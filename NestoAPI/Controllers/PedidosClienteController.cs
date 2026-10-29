@@ -105,6 +105,17 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(PedidoClienteResponse))]
         public async Task<IHttpActionResult> PostPedidoCliente(PedidoClienteRequest peticion)
         {
+            // NestoAPI#728 (TNV#97): Apple Pay / Google Pay / Bizum / tarjeta, si la app lo fija. Sin él, como siempre.
+            string metodoPago = null;
+            if (peticion != null && !peticion.IdPagoCarrito.HasValue)
+            {
+                string metodoNoValido = MetodoPagoApp.Validar(peticion, out metodoPago);
+                if (metodoNoValido != null)
+                {
+                    return BadRequest(metodoNoValido);
+                }
+            }
+
             // NestoAPI#446: quien hace pedidos sin ver los precios no elige cómo paga (la pasarela
             // enseñaría el importe): se ignora lo que pida y se resuelve la forma habitual.
             bool sinPrecios = PoliticaPreciosOcultos.OcultaImportes(User?.Identity);
@@ -290,7 +301,7 @@ namespace NestoAPI.Controllers
             }
             else if (respuesta.RequierePago)
             {
-                await ArrancarPago(respuesta, preparado, tarjetaParaLaPasarela).ConfigureAwait(false);
+                await ArrancarPago(respuesta, preparado, tarjetaParaLaPasarela, metodoPago).ConfigureAwait(false);
             }
 
             // NestoAPI#444: el cliente recibe su confirmación (hasta hoy no recibía nada). Va después
@@ -540,25 +551,13 @@ namespace NestoAPI.Controllers
         /// pedido sin cobrar es recuperable, y el picking no lo va a servir mientras no haya
         /// prepago que cubra el total.</para>
         /// </summary>
-        private async Task ArrancarPago(PedidoClienteResponse respuesta, PedidoPreparado preparado, TarjetaCliente tarjetaGuardada = null)
+        private async Task ArrancarPago(PedidoClienteResponse respuesta, PedidoPreparado preparado, TarjetaCliente tarjetaGuardada = null,
+            string metodoPago = null)
         {
             try
             {
-                respuesta.Pago = await servicioPagos.IniciarPago(new SolicitudPagoTPV
-                {
-                    Empresa = respuesta.Empresa,
-                    Cliente = respuesta.Cliente,
-                    Contacto = respuesta.Contacto,
-                    Importe = respuesta.Total,
-                    Descripcion = $"Pago pedido {respuesta.Numero}",
-                    // Va a Redsys (DS_MERCHANT_CUSTOMER_MAIL, que ayuda en la autenticacion y en
-                    // el justificante del banco). NO se le manda ningun enlace de pago: el cobro
-                    // es online y ocurre en la propia app.
-                    Correo = preparado.Correo,
-                    Pedido = respuesta.Numero,
-                    // NestoAPI#178 (plan B): con la referencia, Redsys enseña la tarjeta guardada
-                    TarjetaGuardada = tarjetaGuardada
-                }, preparado.Pedido.Usuario).ConfigureAwait(false);
+                respuesta.Pago = await servicioPagos.IniciarPago(
+                    SolicitudCobroPedido(respuesta, preparado.Correo, tarjetaGuardada, metodoPago), preparado.Pedido.Usuario).ConfigureAwait(false);
 
                 if (tarjetaGuardada != null)
                 {
@@ -577,6 +576,45 @@ namespace NestoAPI.Controllers
                     "Inténtalo de nuevo desde tus pedidos o llámanos.");
             }
         }
+
+        /// <summary>
+        /// NestoAPI#436 / #728: la solicitud del cobro de un pedido de la app recién creado. Con Apple Pay / Google Pay / Bizum
+        /// (<paramref name="metodoPago"/>) no hay tarjeta guardada y IniciarPago no pide tokenizar.
+        /// </summary>
+        internal static SolicitudPagoTPV SolicitudCobroPedido(PedidoClienteResponse respuesta, string correo, TarjetaCliente tarjetaGuardada,
+            string metodoPago) => new SolicitudPagoTPV
+            {
+                Empresa = respuesta.Empresa,
+                Cliente = respuesta.Cliente,
+                Contacto = respuesta.Contacto,
+                Importe = respuesta.Total,
+                Descripcion = $"Pago pedido {respuesta.Numero}",
+                // Va a Redsys (DS_MERCHANT_CUSTOMER_MAIL, que ayuda en la autenticacion y en
+                // el justificante del banco). NO se le manda ningun enlace de pago: el cobro
+                // es online y ocurre en la propia app.
+                Correo = correo,
+                Pedido = respuesta.Numero,
+                // NestoAPI#178 (plan B): con la referencia, Redsys enseña la tarjeta guardada
+                TarjetaGuardada = MetodoPagoApp.UsaTarjetaGuardada(metodoPago) ? tarjetaGuardada : null,
+                // NestoAPI#728: el método fijado (null = todos, como siempre)
+                MetodoPago = metodoPago
+            };
+
+        /// <summary>TNV#68 / NestoAPI#728: la solicitud del cobro del carrito (sin pedido todavía).</summary>
+        internal static SolicitudPagoTPV SolicitudCobroCarrito(PedidoVentaDTO pedido, decimal total, string correo, TarjetaCliente tarjeta,
+            string metodoPago) => new SolicitudPagoTPV
+            {
+                Empresa = pedido.empresa,
+                Cliente = pedido.cliente,
+                Contacto = pedido.contacto,
+                Importe = total,
+                Descripcion = "Pedido en Nueva Visión",
+                Correo = correo,
+                // Sin pedido: todavía no existe, y solo existirá si esto se autoriza
+                EsCarritoApp = true,
+                TarjetaGuardada = MetodoPagoApp.UsaTarjetaGuardada(metodoPago) ? tarjeta : null,
+                MetodoPago = metodoPago
+            };
 
         /// <summary>
         /// NestoAPI#436 (aviso del equipo de la app): lo que cuesta el envío del carrito ANTES de
@@ -935,11 +973,26 @@ namespace NestoAPI.Controllers
                 return BadRequest("Tu pedido se paga con tu forma de pago habitual, no con tarjeta.");
             }
 
-            if (peticion?.TarjetaId == null)
+            // NestoAPI#728 (TNV#97): con Apple Pay, Google Pay o Bizum no hay tarjeta guardada; la app abre Pago.UrlPaginaPago
+            string metodoNoValido = MetodoPagoApp.Validar(peticion, out string metodoPago);
+            if (metodoNoValido != null)
+            {
+                return BadRequest(metodoNoValido);
+            }
+            bool conTarjetaGuardada = MetodoPagoApp.UsaTarjetaGuardada(metodoPago);
+            if (conTarjetaGuardada && peticion?.TarjetaId == null)
             {
                 return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
             }
-            peticion.PagarConTarjetaGuardada = true;
+            if (conTarjetaGuardada)
+            {
+                peticion.PagarConTarjetaGuardada = true;
+            }
+            else
+            {
+                // Se cobra con tarjeta (la del wallet) al contado, como con la guardada
+                peticion.PagarConTarjeta = true;
+            }
 
             CarritoACobrar carrito = await PrepararCarritoACobrar(peticion, ProveedorCobroCarrito.Redsys).ConfigureAwait(false);
             if (carrito.Error != null)
@@ -949,28 +1002,22 @@ namespace NestoAPI.Controllers
             PedidoPreparado preparado = carrito.Preparado;
             decimal total = carrito.Total;
 
-            TarjetaCliente tarjeta = servicioPagos.TarjetaGuardadaDe(
-                preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
-            if (tarjeta == null)
+            TarjetaCliente tarjeta = null;
+            if (conTarjetaGuardada)
             {
-                return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
+                tarjeta = servicioPagos.TarjetaGuardadaDe(
+                    preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
+                if (tarjeta == null)
+                {
+                    return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
+                }
             }
 
             RespuestaIniciarPago pago;
             try
             {
-                pago = await servicioPagos.IniciarPago(new SolicitudPagoTPV
-                {
-                    Empresa = preparado.Pedido.empresa,
-                    Cliente = preparado.Pedido.cliente,
-                    Contacto = preparado.Pedido.contacto,
-                    Importe = total,
-                    Descripcion = "Pedido en Nueva Visión",
-                    Correo = preparado.Correo,
-                    // Sin pedido: todavía no existe, y solo existirá si esto se autoriza
-                    EsCarritoApp = true,
-                    TarjetaGuardada = tarjeta
-                }, preparado.Pedido.Usuario).ConfigureAwait(false);
+                pago = await servicioPagos.IniciarPago(SolicitudCobroCarrito(preparado.Pedido, total, preparado.Correo, tarjeta, metodoPago),
+                    preparado.Pedido.Usuario).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -987,8 +1034,9 @@ namespace NestoAPI.Controllers
                 Importe = total,
                 BaseImponible = preparado.Pedido.BaseImponible,
                 Portes = PortesDelPedido(preparado.Pedido),
-                TarjetaUltimosDigitos = tarjeta.UltimosDigitos,
-                TarjetaDescripcion = tarjeta.Descripcion
+                TarjetaUltimosDigitos = tarjeta?.UltimosDigitos,
+                TarjetaDescripcion = tarjeta?.Descripcion,
+                MetodoPago = metodoPago
             });
         }
 

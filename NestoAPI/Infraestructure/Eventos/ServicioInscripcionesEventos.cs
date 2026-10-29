@@ -74,6 +74,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// no, Reembolsable (o NoReembolsable si el evento solo tiene esa). 400 si el evento no la ofrece.
         /// </summary>
         public string Modalidad { get; set; }
+        /// <summary>
+        /// NestoAPI#731: opcional, la persona que asiste (PersonasContactoClientes.Número de una persona del mismo cliente y
+        /// contacto; GET api/Eventos/PersonasContacto). 400 si no es de esa ficha. Si no viene y se inscribe la propia clienta
+        /// desde la tienda online, la persona cuyo correo es el de su usuario (si la hay).
+        /// </summary>
+        public string PersonaContacto { get; set; }
     }
 
     /// <summary>NestoAPI#690: POST api/Eventos/Inscripciones/{id}/ConfirmarAsistencia.</summary>
@@ -202,6 +208,24 @@ namespace NestoAPI.Infraestructure.Eventos
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public List<string> Avisos { get; set; }
+
+        /// <summary>
+        /// NestoAPI#731: la persona que asiste (una persona de contacto del cliente, de la misma dirección). Null = sin indicar.
+        /// Se pone al inscribir (InscribirEventoDTO.PersonaContacto) y se cambia con PUT api/Eventos/Inscripciones/{id}/PersonaContacto.
+        /// </summary>
+        public PersonaContactoEventoDTO PersonaContacto { get; set; }
+        /// <summary>
+        /// NestoAPI#731: solo lectura, de la ficha (no se guarda): el correo de la persona que asiste o, si no tiene, el de otra
+        /// persona de contacto de la dirección o del cliente. Null si no hay ninguno.
+        /// </summary>
+        public string Correo { get; set; }
+        /// <summary>NestoAPI#731: solo lectura, de la ficha del contacto (no se guarda): «Calle, CP Población (Provincia)».</summary>
+        public string Direccion { get; set; }
+        /// <summary>
+        /// NestoAPI#732: en un evento «gratuito por compra», el pedido de venta que justifica la inscripción (el que tiene el
+        /// producto requerido). Null en el resto. Si se borra ese pedido o se le quita la línea, la inscripción se anula.
+        /// </summary>
+        public int? PedidoJustificante { get; set; }
     }
 
     /// <summary>
@@ -248,6 +272,10 @@ namespace NestoAPI.Infraestructure.Eventos
         /// primera inscripción con UrlPago.
         /// </summary>
         Task<InscripcionEventoDTO> GenerarEnlacePagoPedidoCursos(int pedido, List<int> inscripciones, IPrincipal usuario);
+        /// <summary>NestoAPI#731: las personas de contacto de un cliente (de un contacto o de todos), para el combo «Asiste». Solo la casa.</summary>
+        Task<List<PersonaContactoEventoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto, IPrincipal usuario);
+        /// <summary>NestoAPI#731: cambia (o quita) la persona que asiste. Quien mantiene el evento.</summary>
+        Task<InscripcionEventoDTO> CambiarPersonaContacto(int id, CambiarPersonaContactoInscripcionDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -355,10 +383,24 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 (asistencias, usuario) => new Cupones.ServicioCupones(db).AplicarAsistencia(asistencias, usuario))
         {
             baseImponibleDia = new LectorBaseImponibleDia(db);
+            PersonasAsistentes = new RepositorioPersonaAsistenteEventos(db);
+            ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
         }
+
+        /// <summary>
+        /// NestoAPI#732: los productos requeridos de los eventos «gratuitos por compra» y el pedido que justifica cada inscripción
+        /// (fuera del EDMX). Null (tests): ningún evento exige compra.
+        /// </summary>
+        internal IRepositorioProductosRequeridosEventos ProductosRequeridos { get; set; }
 
         /// <summary>NestoAPI#690: la base imponible del día en la lista de inscritos. Null (tests): no se calcula.</summary>
         internal ILectorBaseImponibleDia BaseImponibleDia { get => baseImponibleDia; set => baseImponibleDia = value; }
+
+        /// <summary>
+        /// NestoAPI#731: la columna EventosInscripciones.PersonaContacto (fuera del EDMX). Null (tests): la persona que asiste ni
+        /// se lee ni se guarda, y el PUT para cambiarla contesta que falta el script.
+        /// </summary>
+        internal IRepositorioPersonaAsistenteEventos PersonasAsistentes { get; set; }
 
         /// <param name="pagos">Para generar el enlace (perezoso: solo se crea si hace falta).</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
@@ -458,6 +500,37 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 throw new NestoBusinessException($"No quedan plazas en «{evento.Titulo?.Trim()}» ({evento.Plazas.Value} ocupadas).");
             }
 
+            // NestoAPI#731: la persona que asiste (opcional). Si la dicen, tiene que ser de la ficha.
+            List<KeyValuePair<string, PersonaContactoEventoDTO>> personasCliente = null;
+            string personaAsiste = null;
+            string personaPedida = Limpiar(peticion.PersonaContacto);
+            if (personaPedida != null)
+            {
+                personasCliente = await LeerPersonasDe(new List<string> { empresa }, new List<string> { cliente }).ConfigureAwait(false);
+                personaAsiste = ComprobarPersonaDeLaFicha(personasCliente, cliente, contacto, personaPedida);
+            }
+            else if (origen == OrigenInscripcionEvento.TNV)
+            {
+                personasCliente = await LeerPersonasSinFallar(empresa, cliente).ConfigureAwait(false);
+                personaAsiste = PersonaDelCorreo(personasCliente, cliente, contacto, usuario?.Identity?.Name);
+            }
+
+            // NestoAPI#732: «gratuito por compra». Si el evento exige productos, el cliente tiene que haber comprado o pedido
+            // alguno (ReglasProductosRequeridosEvento); el pedido que lo justifica se guarda en la inscripción.
+            JustificanteCompraEvento justificante = null;
+            if (ProductosRequeridos != null)
+            {
+                List<ProductoRequeridoLeido> requeridos = (await ProductosRequeridos.Leer(new List<int> { evento.Id }).ConfigureAwait(false))?
+                    .FirstOrDefault().Value ?? new List<ProductoRequeridoLeido>();
+                if (requeridos.Any())
+                {
+                    DateTime desde = ReglasProductosRequeridosEvento.Desde(requeridos);
+                    justificante = await ProductosRequeridos.BuscarJustificante(empresa, cliente,
+                        requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false)
+                        ?? throw ReglasProductosRequeridosEvento.RequiereCompra(evento.Titulo, requeridos, desde);
+                }
+            }
+
             // NestoAPI#690: la modalidad fija lo que se cobra y si habrá cupón. La gratuita no se paga: entra Inscrita, sin
             // fecha límite ni forma de pago, y va directa a la lista de asistencia.
             ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.Elegir(evento, peticion.Modalidad);
@@ -486,6 +559,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             };
             db.EventosInscripciones.Add(inscripcion);
             await db.SaveChangesAsync().ConfigureAwait(false);
+            bool personaGuardada = await GuardarPersonaSinFallar(inscripcion.Id, personaAsiste).ConfigureAwait(false);
+            bool justificanteGuardado = await GuardarJustificanteSinFallar(inscripcion.Id, justificante?.Pedido).ConfigureAwait(false);
 
             string urlPago = null;
             bool conEnlace = !gratuita && peticion.GenerarEnlacePago && importe > 0
@@ -526,6 +601,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
             InscripcionEventoDTO dto = Componer(inscripcion, evento, ficha.Nombre?.Trim());
             dto.UrlPago = urlPago;
+            // NestoAPI#731: lo de la ficha (solo lectura) y la persona que asiste
+            personasCliente = personasCliente ?? await LeerPersonasSinFallar(empresa, cliente).ConfigureAwait(false);
+            RellenarFicha(dto, ficha.Dirección, ficha.CodPostal, ficha.Población, ficha.Provincia,
+                personasCliente.Where(p => p.Key == cliente).Select(p => p.Value), personaGuardada ? personaAsiste : null);
+            dto.PedidoJustificante = justificanteGuardado ? justificante?.Pedido : null;
             if (origen != OrigenInscripcionEvento.TNV)
             {
                 dto.Avisos = await AvisosFicha(empresa, cliente, contacto, ficha.Teléfono).ConfigureAwait(false);
@@ -556,6 +636,167 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 ElmahHelper.Log(new Exception($"[Sugerencia 776] No se ha podido mirar el teléfono y el correo de {cliente}/{contacto}: {ex.Message}", ex));
                 return new List<string>();
+            }
+        }
+
+        // ---------------- NestoAPI#731: persona que asiste, correo y dirección ----------------
+
+        public async Task<List<PersonaContactoEventoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto, IPrincipal usuario)
+        {
+            if (PermisosEventos.ClienteDelToken(usuario) != null)
+            {
+                throw Prohibido("Las personas de contacto del cliente solo las ve la casa.");
+            }
+            string clienteLimpio = Limpiar(cliente) ?? throw new NestoBusinessException("Indique el cliente.");
+            string contactoLimpio = Limpiar(contacto);
+            List<KeyValuePair<string, PersonaContactoEventoDTO>> personas =
+                await LeerPersonasDe(new List<string> { EmpresaOPorDefecto(empresa) }, new List<string> { clienteLimpio }).ConfigureAwait(false);
+            return personas.Where(p => p.Key == clienteLimpio && (contactoLimpio == null || p.Value.Contacto == contactoLimpio))
+                .Select(p => p.Value)
+                .OrderBy(p => p.Contacto).ThenBy(p => p.Numero)
+                .ToList();
+        }
+
+        public async Task<InscripcionEventoDTO> CambiarPersonaContacto(int id, CambiarPersonaContactoInscripcionDTO peticion, IPrincipal usuario)
+        {
+            EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
+            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+            ComprobarPuedeMantener(usuario, evento);
+            string numero = Limpiar(peticion?.PersonaContacto);
+            if (numero != null)
+            {
+                List<KeyValuePair<string, PersonaContactoEventoDTO>> personas = await LeerPersonasDe(
+                    new List<string> { EmpresaOPorDefecto(inscripcion.Empresa) }, new List<string> { Limpiar(inscripcion.Cliente) }).ConfigureAwait(false);
+                numero = ComprobarPersonaDeLaFicha(personas, Limpiar(inscripcion.Cliente), Limpiar(inscripcion.Contacto), numero);
+            }
+            if (PersonasAsistentes == null || !await PersonasAsistentes.Poner(inscripcion.Id, numero).ConfigureAwait(false))
+            {
+                throw new NestoBusinessException("Todavía no se puede indicar quién asiste: falta lanzar el script " +
+                    "Scripts/Issue731_EventosInscripcionesPersonaContacto.sql. Avise a Informática.");
+            }
+            inscripcion.Usuario = UsuarioDe(usuario);
+            inscripcion.FechaModificacion = reloj();
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            return (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
+                .Single();
+        }
+
+        /// <summary>Las personas de contacto de unos clientes (cliente → persona), ya limpias.</summary>
+        private async Task<List<KeyValuePair<string, PersonaContactoEventoDTO>>> LeerPersonasDe(List<string> empresas, List<string> clientes)
+        {
+            var filas = await db.PersonasContactoClientes
+                .Where(p => empresas.Contains(p.Empresa) && clientes.Contains(p.NºCliente))
+                .Select(p => new { p.NºCliente, p.Contacto, p.Número, p.Nombre, p.CorreoElectrónico, p.Teléfono })
+                .ToListAsync().ConfigureAwait(false);
+            return filas.Select(p => new KeyValuePair<string, PersonaContactoEventoDTO>(Limpiar(p.NºCliente), new PersonaContactoEventoDTO
+            {
+                Contacto = Limpiar(p.Contacto),
+                Numero = Limpiar(p.Número),
+                Nombre = Limpiar(p.Nombre),
+                Correo = Limpiar(p.CorreoElectrónico),
+                Telefono = Limpiar(p.Teléfono)
+            })).ToList();
+        }
+
+        /// <summary>Lo mismo, para enseñar: si falla, sin personas (y a ELMAH). Nunca bloquea.</summary>
+        private async Task<List<KeyValuePair<string, PersonaContactoEventoDTO>>> LeerPersonasSinFallar(string empresa, string cliente)
+        {
+            try
+            {
+                return await LeerPersonasDe(new List<string> { empresa }, new List<string> { cliente }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #731] No se han podido leer las personas de contacto de {cliente}: {ex.Message}", ex));
+                return new List<KeyValuePair<string, PersonaContactoEventoDTO>>();
+            }
+        }
+
+        /// <summary>El Número limpio si la persona es de ese cliente y contacto; 400 si no.</summary>
+        internal static string ComprobarPersonaDeLaFicha(IEnumerable<KeyValuePair<string, PersonaContactoEventoDTO>> personas, string cliente,
+            string contacto, string numero)
+        {
+            PersonaContactoEventoDTO persona = (personas ?? Enumerable.Empty<KeyValuePair<string, PersonaContactoEventoDTO>>())
+                .Where(p => p.Key == cliente && p.Value.Contacto == contacto)
+                .Select(p => p.Value)
+                .FirstOrDefault(p => string.Equals(p.Numero, numero?.Trim(), StringComparison.OrdinalIgnoreCase));
+            return persona?.Numero ?? throw new NestoBusinessException(
+                $"La persona de contacto {numero?.Trim()} no es de la ficha del cliente {cliente}/{contacto}. Elija una de sus personas de contacto.");
+        }
+
+        /// <summary>NestoAPI#731: la clienta que se inscribe desde la tienda es la persona de su dirección con el correo de su usuario.</summary>
+        internal static string PersonaDelCorreo(IEnumerable<KeyValuePair<string, PersonaContactoEventoDTO>> personas, string cliente, string contacto,
+            string correoUsuario)
+        {
+            string correo = correoUsuario?.Trim();
+            if (string.IsNullOrEmpty(correo) || correo.IndexOf('@') < 0)
+            {
+                return null;
+            }
+            return (personas ?? Enumerable.Empty<KeyValuePair<string, PersonaContactoEventoDTO>>())
+                .Where(p => p.Key == cliente && p.Value.Contacto == contacto && p.Value.Correo != null)
+                .Select(p => p.Value)
+                .FirstOrDefault(p => p.Correo.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(c => string.Equals(c.Trim(), correo, StringComparison.OrdinalIgnoreCase)))?.Numero;
+        }
+
+        /// <summary>Guarda la persona que asiste de una inscripción recién creada. Sin columna o si falla: sin persona (y a ELMAH).</summary>
+        private async Task<bool> GuardarPersonaSinFallar(int inscripcion, string numero)
+        {
+            if (numero == null || PersonasAsistentes == null)
+            {
+                return false;
+            }
+            try
+            {
+                return await PersonasAsistentes.Poner(inscripcion, numero).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #731] La inscripción {inscripcion} está hecha, pero no se ha podido guardar quién asiste ({numero}): {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#732: el pedido que justifica la inscripción recién creada. Sin columna o si falla: la inscripción vale igual
+        /// (la compra está comprobada), pero borrar el pedido no la anulará (y queda en ELMAH).
+        /// </summary>
+        private async Task<bool> GuardarJustificanteSinFallar(int inscripcion, int? pedido)
+        {
+            if (!pedido.HasValue || ProductosRequeridos == null)
+            {
+                return false;
+            }
+            try
+            {
+                bool guardado = await ProductosRequeridos.PonerJustificante(inscripcion, pedido.Value).ConfigureAwait(false);
+                if (!guardado)
+                {
+                    ElmahHelper.Log(new Exception($"[Eventos #732] La inscripción {inscripcion} está justificada por el pedido {pedido}, pero falta la " +
+                        "columna EventosInscripciones.PedidoJustificante (Scripts/Issue732_EventosProductosRequeridos.sql)."));
+                }
+                return guardado;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #732] La inscripción {inscripcion} está hecha, pero no se ha podido guardar su pedido justificante {pedido}: {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        /// <summary>NestoAPI#731: dirección y correo de la ficha (solo lectura) y la persona que asiste.</summary>
+        private static void RellenarFicha(InscripcionEventoDTO dto, string direccion, string codigoPostal, string poblacion, string provincia,
+            IEnumerable<PersonaContactoEventoDTO> personasDelCliente, string personaAsiste)
+        {
+            List<PersonaContactoEventoDTO> personas = (personasDelCliente ?? Enumerable.Empty<PersonaContactoEventoDTO>()).ToList();
+            dto.Direccion = FichaInscripcionEvento.Direccion(direccion, codigoPostal, poblacion, provincia);
+            dto.Correo = FichaInscripcionEvento.Correo(dto.Contacto, personaAsiste, personas);
+            if (personaAsiste != null)
+            {
+                dto.PersonaContacto = personas.FirstOrDefault(p => p.Contacto == dto.Contacto && p.Numero == personaAsiste)
+                    // La persona se ha borrado de la ficha: se enseña el número que quedó guardado
+                    ?? new PersonaContactoEventoDTO { Contacto = dto.Contacto, Numero = personaAsiste };
             }
         }
 
@@ -1707,12 +1948,27 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
             List<string> empresas = inscripciones.Select(i => Limpiar(i.Empresa)).Distinct().ToList();
             List<string> clientes = inscripciones.Select(i => Limpiar(i.Cliente)).Distinct().ToList();
-            var nombres = (await db.Clientes
+            var fichas = (await db.Clientes
                 .Where(c => empresas.Contains(c.Empresa) && clientes.Contains(c.Nº_Cliente))
-                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre })
+                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre, c.Dirección, c.CodPostal, c.Población, c.Provincia })
                 .ToListAsync().ConfigureAwait(false))
                 .GroupBy(c => Limpiar(c.Nº_Cliente) + "/" + Limpiar(c.Contacto))
-                .ToDictionary(g => g.Key, g => g.First().Nombre?.Trim());
+                .ToDictionary(g => g.Key, g => g.First());
+
+            // NestoAPI#731: la persona que asiste y las personas de contacto (correo). Si algo falla, la lista sale igual sin ello.
+            Dictionary<int, string> asistentes = await LeerAsistentesSinFallar(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false);
+            List<KeyValuePair<string, PersonaContactoEventoDTO>> personas;
+            try
+            {
+                personas = await LeerPersonasDe(empresas, clientes).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #731] No se han podido leer las personas de contacto de los inscritos: {ex.Message}", ex));
+                personas = new List<KeyValuePair<string, PersonaContactoEventoDTO>>();
+            }
+            ILookup<string, PersonaContactoEventoDTO> personasPorCliente = personas.ToLookup(p => p.Key, p => p.Value);
+            Dictionary<int, int> justificantes = await LeerJustificantesSinFallar(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false);
 
             List<int> pagosPendientes = inscripciones
                 .Where(i => i.PagoTPVId.HasValue && (EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada))
@@ -1730,8 +1986,15 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             return inscripciones.Select(i =>
             {
                 eventos.TryGetValue(i.EventoId, out Evento evento);
-                nombres.TryGetValue(Limpiar(i.Cliente) + "/" + Limpiar(i.Contacto), out string nombre);
-                InscripcionEventoDTO dto = Componer(i, evento, nombre);
+                fichas.TryGetValue(Limpiar(i.Cliente) + "/" + Limpiar(i.Contacto), out var ficha);
+                InscripcionEventoDTO dto = Componer(i, evento, ficha?.Nombre?.Trim());
+                asistentes.TryGetValue(i.Id, out string asiste);
+                RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia,
+                    personasPorCliente[Limpiar(i.Cliente) ?? ""], asiste);
+                if (justificantes.TryGetValue(i.Id, out int pedidoJustificante))
+                {
+                    dto.PedidoJustificante = pedidoJustificante;
+                }
                 if (i.PagoTPVId.HasValue && tokens.TryGetValue(i.PagoTPVId.Value, out Guid token))
                 {
                     dto.UrlPago = URL_PAGINA_PAGO + token;
@@ -1742,6 +2005,42 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 }
                 return dto;
             }).ToList();
+        }
+
+        /// <summary>NestoAPI#731: inscripción → persona que asiste. Sin columna (o si falla): ninguna, y la lista sale igual.</summary>
+        private async Task<Dictionary<int, string>> LeerAsistentesSinFallar(List<int> ids)
+        {
+            if (PersonasAsistentes == null || !ids.Any())
+            {
+                return new Dictionary<int, string>();
+            }
+            try
+            {
+                return await PersonasAsistentes.Leer(ids).ConfigureAwait(false) ?? new Dictionary<int, string>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #731] No se ha podido leer quién asiste: {ex.Message}", ex));
+                return new Dictionary<int, string>();
+            }
+        }
+
+        /// <summary>NestoAPI#732: inscripción → pedido que la justifica. Sin columna (o si falla): ninguno, y la lista sale igual.</summary>
+        private async Task<Dictionary<int, int>> LeerJustificantesSinFallar(List<int> ids)
+        {
+            if (ProductosRequeridos == null || !ids.Any())
+            {
+                return new Dictionary<int, int>();
+            }
+            try
+            {
+                return await ProductosRequeridos.LeerJustificantes(ids).ConfigureAwait(false) ?? new Dictionary<int, int>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #732] No se han podido leer los pedidos justificantes: {ex.Message}", ex));
+                return new Dictionary<int, int>();
+            }
         }
 
         /// <summary>NestoAPI#612: la facturación del curso de las que ya están pagadas. Un fallo aquí no rompe la lista.</summary>

@@ -295,6 +295,7 @@
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\PedidosClienteControllerTests.cs" />
+    <Compile Include="Controllers\PedidosClienteMetodoPagoTests.cs" />
     <Compile Include="Controllers\PedidosClienteOrigenPushTests.cs" />
     <Compile Include="Controllers\AplazameControllersTests.cs" />
     <Compile Include="Infrastructure\Pagos\Aplazame\AplazameSandboxIntegracionTests.cs" />
@@ -664,6 +665,8 @@
     <Compile Include="Infrastructure\Eventos\CursosPlantillaTests.cs" />
     <Compile Include="Infrastructure\Cupones\CarritoCuponesTests.cs" />
     <Compile Include="Infrastructure\Eventos\PropuestasSenalesEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\PersonaAsistenteEventoTests.cs" />
+    <Compile Include="Infrastructure\Eventos\ProductosRequeridosEventosTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTests.cs" />
     <Compile Include="Infrastructure\Cupones\EspejoCuponesPrestashopTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTiendaPrestashopTests.cs" />

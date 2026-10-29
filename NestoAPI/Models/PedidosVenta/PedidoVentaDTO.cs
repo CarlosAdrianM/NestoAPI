@@ -99,6 +99,14 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public bool? ConfirmarAnomalias { get; set; }
         /// <summary>
+        /// NestoAPI#732: al quitar (o poner a 0, o cambiar de producto) la línea que justifica una inscripción gratuita por compra a
+        /// un evento, el PUT contesta 409 PEDIDO_JUSTIFICA_INSCRIPCIONES_EVENTO con la pregunta en el mensaje y las inscripciones en
+        /// error.details.inscripciones, sin guardar nada. True = el usuario ya ha dicho que sí: se guarda el pedido, se anulan esas
+        /// inscripciones y se avisa a la tienda del evento (y la respuesta trae el aviso INSCRIPCIONES_EVENTO_ANULADAS). Null o
+        /// false = se pregunta.
+        /// </summary>
+        public bool? ConfirmarAnularInscripcionesEventos { get; set; }
+        /// <summary>
         /// Issue #159: permite al vendedor marcar un pedido para que no se le cobre la comisión
         /// por contra reembolso, aunque la forma de pago sea EFC. Solo tiene efecto si la fecha
         /// actual es anterior a <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>;
