@@ -12,6 +12,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
     {
         /// <summary>COMP (pedidos de compra de un proveedor) o REPO (reposición entre almacenes).</summary>
         public string Tipo { get; set; }
+        /// <summary>Ariadna#63: el tipo para enseñarlo y filtrar («Compra», «Reposición»). Siempre viene (sin nombre, su código).</summary>
+        public string NombreTipo { get; set; }
         /// <summary>COMP: el proveedor. REPO: el número de traspaso.</summary>
         public string Documento { get; set; }
         /// <summary>Lo que se enseña: el nombre del proveedor o «Reposición 80841 desde Alcobendas». Siempre viene.</summary>

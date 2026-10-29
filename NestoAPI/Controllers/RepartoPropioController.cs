@@ -35,7 +35,7 @@ namespace NestoAPI.Controllers
 
         internal RepartoPropioController(NVEntities db)
             : this(db, new ServicioRepartoPropio(new RepositorioRepartoPropio(db), avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
-                informes: () => new Infraestructure.Informes.InformesService(db)))
+                informes: () => new Infraestructure.Informes.InformesService(db), carga: new RepositorioCargaFurgoneta(db)))
         {
         }
 
@@ -59,17 +59,49 @@ namespace NestoAPI.Controllers
             this.servicio = servicio;
         }
 
-        // GET api/RepartoPropio/Envios?fecha=2026-10-29
+        // GET api/RepartoPropio/Envios?fecha=2026-10-29&soloMios=true
+        /// <summary>Ariadna#63: con Repartidor y BultosCargados; con soloMios, solo los que lleva el usuario.</summary>
         [HttpGet]
         [Route("Envios")]
         [ResponseType(typeof(List<EnvioRepartoDTO>))]
-        public async Task<IHttpActionResult> GetEnvios(DateTime? fecha = null)
+        public async Task<IHttpActionResult> GetEnvios(DateTime? fecha = null, bool soloMios = false)
         {
             if (!PermisosRepartoPropio.PuedeRepartir(User))
             {
                 return Prohibido();
             }
-            return Responder(await servicio.Envios(fecha));
+            return Responder(await servicio.Envios(fecha, soloMios, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
+        // POST api/RepartoPropio/Cargar { Codigo, ClaveIdempotencia, FechaHora, Reasignar }
+        /// <summary>
+        /// Ariadna#63: el repartidor escanea un bulto al cargarlo en la furgoneta. 409 ENVIO_DE_OTRO_REPARTIDOR (error.details.repartidor)
+        /// si lo lleva otro y no se pide Reasignar; 409 si el envío no está en reparto; 400 sin Scripts/Issue739_CargaFurgoneta.sql.
+        /// </summary>
+        [HttpPost]
+        [Route("Cargar")]
+        [ResponseType(typeof(ResultadoCargaBultoDTO))]
+        public async Task<IHttpActionResult> Cargar([FromBody] CargaBultoRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.Cargar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
+        // GET api/RepartoPropio/SinCargar?fecha=2026-10-29
+        /// <summary>Ariadna#63: los envíos Tramitados de ese día con algún bulto sin cargar.</summary>
+        [HttpGet]
+        [Route("SinCargar")]
+        [ResponseType(typeof(List<EnvioSinCargarDTO>))]
+        public async Task<IHttpActionResult> GetSinCargar(DateTime? fecha = null)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.SinCargar(fecha));
         }
 
         // GET api/RepartoPropio/Bulto/RP123456-2
@@ -156,6 +188,15 @@ namespace NestoAPI.Controllers
                 case TipoResultadoReparto.NoEncontrado:
                     return Content(HttpStatusCode.NotFound, new { Message = resultado.Mensaje });
                 case TipoResultadoReparto.Conflicto:
+                    if (resultado.Codigo != null)
+                    {
+                        // Ariadna#63: el formato de GlobalExceptionFilter ({ error: { code, message, details } }), y Message como siempre.
+                        return Content(HttpStatusCode.Conflict, new
+                        {
+                            error = new { code = resultado.Codigo, message = resultado.Mensaje, details = resultado.Detalles },
+                            Message = resultado.Mensaje
+                        });
+                    }
                     return Content(HttpStatusCode.Conflict, new { Message = resultado.Mensaje });
                 default:
                     return Content(HttpStatusCode.BadRequest, new { Message = resultado.Mensaje });

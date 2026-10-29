@@ -404,6 +404,55 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("Lo que falta no sale.", recogida.AvisoConFaltas);
         }
 
+        // Ariadna#63: el filtro por tipo de Salidas y Entradas se construye con NombreTipo (la app no mira el código).
+
+        [TestMethod]
+        public async Task Salidas_LeerPendientes_NombreTipoLegibleYSinNombreElCodigo()
+        {
+            IRepositorioPreparacionAlmacen repositorio = A.Fake<IRepositorioPreparacionAlmacen>();
+            A.CallTo(() => repositorio.LeerPickingsEnCurso(EMPRESA, "ALG")).Returns(new List<PickingEnCursoDTO>
+            {
+                new PickingEnCursoDTO { Picking = 99757, Lineas = 12, Pedidos = 4, Unidades = 30 }
+            });
+            A.CallTo(() => repositorio.LeerReposicionesPorSalir(EMPRESA, "ALG")).Returns(new List<ReposicionPorSalir>
+            {
+                new ReposicionPorSalir { Traspaso = 80905, Destino = "REI", NombreDestino = "Reina", Lineas = 1, Unidades = 1 }
+            });
+
+            List<RecogidaPendienteDTO> pendientes = await Salidas(repositorio, new OrigenSalidaDePrueba()).LeerPendientes(EMPRESA, "ALG");
+
+            Assert.AreEqual("Picking", pendientes.Single(p => p.Numero == 99757).NombreTipo);
+            Assert.AreEqual("PICK", pendientes.Single(p => p.Numero == 99757).Tipo, "El código sigue igual: va en las rutas");
+            Assert.AreEqual("Reposición", pendientes.Single(p => p.Numero == 80905).NombreTipo);
+            Assert.AreEqual("DEVP", pendientes.Single(p => p.Tipo == "DEVP").NombreTipo, "Un tipo sin nombre sale con su código");
+        }
+
+        [TestMethod]
+        public async Task Recepciones_LeerPendientes_NombreTipoLegibleYSinNombreElCodigo()
+        {
+            IOrigenRecepcion compras = OrigenRecepcion("COMP", new OrigenRecepcionCompras.TextosCompras());
+            A.CallTo(() => compras.LeerPendientes(EMPRESA, "ALG")).Returns(new List<RecepcionPendienteDTO>
+            {
+                new RecepcionPendienteDTO { Tipo = "COMP", Documento = "65", Titulo = "MAYSTAR" }
+            });
+            IOrigenRecepcion reposiciones = OrigenRecepcion("REPO", new OrigenRecepcionReposiciones.TextosReposiciones());
+            A.CallTo(() => reposiciones.LeerPendientes(EMPRESA, "ALG")).Returns(new List<RecepcionPendienteDTO>
+            {
+                new RecepcionPendienteDTO { Tipo = "REPO", Documento = "80905", Titulo = "Reposición 80905 desde Alcobendas" }
+            });
+            IOrigenRecepcion devoluciones = OrigenRecepcion("DEVO", null);
+            A.CallTo(() => devoluciones.LeerPendientes(EMPRESA, "ALG")).Returns(new List<RecepcionPendienteDTO>
+            {
+                new RecepcionPendienteDTO { Tipo = "DEVO", Documento = "1" }
+            });
+
+            List<RecepcionPendienteDTO> pendientes = await new ServicioRecepciones(new[] { compras, reposiciones, devoluciones }).LeerPendientes(EMPRESA, "ALG");
+
+            Assert.AreEqual("Compra", pendientes.Single(p => p.Tipo == "COMP").NombreTipo);
+            Assert.AreEqual("Reposición", pendientes.Single(p => p.Tipo == "REPO").NombreTipo);
+            Assert.AreEqual("DEVO", pendientes.Single(p => p.Tipo == "DEVO").NombreTipo);
+        }
+
         #endregion
     }
 }

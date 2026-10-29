@@ -100,6 +100,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NestoAPI#600: lo que se le dice al mozo al recibir de un proveedor (antes estaba en Ariadna).</summary>
         internal class TextosCompras : TextosTipoRecepcion
         {
+            public override string NombreTipo => "Compra";
             public override string Detalle(RecepcionPendienteDTO pendiente)
             {
                 int pedidos = pendiente.Pedidos?.Count ?? 0;
@@ -434,6 +435,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// </summary>
         internal class TextosReposiciones : TextosTipoRecepcion
         {
+            public override string NombreTipo => "Reposición";
             public override string TituloConfirmacion(RecepcionDTO recepcion) => $"¿Terminar la reposición {recepcion.Documento} con esto?";
 
             // #553 (Carlos, 04/10): entra exactamente lo leído y, si no coincide, se avisa a quien hizo el traspaso

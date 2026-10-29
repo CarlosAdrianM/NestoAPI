@@ -130,6 +130,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
     {
         /// <summary>PICK (picking de pedidos) o REPO (reposición a tienda).</summary>
         public string Tipo { get; set; }
+        /// <summary>
+        /// Ariadna#63: el tipo para enseñarlo y filtrar («Picking», «Reposición»). Siempre viene (si el tipo no tiene nombre, su
+        /// código). «Packing» no sale de aquí: es un picking ya recogido y lo decide la app.
+        /// </summary>
+        public string NombreTipo { get; set; }
         /// <summary>El número del picking o el del traspaso.</summary>
         public int Numero { get; set; }
         /// <summary>A dónde va lo recogido: «Mesa de packing», o la tienda (el código del almacén: REI).</summary>
