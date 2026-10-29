@@ -82,6 +82,9 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             Producto("17404", "CHAMPÚ REPARADOR 1000 ML", 40m, 2)
         };
 
+        /// <summary>NestoAPI#532: vendedor de peluquería de cada cliente en el cálculo.</summary>
+        private readonly Dictionary<string, string> vendedorPeluqueria = new Dictionary<string, string>();
+
         private Task<ResultadoRecordatorioReposicionDTO> Calcular(IReadOnlyCollection<string> clientes, string consumibles, DateTime hoy)
         {
             calculados.Add(clientes);
@@ -92,6 +95,7 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
                 {
                     Cliente = cliente,
                     Nombre = "CLIENTE " + cliente,
+                    VendedorPeluqueria = vendedorPeluqueria.TryGetValue(cliente, out string peluqueria) ? peluqueria : null,
                     Productos = productosQueTocan.Select(p => new CandidatoReposicionDTO
                     {
                         Cliente = cliente,
@@ -476,6 +480,22 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 
         private static NotificacionBuzon Buzon(string cliente, DateTime fecha, string datos, string aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS)
             => new NotificacionBuzon { Cliente = cliente, FechaCreacion = fecha, Datos = datos, Aplicacion = aplicacion, Usuario = "u" };
+
+        #endregion
+
+        #region Vendedor de peluquería (NestoAPI#532, Carlos 29/10/26)
+
+        [TestMethod]
+        public async Task VendedorDePeluqueriaIF_LaPushSiLeLlega_LaExclusionEsSoloDelCorreo()
+        {
+            Parametro(Constantes.ParametrosUsuario.RECORDATORIO_REPOSICION_EXCLUIR_VENDEDORES_PELUQUERIA, null);
+            vendedorPeluqueria["15191"] = "IF";
+
+            ResultadoRecordatorioReposicionPushDTO resultado = await Procesar(MARTES);
+
+            CollectionAssert.AreEqual(new[] { "15191" }, resultado.Pushes.Select(p => p.Cliente).ToArray());
+            A.CallTo(() => push.EnviarConsejoACliente("1", "15191", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
 
         #endregion
     }

@@ -171,7 +171,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 ElmahHelper.Log(new Exception("[Recordatorio reposición #532] " + AVISO_SIN_TABLAS));
             }
 
-            ejecucion.Plan = ReglasEnvioRecordatorioReposicion.Planificar(resultado, LeerVendedores(d.Lector), bajas, envios, d.Hoy);
+            ejecucion.Plan = ReglasEnvioRecordatorioReposicion.Planificar(resultado, LeerVendedores(d.Lector), bajas, envios, d.Hoy,
+                LeerVendedoresPeluqueriaExcluidos(d.Lector));
 
             if (ejecucion.Modo == ModoRecordatorioReposicion.Activo)
             {
@@ -401,6 +402,23 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         }
 
         /// <summary>
+        /// NestoAPI#532: CSV de vendedores de peluquería cuyos clientes no reciben el correo del recordatorio (la push no). Sin fila
+        /// o con error: null, que <see cref="ReglasEnvioRecordatorioReposicion.LeerVendedoresPeluqueriaExcluidos"/> lee como «IF».
+        /// </summary>
+        internal static string LeerVendedoresPeluqueriaExcluidos(ILectorParametrosUsuario lector)
+        {
+            try
+            {
+                return lector.LeerParametro(EMPRESA, Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO,
+                    Constantes.ParametrosUsuario.RECORDATORIO_REPOSICION_EXCLUIR_VENDEDORES_PELUQUERIA);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Carlos (25/09/26): de momento la sombra solo le llega a él. Para ampliarlo, volver a los de
         /// CorreosPostCompra:EmailsTest (Laura, Manuel y Carlos), que son los que revisan los correos posventa.
         /// </summary>
@@ -483,7 +501,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             var mail = new MailMessage
             {
                 From = new MailAddress("nesto@nuevavision.es", "Nesto - Nueva Visión"),
-                Subject = cabecera + $", {plan.FueraPorVendedor.Count} fuera por vendedor, {resultado.GrupoControl.Count} en el grupo de control",
+                Subject = cabecera + $", {plan.FueraPorVendedor.Count} fuera por vendedor, " +
+                    $"{plan.FueraPorVendedorPeluqueria.Count} fuera por vendedor de peluquería, {resultado.GrupoControl.Count} en el grupo de control",
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
                 SubjectEncoding = Encoding.UTF8
@@ -562,6 +581,15 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             {
                 sb.AppendLine($"<h3>Fuera por vendedor ({plan.FueraPorVendedor.Count}): les tocaría, pero su vendedor no está en la lista</h3>");
                 AppendTablaCorreos(sb, plan.FueraPorVendedor);
+            }
+
+            if (plan.FueraPorVendedorPeluqueria.Any())
+            {
+                string excluidos = plan.VendedoresPeluqueriaExcluidos.Any() ? string.Join(", ", plan.VendedoresPeluqueriaExcluidos) : "(ninguno)";
+                sb.AppendLine($"<h3>Fuera por vendedor de peluquería ({plan.FueraPorVendedorPeluqueria.Count}): les tocaría, pero su " +
+                    $"vendedor de peluquería es <code>{WebUtility.HtmlEncode(excluidos)}</code> " +
+                    "(RecordatorioReposicionExcluirVendedoresPeluqueria)</h3>");
+                AppendTablaCorreos(sb, plan.FueraPorVendedorPeluqueria);
             }
 
             if (resultado.GrupoControl.Any())

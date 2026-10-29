@@ -166,6 +166,82 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             Assert.AreEqual(3, resultado.Descartes.Count(d => d.Motivo == ReglasEnvioRecordatorioReposicion.MOTIVO_BAJA));
         }
 
+        #region Vendedor de peluquería (Carlos 29/10/26)
+
+        private static RecordatorioReposicionClienteDTO ConPeluqueria(RecordatorioReposicionClienteDTO cliente, string vendedorPeluqueria)
+        {
+            cliente.VendedorPeluqueria = vendedorPeluqueria;
+            return cliente;
+        }
+
+        [TestMethod]
+        public void LeerVendedoresPeluqueriaExcluidos_SinFilaEsIF_VacioEsNinguno()
+        {
+            CollectionAssert.AreEqual(new[] { "IF" }, ReglasEnvioRecordatorioReposicion.LeerVendedoresPeluqueriaExcluidos(null).ToArray());
+            Assert.AreEqual(0, ReglasEnvioRecordatorioReposicion.LeerVendedoresPeluqueriaExcluidos("").Count);
+            Assert.AreEqual(0, ReglasEnvioRecordatorioReposicion.LeerVendedoresPeluqueriaExcluidos(" ; ").Count);
+            CollectionAssert.AreEqual(new[] { "IF", "JM" }, ReglasEnvioRecordatorioReposicion.LeerVendedoresPeluqueriaExcluidos(" if, jm").ToArray());
+        }
+
+        [TestMethod]
+        public void ExcluidoPorVendedorPeluqueria_SinVendedorDePeluqueriaNunca()
+        {
+            List<string> excluidos = ReglasEnvioRecordatorioReposicion.LeerVendedoresPeluqueriaExcluidos(null);
+            Assert.IsTrue(ReglasEnvioRecordatorioReposicion.ExcluidoPorVendedorPeluqueria("if ", excluidos));
+            Assert.IsFalse(ReglasEnvioRecordatorioReposicion.ExcluidoPorVendedorPeluqueria("JM", excluidos));
+            Assert.IsFalse(ReglasEnvioRecordatorioReposicion.ExcluidoPorVendedorPeluqueria(null, excluidos));
+            Assert.IsFalse(ReglasEnvioRecordatorioReposicion.ExcluidoPorVendedorPeluqueria("  ", excluidos));
+            Assert.IsFalse(ReglasEnvioRecordatorioReposicion.ExcluidoPorVendedorPeluqueria(null,
+                ReglasEnvioRecordatorioReposicion.LeerVendedores("(NULL)")), "«(NULL)» no saca a los que no tienen vendedor de peluquería");
+        }
+
+        [TestMethod]
+        public void Planificar_SinParametro_ElDePeluqueriaIF_FueraYNoVaAlControl()
+        {
+            RecordatorioReposicionClienteDTO control = ConPeluqueria(Cliente("4", "NV", ("A", 40)), "IF");
+            control.GrupoControl = true;
+            RecordatorioReposicionClienteDTO controlOtro = ConPeluqueria(Cliente("5", "NV", ("A", 40)), "JM");
+            controlOtro.GrupoControl = true;
+
+            PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(
+                Resultado(ConPeluqueria(Cliente("1", "NV", ("A", 40)), "IF"), ConPeluqueria(Cliente("2", "NV", ("A", 40)), "JM"),
+                    Cliente("3", "NV", ("A", 40)), ConPeluqueria(Cliente("6", "JE", ("A", 40)), "if"), control, controlOtro),
+                "NV", null, null, HOY);
+
+            CollectionAssert.AreEqual(new[] { "2", "3" }, plan.Enviar.Select(c => c.Cliente).ToArray(), "Sin vendedor de peluquería u otro: como hoy");
+            CollectionAssert.AreEqual(new[] { "1", "6" }, plan.FueraPorVendedorPeluqueria.Select(c => c.Cliente).ToArray());
+            Assert.AreEqual(0, plan.FueraPorVendedor.Count, "El de peluquería IF manda aunque el de estética tampoco esté en la lista");
+            CollectionAssert.AreEqual(new[] { "5" }, plan.Control.Select(c => c.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { "IF" }, plan.VendedoresPeluqueriaExcluidos.ToArray());
+        }
+
+        [TestMethod]
+        public void Planificar_ParametroVacio_NoSeExcluyeANadiePorPeluqueria()
+        {
+            RecordatorioReposicionClienteDTO control = ConPeluqueria(Cliente("4", "NV", ("A", 40)), "IF");
+            control.GrupoControl = true;
+
+            PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(
+                Resultado(ConPeluqueria(Cliente("1", "NV", ("A", 40)), "IF"), control), "NV", null, null, HOY, "");
+
+            CollectionAssert.AreEqual(new[] { "1" }, plan.Enviar.Select(c => c.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { "4" }, plan.Control.Select(c => c.Cliente).ToArray());
+            Assert.AreEqual(0, plan.FueraPorVendedorPeluqueria.Count);
+        }
+
+        [TestMethod]
+        public void Planificar_ParametroConOtroVendedor_IFYaNoSale_ElOtroSi()
+        {
+            PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(
+                Resultado(ConPeluqueria(Cliente("1", "NV", ("A", 40)), "IF"), ConPeluqueria(Cliente("2", "NV", ("A", 40)), "JM")),
+                "NV", null, null, HOY, "JM");
+
+            CollectionAssert.AreEqual(new[] { "1" }, plan.Enviar.Select(c => c.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { "2" }, plan.FueraPorVendedorPeluqueria.Select(c => c.Cliente).ToArray());
+        }
+
+        #endregion
+
         [TestMethod]
         public void Planificar_SinResultado_PlanVacio()
         {

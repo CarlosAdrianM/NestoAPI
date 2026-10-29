@@ -61,6 +61,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public short Estado { get; set; }
         public string Vendedor { get; set; }
         public string VendedorNombre { get; set; }
+        /// <summary>NestoAPI#532: vendedor de peluquería (VendedoresClienteGrupoProducto, grupo PEL, del contacto principal). Null si no tiene.</summary>
+        public string VendedorPeluqueria { get; set; }
     }
 
     /// <summary>
@@ -102,6 +104,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string VendedorNombre { get; set; }
         /// <summary>NestoAPI#532: código del vendedor del cliente (null si no tiene). Decide si se le escribe en modo Activo.</summary>
         public string Vendedor { get; set; }
+        /// <summary>
+        /// NestoAPI#532 (Carlos 29/10/26): código del vendedor de peluquería del cliente (null si no tiene). Si está en
+        /// RecordatorioReposicionExcluirVendedoresPeluqueria, no se le escribe (solo el correo: la push no lo mira).
+        /// </summary>
+        public string VendedorPeluqueria { get; set; }
         /// <summary>Grupo de control: sería elegible, pero NO se le escribe (para medir el efecto del correo).</summary>
         public bool GrupoControl { get; set; }
         public List<CandidatoReposicionDTO> Productos { get; set; } = new List<CandidatoReposicionDTO>();
