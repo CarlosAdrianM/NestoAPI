@@ -126,6 +126,64 @@ namespace NestoAPI.Tests.Infrastructure
         }
         #endregion
 
+        #region NestoAPI#743 - el riesgo B mira también el modo de facturación efectivo
+        // (total, plazo, modoServicioEfectivo, modoFacturacionEfectivo, finDeMes, faltaStockDeAlgo, autorizada)
+        private static bool Revisar743(decimal total, PlazoPago plazo, byte modoServicio, byte modoFacturacion, bool autorizada)
+            => GestorPresupuestos.EsFinanciacionARevisar(total, plazo, modoServicio, modoFacturacion,
+                finDeMes: false, faltaStockDeAlgo: true, autorizadaEnFicha: autorizada);
+
+        [TestMethod]
+        public void RiesgoB_Servicio4FacturacionTodoAhora_UnaSolaFactura_NoAvisa()
+        {
+            // Pedido 929646 (29/10/26): 1.201 € a 4 plazos (45 días de media), servicio 4, facturación 3.
+            // Se factura entero con el primer albarán: no hay vencimientos troceados.
+            Assert.IsFalse(Revisar743(1200, Plazo(4, 45),
+                Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ,
+                Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES, autorizada: false));
+        }
+
+        [TestMethod]
+        public void RiesgoB_Servicio4FacturacionPorEntregas_SiTrocea_Avisa()
+        {
+            Assert.IsTrue(Revisar743(1200, Plazo(4, 45),
+                Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ,
+                Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS, autorizada: false));
+        }
+
+        [TestMethod]
+        public void RiesgoB_FacturacionAlCompletar_NoAvisa()
+        {
+            Assert.IsFalse(Revisar743(1200, Plazo(4, 45),
+                Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO,
+                Constantes.Pedidos.ModosFacturacion.AL_COMPLETAR, autorizada: false));
+        }
+
+        [TestMethod]
+        public void RiesgoA_FacturacionTodoAhora_EfectoBajoYFinanciacionLarga_Avisa()
+        {
+            // 400 € a 4 plazos = efectos de 100 € (< 150) a 45 días: sale bajo con el pedido entero.
+            Assert.IsTrue(Revisar743(400, Plazo(4, 45),
+                Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ,
+                Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES, autorizada: false));
+        }
+
+        [TestMethod]
+        public void SobrecargaAntigua_MantenerJuntoEquivaleAFacturacionAlCompletar()
+        {
+            byte modo = Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionARevisar(1200, Plazo(4, 45), modo, mantenerJunto: true, finDeMes: false, faltaStockDeAlgo: true, autorizadaEnFicha: false));
+            Assert.IsTrue(GestorPresupuestos.EsFinanciacionARevisar(1200, Plazo(4, 45), modo, mantenerJunto: false, finDeMes: false, faltaStockDeAlgo: true, autorizadaEnFicha: false));
+        }
+
+        [TestMethod]
+        public void SeFacturaElPedidoEntero_PorModoDeFacturacion()
+        {
+            Assert.IsFalse(GestorPresupuestos.SeFacturaElPedidoEntero(Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS));
+            Assert.IsTrue(GestorPresupuestos.SeFacturaElPedidoEntero(Constantes.Pedidos.ModosFacturacion.AL_COMPLETAR));
+            Assert.IsTrue(GestorPresupuestos.SeFacturaElPedidoEntero(Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES));
+        }
+        #endregion
+
         #region NestoAPI#396 - cuando hay que marcar "[Financiación a revisar]"
 
         // Atajos para leer los casos de un vistazo: (total, plazo, servirJunto, mantenerJunto, autorizadaEnFicha)

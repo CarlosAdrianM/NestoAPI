@@ -269,10 +269,15 @@ namespace NestoAPI.Infraestructure
             // entrega sin problema; con 30/60/90 partido en facturas pequeñas quedan
             // vencimientos ridículos. El prepago ya está cobrado y no genera vencimientos
             // nuevos: deja de disparar la copia (antes Prepagos.Any() también la ponía).
+            // NestoAPI#743: con facturación 2 «Al completar» o 3 «Todo ahora, lo pendiente se entrega
+            // después» hay UNA sola factura por el pedido entero aunque se sirva en varias entregas: no
+            // hay vencimientos troceados y administración no tiene nada que mirar por esto.
+            byte modoFacturacionEfectivo = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.modoFacturacion, pedido.mantenerJunto);
             if (mail.Body.Contains("¡¡¡ ATENCIÓN !!!"))
             {
                 mail.Priority = MailPriority.High;
-                if (plazoPagoPedido != null && plazoPagoPedido.Nº_Plazos > 1)
+                if (plazoPagoPedido != null && plazoPagoPedido.Nº_Plazos > 1
+                    && !SeFacturaElPedidoEntero(modoFacturacionEfectivo))
                 {
                     AnadirAdministracionSiFalta(mail);
                 }
@@ -291,7 +296,7 @@ namespace NestoAPI.Infraestructure
             // (calculado al montar las líneas del correo, que va antes que este bloque).
             if (EsFinanciacionARevisar(totalPedido, plazoPagoPedido,
                     Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto),
-                    pedido.mantenerJunto,
+                    modoFacturacionEfectivo,
                     pedido.periodoFacturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
                     _faltaStockDeAlgo,
                     EstaAutorizadaEnFicha(pedido, totalPedido)))
@@ -390,6 +395,22 @@ namespace NestoAPI.Infraestructure
         internal static bool EsFinanciacionARevisar(decimal totalPedido, PlazoPago plazoPago,
             byte modoEfectivo, bool mantenerJunto, bool finDeMes, bool faltaStockDeAlgo, bool autorizadaEnFicha)
         {
+            // Compatibilidad (#507): sin modo de facturación, el bit MantenerJunto decide entre 2 y 1.
+            return EsFinanciacionARevisar(totalPedido, plazoPago, modoEfectivo,
+                Constantes.Pedidos.ModosFacturacion.Efectivo(null, mantenerJunto),
+                finDeMes, faltaStockDeAlgo, autorizadaEnFicha);
+        }
+
+        /// <summary>
+        /// NestoAPI#743 (29/10/26): el riesgo B también mira el modo de FACTURACIÓN efectivo
+        /// (ModosFacturacion.Efectivo). Con 2 «Al completar el pedido» y con 3 «Todo ahora, lo pendiente
+        /// se entrega después» se emite UNA sola factura por el pedido entero aunque se sirva en varias
+        /// entregas, así que no hay vencimientos troceados y solo queda el riesgo A. Pedido 929646:
+        /// 1.201 € a 4 plazos (45 días), servicio 4, facturación 3: salía «[Financiación a revisar]» sin motivo.
+        /// </summary>
+        internal static bool EsFinanciacionARevisar(decimal totalPedido, PlazoPago plazoPago,
+            byte modoEfectivo, byte modoFacturacionEfectivo, bool finDeMes, bool faltaStockDeAlgo, bool autorizadaEnFicha)
+        {
             if (plazoPago == null || plazoPago.Nº_Plazos == 0 || totalPedido <= 0)
             {
                 return false;
@@ -400,13 +421,21 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
 
-            bool seFacturaEntero = mantenerJunto || finDeMes || !SeTroceaLaFacturacion(modoEfectivo, faltaStockDeAlgo);
+            bool seFacturaEntero = SeFacturaElPedidoEntero(modoFacturacionEfectivo) || finDeMes || !SeTroceaLaFacturacion(modoEfectivo, faltaStockDeAlgo);
             if (!seFacturaEntero && plazoPago.Nº_Plazos > 1)
             {
                 return true; // riesgo B: facturas más pequeñas que el pedido, cada una a plazos
             }
 
             return EsFinanciacionExcesiva(totalPedido, plazoPago) && !autorizadaEnFicha; // riesgo A
+        }
+
+        /// <summary>NestoAPI#743: ¿el modo de facturación EFECTIVO emite una sola factura por el pedido entero?
+        /// Sí con 2 «Al completar» y con 3 «Todo ahora, lo pendiente se entrega después»; no con 1 «Por entregas».</summary>
+        internal static bool SeFacturaElPedidoEntero(byte modoFacturacionEfectivo)
+        {
+            return Constantes.Pedidos.ModosFacturacion.EsAlCompletar(modoFacturacionEfectivo)
+                || Constantes.Pedidos.ModosFacturacion.EsTodoAhora(modoFacturacionEfectivo);
         }
 
         /// <summary>NestoAPI#507: ¿este modo de servicio va a partir el pedido en más de una factura?</summary>
