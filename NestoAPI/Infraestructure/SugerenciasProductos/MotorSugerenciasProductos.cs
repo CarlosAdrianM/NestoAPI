@@ -18,7 +18,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// producto del carrito como antecedente; gana la confianza más alta.</item>
     /// <item><b>LeToca</b>: lo que el cliente compra con ritmo (mediana de días entre compras, con al menos 3 días de compra, la
     /// misma de <see cref="CalculadoraReposicion.IntervaloMediano"/>) y ya se ha pasado de esa mediana; gana el que más se pasa.
-    /// Si se pasa más de <see cref="CalculadoraReposicion.FACTOR_ABANDONO"/> veces, se da por dejado y no se sugiere.</item>
+    /// Si se pasa más de <see cref="ReglasSugerencias.FACTOR_ABANDONO"/> veces, se da por dejado y no se sugiere (NestoAPI#736: el
+    /// del núcleo, que también usa el entrenamiento; el recordatorio de reposición tiene el suyo, CalculadoraReposicion.FACTOR_ABANDONO).</item>
     /// <item><b>Potenciar</b>: ofertas activas, «Potenciar hasta» vigente y novedades que el cliente no ha comprado y que
     /// compran clientes parecidos (mismo perfil: el grupo y subgrupo en el que más compra); gana el que más clientes
     /// parecidos compran.</item>

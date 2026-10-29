@@ -14,7 +14,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// - intervalo = mediana de los días entre compras consecutivas (nunca menos de
     ///   <see cref="INTERVALO_MINIMO_DIAS"/>);
     /// - toca reponer si desde la última compra han pasado intervalo × 1,25 días o más, pero menos de
-    ///   intervalo × 3 (más allá es un cliente que se ha ido, y eso es otro correo).
+    ///   intervalo × <see cref="FACTOR_ABANDONO"/> (más allá es un cliente que se ha ido, y eso es otro correo).
+    ///   NestoAPI#736: el factor era 3 (con ritmos de 120-190 días llegaba a 14-19 meses); ahora 2. Vale para el correo, la
+    ///   push y los habituales de la app (mismo criterio); NO para «le toca» de las sugerencias ni su entrenamiento, que
+    ///   tienen su propio factor en el núcleo (ReglasSugerencias.FACTOR_ABANDONO).
+    /// - NestoAPI#736: además, en el recordatorio (correo y push, no en los habituales) un tope absoluto de días desde la
+    ///   última compra (<see cref="AplicarTope"/>, parámetro RecordatorioReposicionTopeDias).
     ///
     /// De los que tocan, se quedan fuera CON MOTIVO (para revisarlo en el modo sombra): producto de baja
     /// o ficticio, sin stock, con un pedido pendiente o una nota de entrega posterior, o con una compra
@@ -27,7 +32,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public const int MESES_HISTORIAL = 24;
         public const int MINIMO_COMPRAS = 3;
         public const double FACTOR_AVISO = 1.25;
-        public const double FACTOR_ABANDONO = 3;
+        /// <summary>NestoAPI#736 (Carlos 29/10/26): 3 → 2.</summary>
+        public const double FACTOR_ABANDONO = 2;
+        /// <summary>NestoAPI#736: tope de días desde la última compra del recordatorio sin fila de RecordatorioReposicionTopeDias.</summary>
+        public const int TOPE_DIAS_POR_DEFECTO = 240;
         public const int INTERVALO_MINIMO_DIAS = 14;
         public const int MAXIMO_PRODUCTOS_POR_CORREO = 3;
         public const int PORCENTAJE_GRUPO_CONTROL = 10;
@@ -43,6 +51,32 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public const string MOTIVO_SIN_CORREO = "El cliente no tiene correo electrónico con «Enviar boletín» marcado.";
         public const string MOTIVO_MAXIMO_PRODUCTOS = "Ya van 3 productos en su correo (se eligen los de más importe).";
         public const string MOTIVO_CORREO_DUPLICADO = "Mismo correo que otro cliente al que ya se escribe: ";
+        /// <summary>NestoAPI#736: «Última compra hace 300 días: más de 240.» (ver <see cref="MotivoTope"/>).</summary>
+        public const string MOTIVO_TOPE_PREFIJO = "Última compra hace ";
+
+        /// <summary>NestoAPI#736: motivo de los que se quedan fuera por el tope de días.</summary>
+        public static string MotivoTope(int diasDesdeUltimaCompra, int topeDias)
+            => $"{MOTIVO_TOPE_PREFIJO}{diasDesdeUltimaCompra} días: más de {topeDias}.";
+
+        /// <summary>
+        /// NestoAPI#736: los que se avisarían y cuya última compra es de hace MÁS de <paramref name="topeDias"/> días se
+        /// quedan fuera con <see cref="MotivoTope"/>. Null o 0 (o menos): sin tope. Solo para el recordatorio (correo y
+        /// push): los habituales de la app no lo aplican.
+        /// </summary>
+        public static void AplicarTope(IEnumerable<CandidatoReposicionDTO> candidatos, int? topeDias)
+        {
+            if (candidatos == null || topeDias == null || topeDias.Value <= 0)
+            {
+                return;
+            }
+            foreach (CandidatoReposicionDTO candidato in candidatos.Where(c => c != null && c.SeAvisaria))
+            {
+                if (candidato.DiasDesdeUltimaCompra > topeDias.Value)
+                {
+                    candidato.Motivo = MotivoTope(candidato.DiasDesdeUltimaCompra, topeDias.Value);
+                }
+            }
+        }
 
         public static DateTime HistorialDesde(DateTime hoy) => hoy.Date.AddMonths(-MESES_HISTORIAL);
 

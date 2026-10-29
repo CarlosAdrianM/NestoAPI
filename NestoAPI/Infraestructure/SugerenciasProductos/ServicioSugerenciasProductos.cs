@@ -727,77 +727,11 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             }
             try
             {
-                List<Compra> comprasNucleo = MotorSugerenciasProductos.ACompras(compras).ToList();
-                Func<string, FichaProducto> ficha = MotorSugerenciasProductos.Buscador(fichas);
-
-                // El perfil como en el entrenamiento (compras anteriores a d); casi siempre es el de las reglas
-                Tuple<string, string> perfilModelo = ReglasSugerencias.Perfil(comprasNucleo.Where(c => c.Dia < hoy), ficha);
-                Dictionary<string, int> clientesPerfilModelo = clientesPerfil;
-                if (perfilModelo != null && (perfil == null || !string.Equals(perfil.Item1, perfilModelo.Item1, StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(perfil.Item2, perfilModelo.Item2, StringComparison.OrdinalIgnoreCase)))
-                {
-                    clientesPerfilModelo = await repositorio.LeerClientesPerfil(perfilModelo.Item1, perfilModelo.Item2).ConfigureAwait(false)
-                        ?? new Dictionary<string, int>();
-                }
-                List<ProductoDePerfil> perfiles = perfilModelo == null ? new List<ProductoDePerfil>()
-                    : clientesPerfilModelo.Where(c => !string.IsNullOrWhiteSpace(c.Key)).Select(c => new ProductoDePerfil
-                    {
-                        Grupo = perfilModelo.Item1 ?? string.Empty,
-                        SubGrupo = perfilModelo.Item2 ?? string.Empty,
-                        Producto = c.Key.Trim(),
-                        Clientes = c.Value
-                    }).ToList();
-
-                // Las fichas de los primeros del perfil (el modelo coge los 15 primeros que se pueden sugerir)
-                List<string> sinFicha = perfiles.OrderByDescending(p => p.Clientes).ThenBy(p => p.Producto, StringComparer.OrdinalIgnoreCase)
-                    .Take(MotorSugerenciasProductos.FICHAS_PERFIL_MODELO).Select(p => p.Producto)
-                    .Where(p => !fichas.ContainsKey(p)).ToList();
-                if (sinFicha.Count > 0)
-                {
-                    Dictionary<string, FichaProductoSugerencia> nuevas = await repositorio.LeerFichas(empresa, sinFicha).ConfigureAwait(false);
-                    foreach (KeyValuePair<string, FichaProductoSugerencia> f in nuevas ?? new Dictionary<string, FichaProductoSugerencia>())
-                    {
-                        fichas[f.Key.Trim()] = f.Value;
-                    }
-                }
-
-                List<ParComprado> paresNucleo = pares.Where(p => p != null).Select(MotorSugerenciasProductos.AParNucleo).ToList();
-                List<AfinidadProducto> afinidadesNucleo = afinidades.Where(a => a?.Producto != null).Select(a => new AfinidadProducto
-                {
-                    Cliente = (a.Cliente ?? cliente).Trim(),
-                    Producto = a.Producto.Trim(),
-                    Afinidad = a.Afinidad,
-                    Rango = a.Rango
-                }).ToList();
                 // Las que la API también quiere puntuar: todas sus candidatas (Potenciar no lo propone el modelo) y las visibles
                 List<string> adicionales = todos.Select(c => c.Producto).Concat(quedan.Select(m => m.Producto.Trim()))
                     .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                int maximoPorFuente = new OpcionesEntrenamiento().MaximoCandidatosPorFuente;
-
-                // Dos pasadas: la primera da los candidatos (la popularidad no cambia cuáles son) y la segunda, con su popularidad
-                ContextoInstantanea sinPopularidad = ContextoInstantanea.Desde(hoy, paresNucleo, afinidadesNucleo, null, perfiles);
-                ResultadoCandidatos previos = CalculadoraFeatures.Calcular(sinPopularidad, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales);
-                List<PopularidadProducto> popularidad = await repositorio.LeerPopularidad(previos.Filas.Select(f => f.Producto)).ConfigureAwait(false)
-                    ?? new List<PopularidadProducto>();
-                short? estadoCliente = null;
-                List<PopularidadPorEstado> popularidadEstado = null;
-                if (predictor.VersionFeatures >= 2)
-                {
-                    estadoCliente = await repositorio.LeerEstadoCliente(empresa, cliente).ConfigureAwait(false);
-                    popularidadEstado = await repositorio.LeerPopularidadEstado(EstadosCliente.Grupo(estadoCliente),
-                        previos.Filas.Select(f => f.Producto), previos.Filas.Select(f => f.Familia).Where(f => !string.IsNullOrWhiteSpace(f))).ConfigureAwait(false);
-                }
-                ContextoInstantanea contexto = ContextoInstantanea.Desde(hoy, paresNucleo, afinidadesNucleo,
-                    popularidad.Where(p => p?.Producto != null).Select(p => new PopularidadDeProducto
-                    {
-                        Producto = p.Producto.Trim(),
-                        Clientes12Meses = p.Clientes12Meses,
-                        Clientes3Meses = p.Clientes3Meses,
-                        Cestas12Meses = p.Cestas12Meses,
-                        Rango = p.Rango
-                    }), perfiles, popularidadEstado);
-                ResultadoCandidatos features = CalculadoraFeatures.Calcular(contexto, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales,
-                    estadoCliente);
+                ResultadoCandidatos features = await EntradasModelo1.Calcular(repositorio, predictor.VersionFeatures, hoy, cliente, empresa, compras,
+                    enCarrito, pares, afinidades, fichas, perfil, clientesPerfil, adicionales).ConfigureAwait(false);
                 List<ModeloSugerenciaEntrada> entradas = features.Filas.Cast<ModeloSugerenciaEntrada>().ToList();
                 IList<float> probabilidades = predictor.Puntuar(entradas);
                 if (probabilidades == null || probabilidades.Count != entradas.Count)

@@ -107,11 +107,15 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     db.Configuration.LazyLoadingEnabled = false;
                     db.Configuration.ProxyCreationEnabled = false;
+                    var lector = new LectorParametrosUsuario();
                     _ = await Procesar(
-                        new LectorParametrosUsuario(),
+                        lector,
                         new ServicioNotificacionesPush(),
                         new ServicioCorreoElectronico(),
-                        (clientes, consumibles, hoy) => new SelectorRecordatoriosReposicion(db).CalcularParaClientes(EMPRESA, hoy, consumibles, clientes),
+                        // NestoAPI#736: el tope de días también vale para la push
+                        (clientes, consumibles, hoy) => new SelectorRecordatoriosReposicion(db,
+                                topeDias: ParametrosRecordatorioReposicion.LeerTopeDias(lector))
+                            .CalcularParaClientes(EMPRESA, hoy, consumibles, clientes),
                         () => ClientesConConsejos(db),
                         (clientes, desde) => ClientesConPushDesde(db, clientes, desde),
                         dia => GestorFestivos.EsFestivo(dia, Constantes.Almacenes.ALGETE),

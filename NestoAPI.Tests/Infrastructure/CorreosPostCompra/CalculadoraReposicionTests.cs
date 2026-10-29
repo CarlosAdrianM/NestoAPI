@@ -1,4 +1,5 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using FakeItEasy;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Models.PedidosVenta;
@@ -98,12 +99,102 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
-        public void TocaReponer_EntreUnoCoVeinticincoYTresVecesElIntervalo()
+        public void TocaReponer_EntreUnoCoVeinticincoYDosVecesElIntervalo()
         {
+            // NestoAPI#736 (Carlos 29/10/26): el factor de abandono pasa de 3 a 2
+            Assert.AreEqual(2d, CalculadoraReposicion.FACTOR_ABANDONO);
             Assert.IsFalse(CalculadoraReposicion.TocaReponer(40, 49));
             Assert.IsTrue(CalculadoraReposicion.TocaReponer(40, 50));
-            Assert.IsTrue(CalculadoraReposicion.TocaReponer(40, 119));
-            Assert.IsFalse(CalculadoraReposicion.TocaReponer(40, 120), "Con 3 veces el ritmo ya es un cliente que se ha ido");
+            Assert.IsTrue(CalculadoraReposicion.TocaReponer(40, 79));
+            Assert.IsFalse(CalculadoraReposicion.TocaReponer(40, 80), "Con 2 veces el ritmo ya es un cliente que se ha ido");
+            Assert.IsFalse(CalculadoraReposicion.TocaReponer(40, 119), "Con factor 3 sí habría tocado");
+        }
+
+        [TestMethod]
+        public void EvaluarPares_RitmoDe150DiasYLleva320_YaNoToca()
+        {
+            // NestoAPI#736: el caso del primer envío (guantes de hace 10 meses con ritmo de 150-190 días). Con 3× tocaba.
+            Compras("1001", "CREMA500", 50m, 620, 470, 320);
+            Assert.AreEqual(0, Evaluar().Count);
+        }
+
+        [TestMethod]
+        public void AplicarTope_MasDeLosDiasDelTope_SeQuedaFueraConMotivo()
+        {
+            Compras("1001", "CREMA500", 50m, 650, 470, 290);   // ritmo 180, lleva 290: toca (de 225 a 359)
+            List<CandidatoReposicionDTO> candidatos = Evaluar();
+            Assert.IsTrue(candidatos.Single().SeAvisaria, "Por ritmo toca");
+
+            CalculadoraReposicion.AplicarTope(candidatos, 240);
+
+            Assert.AreEqual("Última compra hace 290 días: más de 240.", candidatos.Single().Motivo);
+            Assert.AreEqual("Última compra hace más de 240 días",
+                RecordatorioReposicionJobsService.MotivoResumido(candidatos.Single().Motivo));
+        }
+
+        [TestMethod]
+        public void AplicarTope_JustoEnElTope_SeAvisa()
+        {
+            var candidatos = new List<CandidatoReposicionDTO>
+            {
+                new CandidatoReposicionDTO { Cliente = "1", Producto = "A", DiasDesdeUltimaCompra = 240 },
+                new CandidatoReposicionDTO { Cliente = "1", Producto = "B", DiasDesdeUltimaCompra = 241 },
+                new CandidatoReposicionDTO { Cliente = "1", Producto = "C", DiasDesdeUltimaCompra = 300, Motivo = CalculadoraReposicion.MOTIVO_SIN_STOCK }
+            };
+
+            CalculadoraReposicion.AplicarTope(candidatos, 240);
+
+            Assert.IsTrue(candidatos[0].SeAvisaria);
+            Assert.AreEqual(CalculadoraReposicion.MotivoTope(241, 240), candidatos[1].Motivo);
+            Assert.AreEqual(CalculadoraReposicion.MOTIVO_SIN_STOCK, candidatos[2].Motivo, "El motivo que ya tenía no se pisa");
+        }
+
+        [TestMethod]
+        public void AplicarTope_CeroONull_SinTope()
+        {
+            var candidatos = new List<CandidatoReposicionDTO> { new CandidatoReposicionDTO { Cliente = "1", Producto = "A", DiasDesdeUltimaCompra = 700 } };
+
+            CalculadoraReposicion.AplicarTope(candidatos, 0);
+            CalculadoraReposicion.AplicarTope(candidatos, null);
+
+            Assert.IsTrue(candidatos[0].SeAvisaria);
+        }
+
+        [TestMethod]
+        public void TopeDias_Parametro_SinFila240_CeroOVacioSinTope()
+        {
+            Assert.AreEqual(240, ParametrosRecordatorioReposicion.InterpretarTopeDias(null));
+            Assert.AreEqual(240, ParametrosRecordatorioReposicion.InterpretarTopeDias("180", error: true), "Si falla la lectura, el de por defecto");
+            Assert.AreEqual(240, ParametrosRecordatorioReposicion.InterpretarTopeDias("mucho"));
+            Assert.AreEqual(180, ParametrosRecordatorioReposicion.InterpretarTopeDias(" 180 "));
+            Assert.IsNull(ParametrosRecordatorioReposicion.InterpretarTopeDias("0"));
+            Assert.IsNull(ParametrosRecordatorioReposicion.InterpretarTopeDias(""));
+            Assert.IsNull(ParametrosRecordatorioReposicion.InterpretarTopeDias("-5"));
+        }
+
+        [TestMethod]
+        public void TopeDias_LectorQueFalla_240()
+        {
+            var lector = A.Fake<ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._)).Throws(new Exception("sin BD"));
+
+            Assert.AreEqual(240, ParametrosRecordatorioReposicion.LeerTopeDias(lector));
+            Assert.AreEqual(ModoPuertaModeloReposicion.Sombra, ParametrosRecordatorioReposicion.LeerModoPuerta(lector));
+            Assert.AreEqual(0.15m, ParametrosRecordatorioReposicion.LeerUmbralModelo(lector));
+        }
+
+        [TestMethod]
+        public void PuertaModelo_Parametros_SinFilaSombraY015()
+        {
+            Assert.AreEqual(ModoPuertaModeloReposicion.Sombra, ParametrosRecordatorioReposicion.InterpretarModoPuerta(null));
+            Assert.AreEqual(ModoPuertaModeloReposicion.Sombra, ParametrosRecordatorioReposicion.InterpretarModoPuerta("lo que sea"));
+            Assert.AreEqual(ModoPuertaModeloReposicion.Activo, ParametrosRecordatorioReposicion.InterpretarModoPuerta(" activo "));
+            Assert.AreEqual(ModoPuertaModeloReposicion.Apagado, ParametrosRecordatorioReposicion.InterpretarModoPuerta("Apagado"));
+            Assert.AreEqual(ModoPuertaModeloReposicion.Apagado, ParametrosRecordatorioReposicion.InterpretarModoPuerta("0"));
+            Assert.AreEqual(0.15m, ParametrosRecordatorioReposicion.InterpretarUmbralModelo(null));
+            Assert.AreEqual(0.2m, ParametrosRecordatorioReposicion.InterpretarUmbralModelo("0,2"));
+            Assert.AreEqual(0.25m, ParametrosRecordatorioReposicion.InterpretarUmbralModelo("0.25"));
+            Assert.AreEqual(0.15m, ParametrosRecordatorioReposicion.InterpretarUmbralModelo("7"), "Fuera de 0-1: el de por defecto");
         }
 
         #endregion
@@ -137,8 +228,8 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         [TestMethod]
         public void EvaluarPares_ClienteQueSeHaIdo_NoAparece()
         {
-            Compras("1001", "CREMA500", 50m, 150, 120, 90);
-            Assert.AreEqual(0, Evaluar().Count, "90 días con ritmo de 30 = 3 veces: eso es otro correo (recuperar clientes)");
+            Compras("1001", "CREMA500", 50m, 120, 90, 60);
+            Assert.AreEqual(0, Evaluar().Count, "60 días con ritmo de 30 = 2 veces (NestoAPI#736): eso es otro correo (recuperar clientes)");
         }
 
         [TestMethod]

@@ -91,6 +91,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string EnlaceTienda { get; set; }
         /// <summary>NestoAPI#532: foto del producto en la tienda (ProductoDTO.RutaImagen). Null si no tiene.</summary>
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#736: P1 del modelo 1 de propensión (puerta del correo). Null si no se ha puntuado.</summary>
+        public float? ProbabilidadModelo { get; set; }
+        /// <summary>NestoAPI#736: si la P1 está por debajo del umbral (en Sombra no se quita; en Activo, sí). Null si no se ha puntuado.</summary>
+        public bool? FueraPorModelo { get; set; }
         public bool SeAvisaria => Motivo == null;
     }
 
@@ -120,6 +124,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public DateTime Fecha { get; set; }
         public DateTime HistorialDesde { get; set; }
         public string Consumibles { get; set; }
+        /// <summary>NestoAPI#736: el tope de días desde la última compra con el que se ha calculado (null: sin tope).</summary>
+        public int? TopeDias { get; set; }
         public List<RecordatorioReposicionClienteDTO> SeAvisarian { get; set; } = new List<RecordatorioReposicionClienteDTO>();
         public List<RecordatorioReposicionClienteDTO> GrupoControl { get; set; } = new List<RecordatorioReposicionClienteDTO>();
         /// <summary>Pares que tocarían por ritmo pero se quedan fuera, con el motivo.</summary>
