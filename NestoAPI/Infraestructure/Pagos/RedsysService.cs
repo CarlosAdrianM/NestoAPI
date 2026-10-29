@@ -140,7 +140,8 @@ namespace NestoAPI.Infraestructure.Pagos
             }
 
             // Issue #140: DS_MERCHANT_PAYMETHODS controla qué método muestra Redsys.
-            // "C" = solo tarjeta, "z" = solo Bizum. No se pueden combinar.
+            // "C" = solo tarjeta, "z" = solo Bizum, "xpay" = solo Apple Pay, "google" = solo
+            // Google Pay (#728). No se pueden combinar. Ver MetodosPagoRedsys.
             if (!string.IsNullOrWhiteSpace(metodoPago))
             {
                 r.SetParameter("DS_MERCHANT_PAYMETHODS", metodoPago);
@@ -592,6 +593,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 CodigoRespuesta = respuesta.Ds_Response,
                 CodigoAutorizacion = respuesta.Ds_AuthorisationCode,
                 NumeroOrden = respuesta.Ds_Order,
+                MetodoPagoProcesado = respuesta.Ds_ProcessedPayMethod?.Trim(),
                 // NestoAPI#178: si el pago se hizo con tokenización, aquí viene el token con el
                 // que se podrá cobrar al cliente sin que vuelva a meter la tarjeta
                 TokenTarjeta = respuesta.Ds_Merchant_Identifier,

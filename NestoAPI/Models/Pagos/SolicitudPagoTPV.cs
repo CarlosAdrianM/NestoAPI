@@ -14,7 +14,8 @@ namespace NestoAPI.Models.Pagos
         public string UrlKo { get; set; }
         /// <summary>
         /// NestoAPI#165: selector de método de pago para Redsys.
-        /// "C" = solo tarjeta, "z" = solo Bizum, null = todos los métodos habilitados.
+        /// "C" = solo tarjeta, "z" = solo Bizum, "xpay" = solo Apple Pay, "google" = solo
+        /// Google Pay (#728), null = todos los métodos habilitados. Ver MetodosPagoRedsys.
         /// </summary>
         public string MetodoPago { get; set; }
         public List<EfectoAPagar> Efectos { get; set; }

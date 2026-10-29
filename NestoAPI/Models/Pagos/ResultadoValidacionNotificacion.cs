@@ -11,6 +11,12 @@ namespace NestoAPI.Models.Pagos
         public string NumeroOrden { get; set; }
         public string MensajeError { get; set; }
 
+        /// <summary>
+        /// NestoAPI#728: Ds_ProcessedPayMethod de la notificación (con qué se pagó). Informativo:
+        /// tarjeta, Bizum, Apple Pay y Google Pay se contabilizan igual.
+        /// </summary>
+        public string MetodoPagoProcesado { get; set; }
+
         // NestoAPI#178: datos de la tarjeta tokenizada, si el pago se hizo con
         // DS_MERCHANT_IDENTIFIER=REQUIRED. Con ellos ProcesarNotificacion da de alta la
         // tarjeta guardada del cliente.

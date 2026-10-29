@@ -844,6 +844,8 @@
     <Compile Include="Infrastructure\CanalesExternos\Amazon\AwsSignatureV4Tests.cs" />
     <Compile Include="Infrastructure\Pagos\FormatoCorreoReclamacionTests.cs" />
     <Compile Include="Infrastructure\Pagos\RedsysServiceTests.cs" />
+    <Compile Include="Infrastructure\Pagos\MetodosPagoRedsysTests.cs" />
+    <Compile Include="Controllers\PagoRedirectControllerMetodosPagoTests.cs" />
     <Compile Include="Infrastructure\Pagos\FirmadorRedsysTests.cs" />
     <Compile Include="Controllers\Pago3DSControllerTests.cs" />
     <Compile Include="Models\LineaPedidoBaseTests.cs" />

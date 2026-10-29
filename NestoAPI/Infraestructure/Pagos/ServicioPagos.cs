@@ -95,6 +95,16 @@ namespace NestoAPI.Infraestructure.Pagos
                     "'Pago señal curso quiromasaje') o seleccione los efectos que paga el cliente.");
             }
 
+            // NestoAPI#728: además de "C" (tarjeta) y "z" (Bizum), "xpay" (Apple Pay) y
+            // "google" (Google Pay). Otro valor no se puede mandar a Redsys.
+            if (!MetodosPagoRedsys.EsValido(solicitud.MetodoPago))
+            {
+                throw new ArgumentException(
+                    $"Método de pago '{solicitud.MetodoPago}' no válido. Use 'C' (tarjeta), 'z' (Bizum), " +
+                    "'xpay' (Apple Pay), 'google' (Google Pay) o déjelo vacío para ofrecerlos todos.");
+            }
+            solicitud.MetodoPago = MetodosPagoRedsys.Normalizar(solicitud.MetodoPago);
+
             string urlBase = "https://api.nuevavision.es";
             string urlNotificacion = urlBase + "/api/Pagos/NotificacionRedsys";
             string urlOk = solicitud.UrlOk ?? urlBase + "/pago/ok.html";
@@ -118,8 +128,10 @@ namespace NestoAPI.Infraestructure.Pagos
                 urlOk,
                 urlKo,
                 solicitud.MetodoPago,
-                // Con tarjeta guardada no se pide tokenizar (ya lo está): se manda la referencia
-                solicitarToken: esCobroDeLaApp && solicitud.TarjetaGuardada == null,
+                // Con tarjeta guardada no se pide tokenizar (ya lo está): se manda la referencia.
+                // NestoAPI#728: con Apple Pay / Google Pay tampoco: no dejan token reutilizable.
+                solicitarToken: esCobroDeLaApp && solicitud.TarjetaGuardada == null
+                    && MetodosPagoRedsys.PermiteTokenizar(solicitud.MetodoPago),
                 tokenTarjeta: solicitud.TarjetaGuardada?.TokenRedsys,
                 cofTxnId: solicitud.TarjetaGuardada?.CofTxnId);
 
@@ -182,7 +194,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 await db.SaveChangesAsync().ConfigureAwait(false);
 
-                string urlPaginaPago = $"https://api.nuevavision.es/pago/{pago.TokenAcceso}";
+                // NestoAPI#728: la app la abre en el navegador del sistema para Apple Pay y
+                // Google Pay (no funcionan dentro de un WebView).
+                string urlPaginaPago = UrlPaginaPago(pago.TokenAcceso);
 
                 // NestoAPI#679 (punto 2): si es el enlace de un pedido contra reembolso, se avisa en la respuesta (sin bloquear).
                 List<AvisoEnlacePago> avisos = esCobroDeLaApp
@@ -216,6 +230,14 @@ namespace NestoAPI.Infraestructure.Pagos
                     Avisos = avisos
                 };
             }
+        }
+
+        /// <summary>
+        /// La página de pago propia (/pago/{token}) del pago. Va en RespuestaIniciarPago.UrlPaginaPago.
+        /// </summary>
+        internal static string UrlPaginaPago(Guid tokenAcceso)
+        {
+            return $"https://api.nuevavision.es/pago/{tokenAcceso}";
         }
 
         public async Task<bool> ProcesarNotificacion(NotificacionRedsys notificacion)
@@ -276,16 +298,20 @@ namespace NestoAPI.Infraestructure.Pagos
                         // como Prepago del pedido, igual que hace CanalesExternos con PrestaShop, y
                         // se aplica al facturarlo. Contabilizarlo por los dos sitios seria contarlo
                         // dos veces.
-                        if (EsAltaTarjeta(pago))
+                        // NestoAPI#728: el destino depende del Tipo del pago, NUNCA del método
+                        // (tarjeta, Bizum, Apple Pay o Google Pay): todos son cobros por el mismo
+                        // terminal y entran igual. Ver DestinoDelCobro.
+                        DestinoCobro destino = DestinoDelCobro(pago);
+                        if (destino == DestinoCobro.Ninguno)
                         {
                             // NestoAPI#178: 0 EUR solo para tokenizar. El token ya está guardado
                             // (GuardarTarjetaDeLaNotificacion); no hay dinero que apuntar.
                         }
-                        else if (EsPagoDePedido(pago))
+                        else if (destino == DestinoCobro.PrepagoPedido)
                         {
                             await AnadirPrepagoAlPedido(pago, db).ConfigureAwait(false);
                         }
-                        else if (EsCobroDeLaTienda(pago))
+                        else if (destino == DestinoCobro.PendienteDeCrearPedido)
                         {
                             // TNV#68: cobro de la tienda que todavía no tiene pedido al que
                             // pertenecer (el del carrito, que se cobra ANTES de crearlo). No hay
@@ -353,6 +379,13 @@ namespace NestoAPI.Infraestructure.Pagos
         internal void GuardarTarjetaDeLaNotificacion(ResultadoValidacionNotificacion resultado, PagoTPV pago)
         {
             if (!resultado.TieneTokenTarjeta || string.IsNullOrWhiteSpace(pago.Cliente))
+            {
+                return;
+            }
+
+            // NestoAPI#728: con Apple Pay / Google Pay no se pide tokenizar; si aun así llegara un
+            // token (sería del wallet, no de la tarjeta), no se guarda como tarjeta del cliente.
+            if (!MetodosPagoRedsys.PermiteTokenizar(pago.MetodoPago))
             {
                 return;
             }
@@ -1128,6 +1161,45 @@ namespace NestoAPI.Infraestructure.Pagos
                 pago.FechaActualizacion = DateTime.Now;
                 await db.SaveChangesAsync().ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#728: a dónde va el dinero de un cobro autorizado.
+        /// </summary>
+        internal enum DestinoCobro
+        {
+            /// <summary>Alta de tarjeta (0 EUR): no hay dinero que apuntar.</summary>
+            Ninguno,
+            /// <summary>Cobro de un pedido de la app: Prepago del pedido.</summary>
+            PrepagoPedido,
+            /// <summary>Cobro del carrito: el prepago lo pone AplicarCobroAlPedido al crear el pedido.</summary>
+            PendienteDeCrearPedido,
+            /// <summary>Enlace de pago: cobro contra el extracto del cliente (cuenta de tarjeta).</summary>
+            ContabilizarCobro
+        }
+
+        /// <summary>
+        /// NestoAPI#728: el destino del dinero de un cobro autorizado. Depende solo del Tipo (y del
+        /// pedido en Documento), no de PagoTPV.MetodoPago: tarjeta, Bizum, Apple Pay y Google Pay
+        /// entran exactamente igual (cuenta de tarjeta del enlace, o prepago del pedido). Así no
+        /// puede pasar lo de la tienda (Nesto#565), donde un nombre de método nuevo dejó cobros
+        /// sin prepago.
+        /// </summary>
+        internal static DestinoCobro DestinoDelCobro(PagoTPV pago)
+        {
+            if (EsAltaTarjeta(pago))
+            {
+                return DestinoCobro.Ninguno;
+            }
+            if (EsPagoDePedido(pago))
+            {
+                return DestinoCobro.PrepagoPedido;
+            }
+            if (EsCobroDeLaTienda(pago))
+            {
+                return DestinoCobro.PendienteDeCrearPedido;
+            }
+            return DestinoCobro.ContabilizarCobro;
         }
 
         /// <summary>
