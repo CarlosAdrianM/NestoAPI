@@ -617,6 +617,7 @@
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
     <Compile Include="Controllers\EnvioDocumentosCorreoController.cs" />
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
+    <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
     <Compile Include="Controllers\PedidosVentaAnomaliasController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />
@@ -990,6 +991,11 @@
     <Compile Include="Infraestructure\PedidosVenta\MantenerJuntoContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioServirPendienteAlHaberStock.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\AvisadorConsultaReembolso.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\RepositorioConsultasReembolso.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\ServicioConsultasReembolso.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\TextosConsultaReembolso.cs" />
+    <Compile Include="Models\PedidosVenta\ConsultaReembolsoPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AplazamientoPedidoConPicking.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AvisadorRetencionAlmacen.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\GuardiaPedidoRetenido.cs" />

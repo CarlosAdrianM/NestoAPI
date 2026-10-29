@@ -764,6 +764,7 @@
     <Compile Include="Infrastructure\PedidosVenta\PromesaRiesgoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AplazamientoPedidoConPickingTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RetencionPedidosTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\ConsultaReembolsoTests.cs" />
     <Compile Include="Infrastructure\Abandono\CalculadoraAbandonoTests.cs" />
     <Compile Include="Infrastructure\Abandono\ResolucionAbandonoTests.cs" />
     <Compile Include="Infrastructure\Abandono\ServicioRiesgoAbandonoTests.cs" />

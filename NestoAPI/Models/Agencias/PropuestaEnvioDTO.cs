@@ -69,6 +69,12 @@ namespace NestoAPI.Models.Agencias
         /// código y un tipo para que el cliente sepa qué hacer con cada uno sin leer el texto. Avisos se mantiene.
         /// </summary>
         public List<AvisoPropuestaEnvio> AvisosDetalle { get; set; } = new List<AvisoPropuestaEnvio>();
+        /// <summary>
+        /// NestoAPI#734: la última consulta de reembolso del pedido a Administración (abierta o contestada), o null si nunca se
+        /// ha consultado (o no está lanzado el script). Con ella abierta, el aviso es <see cref="CodigosAvisoPropuestaEnvio.CONSULTA_REEMBOLSO_ABIERTA"/>;
+        /// contestada, ya no se avisa del enlace pendiente.
+        /// </summary>
+        public PedidosVenta.ConsultaReembolsoDTO ConsultaReembolso { get; set; }
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): un aviso de la propuesta de envío.</summary>
@@ -80,6 +86,21 @@ namespace NestoAPI.Models.Agencias
         public string Texto { get; set; }
         /// <summary>Uno de <see cref="TiposAvisoPropuestaEnvio"/>.</summary>
         public string Tipo { get; set; }
+        /// <summary>
+        /// NestoAPI#734: lo que puede ofrecer el cliente además de seguir o no (uno de <see cref="AccionesAvisoPropuestaEnvio"/>);
+        /// null en los avisos que no tienen ninguna. Los clientes que solo leen Texto siguen igual.
+        /// </summary>
+        public string Accion { get; set; }
+    }
+
+    /// <summary>NestoAPI#734: las acciones que puede ofrecer un aviso de la propuesta de envío.</summary>
+    public static class AccionesAvisoPropuestaEnvio
+    {
+        /// <summary>
+        /// Botón «Retener y consultar a Administración»: POST api/PedidosVenta/{empresa}/{pedido}/ConsultaReembolso. Va en el aviso
+        /// <see cref="CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE"/>.
+        /// </summary>
+        public const string CONSULTAR_ADMINISTRACION = "ConsultarAdministracion";
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): los códigos de los avisos de la propuesta de envío.</summary>
@@ -99,6 +120,8 @@ namespace NestoAPI.Models.Agencias
         public const string SIN_AGENCIA = "SinAgencia";
         /// <summary>NestoAPI#679: el pedido tiene enlaces de pago sin pagar y sale contra reembolso.</summary>
         public const string ENLACE_PAGO_PENDIENTE = "EnlacePagoPendiente";
+        /// <summary>NestoAPI#734: se ha consultado a Administración si sale con o sin reembolso y aún no ha contestado (el pedido está retenido).</summary>
+        public const string CONSULTA_REEMBOLSO_ABIERTA = "ConsultaReembolsoAbierta";
         /// <summary>NestoAPI#686: pedido al contado con «Mantener junto» y líneas pendientes: el envío sale sin reembolso.</summary>
         public const string CONTADO_MANTENER_JUNTO = "ContadoMantenerJunto";
     }
