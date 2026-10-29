@@ -226,7 +226,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("api/Almacen/Fotos/abc", primera.UrlFoto);
             Assert.AreEqual("Santiago", primera.Usuario);
             Assert.AreEqual(DIA.AddHours(12), primera.FechaHora, "La hora de la foto");
-            ContenidoCajaHistoricoDTO champu = primera.Contenido.Single();
+            ContenidoCajaHistoricoDTO champu = primera.Lineas.Single();
             Assert.AreEqual(3, champu.Cantidad, "Se suman los usuarios; lo deshecho (0) no sale");
             Assert.AreEqual("Santiago", champu.Usuario);
             Assert.AreEqual(DIA.AddHours(11).AddMinutes(30), champu.FechaHora);

@@ -82,7 +82,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<CajaPackingHistoricoDTO> Cajas { get; set; } = new List<CajaPackingHistoricoDTO>();
     }
 
-    /// <summary>Una caja del packing con lo que se metió en ella.</summary>
+    /// <summary>Una caja del packing con lo que se metió en ella (Lineas, nombre fijado con Ariadna#63).</summary>
     public class CajaPackingHistoricoDTO
     {
         public int Bulto { get; set; }
@@ -97,7 +97,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// o si los enlaces no están configurados.
         /// </summary>
         public string UrlFoto { get; set; }
-        public List<ContenidoCajaHistoricoDTO> Contenido { get; set; } = new List<ContenidoCajaHistoricoDTO>();
+        public List<ContenidoCajaHistoricoDTO> Lineas { get; set; } = new List<ContenidoCajaHistoricoDTO>();
     }
 
     public class ContenidoCajaHistoricoDTO

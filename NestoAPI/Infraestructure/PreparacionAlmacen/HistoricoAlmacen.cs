@@ -455,7 +455,7 @@ GROUP BY e.Bulto, e.NumeroOrigen, e.Producto, p.Nombre, e.Usuario";
                     FechaHora = bulto?.FechaFoto ?? ultima?.Ultima,
                     TieneFoto = bulto?.TieneFoto == true,
                     UrlFoto = bulto?.RutaFotoPublica,
-                    Contenido = productos
+                    Lineas = productos
                 });
             }
 
