@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Tests.Infrastructure.Stocks;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
@@ -35,7 +36,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             A.CallTo(() => repositorio.LeerCalendario(A<string>._)).Returns(Task.FromResult(new List<ReposicionCalendario>()));
             A.CallTo(() => repositorio.LeerHoraCorte(A<string>._)).Returns(new TimeSpan(11, 0, 0));
             A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).ReturnsLazily(() => ConStockEnAlgete("A", 10));
-            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add);
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add,
+                repartoStock: RepartoStockFalso.DesdeSombra(repositorio));
         }
 
         private static DatosSombraModoServicio ConStockEnAlgete(string producto, int unidades)
@@ -228,7 +230,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public async Task CalcularPedido_ProveedorConFechaVencida_AvisaAComprasConElPedidoQueLoEspera()
         {
             var avisador = A.Fake<IAvisadorProveedorVencido>();
-            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador,
+                repartoStock: RepartoStockFalso.DesdeSombra(repositorio));
             A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(PedidoConB(1)));
             A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(ConPedidoAProveedor("B", new DateTime(2026, 10, 9)));
 
@@ -247,7 +250,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public async Task CalcularPedido_DentroDeUnaTransaccion_LeeStockHoraCorteYAvisaFueraDeElla()
         {
             var avisador = A.Fake<IAvisadorProveedorVencido>();
-            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador,
+                repartoStock: RepartoStockFalso.DesdeSombra(repositorio));
             A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(PedidoConB(1)));
             var transaccionAlLeerStock = new List<Transaction>();
             var transaccionAlLeerHoraCorte = new List<Transaction>();
@@ -285,7 +289,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public async Task CalcularPlantilla_ProveedorConFechaVencida_DiceQueEsUnaPlantilla()
         {
             var avisador = A.Fake<IAvisadorProveedorVencido>();
-            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador,
+                repartoStock: RepartoStockFalso.DesdeSombra(repositorio));
             A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(ConPedidoAProveedor("B", new DateTime(2026, 10, 9)));
             var pedido = new PedidoVentaDTO
             {
@@ -309,7 +314,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public async Task CalcularPedido_ProveedorConFechaFutura_NoAvisa()
         {
             var avisador = A.Fake<IAvisadorProveedorVencido>();
-            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador,
+                repartoStock: RepartoStockFalso.DesdeSombra(repositorio));
             A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(PedidoConB(1)));
             A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(ConPedidoAProveedor("B", new DateTime(2026, 10, 16)));
 

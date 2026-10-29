@@ -1,5 +1,6 @@
 using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Infraestructure.Reposiciones;
+using NestoAPI.Infraestructure.Stocks;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.RecursosHumanos;
@@ -85,6 +86,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private readonly Action<Exception> registrar;
         private readonly IAvisadorProveedorVencido avisadorProveedorVencido;
         private readonly Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado;
+        /// <summary>NestoAPI#730: el reparto del stock de Algete por antigüedad, el MISMO del picking.</summary>
+        private readonly IRepartoStockPorAntiguedad repartoStock;
 
         public ServicioFechaEntregaAgencia(NVEntities db)
             : this(new RepositorioFechaEntregaAgencia(db), () => DateTime.Now, GestorFestivos.EsFestivo,
@@ -94,9 +97,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal ServicioFechaEntregaAgencia(IRepositorioFechaEntregaAgencia repositorio, Func<DateTime> reloj,
             Func<DateTime, string, bool> esFestivo, Action<Exception> registrar, IAvisadorProveedorVencido avisadorProveedorVencido = null,
-            Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado = null)
+            Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado = null,
+            IRepartoStockPorAntiguedad repartoStock = null)
         {
             this.anotarPedidoGrabado = anotarPedidoGrabado ?? EventosPromesaRiesgo.Anotar;
+            this.repartoStock = repartoStock ?? RepartoStockPorAntiguedad.PorDefecto();
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.reloj = reloj ?? (() => DateTime.Now);
             this.esFestivo = esFestivo ?? GestorFestivos.EsFestivo;
@@ -145,7 +150,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Cantidad = l.Cantidad - l.recoger,
                     BaseImponible = l.BaseImponible,
                     FechaEntrega = l.fechaEntrega > DateTime.MinValue ? l.fechaEntrega : (DateTime?)null,
-                    YaEnPicking = l.picking > 0
+                    YaEnPicking = l.picking > 0,
+                    // NestoAPI#730: la línea ya grabada conserva su turno si no ha cambiado de cantidad (la nueva va al final)
+                    Id = l.id > 0 ? l.id : (int?)null
                 })
                 .ToList();
             bool tieneLineasServidas = (pedido.Lineas ?? new List<LineaPedidoVentaDTO>())
@@ -348,12 +355,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             // quedaba muerta y la unión fallaba entera. Son lecturas de apoyo (el stock con NOLOCK): fuera de la transacción.
             DatosSombraModoServicio datos;
             TimeSpan horaCorte;
+            Dictionary<LineaPedidoFechaEntregaAgencia, int> enAlgete;
             using (SinTransaccion())
             {
                 datos = productos.Any()
                     ? repositorio.LeerStock(empresa, pedidoExcluir, productos)
                     : new DatosSombraModoServicio();
                 horaCorte = repositorio.LeerHoraCorte(empresa);
+                enAlgete = productos.Any()
+                    ? EnAlgetePorAntiguedad(empresa, pedidoExcluir, lineas, ahora)
+                    : new Dictionary<LineaPedidoFechaEntregaAgencia, int>();
             }
             List<ReposicionCalendario> calendario = await repositorio.LeerCalendario(empresa).ConfigureAwait(false) ?? new List<ReposicionCalendario>();
 
@@ -362,7 +373,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             var entrada = new EntradaFechaEntregaAgencia
             {
                 Empresa = empresa,
-                Lineas = RepartidorStockFechaEntregaAgencia.Repartir(deAlgete, datos, tiendasPorOrden, ahora.Date),
+                Lineas = RepartidorStockFechaEntregaAgencia.Repartir(deAlgete, datos, tiendasPorOrden, ahora.Date, enAlgete),
                 ModoServicio = modoServicio,
                 ModoFacturacion = modoFacturacion,
                 Ruta = ruta?.Trim(),
@@ -396,6 +407,35 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Aviso = resultado.Aviso,
                 Desglose = resultado.Desglose
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#730 (sugerencia 861): lo que el picking le daría ahora de Algete a cada línea del pedido, repartiendo por
+        /// antigüedad con TODAS las líneas pendientes de sus productos (<see cref="IRepartoStockPorAntiguedad"/>). Van todas las
+        /// líneas del pedido, también las de tienda: en el picking compiten igual.
+        /// </summary>
+        private Dictionary<LineaPedidoFechaEntregaAgencia, int> EnAlgetePorAntiguedad(string empresa, int? pedido,
+            List<LineaPedidoFechaEntregaAgencia> lineas, DateTime ahora)
+        {
+            List<LineaPedidoFechaEntregaAgencia> conCantidad = (lineas ?? new List<LineaPedidoFechaEntregaAgencia>())
+                .Where(l => l != null && l.Cantidad != 0 && !string.IsNullOrWhiteSpace(l.Producto))
+                .ToList();
+            int[] reservadas = repartoStock.UnidadesReservadas(empresa, pedido, conCantidad
+                .Select(l => new LineaRepartoStock
+                {
+                    Id = l.Id,
+                    Producto = l.Producto,
+                    Almacen = l.Almacen,
+                    Cantidad = l.Cantidad,
+                    FechaModificacion = l.FechaModificacion
+                })
+                .ToList(), ahora) ?? new int[0];
+            var resultado = new Dictionary<LineaPedidoFechaEntregaAgencia, int>();
+            for (int i = 0; i < conCantidad.Count; i++)
+            {
+                resultado[conCantidad[i]] = i < reservadas.Length ? reservadas[i] : 0;
+            }
+            return resultado;
         }
 
         /// <summary>

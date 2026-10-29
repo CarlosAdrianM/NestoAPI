@@ -100,7 +100,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         Cantidad = (l.Cantidad ?? 0) - l.Recoger,
                         BaseImponible = l.Base_Imponible,
                         FechaEntrega = l.Fecha_Entrega,
-                        YaEnPicking = l.Picking.GetValueOrDefault() != 0
+                        YaEnPicking = l.Picking.GetValueOrDefault() != 0,
+                        // NestoAPI#730: para su turno en el reparto por antigüedad
+                        Id = l.Nº_Orden,
+                        FechaModificacion = l.Fecha_Modificación
                     })
                     .ToList()
             };

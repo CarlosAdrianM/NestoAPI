@@ -73,6 +73,46 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// </summary>
         public Task<ResultadoPromesaRiesgo> PasadaNocturna(string empresa) => Recalcular(empresa, null, null, EVENTO_NOCTURNO);
 
+        public const string EVENTO_ANTES_DEL_CORREO = "revisión antes del correo resumen";
+
+        /// <summary>
+        /// NestoAPI#730 (sugerencia 853, Lidia, 29/10/26): justo antes del correo resumen, se recalculan los riesgos que van a
+        /// salir en él (los que aún no han ido en ninguno), para no mandar lo guardado cuando ya no vale: el riesgo se detectó a
+        /// las 9:35 («viene de Alcobendas») y a las 14:49 un inventario lo había dejado obsoleto. Con las mismas reglas que un
+        /// evento: el que ya cumple se resuelve (y no sale), el que cambia de fecha se actualiza con su porqué nuevo y el que
+        /// empeora avisa por la campana. El que sigue igual no se toca (conserva la causa del evento que lo detectó).
+        /// </summary>
+        public async Task<ResultadoPromesaRiesgo> RevisarAntesDelCorreo(string empresa)
+        {
+            var resultado = new ResultadoPromesaRiesgo();
+            ModoAvisoPromesaRiesgo modoActual = modo();
+            if (modoActual == ModoAvisoPromesaRiesgo.Apagado || !repositorio.TablaExiste())
+            {
+                return resultado;
+            }
+            empresa = string.IsNullOrWhiteSpace(empresa) ? Models.Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            DateTime ahora = reloj();
+            List<RiesgoPromesa> sinCorreo = await repositorio.LeerSinCorreo(empresa).ConfigureAwait(false) ?? new List<RiesgoPromesa>();
+            var avisar = new List<(RiesgoPromesa riesgo, bool empeora)>();
+            foreach (RiesgoPromesa registrado in sinCorreo.GroupBy(r => r.Pedido).Select(g => g.First()))
+            {
+                try
+                {
+                    (DateTime? prometida, bool quedaPendiente) = await repositorio.LeerEstadoPedido(empresa, registrado.Pedido).ConfigureAwait(false);
+                    FechaEntregaAgenciaDTO calculo = quedaPendiente ? await fechas.CalcularPedido(empresa, registrado.Pedido).ConfigureAwait(false) : null;
+                    resultado.Recalculados++;
+                    await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, null, EVENTO_ANTES_DEL_CORREO, ahora,
+                        resultado, avisar).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Registrar($"no se ha podido revisar el riesgo del pedido {registrado.Pedido} antes del correo resumen", ex);
+                }
+            }
+            await AvisarCampana(modoActual, avisar, resultado).ConfigureAwait(false);
+            return resultado;
+        }
+
         private async Task<ResultadoPromesaRiesgo> Recalcular(string empresa, IEnumerable<string> productos,
             IDictionary<string, CausaPromesaRiesgo> causas, string descripcion)
         {
@@ -127,6 +167,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
             }
 
+            await AvisarCampana(modoActual, avisar, resultado).ConfigureAwait(false);
+            return resultado;
+        }
+
+        private async Task AvisarCampana(ModoAvisoPromesaRiesgo modoActual, List<(RiesgoPromesa riesgo, bool empeora)> avisar,
+            ResultadoPromesaRiesgo resultado)
+        {
             if (modoActual == ModoAvisoPromesaRiesgo.Activo && avisador != null)
             {
                 foreach ((RiesgoPromesa riesgo, bool empeora) in avisar)
@@ -147,7 +194,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                 }
             }
-            return resultado;
         }
 
         private async Task Aplicar(string empresa, int pedido, DateTime? prometida, FechaEntregaAgenciaDTO calculo, bool quedaPendiente,

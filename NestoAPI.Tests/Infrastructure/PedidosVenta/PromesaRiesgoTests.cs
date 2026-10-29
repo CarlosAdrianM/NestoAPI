@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Tests.Infrastructure.Stocks;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
@@ -608,6 +609,56 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public async Task RevisarAntesDelCorreo_SiYaCumple_SeResuelveYNoSaleEnElCorreo()
+        {
+            // NestoAPI#730 (853): detectado por la mañana; un inventario a mediodía lo arregla y no pasa por la API.
+            calculoActual = RetrasoAlViernes();
+            _ = await Servicio().ProcesarEvento(TerminarReposicion81094());
+            calculoActual = CumpleElJueves();
+
+            ResultadoPromesaRiesgo revision = await Servicio().RevisarAntesDelCorreo("1");
+            int enviados = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => AHORA, () => modo, "1");
+
+            Assert.AreEqual(1, revision.Resueltos);
+            Assert.AreEqual(EvaluadorPromesaRiesgo.RESUELTO_CUMPLE, repositorio.Filas.Single().MotivoResolucion);
+            Assert.AreEqual(0, enviados, "ya no está en riesgo: no se manda lo guardado");
+        }
+
+        [TestMethod]
+        public async Task RevisarAntesDelCorreo_SiCambiaLaFecha_ActualizaElPorqueYSaleConElNuevo()
+        {
+            calculoActual = SinFecha();
+            _ = await Servicio().ProcesarEvento(TerminarReposicion81094());
+            string motivoGuardado = repositorio.Filas.Single().Motivo;
+            calculoActual = RetrasoAlViernes();
+
+            ResultadoPromesaRiesgo revision = await Servicio().RevisarAntesDelCorreo("1");
+            int enviados = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => AHORA, () => modo, "1");
+
+            Assert.AreEqual(1, revision.Recalculados);
+            Assert.AreEqual(VIERNES, repositorio.Filas.Single().FechaNueva);
+            Assert.AreNotEqual(motivoGuardado, repositorio.Filas.Single().Motivo);
+            Assert.AreEqual(1, enviados);
+        }
+
+        [TestMethod]
+        public async Task RevisarAntesDelCorreo_LosYaEnviadosYApagado_NoSeTocan()
+        {
+            calculoActual = RetrasoAlViernes();
+            _ = await Servicio().ProcesarEvento(TerminarReposicion81094());
+            _ = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => AHORA, () => modo, "1");
+            calculoActual = CumpleElJueves();
+
+            ResultadoPromesaRiesgo yaEnviado = await Servicio().RevisarAntesDelCorreo("1");
+            modo = ModoAvisoPromesaRiesgo.Apagado;
+            ResultadoPromesaRiesgo apagado = await Servicio().RevisarAntesDelCorreo("1");
+
+            Assert.AreEqual(0, yaEnviado.Recalculados, "solo lo que va a salir en el correo");
+            Assert.AreEqual(0, apagado.Recalculados);
+            Assert.IsNull(repositorio.Filas.Single().Resuelto);
+        }
+
+        [TestMethod]
         public async Task CorreoResumen_EnSombra_VaComoSombra()
         {
             modo = ModoAvisoPromesaRiesgo.Sombra;
@@ -996,7 +1047,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             A.CallTo(() => repoFechas.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(new DatosSombraModoServicio());
             var anotados = new List<(string empresa, List<string> productos, IDictionary<string, CausaPromesaRiesgo> causas)>();
             var servicio = new ServicioFechaEntregaAgencia(repoFechas, () => AHORA, (d, a) => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday,
-                _ => { }, null, (e, p, d, c) => anotados.Add((e, p.ToList(), c)));
+                _ => { }, null, (e, p, d, c) => anotados.Add((e, p.ToList(), c)), RepartoStockFalso.DesdeSombra(repoFechas));
 
             _ = await servicio.CalcularPedidoParaCorreo("1", 929104);
 

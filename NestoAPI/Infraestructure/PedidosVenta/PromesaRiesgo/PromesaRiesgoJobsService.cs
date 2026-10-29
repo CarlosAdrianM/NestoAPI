@@ -83,6 +83,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     db.Configuration.LazyLoadingEnabled = false;
                     db.Configuration.ProxyCreationEnabled = false;
+                    // NestoAPI#730 (853): antes de mandarlo, se recalcula lo que va a salir (no se manda lo guardado). Si falla, el
+                    // correo sale igual con lo que había.
+                    try
+                    {
+                        _ = await CrearServicio(db).RevisarAntesDelCorreo(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Promesa en riesgo #730] No se ha podido revisar antes del correo resumen: {ex.Message}", ex),
+                            "Sistema (promesa en riesgo)");
+                    }
                     _ = await CorreoResumen(new RepositorioPromesaRiesgo(), CrearAvisador(db), () => DateTime.Now,
                         () => InterruptorAvisoPromesaRiesgo.Modo, Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
                 }
