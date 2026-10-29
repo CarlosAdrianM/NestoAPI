@@ -58,6 +58,8 @@ namespace NestoAPI.Infraestructure
         private readonly Func<DateTime> _hoy;
         private readonly Func<int, Task> _quitarReembolsoDevuelto;
         private readonly Func<EnviosAgencia, Task> _avisarIncidencia;
+        private readonly Func<Task<List<int>>> _leerReembolsosPendientesEntregados;
+        private readonly Func<int, Task<int>> _contabilizarReembolsoEntregado;
 
         /// <summary>
         /// Sugerencia 544: usuario de la historia del envío y de los apuntes cuando el seguimiento quita el
@@ -65,10 +67,17 @@ namespace NestoAPI.Infraestructure
         /// </summary>
         public const string USUARIO_REEMBOLSO_DEVUELTO = "SeguimientoEnvios";
 
+        /// <summary>NestoAPI#742: usuario de los asientos de los reembolsos que el seguimiento contabiliza al ver la entrega.</summary>
+        public const string USUARIO_REEMBOLSO_ENTREGADO = "SeguimientoEnvios";
+
         public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null,
             Action<Exception> avisar = null, Func<DateTime> hoy = null, Func<int, Task> quitarReembolsoDevuelto = null,
-            Func<EnviosAgencia, Task> avisarIncidencia = null)
+            Func<EnviosAgencia, Task> avisarIncidencia = null, Func<Task<List<int>>> leerReembolsosPendientesEntregados = null,
+            Func<int, Task<int>> contabilizarReembolsoEntregado = null)
         {
+            // NestoAPI#742: contabilizar los reembolsos diferidos de los envíos ya entregados. Null = no se contabiliza.
+            _leerReembolsosPendientesEntregados = leerReembolsosPendientesEntregados;
+            _contabilizarReembolsoEntregado = contabilizarReembolsoEntregado;
             // NestoAPI#666: aviso a los comerciales cuando un envío pasa a incidentado. Null = no se avisa.
             _avisarIncidencia = avisarIncidencia;
             _db = db;
@@ -93,6 +102,31 @@ namespace NestoAPI.Infraestructure
                 db.Configuration.LazyLoadingEnabled = false;
                 _ = await new TramitacionEnviosService(db)
                     .QuitarReembolsoDevueltoAsync(numeroEnvio, USUARIO_REEMBOLSO_DEVUELTO)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>NestoAPI#742: los envíos entregados con el reembolso diferido aún sin contabilizar (contexto propio).</summary>
+        public static async Task<List<int>> LeerReembolsosPendientesEntregadosAsync()
+        {
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                return await new RegistroReembolsosAlEntregar(db).LeerPendientesEntregadosAsync().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#742: contabiliza el reembolso diferido de UN envío entregado con un contexto PROPIO, como el de los devueltos:
+        /// su transacción (reserva + apunte + prdContabilizar) no arrastra nada de la pasada ni de otro envío.
+        /// </summary>
+        public static async Task<int> ContabilizarReembolsoEntregadoAsync(int numeroEnvio)
+        {
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                return await new TramitacionEnviosService(db)
+                    .ContabilizarReembolsoAlEntregarAsync(numeroEnvio, USUARIO_REEMBOLSO_ENTREGADO)
                     .ConfigureAwait(false);
             }
         }
@@ -135,7 +169,9 @@ namespace NestoAPI.Infraestructure
                         () => ProcesarSeguimientosReintentoAsync(),
                         TimeSpan.FromMinutes(REINTENTO_TRAS_MINUTOS)),
                     quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync,
-                    avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync)
+                    avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
+                    leerReembolsosPendientesEntregados: LeerReembolsosPendientesEntregadosAsync,
+                    contabilizarReembolsoEntregado: ContabilizarReembolsoEntregadoAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE);
         }
 
@@ -149,7 +185,9 @@ namespace NestoAPI.Infraestructure
             db.Configuration.LazyLoadingEnabled = false;
             return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
                     quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync,
-                    avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync)
+                    avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
+                    leerReembolsosPendientesEntregados: LeerReembolsosPendientesEntregadosAsync,
+                    contabilizarReembolsoEntregado: ContabilizarReembolsoEntregadoAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE, esReintento: true);
         }
 
@@ -157,8 +195,54 @@ namespace NestoAPI.Infraestructure
         /// Recorre los envíos "en vuelo" (Tramitado o Incidentado) de agencias con gestión remota,
         /// desde <paramref name="fechaCorte"/>, y actualiza su estado/fecha de entrega. Devuelve cuántos
         /// cambiaron. Best-effort por envío: un fallo de una agencia no detiene el resto (se loguea).
+        /// NestoAPI#742: después, contabiliza los reembolsos diferidos de los envíos ya entregados.
         /// </summary>
         public async Task<int> ActualizarSeguimientosAsync(DateTime fechaCorte, bool esReintento = false)
+        {
+            int actualizados = await ActualizarEstadosAsync(fechaCorte, esReintento).ConfigureAwait(false);
+            await ContabilizarReembolsosEntregadosAsync().ConfigureAwait(false);
+            return actualizados;
+        }
+
+        /// <summary>
+        /// NestoAPI#742: contabiliza el reembolso diferido de TODOS los envíos entregados que lo tengan pendiente, no solo de
+        /// los que esta pasada acaba de pasar a Entregado: así entran también los que entregó «Actualizar estado», un cambio a
+        /// mano o una pasada anterior cuyo asiento falló (se reintenta sola en cada pasada). La idempotencia la pone
+        /// <see cref="TramitacionEnviosService.ContabilizarReembolsoAlEntregarAsync"/>. Best-effort por envío: un fallo se avisa
+        /// por ELMAH y no frena ni el seguimiento ni los demás envíos.
+        /// </summary>
+        private async Task ContabilizarReembolsosEntregadosAsync()
+        {
+            if (_leerReembolsosPendientesEntregados == null || _contabilizarReembolsoEntregado == null)
+            {
+                return;
+            }
+            List<int> pendientes;
+            try
+            {
+                pendientes = await _leerReembolsosPendientesEntregados().ConfigureAwait(false) ?? new List<int>();
+            }
+            catch (Exception ex)
+            {
+                _avisar(new Exception($"No se pudieron leer los reembolsos pendientes de contabilizar de los envíos entregados: {ex.Message}", ex));
+                return;
+            }
+            foreach (int numero in pendientes)
+            {
+                try
+                {
+                    _ = await _contabilizarReembolsoEntregado(numero).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _avisar(new Exception(
+                        $"No se pudo contabilizar el reembolso del envío {numero}, ya entregado: {ex.Message}. Sigue pendiente y se " +
+                        "reintenta en la siguiente pasada del seguimiento.", ex));
+                }
+            }
+        }
+
+        private async Task<int> ActualizarEstadosAsync(DateTime fechaCorte, bool esReintento)
         {
             int[] remotas = _fabrica.AgenciasConSeguimiento.ToArray();
             if (remotas.Length == 0)

@@ -482,6 +482,27 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Reembolsos_NoSalenLosDiferidosSinContabilizar()
+        {
+            // NestoAPI#742: Nesto cuadra esta lista contra el saldo de la cuenta de reembolsos de la agencia (#349). Un reembolso
+            // diferido aún sin contabilizar (tramitado sin entregar, o incidentado/devuelto/cerrado a mano) no está en la cuenta.
+            ConEnvios(
+                Envio(1, estado: 2, reembolso: 50),     // antiguo: contabilizado al tramitar, sin fila
+                Envio(2, estado: 1, reembolso: 50),     // diferido, aún sin entregar
+                Envio(3, estado: 2, reembolso: 50),     // diferido y ya contabilizado al entregar
+                Envio(4, estado: 5, reembolso: 50));    // diferido, cerrado a mano sin entregar
+            var registro = new NestoAPI.Tests.Infrastructure.Agencias.RegistroReembolsosEnMemoria();
+            registro.Filas[2] = new NestoAPI.Infraestructure.Agencias.RegistroReembolsoAlEntregar { EnvioId = 2 };
+            registro.Filas[3] = new NestoAPI.Infraestructure.Agencias.RegistroReembolsoAlEntregar { EnvioId = 3, Asiento = 1250001 };
+            registro.Filas[4] = new NestoAPI.Infraestructure.Agencias.RegistroReembolsoAlEntregar { EnvioId = 4 };
+            controller.ReembolsosAlEntregar = registro;
+
+            var resultado = await controller.GetEnviosReembolsos("1", 1) as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            CollectionAssert.AreEquivalent(new List<int> { 1, 3 }, resultado.Content.Select(e => e.Numero).ToList());
+        }
+
+        [TestMethod]
         public async Task Reembolsos_SoloTramitadosConReembolsoSinPagar()
         {
             ConEnvios(

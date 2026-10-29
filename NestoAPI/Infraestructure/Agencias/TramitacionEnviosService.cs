@@ -34,6 +34,7 @@ namespace NestoAPI.Infraestructure.Agencias
         private readonly IAmbitoTransaccion _transaccion;
         private readonly IFabricaAgenciasRemotas _fabricaAgencias;
         private readonly Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> _auditarOperacionRemota;
+        private readonly IRegistroReembolsosAlEntregar _reembolsosAlEntregar;
 
         public TramitacionEnviosService(NVEntities db)
             : this(db, new FabricaAgenciasRemotas(db), null)
@@ -48,7 +49,7 @@ namespace NestoAPI.Infraestructure.Agencias
         public TramitacionEnviosService(NVEntities db, IFabricaAgenciasRemotas fabricaAgencias,
             Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> auditarOperacionRemota)
             : this(db, new ContabilidadService(), () => DateTime.Today, new ProcedimientosExtractoCliente(), new AmbitoTransaccionDb(),
-                  fabricaAgencias, auditarOperacionRemota)
+                  fabricaAgencias, auditarOperacionRemota, new RegistroReembolsosAlEntregar(db))
         {
         }
 
@@ -67,10 +68,14 @@ namespace NestoAPI.Infraestructure.Agencias
         {
         }
 
+        /// <param name="reembolsosAlEntregar">NestoAPI#742: el registro de los reembolsos diferidos al entregar. Null = como
+        /// antes de #742 (todas las agencias, menos la 14, contabilizan al tramitar).</param>
         public TramitacionEnviosService(NVEntities db, IContabilidadService contabilidad, Func<DateTime> hoy,
             IProcedimientosExtractoCliente procedimientos, IAmbitoTransaccion transaccion,
-            IFabricaAgenciasRemotas fabricaAgencias, Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> auditarOperacionRemota)
+            IFabricaAgenciasRemotas fabricaAgencias, Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> auditarOperacionRemota,
+            IRegistroReembolsosAlEntregar reembolsosAlEntregar = null)
         {
+            _reembolsosAlEntregar = reembolsosAlEntregar;
             _db = db;
             _contabilidad = contabilidad;
             _hoy = hoy;
@@ -117,6 +122,7 @@ namespace NestoAPI.Infraestructure.Agencias
             }
 
             DateTime hoy = _hoy();
+            short estadoAnterior = envio.Estado;
             envio.Estado = Constantes.Agencias.ESTADO_TRAMITADO;
             envio.Fecha = hoy;
             envio.FechaEntrega = hoy.AddDays(1);    // se entrega al día siguiente
@@ -128,13 +134,9 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 try
                 {
-                    int asiento = 0;
-                    // NestoAPI#739: el momento lo decide la agencia. El reparto propio (14) no contabiliza al tramitar: lo
-                    // hace al entregar, con lo que de verdad ha cobrado el repartidor (su caja).
-                    if (ContabilizaReembolsoAlTramitar(envio))
-                    {
-                        asiento = await ContabilizarReembolsoAsync(envio, usuario).ConfigureAwait(false);
-                    }
+                    // NestoAPI#739/#742: el momento lo decide la agencia (y el interruptor de #742). El reparto propio (14) no
+                    // contabiliza al tramitar: lo hace al entregar, con lo que de verdad ha cobrado el repartidor (su caja).
+                    int asiento = await ReembolsoAlTramitarAsync(envio, estadoAnterior, usuario).ConfigureAwait(false);
                     _ = await _db.SaveChangesAsync().ConfigureAwait(false);
                     transaccion.Commit();
                     return new ResultadoTramitacionEnvio
@@ -160,6 +162,126 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         internal static bool ContabilizaReembolsoAlTramitar(EnviosAgencia envio)
             => envio.Reembolso != 0 && MomentosContabilizarReembolso.De(envio.Agencia) == MomentoContabilizarReembolso.AlTramitar;
+
+        /// <summary>
+        /// NestoAPI#742: ¿el reembolso de este envío se difiere a la entrega (contra la CuentaReembolsos de la agencia)? Solo
+        /// reembolsos positivos (el cliente paga al recibir; el -1 «no cobrar» ya es 0 aquí), de una agencia que no sea la 14
+        /// (tiene lo suyo), con seguimiento (si no, nunca pasaría sola a Entregado) y con el interruptor y el script.
+        /// </summary>
+        internal bool DifiereReembolsoAlEntregar(EnviosAgencia envio)
+            => envio.Reembolso > 0
+            && envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+            && _reembolsosAlEntregar != null
+            && _reembolsosAlEntregar.Activo()
+            && MomentosContabilizarReembolso.De(envio.Agencia, true, TieneSeguimiento(envio.Agencia)) == MomentoContabilizarReembolso.AlEntregar;
+
+        private bool TieneSeguimiento(int agencia)
+        {
+            try
+            {
+                return _fabricaAgencias?.AgenciasConSeguimiento?.Contains(agencia) == true;
+            }
+            catch (Exception)
+            {
+                // Sin poder saberlo (la puerta de agencias lee la BD), lo seguro es lo de siempre: contabilizar al tramitar.
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#742: lo que TramitarAsync hace con el reembolso, dentro de su transacción. Devuelve el asiento (0 si no
+        /// contabiliza). Tres casos:
+        /// <list type="bullet">
+        /// <item>Diferido (#742): no contabiliza; deja la fila pendiente en EnviosAgenciaReembolsosAlEntregar y la
+        /// contabilización la hace <see cref="ContabilizarReembolsoAlEntregarAsync"/> cuando el seguimiento lo vea Entregado.
+        /// Si el envío YA estaba tramitado (se vuelve a confirmar), no se crea fila: o ya la tiene, o se tramitó antes del
+        /// cambio y su reembolso ya está contabilizado (decisión 1 de Carlos: nunca dos veces).</item>
+        /// <item>La 14 (#739): nada; lo hace al entregar contra la caja del repartidor.</item>
+        /// <item>El resto: al tramitar, como siempre.</item>
+        /// </list>
+        /// </summary>
+        internal async Task<int> ReembolsoAlTramitarAsync(EnviosAgencia envio, short estadoAnterior, string usuario)
+        {
+            if (DifiereReembolsoAlEntregar(envio))
+            {
+                if (estadoAnterior < Constantes.Agencias.ESTADO_TRAMITADO)
+                {
+                    await _reembolsosAlEntregar.MarcarPendienteAsync(envio.Numero, usuario).ConfigureAwait(false);
+                }
+                return 0;
+            }
+            return ContabilizaReembolsoAlTramitar(envio)
+                ? await ContabilizarReembolsoAsync(envio, usuario).ConfigureAwait(false)
+                : 0;
+        }
+
+        /// <summary>NestoAPI#742: ¿un envío en este estado contabiliza ya su reembolso diferido? Solo ENTREGADO (decisión 2 de
+        /// Carlos: incidentados, devueltos y cerrados a mano no; el cliente no ha pagado y la factura sigue pendiente).</summary>
+        internal static bool DebeContabilizarseAlEntregar(EnviosAgencia envio)
+            => envio != null
+            && envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO
+            && envio.Reembolso > 0
+            && envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+            && !envio.FechaPagoReembolso.HasValue;
+
+        /// <summary>
+        /// NestoAPI#742: contabiliza el reembolso DIFERIDO de un envío entregado, contra la CuentaReembolsos de su agencia (la
+        /// misma puerta que al tramitar: <see cref="ContabilizarReembolsoAsync(EnviosAgencia, string)"/>). Una sola vez: sin
+        /// fila pendiente (envío de antes del cambio, ya contabilizado al tramitar, o ya contabilizado al entregar) no hace
+        /// nada, y la reserva de la fila va en la MISMA transacción que el asiento, así que dos pasadas simultáneas no lo
+        /// duplican y un fallo deja la fila pendiente para la siguiente. No depende del interruptor: lo que se tramitó con él
+        /// encendido se contabiliza al entregarse aunque luego se apague. Devuelve el asiento (0 si no tocaba).
+        ///
+        /// Fecha del apunte: la de HOY (la de la pasada que ve la entrega), no la FechaEntrega de la agencia. Es el día en que
+        /// reconocemos que la agencia nos lo debe, siempre cae en un periodo abierto (FechasPermitidas) aunque la agencia
+        /// informe la entrega con días de retraso, y con el seguimiento cada 30 minutos en horario de reparto coincide con la
+        /// de la entrega casi siempre. Es también lo que se hacía al tramitar (hoy, no la fecha de la etiqueta).
+        /// </summary>
+        public async Task<int> ContabilizarReembolsoAlEntregarAsync(int numeroEnvio, string usuario)
+        {
+            if (_reembolsosAlEntregar == null || !_reembolsosAlEntregar.TablaDisponible())
+            {
+                return 0;
+            }
+            RegistroReembolsoAlEntregar registro = await _reembolsosAlEntregar.LeerAsync(numeroEnvio).ConfigureAwait(false);
+            if (registro == null || registro.Contabilizado)
+            {
+                return 0;
+            }
+            // Where + ToListAsync, nunca SingleOrDefaultAsync con Include: ver la nota de TramitarAsync (Limit1).
+            List<EnviosAgencia> envios = await _db.EnviosAgencias
+                .Include(e => e.AgenciasTransporte)
+                .Include(e => e.Empresa1)
+                .Where(e => e.Numero == numeroEnvio)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            EnviosAgencia envio = envios.SingleOrDefault();
+            if (!DebeContabilizarseAlEntregar(envio))
+            {
+                return 0;
+            }
+            return await _transaccion.EjecutarAsync(_db, async () =>
+            {
+                if (!await _reembolsosAlEntregar.ReservarAsync(numeroEnvio).ConfigureAwait(false))
+                {
+                    return 0;   // otra pasada se ha adelantado
+                }
+                int asiento = await ContabilizarReembolsoAsync(envio, usuario).ConfigureAwait(false);
+                await _reembolsosAlEntregar.MarcarContabilizadoAsync(numeroEnvio, asiento, envio.Reembolso, _hoy(), usuario).ConfigureAwait(false);
+                return asiento;
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>NestoAPI#742: ¿el reembolso de este envío está diferido y todavía SIN contabilizar?</summary>
+        private async Task<bool> ReembolsoPendienteDeContabilizarAsync(int numeroEnvio)
+        {
+            if (_reembolsosAlEntregar == null)
+            {
+                return false;
+            }
+            RegistroReembolsoAlEntregar registro = await _reembolsosAlEntregar.LeerAsync(numeroEnvio).ConfigureAwait(false);
+            return registro != null && !registro.Contabilizado;
+        }
 
         /// <summary>
         /// Contabiliza el reembolso del envío: crea el apunte de PreContabilidad y lanza el diario.
@@ -259,7 +381,12 @@ namespace NestoAPI.Infraestructure.Agencias
                 .Where(e => numeros.Contains(e.Numero))
                 .ToListAsync()
                 .ConfigureAwait(false);
-            string error = ErrorEnviosAPagar(envios, numeros, empresaId);
+            // NestoAPI#742: un reembolso diferido sin contabilizar no está en la cuenta de reembolsos de la agencia; pagarlo
+            // dejaría el haber del pago sin su debe y descuadraría la liquidación (#349). Tampoco sale en la pestaña Reembolsos.
+            HashSet<int> pendientes = _reembolsosAlEntregar == null
+                ? null
+                : await _reembolsosAlEntregar.LeerPendientesAsync().ConfigureAwait(false);
+            string error = ErrorEnviosAPagar(envios, numeros, empresaId, pendientes);
             if (error != null)
             {
                 throw new NestoBusinessException(error);
@@ -334,7 +461,7 @@ namespace NestoAPI.Infraestructure.Agencias
         /// Por qué NO se pueden pagar estos envíos, o null si todo está bien. Se acumulan todos los
         /// motivos, que el usuario selecciona varias filas y conviene que vea la lista entera.
         /// </summary>
-        internal static string ErrorEnviosAPagar(List<EnviosAgencia> envios, List<int> numeros, string empresa)
+        internal static string ErrorEnviosAPagar(List<EnviosAgencia> envios, List<int> numeros, string empresa, ISet<int> reembolsosSinContabilizar = null)
         {
             List<string> errores = new List<string>();
             foreach (int numero in numeros)
@@ -360,6 +487,10 @@ namespace NestoAPI.Infraestructure.Agencias
                 if (envio.AgenciasTransporte == null || string.IsNullOrWhiteSpace(envio.AgenciasTransporte.CuentaReembolsos))
                 {
                     errores.Add($"La agencia del envío {numero} no tiene establecida una cuenta de reembolsos.");
+                }
+                if (reembolsosSinContabilizar != null && reembolsosSinContabilizar.Contains(numero))
+                {
+                    errores.Add($"El reembolso del envío {numero} (pedido {envio.Pedido}) todavía no está contabilizado: se contabiliza cuando la agencia lo entrega.");
                 }
             }
             return errores.Count == 0 ? null : string.Join(" ", errores);
@@ -944,6 +1075,13 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         private async Task<int> ContabilizarModificacionReembolsoAsync(EnviosAgencia envio, decimal importeAnterior, decimal importeNuevo, string usuario)
         {
+            // NestoAPI#742: si el reembolso está diferido y aún sin contabilizar, no hay nada que deshacer ni rehacer: basta con
+            // el campo, y al entregarse se contabiliza el importe nuevo. Así un devuelto (Sugerencia 544) se queda sin reembolso
+            // sin un solo apunte (decisión 2 de Carlos: los devueltos no se contabilizan nunca).
+            if (await ReembolsoPendienteDeContabilizarAsync(envio.Numero).ConfigureAwait(false))
+            {
+                return 0;
+            }
             if (envio.AgenciasTransporte == null || string.IsNullOrWhiteSpace(envio.AgenciasTransporte.CuentaReembolsos))
             {
                 throw new NestoBusinessException("Esta agencia no tiene establecida una cuenta de reembolsos. No se puede contabilizar.");
@@ -1019,14 +1157,21 @@ namespace NestoAPI.Infraestructure.Agencias
             };
         }
 
-        /// <summary>El PAGO que se contabilizó al tramitar (por concepto, fecha e importe), para desliquidarlo.</summary>
+        /// <summary>
+        /// El PAGO que se contabilizó al tramitar (por concepto, fecha e importe), para desliquidarlo. NestoAPI#742: si se
+        /// contabilizó al ENTREGAR, su fecha es la que guardó el registro, no la de tramitar.
+        /// </summary>
         private async Task<ExtractoCliente> CalcularMovimientoDesliqAsync(EnviosAgencia envio, decimal importeAnterior)
         {
             string concepto = GenerarConcepto(envio);
             decimal importe = -importeAnterior;
+            RegistroReembolsoAlEntregar registro = _reembolsosAlEntregar == null
+                ? null
+                : await _reembolsosAlEntregar.LeerAsync(envio.Numero).ConfigureAwait(false);
+            DateTime fechaApunte = registro?.FechaContable ?? envio.Fecha;
             List<ExtractoCliente> movimientos = await _db.ExtractosCliente
                 .Where(e => e.Empresa == envio.Empresa && e.Número == envio.Cliente && e.Contacto == envio.Contacto
-                    && e.Fecha == envio.Fecha && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.PAGO
+                    && e.Fecha == fechaApunte && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.PAGO
                     && e.Concepto == concepto && e.Importe == importe)
                 .ToListAsync()
                 .ConfigureAwait(false);
@@ -1332,6 +1477,8 @@ namespace NestoAPI.Infraestructure.Agencias
     {
         Task<ResultadoTramitacionEnvio> TramitarAsync(int numeroEnvio, string usuario);
         Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario);
+        /// <summary>NestoAPI#742: contabiliza el reembolso diferido de un envío ya entregado (una sola vez). 0 si no tocaba.</summary>
+        Task<int> ContabilizarReembolsoAlEntregarAsync(int numeroEnvio, string usuario);
         Task<ResultadoPagoReembolsos> PagarReembolsosAsync(PagoReembolsosDTO datos, string usuario);
         Task<ResultadoModificacionEnvio> ModificarDatosAsync(int numeroEnvio, ModificarDatosEnvioDTO datos, string usuario);
         Task<ResultadoModificacionEnvio> QuitarReembolsoDevueltoAsync(int numeroEnvio, string usuario);
