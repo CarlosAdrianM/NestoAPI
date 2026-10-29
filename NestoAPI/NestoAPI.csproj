@@ -538,11 +538,13 @@
     <Compile Include="Controllers\OfertasAutorizadasController.cs" />
     <Compile Include="Controllers\AlmacenController.cs" />
     <Compile Include="Controllers\PerfilAlmacenController.cs" />
+    <Compile Include="Controllers\HistoricoAlmacenController.cs" />
     <Compile Include="Controllers\RecepcionesController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CorreccionLecturasSalida.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FichaProductoCompletaAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\HistoricoAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FichasProductoAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\ProductosMismoHueco.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FotosProductoAlmacen.cs" />
@@ -592,6 +594,7 @@
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\BultosReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
+    <Compile Include="Models\PreparacionAlmacen\HistoricoAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\DiferenciasReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\SalidasDTO.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
