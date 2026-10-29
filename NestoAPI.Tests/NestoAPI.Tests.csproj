@@ -667,6 +667,7 @@
     <Compile Include="Infrastructure\Eventos\PropuestasSenalesEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\PersonaAsistenteEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\ProductosRequeridosEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\FormaPagoSenalEventoTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTests.cs" />
     <Compile Include="Infrastructure\Cupones\EspejoCuponesPrestashopTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTiendaPrestashopTests.cs" />

@@ -1110,9 +1110,34 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             string contacto = Limpiar(senal.Contacto);
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             DateTime ahora = reloj();
+            // 29/10/26 (primera señal real, cliente 22709): el cobro era un enlace de tarjeta y la inscripción decía «Transferencia».
+            // La forma de pago sale del apunte que es la señal (TAR → Tarjeta, EFC → Efectivo, el resto → Transferencia).
+            string formaPagoApunte = null;
+            try
+            {
+                formaPagoApunte = await db.ExtractosCliente
+                    .Where(e => e.Nº_Orden == senal.NumOrdenExtracto)
+                    .Select(e => e.FormaPago)
+                    .FirstOrDefaultAsync().ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Sin poder leer el apunte, como antes: Transferencia (es solo la etiqueta de la inscripción).
+            }
             EventoInscripcion inscripcion = await PagarOInscribir(evento, Limpiar(senal.Empresa), cliente, contacto, OrigenInscripcionEvento.Transferencia,
-                FormaPagoInscripcionEvento.Transferencia, senal.Importe, ahora, usuarioAuditoria, senal.Id).ConfigureAwait(false);
+                FormaPagoDeLaSenal(formaPagoApunte), senal.Importe, ahora, usuarioAuditoria, senal.Id).ConfigureAwait(false);
             return Componer(inscripcion, evento, null);
+        }
+
+        /// <summary>La forma de pago de la inscripción según la del apunte que es la señal.</summary>
+        internal static FormaPagoInscripcionEvento FormaPagoDeLaSenal(string formaPagoApunte)
+        {
+            string forma = formaPagoApunte?.Trim().ToUpperInvariant();
+            if (forma == Constantes.FormasPago.TARJETA)
+            {
+                return FormaPagoInscripcionEvento.Tarjeta;
+            }
+            return forma == Constantes.FormasPago.EFECTIVO ? FormaPagoInscripcionEvento.Efectivo : FormaPagoInscripcionEvento.Transferencia;
         }
 
         /// <summary>
