@@ -33,7 +33,9 @@ $mozos = @(
     @{ Usuario = "Santiago"; Nombre = "Santiago"; Apellidos = "Almacén"; Correo = "santiagocampillo@nuevavision.es" },
     @{ Usuario = "Alfredo";  Nombre = "Alfredo";  Apellidos = "Almacén"; Correo = "alfredo@nuevavision.es" },
     @{ Usuario = "Pedro";    Nombre = "Pedro";    Apellidos = "Jurado Lara"; Correo = "pjuradolara@gmail.com" },
-    @{ Usuario = "Andre";    Nombre = "Andre";    Apellidos = "Kuznetsov"; Correo = "andrekuznetson@nuevavision.es" }
+    @{ Usuario = "Andre";    Nombre = "Andre";    Apellidos = "Kuznetsov"; Correo = "andrekuznetson@nuevavision.es" },
+    # 29/10/26 (NestoAPI#739): repartidor del reparto propio. Sin usuario de Windows, como Pedro: solo Ariadna.
+    @{ Usuario = "Miguel";   Nombre = "Miguel";   Apellidos = "Sotillos"; Correo = "miguelsotillos@nuevavision.es" }
 )
 
 $sinCorreo = @($mozos | Where-Object { -not $_.Correo })
@@ -112,20 +114,20 @@ foreach ($m in $mozos) {
 
     if ($ServidorSmtp) {
         $texto = @"
-Hola, $($m.Nombre):
+Buenos días, $($m.Nombre):
 
-Ya puedes entrar en Ariadna, la nueva aplicación del almacén.
+Ya puede entrar en Ariadna, la aplicación del almacén.
 
   Usuario:     $($m.Usuario)
   Contraseña:  $contrasena
 
-Si quieres cambiarla, pulsa «He olvidado mi contraseña» en la pantalla de entrada.
-Cualquier cosa que no funcione o que se te ocurra para mejorarla, dínoslo desde la propia
+Si quiere cambiarla, pulse «He olvidado mi contraseña» en la pantalla de entrada.
+Cualquier cosa que no funcione o que se le ocurra para mejorarla, díganoslo desde la propia
 aplicación, en Novedades («Algo no funciona» o «Sugerencia»).
 "@
         try {
             Send-MailMessage -SmtpServer $ServidorSmtp -Port $PuertoSmtp -UseSsl -Credential $credencialSmtp `
-                -From $Remitente -To $m.Correo -Subject "Tu usuario de Ariadna" -Body $texto -Encoding ([System.Text.Encoding]::UTF8)
+                -From $Remitente -To $m.Correo -Subject "Su usuario de Ariadna" -Body $texto -Encoding ([System.Text.Encoding]::UTF8)
             "Creado $($m.Usuario) y enviada la contraseña a $($m.Correo)."
         } catch {
             # El usuario ya está creado: que la contraseña no se pierda
