@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Contabilidad;
@@ -93,7 +93,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             Assert.IsTrue(MetodosPagoRedsys.PermiteTokenizar(null));
             Assert.IsTrue(MetodosPagoRedsys.PermiteTokenizar("C"));
-            Assert.IsTrue(MetodosPagoRedsys.PermiteTokenizar("z"), "Bizum: sin cambios respecto a antes de #728");
+            Assert.IsFalse(MetodosPagoRedsys.PermiteTokenizar("z"), "Bizum tampoco deja token reutilizable (Carlos 29/10/26)");
             Assert.IsFalse(MetodosPagoRedsys.PermiteTokenizar("xpay"));
             Assert.IsFalse(MetodosPagoRedsys.PermiteTokenizar("google"));
         }

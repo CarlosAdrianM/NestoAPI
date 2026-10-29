@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -55,14 +55,14 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
-        /// Apple Pay y Google Pay no dejan un token de tarjeta reutilizable (como Bizum), así que
-        /// no se pide tokenizar cuando el pago va fijado a uno de ellos (#178). Con el resto no
-        /// cambia nada respecto a antes de #728.
+        /// Apple Pay, Google Pay y Bizum no dejan un token de tarjeta reutilizable, así que no se pide tokenizar cuando el pago
+        /// va fijado a uno de ellos (#178). Bizum se añadió el 29/10/26 (Carlos): pedir a Redsys que guarde una tarjeta en un
+        /// pago con Bizum no tiene sentido y puede hacer que lo rechace. Tarjeta o sin método fijado: como siempre.
         /// </summary>
         public static bool PermiteTokenizar(string metodo)
         {
             string normalizado = Normalizar(metodo);
-            return normalizado != APPLE_PAY && normalizado != GOOGLE_PAY;
+            return normalizado != APPLE_PAY && normalizado != GOOGLE_PAY && normalizado != BIZUM;
         }
 
         /// <summary>
