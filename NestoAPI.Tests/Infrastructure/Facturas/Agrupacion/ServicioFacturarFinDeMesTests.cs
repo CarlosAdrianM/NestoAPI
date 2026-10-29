@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -52,7 +52,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
                     return Task.FromResult(new CrearFacturaResponseDTO { Empresa = e, NumeroPedido = p, NumeroFactura = "NV26" + p });
                 });
 
-            servicio = new ServicioFacturarFinDeMes(db, new EstrategiaAgrupacionFinDeMes(db), new MotorAgrupacionPedidos(db), servicioFacturas)
+            servicio = new ServicioFacturarFinDeMes(db, new EstrategiaAgrupacionFinDeMes(db), new MotorAgrupacionPedidos(db, A.Fake<IPersistenciaMovimientoLineas>()), servicioFacturas)
             {
                 ClienteExigeSuPedido = (e, c) => false
             };

@@ -1,5 +1,4 @@
-using System.Collections.Generic;
-using System.Data.Entity;
+﻿using System.Collections.Generic;
 using System.Linq;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -16,15 +15,16 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
     public class MotorAgrupacionPedidosTests
     {
         private NVEntities db;
+        private IPersistenciaMovimientoLineas persistencia;
         private MotorAgrupacionPedidos motor;
 
         [TestInitialize]
         public void Setup()
         {
             db = A.Fake<NVEntities>();
-            ConfigurarDbSet(s => A.CallTo(() => db.PedidosEspeciales).Returns(s), new List<PedidosEspeciale>());
-            ConfigurarDbSet(s => A.CallTo(() => db.Ubicaciones).Returns(s), new List<Ubicacion>());
-            motor = new MotorAgrupacionPedidos(db);
+            // NestoAPI#729: el movimiento en la BD (SQL) y el soltar del contexto los hace la persistencia; aquí se simula.
+            persistencia = A.Fake<IPersistenciaMovimientoLineas>();
+            motor = new MotorAgrupacionPedidos(db, persistencia);
         }
 
         [TestMethod]
@@ -61,27 +61,46 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
             Assert.AreEqual("5", lineaMovida.Contacto);
         }
 
+        /// <summary>
+        /// NestoAPI#729 (regresión del 29/10/26): el motor NO cambia la clave de una entidad seguida por EF; manda a la BD las
+        /// órdenes de las líneas que se mueven (las en albarán de los hermanos) y el grupo entero para soltarlo del contexto,
+        /// ANTES de tocar el grafo en memoria.
+        /// </summary>
         [TestMethod]
-        public void Agrupar_ActualizaPedidosEspecialesQueApuntabanAOrigen()
+        public void Agrupar_MandaALaPersistenciaLasOrdenesMovidasYElGrupo_AntesDeTocarLaMemoria()
         {
             CabPedidoVta destino = NuevoPedido("1", 100, "CLI-1", "0",
                 NuevaLinea(orden: 1, contacto: "0", estado: Constantes.EstadosLineaVenta.ALBARAN));
             CabPedidoVta origen = NuevoPedido("1", 200, "CLI-1", "5",
-                NuevaLinea(orden: 2, contacto: "5", estado: Constantes.EstadosLineaVenta.ALBARAN));
-
-            var pedidoEspecial = new PedidosEspeciale { NºOrdenVta = 2, NºPedidoVta = 200 };
-            ConfigurarDbSet(s => A.CallTo(() => db.PedidosEspeciales).Returns(s),
-                new List<PedidosEspeciale> { pedidoEspecial });
-            var ubicacion = new Ubicacion { NºOrdenVta = 2, PedidoVta = 200 };
-            ConfigurarDbSet(s => A.CallTo(() => db.Ubicaciones).Returns(s),
-                new List<Ubicacion> { ubicacion });
+                NuevaLinea(orden: 2, contacto: "5", estado: Constantes.EstadosLineaVenta.ALBARAN),
+                NuevaLinea(orden: 3, contacto: "5", estado: Constantes.EstadosLineaVenta.FACTURA));
+            int numeroDeLaLinea2AlPersistir = -1;
+            A.CallTo(() => persistencia.Mover("1", 100, A<IReadOnlyCollection<int>>._, A<IEnumerable<CabPedidoVta>>._))
+                .Invokes(() => numeroDeLaLinea2AlPersistir = origen.LinPedidoVtas.Single(l => l.Nº_Orden == 2).Número);
 
             motor.Agrupar(new[] { destino, origen }, destino);
 
-            Assert.AreEqual(100, pedidoEspecial.NºPedidoVta,
-                "El PedidoEspecial debe repuntar al pedido destino.");
-            Assert.AreEqual(100, ubicacion.PedidoVta,
-                "La ubicación debe repuntar al pedido destino.");
+            A.CallTo(() => persistencia.Mover("1", 100,
+                    A<IReadOnlyCollection<int>>.That.Matches(o => o.Count == 1 && o.Contains(2)),
+                    A<IEnumerable<CabPedidoVta>>.That.Matches(g => g.Contains(destino) && g.Contains(origen))))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual(200, numeroDeLaLinea2AlPersistir, "al persistir, la línea aún tiene su Número de origen (nada tocado en memoria)");
+            Assert.AreEqual(200, origen.LinPedidoVtas.Single(l => l.Nº_Orden == 3).Número, "la facturada se queda en el origen");
+        }
+
+        [TestMethod]
+        public void Agrupar_SinLineasQueMover_TambienPersisteLaMarcaDeAgrupado()
+        {
+            CabPedidoVta unico = NuevoPedido("1", 100, "CLI-1", "0",
+                NuevaLinea(orden: 1, contacto: "0", estado: Constantes.EstadosLineaVenta.ALBARAN));
+
+            motor.Agrupar(new[] { unico }, unico);
+
+            A.CallTo(() => persistencia.Mover("1", 100,
+                    A<IReadOnlyCollection<int>>.That.Matches(o => o.Count == 0),
+                    A<IEnumerable<CabPedidoVta>>.That.Matches(g => g.Contains(unico))))
+                .MustHaveHappenedOnceExactly();
+            Assert.IsTrue(unico.Agrupada);
         }
 
         // ----- helpers -----
@@ -117,15 +136,5 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
             };
         }
 
-        private static void ConfigurarDbSet<T>(System.Action<DbSet<T>> asignar, List<T> data) where T : class
-        {
-            DbSet<T> set = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>());
-            IQueryable<T> query = data.AsQueryable();
-            A.CallTo(() => ((IQueryable<T>)set).Provider).Returns(query.Provider);
-            A.CallTo(() => ((IQueryable<T>)set).Expression).Returns(query.Expression);
-            A.CallTo(() => ((IQueryable<T>)set).ElementType).Returns(query.ElementType);
-            A.CallTo(() => ((IQueryable<T>)set).GetEnumerator()).Returns(query.GetEnumerator());
-            asignar(set);
-        }
     }
 }

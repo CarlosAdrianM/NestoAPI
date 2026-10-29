@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -36,7 +36,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
             servicio = new ServicioAgruparPorPO(
                 db,
                 new EstrategiaAgrupacionPO(db),
-                new MotorAgrupacionPedidos(db),
+                new MotorAgrupacionPedidos(db, A.Fake<IPersistenciaMovimientoLineas>()),
                 servicioFacturas);
         }
 

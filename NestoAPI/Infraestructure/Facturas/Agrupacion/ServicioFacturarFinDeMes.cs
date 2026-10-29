@@ -1,10 +1,8 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -210,26 +208,7 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 
         private void DescartarCambiosPendientes()
         {
-            try
-            {
-                foreach (DbEntityEntry entrada in db.ChangeTracker.Entries()
-                    .Where(e => e.State != EntityState.Unchanged && e.State != EntityState.Detached).ToList())
-                {
-                    if (entrada.State == EntityState.Added)
-                    {
-                        entrada.State = EntityState.Detached;
-                    }
-                    else
-                    {
-                        entrada.CurrentValues.SetValues(entrada.OriginalValues);
-                        entrada.State = EntityState.Unchanged;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                ElmahHelper.Log(new Exception($"[Fin de mes #727] No se han podido descartar los cambios pendientes: {ex.Message}", ex));
-            }
+            CambiosPendientesContexto.Descartar(db, "Fin de mes #727");
         }
     }
 }

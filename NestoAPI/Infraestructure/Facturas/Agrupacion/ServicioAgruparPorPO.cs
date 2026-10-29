@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Linq;
@@ -57,7 +57,9 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 }
                 catch (Exception ex)
                 {
-                    // Aislamos el fallo: un PO que falle no impide procesar el resto.
+                    // Aislamos el fallo: un PO que falle no impide procesar el resto. NestoAPI#729: y lo que quedó a medias en
+                    // el contexto compartido no se cuela en el siguiente grupo ni en la facturación de rutas que viene después.
+                    CambiosPendientesContexto.Descartar(db, "Agrupar por P.O. (NestoAPI#195)");
                     resultado.Errores.Add(new ErrorAgrupacionPO
                     {
                         Empresa = grupo.Empresa,

@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,14 +20,29 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
     /// Al mover las líneas hay que repuntar las tablas satélite que referencian la línea
     /// por su <c>Nº_Orden</c> (identidad global): PedidosEspeciales y Ubicaciones, igual
     /// que hace el SP de FDM.
+    ///
+    /// NestoAPI#729 (29/10/26): el movimiento en la BD lo hace <see cref="IPersistenciaMovimientoLineas"/> por SQL (como el
+    /// SP), porque EF6 no deja cambiar la clave de una entidad seguida; el motor solo deja coherente el grafo en memoria.
     /// </summary>
     public class MotorAgrupacionPedidos : IMotorAgrupacionPedidos
     {
-        private readonly NVEntities db;
+        private readonly IPersistenciaMovimientoLineas persistencia;
 
-        public MotorAgrupacionPedidos(NVEntities db)
+        public MotorAgrupacionPedidos(NVEntities db) : this(db, null)
         {
-            this.db = db ?? throw new ArgumentNullException(nameof(db));
+        }
+
+        /// <summary>
+        /// NestoAPI#729: <paramref name="persistencia"/> es quien mueve las líneas en la BD y suelta el grupo del contexto
+        /// (<see cref="PersistenciaMovimientoLineasSql"/> en producción; en los tests, un falso).
+        /// </summary>
+        internal MotorAgrupacionPedidos(NVEntities db, IPersistenciaMovimientoLineas persistencia)
+        {
+            if (db == null)
+            {
+                throw new ArgumentNullException(nameof(db));
+            }
+            this.persistencia = persistencia ?? new PersistenciaMovimientoLineasSql(db);
         }
 
         public CabPedidoVta Agrupar(IEnumerable<CabPedidoVta> origenes, CabPedidoVta destino)
@@ -69,11 +84,17 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             // (Estado FACTURA) no se tocan, y las pendientes no deberían llegar aquí porque
             // el gate de facturación (Fase 1) impide agrupar si algún hermano no está listo.
             // NestoAPI#727: en el fin de mes, además, solo las de fecha de albarán hasta el corte (las demás se quedan).
-            List<LinPedidoVta> lineasAMover = origenes
-                .Where(o => o != null && o.Número != destino.Número)
+            List<CabPedidoVta> grupo = origenes.Where(o => o != null).ToList();
+            List<LinPedidoVta> lineasAMover = grupo
+                .Where(o => o.Número != destino.Número)
                 .SelectMany(o => (o.LinPedidoVtas ?? new List<LinPedidoVta>())
                     .Where(l => LineaAgrupable(l, fechaAlbaranHasta)))
                 .ToList();
+
+            // NestoAPI#729: primero la BD (por SQL, con los satélites y la marca de agrupado) y soltar el grupo del contexto;
+            // después la memoria, ya sin EF mirando: cambiar Número en una entidad seguida rompía el contexto compartido.
+            List<int> ordenesMovidas = lineasAMover.Select(l => l.Nº_Orden).Distinct().ToList();
+            persistencia.Mover(destino.Empresa, destino.Número, ordenesMovidas, grupo.Concat(new[] { destino }));
 
             foreach (LinPedidoVta linea in lineasAMover)
             {
@@ -96,25 +117,9 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 }
             }
 
-            // Repuntar tablas satélite que referencian la línea por su Nº_Orden (identidad
-            // global), igual que el SP de FDM. Se hace una sola vez con todos los Nº_Orden.
-            List<int> ordenesMovidas = lineasAMover.Select(l => l.Nº_Orden).Distinct().ToList();
-            if (ordenesMovidas.Any())
-            {
-                foreach (PedidosEspeciale pe in db.PedidosEspeciales
-                    .Where(p => p.NºOrdenVta.HasValue && ordenesMovidas.Contains(p.NºOrdenVta.Value)))
-                {
-                    pe.NºPedidoVta = destino.Número;
-                }
+            // Las tablas satélite (PedidosEspeciales, Ubicaciones) las repunta la persistencia, en el mismo SQL que las líneas.
 
-                foreach (Ubicacion u in db.Ubicaciones
-                    .Where(x => x.NºOrdenVta.HasValue && ordenesMovidas.Contains(x.NºOrdenVta.Value)))
-                {
-                    u.PedidoVta = destino.Número;
-                }
-            }
-
-            // Marcamos el destino como agrupado: es el pedido contenedor que se facturará.
+            // Marcamos el destino como agrupado (en la BD ya lo está): es el pedido contenedor que se facturará.
             destino.Agrupada = true;
 
             return destino;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -182,9 +182,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
         [TestMethod]
         public void Motor_ConFechaTope_SoloMueveLosAlbaranesHastaElCorte()
         {
-            ConfigurarDbSet(s => A.CallTo(() => db.PedidosEspeciales).Returns(s), new List<PedidosEspeciale>());
-            ConfigurarDbSet(s => A.CallTo(() => db.Ubicaciones).Returns(s), new List<Ubicacion>());
-            var motor = new MotorAgrupacionPedidos(db);
+            var motor = new MotorAgrupacionPedidos(db, A.Fake<IPersistenciaMovimientoLineas>());
             CabPedidoVta destino = Pedido(100, "CLI-1", "0", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
             CabPedidoVta origen = Pedido(200, "CLI-1", "5",
                 Linea(2, Constantes.EstadosLineaVenta.ALBARAN, ULTIMO_DIA_TARDE),

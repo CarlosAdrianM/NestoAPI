@@ -893,6 +893,9 @@
     <Compile Include="Infraestructure\Facturas\Agrupacion\GrupoPedidosPO.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\IMotorAgrupacionPedidos.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\MotorAgrupacionPedidos.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\IPersistenciaMovimientoLineas.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\PersistenciaMovimientoLineasSql.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\CambiosPendientesContexto.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\IEstrategiaAgrupacionPO.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\EstrategiaAgrupacionPO.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\ResultadoAgrupacionPO.cs" />
