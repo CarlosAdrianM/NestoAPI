@@ -425,6 +425,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     Email = cliente.Email?.Trim(),
                     VendedorNombre = NombreVendedor(cliente),
                     Vendedor = string.IsNullOrWhiteSpace(cliente.Vendedor) ? null : cliente.Vendedor.Trim(),
+                    VendedorPeluqueria = string.IsNullOrWhiteSpace(cliente.VendedorPeluqueria) ? null : cliente.VendedorPeluqueria.Trim(),
                     GrupoControl = EsGrupoControl(grupo.Key, porcentajeGrupoControl),
                     Productos = delCliente.Take(MAXIMO_PRODUCTOS_POR_CORREO).ToList()
                 });

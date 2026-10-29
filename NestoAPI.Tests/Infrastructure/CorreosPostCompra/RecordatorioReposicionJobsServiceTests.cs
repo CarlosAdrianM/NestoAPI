@@ -336,6 +336,31 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
+        public async Task Procesar_EnActivo_SinFilaDeExcluidosDePeluqueria_ElDeIFNoRecibeNiVaAlControl()
+        {
+            Modo("Activo");
+            Parametro(Constantes.ParametrosUsuario.RECORDATORIO_REPOSICION_EXCLUIR_VENDEDORES_PELUQUERIA, null);
+            DependenciasRecordatorioReposicion d = Dependencias();
+            d.Calcular = (consumibles, hoy) =>
+            {
+                ResultadoRecordatorioReposicionDTO r = Resultado();
+                r.SeAvisarian.Single(c => c.Cliente == "15191").VendedorPeluqueria = "IF";
+                r.SeAvisarian.Single(c => c.Cliente == "15250").VendedorPeluqueria = "JM";
+                r.GrupoControl.Single().VendedorPeluqueria = "IF";
+                return Task.FromResult(r);
+            };
+
+            EjecucionRecordatorioReposicionDTO ejecucion = await RecordatorioReposicionJobsService.Procesar(d);
+
+            CollectionAssert.AreEqual(new[] { "15250@cliente.es" }, CorreosAClientes().Select(m => m.To.Single().Address).ToArray());
+            CollectionAssert.AreEqual(new[] { "15191" }, ejecucion.Plan.FueraPorVendedorPeluqueria.Select(c => c.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { "15250" }, registrados.Select(r => r.Cliente).ToArray(), "El 15300 (IF) tampoco se apunta al control");
+            MailMessage resumen = Resumen();
+            StringAssert.Contains(resumen.Subject, "1 fuera por vendedor de peluquería");
+            StringAssert.Contains(WebUtility.HtmlDecode(resumen.Body), "Fuera por vendedor de peluquería (1)");
+        }
+
+        [TestMethod]
         public async Task Procesar_EnActivo_SinFilaDeVendedores_NoSeEscribeANadie()
         {
             Modo("Activo");

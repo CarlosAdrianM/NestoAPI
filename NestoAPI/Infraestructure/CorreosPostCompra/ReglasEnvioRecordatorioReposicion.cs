@@ -11,6 +11,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public List<RecordatorioReposicionClienteDTO> Enviar { get; set; } = new List<RecordatorioReposicionClienteDTO>();
         /// <summary>Les tocaría, pero su vendedor no está en RecordatorioReposicionVendedores: no se les escribe (como hasta ahora).</summary>
         public List<RecordatorioReposicionClienteDTO> FueraPorVendedor { get; set; } = new List<RecordatorioReposicionClienteDTO>();
+        /// <summary>
+        /// NestoAPI#532 (Carlos 29/10/26): les tocaría, pero su vendedor de peluquería está en
+        /// RecordatorioReposicionExcluirVendedoresPeluqueria: no se les escribe ni van al grupo de control.
+        /// </summary>
+        public List<RecordatorioReposicionClienteDTO> FueraPorVendedorPeluqueria { get; set; } = new List<RecordatorioReposicionClienteDTO>();
         /// <summary>Grupo de control con el vendedor en la lista: no se les escribe, pero se registran para medir.</summary>
         public List<RecordatorioReposicionClienteDTO> Control { get; set; } = new List<RecordatorioReposicionClienteDTO>();
         /// <summary>Activo: los que han salido de verdad.</summary>
@@ -19,6 +24,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public List<RecordatorioReposicionClienteDTO> Fallidos { get; set; } = new List<RecordatorioReposicionClienteDTO>();
         /// <summary>Vendedores de la lista tal como se han leído («(NULL)» = cliente sin vendedor).</summary>
         public List<string> Vendedores { get; set; } = new List<string>();
+        /// <summary>Vendedores de peluquería excluidos tal como se han leído (sin fila: «IF»).</summary>
+        public List<string> VendedoresPeluqueriaExcluidos { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -28,6 +35,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// <item>Un correo cada <see cref="DIAS_ENTRE_CORREOS"/> días como mucho por cliente → fuera entero esta semana.</item>
     /// <item>Un recordatorio por producto hasta que lo vuelva a comprar: si ya se le recordó (o se le apuntó en el grupo de
     /// control) y no lo ha comprado desde entonces, ese producto sale del correo; si no queda ninguno, el cliente entero.</item>
+    /// <item>Vendedor de peluquería: si está en RecordatorioReposicionExcluirVendedoresPeluqueria, fuera (ni correo ni control).</item>
     /// <item>Vendedor: solo los clientes cuyo vendedor esté en la lista; el resto, como hasta ahora (no se les escribe).</item>
     /// </list>
     /// Lo mismo para el grupo de control, para que la comparación sea con clientes iguales.
@@ -36,6 +44,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     {
         public const string SIN_VENDEDOR = "(NULL)";
         public const int DIAS_ENTRE_CORREOS = 14;
+
+        /// <summary>Carlos (29/10/26): «Los que tengan vendedor de peluquería IF, mejor que de momento no salgan.»</summary>
+        public const string VENDEDORES_PELUQUERIA_EXCLUIDOS_POR_DEFECTO = "IF";
 
         public const string MOTIVO_BAJA = "Ha pedido no recibir estos avisos (CorreosPostCompraBajas, de todo o del recordatorio de reposición).";
         public const string MOTIVO_CORREO_RECIENTE = "Ya se le escribió hace menos de 14 días: ";
@@ -60,10 +71,33 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             return vendedores.Contains(clave);
         }
 
+        /// <summary>
+        /// NestoAPI#532: vendedores de peluquería excluidos. Null (sin fila o error al leer): «IF». Vacío: ninguno.
+        /// </summary>
+        public static List<string> LeerVendedoresPeluqueriaExcluidos(string valor)
+            => LeerVendedores(valor ?? VENDEDORES_PELUQUERIA_EXCLUIDOS_POR_DEFECTO);
+
+        /// <summary>
+        /// NestoAPI#532: true si el vendedor de peluquería del cliente está en la lista de excluidos. Sin vendedor de
+        /// peluquería, nunca (aquí «(NULL)» no significa nada: el cliente sigue la regla del de estética).
+        /// Solo para el correo semanal (Carlos 29/10/26): la push de #662 sigue llegando a todo el que tiene la app.
+        /// </summary>
+        public static bool ExcluidoPorVendedorPeluqueria(string vendedorPeluqueria, IReadOnlyCollection<string> excluidos)
+            => !string.IsNullOrWhiteSpace(vendedorPeluqueria)
+                && excluidos != null
+                && excluidos.Contains(vendedorPeluqueria.Trim().ToUpperInvariant());
+
+        /// <param name="vendedoresPeluqueriaExcluidosCsv">RecordatorioReposicionExcluirVendedoresPeluqueria tal cual: null (sin
+        /// fila) = «IF»; vacío = ninguno.</param>
         public static PlanRecordatorioReposicionDTO Planificar(ResultadoRecordatorioReposicionDTO resultado, string vendedoresCsv,
-            BajasCorreosPostCompra bajas, IReadOnlyCollection<EnvioPrevioReposicion> envios, DateTime hoy)
+            BajasCorreosPostCompra bajas, IReadOnlyCollection<EnvioPrevioReposicion> envios, DateTime hoy,
+            string vendedoresPeluqueriaExcluidosCsv = null)
         {
-            var plan = new PlanRecordatorioReposicionDTO { Vendedores = LeerVendedores(vendedoresCsv) };
+            var plan = new PlanRecordatorioReposicionDTO
+            {
+                Vendedores = LeerVendedores(vendedoresCsv),
+                VendedoresPeluqueriaExcluidos = LeerVendedoresPeluqueriaExcluidos(vendedoresPeluqueriaExcluidosCsv)
+            };
             if (resultado == null)
             {
                 return plan;
@@ -84,7 +118,15 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
             foreach (RecordatorioReposicionClienteDTO correo in resultado.SeAvisarian)
             {
-                if (Filtrar(correo, resultado, bajas, ultimoCorreo, ultimoRecordatorio, limiteCorreo))
+                if (!Filtrar(correo, resultado, bajas, ultimoCorreo, ultimoRecordatorio, limiteCorreo))
+                {
+                    continue;
+                }
+                if (ExcluidoPorVendedorPeluqueria(correo.VendedorPeluqueria, plan.VendedoresPeluqueriaExcluidos))
+                {
+                    plan.FueraPorVendedorPeluqueria.Add(correo);
+                }
+                else
                 {
                     (VendedorEnLista(correo.Vendedor, plan.Vendedores) ? plan.Enviar : plan.FueraPorVendedor).Add(correo);
                 }
@@ -92,6 +134,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             foreach (RecordatorioReposicionClienteDTO correo in resultado.GrupoControl)
             {
                 if (VendedorEnLista(correo.Vendedor, plan.Vendedores)
+                    && !ExcluidoPorVendedorPeluqueria(correo.VendedorPeluqueria, plan.VendedoresPeluqueriaExcluidos)
                     && Filtrar(correo, resultado, bajas, ultimoCorreo, ultimoRecordatorio, limiteCorreo))
                 {
                     plan.Control.Add(correo);

@@ -259,8 +259,8 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
                 });
 
         /// <summary>
-        /// Ficha principal, correo (el primero no vacío de sus personas de contacto, como #74) y nombre
-        /// del vendedor. Por lotes para que el IN no se dispare.
+        /// Ficha principal, correo (el primero no vacío de sus personas de contacto, como #74), nombre
+        /// del vendedor y vendedor de peluquería (subconsulta en la misma consulta del lote). Por lotes para que el IN no se dispare.
         /// </summary>
         private async Task<Dictionary<string, ClienteReposicion>> LeerClientes(string empresa, List<string> ids)
         {
@@ -277,6 +277,12 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
                         c.Nombre,
                         c.Estado,
                         c.Vendedor,
+                        // NestoAPI#532: el de peluquería, del contacto principal (como RepositorioSugerenciasProductos)
+                        VendedorPeluqueria = db.VendedoresClientesGruposProductos
+                            .Where(v => v.Empresa == c.Empresa && v.Cliente == c.Nº_Cliente && v.Contacto == c.Contacto
+                                && v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA)
+                            .Select(v => v.Vendedor)
+                            .FirstOrDefault(),
                         VendedorNombre = db.Vendedores
                             .Where(v => v.Empresa == c.Empresa && v.Número == c.Vendedor)
                             .Select(v => v.Descripción)
@@ -309,6 +315,7 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
                         Estado = ficha.Estado ?? 0,
                         Vendedor = ficha.Vendedor?.Trim(),
                         VendedorNombre = ficha.VendedorNombre?.Trim(),
+                        VendedorPeluqueria = string.IsNullOrWhiteSpace(ficha.VendedorPeluqueria) ? null : ficha.VendedorPeluqueria.Trim(),
                         Email = correoPorCliente.TryGetValue(id, out string email) ? email : null
                     };
                 }

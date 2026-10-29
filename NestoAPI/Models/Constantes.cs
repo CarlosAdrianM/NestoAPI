@@ -919,6 +919,14 @@ namespace NestoAPI.Models
             public const string RECORDATORIO_REPOSICION_VENDEDORES = "RecordatorioReposicionVendedores";
 
             /// <summary>
+            /// NestoAPI#532 (Carlos 29/10/26): vendedores de PELUQUERÍA (CSV, VendedoresClienteGrupoProducto con grupo PEL
+            /// del contacto principal) cuyos clientes NO reciben el CORREO del recordatorio de reposición (la push de #662
+            /// no se toca: sigue llegando a todo el que tiene la app), aunque su vendedor de estética esté en <see cref="RECORDATORIO_REPOSICION_VENDEDORES"/>. Sin fila (o si
+            /// falla la lectura): «IF». Con la fila vacía: no se excluye a nadie.
+            /// </summary>
+            public const string RECORDATORIO_REPOSICION_EXCLUIR_VENDEDORES_PELUQUERIA = "RecordatorioReposicionExcluirVendedoresPeluqueria";
+
+            /// <summary>
             /// NestoAPI#532: lista blanca de grupos/subgrupos consumibles del recordatorio de reposición
             /// (formato en ConsumiblesReposicion: "COS, -COS/MMP, PEL/TIN"...). Sin fila, la de por defecto.
             /// </summary>
