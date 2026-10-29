@@ -65,6 +65,13 @@ namespace NestoAPI.Controllers
                         "Este pago ya fue completado correctamente. No es necesario volver a pagar.");
                 }
 
+                // NestoAPI#734: Administración lo ha anulado (el pedido sale con reembolso): ya no se puede pagar.
+                if (pago.Tipo?.Trim() == Constantes.TiposPagoTPV.TPV_VIRTUAL && Infraestructure.Pagos.EnlacesPagoPedido.EstaAnulado(pago.Estado))
+                {
+                    return GenerarPaginaError("Enlace de pago anulado",
+                        "Este enlace de pago se ha anulado y ya no se puede pagar. Si tiene alguna duda, contacte con Nueva Visión.");
+                }
+
                 if (pago.Estado == Constantes.EstadosPagoTPV.DENEGADO)
                 {
                     var pagoRegenerado = await db.PagosTPV

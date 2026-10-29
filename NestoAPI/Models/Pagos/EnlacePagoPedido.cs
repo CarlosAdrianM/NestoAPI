@@ -16,6 +16,8 @@ namespace NestoAPI.Models.Pagos
         public DateTime FechaCreacion { get; set; }
         public DateTime? FechaActualizacion { get; set; }
         public string Usuario { get; set; }
+        /// <summary>NestoAPI#734: el concepto del enlace («Pago pedido 928521 de Nueva Visión»), para que Administración sepa de qué es.</summary>
+        public string Descripcion { get; set; }
     }
 
     /// <summary>NestoAPI#679: un aviso al crear un enlace de pago (no bloquea: el enlace ya está creado).</summary>

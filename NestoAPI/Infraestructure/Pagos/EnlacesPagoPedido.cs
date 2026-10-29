@@ -55,6 +55,13 @@ namespace NestoAPI.Infraestructure.Pagos
         public static bool EstaAutorizado(EnlacePagoPedido enlace)
             => string.Equals(enlace?.Estado?.Trim(), Constantes.EstadosPagoTPV.AUTORIZADO, StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// NestoAPI#734: un enlace anulado (Administración decide que el pedido sale con reembolso y anula sus enlaces). La página
+        /// de pago ya no deja pagarlo.
+        /// </summary>
+        public static bool EstaAnulado(string estado)
+            => string.Equals(estado?.Trim(), Constantes.EstadosPagoTPV.CANCELADO, StringComparison.OrdinalIgnoreCase);
+
         public static bool EstaPendiente(EnlacePagoPedido enlace)
             => string.Equals(enlace?.Estado?.Trim(), Constantes.EstadosPagoTPV.PENDIENTE, StringComparison.OrdinalIgnoreCase);
 
@@ -193,7 +200,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     Estado = p.Estado?.Trim(),
                     FechaCreacion = p.FechaCreacion,
                     FechaActualizacion = p.FechaActualizacion,
-                    Usuario = p.Usuario?.Trim()
+                    Usuario = p.Usuario?.Trim(),
+                    Descripcion = p.Descripcion?.Trim()
                 })
                 .ToList();
         }

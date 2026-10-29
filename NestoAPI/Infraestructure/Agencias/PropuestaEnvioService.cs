@@ -16,6 +16,7 @@ using NestoAPI.Models.Agencias;
 using NestoAPI.Models.Pagos;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.PreparacionAlmacen;
+using TextosConsultaReembolso = NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso.TextosConsultaReembolso;
 
 namespace NestoAPI.Infraestructure.Agencias
 {
@@ -75,10 +76,13 @@ namespace NestoAPI.Infraestructure.Agencias
         private static readonly RegistroAgencias _perfiles = RegistroAgencias.PorReflexionSinPuerta();
 
         private readonly IDatosPropuestaEnvio datos;
+        private readonly Func<string, int, Task<ConsultaReembolsoDTO>> leerConsultaReembolso;
 
-        public PropuestaEnvioService(IDatosPropuestaEnvio datos)
+        /// <param name="leerConsultaReembolso">NestoAPI#734: la última consulta de reembolso del pedido (null = no se mira).</param>
+        public PropuestaEnvioService(IDatosPropuestaEnvio datos, Func<string, int, Task<ConsultaReembolsoDTO>> leerConsultaReembolso = null)
         {
             this.datos = datos;
+            this.leerConsultaReembolso = leerConsultaReembolso;
         }
 
         public async Task<PropuestaEnvioDTO> Calcular(string empresa, int pedido, short? bultos, decimal? peso, int? excluirEnvio = null)
@@ -109,7 +113,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 Peso = pesoPropuesto,
                 PrepagosPendientes = prepagos,
                 EnlacesPagoAutorizados = EnlacesPagoPedido.ImporteAutorizado(enlaces),
-                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now)
+                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now),
+                // NestoAPI#734: si se ha consultado a Administración, qué dijo (best-effort: sin ella, como antes).
+                ConsultaReembolso = await LeerConsultaReembolso(empresa, pedido).ConfigureAwait(false)
             };
 
             List<AgenciaTransporte> agencias = await datos.LeerAgencias().ConfigureAwait(false) ?? new List<AgenciaTransporte>();
@@ -127,6 +133,13 @@ namespace NestoAPI.Infraestructure.Agencias
                 EnviosAgencia ampliacion = await datos.LeerEnvioAmpliacion(pedidoAgencia.Cliente, pedidoAgencia.Contacto,
                     direccionFicha, excluirEnvio).ConfigureAwait(false);
                 await RellenarNuevoOAmpliacion(propuesta, pedidoAgencia, ficha, ampliacion, empresa, reembolsoPedido, agencias).ConfigureAwait(false);
+            }
+
+            // NestoAPI#734: Administración dijo «sin reembolso». Un envío pendiente (tienda online, NestoApp) trae su propio reembolso,
+            // que no ha viajado a ninguna agencia: se propone sin él. Uno nuevo ya sale a 0 porque la forma de pago se cambió.
+            if (propuesta.ConsultaReembolso?.ConReembolso == false && propuesta.Origen == PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO)
+            {
+                propuesta.Reembolso = 0m;
             }
 
             propuesta.AgenciaNombre = agencias.FirstOrDefault(a => a.Numero == propuesta.Agencia)?.Nombre?.Trim();
@@ -318,7 +331,7 @@ namespace NestoAPI.Infraestructure.Agencias
         {
             CodigosAvisoPropuestaEnvio.DIRECCION_PROPIA, CodigosAvisoPropuestaEnvio.PREPAGOS,
             CodigosAvisoPropuestaEnvio.DIMENSIONES, CodigosAvisoPropuestaEnvio.SIN_AGENCIA,
-            CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE
+            CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE, CodigosAvisoPropuestaEnvio.CONSULTA_REEMBOLSO_ABIERTA
         };
 
         /// <summary>
@@ -358,11 +371,19 @@ namespace NestoAPI.Infraestructure.Agencias
                 Avisar(propuesta, CodigosAvisoPropuestaEnvio.PREPAGOS, TiposAvisoPropuestaEnvio.ELEGIR, string.Format(Espanol, "El pedido tiene {0:C} pagados por adelantado{2}. El reembolso propuesto ({1:C}) no los descuenta.",
                     propuesta.PrepagosPendientes, propuesta.Reembolso, conEnlace));
             }
-            // NestoAPI#679 (pedido 928521): con un enlace de pago sin pagar, ¿seguro que sale contra reembolso?
-            if (propuesta.Reembolso > 0m && propuesta.EnlacesPagoPendientes != null && propuesta.EnlacesPagoPendientes.Count > 0)
+            // NestoAPI#734: consultado a Administración y sin contestar: el pedido está retenido hasta que contesten.
+            if (propuesta.ConsultaReembolso?.Abierta == true)
+            {
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.CONSULTA_REEMBOLSO_ABIERTA, TiposAvisoPropuestaEnvio.BLOQUEANTE,
+                    TextosConsultaReembolso.AvisoPropuestaAbierta(propuesta.ConsultaReembolso));
+            }
+            // NestoAPI#679 (pedido 928521): con un enlace de pago sin pagar, ¿seguro que sale contra reembolso? NestoAPI#734: el
+            // cliente puede ofrecer «Retener y consultar a Administración»; si Administración ya decidió, no se vuelve a avisar.
+            else if (propuesta.Reembolso > 0m && propuesta.EnlacesPagoPendientes != null && propuesta.EnlacesPagoPendientes.Count > 0
+                && !DecisionCubreLosEnlaces(propuesta.ConsultaReembolso, propuesta.EnlacesPagoPendientes))
             {
                 Avisar(propuesta, CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE, TiposAvisoPropuestaEnvio.CONFIRMAR,
-                    EnlacesPagoPedido.TextoAvisoPendientes(propuesta.EnlacesPagoPendientes));
+                    EnlacesPagoPedido.TextoAvisoPendientes(propuesta.EnlacesPagoPendientes), AccionesAvisoPropuestaEnvio.CONSULTAR_ADMINISTRACION);
             }
             // VB 2110-2124 (Nesto#367): Canteras (DimensionesBultosObligatorias) pide las dimensiones al imprimir.
             if (propuesta.Agencia == Constantes.Agencias.AGENCIA_CANTERAS)
@@ -377,10 +398,41 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>NestoAPI#595 (slice 2, 20/10/26): el aviso va a Avisos (el texto, como siempre) y a AvisosDetalle.</summary>
-        private static void Avisar(PropuestaEnvioDTO propuesta, string codigo, string tipo, string texto)
+        private static void Avisar(PropuestaEnvioDTO propuesta, string codigo, string tipo, string texto, string accion = null)
         {
             propuesta.Avisos.Add(texto);
-            propuesta.AvisosDetalle.Add(new AvisoPropuestaEnvio { Codigo = codigo, Texto = texto, Tipo = tipo });
+            propuesta.AvisosDetalle.Add(new AvisoPropuestaEnvio { Codigo = codigo, Texto = texto, Tipo = tipo, Accion = accion });
+        }
+
+        /// <summary>
+        /// NestoAPI#734: Administración ya contestó y los enlaces pendientes son los que había entonces. Un enlace enviado
+        /// DESPUÉS de la respuesta es una situación nueva: se vuelve a avisar.
+        /// </summary>
+        internal static bool DecisionCubreLosEnlaces(ConsultaReembolsoDTO consulta, IEnumerable<EnlacePagoPedido> pendientes)
+        {
+            if (consulta == null || !consulta.Respondida.HasValue)
+            {
+                return false;
+            }
+            DateTime respondida = consulta.Respondida.Value;
+            return (pendientes ?? Enumerable.Empty<EnlacePagoPedido>()).All(e => e.FechaCreacion <= respondida);
+        }
+
+        private async Task<ConsultaReembolsoDTO> LeerConsultaReembolso(string empresa, int pedido)
+        {
+            if (leerConsultaReembolso == null)
+            {
+                return null;
+            }
+            try
+            {
+                return await leerConsultaReembolso(empresa, pedido).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudo leer la consulta de reembolso (#734). {ex.Message}", ex));
+                return null;
+            }
         }
 
         // ---------------------------------------------------------------- piezas

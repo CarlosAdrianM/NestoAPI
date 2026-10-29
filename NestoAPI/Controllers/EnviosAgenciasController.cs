@@ -311,7 +311,9 @@ namespace NestoAPI.Controllers
         private IPropuestaEnvioService propuestaEnvio;
         internal IPropuestaEnvioService PropuestaEnvio
         {
-            get => propuestaEnvio ?? (propuestaEnvio = new PropuestaEnvioService(new DatosPropuestaEnvioEF(db, () => ServicioPedidosVenta)));
+            // NestoAPI#734: con la última consulta de reembolso a Administración (sin la tabla, null: como antes).
+            get => propuestaEnvio ?? (propuestaEnvio = new PropuestaEnvioService(new DatosPropuestaEnvioEF(db, () => ServicioPedidosVenta),
+                (empresa, pedido) => new Infraestructure.PedidosVenta.ConsultaReembolso.RepositorioConsultasReembolso().LeerUltima(empresa, pedido)));
             set => propuestaEnvio = value;
         }
 
