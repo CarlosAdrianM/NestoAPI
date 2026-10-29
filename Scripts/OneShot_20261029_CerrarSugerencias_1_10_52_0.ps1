@@ -21,8 +21,8 @@ function Contestar($novedad, $texto) {
 
 if ($Ariadna222) {
     Implementar 872 ${VersionAriadna} "Mejorado" "Almacén" "Salidas y Entradas: filtro por tipo" `
-        "En Salidas y en Entradas de Ariadna hay un selector de tipo (F3) para ver solo los pickings, solo los packings, solo las reposiciones o todo junto. Ariadna recuerda lo que eligió en cada pantalla. Lo pidió Pedro."
-    Contestar 872 "@Pedro, ya está en Ariadna ${VersionAriadna}, que les llega sola por Play Store: en Salidas y en Entradas puede elegir el tipo (F3) y ver solo pickings, solo packings o todo junto. Ariadna se acuerda de lo que eligió. ¿Es lo que necesitaba?"
+        "En Salidas y en Entradas de Ariadna hay un selector de tipo (F3, o en el menú «⋯» de abajo a la derecha) para ver solo los pickings, solo los packings, solo las reposiciones o todo junto. Ariadna recuerda lo que eligió en cada pantalla. Lo pidió Pedro."
+    Contestar 872 "@Pedro, ya está en Ariadna ${VersionAriadna}, que les llega sola por Play Store: en Salidas y en Entradas puede elegir el tipo con F3 o en el menú «⋯» (tecla TAB) y ver solo pickings, solo packings o todo junto. Ariadna se acuerda de lo que eligió. ¿Es lo que necesitaba?"
     Implementar 873 ${VersionAriadna} "Nuevo" "Almacén" "Histórico de pickings y packings" `
         "En Salidas de Ariadna, F6 abre el histórico (para quien tiene permiso): pickings y packings de un rango de fechas (ayer y hoy por defecto, hasta 31 días), por pedido o por producto, con quién recogió cada línea, qué faltó, y el contenido y la foto de cada caja. Lo pidió Andre."
     Contestar 873 "@Andre @Alfredo @Santiago, ya está en Ariadna ${VersionAriadna}: en Salidas, F6 abre el histórico de pickings y packings. Puede buscar por fechas (hasta 31 días), por pedido o por producto, y ver quién recogió cada línea, qué faltó y el contenido y la foto de cada caja. De momento lo ven Alfredo y Santiago. Revísenlo y díganos aquí si le falta algo."
