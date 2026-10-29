@@ -948,6 +948,22 @@ namespace NestoAPI.Models
             public const string RECORDATORIO_REPOSICION_HORA_LIMITE = "RecordatorioReposicionHoraLimite";
 
             /// <summary>
+            /// NestoAPI#736: tope de días desde la última compra del recordatorio de reposición (correo y push): lo que pase de
+            /// ahí se queda fuera aunque toque por ritmo. Sin fila o ilegible: 240. «0» o vacío: sin tope.
+            /// </summary>
+            public const string RECORDATORIO_REPOSICION_TOPE_DIAS = "RecordatorioReposicionTopeDias";
+
+            /// <summary>
+            /// NestoAPI#736: puerta del correo del recordatorio de reposición con el modelo 1 de propensión (#671). «Apagado»:
+            /// no se puntúa. «Sombra» (sin fila o cualquier otro valor): se puntúa y se registra la P1 y si habría quedado
+            /// fuera, sin quitar nada. «Activo»: se quitan los de P1 menor que <see cref="RECORDATORIO_REPOSICION_UMBRAL_MODELO"/>.
+            /// </summary>
+            public const string RECORDATORIO_REPOSICION_PUERTA_MODELO = "RecordatorioReposicionPuertaModelo";
+
+            /// <summary>NestoAPI#736: umbral de P1 de la puerta del modelo («0,15» o «0.15»). Sin fila o ilegible: 0,15.</summary>
+            public const string RECORDATORIO_REPOSICION_UMBRAL_MODELO = "RecordatorioReposicionUmbralModelo";
+
+            /// <summary>
             /// NestoAPI#670: interruptor del job nocturno de las sugerencias de productos (pares «comprados juntos» y
             /// perfiles). Bajo «(defecto)». "Activo": calcula; sin fila o cualquier otro valor: no hace nada. El script
             /// Issue670_SugerenciasProductos.sql lo crea Activo.

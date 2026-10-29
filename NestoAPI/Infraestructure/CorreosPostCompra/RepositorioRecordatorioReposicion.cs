@@ -1,6 +1,7 @@
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Linq;
@@ -77,8 +78,16 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         Task<List<EnvioPrevioReposicion>> LeerEnviosDesde(string empresa, DateTime desde);
         /// <summary>Guarda el texto de la semana y devuelve su Id.</summary>
         Task<int> GuardarTexto(string empresa, DateTime semana, TextoRecordatorioReposicion texto);
-        /// <summary>Una fila por producto del correo.</summary>
+        /// <summary>
+        /// Una fila por producto del correo. NestoAPI#736: con las columnas del script Issue736, también la P1 del modelo y si
+        /// habría quedado fuera; sin ellas, como antes (no falla).
+        /// </summary>
         Task RegistrarEnvio(string empresa, RecordatorioReposicionClienteDTO correo, string grupo, DateTime fecha, int? textoId, string version);
+        /// <summary>
+        /// NestoAPI#736: los envíos (Enviado y Control) con Fecha en [desde, hasta) y las líneas de pedido de ese producto que ese
+        /// cliente hizo en los <paramref name="dias"/> días siguientes. Vacío si no existen las tablas.
+        /// </summary>
+        Task<List<FilaConversionReposicion>> LeerConversion(string empresa, DateTime desde, DateTime hasta, int dias);
     }
 
     /// <summary>
@@ -114,6 +123,43 @@ INSERT INTO dbo.RecordatoriosReposicionEnvios (Empresa, Cliente, Email, Vendedor
 VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ultimaCompra, @intervaloDias, @cantidadHabitual,
     @grupo, @fecha, @textoId, @version)";
 
+        /// <summary>NestoAPI#736: las columnas de la puerta del modelo (Scripts/Issue736_RecordatorioReposicionModelo.sql).</summary>
+        internal const string SQL_EXISTEN_COLUMNAS_MODELO = @"
+SELECT CAST(CASE WHEN COL_LENGTH('dbo.RecordatoriosReposicionEnvios', 'ProbabilidadModelo') IS NULL
+                   OR COL_LENGTH('dbo.RecordatoriosReposicionEnvios', 'FueraPorModelo') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        internal const string SQL_REGISTRAR_ENVIO_MODELO = @"
+INSERT INTO dbo.RecordatoriosReposicionEnvios (Empresa, Cliente, Email, Vendedor, Producto, NombreProducto, UltimaCompra,
+    IntervaloDias, CantidadHabitual, Grupo, Fecha, TextoId, VersionTexto, ProbabilidadModelo, FueraPorModelo)
+VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ultimaCompra, @intervaloDias, @cantidadHabitual,
+    @grupo, @fecha, @textoId, @version, @probabilidadModelo, @fueraPorModelo)";
+
+        /// <summary>
+        /// NestoAPI#736: cada envío con sus líneas de pedido de ese producto en la ventana (pedido con fecha desde el día del
+        /// envío, sin presupuestos: como #707). {0} y {1}: la P1 y FueraPorModelo, o NULL si aún no existen las columnas. El cruce
+        /// con LinPedidoVta va por cliente y producto (índices que empiezan por Nº Cliente o Producto) y con NOLOCK.
+        /// </summary>
+        internal static readonly string SQL_CONVERSION = @"
+SELECT e.Fecha, RTRIM(e.Cliente) AS Cliente, RTRIM(e.Producto) AS Producto, RTRIM(e.Grupo) AS Grupo,
+       CAST(e.UltimaCompra AS datetime) AS UltimaCompra, e.IntervaloDias,
+       {0} AS ProbabilidadModelo, {1} AS FueraPorModelo, ISNULL(c.Lineas, 0) AS Lineas
+FROM dbo.RecordatoriosReposicionEnvios e WITH (NOLOCK)
+OUTER APPLY (
+    SELECT COUNT(*) AS Lineas
+    FROM dbo.LinPedidoVta l WITH (NOLOCK)
+    INNER JOIN dbo.CabPedidoVta cab WITH (NOLOCK) ON cab.Empresa = l.Empresa AND cab.Número = l.Número
+    WHERE l.Empresa = e.Empresa AND l.[Nº Cliente] = e.Cliente AND l.Producto = e.Producto
+      AND l.TipoLinea = 1 AND l.Estado >= " + Constantes.EstadosLineaVenta.PENDIENTE + @" AND l.Cantidad > 0
+      AND cab.Fecha >= CAST(CAST(e.Fecha AS date) AS datetime)
+      AND cab.Fecha < DATEADD(day, @dias, CAST(CAST(e.Fecha AS date) AS datetime))
+) c
+WHERE e.Empresa = @empresa AND e.Fecha >= @desde AND e.Fecha < @hasta";
+
+        internal static string SqlConversion(bool conColumnasModelo)
+            => conColumnasModelo
+                ? string.Format(SQL_CONVERSION, "CAST(e.ProbabilidadModelo AS decimal(9, 6))", "e.FueraPorModelo")
+                : string.Format(SQL_CONVERSION, "CAST(NULL AS decimal(9, 6))", "CAST(NULL AS bit)");
+
         internal class FilaBaja
         {
             public string Cliente { get; set; }
@@ -122,6 +168,7 @@ VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ulti
         }
 
         private readonly NVEntities db;
+        private bool? columnasModelo;
 
         public RepositorioRecordatorioReposicionSql(NVEntities db)
         {
@@ -165,12 +212,31 @@ VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ulti
                     new SqlParameter("@motivoFija", Nulo(Recortar(texto.MotivoFija, 400))))
                 .FirstAsync().ConfigureAwait(false);
 
+        /// <summary>NestoAPI#736: si están las columnas de la puerta del modelo (una vez por instancia; si falla, como si no).</summary>
+        internal async Task<bool> ExistenColumnasModelo()
+        {
+            if (columnasModelo == null)
+            {
+                try
+                {
+                    columnasModelo = await db.Database.SqlQuery<bool>(SQL_EXISTEN_COLUMNAS_MODELO).FirstOrDefaultAsync().ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    columnasModelo = false;
+                }
+            }
+            return columnasModelo.Value;
+        }
+
         public async Task RegistrarEnvio(string empresa, RecordatorioReposicionClienteDTO correo, string grupo, DateTime fecha,
             int? textoId, string version)
         {
+            bool conModelo = await ExistenColumnasModelo().ConfigureAwait(false);
             foreach (CandidatoReposicionDTO producto in correo.Productos)
             {
-                _ = await db.Database.ExecuteSqlCommandAsync(SQL_REGISTRAR_ENVIO,
+                var parametros = new List<SqlParameter>
+                {
                     new SqlParameter("@empresa", empresa),
                     new SqlParameter("@cliente", correo.Cliente?.Trim()),
                     new SqlParameter("@email", Nulo(Recortar(correo.Email?.Trim(), 255))),
@@ -183,8 +249,41 @@ VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ulti
                     new SqlParameter("@grupo", grupo),
                     new SqlParameter("@fecha", fecha),
                     new SqlParameter("@textoId", (object)textoId ?? DBNull.Value),
-                    new SqlParameter("@version", version ?? TextoRecordatorioReposicion.VERSION_FIJA)).ConfigureAwait(false);
+                    new SqlParameter("@version", version ?? TextoRecordatorioReposicion.VERSION_FIJA)
+                };
+                if (conModelo)
+                {
+                    parametros.Add(new SqlParameter("@probabilidadModelo", SqlDbType.Decimal)
+                    {
+                        Precision = 6,
+                        Scale = 5,
+                        Value = producto.ProbabilidadModelo.HasValue
+                            ? (object)Math.Round((decimal)producto.ProbabilidadModelo.Value, 5, MidpointRounding.AwayFromZero)
+                            : DBNull.Value
+                    });
+                    parametros.Add(new SqlParameter("@fueraPorModelo", SqlDbType.Bit)
+                    {
+                        Value = producto.FueraPorModelo.HasValue ? (object)producto.FueraPorModelo.Value : DBNull.Value
+                    });
+                }
+                _ = await db.Database.ExecuteSqlCommandAsync(conModelo ? SQL_REGISTRAR_ENVIO_MODELO : SQL_REGISTRAR_ENVIO,
+                    parametros.Cast<object>().ToArray()).ConfigureAwait(false);
             }
+        }
+
+        public async Task<List<FilaConversionReposicion>> LeerConversion(string empresa, DateTime desde, DateTime hasta, int dias)
+        {
+            if (!await ExistenTablas().ConfigureAwait(false))
+            {
+                return new List<FilaConversionReposicion>();
+            }
+            bool conModelo = await ExistenColumnasModelo().ConfigureAwait(false);
+            return await db.Database.SqlQuery<FilaConversionReposicion>(SqlConversion(conModelo),
+                    new SqlParameter("@empresa", empresa),
+                    new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde },
+                    new SqlParameter("@hasta", SqlDbType.DateTime) { Value = hasta },
+                    new SqlParameter("@dias", SqlDbType.Int) { Value = dias })
+                .ToListAsync().ConfigureAwait(false);
         }
 
         private static object Nulo(string valor) => string.IsNullOrEmpty(valor) ? (object)DBNull.Value : valor;

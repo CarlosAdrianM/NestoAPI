@@ -1026,6 +1026,7 @@
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />
     <Compile Include="Controllers\SugerenciasProductosController.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\CalculadoraAfinidadProductos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\EntradasModelo1.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\CalculadoraParesCompradosJuntos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\InformeUsoSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\MotorSugerenciasProductos.cs" />
@@ -1369,6 +1370,10 @@
     <Compile Include="Infraestructure\CorreosPostCompra\CorreosPostCompraJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\GrupoControlPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\InformeConversionPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\InformeConversionRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\ParametrosRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\PuertaModeloRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\PuntuadorReposicionModelo.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\PuntuadorRecomendacionesPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RegistroRecomendacionesPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\CalculadoraReposicion.cs" />

@@ -87,11 +87,16 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
 
         private readonly NVEntities db;
         private readonly Func<IReadOnlyCollection<string>, ISet<string>> leerSinStock;
+        private readonly int? topeDias;
 
-        public SelectorRecordatoriosReposicion(NVEntities db, Func<IReadOnlyCollection<string>, ISet<string>> leerSinStock = null)
+        /// <param name="topeDias">NestoAPI#736: tope de días desde la última compra del recordatorio (correo y push), el de
+        /// <see cref="ParametrosRecordatorioReposicion.LeerTopeDias"/>. Null: sin tope. Los habituales de la app no lo usan.</param>
+        public SelectorRecordatoriosReposicion(NVEntities db, Func<IReadOnlyCollection<string>, ISet<string>> leerSinStock = null,
+            int? topeDias = null)
         {
             this.db = db;
             this.leerSinStock = leerSinStock ?? LeerSinStockBd;
+            this.topeDias = topeDias;
         }
 
         public async Task<ResultadoRecordatorioReposicionDTO> Calcular(string empresa, DateTime hoy, string consumibles = null)
@@ -159,6 +164,8 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
             ConsumiblesReposicion listaConsumibles = ConsumiblesReposicion.Leer(consumibles);
             List<CandidatoReposicionDTO> candidatos = CalculadoraReposicion.EvaluarPares(compras, pendientes, productos,
                 listaConsumibles, fechaHoy);
+            // NestoAPI#736: antes del stock (lo que se queda fuera por el tope no necesita mirarlo)
+            CalculadoraReposicion.AplicarTope(candidatos, topeDias);
 
             List<string> productosAvisables = candidatos.Where(c => c.SeAvisaria)
                 .Select(c => c.Producto).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -171,8 +178,10 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
                 .Select(c => c.Cliente).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             Dictionary<string, ClienteReposicion> clientes = await LeerClientes(empresa, clientesAvisables).ConfigureAwait(false);
 
-            return CalculadoraReposicion.Agrupar(candidatos, clientes, fechaHoy, listaConsumibles.Definicion,
-                exigirCorreo, porcentajeGrupoControl);
+            ResultadoRecordatorioReposicionDTO resultado = CalculadoraReposicion.Agrupar(candidatos, clientes, fechaHoy,
+                listaConsumibles.Definicion, exigirCorreo, porcentajeGrupoControl);
+            resultado.TopeDias = topeDias > 0 ? topeDias : null;
+            return resultado;
         }
 
         private static List<string> ProductosDe(IEnumerable<CompraDiaReposicion> compras, IEnumerable<LineaPendienteReposicion> pendientes)

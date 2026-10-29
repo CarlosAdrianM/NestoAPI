@@ -750,6 +750,7 @@
     <Compile Include="Infrastructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompraSaludosTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\CalculadoraReposicionTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionModeloTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionPushJobsServiceTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\ReglasEnvioRecordatorioReposicionTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\PreferenciasCorreoClienteTests.cs" />

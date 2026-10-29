@@ -1,8 +1,10 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.OpenAI;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -31,7 +33,7 @@ namespace NestoAPI.Controllers
         }
 
         /// <param name="crearSelector">Null: el de la BD.</param>
-        /// <param name="crearRepositorio">Solo se usa con <paramref name="crearSelector"/> (tests); sin selector, el de la BD.</param>
+        /// <param name="crearRepositorio">Solo se usa con <paramref name="crearSelector"/> (tests) y en la conversión (tests); sin él, el de la BD.</param>
         public RecordatorioReposicionController(Func<ISelectorRecordatoriosReposicion> crearSelector,
             ILectorParametrosUsuario lector, IServicioCorreoElectronico servicioCorreo,
             Func<IRepositorioRecordatorioReposicion> crearRepositorio = null,
@@ -65,7 +67,8 @@ namespace NestoAPI.Controllers
             }
             using (NVEntities db = NuevoContexto())
             {
-                return Ok(await new SelectorRecordatoriosReposicion(db).Calcular(empresa, hoy, consumibles).ConfigureAwait(false));
+                return Ok(await new SelectorRecordatoriosReposicion(db, topeDias: ParametrosRecordatorioReposicion.LeerTopeDias(lector))
+                    .Calcular(empresa, hoy, consumibles).ConfigureAwait(false));
             }
         }
 
@@ -94,10 +97,13 @@ namespace NestoAPI.Controllers
             {
                 using (NVEntities db = NuevoContexto())
                 {
-                    ResultadoRecordatorioReposicionDTO resultado = await new SelectorRecordatoriosReposicion(db)
+                    ResultadoRecordatorioReposicionDTO resultado = await new SelectorRecordatoriosReposicion(db,
+                            topeDias: ParametrosRecordatorioReposicion.LeerTopeDias(lector))
                         .Calcular(empresa, hoy, consumibles).ConfigureAwait(false);
+                    DependenciasRecordatorioReposicion dependencias = Dependencias(new RepositorioRecordatorioReposicionSql(db), hoy);
+                    dependencias.Puntuador = RecordatorioReposicionJobsService.CrearPuntuador(db);
                     ejecucion = await RecordatorioReposicionJobsService.Ejecutar(ModoRecordatorioReposicion.Sombra, resultado,
-                        Dependencias(new RepositorioRecordatorioReposicionSql(db), hoy)).ConfigureAwait(false);
+                        dependencias).ConfigureAwait(false);
                 }
             }
             return Ok(new
@@ -110,6 +116,53 @@ namespace NestoAPI.Controllers
                 Descartes = ejecucion.Resultado.Descartes.Count,
                 Texto = ejecucion.Texto.Version
             });
+        }
+
+        /// <summary>NestoAPI#736: hoy (para saber qué ventanas están cerradas). Para tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>
+        /// NestoAPI#736: ¿convierte el recordatorio de reposición? De cada producto recordado (Enviado) o apuntado en el grupo de
+        /// control (Control) desde <paramref name="desde"/> (por defecto, hace 6 meses), si el cliente volvió a pedir ese producto
+        /// en los <paramref name="dias"/> días siguientes (por defecto 30; pedidos desde el día del envío, sin presupuestos). Solo
+        /// cuentan los envíos con la ventana ya cerrada. Total y desglose por antigüedad de la última compra, por intervalo y por
+        /// P1 del modelo (si hay). Solo lectura. Solo Dirección e Informática.
+        /// GET api/CorreosPostCompra/Reposicion/Conversion?desde=2026-10-29&amp;dias=30
+        /// </summary>
+        [HttpGet]
+        [Route("Conversion")]
+        [ResponseType(typeof(InformeConversionReposicionDTO))]
+        public async Task<IHttpActionResult> GetConversion(DateTime? desde = null, int dias = InformeConversionRecordatorioReposicion.DIAS_VENTANA_POR_DEFECTO,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            if (dias < 1 || dias > InformeConversionRecordatorioReposicion.DIAS_VENTANA_MAXIMO)
+            {
+                return BadRequest($"Los días tienen que estar entre 1 y {InformeConversionRecordatorioReposicion.DIAS_VENTANA_MAXIMO}.");
+            }
+            DateTime hoy = Hoy().Date;
+            DateTime inicio = (desde ?? hoy.AddMonths(-InformeConversionRecordatorioReposicion.MESES_POR_DEFECTO)).Date;
+            DateTime fin = hoy.AddDays(1); // exclusivo; las de ventana abierta se cuentan aparte (EnviosEnCurso)
+            if (inicio >= fin)
+            {
+                return BadRequest("La fecha «desde» no puede ser posterior a hoy.");
+            }
+            List<FilaConversionReposicion> filas;
+            if (crearRepositorio != null)
+            {
+                filas = await crearRepositorio().LeerConversion(empresa, inicio, fin, dias).ConfigureAwait(false);
+            }
+            else
+            {
+                using (NVEntities db = NuevoContexto())
+                {
+                    filas = await new RepositorioRecordatorioReposicionSql(db).LeerConversion(empresa, inicio, fin, dias).ConfigureAwait(false);
+                }
+            }
+            return Ok(InformeConversionRecordatorioReposicion.Calcular(filas, inicio, dias, hoy));
         }
 
         private DependenciasRecordatorioReposicion Dependencias(IRepositorioRecordatorioReposicion repositorio, DateTime hoy)
