@@ -1544,7 +1544,7 @@ namespace NestoAPI.Infraestructure
             }
 
             ReportViewer viewer = new ReportViewer();
-            viewer.LocalReport.ReportPath = @"Models\Clientes\MandatoCoreSEPA.rdlc";
+            viewer.LocalReport.ReportPath = Informes.RutaInformeRdlc.Absoluta(@"Models\Clientes\MandatoCoreSEPA.rdlc");
             viewer.LocalReport.DataSources.Add(new ReportDataSource("MandatoDataSet", mandatos));
             viewer.LocalReport.EnableExternalImages = true;
 

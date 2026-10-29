@@ -619,6 +619,7 @@
     <Compile Include="Infrastructure\Facturas\DiagnosticoGastoSinCentroCosteTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\MotorAgrupacionPedidosTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\PersistenciaMovimientoLineasSqlTests.cs" />
+    <Compile Include="Infrastructure\Informes\RutaInformeRdlcTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\EstrategiaAgrupacionPOTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\ServicioAgruparPorPOTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\EstrategiaAgrupacionFinDeMesTests.cs" />

@@ -1,4 +1,4 @@
-using Microsoft.Reporting.WebForms;
+﻿using Microsoft.Reporting.WebForms;
 using NestoAPI.Models.Facturas;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,7 +15,7 @@ namespace NestoAPI.Infraestructure.Facturas
         public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             ReportViewer viewer = new ReportViewer();
-            viewer.LocalReport.ReportPath = facturas.FirstOrDefault().RutaInforme;
+            viewer.LocalReport.ReportPath = Informes.RutaInformeRdlc.Absoluta(facturas.FirstOrDefault().RutaInforme);
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Facturas", facturas));
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Direcciones", facturas.FirstOrDefault().Direcciones));
             viewer.LocalReport.DataSources.Add(new ReportDataSource("LineasFactura", facturas.FirstOrDefault().Lineas));

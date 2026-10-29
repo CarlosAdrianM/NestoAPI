@@ -1224,6 +1224,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfPacking.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfUbicacionesInventario.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfMandatoSepa.cs" />
+    <Compile Include="Infraestructure\Informes\RutaInformeRdlc.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfManifiestoAgencia.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfBalance.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfRemesa.cs" />
