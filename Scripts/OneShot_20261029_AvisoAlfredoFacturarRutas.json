@@ -1,0 +1,7 @@
+[
+  {
+    "novedad": 840,
+    "contestados": [],
+    "texto": "Hola, @Alfredo. Esta mañana a las 09:18 Facturar rutas le dio error en 7 pedidos (928586, 929179, 929362, 929441, 929479, 929552 y 929554) por un fallo nuestro de ayer en la agrupación por P.O.: el primer grupo completo (los 6 pedidos de Chanel) rompía el proceso para todo lo que venía detrás. Ya está corregido y publicado, y Chanel ha quedado en una sola factura (NV2617512). Puede volver a lanzar Facturar rutas cuando quiera: los tres pedidos que ya tienen albarán de las 09:18 se facturan sobre ese albarán y las tres notas de entrega se crean ahora. El 928217 es otra cosa (líneas de picking sin ubicación reservada, como el 22/10 con el 45921): lo estamos mirando aparte. Perdone las molestias."
+  }
+]

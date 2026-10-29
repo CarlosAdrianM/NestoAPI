@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PedidosVenta;
+﻿using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -47,6 +47,19 @@ namespace NestoAPI.Infraestructure.Traspasos
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.servicioPedidos = servicioPedidos ?? throw new ArgumentNullException(nameof(servicioPedidos));
         }
+
+        /// <summary>
+        /// NestoAPI#733 (Carlos, 29/10/26): solo pasan a la empresa espejo las líneas ya albaraneadas (Estado >= 2), como se ha
+        /// hecho siempre: lo pendiente se queda en la empresa 1 con su cabecera (el stock y las reservas de hueco viven en la 1)
+        /// y se traspasa cuando se sirva. Antes se movían TODAS las líneas y la segunda entrega quedaba en la 3, donde no se
+        /// puede albaranear (928217: «sin ubicacion reservada» y luego «Fecha no permitida»).
+        /// </summary>
+        internal const string SQL_MOVER_LINEAS_ALBARANEADAS =
+            @"UPDATE LinPedidoVta
+              SET Empresa = @EmpresaDestino
+              WHERE Empresa = @EmpresaOrigen
+                AND Número = @NumeroPedido
+                AND Estado >= 2";
 
         /// <summary>
         /// Determina si un pedido debe ser traspasado a la empresa espejo.
@@ -223,7 +236,7 @@ namespace NestoAPI.Infraestructure.Traspasos
         /// - Usa parámetros SQL (protección contra inyección)
         /// - Deshabilita temporalmente FK para permitir UPDATE de PK
         /// - UPDATE directo permite cambiar PK sin problemas
-        /// - Funciona con líneas albaranadas (Estado >= 2) - no las elimina
+        /// - Solo mueve las líneas albaranadas (Estado >= 2); las pendientes se quedan en origen (NestoAPI#733)
         /// - Mantiene el mismo número de pedido
         /// - No hay riesgo de perder datos (UPDATE en lugar de INSERT + DELETE)
         /// - Todo dentro de una transacción - si falla, rollback automático
@@ -449,10 +462,7 @@ namespace NestoAPI.Infraestructure.Traspasos
                         int lineasMovidas = await ExecuteSqlCommandAsync(
                             connection,
                             transaction.UnderlyingTransaction,
-                            @"UPDATE LinPedidoVta
-                              SET Empresa = @EmpresaDestino
-                              WHERE Empresa = @EmpresaOrigen
-                                AND Número = @NumeroPedido",
+                            SQL_MOVER_LINEAS_ALBARANEADAS,
                             new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
                             new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
                             new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }

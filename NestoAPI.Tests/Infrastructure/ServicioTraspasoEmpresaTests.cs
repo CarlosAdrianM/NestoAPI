@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Traspasos;
@@ -276,6 +276,18 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        /// <summary>
+        /// NestoAPI#733 (regresión 928217, 29/10/26): al traspasar a la espejo solo viajan las líneas albaraneadas; las
+        /// pendientes se quedan en la empresa 1, donde están el stock y las reservas de hueco, para la siguiente entrega.
+        /// </summary>
+        [TestMethod]
+        public void SqlMoverLineas_SoloMueveLasAlbaraneadas()
+        {
+            string sql = System.Text.RegularExpressions.Regex.Replace(ServicioTraspasoEmpresa.SQL_MOVER_LINEAS_ALBARANEADAS, @"\s+", " ").Trim();
+
+            Assert.AreEqual("UPDATE LinPedidoVta SET Empresa = @EmpresaDestino WHERE Empresa = @EmpresaOrigen AND Número = @NumeroPedido AND Estado >= 2", sql);
+        }
 
         #region Recálculo de importes tras el traspaso
 
