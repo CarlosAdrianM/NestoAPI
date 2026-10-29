@@ -178,6 +178,62 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 .MustHaveHappenedOnceExactly();
         }
 
+        /// <summary>
+        /// NestoAPI#739: las agencias de siempre siguen contabilizando contra su CuentaReembolsos (la sobrecarga con cuenta
+        /// explícita es solo para el reparto propio, que cobra en la caja del repartidor).
+        /// </summary>
+        [TestMethod]
+        public async Task ContabilizarReembolsoAsync_SinCuentaExplicita_ContraLaCuentaReembolsosDeLaAgencia()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            IContabilidadService contabilidad = A.Fake<IContabilidadService>();
+            A.CallTo(() => contabilidad.ContabilizarDiario(db, "1", "_Reembolso", USUARIO)).Returns(1199547);
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, contabilidad, () => HOY);
+            EnviosAgencia envio = EnvioConReembolso();
+            envio.Cliente = Constantes.ClientesEspeciales.AMAZON;
+
+            _ = await servicio.ContabilizarReembolsoAsync(envio, USUARIO);
+
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(
+                    lineas => lineas.Single().Contrapartida == "5720000001")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ContabilizarReembolsoAsync_ConCuentaExplicita_ContraEsaCuentaAunqueLaAgenciaNoTenga()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            IContabilidadService contabilidad = A.Fake<IContabilidadService>();
+            A.CallTo(() => contabilidad.ContabilizarDiario(db, "1", "_Reembolso", USUARIO)).Returns(1199548);
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, contabilidad, () => HOY);
+            EnviosAgencia envio = EnvioConReembolso();
+            envio.Cliente = Constantes.ClientesEspeciales.AMAZON;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = 14, Nombre = "Reparto propio", CuentaReembolsos = null };
+
+            int asiento = await servicio.ContabilizarReembolsoAsync(envio, USUARIO, 80M, " 57000001 ");
+
+            Assert.AreEqual(1199548, asiento);
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(
+                    lineas => lineas.Single().Contrapartida == "57000001" && lineas.Single().Haber == 80M)))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ContabilizarReembolsoAsync_AgenciaSinCuentaYSinCuentaExplicita_NoContabiliza()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            IContabilidadService contabilidad = A.Fake<IContabilidadService>();
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, contabilidad, () => HOY);
+            EnviosAgencia envio = EnvioConReembolso();
+            envio.AgenciasTransporte.CuentaReembolsos = null;
+
+            _ = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => servicio.ContabilizarReembolsoAsync(envio, USUARIO));
+            _ = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => servicio.ContabilizarReembolsoAsync(envio, USUARIO, 10M, "  "));
+            A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>._, A<List<PreContabilidad>>._)).MustNotHaveHappened();
+        }
+
         // ===== Elección del movimiento a liquidar =====
 
         [TestMethod]

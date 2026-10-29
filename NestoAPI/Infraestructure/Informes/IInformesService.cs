@@ -12,6 +12,8 @@ namespace NestoAPI.Infraestructure.Informes
         Task<List<ControlPedidosDTO>> LeerControlPedidosAsync();
         Task<List<DetalleRapportsDTO>> LeerDetalleRapportsAsync(DateTime fechaDesde, DateTime fechaHasta, string listaVendedores);
         Task<List<ExtractoContableDTO>> LeerExtractoContableAsync(string empresa, string cuenta, DateTime fechaDesde, DateTime fechaHasta);
+        /// <summary>NestoAPI#739: el saldo (Debe − Haber) de la cuenta antes de esa fecha.</summary>
+        Task<decimal> LeerSaldoContableAnteriorAsync(string empresa, string cuenta, DateTime fecha);
         Task<List<UbicacionesInventarioDTO>> LeerUbicacionesInventarioAsync(string empresa);
         Task<List<KitsQueSePuedenMontarDTO>> LeerKitsQueSePuedenMontarAsync(string empresa, string fecha, string almacen, string filtroRutas);
         Task<List<MontarKitProductosDTO>> LeerMontarKitProductosAsync(int traspaso);

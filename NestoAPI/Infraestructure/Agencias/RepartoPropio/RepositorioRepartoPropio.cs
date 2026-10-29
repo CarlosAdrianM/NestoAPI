@@ -5,6 +5,7 @@ using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
 
@@ -17,9 +18,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     public class RepositorioRepartoPropio : IRepositorioRepartoPropio
     {
         public const string TABLA = "EnviosAgenciaPruebasEntrega";
+        /// <summary>Las columnas de la ampliación del 29/10/26 (caja del repartidor y cobro por enlace): van juntas en el script.</summary>
+        internal static readonly string[] COLUMNAS_COBRO = { "CuentaCaja", "PagoTPVId", "UrlPago" };
 
-        private const string COLUMNAS = "Id, EnvioId, ClaveIdempotencia, Tipo, FechaHora, Receptor, DniReceptor, CobroReembolso, ImporteCobrado, " +
+        private const string COLUMNAS_FIJAS = "Id, EnvioId, ClaveIdempotencia, Tipo, FechaHora, Receptor, DniReceptor, CobroReembolso, ImporteCobrado, " +
             "Motivo, Texto, Latitud, Longitud, Asiento, Usuario, FechaRegistro, CAST(CASE WHEN Firma IS NULL THEN 0 ELSE 1 END AS bit) AS TieneFirma";
+
+        // SqlQuery<PruebaEntregaReparto> exige una columna por propiedad: sin las columnas del cobro (script de antes), NULL.
+        private string COLUMNAS => COLUMNAS_FIJAS + (TieneColumnasCobro()
+            ? ", CuentaCaja, PagoTPVId, UrlPago"
+            : ", CAST(NULL AS varchar(15)) AS CuentaCaja, CAST(NULL AS int) AS PagoTPVId, CAST(NULL AS varchar(200)) AS UrlPago");
+
+        private bool TieneColumnasCobro() => ColumnasOpcionales.Existen(db, TABLA, COLUMNAS_COBRO);
 
         private readonly NVEntities db;
 
@@ -78,19 +88,30 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     if (importeAContabilizar.HasValue)
                     {
                         // La misma puerta que el reembolso de las agencias al tramitar (PreContabilidad + diario de reembolsos),
-                        // contra la cuenta de caja de la agencia 14.
+                        // contra la caja del repartidor que entrega (su CajaDefecto, que el servicio deja en la prueba), NO contra
+                        // la CuentaReembolsos de la agencia 14 (Carlos 29/10/26: con dos repartidores, cada uno en su caja).
+                        if (string.IsNullOrWhiteSpace(prueba.CuentaCaja))
+                        {
+                            throw new NestoBusinessException("No hay caja del repartidor contra la que contabilizar el reembolso.");
+                        }
                         asiento = await new TramitacionEnviosService(db)
-                            .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value)
+                            .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value, prueba.CuentaCaja)
                             .ConfigureAwait(false);
                     }
+                    else
+                    {
+                        prueba.CuentaCaja = null;
+                    }
                     prueba.Asiento = asiento > 0 ? asiento : (int?)null;
+                    bool conCobro = TieneColumnasCobro();
 
                     try
                     {
                         _ = await db.Database.ExecuteSqlCommandAsync(
                             $"INSERT INTO dbo.{TABLA} (EnvioId, ClaveIdempotencia, Tipo, FechaHora, Receptor, DniReceptor, Firma, CobroReembolso, " +
-                            "ImporteCobrado, Motivo, Texto, Latitud, Longitud, Asiento, Usuario, FechaRegistro) VALUES (@EnvioId, @Clave, @Tipo, " +
-                            "@FechaHora, @Receptor, @Dni, @Firma, @Cobro, @Importe, @Motivo, @Texto, @Latitud, @Longitud, @Asiento, @Usuario, @FechaRegistro)",
+                            "ImporteCobrado, Motivo, Texto, Latitud, Longitud, Asiento, Usuario, FechaRegistro" + (conCobro ? ", CuentaCaja, PagoTPVId, UrlPago" : string.Empty) +
+                            ") VALUES (@EnvioId, @Clave, @Tipo, @FechaHora, @Receptor, @Dni, @Firma, @Cobro, @Importe, @Motivo, @Texto, @Latitud, " +
+                            "@Longitud, @Asiento, @Usuario, @FechaRegistro" + (conCobro ? ", @CuentaCaja, @PagoTPVId, @UrlPago" : string.Empty) + ")",
                             Parametro("@EnvioId", SqlDbType.Int, prueba.EnvioId),
                             Parametro("@Clave", SqlDbType.UniqueIdentifier, prueba.ClaveIdempotencia),
                             Parametro("@Tipo", SqlDbType.VarChar, prueba.Tipo),
@@ -106,7 +127,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                             Parametro("@Longitud", SqlDbType.Decimal, prueba.Longitud),
                             Parametro("@Asiento", SqlDbType.Int, prueba.Asiento),
                             Parametro("@Usuario", SqlDbType.VarChar, Recortar(prueba.Usuario, 50)),
-                            Parametro("@FechaRegistro", SqlDbType.DateTime, prueba.FechaRegistro)).ConfigureAwait(false);
+                            Parametro("@FechaRegistro", SqlDbType.DateTime, prueba.FechaRegistro),
+                            // Sin las columnas estos parámetros sobran pero no molestan (no aparecen en el texto del INSERT).
+                            Parametro("@CuentaCaja", SqlDbType.VarChar, Recortar(prueba.CuentaCaja?.Trim(), 15)),
+                            Parametro("@PagoTPVId", SqlDbType.Int, prueba.PagoTPVId),
+                            Parametro("@UrlPago", SqlDbType.VarChar, Recortar(prueba.UrlPago, 200))).ConfigureAwait(false);
                     }
                     catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
                     {

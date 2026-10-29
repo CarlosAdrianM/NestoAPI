@@ -112,6 +112,7 @@ namespace NestoAPI.Infraestructure.Informes
                     Concepto,
                     Debe,
                     Haber,
+                    Asiento,
                     ISNULL((
                         SELECT SUM(Debe - Haber)
                         FROM Contabilidad
@@ -133,6 +134,29 @@ namespace NestoAPI.Infraestructure.Informes
                     new SqlParameter("@FechaHasta", SqlDbType.DateTime) { Value = fechaHasta })
                 .ToListAsync()
                 .ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// NestoAPI#739 (MisCobros del reparto propio): el saldo (Debe − Haber) de la cuenta antes de <paramref name="fecha"/>, el mismo
+        /// que suma <see cref="LeerExtractoContableAsync"/> como saldo inicial.
+        /// </summary>
+        public async Task<decimal> LeerSaldoContableAnteriorAsync(string empresa, string cuenta, DateTime fecha)
+        {
+            const string sql = @"
+                SELECT ISNULL(SUM(Debe - Haber), 0)
+                FROM Contabilidad
+                WHERE [Nº Cuenta] = @Cuenta
+                AND Fecha < @Fecha
+                AND Empresa = @Empresa";
+
+            List<decimal> saldo = await db.Database
+                .SqlQuery<decimal>(sql,
+                    new SqlParameter("@Empresa", SqlDbType.NVarChar) { Value = empresa },
+                    new SqlParameter("@Cuenta", SqlDbType.NVarChar) { Value = cuenta },
+                    new SqlParameter("@Fecha", SqlDbType.DateTime) { Value = fecha })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return saldo.FirstOrDefault();
         }
 
         public async Task<List<UbicacionesInventarioDTO>> LeerUbicacionesInventarioAsync(string empresa)

@@ -34,8 +34,23 @@ namespace NestoAPI.Controllers
         }
 
         internal RepartoPropioController(NVEntities db)
-            : this(db, new ServicioRepartoPropio(new RepositorioRepartoPropio(db), avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync))
+            : this(db, new ServicioRepartoPropio(new RepositorioRepartoPropio(db), avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
+                informes: () => new Infraestructure.Informes.InformesService(db)))
         {
+        }
+
+        // GET api/RepartoPropio/MisCobros?fecha=2026-10-29
+        /// <summary>El extracto del día de la caja del usuario (su CajaDefecto). Sin caja, 400.</summary>
+        [HttpGet]
+        [Route("MisCobros")]
+        [ResponseType(typeof(MisCobrosRepartoDTO))]
+        public async Task<IHttpActionResult> GetMisCobros(DateTime? fecha = null)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.MisCobros(fecha, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
         }
 
         internal RepartoPropioController(NVEntities db, ServicioRepartoPropio servicio)

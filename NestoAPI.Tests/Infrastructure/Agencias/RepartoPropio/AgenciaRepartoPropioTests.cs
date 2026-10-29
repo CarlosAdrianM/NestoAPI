@@ -332,6 +332,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
             RepartoPropioController sinPermiso = Controlador(Usuario("Tiendas"), repositorio);
             Assert.AreEqual(HttpStatusCode.Forbidden, await Estado(await sinPermiso.GetEnvios()));
+            Assert.AreEqual(HttpStatusCode.Forbidden, await Estado(await sinPermiso.GetMisCobros()));
             Assert.AreEqual(HttpStatusCode.Forbidden, await Estado(await sinPermiso.Entregar(251300, new EntregaRepartoDTO { ClaveIdempotencia = Guid.NewGuid() })));
             Assert.AreEqual(0, repositorio.Registros.Count);
 

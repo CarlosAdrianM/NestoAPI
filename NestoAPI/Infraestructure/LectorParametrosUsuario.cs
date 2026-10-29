@@ -11,5 +11,10 @@ namespace NestoAPI.Infraestructure
         {
             return ParametrosUsuarioController.LeerParametro(empresa, usuario, parametro);
         }
+
+        public string LeerParametroSinDefecto(string empresa, string usuario, string parametro)
+        {
+            return ParametrosUsuarioController.LeerParametroSinDefecto(empresa, usuario, parametro);
+        }
     }
 }

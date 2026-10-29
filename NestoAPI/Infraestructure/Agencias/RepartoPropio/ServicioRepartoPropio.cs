@@ -3,8 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Informes;
+using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
+using NestoAPI.Models.Informes;
+using NestoAPI.Models.Pagos;
 
 namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 {
@@ -65,13 +69,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// Entregar e incidentar cambian el estado del envío con la misma regla que el seguimiento de las agencias
     /// (<see cref="SeguimientoEnviosJobsService.AplicarSeguimiento"/>), quedan en EnviosHistoria y una incidencia nueva avisa a los
     /// comerciales como las de las agencias (#666). El reembolso del reparto propio se contabiliza AL ENTREGAR (lo cobrado, contra
-    /// la cuenta de caja de la agencia 14). La firma y el DNI solo van a EnviosAgenciaPruebasEntrega: nunca a ELMAH ni a los
+    /// la caja del usuario que entrega: su parámetro CajaDefecto, nunca la CuentaReembolsos de la agencia 14). La firma y el DNI solo van a EnviosAgenciaPruebasEntrega: nunca a ELMAH ni a los
     /// mensajes ni a la historia.
     /// </summary>
     public class ServicioRepartoPropio
     {
         public const string MENSAJE_FALTA_SCRIPT = "Falta lanzar el script Scripts/Issue739_RepartoPropio.sql (reparto propio): " +
             "hasta entonces no se pueden registrar entregas ni incidencias. Avise a Informática.";
+        public const string MENSAJE_SIN_CAJA = "No tiene caja asignada (parámetro CajaDefecto): pida a Administración que se la ponga " +
+            "para poder cobrar reembolsos.";
+        /// <summary>El mismo parámetro de usuario que usa Nesto en la ventana de Cajas (Parametros.Claves.CajaDefecto).</summary>
+        public const string PARAMETRO_CAJA = "CajaDefecto";
+        public const string MENSAJE_SIN_DATAFONO = "Sin datáfono: use Efectivo o Enlace.";
         internal const int DIAS_ATRAS_LISTA = 30;
         internal const int MAXIMO_RECEPTOR = 100;
         internal const int MAXIMO_DNI = 20;
@@ -91,18 +100,27 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         private static readonly string[] Cobros =
         {
-            PruebaEntregaReparto.COBRO_EFECTIVO, PruebaEntregaReparto.COBRO_TARJETA, PruebaEntregaReparto.COBRO_NO_COBRADO
+            PruebaEntregaReparto.COBRO_EFECTIVO, PruebaEntregaReparto.COBRO_ENLACE, PruebaEntregaReparto.COBRO_NO_COBRADO
         };
 
         private readonly IRepositorioRepartoPropio repositorio;
         private readonly Func<DateTime> ahora;
         private readonly Func<EnviosAgencia, Task> avisarIncidencia;
+        private readonly ILectorParametrosUsuario parametros;
+        private readonly Func<IServicioPagos> pagos;
+        private readonly Func<IInformesService> informes;
 
-        public ServicioRepartoPropio(IRepositorioRepartoPropio repositorio, Func<DateTime> ahora = null, Func<EnviosAgencia, Task> avisarIncidencia = null)
+        /// <param name="pagos">Los enlaces de pago (cobro por enlace): el mismo IniciarPago que el enlace que manda Nesto desde el pedido.</param>
+        /// <param name="informes">El extracto contable de la caja (MisCobros): el mismo que el de la ventana de Cajas de Nesto.</param>
+        public ServicioRepartoPropio(IRepositorioRepartoPropio repositorio, Func<DateTime> ahora = null, Func<EnviosAgencia, Task> avisarIncidencia = null,
+            ILectorParametrosUsuario parametros = null, Func<IServicioPagos> pagos = null, Func<IInformesService> informes = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.ahora = ahora ?? (() => DateTime.Now);
             this.avisarIncidencia = avisarIncidencia;
+            this.parametros = parametros ?? new LectorParametrosUsuario();
+            this.pagos = pagos ?? (() => new ServicioPagos(new RedsysService(), new global::NestoAPI.Infraestructure.Contabilidad.ContabilidadService(), new LectorParametrosUsuario()));
+            this.informes = informes ?? (() => new InformesService());
         }
 
         // ---------------------------------------------------------------- lecturas
@@ -177,6 +195,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 DniReceptor = prueba.DniReceptor,
                 CobroReembolso = prueba.CobroReembolso,
                 ImporteCobrado = prueba.ImporteCobrado,
+                CuentaCaja = prueba.CuentaCaja,
+                UrlPago = prueba.UrlPago,
                 Usuario = prueba.Usuario,
                 TieneFirma = prueba.TieneFirma,
                 Latitud = prueba.Latitud,
@@ -224,15 +244,32 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             string cobro = null;
             if (!string.IsNullOrWhiteSpace(peticion.CobroReembolso))
             {
+                if (string.Equals(peticion.CobroReembolso.Trim(), PruebaEntregaReparto.COBRO_TARJETA, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Invalido(MENSAJE_SIN_DATAFONO);
+                }
                 cobro = Cobros.FirstOrDefault(c => string.Equals(c, peticion.CobroReembolso.Trim(), StringComparison.OrdinalIgnoreCase));
                 if (cobro == null)
                 {
-                    return Invalido("El cobro del reembolso tiene que ser Efectivo, Tarjeta o NoCobrado.");
+                    return Invalido("El cobro del reembolso tiene que ser Efectivo, Enlace o NoCobrado.");
                 }
             }
             if (peticion.ImporteCobrado.HasValue && peticion.ImporteCobrado.Value < 0)
             {
                 return Invalido("El importe cobrado no puede ser negativo.");
+            }
+            string correoEnlace = null;
+            if (cobro == PruebaEntregaReparto.COBRO_ENLACE)
+            {
+                correoEnlace = Limpio(peticion.CorreoEnlace);
+                if (correoEnlace == null)
+                {
+                    return Invalido("Para cobrar por enlace indique el correo al que se manda el enlace de pago.");
+                }
+                if (!CorreoFacturacionTienda.EsCorreoValido(correoEnlace))
+                {
+                    return Invalido($"El correo «{correoEnlace}» no es válido: revíselo para mandar el enlace de pago.");
+                }
             }
             byte[] firma = null;
             if (!string.IsNullOrWhiteSpace(peticion.FirmaPng))
@@ -270,19 +307,51 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 cobro = PruebaEntregaReparto.COBRO_NO_COBRADO;
             }
-            bool cobrado = cobro == PruebaEntregaReparto.COBRO_EFECTIVO || cobro == PruebaEntregaReparto.COBRO_TARJETA;
+            bool efectivo = cobro == PruebaEntregaReparto.COBRO_EFECTIVO;
+            bool enlace = cobro == PruebaEntregaReparto.COBRO_ENLACE;
+            // Con enlace, ImporteCobrado es el importe del enlace (aún no cobrado: entra por la notificación de Redsys).
             decimal? importeCobrado = cobro == null ? peticion.ImporteCobrado
-                : cobrado ? peticion.ImporteCobrado ?? reembolso
+                : efectivo || enlace ? peticion.ImporteCobrado ?? reembolso
                 : 0m;
             decimal? aContabilizar = null;
-            if (cobrado && importeCobrado > 0 && MomentosContabilizarReembolso.De(envio.Agencia) == MomentoContabilizarReembolso.AlEntregar)
+            string cuentaCaja = null;
+            if (efectivo && importeCobrado > 0 && MomentosContabilizarReembolso.De(envio.Agencia) == MomentoContabilizarReembolso.AlEntregar)
             {
-                if (string.IsNullOrWhiteSpace(envio.AgenciasTransporte?.CuentaReembolsos))
+                // Carlos 29/10/26: la caja es del REPARTIDOR, no de la agencia (con dos repartidores, cada uno cobra en su caja).
+                cuentaCaja = CajaDelUsuario(usuario);
+                if (cuentaCaja == null)
                 {
-                    return Invalido("La agencia Reparto propio no tiene cuenta de caja (AgenciasTransporte.CuentaReembolsos): no se puede " +
-                        "contabilizar el reembolso cobrado. Avise a Administración para que la ponga y vuelva a enviar la entrega.");
+                    return Invalido(MENSAJE_SIN_CAJA);
                 }
                 aContabilizar = importeCobrado;
+            }
+            RespuestaIniciarPago pago = null;
+            if (enlace)
+            {
+                if (!(importeCobrado > 0))
+                {
+                    return Invalido("No hay importe para el enlace de pago: indique el importe a cobrar.");
+                }
+                // El mismo enlace que manda Nesto desde el pedido («Pago pedido N de Nueva Visión»): el concepto lleva el pedido
+                // (#679, EnlacesPagoPedido). Antes de tocar nada: si falla, el envío sigue como estaba. Un reintento con la misma
+                // clave ya registrada no llega aquí (YaRegistrada devuelve el enlace guardado).
+                try
+                {
+                    pago = await pagos().IniciarPago(new SolicitudPagoTPV
+                    {
+                        Empresa = envio.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        Cliente = envio.Cliente?.Trim(),
+                        Contacto = envio.Contacto?.Trim(),
+                        Importe = importeCobrado.Value,
+                        Descripcion = ConceptoEnlace(envio),
+                        Correo = correoEnlace,
+                        Vendedor = envio.Vendedor?.Trim()
+                    }, usuario).ConfigureAwait(false);
+                }
+                catch (ArgumentException ex)
+                {
+                    return Invalido($"No se ha podido crear el enlace de pago del envío {envio.Numero}: {ex.Message}");
+                }
             }
 
             DateTime fechaHora = peticion.FechaHora ?? ahora();
@@ -296,6 +365,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 DniReceptor = dni,
                 CobroReembolso = cobro,
                 ImporteCobrado = importeCobrado,
+                CuentaCaja = cuentaCaja,
+                PagoTPVId = pago?.IdPago,
+                UrlPago = pago?.UrlPaginaPago,
                 Texto = observaciones,
                 Latitud = peticion.Latitud,
                 Longitud = peticion.Longitud,
@@ -402,7 +474,64 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return resultado;
         }
 
+        // ---------------------------------------------------------------- mis cobros
+
+        /// <summary>
+        /// GET api/RepartoPropio/MisCobros: el extracto contable del día de la caja del usuario (su CajaDefecto), el mismo que el
+        /// de la ventana de Cajas de Nesto (api/Informes/ExtractoContable). Importe = Debe − Haber de la caja (positivo, entra).
+        /// </summary>
+        public async Task<ResultadoReparto<MisCobrosRepartoDTO>> MisCobros(DateTime? fecha, string usuario)
+        {
+            string cuenta = CajaDelUsuario(usuario);
+            if (cuenta == null)
+            {
+                return ResultadoReparto<MisCobrosRepartoDTO>.Mal(TipoResultadoReparto.Invalido, MENSAJE_SIN_CAJA);
+            }
+            DateTime dia = (fecha ?? ahora()).Date;
+            IInformesService servicioInformes = informes();
+            decimal saldoAnterior = await servicioInformes.LeerSaldoContableAnteriorAsync(Constantes.Empresas.EMPRESA_POR_DEFECTO, cuenta, dia)
+                .ConfigureAwait(false);
+            List<ExtractoContableDTO> lineas = await servicioInformes.LeerExtractoContableAsync(Constantes.Empresas.EMPRESA_POR_DEFECTO, cuenta, dia, dia)
+                .ConfigureAwait(false) ?? new List<ExtractoContableDTO>();
+            List<ApunteCajaRepartoDTO> apuntes = lineas
+                .OrderBy(l => l.Fecha).ThenBy(l => l.Id)
+                .Select(l => new ApunteCajaRepartoDTO
+                {
+                    Fecha = l.Fecha,
+                    Concepto = l.Concepto?.Trim(),
+                    Importe = l.Debe - l.Haber,
+                    Asiento = l.Asiento,
+                    Documento = l.Documento?.Trim()
+                })
+                .ToList();
+            decimal totalDia = apuntes.Sum(a => a.Importe);
+            return ResultadoReparto<MisCobrosRepartoDTO>.Bien(new MisCobrosRepartoDTO
+            {
+                Cuenta = cuenta,
+                Fecha = dia,
+                SaldoAnterior = saldoAnterior,
+                Apuntes = apuntes,
+                TotalDia = totalDia,
+                SaldoFinal = saldoAnterior + totalDia
+            });
+        }
+
         // ---------------------------------------------------------------- piezas
+
+        /// <summary>
+        /// La CajaDefecto del usuario (empresa 1, sin dominio), SOLO de su propia fila: la de «(defecto)» sería la caja de otro.
+        /// Null si no la tiene.
+        /// </summary>
+        private string CajaDelUsuario(string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            string sinDominio = usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+            string caja = parametros.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, sinDominio, PARAMETRO_CAJA)?.Trim();
+            return string.IsNullOrEmpty(caja) ? null : caja;
+        }
 
         private async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Registrar(PruebaEntregaReparto prueba, byte[] firma, EnviosAgencia envio,
             List<EnvioHistoria> historia, decimal? aContabilizar, string usuario, string estado)
@@ -423,7 +552,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 // La contabilización del reembolso (sin cuenta, sin diario...): nada se ha guardado.
                 return Invalido($"No se ha registrado la entrega del envío {envio.Numero}: {ex.Message}");
             }
-            return ResultadoReparto<EstadoEnvioRepartoDTO>.Bien(new EstadoEnvioRepartoDTO { EnvioId = envio.Numero, Estado = estado });
+            return ResultadoReparto<EstadoEnvioRepartoDTO>.Bien(new EstadoEnvioRepartoDTO { EnvioId = envio.Numero, Estado = estado, UrlPago = prueba.UrlPago });
         }
 
         /// <summary>Misma clave = misma respuesta; la clave de otro envío o de otra operación, 409. Null si la clave es nueva.</summary>
@@ -442,9 +571,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return ResultadoReparto<EstadoEnvioRepartoDTO>.Bien(new EstadoEnvioRepartoDTO
             {
                 EnvioId = envioId,
-                Estado = tipo == PruebaEntregaReparto.TIPO_ENTREGA ? EnvioRepartoDTO.ESTADO_ENTREGADO : EnvioRepartoDTO.ESTADO_INCIDENTADO
+                Estado = tipo == PruebaEntregaReparto.TIPO_ENTREGA ? EnvioRepartoDTO.ESTADO_ENTREGADO : EnvioRepartoDTO.ESTADO_INCIDENTADO,
+                // El enlace que ya se mandó: un reintento no crea otro.
+                UrlPago = previa.UrlPago
             });
         }
+
+        /// <summary>«Pago pedido 928000 de Nueva Visión», como el enlace que manda Nesto desde el pedido. Sin pedido, el envío.</summary>
+        internal static string ConceptoEnlace(EnviosAgencia envio)
+            => envio.Pedido.HasValue
+                ? $"Pago pedido {envio.Pedido.Value} de Nueva Visión"
+                : $"Pago envío {envio.Numero} de Nueva Visión";
 
         // Estado y detalle ANTERIORES (como CierreManualEnvio). Nunca la firma ni el DNI.
         private List<EnvioHistoria> Historia(EnviosAgencia envio, string observaciones, string usuario)
@@ -465,7 +602,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         private static string TextoCobro(string cobro, decimal? importe)
             => cobro == PruebaEntregaReparto.COBRO_NO_COBRADO ? "no cobrado"
-            : $"{cobro.ToLowerInvariant()} {(importe ?? 0m).ToString("N2", new System.Globalization.CultureInfo("es-ES"))} €";
+            : $"{(cobro == PruebaEntregaReparto.COBRO_ENLACE ? "enlace de pago enviado de" : cobro.ToLowerInvariant())} {(importe ?? 0m).ToString("N2", new System.Globalization.CultureInfo("es-ES"))} €";
 
         internal static string EstadoTexto(short estado)
         {
@@ -496,6 +633,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             dto.Poblacion = e.Poblacion?.Trim();
             dto.Telefono = e.Telefono?.Trim();
             dto.Movil = e.Movil?.Trim();
+            string correo = e.Email?.Trim();
+            dto.Correo = CorreoFacturacionTienda.EsCorreoValido(correo) ? correo : null;
             dto.Bultos = e.Bultos;
             dto.Reembolso = e.Reembolso > 0 ? e.Reembolso : 0m;
             dto.Estado = EstadoTexto(e.Estado);

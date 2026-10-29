@@ -172,18 +172,33 @@ namespace NestoAPI.Infraestructure.Agencias
         /// NestoAPI#739: lo mismo, por un importe distinto del reembolso del envío (lo que ha cobrado de verdad el repartidor del
         /// reparto propio). Null = el reembolso del envío, como siempre.
         /// </summary>
-        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe)
+        public Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe)
         {
             if (envio.AgenciasTransporte == null || string.IsNullOrWhiteSpace(envio.AgenciasTransporte.CuentaReembolsos))
             {
                 throw new NestoBusinessException(
                     "Esta agencia no tiene establecida una cuenta de reembolsos. No se puede contabilizar.");
             }
+            return ContabilizarReembolsoAsync(envio, usuario, importe, envio.AgenciasTransporte.CuentaReembolsos);
+        }
+
+        /// <summary>
+        /// NestoAPI#739: lo mismo contra una cuenta explícita en vez de la CuentaReembolsos de la agencia. El reparto propio
+        /// cobra en la caja del repartidor que entrega (su parámetro CajaDefecto, decisión de Carlos 29/10/26: con dos
+        /// repartidores, cada uno en su caja). Las demás agencias siguen por la sobrecarga sin cuenta.
+        /// </summary>
+        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida)
+        {
+            if (string.IsNullOrWhiteSpace(cuentaContrapartida))
+            {
+                throw new NestoBusinessException("No hay cuenta contra la que contabilizar el reembolso. No se puede contabilizar.");
+            }
 
             ExtractoCliente movimientoLiq = importe.HasValue
                 ? await CalcularMovimientoLiqAsync(envio, importe.Value).ConfigureAwait(false)
                 : await CalcularMovimientoLiqAsync(envio).ConfigureAwait(false);
             PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario);
+            linea.Contrapartida = cuentaContrapartida.Trim();
             if (importe.HasValue)
             {
                 linea.Haber = importe.Value;
@@ -1066,7 +1081,8 @@ namespace NestoAPI.Infraestructure.Agencias
                 FechaVto = hoy,
                 Haber = envio.Reembolso,
                 Concepto = GenerarConcepto(envio),
-                Contrapartida = envio.AgenciasTransporte.CuentaReembolsos.Trim(),
+                // Null-safe por el reparto propio (#739): su agencia no tiene cuenta y la sobrecarga con cuenta la pisa.
+                Contrapartida = envio.AgenciasTransporte?.CuentaReembolsos?.Trim(),
                 Asiento_Automático = false,
                 FormaPago = empresa?.FormaPagoEfectivo,
                 Vendedor = envio.Vendedor,

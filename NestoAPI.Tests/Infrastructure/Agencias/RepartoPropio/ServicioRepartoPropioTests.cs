@@ -1,8 +1,13 @@
+using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Informes;
+using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
+using NestoAPI.Models.Informes;
+using NestoAPI.Models.Pagos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,16 +17,24 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 {
     /// <summary>
     /// NestoAPI#739: las reglas de api/RepartoPropio (contrato de la issue + cambios de Carlos del 29/10/26: entrega opcional salvo
-    /// la clave, reembolso contabilizado AL ENTREGAR contra la caja de la agencia 14).
+    /// la clave, reembolso contabilizado AL ENTREGAR). La caja es la del REPARTIDOR que entrega (su parámetro CajaDefecto), no la
+    /// CuentaReembolsos de la agencia 14 (Carlos 29/10/26: con dos repartidores, cada uno en su caja). Sin datáfono: Efectivo,
+    /// Enlace (enlace de pago al correo, sin contabilizar) o NoCobrado.
     /// </summary>
     [TestClass]
     public class ServicioRepartoPropioTests
     {
         private static readonly DateTime AHORA = new DateTime(2026, 10, 29, 12, 30, 0);
         private const string USUARIO = @"NUEVAVISION\Repartidor";
-        private const string CUENTA_CAJA = "57000014";
+        /// <summary>La CuentaReembolsos de la agencia 14: NO se usa (la caja es del repartidor).</summary>
+        private const string CUENTA_AGENCIA = "57000014";
+        private const string CAJA_REPARTIDOR = "57000001";
+        private const string URL_ENLACE = "https://api.nuevavision.es/pago/abc";
 
         private RepositorioFalso repositorio;
+        private ParametrosFalsos parametros;
+        private IServicioPagos pagos;
+        private IInformesService informes;
         private List<EnviosAgencia> avisados;
         private ServicioRepartoPropio servicio;
 
@@ -29,12 +42,19 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         public void Setup()
         {
             repositorio = new RepositorioFalso();
+            parametros = new ParametrosFalsos();
+            parametros.Caja("Repartidor", CAJA_REPARTIDOR);
+            pagos = A.Fake<IServicioPagos>();
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._))
+                .Returns(new RespuestaIniciarPago { IdPago = 4321, UrlPaginaPago = URL_ENLACE });
+            informes = A.Fake<IInformesService>();
             avisados = new List<EnviosAgencia>();
-            servicio = new ServicioRepartoPropio(repositorio, () => AHORA, e => { avisados.Add(e); return Task.CompletedTask; });
+            servicio = new ServicioRepartoPropio(repositorio, () => AHORA, e => { avisados.Add(e); return Task.CompletedTask; }, parametros,
+                () => pagos, () => informes);
         }
 
         internal static EnviosAgencia Envio(int numero = 251300, short estado = Constantes.Agencias.ESTADO_TRAMITADO, decimal reembolso = 0m,
-            string cuenta = CUENTA_CAJA, int agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO, short bultos = 3) => new EnviosAgencia
+            string cuenta = CUENTA_AGENCIA, int agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO, short bultos = 3) => new EnviosAgencia
             {
                 Numero = numero,
                 Empresa = "1  ",
@@ -287,14 +307,17 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(85.40m, r.ImporteAContabilizar, "Al entregar, en la misma transacción que el cambio de estado");
             Assert.AreEqual(USUARIO, r.Usuario);
             Assert.AreEqual(7001, r.Prueba.Asiento);
+            Assert.AreEqual(CAJA_REPARTIDOR, r.Prueba.CuentaCaja, "La caja del repartidor, no la CuentaReembolsos de la agencia");
+            Assert.IsNull(resultado.Contenido.UrlPago);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task Entregar_CobradoConTarjetaOtroImporte_ContabilizaLoCobrado()
+        public async Task Entregar_CobradoEnEfectivoOtroImporte_ContabilizaLoCobrado()
         {
             repositorio.Con(Envio(reembolso: 85.40m));
             EntregaRepartoDTO p = Entrega();
-            p.CobroReembolso = "Tarjeta";
+            p.CobroReembolso = "Efectivo";
             p.ImporteCobrado = 80m;
 
             _ = await servicio.Entregar(251300, p, USUARIO);
@@ -303,29 +326,307 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
-        public async Task Entregar_CobradoSinCuentaDeCaja_400ClaroYNadaRegistrado()
+        public async Task Entregar_EfectivoConCajaDelUsuario_SeContabilizaEnSuCaja_AunqueLaAgenciaNoTengaCuenta()
         {
-            EnviosAgencia envio = repositorio.Con(Envio(reembolso: 85.40m, cuenta: null));
+            repositorio.Con(Envio(reembolso: 85.40m, cuenta: null));
             EntregaRepartoDTO p = Entrega();
             p.CobroReembolso = "Efectivo";
 
             var resultado = await servicio.Entregar(251300, p, USUARIO);
 
-            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
-            StringAssert.Contains(resultado.Mensaje, "no tiene cuenta de caja");
-            Assert.AreEqual(0, repositorio.Registros.Count);
-            Assert.AreEqual(Constantes.Agencias.ESTADO_TRAMITADO, envio.Estado, "Sin registro no cambia el estado");
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Registro r = repositorio.Registros.Single();
+            Assert.AreEqual(85.40m, r.ImporteAContabilizar);
+            Assert.AreEqual(CAJA_REPARTIDOR, r.Prueba.CuentaCaja);
+            Assert.AreEqual("1", parametros.UltimaEmpresa, "Empresa 1");
+            Assert.AreEqual("Repartidor", parametros.UltimoUsuario, "El usuario sin dominio");
+            Assert.AreEqual("CajaDefecto", ServicioRepartoPropio.PARAMETRO_CAJA, "El mismo parámetro que la ventana de Cajas de Nesto");
+            Assert.AreEqual(ServicioRepartoPropio.PARAMETRO_CAJA, parametros.UltimoParametro);
         }
 
         [TestMethod]
-        public async Task Entregar_NoCobradoSinCuentaDeCaja_SeEntrega()
+        public async Task Entregar_DosRepartidores_CadaUnoCobraEnSuCaja()
+        {
+            parametros.Caja("Andre", "57000002");
+            parametros.Caja("Miguel", "57000003");
+            repositorio.Con(Envio(numero: 251301, reembolso: 50m));
+            repositorio.Con(Envio(numero: 251302, reembolso: 70m));
+            EntregaRepartoDTO p1 = Entrega();
+            p1.CobroReembolso = "Efectivo";
+            EntregaRepartoDTO p2 = Entrega();
+            p2.CobroReembolso = "Efectivo";
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, (await servicio.Entregar(251301, p1, @"NUEVAVISION\Andre")).Tipo);
+            Assert.AreEqual(TipoResultadoReparto.Ok, (await servicio.Entregar(251302, p2, @"NUEVAVISION\Miguel")).Tipo);
+
+            Assert.AreEqual("57000002", repositorio.Registros.Single(r => r.Prueba.EnvioId == 251301).Prueba.CuentaCaja);
+            Assert.AreEqual("57000003", repositorio.Registros.Single(r => r.Prueba.EnvioId == 251302).Prueba.CuentaCaja);
+        }
+
+        [TestMethod]
+        public async Task Entregar_EfectivoSinCajaDelUsuario_400DeUstedYNadaRegistrado_AunqueLaAgenciaTengaCuenta()
+        {
+            EnviosAgencia envio = repositorio.Con(Envio(reembolso: 85.40m, cuenta: CUENTA_AGENCIA));
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "Efectivo";
+
+            var resultado = await servicio.Entregar(251300, p, @"NUEVAVISION\SinCaja");
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
+            Assert.AreEqual(ServicioRepartoPropio.MENSAJE_SIN_CAJA, resultado.Mensaje);
+            StringAssert.Contains(resultado.Mensaje, "No tiene caja asignada (parámetro CajaDefecto)");
+            Assert.AreEqual(0, repositorio.Registros.Count);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_TRAMITADO, envio.Estado, "Sin registro no cambia el estado");
+            Assert.IsNull(envio.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task Entregar_EfectivoConCajaVaciaEnSuFila_400()
+        {
+            parametros.Caja("Vacio", "   ");
+            repositorio.Con(Envio(reembolso: 85.40m));
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "Efectivo";
+
+            var resultado = await servicio.Entregar(251300, p, @"NUEVAVISION\Vacio");
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
+            Assert.AreEqual(0, repositorio.Registros.Count);
+        }
+
+        [TestMethod]
+        public async Task Entregar_NoCobradoSinCajaDelUsuario_SeEntrega_YNiSiquieraSeMiraLaCaja()
         {
             repositorio.Con(Envio(reembolso: 85.40m, cuenta: null));
             EntregaRepartoDTO p = Entrega();
             p.CobroReembolso = "NoCobrado";
 
+            Assert.AreEqual(TipoResultadoReparto.Ok, (await servicio.Entregar(251300, p, @"NUEVAVISION\SinCaja")).Tipo);
+            Registro r = repositorio.Registros.Single();
+            Assert.IsNull(r.ImporteAContabilizar);
+            Assert.IsNull(r.Prueba.CuentaCaja);
+            Assert.AreEqual(0, parametros.Lecturas);
+        }
+
+        // ================================================================ entregar: sin datáfono y cobro por enlace
+
+        [TestMethod]
+        public async Task Entregar_Tarjeta_400SinDatafono_YNadaRegistrado()
+        {
+            EnviosAgencia envio = repositorio.Con(Envio(reembolso: 85.40m));
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "tarjeta";
+
+            var resultado = await servicio.Entregar(251300, p, USUARIO);
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
+            Assert.AreEqual("Sin datáfono: use Efectivo o Enlace.", resultado.Mensaje);
+            Assert.AreEqual(0, repositorio.Registros.Count);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_TRAMITADO, envio.Estado);
+        }
+
+        [TestMethod]
+        public async Task Entregar_EnlaceSinCorreoOConCorreoMal_400_YNoSeCreaEnlace()
+        {
+            repositorio.Con(Envio(reembolso: 85.40m));
+            EntregaRepartoDTO sinCorreo = Entrega();
+            sinCorreo.CobroReembolso = "Enlace";
+            EntregaRepartoDTO correoMal = Entrega();
+            correoMal.CobroReembolso = "Enlace";
+            correoMal.CorreoEnlace = "no-es-un-correo";
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, (await servicio.Entregar(251300, sinCorreo, USUARIO)).Tipo);
+            var mal = await servicio.Entregar(251300, correoMal, USUARIO);
+            Assert.AreEqual(TipoResultadoReparto.Invalido, mal.Tipo);
+            StringAssert.Contains(mal.Mensaje, "no es válido");
+            Assert.AreEqual(0, repositorio.Registros.Count);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Entregar_Enlace_CreaElEnlaceDelPedidoPorElReembolso_NoContabiliza_YDevuelveLaUrl()
+        {
+            EnviosAgencia envio = repositorio.Con(Envio(reembolso: 85.40m));
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "enlace";
+            p.CorreoEnlace = " cliente@ejemplo.com ";
+
+            // Sin caja: con enlace no hace falta.
+            var resultado = await servicio.Entregar(251300, p, @"NUEVAVISION\SinCaja");
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual(URL_ENLACE, resultado.Contenido.UrlPago);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>.That.Matches(s =>
+                    s.Importe == 85.40m
+                    && s.Descripcion == "Pago pedido 928000 de Nueva Visión"
+                    && s.Correo == "cliente@ejemplo.com"
+                    && s.Cliente == "15191"
+                    && s.Contacto == "0"
+                    && s.Empresa == "1"
+                    && s.Pedido == null), @"NUEVAVISION\SinCaja"))
+                .MustHaveHappenedOnceExactly();
+            Registro r = repositorio.Registros.Single();
+            Assert.IsNull(r.ImporteAContabilizar, "El cobro entra por la notificación de Redsys");
+            Assert.IsNull(r.Prueba.CuentaCaja);
+            Assert.AreEqual(PruebaEntregaReparto.COBRO_ENLACE, r.Prueba.CobroReembolso);
+            Assert.AreEqual(85.40m, r.Prueba.ImporteCobrado, "El importe del enlace");
+            Assert.AreEqual(4321, r.Prueba.PagoTPVId);
+            Assert.AreEqual(URL_ENLACE, r.Prueba.UrlPago);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, envio.Estado);
+            Assert.AreEqual(0, parametros.Lecturas);
+        }
+
+        [TestMethod]
+        public async Task Entregar_EnlaceConOtroImporte_ElEnlaceVaPorEseImporte()
+        {
+            repositorio.Con(Envio(reembolso: 85.40m));
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "Enlace";
+            p.CorreoEnlace = "cliente@ejemplo.com";
+            p.ImporteCobrado = 60m;
+
             Assert.AreEqual(TipoResultadoReparto.Ok, (await servicio.Entregar(251300, p, USUARIO)).Tipo);
-            Assert.IsNull(repositorio.Registros.Single().ImporteAContabilizar);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>.That.Matches(s => s.Importe == 60m), A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Entregar_EnlaceSinImporte_400()
+        {
+            repositorio.Con(Envio());
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "Enlace";
+            p.CorreoEnlace = "cliente@ejemplo.com";
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, (await servicio.Entregar(251300, p, USUARIO)).Tipo);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Entregar_EnlaceMismaClave_NoCreaDosEnlaces_YDevuelveLaMismaUrl()
+        {
+            repositorio.Con(Envio(reembolso: 85.40m));
+            Guid clave = Guid.NewGuid();
+            EntregaRepartoDTO p = Entrega(clave);
+            p.CobroReembolso = "Enlace";
+            p.CorreoEnlace = "cliente@ejemplo.com";
+
+            var primera = await servicio.Entregar(251300, p, USUARIO);
+            var segunda = await servicio.Entregar(251300, p, USUARIO);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, segunda.Tipo);
+            Assert.AreEqual(URL_ENLACE, primera.Contenido.UrlPago);
+            Assert.AreEqual(URL_ENLACE, segunda.Contenido.UrlPago);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, repositorio.Registros.Count);
+        }
+
+        [TestMethod]
+        public async Task Entregar_FallaElEnlace_400YElEnvioSigueComoEstaba()
+        {
+            EnviosAgencia envio = repositorio.Con(Envio(reembolso: 85.40m));
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).Throws(new ArgumentException("El importe debe ser mayor que cero"));
+            EntregaRepartoDTO p = Entrega();
+            p.CobroReembolso = "Enlace";
+            p.CorreoEnlace = "cliente@ejemplo.com";
+
+            var resultado = await servicio.Entregar(251300, p, USUARIO);
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
+            Assert.AreEqual(0, repositorio.Registros.Count);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_TRAMITADO, envio.Estado);
+        }
+
+        [TestMethod]
+        public void ConceptoEnlace_ElPedidoQueReconocenLosEnlacesDelPedido()
+        {
+            EnviosAgencia envio = Envio();
+            Assert.AreEqual(928000, NestoAPI.Infraestructure.Pagos.EnlacesPagoPedido.PedidoDelConcepto(ServicioRepartoPropio.ConceptoEnlace(envio)));
+            envio.Pedido = null;
+            Assert.AreEqual("Pago envío 251300 de Nueva Visión", ServicioRepartoPropio.ConceptoEnlace(envio));
+        }
+
+        [TestMethod]
+        public async Task EnviosYBulto_LlevanElCorreoDelCliente_ONullSiNoHayONoEsValido()
+        {
+            EnviosAgencia conCorreo = repositorio.Con(Envio(numero: 251301));
+            conCorreo.Email = " cliente@ejemplo.com  ";
+            EnviosAgencia sinCorreo = repositorio.Con(Envio(numero: 251302));
+            sinCorreo.Email = null;
+            EnviosAgencia correoMal = repositorio.Con(Envio(numero: 251303));
+            correoMal.Email = "no es correo";
+
+            List<EnvioRepartoDTO> envios = (await servicio.Envios(null)).Contenido;
+
+            Assert.AreEqual("cliente@ejemplo.com", envios.Single(e => e.EnvioId == 251301).Correo);
+            Assert.IsNull(envios.Single(e => e.EnvioId == 251302).Correo);
+            Assert.IsNull(envios.Single(e => e.EnvioId == 251303).Correo);
+            Assert.AreEqual("cliente@ejemplo.com", (await servicio.Bulto("RP251301-1")).Contenido.Correo);
+        }
+
+        // ================================================================ mis cobros
+
+        [TestMethod]
+        public async Task MisCobros_ElExtractoDelDiaDeSuCaja()
+        {
+            DateTime dia = new DateTime(2026, 10, 28);
+            A.CallTo(() => informes.LeerSaldoContableAnteriorAsync("1", CAJA_REPARTIDOR, dia)).Returns(100m);
+            A.CallTo(() => informes.LeerExtractoContableAsync("1", CAJA_REPARTIDOR, dia, dia)).Returns(new List<ExtractoContableDTO>
+            {
+                new ExtractoContableDTO { Id = 2, Fecha = dia, Concepto = "Arqueo  ", Debe = 0m, Haber = 50m, Asiento = 902, Documento = "  " },
+                new ExtractoContableDTO { Id = 1, Fecha = dia, Concepto = "Reembolso envío 251300  ", Debe = 85.40m, Haber = 0m, Asiento = 901, Documento = "928000  " }
+            });
+
+            var resultado = await servicio.MisCobros(dia.AddHours(15), USUARIO);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            MisCobrosRepartoDTO c = resultado.Contenido;
+            Assert.AreEqual(CAJA_REPARTIDOR, c.Cuenta);
+            Assert.AreEqual(dia, c.Fecha);
+            Assert.AreEqual(100m, c.SaldoAnterior);
+            Assert.AreEqual(2, c.Apuntes.Count);
+            Assert.AreEqual(901, c.Apuntes[0].Asiento, "En orden");
+            Assert.AreEqual(85.40m, c.Apuntes[0].Importe, "Debe de la caja = entra");
+            Assert.AreEqual("Reembolso envío 251300", c.Apuntes[0].Concepto);
+            Assert.AreEqual("928000", c.Apuntes[0].Documento);
+            Assert.AreEqual(-50m, c.Apuntes[1].Importe, "Haber de la caja = sale");
+            Assert.AreEqual(35.40m, c.TotalDia);
+            Assert.AreEqual(135.40m, c.SaldoFinal);
+        }
+
+        [TestMethod]
+        public async Task MisCobros_SinFecha_Hoy_YSinApuntes_SaldoIgual()
+        {
+            A.CallTo(() => informes.LeerSaldoContableAnteriorAsync(A<string>._, A<string>._, A<DateTime>._)).Returns(20m);
+            A.CallTo(() => informes.LeerExtractoContableAsync(A<string>._, A<string>._, A<DateTime>._, A<DateTime>._)).Returns(new List<ExtractoContableDTO>());
+
+            var resultado = await servicio.MisCobros(null, USUARIO);
+
+            Assert.AreEqual(AHORA.Date, resultado.Contenido.Fecha);
+            Assert.AreEqual(0, resultado.Contenido.Apuntes.Count);
+            Assert.AreEqual(0m, resultado.Contenido.TotalDia);
+            Assert.AreEqual(20m, resultado.Contenido.SaldoFinal);
+            A.CallTo(() => informes.LeerExtractoContableAsync("1", CAJA_REPARTIDOR, AHORA.Date, AHORA.Date)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task MisCobros_SinCaja_400ElMismoMensaje()
+        {
+            var resultado = await servicio.MisCobros(null, @"NUEVAVISION\SinCaja");
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
+            Assert.AreEqual(ServicioRepartoPropio.MENSAJE_SIN_CAJA, resultado.Mensaje);
+            A.CallTo(() => informes.LeerExtractoContableAsync(A<string>._, A<string>._, A<DateTime>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MisCobros_DosRepartidores_CadaUnoSuCaja()
+        {
+            parametros.Caja("Andre", "57000002");
+            parametros.Caja("Miguel", "57000003");
+            A.CallTo(() => informes.LeerExtractoContableAsync(A<string>._, A<string>._, A<DateTime>._, A<DateTime>._)).Returns(new List<ExtractoContableDTO>());
+
+            Assert.AreEqual("57000002", (await servicio.MisCobros(null, @"NUEVAVISION\Andre")).Contenido.Cuenta);
+            Assert.AreEqual("57000003", (await servicio.MisCobros(null, @"NUEVAVISION\Miguel")).Contenido.Cuenta);
         }
 
         [TestMethod]
@@ -488,6 +789,28 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         // ================================================================ doble en memoria
+
+        /// <summary>Solo las filas PROPIAS del usuario (LeerParametroSinDefecto); LeerParametro (con «(defecto)») no se debe usar.</summary>
+        internal class ParametrosFalsos : NestoAPI.Infraestructure.ILectorParametrosUsuario
+        {
+            private readonly Dictionary<string, string> cajas = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public int Lecturas;
+            public string UltimaEmpresa, UltimoUsuario, UltimoParametro;
+
+            public void Caja(string usuario, string cuenta) => cajas[usuario] = cuenta;
+
+            public string LeerParametro(string empresa, string usuario, string parametro)
+                => throw new AssertFailedException("La caja no puede salir de «(defecto)»: hay que usar LeerParametroSinDefecto.");
+
+            public string LeerParametroSinDefecto(string empresa, string usuario, string parametro)
+            {
+                Lecturas++;
+                UltimaEmpresa = empresa;
+                UltimoUsuario = usuario;
+                UltimoParametro = parametro;
+                return parametro == "CajaDefecto" && cajas.TryGetValue(usuario, out string cuenta) ? cuenta : null;
+            }
+        }
 
         internal class Registro
         {
