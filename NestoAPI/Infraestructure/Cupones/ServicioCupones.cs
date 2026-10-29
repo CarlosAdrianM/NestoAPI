@@ -220,6 +220,12 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 throw new NestoBusinessException("El importe del cupón tiene que ser mayor que cero.");
             }
+            // NestoAPI#613 (Carlos, 29/10/26): los manuales también llevan pedido mínimo; si no se indica, 200 €.
+            decimal pedidoMinimo = Math.Round(peticion.PedidoMinimo ?? ReglasCupon.PEDIDO_MINIMO_MANUAL_POR_DEFECTO, 2, MidpointRounding.AwayFromZero);
+            if (pedidoMinimo < 0)
+            {
+                throw new NestoBusinessException("El pedido mínimo del cupón no puede ser negativo. Indique 0 si no quiere pedido mínimo.");
+            }
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string cliente = peticion.Cliente.Trim();
             string contacto = string.IsNullOrWhiteSpace(peticion.Contacto) ? null : peticion.Contacto.Trim();
@@ -247,7 +253,8 @@ namespace NestoAPI.Infraestructure.Cupones
                 ValidoDesde = validoDesde,
                 Caducidad = ReglasCupon.Caducidad(validoDesde),
                 Estado = validoDesde > hoy ? EstadosCupon.EMITIDO : EstadosCupon.ACTIVO,
-                Usuario = usuarioAuditoria
+                Usuario = usuarioAuditoria,
+                PedidoMinimo = pedidoMinimo
             }, () => ReglasCupon.NuevoCodigo(OrigenesCupon.MANUAL, hoy)).ConfigureAwait(false);
             if (creado != null)
             {

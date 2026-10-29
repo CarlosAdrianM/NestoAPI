@@ -665,6 +665,57 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             Assert.AreEqual(HOY.Date.AddMonths(6), insertado.Caducidad);
             Assert.AreEqual(EstadosCupon.ACTIVO, insertado.Estado);
             Assert.AreEqual("Compensación por el retraso", insertado.Motivo);
+            Assert.AreEqual(200M, insertado.PedidoMinimo, "NestoAPI#613 (29/10/26): sin indicarlo, 200 €");
+        }
+
+        private (ServicioCupones servicio, Func<CuponNuevo> insertado) ServicioManual()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            A.CallTo(() => db.Clientes).Returns(Crear(new List<Cliente> { new Cliente { Empresa = "1", Nº_Cliente = "15191", Contacto = "0  " } }));
+            CuponNuevo insertado = null;
+            A.CallTo(() => repositorio.Insertar(A<CuponNuevo>._, A<Func<string>>._)).ReturnsLazily((CuponNuevo c, Func<string> f) =>
+            {
+                insertado = c;
+                return Task.FromResult(Cupon());
+            });
+            return (new ServicioCupones(repositorio, db, () => HOY, PRODUCTO), () => insertado);
+        }
+
+        [TestMethod]
+        public async Task Manual_PedidoMinimoIndicado_SeGuarda()
+        {
+            var (servicio, insertado) = ServicioManual();
+            IPrincipal direccion = Usuario("NUEVAVISION\\Carlos", "Dirección");
+
+            await servicio.CrearManual(new CrearCuponManualDTO { Cliente = "15191", Importe = 30, Motivo = "Compensación", PedidoMinimo = 150.555M }, direccion);
+
+            Assert.AreEqual(150.56M, insertado().PedidoMinimo);
+        }
+
+        [TestMethod]
+        public async Task Manual_PedidoMinimoCero_CualquierImporte()
+        {
+            var (servicio, insertado) = ServicioManual();
+            IPrincipal direccion = Usuario("NUEVAVISION\\Carlos", "Dirección");
+
+            await servicio.CrearManual(new CrearCuponManualDTO { Cliente = "15191", Importe = 30, Motivo = "Compensación", PedidoMinimo = 0 }, direccion);
+
+            Assert.AreEqual(0M, insertado().PedidoMinimo);
+            Assert.AreEqual(0M, ReglasCupon.PedidoMinimo(30, insertado().PedidoMinimo));
+        }
+
+        [TestMethod]
+        public async Task Manual_PedidoMinimoNegativo_400SinInsertar()
+        {
+            var (servicio, _) = ServicioManual();
+            IPrincipal direccion = Usuario("NUEVAVISION\\Carlos", "Dirección");
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                servicio.CrearManual(new CrearCuponManualDTO { Cliente = "15191", Importe = 30, Motivo = "Compensación", PedidoMinimo = -1 }, direccion));
+
+            StringAssert.Contains(ex.Message, "no puede ser negativo");
+            Assert.AreNotEqual(HttpStatusCode.Forbidden, ex.StatusCode);
+            A.CallTo(() => repositorio.Insertar(A<CuponNuevo>._, A<Func<string>>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
