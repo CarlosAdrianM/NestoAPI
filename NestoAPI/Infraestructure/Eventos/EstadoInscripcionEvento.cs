@@ -43,8 +43,16 @@ namespace NestoAPI.Infraestructure.Eventos
         TNV,
         PrestaShop,
         Telefono,
-        /// <summary>Llegó una señal (#591) de un cliente sin inscripción previa: la crea el corte 2.</summary>
-        Transferencia
+        /// <summary>
+        /// Histórico: inscripciones creadas por una señal (#591) hasta el 29/10/26, cuando todas se etiquetaban así aunque el
+        /// cobro fuera un enlace de tarjeta. Sigue siendo un valor válido para leer las antiguas; ya no se crea ninguna nueva.
+        /// </summary>
+        Transferencia,
+        /// <summary>
+        /// Llegó el cobro (transferencia, enlace de tarjeta o caja: la señal de #591) de un cliente sin inscripción previa: la
+        /// crea el corte 2. Cómo pagó está en la forma de pago (Carlos, 29/10/26: que no diga «Transferencia» si no lo fue).
+        /// </summary>
+        Cobro
     }
 
     /// <summary>NestoAPI#611 (Carlos, 14/10/26): cómo se paga la inscripción. El enlace de tarjeta es opcional.</summary>

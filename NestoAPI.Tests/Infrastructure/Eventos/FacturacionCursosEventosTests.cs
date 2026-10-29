@@ -203,7 +203,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             InscripcionEventoDTO dto = await Servicio().InscribirDesdeTransferencia(40, "NUEVAVISION\\Alfredo");
 
             EventoInscripcion i = inscripciones.Single();
-            Assert.AreEqual("Transferencia", i.Origen, "Sin inscripción previa, la crea la señal");
+            Assert.AreEqual("Cobro", i.Origen, "Sin inscripción previa, la crea la señal");
             Assert.AreEqual("Facturada", i.Estado);
             Assert.AreEqual(40, i.EventoSenalId);
             A.CallTo(() => creador.Crear(i, A<Evento>._, "NUEVAVISION\\Alfredo")).MustHaveHappenedOnceExactly();

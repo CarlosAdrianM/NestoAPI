@@ -189,6 +189,14 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.IsNull(ReglasInscripcionEvento.Origen("1"));
         }
 
+        [TestMethod]
+        public void Reglas_Origen_CobroYElHistoricoTransferencia()
+        {
+            Assert.AreEqual(OrigenInscripcionEvento.Cobro, ReglasInscripcionEvento.Origen("Cobro"));
+            Assert.AreEqual(OrigenInscripcionEvento.Transferencia, ReglasInscripcionEvento.Origen("Transferencia"), "Las antiguas siguen leyéndose");
+            Assert.AreEqual("Cobro", ReglasInscripcionEvento.Texto(OrigenInscripcionEvento.Cobro));
+        }
+
         // ---------------- Inscribir ----------------
 
         [TestMethod]
@@ -295,6 +303,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 new InscribirEventoDTO { Cliente = "15191" }, VENDEDOR));
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Inscribir(EVENTO_REINA,
                 new InscribirEventoDTO { Cliente = "15191", Origen = "Transferencia" }, VENDEDOR));
+            await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Inscribir(EVENTO_REINA,
+                new InscribirEventoDTO { Cliente = "15191", Origen = "Cobro" }, VENDEDOR), "Cobro solo lo pone la señal");
         }
 
         [TestMethod]
@@ -658,14 +668,15 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         // ---------------- Transferencia sin inscripción previa ----------------
 
         [TestMethod]
-        public async Task Transferencia_SinInscripcionPrevia_LaCreaPagadaConOrigenTransferencia()
+        public async Task Transferencia_SinInscripcionPrevia_LaCreaPagadaConOrigenCobro()
         {
             senales.Add(new EventoSenal { Id = 7, EventoId = EVENTO_REINA, Empresa = "1", Cliente = "15191", Contacto = "0  ", NumOrdenExtracto = 3054909, Importe = 50 });
 
             InscripcionEventoDTO dto = await Servicio().InscribirDesdeTransferencia(7, "NUEVAVISION\\Admin");
 
             EventoInscripcion i = inscripciones.Single();
-            Assert.AreEqual("Transferencia", i.Origen);
+            Assert.AreEqual("Cobro", i.Origen, "29/10/26: Cobro, no Transferencia (pudo ser un enlace o caja)");
+            Assert.AreEqual(OrigenInscripcionEvento.Cobro, dto.Origen);
             Assert.AreEqual("Pagada", i.Estado);
             Assert.AreEqual("Transferencia", i.FormaPago);
             Assert.AreEqual(7, i.EventoSenalId);
@@ -1185,6 +1196,54 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual("https://api.nuevavision.es/pago/" + token, reservada.UrlPago);
             Assert.AreEqual("REI", reservada.Almacen);
             Assert.IsNull(lista.Single(i => i.Id == 2).UrlPago);
+        }
+
+        [TestMethod]
+        public async Task LeerInscripcionesEvento_UrlPago_SoloSiElPagoTPVSigueSinCobrarNiAnular()
+        {
+            Guid pendiente = Guid.NewGuid(), autorizado = Guid.NewGuid(), cancelado = Guid.NewGuid(), denegado = Guid.NewGuid();
+            pagosTPV.Add(new PagoTPV { Id = 601, TokenAcceso = pendiente, Estado = Constantes.EstadosPagoTPV.PENDIENTE });
+            pagosTPV.Add(new PagoTPV { Id = 602, TokenAcceso = autorizado, Estado = Constantes.EstadosPagoTPV.AUTORIZADO });
+            pagosTPV.Add(new PagoTPV { Id = 603, TokenAcceso = cancelado, Estado = Constantes.EstadosPagoTPV.CANCELADO });
+            pagosTPV.Add(new PagoTPV { Id = 604, TokenAcceso = denegado, Estado = Constantes.EstadosPagoTPV.DENEGADO });
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3), pago: 601);
+            Inscripcion(2, EVENTO_REINA, "20000", EstadoInscripcionEvento.Reservada, HOY.AddDays(3), pago: 602);
+            Inscripcion(3, EVENTO_REINA, "20001", EstadoInscripcionEvento.Reservada, HOY.AddDays(3), pago: 603);
+            Inscripcion(4, EVENTO_REINA, "20002", EstadoInscripcionEvento.Reservada, HOY.AddDays(3), pago: 604);
+            Inscripcion(5, EVENTO_REINA, "20003", EstadoInscripcionEvento.Anulada, HOY.AddDays(3), pago: 601);
+
+            List<InscripcionEventoDTO> lista = await Servicio().LeerInscripcionesEvento(EVENTO_REINA, VENDEDOR);
+
+            Assert.AreEqual(ServicioPagos.UrlPaginaPago(pendiente), lista.Single(i => i.Id == 1).UrlPago);
+            Assert.IsNull(lista.Single(i => i.Id == 2).UrlPago, "Ya cobrado");
+            Assert.IsNull(lista.Single(i => i.Id == 3).UrlPago, "Enlace anulado");
+            Assert.AreEqual(ServicioPagos.UrlPaginaPago(denegado), lista.Single(i => i.Id == 4).UrlPago, "Denegado: la página lleva al reintento");
+            Assert.IsNull(lista.Single(i => i.Id == 5).UrlPago, "Inscripción anulada");
+        }
+
+        [TestMethod]
+        public async Task LeerInscripcionesCliente_ConUrlPagoDeLaReservadaPendiente()
+        {
+            var token = Guid.NewGuid();
+            pagosTPV.Add(new PagoTPV { Id = 610, TokenAcceso = token, Estado = Constantes.EstadosPagoTPV.PENDIENTE });
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3), pago: 610);
+            Inscripcion(2, EVENTO_ALCOBENDAS, "15191", EstadoInscripcionEvento.Pagada, pago: 610);
+
+            List<InscripcionEventoDTO> suyas = await Servicio().LeerInscripcionesCliente("1", "15191", null, VENDEDOR);
+
+            Assert.AreEqual("https://api.nuevavision.es/pago/" + token, suyas.Single(i => i.Id == 1).UrlPago);
+            Assert.IsNull(suyas.Single(i => i.Id == 2).UrlPago, "Pagada: sin enlace");
+        }
+
+        [TestMethod]
+        public void EnlaceSePuedePagar_SegunElEstadoDelPagoTPV()
+        {
+            Assert.IsTrue(ServicioInscripcionesEventos.EnlaceSePuedePagar(Constantes.EstadosPagoTPV.PENDIENTE));
+            Assert.IsTrue(ServicioInscripcionesEventos.EnlaceSePuedePagar(null));
+            Assert.IsTrue(ServicioInscripcionesEventos.EnlaceSePuedePagar(Constantes.EstadosPagoTPV.DENEGADO));
+            Assert.IsFalse(ServicioInscripcionesEventos.EnlaceSePuedePagar("Autorizado "));
+            Assert.IsFalse(ServicioInscripcionesEventos.EnlaceSePuedePagar(Constantes.EstadosPagoTPV.CANCELADO));
+            Assert.IsFalse(ServicioInscripcionesEventos.EnlaceSePuedePagar(Constantes.EstadosPagoTPV.DEVUELTO));
         }
 
         [TestMethod]
