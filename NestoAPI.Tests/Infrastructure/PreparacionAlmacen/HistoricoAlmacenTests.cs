@@ -223,7 +223,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(2, detalle.Cajas.Count);
             CajaPackingHistoricoDTO primera = detalle.Cajas[0];
             Assert.IsTrue(primera.TieneFoto);
-            Assert.AreEqual("api/Almacen/Fotos/abc", primera.UrlFoto);
+            Assert.AreEqual("https://api.nuevavision.es/api/Almacen/Fotos/abc", primera.UrlFoto, "URL completa: Ariadna la pinta con un Image");
             Assert.AreEqual("Santiago", primera.Usuario);
             Assert.AreEqual(DIA.AddHours(12), primera.FechaHora, "La hora de la foto");
             ContenidoCajaHistoricoDTO champu = primera.Lineas.Single();

@@ -454,7 +454,7 @@ GROUP BY e.Bulto, e.NumeroOrigen, e.Producto, p.Nombre, e.Usuario";
                     Usuario = SinDominio(bulto?.Usuario) ?? SinDominio(ultima?.Usuario),
                     FechaHora = bulto?.FechaFoto ?? ultima?.Ultima,
                     TieneFoto = bulto?.TieneFoto == true,
-                    UrlFoto = bulto?.RutaFotoPublica,
+                    UrlFoto = FotoHistoricoAlmacen.UrlAbsoluta(bulto?.RutaFotoPublica),
                     Lineas = productos
                 });
             }
@@ -546,6 +546,26 @@ GROUP BY e.Bulto, e.NumeroOrigen, e.Producto, p.Nombre, e.Usuario";
             }
             int barra = limpio.LastIndexOf('\\');
             return barra >= 0 && barra < limpio.Length - 1 ? limpio.Substring(barra + 1) : limpio;
+        }
+    }
+
+    /// <summary>
+    /// 29/10/26: Ariadna pinta la foto con un Image (necesita la URL completa); la ruta del enlace público es relativa a la API
+    /// (api/Almacen/Fotos/{token}). Se cuelga de la URL pública (appSetting UrlPublicaApi, como las miniaturas del cheque).
+    /// </summary>
+    internal static class FotoHistoricoAlmacen
+    {
+        internal static string UrlAbsoluta(string ruta)
+        {
+            if (string.IsNullOrWhiteSpace(ruta))
+            {
+                return null;
+            }
+            if (ruta.StartsWith("http", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return ruta;
+            }
+            return ChequesRegalo.MiniaturasChequeRegalo.UrlPublicaApi + "/" + ruta.TrimStart('/');
         }
     }
 }
