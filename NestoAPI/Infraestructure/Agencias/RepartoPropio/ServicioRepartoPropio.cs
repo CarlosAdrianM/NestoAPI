@@ -57,6 +57,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public T Contenido { get; set; }
         /// <summary>Para el usuario, de usted.</summary>
         public string Mensaje { get; set; }
+        /// <summary>Ariadna#63: código del error para la app (va en error.code). Null: el error de siempre ({ Message }).</summary>
+        public string Codigo { get; set; }
+        /// <summary>Ariadna#63: datos del error para la app (van en error.details, p. ej. { repartidor }).</summary>
+        public object Detalles { get; set; }
 
         public static ResultadoReparto<T> Bien(T contenido) => new ResultadoReparto<T> { Tipo = TipoResultadoReparto.Ok, Contenido = contenido };
         public static ResultadoReparto<T> Vacio() => new ResultadoReparto<T> { Tipo = TipoResultadoReparto.SinContenido };
@@ -72,7 +76,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// la caja del usuario que entrega: su parámetro CajaDefecto, nunca la CuentaReembolsos de la agencia 14). La firma y el DNI solo van a EnviosAgenciaPruebasEntrega: nunca a ELMAH ni a los
     /// mensajes ni a la historia.
     /// </summary>
-    public class ServicioRepartoPropio
+    public partial class ServicioRepartoPropio
     {
         public const string MENSAJE_FALTA_SCRIPT = "Falta lanzar el script Scripts/Issue739_RepartoPropio.sql (reparto propio): " +
             "hasta entonces no se pueden registrar entregas ni incidencias. Avise a Informática.";
@@ -109,12 +113,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         private readonly ILectorParametrosUsuario parametros;
         private readonly Func<IServicioPagos> pagos;
         private readonly Func<IInformesService> informes;
+        /// <summary>Ariadna#63: la carga de la furgoneta (EnviosAgenciaCargaBultos). Null: no hay carga (Envios sin repartidor).</summary>
+        private readonly IRepositorioCargaFurgoneta carga;
 
+        /// <param name="carga">Ariadna#63: quién lleva cada envío y qué bultos ha cargado. Null: como antes de la carga.</param>
         /// <param name="pagos">Los enlaces de pago (cobro por enlace): el mismo IniciarPago que el enlace que manda Nesto desde el pedido.</param>
         /// <param name="informes">El extracto contable de la caja (MisCobros): el mismo que el de la ventana de Cajas de Nesto.</param>
         public ServicioRepartoPropio(IRepositorioRepartoPropio repositorio, Func<DateTime> ahora = null, Func<EnviosAgencia, Task> avisarIncidencia = null,
-            ILectorParametrosUsuario parametros = null, Func<IServicioPagos> pagos = null, Func<IInformesService> informes = null)
+            ILectorParametrosUsuario parametros = null, Func<IServicioPagos> pagos = null, Func<IInformesService> informes = null,
+            IRepositorioCargaFurgoneta carga = null)
         {
+            this.carga = carga;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.ahora = ahora ?? (() => DateTime.Now);
             this.avisarIncidencia = avisarIncidencia;
@@ -127,9 +136,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         /// <summary>
         /// Los envíos en reparto (Tramitado o Incidentado) con fecha hasta <paramref name="fecha"/> (hoy por defecto) y desde
-        /// 30 días antes: un incidentado de ayer sigue en la lista para reintentarlo.
+        /// 30 días antes: un incidentado de ayer sigue en la lista para reintentarlo. Ariadna#63: con quién lo lleva y cuántos
+        /// bultos ha cargado; con <paramref name="soloMios"/>, solo los que lleva <paramref name="usuario"/> (sin el script de la
+        /// carga no hay repartidores y se ignora: la lista de siempre).
         /// </summary>
-        public async Task<ResultadoReparto<List<EnvioRepartoDTO>>> Envios(DateTime? fecha)
+        public async Task<ResultadoReparto<List<EnvioRepartoDTO>>> Envios(DateTime? fecha, bool soloMios = false, string usuario = null)
         {
             if (!repositorio.ScriptAplicado())
             {
@@ -138,11 +149,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             DateTime dia = (fecha ?? ahora()).Date;
             List<EnviosAgencia> envios = await repositorio.LeerEnviosEnReparto(dia.AddDays(-DIAS_ATRAS_LISTA), dia.AddDays(1)).ConfigureAwait(false)
                 ?? new List<EnviosAgencia>();
-            return ResultadoReparto<List<EnvioRepartoDTO>>.Bien(envios
+            List<EnvioRepartoDTO> lista = envios
                 .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && EstadoTexto(e.Estado) != null && e.Estado != Constantes.Agencias.ESTADO_ENTREGADO)
                 .OrderBy(e => e.Fecha).ThenBy(e => e.Numero)
                 .Select(e => ADto(e, new EnvioRepartoDTO()))
-                .ToList());
+                .ToList();
+            if (CargaDisponible())
+            {
+                await CompletarCarga(lista).ConfigureAwait(false);
+                if (soloMios)
+                {
+                    lista = lista.Where(e => MismoUsuario(e.Repartidor, usuario)).ToList();
+                }
+            }
+            return ResultadoReparto<List<EnvioRepartoDTO>>.Bien(lista);
         }
 
         /// <summary>El envío de un bulto escaneado (RP{envío}-{N}).</summary>

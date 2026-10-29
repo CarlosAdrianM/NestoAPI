@@ -33,6 +33,56 @@ namespace NestoAPI.Models.Agencias
         /// <summary>"Tramitado", "Incidentado" o "Entregado".</summary>
         public string Estado { get; set; }
         public string Observaciones { get; set; }
+        /// <summary>
+        /// Ariadna#63: quién lo lleva (el último que cargó un bulto suyo en la furgoneta), sin dominio. Null si nadie ha cargado
+        /// nada (o sin Scripts/Issue739_CargaFurgoneta.sql).
+        /// </summary>
+        public string Repartidor { get; set; }
+        /// <summary>Ariadna#63: bultos distintos que ha cargado el repartidor (0 sin repartidor).</summary>
+        public int BultosCargados { get; set; }
+    }
+
+    /// <summary>
+    /// Ariadna#63: POST api/RepartoPropio/Cargar. El repartidor escanea al cargar cada bulto que se lleva. Idempotente por
+    /// ClaveIdempotencia (la cola de Ariadna reintenta) y por bulto (el mismo bulto otra vez no da error).
+    /// </summary>
+    public class CargaBultoRepartoDTO
+    {
+        /// <summary>«RP{EnvioId}-{N}», el de la etiqueta del bulto.</summary>
+        public string Codigo { get; set; }
+        public Guid ClaveIdempotencia { get; set; }
+        /// <summary>La hora de la PDA. Null: la del servidor.</summary>
+        public DateTime? FechaHora { get; set; }
+        /// <summary>El envío lo lleva otro repartidor y este confirma que se lo lleva él (queda la traza en EnviosHistoria).</summary>
+        public bool Reasignar { get; set; }
+    }
+
+    /// <summary>Ariadna#63: la respuesta de POST api/RepartoPropio/Cargar.</summary>
+    public class ResultadoCargaBultoDTO
+    {
+        public int EnvioId { get; set; }
+        public int Bulto { get; set; }
+        public int Bultos { get; set; }
+        /// <summary>Bultos distintos del envío cargados por este usuario.</summary>
+        public int BultosCargados { get; set; }
+        /// <summary>Quién lo lleva (este usuario), sin dominio.</summary>
+        public string Repartidor { get; set; }
+        /// <summary>El destinatario del envío.</summary>
+        public string Nombre { get; set; }
+        public string Poblacion { get; set; }
+    }
+
+    /// <summary>Ariadna#63: GET api/RepartoPropio/SinCargar, un envío tramitado de ese día con algún bulto sin cargar.</summary>
+    public class EnvioSinCargarDTO
+    {
+        public int EnvioId { get; set; }
+        public int? Pedido { get; set; }
+        public string Nombre { get; set; }
+        public string Poblacion { get; set; }
+        public int Bultos { get; set; }
+        public int BultosCargados { get; set; }
+        /// <summary>Null si no lo ha cargado nadie.</summary>
+        public string Repartidor { get; set; }
     }
 
     /// <summary>GET api/RepartoPropio/Bulto/{codigo}: el envío y el bulto escaneado.</summary>
