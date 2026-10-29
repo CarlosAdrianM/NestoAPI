@@ -11,6 +11,8 @@ namespace NestoAPI.Models.Informes
         public string Concepto { get; set; }
         public decimal Debe { get; set; }
         public decimal Haber { get; set; }
+        /// <summary>NestoAPI#739: el asiento del apunte (MisCobros del reparto propio).</summary>
+        public int? Asiento { get; set; }
         public decimal Saldo { get; set; }
         public string Delegacion { get; set; }
         public string FormaVenta { get; set; }

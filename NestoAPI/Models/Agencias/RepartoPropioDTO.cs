@@ -22,6 +22,11 @@ namespace NestoAPI.Models.Agencias
         public string Poblacion { get; set; }
         public string Telefono { get; set; }
         public string Movil { get; set; }
+        /// <summary>
+        /// El correo del cliente del envío (EnviosAgencia.Email, el del contacto del pedido): Ariadna lo propone para el cobro por
+        /// enlace. Null si no hay o no es válido.
+        /// </summary>
+        public string Correo { get; set; }
         public int Bultos { get; set; }
         /// <summary>0 sin reembolso.</summary>
         public decimal Reembolso { get; set; }
@@ -49,10 +54,16 @@ namespace NestoAPI.Models.Agencias
         public string DniReceptor { get; set; }
         /// <summary>PNG en base64.</summary>
         public string FirmaPng { get; set; }
-        /// <summary>"Efectivo", "Tarjeta" o "NoCobrado". Con reembolso y sin esto, «NoCobrado».</summary>
+        /// <summary>
+        /// "Efectivo", "Enlace" o "NoCobrado". Con reembolso y sin esto, «NoCobrado». El repartidor no lleva datáfono: "Tarjeta"
+        /// da 400. Efectivo se contabiliza al entregar en la caja del repartidor (su CajaDefecto); Enlace manda un enlace de pago
+        /// a <see cref="CorreoEnlace"/> y no contabiliza nada (el cobro entra por la notificación de Redsys).
+        /// </summary>
         public string CobroReembolso { get; set; }
-        /// <summary>Lo cobrado; sin él, el reembolso del envío (si se ha cobrado).</summary>
+        /// <summary>Lo cobrado (o el importe del enlace); sin él, el reembolso del envío.</summary>
         public decimal? ImporteCobrado { get; set; }
+        /// <summary>Obligatorio y con formato válido con CobroReembolso = "Enlace": a dónde se manda el enlace de pago.</summary>
+        public string CorreoEnlace { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
         public string Observaciones { get; set; }
@@ -81,6 +92,32 @@ namespace NestoAPI.Models.Agencias
     {
         public int EnvioId { get; set; }
         public string Estado { get; set; }
+        /// <summary>La página del enlace de pago (CobroReembolso = "Enlace"); null si no hay enlace.</summary>
+        public string UrlPago { get; set; }
+    }
+
+    /// <summary>
+    /// GET api/RepartoPropio/MisCobros?fecha=yyyy-MM-dd: el extracto contable de ese día de la caja del usuario (su CajaDefecto),
+    /// el mismo que el de la ventana de Cajas de Nesto (api/Informes/ExtractoContable).
+    /// </summary>
+    public class MisCobrosRepartoDTO
+    {
+        public string Cuenta { get; set; }
+        public DateTime Fecha { get; set; }
+        public decimal SaldoAnterior { get; set; }
+        public System.Collections.Generic.List<ApunteCajaRepartoDTO> Apuntes { get; set; } = new System.Collections.Generic.List<ApunteCajaRepartoDTO>();
+        public decimal TotalDia { get; set; }
+        public decimal SaldoFinal { get; set; }
+    }
+
+    public class ApunteCajaRepartoDTO
+    {
+        public DateTime Fecha { get; set; }
+        public string Concepto { get; set; }
+        /// <summary>Debe − Haber de la cuenta de caja: positivo = entra en caja.</summary>
+        public decimal Importe { get; set; }
+        public int? Asiento { get; set; }
+        public string Documento { get; set; }
     }
 
     /// <summary>GET api/RepartoPropio/Envios/{envioId}/PruebaEntrega (la firma va aparte, en .../Firma).</summary>
@@ -92,6 +129,10 @@ namespace NestoAPI.Models.Agencias
         public string DniReceptor { get; set; }
         public string CobroReembolso { get; set; }
         public decimal? ImporteCobrado { get; set; }
+        /// <summary>La caja en la que se contabilizó el efectivo (null si no se contabilizó).</summary>
+        public string CuentaCaja { get; set; }
+        /// <summary>El enlace de pago que se mandó (cobro por enlace), o null.</summary>
+        public string UrlPago { get; set; }
         public string Usuario { get; set; }
         public bool TieneFirma { get; set; }
         public decimal? Latitud { get; set; }
@@ -104,7 +145,9 @@ namespace NestoAPI.Models.Agencias
         public const string TIPO_ENTREGA = "Entrega";
         public const string TIPO_INCIDENCIA = "Incidencia";
         public const string COBRO_EFECTIVO = "Efectivo";
+        /// <summary>Ya no se admite (el repartidor no lleva datáfono, Carlos 29/10/26): da 400.</summary>
         public const string COBRO_TARJETA = "Tarjeta";
+        public const string COBRO_ENLACE = "Enlace";
         public const string COBRO_NO_COBRADO = "NoCobrado";
 
         public int Id { get; set; }
@@ -121,6 +164,14 @@ namespace NestoAPI.Models.Agencias
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
         public int? Asiento { get; set; }
+        /// <summary>
+        /// NestoAPI#739: la cuenta de caja contra la que se contabilizó el reembolso cobrado: la CajaDefecto del usuario que
+        /// entrega (cada repartidor en su caja). Null si no se contabilizó nada.
+        /// </summary>
+        public string CuentaCaja { get; set; }
+        /// <summary>Cobro por enlace: el PagoTPV del enlace y su página (para devolver lo mismo si Ariadna reintenta).</summary>
+        public int? PagoTPVId { get; set; }
+        public string UrlPago { get; set; }
         public string Usuario { get; set; }
         public DateTime FechaRegistro { get; set; }
         public bool TieneFirma { get; set; }

@@ -118,6 +118,28 @@ namespace NestoAPI.Controllers
             }
         }
 
+        /// <summary>
+        /// NestoAPI#739: como <see cref="LeerParametro"/> pero SOLO la fila propia del usuario: ni «(defecto)» ni la crea.
+        /// </summary>
+        public static string LeerParametroSinDefecto(string empresa, string usuario, string clave)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            using (NVEntities db = new NVEntities())
+            {
+                string usuarioParametro = usuario.Substring(usuario.IndexOf("\\") + 1).Trim();
+                // Where + ToList (no SingleOrDefault): los filtros van en SQL, que ignora el relleno de los char.
+                string valor = db.ParametrosUsuario
+                    .Where(p => p.Empresa == empresa && p.Usuario == usuarioParametro && p.Clave == clave)
+                    .Select(p => p.Valor)
+                    .ToList()
+                    .FirstOrDefault()?.Trim();
+                return string.IsNullOrEmpty(valor) ? null : valor;
+            }
+        }
+
 
         // Caso real 20/08/26: el usuario de Tienda Online que factura los FBA (almacén AMZ)
         // cubre rutas por vacaciones y necesita pasar a ALG unos días y volver. El catálogo de
