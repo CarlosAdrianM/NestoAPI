@@ -31,13 +31,25 @@ BEGIN RAISERROR('Alguna de las cuentas tiene apuntes antiguos: no se cambia nada
 
 BEGIN TRAN;
 
-INSERT INTO PlanCuentas (Empresa, [Nº Cuenta], Concepto, IVA, DebeHaber, SóloAuto, Bloqueada, Estado, Usuario, [Fecha Modificación])
-SELECT e.Empresa, c.Cuenta, c.Concepto, m.IVA, m.DebeHaber, m.SóloAuto, m.Bloqueada, m.Estado, SUSER_SNAME(), GETDATE()
-FROM @cajas c
-CROSS JOIN @empresas e
-JOIN PlanCuentas m ON m.Empresa = e.Empresa AND m.[Nº Cuenta] = '57000029'
+-- De una en una: el trigger trgPlanCuentasUpd hace «(SELECT estado FROM inserted) = -1» y revienta con más de una fila
+-- (Mens. 512, 29/10/26 18:09).
+DECLARE @pendientes TABLE (Empresa char(3), Cuenta char(10), Concepto char(75));
+INSERT INTO @pendientes
+SELECT e.Empresa, c.Cuenta, c.Concepto
+FROM @cajas c CROSS JOIN @empresas e
 WHERE NOT EXISTS (SELECT 1 FROM PlanCuentas p WHERE p.Empresa = e.Empresa AND p.[Nº Cuenta] = c.Cuenta);
-PRINT CONCAT('Cuentas creadas: ', @@ROWCOUNT);
+
+DECLARE @creadas int = 0, @emp char(3), @cta char(10), @con char(75);
+WHILE EXISTS (SELECT 1 FROM @pendientes)
+BEGIN
+    SELECT TOP 1 @emp = Empresa, @cta = Cuenta, @con = Concepto FROM @pendientes ORDER BY Cuenta, Empresa;
+    INSERT INTO PlanCuentas (Empresa, [Nº Cuenta], Concepto, IVA, DebeHaber, SóloAuto, Bloqueada, Estado, Usuario, [Fecha Modificación])
+    SELECT @emp, @cta, @con, m.IVA, m.DebeHaber, m.SóloAuto, m.Bloqueada, m.Estado, SUSER_SNAME(), GETDATE()
+    FROM PlanCuentas m WHERE m.Empresa = @emp AND m.[Nº Cuenta] = '57000029';
+    SET @creadas += @@ROWCOUNT;
+    DELETE FROM @pendientes WHERE Empresa = @emp AND Cuenta = @cta;
+END
+PRINT CONCAT('Cuentas creadas: ', @creadas);
 
 UPDATE pu SET Valor = c.Cuenta, Usuario2 = SUSER_SNAME(), [Fecha Modificación] = GETDATE()
 FROM ParámetrosUsuario pu
