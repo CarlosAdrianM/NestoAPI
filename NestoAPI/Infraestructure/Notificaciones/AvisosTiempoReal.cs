@@ -42,7 +42,25 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public override Task OnDisconnected(bool stopCalled)
         {
             UsuariosConectadosNesto.Quitar(Context.ConnectionId);
+            ConexionesEscanerRemoto.Global.Quitar(Context.ConnectionId);
             return base.OnDisconnected(stopCalled);
+        }
+
+        /// <summary>
+        /// NestoAPI#768 (escáner remoto): Nesto se presenta al conectar (con <paramref name="conFoco"/> = si tiene una ventana
+        /// activa) y avisa cada vez que se activa su ventana. Solo las conexiones que lo han llamado reciben «lecturaEscanerRemoto»
+        /// (lo leído con Ariadna por el MISMO usuario) y, si hay varias, la del foco más reciente. False sin usuario o con un token de
+        /// cliente (TiendasNuevaVision).
+        /// </summary>
+        public bool ActividadEscanerRemoto(string equipo, bool conFoco)
+        {
+            string usuario = Context.User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario) || EscanerRemotoPermisos.EsCliente(Context.User))
+            {
+                return false;
+            }
+            ConexionesEscanerRemoto.Global.Actividad(Context.ConnectionId, usuario, equipo, conFoco, DateTime.UtcNow);
+            return true;
         }
     }
 
