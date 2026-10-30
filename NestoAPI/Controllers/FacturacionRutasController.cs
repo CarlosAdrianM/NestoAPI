@@ -512,6 +512,7 @@ namespace NestoAPI.Controllers
                 return false;
 
             return user.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION) ||
+                   user.IsInRoleSinDominio(Constantes.GruposSeguridad.FACTURACION) || // Carlos 30/10/26: Alfredo (Facturación) lanza el fin de mes
                    user.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
                    user.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA);
         }
