@@ -24,8 +24,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
             this.db = db;
         }
 
+        /// <param name="facturaPreferida">
+        /// NestoAPI#760: la factura que el cliente dice devolver (FacturaOriginal de la nota de recogida). Sus líneas van PRIMERO y
+        /// lo que no quepa en ellas sigue por el LIFO de siempre. Null = solo LIFO.
+        /// </param>
         public async Task<List<VinculacionRectificativa>> BuscarFacturasOriginales(
-            string empresa, string cliente, string producto, decimal cantidadARectificar)
+            string empresa, string cliente, string producto, decimal cantidadARectificar, string facturaPreferida = null)
         {
             // Solo líneas FACTURADAS y positivas (una negativa sería otra rectificativa)
             var lineasFacturadas = await db.LinPedidoVtas
@@ -64,7 +68,23 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 })
                 .ToList();
 
-            return RepartirEntreCompras(producto, cantidadARectificar, compras);
+            return RepartirEntreCompras(producto, cantidadARectificar, PreferidaPrimero(compras, facturaPreferida));
+        }
+
+        /// <summary>
+        /// NestoAPI#760 (puro): las compras de <paramref name="facturaPreferida"/> delante, en su orden; detrás, las demás en el
+        /// orden LIFO en que llegan. Sin factura preferida, la lista tal cual.
+        /// </summary>
+        internal static List<CompraOriginal> PreferidaPrimero(IEnumerable<CompraOriginal> comprasLifo, string facturaPreferida)
+        {
+            List<CompraOriginal> compras = (comprasLifo ?? Enumerable.Empty<CompraOriginal>()).ToList();
+            string preferida = facturaPreferida?.Trim();
+            if (string.IsNullOrEmpty(preferida))
+            {
+                return compras;
+            }
+            bool EsPreferida(CompraOriginal c) => string.Equals(c.Factura?.Trim(), preferida, StringComparison.OrdinalIgnoreCase);
+            return compras.Where(EsPreferida).Concat(compras.Where(c => !EsPreferida(c))).ToList();
         }
 
         private static string ClaveLinea(string factura, int linea) => $"{factura?.Trim()}|{linea}";

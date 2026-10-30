@@ -486,6 +486,47 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_AbonoDeRecogidaConFacturaOriginal_EsaFacturaVaPrimero()
+        {
+            // NestoAPI#760: el abono de la nota de recogida dice que devuelve la NV110 (la antigua): aunque el LIFO cogería
+            // antes la NV111, la vinculación sale de la NV110; lo que no cabe en ella seguiría por el LIFO.
+            var rectificativa = new CabFacturaVta
+            {
+                Empresa = "1", Serie = "RV", Número = "RV2600002", Fecha = DateTime.Today, CifNif = "12345678Z", NombreFiscal = "CLIENTE DE PRUEBA SL",
+                LinPedidoVtas = new List<LinPedidoVta> { new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M } }
+            };
+            var originalReciente = new CabFacturaVta { Empresa = "1", Serie = "NV", Número = "NV111", Fecha = DateTime.Today.AddDays(-5), LinPedidoVtas = new List<LinPedidoVta>() };
+            var originalAntigua = new CabFacturaVta { Empresa = "1", Serie = "NV", Número = "NV110", Fecha = DateTime.Today.AddDays(-30), LinPedidoVtas = new List<LinPedidoVta>() };
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta> { rectificativa, originalReciente, originalAntigua }.AsQueryable());
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 930800, Nº_Orden = 1, Nº_Cliente = "C1", Producto = "P1", Cantidad = -3, Nº_Factura = "RV2600002" },
+                new LinPedidoVta { Empresa = "1", Nº_Cliente = "C1", Producto = "P1", Cantidad = 2, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV111", Nº_Orden = 5, Fecha_Factura = DateTime.Today.AddDays(-5) },
+                new LinPedidoVta { Empresa = "1", Nº_Cliente = "C1", Producto = "P1", Cantidad = 5, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV110", Nº_Orden = 3, Fecha_Factura = DateTime.Today.AddDays(-30) });
+            var vinculadas = new List<LinFacturaVtaRectificacion>();
+            _ = A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored))
+                .Invokes((LinFacturaVtaRectificacion fila) =>
+                {
+                    vinculadas.Add(fila);
+                    ConfigurarFakeDbSet(fakeRectificaciones, vinculadas.AsQueryable());
+                });
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-recogida" });
+            int? pedidoConsultado = null;
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService)
+            {
+                FacturaOriginalDeAbono = (empresa, pedido) => { pedidoConsultado = pedido; return Task.FromResult("NV110"); }
+            };
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600002", "RV", "C1", 930800);
+
+            Assert.AreEqual(930800, pedidoConsultado);
+            Assert.AreEqual(1, vinculadas.Count, "Las 3 caben en la factura original de la nota");
+            Assert.AreEqual("NV110", vinculadas[0].FacturaOriginalNumero);
+            Assert.AreEqual(3, vinculadas[0].FacturaOriginalLinea);
+            Assert.AreEqual(3M, vinculadas[0].CantidadRectificada);
+        }
+
+        [TestMethod]
         public async Task EnviarRectificativaAVerifactu_SinVinculacionesPeroConLifoPosible_SeAutocuraYDeclara()
         {
             // Caso real RV2600001 (20/08/26): el guardado de las vinculaciones de la copia falló
