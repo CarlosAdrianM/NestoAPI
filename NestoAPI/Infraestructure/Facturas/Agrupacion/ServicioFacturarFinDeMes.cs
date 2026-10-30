@@ -56,6 +56,7 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 
                 CabPedidoVta destino = null;
                 bool reunido = false;
+                bool mantenerJuntoQuitado = false;
                 try
                 {
                     if (ClienteExigeSuPedido(grupo.Empresa, grupo.Cliente))
@@ -112,6 +113,15 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 
                     _ = motor.Agrupar(grupo.Pedidos, destino, fechaCorte);
 
+                    // Carlos 30/10/26: en el fin de mes se factura SOLO lo que está en albarán. Si el destino es «al completar»
+                    // (MantenerJunto) y le quedan líneas sin servir, prdCrearFacturaVta se niega («tiene marcado el servir
+                    // junto…»): se le quita la marca para esta factura y se le vuelve a poner después.
+                    if (destinoConPendientes && destino.MantenerJunto)
+                    {
+                        destino.MantenerJunto = false;
+                        mantenerJuntoQuitado = true;
+                    }
+
                     _ = db.Modificaciones.Add(new Modificacion
                     {
                         Tabla = TABLA_MODIFICACIONES,
@@ -137,6 +147,11 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                     }
 
                     string aviso = null;
+                    if (mantenerJuntoQuitado)
+                    {
+                        aviso = RestaurarMantenerJunto(factura.Empresa ?? grupo.Empresa, destino.Número);
+                        mantenerJuntoQuitado = false;
+                    }
                     if (destinoConPendientes)
                     {
                         try
@@ -146,7 +161,7 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                         catch (Exception exMarca)
                         {
                             // La factura ya está hecha: no es un error del cliente, pero hay que quitar la marca a mano.
-                            aviso = $"Al pedido {destino.Número} le quedan líneas sin servir y no se le ha podido quitar la marca de agrupado ({exMarca.Message}): quítesela para que no se facture antes de fin de mes.";
+                            aviso = (aviso == null ? string.Empty : aviso + " ") + $"Al pedido {destino.Número} le quedan líneas sin servir y no se le ha podido quitar la marca de agrupado ({exMarca.Message}): quítesela para que no se facture antes de fin de mes.";
                             ElmahHelper.Log(new Exception($"[Fin de mes #727] {aviso}", exMarca));
                         }
                     }
@@ -168,6 +183,10 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                     {
                         // Que lo que no se ha podido grabar de este cliente no se cuele en el SaveChanges del siguiente.
                         DescartarCambiosPendientes();
+                    }
+                    else if (mantenerJuntoQuitado)
+                    {
+                        _ = RestaurarMantenerJunto(grupo.Empresa, destino.Número);
                     }
                     string mensaje = reunido
                         ? $"Los albaranes ya están reunidos en el pedido {destino.Número} pero no se ha podido facturar: {ex.Message}. Cuando lo arregle, facture ese pedido desde Nesto."
@@ -203,6 +222,27 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             {
                 cabecera.Agrupada = false;
                 _ = db.SaveChanges();
+            }
+        }
+
+        /// <summary>Vuelve a poner «al completar» (MantenerJunto) al destino. Devuelve un aviso si no se ha podido.</summary>
+        private string RestaurarMantenerJunto(string empresa, int numero)
+        {
+            try
+            {
+                CabPedidoVta cabecera = db.CabPedidoVtas.FirstOrDefault(c => c.Empresa == empresa && c.Número == numero);
+                if (cabecera != null && !cabecera.MantenerJunto)
+                {
+                    cabecera.MantenerJunto = true;
+                    _ = db.SaveChanges();
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                string aviso = $"Al pedido {numero} se le quitó «facturar al completar» para facturar lo albaraneado y no se le ha podido volver a poner ({ex.Message}): póngaselo a mano.";
+                ElmahHelper.Log(new Exception($"[Fin de mes #727] {aviso}", ex));
+                return aviso;
             }
         }
 
