@@ -1112,6 +1112,7 @@
     <Compile Include="Infraestructure\Verifactu\Verifacti\ServicioVerifacti.cs" />
     <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
+    <Compile Include="Infraestructure\Contadores\NumeradorNotasEntrega.cs" />
     <Compile Include="Infraestructure\Contadores\NumeradorTraspasos.cs" />
     <Compile Include="Infraestructure\NotasEntrega\CreadorNotaEntregaPendiente.cs" />
     <Compile Include="Infraestructure\NotasEntrega\AvisoPendienteCompleto.cs" />
