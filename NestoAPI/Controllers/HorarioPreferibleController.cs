@@ -11,8 +11,8 @@ using System.Web.Http.Description;
 namespace NestoAPI.Controllers
 {
     /// <summary>
-    /// NestoAPI#763 (Nesto#584): el «horario preferible» de entrega de cada cliente/contacto. Solo lo respeta nuestra ruta propia
-    /// (agencia 14); las agencias externas no tienen obligación de respetarlo (<see cref="HorarioPreferibleDTO.AVISO"/>). Más las
+    /// NestoAPI#763 (Nesto#584): el «horario preferible» de entrega de cada cliente/contacto. Se intenta respetar,
+    /// pero sin compromiso (<see cref="HorarioPreferibleDTO.AVISO"/>). Más las
     /// propuestas sacadas de los comentarios de la ficha, que no cuentan hasta que una persona las acepta.
     /// </summary>
     [Authorize]

@@ -14,7 +14,7 @@ using System.Web.Http.Results;
 namespace NestoAPI.Tests.Infrastructure.Clientes
 {
     /// <summary>
-    /// NestoAPI#763 (Nesto#584): «horario preferible» por cliente y contacto (solo lo respeta nuestra ruta propia). El formato en
+    /// NestoAPI#763 (Nesto#584): «horario preferible» por cliente y contacto (se intenta respetar, sin compromiso). El formato en
     /// texto, las reglas de lo que se puede guardar, las propuestas sacadas de los comentarios reales de las fichas, el servicio y
     /// los endpoints.
     /// </summary>
@@ -246,8 +246,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.AreEqual("0", r.Contenido.Contacto, "Sin contacto: el 0");
             Assert.AreEqual(0, r.Contenido.Franjas.Count);
             Assert.AreEqual(string.Empty, r.Contenido.Texto);
-            StringAssert.Contains(r.Contenido.Aviso, "solo lo respeta nuestra ruta propia");
-            StringAssert.Contains(r.Contenido.Aviso, "agencias externas no tienen obligación");
+            StringAssert.Contains(r.Contenido.Aviso, "no hay compromiso de respetarlo");
             Assert.AreEqual(7, r.Contenido.PropuestaPendiente.Id);
             Assert.AreEqual("L-V 10:00-14:00", r.Contenido.PropuestaPendiente.HorarioPropuesto);
         }

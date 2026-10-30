@@ -10,7 +10,7 @@ namespace NestoAPI.Infraestructure.Clientes
 {
     /// <summary>
     /// NestoAPI#763: una franja del «horario preferible» de un cliente/contacto (una fila de dbo.ClientesHorarioPreferible).
-    /// Solo lo respeta nuestra ruta propia; las agencias externas no tienen obligación.
+    /// Se intenta respetar, pero sin compromiso.
     /// </summary>
     public class FranjaHorario
     {

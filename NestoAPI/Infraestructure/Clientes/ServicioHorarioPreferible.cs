@@ -206,9 +206,8 @@ namespace NestoAPI.Infraestructure.Clientes
     }
 
     /// <summary>
-    /// NestoAPI#763 (Nesto#584): el «horario preferible» de entrega por cliente y contacto. Solo lo respeta nuestra ruta propia
-    /// (agencia 14: el orden sugerido de las paradas avisa de las que llegarían fuera de él); las agencias externas no tienen
-    /// obligación. Las propuestas sacadas de los comentarios (Scripts/Issue763_CargaPropuestasHorario.sql) no cuentan hasta que
+    /// NestoAPI#763 (Nesto#584): el «horario preferible» de entrega por cliente y contacto. Se intenta respetar (el orden
+    /// sugerido de las paradas avisa de las que llegarían fuera de él), pero sin compromiso. Las propuestas sacadas de los comentarios (Scripts/Issue763_CargaPropuestasHorario.sql) no cuentan hasta que
     /// una persona las acepta.
     /// </summary>
     public class ServicioHorarioPreferible

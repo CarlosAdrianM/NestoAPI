@@ -23,7 +23,7 @@ namespace NestoAPI.Models.Clientes
     public class HorarioPreferibleDTO
     {
         /// <summary>Lo que hay que enseñar siempre junto al horario.</summary>
-        public const string AVISO = "Horario preferible: solo lo respeta nuestra ruta propia. Las agencias externas no tienen obligación de respetarlo.";
+        public const string AVISO = "Horario preferible del cliente: lo intentaremos, pero no hay compromiso de respetarlo.";
 
         public string Empresa { get; set; }
         public string Cliente { get; set; }
