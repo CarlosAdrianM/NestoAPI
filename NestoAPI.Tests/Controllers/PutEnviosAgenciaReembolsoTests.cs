@@ -331,5 +331,61 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
+
+        // ---- Sugerencia 906 (30/10/26): el retorno de un pendiente «Recoger producto» solo lo quita el usuario ----
+
+        private EnviosAgencia PendienteRecogerProducto()
+            => Registrado(codigoBarras: null, estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 0M, retorno: 1);
+
+        private static EnviosAgencia ImpresoSinRetorno()
+            => Envio(codigoBarras: "", estado: (short)Constantes.Agencias.ESTADO_EN_CURSO, reembolso: 0M, retorno: 0);
+
+        [TestMethod]
+        public async Task Pendiente_ConRetorno_PutSinRetornoYSinQuitarRetorno_ConservaElRetornoConHistoriaYElmah()
+        {
+            // Envío 250390: Nesto lo imprimía con Retorno = 0 sin que Andre tocara el combo.
+            _ = PendienteRecogerProducto();
+            var elmah = new List<Exception>();
+            controller.RegistrarEnElmah = ex => elmah.Add(ex);
+            EnviosAgencia enviado = ImpresoSinRetorno();
+
+            IHttpActionResult resultado = await controller.PutEnviosAgencia(249990, enviado);
+
+            Assert.IsNotInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual((short)1, enviado.Retorno, "Se graba con el retorno del pendiente");
+            Assert.AreEqual((short)1, controller.Marcados.Single().Retorno);
+            Assert.AreEqual("Retorno", historia.Single().Campo);
+            Assert.AreEqual("1", historia.Single().ValorAnterior);
+            StringAssert.Contains(historia.Single().Observaciones, "906");
+            Assert.AreEqual(@"NUEVAVISION\Alfredo", historia.Single().Usuario);
+            Assert.IsTrue(elmah.Any(e => e.Message.Contains("[Retorno pendiente 906]") && e.Message.Contains("249990")));
+        }
+
+        [TestMethod]
+        public async Task Pendiente_ConRetorno_ElUsuarioLoQuitaAMano_SeGrabaSinRetorno()
+        {
+            _ = PendienteRecogerProducto();
+            controller.RegistrarEnElmah = ex => { };
+            EnviosAgencia enviado = ImpresoSinRetorno();
+
+            _ = await controller.PutEnviosAgencia(249990, enviado, quitarRetorno: true);
+
+            Assert.AreEqual((short)0, enviado.Retorno);
+            Assert.AreEqual(0, historia.Count);
+        }
+
+        [TestMethod]
+        public void QuitaElRetornoDelPendienteSinPedirlo_SoloPendienteConRetornoAMismaAgencia()
+        {
+            EnviosAgencia pendiente = Envio(codigoBarras: null, estado: -1, retorno: 1);
+            Assert.IsTrue(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(pendiente, Envio(estado: 0, retorno: 0), false));
+            Assert.IsFalse(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(pendiente, Envio(estado: 0, retorno: 0), true), "Lo pide el usuario");
+            Assert.IsFalse(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(pendiente, Envio(estado: 0, retorno: 2), false), "No lo quita");
+            Assert.IsFalse(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(pendiente,
+                Envio(agencia: Constantes.Agencias.AGENCIA_INNOVATRANS, estado: -1, retorno: 0), false), "Cambia de agencia");
+            Assert.IsFalse(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(Envio(estado: 0, retorno: 1), Envio(estado: 0, retorno: 0), false),
+                "En curso: no es un pendiente");
+            Assert.IsFalse(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(null, Envio(retorno: 0), false));
+        }
     }
 }
