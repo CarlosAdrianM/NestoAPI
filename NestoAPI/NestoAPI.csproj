@@ -1008,6 +1008,9 @@
     <Compile Include="Infraestructure\PedidosVenta\ModosServicioPermitidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ClasificadorCausasModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalculadoraFechaEntregaAgencia.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CalendarioRutasDia.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\AvisoClienteCierraDiaReparto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioFechaEntregaAgencia.cs" />
@@ -1340,6 +1343,7 @@
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Clientes\ValidadorCambioClienteComercial.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServir.cs" />
+    <Compile Include="Models\Picking\GestorRutaInternaPicking.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PuertaPublicacionTienda.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PublicacionTienda.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
@@ -1981,6 +1985,7 @@
     <Compile Include="Models\Picking\HoraCortePicking.cs" />
     <Compile Include="Models\Picking\AvisadorPickingAutomatico.cs" />
     <Compile Include="Infraestructure\Picking\PickingJobsService.cs" />
+    <Compile Include="Infraestructure\Picking\PickingRutasInternasJobsService.cs" />
     <Compile Include="Infraestructure\Picking\ReglasRutaPropia.cs" />
     <Compile Include="Infraestructure\Picking\GestorSugerenciasRuta.cs" />
     <Compile Include="Infraestructure\Picking\RepositorioSugerenciasRutaSql.cs" />

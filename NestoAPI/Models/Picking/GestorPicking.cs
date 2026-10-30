@@ -61,10 +61,22 @@ namespace NestoAPI.Models.Picking
 
         public void SacarPicking(List<Ruta> rutas)
         {
+            SacarPickingDeRutas(rutas, () => FechaPickingAhora(Constantes.Empresas.EMPRESA_POR_DEFECTO));
+        }
+
+        /// <summary>NestoAPI#764: el picking de esas rutas con el horizonte de entrega como dato (el automático de las rutas
+        /// internas de las 9:00 declara hoy, como el de cierre de las 11).</summary>
+        public void SacarPicking(List<Ruta> rutas, DateTime fechaPicking)
+        {
+            SacarPickingDeRutas(rutas, () => fechaPicking);
+        }
+
+        private void SacarPickingDeRutas(List<Ruta> rutas, Func<DateTime> fechaPicking)
+        {
             EnExclusiva(() =>
             {
                 candidatos = modulos.rellenadorPicking.Rellenar(rutas);
-                Ejecutar(FechaPickingAhora(Constantes.Empresas.EMPRESA_POR_DEFECTO));
+                Ejecutar(fechaPicking());
             });
         }
 
@@ -172,6 +184,15 @@ namespace NestoAPI.Models.Picking
 
             GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, fechaPicking);
 
+            // NestoAPI#764: los pedidos de ruta interna con día de reparto por código postal se preparan el mismo día del reparto
+            // y solo el día que les toca (salvo en el picking de un solo pedido: lo decide almacén).
+            List<PedidoPicking> noLesTocaHoy = GestorRutaInternaPicking.Aplicar(candidatos, DateTime.Today,
+                f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE), mirarDiaDeReparto: !pedidoUnico.HasValue);
+            foreach (PedidoPicking pedido in noLesTocaHoy)
+            {
+                System.Diagnostics.Trace.WriteLine($"[Picking#764] Pedido {pedido.Id} no sale: su día de reparto por nuestra ruta es el {pedido.PrimeraEntregaFuturaQuitada:dd/MM/yyyy}");
+            }
+
             // NestoAPI#362: si la entrega (el laborable siguiente a la salida) cae en un día que
             // el cliente cierra, el pedido no sale en esta pasada; se reevalúa en la siguiente.
             DateTime diaEntrega = GestorDiasEnServir.CalcularDiaEntrega(fechaPicking,
@@ -180,7 +201,9 @@ namespace NestoAPI.Models.Picking
             // a la salida de la agencia)
             DateTime diaEntregaRutaPropia = GestorDiasEnServir.CalcularDiaEntregaRutaPropia(DateTime.Today, fechaPicking,
                 f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
-            sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, diaEntregaRutaPropia, ignorarCierreCliente);
+            // NestoAPI#764: los de ruta interna con día de reparto se entregan hoy, el día en que se preparan
+            sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, diaEntregaRutaPropia,
+                DateTime.Today, ignorarCierreCliente);
             diaEntregaPicking = diaEntrega;
 
             // 27/10/26 (Carlos, caso David): una muestra (MMP) sin stock no retiene el pedido ni se queda pendiente. Si sin

@@ -139,6 +139,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return db.DescuentosClientes.OrderBy(d => d.ImporteMínimo).FirstOrDefault(d => d.Empresa == empresa && d.Nº_Cliente == cliente && d.Contacto == contacto);
         }
 
+        public string LeerCodigoPostalEntrega(string empresa, string cliente, string contacto)
+        {
+            return db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)
+                .Select(c => c.CodPostal)
+                .FirstOrDefault()?.Trim();
+        }
+
         public Empresa LeerEmpresa(string empresa)
         {
             return db.Empresas.SingleOrDefault(e => e.Número == empresa);

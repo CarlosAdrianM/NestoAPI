@@ -577,7 +577,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Producto = linea.Producto,
                 Texto = TruncarTexto(linea.texto), // 50 es la longitud del campo; NestoAPI#352: null-safe
                 Cantidad = (short)linea.Cantidad,
-                Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta, linea.almacen),
+                Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta, linea.almacen, CodigoPostalSiRutaInterna(empresa, cliente, contacto, ruta)),
                 Precio = linea.PrecioUnitario,
                 PrecioTarifa = precioTarifa,
                 Coste = coste,
@@ -715,9 +715,52 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         // A la hora de corte del picking (HoraCortePicking, 11:00 por defecto) se cierra la ruta y los pedidos que se metan son ya para el día siguiente
         internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen = "")
         {
-            return FechaEntregaAjustada(fecha, ruta, almacen, DateTime.Now,
-                Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO), GestorFestivos.EsFestivo);
+            return FechaEntregaAjustada(fecha, ruta, almacen, (string)null);
         }
+
+        /// <summary>
+        /// NestoAPI#764: con el código postal de entrega. Si el pedido va por ruta interna y ese código postal tiene día de
+        /// reparto (<see cref="DiasRepartoCodigosPostales.DiaRutaInterna"/>), el próximo día de su ruta; si no, como siempre.
+        /// </summary>
+        internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, string codigoPostal)
+        {
+            return FechaEntregaAjustada(fecha, ruta, almacen, DateTime.Now,
+                Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO), GestorFestivos.EsFestivo,
+                DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal));
+        }
+
+        /// <summary>
+        /// NestoAPI#764: el código postal de entrega del pedido SOLO si su ruta es interna (si no, no hace falta y no se lee).
+        /// Uno por cliente y contacto en la vida del gestor (es por petición).
+        /// </summary>
+        internal string CodigoPostalSiRutaInterna(string empresa, string cliente, string contacto, string ruta)
+        {
+            if (string.IsNullOrWhiteSpace(cliente) || !DiasRepartoCodigosPostales.PuedeTenerDia(ruta))
+            {
+                return null;
+            }
+            string clave = $"{empresa?.Trim()}|{cliente.Trim()}|{contacto?.Trim()}";
+            if (!codigosPostalesLeidos.TryGetValue(clave, out string codigoPostal))
+            {
+                try
+                {
+                    codigoPostal = servicio.LeerCodigoPostalEntrega(empresa, cliente, contacto);
+                }
+                catch (Exception ex)
+                {
+                    // Sin código postal, la fecha de siempre: nunca se deja de grabar un pedido por esto.
+                    ElmahHelper.Log(new Exception($"NestoAPI#764: no se ha podido leer el código postal del cliente {cliente?.Trim()}/{contacto?.Trim()}: {ex.Message}", ex));
+                    codigoPostal = null;
+                }
+                codigosPostalesLeidos[clave] = codigoPostal;
+            }
+            return codigoPostal;
+        }
+
+        private readonly Dictionary<string, string> codigosPostalesLeidos = new Dictionary<string, string>();
+
+        /// <summary>NestoAPI#764: desde aquí, una fecha de entrega es de retención (2099...): no se mueve al día de la ruta.</summary>
+        internal static readonly DateTime FECHA_RETENCION = new DateTime(2099, 1, 1);
 
         /// <summary>
         /// NestoAPI#606: la misma regla, sin reloj ni BD (el instante, la hora de corte y los festivos como dato), para que
@@ -726,6 +769,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal static DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, DateTime ahora, TimeSpan horaCorte,
             Func<DateTime, string, bool> esFestivo)
         {
+            return FechaEntregaAjustada(fecha, ruta, almacen, ahora, horaCorte, esFestivo, null);
+        }
+
+        /// <param name="diaRutaInterna">NestoAPI#764: el día de reparto del pedido por nuestra ruta
+        /// (<see cref="DiasRepartoCodigosPostales.DiaRutaInterna"/>); null = sin día, como siempre. Con día, desde Algete: el
+        /// próximo día de su ruta (<see cref="CalendarioRutasDia"/>, corte a las 9:00, festivos de Algete); las fechas de
+        /// retención (2099...) no se mueven.</param>
+        internal static DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, DateTime ahora, TimeSpan horaCorte,
+            Func<DateTime, string, bool> esFestivo, DayOfWeek? diaRutaInterna)
+        {
             fecha = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             if (string.IsNullOrEmpty(almacen))
             {
@@ -733,6 +786,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             DateTime hoy = ahora.Date;
             DateTime fechaMinima;
+
+            if (diaRutaInterna.HasValue && almacen == Constantes.Almacenes.ALGETE && fecha < FECHA_RETENCION)
+            {
+                return CalendarioRutasDia.ProximoDiaReparto(diaRutaInterna.Value, fecha, ahora, CalendarioRutasDia.HORA_CORTE,
+                    d => esFestivo(d, Constantes.Almacenes.ALGETE));
+            }
 
             if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta) && almacen == Constantes.Almacenes.ALGETE)
             {

@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Picking;
 using System;
 using System.Collections.Generic;
@@ -52,7 +52,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     c.ServirJunto,
                     c.ModoFacturacion,
                     c.MantenerJunto,
-                    c.Cliente.DiasEnServir
+                    c.Cliente.DiasEnServir,
+                    c.Cliente.CodPostal
                 })
                 .FirstOrDefaultAsync().ConfigureAwait(false);
             if (cabecera == null)
@@ -88,6 +89,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ModoFacturacion = cabecera.ModoFacturacion,
                 MantenerJunto = cabecera.MantenerJunto,
                 DiasEnServir = cabecera.DiasEnServir,
+                CodigoPostal = cabecera.CodPostal?.Trim(),
                 TieneLineasServidas = lineas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN),
                 // Como RellenadorPickingService: pendientes y en curso, Cantidad − Recoger, por fecha de modificación y Nº orden.
                 Lineas = lineas
@@ -119,6 +121,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ?? fichas.FirstOrDefault(c => c.ClientePrincipal)
                 ?? fichas.FirstOrDefault();
             return ficha?.DiasEnServir;
+        }
+
+        public async Task<string> LeerCodigoPostal(string empresa, string cliente, string contacto)
+        {
+            var fichas = await db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                .Select(c => new { c.Contacto, c.ClientePrincipal, c.CodPostal })
+                .ToListAsync().ConfigureAwait(false);
+            var ficha = fichas.FirstOrDefault(c => string.Equals(c.Contacto?.Trim(), contacto, StringComparison.OrdinalIgnoreCase))
+                ?? fichas.FirstOrDefault(c => c.ClientePrincipal)
+                ?? fichas.FirstOrDefault();
+            return ficha?.CodPostal?.Trim();
         }
 
         public DatosSombraModoServicio LeerStock(string empresa, int? pedidoExcluir, IEnumerable<string> productos)

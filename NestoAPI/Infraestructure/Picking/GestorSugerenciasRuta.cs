@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -70,6 +70,13 @@ namespace NestoAPI.Infraestructure.Picking
         /// <summary>Lo que se deja en ELMAH si falla un cambio (sustituible en los tests).</summary>
         internal Action<Exception> RegistrarEnElmah { get; set; } = ElmahHelper.Log;
 
+        /// <summary>NestoAPI#764: hoy, para el día en que saldría por nuestra ruta (sustituible en los tests).</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>NestoAPI#764: los festivos de Algete (sustituible en los tests).</summary>
+        internal Func<DateTime, bool> EsFestivo { get; set; } =
+            f => Models.RecursosHumanos.GestorFestivos.EsFestivo(f, Models.Constantes.Almacenes.ALGETE);
+
         public async Task<List<SugerenciaRutaPedidoDTO>> LeerSugerencias(string empresa, int? pedido, string cliente, DateTime fechaPicking)
         {
             int? pedidoFiltro = pedido.HasValue && pedido.Value > 0 ? pedido : null;
@@ -82,9 +89,19 @@ namespace NestoAPI.Infraestructure.Picking
                 .LeerCandidatos(empresaFiltro, pedidoFiltro, clienteFiltro, fechaPicking.Date).ConfigureAwait(false)
                 ?? new List<DatosPedidoSugerenciaRuta>();
 
-            return candidatos
-                .Select(ReglasRutaPropia.Sugerir)
-                .Where(s => s != null)
+            DateTime hoy = Hoy().Date;
+            var sugerencias = new List<SugerenciaRutaPedidoDTO>();
+            foreach (DatosPedidoSugerenciaRuta datos in candidatos)
+            {
+                SugerenciaRutaPedidoDTO sugerencia = ReglasRutaPropia.Sugerir(datos);
+                if (sugerencia != null)
+                {
+                    // NestoAPI#764: el día en que saldría por nuestra ruta, si su código postal tiene día de reparto
+                    ReglasRutaPropia.AnotarDiaReparto(sugerencia, datos.DiasEnServir, hoy, EsFestivo);
+                    sugerencias.Add(sugerencia);
+                }
+            }
+            return sugerencias
                 .OrderBy(s => s.Empresa)
                 .ThenBy(s => s.Pedido)
                 .ToList();
