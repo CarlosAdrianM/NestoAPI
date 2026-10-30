@@ -27,9 +27,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         // SqlQuery<PruebaEntregaReparto> exige una columna por propiedad: sin las columnas del cobro (script de antes), NULL.
         private string COLUMNAS => COLUMNAS_FIJAS + (TieneColumnasCobro()
             ? ", CuentaCaja, PagoTPVId, UrlPago"
-            : ", CAST(NULL AS varchar(15)) AS CuentaCaja, CAST(NULL AS int) AS PagoTPVId, CAST(NULL AS varchar(200)) AS UrlPago");
+            : ", CAST(NULL AS varchar(15)) AS CuentaCaja, CAST(NULL AS int) AS PagoTPVId, CAST(NULL AS varchar(200)) AS UrlPago")
+            + (TieneBultosRecogidos() ? ", BultosRecogidos" : ", CAST(NULL AS smallint) AS BultosRecogidos");
 
         private bool TieneColumnasCobro() => ColumnasOpcionales.Existen(db, TABLA, COLUMNAS_COBRO);
+
+        /// <summary>NestoAPI#759: la columna de Scripts/Issue759_ParadasReparto.sql.</summary>
+        internal const string COLUMNA_BULTOS_RECOGIDOS = "BultosRecogidos";
+
+        private bool TieneBultosRecogidos() => ColumnasOpcionales.Existen(db, TABLA, COLUMNA_BULTOS_RECOGIDOS);
 
         private readonly NVEntities db;
 
@@ -104,14 +110,23 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     }
                     prueba.Asiento = asiento > 0 ? asiento : (int?)null;
                     bool conCobro = TieneColumnasCobro();
+                    // NestoAPI#759: sin la columna (script sin lanzar) los bultos recogidos se quedan solo en la historia.
+                    bool conBultos = TieneBultosRecogidos();
+                    if (!conBultos && prueba.Motivo == IncidenciaRepartoDTO.NADA_QUE_RECOGER)
+                    {
+                        // El mismo script amplía la CHECK de Motivo: sin él, el INSERT fallaría con la restricción (lección de #698).
+                        throw new NestoBusinessException("falta lanzar Scripts/Issue759_ParadasReparto.sql (motivo «No había nada que recoger»). Avise a Informática.");
+                    }
 
                     try
                     {
                         _ = await db.Database.ExecuteSqlCommandAsync(
                             $"INSERT INTO dbo.{TABLA} (EnvioId, ClaveIdempotencia, Tipo, FechaHora, Receptor, DniReceptor, Firma, CobroReembolso, " +
                             "ImporteCobrado, Motivo, Texto, Latitud, Longitud, Asiento, Usuario, FechaRegistro" + (conCobro ? ", CuentaCaja, PagoTPVId, UrlPago" : string.Empty) +
+                            (conBultos ? ", BultosRecogidos" : string.Empty) +
                             ") VALUES (@EnvioId, @Clave, @Tipo, @FechaHora, @Receptor, @Dni, @Firma, @Cobro, @Importe, @Motivo, @Texto, @Latitud, " +
-                            "@Longitud, @Asiento, @Usuario, @FechaRegistro" + (conCobro ? ", @CuentaCaja, @PagoTPVId, @UrlPago" : string.Empty) + ")",
+                            "@Longitud, @Asiento, @Usuario, @FechaRegistro" + (conCobro ? ", @CuentaCaja, @PagoTPVId, @UrlPago" : string.Empty) +
+                            (conBultos ? ", @BultosRecogidos" : string.Empty) + ")",
                             Parametro("@EnvioId", SqlDbType.Int, prueba.EnvioId),
                             Parametro("@Clave", SqlDbType.UniqueIdentifier, prueba.ClaveIdempotencia),
                             Parametro("@Tipo", SqlDbType.VarChar, prueba.Tipo),
@@ -131,7 +146,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                             // Sin las columnas estos parámetros sobran pero no molestan (no aparecen en el texto del INSERT).
                             Parametro("@CuentaCaja", SqlDbType.VarChar, Recortar(prueba.CuentaCaja?.Trim(), 15)),
                             Parametro("@PagoTPVId", SqlDbType.Int, prueba.PagoTPVId),
-                            Parametro("@UrlPago", SqlDbType.VarChar, Recortar(prueba.UrlPago, 200))).ConfigureAwait(false);
+                            Parametro("@UrlPago", SqlDbType.VarChar, Recortar(prueba.UrlPago, 200)),
+                            Parametro("@BultosRecogidos", SqlDbType.SmallInt, prueba.BultosRecogidos)).ConfigureAwait(false);
                     }
                     catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
                     {

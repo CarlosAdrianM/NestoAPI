@@ -183,7 +183,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             var resultado = await servicio.Cargar(Carga("RP251300-2"), MIGUEL);
 
             Assert.AreEqual(TipoResultadoReparto.Conflicto, resultado.Tipo);
-            Assert.AreEqual("Este envío lo lleva Andre. Si se lo lleva usted, confírmelo para reasignárselo.", resultado.Mensaje);
+            Assert.AreEqual("Este bulto no es suyo: es de la parada de Andre. Si se la lleva usted, confírmelo para reasignársela.", resultado.Mensaje); // NestoAPI#759
             Assert.AreEqual(ServicioRepartoPropio.CODIGO_ENVIO_DE_OTRO, resultado.Codigo);
             Assert.AreEqual("Andre", resultado.Detalles.GetType().GetProperty("repartidor").GetValue(resultado.Detalles));
             Assert.AreEqual(1, cargas.Filas.Count);
@@ -279,7 +279,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(0, todos.Single(e => e.EnvioId == 251302).BultosCargados);
 
             List<EnvioRepartoDTO> deMiguel = (await servicio.Envios(null, soloMios: true, usuario: "miguel")).Contenido;
-            Assert.AreEqual(251301, deMiguel.Single().EnvioId);
+            // NestoAPI#759: las suyas y las que no ha cargado nadie (para poder cargarlas); nunca la de Andre.
+            CollectionAssert.AreEquivalent(new[] { 251301, 251302 }, deMiguel.Select(e => e.EnvioId).ToList());
         }
 
         [TestMethod]
@@ -330,7 +331,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             string cuerpo = await respuesta.Content.ReadAsStringAsync();
             StringAssert.Contains(cuerpo, "\"code\":\"ENVIO_DE_OTRO_REPARTIDOR\"");
             StringAssert.Contains(cuerpo, "\"details\":{\"repartidor\":\"Andre\"}");
-            StringAssert.Contains(cuerpo, "\"Message\":\"Este envío lo lleva Andre.");
+            StringAssert.Contains(cuerpo, "\"Message\":\"Este bulto no es suyo: es de la parada de Andre.");
         }
 
         // ================================================================ dobles

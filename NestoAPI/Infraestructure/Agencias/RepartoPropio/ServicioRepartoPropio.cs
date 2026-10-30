@@ -99,6 +99,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             { IncidenciaRepartoDTO.DIRECCION_INCORRECTA, "Dirección incorrecta" },
             { IncidenciaRepartoDTO.RECHAZADO, "Rechazado" },
             { IncidenciaRepartoDTO.FALTAN_BULTOS, "Faltan bultos" },
+            { IncidenciaRepartoDTO.NADA_QUE_RECOGER, "No había nada que recoger" },
             { IncidenciaRepartoDTO.OTRO, "Otro" }
         };
 
@@ -116,14 +117,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>Ariadna#63: la carga de la furgoneta (EnviosAgenciaCargaBultos). Null: no hay carga (Envios sin repartidor).</summary>
         private readonly IRepositorioCargaFurgoneta carga;
 
+        /// <summary>NestoAPI#759: notas, orden, reposiciones y avisos de las paradas (vacío: como antes del corte 3).</summary>
+        private readonly DependenciasParadasReparto paradas;
+
         /// <param name="carga">Ariadna#63: quién lleva cada envío y qué bultos ha cargado. Null: como antes de la carga.</param>
+        /// <param name="paradas">NestoAPI#759: lo de las paradas (notas, orden, reposiciones, SignalR). Null: como antes.</param>
         /// <param name="pagos">Los enlaces de pago (cobro por enlace): el mismo IniciarPago que el enlace que manda Nesto desde el pedido.</param>
         /// <param name="informes">El extracto contable de la caja (MisCobros): el mismo que el de la ventana de Cajas de Nesto.</param>
         public ServicioRepartoPropio(IRepositorioRepartoPropio repositorio, Func<DateTime> ahora = null, Func<EnviosAgencia, Task> avisarIncidencia = null,
             ILectorParametrosUsuario parametros = null, Func<IServicioPagos> pagos = null, Func<IInformesService> informes = null,
-            IRepositorioCargaFurgoneta carga = null)
+            IRepositorioCargaFurgoneta carga = null, DependenciasParadasReparto paradas = null)
         {
             this.carga = carga;
+            this.paradas = paradas ?? new DependenciasParadasReparto();
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.ahora = ahora ?? (() => DateTime.Now);
             this.avisarIncidencia = avisarIncidencia;
@@ -154,29 +160,43 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .OrderBy(e => e.Fecha).ThenBy(e => e.Numero)
                 .Select(e => ADto(e, new EnvioRepartoDTO()))
                 .ToList();
+            await CompletarNotas(lista).ConfigureAwait(false);
             if (CargaDisponible())
             {
                 await CompletarCarga(lista).ConfigureAwait(false);
                 if (soloMios)
                 {
-                    lista = lista.Where(e => MismoUsuario(e.Repartidor, usuario)).ToList();
+                    // NestoAPI#759: las suyas y las que no ha cargado nadie (para poder cargarlas).
+                    lista = lista.Where(e => NucleoParadasReparto.Visible(e.Repartidor, usuario, true)).ToList();
                 }
             }
-            return ResultadoReparto<List<EnvioRepartoDTO>>.Bien(lista);
+            lista.AddRange((await ParadasReposicionEnReparto(dia).ConfigureAwait(false))
+                .Where(p => NucleoParadasReparto.Visible(p.Repartidor, usuario, soloMios)));
+            await CompletarOrden(lista).ConfigureAwait(false);
+            return ResultadoReparto<List<EnvioRepartoDTO>>.Bien(NucleoParadasReparto.Ordenar(lista));
         }
 
-        /// <summary>El envío de un bulto escaneado (RP{envío}-{N}).</summary>
+        /// <summary>
+        /// La parada de un bulto escaneado: RP{envío}-{N}, NestoAPI#759 NE{pedido}, NR{pedido}, NR{pedido}-{N} y R{traspaso}-{N}
+        /// (este, solo si ya está cargado en una parada de reposición).
+        /// </summary>
         public async Task<ResultadoReparto<EnvioRepartoBultoDTO>> Bulto(string codigo)
         {
             if (!repositorio.ScriptAplicado())
             {
                 return ResultadoReparto<EnvioRepartoBultoDTO>.Mal(TipoResultadoReparto.Invalido, MENSAJE_FALTA_SCRIPT);
             }
-            if (!CodigoBultoRepartoPropio.TryLeerBulto(codigo, out int numero, out int bulto))
+            if (EsCodigoReposicion(codigo, out int traspaso, out int bultoReposicion))
             {
-                return ResultadoReparto<EnvioRepartoBultoDTO>.Mal(TipoResultadoReparto.NoEncontrado,
-                    $"El código «{codigo?.Trim()}» no es de un bulto del reparto propio (RP, el número del envío, guion y el bulto).");
+                return await BultoReposicion(traspaso, bultoReposicion).ConfigureAwait(false);
             }
+            CodigoParadaResuelto resuelto = await ResolverCodigo(codigo).ConfigureAwait(false);
+            if (resuelto.Error.HasValue)
+            {
+                return ResultadoReparto<EnvioRepartoBultoDTO>.Mal(resuelto.Error.Value, resuelto.Mensaje);
+            }
+            int numero = resuelto.Envio;
+            int bulto = resuelto.Bulto;
             EnviosAgencia envio = await repositorio.LeerEnvio(numero).ConfigureAwait(false);
             if (envio == null || envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
             {
@@ -193,6 +213,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             EnvioRepartoBultoDTO dto = ADto(envio, new EnvioRepartoBultoDTO());
             dto.Bulto = bulto;
+            await CompletarNotas(new List<EnvioRepartoDTO> { dto }).ConfigureAwait(false);
+            if (CargaDisponible())
+            {
+                await CompletarCarga(new List<EnvioRepartoDTO> { dto }).ConfigureAwait(false);
+            }
+            await CompletarOrden(new List<EnvioRepartoDTO> { dto }).ConfigureAwait(false);
             return ResultadoReparto<EnvioRepartoBultoDTO>.Bien(dto);
         }
 
@@ -236,7 +262,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         // ---------------------------------------------------------------- entregar
 
-        public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Entregar(int envioId, EntregaRepartoDTO peticion, string usuario)
+        public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Entregar(int envioId, EntregaRepartoDTO peticion, string usuario,
+            OrigenPeticionReparto origen = null)
+        {
+            ResultadoReparto<EstadoEnvioRepartoDTO> resultado = NucleoParadasReparto.EsReposicion(envioId)
+                ? await EntregarReposicion(NucleoParadasReparto.IdReposicion(envioId), peticion, usuario).ConfigureAwait(false)
+                : await EntregarEnvio(envioId, peticion, usuario).ConfigureAwait(false);
+            Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_ENTREGA, origen);
+            return resultado;
+        }
+
+        private async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> EntregarEnvio(int envioId, EntregaRepartoDTO peticion, string usuario)
         {
             if (!repositorio.ScriptAplicado())
             {
@@ -245,6 +281,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (peticion == null || peticion.ClaveIdempotencia == Guid.Empty)
             {
                 return Invalido("Falta la ClaveIdempotencia de la entrega.");
+            }
+            if (peticion.BultosRecogidos.HasValue && (peticion.BultosRecogidos.Value < 0 || peticion.BultosRecogidos.Value > NestoAPI.Models.PedidosVenta.TiposNotaEntrega.BULTOS_MAXIMO))
+            {
+                return Invalido($"Los bultos recogidos tienen que estar entre 0 y {NestoAPI.Models.PedidosVenta.TiposNotaEntrega.BULTOS_MAXIMO}.");
             }
             string receptor = Limpio(peticion.Receptor);
             string dni = Limpio(peticion.DniReceptor);
@@ -374,9 +414,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 }
             }
 
+            // NestoAPI#759: en las notas de recogida, los bultos que se trae (en las demás paradas se ignoran).
+            bool recogida = (await NotaDe(envio.Pedido).ConfigureAwait(false))?.EsRecogida == true;
+            short? bultosRecogidos = recogida && peticion.BultosRecogidos.HasValue ? (short?)peticion.BultosRecogidos.Value : null;
+
             DateTime fechaHora = peticion.FechaHora ?? ahora();
             var prueba = new PruebaEntregaReparto
             {
+                BultosRecogidos = bultosRecogidos,
                 EnvioId = envio.Numero,
                 ClaveIdempotencia = peticion.ClaveIdempotencia,
                 Tipo = PruebaEntregaReparto.TIPO_ENTREGA,
@@ -395,7 +440,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 FechaRegistro = ahora(),
                 TieneFirma = firma != null
             };
-            string observacionesHistoria = "Reparto propio: entregado" + (cobro == null ? string.Empty : $" (reembolso: {TextoCobro(cobro, importeCobrado)})");
+            string observacionesHistoria = recogida
+                ? "Reparto propio: recogido" + (bultosRecogidos.HasValue ? $" ({bultosRecogidos.Value} {(bultosRecogidos.Value == 1 ? "bulto" : "bultos")})" : string.Empty)
+                : "Reparto propio: entregado" + (cobro == null ? string.Empty : $" (reembolso: {TextoCobro(cobro, importeCobrado)})");
             List<EnvioHistoria> historia = Historia(envio, observacionesHistoria, usuario);
             SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
             {
@@ -410,8 +457,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         // ---------------------------------------------------------------- incidencia
 
-        public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Incidencia(int envioId, IncidenciaRepartoDTO peticion, string usuario)
+        public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Incidencia(int envioId, IncidenciaRepartoDTO peticion, string usuario,
+            OrigenPeticionReparto origen = null)
         {
+            ResultadoReparto<EstadoEnvioRepartoDTO> resultado = await IncidenciaEnvio(envioId, peticion, usuario).ConfigureAwait(false);
+            Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_INCIDENCIA, origen);
+            return resultado;
+        }
+
+        private async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> IncidenciaEnvio(int envioId, IncidenciaRepartoDTO peticion, string usuario)
+        {
+            if (NucleoParadasReparto.EsReposicion(envioId))
+            {
+                return Invalido("Una parada de reposición no lleva incidencias: si no puede dejarla en la tienda, vuelva con ella al almacén y avise a la tienda.");
+            }
             if (!repositorio.ScriptAplicado())
             {
                 return Invalido(MENSAJE_FALTA_SCRIPT);
@@ -423,7 +482,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             string motivo = Motivos.Keys.FirstOrDefault(m => string.Equals(m, peticion.Motivo?.Trim(), StringComparison.OrdinalIgnoreCase));
             if (motivo == null)
             {
-                return Invalido("El motivo de la incidencia tiene que ser Ausente, DireccionIncorrecta, Rechazado, FaltanBultos u Otro.");
+                return Invalido("El motivo de la incidencia tiene que ser Ausente, DireccionIncorrecta, Rechazado, FaltanBultos, NadaQueRecoger u Otro.");
             }
             string texto = Limpio(peticion.Texto);
             if (motivo == IncidenciaRepartoDTO.OTRO && texto == null)
@@ -452,6 +511,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (envio.Estado != Constantes.Agencias.ESTADO_TRAMITADO && envio.Estado != Constantes.Agencias.ESTADO_INCIDENTADO)
             {
                 return Conflicto(NoEstaEnReparto(envio));
+            }
+            if (motivo == IncidenciaRepartoDTO.NADA_QUE_RECOGER && (await NotaDe(envio.Pedido).ConfigureAwait(false))?.EsRecogida != true)
+            {
+                return Invalido("«No había nada que recoger» solo vale para las notas de recogida.");
             }
 
             DateTime fechaHora = peticion.FechaHora ?? ahora();
@@ -570,7 +633,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             catch (NestoBusinessException ex)
             {
                 // La contabilización del reembolso (sin cuenta, sin diario...): nada se ha guardado.
-                return Invalido($"No se ha registrado la entrega del envío {envio.Numero}: {ex.Message}");
+                return Invalido($"No se ha registrado {(prueba.Tipo == PruebaEntregaReparto.TIPO_ENTREGA ? "la entrega" : "la incidencia")} del envío {envio.Numero}: {ex.Message}");
             }
             return ResultadoReparto<EstadoEnvioRepartoDTO>.Bien(new EstadoEnvioRepartoDTO { EnvioId = envio.Numero, Estado = estado, UrlPago = prueba.UrlPago });
         }

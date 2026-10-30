@@ -438,6 +438,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\AgenciaRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ServicioRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CargaFurgonetaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\ParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroDeudaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\ServicioEnvioDesdePedidoTests.cs" />

@@ -40,6 +40,38 @@ namespace NestoAPI.Models.Agencias
         public string Repartidor { get; set; }
         /// <summary>Ariadna#63: bultos distintos que ha cargado el repartidor (0 sin repartidor).</summary>
         public int BultosCargados { get; set; }
+        /// <summary>
+        /// NestoAPI#759: "Envio", "NotaEntrega", "NotaRecogida" o "Reposicion" (<see cref="TiposParadaReparto"/>). Las de
+        /// reposición llevan <see cref="EnvioId"/> NEGATIVO (−Id de RepartoParadasReposicion): se ordenan, se entregan y se buscan
+        /// con ese mismo EnvioId, como las demás.
+        /// </summary>
+        public string TipoParada { get; set; } = TiposParadaReparto.ENVIO;
+        /// <summary>
+        /// NestoAPI#759: las líneas de texto de la nota separadas por \n (en las de reposición, una línea por traspaso con sus
+        /// bultos cargados). Null en los envíos normales.
+        /// </summary>
+        public string TextoNota { get; set; }
+        /// <summary>NestoAPI#759: el número de la nota (NotasEntrega.Numero), o null.</summary>
+        public int? NumeroNota { get; set; }
+        /// <summary>NestoAPI#759: «NE929667» / «NR929554» en las notas; null en las demás.</summary>
+        public string CodigoDocumento { get; set; }
+        /// <summary>
+        /// NestoAPI#759: la posición que le dio su repartidor (PUT Orden), o null si nadie la ha ordenado. La lista ya viene por
+        /// Orden (nulos al final), fecha y número.
+        /// </summary>
+        public int? Orden { get; set; }
+
+        /// <summary>Para ordenar la lista (no sale en el JSON): la fecha del envío o de la parada de reposición.</summary>
+        internal DateTime FechaParada { get; set; }
+    }
+
+    /// <summary>NestoAPI#759: los tipos de parada del reparto propio.</summary>
+    public static class TiposParadaReparto
+    {
+        public const string ENVIO = "Envio";
+        public const string NOTA_ENTREGA = "NotaEntrega";
+        public const string NOTA_RECOGIDA = "NotaRecogida";
+        public const string REPOSICION = "Reposicion";
     }
 
     /// <summary>
@@ -48,12 +80,18 @@ namespace NestoAPI.Models.Agencias
     /// </summary>
     public class CargaBultoRepartoDTO
     {
-        /// <summary>«RP{EnvioId}-{N}», el de la etiqueta del bulto.</summary>
+        /// <summary>
+        /// «RP{EnvioId}-{N}» (la etiqueta del bulto) y, NestoAPI#759, «NE{Pedido}», «NR{Pedido}», «NR{Pedido}-{N}» (notas) y
+        /// «R{Traspaso}-{N}» (bultos de reposición: van a la parada «Reposición {tienda}» del día).
+        /// </summary>
         public string Codigo { get; set; }
         public Guid ClaveIdempotencia { get; set; }
         /// <summary>La hora de la PDA. Null: la del servidor.</summary>
         public DateTime? FechaHora { get; set; }
-        /// <summary>El envío lo lleva otro repartidor y este confirma que se lo lleva él (queda la traza en EnviosHistoria).</summary>
+        /// <summary>
+        /// La parada es de otro repartidor (409 ENVIO_DE_OTRO_REPARTIDOR, «Este bulto no es suyo: es de la parada de X») y este
+        /// confirma que se la lleva él (queda la traza en EnviosHistoria).
+        /// </summary>
         public bool Reasignar { get; set; }
     }
 
@@ -70,6 +108,10 @@ namespace NestoAPI.Models.Agencias
         /// <summary>El destinatario del envío.</summary>
         public string Nombre { get; set; }
         public string Poblacion { get; set; }
+        /// <summary>NestoAPI#759: el tipo de la parada cargada (<see cref="TiposParadaReparto"/>).</summary>
+        public string TipoParada { get; set; } = TiposParadaReparto.ENVIO;
+        /// <summary>NestoAPI#759: «NE…»/«NR…» en las notas; null en las demás.</summary>
+        public string CodigoDocumento { get; set; }
     }
 
     /// <summary>Ariadna#63: GET api/RepartoPropio/SinCargar, un envío tramitado de ese día con algún bulto sin cargar.</summary>
@@ -83,6 +125,10 @@ namespace NestoAPI.Models.Agencias
         public int BultosCargados { get; set; }
         /// <summary>Null si no lo ha cargado nadie.</summary>
         public string Repartidor { get; set; }
+        /// <summary>NestoAPI#759: el tipo de parada (<see cref="TiposParadaReparto"/>).</summary>
+        public string TipoParada { get; set; } = TiposParadaReparto.ENVIO;
+        /// <summary>NestoAPI#759: «NE…»/«NR…» en las notas; null en las demás.</summary>
+        public string CodigoDocumento { get; set; }
     }
 
     /// <summary>GET api/RepartoPropio/Bulto/{codigo}: el envío y el bulto escaneado.</summary>
@@ -117,6 +163,48 @@ namespace NestoAPI.Models.Agencias
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
         public string Observaciones { get; set; }
+        /// <summary>
+        /// NestoAPI#759: solo en las notas de RECOGIDA, los bultos que se trae (0..999). Va a EnviosAgenciaPruebasEntrega.BultosRecogidos
+        /// y a la historia («Reparto propio: recogido (2 bultos)»); en las demás paradas se ignora.
+        /// </summary>
+        public int? BultosRecogidos { get; set; }
+    }
+
+    /// <summary>NestoAPI#759: PUT api/RepartoPropio/Orden. El orden de las paradas del repartidor, tal como lo deja en la PDA.</summary>
+    public class OrdenRepartoDTO
+    {
+        /// <summary>La hora local de la PDA al ordenar (último gana: la cola puede llegar tarde). Sin ella, la del servidor.</summary>
+        public DateTime? FechaHora { get; set; }
+        /// <summary>Los EnvioId de las paradas en el orden nuevo (posición 1..n); las de reposición, negativos.</summary>
+        public System.Collections.Generic.List<int> Envios { get; set; }
+    }
+
+    /// <summary>NestoAPI#759: la respuesta de PUT api/RepartoPropio/Orden.</summary>
+    public class ResultadoOrdenRepartoDTO
+    {
+        public int Guardados { get; set; }
+        /// <summary>Repetidos, que ya no están en reparto, de otro repartidor o con un orden más nuevo ya guardado.</summary>
+        public int Ignorados { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#759: el evento «repartoCambiado» del AlmacenHub, al grupo «Reparto». Sin datos de las paradas: quien lo recibe
+    /// relee la lista (GET Envios).
+    /// </summary>
+    public class RepartoCambiadoDTO
+    {
+        public const string MOTIVO_ORDEN = "Orden";
+        public const string MOTIVO_CARGA = "Carga";
+        public const string MOTIVO_ENTREGA = "Entrega";
+        public const string MOTIVO_INCIDENCIA = "Incidencia";
+
+        /// <summary>Quién lo ha cambiado, sin dominio.</summary>
+        public string Usuario { get; set; }
+        /// <summary>"Orden", "Carga", "Entrega" o "Incidencia".</summary>
+        public string Motivo { get; set; }
+        public DateTime FechaHora { get; set; }
+        /// <summary>El dispositivo que lo ha hecho (cabecera X-Dispositivo), o vacío.</summary>
+        public string Dispositivo { get; set; }
     }
 
     /// <summary>POST api/RepartoPropio/Envios/{envioId}/Incidencia.</summary>
@@ -127,10 +215,15 @@ namespace NestoAPI.Models.Agencias
         public const string RECHAZADO = "Rechazado";
         public const string FALTAN_BULTOS = "FaltanBultos";
         public const string OTRO = "Otro";
+        /// <summary>NestoAPI#759: solo en las notas de recogida.</summary>
+        public const string NADA_QUE_RECOGER = "NadaQueRecoger";
 
         public Guid ClaveIdempotencia { get; set; }
         public DateTime? FechaHora { get; set; }
-        /// <summary>"Ausente", "DireccionIncorrecta", "Rechazado", "FaltanBultos" u "Otro" (este exige <see cref="Texto"/>).</summary>
+        /// <summary>
+        /// "Ausente", "DireccionIncorrecta", "Rechazado", "FaltanBultos", "NadaQueRecoger" (solo recogidas, NestoAPI#759) u "Otro"
+        /// (este exige <see cref="Texto"/>).
+        /// </summary>
         public string Motivo { get; set; }
         public string Texto { get; set; }
         public decimal? Latitud { get; set; }
@@ -225,5 +318,7 @@ namespace NestoAPI.Models.Agencias
         public string Usuario { get; set; }
         public DateTime FechaRegistro { get; set; }
         public bool TieneFirma { get; set; }
+        /// <summary>NestoAPI#759: los bultos recogidos (notas de recogida); null en lo demás o sin la columna del script.</summary>
+        public short? BultosRecogidos { get; set; }
     }
 }

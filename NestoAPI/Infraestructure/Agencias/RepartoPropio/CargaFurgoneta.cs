@@ -124,7 +124,30 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         // ---------------------------------------------------------------- cargar
 
-        public async Task<ResultadoReparto<ResultadoCargaBultoDTO>> Cargar(CargaBultoRepartoDTO peticion, string usuario)
+        /// <summary>
+        /// NestoAPI#759: cargar = la parada pasa a ser del que escanea. RP/NE/NR van al envío de la parada; R{traspaso}-{N}, a la
+        /// parada «Reposición {tienda}» del día. Si es de otro repartidor, 409 «Este bulto no es suyo: es de la parada de X».
+        /// </summary>
+        public async Task<ResultadoReparto<ResultadoCargaBultoDTO>> Cargar(CargaBultoRepartoDTO peticion, string usuario, OrigenPeticionReparto origen = null)
+        {
+            ResultadoReparto<ResultadoCargaBultoDTO> resultado = EsCodigoReposicion(peticion?.Codigo, out int traspaso, out int bultoReposicion)
+                && peticion.ClaveIdempotencia != Guid.Empty && !string.IsNullOrWhiteSpace(usuario)
+                ? await CargarReposicion(peticion, traspaso, bultoReposicion, usuario).ConfigureAwait(false)
+                : await CargarEnvio(peticion, usuario).ConfigureAwait(false);
+            if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido != null && resultado.Contenido.EnvioId > 0)
+            {
+                NotaParadaReparto nota = await NotaDeEnvio(resultado.Contenido.EnvioId).ConfigureAwait(false);
+                if (nota != null)
+                {
+                    resultado.Contenido.TipoParada = nota.TipoParada;
+                    resultado.Contenido.CodigoDocumento = nota.CodigoDocumento;
+                }
+            }
+            Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_CARGA, origen);
+            return resultado;
+        }
+
+        private async Task<ResultadoReparto<ResultadoCargaBultoDTO>> CargarEnvio(CargaBultoRepartoDTO peticion, string usuario)
         {
             if (!repositorio.ScriptAplicado() || !CargaDisponible())
             {
@@ -138,11 +161,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return MalCarga(TipoResultadoReparto.Invalido, "No se sabe quién carga el bulto.");
             }
-            if (!CodigoBultoRepartoPropio.TryLeerBulto(peticion.Codigo, out int numero, out int bulto))
+            CodigoParadaResuelto resuelto = await ResolverCodigo(peticion.Codigo).ConfigureAwait(false);
+            if (resuelto.Error.HasValue)
             {
-                return MalCarga(TipoResultadoReparto.NoEncontrado,
-                    $"El código «{peticion.Codigo?.Trim()}» no es de un bulto del reparto propio (RP, el número del envío, guion y el bulto).");
+                return MalCarga(resuelto.Error.Value, resuelto.Mensaje);
             }
+            int numero = resuelto.Envio;
+            int bulto = resuelto.Bulto;
             EnviosAgencia envio = await repositorio.LeerEnvio(numero).ConfigureAwait(false);
             if (envio == null || envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
             {
@@ -172,17 +197,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
             List<CargaBultoReparto> cargas = await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false) ?? new List<CargaBultoReparto>();
             string actual = Repartidor(cargas);
-            bool esSuyo = actual == null || MismoUsuario(actual, usuario);
+            bool esSuyo = !NucleoParadasReparto.EsDeOtro(actual, usuario);
             if (!esSuyo && !peticion.Reasignar)
             {
-                string nombreActual = NombreRepartidor(actual);
-                return new ResultadoReparto<ResultadoCargaBultoDTO>
-                {
-                    Tipo = TipoResultadoReparto.Conflicto,
-                    Mensaje = $"Este envío lo lleva {nombreActual}. Si se lo lleva usted, confírmelo para reasignárselo.",
-                    Codigo = CODIGO_ENVIO_DE_OTRO,
-                    Detalles = new { repartidor = nombreActual }
-                };
+                return NucleoParadasReparto.ConflictoDeOtro<ResultadoCargaBultoDTO>(actual);
             }
             if (esSuyo && actual != null && cargas.Any(c => c.Bulto == bulto && MismoUsuario(c.Usuario, usuario)))
             {
@@ -253,11 +271,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .ToList();
             List<CargaBultoReparto> cargas = await carga.LeerCargas(envios.Select(e => e.Numero).ToList()).ConfigureAwait(false)
                 ?? new List<CargaBultoReparto>();
+            Dictionary<int, NotaParadaReparto> notas = await NotasDe(envios.Select(e => e.Pedido)).ConfigureAwait(false);
             return ResultadoReparto<List<EnvioSinCargarDTO>>.Bien(envios
                 .Select(e =>
                 {
                     List<CargaBultoReparto> suyas = cargas.Where(c => c.EnvioId == e.Numero).ToList();
                     string repartidor = Repartidor(suyas);
+                    NotaParadaReparto nota = e.Pedido.HasValue && notas.TryGetValue(e.Pedido.Value, out NotaParadaReparto n) ? n : null;
                     return new EnvioSinCargarDTO
                     {
                         EnvioId = e.Numero,
@@ -266,7 +286,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         Poblacion = e.Poblacion?.Trim(),
                         Bultos = Math.Max((int)e.Bultos, 1),
                         BultosCargados = BultosCargados(suyas, repartidor),
-                        Repartidor = NombreRepartidor(repartidor)
+                        Repartidor = NombreRepartidor(repartidor),
+                        TipoParada = nota?.TipoParada ?? TiposParadaReparto.ENVIO,
+                        CodigoDocumento = nota?.CodigoDocumento
                     };
                 })
                 .Where(e => e.BultosCargados < e.Bultos)
@@ -319,11 +341,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         /// <summary>Quién lleva el envío: el usuario de la última carga (con «Reasignar» pasa al nuevo). Null si nadie.</summary>
         internal static string Repartidor(IEnumerable<CargaBultoReparto> cargas)
-            => cargas?.OrderBy(c => c.Id).ThenBy(c => c.FechaRegistro).LastOrDefault()?.Usuario?.Trim();
+            => NucleoParadasReparto.Propietario(cargas, c => c.Id, c => c.Usuario);
 
         /// <summary>Bultos distintos cargados por <paramref name="usuario"/> (0 sin usuario).</summary>
         internal static int BultosCargados(IEnumerable<CargaBultoReparto> cargas, string usuario)
-            => usuario == null ? 0 : (cargas ?? Enumerable.Empty<CargaBultoReparto>()).Where(c => MismoUsuario(c.Usuario, usuario)).Select(c => c.Bulto).Distinct().Count();
+            => NucleoParadasReparto.BultosCargados(cargas, usuario, c => c.Usuario, c => c.Bulto);
 
         /// <summary>Sin dominio y sin distinguir mayúsculas: «NUEVAVISION\Andre» es «andre».</summary>
         internal static bool MismoUsuario(string uno, string otro)

@@ -195,8 +195,14 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 : ModoAvisosConDatos.Ambos;
         }
 
-        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3})$",
+        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto)$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// NestoAPI#759: «Reparto», el de la pantalla de Reparto de Ariadna (todas las PDA del reparto propio: la lista es de
+        /// todos, filtrada por repartidor en GET Envios). Evento «repartoCambiado(RepartoCambiadoDTO)».
+        /// </summary>
+        public const string GRUPO_REPARTO = "Reparto";
 
         /// <summary>«Recogida:PICK:99633», «Recogida:REPO:80905».</summary>
         public static string GrupoRecogida(string tipo, int numero) => $"Recogida:{(tipo ?? string.Empty).Trim().ToUpperInvariant()}:{numero}";
@@ -219,6 +225,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
             {
                 return null;
             }
+            if (string.Equals(limpio, GRUPO_REPARTO, StringComparison.OrdinalIgnoreCase))
+            {
+                return GRUPO_REPARTO;
+            }
             string[] partes = limpio.Split(':');
             if (partes.Length == 4)
             {
@@ -233,7 +243,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// «haCambiado(grupo, dispositivo)», «lectura(grupo, dispositivo, LecturaAlmacenAvisoDTO)», «lecturas(grupo, dispositivo,
     /// [LecturaAlmacenAvisoDTO])» y «correccion(grupo, dispositivo, CorreccionAlmacenAvisoDTO)».
     /// </summary>
-    public class AvisosAlmacenSignalR : IAvisosAlmacen
+    public class AvisosAlmacenSignalR : IAvisosAlmacen, Agencias.RepartoPropio.IAvisosReparto
     {
         private readonly Func<IHubContext> contexto;
         private readonly Func<ModoAvisosConDatos> modo;
@@ -252,6 +262,22 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public void HaCambiado(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor)
         {
             Mandar(grupo, usuario, conexionEmisora, dispositivoEmisor, (clientes, limpio, dispositivo) => clientes.haCambiado(limpio, dispositivo));
+        }
+
+        /// <summary>
+        /// NestoAPI#759: «repartoCambiado(RepartoCambiadoDTO)» al grupo «Reparto», a todos menos a la PDA que lo ha hecho (como los
+        /// demás avisos). Sin datos de las paradas: quien lo recibe relee GET api/RepartoPropio/Envios. Nunca lanza.
+        /// </summary>
+        public void RepartoCambiado(string usuario, string motivo, DateTime fechaHora, Agencias.RepartoPropio.OrigenPeticionReparto origen)
+        {
+            Mandar(AvisosAlmacen.GRUPO_REPARTO, usuario, origen?.Conexion, origen?.Dispositivo, (clientes, limpio, dispositivo) =>
+                clientes.repartoCambiado(new global::NestoAPI.Models.Agencias.RepartoCambiadoDTO
+                {
+                    Usuario = Agencias.RepartoPropio.ServicioRepartoPropio.NombreRepartidor(usuario),
+                    Motivo = motivo,
+                    FechaHora = fechaHora,
+                    Dispositivo = dispositivo
+                }));
         }
 
         public void Lecturas(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, IReadOnlyList<LecturaAlmacenAvisoDTO> lecturas)
