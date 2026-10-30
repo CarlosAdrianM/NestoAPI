@@ -288,6 +288,52 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(Constantes.Agencias.AGENCIA_GLS, (await Propuesta("AT ", true, false).Calcular("1", 928000, null, null)).Agencia, "Sin el script");
         }
 
+        // NestoAPI#750 (Nesto#576): Nesto lee de la propuesta la agencia, el servicio y el horario. Del reparto propio todo es 0
+        // (un solo servicio, sin horarios ni retornos) y sin coste de agencia, que es lo que grabará Nesto.
+        [TestMethod]
+        public async Task Propuesta_RutaPropia_ServicioHorarioRetornoYCosteACero()
+        {
+            PropuestaEnvioDTO p = await Propuesta("AT ", true, true).Calcular("1", 928000, null, 3.5m);
+
+            Assert.AreEqual(REPARTO, p.Agencia);
+            Assert.AreEqual(PropuestaEnvioDTO.ORIGEN_NUEVO, p.Origen);
+            Assert.AreEqual(0, p.Servicio);
+            Assert.AreEqual(0, p.Horario);
+            Assert.AreEqual(0, p.Retorno);
+            Assert.AreEqual(0m, p.ImporteGasto);
+            Assert.AreEqual("28110", p.CodPostal, "Nesto solo la aplica si el CP de la pantalla es este");
+            Assert.AreEqual("ES", p.PaisIso);
+        }
+
+        // NestoAPI#750 (Nesto#576): la sombra de #595. Con lo que grababa Nesto (ELMAH 30/10/26, envío 250375, pedido 929440)
+        // salían 3 diferencias; con lo que graba ahora (lo propuesto), ninguna.
+        [TestMethod]
+        public async Task Sombra_NestoGrabaLaPropuestaDelRepartoPropio_SinDiferencias()
+        {
+            PropuestaEnvioDTO p = await Propuesta("16 ", true, true).Calcular("1", 928000, 1, 3.5m);
+            EnviosAgencia envio = new EnviosAgencia
+            {
+                Numero = 250375, Pedido = p.Pedido, Agencia = REPARTO, Servicio = 0, Horario = 0, Retorno = 0,
+                Reembolso = p.Reembolso, Nombre = p.Nombre, Direccion = p.Direccion, CodPostal = p.CodPostal, Poblacion = p.Poblacion,
+                Provincia = p.Provincia, Pais = p.Pais, Telefono = p.Telefono, Movil = p.Movil, Email = p.Email, Atencion = p.Atencion,
+                Vendedor = p.Vendedor, Bultos = p.Bultos, Peso = p.Peso, ImporteGasto = 0m, Empresa = "1  ",
+                Fecha = p.Fecha, FechaEntrega = p.FechaEntrega, Observaciones = p.Observaciones
+            };
+
+            CollectionAssert.AreEqual(new List<string>(), ComparadorPropuestaEnvio.Diferencias(envio, p));
+
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.Servicio = 48;
+            envio.ImporteGasto = 3.896450m;
+            List<string> antes = ComparadorPropuestaEnvio.Diferencias(envio, p);
+            CollectionAssert.AreEqual(new List<string>
+            {
+                "agencia: Nesto=13 / propuesta=14",
+                "servicio: Nesto=48 / propuesta=0",
+                "ImporteGasto: Nesto=3.896450 / propuesta=0"
+            }, antes, string.Join(" | ", antes));
+        }
+
         // ================================================================ permisos
 
         private static ClaimsPrincipal Usuario(params string[] grupos)
