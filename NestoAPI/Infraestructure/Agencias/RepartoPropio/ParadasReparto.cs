@@ -331,6 +331,11 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public IPlanificadorRecorrido Recorrido { get; set; }
         /// <summary>NestoAPI#763: el horario preferible de los clientes de las paradas. Null: sin horarios (como antes).</summary>
         public IHorariosParadas Horarios { get; set; }
+        /// <summary>
+        /// NestoAPI#769: la matriz de tiempos (OSRM /table) para reordenar por el horario preferible; si no responde, la línea
+        /// recta. Null: no se reordena (solo se avisa, como en #763).
+        /// </summary>
+        public IMatrizTiempos Tiempos { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
@@ -339,6 +344,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                     new global::NestoAPI.Infraestructure.Clientes.RepositorioHorarioPreferible(db))),
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),
                 Recorrido = new PlanificadorRecorrido(new MotorRutasOsrm()),
+                Tiempos = new MatrizTiemposOsrm(),
                 Notas = new ServicioParadasNotaEntrega(db),
                 NotasParada = new RepositorioNotasParadaReparto(db),
                 Orden = new RepositorioOrdenReparto(db),
