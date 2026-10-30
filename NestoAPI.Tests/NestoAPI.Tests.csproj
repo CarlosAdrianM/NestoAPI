@@ -420,6 +420,8 @@
     <Compile Include="Controllers\InformesControllerCorreoFacturacionTiendaTests.cs" />
     <Compile Include="Controllers\InformesControllerFacturacionTiendaTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
+    <Compile Include="Controllers\EscanerRemotoControllerTests.cs" />
+    <Compile Include="Infraestructure\Notificaciones\EscanerRemotoTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />
     <Compile Include="Controllers\PedidosVentaListadoTests.cs" />
     <Compile Include="Controllers\PedidosVentaPorCanalExternoTests.cs" />
