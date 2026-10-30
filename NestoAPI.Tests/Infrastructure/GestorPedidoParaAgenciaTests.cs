@@ -100,6 +100,19 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("916280000", dto.ClienteFicha.Telefono);
         }
 
+        [TestMethod]
+        public void LeerPorEmpresaYNumero_NotaDeEntrega_LoDice_765()
+        {
+            // Nesto#586: Agencias avisa de que una nota de entrega sale con reembolso 0, por si hay que cobrar algo
+            CabPedidoVta nota = PedidoCompleto();
+            nota.NotaEntrega = true;
+            var gestor = new GestorPedidoParaAgencia(CrearDb(new[] { nota }, new[] { FichaCompleta() }));
+
+            Assert.IsTrue(gestor.LeerPorEmpresaYNumero("1  ", 924645).Result.NotaEntrega);
+            Assert.IsFalse(new GestorPedidoParaAgencia(CrearDb(new[] { PedidoCompleto() }, new[] { FichaCompleta() }))
+                .LeerPorEmpresaYNumero("1  ", 924645).Result.NotaEntrega);
+        }
+
         // EL RIESGO Nº 1 DEL SLICE. Agencias hace listaEmpresas.Single(e => e.Numero == pedido.Empresa)
         // contra una lista que sigue viniendo de EF con padding: si aqui recortamos, ese Single
         // lanza InvalidOperationException y se rompe la seleccion de empresa y de agencia.

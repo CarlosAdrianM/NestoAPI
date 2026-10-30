@@ -78,6 +78,20 @@ namespace NestoAPI.Infraestructure.Pedidos
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<CabPedidoVta> ObtenerNotaEntregaSinPicking(string empresa, int numero, DateTime fechaEntregaDesde)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+                throw new ArgumentException("La empresa no puede ser null o vacía", nameof(empresa));
+
+            string empresaBuscada = empresa.Trim();
+            return await db.CabPedidoVtas
+                .Include(p => p.LinPedidoVtas)
+                .Include(p => p.Cliente)
+                .Where(p => p.Empresa == empresaBuscada && p.Número == numero && p.NotaEntrega)
+                .Where(p => p.LinPedidoVtas.Any(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO && l.Fecha_Entrega <= fechaEntregaDesde))
+                .FirstOrDefaultAsync();
+        }
+
         /// <summary>
         /// Condición única de «este pedido tiene algo que facturar»: líneas EN_CURSO (sin albarán) o
         /// ALBARAN (con albarán pero sin factura, para re-facturar NRM), con picking y con fecha de

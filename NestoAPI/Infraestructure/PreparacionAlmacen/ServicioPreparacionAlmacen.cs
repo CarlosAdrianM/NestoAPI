@@ -563,6 +563,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         ComentarioPicking = string.IsNullOrWhiteSpace(g.First().ComentarioPicking) ? null : g.First().ComentarioPicking.Trim(),
                         Lineas = g.OrderBy(f => f.LineaPedido).Select(f =>
                         {
+                            if (f.EsTexto)
+                            {
+                                // NestoAPI#765: nota de entrega de solo texto; no se escanea, cuenta como metida
+                                return new LineaPackingAlmacenDTO
+                                {
+                                    LineaPedido = f.LineaPedido,
+                                    Producto = string.Empty,
+                                    Descripcion = f.Descripcion?.Trim(),
+                                    Cantidad = f.Cantidad,
+                                    Metidas = f.Cantidad,
+                                    EsTexto = true
+                                };
+                            }
                             string codigo = Productos.ValidadorGtin.SoloSiValido(f.CodigoBarras); // NestoAPI#674: no GTIN = sin código
                             return new LineaPackingAlmacenDTO
                             {
@@ -600,7 +613,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
             foreach (PedidoPackingAlmacenDTO pedido in packing.Entregas.SelectMany(e => e.Pedidos))
             {
-                foreach (var lineasDelProducto in pedido.Lineas.GroupBy(l => l.Producto?.Trim().ToUpperInvariant() ?? string.Empty))
+                foreach (var lineasDelProducto in pedido.Lineas.Where(l => !l.EsTexto).GroupBy(l => l.Producto?.Trim().ToUpperInvariant() ?? string.Empty))
                 {
                     if (!porPedidoYProducto.TryGetValue((pedido.Pedido, lineasDelProducto.Key), out LecturaPackingAlmacen lectura))
                     {
@@ -968,8 +981,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<BultoAlmacenDTO> bultos = ConEnlacePublico((await repositorio.LeerBultos(empresa, pedido).ConfigureAwait(false))
                 .Where(b => b.Picking == pickingDelPedido.Value).ToList());
 
+            // NestoAPI#765: las líneas de una nota de solo texto no se escanean (cuentan como metidas): no entran en el casado, y la
+            // nota está completa si no se ha leído nada que no sea suyo.
+            List<FilaPackingAlmacen> lineasProducto = lineas.Where(l => !l.EsTexto).ToList();
+            bool soloTexto = lineas.Count > 0 && lineasProducto.Count == 0;
             List<DiferenciaPreparacionDTO> diferencias = CasadorEscaneos.Casar(
-                lineas.Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Descripcion = l.Descripcion, Unidades = l.Cantidad }),
+                lineasProducto.Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Descripcion = l.Descripcion, Unidades = l.Cantidad }),
                 lecturas.Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Unidades }));
 
             return new EstadoPreparacionPedidoDTO
@@ -978,7 +995,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Pedido = pedido,
                 Picking = pickingDelPedido.Value,
                 Productos = diferencias,
-                Completo = CasadorEscaneos.EstaCompleto(diferencias),
+                Completo = soloTexto ? diferencias.All(d => !d.Ajeno) : CasadorEscaneos.EstaCompleto(diferencias),
                 Bultos = bultos,
                 TodosLosBultosConFoto = bultos.Any() && bultos.All(b => b.TieneFoto)
             };

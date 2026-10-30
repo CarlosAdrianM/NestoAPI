@@ -1124,6 +1124,7 @@
     <Compile Include="Infraestructure\NotasEntrega\RepositorioNotasEntregaCabecera.cs" />
     <Compile Include="Infraestructure\NotasEntrega\RepositorioParadasNotaEntrega.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioParadasNotaEntrega.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\GuardiaNotaSinPacking.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioEtiquetasRecogida.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioDocumentoNotaEntrega.cs" />
     <Compile Include="Infraestructure\Code128.cs" />

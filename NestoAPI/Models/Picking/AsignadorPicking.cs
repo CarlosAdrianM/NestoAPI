@@ -71,7 +71,7 @@ namespace NestoAPI.Models.Picking
 
                     // System.Diagnostics.Debug.WriteLine("Pedido: " + pedido.Id.ToString() + ", producto: " +  linea.Producto.ToString() + ", cantidad: " + linea.CantidadReservada.ToString());
 
-                    if (!pedido.EsNotaEntrega && linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && linea.CantidadReservada > 0)
+                    if (NecesitaUbicacion(pedido, linea))
                     {
                         gestor = new GestorUbicaciones(linea, ubicaciones);
                         gestor.Ejecutar();
@@ -82,6 +82,13 @@ namespace NestoAPI.Models.Picking
             GestorUbicaciones.Persistir(db, ubicaciones);
 
         }
+
+        /// <summary>
+        /// Solo las líneas de producto reservadas de un pedido que no es nota de entrega reservan hueco. Una nota de entrega (también la
+        /// de solo texto, NestoAPI#765) lleva picking pero no toca las ubicaciones.
+        /// </summary>
+        internal static bool NecesitaUbicacion(PedidoPicking pedido, LineaPedidoPicking linea)
+            => !pedido.EsNotaEntrega && linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && linea.CantidadReservada > 0;
 
         /// <summary>
         /// NestoAPI#405: ¿esta línea ya la asignó OTRA pasada de picking? Se compara contra el

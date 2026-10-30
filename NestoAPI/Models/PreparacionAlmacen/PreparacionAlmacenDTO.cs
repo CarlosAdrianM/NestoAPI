@@ -319,6 +319,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Metidas { get; set; }
         /// <summary>Lo dado por falta en el packing: no aparece en la mesa después de buscarlo (se avisa a Compras).</summary>
         public int Faltas { get; set; }
+        /// <summary>
+        /// NestoAPI#765: línea de texto de una nota de ENTREGA de solo texto («PRESTAMO HIDRA 7»). Producto vacío, sin código ni
+        /// ficha, Cantidad 1 y ya metida (Metidas = Cantidad): no se escanea. Ariadna la pinta como «Preparar: {Descripcion}».
+        /// </summary>
+        public bool EsTexto { get; set; }
     }
 
     public class PedidoPackingAlmacenDTO

@@ -96,5 +96,11 @@ namespace NestoAPI.Models.Facturas
         /// Solo se rellena cuando hay un error de descuadre para ayudar al diagnóstico.
         /// </summary>
         public string InfoDescuentoPP { get; set; }
+
+        /// <summary>
+        /// NestoAPI#765: un código para que el cliente sepa qué hacer (null en los errores de siempre). «NOTA_SIN_PACKING»: la nota de
+        /// entrega no ha pasado por el packing; preguntar y reintentar con FacturarPedidoRequestDTO.SaltarPacking.
+        /// </summary>
+        public string Codigo { get; set; }
     }
 }

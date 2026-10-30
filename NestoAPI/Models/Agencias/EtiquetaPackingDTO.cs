@@ -27,6 +27,12 @@ namespace NestoAPI.Models.Agencias
         /// <see cref="NestoAPI.Infraestructure.Agencias.ServicioEtiquetaPacking.MAXIMO_BULTOS"/>, 400.
         /// </summary>
         public int? Bultos { get; set; }
+        /// <summary>
+        /// NestoAPI#765 (decisión 7 de #755): el reembolso que marca el mozo en el packing, sobre todo en una nota de entrega (por
+        /// defecto 0: la nota no lleva importes). Si viene, manda sobre el de la propuesta del envío; sin él, el de la propuesta, como
+        /// siempre. Negativo, 400. Solo cuenta al grabar el envío: en una reimpresión no se usa.
+        /// </summary>
+        public decimal? Reembolso { get; set; }
     }
 
     /// <summary>NestoAPI#595 (slice 5): la respuesta 200 (y la 502, con <see cref="Impresa"/> a false) de la etiqueta del packing.</summary>
