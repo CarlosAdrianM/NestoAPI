@@ -297,7 +297,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                "<p><a href=\"tel:" + TELEFONO_ENLACE + "\">" + TELEFONO + "</a> · <a href=\"" + WHATSAPP + "\">WhatsApp</a> · " +
                "<a href=\"mailto:" + CORREO + "\">" + CORREO + "</a></p></div>";
 
-        private static string Documento(string titulo, string cuerpo)
+        // internal: también la usa la página de los enlaces de descarga (NestoAPI#737)
+        internal static string Documento(string titulo, string cuerpo)
             => "<!DOCTYPE html><html lang=\"es\"><head><meta charset=\"utf-8\">" +
                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
                "<meta name=\"robots\" content=\"noindex, nofollow\">" +
@@ -355,7 +356,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         // Solo los caracteres que rompen el HTML: WebUtility.HtmlEncode de .NET Framework pasa las tildes a &#NNN; y la página
         // es UTF-8 (así el texto sigue legible en el código fuente y en los tests).
-        private static string H(string texto)
+        internal static string H(string texto)
             => (texto ?? string.Empty).Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;").Replace("'", "&#39;");
     }
 }
