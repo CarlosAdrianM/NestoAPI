@@ -2399,6 +2399,15 @@ namespace NestoAPI.Controllers
             pedido.plazosPago = empresa.PlazosPagoDefecto;
         }
 
+        // NestoAPI#757: la cabecera de las notas de entrega (tipo, bultos, factura original). Para tests.
+        private Infraestructure.NotasEntrega.IServicioNotasEntregaCabecera servicioNotasEntregaCabecera;
+        internal Infraestructure.NotasEntrega.IServicioNotasEntregaCabecera ServicioNotasEntregaCabecera
+        {
+            get => servicioNotasEntregaCabecera ?? (servicioNotasEntregaCabecera = new Infraestructure.NotasEntrega.ServicioNotasEntregaCabecera(
+                new Infraestructure.NotasEntrega.RepositorioNotasEntregaCabecera(db)));
+            set => servicioNotasEntregaCabecera = value;
+        }
+
         // NestoAPI#691: los cursos de la plantilla (comprobar, inscribir, crear su pedido CV). Para tests.
         private Infraestructure.Eventos.IServicioCursosPlantilla servicioCursosPlantilla;
         internal Infraestructure.Eventos.IServicioCursosPlantilla ServicioCursosPlantilla
@@ -2462,6 +2471,13 @@ namespace NestoAPI.Controllers
             if (faltanDatos != null)
             {
                 return BadRequest(faltanDatos);
+            }
+            // NestoAPI#757: Almacén, Administración, Dirección e Informática pueden crear notas de entrega (con tipo y bultos);
+            // para los demás notaEntrega sigue a false, como siempre. ANTES de los portes y del modo de facturación.
+            string motivoNota = await ServicioNotasEntregaCabecera.PrepararAlCrear(pedido, PrincipalParaValidacion()).ConfigureAwait(true);
+            if (motivoNota != null)
+            {
+                return BadRequest(motivoNota);
             }
             // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae (los presupuestos no lo exigen)
             string sinSuPedido = await MotivoSuPedidoObligatorio(pedido);
@@ -2656,6 +2672,7 @@ namespace NestoAPI.Controllers
                 Comentarios = pedido.comentarios,
                 SuPedido = pedido.suPedido,
                 NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso,
+                NotaEntrega = pedido.notaEntrega, // NestoAPI#757: solo true si PrepararAlCrear lo ha dejado
                 Usuario = pedido.Usuario
             };
 
@@ -2722,7 +2739,7 @@ namespace NestoAPI.Controllers
 
 
             // Carlos: 18/01/19: insertamos en la agencia si es necesario
-            if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
+            if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO && !pedido.notaEntrega) // NestoAPI#757: una nota no lleva portes
             {
                 IServicioAgencias servicioAgencias = new ServicioAgencias();
                 string codigoPostal = servicioAgencias.LeerCodigoPostal(pedido);
@@ -2959,6 +2976,9 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
+
+            // NestoAPI#757: el tipo y los bultos de la nota (tabla fuera del EDMX). Nunca lanza.
+            await ServicioNotasEntregaCabecera.GuardarAlCrear(pedido, UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)).ConfigureAwait(true);
 
             // NestoAPI#606: la fecha de entrega a la agencia que se le da al usuario al crear el pedido, para medir después si
             // acertamos (frente a la del albarán). Se escribe UNA vez y no se toca más. Todos los caminos de creación pasan

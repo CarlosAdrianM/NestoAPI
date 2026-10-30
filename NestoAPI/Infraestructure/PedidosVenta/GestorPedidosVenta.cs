@@ -821,6 +821,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 decimal totalComprobacion = RoundingHelper.DosDecimalesRound(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total));
 
                 PedidoVentaDTO pedido = CrearCabeceraDTO(cabPedidoVta);
+                // NestoAPI#757: tipo, bultos y factura original de la nota (tabla fuera del EDMX); solo en las notas.
+                if (pedido.notaEntrega)
+                {
+                    NotasEntrega.FilaNotaEntregaCabecera filaNota = null;
+                    try
+                    {
+                        filaNota = await new NotasEntrega.RepositorioNotasEntregaCabecera(db).Leer(empresa, numero).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Notas de entrega #757] No se ha podido leer la cabecera de la nota {numero}: {ex.Message}", ex));
+                    }
+                    NotasEntrega.ServicioNotasEntregaCabecera.RellenarCamposPedido(pedido, filaNota);
+                }
                 // NestoAPI#698: solo los retenidos (modo 5) leen su retención viva (tabla fuera del EDMX).
                 if (Constantes.Pedidos.ModosServicio.EsRetenido(pedido.modoServicio))
                 {

@@ -38,6 +38,16 @@ namespace NestoAPI.Models.PedidosVenta
         public bool mantenerJunto { get; set; }
         public decimal noComisiona { get; set; }
         public bool notaEntrega { get; set; }
+        /// <summary>
+        /// NestoAPI#757: en una nota de entrega, "Entrega" o "Recogida" (NotasEntregaCabecera; sin fila, "Entrega"); null si no es
+        /// nota. Al leer, de solo lectura: el PUT del pedido lo ignora (se cambia con PUT api/NotasEntrega/{empresa}/{pedido}/Cabecera).
+        /// Al crear (POST), lo honra para Almacén, Administración, Dirección e Informática.
+        /// </summary>
+        public string tipoNotaEntrega { get; set; }
+        /// <summary>NestoAPI#757: los bultos de la nota (solo cuentan en Recogida; sin fila, 1); null si no es nota. Como tipoNotaEntrega.</summary>
+        public short? bultosNota { get; set; }
+        /// <summary>NestoAPI#757: la factura que se devuelve en una nota de recogida, o null. Como tipoNotaEntrega.</summary>
+        public string facturaOriginalNota { get; set; }
         public int numero { get; set; }
         public string origen { get; set; }
         public string periodoFacturacion { get; set; }

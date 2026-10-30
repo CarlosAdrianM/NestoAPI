@@ -1117,6 +1117,10 @@
     <Compile Include="Infraestructure\NotasEntrega\CreadorNotaEntregaPendiente.cs" />
     <Compile Include="Infraestructure\NotasEntrega\AvisoPendienteCompleto.cs" />
     <Compile Include="Infraestructure\NotasEntrega\GestorFechaEntregaNotas.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\RepositorioNotasEntregaCabecera.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntregaCabecera.cs" />
+    <Compile Include="Controllers\NotasEntregaController.cs" />
+    <Compile Include="Models\PedidosVenta\NotaEntregaCabeceraDTO.cs" />
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\ListadoReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
