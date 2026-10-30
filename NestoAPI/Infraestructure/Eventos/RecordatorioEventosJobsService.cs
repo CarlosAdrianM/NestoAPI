@@ -288,7 +288,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             else
             {
-                cuerpo.Append("<p>Puede pagarla en su tienda o pedirnos el enlace de pago.</p>");
+                cuerpo.Append($"<p>{Html(ReglasInscripcionEvento.ComoPagarSinEnlace(aviso.Inscripcion?.FormaPago))}</p>"); // Sugerencia 899
             }
             cuerpo.Append("<p>Si ya la ha pagado, no tenga en cuenta este mensaje.</p><p>Muchas gracias.</p><p>Nueva Visión</p></body></html>");
 
