@@ -582,6 +582,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\LenguajeEtiquetas.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasHuecoDTO.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasProductoAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\SinEtiquetaRecepcion.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasProductoDTO.cs" />
     <Compile Include="Controllers\EtiquetasProductoController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\LecturasAlmacen.cs" />
@@ -1239,6 +1240,8 @@
     <Compile Include="Models\Picking\CuponesPicking.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
+    <Compile Include="Infraestructure\Productos\CodigoBarrasInterno.cs" />
+    <Compile Include="Infraestructure\Productos\RepuestosSinCodigoBarras.cs" />
     <Compile Include="Infraestructure\Productos\InformeCodigosBarras.cs" />
     <Compile Include="Infraestructure\Productos\ValidadorGtin.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />

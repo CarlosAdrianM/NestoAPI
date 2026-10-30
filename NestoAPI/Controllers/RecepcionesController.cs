@@ -35,14 +35,18 @@ namespace NestoAPI.Controllers
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="lecturas">Ariadna#51 (corte 2): lo leído en curso, en el servidor. Sin él, …/Lecturas da 404 (como sin la tabla).</param>
         /// <param name="avisos">NestoAPI#646: «ha cambiado» a los demás equipos de la recepción (SignalR). Sin él, no se avisa.</param>
+        /// <param name="sinEtiqueta">NestoAPI#762: avisar de lo que llega sin etiqueta. Sin él, …/SinEtiqueta da 404.</param>
         public RecepcionesController(IServicioRecepciones servicio, IFichasProductoAlmacen fichas = null,
-            IServicioLecturasRecepcion lecturas = null, IAvisosAlmacen avisos = null)
+            IServicioLecturasRecepcion lecturas = null, IAvisosAlmacen avisos = null, IServicioSinEtiquetaRecepcion sinEtiqueta = null)
         {
             this.servicio = servicio;
             this.fichas = fichas;
             this.lecturas = lecturas;
             this.avisos = avisos;
+            this.sinEtiqueta = sinEtiqueta;
         }
+
+        private readonly IServicioSinEtiquetaRecepcion sinEtiqueta;
 
         // GET api/Almacen/Recepciones?almacen=ALG&empresa=1
         /// <summary>Todo lo que está por recibir en el almacén, de todos los tipos, lo más antiguo primero.</summary>
@@ -237,6 +241,38 @@ namespace NestoAPI.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 return Prohibido(ex);
+            }
+        }
+
+        // POST api/Almacen/Recepciones/REPO/81198/SinEtiqueta?almacen=REI&empresa=1   { Producto, Motivo, Comentario, Unidades, Dispositivo }
+        /// <summary>
+        /// NestoAPI#762: ha llegado una unidad sin etiqueta (se recibe solo escaneando, RecepcionDTO.SoloEscaneando). Avisa al
+        /// origen y a Compras con el motivo (NoLleva, NoSeLee u Otro con Comentario). NO cuenta la unidad: la cuenta la app con
+        /// sus lecturas tras el 200. 400 con el motivo para el usuario (no es REPO, motivo no válido, el producto no viene…);
+        /// 404 si la reposición no está pendiente en ese almacén.
+        /// </summary>
+        [HttpPost]
+        [Route("{tipo}/{documento}/SinEtiqueta")]
+        [ResponseType(typeof(ResultadoSinEtiquetaRecepcionDTO))]
+        public async Task<IHttpActionResult> PostSinEtiqueta(string tipo, string documento, [FromBody] SinEtiquetaRecepcionDTO peticion,
+            string almacen = Constantes.Almacenes.ALGETE, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (sinEtiqueta == null)
+            {
+                return NotFound();
+            }
+            try
+            {
+                return Ok(await sinEtiqueta.Apuntar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), peticion,
+                    UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.NotFound, ex.Message));
             }
         }
 

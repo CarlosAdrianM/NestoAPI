@@ -229,6 +229,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             => F("^FO{0},{1}^BY{2}^BCN,{3},N,N,N,A^FH^FD{4}^FS", x, y, estrecho, alto, Escapar(datos));
 
         /// <summary>
+        /// NestoAPI#762: EAN-13 (^BE) con las cifras debajo. Van las 12 primeras: la impresora calcula el dígito de control (si se
+        /// le dan 13, unas versiones lo ignoran y otras lo imprimen mal).
+        /// </summary>
+        public static string Ean13(int x, int y, int modulo, int alto, string codigo)
+        {
+            string cifras = new string((codigo ?? string.Empty).Where(char.IsDigit).ToArray());
+            return F("^FO{0},{1}^BY{2}^BEN,{3},Y,N^FD{4}^FS", x, y, modulo, alto, cifras.Length > 12 ? cifras.Substring(0, 12) : cifras);
+        }
+
+        /// <summary>
         /// Texto en la fuente D de ZPL (18 × 10 más 2 de separación): la misma celda de 12 puntos de ancho que la fuente 3 de
         /// EPL, monoespaciada, así que las posiciones y el centrado que se calculan para EPL valen igual.
         /// </summary>

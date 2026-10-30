@@ -252,12 +252,19 @@ namespace NestoAPI
             // Ariadna#51 (corte 2): lo leído de una recepción en curso, en el servidor (Nesto y Ariadna ven lo mismo)
             _ = services.AddSingleton<Infraestructure.PreparacionAlmacen.IRepositorioLecturasRecepcion, Infraestructure.PreparacionAlmacen.RepositorioLecturasRecepcionSql>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioLecturasRecepcion, Infraestructure.PreparacionAlmacen.ServicioLecturasRecepcion>();
+            // NestoAPI#762: lo que llega sin etiqueta a una reposición (se recibe solo escaneando): aviso al origen y a Compras
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorSinEtiqueta, Infraestructure.PreparacionAlmacen.AvisadorSinEtiqueta>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioSinEtiquetaRecepcion, Infraestructure.PreparacionAlmacen.ServicioSinEtiquetaRecepcion>();
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen, Infraestructure.PreparacionAlmacen.FotosProductoAlmacen>();
             // NestoAPI#605: varios códigos de barras por producto
             _ = services.AddScoped<Infraestructure.Productos.IRepositorioCodigosBarras>(_ => Infraestructure.Productos.RepositorioCodigosBarras.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.Productos.IServicioCodigosBarras, Infraestructure.Productos.ServicioCodigosBarras>();
+            // NestoAPI#762: lo repuesto en los últimos meses sin código de barras (limpieza inicial)
+            _ = services.AddScoped(sp => new Infraestructure.Productos.InformeRepuestosSinCodigo(
+                new Infraestructure.Productos.RepositorioRepuestosSinCodigoSql(),
+                sp.GetRequiredService<Infraestructure.Productos.IRepositorioCodigosBarras>()));
             // Ariadna#47: los demás productos con stock en el hueco de cada línea (una consulta por respuesta)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioProductosMismoHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioProductosMismoHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen,Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
@@ -287,10 +294,12 @@ namespace NestoAPI
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
             // NestoAPI#654: etiquetas de código de barras de producto, con la ficha del almacén y la impresora de las de hueco
+            // NestoAPI#762: y con los códigos de barras, para la EAN-13 (el del producto o su código interno)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasProducto>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasProducto(
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(),
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
-                Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
+                Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows(),
+                sp.GetRequiredService<Infraestructure.Productos.IServicioCodigosBarras>()));
 
             // NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing (DesdePedido + Tramitar + ImprimirEtiqueta
             // y, si el usuario lo tiene, facturar), con los mismos endpoints que Agencias de Nesto

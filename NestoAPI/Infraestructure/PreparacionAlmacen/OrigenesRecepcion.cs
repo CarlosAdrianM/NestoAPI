@@ -569,6 +569,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Documento = traspaso.ToString(),
                 Titulo = Titulo(traspaso, pendiente),
                 EsPuntual = pendiente?.EsPuntual == true,
+                // NestoAPI#762: las reposiciones se reciben solo escaneando (lo sin etiqueta, unidad a unidad con su motivo)
+                SoloEscaneando = true,
                 TextoRecibidaEnParte = pendiente == null ? null : TextoRecibidaEnParte(pendiente.LineasRecibidas, pendiente.UnidadesRecibidas),
                 // Ariadna#51: lo ya dado de alta en parte sigue en la lista («Recibido el 22/10 (Alfredo)»); solo si lo hay
                 YaRecibidas = pendiente != null && TextoRecibidaEnParte(pendiente.LineasRecibidas, pendiente.UnidadesRecibidas) != null

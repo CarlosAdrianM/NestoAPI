@@ -142,6 +142,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// True en las REPO. Una app solo debe ofrecerlo si viene a true: una API anterior ignoraría Parcial y la terminaría entera.
         /// </summary>
         public bool AdmiteRecibirEnParte { get; set; }
+
+        /// <summary>
+        /// NestoAPI#762 (sugerencia 909, Carlos 30/10/26): se recibe SOLO escaneando: nada de cantidades tecleadas. Lo que llegue
+        /// sin etiqueta se cuenta unidad a unidad con «Sin etiqueta» (POST …/SinEtiqueta), que avisa al origen y a Compras. True
+        /// en las REPO (el origen etiqueta lo que no lleva código); false en las compras de proveedor.
+        /// </summary>
+        public bool SoloEscaneando { get; set; }
         /// <summary>NestoAPI#673: «Recibido en parte: 1 línea, 2 ud.» si ya se ha dado de alta una parte; null si no.</summary>
         public string TextoRecibidaEnParte { get; set; }
         /// <summary>
