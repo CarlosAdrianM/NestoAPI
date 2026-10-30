@@ -286,6 +286,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             dto.Repartidor = NombreRepartidor(dueno);
             dto.BultosCargados = NucleoParadasReparto.BultosCargados(cargas, dueno, c => c.Usuario, c => (c.Traspaso, c.Bulto));
             dto.FechaParada = parada.Fecha;
+            // NestoAPI#767: la tienda, con su dirección real (la de la web, TiendasRecogida) y sus coordenadas fijas, para «Ir» y
+            // «Ruta completa» en Ariadna.
+            PedidosVenta.TiendasRecogida.Tienda datosTienda = PedidosVenta.TiendasRecogida.Buscar(parada.Destino);
+            if (datosTienda != null)
+            {
+                dto.Direccion = datosTienda.Direccion;
+                dto.CodigoPostal = datosTienda.CodigoPostal;
+                dto.Poblacion = datosTienda.Poblacion;
+                dto.Telefono = datosTienda.Telefono;
+            }
+            CoordenadasGeo tiendaGeo = SedesReparto.DeAlmacen(parada.Destino);
+            dto.Latitud = tiendaGeo?.Latitud;
+            dto.Longitud = tiendaGeo?.Longitud;
             return dto;
         }
 

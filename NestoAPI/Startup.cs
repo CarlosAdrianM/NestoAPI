@@ -701,6 +701,18 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'seguimiento-envios' configurado (cada 30 min en horario de reparto, cada 2 horas el resto)");
 
+            // NestoAPI#767: de noche, coordenadas (Nominatim, 1 petición/s) de las paradas en reparto y de los clientes activos
+            // de las rutas propias, con tope por noche. De día solo se geocodifica bajo demanda (lo que pida la lista del reparto).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Agencias.RepartoPropio.GeocodificacionRepartoJobsService.JOB_NOCTURNO,
+                () => Infraestructure.Agencias.RepartoPropio.GeocodificacionRepartoJobsService.GeocodificarClientesRutasPropias(),
+                "40 3 * * *", // Cron: todos los días a las 3:40
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+
             // NestoAPI#329: cada hora (a y cuarto, para no coincidir con seguimiento-envios),
             // consulta estados Verifactu pendientes, reintenta las facturas sin declarar (series
             // que tramitan, desde la fecha de arranque de la sombra) y marca fichas con NIF

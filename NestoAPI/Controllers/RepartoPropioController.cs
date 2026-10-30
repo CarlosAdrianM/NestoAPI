@@ -165,6 +165,25 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.GuardarOrden(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
+        // POST api/RepartoPropio/OrdenSugerido { FechaHora, Fecha, Latitud, Longitud }
+        /// <summary>
+        /// NestoAPI#767 (Ariadna#68): reordena las paradas PENDIENTES del repartidor por el recorrido más corto desde su posición
+        /// (Latitud/Longitud de la PDA; sin ellas, desde Algete) y de vuelta a Algete, con OSRM o, si no responde en 5 s, con una
+        /// heurística local. Lo guarda como PUT Orden (último gana; avisa «repartoCambiado» con Motivo «Orden»). 400 sin
+        /// Scripts/Issue759_ParadasReparto.sql o con una posición no válida.
+        /// </summary>
+        [HttpPost]
+        [Route("OrdenSugerido")]
+        [ResponseType(typeof(OrdenSugeridoRepartoDTO))]
+        public async Task<IHttpActionResult> PostOrdenSugerido([FromBody] PeticionOrdenSugeridoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.OrdenSugerido(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
         // POST api/RepartoPropio/Envios/123456/Entregar (las de reposición, con su EnvioId negativo: Envios/-12/Entregar)
         [HttpPost]
         [Route("Envios/{envioId:int}/Entregar")]

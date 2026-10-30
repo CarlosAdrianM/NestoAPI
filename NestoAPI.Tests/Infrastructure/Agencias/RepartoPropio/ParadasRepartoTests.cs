@@ -589,7 +589,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
         // ================================================================ dobles
 
-        private class NotasFalsas : IRepositorioNotasParadaReparto
+        internal class NotasFalsas : IRepositorioNotasParadaReparto
         {
             public readonly List<NotaParadaReparto> Filas = new List<NotaParadaReparto>();
 
@@ -597,7 +597,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 => Task.FromResult(Filas.Where(f => pedidos.Contains(f.Pedido)).ToList());
         }
 
-        private class OrdenFalso : IRepositorioOrdenReparto
+        internal class OrdenFalso : IRepositorioOrdenReparto
         {
             private readonly ServicioRepartoPropioTests.RepositorioFalso envios;
             public bool Script = true;
@@ -629,7 +629,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     .Select(e => new EstadoEnvioParada { Numero = e.Numero, Agencia = e.Agencia, Estado = e.Estado }).ToList());
         }
 
-        private class ReposicionesFalsas : IRepositorioParadasReposicion
+        internal class ReposicionesFalsas : IRepositorioParadasReposicion
         {
             public readonly List<ParadaReposicion> Paradas = new List<ParadaReposicion>();
             public readonly List<CargaBultoParadaReposicion> Cargas = new List<CargaBultoParadaReposicion>();
@@ -686,7 +686,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             }
         }
 
-        private class BultosReposicionFalsos : IRepositorioBultosReposicion
+        internal class BultosReposicionFalsos : IRepositorioBultosReposicion
         {
             public readonly List<FilaBultoReposicion> Filas = new List<FilaBultoReposicion>();
             public readonly Dictionary<int, string> Destinos = new Dictionary<int, string>();
@@ -704,7 +704,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public Task<bool> Reemplazar(string empresa, int traspaso, int total, string usuario) => throw new NotSupportedException();
         }
 
-        private class AvisoFalso
+        internal class AvisoFalso
         {
             public string Usuario;
             public string Motivo;
@@ -712,7 +712,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public OrigenPeticionReparto Origen;
         }
 
-        private class AvisosFalsos : IAvisosReparto
+        internal class AvisosFalsos : IAvisosReparto
         {
             public readonly List<AvisoFalso> Recibidos = new List<AvisoFalso>();
             public bool Fallar;
