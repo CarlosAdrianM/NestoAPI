@@ -26,6 +26,11 @@ namespace NestoAPI.Models.PedidosVenta
         public string ComentarioPicking { get; set; }
         /// <summary>NestoAPI#739: CabPedidoVta.Ruta (sin Trim). Con ruta propia (AT, 16) se propone el reparto propio.</summary>
         public string Ruta { get; set; }
+        /// <summary>
+        /// NestoAPI#765 / Nesto#586: CabPedidoVta.NotaEntrega. Una nota de entrega no lleva importes: Agencias avisa de que el
+        /// reembolso es 0 por si hay que cobrar algo.
+        /// </summary>
+        public bool NotaEntrega { get; set; }
 
         /// <summary>
         /// Ficha del cliente. Puede ser null, y ESO IMPORTA: Agencias usa "sin ficha" como

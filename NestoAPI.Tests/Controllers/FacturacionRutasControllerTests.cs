@@ -3,11 +3,13 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.Facturas.Agrupacion;
+using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Pedidos;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -28,6 +30,7 @@ namespace NestoAPI.Tests.Controllers
         private IServicioPedidosParaFacturacion servicioPedidos;
         private IServicioAgruparPorPO servicioAgruparPorPO;
         private FacturacionRutasController controller;
+        private IGuardiaNotaSinPacking guardia;
 
         [TestInitialize]
         public void Setup()
@@ -37,7 +40,9 @@ namespace NestoAPI.Tests.Controllers
             servicioAgruparPorPO = A.Fake<IServicioAgruparPorPO>();
             _ = A.CallTo(() => servicioAgruparPorPO.EvaluarYProcesar(A<string>._, A<string>._))
                 .Returns(Task.FromResult(new ResultadoAgrupacionPO()));
-            controller = new FacturacionRutasController(db, servicioPedidos, servicioAgruparPorPO);
+            guardia = A.Fake<IGuardiaNotaSinPacking>();
+            A.CallTo(() => guardia.Motivo(A<string>._, A<int>._)).Returns(Task.FromResult<string>(null));
+            controller = new FacturacionRutasController(db, servicioPedidos, servicioAgruparPorPO) { GuardiaNotas = guardia };
         }
 
         private void ConfigurarUsuario(string rol, string nombre = "NUEVAVISION\\Test")
@@ -262,7 +267,7 @@ namespace NestoAPI.Tests.Controllers
         #region FacturarPedido (Agencias: mismo camino que la facturación de rutas)
 
         private FacturacionRutasController ControllerConGestor(IGestorFacturacionRutas gestor)
-            => new FacturacionRutasController(db, servicioPedidos, servicioAgruparPorPO, () => gestor);
+            => new FacturacionRutasController(db, servicioPedidos, servicioAgruparPorPO, () => gestor) { GuardiaNotas = guardia };
 
         [TestMethod]
         public async Task FacturarPedido_PedidoConAlgoQueFacturar_LoProcesaConElMismoNucleoQueLasRutas()
@@ -324,6 +329,110 @@ namespace NestoAPI.Tests.Controllers
             var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 5 });
 
             Assert.AreNotEqual(HttpStatusCode.Forbidden, (resultado as StatusCodeResult)?.StatusCode);
+        }
+
+        // NestoAPI#765 (decisión 4 de #755): toda nota de ENTREGA pasa por picking y packing.
+
+        [TestMethod]
+        public async Task FacturarPedido_NotaDeEntregaSinPacking_DevuelveElCodigoParaPreguntar_SinProcesarla()
+        {
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            var nota = new CabPedidoVta { Empresa = "1", Número = 929486, NotaEntrega = true, Ruta = "AT" };
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar("1", 929486, DateTime.Today)).Returns(nota);
+            A.CallTo(() => guardia.Motivo("1", 929486)).Returns("La nota de entrega 929486 no ha pasado por el packing.");
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 929486 })
+                as OkNegotiatedContentResult<FacturarRutasResponseDTO>;
+
+            PedidoConErrorDTO error = resultado.Content.PedidosConErrores.Single();
+            Assert.AreEqual(GuardiaNotaSinPacking.CODIGO, error.Codigo);
+            Assert.AreEqual(NivelSeveridad.Error, error.Severidad);
+            StringAssert.Contains(error.MensajeError, "no ha pasado por el packing");
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_NotaDeEntregaSinPacking_ConfirmadoSaltarPacking_SeProcesa()
+        {
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            var nota = new CabPedidoVta { Empresa = "1", Número = 929486, NotaEntrega = true, Ruta = "AT" };
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar("1", 929486, DateTime.Today)).Returns(nota);
+            A.CallTo(() => guardia.Motivo(A<string>._, A<int>._)).Returns("La nota de entrega 929486 no ha pasado por el packing.");
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).Returns(new FacturarRutasResponseDTO());
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 929486, SaltarPacking = true });
+
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>.That.Matches(l => l.Single() == nota), A<string>._, A<DateTime>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => guardia.Motivo(A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_NotaSinPickingConfirmada_LaBuscaAunqueNoTengaPicking()
+        {
+            // Sin picking, la búsqueda de siempre (exige picking) no la encuentra: con la confirmación se procesa igual
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            var nota = new CabPedidoVta { Empresa = "1", Número = 929667, NotaEntrega = true };
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar(A<string>._, A<int>._, A<DateTime>._)).Returns((CabPedidoVta)null);
+            A.CallTo(() => servicioPedidos.ObtenerNotaEntregaSinPicking("1", 929667, DateTime.Today)).Returns(nota);
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).Returns(new FacturarRutasResponseDTO());
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 929667, SaltarPacking = true });
+
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>.That.Matches(l => l.Single() == nota), A<string>._, A<DateTime>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_NotaSinPickingSinConfirmar_PreguntaEnVezDeDecirQueNoHayNadaQueFacturar()
+        {
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar(A<string>._, A<int>._, A<DateTime>._)).Returns((CabPedidoVta)null);
+            A.CallTo(() => guardia.Motivo("1", 929667)).Returns("La nota de entrega 929667 no ha pasado por el picking ni por el packing.");
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 929667 })
+                as OkNegotiatedContentResult<FacturarRutasResponseDTO>;
+
+            Assert.AreEqual(GuardiaNotaSinPacking.CODIGO, resultado.Content.PedidosConErrores.Single().Codigo);
+            A.CallTo(() => servicioPedidos.ObtenerNotaEntregaSinPicking(A<string>._, A<int>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_PedidoNormal_NoMiraLaGuardiaDeNotas()
+        {
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar("1", 927519, DateTime.Today))
+                .Returns(new CabPedidoVta { Empresa = "1", Número = 927519, NotaEntrega = false });
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).Returns(new FacturarRutasResponseDTO());
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 927519 });
+
+            A.CallTo(() => guardia.Motivo(A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_NotaConPacking_SeProcesaSinPreguntar()
+        {
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            var nota = new CabPedidoVta { Empresa = "1", Número = 929179, NotaEntrega = true, Ruta = "AT" };
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar("1", 929179, DateTime.Today)).Returns(nota);
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).Returns(new FacturarRutasResponseDTO());
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 929179 });
+
+            A.CallTo(() => guardia.Motivo("1", 929179)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).MustHaveHappenedOnceExactly();
         }
 
         #endregion

@@ -138,6 +138,9 @@ namespace NestoAPI.Infraestructure.Agencias
             return nombres.FirstOrDefault()?.Trim();
         }
 
+        public Task<bool> EsNotaDeRepartoPropio(string empresa, int pedido)
+            => new NotasEntrega.GuardiaNotaSinPacking(new NotasEntrega.RepositorioEstadoNotaPacking(Db)).EsNotaDeRepartoPropio(empresa, pedido);
+
         public void Dispose() => envios.Dispose();
 
         // ---------------------------------------------------------------- piezas

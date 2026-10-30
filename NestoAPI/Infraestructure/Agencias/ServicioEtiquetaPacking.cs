@@ -152,6 +152,11 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>POST api/FacturacionRutas/FacturarPedido. Lanza con el motivo si no se ha podido.</summary>
         Task<FacturarRutasResponseDTO> Facturar(string empresa, int pedido);
         Task<string> NombreAgencia(int agencia);
+        /// <summary>
+        /// NestoAPI#765: ¿es una nota (de entrega o recogida) de una ruta de reparto propio? Esas no se procesan al imprimir la etiqueta:
+        /// las procesa Facturar rutas, que crea la parada e imprime el documento NE (#758).
+        /// </summary>
+        Task<bool> EsNotaDeRepartoPropio(string empresa, int pedido);
     }
 
     public class ServicioEtiquetaPacking : IServicioEtiquetaPacking
@@ -197,6 +202,10 @@ namespace NestoAPI.Infraestructure.Agencias
                 return ResultadoEtiquetaPacking.Invalida(CodigosErrorEnvioDesdePedido.PETICION_INVALIDA,
                     $"Los bultos tienen que estar entre 1 y {MAXIMO_BULTOS}.");
             }
+            if (peticion.Reembolso.HasValue && peticion.Reembolso.Value < 0m)
+            {
+                return ResultadoEtiquetaPacking.Invalida(CodigosErrorEnvioDesdePedido.PETICION_INVALIDA, "El reembolso no puede ser negativo.");
+            }
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(usuario, "NestoAPI");
 
@@ -234,7 +243,9 @@ namespace NestoAPI.Infraestructure.Agencias
                         Confirmaciones = (peticion.Confirmaciones ?? new List<string>())
                             .Where(c => !string.Equals(c?.Trim(), CodigosAvisoPropuestaEnvio.AMPLIACION, StringComparison.OrdinalIgnoreCase)).ToList(),
                         DescontarPrepagos = peticion.DescontarPrepagos,
-                        Dimensiones = peticion.Dimensiones
+                        Dimensiones = peticion.Dimensiones,
+                        // NestoAPI#765: el reembolso del packing (en una nota de entrega lo marca el mozo); sin él, el de la propuesta
+                        Cambios = peticion.Reembolso.HasValue ? new CambiosEnvioDesdePedidoDTO { Reembolso = peticion.Reembolso.Value } : null
                     }, usuarioAuditoria);
 
                     switch (creado.Tipo)
@@ -333,9 +344,18 @@ namespace NestoAPI.Infraestructure.Agencias
                     $"{(string.IsNullOrWhiteSpace(etiqueta.Impresora) ? string.Empty : " en " + etiqueta.Impresora.Trim())} ({TextoBultos(etiqueta.Bultos)}).";
 
                 // 5. Facturar al imprimir (#592), si el usuario lo tiene: lo que diga no deshace la etiqueta.
+                // NestoAPI#765: menos las notas de reparto propio, que las procesa Facturar rutas (si se procesaran aquí, Facturar
+                // rutas ya no las vería y no saldría el documento NE: Ariadna no imprime documentos).
                 if (FacturarAlImprimir(usuarioAuditoria))
                 {
-                    await Facturar(pasos, envio, pedido, etiqueta);
+                    if (await EsNotaDeRepartoPropioSeguro(pasos, empresa, pedido))
+                    {
+                        etiqueta.Avisos.Add($"La nota de entrega {pedido} no se procesa al imprimir la etiqueta: la procesa Facturar rutas, que imprime su documento.");
+                    }
+                    else
+                    {
+                        await Facturar(pasos, envio, pedido, etiqueta);
+                    }
                 }
 
                 return ResultadoEtiquetaPacking.Hecha(etiqueta);
@@ -440,6 +460,20 @@ namespace NestoAPI.Infraestructure.Agencias
                 avisos.Add($"El pedido {pedido} lleva el documento en papel: imprímalo desde Nesto.");
             }
             return avisos.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
+        }
+
+        /// <summary>Si no se puede saber, se trata como nota de reparto propio: mejor que la procese Facturar rutas que perder el NE.</summary>
+        private async Task<bool> EsNotaDeRepartoPropioSeguro(IPasosEtiquetaPacking pasos, string empresa, int pedido)
+        {
+            try
+            {
+                return await pasos.EsNotaDeRepartoPropio(empresa, pedido);
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[Etiqueta del packing #765] No se ha podido saber si el pedido {pedido} es una nota de reparto propio: no se factura al imprimir. {ex.Message}", ex));
+                return true;
+            }
         }
 
         private async Task<string> NombreSeguro(IPasosEtiquetaPacking pasos, int agencia)

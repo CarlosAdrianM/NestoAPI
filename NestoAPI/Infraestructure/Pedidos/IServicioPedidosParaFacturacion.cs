@@ -34,5 +34,11 @@ namespace NestoAPI.Infraestructure.Pedidos
         /// que la facturación de rutas.
         /// </summary>
         Task<CabPedidoVta> ObtenerPedidoParaFacturar(string empresa, int numero, DateTime fechaEntregaDesde);
+
+        /// <summary>
+        /// NestoAPI#765: la nota de entrega indicada con alguna línea en curso hasta esa fecha de entrega, tenga picking o no; null si
+        /// no es nota o no tiene nada en curso. Solo para procesarla cuando quien lo pide ya ha confirmado que se salta el packing.
+        /// </summary>
+        Task<CabPedidoVta> ObtenerNotaEntregaSinPicking(string empresa, int numero, DateTime fechaEntregaDesde);
     }
 }
