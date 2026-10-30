@@ -377,6 +377,7 @@
     <Compile Include="Infrastructure\ServicioExtractoRutaTests.cs" />
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacionTests.cs" />
     <Compile Include="Infrastructure\ServicioNotasEntregaTests.cs" />
+    <Compile Include="Infrastructure\NotasEntrega\NotasEntregaCabeceraTests.cs" />
     <Compile Include="Infrastructure\CreadorNotaEntregaPendienteTests.cs" />
     <Compile Include="Infrastructure\FechaEntregaNotasTests.cs" />
     <Compile Include="Infrastructure\PendientesEntregarTests.cs" />
