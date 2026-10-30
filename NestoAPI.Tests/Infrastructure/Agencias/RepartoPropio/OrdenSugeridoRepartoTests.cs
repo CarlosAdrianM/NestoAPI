@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Notificaciones;
@@ -45,6 +46,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         private ParadasRepartoTests.AvisosFalsos avisos;
         private CoordenadasFalsas coordenadas;
         private MotorFalso motor;
+        private HorariosFalsos horarios;
         private ServicioRepartoPropio servicio;
 
         [TestInitialize]
@@ -58,6 +60,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             avisos = new ParadasRepartoTests.AvisosFalsos();
             coordenadas = new CoordenadasFalsas();
             motor = new MotorFalso();
+            horarios = new HorariosFalsos();
             servicio = new ServicioRepartoPropio(repositorio, () => AHORA, null, new ServicioRepartoPropioTests.ParametrosFalsos(),
                 () => A.Fake<IServicioPagos>(), () => A.Fake<IInformesService>(), cargas, new DependenciasParadasReparto
                 {
@@ -67,7 +70,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     BultosReposicion = new ParadasRepartoTests.BultosReposicionFalsos(),
                     Avisos = avisos,
                     Coordenadas = coordenadas,
-                    Recorrido = new PlanificadorRecorrido(motor)
+                    Recorrido = new PlanificadorRecorrido(motor),
+                    Horarios = horarios
                 });
         }
 
@@ -555,6 +559,140 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     yield return resto;
                 }
             }
+        }
+
+        // ================================================================ NestoAPI#763: horario preferible
+
+        /// <summary>Una parada de otro cliente (para que tenga su propio horario).</summary>
+        private async Task<EnviosAgencia> ParadaDe(int numero, string cliente, string nombre, CoordenadasGeo geo, string horario)
+        {
+            EnviosAgencia envio = await Parada(numero, "Calle " + numero, geo);
+            envio.Cliente = cliente + "     ";
+            envio.Nombre = nombre;
+            if (horario != null)
+            {
+                horarios.Con("1", cliente, "0", horario);
+            }
+            return envio;
+        }
+
+        [TestMethod]
+        public async Task Envios_TraenElHorarioPreferible_EnteroYElDelDia_YLasReposicionesNo()
+        {
+            // AHORA es viernes 30/10/26.
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_MADRID, "L-V 10:00-14:00, 17:00-20:00; S 10:00-13:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_ALCOBENDAS, "S 10:00-13:00");
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            ReposicionDeAndre(7, Constantes.Almacenes.ALCOBENDAS);
+
+            List<EnvioRepartoDTO> lista = (await servicio.Envios(null)).Contenido;
+
+            EnvioRepartoDTO uno = lista.Single(e => e.EnvioId == 251300);
+            Assert.AreEqual("L-V 10:00-14:00, 17:00-20:00; S 10:00-13:00", uno.HorarioPreferible);
+            Assert.AreEqual("10:00-14:00, 17:00-20:00", uno.HorarioPreferibleDia);
+            EnvioRepartoDTO dos = lista.Single(e => e.EnvioId == 251301);
+            Assert.AreEqual("S 10:00-13:00", dos.HorarioPreferible);
+            Assert.AreEqual(string.Empty, dos.HorarioPreferibleDia, "Tiene horario, pero no los viernes");
+            Assert.IsNull(lista.Single(e => e.EnvioId == 251302).HorarioPreferible);
+            Assert.IsNull(lista.Single(e => e.EnvioId == -7).HorarioPreferible);
+            Assert.IsNull(uno.LlegadaEstimada, "La llegada solo la calcula el orden sugerido");
+
+            List<EnvioRepartoDTO> sabado = (await servicio.Envios(AHORA.Date.AddDays(1))).Contenido;
+            Assert.AreEqual("10:00-13:00", sabado.Single(e => e.EnvioId == 251301).HorarioPreferibleDia);
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_ConLosTramosDeOsrm_EstimaLaLlegada_YAvisaDeLasQueCaenFueraDeSuHorario()
+        {
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 10:00-14:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, "L-V 09:00-13:00");
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            // Orden: Alcobendas (30 min), Madrid (60 min), cerca de Algete (20 min).
+            motor.Responder = (o, d, p) => new RecorridoCalculado
+            {
+                Orden = new List<int> { 0, 1, 2 }, Motor = OrdenSugeridoRepartoDTO.MOTOR_OSRM, Kilometros = 80m, Minutos = 120,
+                MinutosTramos = new List<double> { 30, 60, 20 }
+            };
+
+            var resultado = await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE);
+
+            OrdenSugeridoRepartoDTO r = resultado.Contenido;
+            CollectionAssert.AreEqual(new[] { 251300, 251301, 251302 }, Ids(r));
+            Assert.AreEqual(AHORA.AddMinutes(30), r.Paradas[0].LlegadaEstimada, "08:30");
+            Assert.AreEqual(AHORA.AddMinutes(30 + 5 + 60), r.Paradas[1].LlegadaEstimada, "09:35");
+            Assert.AreEqual(AHORA.AddMinutes(30 + 5 + 60 + 5 + 20), r.Paradas[2].LlegadaEstimada, "10:00");
+            Assert.IsTrue(r.Paradas[0].FueraDeHorario, "A las 08:30 aún no abre (10:00-14:00)");
+            Assert.IsFalse(r.Paradas[1].FueraDeHorario, "A las 09:35 está abierto (09:00-13:00)");
+            Assert.IsFalse(r.Paradas[2].FueraDeHorario, "Sin horario no se avisa");
+            Assert.AreEqual(1, r.FueraDeHorario);
+            StringAssert.Contains(r.AvisoHorario, "Una parada llegaría fuera de su horario preferible (ESTÉTICA UNO)");
+            CollectionAssert.AreEqual(new[] { 251300, 251301, 251302 }, orden.Filas.OrderBy(f => f.Value.Orden).Select(f => f.Key).ToList(),
+                "El horario solo avisa: no cambia el orden");
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_ConLaHeuristica_EstimaConLaLineaRecta_YDiaFuturoSaleALasNueve()
+        {
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 10:00-14:00");
+            motor.Responder = (o, d, p) => null;
+
+            var hoy = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+            DateTime llegada = hoy.Paradas[0].LlegadaEstimada.Value;
+            Assert.IsTrue(llegada > AHORA && llegada < AHORA.AddHours(1), $"Algete → Alcobendas en línea recta: {llegada:HH:mm}");
+            Assert.IsTrue(hoy.Paradas[0].FueraDeHorario);
+
+            Assert.AreEqual(9, ServicioRepartoPropio.HoraSalida(AHORA.Date.AddDays(3), AHORA).Value.Hour, "Día futuro: sale a las 9");
+            Assert.AreEqual(AHORA, ServicioRepartoPropio.HoraSalida(AHORA.Date, AHORA));
+            Assert.IsNull(ServicioRepartoPropio.HoraSalida(AHORA.Date.AddDays(-1), AHORA), "Un día pasado no se estima");
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_SinNadieFueraDeHorario_SinAviso_YSinHorariosConfigurados_ComoAntes()
+        {
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 08:00-20:00");
+            motor.Responder = (o, d, p) => null;
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            Assert.AreEqual(0, r.FueraDeHorario);
+            Assert.IsNull(r.AvisoHorario);
+            Assert.IsFalse(r.Paradas[0].FueraDeHorario);
+        }
+
+        [TestMethod]
+        public void Osrm_Leer_LosTramosDeCadaParada_EnMinutos()
+        {
+            const string json = @"{""code"":""Ok"",""trips"":[{""distance"":34567.8,""duration"":2730.0,
+                ""legs"":[{""duration"":600.0},{""duration"":1200.0},{""duration"":900.0},{""duration"":30.0}]}],
+                ""waypoints"":[{""waypoint_index"":0,""trips_index"":0},{""waypoint_index"":3,""trips_index"":0},
+                {""waypoint_index"":1,""trips_index"":0},{""waypoint_index"":2,""trips_index"":0},{""waypoint_index"":4,""trips_index"":0}]}";
+
+            RecorridoCalculado r = MotorRutasOsrm.Leer(json, 3);
+
+            CollectionAssert.AreEqual(new[] { 10d, 20d, 15d }, r.MinutosTramos);
+            Assert.IsNull(MotorRutasOsrm.Leer(json.Replace(@"""legs""", @"""otros"""), 3).MinutosTramos, "Sin legs, se estima con la línea recta");
+        }
+
+        [TestMethod]
+        public void AvisoHorario_MasDeTres_ResumeLosDemas()
+        {
+            var fuera = Enumerable.Range(1, 5).Select(i => new EnvioRepartoDTO { Nombre = "C" + i }).ToList();
+
+            Assert.AreEqual("5 paradas llegarían fuera de su horario preferible (C1, C2, C3 y 2 más). Revise el orden si puede; el horario solo es una preferencia.",
+                ServicioRepartoPropio.AvisoHorario(fuera));
+            Assert.IsNull(ServicioRepartoPropio.AvisoHorario(new List<EnvioRepartoDTO>()));
+        }
+
+        private class HorariosFalsos : IHorariosParadas
+        {
+            private readonly Dictionary<string, List<FranjaHorario>> filas = new Dictionary<string, List<FranjaHorario>>();
+
+            public void Con(string empresa, string cliente, string contacto, string texto)
+                => filas[RepositorioHorarioPreferible.Clave(empresa, cliente, contacto)] = FormatoHorarioPreferible.Leer(texto, out _);
+
+            public Task<Dictionary<string, List<FranjaHorario>>> HorariosDe(IReadOnlyCollection<(string Empresa, string Cliente, string Contacto)> contactos)
+                => Task.FromResult(contactos.Select(c => RepositorioHorarioPreferible.Clave(c.Empresa, c.Cliente, c.Contacto)).Distinct()
+                    .Where(filas.ContainsKey).ToDictionary(c => c, c => filas[c]));
         }
 
         // ================================================================ dobles

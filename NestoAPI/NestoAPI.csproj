@@ -742,6 +742,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Paradas.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.OrdenSugerido.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.HorarioPreferible.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionRepartoJobsService.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RecorridoReparto.cs" />
@@ -833,6 +834,9 @@
     <Compile Include="Infraestructure\ChequesRegalo\EstadisticaChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\SuPedidoObligatorio.cs" />
+    <Compile Include="Infraestructure\Clientes\HorarioPreferible.cs" />
+    <Compile Include="Infraestructure\Clientes\ServicioHorarioPreferible.cs" />
+    <Compile Include="Models\Clientes\HorarioPreferibleDTO.cs" />
     <Compile Include="Infraestructure\Clientes\AltaClienteEspecial.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ReglaIvaContacto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AdelantoFechaEntrega.cs" />
@@ -1260,6 +1264,7 @@
     <Compile Include="Infraestructure\Ubicaciones\RepositorioCuadreUbicaciones.cs" />
     <Compile Include="Controllers\EventosController.cs" />
     <Compile Include="Controllers\RepartoPropioController.cs" />
+    <Compile Include="Controllers\HorarioPreferibleController.cs" />
     <Compile Include="Controllers\SeguimientoController.cs" />
     <Compile Include="Controllers\ReposicionesController.cs" />
     <Compile Include="Controllers\UbicacionesController.cs" />

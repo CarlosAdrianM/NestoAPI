@@ -174,6 +174,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .Where(p => NucleoParadasReparto.Visible(p.Repartidor, usuario, soloMios)));
             await CompletarOrden(lista).ConfigureAwait(false);
             await CompletarCoordenadas(lista).ConfigureAwait(false);
+            await CompletarHorarios(lista, dia).ConfigureAwait(false);
             return ResultadoReparto<List<EnvioRepartoDTO>>.Bien(NucleoParadasReparto.Ordenar(lista));
         }
 
@@ -221,6 +222,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             await CompletarOrden(new List<EnvioRepartoDTO> { dto }).ConfigureAwait(false);
             await CompletarCoordenadas(new List<EnvioRepartoDTO> { dto }).ConfigureAwait(false);
+            await CompletarHorarios(new List<EnvioRepartoDTO> { dto }, ahora().Date).ConfigureAwait(false);
             return ResultadoReparto<EnvioRepartoBultoDTO>.Bien(dto);
         }
 

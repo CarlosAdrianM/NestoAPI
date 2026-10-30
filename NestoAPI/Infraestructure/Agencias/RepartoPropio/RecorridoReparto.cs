@@ -18,6 +18,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public int? Minutos { get; set; }
         /// <summary><see cref="OrdenSugeridoRepartoDTO.MOTOR_OSRM"/> o <see cref="OrdenSugeridoRepartoDTO.MOTOR_HEURISTICA"/>.</summary>
         public string Motor { get; set; }
+        /// <summary>
+        /// NestoAPI#763: minutos de conducción hasta cada parada desde la anterior (o el origen), en el orden de visita. Solo con
+        /// OSRM; null con la heurística (entonces se estima con la línea recta).
+        /// </summary>
+        public List<double> MinutosTramos { get; set; }
     }
 
     /// <summary>
@@ -115,12 +120,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             double? metros = (double?)trips[0]["distance"];
             double? segundos = (double?)trips[0]["duration"];
+            // NestoAPI#763: legs[k] es el tramo del punto k al k+1 del viaje (el 0 es el origen): los n primeros llegan a las paradas.
+            var legs = trips[0]["legs"] as JArray;
+            List<double> tramos = null;
+            if (legs != null && legs.Count >= paradas && legs.Take(paradas).All(l => l["duration"] != null && l["duration"].Type != JTokenType.Null))
+            {
+                tramos = legs.Take(paradas).Select(l => (double)l["duration"] / 60d).ToList();
+            }
             return new RecorridoCalculado
             {
                 Orden = posiciones.OrderBy(p => p.Posicion).Select(p => p.Parada).ToList(),
                 Kilometros = metros.HasValue ? Math.Round((decimal)metros.Value / 1000m, 1) : (decimal?)null,
                 Minutos = segundos.HasValue ? (int)Math.Round(segundos.Value / 60d) : (int?)null,
-                Motor = OrdenSugeridoRepartoDTO.MOTOR_OSRM
+                Motor = OrdenSugeridoRepartoDTO.MOTOR_OSRM,
+                MinutosTramos = tramos
             };
         }
     }
