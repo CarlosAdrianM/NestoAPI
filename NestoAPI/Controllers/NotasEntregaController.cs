@@ -55,6 +55,15 @@ namespace NestoAPI.Controllers
             set => documentos = value;
         }
 
+        private IServicioAbonosRecogida abonosRecogida;
+
+        /// <summary>NestoAPI#760: el abono por recogida (sustituible en los tests).</summary>
+        internal IServicioAbonosRecogida AbonosRecogida
+        {
+            get => abonosRecogida ?? (abonosRecogida = new ServicioAbonosRecogida(new RepositorioAbonosRecogida(db)));
+            set => abonosRecogida = value;
+        }
+
         /// <summary>NestoAPI#758: las etiquetas de recogida (sustituible en los tests).</summary>
         internal IServicioEtiquetasRecogida EtiquetasRecogida
         {
@@ -142,6 +151,63 @@ namespace NestoAPI.Controllers
                 return Prohibido();
             }
             ResultadoEtiquetasRecogida resultado = await EtiquetasRecogida.Imprimir(empresa, pedido, peticion?.Impresora, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            return Responder(resultado.Tipo, resultado.Mensaje, resultado.Contenido);
+        }
+
+        // GET api/NotasEntrega/Recogidas/NR929554-1
+        /// <summary>
+        /// NestoAPI#760: la nota de recogida de una etiqueta (NR{pedido}-{N} o NR{pedido}), para enseñarla antes de crear el abono:
+        /// cliente, texto, bultos, factura original, estado de la parada, cuándo y a quién se recogió (Receptor solo para Almacén,
+        /// Administración y Dirección) y el abono si ya existe. 404 si el código no es de una nota de recogida.
+        /// </summary>
+        [HttpGet]
+        [Route("Recogidas/{codigo}")]
+        [ResponseType(typeof(RecogidaDTO))]
+        public async Task<IHttpActionResult> GetRecogida(string codigo)
+        {
+            if (!PermisosNotasEntrega.Puede(User))
+            {
+                return Prohibido();
+            }
+            ResultadoAbonoRecogida<RecogidaDTO> resultado = await AbonosRecogida.Leer(codigo, PermisosRepartoPropio.PuedeVerDatosPersonales(User));
+            return Responder(resultado);
+        }
+
+        // POST api/NotasEntrega/Recogidas/Abono { Codigo, Forzar }
+        /// <summary>
+        /// NestoAPI#760: crea el pedido de abono (serie rectificativa, sin líneas) del cliente de la nota de recogida y lo apunta en
+        /// NotasEntregaCabecera.PedidoAbono: 201 con { Empresa, Pedido, Cliente, Contacto, Nombre, Serie, PedidoNota, FacturaOriginal,
+        /// TextoNota, YaExistia }. Idempotente: si ya tiene abono, 200 con ese pedido y YaExistia = true. 409 RECOGIDA_NO_RECOGIDA
+        /// (details.estado) si el repartidor no la ha marcado como recogida, salvo con Forzar = true. 404 si no es una recogida.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/Abono")]
+        [ResponseType(typeof(AbonoRecogidaDTO))]
+        public async Task<IHttpActionResult> PostAbonoRecogida([FromBody] CrearAbonoRecogidaDTO peticion)
+        {
+            if (!PermisosNotasEntrega.Puede(User))
+            {
+                return Prohibido();
+            }
+            ResultadoAbonoRecogida<AbonoRecogidaDTO> resultado = await AbonosRecogida.CrearAbono(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            if (resultado.Tipo == TipoResultadoNotaEntrega.Ok && resultado.Creado)
+            {
+                return Content(HttpStatusCode.Created, resultado.Contenido);
+            }
+            return Responder(resultado);
+        }
+
+        private IHttpActionResult Responder<T>(ResultadoAbonoRecogida<T> resultado)
+        {
+            if (resultado.Tipo == TipoResultadoNotaEntrega.Conflicto && resultado.Codigo != null)
+            {
+                // El formato de GlobalExceptionFilter ({ error: { code, message, details } }) y Message como siempre (como api/RepartoPropio).
+                return Content(HttpStatusCode.Conflict, new
+                {
+                    error = new { code = resultado.Codigo, message = resultado.Mensaje, details = resultado.Detalles },
+                    Message = resultado.Mensaje
+                });
+            }
             return Responder(resultado.Tipo, resultado.Mensaje, resultado.Contenido);
         }
 
