@@ -132,6 +132,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 respuesta.Motor = calculado.Motor;
                 respuesta.Kilometros = calculado.Kilometros;
                 respuesta.Minutos = calculado.Minutos;
+
+                // NestoAPI#763: a qué hora se llega a cada una y cuáles caen fuera de su horario preferible (solo se avisa).
+                DateTime? horaSalida = HoraSalida((peticion.Fecha ?? ahora()).Date, peticion.FechaHora ?? ahora());
+                if (horaSalida.HasValue)
+                {
+                    respuesta.FueraDeHorario = EstimarLlegadas(recorrido, salida, horaSalida.Value, calculado.MinutosTramos);
+                    respuesta.AvisoHorario = AvisoHorario(recorrido.Where(p => p.FueraDeHorario));
+                }
             }
 
             List<EnvioRepartoDTO> ordenadas = recorrido.Concat(sinCoordenadas).Concat(visitadas).ToList();

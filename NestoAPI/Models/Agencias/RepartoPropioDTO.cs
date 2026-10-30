@@ -68,6 +68,23 @@ namespace NestoAPI.Models.Agencias
         public decimal? Latitud { get; set; }
         /// <summary>NestoAPI#767: ver <see cref="Latitud"/>.</summary>
         public decimal? Longitud { get; set; }
+        /// <summary>
+        /// NestoAPI#763: el «horario preferible» del cliente/contacto de la parada, entero («L-V 10:00-14:00, 17:00-20:00; S
+        /// 10:00-13:00»). Null si no tiene (o en las de reposición). Solo lo respeta nuestra ruta.
+        /// </summary>
+        public string HorarioPreferible { get; set; }
+        /// <summary>
+        /// NestoAPI#763: las franjas del horario preferible del DÍA de la lista («10:00-14:00, 17:00-20:00»). Null si no tiene
+        /// horario; vacío ("") si tiene horario pero ese día no tiene ninguna franja (ese día no le viene bien).
+        /// </summary>
+        public string HorarioPreferibleDia { get; set; }
+        /// <summary>
+        /// NestoAPI#763: solo en la respuesta de POST OrdenSugerido. A qué hora se calcula que se llega (conducción + 5 minutos por
+        /// parada, desde la hora de la PDA). Null si no se puede estimar (sin coordenadas, ya visitada).
+        /// </summary>
+        public DateTime? LlegadaEstimada { get; set; }
+        /// <summary>NestoAPI#763: solo en POST OrdenSugerido. True si tiene horario preferible y la llegada estimada cae fuera de él.</summary>
+        public bool FueraDeHorario { get; set; }
 
         /// <summary>Para ordenar la lista (no sale en el JSON): la fecha del envío o de la parada de reposición.</summary>
         internal DateTime FechaParada { get; set; }
@@ -239,6 +256,10 @@ namespace NestoAPI.Models.Agencias
         public int? Minutos { get; set; }
         /// <summary>Paradas pendientes que aún no tienen coordenadas (van detrás de las que sí, sin mover).</summary>
         public int SinCoordenadas { get; set; }
+        /// <summary>NestoAPI#763: paradas pendientes que, con este orden, llegarían fuera de su horario preferible.</summary>
+        public int FueraDeHorario { get; set; }
+        /// <summary>NestoAPI#763: el aviso para el repartidor si <see cref="FueraDeHorario"/> &gt; 0; null si no hay nada que avisar.</summary>
+        public string AvisoHorario { get; set; }
         public int Guardados { get; set; }
         public int Ignorados { get; set; }
     }

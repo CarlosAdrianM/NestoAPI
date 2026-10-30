@@ -329,10 +329,14 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public ICoordenadasParadas Coordenadas { get; set; }
         /// <summary>NestoAPI#767: el orden sugerido (OSRM con la heurística de respaldo). Null: solo la heurística.</summary>
         public IPlanificadorRecorrido Recorrido { get; set; }
+        /// <summary>NestoAPI#763: el horario preferible de los clientes de las paradas. Null: sin horarios (como antes).</summary>
+        public IHorariosParadas Horarios { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
             {
+                Horarios = new HorariosParadas(new global::NestoAPI.Infraestructure.Clientes.ServicioHorarioPreferible(
+                    new global::NestoAPI.Infraestructure.Clientes.RepositorioHorarioPreferible(db))),
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),
                 Recorrido = new PlanificadorRecorrido(new MotorRutasOsrm()),
                 Notas = new ServicioParadasNotaEntrega(db),
