@@ -544,21 +544,46 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             // NestoAPI#732: «gratuito por compra». Si el evento exige productos, el cliente tiene que haber comprado o pedido
             // alguno (modo «Alguno») o todos (modo «Todos»; ReglasProductosRequeridosEvento); el pedido que lo justifica se
             // guarda en la inscripción.
+            // NestoAPI#745 (Carlos, 30/10/26): Dirección (e Informática) inscribe aunque no haya compra; si la hay, el
+            // justificante se guarda igual. Nunca el cliente de la tienda online.
             JustificanteCompraEvento justificante = null;
+            string sinCompraPorDireccion = null;
             if (ProductosRequeridos != null)
             {
                 List<ProductoRequeridoLeido> requeridos = (await ProductosRequeridos.Leer(new List<int> { evento.Id }).ConfigureAwait(false))?
                     .FirstOrDefault().Value ?? new List<ProductoRequeridoLeido>();
                 if (requeridos.Any())
                 {
+                    bool exigirCompra = clienteDelToken != null || !PermisosEventos.EsDireccion(usuario);
                     DateTime desde = ReglasProductosRequeridosEvento.Desde(requeridos);
                     bool exigeTodos = (await ProductosRequeridos.EventosQueExigenTodos(new List<int> { evento.Id }).ConfigureAwait(false))?
                         .Contains(evento.Id) == true;
-                    justificante = exigeTodos
-                        ? await JustificanteDeTodos(empresa, cliente, evento.Titulo, requeridos, desde).ConfigureAwait(false)
-                        : await ProductosRequeridos.BuscarJustificante(empresa, cliente,
-                            requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false)
-                            ?? throw ReglasProductosRequeridosEvento.RequiereCompra(evento.Titulo, requeridos, desde);
+                    if (exigeTodos)
+                    {
+                        List<ProductoRequeridoLeido> faltan;
+                        (justificante, faltan) = await JustificanteDeTodos(empresa, cliente, requeridos, desde).ConfigureAwait(false);
+                        if (faltan.Any())
+                        {
+                            if (exigirCompra)
+                            {
+                                throw ReglasProductosRequeridosEvento.RequiereCompraTodos(evento.Titulo, faltan, desde);
+                            }
+                            sinCompraPorDireccion = ReglasProductosRequeridosEvento.AvisoSinCompraPorDireccion(evento.Titulo, faltan, desde, todos: true);
+                        }
+                    }
+                    else
+                    {
+                        justificante = await ProductosRequeridos.BuscarJustificante(empresa, cliente,
+                            requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false);
+                        if (justificante == null)
+                        {
+                            if (exigirCompra)
+                            {
+                                throw ReglasProductosRequeridosEvento.RequiereCompra(evento.Titulo, requeridos, desde);
+                            }
+                            sinCompraPorDireccion = ReglasProductosRequeridosEvento.AvisoSinCompraPorDireccion(evento.Titulo, requeridos, desde, todos: false);
+                        }
+                    }
                 }
             }
 
@@ -592,6 +617,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             await db.SaveChangesAsync().ConfigureAwait(false);
             bool personaGuardada = await GuardarPersonaSinFallar(inscripcion.Id, personaAsiste).ConfigureAwait(false);
             bool justificanteGuardado = await GuardarJustificanteSinFallar(inscripcion.Id, justificante?.Pedido).ConfigureAwait(false);
+            if (sinCompraPorDireccion != null)
+            {
+                await ApuntarSinCompraPorDireccion(inscripcion, cliente, contacto, sinCompraPorDireccion, usuarioAuditoria).ConfigureAwait(false);
+            }
 
             string urlPago = null;
             bool conEnlace = !gratuita && peticion.GenerarEnlacePago && importe > 0
@@ -640,6 +669,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             if (origen != OrigenInscripcionEvento.TNV)
             {
                 dto.Avisos = await AvisosFicha(empresa, cliente, contacto, ficha.Teléfono).ConfigureAwait(false);
+            }
+            if (sinCompraPorDireccion != null)
+            {
+                dto.Avisos = dto.Avisos ?? new List<string>();
+                dto.Avisos.Insert(0, sinCompraPorDireccion);
             }
             return dto;
         }
@@ -790,11 +824,35 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         }
 
         /// <summary>
-        /// NestoAPI#732, modo «Todos»: cada producto requerido tiene que tener su línea (mismas líneas válidas y misma ventana
-        /// que con «Alguno»). Si falta alguno, 400 EVENTO_REQUIERE_COMPRA con los que faltan; si no, el justificante es el pedido
-        /// más reciente de los que justifican.
+        /// NestoAPI#745: constancia de que Dirección inscribió sin compra, en Modificaciones (Tabla EventosInscripciones; la
+        /// columna Usuario la rellena la BD, así que el usuario del token va en Nuevo). Si falla, la inscripción vale igual (y a ELMAH).
         /// </summary>
-        private async Task<JustificanteCompraEvento> JustificanteDeTodos(string empresa, string cliente, string titulo,
+        private async Task ApuntarSinCompraPorDireccion(EventoInscripcion inscripcion, string cliente, string contacto, string aviso, string usuario)
+        {
+            try
+            {
+                db.Modificaciones.Add(new Modificacion
+                {
+                    Tabla = "EventosInscripciones",
+                    Anterior = null,
+                    Nuevo = $"Inscripción {inscripcion.Id} (evento {inscripcion.EventoId}, cliente {cliente}/{contacto}) SIN COMPRA POR DIRECCIÓN " +
+                            $"(NestoAPI#745; usuario {usuario}): {aviso}"
+                });
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #745] La inscripción {inscripcion.Id} está hecha sin compra por Dirección ({usuario}), " +
+                    $"pero no se ha podido apuntar en Modificaciones: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#732, modo «Todos»: cada producto requerido tiene que tener su línea (mismas líneas válidas y misma ventana
+        /// que con «Alguno»). Devuelve el justificante (el pedido más reciente de los que justifican; null si falta alguno) y los
+        /// que faltan. Quien llama decide: 400 EVENTO_REQUIERE_COMPRA con los que faltan o, si es Dirección (NestoAPI#745), sin compra.
+        /// </summary>
+        private async Task<(JustificanteCompraEvento, List<ProductoRequeridoLeido>)> JustificanteDeTodos(string empresa, string cliente,
             List<ProductoRequeridoLeido> requeridos, DateTime desde)
         {
             var encontrados = new List<JustificanteCompraEvento>();
@@ -812,11 +870,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                     encontrados.Add(suyo);
                 }
             }
-            if (faltan.Any())
-            {
-                throw ReglasProductosRequeridosEvento.RequiereCompraTodos(titulo, faltan, desde);
-            }
-            return encontrados.OrderByDescending(j => j.Pedido).First();
+            return (faltan.Any() ? null : encontrados.OrderByDescending(j => j.Pedido).First(), faltan);
         }
 
         /// <summary>

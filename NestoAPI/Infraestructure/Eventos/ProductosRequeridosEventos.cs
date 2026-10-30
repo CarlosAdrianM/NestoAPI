@@ -147,6 +147,17 @@ namespace NestoAPI.Infraestructure.Eventos
         public static NestoBusinessException RequiereCompraTodos(string titulo, List<ProductoRequeridoLeido> faltan, DateTime desde) =>
             ErrorRequiereCompra(MensajeRequiereCompraTodos(titulo, faltan, desde), faltan, desde, MODO_TODOS);
 
+        /// <summary>
+        /// NestoAPI#745 (Carlos, 30/10/26): Dirección inscribe aunque no haya compra. El aviso de la respuesta (y el texto de la
+        /// fila de Modificaciones) dice qué faltaba y que, sin pedido justificante, borrar un pedido no la anulará.
+        /// </summary>
+        public static string AvisoSinCompraPorDireccion(string titulo, List<ProductoRequeridoLeido> faltan, DateTime desde, bool todos) =>
+            $"Inscrita por Dirección sin la compra que pide «{titulo?.Trim()}»: " +
+            (todos
+                ? $"le faltan {string.Join(", ", faltan.OrderBy(r => r.Producto).Select(r => string.IsNullOrWhiteSpace(r.Nombre) ? r.Producto : $"{r.Producto} ({r.Nombre.Trim()})"))}"
+                : $"no hay pedido de {Lista(faltan)}") +
+            $" desde el {desde.ToString("dd/MM/yyyy", es)}. Al no tener pedido que la justifique, borrar un pedido no la anulará.";
+
         private static NestoBusinessException ErrorRequiereCompra(string mensaje, List<ProductoRequeridoLeido> productos, DateTime desde, string modo) =>
             new NestoBusinessException(mensaje,
                 new ErrorContext { ErrorCode = ERROR_REQUIERE_COMPRA }
