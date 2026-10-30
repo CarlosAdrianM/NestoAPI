@@ -881,6 +881,9 @@
     <Compile Include="Infraestructure\Novedades\ReglasAdjuntosNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ServicioAdjuntosNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\AlmacenVideosNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\AlmacenCapturasNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ReglasCapturasNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ServicioCapturasNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\RangoBytesHttp.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasVideoNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ServicioVideosNovedades.cs" />
@@ -893,6 +896,7 @@
     <Compile Include="Models\Novedades\SugerenciaNovedadDTO.cs" />
     <Compile Include="Models\Novedades\NovedadDTO.cs" />
     <Compile Include="Models\Novedades\AdjuntoNovedadDTO.cs" />
+    <Compile Include="Models\Novedades\CapturaNovedadDTO.cs" />
     <Compile Include="Models\Novedades\VideoNovedadDTO.cs" />
     <Compile Include="Models\Novedades\EsperaRespuestaNovedad.cs" />
     <Compile Include="Controllers\NovedadesController.cs" />

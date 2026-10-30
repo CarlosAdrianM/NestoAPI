@@ -32,6 +32,12 @@ namespace NestoAPI.Models.Novedades
         public string ImagenBase64 { get; set; }
         /// <summary>image/png o image/jpeg. Si no viene, se deduce de los bytes.</summary>
         public string ImagenTipo { get; set; }
+        /// <summary>
+        /// NestoAPI#754 (sugerencia 900): varias capturas, en base64 y en orden (el tipo se deduce de los bytes). Opcional:
+        /// los clientes viejos solo mandan <see cref="ImagenBase64"/>. Si vienen las dos, ImagenBase64 va la primera.
+        /// Máximo 10 capturas de 2 MB cada una.
+        /// </summary>
+        public List<string> ImagenesBase64 { get; set; }
         /// <summary>Versión del cliente que comenta (Nesto 1.10.29.1, NestoApp 2.20.5…), para el diagnóstico.</summary>
         public string VersionCliente { get; set; }
     }
@@ -62,9 +68,42 @@ namespace NestoAPI.Models.Novedades
         public string VersionCliente { get; set; }
         public string Texto { get; set; }
         public DateTime Fecha { get; set; }
+        /// <summary>Tiene al menos una captura (la primera se sigue sirviendo en GET api/Novedades/Comentarios/{Id}/Imagen).</summary>
         public bool TieneImagen { get; set; }
         /// <summary>El comentario es de quien pregunta: el cliente puede ofrecer «Borrar».</summary>
         public bool EsMio { get; set; }
+        /// <summary>
+        /// NestoAPI#754: todas sus capturas (cada una en GET api/Novedades/Capturas/{Id}). Vacía si no tiene o si su
+        /// única imagen es de las de antes (TieneImagen = true): esa, en GET api/Novedades/Comentarios/{Id}/Imagen.
+        /// </summary>
+        public List<CapturaNovedadDTO> Capturas { get; set; } = new List<CapturaNovedadDTO>();
+    }
+
+    /// <summary>Fila de la consulta de comentarios (SqlQuery exige una columna por propiedad).</summary>
+    public class ComentarioNovedadFila
+    {
+        public int Id { get; set; }
+        public int NovedadId { get; set; }
+        public string NombreVisible { get; set; }
+        public string Cliente { get; set; }
+        public string VersionCliente { get; set; }
+        public string Texto { get; set; }
+        public DateTime Fecha { get; set; }
+        public bool TieneImagen { get; set; }
+        public bool EsMio { get; set; }
+
+        public ComentarioNovedadDTO ADto() => new ComentarioNovedadDTO
+        {
+            Id = Id,
+            NovedadId = NovedadId,
+            NombreVisible = NombreVisible,
+            Cliente = Cliente,
+            VersionCliente = VersionCliente,
+            Texto = Texto,
+            Fecha = Fecha,
+            TieneImagen = TieneImagen,
+            EsMio = EsMio
+        };
     }
 
     /// <summary>Lo que se graba al comentar (interno: ya validado y con el usuario del token).</summary>
@@ -131,6 +170,44 @@ namespace NestoAPI.Models.Novedades
         public DateTime Fecha { get; set; }
         public bool Revisado { get; set; }
         public int? IssueGitHub { get; set; }
+
+        /// <summary>NestoAPI#754: sus capturas (GET api/Novedades/Capturas/{Id}); la rellena el controlador.</summary>
+        public List<CapturaNovedadDTO> Capturas { get; set; } = new List<CapturaNovedadDTO>();
+    }
+
+    /// <summary>Fila de la consulta del feedback (SqlQuery exige una columna por propiedad).</summary>
+    public class ComentarioFeedbackFila
+    {
+        public int Id { get; set; }
+        public int NovedadId { get; set; }
+        public string Version { get; set; }
+        public string Titulo { get; set; }
+        public string Usuario { get; set; }
+        public string NombreVisible { get; set; }
+        public string Cliente { get; set; }
+        public string VersionCliente { get; set; }
+        public string Texto { get; set; }
+        public bool TieneImagen { get; set; }
+        public DateTime Fecha { get; set; }
+        public bool Revisado { get; set; }
+        public int? IssueGitHub { get; set; }
+
+        public ComentarioFeedbackDTO ADto() => new ComentarioFeedbackDTO
+        {
+            Id = Id,
+            NovedadId = NovedadId,
+            Version = Version,
+            Titulo = Titulo,
+            Usuario = Usuario,
+            NombreVisible = NombreVisible,
+            Cliente = Cliente,
+            VersionCliente = VersionCliente,
+            Texto = Texto,
+            TieneImagen = TieneImagen,
+            Fecha = Fecha,
+            Revisado = Revisado,
+            IssueGitHub = IssueGitHub
+        };
     }
 
     public class VotoNegativoFeedbackDTO

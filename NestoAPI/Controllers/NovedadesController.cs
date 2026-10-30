@@ -33,6 +33,8 @@ namespace NestoAPI.Controllers
             Adjuntos = new ServicioAdjuntosNovedades();
             Videos = new ServicioVideosNovedades();
             AlmacenVideos = new AlmacenVideosNovedadesAzure();
+            Capturas = new ServicioCapturasNovedades();
+            AlmacenCapturas = new AlmacenCapturasNovedadesAzure();
             EsperaRespuesta = new RepositorioEsperaRespuestaNovedadesSql();
             LectorMiembrosGrupo = Infraestructure.Verifactu.MiembrosGrupoDominio.Leer;
         }
@@ -57,6 +59,15 @@ namespace NestoAPI.Controllers
 
         /// <summary>NestoAPI#711: dónde están los MP4 (Azure). null = no se pueden subir ni servir.</summary>
         internal IAlmacenVideosNovedades AlmacenVideos { get; set; }
+
+        /// <summary>
+        /// NestoAPI#754 (sugerencia 900): la tabla de las capturas (varias por sugerencia y por comentario). null = como
+        /// antes: una sola imagen en la columna Imagen.
+        /// </summary>
+        internal IServicioCapturasNovedades Capturas { get; set; }
+
+        /// <summary>NestoAPI#754: dónde están las capturas (Azure, contenedor privado). null = como antes.</summary>
+        internal IAlmacenCapturasNovedades AlmacenCapturas { get; set; }
 
         /// <summary>
         /// Carlos, 28/09/26: de dónde se lee a quién avisar de la actividad de Novedades. null = no se
@@ -299,6 +310,7 @@ namespace NestoAPI.Controllers
             _ = RellenarFeedback(sugerencias);
             RellenarAdjuntos(sugerencias);
             RellenarVideos(sugerencias); // NestoAPI#711
+            RellenarCapturasSugerencias(sugerencias); // NestoAPI#754
             return Ok(sugerencias
                 // NestoAPI#650: las privadas tienen menos prioridad: detrás de las públicas
                 .OrderBy(s => s.Privada ? 1 : 0)
@@ -417,7 +429,7 @@ namespace NestoAPI.Controllers
                 // Las sugerencias son de Nesto y de NestoApp; la tienda no tiene Novedades.
                 return StatusCode(HttpStatusCode.Forbidden);
             }
-            string error = ReglasFeedbackNovedades.Validar(sugerencia, out byte[] imagen, out string tipo);
+            string error = ReglasFeedbackNovedades.Validar(sugerencia, out List<CapturaValidada> capturasValidadas);
             if (error != null)
             {
                 return BadRequest(error);
@@ -427,20 +439,27 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(PrivacidadNovedades.ERROR_SIN_COLUMNA);
             }
+            // NestoAPI#754: las capturas se suben ANTES de grabar; si no se pueden guardar, no se crea nada a medias
+            CapturasPreparadas capturas = await PrepararCapturas(capturasValidadas).ConfigureAwait(false);
+            if (capturas.Error != null)
+            {
+                return ErrorCapturas(capturas);
+            }
             var aGrabar = new SugerenciaNovedadAGrabar
             {
                 Privada = sugerencia.Privada,
                 Ambito = AmbitoDelCliente(cliente),
                 Titulo = ReglasSugerenciasNovedades.TituloDesde(sugerencia.Texto),
                 TextoOriginal = sugerencia.Texto.Trim(),
-                Imagen = imagen,
-                ImagenTipo = tipo,
+                Imagen = capturas.Imagen,
+                ImagenTipo = capturas.ImagenTipo,
                 SugeridaPor = usuario,
                 SugeridaNombre = ReglasFeedbackNovedades.NombreVisible(User),
                 Categoria = sugerencia.EsIncidencia ? ReglasSugerenciasNovedades.CATEGORIA_INCIDENCIA : ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA,
                 Contexto = sugerencia.EsIncidencia ? ContextoIncidencia(sugerencia) : null
             };
             int id = servicio.CrearSugerencia(aGrabar);
+            List<CapturaNovedadDTO> capturasGrabadas = RegistrarCapturas(id, null, capturas, usuario);
             if (aGrabar.Privada)
             {
                 // NestoAPI#650: los avisos de abajo ya la tratan como privada (sin volver a leer de la BD)
@@ -469,7 +488,8 @@ namespace NestoAPI.Controllers
                 SugeridaNombre = aGrabar.SugeridaNombre,
                 SugeridaFecha = DateTime.Now,
                 Estado = ReglasSugerenciasNovedades.ESTADO_PENDIENTE,
-                TieneImagen = imagen != null,
+                TieneImagen = capturas.Imagen != null || capturasGrabadas.Count > 0,
+                Capturas = capturasGrabadas,
                 Privada = aGrabar.Privada,
                 VotosPositivos = 0,
                 VotosNegativos = 0,
@@ -538,23 +558,16 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Authorize]
         [Route("api/Novedades/{id:int}/Imagen")]
-        public HttpResponseMessage GetImagenNovedad(int id)
+        public async System.Threading.Tasks.Task<HttpResponseMessage> GetImagenNovedad(int id)
         {
             if (!PuedeVerNovedad(id))
             {
                 return Request.CreateResponse(HttpStatusCode.NotFound);
             }
-            ImagenComentarioNovedad imagen = servicio.LeerImagen(id);
-            if (imagen?.Imagen == null)
-            {
-                return Request.CreateResponse(HttpStatusCode.NotFound);
-            }
-            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(imagen.Imagen)
-            };
-            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(imagen.ImagenTipo ?? ReglasFeedbackNovedades.TIPO_PNG);
-            return respuesta;
+            // NestoAPI#754: la de antes (columna) o, si ya está en el blob, la primera captura
+            ImagenComentarioNovedad imagen = servicio.LeerImagen(id)
+                ?? await LeerPrimeraCaptura(() => Capturas.LeerDeNovedades(new[] { id })).ConfigureAwait(false);
+            return RespuestaImagen(imagen);
         }
 
         // PUT api/Novedades/Sugerencias/7  { "Titulo": "...", "Descripcion": "...", "Estado": "Aceptada", "Version": "1.10.31.0", "Ambito": "Ariadna" }
@@ -644,7 +657,351 @@ namespace NestoAPI.Controllers
             _ = RellenarFeedback(encontradas);
             RellenarAdjuntos(encontradas);
             RellenarVideos(encontradas); // NestoAPI#711
+            RellenarCapturasSugerencias(encontradas); // NestoAPI#754
             return Ok(encontradas);
+        }
+
+        #endregion
+
+        #region NestoAPI#754 (sugerencia 900): varias capturas, en Azure Blob privado
+
+        private static int capturasFalloRegistrado;
+
+        /// <summary>Lo que hay que grabar de las capturas que han llegado: en la columna (como antes) o ya subidas al blob.</summary>
+        internal class CapturasPreparadas
+        {
+            /// <summary>Solo sin tabla o sin almacenamiento (o si el blob falla con una sola captura): la de siempre.</summary>
+            public byte[] Imagen { get; set; }
+            public string ImagenTipo { get; set; }
+            public List<CapturaSubida> Subidas { get; } = new List<CapturaSubida>();
+            /// <summary>null si todo bien.</summary>
+            public string Error { get; set; }
+            /// <summary>El error es del almacenamiento (503), no de la petición (400).</summary>
+            public bool FalloAlmacen { get; set; }
+        }
+
+        /// <summary>Hay tabla y almacenamiento: las capturas nuevas van al blob. Si falla la consulta, como antes.</summary>
+        internal bool BlobCapturasDisponible()
+        {
+            if (Capturas == null || AlmacenCapturas?.Configurado != true)
+            {
+                return false;
+            }
+            try
+            {
+                return Capturas.Disponible();
+            }
+            catch (Exception ex)
+            {
+                RegistrarFalloCapturas("no se pudo comprobar si existe la tabla NovedadesCapturas; se guarda como antes", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Sube las capturas al blob ANTES de grabar la sugerencia o el comentario. Sin tabla o sin almacenamiento, la
+        /// única captura va a la columna como siempre (y con varias, error). Si Azure falla con una sola, también a la
+        /// columna (no se pierde); con varias, error para que el usuario lo intente de nuevo sin perder el texto.
+        /// </summary>
+        internal async System.Threading.Tasks.Task<CapturasPreparadas> PrepararCapturas(List<CapturaValidada> capturas)
+        {
+            var preparadas = new CapturasPreparadas();
+            capturas = capturas ?? new List<CapturaValidada>();
+            switch (ReglasCapturasNovedades.Destino(capturas.Count, BlobCapturasDisponible()))
+            {
+                case DestinoCapturasNovedad.Ninguna:
+                    return preparadas;
+                case DestinoCapturasNovedad.NoDisponible:
+                    preparadas.Error = ReglasCapturasNovedades.ERROR_VARIAS_NO_DISPONIBLE;
+                    return preparadas;
+                case DestinoCapturasNovedad.Columna:
+                    preparadas.Imagen = capturas[0].Contenido;
+                    preparadas.ImagenTipo = capturas[0].Tipo;
+                    return preparadas;
+            }
+            try
+            {
+                DateTime ahora = DateTime.Now;
+                foreach (CapturaValidada captura in capturas)
+                {
+                    string ruta = ReglasCapturasNovedades.RutaNueva(ahora, Guid.NewGuid(), captura.Tipo);
+                    await AlmacenCapturas.Subir(ruta, captura.Contenido, captura.Tipo).ConfigureAwait(false);
+                    preparadas.Subidas.Add(new CapturaSubida { Ruta = ruta, Tipo = captura.Tipo, Bytes = captura.Contenido.Length });
+                }
+            }
+            catch (Exception ex)
+            {
+                RegistrarFalloCapturas($"no se pudieron subir {capturas.Count} captura(s) al contenedor {AlmacenCapturas.Contenedor}", ex, siempre: true);
+                preparadas.Subidas.Clear();
+                if (capturas.Count == 1)
+                {
+                    preparadas.Imagen = capturas[0].Contenido;
+                    preparadas.ImagenTipo = capturas[0].Tipo;
+                }
+                else
+                {
+                    preparadas.Error = ReglasCapturasNovedades.ERROR_NO_SE_HAN_GUARDADO;
+                    preparadas.FalloAlmacen = true;
+                }
+            }
+            return preparadas;
+        }
+
+        private IHttpActionResult ErrorCapturas(CapturasPreparadas capturas) => capturas.FalloAlmacen
+            ? Content(HttpStatusCode.ServiceUnavailable, new HttpError(capturas.Error))
+            : (IHttpActionResult)BadRequest(capturas.Error);
+
+        /// <summary>
+        /// Apunta en la tabla las capturas ya subidas. Nunca rompe la sugerencia o el comentario, que ya están grabados:
+        /// si falla, va a ELMAH con las rutas (los blobs están) para poder recuperarlas.
+        /// </summary>
+        internal List<CapturaNovedadDTO> RegistrarCapturas(int novedadId, int? comentarioId, CapturasPreparadas capturas, string usuario)
+        {
+            if (capturas == null || capturas.Subidas.Count == 0)
+            {
+                return new List<CapturaNovedadDTO>();
+            }
+            try
+            {
+                return (Capturas.Crear(novedadId, comentarioId, capturas.Subidas, usuario) ?? new List<CapturaNovedadFila>())
+                    .Select(f => f.ADto()).ToList();
+            }
+            catch (Exception ex)
+            {
+                RegistrarFalloCapturas($"no se pudieron apuntar las capturas de la novedad {novedadId}" +
+                    (comentarioId.HasValue ? $", comentario {comentarioId}" : string.Empty) +
+                    $"; están en el blob: {string.Join(", ", capturas.Subidas.Select(c => c.Ruta))}", ex, siempre: true);
+                return new List<CapturaNovedadDTO>();
+            }
+        }
+
+        /// <summary>Las capturas de cada sugerencia, en UNA consulta. Si falla, salen sin ellas (como antes).</summary>
+        internal void RellenarCapturasSugerencias(List<SugerenciaNovedadDTO> sugerencias)
+        {
+            if (sugerencias == null || sugerencias.Count == 0 || Capturas == null)
+            {
+                return;
+            }
+            Dictionary<int, List<CapturaNovedadDTO>> porNovedad = LeerCapturasSinRomper(
+                () => Capturas.LeerDeNovedades(sugerencias.Select(s => s.Id)), f => f.NovedadId);
+            foreach (SugerenciaNovedadDTO sugerencia in sugerencias)
+            {
+                if (porNovedad.TryGetValue(sugerencia.Id, out List<CapturaNovedadDTO> capturas))
+                {
+                    sugerencia.Capturas = capturas;
+                    sugerencia.TieneImagen = true;
+                }
+            }
+        }
+
+        /// <summary>Las capturas de cada comentario, en UNA consulta. Si falla, salen sin ellas (como antes).</summary>
+        internal void RellenarCapturasComentarios(List<ComentarioNovedadDTO> comentarios)
+        {
+            if (comentarios == null || comentarios.Count == 0 || Capturas == null)
+            {
+                return;
+            }
+            Dictionary<int, List<CapturaNovedadDTO>> porComentario = LeerCapturasSinRomper(
+                () => Capturas.LeerDeComentarios(comentarios.Select(c => c.Id)), f => f.ComentarioId ?? 0);
+            foreach (ComentarioNovedadDTO comentario in comentarios)
+            {
+                if (porComentario.TryGetValue(comentario.Id, out List<CapturaNovedadDTO> capturas))
+                {
+                    comentario.Capturas = capturas;
+                    comentario.TieneImagen = true;
+                }
+            }
+        }
+
+        /// <summary>Lo mismo para el feedback del asistente (GET api/Novedades/Feedback).</summary>
+        internal void RellenarCapturasComentarios(List<ComentarioFeedbackDTO> comentarios)
+        {
+            if (comentarios == null || comentarios.Count == 0 || Capturas == null)
+            {
+                return;
+            }
+            Dictionary<int, List<CapturaNovedadDTO>> porComentario = LeerCapturasSinRomper(
+                () => Capturas.LeerDeComentarios(comentarios.Select(c => c.Id)), f => f.ComentarioId ?? 0);
+            foreach (ComentarioFeedbackDTO comentario in comentarios)
+            {
+                if (porComentario.TryGetValue(comentario.Id, out List<CapturaNovedadDTO> capturas))
+                {
+                    comentario.Capturas = capturas;
+                    comentario.TieneImagen = true;
+                }
+            }
+        }
+
+        private static Dictionary<int, List<CapturaNovedadDTO>> LeerCapturasSinRomper(Func<List<CapturaNovedadFila>> leer, Func<CapturaNovedadFila, int> clave)
+        {
+            try
+            {
+                return ReglasCapturasNovedades.Agrupar(leer(), clave);
+            }
+            catch (Exception ex)
+            {
+                RegistrarFalloCapturas("no se pudieron leer las capturas; se sirven sin ellas", ex);
+                return new Dictionary<int, List<CapturaNovedadDTO>>();
+            }
+        }
+
+        /// <summary>La primera captura del blob (para GET .../Imagen de los clientes de una sola imagen), o null.</summary>
+        private async System.Threading.Tasks.Task<ImagenComentarioNovedad> LeerPrimeraCaptura(Func<List<CapturaNovedadFila>> leer)
+        {
+            if (Capturas == null || AlmacenCapturas?.Configurado != true)
+            {
+                return null;
+            }
+            CapturaNovedadFila primera;
+            try
+            {
+                primera = (leer() ?? new List<CapturaNovedadFila>()).OrderBy(f => f.Orden).ThenBy(f => f.Id).FirstOrDefault();
+            }
+            catch (Exception ex)
+            {
+                RegistrarFalloCapturas("no se pudo leer la primera captura", ex);
+                return null;
+            }
+            if (primera == null)
+            {
+                return null;
+            }
+            byte[] contenido = await AlmacenCapturas.Descargar(primera.Ruta).ConfigureAwait(false);
+            return contenido == null ? null : new ImagenComentarioNovedad { Imagen = contenido, ImagenTipo = primera.Tipo };
+        }
+
+        private HttpResponseMessage RespuestaImagen(ImagenComentarioNovedad imagen)
+        {
+            if (imagen?.Imagen == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(imagen.Imagen)
+            };
+            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(imagen.ImagenTipo) ? ReglasFeedbackNovedades.TIPO_PNG : imagen.ImagenTipo.Trim());
+            return respuesta;
+        }
+
+        // GET api/Novedades/Capturas/7  → la captura con su content-type. Se ve si se ve su novedad (privadas, #650).
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/Capturas/{id:int}")]
+        public async System.Threading.Tasks.Task<HttpResponseMessage> GetCaptura(int id)
+        {
+            if (Capturas == null || AlmacenCapturas?.Configurado != true)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            CapturaNovedadFila captura = Capturas.Leer(id);
+            if (captura == null || !PuedeVerNovedad(captura.NovedadId))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            byte[] contenido = await AlmacenCapturas.Descargar(captura.Ruta).ConfigureAwait(false);
+            HttpResponseMessage respuesta = RespuestaImagen(contenido == null ? null
+                : new ImagenComentarioNovedad { Imagen = contenido, ImagenTipo = captura.Tipo });
+            if (respuesta.IsSuccessStatusCode)
+            {
+                // Una captura no cambia nunca; privada: que no la guarde ningún proxy
+                respuesta.Headers.CacheControl = new CacheControlHeaderValue { Private = true, MaxAge = TimeSpan.FromHours(1) };
+            }
+            return respuesta;
+        }
+
+        // POST api/Novedades/Capturas/Migrar?aplicar=false&maximo=25  (Dirección / Informática; fuera de horario)
+        // Pasa las imágenes de antes (varbinary) al blob, de una en una: sube, comprueba que lo subido es idéntico y
+        // solo entonces apunta la captura y vacía la columna. Idempotente: se puede lanzar tantas veces como haga falta
+        // (ruta fija por imagen). Sin aplicar, solo mira: cuántas quedan y si están la tabla y el contenedor.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/Capturas/Migrar")]
+        [ResponseType(typeof(MigracionCapturasDTO))]
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostMigrarCapturas(bool aplicar = false, int? maximo = null)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (Capturas == null || AlmacenCapturas == null)
+            {
+                return StatusCode(HttpStatusCode.NotImplemented);
+            }
+            var resultado = new MigracionCapturasDTO
+            {
+                Aplicar = aplicar,
+                AlmacenConfigurado = AlmacenCapturas.Configurado,
+                Contenedor = AlmacenCapturas.Contenedor,
+                TablaDisponible = Capturas.Disponible(),
+                PendientesAntes = Capturas.ContarPendientes()
+            };
+            if (resultado.AlmacenConfigurado)
+            {
+                try
+                {
+                    resultado.ContenedorExiste = await AlmacenCapturas.ExisteContenedor().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    resultado.Errores.Add(ex.Message);
+                }
+            }
+            if (!resultado.TablaDisponible || !resultado.AlmacenConfigurado || resultado.ContenedorExiste != true)
+            {
+                resultado.Mensaje = !resultado.TablaDisponible ? "Falta lanzar Scripts/NovedadesCapturasABlob.sql."
+                    : !resultado.AlmacenConfigurado ? $"Falta la cadena de conexión {Infraestructure.PreparacionAlmacen.AlmacenFotosBultosAzure.CLAVE_CONEXION}."
+                    : $"Falta crear el contenedor privado «{resultado.Contenedor}» en la cuenta de almacenamiento (o no se ha podido comprobar).";
+                return Ok(resultado);
+            }
+            if (!aplicar)
+            {
+                resultado.Mensaje = "Modo mirar: no se ha tocado nada. Repita con aplicar=true para migrar.";
+                return Ok(resultado);
+            }
+            foreach (ImagenPendienteMigrar imagen in Capturas.LeerPendientes(ReglasCapturasNovedades.PorPasada(maximo)) ?? new List<ImagenPendienteMigrar>())
+            {
+                string referencia = $"{imagen.Origen} {imagen.Id}";
+                try
+                {
+                    string tipo = ReglasCapturasNovedades.TipoDeImagenGuardada(imagen.Imagen, imagen.ImagenTipo);
+                    var subida = new CapturaSubida
+                    {
+                        Ruta = ReglasCapturasNovedades.RutaMigrada(imagen.Origen, imagen.Id, tipo),
+                        Tipo = tipo,
+                        Bytes = imagen.Imagen.Length
+                    };
+                    await AlmacenCapturas.Subir(subida.Ruta, imagen.Imagen, tipo).ConfigureAwait(false);
+                    // Primero el blob, comprobado byte a byte; solo entonces se vacía la columna
+                    byte[] comprobacion = await AlmacenCapturas.Descargar(subida.Ruta).ConfigureAwait(false);
+                    if (comprobacion == null || !comprobacion.SequenceEqual(imagen.Imagen))
+                    {
+                        resultado.Errores.Add($"{referencia}: lo leído del blob no coincide con lo subido; no se vacía la columna.");
+                        continue;
+                    }
+                    if (Capturas.RegistrarMigrada(imagen, subida))
+                    {
+                        resultado.Migradas.Add(new CapturaMigradaDTO { Origen = imagen.Origen, Id = imagen.Id, Ruta = subida.Ruta, Bytes = subida.Bytes });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    resultado.Errores.Add($"{referencia}: {ex.Message}");
+                }
+            }
+            resultado.PendientesDespues = Capturas.ContarPendientes();
+            int quedan = (resultado.PendientesDespues?.Novedades ?? 0) + (resultado.PendientesDespues?.Comentarios ?? 0);
+            resultado.Mensaje = $"Migradas {resultado.Migradas.Count}; quedan {quedan}.";
+            return Ok(resultado);
+        }
+
+        private static void RegistrarFalloCapturas(string que, Exception ex, bool siempre = false)
+        {
+            if (siempre || Interlocked.Exchange(ref capturasFalloRegistrado, 1) == 0)
+            {
+                RegistrarSinRomper(new Exception("Novedades (NestoAPI#754): " + que + ". " + ex.Message, ex));
+            }
         }
 
         #endregion
@@ -1182,7 +1539,9 @@ namespace NestoAPI.Controllers
             {
                 return NotFound(); // NestoAPI#650
             }
-            return Ok(feedback.LeerComentarios(id, ReglasFeedbackNovedades.ClaveUsuario(User)));
+            List<ComentarioNovedadDTO> comentarios = feedback.LeerComentarios(id, ReglasFeedbackNovedades.ClaveUsuario(User));
+            RellenarCapturasComentarios(comentarios); // NestoAPI#754
+            return Ok(comentarios);
         }
 
         // POST api/Novedades/5/Comentarios  { "Texto": "...", "ImagenBase64": "...", "VersionCliente": "1.10.29.1" }
@@ -1197,7 +1556,7 @@ namespace NestoAPI.Controllers
             {
                 return Unauthorized();
             }
-            string error = ReglasFeedbackNovedades.Validar(comentario, out byte[] imagen, out string tipo);
+            string error = ReglasFeedbackNovedades.Validar(comentario, out List<CapturaValidada> capturasValidadas);
             if (error != null)
             {
                 return BadRequest(error);
@@ -1205,6 +1564,11 @@ namespace NestoAPI.Controllers
             if (!PuedeVerNovedad(id) || !feedback.ExisteNovedad(id))
             {
                 return NotFound();
+            }
+            CapturasPreparadas capturas = await PrepararCapturas(capturasValidadas).ConfigureAwait(false); // NestoAPI#754
+            if (capturas.Error != null)
+            {
+                return ErrorCapturas(capturas);
             }
             var aGrabar = new ComentarioNovedadAGrabar
             {
@@ -1215,10 +1579,11 @@ namespace NestoAPI.Controllers
                 VersionCliente = string.IsNullOrWhiteSpace(comentario.VersionCliente) ? null
                     : comentario.VersionCliente.Trim().Substring(0, Math.Min(30, comentario.VersionCliente.Trim().Length)),
                 Texto = comentario.Texto.Trim(),
-                Imagen = imagen,
-                ImagenTipo = tipo
+                Imagen = capturas.Imagen,
+                ImagenTipo = capturas.ImagenTipo
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
+            List<CapturaNovedadDTO> capturasGrabadas = RegistrarCapturas(id, nuevoId, capturas, usuario);
             // Recordatorios de respuesta: si es el autor, ya ha contestado (y, si estaba Cerrada, se reabre)
             bool reabierta = AlComentarQuitarEspera(id, usuario);
             // NestoAPI#537: a quien se mencione con @ le llega el aviso
@@ -1239,7 +1604,8 @@ namespace NestoAPI.Controllers
                 VersionCliente = aGrabar.VersionCliente,
                 Texto = aGrabar.Texto,
                 Fecha = DateTime.Now,
-                TieneImagen = imagen != null,
+                TieneImagen = capturas.Imagen != null || capturasGrabadas.Count > 0,
+                Capturas = capturasGrabadas,
                 EsMio = true
             });
         }
@@ -1257,7 +1623,7 @@ namespace NestoAPI.Controllers
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
-            string error = ReglasFeedbackNovedades.Validar(comentario, out byte[] imagen, out string tipo);
+            string error = ReglasFeedbackNovedades.Validar(comentario, out List<CapturaValidada> capturasValidadas);
             if (error != null)
             {
                 return BadRequest(error);
@@ -1266,6 +1632,11 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+            CapturasPreparadas capturas = await PrepararCapturas(capturasValidadas).ConfigureAwait(false); // NestoAPI#754
+            if (capturas.Error != null)
+            {
+                return ErrorCapturas(capturas);
+            }
             var aGrabar = new ComentarioNovedadAGrabar
             {
                 NovedadId = id,
@@ -1273,10 +1644,11 @@ namespace NestoAPI.Controllers
                 NombreVisible = ReglasFeedbackNovedades.NOMBRE_ASISTENTE,
                 Cliente = ReglasFeedbackNovedades.CLIENTE_ASISTENTE,
                 Texto = comentario.Texto.Trim(),
-                Imagen = imagen,
-                ImagenTipo = tipo
+                Imagen = capturas.Imagen,
+                ImagenTipo = capturas.ImagenTipo
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
+            List<CapturaNovedadDTO> capturasGrabadas = RegistrarCapturas(id, nuevoId, capturas, ReglasFeedbackNovedades.USUARIO_ASISTENTE);
             if (comentario.EsperaRespuesta)
             {
                 MarcarEsperaRespuesta(id);
@@ -1297,7 +1669,8 @@ namespace NestoAPI.Controllers
                 Cliente = aGrabar.Cliente,
                 Texto = aGrabar.Texto,
                 Fecha = DateTime.Now,
-                TieneImagen = imagen != null,
+                TieneImagen = capturas.Imagen != null || capturasGrabadas.Count > 0,
+                Capturas = capturasGrabadas,
                 EsMio = false
             });
         }
@@ -1649,19 +2022,16 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Authorize]
         [Route("api/Novedades/Comentarios/{id:int}/Imagen")]
-        public HttpResponseMessage GetImagenComentario(int id)
+        public async System.Threading.Tasks.Task<HttpResponseMessage> GetImagenComentario(int id)
         {
-            ImagenComentarioNovedad imagen = feedback.LeerImagen(id);
+            // NestoAPI#754: la de antes (columna) o, si ya está en el blob, la primera captura del comentario
+            ImagenComentarioNovedad imagen = feedback.LeerImagen(id)
+                ?? await LeerPrimeraCaptura(() => Capturas.LeerDeComentarios(new[] { id })).ConfigureAwait(false);
             if (imagen?.Imagen == null || !PuedeVerComentario(id))
             {
                 return Request.CreateResponse(HttpStatusCode.NotFound);
             }
-            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(imagen.Imagen)
-            };
-            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(imagen.ImagenTipo ?? ReglasFeedbackNovedades.TIPO_PNG);
-            return respuesta;
+            return RespuestaImagen(imagen);
         }
 
         // DELETE api/Novedades/Comentarios/7  → solo su autor
@@ -1699,7 +2069,9 @@ namespace NestoAPI.Controllers
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
-            return Ok(feedback.LeerFeedback(desde ?? DateTime.Today.AddDays(-7), soloNoRevisados));
+            FeedbackNovedadesDTO resultado = feedback.LeerFeedback(desde ?? DateTime.Today.AddDays(-7), soloNoRevisados);
+            RellenarCapturasComentarios(resultado?.Comentarios); // NestoAPI#754
+            return Ok(resultado);
         }
 
         // POST api/Novedades/Comentarios/7/Revisado  (desarrollo: Dirección / Informática)
