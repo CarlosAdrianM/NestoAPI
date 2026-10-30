@@ -153,6 +153,19 @@ namespace NestoAPI.Models.Picking
         internal static List<PedidoPicking> RetirarPedidosDeClientesCerrados(
             List<PedidoPicking> candidatos, DateTime diaEntregaAgencia, DateTime diaEntregaRutaPropia, bool ignorarCierre = false)
         {
+            return RetirarPedidosDeClientesCerrados(candidatos, diaEntregaAgencia, diaEntregaRutaPropia, null, ignorarCierre);
+        }
+
+        /// <summary>
+        /// NestoAPI#764: además, los pedidos de ruta interna con día de reparto por código postal
+        /// (<see cref="GestorRutaInternaPicking.DiaReparto"/>) se preparan y se entregan el MISMO día: su día de entrega es
+        /// <paramref name="diaEntregaRutaInterna"/> (hoy, el día en que se saca el picking), no «el laborable siguiente». Null =
+        /// como los demás (llamadas antiguas).
+        /// </summary>
+        internal static List<PedidoPicking> RetirarPedidosDeClientesCerrados(
+            List<PedidoPicking> candidatos, DateTime diaEntregaAgencia, DateTime diaEntregaRutaPropia, DateTime? diaEntregaRutaInterna,
+            bool ignorarCierre = false)
+        {
             if (ignorarCierre)
             {
                 return new List<PedidoPicking>();
@@ -160,8 +173,9 @@ namespace NestoAPI.Models.Picking
             List<PedidoPicking> retirados = new List<PedidoPicking>();
             foreach (PedidoPicking pedido in candidatos.Where(p => p.Lineas != null && p.Lineas.Count > 0))
             {
-                bool porNuestraRuta = EsRutaPropia(pedido.Ruta);
-                DateTime diaEntrega = porNuestraRuta ? diaEntregaRutaPropia : diaEntregaAgencia;
+                bool conDiaReparto = diaEntregaRutaInterna.HasValue && GestorRutaInternaPicking.DiaReparto(pedido).HasValue;
+                bool porNuestraRuta = conDiaReparto || EsRutaPropia(pedido.Ruta);
+                DateTime diaEntrega = conDiaReparto ? diaEntregaRutaInterna.Value : porNuestraRuta ? diaEntregaRutaPropia : diaEntregaAgencia;
                 if (EstaAbierto(pedido.DiasEnServir, diaEntrega))
                 {
                     continue;

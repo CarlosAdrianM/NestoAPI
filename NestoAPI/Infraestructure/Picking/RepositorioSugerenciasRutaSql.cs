@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -34,7 +34,7 @@ namespace NestoAPI.Infraestructure.Picking
         // curso, de Algete, de la empresa 1 o 3 y sin picking; y con fecha de entrega dentro del horizonte del picking.
         private const string SQL_CANDIDATOS = @"
 SELECT c.Empresa, c.Número AS Pedido, c.Fecha AS FechaPedido, c.[Nº Cliente] AS Cliente, c.Contacto, c.Ruta,
-       cl.Nombre, cl.CodPostal AS CodigoPostal, cl.Población AS Poblacion,
+       cl.Nombre, cl.CodPostal AS CodigoPostal, cl.DiasEnServir, cl.Población AS Poblacion,
        p.BaseImponible, p.TieneAparatos,
        (SELECT TOP 1 c2.Ruta
           FROM CabPedidoVta c2 WITH (NOLOCK)

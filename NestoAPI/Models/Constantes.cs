@@ -850,6 +850,13 @@ namespace NestoAPI.Models
             public const string AVISO_FACTURAS_VENCIDAS = "AvisoFacturasVencidas";
 
             /// <summary>
+            /// NestoAPI#764: interruptor del picking automático de las rutas internas a las 9:00 (job de Hangfire
+            /// «picking-rutas-internas»). Bajo «(defecto)» de la empresa por defecto: "1" lo enciende; sin fila, "0" o
+            /// cualquier otro valor, APAGADO (no hace nada). Se lee en cada ejecución: se enciende y apaga sin publicar.
+            /// </summary>
+            public const string PICKING_AUTOMATICO_RUTAS_INTERNAS = "PickingAutomaticoRutasInternas";
+
+            /// <summary>
             /// Carlos, 28/09/26: a quién se avisa de TODA la actividad de los usuarios en Novedades
             /// (comentarios, votos y sugerencias), para llevar el control. Bajo «(defecto)»: sin fila =
             /// Carlos (NovedadesController.SUPERVISOR_ACTIVIDAD_POR_DEFECTO); "0" o vacío = nadie; otro

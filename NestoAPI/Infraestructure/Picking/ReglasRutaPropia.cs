@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -24,8 +24,16 @@ namespace NestoAPI.Infraestructure.Picking
         public decimal BaseImponible { get; set; }
         public string RutaActual { get; set; }
         public string RutaPropuesta { get; set; }
-        /// <summary>Por qué se propone (puede haber varios motivos a la vez), en lenguaje de almacén.</summary>
+        /// <summary>Por qué se propone (puede haber varios motivos a la vez), en lenguaje de almacén. NestoAPI#764: el último
+        /// es <see cref="TextoDiaReparto"/> si lo hay, para que Nesto lo enseñe sin cambios.</summary>
         public List<string> Motivos { get; set; } = new List<string>();
+        /// <summary>
+        /// NestoAPI#764: el día en que saldría si se pasa a nuestra ruta, cuando su código postal tiene día de reparto
+        /// (CodigosPostalesDiaReparto). Null si no tiene (entonces, como siempre: se prepara hoy y se entrega el laborable siguiente).
+        /// </summary>
+        public DateTime? DiaRepartoRutaInterna { get; set; }
+        /// <summary>NestoAPI#764: «Saldría el martes 03/11 por nuestra ruta» (y si el cliente cierra ese día, lo dice). Null sin día.</summary>
+        public string TextoDiaReparto { get; set; }
     }
 
     /// <summary>Sugerencia 575: lo que se lee de cada pedido candidato para decidir si se sugiere ruta propia.</summary>
@@ -47,6 +55,8 @@ namespace NestoAPI.Infraestructure.Picking
         public bool TieneAparatos { get; set; }
         /// <summary>Ruta con la que salió el último pedido servido del cliente (null si no hay).</summary>
         public string RutaUltimoPedido { get; set; }
+        /// <summary>NestoAPI#764: Clientes.DiasEnServir del contacto («11111»), para avisar si cierra el día de reparto.</summary>
+        public string DiasEnServir { get; set; }
     }
 
     /// <summary>
@@ -145,7 +155,7 @@ namespace NestoAPI.Infraestructure.Picking
                 return null;
             }
 
-            return new SugerenciaRutaPedidoDTO
+            var sugerencia = new SugerenciaRutaPedidoDTO
             {
                 Empresa = empresa,
                 Pedido = datos.Pedido,
@@ -160,6 +170,35 @@ namespace NestoAPI.Infraestructure.Picking
                 RutaPropuesta = propuesta,
                 Motivos = motivos
             };
+            return sugerencia;
+        }
+
+        /// <summary>
+        /// NestoAPI#764: si el código postal tiene día de reparto por nuestra ruta, el día en que saldría si almacén lo pasa a
+        /// ruta interna: el próximo día de su ruta desde hoy (hoy mismo si hoy le toca; el picking de ese día lo saca). Lo añade
+        /// al final de los motivos. Si el cliente cierra ese día, lo dice: así no saldría nunca por nuestra ruta.
+        /// </summary>
+        public static void AnotarDiaReparto(SugerenciaRutaPedidoDTO sugerencia, string diasEnServir, DateTime hoy, Func<DateTime, bool> esFestivo)
+        {
+            if (sugerencia == null)
+            {
+                return;
+            }
+            DayOfWeek? dia = PedidosVenta.DiasRepartoCodigosPostales.DiaDe(sugerencia.CodigoPostal);
+            if (!dia.HasValue)
+            {
+                return;
+            }
+            DateTime reparto = PedidosVenta.CalendarioRutasDia.ProximoDiaReparto(dia.Value, hoy, esFestivo);
+            string dondeYCuando = reparto.Date <= hoy.Date.AddDays(1)
+                ? $"Saldría {PedidosVenta.CalendarioRutasDia.Texto(reparto, hoy)}, por nuestra ruta"
+                : $"Saldría {PedidosVenta.CalendarioRutasDia.Texto(reparto, hoy)} por nuestra ruta";
+            string texto = Models.Picking.GestorDiasEnServir.EstaAbierto(diasEnServir, reparto)
+                ? dondeYCuando
+                : $"{dondeYCuando}, pero el cliente cierra {PedidosVenta.CalendarioRutasDia.NombrePlural(dia.Value)}: mejor por agencia";
+            sugerencia.DiaRepartoRutaInterna = reparto;
+            sugerencia.TextoDiaReparto = texto;
+            sugerencia.Motivos.Add(texto);
         }
     }
 }
