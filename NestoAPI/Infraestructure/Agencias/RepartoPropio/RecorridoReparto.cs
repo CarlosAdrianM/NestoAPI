@@ -48,6 +48,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public static readonly TimeSpan TIMEOUT = TimeSpan.FromSeconds(5);
 
         private static readonly HttpClient cliente = CrearCliente();
+        /// <summary>NestoAPI#769: el mismo cliente (User-Agent) para /table.</summary>
+        internal static HttpClient Http => cliente;
 
         private static HttpClient CrearCliente()
         {

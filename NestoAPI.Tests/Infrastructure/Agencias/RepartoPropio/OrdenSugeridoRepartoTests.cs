@@ -673,6 +673,211 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.IsNull(MotorRutasOsrm.Leer(json.Replace(@"""legs""", @"""otros"""), 3).MinutosTramos, "Sin legs, se estima con la línea recta");
         }
 
+        // ================================================================ NestoAPI#769: reordenar por el horario preferible
+
+        /// <summary>El servicio con la matriz de tiempos (sin ella, la segunda pasada no se hace: como antes).</summary>
+        private void ConTiempos(IMatrizTiempos tiempos)
+        {
+            servicio = new ServicioRepartoPropio(repositorio, () => AHORA, null, new ServicioRepartoPropioTests.ParametrosFalsos(),
+                () => A.Fake<IServicioPagos>(), () => A.Fake<IInformesService>(), cargas, new DependenciasParadasReparto
+                {
+                    NotasParada = new ParadasRepartoTests.NotasFalsas(),
+                    Orden = orden,
+                    Reposiciones = reposiciones,
+                    BultosReposicion = new ParadasRepartoTests.BultosReposicionFalsos(),
+                    Avisos = avisos,
+                    Coordenadas = coordenadas,
+                    Recorrido = new PlanificadorRecorrido(motor),
+                    Horarios = horarios,
+                    Tiempos = tiempos
+                });
+        }
+
+        /// <summary>
+        /// A = Alcobendas, B = Madrid, C = cerca de Algete; 0 = origen (Algete) y 4 = destino (Algete). Los mismos tiempos que
+        /// <see cref="OrdenConHorariosTests"/>: A, B, C es lo más corto; C, B, A tarda 10 min más.
+        /// </summary>
+        private static IMatrizTiempos TiemposDeOsrm()
+        {
+            var tramos = new Dictionary<(int, int), double>
+            {
+                [(0, 1)] = 30, [(0, 2)] = 45, [(0, 3)] = 20, [(0, 4)] = 0,
+                [(1, 2)] = 30, [(1, 3)] = 25, [(1, 4)] = 30,
+                [(2, 3)] = 50, [(2, 4)] = 45,
+                [(3, 4)] = 20
+            };
+            IMatrizTiempos tiempos = A.Fake<IMatrizTiempos>();
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).ReturnsLazily((IReadOnlyList<CoordenadasGeo> puntos) =>
+            {
+                int Etiqueta(int i) => i == 0 ? 0 : i == puntos.Count - 1 ? 4
+                    : puntos[i].Latitud == EN_ALCOBENDAS.Latitud ? 1 : puntos[i].Latitud == EN_MADRID.Latitud ? 2 : 3;
+                var m = new double[puntos.Count, puntos.Count];
+                for (int i = 0; i < puntos.Count; i++)
+                {
+                    for (int j = 0; j < puntos.Count; j++)
+                    {
+                        int a = Math.Min(Etiqueta(i), Etiqueta(j)), b = Math.Max(Etiqueta(i), Etiqueta(j));
+                        m[i, j] = a == b ? 0 : tramos[(a, b)];
+                    }
+                }
+                return Task.FromResult(new MatrizTiempos(m, null, OrdenSugeridoRepartoDTO.MOTOR_OSRM));
+            });
+            return tiempos;
+        }
+
+        /// <summary>OSRM /trip devuelve Alcobendas, Madrid, cerca de Algete (lo más corto), con los tramos 30, 60 y 20.</summary>
+        private void TripAlcobendasMadridAlgete()
+        {
+            motor.Responder = (o, d, p) => new RecorridoCalculado
+            {
+                Orden = Enumerable.Range(0, p.Count)
+                    .OrderBy(i => p[i].Latitud == EN_ALCOBENDAS.Latitud ? 0 : p[i].Latitud == EN_MADRID.Latitud ? 1 : 2).ToList(),
+                Motor = OrdenSugeridoRepartoDTO.MOTOR_OSRM, Kilometros = 80m, Minutos = 120,
+                MinutosTramos = new List<double> { 30, 60, 20 }
+            };
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_769_ReordenaParaQueLleguenDentroDeSuHorario_ConLaMatrizDeOsrm_YLoDiceSinComprometerse()
+        {
+            IMatrizTiempos tiempos = TiemposDeOsrm();
+            ConTiempos(tiempos);
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 10:00-14:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, "L-V 09:00-13:00");
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            TripAlcobendasMadridAlgete();
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            CollectionAssert.AreEqual(new[] { 251302, 251301, 251300 }, Ids(r), "Cerca de Algete, Madrid y Alcobendas (espera a que abra)");
+            Assert.IsTrue(r.ReordenadoPorHorario);
+            Assert.AreEqual(10, r.MinutosExtra);
+            Assert.AreEqual(0, r.FueraDeHorario);
+            Assert.IsTrue(r.Paradas.All(p => !p.FueraDeHorario));
+            Assert.AreEqual(AHORA.AddMinutes(20), r.Paradas[0].LlegadaEstimada);
+            Assert.AreEqual(AHORA.AddMinutes(75), r.Paradas[1].LlegadaEstimada, "09:15");
+            Assert.AreEqual(AHORA.Date.AddHours(10), r.Paradas[2].LlegadaEstimada, "Llega a las 09:50 y espera a las 10:00");
+            Assert.AreEqual(130, r.Minutos, "Conducción del orden final: 20 + 50 + 30 + 30");
+            Assert.IsTrue(r.Kilometros > 0m);
+            Assert.AreEqual("Orden cambiado para intentar llegar dentro del horario preferible de 1 cliente (10 min más).", r.AvisoHorario);
+            CollectionAssert.AreEqual(new[] { 251302, 251301, 251300 }, orden.Filas.OrderBy(f => f.Value.Orden).Select(f => f.Key).ToList(), "Se guarda el orden final");
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>.That.Matches(p => p.Count == 5))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_769_SiReordenarNoArreglaNinguna_SeQuedaElRecorridoMasCorto_ConElAvisoDeHoy()
+        {
+            ConTiempos(TiemposDeOsrm());
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 18:00-20:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, null);
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            TripAlcobendasMadridAlgete();
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            CollectionAssert.AreEqual(new[] { 251300, 251301, 251302 }, Ids(r));
+            Assert.IsFalse(r.ReordenadoPorHorario);
+            Assert.AreEqual(0, r.MinutosExtra);
+            Assert.AreEqual(1, r.FueraDeHorario);
+            Assert.AreEqual(120, r.Minutos, "Los de OSRM /trip");
+            Assert.AreEqual(AHORA.AddMinutes(30), r.Paradas[0].LlegadaEstimada, "La estimación de hoy");
+            Assert.AreEqual(ServicioRepartoPropio.AvisoHorario(r.Paradas.Where(p => p.FueraDeHorario)), r.AvisoHorario);
+            StringAssert.Contains(r.AvisoHorario, "Una parada llegaría fuera de su horario preferible (ESTÉTICA UNO)");
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_769_SiSiguenFueraAlgunas_LoDiceConLosNombres()
+        {
+            ConTiempos(TiemposDeOsrm());
+            // A no llega nunca (18-20); B, con el recorrido corto, a las 08:45 (abre a las 09:30: 45 min de espera, fuera).
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 18:00-20:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, "L-V 09:30-13:00");
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            motor.Responder = (o, d, p) => new RecorridoCalculado
+            {
+                Orden = Enumerable.Range(0, p.Count).OrderBy(i => p[i].Latitud == EN_MADRID.Latitud ? 0 : p[i].Latitud == EN_ALCOBENDAS.Latitud ? 1 : 2).ToList(),
+                Motor = OrdenSugeridoRepartoDTO.MOTOR_OSRM, Kilometros = 80m, Minutos = 100,
+                MinutosTramos = new List<double> { 45, 30, 25 }
+            };
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            Assert.IsTrue(r.ReordenadoPorHorario);
+            Assert.AreEqual(1, r.FueraDeHorario);
+            Assert.IsFalse(r.Paradas.Single(p => p.EnvioId == 251301).FueraDeHorario);
+            Assert.IsTrue(r.Paradas.Single(p => p.EnvioId == 251300).FueraDeHorario);
+            Assert.AreEqual("Orden cambiado para intentar respetar los horarios preferibles; aun así 1 llegaría fuera (ESTÉTICA UNO). El horario es solo una preferencia.",
+                r.AvisoHorario);
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_769_SinMatrizDeOsrm_UsaLaLineaRecta_YReordenaIgual()
+        {
+            IMatrizTiempos tiempos = A.Fake<IMatrizTiempos>();
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).Returns(Task.FromResult<MatrizTiempos>(null));
+            ConTiempos(tiempos);
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_MADRID, "L-V 08:00-10:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", CERCA_ALGETE, "L-V 10:00-14:00");
+            // El recorrido corto va primero al lado de Algete (08:02, aún no abre) y luego a Madrid.
+            motor.Responder = (o, d, p) => new RecorridoCalculado
+            {
+                Orden = Enumerable.Range(0, p.Count).OrderBy(i => p[i].Latitud == CERCA_ALGETE.Latitud ? 0 : 1).ToList(),
+                Motor = OrdenSugeridoRepartoDTO.MOTOR_HEURISTICA
+            };
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            CollectionAssert.AreEqual(new[] { 251300, 251301 }, Ids(r));
+            Assert.IsTrue(r.ReordenadoPorHorario);
+            Assert.AreEqual(0, r.FueraDeHorario);
+            Assert.IsNull(r.Minutos, "Con la línea recta no se dan minutos de conducción");
+            StringAssert.StartsWith(r.AvisoHorario, "Orden cambiado para intentar llegar dentro del horario preferible de 1 cliente");
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_769_SiLaMatrizRevienta_LineaRecta()
+        {
+            IMatrizTiempos tiempos = A.Fake<IMatrizTiempos>();
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).Throws(new InvalidOperationException("caído"));
+            ConTiempos(tiempos);
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_MADRID, "L-V 08:00-10:00");
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", CERCA_ALGETE, "L-V 10:00-14:00");
+            motor.Responder = (o, d, p) => new RecorridoCalculado
+            {
+                Orden = Enumerable.Range(0, p.Count).OrderBy(i => p[i].Latitud == CERCA_ALGETE.Latitud ? 0 : 1).ToList(),
+                Motor = OrdenSugeridoRepartoDTO.MOTOR_HEURISTICA
+            };
+
+            var resultado = await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            CollectionAssert.AreEqual(new[] { 251300, 251301 }, Ids(resultado.Contenido), "La excepción de /table es como si no respondiera");
+            Assert.IsTrue(resultado.Contenido.ReordenadoPorHorario);
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_769_SinNadieFuera_OSinFranjasHoy_NoPideLaMatriz()
+        {
+            IMatrizTiempos tiempos = TiemposDeOsrm();
+            ConTiempos(tiempos);
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, "L-V 08:00-20:00");
+            TripAlcobendasMadridAlgete();
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+            Assert.IsFalse(r.ReordenadoPorHorario);
+            Assert.IsNull(r.AvisoHorario);
+
+            // Solo los sábados: hoy (viernes) llegan fuera con cualquier orden; no se intenta reordenar.
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, "S 10:00-13:00");
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            horarios.Con("1", "1001", "0", "S 09:00-13:00");
+            r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+            Assert.AreEqual(2, r.FueraDeHorario);
+            Assert.IsFalse(r.ReordenadoPorHorario);
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public void AvisoHorario_MasDeTres_ResumeLosDemas()
         {

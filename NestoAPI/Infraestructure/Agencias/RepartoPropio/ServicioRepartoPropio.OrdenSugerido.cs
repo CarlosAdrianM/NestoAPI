@@ -139,6 +139,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     respuesta.FueraDeHorario = EstimarLlegadas(recorrido, salida, horaSalida.Value, calculado.MinutosTramos);
                     respuesta.AvisoHorario = AvisoHorario(recorrido.Where(p => p.FueraDeHorario));
+                    // NestoAPI#769: si alguna llega fuera, se intenta otro orden (sin compromiso).
+                    recorrido = await ReordenarPorHorario(recorrido, salida, final, horaSalida.Value, respuesta).ConfigureAwait(false);
                 }
             }
 

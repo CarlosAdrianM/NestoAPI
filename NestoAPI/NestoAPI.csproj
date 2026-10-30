@@ -747,6 +747,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionRepartoJobsService.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RecorridoReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\OrdenConHorarios.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReposicion.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />

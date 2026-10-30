@@ -260,6 +260,13 @@ namespace NestoAPI.Models.Agencias
         public int FueraDeHorario { get; set; }
         /// <summary>NestoAPI#763: el aviso para el repartidor si <see cref="FueraDeHorario"/> &gt; 0; null si no hay nada que avisar.</summary>
         public string AvisoHorario { get; set; }
+        /// <summary>
+        /// NestoAPI#769: true si se ha cambiado el recorrido más corto para intentar que más paradas lleguen dentro de su horario
+        /// preferible (sin compromiso: el horario es solo una preferencia).
+        /// </summary>
+        public bool ReordenadoPorHorario { get; set; }
+        /// <summary>NestoAPI#769: cuántos minutos más que el recorrido más corto tarda el orden final (conducción, paradas y esperas); 0 si no se reordena.</summary>
+        public int MinutosExtra { get; set; }
         public int Guardados { get; set; }
         public int Ignorados { get; set; }
     }

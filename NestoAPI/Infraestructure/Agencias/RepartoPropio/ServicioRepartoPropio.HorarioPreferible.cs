@@ -103,14 +103,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     ? minutosTramos[i]
                     : HeuristicaRutas.DistanciaKm(anterior, aqui) * HeuristicaRutas.FACTOR_CARRETERA / VELOCIDAD_MEDIA_KMH * 60d;
                 reloj = reloj.AddMinutes(Math.Max(0, minutos));
-                parada.LlegadaEstimada = new DateTime(reloj.Year, reloj.Month, reloj.Day, reloj.Hour, reloj.Minute, 0);
-                List<FranjaHorario> franjas = string.IsNullOrWhiteSpace(parada.HorarioPreferible) ? null : FormatoHorarioPreferible.Leer(parada.HorarioPreferible, out _);
-                if (franjas != null
-                    && franjas.Count > 0)
+                // Sin espera: aquí solo se dice qué pasaría con este orden (la espera es cosa de la segunda pasada, #769).
+                LlegadaParada llegada = VentanaHorario.Llegar(reloj, FranjasDe(parada), 0);
+                parada.LlegadaEstimada = VentanaHorario.Minuto(llegada.Hora);
+                if (llegada.ConHorario)
                 {
-                    int dia = FormatoHorarioPreferible.DiaSemana(reloj.DayOfWeek);
-                    TimeSpan hora = parada.LlegadaEstimada.Value.TimeOfDay;
-                    parada.FueraDeHorario = !franjas.Any(f => f.DiaSemana == dia && f.Contiene(hora));
+                    parada.FueraDeHorario = llegada.Fuera;
                     if (parada.FueraDeHorario)
                     {
                         fuera++;
@@ -130,10 +128,126 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return null;
             }
+            string cuantas = lista.Count == 1 ? "Una parada llegaría" : $"{lista.Count} paradas llegarían";
+            return $"{cuantas} fuera de su horario preferible ({Nombres(lista)}). Revise el orden si puede; el horario solo es una preferencia.";
+        }
+
+        /// <summary>«C1, C2, C3 y 2 más».</summary>
+        private static string Nombres(List<EnvioRepartoDTO> lista)
+        {
             string nombres = string.Join(", ", lista.Take(3).Select(p => p.Nombre?.Trim()).Where(n => !string.IsNullOrEmpty(n)));
             string mas = lista.Count > 3 ? $" y {lista.Count - 3} más" : string.Empty;
-            string cuantas = lista.Count == 1 ? "Una parada llegaría" : $"{lista.Count} paradas llegarían";
-            return $"{cuantas} fuera de su horario preferible ({nombres}{mas}). Revise el orden si puede; el horario solo es una preferencia.";
+            return nombres + mas;
+        }
+
+        /// <summary>Las franjas del horario preferible de la parada (de <see cref="EnvioRepartoDTO.HorarioPreferible"/>), o null si no tiene.</summary>
+        private static List<FranjaHorario> FranjasDe(EnvioRepartoDTO parada)
+        {
+            List<FranjaHorario> franjas = string.IsNullOrWhiteSpace(parada.HorarioPreferible) ? null : FormatoHorarioPreferible.Leer(parada.HorarioPreferible, out _);
+            return franjas != null && franjas.Count > 0 ? franjas : null;
+        }
+
+        /// <summary>
+        /// NestoAPI#769: el aviso cuando se ha cambiado el orden por el horario. Nunca dice que se respete: solo que se intenta.
+        /// </summary>
+        internal static string AvisoReordenado(IEnumerable<EnvioRepartoDTO> siguenFuera, int arregladas, int minutosExtra)
+        {
+            List<EnvioRepartoDTO> lista = siguenFuera.ToList();
+            if (lista.Count == 0)
+            {
+                string clientes = arregladas == 1 ? "1 cliente" : $"{arregladas} clientes";
+                string extra = minutosExtra > 0 ? $" ({minutosExtra} min más)" : string.Empty;
+                return $"Orden cambiado para intentar llegar dentro del horario preferible de {clientes}{extra}.";
+            }
+            string llegarian = lista.Count == 1 ? "1 llegaría" : $"{lista.Count} llegarían";
+            return $"Orden cambiado para intentar respetar los horarios preferibles; aun así {llegarian} fuera ({Nombres(lista)}). El horario es solo una preferencia.";
+        }
+
+        /// <summary>
+        /// NestoAPI#769: la segunda pasada. Si alguna parada del recorrido más corto llega fuera de su horario y alguna tiene
+        /// franjas ese día, busca otro orden con la matriz de tiempos (OSRM /table o, si falla, la línea recta) y
+        /// <see cref="OrdenConHorarios"/>. Solo lo acepta si deja MENOS paradas fuera; entonces actualiza la respuesta (llegadas,
+        /// fuera, kilómetros, minutos y el aviso). Cualquier fallo: el recorrido de antes, tal cual.
+        /// </summary>
+        private async Task<List<EnvioRepartoDTO>> ReordenarPorHorario(List<EnvioRepartoDTO> recorrido, CoordenadasGeo salida, CoordenadasGeo final,
+            DateTime horaSalida, OrdenSugeridoRepartoDTO respuesta)
+        {
+            if (paradas.Tiempos == null || respuesta.FueraDeHorario == 0 || recorrido.Count < 2)
+            {
+                return recorrido;
+            }
+            try
+            {
+                List<List<FranjaHorario>> franjas = recorrido.Select(FranjasDe).ToList();
+                int dia = FormatoHorarioPreferible.DiaSemana(horaSalida.DayOfWeek);
+                if (!franjas.Any(f => f != null && f.Any(x => x.DiaSemana == dia)))
+                {
+                    return recorrido; // Las que tienen horario no lo tienen hoy: ningún orden lo arregla.
+                }
+                var puntos = new List<CoordenadasGeo> { salida };
+                puntos.AddRange(recorrido.Select(p => new CoordenadasGeo(p.Latitud.Value, p.Longitud.Value)));
+                puntos.Add(final);
+
+                MatrizTiempos matriz = null;
+                try
+                {
+                    matriz = await paradas.Tiempos.Calcular(puntos).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Reparto propio #769] La matriz de tiempos ha fallado; se usa la línea recta. {ex.Message}", ex));
+                }
+                if (matriz == null || matriz.Puntos != puntos.Count)
+                {
+                    matriz = MatrizTiempos.Heuristica(puntos);
+                }
+
+                List<int> masCorto = Enumerable.Range(0, recorrido.Count).ToList();
+                EvaluacionOrden antes = OrdenConHorarios.Evaluar(matriz, franjas, horaSalida, masCorto);
+                EvaluacionOrden mejor = OrdenConHorarios.Mejorar(matriz, franjas, horaSalida, masCorto);
+                if (mejor.Fuera >= antes.Fuera || mejor.Orden.SequenceEqual(masCorto))
+                {
+                    return recorrido;
+                }
+
+                List<EnvioRepartoDTO> nuevo = mejor.Orden.Select(i => recorrido[i]).ToList();
+                for (int i = 0; i < nuevo.Count; i++)
+                {
+                    nuevo[i].LlegadaEstimada = mejor.Llegadas[i];
+                    nuevo[i].FueraDeHorario = mejor.FueraPorParada[i];
+                }
+                int minutosExtra = Math.Max(0, (int)Math.Round(mejor.MinutosTotales - antes.MinutosTotales, MidpointRounding.AwayFromZero));
+                respuesta.ReordenadoPorHorario = true;
+                respuesta.MinutosExtra = minutosExtra;
+                respuesta.FueraDeHorario = mejor.Fuera;
+                respuesta.Minutos = matriz.Motor == OrdenSugeridoRepartoDTO.MOTOR_OSRM || respuesta.Minutos.HasValue
+                    ? (int)Math.Round(mejor.MinutosConduccion, MidpointRounding.AwayFromZero)
+                    : (int?)null;
+                respuesta.Kilometros = Kilometros(matriz, puntos, mejor.Orden);
+                respuesta.AvisoHorario = AvisoReordenado(nuevo.Where(p => p.FueraDeHorario), antes.Fuera - mejor.Fuera, minutosExtra);
+                return nuevo;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto propio #769] No se pudo reordenar por el horario preferible; se deja el recorrido más corto. {ex.Message}", ex));
+                return recorrido;
+            }
+        }
+
+        /// <summary>Del origen, por las paradas en <paramref name="orden"/>, al destino: los de la matriz o, si no los trae, línea recta × 1,3.</summary>
+        private static decimal Kilometros(MatrizTiempos matriz, IReadOnlyList<CoordenadasGeo> puntos, IReadOnlyList<int> orden)
+        {
+            var camino = new List<int> { 0 };
+            camino.AddRange(orden.Select(i => i + 1));
+            camino.Add(puntos.Count - 1);
+            double km = 0;
+            for (int i = 0; i < camino.Count - 1; i++)
+            {
+                km += matriz.Kilometros != null
+                    ? matriz.Kilometros[camino[i], camino[i + 1]]
+                    : HeuristicaRutas.DistanciaKm(puntos[camino[i]], puntos[camino[i + 1]]) * HeuristicaRutas.FACTOR_CARRETERA;
+            }
+            return Math.Round((decimal)km, 1);
         }
 
         /// <summary>A qué hora sale el recorrido: la de la PDA; para un día futuro, <see cref="HORA_SALIDA_POR_DEFECTO"/>; null si el día ya pasó.</summary>
