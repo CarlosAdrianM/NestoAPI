@@ -777,7 +777,7 @@ namespace NestoAPI.Infraestructure
             // NestoAPI#507: la regla de financiación (riesgo B) necesita saber si falta stock de algo,
             // porque en «Tras reponer de tiendas» el pedido solo se trocea si hay líneas rojas.
             _faltaStockDeAlgo = faltaStockDeAlgo;
-            _ = s.Append(GenerarHtmlModoServicio(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspanNotas));
+            _ = s.Append(GenerarHtmlModoServicio(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspanNotas, LeerTextoRetorno(pedido)));
             // Issue #110: fecha de entrega común a todo el pedido, al pie y discreta (cuando las
             // líneas difieren no sale nada aquí: cada una lleva la suya en la columna F. Entrega).
             int colspanFechaEntrega = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
@@ -1284,7 +1284,47 @@ namespace NestoAPI.Infraestructure
         internal const string LO_PENDIENTE_EN_CUANTO_HAYA_STOCK = "Lo pendiente: se sirve en cuanto haya stock";
         internal const string LO_PENDIENTE_CUANDO_LO_INDIQUE = "Lo pendiente: se entrega cuando usted lo indique";
 
-        internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan)
+        /// <summary>
+        /// Carlos 30/10/26 (retornos, sugerencia 906): el estado del retorno del envío del pedido va en la misma fila
+        /// del modo de entrega, para que cada correo de modificación lo deje constancia sin alargar el correo.
+        /// Null si el pedido aún no tiene envío pendiente o en curso (el primer correo suele salir antes de la etiqueta).
+        /// </summary>
+        internal static string TextoRetorno(short? retorno, int agencia)
+        {
+            if (retorno == null)
+            {
+                return null;
+            }
+            if (retorno == 0)
+            {
+                return "Retorno: No";
+            }
+            string nombre = null;
+            _ = Agencias.Perfiles.CatalogoServiciosAgencias.De(agencia)?.Retornos.TryGetValue(retorno.Value, out nombre);
+            return "Retorno: " + (string.IsNullOrWhiteSpace(nombre) ? "Sí" : nombre);
+        }
+
+        private string LeerTextoRetorno(PedidoVentaDTO pedido)
+        {
+            try
+            {
+                var envio = db.EnviosAgencias
+                    .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero
+                        && (e.Estado == Constantes.Agencias.ESTADO_PENDIENTE || e.Estado == Constantes.Agencias.ESTADO_EN_CURSO))
+                    .OrderByDescending(e => e.Numero)
+                    .Select(e => new { e.Retorno, e.Agencia })
+                    .FirstOrDefault();
+                return envio == null ? null : TextoRetorno(envio.Retorno, envio.Agencia);
+            }
+            catch (Exception ex)
+            {
+                // El correo del pedido no puede caerse por esto.
+                ElmahHelper.Log(ex);
+                return null;
+            }
+        }
+
+        internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan, string textoRetorno = null)
         {
             byte modo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
             byte modoFacturacion = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.modoFacturacion, pedido.mantenerJunto);
@@ -1311,6 +1351,10 @@ namespace NestoAPI.Infraestructure
                 texto += pedido.servirPendienteAlHaberStock == true
                     ? ". " + LO_PENDIENTE_EN_CUANTO_HAYA_STOCK
                     : ". " + LO_PENDIENTE_CUANDO_LO_INDIQUE;
+            }
+            if (!string.IsNullOrEmpty(textoRetorno))
+            {
+                texto += ". " + textoRetorno;
             }
 
             StringBuilder s = new StringBuilder();

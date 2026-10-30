@@ -1108,6 +1108,39 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(html, "¡¡¡ ATENCIÓN !!! Modo de entrega: Según vaya entrando");
         }
 
+        // Carlos 30/10/26 (retornos, sugerencia 906): el retorno del envío va en la misma fila del modo de entrega.
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_ConRetorno_LoDiceEnLaMismaFila()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true };
+            string textoRetorno = GestorPresupuestos.TextoRetorno(1, Constantes.Agencias.AGENCIA_CTT);
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6, textoRetorno: textoRetorno);
+
+            StringAssert.Contains(html, "Modo de entrega: Todo junto. Retorno: Con retorno");
+            Assert.AreEqual(1, html.Split(new[] { "<tr" }, StringSplitOptions.None).Length - 1, "No añade filas al correo");
+        }
+
+        [TestMethod]
+        public void TextoRetorno_SinRetorno_SinEnvio_YRecogidaEnOrigen()
+        {
+            Assert.AreEqual("Retorno: No", GestorPresupuestos.TextoRetorno(0, Constantes.Agencias.AGENCIA_GLS));
+            Assert.IsNull(GestorPresupuestos.TextoRetorno(null, Constantes.Agencias.AGENCIA_CTT), "Sin envío pendiente no se dice nada");
+            Assert.AreEqual("Retorno: Recogida en origen", GestorPresupuestos.TextoRetorno(2, Constantes.Agencias.AGENCIA_CTT));
+            Assert.AreEqual("Retorno: Sí", GestorPresupuestos.TextoRetorno(1, Constantes.Agencias.AGENCIA_REPARTO_PROPIO), "Agencia sin catálogo");
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_SinTextoRetorno_NoCambia()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            Assert.IsFalse(html.Contains("Retorno"), html);
+        }
+
         [TestMethod]
         public void GenerarHtmlModoServicio_TrasReponerDeTiendas_ConAlgoPorTraer_NoAvisa()
         {
