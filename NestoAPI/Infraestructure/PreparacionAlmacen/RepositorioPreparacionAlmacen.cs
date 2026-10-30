@@ -26,6 +26,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
         public int Cantidad { get; set; }
+        /// <summary>
+        /// NestoAPI#765: una línea de texto de una nota de ENTREGA de solo texto («PRESTAMO HIDRA 7»): Producto vacío, Cantidad 1, el
+        /// texto en Descripcion. No se escanea: cuenta como metida.
+        /// </summary>
+        public bool EsTexto { get; set; }
     }
 
     /// <summary>Ariadna: una entrega (cliente + dirección) de un picking en curso con cuántos bultos tiene ya.</summary>
@@ -310,6 +315,16 @@ FROM Paradas t
 GROUP BY t.[Número], t.Pasillo, t.Fila, t.Columna
 HAVING SUM(t.Cantidad) > 0";
 
+        // NestoAPI#765 (decisión 4 de #755): las notas de ENTREGA de solo texto («PRESTAMO HIDRA 7») también se empaquetan y
+        // etiquetan. Sus líneas de texto (TipoLinea 0, con texto) salen con Cantidad 1, Producto vacío y EsTexto: no se escanean.
+        // Solo si la nota no lleva ninguna línea de producto en ese picking (entonces se empaqueta por sus productos, como siempre)
+        // y no es de RECOGIDA (esas no pasan por packing). Va en SQL_LINEAS_PACKING y en SQL_ENTREGAS_POR_EMPAQUETAR.
+        internal const string CONDICION_NOTA_SOLO_TEXTO = @"l.TipoLinea = 0 AND c.NotaEntrega = 1 AND LTRIM(RTRIM(ISNULL(l.Texto, ''))) <> ''
+      AND NOT EXISTS (SELECT 1 FROM NotasEntregaCabecera ne
+                      WHERE ne.Empresa = c.Empresa AND ne.Pedido = c.[Número] AND RTRIM(ne.Tipo) = 'Recogida')
+      AND NOT EXISTS (SELECT 1 FROM LinPedidoVta x
+                      WHERE x.Empresa = l.Empresa AND x.[Número] = l.[Número] AND x.Picking = l.Picking AND x.Estado = 1 AND x.TipoLinea = 1)";
+
         internal const string SQL_LINEAS_PACKING = @"
 SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto,
        RTRIM(cl.Nombre) AS Nombre, RTRIM(cl.[Dirección]) AS Direccion, RTRIM(cl.CodPostal) AS CodigoPostal,
@@ -317,7 +332,8 @@ SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contact
        RTRIM(CAST(c.ComentarioPicking AS nvarchar(max))) AS ComentarioPicking,
        l.[Nº Orden] AS LineaPedido, RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion,
        RTRIM(p.CodBarras) AS CodigoBarras,
-       CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad
+       CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad,
+       CAST(0 AS bit) AS EsTexto
 FROM LinPedidoVta l
      JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
      LEFT JOIN Clientes cl ON cl.Empresa = c.Empresa AND cl.[Nº Cliente] = c.[Nº Cliente] AND cl.Contacto = c.Contacto
@@ -325,7 +341,22 @@ FROM LinPedidoVta l
 WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND ISNULL(p.Ficticio, 0) = 0
       AND (@p2 IS NULL OR l.[Número] = @p2)
       AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0
-ORDER BY c.[Nº Cliente], c.Contacto, c.[Número], l.[Nº Orden]";
+UNION ALL
+SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto,
+       RTRIM(cl.Nombre) AS Nombre, RTRIM(cl.[Dirección]) AS Direccion, RTRIM(cl.CodPostal) AS CodigoPostal,
+       RTRIM(cl.[Población]) AS Poblacion, RTRIM(c.Ruta) AS Ruta,
+       RTRIM(CAST(c.ComentarioPicking AS nvarchar(max))) AS ComentarioPicking,
+       l.[Nº Orden] AS LineaPedido, '' AS Producto, LTRIM(RTRIM(l.Texto)) AS Descripcion,
+       CAST(NULL AS varchar(50)) AS CodigoBarras,
+       1 AS Cantidad,
+       CAST(1 AS bit) AS EsTexto
+FROM LinPedidoVta l
+     JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
+     LEFT JOIN Clientes cl ON cl.Empresa = c.Empresa AND cl.[Nº Cliente] = c.[Nº Cliente] AND cl.Contacto = c.Contacto
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.Estado = 1
+      AND (@p2 IS NULL OR l.[Número] = @p2)
+      AND " + CONDICION_NOTA_SOLO_TEXTO + @"
+ORDER BY Cliente, Contacto, Pedido, LineaPedido";
 
         // NestoAPI#556: lo ya metido en las cajas del picking (y lo que no apareció en la mesa), para retomar el packing.
         // Va por IX_PreparacionEscaneos_Origen (Empresa, TipoOrigen, NumeroOrigen, Fase), del script #574.
@@ -556,6 +587,12 @@ WITH lineas AS (
     WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.TipoLinea = 1 AND l.Picking > 0
           AND ISNULL(p.Ficticio, 0) = 0
           AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0
+    UNION ALL
+    SELECT l.Picking, l.[Número] AS Pedido, c.[Nº Cliente] AS Cliente, c.Contacto, 1 AS Unidades
+    FROM LinPedidoVta l
+         JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
+    WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.Picking > 0
+          AND " + CONDICION_NOTA_SOLO_TEXTO + @"
 ), entregas AS (
     SELECT Picking, Cliente, Contacto, MIN(Pedido) AS PrimerPedido, COUNT(DISTINCT Pedido) AS Pedidos, SUM(Unidades) AS Unidades
     FROM lineas GROUP BY Picking, Cliente, Contacto

@@ -184,7 +184,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Vendedor = pedido.Vendedor,
                 Comentarios = pedido.Comentarios,
                 ComentarioPicking = pedido.ComentarioPicking,
-                Ruta = pedido.Ruta
+                Ruta = pedido.Ruta,
+                NotaEntrega = pedido.NotaEntrega
             };
 
             Cliente ficha = await db.Clientes.FirstOrDefaultAsync(c =>

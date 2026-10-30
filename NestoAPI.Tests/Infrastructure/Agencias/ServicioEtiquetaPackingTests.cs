@@ -631,5 +631,100 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
             A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
         }
+
+        // ------------------------------------------------------------ NestoAPI#765: notas de entrega
+
+        [TestMethod]
+        public async Task Reembolso_DelPacking_VaEnLosCambiosDelEnvio()
+        {
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Reembolso = 45.5m;
+
+            await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Cambios != null && p.Cambios.Reembolso == 45.5m),
+                A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reembolso_Cero_TambienSeManda_LaNotaNoCobraNada()
+        {
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Reembolso = 0m;
+
+            await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Cambios != null && p.Cambios.Reembolso == 0m),
+                A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reembolso_SinIndicar_ElDeLaPropuestaComoSiempre()
+        {
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+
+            await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Cambios == null), A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reembolso_Negativo_400SinGrabarNada()
+        {
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Reembolso = -1m;
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Invalida, resultado.Tipo);
+            StringAssert.Contains(resultado.Error.Message, "reembolso");
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarAlImprimir_NotaDeRepartoPropio_NoSeProcesa_LaProcesaFacturarRutasConSuDocumentoNE()
+        {
+            // Si se procesara aquí, Facturar rutas ya no la vería: ni parada (#758) ni documento NE (Ariadna no imprime documentos)
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.EsNotaDeRepartoPropio("1", PEDIDO)).Returns(true);
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsTrue(etiqueta.Impresa);
+            Assert.IsFalse(etiqueta.Facturado);
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("la procesa Facturar rutas")));
+        }
+
+        [TestMethod]
+        public async Task FacturarAlImprimir_SiNoEsNotaDeRepartoPropio_SeFacturaComoSiempre()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.EsNotaDeRepartoPropio("1", PEDIDO)).Returns(false);
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(new FacturarRutasResponseDTO());
+
+            await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task FacturarAlImprimir_SiNoSePuedeSaberSiEsNota_NoSeFactura_YQuedaEnElmah()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.EsNotaDeRepartoPropio("1", PEDIDO)).Throws(new InvalidOperationException("sin BD"));
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsTrue(etiqueta.Impresa);
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            Assert.IsTrue(registrados.Any(e => e.Message.Contains("#765")));
+        }
     }
 }

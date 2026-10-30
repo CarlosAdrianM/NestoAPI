@@ -380,6 +380,7 @@
     <Compile Include="Infrastructure\NotasEntrega\AbonosRecogidaTests.cs" />
     <Compile Include="Infrastructure\NotasEntrega\NotasEntregaCabeceraTests.cs" />
     <Compile Include="Infrastructure\NotasEntrega\NotasEntregaRepartoTests.cs" />
+    <Compile Include="Infrastructure\NotasEntrega\GuardiaNotaSinPackingTests.cs" />
     <Compile Include="Infrastructure\CreadorNotaEntregaPendienteTests.cs" />
     <Compile Include="Infrastructure\FechaEntregaNotasTests.cs" />
     <Compile Include="Infrastructure\PendientesEntregarTests.cs" />
@@ -527,6 +528,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisosFichaProductoTests.cs" />
     <Compile Include="Controllers\AvisosFichaControllerTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioPreparacionAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\PackingNotasSoloTextoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\PlanificadorRecepcionCompraTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisosAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisadorComprasTests.cs" />
@@ -919,6 +921,7 @@
     <Compile Include="Models\Picking\GestorReservasStockTest.cs" />
     <Compile Include="Models\Picking\GestorReposicionTiendasTest.cs" />
     <Compile Include="Models\Picking\GestorStocksPickingTest.cs" />
+    <Compile Include="Models\Picking\NotasEntregaSoloTextoPickingTests.cs" />
     <Compile Include="Models\Picking\GestorImportesMinimosTest.cs" />
     <Compile Include="Models\Picking\GestorUbicacionesTest.cs" />
     <Compile Include="Models\Picking\GestorMargenesTest.cs" />

@@ -67,6 +67,17 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#727: hoy, para la fecha de corte por defecto (se fakea en los tests).</summary>
         internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
 
+        /// <summary>
+        /// NestoAPI#765: la nota de entrega que no ha pasado por el packing no se procesa sin confirmación. Por defecto lee del db del
+        /// controller; se sustituye en los tests.
+        /// </summary>
+        internal IGuardiaNotaSinPacking GuardiaNotas
+        {
+            get => guardiaNotas ?? (guardiaNotas = new GuardiaNotaSinPacking(new RepositorioEstadoNotaPacking(db)));
+            set => guardiaNotas = value;
+        }
+        private IGuardiaNotaSinPacking guardiaNotas;
+
         // Para tests: sustituye el gestor real (con sus servicios) por uno falso.
         private readonly Func<IGestorFacturacionRutas> fabricaGestor;
 
@@ -288,6 +299,33 @@ namespace NestoAPI.Controllers
 
                 var fechaDesde = request.FechaEntregaDesde ?? DateTime.Today;
                 var pedido = await servicioPedidos.ObtenerPedidoParaFacturar(request.Empresa, request.Pedido, fechaDesde);
+
+                // NestoAPI#765: una nota de ENTREGA sin picking o sin envío no se procesa sin confirmar (se saltaría el packing). Solo
+                // se mira si es nota o si no hay nada con picking (puede ser una nota que aún no ha entrado en el picking).
+                if (!request.SaltarPacking && (pedido == null || pedido.NotaEntrega))
+                {
+                    string motivo = await GuardiaNotas.Motivo(request.Empresa.Trim(), request.Pedido);
+                    if (!string.IsNullOrWhiteSpace(motivo))
+                    {
+                        var sinPacking = new FacturarRutasResponseDTO();
+                        sinPacking.PedidosConErrores.Add(new PedidoConErrorDTO
+                        {
+                            Empresa = request.Empresa.Trim(),
+                            NumeroPedido = request.Pedido,
+                            Ruta = pedido?.Ruta?.Trim(),
+                            TipoError = GuardiaNotaSinPacking.TIPO_ERROR,
+                            Codigo = GuardiaNotaSinPacking.CODIGO,
+                            MensajeError = motivo,
+                            FechaEntrega = fechaDesde
+                        });
+                        return Ok(sinPacking);
+                    }
+                }
+                if (pedido == null && request.SaltarPacking)
+                {
+                    pedido = await servicioPedidos.ObtenerNotaEntregaSinPicking(request.Empresa, request.Pedido, fechaDesde);
+                }
+
                 if (pedido == null)
                 {
                     var sinNada = new FacturarRutasResponseDTO();
