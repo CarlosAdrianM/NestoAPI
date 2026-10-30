@@ -403,6 +403,7 @@
     <Compile Include="Controllers\FacturasControllerDescargaTests.cs" />
     <Compile Include="Controllers\FacturasControllerEnvioCorreoTests.cs" />
     <Compile Include="Controllers\EnvioDocumentosCorreoControllerTests.cs" />
+    <Compile Include="Controllers\DocumentosControllerTests.cs" />
     <Compile Include="Infraestructure\GestorEnvioDocumentosCorreoTests.cs" />
     <Compile Include="Controllers\VideosProductosControllerTests.cs" />
     <Compile Include="Controllers\VideosControllerBorrarTests.cs" />
