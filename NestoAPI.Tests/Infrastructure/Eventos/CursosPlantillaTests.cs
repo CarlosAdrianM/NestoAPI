@@ -464,7 +464,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(930400, A<List<int>>.That.Matches(l => l.SequenceEqual(new[] { 501, 502 })), A<IPrincipal>._))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>.That.Matches(c => c.Count == 2), A<IReadOnlyList<InscripcionEventoDTO>>._,
-                "https://api.nuevavision.es/pago/x", 930400)).MustHaveHappenedOnceExactly();
+                "https://api.nuevavision.es/pago/x", 930400, FormaPagoInscripcionEvento.Tarjeta)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -509,8 +509,240 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             StringAssert.Contains(creado.Aviso, "enlace de pago");
             StringAssert.Contains(creado.Aviso, "por favor");
             A.CallTo(() => servicioInscripciones.Anular(A<int>._, A<IPrincipal>._)).MustNotHaveHappened();
-            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._, null, 930410))
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._, null, 930410, FormaPagoInscripcionEvento.Tarjeta))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        // ---------------- Sugerencia 899: la forma de pago del pedido y el correo que se pregunta en Nesto ----------------
+
+        private (IServicioInscripcionesEventos inscripciones, IAvisadorCursoPlantilla avisador, ServicioCursosPlantilla servicio) ServicioParaCrear(int numero)
+        {
+            IServicioInscripcionesEventos servicioInscripciones = A.Fake<IServicioInscripcionesEventos>();
+            A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>._, A<IPrincipal>._))
+                .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 14 }));
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(A<int>._, A<List<int>>._, A<IPrincipal>._))
+                .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 14, UrlPago = "https://api.nuevavision.es/pago/x" }));
+            ICreadorPedidoCursoPlantilla creador = A.Fake<ICreadorPedidoCursoPlantilla>();
+            A.CallTo(() => creador.Crear(A<PedidoVentaDTO>._, A<Cliente>._, A<IReadOnlyList<CursoDelPedido>>._)).Returns(Task.FromResult(numero));
+            IAvisadorCursoPlantilla avisador = A.Fake<IAvisadorCursoPlantilla>();
+            return (servicioInscripciones, avisador, Servicio(servicioInscripciones, creador, avisador));
+        }
+
+        [TestMethod]
+        public async Task CrearPedidoCursos_PorTransferencia_InscripcionTransferenciaSinEnlaceDeTarjetaYCorreoDeTransferencia()
+        {
+            // Regresión sugerencia 899 (pedido 929655, inscripción 14): por transferencia se generaba el enlace de tarjeta y la
+            // inscripción quedaba con FormaPago «Tarjeta».
+            var (servicioInscripciones, avisador, servicio) = ServicioParaCrear(929655);
+            PedidoVentaDTO pedido = Pedido(Curso());
+            pedido.formaPago = "TRN";
+            PreparacionCursos preparacion = await servicio.Preparar(pedido);
+
+            PedidoAdicionalDTO creado = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
+
+            Assert.IsNull(creado.Aviso);
+            A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>.That.Matches(i => i.FormaPago == "Transferencia" && !i.GenerarEnlacePago),
+                A<IPrincipal>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(A<int>._, A<List<int>>._, A<IPrincipal>._)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._, null, 929655,
+                FormaPagoInscripcionEvento.Transferencia)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CrearPedidoCursos_EnEfectivo_InscripcionEfectivoSinEnlace()
+        {
+            var (servicioInscripciones, avisador, servicio) = ServicioParaCrear(929656);
+            PedidoVentaDTO pedido = Pedido(Curso());
+            pedido.formaPago = "EFC";
+            PreparacionCursos preparacion = await servicio.Preparar(pedido);
+
+            _ = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
+
+            A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>.That.Matches(i => i.FormaPago == "Efectivo"), A<IPrincipal>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(A<int>._, A<List<int>>._, A<IPrincipal>._)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._, null, 929656,
+                FormaPagoInscripcionEvento.Efectivo)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CrearPedidoCursos_ConTarjeta_SinFormaPagoEnLaInscripcionYConEnlace_ComoHastaAhora()
+        {
+            var (servicioInscripciones, avisador, servicio) = ServicioParaCrear(929657);
+            PedidoVentaDTO pedido = Pedido(Curso());
+            pedido.formaPago = "TAR";
+            PreparacionCursos preparacion = await servicio.Preparar(pedido);
+
+            _ = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
+
+            A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>.That.Matches(i => i.FormaPago == null), A<IPrincipal>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(929657, A<List<int>>._, A<IPrincipal>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._,
+                "https://api.nuevavision.es/pago/x", 929657, FormaPagoInscripcionEvento.Tarjeta)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CrearPedidoCursos_SiElUsuarioDiceQueNo_NoSeMandaCorreo()
+        {
+            var (servicioInscripciones, avisador, servicio) = ServicioParaCrear(929658);
+            PedidoVentaDTO pedido = Pedido(Curso());
+            pedido.formaPago = "TAR";
+            pedido.EnviarCorreoCursos = false;
+            PreparacionCursos preparacion = await servicio.Preparar(pedido);
+
+            _ = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
+
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(929658, A<List<int>>._, A<IPrincipal>._))
+                .MustHaveHappenedOnceExactly(); // el enlace se genera igual (se puede mandar desde el pedido)
+            A.CallTo(() => avisador.Avisar(A<PedidoVentaDTO>._, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._,
+                A<string>._, A<int>._, A<FormaPagoInscripcionEvento>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CrearPedidoCursos_SinRespuestaDelUsuario_SeMandaElCorreo_ComoHastaAhora()
+        {
+            // NestoApp y TNV no mandan EnviarCorreoCursos: se manda, como hasta ahora
+            var (_, avisador, servicio) = ServicioParaCrear(929659);
+            PedidoVentaDTO pedido = Pedido(Curso());
+            pedido.formaPago = "TRN";
+            pedido.EnviarCorreoCursos = null;
+            PreparacionCursos preparacion = await servicio.Preparar(pedido);
+
+            _ = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
+
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._, null, 929659,
+                FormaPagoInscripcionEvento.Transferencia)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void FormaPagoInscripcion_TrnTransferencia_EfcEfectivo_ElRestoTarjeta()
+        {
+            Assert.AreEqual(FormaPagoInscripcionEvento.Transferencia, ReglasCursosPlantilla.FormaPagoInscripcion("TRN"));
+            Assert.AreEqual(FormaPagoInscripcionEvento.Transferencia, ReglasCursosPlantilla.FormaPagoInscripcion(" trn "));
+            Assert.AreEqual(FormaPagoInscripcionEvento.Efectivo, ReglasCursosPlantilla.FormaPagoInscripcion("EFC"));
+            Assert.AreEqual(FormaPagoInscripcionEvento.Tarjeta, ReglasCursosPlantilla.FormaPagoInscripcion("TAR"));
+            Assert.AreEqual(FormaPagoInscripcionEvento.Tarjeta, ReglasCursosPlantilla.FormaPagoInscripcion(null));
+            Assert.AreEqual(FormaPagoInscripcionEvento.Tarjeta, ReglasCursosPlantilla.FormaPagoInscripcion(""));
+        }
+
+        [TestMethod]
+        public void Correo_PorTransferencia_ConIbanConceptoEImporte_SinBotonDeTarjeta()
+        {
+            var curso = new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO), Modalidad = ModalidadInscripcionEvento.Reembolsable, Importe = 120 };
+            var datos = new DatosTransferenciaPedidoDTO
+            {
+                Iban = "ES12 3456 7890 1234 5678 9012",
+                Titular = "NUEVA VISIÓN, S.A.",
+                Concepto = "Cliente 35100 - Pedido 929655",
+                Importe = 120
+            };
+
+            using (MailMessage correo = AvisadorCursoPlantilla.Correo(new[] { curso }, null, new DateTime(2026, 11, 3), 929655, "MARÍA", "maria@example.com",
+                FormaPagoInscripcionEvento.Transferencia, datos))
+            {
+                StringAssert.Contains(correo.Subject, "datos para la transferencia");
+                StringAssert.Contains(correo.Body, "haga una transferencia");
+                StringAssert.Contains(correo.Body, "ES12 3456 7890 1234 5678 9012");
+                StringAssert.Contains(correo.Body, System.Net.WebUtility.HtmlEncode("NUEVA VISIÓN, S.A."));
+                StringAssert.Contains(correo.Body, "Cliente 35100 - Pedido 929655");
+                StringAssert.Contains(correo.Body, "120,00 €");
+                Assert.IsFalse(correo.Body.Contains("Pagar mi plaza"), "sin botón de tarjeta");
+                Assert.IsFalse(correo.Body.Contains("enlace de pago"), "sin enlace de pago");
+            }
+        }
+
+        [TestMethod]
+        public void Correo_PorTransferenciaSinIban_PidaLosDatos()
+        {
+            var curso = new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO), Modalidad = ModalidadInscripcionEvento.Reembolsable, Importe = 120 };
+
+            using (MailMessage correo = AvisadorCursoPlantilla.Correo(new[] { curso }, null, null, 929655, null, "maria@example.com",
+                FormaPagoInscripcionEvento.Transferencia, new DatosTransferenciaPedidoDTO { Concepto = "Cliente 35100 - Pedido 929655", Importe = 120 }))
+            {
+                StringAssert.Contains(correo.Body, "pídanoslos");
+                StringAssert.Contains(correo.Body, "Cliente 35100 - Pedido 929655");
+            }
+        }
+
+        [TestMethod]
+        public void Correo_EnEfectivo_PagueEnLaTienda_SinEnlace()
+        {
+            var curso = new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO), Modalidad = ModalidadInscripcionEvento.Reembolsable, Importe = 120 };
+
+            using (MailMessage correo = AvisadorCursoPlantilla.Correo(new[] { curso }, null, null, 929656, null, "maria@example.com", FormaPagoInscripcionEvento.Efectivo))
+            {
+                StringAssert.Contains(correo.Subject, "reserva");
+                StringAssert.Contains(correo.Body, "páguela en nuestra tienda");
+                Assert.IsFalse(correo.Body.Contains("enlace de pago"));
+                Assert.IsFalse(correo.Body.Contains("transferencia"));
+            }
+        }
+
+        [TestMethod]
+        public void DatosTransferencia_ConceptoDelPedidoDeCursosIbanDeLaEmpresaEImporteDeLosCursos()
+        {
+            global::NestoAPI.Infraestructure.Cobros.ILectorDatosPagoEmpresa lector = A.Fake<global::NestoAPI.Infraestructure.Cobros.ILectorDatosPagoEmpresa>();
+            A.CallTo(() => lector.Leer("1")).Returns(new global::NestoAPI.Models.Cobros.DatosPagoAviso { Iban = " ES12 3456 ", Titular = "NUEVA VISIÓN " });
+            var avisador = new AvisadorCursoPlantilla(db, A.Fake<IServicioCorreoElectronico>(), lector);
+            var cursos = new[]
+            {
+                new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO), Importe = 60 },
+                new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO_ONLINE), Importe = 150 }
+            };
+
+            DatosTransferenciaPedidoDTO datos = avisador.DatosTransferencia("1", "35100", 929655, cursos);
+
+            Assert.AreEqual("ES12 3456", datos.Iban);
+            Assert.AreEqual("NUEVA VISIÓN", datos.Titular);
+            Assert.AreEqual("Cliente 35100 - Pedido 929655", datos.Concepto);
+            Assert.AreEqual(210M, datos.Importe);
+        }
+
+        [TestMethod]
+        public void AvisosSinEnlace_SegunLaFormaDePago()
+        {
+            StringAssert.Contains(ReglasInscripcionEvento.ComoPagarSinEnlace("Transferencia"), "por transferencia");
+            Assert.IsFalse(ReglasInscripcionEvento.ComoPagarSinEnlace("Transferencia").Contains("enlace"));
+            Assert.AreEqual("Puede pagarla en su tienda.", ReglasInscripcionEvento.ComoPagarSinEnlace("Efectivo"));
+            Assert.AreEqual("Puede pagarla en su tienda o pedirnos el enlace de pago.", ReglasInscripcionEvento.ComoPagarSinEnlace("Tarjeta"));
+            Assert.AreEqual("Puede pagarla en su tienda o pedirnos el enlace de pago.", ReglasInscripcionEvento.ComoPagarSinEnlace(null));
+        }
+
+        [TestMethod]
+        public void AvisoPlazoDePago_InscripcionPorTransferenciaSinEnlace_DiceTransferenciaNoEnlace()
+        {
+            var aviso = new AvisoPagoInscripcion
+            {
+                Evento = eventos.First(e => e.Id == EVENTO),
+                Inscripcion = new EventoInscripcion { Id = 14, Empresa = "1", Cliente = "35100", Contacto = "0", FormaPago = "Transferencia" },
+                FechaLimite = new DateTime(2026, 11, 3),
+                FechaLiberacion = new DateTime(2026, 11, 4)
+            };
+
+            using (MailMessage correo = RecordatorioEventosJobsService.CorreoPago(aviso, "MARÍA", "maria@example.com"))
+            {
+                StringAssert.Contains(correo.Body, "por transferencia");
+                Assert.IsFalse(correo.Body.Contains("Pagar mi plaza"));
+                Assert.IsFalse(correo.Body.Contains("enlace de pago"));
+            }
+        }
+
+        [TestMethod]
+        public void AvisoEventoLleno746_InscripcionEnEfectivoSinEnlace_DiceTiendaNoEnlace()
+        {
+            var aviso = new AvisoPlazasLlenasInscripcion
+            {
+                Evento = eventos.First(e => e.Id == EVENTO),
+                Inscripcion = new EventoInscripcion { Id = 15, Empresa = "1", Cliente = "35100", Contacto = "0", FormaPago = "Efectivo" },
+                Plazo = new DateTime(2026, 11, 3, 14, 0, 0)
+            };
+
+            using (MailMessage correo = PlazasLlenasEventosJobsService.CorreoAviso(aviso, null, "maria@example.com"))
+            {
+                StringAssert.Contains(correo.Body, "Puede pagarla en su tienda.");
+                Assert.IsFalse(correo.Body.Contains("enlace de pago"));
+            }
         }
 
         [TestMethod]

@@ -211,6 +211,24 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public static FormaPagoInscripcionEvento? FormaPago(string texto) => PorNombre<FormaPagoInscripcionEvento>(texto);
 
+        /// <summary>
+        /// Sugerencia 899 (NestoAPI#753): lo que dicen los avisos (plazo de pago, evento lleno) a una reserva SIN enlace de pago,
+        /// según su forma de pago: a la de transferencia, que la pague por transferencia; a la de efectivo, en la tienda; al resto,
+        /// como hasta ahora (en la tienda o pidiendo el enlace). Texto plano, de usted.
+        /// </summary>
+        public static string ComoPagarSinEnlace(string formaPago)
+        {
+            switch (FormaPago(formaPago))
+            {
+                case FormaPagoInscripcionEvento.Transferencia:
+                    return "Puede pagarla por transferencia, indicando en el concepto su número de cliente y el del pedido (si no tiene los datos de la cuenta, pídanoslos), o en su tienda.";
+                case FormaPagoInscripcionEvento.Efectivo:
+                    return "Puede pagarla en su tienda.";
+                default:
+                    return "Puede pagarla en su tienda o pedirnos el enlace de pago.";
+            }
+        }
+
         /// <summary>Solo por nombre (sin distinguir mayúsculas): «1» no es un estado ni un origen aunque Enum.TryParse lo acepte.</summary>
         private static T? PorNombre<T>(string texto) where T : struct
         {

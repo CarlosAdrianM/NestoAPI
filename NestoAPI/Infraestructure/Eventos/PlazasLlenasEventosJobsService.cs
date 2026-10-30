@@ -252,7 +252,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 $"{Html(RecordatorioEventosJobsService.CuandoYDonde(aviso.Evento))}, y la suya está pendiente de pago.</p>");
             cuerpo.Append($"<p>Para mantener su plaza, <b>pague antes del {Html(ReglasPlazasLlenas.DiaYHora(aviso.Plazo))}</b>. " +
                 "Si no, la perderá y quedará libre para otra persona.</p>");
-            BotonPago(cuerpo, aviso.UrlPago);
+            BotonPago(cuerpo, aviso.UrlPago, aviso.Inscripcion?.FormaPago);
             cuerpo.Append("<p>Si ya la ha pagado, no tenga en cuenta este mensaje.</p>");
             return Correo(cuerpo, $"Pague su plaza en «{Titulo(aviso.Evento)}» antes del {ReglasPlazasLlenas.DiaYHora(aviso.Plazo)}", destino);
         }
@@ -369,7 +369,7 @@ namespace NestoAPI.Infraestructure.Eventos
             cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre.Trim()))}:</p>");
         }
 
-        private static void BotonPago(StringBuilder cuerpo, string urlPago)
+        private static void BotonPago(StringBuilder cuerpo, string urlPago, string formaPago)
         {
             if (!string.IsNullOrWhiteSpace(urlPago))
             {
@@ -378,7 +378,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             else
             {
-                cuerpo.Append("<p>Puede pagarla en su tienda o pedirnos el enlace de pago.</p>");
+                cuerpo.Append($"<p>{Html(ReglasInscripcionEvento.ComoPagarSinEnlace(formaPago))}</p>"); // Sugerencia 899: según su forma de pago
             }
         }
 

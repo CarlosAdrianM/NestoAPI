@@ -224,6 +224,21 @@ namespace NestoAPI.Infraestructure.Eventos
 
         internal static string Euros(decimal importe) => importe.ToString("N2", es);
 
+        /// <summary>
+        /// Sugerencia 899 (Carlos, 30/10/26): cómo se pagan las inscripciones según la forma de pago del pedido de la plantilla.
+        /// TRN → Transferencia y EFC → Efectivo (sin enlace de pago); cualquier otra (TAR, vacía…) → Tarjeta, con su enlace, como
+        /// hasta ahora.
+        /// </summary>
+        public static FormaPagoInscripcionEvento FormaPagoInscripcion(string formaPagoPedido)
+        {
+            string forma = Limpiar(formaPagoPedido)?.ToUpperInvariant();
+            if (forma == Constantes.FormasPago.TRANSFERENCIA)
+            {
+                return FormaPagoInscripcionEvento.Transferencia;
+            }
+            return forma == Constantes.FormasPago.EFECTIVO ? FormaPagoInscripcionEvento.Efectivo : FormaPagoInscripcionEvento.Tarjeta;
+        }
+
         /// <summary>El origen de la inscripción: Nesto (usuario de dominio) o NestoApp.</summary>
         public static string Origen(string usuarioPedido) =>
             (usuarioPedido ?? string.Empty).Contains("\\") ? OrigenInscripcionEvento.Nesto.ToString() : OrigenInscripcionEvento.NestoApp.ToString();
@@ -451,11 +466,14 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<int> Crear(PedidoVentaDTO pedido, Cliente ficha, IReadOnlyList<CursoDelPedido> cursos);
     }
 
-    /// <summary>NestoAPI#691: el correo de usted a la clienta con sus cursos y el enlace de pago (uno, por el total). Nunca lanza.</summary>
+    /// <summary>
+    /// NestoAPI#691: el correo de usted a la clienta con sus cursos y cómo pagarlos: el enlace de pago (uno, por el total) con
+    /// tarjeta; los datos de la transferencia (sugerencia 899); o «páguela en su tienda» en efectivo. Nunca lanza.
+    /// </summary>
     public interface IAvisadorCursoPlantilla
     {
         Task<bool> Avisar(PedidoVentaDTO pedido, IReadOnlyList<CursoDelPedido> cursos, IReadOnlyList<InscripcionEventoDTO> inscripciones,
-            string urlPago, int pedidoCursos);
+            string urlPago, int pedidoCursos, FormaPagoInscripcionEvento formaPago);
     }
 
     public interface IServicioCursosPlantilla
@@ -464,7 +482,8 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<PreparacionCursos> Preparar(PedidoVentaDTO pedido);
         /// <summary>
         /// Una inscripción Reservada por curso + UN pedido de cursos (una línea por curso, cada una ligada a su inscripción) + UN
-        /// enlace de pago por el total + correo a la clienta.
+        /// enlace de pago por el total (solo con tarjeta; con transferencia o efectivo, ninguno: NestoAPI#753) + correo a la clienta
+        /// adaptado a la forma de pago (salvo que el usuario haya dicho que no: EnviarCorreoCursos = false).
         /// </summary>
         Task<PedidoAdicionalDTO> CrearPedidoCursos(PedidoVentaDTO pedido, Cliente ficha, IReadOnlyList<CursoDelPedido> cursos, IPrincipal usuario);
     }
@@ -675,11 +694,14 @@ namespace NestoAPI.Infraestructure.Eventos
                 throw new ArgumentException("No hay cursos que crear.", nameof(cursos));
             }
             IServicioInscripcionesEventos servicio = inscripciones();
+            // Sugerencia 899: la forma de pago del pedido manda. Con transferencia o efectivo no hay enlace de tarjeta.
+            FormaPagoInscripcionEvento formaPago = ReglasCursosPlantilla.FormaPagoInscripcion(pedido.formaPago);
+            bool conEnlace = formaPago == FormaPagoInscripcionEvento.Tarjeta;
             var inscritas = new List<InscripcionEventoDTO>();
             int numero;
             try
             {
-                // Una plaza (Reservada) por curso, sin enlace propio: el enlace es uno para todo el pedido (abajo)
+                // Una plaza (Reservada) por curso, sin enlace propio: el enlace (con tarjeta) es uno para todo el pedido (abajo)
                 foreach (CursoDelPedido curso in cursos)
                 {
                     InscripcionEventoDTO inscripcion = await servicio.Inscribir(curso.Evento.Id, new InscribirEventoDTO
@@ -690,7 +712,9 @@ namespace NestoAPI.Infraestructure.Eventos
                         Origen = ReglasCursosPlantilla.Origen(pedido.Usuario),
                         GenerarEnlacePago = false,
                         Correo = null,
-                        Modalidad = curso.Modalidad.ToString()
+                        Modalidad = curso.Modalidad.ToString(),
+                        // Tarjeta: la pone el enlace del pedido al generarse (como hasta ahora)
+                        FormaPago = conEnlace ? null : formaPago.ToString()
                     }, usuario).ConfigureAwait(false);
                     inscritas.Add(inscripcion);
                     curso.InscripcionId = inscripcion.Id;
@@ -716,22 +740,30 @@ namespace NestoAPI.Infraestructure.Eventos
                     : new NestoBusinessException($"No se ha podido crear el pedido de {Titulos(cursos)}: {ex.Message}", ex);
             }
 
-            // UN enlace por el total: al cobrarlo quedan pagadas todas las inscripciones y sale una factura con todas
+            // Con tarjeta, UN enlace por el total: al cobrarlo quedan pagadas todas las inscripciones y sale una factura con todas.
+            // Con transferencia (la señal de #591 la marca pagada) o efectivo (Marcar pagada en la tienda), ninguno.
             var resultado = new PedidoAdicionalDTO { Numero = numero, Motivo = ReglasCursosPlantilla.MOTIVO_CURSOS };
             string urlPago = null;
-            try
+            if (conEnlace)
             {
-                urlPago = (await servicio.GenerarEnlacePagoPedidoCursos(numero, inscritas.Select(i => i.Id).ToList(), usuario).ConfigureAwait(false))?.UrlPago;
-            }
-            catch (Exception ex)
-            {
-                // El pedido y las plazas se quedan: se pueden pagar en la tienda (Marcar pagada) o con otro enlace
-                resultado.Aviso = $"No se ha podido generar el enlace de pago del pedido {numero} ({ex.Message}). Las plazas están reservadas: " +
-                    "mándele el enlace desde el pedido o márquelas como pagadas al cobrarlas, por favor.";
-                ElmahHelper.Log(new Exception($"[Cursos #691] Pedido de cursos {numero} de {pedido.cliente?.Trim()}: {resultado.Aviso}", ex));
+                try
+                {
+                    urlPago = (await servicio.GenerarEnlacePagoPedidoCursos(numero, inscritas.Select(i => i.Id).ToList(), usuario).ConfigureAwait(false))?.UrlPago;
+                }
+                catch (Exception ex)
+                {
+                    // El pedido y las plazas se quedan: se pueden pagar en la tienda (Marcar pagada) o con otro enlace
+                    resultado.Aviso = $"No se ha podido generar el enlace de pago del pedido {numero} ({ex.Message}). Las plazas están reservadas: " +
+                        "mándele el enlace desde el pedido o márquelas como pagadas al cobrarlas, por favor.";
+                    ElmahHelper.Log(new Exception($"[Cursos #691] Pedido de cursos {numero} de {pedido.cliente?.Trim()}: {resultado.Aviso}", ex));
+                }
             }
 
-            _ = await avisador.Avisar(pedido, cursos, inscritas, urlPago, numero).ConfigureAwait(false);
+            // Sugerencia 899: Nesto pregunta si se le manda el correo; si no viene la respuesta (NestoApp, TNV), sí, como hasta ahora
+            if (pedido.EnviarCorreoCursos != false)
+            {
+                _ = await avisador.Avisar(pedido, cursos, inscritas, urlPago, numero, formaPago).ConfigureAwait(false);
+            }
             return resultado;
         }
 
@@ -903,20 +935,26 @@ VALUES (@p0, @p1, @p2, @p3, 'EnCurso', 0, @p4, GETDATE(), GETDATE())";
         }
     }
 
-    /// <summary>NestoAPI#691: el correo a la clienta (de usted) con sus cursos y el enlace de pago del pedido. Nunca lanza.</summary>
+    /// <summary>
+    /// NestoAPI#691: el correo a la clienta (de usted) con sus cursos y cómo pagarlos: con tarjeta, el enlace de pago del pedido;
+    /// con transferencia (sugerencia 899), los datos de la cuenta, el concepto con el pedido y el importe; en efectivo, que la
+    /// pague en su tienda. Nunca lanza.
+    /// </summary>
     public class AvisadorCursoPlantilla : IAvisadorCursoPlantilla
     {
         private readonly NVEntities db;
         private readonly IServicioCorreoElectronico correo;
+        private readonly Cobros.ILectorDatosPagoEmpresa lectorDatosPago;
 
-        public AvisadorCursoPlantilla(NVEntities db, IServicioCorreoElectronico correo = null)
+        public AvisadorCursoPlantilla(NVEntities db, IServicioCorreoElectronico correo = null, Cobros.ILectorDatosPagoEmpresa lectorDatosPago = null)
         {
             this.db = db;
             this.correo = correo ?? new ServicioCorreoElectronico();
+            this.lectorDatosPago = lectorDatosPago ?? new Cobros.LectorDatosPagoEmpresa(db);
         }
 
         public async Task<bool> Avisar(PedidoVentaDTO pedido, IReadOnlyList<CursoDelPedido> cursos, IReadOnlyList<InscripcionEventoDTO> inscripciones,
-            string urlPago, int pedidoCursos)
+            string urlPago, int pedidoCursos, FormaPagoInscripcionEvento formaPago)
         {
             try
             {
@@ -926,27 +964,58 @@ VALUES (@p0, @p1, @p2, @p3, 'EnCurso', 0, @p4, GETDATE(), GETDATE())";
                 string destino = await CorreoDelCliente(empresa, cliente, contacto).ConfigureAwait(false);
                 if (destino == null)
                 {
-                    ElmahHelper.Log(new Exception($"[Cursos #691] El cliente {cliente}/{contacto} no tiene correo: no se le ha mandado el enlace de pago " +
-                        $"de {ServicioCursosPlantilla.Titulos(cursos)} (pedido {pedidoCursos}). Enlace: {urlPago}"));
+                    ElmahHelper.Log(new Exception($"[Cursos #691] El cliente {cliente}/{contacto} no tiene correo: no se le ha mandado el correo " +
+                        $"de {ServicioCursosPlantilla.Titulos(cursos)} (pedido {pedidoCursos}, {formaPago}). Enlace: {urlPago}"));
                     return false;
                 }
                 string nombre = inscripciones?.Select(i => i?.Nombre).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
                 DateTime? limite = inscripciones?.Where(i => i?.FechaLimitePago != null).Select(i => i.FechaLimitePago).Min();
-                using (MailMessage mail = Correo(cursos, urlPago, limite, pedidoCursos, nombre, destino))
+                DatosTransferenciaPedidoDTO transferencia = formaPago == FormaPagoInscripcionEvento.Transferencia
+                    ? DatosTransferencia(empresa, cliente, pedidoCursos, cursos)
+                    : null;
+                using (MailMessage mail = Correo(cursos, urlPago, limite, pedidoCursos, nombre, destino, formaPago, transferencia))
                 {
                     bool enviado = correo.EnviarCorreoSMTP(mail);
                     if (!enviado)
                     {
-                        ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar a {destino} el enlace de pago del pedido {pedidoCursos}."));
+                        ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar a {destino} el correo del pedido de cursos {pedidoCursos}."));
                     }
                     return enviado;
                 }
             }
             catch (Exception ex)
             {
-                ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar el enlace de pago del pedido {pedidoCursos}: {ex.Message}", ex));
+                ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar el correo del pedido de cursos {pedidoCursos}: {ex.Message}", ex));
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Sugerencia 899: los datos de la transferencia como los de la sugerencia 396 (ServicioDatosTransferenciaPedido): IBAN y
+        /// titular de la empresa y concepto «Cliente X - Pedido N». El importe es el de los cursos (lo mismo que cobraría el enlace).
+        /// </summary>
+        internal DatosTransferenciaPedidoDTO DatosTransferencia(string empresa, string cliente, int pedidoCursos, IReadOnlyList<CursoDelPedido> cursos)
+        {
+            Models.Cobros.DatosPagoAviso datos = null;
+            try
+            {
+                datos = lectorDatosPago.Leer(empresa);
+            }
+            catch (Exception ex)
+            {
+                // Sin IBAN el correo sale igual, pidiendo que nos pidan los datos de la cuenta
+                ElmahHelper.Log(new Exception($"[Cursos #691] No se han podido leer los datos bancarios de la empresa {empresa}: {ex.Message}", ex));
+            }
+            return new DatosTransferenciaPedidoDTO
+            {
+                Empresa = empresa,
+                Pedido = pedidoCursos,
+                Cliente = cliente,
+                Iban = ReglasCursosPlantilla.Limpiar(datos?.Iban),
+                Titular = ReglasCursosPlantilla.Limpiar(datos?.Titular),
+                Concepto = ServicioDatosTransferenciaPedido.Concepto(cliente, pedidoCursos),
+                Importe = Math.Round(cursos.Sum(c => c.Importe), 2, MidpointRounding.AwayFromZero)
+            };
         }
 
         /// <summary>El de las facturas (cargo 22) del contacto; si no tiene, cualquiera de sus personas de contacto con correo.</summary>
@@ -964,11 +1033,13 @@ VALUES (@p0, @p1, @p2, @p3, 'EnCurso', 0, @p4, GETDATE(), GETDATE())";
         }
 
         /// <summary>
-        /// El correo de usted: cada curso (evento, fecha, tienda u «online», modalidad e importe), el total, el pedido y UN botón con
-        /// el enlace de pago del pedido.
+        /// El correo de usted: cada curso (evento, fecha, tienda u «online», modalidad e importe), el total, el pedido y cómo pagar:
+        /// con tarjeta, UN botón con el enlace de pago del pedido; con transferencia, los datos (IBAN, beneficiario, concepto e
+        /// importe); en efectivo, que la pague en su tienda.
         /// </summary>
         internal static MailMessage Correo(IReadOnlyList<CursoDelPedido> cursos, string urlPago, DateTime? fechaLimitePago, int pedidoCursos,
-            string nombre, string destino)
+            string nombre, string destino, FormaPagoInscripcionEvento formaPago = FormaPagoInscripcionEvento.Tarjeta,
+            DatosTransferenciaPedidoDTO transferencia = null)
         {
             string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
             bool varios = cursos.Count > 1;
@@ -996,7 +1067,37 @@ VALUES (@p0, @p1, @p2, @p3, 'EnCurso', 0, @p4, GETDATE(), GETDATE())";
             }
             cuerpo.Append($"<li>Pedido: {pedidoCursos}</li>");
             cuerpo.Append("</ul>");
-            if (!string.IsNullOrWhiteSpace(urlPago))
+            if (formaPago == FormaPagoInscripcionEvento.Transferencia)
+            {
+                // Sugerencia 899: transferencia, sin enlace de tarjeta
+                cuerpo.Append($"<p>Para confirmar {(varios ? "sus plazas" : "su plaza")}, haga una transferencia con estos datos:</p><ul>");
+                if (!string.IsNullOrWhiteSpace(transferencia?.Iban))
+                {
+                    cuerpo.Append($"<li>IBAN: <b>{Html(transferencia.Iban)}</b></li>");
+                }
+                if (!string.IsNullOrWhiteSpace(transferencia?.Titular))
+                {
+                    cuerpo.Append($"<li>Beneficiario: {Html(transferencia.Titular)}</li>");
+                }
+                string concepto = transferencia?.Concepto ?? $"Pedido {pedidoCursos}";
+                decimal importe = transferencia != null && transferencia.Importe > 0 ? transferencia.Importe : cursos.Sum(c => c.Importe);
+                cuerpo.Append($"<li>Concepto: <b>{Html(concepto)}</b></li>");
+                cuerpo.Append($"<li>Importe: <b>{ReglasCursosPlantilla.Euros(importe)} €</b></li>");
+                cuerpo.Append("</ul>");
+                if (string.IsNullOrWhiteSpace(transferencia?.Iban))
+                {
+                    cuerpo.Append("<p>Si no tiene los datos de nuestra cuenta, pídanoslos, por favor.</p>");
+                }
+                cuerpo.Append("<p>Ponga el concepto tal cual, para que podamos identificar su pago.</p>");
+            }
+            else if (formaPago == FormaPagoInscripcionEvento.Efectivo)
+            {
+                // Sugerencia 899: efectivo, en la tienda
+                cuerpo.Append(varios
+                    ? "<p>Para confirmar sus plazas, páguelas en nuestra tienda.</p>"
+                    : "<p>Para confirmar su plaza, páguela en nuestra tienda.</p>");
+            }
+            else if (!string.IsNullOrWhiteSpace(urlPago))
             {
                 cuerpo.Append(varios
                     ? "<p>Para confirmar sus plazas, páguelas todas juntas con este enlace de pago seguro:</p>"
@@ -1016,12 +1117,15 @@ VALUES (@p0, @p1, @p2, @p3, 'EnCurso', 0, @p4, GETDATE(), GETDATE())";
             }
             cuerpo.Append("<p>Muchas gracias.</p><p>Nueva Visión</p></body></html>");
 
+            string queSigue = formaPago == FormaPagoInscripcionEvento.Transferencia ? "datos para la transferencia"
+                : formaPago == FormaPagoInscripcionEvento.Efectivo ? "reserva"
+                : "enlace de pago";
             var mail = new MailMessage
             {
                 From = new MailAddress("nuevavision@nuevavision.es", "Nueva Visión"),
                 Subject = varios
-                    ? $"Sus plazas en {ServicioCursosPlantilla.Titulos(cursos)}: enlace de pago"
-                    : $"Su plaza en «{cursos[0].Evento.Titulo?.Trim()}»: enlace de pago",
+                    ? $"Sus plazas en {ServicioCursosPlantilla.Titulos(cursos)}: {queSigue}"
+                    : $"Su plaza en «{cursos[0].Evento.Titulo?.Trim()}»: {queSigue}",
                 Body = cuerpo.ToString(),
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
