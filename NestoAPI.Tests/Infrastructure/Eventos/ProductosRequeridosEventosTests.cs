@@ -703,6 +703,103 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(0, (await Guardian().AfectadasAlModificar("1", PEDIDO, new[] { "45363", "OTRO" }, tenia)).Count, "Con «Alguno» no");
         }
 
+        // ---------------- NestoAPI#745: Dirección inscribe aunque no haya compra (Carlos 30/10/26) ----------------
+
+        private static readonly IPrincipal DIRECCION = Usuario("NUEVAVISION\\Manuel", Constantes.GruposSeguridad.DIRECCION);
+        private static readonly IPrincipal ADMINISTRACION = Usuario("NUEVAVISION\\Laura", Constantes.GruposSeguridad.ADMINISTRACION);
+
+        private void SinCompra() =>
+            A.CallTo(() => repositorio.BuscarJustificante(A<string>._, A<string>._, A<IReadOnlyCollection<string>>._, A<DateTime>._))
+                .Returns(Task.FromResult<JustificanteCompraEvento>(null));
+
+        [TestMethod]
+        public async Task Direccion_SinCompra_InscritaSinJustificanteConAvisoYConstancia()
+        {
+            SinCompra();
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, DIRECCION);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            Assert.IsNull(dto.PedidoJustificante);
+            Assert.AreEqual(1, inscripciones.Count);
+            A.CallTo(() => repositorio.PonerJustificante(A<int>._, A<int>._)).MustNotHaveHappened();
+            Assert.AreEqual("Inscrita por Dirección sin la compra que pide «Formación por compra Lifting Coreano»: no hay pedido de 45363 " +
+                "(LIFTING COREANO KIT) desde el 21/08/2026. Al no tener pedido que la justifique, borrar un pedido no la anulará.", dto.Avisos.First());
+            Modificacion constancia = modificaciones.Single();
+            Assert.AreEqual("EventosInscripciones", constancia.Tabla);
+            StringAssert.Contains(constancia.Nuevo, $"Inscripción {dto.Id} (evento {EVENTO_POR_COMPRA}, cliente 15191/0) SIN COMPRA POR DIRECCIÓN");
+            StringAssert.Contains(constancia.Nuevo, "Manuel");
+        }
+
+        [TestMethod]
+        public async Task Direccion_ConCompra_GuardaElJustificanteComoSiempreSinAviso()
+        {
+            A.CallTo(() => repositorio.BuscarJustificante("1", "15191", A<IReadOnlyCollection<string>>._, A<DateTime>._))
+                .Returns(Task.FromResult(new JustificanteCompraEvento { Pedido = PEDIDO, Producto = "45363", Estado = Constantes.EstadosLineaVenta.FACTURA }));
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, DIRECCION);
+
+            Assert.AreEqual(PEDIDO, dto.PedidoJustificante);
+            A.CallTo(() => repositorio.PonerJustificante(dto.Id, PEDIDO)).MustHaveHappenedOnceExactly();
+            Assert.IsFalse((dto.Avisos ?? new List<string>()).Any(a => a.Contains("Dirección")));
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public async Task NoDireccion_SinCompra_Sigue400()
+        {
+            SinCompra();
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, ADMINISTRACION));
+
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex.GetErrorCode());
+            Assert.AreEqual(0, inscripciones.Count);
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public async Task ClienteDeLaTienda_SinCompra_Sigue400()
+        {
+            SinCompra();
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191" }, CLIENTE_TIENDA));
+
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex.GetErrorCode());
+            Assert.AreEqual(0, inscripciones.Count);
+        }
+
+        [TestMethod]
+        public async Task Todos_DireccionLeFaltaUno_InscritaSinJustificanteDiciendoLoQueFalta()
+        {
+            DosProductos(todos: true);
+            Comprado("45363", PEDIDO);
+            A.CallTo(() => repositorio.BuscarJustificante(A<string>._, A<string>._, A<IReadOnlyCollection<string>>.That.Matches(p => p.Contains("45364")), A<DateTime>._))
+                .Returns(Task.FromResult<JustificanteCompraEvento>(null));
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, DIRECCION);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            Assert.IsNull(dto.PedidoJustificante, "Sin todos comprados no hay pedido que la justifique");
+            A.CallTo(() => repositorio.PonerJustificante(A<int>._, A<int>._)).MustNotHaveHappened();
+            StringAssert.StartsWith(dto.Avisos.First(), "Inscrita por Dirección sin la compra que pide «Formación por compra Lifting Coreano»: le faltan 45364 (SÉRUM LIFTING) desde el 21/08/2026.");
+            Assert.AreEqual(1, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public async Task Todos_DireccionConTodos_GuardaElMasReciente()
+        {
+            DosProductos(todos: true);
+            Comprado("45363", PEDIDO);
+            Comprado("45364", PEDIDO + 5);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, DIRECCION);
+
+            Assert.AreEqual(PEDIDO + 5, dto.PedidoJustificante);
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
         [TestMethod]
         public void ProductosQueJustifican_SoloLineasConCantidadYEstadoQueCuenta()
         {
