@@ -35,6 +35,12 @@ namespace NestoAPI.Controllers
 
         private string Usuario => UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
 
+        /// <summary>Los clientes de la tienda online (token de api/auth/token, claim «cliente») no ven ni cambian horarios: 403.</summary>
+        private IHttpActionResult SoloEmpleados()
+            => Infraestructure.Notificaciones.EscanerRemotoPermisos.EsCliente(User)
+                ? Content(HttpStatusCode.Forbidden, new { Message = "El horario preferible solo lo gestionan los empleados." })
+                : null;
+
         // GET api/Clientes/1/12345/0/HorarioPreferible
         /// <summary>El horario del contacto (franjas vacías si no tiene) y, si la hay, su propuesta por revisar.</summary>
         [HttpGet]
@@ -42,6 +48,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(HorarioPreferibleDTO))]
         public async Task<IHttpActionResult> GetHorarioPreferible(string empresa, string cliente, string contacto)
         {
+            IHttpActionResult prohibido = SoloEmpleados();
+            if (prohibido != null)
+            {
+                return prohibido;
+            }
             return Responder(await servicio.Leer(empresa, cliente, contacto).ConfigureAwait(false));
         }
 
@@ -52,6 +63,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(HorarioPreferibleDTO))]
         public async Task<IHttpActionResult> PutHorarioPreferible(string empresa, string cliente, string contacto, [FromBody] HorarioPreferibleDTO horario)
         {
+            IHttpActionResult prohibido = SoloEmpleados();
+            if (prohibido != null)
+            {
+                return prohibido;
+            }
             return Responder(await servicio.Guardar(empresa, cliente, contacto, horario, Usuario).ConfigureAwait(false));
         }
 
@@ -62,6 +78,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<PropuestaHorarioPreferibleDTO>))]
         public async Task<IHttpActionResult> GetPropuestas()
         {
+            IHttpActionResult prohibido = SoloEmpleados();
+            if (prohibido != null)
+            {
+                return prohibido;
+            }
             return Ok(await servicio.Propuestas().ConfigureAwait(false));
         }
 
@@ -71,6 +92,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(HorarioPreferibleDTO))]
         public async Task<IHttpActionResult> PostAceptarPropuesta(int id, [FromBody] HorarioPreferibleDTO horario)
         {
+            IHttpActionResult prohibido = SoloEmpleados();
+            if (prohibido != null)
+            {
+                return prohibido;
+            }
             return Responder(await servicio.Aceptar(id, horario, Usuario).ConfigureAwait(false));
         }
 
@@ -79,6 +105,11 @@ namespace NestoAPI.Controllers
         [Route("api/Clientes/HorariosPreferibles/Propuestas/{id:int}/Descartar")]
         public async Task<IHttpActionResult> PostDescartarPropuesta(int id)
         {
+            IHttpActionResult prohibido = SoloEmpleados();
+            if (prohibido != null)
+            {
+                return prohibido;
+            }
             ResultadoHorarioPreferible<bool> resultado = await servicio.Descartar(id, Usuario).ConfigureAwait(false);
             return resultado.Ok ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent) : Content(resultado.Error.Value, new { Message = resultado.Mensaje });
         }

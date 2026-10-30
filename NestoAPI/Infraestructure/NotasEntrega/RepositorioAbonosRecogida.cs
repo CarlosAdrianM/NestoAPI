@@ -71,6 +71,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         Task<FichaClienteAbono> LeerFicha(string empresa, string cliente, string contacto);
         /// <summary>Reserva el número del pedido nuevo (ContadoresGlobales, atómico, #275).</summary>
         int ReservarNumeroPedido();
+        /// <summary>Devuelve al contador un número reservado cuyo abono no se ha guardado (si sigue siendo el último).</summary>
+        void DevolverNumeroPedido(int numero);
         /// <summary>
         /// Guarda la cabecera del abono, su fila en Modificaciones y NotasEntregaCabecera.PedidoAbono, todo junto. El UPDATE de la
         /// nota solo entra si PedidoAbono sigue siendo <paramref name="pedidoAbonoAnterior"/>: si otro se ha adelantado (dos bultos
@@ -217,6 +219,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         }
 
         public int ReservarNumeroPedido() => db.TomarSiguienteNumeroPedido();
+        public void DevolverNumeroPedido(int numero) => db.DevolverNumeroPedido(numero);
 
         public async Task<bool> GuardarAbono(CabPedidoVta cabecera, Modificacion modificacion, int pedidoNota, int? pedidoAbonoAnterior, string usuario)
         {

@@ -184,12 +184,14 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                         // Que lo que no se ha podido grabar de este cliente no se cuele en el SaveChanges del siguiente.
                         DescartarCambiosPendientes();
                     }
-                    else if (mantenerJuntoQuitado)
+                    string avisoMantenerJunto = null;
+                    if (reunido && mantenerJuntoQuitado)
                     {
-                        _ = RestaurarMantenerJunto(grupo.Empresa, destino.Número);
+                        avisoMantenerJunto = RestaurarMantenerJunto(grupo.Empresa, destino.Número);
                     }
                     string mensaje = reunido
                         ? $"Los albaranes ya están reunidos en el pedido {destino.Número} pero no se ha podido facturar: {ex.Message}. Cuando lo arregle, facture ese pedido desde Nesto."
+                          + (avisoMantenerJunto == null ? string.Empty : " " + avisoMantenerJunto)
                         : ex.Message;
                     resultado.Errores.Add(new ErrorFinDeMes
                     {

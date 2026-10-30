@@ -162,9 +162,19 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                     $" (NestoAPI#760, usuario {usuario})",
                 Usuario = Recortar(usuario, 50)
             };
-            bool guardado = await repositorio.GuardarAbono(cabecera, modificacion, nota.Pedido, nota.PedidoAbono, usuario).ConfigureAwait(false);
+            bool guardado;
+            try
+            {
+                guardado = await repositorio.GuardarAbono(cabecera, modificacion, nota.Pedido, nota.PedidoAbono, usuario).ConfigureAwait(false);
+            }
+            catch
+            {
+                DevolverNumero(numero);
+                throw;
+            }
             if (!guardado)
             {
+                DevolverNumero(numero);
                 // Otro bulto de la misma recogida se ha leído a la vez y ha ganado: se devuelve el suyo.
                 NotaRecogidaLeida releida = await repositorio.LeerNota(nota.Empresa, nota.Pedido).ConfigureAwait(false);
                 AbonoRecogidaDTO ganador = releida == null ? null : await AbonoExistente(releida).ConfigureAwait(false);
@@ -177,6 +187,19 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                     null, null);
             }
             return ResultadoAbonoRecogida<AbonoRecogidaDTO>.Ok(Respuesta(nota, numero, nota.Cliente, nota.Contacto, cabecera.Serie?.Trim(), false), creado: true);
+        }
+
+        /// <summary>El número reservado no se ha usado: se devuelve al contador para no dejar un hueco (si sigue siendo el último).</summary>
+        private void DevolverNumero(int numero)
+        {
+            try
+            {
+                repositorio.DevolverNumeroPedido(numero);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Abono por recogida #760] No se ha podido devolver el número de pedido {numero}: {ex.Message}", ex));
+            }
         }
 
         public async Task<AvisoPedidoDTO> AvisoProductosFueraDeFactura(PedidoVentaDTO pedido)

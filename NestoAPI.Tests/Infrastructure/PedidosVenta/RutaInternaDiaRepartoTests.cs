@@ -391,6 +391,19 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void FechaEntregaAjustada_PickingDeLas9Apagado_CortaALaHoraDelPickingDeSiempre()
+        {
+            // Revisión 30/10/26: con el picking automático de rutas internas apagado, el picking real sigue siendo el de las 11:
+            // un pedido del día de su ruta a las 10 sale hoy (no se va a la semana siguiente). A las 11 en punto, ya no.
+            DayOfWeek? dia = DiasRepartoCodigosPostales.DiaRutaInterna("16", CP_MIERCOLES);
+            DateTime aLas10 = GestorPedidosVenta.FechaEntregaAjustada(D("2026-11-04"), "16", Constantes.Almacenes.ALGETE, Instante("2026-11-04 10:00"), CORTE_AGENCIA, FestivosAlmacen(), dia, CORTE_AGENCIA);
+            DateTime aLas11 = GestorPedidosVenta.FechaEntregaAjustada(D("2026-11-04"), "16", Constantes.Almacenes.ALGETE, Instante("2026-11-04 11:00"), CORTE_AGENCIA, FestivosAlmacen(), dia, CORTE_AGENCIA);
+
+            Assert.AreEqual(D("2026-11-04"), aLas10);
+            Assert.AreEqual(D("2026-11-11"), aLas11);
+        }
+
+        [TestMethod]
         public void FechaEntregaAjustada_ViernesFestivo_ElLunes()
         {
             Assert.AreEqual(D("2026-11-09"), Ajustada("AT", "2026-11-04", "2026-11-04 12:00", CP_VIERNES, Constantes.Almacenes.ALGETE, "2026-11-06"));
