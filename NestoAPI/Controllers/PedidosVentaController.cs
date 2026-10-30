@@ -2349,6 +2349,13 @@ namespace NestoAPI.Controllers
                 pedido, envioModoServicio, null, modoEfectivoAnterior,
                 Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
 
+            // NestoAPI#760: el abono de una recogida con factura original avisa (sin bloquear) de lo que no está en esa factura.
+            AvisoPedidoDTO avisoFueraDeFactura = await ServicioAbonosRecogida.AvisoProductosFueraDeFactura(pedido).ConfigureAwait(true);
+            if (avisoFueraDeFactura != null)
+            {
+                avisos.Add(avisoFueraDeFactura);
+            }
+
             if (avisos.Count > 0)
             {
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
@@ -2400,6 +2407,15 @@ namespace NestoAPI.Controllers
         }
 
         // NestoAPI#757: la cabecera de las notas de entrega (tipo, bultos, factura original). Para tests.
+        private Infraestructure.NotasEntrega.IServicioAbonosRecogida servicioAbonosRecogida;
+        /// <summary>NestoAPI#760: el aviso del PUT de un abono por recogida con factura original (sustituible en los tests).</summary>
+        internal Infraestructure.NotasEntrega.IServicioAbonosRecogida ServicioAbonosRecogida
+        {
+            get => servicioAbonosRecogida ?? (servicioAbonosRecogida = new Infraestructure.NotasEntrega.ServicioAbonosRecogida(
+                new Infraestructure.NotasEntrega.RepositorioAbonosRecogida(db)));
+            set => servicioAbonosRecogida = value;
+        }
+
         private Infraestructure.NotasEntrega.IServicioNotasEntregaCabecera servicioNotasEntregaCabecera;
         internal Infraestructure.NotasEntrega.IServicioNotasEntregaCabecera ServicioNotasEntregaCabecera
         {
