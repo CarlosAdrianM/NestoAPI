@@ -187,6 +187,71 @@ namespace NestoAPI.Controllers
             return Ok(InformeUsoSugerenciasProductos.Calcular(filas, inicio, fin));
         }
 
+        /// <summary>NestoAPI#751: (desde, hasta, usuario o null para todos) → filas de respuestas. Null = contra la BD. Para tests.</summary>
+        internal Func<DateTime, DateTime, string, Task<System.Collections.Generic.List<FilaRespuestaSugerencia>>> LeerFilasRespuestas { get; set; }
+
+        /// <summary>
+        /// NestoAPI#751: el resumen personal de quien llama (solo lo suyo, en Nesto y en NestoApp): las últimas
+        /// <see cref="ResumenRespuestasSugerencias.SEMANAS_RESUMEN"/> semanas (✓, ✗, 🚫, las ✓ que acabaron en el pedido y su
+        /// importe), de cada 10 que ofrece cuántas le aceptan, y la frase y la ayuda ya montadas para la cabecera de la cinta
+        /// «Puede ofrecer». Solo lee. Sin las tablas de las sugerencias, todo a cero y la frase de ánimo.
+        /// GET api/SugerenciasProductos/MiResumen
+        /// </summary>
+        [HttpGet]
+        [Route("MiResumen")]
+        [ResponseType(typeof(ResumenSugerenciasVendedorDTO))]
+        public async Task<IHttpActionResult> GetMiResumen()
+        {
+            string usuario = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            DateTime hoy = ahora().Date;
+            System.Collections.Generic.List<FilaRespuestaSugerencia> filas =
+                await LeerRespuestas(ResumenRespuestasSugerencias.InicioResumen(hoy), hoy.AddDays(1), usuario).ConfigureAwait(false);
+            return Ok(ResumenRespuestasSugerencias.CalcularResumen(filas, hoy));
+        }
+
+        /// <summary>
+        /// NestoAPI#751 y #109: la participación con las sugerencias por usuario (sin dominio: Nesto y NestoApp juntos) y sus puntos,
+        /// de más a menos, para el agradecimiento a los key users en las Novedades de cada versión. Los vendedores todavía no ven
+        /// los puntos (decisión de Carlos, 23/10/26). Sin <paramref name="desde"/>, los últimos 30 días; sin
+        /// <paramref name="hasta"/>, hasta hoy incluido. Solo Dirección e Informática.
+        /// GET api/SugerenciasProductos/Participacion?desde=2026-10-29
+        /// </summary>
+        [HttpGet]
+        [Route("Participacion")]
+        [ResponseType(typeof(ParticipacionSugerenciasDTO))]
+        public async Task<IHttpActionResult> GetParticipacion(DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            DateTime hoy = ahora().Date;
+            DateTime inicio = (desde ?? hoy.AddDays(-ResumenRespuestasSugerencias.DIAS_PARTICIPACION_POR_DEFECTO)).Date;
+            DateTime fin = (hasta?.Date ?? hoy).AddDays(1); // exclusivo
+            if (fin <= inicio)
+            {
+                return BadRequest("La fecha «hasta» no puede ser anterior a «desde».");
+            }
+            System.Collections.Generic.List<FilaRespuestaSugerencia> filas = await LeerRespuestas(inicio, fin, null).ConfigureAwait(false);
+            return Ok(ResumenRespuestasSugerencias.CalcularParticipacion(filas, inicio, fin));
+        }
+
+        private async Task<System.Collections.Generic.List<FilaRespuestaSugerencia>> LeerRespuestas(DateTime desde, DateTime hasta, string usuario)
+        {
+            if (LeerFilasRespuestas != null)
+            {
+                return await LeerFilasRespuestas(desde, hasta, usuario).ConfigureAwait(false);
+            }
+            using (var db = new NVEntities())
+            {
+                return await ResumenRespuestasSugerencias.Leer(db, desde, hasta, usuario).ConfigureAwait(false);
+            }
+        }
+
         /// <summary>Ya (o en el próximo minuto): Enqueue; más tarde: Schedule. Los dos en la cola «entrenamiento» (atributo Queue del job).</summary>
         private string ProgramarEnHangfire(bool forzar, string usuario, DateTime programada)
             => programada <= ahora().AddMinutes(1)

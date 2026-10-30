@@ -596,6 +596,7 @@
     <Compile Include="Infrastructure\ReentrenamientoModeloSugerenciasTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosTests.cs" />
     <Compile Include="Infrastructure\InformeUsoSugerenciasProductosTests.cs" />
+    <Compile Include="Infrastructure\ResumenRespuestasSugerenciasTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosModeloTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosAceptacionTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosEstadoTests.cs" />
