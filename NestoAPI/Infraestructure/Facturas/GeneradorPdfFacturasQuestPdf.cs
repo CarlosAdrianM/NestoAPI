@@ -104,7 +104,15 @@ namespace NestoAPI.Infraestructure.Facturas
                     page.DefaultTextStyle(x => x.FontSize(8));
 
                     page.Header().Element(c => ComponerCabecera(c, factura));
-                    page.Content().Element(c => ComponerContenido(c, factura, mostrarColumnaDescuento, mostrarColumnaImagen));
+                    // NestoAPI#758: la nota de entrega / recogida tiene su propio cuerpo (texto en grande y «Recibí»).
+                    if (factura.NotaEntrega != null)
+                    {
+                        page.Content().Element(c => ComponerContenidoNotaEntrega(c, factura));
+                    }
+                    else
+                    {
+                        page.Content().Element(c => ComponerContenido(c, factura, mostrarColumnaDescuento, mostrarColumnaImagen));
+                    }
                     page.Footer().Element(c => ComponerPie(c, factura));
                 });
             });
@@ -361,7 +369,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     // Tipo de documento en grande (16pt como en RDLC)
                     col.Item().Background(Colors.Grey.Lighten3).Padding(5).AlignCenter()
-                        .Text(factura.TipoDocumento ?? "FACTURA").Bold().FontSize(16);
+                        .Text(TituloDocumento(factura)).Bold().FontSize(16);
 
                     // Tabla con encabezados y valores debajo (como en RDLC)
                     col.Item().Padding(5).Table(table =>
@@ -402,6 +410,12 @@ namespace NestoAPI.Infraestructure.Facturas
                         table.Cell().Padding(2).Text(factura.NumeroFactura ?? "").FontSize(8);
                     });
                 });
+
+                // ========== NestoAPI#758: nota de entrega / recogida: nº de nota, bultos, teléfonos y Code128 ==========
+                if (factura.NotaEntrega != null)
+                {
+                    column.Item().PaddingTop(3).Element(c => ComponerDatosNotaEntrega(c, factura.NotaEntrega));
+                }
 
                 // ========== NestoAPI#522: aviso del justificante provisional ==========
                 // Justo debajo del cuadro, imposible de pasar por alto: este papel NO es la factura.
@@ -811,6 +825,135 @@ namespace NestoAPI.Infraestructure.Facturas
                         .AlignCenter().Text(venc.Iban ?? "").FontSize(8);
                     table.Cell().Border(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(3)
                         .AlignLeft().Text(venc.TextoPagado ?? "").FontSize(8);
+                }
+            });
+        }
+
+        /// <summary>NestoAPI#758: el título del cuadro: el de la nota («NOTA DE RECOGIDA») si lo trae; si no, el tipo de documento.</summary>
+        internal static string TituloDocumento(Factura factura)
+            => !string.IsNullOrWhiteSpace(factura?.NotaEntrega?.Titulo) ? factura.NotaEntrega.Titulo : factura?.TipoDocumento ?? "FACTURA";
+
+        /// <summary>NestoAPI#758: el texto de la línea de datos de la nota (nº de nota, bultos y teléfonos).</summary>
+        internal static string TextoDatosNotaEntrega(DatosNotaEntregaFactura nota)
+        {
+            var partes = new List<string>();
+            if (nota.NumeroNota.HasValue)
+            {
+                partes.Add($"Nº nota: {nota.NumeroNota.Value}");
+            }
+            if (nota.Bultos.HasValue && nota.Bultos.Value > 0)
+            {
+                partes.Add($"Bultos: {nota.Bultos.Value}");
+            }
+            if (!string.IsNullOrWhiteSpace(nota.Telefono))
+            {
+                partes.Add($"Teléfono: {nota.Telefono.Trim()}");
+            }
+            if (!string.IsNullOrWhiteSpace(nota.Movil))
+            {
+                partes.Add($"Móvil: {nota.Movil.Trim()}");
+            }
+            return string.Join("    ", partes);
+        }
+
+        private static void ComponerDatosNotaEntrega(IContainer container, DatosNotaEntregaFactura nota)
+        {
+            container.Row(row =>
+            {
+                row.RelativeItem().AlignMiddle().Text(TextoDatosNotaEntrega(nota)).Bold().FontSize(11);
+                if (!string.IsNullOrWhiteSpace(nota.CodigoBarras))
+                {
+                    row.ConstantItem(7f, Unit.Centimetre).AlignRight().Element(c => ComponerCode128(c, nota.CodigoBarras.Trim(), 1.2f, 40f));
+                }
+            });
+        }
+
+        /// <summary>
+        /// NestoAPI#758: Code128 dibujado en el lienzo de QuestPDF (Skia, que ya viene con QuestPDF): una barra por tramo de
+        /// <see cref="Code128.Tramos"/>, con 10 módulos en blanco a cada lado y el código en claro debajo.
+        /// </summary>
+        internal static void ComponerCode128(IContainer container, string codigo, float anchoModulo, float alto)
+        {
+            List<(bool EsBarra, int Modulos)> tramos = Code128.Tramos(codigo);
+            int modulos = tramos.Sum(t => t.Modulos) + 20;
+            container.Column(col =>
+            {
+                col.Item().Width(modulos * anchoModulo).Height(alto).Canvas((lienzo, tamano) =>
+                {
+                    using (var pincel = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.Black, IsAntialias = false, Style = SkiaSharp.SKPaintStyle.Fill })
+                    {
+                        float x = 10 * anchoModulo;
+                        foreach ((bool esBarra, int ancho) in tramos)
+                        {
+                            float w = ancho * anchoModulo;
+                            if (esBarra)
+                            {
+                                lienzo.DrawRect(x, 0, w, alto, pincel);
+                            }
+                            x += w;
+                        }
+                    }
+                });
+                col.Item().Width(modulos * anchoModulo).AlignCenter().Text(codigo).FontSize(9);
+            });
+        }
+
+        /// <summary>
+        /// NestoAPI#758: el cuerpo de la nota de entrega / recogida: lo que lleva (productos con su cantidad), las líneas de texto
+        /// en grande (lo que hay que entregar o recoger) y el «Recibí» con nombre, DNI y firma.
+        /// </summary>
+        private void ComponerContenidoNotaEntrega(IContainer container, Factura factura)
+        {
+            List<LineaFactura> productos = (factura.Lineas ?? new List<LineaFactura>()).Where(l => !string.IsNullOrWhiteSpace(l.Producto)).ToList();
+            List<string> textos = (factura.Lineas ?? new List<LineaFactura>())
+                .Where(l => string.IsNullOrWhiteSpace(l.Producto) && !string.IsNullOrWhiteSpace(l.Descripcion))
+                .Select(l => l.Descripcion.Trim()).ToList();
+
+            container.Column(column =>
+            {
+                if (productos.Any())
+                {
+                    column.Item().Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.ConstantColumn(2.2f, Unit.Centimetre);
+                            columns.RelativeColumn();
+                            columns.ConstantColumn(2f, Unit.Centimetre);
+                        });
+                        table.Header(header =>
+                        {
+                            header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Producto").Bold().FontSize(9);
+                            header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Descripción").Bold().FontSize(9);
+                            header.Cell().Background(Colors.Grey.Lighten3).Padding(3).AlignRight().Text("Cantidad").Bold().FontSize(9);
+                        });
+                        foreach (LineaFactura linea in productos)
+                        {
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(3).Text(linea.Producto?.Trim() ?? "").FontSize(10);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(3).Text(linea.Descripcion ?? "").FontSize(10);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(3).AlignRight().Text(linea.Cantidad.ToString()).FontSize(10);
+                        }
+                    });
+                    column.Item().PaddingVertical(6);
+                }
+
+                foreach (string texto in textos)
+                {
+                    column.Item().PaddingVertical(3).Text(texto).Bold().FontSize(14);
+                }
+
+                column.Item().PaddingTop(25).Border(1).BorderColor(Colors.Grey.Medium).Padding(8).Column(recibi =>
+                {
+                    recibi.Item().Text("Recibí:").Bold().FontSize(11);
+                    recibi.Item().PaddingTop(12).Text("Nombre: ______________________________________________").FontSize(11);
+                    recibi.Item().PaddingTop(12).Text("DNI: ____________________").FontSize(11);
+                    recibi.Item().PaddingTop(12).Text("Firma:").FontSize(11);
+                    recibi.Item().Height(2.5f, Unit.Centimetre);
+                });
+
+                if (factura.NotasAlPie?.Any() == true)
+                {
+                    column.Item().PaddingTop(8).Element(c => ComponerNotas(c, factura));
                 }
             });
         }

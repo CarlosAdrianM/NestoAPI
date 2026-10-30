@@ -114,6 +114,31 @@ namespace NestoAPI.Infraestructure.Facturas
             return sb.ToString().Normalize(NormalizationForm.FormC);
         }
 
+        private IServicioParadasNotaEntrega paradasNotaEntrega;
+        private IServicioEtiquetasRecogida etiquetasRecogida;
+        private IServicioDocumentoNotaEntrega documentoNotaEntrega;
+
+        /// <summary>NestoAPI#758: la parada en el reparto propio de cada nota (sustituible en los tests; por defecto, con el mismo db).</summary>
+        internal IServicioParadasNotaEntrega ParadasNotaEntrega
+        {
+            get => paradasNotaEntrega ?? (paradasNotaEntrega = new ServicioParadasNotaEntrega(db));
+            set => paradasNotaEntrega = value;
+        }
+
+        /// <summary>NestoAPI#758: las etiquetas NR{pedido}-{N} de las recogidas (sustituible en los tests).</summary>
+        internal IServicioEtiquetasRecogida EtiquetasRecogida
+        {
+            get => etiquetasRecogida ?? (etiquetasRecogida = new ServicioEtiquetasRecogida(db));
+            set => etiquetasRecogida = value;
+        }
+
+        /// <summary>NestoAPI#758: el documento de la nota con su título y su Code128 (sustituible en los tests).</summary>
+        internal IServicioDocumentoNotaEntrega DocumentoNotaEntrega
+        {
+            get => documentoNotaEntrega ?? (documentoNotaEntrega = new ServicioDocumentoNotaEntrega(db, gestorFacturas));
+            set => documentoNotaEntrega = value;
+        }
+
         /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. (sustituible en los tests). Solo se consulta sin P.O.</summary>
         internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
 
@@ -348,6 +373,10 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     if (notaEntrega != null)
                     {
+                        // NestoAPI#758: la parada en el reparto propio (y las etiquetas de una recogida). Sus fallos van a la
+                        // lista de errores del pedido, pero la nota ya está procesada: sigue al PDF y a la respuesta.
+                        await CompletarNotaEnReparto(pedido, notaEntrega, response, usuario);
+
                         // Determinar tipo de ruta y si debe generar PDF
                         var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
                         bool debeImprimir = DebeImprimirDocumento(pedido);
@@ -363,7 +392,7 @@ namespace NestoAPI.Infraestructure.Facturas
                             try
                             {
                                 System.Diagnostics.Debug.WriteLine($"  → Generando PDF de nota de entrega ({numeroCopias} copias)");
-                                notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, pedido.Empresa, pedido.Número, usuario);
+                                notaEntrega.DatosImpresion = await GenerarDatosImpresionNotaEntrega(pedido, pedido.Empresa, pedido.Número, usuario, notaEntrega);
                             }
                             catch (Exception exPdf)
                             {
@@ -747,12 +776,27 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Genera los datos de impresión para una nota de entrega (bytes del PDF, copias, bandeja).
         /// Usa el formato de pedido para generar el PDF de la nota de entrega.
         /// </summary>
-        private DocumentoParaImprimir GenerarDatosImpresionNotaEntrega(CabPedidoVta pedido, string empresa, int numeroPedido, string usuario)
+        private async Task<DocumentoParaImprimir> GenerarDatosImpresionNotaEntrega(CabPedidoVta pedido, string empresa, int numeroPedido, string usuario,
+            NotaEntregaCreadaDTO nota = null)
         {
-            var pedidoFactura = gestorFacturas.LeerPedido(empresa, numeroPedido);
-            var pedidos = new List<Factura> { pedidoFactura };
-
-            var bytesPdf = gestorFacturas.FacturasEnPDF(pedidos, papelConMembrete: true, usuario: usuario);
+            byte[] bytesPdf;
+            if (pedido.NotaEntrega)
+            {
+                // NestoAPI#758: con el título por tipo («NOTA DE RECOGIDA»), nº de nota, bultos, teléfonos, «Recibí» y Code128.
+                Factura documento = await DocumentoNotaEntrega.LeerParaImprimir(empresa, numeroPedido);
+                bytesPdf = DocumentoNotaEntrega.Pdf(documento, papelConMembrete: true, usuario: usuario);
+                if (nota != null && documento?.NotaEntrega != null)
+                {
+                    nota.Tipo = nota.Tipo ?? documento.NotaEntrega.Tipo;
+                    nota.CodigoDocumento = nota.CodigoDocumento ?? documento.NotaEntrega.CodigoBarras;
+                }
+            }
+            else
+            {
+                var pedidoFactura = gestorFacturas.LeerPedido(empresa, numeroPedido);
+                var pedidos = new List<Factura> { pedidoFactura };
+                bytesPdf = await gestorFacturas.FacturasEnPDF(pedidos, papelConMembrete: true, usuario: usuario).ReadAsByteArrayAsync();
+            }
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -769,10 +813,62 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return new DocumentoParaImprimir
             {
-                BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
+                BytesPDF = bytesPdf,
                 NumeroCopias = numeroCopias,
                 TipoBandeja = tipoBandeja
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#758 (corte 2 de #755): la nota recién procesada entra en el reparto propio como parada (envío de la agencia
+        /// 14) y, si es de recogida, se imprimen sus etiquetas NR{pedido}-{N}. Rellena Tipo, CodigoDocumento, Bultos, EnvioId y
+        /// EtiquetasRecogidaImpresas de la nota de la respuesta. Nunca lanza: un fallo (también de la impresora) queda como error
+        /// del pedido y la facturación sigue con los demás.
+        /// </summary>
+        private async Task CompletarNotaEnReparto(CabPedidoVta pedido, NotaEntregaCreadaDTO nota, FacturarRutasResponseDTO response, string usuario)
+        {
+            ResultadoParadaNotaEntrega parada;
+            try
+            {
+                parada = await ParadasNotaEntrega.AsegurarParada(pedido, usuario);
+            }
+            catch (Exception ex)
+            {
+                RegistrarError(pedido, "Parada del reparto propio", ex, response);
+                return;
+            }
+            if (parada == null)
+            {
+                return;
+            }
+            nota.Tipo = parada.Tipo;
+            nota.CodigoDocumento = parada.CodigoDocumento;
+            nota.Bultos = parada.Bultos;
+            nota.EnvioId = parada.EsParada ? parada.EnvioId : null;
+            if (!string.IsNullOrWhiteSpace(parada.Aviso))
+            {
+                RegistrarError(pedido, "Parada del reparto propio", parada.Aviso, response);
+            }
+            if (!parada.EsParada || !parada.EsRecogida)
+            {
+                return;
+            }
+            try
+            {
+                ResultadoEtiquetasRecogida etiquetas = await EtiquetasRecogida.Imprimir(pedido.Empresa, pedido.Número, null, usuario);
+                if (etiquetas?.Tipo == TipoResultadoNotaEntrega.Ok)
+                {
+                    nota.EtiquetasRecogidaImpresas = etiquetas.Contenido?.Impresas ?? 0;
+                }
+                else
+                {
+                    RegistrarError(pedido, "Etiquetas de recogida", etiquetas?.Mensaje ?? "No se han podido imprimir las etiquetas de la recogida.", response);
+                }
+            }
+            catch (Exception ex)
+            {
+                RegistrarError(pedido, "Etiquetas de recogida", ex, response);
+            }
         }
 
         /// <summary>
@@ -1567,7 +1663,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     try
                     {
-                        notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, empresa, numeroPedido, usuario);
+                        notaEntrega.DatosImpresion = await GenerarDatosImpresionNotaEntrega(pedido, empresa, numeroPedido, usuario, notaEntrega);
                         response.NotasEntrega.Add(notaEntrega);
                         response.TipoDocumentoPrincipal = "Nota de Entrega";
                         response.Mensaje = $"Nota de entrega del pedido {numeroPedido} lista para imprimir";

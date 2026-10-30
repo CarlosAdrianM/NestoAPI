@@ -66,7 +66,13 @@ namespace NestoAPI.Tests.Infrastructure
                 gestorFacturas,
                 servicioTraspaso,
                 servicioNotasEntrega,
-                servicioExtractoRuta);
+                servicioExtractoRuta)
+            {
+                // NestoAPI#758: la parada y las etiquetas de las notas, sin BD (el fake de NVEntities no tiene conexión).
+                ParadasNotaEntrega = A.Fake<IServicioParadasNotaEntrega>(),
+                EtiquetasRecogida = A.Fake<IServicioEtiquetasRecogida>(),
+                DocumentoNotaEntrega = A.Fake<IServicioDocumentoNotaEntrega>()
+            };
         }
 
         #region Constructor Tests

@@ -38,6 +38,24 @@ namespace NestoAPI.Models.PedidosVenta
         public string FacturaOriginal { get; set; }
     }
 
+    /// <summary>NestoAPI#758: el cuerpo (opcional) de POST api/NotasEntrega/{empresa}/{pedido}/EtiquetasRecogida.</summary>
+    public class EtiquetasRecogidaPeticionDTO
+    {
+        /// <summary>La impresora de Windows; sin ella, la ImpresoraAgencia del usuario (o la de «(defecto)»).</summary>
+        public string Impresora { get; set; }
+    }
+
+    /// <summary>NestoAPI#758: la respuesta de POST api/NotasEntrega/{empresa}/{pedido}/EtiquetasRecogida.</summary>
+    public class EtiquetasRecogidaResultadoDTO
+    {
+        /// <summary>Etiquetas mandadas a la impresora (una por bulto de la recogida).</summary>
+        public int Impresas { get; set; }
+        /// <summary>«NR929554-1», «NR929554-2»…</summary>
+        public System.Collections.Generic.List<string> Codigos { get; set; } = new System.Collections.Generic.List<string>();
+        /// <summary>La impresora por la que han salido.</summary>
+        public string Impresora { get; set; }
+    }
+
     public static class TiposNotaEntrega
     {
         public const string ENTREGA = "Entrega";
@@ -60,6 +78,10 @@ namespace NestoAPI.Models.PedidosVenta
             return null;
         }
 
-        public static string CodigoDocumento(string tipo, int pedido) => (tipo == RECOGIDA ? "NR" : "NE") + pedido;
+        public static string CodigoDocumento(string tipo, int pedido)
+            => Infraestructure.Agencias.RepartoPropio.CodigoNotaEntrega.Documento(tipo == RECOGIDA, pedido);
+
+        /// <summary>NestoAPI#758: «NOTA DE ENTREGA» / «NOTA DE RECOGIDA», el título del documento.</summary>
+        public static string Titulo(string tipo) => tipo == RECOGIDA ? "NOTA DE RECOGIDA" : Constantes.Facturas.TiposDocumento.NOTA_ENTREGA;
     }
 }

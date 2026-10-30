@@ -134,9 +134,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
         /// <summary>
         /// NestoAPI#649: rutas de reparto que salen de Algete (ruta propia y agencias, las mismas que
-        /// factura GestorFacturacionRutas). Las demás (recoger en tienda, Glovo…) quedan fuera.
+        /// factura GestorFacturacionRutas). Las demás (recoger en tienda, Glovo…) quedan fuera. NestoAPI#758: se calcula
+        /// cada vez porque las rutas propias salen de un parámetro (RutasRepartoPropio).
         /// </summary>
-        internal static readonly HashSet<string> RUTAS_QUE_SALEN_DE_ALGETE = new HashSet<string>(
+        internal static HashSet<string> RUTAS_QUE_SALEN_DE_ALGETE => new HashSet<string>(
             new RutaPropia().RutasContenidas.Concat(new RutaAgencia().RutasContenidas).Select(r => r.Trim()),
             StringComparer.OrdinalIgnoreCase);
 

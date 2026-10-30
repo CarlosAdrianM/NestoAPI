@@ -100,4 +100,55 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out envio) && envio > 0;
         }
     }
+
+    /// <summary>
+    /// NestoAPI#758 (corte 2 de #755): los códigos de barras de las notas de entrega, por NÚMERO DE PEDIDO (empresa 1) y no por
+    /// envío, porque se imprimen antes de facturar la ruta y valen para las notas de Nesto viejo: <c>NE{Pedido}</c> (documento de
+    /// una nota de ENTREGA), <c>NR{Pedido}</c> (documento de una nota de RECOGIDA) y <c>NR{Pedido}-{N}</c> (etiqueta del bulto N
+    /// que se recoge). Las entregas no llevan etiqueta propia: llevan la RP del packing.
+    /// </summary>
+    public static class CodigoNotaEntrega
+    {
+        public const string PREFIJO_ENTREGA = "NE";
+        public const string PREFIJO_RECOGIDA = "NR";
+        private static readonly Regex formato = new Regex(@"^(NE|NR)(\d{1,9})(?:-(\d{1,4}))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>«NE930123» o «NR930123».</summary>
+        public static string Documento(bool esRecogida, int pedido)
+            => (esRecogida ? PREFIJO_RECOGIDA : PREFIJO_ENTREGA) + pedido.ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>«NR930123-2».</summary>
+        public static string BultoRecogida(int pedido, int bulto)
+            => Documento(true, pedido) + "-" + bulto.ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// «nr930123-2 » → (NR, 930123, 2); «NE930123» → (NE, 930123, null). False si no tiene esa forma (las entregas no tienen
+        /// bultos con código: «NE930123-1» no vale).
+        /// </summary>
+        public static bool TryLeer(string codigo, out string prefijo, out int pedido, out int? bulto)
+        {
+            prefijo = null;
+            pedido = 0;
+            bulto = null;
+            Match m = formato.Match(codigo?.Trim() ?? string.Empty);
+            if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out pedido) || pedido <= 0)
+            {
+                pedido = 0;
+                return false;
+            }
+            prefijo = m.Groups[1].Value.ToUpperInvariant();
+            if (m.Groups[3].Success)
+            {
+                if (prefijo != PREFIJO_RECOGIDA
+                    || !int.TryParse(m.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) || n <= 0)
+                {
+                    prefijo = null;
+                    pedido = 0;
+                    return false;
+                }
+                bulto = n;
+            }
+            return true;
+        }
+    }
 }
