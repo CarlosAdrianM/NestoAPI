@@ -301,8 +301,14 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                    $"Le enviamos {documento} {numero?.Trim()}{cuanto}. Puede descargar{(esPedido ? "lo" : "la")} en PDF desde este enlace:\n" +
                    $"{url}\n\n" +
                    $"El enlace estará disponible hasta el {caduca.ToString("dd/MM/yyyy", Espanol)}.\n\n" +
+                   $"Puede descargar nuestra app para Android, con sus pedidos y facturas:\n{EnlaceApp(esPedido)}\n\n" +
                    "Un saludo,\nNueva Visión";
         }
+
+        /// <summary>La ficha de TNV en Google Play con el referrer de la campaña (Play Console y Firebase la atribuyen).</summary>
+        internal static string EnlaceApp(bool esPedido)
+            => "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas&referrer=utm_source%3Dwhatsapp%26utm_medium%3Dmensaje%26utm_campaign%3D"
+               + (esPedido ? "envio_pedido" : "envio_factura");
 
         internal static string Saludo(DateTime ahora)
             => ahora.Hour < 14 ? "Buenos días" : ahora.Hour < 21 ? "Buenas tardes" : "Buenas noches";

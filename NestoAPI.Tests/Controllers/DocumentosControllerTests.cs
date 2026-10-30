@@ -165,6 +165,7 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.StartsWith(texto, "Buenos días, Peluquería Ana:");
             StringAssert.Contains(texto, "Le enviamos su pedido 929498, de 1.234,56 €. Puede descargarlo en PDF desde este enlace:\nhttps://api.nuevavision.es/d/x");
             StringAssert.Contains(texto, "El enlace estará disponible hasta el 29/11/2026.");
+            StringAssert.Contains(texto, "Puede descargar nuestra app para Android, con sus pedidos y facturas:\nhttps://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas&referrer=utm_source%3Dwhatsapp%26utm_medium%3Dmensaje%26utm_campaign%3Denvio_pedido");
             StringAssert.EndsWith(texto, "Un saludo,\nNueva Visión");
             Assert.IsFalse(texto.Contains(" tu ") || texto.Contains("Te "), "de usted, nunca de tú");
         }
@@ -177,6 +178,7 @@ namespace NestoAPI.Tests.Controllers
 
             StringAssert.StartsWith(texto, "Buenas tardes:");
             StringAssert.Contains(texto, "Le enviamos su factura NV2616199, de 50,00 €. Puede descargarla en PDF");
+            StringAssert.Contains(texto, "utm_campaign%3Denvio_factura");
         }
 
         // ===================================================================== móviles y token
