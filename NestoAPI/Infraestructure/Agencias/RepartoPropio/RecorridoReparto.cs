@@ -22,7 +22,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
     /// <summary>
     /// NestoAPI#767: un motor de rutas. Recorrido ABIERTO con los dos extremos fijos: sale de <c>origen</c> (la posición de la PDA,
-    /// o Algete) y termina en <c>destino</c> (siempre el almacén de Algete: la furgoneta vuelve). Así, si recalcula a media ruta,
+    /// o Algete) y termina en <c>destino</c> (el almacén de Algete por defecto, o el punto final que elija el repartidor, p. ej. su casa). Así, si recalcula a media ruta,
     /// no deja para el final la parada más lejana de Algete.
     /// </summary>
     public interface IMotorRutas
@@ -33,7 +33,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
     /// <summary>
     /// NestoAPI#767: OSRM <c>/trip</c> del servidor público (router.project-osrm.org, perfil coche) con
-    /// <c>roundtrip=false&amp;source=first&amp;destination=last</c> (origen primero, Algete último). Con un tope de
+    /// <c>roundtrip=false&amp;source=first&amp;destination=last</c> (origen primero, destino último). Con un tope de
     /// <see cref="TIMEOUT"/>: la PDA está esperando. El servidor de demostración no admite más de 100 puntos por petición.
     /// </summary>
     public class MotorRutasOsrm : IMotorRutas
