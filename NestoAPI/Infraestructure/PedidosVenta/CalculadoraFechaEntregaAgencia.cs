@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Reposiciones;
+﻿using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
@@ -55,6 +55,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Modo de facturación EFECTIVO (<see cref="Constantes.Pedidos.ModosFacturacion"/>).</summary>
         public byte ModoFacturacion { get; set; } = Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS;
         public string Ruta { get; set; }
+        /// <summary>
+        /// NestoAPI#764: el día de reparto del pedido por nuestra ruta (<see cref="DiasRepartoCodigosPostales.DiaRutaInterna"/>):
+        /// solo sale ese día (si es festivo, el siguiente laborable) y se entrega el mismo día. Null = como siempre.
+        /// </summary>
+        public DayOfWeek? DiaRutaInterna { get; set; }
         /// <summary>Clientes.DiasEnServir ("11111"): el picking no saca un pedido cuya entrega cae en un día que cierra (#362).</summary>
         public string DiasEnServir { get; set; }
         /// <summary>El pedido ya tuvo alguna entrega (en el modo 4, lo que queda va de una vez).</summary>
@@ -209,8 +214,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     continue;
                 }
 
+                // NestoAPI#764: por nuestra ruta con día de reparto, solo sale el día de su ruta y se entrega ese mismo día.
+                if (entrada.DiaRutaInterna.HasValue && !CalendarioRutasDia.EsDiaDeReparto(entrada.DiaRutaInterna.Value, dia, f => !EsLaborable(f)))
+                {
+                    continue;
+                }
+
                 // #362: si la entrega (el laborable siguiente a la salida) cae en un día que el cliente cierra, no sale.
-                DateTime diaEntrega = GestorDiasEnServir.CalcularDiaEntrega(dia, f => !EsLaborable(f));
+                DateTime diaEntrega = entrada.DiaRutaInterna.HasValue ? dia : GestorDiasEnServir.CalcularDiaEntrega(dia, f => !EsLaborable(f));
                 if (!GestorDiasEnServir.EstaAbierto(entrada.DiasEnServir, diaEntrega))
                 {
                     diasCerrados.Add(diaEntrega);
@@ -369,7 +380,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 DateTime fechaLinea = linea.FechaEntrega.HasValue && linea.FechaEntrega.Value > DateTime.MinValue ? linea.FechaEntrega.Value : hoy;
                 DateTime elegible = GestorPedidosVenta.FechaEntregaAjustada(fechaLinea, entrada.Ruta, Constantes.Almacenes.ALGETE,
-                    entrada.Ahora, entrada.HoraCorte, esFestivo);
+                    entrada.Ahora, entrada.HoraCorte, esFestivo, entrada.DiaRutaInterna);
                 bool regalo = linea.BaseImponible == 0;
                 string producto = linea.Producto?.Trim();
 
@@ -494,31 +505,46 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             var frases = new List<string>();
             DateTime hoy = entrada.Ahora.Date;
+            // NestoAPI#764: con día de reparto no va a la agencia: lo reparte nuestra ruta el mismo día en que se prepara
+            string destino = entrada.DiaRutaInterna.HasValue ? "por nuestra ruta" : "a la agencia";
             if (resultado.PrimeraEntrega.HasValue && resultado.EntregaCompleta == resultado.PrimeraEntrega)
             {
-                frases.Add($"Sale entero a la agencia el {Dia(resultado.PrimeraEntrega.Value, hoy)}.");
+                frases.Add($"Sale entero {destino} el {Dia(resultado.PrimeraEntrega.Value, hoy)}.");
             }
             else if (resultado.PrimeraEntrega.HasValue)
             {
-                frases.Add($"Primera entrega a la agencia el {Dia(resultado.PrimeraEntrega.Value, hoy)}; " +
+                frases.Add($"Primera entrega {destino} el {Dia(resultado.PrimeraEntrega.Value, hoy)}; " +
                     (resultado.EntregaCompleta.HasValue
                         ? $"entrega completa el {Dia(resultado.EntregaCompleta.Value, hoy)} ({resultado.Entregas.Count} entregas)."
                         : "la entrega completa no tiene fecha."));
             }
             else
             {
-                frases.Add("Sin fecha de entrega a la agencia.");
+                frases.Add(entrada.DiaRutaInterna.HasValue ? "Sin fecha de reparto por nuestra ruta." : "Sin fecha de entrega a la agencia.");
+            }
+            if (entrada.DiaRutaInterna.HasValue)
+            {
+                frases.Add($"Por nuestra ruta, su código postal se reparte {CalendarioRutasDia.NombrePlural(entrada.DiaRutaInterna.Value)} " +
+                    "(si es festivo, el siguiente laborable) y se prepara ese mismo día.");
             }
 
             frases.Add($"Modo «{Constantes.Pedidos.ModosServicio.Nombre(entrada.ModoServicio)}»: {ExplicacionModo(entrada.ModoServicio)}");
 
             DateTime primerPicking = GestorPedidosVenta.FechaEntregaAjustada(hoy, entrada.Ruta, Constantes.Almacenes.ALGETE, entrada.Ahora,
-                entrada.HoraCorte, esFestivo);
+                entrada.HoraCorte, esFestivo, entrada.DiaRutaInterna);
             List<Lote> porSalir = lotes.Where(l => !l.YaEnPicking).ToList();
             DateTime? primeraElegible = porSalir.Any() ? porSalir.Min(l => l.Elegible) : (DateTime?)null;
             if (primeraElegible.HasValue && primeraElegible.Value > primerPicking)
             {
                 frases.Add($"Tiene fecha de entrega el {Dia(primeraElegible.Value, hoy)}: no entra en el picking hasta ese día.");
+            }
+            else if (primeraElegible.HasValue && primerPicking > hoy && entrada.DiaRutaInterna.HasValue)
+            {
+                // NestoAPI#764: hoy le tocaba pero ya pasó el corte de nuestra ruta → su próximo día; otro día → su próximo día
+                bool hoyLeToca = CalendarioRutasDia.EsDiaDeReparto(entrada.DiaRutaInterna.Value, hoy, d => !EsLaborable(d));
+                frases.Add(hoyLeToca
+                    ? $"Pasada la hora de corte de nuestra ruta ({CalendarioRutasDia.HORA_CORTE:hh\\:mm}), ya no sale hoy: el próximo reparto es el {Dia(primerPicking, hoy)}."
+                    : $"El próximo reparto de nuestra ruta es el {Dia(primerPicking, hoy)}.");
             }
             else if (primeraElegible.HasValue && primerPicking > hoy)
             {
