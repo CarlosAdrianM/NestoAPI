@@ -743,6 +743,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReposicion.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
