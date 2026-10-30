@@ -152,6 +152,13 @@ namespace NestoAPI.Models.PedidosVenta
         public List<string> AvisosCursos { get; set; }
 
         /// <summary>
+        /// NestoAPI#764: solo en la respuesta del POST. Avisos NO bloqueantes del pedido recién grabado, con la misma forma que los
+        /// del PUT (RespuestaModificacionPedidoDTO.Avisos), p. ej. «ClienteCierraDiaReparto». Null si no hay ninguno.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<AvisoPedidoDTO> AvisosGrabacion { get; set; }
+
+        /// <summary>
         /// Sugerencia 899 (Nesto pregunta al grabar): si se le manda a la clienta el correo de sus cursos (con el enlace de tarjeta,
         /// los datos de la transferencia o «páguela en su tienda», según la forma de pago del pedido). Null = sí, como hasta ahora
         /// (NestoApp y TNV no lo mandan); false = no se manda nada.

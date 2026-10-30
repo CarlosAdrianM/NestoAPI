@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PedidosCompra;
+﻿using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Infraestructure.Stocks;
 using NestoAPI.Models;
@@ -23,6 +23,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public byte? ModoFacturacion { get; set; }
         public bool MantenerJunto { get; set; }
         public string DiasEnServir { get; set; }
+        /// <summary>NestoAPI#764: el código postal de entrega (el del contacto del pedido), para el día de reparto de nuestra ruta.</summary>
+        public string CodigoPostal { get; set; }
         /// <summary>Alguna línea ya en albarán o factura.</summary>
         public bool TieneLineasServidas { get; set; }
         /// <summary>Las líneas de producto pendientes (-1 y 1), en el orden del picking.</summary>
@@ -35,6 +37,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Null si el pedido no existe.</summary>
         Task<PedidoFechaEntregaAgencia> LeerPedido(string empresa, int numero);
         Task<string> LeerDiasEnServir(string empresa, string cliente, string contacto);
+        /// <summary>NestoAPI#764: el código postal del contacto (el principal o el primero si no está), o null.</summary>
+        Task<string> LeerCodigoPostal(string empresa, string cliente, string contacto);
         /// <summary>Stock de los productos, con los pendientes SIN las líneas de <paramref name="pedidoExcluir"/>.</summary>
         DatosSombraModoServicio LeerStock(string empresa, int? pedidoExcluir, IEnumerable<string> productos);
         Task<List<ReposicionCalendario>> LeerCalendario(string empresa);
@@ -125,7 +129,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             FechaEntregaAgenciaDTO dto = await Calcular(empresaLimpia, numero, pedido.Ruta,
                 Constantes.Pedidos.ModosServicio.Efectivo(pedido.ModoServicio, pedido.ServirJunto),
                 Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.ModoFacturacion, pedido.MantenerJunto),
-                pedido.DiasEnServir, pedido.TieneLineasServidas, pedido.Lineas, $"el pedido {numero}").ConfigureAwait(false);
+                pedido.DiasEnServir, pedido.TieneLineasServidas, pedido.Lineas, $"el pedido {numero}", pedido.CodigoPostal).ConfigureAwait(false);
             dto.FechaPrometida = await repositorio.LeerPrometida(empresaLimpia, numero).ConfigureAwait(false);
             return (dto, pedido);
         }
@@ -164,8 +168,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             byte modoFacturacion = pedido.modoFacturacion.HasValue && Constantes.Pedidos.ModosFacturacion.EsValido(pedido.modoFacturacion.Value)
                 ? pedido.modoFacturacion.Value
                 : Constantes.Pedidos.ModosFacturacion.Efectivo(null, pedido.mantenerJunto);
+            // NestoAPI#764: el código postal solo hace falta si va por ruta interna (día de reparto)
+            string codigoPostal = string.IsNullOrWhiteSpace(pedido.cliente) || !DiasRepartoCodigosPostales.PuedeTenerDia(pedido.ruta)
+                ? null
+                : await repositorio.LeerCodigoPostal(empresa, pedido.cliente.Trim(), pedido.contacto?.Trim()).ConfigureAwait(false);
             return await Calcular(empresa, pedido.numero > 0 ? pedido.numero : (int?)null, pedido.ruta, modoServicio, modoFacturacion,
-                diasEnServir, tieneLineasServidas, lineas, QuienEspera(pedido)).ConfigureAwait(false);
+                diasEnServir, tieneLineasServidas, lineas, QuienEspera(pedido), codigoPostal).ConfigureAwait(false);
         }
 
         public async Task<DateTime?> GuardarPrometidaAlCrear(string empresa, int numero)
@@ -340,7 +348,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         private async Task<FechaEntregaAgenciaDTO> Calcular(string empresa, int? pedidoExcluir, string ruta, byte modoServicio, byte modoFacturacion,
-            string diasEnServir, bool tieneLineasServidas, List<LineaPedidoFechaEntregaAgencia> lineas, string quienEspera)
+            string diasEnServir, bool tieneLineasServidas, List<LineaPedidoFechaEntregaAgencia> lineas, string quienEspera, string codigoPostal)
         {
             DateTime ahora = reloj();
             List<LineaPedidoFechaEntregaAgencia> deAlgete = (lineas ?? new List<LineaPedidoFechaEntregaAgencia>())
@@ -377,6 +385,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ModoServicio = modoServicio,
                 ModoFacturacion = modoFacturacion,
                 Ruta = ruta?.Trim(),
+                DiaRutaInterna = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal),
                 DiasEnServir = diasEnServir,
                 TieneLineasServidas = tieneLineasServidas,
                 Ahora = ahora,

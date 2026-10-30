@@ -57,6 +57,8 @@ namespace NestoAPI
 
                 // NestoAPI#758: las rutas propias (AT, 16 y las que se añadan) salen del parámetro RutasRepartoPropio de la BD.
                 Models.Facturas.RutasPropiasConfiguradas.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // NestoAPI#764: el día de reparto de nuestra ruta por código postal (tabla CodigosPostalesDiaReparto).
+                Infraestructure.PedidosVenta.DiasRepartoCodigosPostales.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
 
                 _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 
@@ -465,6 +467,19 @@ namespace NestoAPI
         /// El arreglo de fondo sería subir el targetFramework a 4.8, pero eso cambia muchos
         /// comportamientos de ASP.NET y merece su propio cambio.
         /// </summary>
+        /// <summary>NestoAPI#764: la hora de España peninsular (Romance Standard Time); si el servidor no la tuviera, la local.</summary>
+        internal static TimeZoneInfo ZonaHorariaPeninsular()
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time");
+            }
+            catch (Exception)
+            {
+                return TimeZoneInfo.Local;
+            }
+        }
+
         internal static void ConfigurarTlsDelProceso()
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
@@ -786,6 +801,21 @@ namespace NestoAPI
             );
 
             Console.WriteLine("✅ Job recurrente 'picking-cierre-diario' configurado (L-V a las 11:00)");
+
+            // NestoAPI#764: picking automático de las rutas internas (AT/16, las de RutasRepartoPropio) a las 9:00, con la forma
+            // del de cierre de arriba. De los pedidos con día de reparto por código postal, solo los que tocan hoy. Nace APAGADO:
+            // interruptor PickingAutomaticoRutasInternas = "1" bajo «(defecto)» (Scripts/Issue764_PickingRutasInternas.sql);
+            // solo laborables de Algete. El cron sale de la hora de corte de las rutas internas (CalendarioRutasDia.HORA_CORTE).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Picking.PickingRutasInternasJobsService.JOB_ID,
+                () => Infraestructure.Picking.PickingRutasInternasJobsService.SacarPickingRutasInternasJob(),
+                Infraestructure.PedidosVenta.CalendarioRutasDia.CRON_PICKING, // Cron: de lunes a viernes a las 9:00
+                new RecurringJobOptions
+                {
+                    TimeZone = ZonaHorariaPeninsular()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'picking-rutas-internas' configurado (L-V a las 9:00, apagado salvo interruptor)");
 
             // NestoAPI#577 (corte 3b): las reposiciones se rellenan solas a la hora de cierre de su fila del calendario
             // (ReposicionesCalendario, lo mantiene Almacén). Como el picking de cierre (#361), el corte es un DATO: cada

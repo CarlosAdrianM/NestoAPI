@@ -394,16 +394,19 @@ namespace NestoAPI.Controllers
                     .GroupBy(e => e.Pedido.Value)
                     .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.Numero).First().CodigoBarras);
 
-            // La fecha ajustada depende de la ruta (y de la hora): una por ruta distinta.
+            // La fecha ajustada depende de la ruta (y de la hora): una por ruta distinta. NestoAPI#764: y, en las rutas
+            // internas, del código postal de entrega (su día de reparto).
             Dictionary<string, DateTime> fechaAjustadaPorRuta = new Dictionary<string, DateTime>();
 
             return lista.Select(g =>
             {
                 string ruta = g.Ruta?.Trim() ?? string.Empty;
-                if (!fechaAjustadaPorRuta.TryGetValue(ruta, out DateTime fechaEntregaFutura))
+                string codigoPostalRuta = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, g.CodPostal).HasValue ? g.CodPostal?.Trim() : null;
+                string claveFecha = codigoPostalRuta == null ? ruta : $"{ruta}|{codigoPostalRuta}";
+                if (!fechaAjustadaPorRuta.TryGetValue(claveFecha, out DateTime fechaEntregaFutura))
                 {
-                    fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, ruta);
-                    fechaAjustadaPorRuta[ruta] = fechaEntregaFutura;
+                    fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, ruta, string.Empty, codigoPostalRuta);
+                    fechaAjustadaPorRuta[claveFecha] = fechaEntregaFutura;
                 }
                 return new ResumenPedidoVentaDTO
                 {
@@ -476,7 +479,7 @@ namespace NestoAPI.Controllers
 
             foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
             {
-                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
+                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta, string.Empty, cab.codPostal); // NestoAPI#764
                 cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
             }
 
@@ -1145,6 +1148,8 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+            // NestoAPI#764: el código postal de entrega, solo si el pedido va por ruta interna (para su día de reparto)
+            string codigoPostalRutaInterna = this.gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta);
             // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae
             string sinSuPedido = await MotivoSuPedidoObligatorio(pedido);
             if (sinSuPedido != null)
@@ -1587,7 +1592,7 @@ namespace NestoAPI.Controllers
                         {
                             errorPersonalizado(Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.MensajeRechazo(pedido.numero, envioEnAgencia));
                         }
-                        DateTime fechaNueva = this.gestor.FechaEntregaAjustada(lineaEncontrada.fechaEntrega.Date, pedido.ruta, linea.Almacén);
+                        DateTime fechaNueva = this.gestor.FechaEntregaAjustada(lineaEncontrada.fechaEntrega.Date, pedido.ruta, linea.Almacén, codigoPostalRutaInterna);
                         lineasAplazadas.Add(new Infraestructure.PedidosVenta.Retencion.LineaAplazable
                         {
                             NumeroOrden = linea.Nº_Orden,
@@ -1608,7 +1613,7 @@ namespace NestoAPI.Controllers
 
                 if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))
                 {
-                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén)))
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna)))
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
@@ -1700,7 +1705,7 @@ namespace NestoAPI.Controllers
                     if (modificado)
                     {
                         hayAlgunaLineaModificada = true;
-                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén)))
+                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna)))
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
                         }
@@ -2356,6 +2361,13 @@ namespace NestoAPI.Controllers
                 avisos.Add(avisoFueraDeFactura);
             }
 
+            // NestoAPI#764: va por ruta interna y el cliente cierra justo su día de reparto (no bloquea; nunca lanza)
+            AvisoPedidoDTO avisoCierreDiaReparto = AvisoCierreDiaReparto(pedido, codigoPostalRutaInterna);
+            if (avisoCierreDiaReparto != null)
+            {
+                avisos.Add(avisoCierreDiaReparto);
+            }
+
             if (avisos.Count > 0)
             {
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
@@ -2386,7 +2398,9 @@ namespace NestoAPI.Controllers
         public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
         {
             TimeSpan horaCorte = Models.Picking.HoraCortePicking.Leer(pedido.empresa);
-            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen) <= DateTime.Today && DateTime.Now.TimeOfDay >= horaCorte)
+            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen,
+                    gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta)) <= DateTime.Today
+                && DateTime.Now.TimeOfDay >= horaCorte)
             {
                 errorPersonalizado("No se pueden insertar líneas porque son más de las " + horaCorte.ToString(@"hh\:mm") + " y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
             }
@@ -3082,8 +3096,45 @@ namespace NestoAPI.Controllers
                 Infraestructure.PedidosVenta.Anomalias.OperacionesAnomalia.CREAR, pedido, null, respuestaValidacion,
                 Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
 
+            // NestoAPI#764: va por ruta interna y el cliente cierra justo su día de reparto (no bloquea; nunca lanza)
+            AvisoPedidoDTO avisoCierreDiaReparto = AvisoCierreDiaReparto(pedido,
+                this.gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta));
+            if (avisoCierreDiaReparto != null)
+            {
+                pedido.AvisosGrabacion = new List<AvisoPedidoDTO> { avisoCierreDiaReparto };
+            }
+
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
+        }
+
+        /// <summary>NestoAPI#764: los días de servir del contacto del pedido. Sustituible en los tests.</summary>
+        internal Func<string, string, string, string> LeerDiasEnServirContacto { get; set; }
+
+        /// <summary>
+        /// NestoAPI#764: el aviso «El cliente cierra el martes, que es su día de reparto por nuestra ruta…» si el pedido va por
+        /// ruta interna, su código postal tiene día de reparto y el cliente cierra ese día; si no, null. Nunca lanza: un fallo
+        /// aquí no puede tumbar la grabación del pedido.
+        /// </summary>
+        internal AvisoPedidoDTO AvisoCierreDiaReparto(PedidoVentaDTO pedido, string codigoPostal)
+        {
+            try
+            {
+                if (pedido == null || !DiasRepartoCodigosPostales.DiaRutaInterna(pedido.ruta, codigoPostal).HasValue)
+                {
+                    return null;
+                }
+                Func<string, string, string, string> leer = LeerDiasEnServirContacto ?? ((empresa, cliente, contacto) => db.Clientes
+                    .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)
+                    .Select(c => c.DiasEnServir)
+                    .FirstOrDefault());
+                return AvisoClienteCierraDiaReparto.Crear(pedido.ruta, codigoPostal, leer(pedido.empresa, pedido.cliente, pedido.contacto));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#764: no se ha podido comprobar si el cliente del pedido {pedido?.numero} cierra su día de reparto: {ex.Message}", ex));
+                return null;
+            }
         }
 
         // DELETE: api/PedidosVenta?empresa=1&numero=5[&anularInscripcionesEventos=true]
@@ -3266,9 +3317,10 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [ResponseType(typeof(DateTime))]
         [Route("api/PedidosVenta/FechaAjustada")]
-        public IHttpActionResult CalcularFechaEntrega(DateTime fecha, string ruta, string almacen)
+        public IHttpActionResult CalcularFechaEntrega(DateTime fecha, string ruta, string almacen, string codigoPostal = null)
         {
-            var fechaAjustada = gestor.FechaEntregaAjustada(fecha, ruta, almacen);
+            // NestoAPI#764: con el código postal de entrega (opcional), las rutas internas dan el próximo día de su reparto
+            var fechaAjustada = gestor.FechaEntregaAjustada(fecha, ruta, almacen, codigoPostal);
             return Ok(fechaAjustada);
         }
 

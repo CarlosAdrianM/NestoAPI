@@ -17,6 +17,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         bool EsSobrePedido(string producto, short cantidad);
         CabPedidoVta LeerCabPedidoVta(string empresa, int pedido);
         DescuentosCliente LeerDescuentoCliente(string empresa, string cliente, string contacto);
+        /// <summary>NestoAPI#764: el código postal de entrega del pedido (el del contacto en Clientes), recortado; null si no está.</summary>
+        string LeerCodigoPostalEntrega(string empresa, string cliente, string contacto);
         Empresa LeerEmpresa(string empresa);
         Inmovilizado LeerInmovilizado(string empresa, string inmovilizado);
         ParametroIVA LeerParametroIVA(string empresa, string ivaClienteProveedor, string ivaProducto);
