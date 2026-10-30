@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
@@ -362,7 +362,7 @@ namespace NestoAPI.Controllers
         /// </summary>
         /// <remarks>
         /// PERMISOS REQUERIDOS: Administración, Dirección o Informática. Detrás de Facturacion:FinDeMesPorApi (apagado: 400).
-        /// Body: { Empresa, FechaCorte (yyyy-MM-dd; por defecto el último día del mes anterior), Cliente?, Contacto? }.
+        /// Body: { Empresa, FechaCorte (yyyy-MM-dd; por defecto HOY: entran todos los albaranes, no puede haberlos con fecha futura), Cliente?, Contacto? }.
         /// </remarks>
         [HttpPost]
         [Route("FinDeMes")]
@@ -385,7 +385,9 @@ namespace NestoAPI.Controllers
             DateTime fechaCorte;
             if (string.IsNullOrWhiteSpace(request.FechaCorte))
             {
-                fechaCorte = new DateTime(hoy.Year, hoy.Month, 1).AddDays(-1);
+                // Carlos 30/10/26: el fin de mes se hace el último día laborable y entran TODOS los albaranes (no puede
+                // haberlos con fecha futura). Antes era el último día del mes anterior y había que cambiarlo a mano.
+                fechaCorte = hoy;
             }
             else if (!DateTime.TryParseExact(request.FechaCorte.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out fechaCorte))
             {

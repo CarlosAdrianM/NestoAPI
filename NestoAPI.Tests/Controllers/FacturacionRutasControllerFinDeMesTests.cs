@@ -69,14 +69,15 @@ namespace NestoAPI.Tests.Controllers
         [DataRow(Constantes.GruposSeguridad.ADMINISTRACION)]
         [DataRow(Constantes.GruposSeguridad.DIRECCION)]
         [DataRow(Constantes.GruposSeguridad.INFORMATICA)]
-        public async Task FinDeMes_SinFecha_CortaElUltimoDiaDelMesAnteriorYDevuelveElResultado(string grupo)
+        public async Task FinDeMes_SinFecha_CortaHoy_EntranTodosLosAlbaranes(string grupo)
         {
+            // Carlos 30/10/26: sin fecha de corte entran todos los albaranes (hasta hoy); antes era el último día del mes anterior
             FacturacionRutasController controller = Controlador(grupo);
 
             var resultado = await controller.FacturarFinDeMes(new FacturarFinDeMesRequestDTO());
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ResultadoFacturacionFinDeMes>));
-            A.CallTo(() => servicioFinDeMes.Facturar(Constantes.Empresas.EMPRESA_POR_DEFECTO, new DateTime(2026, 10, 31), null, null, "NUEVAVISION\\Test"))
+            A.CallTo(() => servicioFinDeMes.Facturar(Constantes.Empresas.EMPRESA_POR_DEFECTO, new DateTime(2026, 11, 3), null, null, "NUEVAVISION\\Test"))
                 .MustHaveHappenedOnceExactly();
         }
 
