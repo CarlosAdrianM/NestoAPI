@@ -882,6 +882,7 @@
     <Compile Include="Infrastructure\Pagos\PoliticaImporteMinimoEfectoTests.cs" />
     <Compile Include="Infrastructure\ServicioFacturasCrearFacturaTests.cs" />
     <Compile Include="Controllers\AnularModificarEnvioTests.cs" />
+    <Compile Include="Controllers\EnlaceSeguimientoEnvioTests.cs" />
     <Compile Include="Controllers\PutEnviosAgenciaReembolsoTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaResolverGrupoTests.cs" />
     <Compile Include="Infrastructure\Verifactu\MapeadorFacturaVerifactuTests.cs" />

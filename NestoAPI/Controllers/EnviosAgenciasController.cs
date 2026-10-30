@@ -179,6 +179,14 @@ namespace NestoAPI.Controllers
         public DateTime FechaRetornoRecibido { get; set; }
     }
 
+    /// <summary>NestoAPI#748: respuesta de GET EnviosAgencias/{id}/EnlaceSeguimiento.</summary>
+    public class EnlaceSeguimientoEnvioDTO
+    {
+        public int Numero { get; set; }
+        /// <summary>Null si el envío no tiene enlace de seguimiento.</summary>
+        public string Url { get; set; }
+    }
+
     /// <summary>NestoAPI#676: cuerpo de POST EnviosAgencias/{id}/DarPorCerrado.</summary>
     public class DarPorCerradoEnvioDTO
     {
@@ -721,6 +729,30 @@ namespace NestoAPI.Controllers
                 })
                 .ToListAsync();
             return Ok(historia);
+        }
+
+        /// <summary>
+        /// NestoAPI#748: el enlace de seguimiento de un envío, para el botón «Abrir seguimiento» de Nesto. El del reparto
+        /// propio (NestoAPI#744) va firmado con una clave que solo tiene la API, así que el cliente no puede calcularlo.
+        /// Sirve para cualquier agencia. Url = null si no hay enlace (sin albarán, agencia sin seguimiento o sin clave);
+        /// 404 si el envío no existe.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/{id:int}/EnlaceSeguimiento")]
+        [ResponseType(typeof(EnlaceSeguimientoEnvioDTO))]
+        public async Task<IHttpActionResult> GetEnlaceSeguimiento(int id)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+            AgenciaTransporte agencia = envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+                ? null // no hace falta: se firma el número del envío
+                : await db.AgenciasTransportes.FindAsync(envio.Agencia);
+            string url = RegistroSeguimientoAgencias.UrlDeEnvio(envio.Numero, envio.Agencia, agencia?.Nombre,
+                agencia?.Identificador, envio.CodigoBarras, envio.CodPostal, envio.Cliente, envio.Pedido ?? 0);
+            return Ok(new EnlaceSeguimientoEnvioDTO { Numero = envio.Numero, Url = url });
         }
 
         /// <summary>Retornos pendientes de recibir (excluyendo el tipo "sin retorno" de cada
