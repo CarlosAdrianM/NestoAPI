@@ -254,6 +254,8 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioLecturasRecepcion, Infraestructure.PreparacionAlmacen.ServicioLecturasRecepcion>();
             // NestoAPI#762: lo que llega sin etiqueta a una reposición (se recibe solo escaneando): aviso al origen y a Compras
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorSinEtiqueta, Infraestructure.PreparacionAlmacen.AvisadorSinEtiqueta>();
+            // Revisión 30/10: «Sin etiqueta» idempotente con ClaveIdempotencia (en Modificaciones, sin script de BD)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioIdempotenciaSinEtiqueta, Infraestructure.PreparacionAlmacen.RepositorioIdempotenciaSinEtiqueta>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioSinEtiquetaRecepcion, Infraestructure.PreparacionAlmacen.ServicioSinEtiquetaRecepcion>();
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());

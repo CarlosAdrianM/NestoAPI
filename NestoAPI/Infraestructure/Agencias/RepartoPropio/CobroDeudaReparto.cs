@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -41,6 +41,57 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public string Caja { get; set; }
         /// <summary>Lo que conviene saber (p. ej. un efecto que ya no estaba pendiente). Null si nada.</summary>
         public string Aviso { get; set; }
+    }
+
+    /// <summary>
+    /// Lo que se apunta en <c>Modificaciones.Nuevo</c> del cobro (revisión 30/10): el resultado (lo que se devuelve a un reintento,
+    /// por eso hereda de <see cref="ResultadoCobroDeudaDTO"/> y el JSON sigue siendo compatible) más quién, a quién y qué efectos.
+    /// <c>Modificaciones.Usuario</c> es Computed en el EDMX (lo pone la BD), así que el usuario tiene que ir aquí.
+    /// </summary>
+    public class AuditoriaCobroDeuda : ResultadoCobroDeudaDTO
+    {
+        public string Usuario { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        /// <summary>Los efectos que se han pagado (los que seguían pendientes).</summary>
+        public List<EfectoCobradoAuditoria> EfectosCobrados { get; set; } = new List<EfectoCobradoAuditoria>();
+        /// <summary>Los Nº Orden que se pidieron pero ya no estaban pendientes (lo suyo quedó a cuenta).</summary>
+        public List<int> EfectosNoPendientes { get; set; } = new List<int>();
+
+        public static AuditoriaCobroDeuda De(ResultadoCobroDeudaDTO resultado, string usuario, string cliente, string contacto,
+            IEnumerable<EfectoCobroReparto> cobrados, IEnumerable<int> noPendientes)
+        {
+            return new AuditoriaCobroDeuda
+            {
+                Asiento = resultado.Asiento,
+                Importe = resultado.Importe,
+                ImporteACuenta = resultado.ImporteACuenta,
+                Efectos = resultado.Efectos,
+                Caja = resultado.Caja,
+                Aviso = resultado.Aviso,
+                Usuario = usuario,
+                Cliente = cliente,
+                Contacto = contacto,
+                EfectosCobrados = (cobrados ?? Enumerable.Empty<EfectoCobroReparto>()).Select(e => new EfectoCobradoAuditoria
+                {
+                    Id = e.Id,
+                    Empresa = e.Empresa?.Trim(),
+                    Documento = e.Documento?.Trim(),
+                    Efecto = e.Efecto?.Trim(),
+                    ImportePendiente = e.ImportePendiente
+                }).ToList(),
+                EfectosNoPendientes = (noPendientes ?? Enumerable.Empty<int>()).ToList()
+            };
+        }
+    }
+
+    public class EfectoCobradoAuditoria
+    {
+        public int Id { get; set; }
+        public string Empresa { get; set; }
+        public string Documento { get; set; }
+        public string Efecto { get; set; }
+        public decimal ImportePendiente { get; set; }
     }
 
     /// <summary>Un efecto de ExtractoCliente, con lo que hace falta para pagarlo.</summary>
@@ -360,7 +411,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             };
             try
             {
-                resultado.Asiento = await repositorio.Registrar(peticion.ClaveIdempotencia, usuario, apuntes.Lineas, resultado).ConfigureAwait(false);
+                AuditoriaCobroDeuda auditoria = AuditoriaCobroDeuda.De(resultado, usuario, cliente, contacto, pendientes, yaNoPendientes);
+                resultado.Asiento = await repositorio.Registrar(peticion.ClaveIdempotencia, usuario, apuntes.Lineas, auditoria).ConfigureAwait(false);
             }
             catch (ClaveIdempotenciaRepetidaException)
             {
@@ -457,8 +509,16 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .ToListAsync();
         }
 
+        /// <summary>El JSON de <c>Modificaciones.Nuevo</c>: el resultado con la auditoría si llega (y siempre el usuario).</summary>
+        internal static string TextoNuevo(ResultadoCobroDeudaDTO resultado)
+            => JsonConvert.SerializeObject(resultado);
+
         public async Task<int> Registrar(Guid clave, string usuario, List<PreContabilidad> lineas, ResultadoCobroDeudaDTO resultado)
         {
+            if (!(resultado is AuditoriaCobroDeuda))
+            {
+                resultado = AuditoriaCobroDeuda.De(resultado, usuario, null, null, null, null);
+            }
             string texto = clave.ToString("D", CultureInfo.InvariantCulture);
             db.Database.CommandTimeout = 120;
             using (DbContextTransaction transaccion = db.Database.BeginTransaction())
@@ -499,7 +559,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     {
                         Tabla = TABLA_MODIFICACIONES,
                         Anterior = texto,
-                        Nuevo = JsonConvert.SerializeObject(resultado),
+                        Nuevo = TextoNuevo(resultado),
+                        // Computed en el EDMX: EF no lo graba (lo pone la BD). El usuario va en Nuevo (AuditoriaCobroDeuda).
                         Usuario = usuario != null && usuario.Length > 50 ? usuario.Substring(0, 50) : usuario,
                         Fecha = DateTime.Now
                     });

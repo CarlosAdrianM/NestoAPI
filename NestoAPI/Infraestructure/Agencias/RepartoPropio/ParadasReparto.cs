@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -238,6 +238,13 @@ IF @@ROWCOUNT = 0 AND NOT EXISTS (SELECT 1 FROM dbo." + TABLA + @" WITH (UPDLOCK
     INSERT INTO dbo." + TABLA + @" (ParadaId, Orden, Usuario, FechaHora, FechaRegistro) VALUES (@Id, @Orden, @Usuario, @FechaHora, GETDATE());
 SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = @Id AND FechaHora = @FechaHora AND Orden = @Orden) THEN 1 ELSE 0 END AS bit);";
 
+        /// <summary>El reintento tras perder la carrera del INSERT: la fila ya existe, solo queda el UPDATE (último gana por FechaHora).</summary>
+        private const string SQL_ACTUALIZAR = @"
+SET NOCOUNT ON;
+UPDATE dbo." + TABLA + @" SET Orden = @Orden, Usuario = @Usuario, FechaHora = @FechaHora, FechaRegistro = GETDATE()
+WHERE ParadaId = @Id AND FechaHora <= @FechaHora;
+SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = @Id AND FechaHora = @FechaHora AND Orden = @Orden) THEN 1 ELSE 0 END AS bit);";
+
         private readonly NVEntities db;
 
         public RepositorioOrdenReparto(NVEntities db)
@@ -271,11 +278,12 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 {
                     foreach (OrdenParadaReparto fila in filas)
                     {
-                        bool guardada = (await db.Database.SqlQuery<bool>(SQL_GUARDAR,
+                        bool guardada = await GuardarConReintento(async soloActualizar => (await db.Database.SqlQuery<bool>(soloActualizar ? SQL_ACTUALIZAR : SQL_GUARDAR,
                             new SqlParameter("@Id", SqlDbType.Int) { Value = fila.ParadaId },
                             new SqlParameter("@Orden", SqlDbType.Int) { Value = fila.Orden },
                             new SqlParameter("@Usuario", SqlDbType.VarChar, 50) { Value = Recortar(fila.Usuario, 50) ?? string.Empty },
-                            new SqlParameter("@FechaHora", SqlDbType.DateTime) { Value = fila.FechaHora }).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                            new SqlParameter("@FechaHora", SqlDbType.DateTime) { Value = fila.FechaHora }).ToListAsync().ConfigureAwait(false)).FirstOrDefault())
+                            .ConfigureAwait(false);
                         if (guardada)
                         {
                             _ = guardadas.Add(fila.ParadaId);
@@ -290,6 +298,36 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 }
             }
             return guardadas;
+        }
+
+        /// <summary>
+        /// Revisión 30/10: dos PDA guardan a la vez el orden de una parada que aún no tiene fila; las dos ven que no existe y la
+        /// segunda choca con la PK (2627/2601) al insertar. Un error de clave duplicada solo termina la sentencia (la transacción
+        /// sigue viva), así que se reintenta UNA vez solo el UPDATE: último gana por FechaHora, como siempre.
+        /// </summary>
+        /// <param name="ejecutar">Ejecuta el upsert (false) o solo el UPDATE (true) y dice si la fila ha quedado con lo suyo.</param>
+        internal static async Task<bool> GuardarConReintento(Func<bool, Task<bool>> ejecutar)
+        {
+            try
+            {
+                return await ejecutar(false).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (EsClaveDuplicada(ex))
+            {
+                return await ejecutar(true).ConfigureAwait(false);
+            }
+        }
+
+        private static bool EsClaveDuplicada(Exception ex)
+        {
+            for (Exception e = ex; e != null; e = e.InnerException)
+            {
+                if (e is SqlException sql && (sql.Number == 2627 || sql.Number == 2601))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public Task<List<EstadoEnvioParada>> LeerEstadosEnvios(IReadOnlyCollection<int> envios)

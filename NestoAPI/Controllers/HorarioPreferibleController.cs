@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
@@ -41,6 +41,19 @@ namespace NestoAPI.Controllers
                 ? Content(HttpStatusCode.Forbidden, new { Message = "El horario preferible solo lo gestionan los empleados." })
                 : null;
 
+        public const string MENSAJE_SIN_PERMISO_REVISAR = "Las propuestas de horario por revisar solo las pueden ver y resolver " +
+            "Administración, Almacén, Dirección e Informática. Si cree que debería poder, pídaselo a Informática.";
+
+        /// <summary>
+        /// Revisión 30/10: «Horarios por revisar» (la lista de propuestas, con los comentarios internos de las fichas, y aceptarlas o
+        /// descartarlas) solo para Administración, Almacén, Dirección e Informática; los mismos grupos que el reparto propio. El
+        /// horario de UN contacto (GET/PUT) sigue abierto a todos los empleados: los vendedores lo editan en la ficha.
+        /// </summary>
+        private IHttpActionResult SoloRevisores()
+            => SoloEmpleados() ?? (PermisosRepartoPropio.PuedeRepartir(User)
+                ? null
+                : Content(HttpStatusCode.Forbidden, new { Message = MENSAJE_SIN_PERMISO_REVISAR }));
+
         // GET api/Clientes/1/12345/0/HorarioPreferible
         /// <summary>El horario del contacto (franjas vacías si no tiene) y, si la hay, su propuesta por revisar.</summary>
         [HttpGet]
@@ -78,7 +91,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<PropuestaHorarioPreferibleDTO>))]
         public async Task<IHttpActionResult> GetPropuestas()
         {
-            IHttpActionResult prohibido = SoloEmpleados();
+            IHttpActionResult prohibido = SoloRevisores();
             if (prohibido != null)
             {
                 return prohibido;
@@ -92,7 +105,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(HorarioPreferibleDTO))]
         public async Task<IHttpActionResult> PostAceptarPropuesta(int id, [FromBody] HorarioPreferibleDTO horario)
         {
-            IHttpActionResult prohibido = SoloEmpleados();
+            IHttpActionResult prohibido = SoloRevisores();
             if (prohibido != null)
             {
                 return prohibido;
@@ -105,7 +118,7 @@ namespace NestoAPI.Controllers
         [Route("api/Clientes/HorariosPreferibles/Propuestas/{id:int}/Descartar")]
         public async Task<IHttpActionResult> PostDescartarPropuesta(int id)
         {
-            IHttpActionResult prohibido = SoloEmpleados();
+            IHttpActionResult prohibido = SoloRevisores();
             if (prohibido != null)
             {
                 return prohibido;

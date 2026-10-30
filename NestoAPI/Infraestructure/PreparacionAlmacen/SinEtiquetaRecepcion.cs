@@ -2,8 +2,12 @@ using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Verifactu;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.Entity;
+using System.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,6 +24,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Sin él (o 0), una. Se cuenta unidad a unidad: las apps mandan 1.</summary>
         public int Unidades { get; set; }
         public string Dispositivo { get; set; }
+        /// <summary>
+        /// Revisión 30/10 (opcional): una clave por unidad apuntada (un GUID de la app). Si llega una que ya se procesó (la PDA
+        /// repite tras un timeout), se devuelve la respuesta de la primera vez sin volver a avisar. Sin ella, se avisa siempre.
+        /// </summary>
+        public string ClaveIdempotencia { get; set; }
     }
 
     public class ResultadoSinEtiquetaRecepcionDTO
@@ -49,14 +58,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public const string MOTIVO_OTRO = "Otro";
         public const int MAXIMO_UNIDADES = 50;
 
+        public const int LONGITUD_MAXIMA_CLAVE = 100;
+
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IAvisadorSinEtiqueta avisador;
+        private readonly IRepositorioIdempotenciaSinEtiqueta idempotencia;
 
-        public ServicioSinEtiquetaRecepcion(IServicioRecepcionReposiciones reposiciones, IAvisadorSinEtiqueta avisador)
+        /// <param name="idempotencia">Dónde se apuntan las claves ya procesadas. Sin él, la clave se ignora (se avisa siempre).</param>
+        public ServicioSinEtiquetaRecepcion(IServicioRecepcionReposiciones reposiciones, IAvisadorSinEtiqueta avisador,
+            IRepositorioIdempotenciaSinEtiqueta idempotencia = null)
         {
             this.reposiciones = reposiciones ?? throw new ArgumentNullException(nameof(reposiciones));
             this.avisador = avisador ?? throw new ArgumentNullException(nameof(avisador));
+            this.idempotencia = idempotencia;
         }
+
+        /// <summary>La clave tal como se apunta: con el documento, para que la misma clave en otra reposición no choque.</summary>
+        internal static string ClaveCompleta(string empresa, string almacen, int traspaso, string clave)
+            => string.Join("|", empresa?.Trim(), almacen?.Trim().ToUpperInvariant(), OrigenRecepcionReposiciones.TIPO,
+                traspaso.ToString(CultureInfo.InvariantCulture), clave.Trim());
 
         /// <summary>El motivo normalizado (NoLleva, NoSeLee, Otro; admite mayúsculas y los textos), o null si no es ninguno.</summary>
         public static string NormalizarMotivo(string motivo)
@@ -86,7 +106,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
         }
 
-        public async Task<ResultadoSinEtiquetaRecepcionDTO> Apuntar(string tipo, string empresa, string almacen, string documento,
+        public Task<ResultadoSinEtiquetaRecepcionDTO> Apuntar(string tipo, string empresa, string almacen, string documento,
             SinEtiquetaRecepcionDTO peticion, string usuario)
         {
             if (!string.Equals(tipo?.Trim(), OrigenRecepcionReposiciones.TIPO, StringComparison.OrdinalIgnoreCase))
@@ -97,6 +117,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new ArgumentException($"«{documento}» no es un número de traspaso.");
             }
+            string clave = peticion?.ClaveIdempotencia?.Trim();
+            if (string.IsNullOrEmpty(clave) || idempotencia == null)
+            {
+                return ApuntarYAvisar(empresa, almacen, traspaso, peticion, usuario);
+            }
+            if (clave.Length > LONGITUD_MAXIMA_CLAVE)
+            {
+                throw new ArgumentException($"La clave de idempotencia no puede pasar de {LONGITUD_MAXIMA_CLAVE} caracteres.");
+            }
+            return idempotencia.UnaVez(ClaveCompleta(empresa, almacen, traspaso, clave),
+                () => ApuntarYAvisar(empresa, almacen, traspaso, peticion, usuario));
+        }
+
+        private async Task<ResultadoSinEtiquetaRecepcionDTO> ApuntarYAvisar(string empresa, string almacen, int traspaso,
+            SinEtiquetaRecepcionDTO peticion, string usuario)
+        {
             string producto = peticion?.Producto?.Trim();
             if (string.IsNullOrEmpty(producto))
             {
@@ -170,6 +206,78 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Mensaje = $"Apuntada {ud} sin etiqueta del {producto}: {aQuien}.",
                 Avisados = avisados
             };
+        }
+    }
+
+    /// <summary>Revisión 30/10: las claves de «Sin etiqueta» ya procesadas, con la respuesta de la primera vez.</summary>
+    public interface IRepositorioIdempotenciaSinEtiqueta
+    {
+        /// <summary>
+        /// Si la clave ya se procesó, su respuesta de entonces (sin llamar a <paramref name="procesar"/>); si no, procesa, apunta la
+        /// clave con la respuesta y la devuelve. Si <paramref name="procesar"/> lanza, no se apunta nada.
+        /// </summary>
+        Task<ResultadoSinEtiquetaRecepcionDTO> UnaVez(string clave, Func<Task<ResultadoSinEtiquetaRecepcionDTO>> procesar);
+    }
+
+    /// <summary>
+    /// En <c>Modificaciones</c> (Tabla «SinEtiquetaRecepcion», Anterior = la clave, Nuevo = la respuesta en JSON), como la clave del
+    /// cobro del reparto (<see cref="Agencias.RepartoPropio.RepositorioCobrosReparto"/>): sin script de BD. Un <c>sp_getapplock</c>
+    /// por clave hace que dos reintentos a la vez avisen una sola vez (el segundo espera y devuelve lo del primero).
+    /// </summary>
+    public class RepositorioIdempotenciaSinEtiqueta : IRepositorioIdempotenciaSinEtiqueta
+    {
+        internal const string TABLA_MODIFICACIONES = "SinEtiquetaRecepcion";
+
+        public async Task<ResultadoSinEtiquetaRecepcionDTO> UnaVez(string clave, Func<Task<ResultadoSinEtiquetaRecepcionDTO>> procesar)
+        {
+            using (var db = new NVEntities())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    var bloqueo = new SqlParameter("@r", SqlDbType.Int) { Direction = ParameterDirection.Output };
+                    _ = await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC @r = sp_getapplock @Resource = @recurso, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000",
+                        bloqueo, new SqlParameter("@recurso", SqlDbType.NVarChar, 255) { Value = Recurso(clave) }).ConfigureAwait(false);
+                    if (bloqueo.Value is int r && r < 0)
+                    {
+                        throw new InvalidOperationException("Este aviso de «sin etiqueta» ya se está procesando: vuelva a intentarlo en unos segundos.");
+                    }
+                    string previo = (await db.Modificaciones
+                        .Where(m => m.Tabla == TABLA_MODIFICACIONES && m.Anterior == clave)
+                        .Select(m => m.Nuevo)
+                        .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                    if (previo != null)
+                    {
+                        transaccion.RollbackSeguro();
+                        return JsonConvert.DeserializeObject<ResultadoSinEtiquetaRecepcionDTO>(previo);
+                    }
+
+                    ResultadoSinEtiquetaRecepcionDTO resultado = await procesar().ConfigureAwait(false);
+                    _ = db.Modificaciones.Add(new Modificacion
+                    {
+                        Tabla = TABLA_MODIFICACIONES,
+                        Anterior = clave,
+                        Nuevo = JsonConvert.SerializeObject(resultado),
+                        Fecha = DateTime.Now
+                    });
+                    _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                    transaccion.Commit();
+                    return resultado;
+                }
+                catch (Exception)
+                {
+                    transaccion.RollbackSeguro();
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>El recurso del applock: como mucho 255 caracteres.</summary>
+        internal static string Recurso(string clave)
+        {
+            string recurso = TABLA_MODIFICACIONES + ":" + clave;
+            return recurso.Length <= 255 ? recurso : recurso.Substring(0, 255);
         }
     }
 

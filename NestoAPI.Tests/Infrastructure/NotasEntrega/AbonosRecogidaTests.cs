@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -197,6 +197,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             Assert.AreEqual("Pedidos", guardado.Modificacion.Tabla);
             StringAssert.Contains(guardado.Modificacion.Nuevo, "Pedido de abono 930800");
             StringAssert.Contains(guardado.Modificacion.Nuevo, "nota de recogida 929554");
+            // Modificaciones.Usuario es Computed en el EDMX (no se graba): el usuario tiene que ir en Nuevo (revisión 30/10)
+            StringAssert.Contains(guardado.Modificacion.Nuevo, @"usuario NUEVAVISION\alfredo");
+            StringAssert.Contains(guardado.Modificacion.Nuevo, "cliente 15191/0");
             Assert.AreEqual("NUEVAVISION\\alfredo", guardado.Modificacion.Usuario);
         }
 

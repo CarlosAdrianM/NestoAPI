@@ -389,15 +389,59 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
 
         // ================================================================ controller
 
-        private HorarioPreferibleController Controller()
+        /// <param name="grupos">Sin grupos: un empleado cualquiera (un vendedor). Las propuestas piden Administración, Almacén, Dirección o Informática.</param>
+        private HorarioPreferibleController Controller(params string[] grupos)
         {
+            var claims = new List<Claim> { new Claim(ClaimTypes.Name, @"NUEVAVISION\Laura") };
+            claims.AddRange(grupos.Select(g => new Claim(ClaimTypes.Role, @"NUEVAVISION\" + g)));
             var controller = new HorarioPreferibleController(servicio)
             {
                 Request = new System.Net.Http.HttpRequestMessage(),
                 Configuration = new HttpConfiguration(),
-                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, @"NUEVAVISION\Laura") }, "prueba"))
+                User = new ClaimsPrincipal(new ClaimsIdentity(claims, "prueba"))
             };
             return controller;
+        }
+
+        [TestMethod]
+        public async Task Controller_EmpleadoSinGrupoDeRevision_403EnPropuestas_PeroGetYPutDelContactoOk()
+        {
+            // Revisión 30/10/26: «Horarios por revisar» solo para Administración, Almacén, Dirección e Informática; el horario de
+            // un contacto lo siguen viendo y cambiando todos los empleados (los vendedores, en la ficha).
+            HorarioPreferibleController controller = Controller("Vendedores");
+            FilaPropuestaHorario propuesta = Propuesta(5, "HORARIO DE 10 A 14");
+
+            IHttpActionResult propuestas = await controller.GetPropuestas();
+            IHttpActionResult aceptar = await controller.PostAceptarPropuesta(5, null);
+            IHttpActionResult descartar = await controller.PostDescartarPropuesta(5);
+            Assert.AreEqual(PropuestaHorarioPreferibleDTO.ESTADO_POR_REVISAR, propuesta.Estado, "Ni aceptada ni descartada");
+            Assert.AreEqual(0, repositorio.Filas.Count, "El aceptar no ha guardado nada");
+            var put = await controller.PutHorarioPreferible("1", "15191", "0", new HorarioPreferibleDTO { Texto = "L-V 10:00-14:00" }) as OkNegotiatedContentResult<HorarioPreferibleDTO>;
+            var get = await controller.GetHorarioPreferible("1", "15191", "0") as OkNegotiatedContentResult<HorarioPreferibleDTO>;
+
+            foreach (IHttpActionResult r in new[] { propuestas, aceptar, descartar })
+            {
+                System.Net.Http.HttpResponseMessage respuesta = await r.ExecuteAsync(default);
+                Assert.AreEqual(HttpStatusCode.Forbidden, respuesta.StatusCode);
+                StringAssert.Contains(await respuesta.Content.ReadAsStringAsync(), "Administración, Almacén, Dirección e Informática");
+            }
+            Assert.IsNotNull(put);
+            Assert.AreEqual("L-V 10:00-14:00", get.Content.Texto);
+        }
+
+        [DataTestMethod]
+        [DataRow("Administración")]
+        [DataRow("Almacén")]
+        [DataRow("Dirección")]
+        [DataRow("Informática")]
+        public async Task Controller_GruposDeRevision_VenLasPropuestas(string grupo)
+        {
+            _ = Propuesta(5, "HORARIO DE 10 A 14");
+
+            var propuestas = await Controller(grupo).GetPropuestas() as OkNegotiatedContentResult<List<PropuestaHorarioPreferibleDTO>>;
+
+            Assert.IsNotNull(propuestas, grupo);
+            Assert.AreEqual(1, propuestas.Content.Count);
         }
 
         [TestMethod]
@@ -438,7 +482,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         [TestMethod]
         public async Task Controller_PutMalo400_PropuestasLista_Descartar204Y404()
         {
-            HorarioPreferibleController controller = Controller();
+            HorarioPreferibleController controller = Controller(NestoAPI.Models.Constantes.GruposSeguridad.ADMINISTRACION);
             _ = Propuesta(5, "HORARIO DE 10 A 14");
 
             IHttpActionResult malo = await controller.PutHorarioPreferible("1", "15191", "0", new HorarioPreferibleDTO { Texto = "L 14:00-10:00" });
@@ -455,7 +499,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         [TestMethod]
         public async Task Controller_AceptarPropuesta_Ok()
         {
-            HorarioPreferibleController controller = Controller();
+            HorarioPreferibleController controller = Controller(NestoAPI.Models.Constantes.GruposSeguridad.ADMINISTRACION);
             _ = Propuesta(5, "HORARIO DE 10 A 14");
 
             var r = await controller.PostAceptarPropuesta(5, null) as OkNegotiatedContentResult<HorarioPreferibleDTO>;
