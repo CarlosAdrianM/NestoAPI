@@ -80,6 +80,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// desde la tienda online, la persona cuyo correo es el de su usuario (si la hay).
         /// </summary>
         public string PersonaContacto { get; set; }
+        /// <summary>
+        /// NestoAPI#746: opcional, inscribir YA PAGADA (como «Marcar pagada»: quien mantiene el evento, Administración o
+        /// Dirección; nunca la tienda online). Entra aunque el evento esté lleno; sin enlace de pago.
+        /// </summary>
+        public MarcarPagoInscripcionDTO Pago { get; set; }
     }
 
     /// <summary>NestoAPI#690: POST api/Eventos/Inscripciones/{id}/ConfirmarAsistencia.</summary>
@@ -353,7 +358,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
     /// transferencia o efectivo—, pasa a Pagada y llama a <see cref="IProcesadorInscripcionPagada"/> (corte 2). El día del
     /// evento se pasa lista; si nadie lo hace, al día siguiente el job da a todos por asistidos y avisa a la tienda.
     /// </summary>
-    public class ServicioInscripcionesEventos : IServicioInscripcionesEventos
+    public partial class ServicioInscripcionesEventos : IServicioInscripcionesEventos
     {
         /// <summary>PagosTPV.Documento del enlace de una inscripción: «INS» + Id (cabe en los 10 de Nº_Documento).</summary>
         public const string PREFIJO_DOCUMENTO_PAGO = "INS";
@@ -388,6 +393,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             baseImponibleDia = new LectorBaseImponibleDia(db);
             PersonasAsistentes = new RepositorioPersonaAsistenteEventos(db);
             ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
+            // NestoAPI#746: reservas sin pagar con el evento lleno
+            PlazasLlenas = new RepositorioPlazasLlenas(db);
+            ParametrosPlazasLlenas = () => ParametrosPlazasLlenasEventos.Leer(db);
+            EncolarPlazasLlenas = PlazasLlenasEventosJobsService.Encolar;
+            AvisarPagoFueraDePlazo = PlazasLlenasEventosJobsService.AvisarPagoFueraDePlazo;
         }
 
         /// <summary>
@@ -498,6 +508,28 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 throw new NestoBusinessException($"El evento «{evento.Titulo?.Trim()}» ya ha pasado.");
             }
 
+            // NestoAPI#746: inscribir ya pagada (efectivo, datáfono, transferencia recibida). Quien puede marcar pagos; entra
+            // aunque el evento esté lleno (las reservas sin pagar reciben el aviso para pagar o perder la plaza).
+            FormaPagoInscripcionEvento? formaPagada = null;
+            if (peticion.Pago != null)
+            {
+                if (clienteDelToken != null)
+                {
+                    throw Prohibido("El pago de la inscripción lo apunta la tienda.");
+                }
+                ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
+                formaPagada = ReglasInscripcionEvento.FormaPago(peticion.Pago.FormaPago)
+                    ?? throw new NestoBusinessException("Indique cómo ha pagado: Tarjeta, Transferencia o Efectivo.");
+                if (peticion.Pago.Importe.HasValue && peticion.Pago.Importe.Value < 0)
+                {
+                    throw new NestoBusinessException("El importe pagado no puede ser negativo.");
+                }
+                if (peticion.Pago.Fecha.HasValue && peticion.Pago.Fecha.Value.Date > ahora.Date)
+                {
+                    throw new NestoBusinessException("La fecha del pago no puede ser futura.");
+                }
+            }
+
             Cliente ficha = await LeerFichaCliente(empresa, cliente, Limpiar(peticion.Contacto)).ConfigureAwait(false);
             string contacto = Limpiar(ficha.Contacto);
 
@@ -521,9 +553,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                     : $"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}», pero dijo que no podría ir: " +
                       "si al final viene, confirme su asistencia en esa inscripción.");
             }
-            if (evento.Plazas.HasValue && ocupan.Count >= evento.Plazas.Value)
+            // NestoAPI#746 (Pilar/Carlos, 30/10/26): sin plazas no se reserva sin pagar; el mensaje dice cuántas son reservas
+            // sin pagar y cuándo vencen. La que entra ya pagada pasa igual.
+            if (evento.Plazas.HasValue && ocupan.Count >= evento.Plazas.Value && formaPagada == null)
             {
-                throw new NestoBusinessException($"No quedan plazas en «{evento.Titulo?.Trim()}» ({evento.Plazas.Value} ocupadas).");
+                throw new NestoBusinessException(await MensajeSinPlazas(evento, delEvento).ConfigureAwait(false));
             }
 
             // NestoAPI#731: la persona que asiste (opcional). Si la dicen, tiene que ser de la ficha.
@@ -567,6 +601,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.Elegir(evento, peticion.Modalidad);
             bool gratuita = modalidad == ModalidadInscripcionEvento.Gratuita;
             decimal importe = ReglasModalidadEvento.Importe(evento, modalidad);
+            if (gratuita && formaPagada != null)
+            {
+                throw new NestoBusinessException($"«{evento.Titulo?.Trim()}» es gratuito: la inscripción no se paga.");
+            }
 
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
             var inscripcion = new EventoInscripcion
@@ -594,7 +632,12 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             bool justificanteGuardado = await GuardarJustificanteSinFallar(inscripcion.Id, justificante?.Pedido).ConfigureAwait(false);
 
             string urlPago = null;
-            bool conEnlace = !gratuita && peticion.GenerarEnlacePago && importe > 0
+            if (formaPagada != null)
+            {
+                decimal pagado = Math.Round(peticion.Pago.Importe ?? importe, 2, MidpointRounding.AwayFromZero);
+                await Pagar(inscripcion, evento, formaPagada.Value, pagado, peticion.Pago.Fecha ?? ahora, UsuarioDe(usuario), null).ConfigureAwait(false);
+            }
+            bool conEnlace = formaPagada == null && !gratuita && peticion.GenerarEnlacePago && importe > 0
                 && (formaPago == null || formaPago == FormaPagoInscripcionEvento.Tarjeta);
             if (conEnlace)
             {
@@ -641,6 +684,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 dto.Avisos = await AvisosFicha(empresa, cliente, contacto, ficha.Teléfono).ConfigureAwait(false);
             }
+            // NestoAPI#746: si con esta se llena (o ya estaba lleno y ha entrado pagada), aviso a las reservas sin pagar
+            await AvisarSiSeLlena(evento).ConfigureAwait(false);
             return dto;
         }
 
@@ -1016,6 +1061,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 ElmahHelper.Log(new Exception($"[Inscripciones #611] Se ha cobrado el enlace {pagoRaizId} de la inscripción {inscripcion.Id} " +
                     $"(cliente {Limpiar(inscripcion.Cliente)}, evento «{evento.Titulo?.Trim()}»), pero estaba anulada: el cobro está en su " +
                     "extracto; decidan si se reactiva (marcándola pagada) o se devuelve."));
+                await AvisarFueraDePlazo(inscripcion, evento, estado).ConfigureAwait(false);
                 return Componer(inscripcion, evento, null);
             }
             if (!ReglasInscripcionEvento.PuedePasar(estado, EstadoInscripcionEvento.Pagada) || estado == EstadoInscripcionEvento.Pagada)
@@ -1035,6 +1081,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         {
             DateTime ahora = reloj();
             var pagadas = new List<KeyValuePair<EventoInscripcion, Evento>>();
+            var caducadasPagadas = new List<KeyValuePair<EventoInscripcion, Evento>>();
             foreach (EventoInscripcion inscripcion in delEnlace.OrderBy(i => i.Id))
             {
                 Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
@@ -1044,6 +1091,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                     ElmahHelper.Log(new Exception($"[Cursos #691] Se ha cobrado el enlace {pagoRaizId} del pedido de cursos, pero la inscripción " +
                         $"{inscripcion.Id} (cliente {Limpiar(inscripcion.Cliente)}, evento «{evento.Titulo?.Trim()}») estaba anulada: su parte del " +
                         "cobro está en el extracto; decidan si se reactiva (marcándola pagada) o se devuelve."));
+                    await AvisarFueraDePlazo(inscripcion, evento, estado).ConfigureAwait(false);
                     continue;
                 }
                 if (!ReglasInscripcionEvento.PuedePasar(estado, EstadoInscripcionEvento.Pagada) || estado == EstadoInscripcionEvento.Pagada)
@@ -1052,10 +1100,20 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 }
                 AnotarPago(inscripcion, FormaPagoInscripcionEvento.Tarjeta, ReglasModalidadEvento.ImporteDe(inscripcion, evento), ahora, USUARIO_AUTOMATICO, null);
                 pagadas.Add(new KeyValuePair<EventoInscripcion, Evento>(inscripcion, evento));
+                if (estado == EstadoInscripcionEvento.Caducada)
+                {
+                    caducadasPagadas.Add(new KeyValuePair<EventoInscripcion, Evento>(inscripcion, evento));
+                }
             }
             if (pagadas.Any())
             {
                 await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            // NestoAPI#746: pagadas fuera de plazo (Caducada): recuperan la plaza; aviso a Administración y a las reservas sin pagar
+            foreach (KeyValuePair<EventoInscripcion, Evento> tarde in caducadasPagadas)
+            {
+                await AvisarFueraDePlazo(tarde.Key, tarde.Value, EstadoInscripcionEvento.Caducada).ConfigureAwait(false);
+                await AvisarSiSeLlena(tarde.Value).ConfigureAwait(false);
             }
             foreach (KeyValuePair<EventoInscripcion, Evento> pagada in pagadas)
             {
@@ -1329,6 +1387,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 .Where(i => EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada)
                 .OrderBy(i => EstadoDe(i) == EstadoInscripcionEvento.Reservada ? 0 : 1).ThenByDescending(i => i.FechaCreacion)
                 .FirstOrDefault();
+            bool nueva = false;
             if (pendiente == null)
             {
                 pendiente = new EventoInscripcion
@@ -1349,6 +1408,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                     FechaModificacion = ahora
                 };
                 db.EventosInscripciones.Add(pendiente);
+                nueva = true;
             }
             else if (modalidad.HasValue)
             {
@@ -1356,6 +1416,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 pendiente.Modalidad = modalidad.Value.ToString();
             }
             await Pagar(pendiente, evento, forma, importe, fecha, usuarioAuditoria, eventoSenalId).ConfigureAwait(false);
+            if (nueva)
+            {
+                // NestoAPI#746: la pagada entra aunque el evento esté lleno; si ahora lo está, aviso a las reservas sin pagar
+                await AvisarSiSeLlena(evento).ConfigureAwait(false);
+            }
             return pendiente;
         }
 
@@ -1372,6 +1437,13 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             AnotarPago(inscripcion, forma, importe, fecha, usuario, eventoSenalId);
             await db.SaveChangesAsync().ConfigureAwait(false);
             await ProcesarPagada(inscripcion, evento).ConfigureAwait(false);
+            if (estado == EstadoInscripcionEvento.Caducada)
+            {
+                // NestoAPI#746: pagada fuera de plazo: el dinero manda (recupera la plaza aunque el evento quede por encima de
+                // sus plazas); Administración decide, y las reservas sin pagar reciben el aviso si ahora está lleno.
+                await AvisarFueraDePlazo(inscripcion, evento, estado).ConfigureAwait(false);
+                await AvisarSiSeLlena(evento).ConfigureAwait(false);
+            }
         }
 
         private void AnotarPago(EventoInscripcion inscripcion, FormaPagoInscripcionEvento forma, decimal importe, DateTime fecha, string usuario,

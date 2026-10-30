@@ -64,6 +64,11 @@ namespace NestoAPI.Infraestructure.Eventos
         public int? Plazas { get => plazas; set { plazas = value; recibidos.Add(nameof(Plazas)); } }
         /// <summary>NestoAPI#611: solo lectura. Inscripciones que ocupan plaza (todas menos caducadas y anuladas).</summary>
         public int PlazasOcupadas { get; set; }
+        /// <summary>
+        /// NestoAPI#746: solo lectura. De <see cref="PlazasOcupadas"/>, cuántas son reservas sin pagar (Reservada que no ha dicho
+        /// «No podré ir»). Con el evento lleno, esas reciben el aviso para pagar o perder la plaza.
+        /// </summary>
+        public int PlazasSinPagar { get; set; }
         /// <summary>NestoAPI#611 (para TNV).</summary>
         public string Lugar { get => lugar; set { lugar = value; recibidos.Add(nameof(Lugar)); } }
         /// <summary>
@@ -359,6 +364,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 .Concat(eventos.Where(e => e.Fecha.Date < hoy).OrderByDescending(e => e.Fecha).ThenBy(e => e.Titulo))
                 .Select(e => ConAnuncio(ConImagen(ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0), conImagen), anunciados))
                 .ToList();
+            await ConPlazasSinPagar(lista).ConfigureAwait(false);
             return await ConProductosRequeridos(lista).ConfigureAwait(false);
         }
 
@@ -574,8 +580,9 @@ namespace NestoAPI.Infraestructure.Eventos
                 return null;
             }
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
-            return await ConProductosRequeridos(await ConImagen(ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0)).ConfigureAwait(false))
-                .ConfigureAwait(false);
+            EventoDTO dto = ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0);
+            await ConPlazasSinPagar(new List<EventoDTO> { dto }).ConfigureAwait(false);
+            return await ConProductosRequeridos(await ConImagen(dto).ConfigureAwait(false)).ConfigureAwait(false);
         }
 
         private static int anunciosFalloRegistrado;
@@ -684,6 +691,28 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public async Task<ImagenEvento> LeerImagen(int id) =>
             imagenes == null ? null : await imagenes.Leer(id).ConfigureAwait(false);
+
+        /// <summary>NestoAPI#746: cuántas de las que ocupan plaza son reservas sin pagar (solo eventos con plazas).</summary>
+        private async Task ConPlazasSinPagar(List<EventoDTO> lista)
+        {
+            List<int> ids = lista.Where(e => e.Plazas.HasValue && e.PlazasOcupadas > 0).Select(e => e.Id).ToList();
+            if (!ids.Any())
+            {
+                return;
+            }
+            string reservada = EstadoInscripcionEvento.Reservada.ToString();
+            var filas = await db.EventosInscripciones
+                .Where(i => ids.Contains(i.EventoId) && i.Estado == reservada)
+                .Select(i => new { i.EventoId, i.Estado, i.AsistenciaRespuesta })
+                .ToListAsync().ConfigureAwait(false);
+            Dictionary<int, int> sinPagar = filas
+                .Where(f => ReglasPlazasLlenas.EsReservaSinPagar(new EventoInscripcion { Estado = f.Estado, AsistenciaRespuesta = f.AsistenciaRespuesta }))
+                .GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Count());
+            foreach (EventoDTO dto in lista)
+            {
+                dto.PlazasSinPagar = sinPagar.TryGetValue(dto.Id, out int n) ? n : 0;
+            }
+        }
 
         /// <summary>NestoAPI#611: cuántas inscripciones ocupan plaza en cada evento.</summary>
         private async Task<Dictionary<int, int>> PlazasOcupadas(List<int> ids)

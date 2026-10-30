@@ -950,6 +950,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'recordatorio-eventos' configurado (todos los días a las 10:00; apagado salvo interruptor)");
 
+            // NestoAPI#746: reservas sin pagar con el evento lleno. La pasada de cada evento se encola al llenarse y se programa
+            // al vencer cada plazo; esta diaria (10:05) solo recoge lo que se haya escapado. Sin el script de las columnas, o
+            // con EventosPlazasLlenasActivo = 0 en «(defecto)», no hace nada.
+            RecurringJob.AddOrUpdate(
+                "plazas-llenas-eventos",
+                () => Infraestructure.Eventos.PlazasLlenasEventosJobsService.Procesar(),
+                Infraestructure.Eventos.PlazasLlenasEventosJobsService.CRON, // Cron: todos los días a las 10:05
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'plazas-llenas-eventos' configurado (todos los días a las 10:05)");
+
             // NestoAPI#614: el espejo de los cupones en PrestaShop (cart_rules). Con Cupones:EspejoPrestashop apagado no hace nada.
             RecurringJob.AddOrUpdate(
                 "cupones-prestashop",
