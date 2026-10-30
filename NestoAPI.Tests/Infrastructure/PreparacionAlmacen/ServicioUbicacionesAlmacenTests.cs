@@ -304,5 +304,55 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(0, (await servicio.BuscarProducto("1", "ALG", new string('9', 40))).Count);
             A.CallTo(() => repositorio.BuscarProductos(A<string>._, A<string>._)).MustNotHaveHappened();
         }
+
+        // ---------------------------------------------------------------- Descuadre del 46048 (30/10/26)
+        // prdUbicar suma lo ubicado a TODAS las filas libres (estado 0) del hueco. El 46048 tenía dos en 004/004/012 (la
+        // del picking doble del 25/08 que liberó el Fix #405/#406 y la del picking del 15/10) y el albarán de compra 125747
+        // (+9) se sumó a las dos: 53 en Ubicaciones con 44 de stock. Antes de llamar a prdUbicar se juntan en una.
+
+        [TestMethod]
+        public void SqlUbicar_JuntaLasFilasLibresDelHuecoAntesDeLlamarAPrdUbicar()
+        {
+            string sql = RepositorioUbicacionesAlmacen.SQL_UBICAR;
+            int juntar = sql.IndexOf("DELETE FROM Ubicaciones", StringComparison.Ordinal);
+            int ubicar = sql.IndexOf("EXEC @resultado = prdUbicar", StringComparison.Ordinal);
+            Assert.IsTrue(juntar >= 0, "Sin juntar las filas libres, prdUbicar suma la cantidad a cada una de ellas");
+            Assert.IsTrue(ubicar > juntar, "Hay que juntarlas ANTES de llamar a prdUbicar");
+        }
+
+        [TestMethod]
+        public void SqlJuntarLibres_SoloLasFilasLibresDeEseProductoEnEseHueco_LasMismasQueSumaPrdUbicar()
+        {
+            string sql = RepositorioUbicacionesAlmacen.SQL_JUNTAR_LIBRES_DEL_HUECO;
+            // Las mismas que el UPDATE de prdUbicar: empresa, almacén, producto, pasillo, fila, columna y estado 0
+            const string HUECO = "WHERE Empresa = @empresaHueco AND [Almacén] = @almacenHueco AND [Número] = @productoHueco"
+                + " AND Pasillo = @pasilloHueco AND Fila = @filaHueco AND Columna = @columnaHueco AND Estado = 0";
+            StringAssert.Contains(Normalizar(sql), Normalizar(HUECO));
+            // Se queda la más antigua con la suma de todas y se borran las demás: el total del hueco no cambia
+            StringAssert.Contains(sql, "@filaLibre = MIN([NºOrden]), @totalLibre = SUM(Cantidad)");
+            StringAssert.Contains(sql, "HAVING COUNT(*) > 1");
+            StringAssert.Contains(sql, "UPDATE Ubicaciones SET Cantidad = @totalLibre WHERE [NºOrden] = @filaLibre");
+            StringAssert.Contains(Normalizar(sql), Normalizar("AND Estado = 0 AND [NºOrden] <> @filaLibre"));
+            // Bloquea las filas leídas hasta el final de la transacción (dos ubicaciones a la vez en el mismo hueco)
+            StringAssert.Contains(sql, "WITH (UPDLOCK, HOLDLOCK)");
+            // Las columnas son char: con los parámetros nvarchar de EF se recorrería la tabla entera
+            StringAssert.Contains(sql, "@productoHueco char(15) = @p2");
+            // Queda anotado (mismo usuario que la ubicación)
+            StringAssert.Contains(sql, "INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario)");
+            StringAssert.Contains(sql, "@p11);");
+        }
+
+        [TestMethod]
+        public void SqlUbicar_SigueLlamandoAPrdUbicarConLosMismosParametros()
+        {
+            string sql = RepositorioUbicacionesAlmacen.SQL_UBICAR;
+            StringAssert.Contains(sql, "EXEC @resultado = prdUbicar @Empresa = @p0, @Almacen = @p1, @Producto = @p2, @Pasillo = @p3, @Fila = @p4, @Columna = @p5,");
+            StringAssert.Contains(sql, "@Cantidad = @p6, @TipoFiltro = @p7, @Filtro = @p8;");
+        }
+
+        private static string Normalizar(string sql)
+        {
+            return string.Join(" ", sql.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
     }
 }
