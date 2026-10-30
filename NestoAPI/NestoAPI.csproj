@@ -740,6 +740,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RepositorioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />

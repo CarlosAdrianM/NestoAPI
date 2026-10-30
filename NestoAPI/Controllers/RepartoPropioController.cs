@@ -59,6 +59,33 @@ namespace NestoAPI.Controllers
             this.servicio = servicio;
         }
 
+        private ServicioCobrosReparto servicioCobros;
+
+        /// <summary>NestoAPI#766: el cobro de deudas en efectivo (sustituible en tests).</summary>
+        internal ServicioCobrosReparto ServicioCobros
+        {
+            get => servicioCobros ?? (servicioCobros = new ServicioCobrosReparto(new RepositorioCobrosReparto(db)));
+            set => servicioCobros = value;
+        }
+
+        // POST api/RepartoPropio/Cobros { Cliente, Contacto, Efectos, Importe, ClaveIdempotencia, FechaHora }
+        /// <summary>
+        /// NestoAPI#766 (Ariadna#67): el repartidor cobra en EFECTIVO a un cliente algo que debía, como en la caja de Nesto: los
+        /// efectos elegidos (o ninguno) y el importe; lo que sobra queda a cuenta. Contra su caja (CajaDefecto de su fila; sin ella,
+        /// 400). Idempotente por ClaveIdempotencia (Ariadna lo manda por su cola sin cobertura).
+        /// </summary>
+        [HttpPost]
+        [Route("Cobros")]
+        [ResponseType(typeof(ResultadoCobroDeudaDTO))]
+        public async Task<IHttpActionResult> Cobrar([FromBody] CobroDeudaRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await ServicioCobros.Cobrar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
         // GET api/RepartoPropio/Envios?fecha=2026-10-29&soloMios=true
         /// <summary>Ariadna#63: con Repartidor y BultosCargados; con soloMios, solo los que lleva el usuario.</summary>
         [HttpGet]
