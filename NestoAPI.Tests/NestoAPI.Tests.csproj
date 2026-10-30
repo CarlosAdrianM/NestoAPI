@@ -667,6 +667,7 @@
     <Compile Include="Infrastructure\Eventos\AnunciosEventosTests.cs" />
     <Compile Include="Controllers\PreferenciasNotificacionesControllerTests.cs" />
     <Compile Include="Infrastructure\Eventos\InscripcionesEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\PlazasLlenasEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\PermisoInscribirClienteEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\EventosHorarioModalidadAsistenciaTests.cs" />
     <Compile Include="Infrastructure\Eventos\ProductoCursoEventoTests.cs" />
