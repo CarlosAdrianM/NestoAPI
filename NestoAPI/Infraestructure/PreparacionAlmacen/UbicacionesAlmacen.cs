@@ -133,8 +133,35 @@ WHERE u.Empresa = @p0 AND u.[Almacén] = @p1 AND u.[Número] = @p2 AND u.Estado 
 GROUP BY u.[Número], u.Estado, u.Pasillo, u.Fila, u.Columna
 HAVING SUM(u.Cantidad) <> 0";
 
+        // Descuadre del 46048 (30/10/26): prdUbicar suma la cantidad con
+        //   update ubicaciones set cantidad=cantidad+@cantidad where ...pasillo=@pasillo and fila=@fila and columna=@columna and estado=0
+        // es decir, a TODAS las filas libres (estado 0) del hueco. Con dos filas libres, lo ubicado cuenta dos veces: el
+        // albarán de compra 125747 (+9) dejó el 46048 en 53 con 44 de stock. Por eso, antes de llamarlo, las filas libres
+        // del producto en ese hueco se juntan en la más antigua (la suma no cambia) y prdUbicar solo encuentra una.
+        // Va en el mismo lote que prdUbicar: ExecuteSqlCommand lo mete en una transacción, si falla no se queda a medias.
+        // Variables char: comparar las columnas char con los parámetros nvarchar haría recorrer la tabla entera.
+        internal const string SQL_JUNTAR_LIBRES_DEL_HUECO = @"
+DECLARE @empresaHueco char(3) = @p0, @almacenHueco char(3) = @p1, @productoHueco char(15) = @p2,
+        @pasilloHueco char(3) = @p3, @filaHueco char(3) = @p4, @columnaHueco char(3) = @p5;
+DECLARE @filaLibre int, @totalLibre int, @filasLibres int;
+SELECT @filaLibre = MIN([NºOrden]), @totalLibre = SUM(Cantidad), @filasLibres = COUNT(*)
+FROM Ubicaciones WITH (UPDLOCK, HOLDLOCK)
+WHERE Empresa = @empresaHueco AND [Almacén] = @almacenHueco AND [Número] = @productoHueco
+  AND Pasillo = @pasilloHueco AND Fila = @filaHueco AND Columna = @columnaHueco AND Estado = 0
+HAVING COUNT(*) > 1;
+IF @filaLibre IS NOT NULL
+BEGIN
+    UPDATE Ubicaciones SET Cantidad = @totalLibre WHERE [NºOrden] = @filaLibre;
+    DELETE FROM Ubicaciones
+    WHERE Empresa = @empresaHueco AND [Almacén] = @almacenHueco AND [Número] = @productoHueco
+      AND Pasillo = @pasilloHueco AND Fila = @filaHueco AND Columna = @columnaHueco AND Estado = 0 AND [NºOrden] <> @filaLibre;
+    INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario)
+    VALUES (N'Ubicaciones', CONCAT(N'Producto ', RTRIM(@productoHueco), N' con ', @filasLibres, N' filas libres en ', RTRIM(@pasilloHueco), N'/', RTRIM(@filaHueco), N'/', RTRIM(@columnaHueco)),
+            CONCAT(N'Juntadas en la fila ', @filaLibre, N' (', @totalLibre, N' unidades) antes de ubicar'), @p11);
+END;";
+
         // El procedimiento recibe el filtro como texto (char(1000)) y lo compara con la columna entera
-        internal const string SQL_UBICAR = @"
+        internal const string SQL_UBICAR = SQL_JUNTAR_LIBRES_DEL_HUECO + @"
 DECLARE @resultado int;
 EXEC @resultado = prdUbicar @Empresa = @p0, @Almacen = @p1, @Producto = @p2, @Pasillo = @p3, @Fila = @p4, @Columna = @p5,
                             @Cantidad = @p6, @TipoFiltro = @p7, @Filtro = @p8;
