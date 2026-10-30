@@ -457,8 +457,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
             avisador = new AvisadorFichaProducto(correo, notificaciones,
                 grupo => grupo == "TiendaOnline" ? new List<string> { "Laura" } : new List<string> { @"NUEVAVISION\Manuel" },
-                _ => Task.FromResult("https://tienda.es/lata-cera-oro"));
+                _ => Task.FromResult("https://tienda.es/lata-cera-oro"),
+                SinFoto);
         }
+
+        // Los tests de siempre, sin red: la foto no se puede descargar y va el enlace
+        private static readonly Func<string, Task<FotoCorreo>> SinFoto = _ => Task.FromResult<FotoCorreo>(null);
 
         private static AvisoFicha Aviso(string destino, params string[] campos) => new AvisoFicha
         {
@@ -523,7 +527,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 OtroProducto = new ProductoConCodigo { Producto = "32564", Nombre = "GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G" }
             });
             var avisadorConEnlaces = new AvisadorFichaProducto(correo, notificaciones, _ => new List<string> { "Manuel" },
-                producto => Task.FromResult("https://tienda.es/" + producto));
+                producto => Task.FromResult("https://tienda.es/" + producto), SinFoto);
 
             await avisadorConEnlaces.AvisarEquipo(aviso, new DatosFichaActual { Producto = "32565", CodigoBarras = "8437017506379" }, new[] { "CodigoBarras" });
 
@@ -607,6 +611,181 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Pedro", "Ariadna",
                 A<NestoAPI.Models.NotificacionPushDTO>.That.Matches(n => n.Cuerpo.Contains("estaba bien")))).MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Santiago", "Ariadna", A<NestoAPI.Models.NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        // NestoAPI#752 (sugerencia 901, caso 37539): la foto va DENTRO del correo; con el enlace solo, en cuanto la tienda
+        // cambia la foto el correo se queda sin imagen.
+
+        private static string Html(System.Net.Mail.MailMessage mail)
+        {
+            System.Net.Mail.AlternateView vista = mail.AlternateViews.Last();
+            using (var lector = new System.IO.StreamReader(vista.ContentStream))
+            {
+                return lector.ReadToEnd();
+            }
+        }
+
+        [TestMethod]
+        public async Task LaFoto_VaDentroDelCorreoComoRecursoEnlazado()
+        {
+            var bytes = new byte[] { 0xFF, 0xD8, 0xFF, 1, 2, 3 };
+            string pedida = null;
+            var conFoto = new AvisadorFichaProducto(correo, notificaciones, _ => new List<string>(), _ => Task.FromResult("https://tienda.es/x"),
+                url => { pedida = url; return Task.FromResult(new FotoCorreo { Bytes = bytes, TipoMime = "image/jpeg" }); });
+
+            await conFoto.AvisarEquipo(Aviso(DestinosAvisoFicha.TIENDA_ONLINE, "Foto"), new DatosFichaActual { Producto = "22624" }, new[] { "Foto" });
+
+            Assert.AreEqual("https://tienda.es/101089-home_default/lata.jpg", pedida);
+            Assert.AreEqual(2, enviado.AlternateViews.Count, "Texto y HTML; el HTML el último (el preferido)");
+            Assert.AreEqual("text/plain", enviado.AlternateViews[0].ContentType.MediaType);
+            System.Net.Mail.AlternateView html = enviado.AlternateViews[1];
+            Assert.AreEqual("text/html", html.ContentType.MediaType);
+            System.Net.Mail.LinkedResource foto = html.LinkedResources.Single();
+            Assert.AreEqual(AvisadorFichaProducto.ID_FOTO, foto.ContentId);
+            Assert.AreEqual("image/jpeg", foto.ContentType.MediaType);
+            Assert.AreEqual("foto-22624.jpg", foto.ContentType.Name);
+            var leidos = new System.IO.MemoryStream();
+            foto.ContentStream.CopyTo(leidos);
+            CollectionAssert.AreEqual(bytes, leidos.ToArray());
+            string cuerpo = Html(enviado);
+            StringAssert.Contains(cuerpo, "src=\"cid:" + AvisadorFichaProducto.ID_FOTO + "\"");
+            Assert.IsFalse(cuerpo.Contains("<img src=\"https://"), "La imagen no depende de la tienda");
+            StringAssert.Contains(cuerpo, "Enlace/6f9c1d2e-0000-4000-8000-000000000001?resultado=Cambiado");
+            Assert.IsFalse(cuerpo.Contains(System.Net.WebUtility.HtmlEncode(AvisadorFichaProducto.NOTA_SIN_FOTO)));
+        }
+
+        [TestMethod]
+        public async Task LaFoto_SiNoSePuedeDescargar_ElCorreoSaleConElEnlaceYUnaNota()
+        {
+            await avisador.AvisarEquipo(Aviso(DestinosAvisoFicha.TIENDA_ONLINE, "Foto"), new DatosFichaActual { Producto = "22624" }, new[] { "Foto" });
+
+            Assert.AreEqual(0, enviado.AlternateViews.Count);
+            Assert.IsTrue(enviado.IsBodyHtml);
+            StringAssert.Contains(enviado.Body, "href=\"https://tienda.es/101089-home_default/lata.jpg\"");
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode(AvisadorFichaProducto.NOTA_SIN_FOTO));
+        }
+
+        [TestMethod]
+        public async Task LaFoto_SiLaDescargaRevienta_ElCorreoSaleIgual()
+        {
+            var rota = new AvisadorFichaProducto(correo, notificaciones, _ => new List<string>(), _ => Task.FromResult("https://tienda.es/x"),
+                _ => throw new InvalidOperationException("sin red"));
+
+            await rota.AvisarEquipo(Aviso(DestinosAvisoFicha.TIENDA_ONLINE, "Foto"), new DatosFichaActual { Producto = "22624" }, new[] { "Foto" });
+
+            Assert.IsNotNull(enviado);
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode(AvisadorFichaProducto.NOTA_SIN_FOTO));
+        }
+
+        [TestMethod]
+        public async Task SinUrlDeFoto_NoSeDescargaNadaNiHayNota()
+        {
+            bool descargado = false;
+            var conFoto = new AvisadorFichaProducto(correo, notificaciones, _ => new List<string>(), _ => Task.FromResult("https://tienda.es/x"),
+                _ => { descargado = true; return Task.FromResult<FotoCorreo>(null); });
+            AvisoFicha aviso = Aviso(DestinosAvisoFicha.COMPRAS, "Precio");
+            aviso.UrlFoto = null;
+
+            await conFoto.AvisarEquipo(aviso, new DatosFichaActual { Producto = "22624", Precio = 8.74M }, new[] { "Precio" });
+
+            Assert.IsFalse(descargado);
+            Assert.IsFalse(enviado.Body.Contains(System.Net.WebUtility.HtmlEncode(AvisadorFichaProducto.NOTA_SIN_FOTO)));
+        }
+    }
+
+    /// <summary>NestoAPI#752: la descarga de la foto para el correo, con tiempo y tamaño limitados y sin lanzar nunca.</summary>
+    [TestClass]
+    public class DescargaFotoCorreoTests
+    {
+        private class Respuestas : System.Net.Http.HttpMessageHandler
+        {
+            private readonly Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> responder;
+            public int Llamadas { get; private set; }
+
+            public Respuestas(Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> responder) => this.responder = responder;
+
+            protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+            {
+                Llamadas++;
+                return Task.FromResult(responder(request));
+            }
+        }
+
+        private static System.Net.Http.HttpResponseMessage Imagen(byte[] bytes, string tipo = "image/jpeg", bool sinLongitud = false)
+        {
+            System.Net.Http.HttpContent contenido = sinLongitud
+                ? (System.Net.Http.HttpContent)new System.Net.Http.StreamContent(new SinLongitud(bytes))
+                : new System.Net.Http.ByteArrayContent(bytes);
+            contenido.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(tipo);
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = contenido };
+        }
+
+        // Como un chunked: no se sabe el tamaño hasta leerlo
+        private class SinLongitud : System.IO.MemoryStream
+        {
+            public SinLongitud(byte[] bytes) : base(bytes) { }
+            public override bool CanSeek => false;
+        }
+
+        private static Task<FotoCorreo> Descargar(Respuestas respuestas, string url = "https://tienda.es/101089-home_default/lata.jpg", int maximo = 1000)
+            => DescargaFotoCorreo.Descargar(new System.Net.Http.HttpClient(respuestas), url, maximo);
+
+        [TestMethod]
+        public async Task Imagen_DevuelveLosBytesYElTipo()
+        {
+            var bytes = new byte[] { 1, 2, 3, 4 };
+
+            FotoCorreo foto = await Descargar(new Respuestas(_ => Imagen(bytes, "image/WEBP")));
+
+            CollectionAssert.AreEqual(bytes, foto.Bytes);
+            Assert.AreEqual("image/webp", foto.TipoMime);
+            Assert.AreEqual(".webp", foto.Extension);
+        }
+
+        [TestMethod]
+        public async Task TiendaDa404o403_Null()
+        {
+            Assert.IsNull(await Descargar(new Respuestas(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NotFound))));
+            Assert.IsNull(await Descargar(new Respuestas(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Forbidden))));
+        }
+
+        [TestMethod]
+        public async Task NoEsUnaImagen_Null()
+        {
+            Assert.IsNull(await Descargar(new Respuestas(_ => Imagen(new byte[] { 1 }, "text/html"))));
+        }
+
+        [TestMethod]
+        public async Task MasGrandeQueElLimite_Null()
+        {
+            Assert.IsNull(await Descargar(new Respuestas(_ => Imagen(new byte[1001])), maximo: 1000));
+            Assert.IsNull(await Descargar(new Respuestas(_ => Imagen(new byte[1001], sinLongitud: true)), maximo: 1000));
+            Assert.IsNotNull(await Descargar(new Respuestas(_ => Imagen(new byte[1000], sinLongitud: true)), maximo: 1000));
+        }
+
+        [TestMethod]
+        public async Task SiRevientaOSeAgotaElTiempo_Null()
+        {
+            Assert.IsNull(await Descargar(new Respuestas(_ => throw new System.Net.Http.HttpRequestException("sin red"))));
+            Assert.IsNull(await Descargar(new Respuestas(_ => throw new TaskCanceledException("tiempo agotado"))));
+        }
+
+        [TestMethod]
+        public async Task UrlQueNoEsHttp_NiSeIntenta()
+        {
+            var respuestas = new Respuestas(_ => Imagen(new byte[] { 1 }));
+
+            Assert.IsNull(await Descargar(respuestas, url: "file:///C:/Windows/win.ini"));
+            Assert.IsNull(await Descargar(respuestas, url: "lata.jpg"));
+            Assert.IsNull(await Descargar(respuestas, url: null));
+            Assert.AreEqual(0, respuestas.Llamadas);
+        }
+
+        [TestMethod]
+        public void Limites_CincoSegundosYDosMegas()
+        {
+            Assert.AreEqual(5, DescargaFotoCorreo.SEGUNDOS_MAXIMO);
+            Assert.AreEqual(2 * 1024 * 1024, DescargaFotoCorreo.BYTES_MAXIMO);
         }
     }
 }
