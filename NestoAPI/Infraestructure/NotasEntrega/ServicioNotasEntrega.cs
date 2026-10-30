@@ -21,6 +21,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         private readonly NVEntities db;
         private readonly IServicioExtractoProducto extractos;
         private readonly INumeradorTraspasos numeradorTraspasos;
+        private readonly INumeradorNotasEntrega numeradorNotasEntrega;
 
         public ServicioNotasEntrega(NVEntities db) : this(db, null)
         {
@@ -29,13 +30,16 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// <summary>
         /// NestoAPI#313: prdExtrProducto se lanza por db.Database, que no es virtual y no se puede falsear; los tests
         /// pasan aquí su propio servicio de extractos (y el numerador de traspasos, que también va por db.Database).
-        /// En producción (null), los de siempre (único punto de llamada).
+        /// En producción (null), los de siempre (único punto de llamada). NestoAPI#756: lo mismo con el numerador de
+        /// notas de entrega.
         /// </summary>
-        internal ServicioNotasEntrega(NVEntities db, IServicioExtractoProducto extractos, INumeradorTraspasos numeradorTraspasos = null)
+        internal ServicioNotasEntrega(NVEntities db, IServicioExtractoProducto extractos, INumeradorTraspasos numeradorTraspasos = null,
+            INumeradorNotasEntrega numeradorNotasEntrega = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.extractos = extractos ?? new ServicioExtractoProducto();
             this.numeradorTraspasos = numeradorTraspasos ?? new NumeradorTraspasosSql();
+            this.numeradorNotasEntrega = numeradorNotasEntrega ?? new NumeradorNotasEntregaSql();
         }
 
         /// <summary>
@@ -44,7 +48,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// Lógica:
         /// - Si líneas NO facturadas (YaFacturado=false): Solo cambia estado a NOTA_ENTREGA (-2), NO toca stock
         /// - Si líneas YA facturadas (YaFacturado=true): Cambia estado a NOTA_ENTREGA (-2) Y da de baja stock
-        /// - Obtiene número de nota de entrega de ContadoresGlobales
+        /// - Reserva el número de nota de entrega en ContadoresGlobales (numerador, UPDATE…OUTPUT)
         /// - Inserta registros en NotasEntrega por cada línea procesada
         /// - Inserta registro en ExtractoRuta con Nº_Orden negativo
         /// </summary>
@@ -101,17 +105,11 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             bool hayLineasYaFacturadas = lineasAProcesar.Any(l => l.YaFacturado);
             resultado.TeniaLineasYaFacturadas = hayLineasYaFacturadas;
 
-            // 2. Obtener y actualizar número de nota de entrega y traspaso de ContadoresGlobales
-            System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Obteniendo número de nota de entrega y traspaso de ContadoresGlobales");
-            var contador = await db.ContadoresGlobales.FirstOrDefaultAsync();
-            if (contador == null)
-            {
-                System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] ERROR: No se encontró ContadoresGlobales");
-                throw new InvalidOperationException("No se encontró el registro de ContadoresGlobales");
-            }
-
-            int numeroNotaEntrega = contador.NotaEntrega;
-            contador.NotaEntrega = numeroNotaEntrega + 1;
+            // 2. Número de nota de entrega. NestoAPI#756: ContadoresGlobales.NotaEntrega guarda el ÚLTIMO usado (como en
+            // Nesto viejo); antes se cogía tal cual y se guardaba +1 por EF, y cada nota detrás de una de Nesto viejo
+            // repetía su número. Se reserva en BD con el numerador (UPDATE…OUTPUT); la entidad no se toca para que el
+            // SaveChanges no lo pise.
+            int numeroNotaEntrega = await numeradorNotasEntrega.Siguiente(db).ConfigureAwait(false);
             System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Número de nota de entrega asignado: {numeroNotaEntrega}");
 
             // Número de traspaso para PreExtrProducto (si hay líneas ya facturadas). ContadoresGlobales.TraspasoAlmacén

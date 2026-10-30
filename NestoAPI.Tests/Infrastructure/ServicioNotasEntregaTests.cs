@@ -30,6 +30,10 @@ namespace NestoAPI.Tests.Infrastructure
         // El siguiente traspaso sale de BD (UPDATE…OUTPUT por db.Database, que no se puede falsear): numerador falso.
         private INumeradorTraspasos numerador;
         private int siguienteTraspaso;
+        // NestoAPI#756: la nota de entrega también sale de BD (UPDATE…OUTPUT). El falso imita al contador: guarda el
+        // último usado y devuelve el siguiente en cada llamada.
+        private INumeradorNotasEntrega numeradorNotas;
+        private int ultimaNotaEntrega;
 
         [TestInitialize]
         public void Setup()
@@ -55,7 +59,10 @@ namespace NestoAPI.Tests.Infrastructure
             siguienteTraspaso = 5001;
             numerador = A.Fake<INumeradorTraspasos>();
             A.CallTo(() => numerador.Siguiente(A<NVEntities>.Ignored)).ReturnsLazily(() => Task.FromResult(siguienteTraspaso));
-            servicio = new ServicioNotasEntrega(db, extractos, numerador);
+            ultimaNotaEntrega = 1000;
+            numeradorNotas = A.Fake<INumeradorNotasEntrega>();
+            A.CallTo(() => numeradorNotas.Siguiente(A<NVEntities>.Ignored)).ReturnsLazily(() => Task.FromResult(++ultimaNotaEntrega));
+            servicio = new ServicioNotasEntrega(db, extractos, numerador, numeradorNotas);
         }
 
         private static DbSet<T> DbSetCon<T>(List<T> datos) where T : class
@@ -607,8 +614,90 @@ namespace NestoAPI.Tests.Infrastructure
             // SaveChanges no pise el valor que ha dejado el UPDATE…OUTPUT
             A.CallTo(() => numerador.Siguiente(db)).MustHaveHappenedOnceExactly();
             Assert.AreEqual(5000, fakeContador.TraspasoAlmacén, "El contador de traspasos no se toca en la entidad");
-            Assert.AreEqual(1001, fakeContador.NotaEntrega, "ContadoresGlobales.NotaEntrega sí se incrementa (guarda el siguiente)");
+            Assert.AreEqual(1000, fakeContador.NotaEntrega, "NestoAPI#756: el contador de notas tampoco se toca en la entidad");
         }
+
+        #region NestoAPI#756 - Numeración de las notas de entrega
+
+        private static CabPedidoVta PedidoNotaNoFacturada(int numero, int nOrden)
+        {
+            return new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = numero,
+                Nº_Cliente = "1020",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = nOrden,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = false,
+                        Base_Imponible = 10m,
+                        Producto = "PROD756"
+                    }
+                }
+            };
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_DosNotasSeguidas_NoRepitenNumero()
+        {
+            // Regresión NestoAPI#756: la 25791 salió en 929667 (Nesto viejo) y en 929637 (API), porque la API cogía el
+            // contador tal cual (el último usado) y guardaba +1. Cada nota tiene que llevar el número que reserva el
+            // numerador, y dos seguidas, números distintos y correlativos.
+            var notasAnadidas = new List<NotaEntrega>();
+            var notasEntrega = A.Fake<DbSet<NotaEntrega>>();
+            A.CallTo(() => notasEntrega.Add(A<NotaEntrega>._)).Invokes((NotaEntrega n) => notasAnadidas.Add(n));
+            A.CallTo(() => db.NotasEntregas).Returns(notasEntrega);
+            A.CallTo(() => db.Clientes.Find(A<object[]>._)).Returns(new Cliente { Nombre = "Cliente 756" });
+            ultimaNotaEntrega = 25791; // el contador guarda el último usado
+
+            await servicio.ProcesarNotaEntrega(PedidoNotaNoFacturada(929700, 1), "testuser");
+            await servicio.ProcesarNotaEntrega(PedidoNotaNoFacturada(929701, 2), "testuser");
+
+            Assert.AreEqual(2, notasAnadidas.Count);
+            Assert.AreEqual(25792, notasAnadidas.Single(n => n.NºOrden == 1).Numero, "La primera lleva el siguiente al último usado");
+            Assert.AreEqual(25793, notasAnadidas.Single(n => n.NºOrden == 2).Numero, "La segunda, el siguiente: no repite");
+            A.CallTo(() => numeradorNotas.Siguiente(db)).MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_UsaElNumeradorYNoTocaContadoresGlobales()
+        {
+            // NestoAPI#756: si el servicio leyera o modificara la entidad ContadoresGlobales, el SaveChanges pisaría el
+            // valor que deja el UPDATE…OUTPUT (y la numeración de Nesto viejo).
+            A.CallTo(() => db.Clientes.Find(A<object[]>._)).Returns(new Cliente { Nombre = "Cliente 756" });
+            var contador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            UsarContador(contador);
+            Fake.ClearRecordedCalls(db);
+
+            await servicio.ProcesarNotaEntrega(PedidoNotaNoFacturada(929702, 3), "testuser");
+
+            A.CallTo(() => numeradorNotas.Siguiente(db)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.ContadoresGlobales).MustNotHaveHappened();
+            Assert.AreEqual(1000, contador.NotaEntrega);
+        }
+
+        [TestMethod]
+        public void NumeradorNotasEntregaSql_SubeElContadorYDevuelveElValorNuevoEnUnaSolaSentencia()
+        {
+            // NestoAPI#756: misma semántica que Nesto viejo (el contador guarda el último usado; el siguiente es el
+            // valor DESPUÉS de sumar 1) y una sola sentencia atómica, para que dos altas a la vez no se lleven el mismo
+            StringAssert.Contains(NumeradorNotasEntregaSql.SQL_SIGUIENTE, "UPDATE ContadoresGlobales SET NotaEntrega = NotaEntrega + 1");
+            StringAssert.Contains(NumeradorNotasEntregaSql.SQL_SIGUIENTE, "OUTPUT inserted.NotaEntrega");
+        }
+
+        [TestMethod]
+        public void ServicioNotasEntrega_ConstructorDeProduccion_NoFalla()
+        {
+            // El constructor público (el del IoC) pone los numeradores de verdad
+            Assert.IsNotNull(new ServicioNotasEntrega(A.Fake<NVEntities>()));
+        }
+
+        #endregion
 
         [TestMethod]
         public void NumeradorTraspasosSql_SubeElContadorYDevuelveElValorNuevoEnUnaSolaSentencia()
@@ -742,7 +831,9 @@ namespace NestoAPI.Tests.Infrastructure
             // Verificar que el contador de TraspasoAlmacén NO se incrementó (porque YaFacturado=false)
             A.CallTo(() => numerador.Siguiente(A<NVEntities>.Ignored)).MustNotHaveHappened();
             Assert.AreEqual(5000, fakeContador.TraspasoAlmacén, "TraspasoAlmacén NO debe incrementarse si no hay líneas YaFacturado=true");
-            Assert.AreEqual(1001, fakeContador.NotaEntrega, "NotaEntrega sí debe incrementarse siempre");
+            // NestoAPI#756: el número de nota se reserva siempre, pero en BD con el numerador, no en la entidad
+            A.CallTo(() => numeradorNotas.Siguiente(db)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1000, fakeContador.NotaEntrega, "NotaEntrega no se toca en la entidad (lo sube el UPDATE…OUTPUT)");
         }
 
         #endregion
