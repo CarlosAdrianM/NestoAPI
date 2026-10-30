@@ -252,5 +252,95 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
+
+        // ---- Idempotencia (revisión 30/10): la PDA repite tras un timeout ----
+
+        /// <summary>Como el de Modificaciones, en memoria.</summary>
+        private class IdempotenciaEnMemoria : IRepositorioIdempotenciaSinEtiqueta
+        {
+            public readonly Dictionary<string, string> Guardadas = new Dictionary<string, string>();
+
+            public async Task<ResultadoSinEtiquetaRecepcionDTO> UnaVez(string clave, Func<Task<ResultadoSinEtiquetaRecepcionDTO>> procesar)
+            {
+                if (Guardadas.TryGetValue(clave, out string json))
+                {
+                    return Newtonsoft.Json.JsonConvert.DeserializeObject<ResultadoSinEtiquetaRecepcionDTO>(json);
+                }
+                ResultadoSinEtiquetaRecepcionDTO resultado = await procesar();
+                Guardadas[clave] = Newtonsoft.Json.JsonConvert.SerializeObject(resultado);
+                return resultado;
+            }
+        }
+
+        private static SinEtiquetaRecepcionDTO ConClave(string clave)
+            => new SinEtiquetaRecepcionDTO { Producto = "17404", Motivo = "NoLleva", ClaveIdempotencia = clave };
+
+        [TestMethod]
+        public async Task Apuntar_MismaClaveDosVeces_AvisaUnaVezYDevuelveLaPrimeraRespuesta()
+        {
+            var idempotencia = new IdempotenciaEnMemoria();
+            servicio = new ServicioSinEtiquetaRecepcion(reposiciones, avisador, idempotencia);
+
+            ResultadoSinEtiquetaRecepcionDTO primera = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave("a1b2"), @"NUEVAVISION\Reina");
+            ResultadoSinEtiquetaRecepcionDTO segunda = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave("a1b2"), @"NUEVAVISION\Reina");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual(primera.Mensaje, segunda.Mensaje);
+            CollectionAssert.AreEqual(primera.Avisados, segunda.Avisados);
+            Assert.AreEqual("1|REI|REPO|81198|a1b2", idempotencia.Guardadas.Keys.Single());
+        }
+
+        [TestMethod]
+        public async Task Apuntar_ClavesDistintasOSinClave_AvisaCadaVez()
+        {
+            servicio = new ServicioSinEtiquetaRecepcion(reposiciones, avisador, new IdempotenciaEnMemoria());
+
+            _ = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave("uno"), "Reina");
+            _ = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave("dos"), "Reina");
+            _ = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave(null), "Reina");
+            _ = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave("  "), "Reina");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .MustHaveHappened(4, Times.Exactly);
+        }
+
+        [TestMethod]
+        public async Task Apuntar_PrimeraVezFalla_NoSeApuntaYElReintentoAvisa()
+        {
+            var idempotencia = new IdempotenciaEnMemoria();
+            servicio = new ServicioSinEtiquetaRecepcion(reposiciones, avisador, idempotencia);
+
+            _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => servicio.Apuntar("REPO", "1", "REI", "81198",
+                new SinEtiquetaRecepcionDTO { Producto = "17404", Motivo = "Raro", ClaveIdempotencia = "k" }, "Reina"));
+            _ = await servicio.Apuntar("REPO", "1", "REI", "81198", ConClave("k"), "Reina");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Apuntar_ClaveDemasiadoLarga_400()
+        {
+            servicio = new ServicioSinEtiquetaRecepcion(reposiciones, avisador, new IdempotenciaEnMemoria());
+
+            _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => servicio.Apuntar("REPO", "1", "REI", "81198",
+                ConClave(new string('x', ServicioSinEtiquetaRecepcion.LONGITUD_MAXIMA_CLAVE + 1)), "Reina"));
+        }
+
+        [TestMethod]
+        public async Task PostSinEtiqueta_MismaClave_200ConLaMismaRespuesta()
+        {
+            RecepcionesController controller = Controlador(new ServicioSinEtiquetaRecepcion(reposiciones, avisador, new IdempotenciaEnMemoria()));
+
+            var primera = await controller.PostSinEtiqueta("REPO", "81198", ConClave("g-1"), "REI") as OkNegotiatedContentResult<ResultadoSinEtiquetaRecepcionDTO>;
+            var segunda = await controller.PostSinEtiqueta("REPO", "81198", ConClave("g-1"), "REI") as OkNegotiatedContentResult<ResultadoSinEtiquetaRecepcionDTO>;
+
+            Assert.IsNotNull(primera);
+            Assert.IsNotNull(segunda);
+            Assert.AreEqual(primera.Content.Mensaje, segunda.Content.Mensaje);
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .MustHaveHappenedOnceExactly();
+        }
     }
 }

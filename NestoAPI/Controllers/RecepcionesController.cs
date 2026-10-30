@@ -244,7 +244,8 @@ namespace NestoAPI.Controllers
             }
         }
 
-        // POST api/Almacen/Recepciones/REPO/81198/SinEtiqueta?almacen=REI&empresa=1   { Producto, Motivo, Comentario, Unidades, Dispositivo }
+        // POST api/Almacen/Recepciones/REPO/81198/SinEtiqueta?almacen=REI&empresa=1   { Producto, Motivo, Comentario, Unidades, Dispositivo, ClaveIdempotencia }
+        // ClaveIdempotencia (opcional, revisión 30/10): si ya se procesó, 200 con la respuesta de la primera vez y sin volver a avisar.
         /// <summary>
         /// NestoAPI#762: ha llegado una unidad sin etiqueta (se recibe solo escaneando, RecepcionDTO.SoloEscaneando). Avisa al
         /// origen y a Compras con el motivo (NoLleva, NoSeLee u Otro con Comentario). NO cuenta la unidad: la cuenta la app con
@@ -273,6 +274,11 @@ namespace NestoAPI.Controllers
             catch (KeyNotFoundException ex)
             {
                 return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.NotFound, ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Otro reintento con la misma ClaveIdempotencia lleva más de 30 s procesándose
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Conflict, ex.Message));
             }
         }
 
