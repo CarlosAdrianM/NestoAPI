@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -159,7 +159,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Anterior = $"Nota de recogida {nota.Pedido}: sin abono" + (nota.PedidoAbono.HasValue ? $" (el {nota.PedidoAbono} ya no existe)" : string.Empty),
                 Nuevo = $"Pedido de abono {numero} (serie {cabecera.Serie?.Trim()}) para la nota de recogida {nota.Pedido}" +
                     (nota.FacturaOriginal != null ? $", factura original {nota.FacturaOriginal}" : ", sin factura original (LIFO)") +
+                    $", cliente {nota.Cliente?.Trim()}/{nota.Contacto?.Trim()}" +
                     $" (NestoAPI#760, usuario {usuario})",
+                // Modificaciones.Usuario es Computed en el EDMX: EF no lo graba (lo pone la BD). El usuario va en Nuevo.
                 Usuario = Recortar(usuario, 50)
             };
             bool guardado;

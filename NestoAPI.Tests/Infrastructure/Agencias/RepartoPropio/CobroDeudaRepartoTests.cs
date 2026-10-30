@@ -1,9 +1,11 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -203,6 +205,60 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             futuro.FechaHora = AHORA.AddDays(2);
             await servicio.Cobrar(futuro, MIGUEL);
             Assert.IsTrue(registradas.All(l => l.Fecha == AHORA.Date));
+        }
+
+        // ================================================================ auditoría en Modificaciones.Nuevo (revisión 30/10)
+
+        [TestMethod]
+        public async Task Cobrar_LaAuditoriaDeNuevoLlevaUsuarioClienteContactoEfectosEImporte()
+        {
+            // Modificaciones.Usuario es Computed en el EDMX: lo asignado no se graba, así que todo va en Nuevo
+            Efecto(1, 50m, efecto: "1");
+            Efecto(2, 30m, efecto: "2").ImportePendiente = 0;
+            ResultadoCobroDeudaDTO pasado = null;
+            A.CallTo(() => repositorio.Registrar(A<Guid>._, A<string>._, A<List<PreContabilidad>>._, A<ResultadoCobroDeudaDTO>._))
+                .ReturnsLazily((Guid clave, string usuario, List<PreContabilidad> lineas, ResultadoCobroDeudaDTO resultado) =>
+                {
+                    pasado = resultado;
+                    return Task.FromResult(4321);
+                });
+            CobroDeudaRepartoDTO peticion = Peticion(90m, 1, 2);
+            peticion.Contacto = "2";
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await servicio.Cobrar(peticion, "NUEVAVISION\\" + MIGUEL);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.IsNotInstanceOfType(r.Contenido, typeof(AuditoriaCobroDeuda), "a la app solo le va el resultado");
+            pasado.Asiento = 4321; // lo pone el repositorio antes de serializar
+            JObject nuevo = JObject.Parse(RepositorioCobrosReparto.TextoNuevo(pasado));
+            Assert.AreEqual(@"NUEVAVISION\Miguel", (string)nuevo["Usuario"]);
+            Assert.AreEqual("15191", (string)nuevo["Cliente"]);
+            Assert.AreEqual("2", (string)nuevo["Contacto"]);
+            Assert.AreEqual(90m, (decimal)nuevo["Importe"]);
+            Assert.AreEqual(40m, (decimal)nuevo["ImporteACuenta"]);
+            Assert.AreEqual(4321, (int)nuevo["Asiento"]);
+            JArray cobrados = (JArray)nuevo["EfectosCobrados"];
+            Assert.AreEqual(1, cobrados.Count);
+            Assert.AreEqual(1, (int)cobrados[0]["Id"]);
+            Assert.AreEqual("NV26001", (string)cobrados[0]["Documento"]);
+            Assert.AreEqual("1", (string)cobrados[0]["Efecto"]);
+            Assert.AreEqual(50m, (decimal)cobrados[0]["ImportePendiente"]);
+            CollectionAssert.AreEqual(new[] { 2 }, ((JArray)nuevo["EfectosNoPendientes"]).Select(t => (int)t).ToArray());
+        }
+
+        [TestMethod]
+        public void TextoNuevo_SeSigueLeyendoComoResultadoParaLosReintentos()
+        {
+            var auditoria = AuditoriaCobroDeuda.De(new ResultadoCobroDeudaDTO { Asiento = 7, Importe = 80m, ImporteACuenta = 5m, Efectos = 2, Caja = CAJA_MIGUEL },
+                MIGUEL, "15191", "0", null, null);
+
+            ResultadoCobroDeudaDTO leido = JsonConvert.DeserializeObject<ResultadoCobroDeudaDTO>(RepositorioCobrosReparto.TextoNuevo(auditoria));
+
+            Assert.AreEqual(7, leido.Asiento);
+            Assert.AreEqual(80m, leido.Importe);
+            Assert.AreEqual(5m, leido.ImporteACuenta);
+            Assert.AreEqual(2, leido.Efectos);
+            Assert.AreEqual(CAJA_MIGUEL, leido.Caja);
         }
 
         // ================================================================ lo que esperaba en la cola
