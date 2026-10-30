@@ -724,10 +724,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// </summary>
         internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, string codigoPostal)
         {
-            return FechaEntregaAjustada(fecha, ruta, almacen, DateTime.Now,
-                Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO), GestorFestivos.EsFestivo,
-                DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal));
+            TimeSpan horaCortePicking = Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO);
+            DayOfWeek? diaRutaInterna = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal);
+            // Mientras el picking automático de las 9 esté apagado, el picking real de la ruta interna es el de las 11 (el de
+            // siempre): si se cortara a las 9, un pedido del día de su ruta grabado entre las 9 y las 11 se iría a la semana siguiente.
+            TimeSpan horaCorteRutaInterna = diaRutaInterna.HasValue && PickingRutasInternasEncendido() ? CalendarioRutasDia.HORA_CORTE : horaCortePicking;
+            return FechaEntregaAjustada(fecha, ruta, almacen, DateTime.Now, horaCortePicking, GestorFestivos.EsFestivo, diaRutaInterna, horaCorteRutaInterna);
         }
+
+        /// <summary>NestoAPI#764: ¿está encendido el picking automático de las rutas internas (el de las 9)? Hook para los tests.</summary>
+        internal static Func<bool> PickingRutasInternasEncendido { get; set; } = () => Picking.PickingRutasInternasJobsService.CrearPorDefecto().EstaEncendido();
 
         /// <summary>
         /// NestoAPI#764: el código postal de entrega del pedido SOLO si su ruta es interna (si no, no hace falta y no se lee).
@@ -776,8 +782,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// (<see cref="DiasRepartoCodigosPostales.DiaRutaInterna"/>); null = sin día, como siempre. Con día, desde Algete: el
         /// próximo día de su ruta (<see cref="CalendarioRutasDia"/>, corte a las 9:00, festivos de Algete); las fechas de
         /// retención (2099...) no se mueven.</param>
+        /// <param name="horaCorteRutaInterna">La hora de corte del día de la ruta interna: <see cref="CalendarioRutasDia.HORA_CORTE"/> (9:00) con el
+        /// picking automático de rutas internas encendido; apagado, la del picking de siempre (11:00). Null = 9:00.</param>
         internal static DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, DateTime ahora, TimeSpan horaCorte,
-            Func<DateTime, string, bool> esFestivo, DayOfWeek? diaRutaInterna)
+            Func<DateTime, string, bool> esFestivo, DayOfWeek? diaRutaInterna, TimeSpan? horaCorteRutaInterna = null)
         {
             fecha = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             if (string.IsNullOrEmpty(almacen))
@@ -789,7 +797,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             if (diaRutaInterna.HasValue && almacen == Constantes.Almacenes.ALGETE && fecha < FECHA_RETENCION)
             {
-                return CalendarioRutasDia.ProximoDiaReparto(diaRutaInterna.Value, fecha, ahora, CalendarioRutasDia.HORA_CORTE,
+                return CalendarioRutasDia.ProximoDiaReparto(diaRutaInterna.Value, fecha, ahora, horaCorteRutaInterna ?? CalendarioRutasDia.HORA_CORTE,
                     d => esFestivo(d, Constantes.Almacenes.ALGETE));
             }
 

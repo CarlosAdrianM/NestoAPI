@@ -414,6 +414,28 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
+        public async Task Controller_ClienteDeLaTienda_403EnTodo()
+        {
+            // Revisión 30/10/26: el token de TiendasNuevaVision (claim «cliente») solo lleva [Authorize]: ni ve ni cambia horarios
+            // de otras fichas ni se lleva los comentarios internos de las propuestas.
+            HorarioPreferibleController controller = Controller();
+            controller.User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "cliente@correo.es"), new Claim("cliente", "15191") }, "prueba"));
+            _ = Propuesta(5, "HORARIO DE 10 A 14");
+
+            IHttpActionResult get = await controller.GetHorarioPreferible("1", "15191", "0");
+            IHttpActionResult put = await controller.PutHorarioPreferible("1", "15191", "0", new HorarioPreferibleDTO { Texto = "L-V 10:00-14:00" });
+            IHttpActionResult propuestas = await controller.GetPropuestas();
+            IHttpActionResult aceptar = await controller.PostAceptarPropuesta(5, null);
+            IHttpActionResult descartar = await controller.PostDescartarPropuesta(5);
+
+            foreach (IHttpActionResult r in new[] { get, put, propuestas, aceptar, descartar })
+            {
+                Assert.AreEqual(HttpStatusCode.Forbidden, (await r.ExecuteAsync(default)).StatusCode);
+            }
+            Assert.AreEqual(0, repositorio.Filas.Count, "No ha guardado nada");
+        }
+
+        [TestMethod]
         public async Task Controller_PutMalo400_PropuestasLista_Descartar204Y404()
         {
             HorarioPreferibleController controller = Controller();

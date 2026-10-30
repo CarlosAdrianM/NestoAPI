@@ -292,6 +292,19 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         }
 
         [TestMethod]
+        public async Task CrearAbono_OtroGanaAlGuardar_DevuelveElNumeroReservado()
+        {
+            // Revisión 30/10/26: el número de pedido se reserva antes de guardar; si el abono no se graba (carrera o error) se
+            // devuelve al contador para no quemarlo.
+            repositorio.AlGuardarOtroGana = 777;
+            int esperado = repositorio.SiguienteNumero;
+
+            _ = await servicio.CrearAbono(Peticion("NR929554-2"), "alfredo");
+
+            CollectionAssert.AreEqual(new[] { esperado }, repositorio.NumerosDevueltos);
+        }
+
+        [TestMethod]
         public async Task CrearAbono_SinEnvio_409SinEnvio()
         {
             repositorio.Parada = null;
@@ -567,6 +580,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
                 NumerosReservados++;
                 return SiguienteNumero++;
             }
+
+            public List<int> NumerosDevueltos { get; } = new List<int>();
+            public void DevolverNumeroPedido(int numero) => NumerosDevueltos.Add(numero);
 
             public Task<bool> GuardarAbono(CabPedidoVta cabecera, Modificacion modificacion, int pedidoNota, int? pedidoAbonoAnterior, string usuario)
             {
