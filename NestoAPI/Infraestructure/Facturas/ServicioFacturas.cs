@@ -752,8 +752,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 // Verifactu #38: rectificativa facturada A MANO en serie RV/RC (pedido negativo
                 // creado directamente, sin CopiarFactura ni metadata): la búsqueda LIFO de #37
                 // genera las vinculaciones y la deja declarable. Best-effort.
+                // NestoAPI#760: si el pedido es el abono de una nota de recogida con factura original, esa factura va primero.
                 await VincularRectificativaFacturadaAMano(empresa, resultadoProcedimiento,
-                    cabPedido.Serie, cabPedido.Nº_Cliente);
+                    cabPedido.Serie, cabPedido.Nº_Cliente, pedido);
 
                 // Verifactu (#34): enviar la factura recién creada a la AEAT vía Verifacti.
                 // Best-effort: si Verifacti falla, la factura sigue creada y el error queda en ELMAH.
@@ -1741,7 +1742,7 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         internal async Task VincularRectificativaFacturadaAMano(string empresa, string numeroFactura,
-            string serieFactura, string cliente)
+            string serieFactura, string cliente, int? pedido = null)
         {
             try
             {
@@ -1751,7 +1752,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     return;
                 }
 
-                if (await GenerarVinculacionesLifo(empresa, numeroFactura, cliente))
+                string facturaPreferida = pedido.HasValue ? await FacturaOriginalDeAbonoSinFallar(empresa, pedido.Value) : null;
+                if (await GenerarVinculacionesLifo(empresa, numeroFactura, cliente, facturaPreferida))
                 {
                     // Con las vinculaciones ya en su sitio, la rectificativa puede declararse (#36)
                     await EnviarRectificativaAVerifactu(empresa, numeroFactura);
@@ -1765,12 +1767,34 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
+        /// NestoAPI#760: la FacturaOriginal de la nota de recogida cuyo abono es este pedido (sustituible en los tests). Por defecto,
+        /// NotasEntregaCabecera por SQL.
+        /// </summary>
+        internal Func<string, int, Task<string>> FacturaOriginalDeAbono { get; set; }
+
+        private async Task<string> FacturaOriginalDeAbonoSinFallar(string empresa, int pedido)
+        {
+            try
+            {
+                Func<string, int, Task<string>> leer = FacturaOriginalDeAbono
+                    ?? new NotasEntrega.RepositorioAbonosRecogida(db).LeerFacturaOriginalDelAbono;
+                return await leer(empresa?.Trim(), pedido);
+            }
+            catch (Exception ex)
+            {
+                // Sin la factura original se vincula todo por el LIFO, como cualquier rectificativa hecha a mano.
+                logService.LogError($"Abono por recogida #760: no se pudo leer la factura original del pedido {pedido}: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Verifactu #38: genera las vinculaciones LIFO de una rectificativa que no las tiene
         /// (pedido negativo creado a mano, o copia cuyo guardado falló — caso RV2600001 del
         /// 20/08/26, GRANT de LinFacturaVtaRectificacion). Idempotente: si ya está vinculada
         /// no toca nada. Devuelve true si las ha CREADO ahora (el llamante decide si declara).
         /// </summary>
-        internal async Task<bool> GenerarVinculacionesLifo(string empresa, string numeroFactura, string cliente)
+        internal async Task<bool> GenerarVinculacionesLifo(string empresa, string numeroFactura, string cliente, string facturaPreferida = null)
         {
             // ELMAH 20-21/08/26: el job llama con factura.Empresa TAL CUAL sale de la BD, y
             // CabFacturaVta.Empresa es char(3) → "1  ". LinFacturaVtaRectificacion.Empresa es
@@ -1802,7 +1826,7 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 List<Models.Rectificativas.VinculacionRectificativa> vinculaciones =
                     await gestor.BuscarFacturasOriginales(empresaLimpia, cliente?.Trim(), linea.Producto,
-                        -(linea.Cantidad ?? 0));
+                        -(linea.Cantidad ?? 0), facturaPreferida);
                 nuevas.AddRange(vinculaciones.Select(v => new LinFacturaVtaRectificacion
                 {
                     Empresa = empresaLimpia,
