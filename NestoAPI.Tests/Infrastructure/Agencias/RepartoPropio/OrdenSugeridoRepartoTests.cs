@@ -391,10 +391,50 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             CollectionAssert.AreEqual(new[] { -3, 251300 }, Ids(r));
             Assert.AreEqual(OrdenSugeridoRepartoDTO.ORIGEN_ALMACEN, r.Origen);
             Assert.AreEqual(SedesReparto.ALGETE.Longitud, r.OrigenLongitud);
+            Assert.AreEqual(OrdenSugeridoRepartoDTO.DESTINO_ALMACEN, r.Destino);
+            Assert.AreEqual(SedesReparto.ALGETE.Latitud, r.DestinoLatitud);
             Assert.AreEqual(OrdenSugeridoRepartoDTO.MOTOR_OSRM, r.Motor);
             Assert.AreEqual(61.2m, r.Kilometros);
             Assert.AreEqual(75, r.Minutos);
             Assert.AreEqual(1, orden.Filas[-3].Orden);
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_ConDestinoPersonalizado_AcabaAhi_YLaRespuestaLoDice()
+        {
+            // Sale de Algete y acaba en Madrid centro (p. ej. la casa del repartidor): cerca de Algete → Alcobendas → Madrid.
+            await Parada(251300, "Calle A, 1", EN_MADRID);
+            await Parada(251301, "Calle B, 1", CERCA_ALGETE);
+            await Parada(251302, "Calle C, 1", EN_ALCOBENDAS);
+            CoordenadasGeo destinoUsado = null;
+            motor.Responder = (o, d, p) => { destinoUsado = d; return null; }; // OSRM no responde: heurística con el mismo destino
+            var casa = new CoordenadasGeo(40.400m, -3.705m);
+
+            var r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA, DestinoLatitud = casa.Latitud, DestinoLongitud = casa.Longitud }, ANDRE)).Contenido;
+
+            CollectionAssert.AreEqual(new[] { 251301, 251302, 251300 }, Ids(r));
+            Assert.AreEqual(OrdenSugeridoRepartoDTO.DESTINO_PERSONALIZADO, r.Destino);
+            Assert.AreEqual(casa.Latitud, r.DestinoLatitud);
+            Assert.AreEqual(casa.Longitud, r.DestinoLongitud);
+            Assert.AreEqual(OrdenSugeridoRepartoDTO.ORIGEN_ALMACEN, r.Origen);
+            Assert.AreEqual(casa.Latitud, destinoUsado.Latitud, "OSRM recibe ese destino como último punto");
+
+            string url = MotorRutasOsrm.Url(SedesReparto.ALGETE, casa, new List<CoordenadasGeo> { EN_ALCOBENDAS });
+            StringAssert.Contains(url, ";-3.705,40.4?roundtrip=false&source=first&destination=last");
+        }
+
+        [TestMethod]
+        public async Task OrdenSugerido_DestinoIncompletoOFueraDeRango400()
+        {
+            await Parada(251300, "Calle A, 1", EN_MADRID);
+
+            var solo = await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { DestinoLatitud = 40.4m }, ANDRE);
+            var fuera = await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { DestinoLatitud = 40.4m, DestinoLongitud = 200m }, ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, solo.Tipo);
+            StringAssert.Contains(solo.Mensaje, "mande DestinoLatitud y DestinoLongitud juntas");
+            Assert.AreEqual(TipoResultadoReparto.Invalido, fuera.Tipo);
+            Assert.IsFalse(orden.Filas.ContainsKey(251300), "Con el destino mal no se guarda nada");
         }
 
         [TestMethod]

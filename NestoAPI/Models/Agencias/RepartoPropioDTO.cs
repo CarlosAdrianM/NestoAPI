@@ -199,6 +199,12 @@ namespace NestoAPI.Models.Agencias
         public DateTime? Fecha { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
+        /// <summary>
+        /// Dónde acaba el recorrido si no es Algete (p. ej. la casa del repartidor): los dos o ninguno. La API no lo guarda (es un
+        /// dato personal): lo guarda Ariadna en el aparato y lo manda en cada petición. Sin ellos, Algete.
+        /// </summary>
+        public decimal? DestinoLatitud { get; set; }
+        public decimal? DestinoLongitud { get; set; }
     }
 
     /// <summary>NestoAPI#767: la respuesta de POST api/RepartoPropio/OrdenSugerido.</summary>
@@ -209,6 +215,8 @@ namespace NestoAPI.Models.Agencias
         public const string MOTOR_SIN_COORDENADAS = "SinCoordenadas";
         public const string ORIGEN_POSICION = "Posicion";
         public const string ORIGEN_ALMACEN = "Almacen";
+        public const string DESTINO_ALMACEN = "Almacen";
+        public const string DESTINO_PERSONALIZADO = "Personalizado";
 
         /// <summary>
         /// Las paradas del repartidor en el orden nuevo (Orden = 1..n): primero las pendientes con coordenadas por el recorrido,
@@ -221,7 +229,11 @@ namespace NestoAPI.Models.Agencias
         public string Origen { get; set; }
         public decimal OrigenLatitud { get; set; }
         public decimal OrigenLongitud { get; set; }
-        /// <summary>Del origen a la última parada y vuelta al almacén de Algete. Con la heurística, estimados (línea recta × 1,3).</summary>
+        /// <summary>"Almacen" (Algete, por defecto) o "Personalizado" (el DestinoLatitud/DestinoLongitud de la petición).</summary>
+        public string Destino { get; set; }
+        public decimal DestinoLatitud { get; set; }
+        public decimal DestinoLongitud { get; set; }
+        /// <summary>Del origen a la última parada y de ahí al destino (Algete o el elegido). Con la heurística, estimados (línea recta × 1,3).</summary>
         public decimal? Kilometros { get; set; }
         /// <summary>Minutos de conducción (solo con OSRM; null con la heurística).</summary>
         public int? Minutos { get; set; }

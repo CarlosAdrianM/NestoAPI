@@ -10,7 +10,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// NestoAPI#767 (Ariadna#68): coordenadas de las paradas y orden sugerido. Las coordenadas salen SOLO de la caché
     /// (DireccionesCoordenadas); lo que falta lo busca un job en segundo plano con Nominatim y, mientras, esa parada va detrás.
     /// El recorrido sale de la posición ACTUAL de la PDA (o de Algete si no la manda), pasa por las paradas PENDIENTES del
-    /// repartidor y vuelve a Algete; se guarda con el mismo mecanismo que PUT Orden (último gana, aviso «repartoCambiado»).
+    /// repartidor y acaba en Algete o en el destino que mande la PDA (ese punto no se guarda en ningún sitio). El orden se guarda con el mismo mecanismo que PUT Orden (último gana, aviso «repartoCambiado»).
     /// </summary>
     public partial class ServicioRepartoPropio
     {
@@ -83,6 +83,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return ResultadoReparto<OrdenSugeridoRepartoDTO>.Mal(TipoResultadoReparto.Invalido,
                     "La posición no es válida: mande Latitud y Longitud juntas, en grados, o ninguna de las dos.");
             }
+            bool conDestino = peticion.DestinoLatitud.HasValue || peticion.DestinoLongitud.HasValue;
+            if (conDestino && !CoordenadasGeo.Validas(peticion.DestinoLatitud, peticion.DestinoLongitud))
+            {
+                return ResultadoReparto<OrdenSugeridoRepartoDTO>.Mal(TipoResultadoReparto.Invalido,
+                    "El destino no es válido: mande DestinoLatitud y DestinoLongitud juntas, en grados, o ninguna de las dos para acabar en Algete.");
+            }
+            // La casa del repartidor (u otro punto) no se guarda: solo se usa para este cálculo.
+            CoordenadasGeo final = conDestino ? new CoordenadasGeo(peticion.DestinoLatitud.Value, peticion.DestinoLongitud.Value) : SedesReparto.ALGETE;
             // 0,0 es lo que manda un GPS sin señal: como si no viniera.
             CoordenadasGeo inicio = CoordenadasGeo.Validas(peticion.Latitud, peticion.Longitud)
                 ? new CoordenadasGeo(peticion.Latitud.Value, peticion.Longitud.Value)
@@ -107,6 +115,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Origen = inicio != null ? OrdenSugeridoRepartoDTO.ORIGEN_POSICION : OrdenSugeridoRepartoDTO.ORIGEN_ALMACEN,
                 OrigenLatitud = salida.Latitud,
                 OrigenLongitud = salida.Longitud,
+                Destino = conDestino ? OrdenSugeridoRepartoDTO.DESTINO_PERSONALIZADO : OrdenSugeridoRepartoDTO.DESTINO_ALMACEN,
+                DestinoLatitud = final.Latitud,
+                DestinoLongitud = final.Longitud,
                 SinCoordenadas = sinCoordenadas.Count,
                 Motor = OrdenSugeridoRepartoDTO.MOTOR_SIN_COORDENADAS
             };
@@ -115,7 +126,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (conCoordenadas.Count > 0)
             {
                 IPlanificadorRecorrido planificador = paradas.Recorrido ?? new PlanificadorRecorrido(null);
-                RecorridoCalculado calculado = await planificador.Calcular(salida, SedesReparto.ALGETE,
+                RecorridoCalculado calculado = await planificador.Calcular(salida, final,
                     conCoordenadas.Select(p => new CoordenadasGeo(p.Latitud.Value, p.Longitud.Value)).ToList()).ConfigureAwait(false);
                 recorrido = calculado.Orden.Select(i => conCoordenadas[i]).ToList();
                 respuesta.Motor = calculado.Motor;
