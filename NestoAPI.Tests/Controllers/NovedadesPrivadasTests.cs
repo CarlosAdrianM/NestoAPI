@@ -276,18 +276,18 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void GetImagenNovedad_OtroUsuario_NoExiste()
+        public async System.Threading.Tasks.Task GetImagenNovedad_OtroUsuario_NoExiste()
         {
             A.CallTo(() => servicio.LeerImagen(PRIVADA)).Returns(new ImagenComentarioNovedad { Imagen = new byte[] { 1 }, ImagenTipo = "image/png" });
             ComoOtro();
 
-            Assert.AreEqual(HttpStatusCode.NotFound, controller.GetImagenNovedad(PRIVADA).StatusCode);
+            Assert.AreEqual(HttpStatusCode.NotFound, (await controller.GetImagenNovedad(PRIVADA)).StatusCode);
             ComoAutor();
-            Assert.AreEqual(HttpStatusCode.OK, controller.GetImagenNovedad(PRIVADA).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await controller.GetImagenNovedad(PRIVADA)).StatusCode);
         }
 
         [TestMethod]
-        public void GetImagenComentario_DeUnaPrivada_OtroUsuarioNoLaVe()
+        public async System.Threading.Tasks.Task GetImagenComentario_DeUnaPrivada_OtroUsuarioNoLaVe()
         {
             A.CallTo(() => feedback.LeerImagen(60)).Returns(new ImagenComentarioNovedad { Imagen = new byte[] { 1 }, ImagenTipo = "image/png" });
             A.CallTo(() => feedback.LeerAutores(A<IEnumerable<int>>._)).Returns(new List<AutorComentarioNovedad>
@@ -296,19 +296,19 @@ namespace NestoAPI.Tests.Controllers
             });
             ComoOtro();
 
-            Assert.AreEqual(HttpStatusCode.NotFound, controller.GetImagenComentario(60).StatusCode);
+            Assert.AreEqual(HttpStatusCode.NotFound, (await controller.GetImagenComentario(60)).StatusCode);
             ComoAutor();
-            Assert.AreEqual(HttpStatusCode.OK, controller.GetImagenComentario(60).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await controller.GetImagenComentario(60)).StatusCode);
         }
 
         [TestMethod]
-        public void GetImagenComentario_SinPrivadas_NoConsultaDeQueNovedadEs()
+        public async System.Threading.Tasks.Task GetImagenComentario_SinPrivadas_NoConsultaDeQueNovedadEs()
         {
             A.CallTo(() => servicio.LeerPrivadas()).Returns(new List<SugerenciaPrivadaFila>());
             A.CallTo(() => feedback.LeerImagen(60)).Returns(new ImagenComentarioNovedad { Imagen = new byte[] { 1 }, ImagenTipo = "image/png" });
             ComoOtro();
 
-            Assert.AreEqual(HttpStatusCode.OK, controller.GetImagenComentario(60).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await controller.GetImagenComentario(60)).StatusCode);
             A.CallTo(() => feedback.LeerAutores(A<IEnumerable<int>>._)).MustNotHaveHappened();
         }
 

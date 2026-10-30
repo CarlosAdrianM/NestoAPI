@@ -653,6 +653,7 @@
     <Compile Include="Controllers\NovedadesAmbitoVersionTests.cs" />
     <Compile Include="Controllers\NovedadesAdjuntosTests.cs" />
     <Compile Include="Controllers\NovedadesVideoTests.cs" />
+    <Compile Include="Controllers\NovedadesCapturasTests.cs" />
     <Compile Include="Infrastructure\RangoBytesHttpTests.cs" />
     <Compile Include="Infrastructure\VigenciaDescuentosTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />

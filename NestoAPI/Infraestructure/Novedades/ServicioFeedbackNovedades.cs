@@ -84,7 +84,8 @@ namespace NestoAPI.Infraestructure.Novedades
         {
             using (var db = new NVEntities())
             {
-                return db.Database.SqlQuery<ComentarioNovedadDTO>(@"
+                // NestoAPI#754: a una fila (sin Capturas) y luego al DTO, que la lista la rellena el controlador
+                return db.Database.SqlQuery<ComentarioNovedadFila>(@"
                     SELECT Id, NovedadId, NombreVisible, Cliente, VersionCliente, Texto, Fecha,
                            CAST(CASE WHEN Imagen IS NULL THEN 0 ELSE 1 END AS bit) AS TieneImagen,
                            CAST(CASE WHEN Usuario = @usuario THEN 1 ELSE 0 END AS bit) AS EsMio
@@ -93,6 +94,8 @@ namespace NestoAPI.Infraestructure.Novedades
                     ORDER BY Fecha, Id",
                     new SqlParameter("@id", novedadId),
                     new SqlParameter("@usuario", SqlDbType.NVarChar, 128) { Value = (object)usuario ?? DBNull.Value })
+                    .ToList()
+                    .Select(f => f.ADto())
                     .ToList();
             }
         }
@@ -201,7 +204,7 @@ namespace NestoAPI.Infraestructure.Novedades
             using (var db = new NVEntities())
             {
                 var feedback = new FeedbackNovedadesDTO { Desde = desde };
-                feedback.Comentarios = db.Database.SqlQuery<ComentarioFeedbackDTO>(@"
+                feedback.Comentarios = db.Database.SqlQuery<ComentarioFeedbackFila>(@"
                     SELECT c.Id, c.NovedadId, n.Version, n.Titulo, c.Usuario, c.NombreVisible, c.Cliente,
                            c.VersionCliente, c.Texto,
                            CAST(CASE WHEN c.Imagen IS NULL THEN 0 ELSE 1 END AS bit) AS TieneImagen,
@@ -211,7 +214,8 @@ namespace NestoAPI.Infraestructure.Novedades
                     WHERE c.Borrado = 0 AND c.Fecha >= @desde AND (@solo = 0 OR c.Revisado = 0)
                     ORDER BY c.Fecha",
                     new SqlParameter("@desde", SqlDbType.DateTime2) { Value = desde },
-                    new SqlParameter("@solo", SqlDbType.Bit) { Value = soloNoRevisados }).ToList();
+                    new SqlParameter("@solo", SqlDbType.Bit) { Value = soloNoRevisados }).ToList()
+                    .Select(f => f.ADto()).ToList();
                 feedback.VotosNegativos = db.Database.SqlQuery<VotoNegativoFeedbackDTO>(@"
                     SELECT v.NovedadId, n.Version, n.Titulo, v.Usuario, v.Cliente, v.Fecha
                     FROM NovedadesVotos v

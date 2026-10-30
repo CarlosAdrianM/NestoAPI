@@ -1,5 +1,6 @@
 using NestoAPI.Models.Novedades;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -96,6 +97,27 @@ namespace NestoAPI.Infraestructure.Novedades
         {
             imagen = null;
             tipo = null;
+            string error = Validar(comentario, out List<CapturaValidada> capturas);
+            if (error == null && capturas.Count > 0)
+            {
+                imagen = capturas[0].Contenido;
+                tipo = capturas[0].Tipo;
+            }
+            return error;
+        }
+
+        /// <summary>NestoAPI#754 (sugerencia 900): como mucho tantas capturas por sugerencia o comentario.</summary>
+        public const int MAXIMO_CAPTURAS = 10;
+
+        /// <summary>
+        /// NestoAPI#754: valida el texto y TODAS las capturas (<see cref="NuevoComentarioNovedadDTO.ImagenBase64"/>, la de
+        /// siempre, primero; luego <see cref="NuevoComentarioNovedadDTO.ImagenesBase64"/>). Las repetidas (mismos bytes)
+        /// cuentan una vez: un cliente nuevo puede mandar la primera también en ImagenBase64 para los servidores viejos.
+        /// Devuelve el mensaje de error, o null si todo está bien (y entonces <paramref name="capturas"/> trae las válidas).
+        /// </summary>
+        public static string Validar(NuevoComentarioNovedadDTO comentario, out List<CapturaValidada> capturas)
+        {
+            capturas = new List<CapturaValidada>();
             string texto = comentario?.Texto?.Trim();
             if (string.IsNullOrEmpty(texto))
             {
@@ -105,12 +127,41 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 return $"El comentario es demasiado largo (máximo {LONGITUD_MAXIMA_TEXTO} caracteres).";
             }
-            if (string.IsNullOrWhiteSpace(comentario.ImagenBase64))
+            var enBase64 = new List<string>();
+            if (!string.IsNullOrWhiteSpace(comentario.ImagenBase64))
             {
-                return null;
+                enBase64.Add(comentario.ImagenBase64);
             }
+            if (comentario.ImagenesBase64 != null)
+            {
+                enBase64.AddRange(comentario.ImagenesBase64.Where(i => !string.IsNullOrWhiteSpace(i)));
+            }
+            var validas = new List<CapturaValidada>();
+            for (int i = 0; i < enBase64.Count; i++)
+            {
+                string error = Decodificar(enBase64[i], out byte[] bytes, out string tipoReal);
+                if (error != null)
+                {
+                    return enBase64.Count > 1 ? $"Captura {i + 1}: {error}" : error;
+                }
+                if (!validas.Any(v => v.Contenido.SequenceEqual(bytes)))
+                {
+                    validas.Add(new CapturaValidada { Contenido = bytes, Tipo = tipoReal });
+                }
+            }
+            if (validas.Count > MAXIMO_CAPTURAS)
+            {
+                return $"Como máximo se pueden adjuntar {MAXIMO_CAPTURAS} capturas; quite alguna, por favor.";
+            }
+            capturas = validas;
+            return null;
+        }
 
-            string base64 = comentario.ImagenBase64.Trim();
+        private static string Decodificar(string imagenBase64, out byte[] imagen, out string tipo)
+        {
+            imagen = null;
+            tipo = null;
+            string base64 = imagenBase64.Trim();
             int coma = base64.IndexOf(',');
             if (base64.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && coma > 0)
             {

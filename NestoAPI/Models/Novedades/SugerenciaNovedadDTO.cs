@@ -19,7 +19,13 @@ namespace NestoAPI.Models.Novedades
         /// respuesta del autor a lo que le preguntamos; la sigue viendo y, si comenta, vuelve a Pendiente.
         /// </summary>
         public string Estado { get; set; }
+        /// <summary>Tiene al menos una captura (la primera se sigue sirviendo en GET api/Novedades/{Id}/Imagen).</summary>
         public bool TieneImagen { get; set; }
+        /// <summary>
+        /// NestoAPI#754 (sugerencia 900): todas sus capturas (cada una en GET api/Novedades/Capturas/{Id}). Vacía si no
+        /// tiene o si su única imagen es de las de antes (TieneImagen = true): esa, en GET api/Novedades/{Id}/Imagen.
+        /// </summary>
+        public List<CapturaNovedadDTO> Capturas { get; set; } = new List<CapturaNovedadDTO>();
         /// <summary>NestoAPI#558: «Algo no funciona» (categoría Incidencia), no una idea nueva.</summary>
         public bool EsIncidencia { get; set; }
         /// <summary>
