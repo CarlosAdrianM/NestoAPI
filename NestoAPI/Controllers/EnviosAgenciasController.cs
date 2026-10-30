@@ -800,11 +800,34 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#725: longitud mínima del texto de la confirmación (con quién se habló en la agencia y cuándo).</summary>
         public const int LONGITUD_MINIMA_CONFIRMACION_AGENCIA = 5;
 
+        /// <summary>
+        /// NestoAPI#761 (sugerencia 906, 30/10/26; envíos 250390, 250391, 250271, 250177, 250162, 250161 y 250074): ¿este PUT le
+        /// quita el retorno a un envío PENDIENTE («Recoger producto») sin que el usuario lo haya pedido (?quitarRetorno=true)?
+        /// Misma agencia: si la cambia, el retorno puede no existir en la nueva y lo decide el usuario en Pendientes.
+        /// </summary>
+        internal static bool QuitaElRetornoDelPendienteSinPedirlo(EnviosAgencia registrado, EnviosAgencia nuevo, bool quitarRetorno)
+            => !quitarRetorno && registrado != null && nuevo != null
+            && registrado.Estado < Constantes.Agencias.ESTADO_EN_CURSO
+            && registrado.Retorno > 0 && nuevo.Retorno == 0
+            && registrado.Agencia == nuevo.Agencia;
+
+        /// <summary>Sugerencia 906: la fila de EnviosHistoria que deja constancia de que se ha conservado el retorno.</summary>
+        internal static EnvioHistoria HistoriaRetornoConservado(int numeroEnvio, short retorno, string usuario, DateTime ahora) => new EnvioHistoria
+        {
+            NumeroEnvio = numeroEnvio,
+            Campo = "Retorno",
+            ValorAnterior = retorno.ToString(),
+            Observaciones = $"Se conserva el retorno {retorno} del envío pendiente: el cliente lo grababa sin retorno sin que el usuario lo quitara (sugerencia 906).",
+            Usuario = usuario == null || usuario.Length <= 50 ? usuario : usuario.Substring(0, 50),
+            FechaModificacion = ahora
+        };
+
         // PUT: api/EnviosAgencias/5
         // PUT: api/EnviosAgencias/5?confirmadoConLaAgencia=true&confirmacionAgencia=<con quién y cuándo> (NestoAPI#725)
+        // PUT: api/EnviosAgencias/5?quitarRetorno=true (sugerencia 906: el usuario le quita a mano el retorno a un pendiente)
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutEnviosAgencia(int id, EnviosAgencia enviosAgencia,
-            bool confirmadoConLaAgencia = false, string confirmacionAgencia = null)
+            bool confirmadoConLaAgencia = false, string confirmacionAgencia = null, bool quitarRetorno = false)
         {
             if (!ModelState.IsValid)
             {
@@ -871,6 +894,19 @@ namespace NestoAPI.Controllers
                 return BadRequest($"No se puede cambiar el reembolso del envío {id}, porque ya está cobrado.");
             }
 
+            // Sugerencia 906: el retorno de un pendiente («Recoger producto») solo lo quita el usuario. Si llega a 0 sin
+            // ?quitarRetorno=true (Nesto se lo había pisado en pantalla al imprimir), se conserva, queda en la historia del
+            // envío y en ELMAH. No se bloquea: el envío sale, y con su retorno.
+            EnvioHistoria historiaRetorno = null;
+            if (QuitaElRetornoDelPendienteSinPedirlo(registrado, enviosAgencia, quitarRetorno))
+            {
+                string usuarioRetorno = User?.Identity?.Name ?? "NestoAPI";
+                enviosAgencia.Retorno = registrado.Retorno;
+                historiaRetorno = HistoriaRetornoConservado(id, registrado.Retorno, usuarioRetorno, DateTime.Now);
+                RegistrarEnElmah(new Exception($"[Retorno pendiente 906] Envío {id} (pedido {registrado.Pedido}, agencia {registrado.Agencia}): " +
+                    $"el PUT de {usuarioRetorno} lo grababa sin retorno y el pendiente tenía el {registrado.Retorno}. Se conserva."));
+            }
+
             // NestoAPI#546 (28/09/26, envíos 249165/249181/249182): un pendiente de GLS se guardó con el
             // servicio 48 / horario 0 de CTT. Solo se valida si el envío está pendiente o si el PUT toca
             // agencia/servicio/horario/retorno: los tramitados con datos históricos se pueden seguir tocando.
@@ -903,6 +939,10 @@ namespace NestoAPI.Controllers
                 else
                 {
                     MarcarEnvioModificado(enviosAgencia);
+                    if (historiaRetorno != null)
+                    {
+                        _ = db.EnviosHistorias.Add(historiaRetorno);
+                    }
                     _ = await db.SaveChangesAsync();
                 }
             }
