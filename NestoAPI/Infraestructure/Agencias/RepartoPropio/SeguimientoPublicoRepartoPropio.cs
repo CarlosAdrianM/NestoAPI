@@ -75,12 +75,28 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     {
         private readonly ILectorSeguimientoPublicoReparto lector;
         private readonly Func<string, (bool Valido, int Envio)> leerToken;
+        private readonly Func<EnviosAgencia, Task<bool>> esRecogida;
 
-        public ServicioSeguimientoPublicoReparto(ILectorSeguimientoPublicoReparto lector, Func<string, (bool, int)> leerToken = null)
+        /// <param name="esRecogida">NestoAPI#759: ¿el envío es la parada de una nota de RECOGIDA? Sin él, nunca.</param>
+        public ServicioSeguimientoPublicoReparto(ILectorSeguimientoPublicoReparto lector, Func<string, (bool, int)> leerToken = null,
+            Func<EnviosAgencia, Task<bool>> esRecogida = null)
         {
             this.lector = lector ?? throw new ArgumentNullException(nameof(lector));
             this.leerToken = leerToken ?? (t => (EnlaceSeguimientoRepartoPropio.TryLeerEnvio(t, out int envio), envio));
+            this.esRecogida = esRecogida;
         }
+
+        /// <summary>NestoAPI#759: con la BD, mira si el pedido del envío es una nota de recogida.</summary>
+        public static Func<EnviosAgencia, Task<bool>> EsRecogidaEnBaseDeDatos(NVEntities db)
+            => async envio =>
+            {
+                if (envio?.Pedido == null)
+                {
+                    return false;
+                }
+                List<NotaParadaReparto> notas = await new RepositorioNotasParadaReparto(db).LeerNotas(new[] { envio.Pedido.Value }).ConfigureAwait(false);
+                return notas.Any(n => n.EsRecogida);
+            };
 
         public async Task<PaginaSeguimientoReparto> Pagina(string token)
         {
@@ -96,7 +112,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return NoEncontrada();
             }
             List<HitoEntregaPublico> hitos = await lector.LeerHitos(envio.Numero).ConfigureAwait(false) ?? new List<HitoEntregaPublico>();
-            return new PaginaSeguimientoReparto { Estado = HttpStatusCode.OK, Html = PaginaHtmlSeguimientoReparto.Html(VistaSeguimientoReparto.Construir(envio, hitos)) };
+            bool recogida = false;
+            if (esRecogida != null)
+            {
+                try
+                {
+                    recogida = await esRecogida(envio).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // La página sale igual, con los textos de una entrega.
+                    ElmahHelper.Log(new Exception($"[Seguimiento #759] No se pudo saber si el envío {envio.Numero} es una recogida: {ex.Message}", ex));
+                }
+            }
+            return new PaginaSeguimientoReparto { Estado = HttpStatusCode.OK, Html = PaginaHtmlSeguimientoReparto.Html(VistaSeguimientoReparto.Construir(envio, hitos, recogida)) };
         }
 
         public static PaginaSeguimientoReparto NoEncontrada()
@@ -132,6 +161,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public DateTime? FechaEntrega { get; set; }
         public string Receptor { get; set; }
         public string MotivoIncidencia { get; set; }
+        /// <summary>NestoAPI#759: la parada de una nota de recogida («Recogida programada» / «Recogido»).</summary>
+        public bool EsRecogida { get; set; }
         /// <summary>Del más reciente al más antiguo.</summary>
         public List<EventoSeguimientoPublico> Eventos { get; set; } = new List<EventoSeguimientoPublico>();
         public bool MostrarContacto => Estado == EstadoSeguimientoPublico.Incidencia || Estado == EstadoSeguimientoPublico.Devuelto
@@ -146,37 +177,43 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 case IncidenciaRepartoDTO.DIRECCION_INCORRECTA: return "La dirección de entrega no es correcta o está incompleta.";
                 case IncidenciaRepartoDTO.RECHAZADO: return "El envío no se aceptó en la entrega.";
                 case IncidenciaRepartoDTO.FALTAN_BULTOS: return "Faltan bultos del envío: lo estamos revisando.";
+                case IncidenciaRepartoDTO.NADA_QUE_RECOGER: return "No había nada que recoger en la dirección.";
                 default: return "Ha surgido un problema con la entrega.";
             }
         }
 
-        public static VistaSeguimientoReparto Construir(EnviosAgencia envio, IEnumerable<HitoEntregaPublico> hitos)
+        public static VistaSeguimientoReparto Construir(EnviosAgencia envio, IEnumerable<HitoEntregaPublico> hitos, bool esRecogida = false)
         {
             List<HitoEntregaPublico> lista = (hitos ?? Enumerable.Empty<HitoEntregaPublico>()).Where(h => h != null).OrderBy(h => h.FechaHora).ToList();
             HitoEntregaPublico entrega = lista.LastOrDefault(h => string.Equals(h.Tipo?.Trim(), PruebaEntregaReparto.TIPO_ENTREGA, StringComparison.OrdinalIgnoreCase));
             HitoEntregaPublico incidencia = lista.LastOrDefault(h => string.Equals(h.Tipo?.Trim(), PruebaEntregaReparto.TIPO_INCIDENCIA, StringComparison.OrdinalIgnoreCase));
 
-            var vista = new VistaSeguimientoReparto { Pedido = envio.Pedido, Bultos = envio.Bultos };
+            var vista = new VistaSeguimientoReparto { Pedido = envio.Pedido, Bultos = envio.Bultos, EsRecogida = esRecogida };
+            string hecho = esRecogida ? "Recogido" : "Entregado";
 
             switch (envio.Estado)
             {
                 case Constantes.Agencias.ESTADO_ENTREGADO:
                     vista.Estado = EstadoSeguimientoPublico.Entregado;
-                    vista.TituloEstado = "Entregado";
+                    vista.TituloEstado = hecho;
                     vista.FechaEntrega = entrega?.FechaHora ?? envio.FechaEntrega;
                     vista.Receptor = Limpio(entrega?.Receptor);
-                    vista.TextoEstado = "Su pedido ya está entregado. Gracias por confiar en Nueva Visión.";
+                    vista.TextoEstado = esRecogida
+                        ? "Ya hemos pasado a recogerlo. Gracias por confiar en Nueva Visión."
+                        : "Su pedido ya está entregado. Gracias por confiar en Nueva Visión.";
                     break;
                 case Constantes.Agencias.ESTADO_INCIDENTADO:
                     vista.Estado = EstadoSeguimientoPublico.Incidencia;
-                    vista.TituloEstado = "Incidencia en la entrega";
+                    vista.TituloEstado = esRecogida ? "Incidencia en la recogida" : "Incidencia en la entrega";
                     vista.MotivoIncidencia = MotivoLegible(incidencia?.Motivo);
                     vista.TextoEstado = vista.MotivoIncidencia + " Volveremos a intentarlo o nos pondremos en contacto con usted.";
                     break;
                 case Constantes.Agencias.ESTADO_TRAMITADO:
                     vista.Estado = EstadoSeguimientoPublico.EnReparto;
-                    vista.TituloEstado = "En reparto";
-                    vista.TextoEstado = "Su pedido está en nuestro reparto y se lo llevaremos en breve.";
+                    vista.TituloEstado = esRecogida ? "Recogida programada" : "En reparto";
+                    vista.TextoEstado = esRecogida
+                        ? "Tenemos programada la recogida: pasaremos a recogerlo en breve."
+                        : "Su pedido está en nuestro reparto y se lo llevaremos en breve.";
                     break;
                 case Constantes.Agencias.ESTADO_DEVUELTO:
                     vista.Estado = EstadoSeguimientoPublico.Devuelto;
@@ -198,7 +235,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             // La historia: la salida a reparto y lo que ha registrado el repartidor.
             if (envio.Estado >= Constantes.Agencias.ESTADO_TRAMITADO)
             {
-                vista.Eventos.Add(new EventoSeguimientoPublico { Fecha = envio.Fecha, ConHora = false, Titulo = "Preparado para el reparto" });
+                vista.Eventos.Add(new EventoSeguimientoPublico { Fecha = envio.Fecha, ConHora = false, Titulo = esRecogida ? "Recogida programada" : "Preparado para el reparto" });
             }
             foreach (HitoEntregaPublico hito in lista)
             {
@@ -209,8 +246,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     {
                         Fecha = hito.FechaHora,
                         ConHora = true,
-                        Titulo = "Entregado",
-                        Detalle = receptor == null ? null : "Lo recogió " + receptor + "."
+                        Titulo = hecho,
+                        Detalle = receptor == null ? null : (esRecogida ? "Lo entregó " : "Lo recogió ") + receptor + "."
                     });
                 }
                 else if (string.Equals(hito.Tipo?.Trim(), PruebaEntregaReparto.TIPO_INCIDENCIA, StringComparison.OrdinalIgnoreCase))
@@ -221,7 +258,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             // Entregado sin prueba del repartidor (p. ej. cerrado desde Nesto): la fecha del envío.
             if (vista.Estado == EstadoSeguimientoPublico.Entregado && entrega == null && envio.FechaEntrega.HasValue)
             {
-                vista.Eventos.Add(new EventoSeguimientoPublico { Fecha = envio.FechaEntrega.Value, ConHora = envio.FechaEntrega.Value.TimeOfDay != TimeSpan.Zero, Titulo = "Entregado" });
+                vista.Eventos.Add(new EventoSeguimientoPublico { Fecha = envio.FechaEntrega.Value, ConHora = envio.FechaEntrega.Value.TimeOfDay != TimeSpan.Zero, Titulo = hecho });
             }
             vista.Eventos = vista.Eventos.OrderByDescending(e => e.Fecha).ToList();
             return vista;
@@ -253,7 +290,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             if (vista.Estado == EstadoSeguimientoPublico.Entregado && vista.Receptor != null)
             {
-                _ = cuerpo.Append("<p class=\"dato\">Lo recogió <strong>").Append(H(vista.Receptor)).Append("</strong></p>");
+                _ = cuerpo.Append("<p class=\"dato\">").Append(vista.EsRecogida ? "Lo entregó" : "Lo recogió").Append(" <strong>").Append(H(vista.Receptor)).Append("</strong></p>");
             }
             _ = cuerpo.Append("</div>");
 

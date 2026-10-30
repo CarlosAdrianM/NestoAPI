@@ -35,7 +35,8 @@ namespace NestoAPI.Controllers
 
         internal RepartoPropioController(NVEntities db)
             : this(db, new ServicioRepartoPropio(new RepositorioRepartoPropio(db), avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
-                informes: () => new Infraestructure.Informes.InformesService(db), carga: new RepositorioCargaFurgoneta(db)))
+                informes: () => new Infraestructure.Informes.InformesService(db), carga: new RepositorioCargaFurgoneta(db),
+                paradas: DependenciasParadasReparto.DeLaBaseDeDatos(db, new Infraestructure.Notificaciones.AvisosAlmacenSignalR())))
         {
         }
 
@@ -60,7 +61,10 @@ namespace NestoAPI.Controllers
         }
 
         // GET api/RepartoPropio/Envios?fecha=2026-10-29&soloMios=true
-        /// <summary>Ariadna#63: con Repartidor y BultosCargados; con soloMios, solo los que lleva el usuario.</summary>
+        /// <summary>
+        /// Ariadna#63: con Repartidor y BultosCargados. NestoAPI#759: las paradas (envíos, notas y reposiciones) por Orden; con
+        /// soloMios, las del usuario y las que no ha cargado nadie.
+        /// </summary>
         [HttpGet]
         [Route("Envios")]
         [ResponseType(typeof(List<EnvioRepartoDTO>))]
@@ -87,7 +91,7 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido();
             }
-            return Responder(await servicio.Cargar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+            return Responder(await servicio.Cargar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
         // GET api/RepartoPropio/SinCargar?fecha=2026-10-29
@@ -117,7 +121,24 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.Bulto(codigo));
         }
 
-        // POST api/RepartoPropio/Envios/123456/Entregar
+        // PUT api/RepartoPropio/Orden { FechaHora, Envios: [251300, -12, 251301] }
+        /// <summary>
+        /// NestoAPI#759: el orden de las paradas del repartidor (posición 1..n). Último gana por FechaHora; se ignoran las que no
+        /// están en reparto, las de otro repartidor y las repetidas. 400 sin Scripts/Issue759_ParadasReparto.sql.
+        /// </summary>
+        [HttpPut]
+        [Route("Orden")]
+        [ResponseType(typeof(ResultadoOrdenRepartoDTO))]
+        public async Task<IHttpActionResult> PutOrden([FromBody] OrdenRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.GuardarOrden(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
+        // POST api/RepartoPropio/Envios/123456/Entregar (las de reposición, con su EnvioId negativo: Envios/-12/Entregar)
         [HttpPost]
         [Route("Envios/{envioId:int}/Entregar")]
         [ResponseType(typeof(EstadoEnvioRepartoDTO))]
@@ -127,7 +148,7 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido();
             }
-            return Responder(await servicio.Entregar(envioId, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+            return Responder(await servicio.Entregar(envioId, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
         // POST api/RepartoPropio/Envios/123456/Incidencia
@@ -140,7 +161,7 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido();
             }
-            return Responder(await servicio.Incidencia(envioId, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+            return Responder(await servicio.Incidencia(envioId, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
         // GET api/RepartoPropio/Envios/123456/PruebaEntrega
@@ -202,6 +223,19 @@ namespace NestoAPI.Controllers
                     return Content(HttpStatusCode.BadRequest, new { Message = resultado.Mensaje });
             }
         }
+
+        /// <summary>NestoAPI#759: la conexión de SignalR y el dispositivo de la PDA (para no avisarle de su propio cambio).</summary>
+        private OrigenPeticionReparto Origen()
+            => new OrigenPeticionReparto
+            {
+                Conexion = Cabecera(Infraestructure.Notificaciones.AvisosAlmacen.CABECERA_CONEXION),
+                Dispositivo = Cabecera(Infraestructure.Notificaciones.AvisosAlmacen.CABECERA_DISPOSITIVO)
+            };
+
+        private string Cabecera(string nombre)
+            => Request != null && Request.Headers.TryGetValues(nombre, out IEnumerable<string> valores)
+                ? valores.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim()
+                : null;
 
         private IHttpActionResult Prohibido()
             => Content(HttpStatusCode.Forbidden, new { Message = "Su usuario no tiene permiso para el reparto propio." });

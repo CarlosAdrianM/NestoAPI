@@ -58,6 +58,28 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
         /// <summary>«NE930123» / «NR930123» / «NR930123-2» → el envío de su parada (agencia 14, Tramitado o Incidentado), o null.</summary>
         Task<int?> ResolverParada(string codigo);
+
+        /// <summary>
+        /// NestoAPI#759: como <see cref="ResolverParada"/>, pero diciendo por qué no hay parada (no es una nota, no está en el
+        /// reparto o ya está entregada), para dar el 404/409 de usted al escanear. Null si el código no es NE/NR.
+        /// </summary>
+        Task<ResolucionCodigoNota> Resolver(string codigo);
+    }
+
+    /// <summary>NestoAPI#759: lo que se sabe de un código NE/NR escaneado.</summary>
+    public class ResolucionCodigoNota
+    {
+        public int Pedido { get; set; }
+        /// <summary>1 en NE{Pedido} y NR{Pedido}; N en NR{Pedido}-{N}.</summary>
+        public int Bulto { get; set; } = 1;
+        /// <summary>El prefijo es NR.</summary>
+        public bool EsRecogida { get; set; }
+        /// <summary>El pedido existe en la empresa 1 y es una nota de entrega.</summary>
+        public bool EsNota { get; set; }
+        /// <summary>El envío de su parada (agencia 14, Tramitado o Incidentado), o null.</summary>
+        public int? EnvioId { get; set; }
+        /// <summary>Sin parada activa, pero con un envío de la agencia 14 ya entregado.</summary>
+        public int? EnvioEntregado { get; set; }
     }
 
     /// <summary>
@@ -187,20 +209,34 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             return resultado;
         }
 
-        public async Task<int?> ResolverParada(string codigo)
+        public async Task<int?> ResolverParada(string codigo) => (await Resolver(codigo).ConfigureAwait(false))?.EnvioId;
+
+        public async Task<ResolucionCodigoNota> Resolver(string codigo)
         {
-            if (!CodigoNotaEntrega.TryLeer(codigo, out _, out int pedido, out _))
+            if (!CodigoNotaEntrega.TryLeer(codigo, out string prefijo, out int pedido, out int? bulto))
             {
                 return null;
             }
+            var resolucion = new ResolucionCodigoNota
+            {
+                Pedido = pedido,
+                Bulto = bulto ?? 1,
+                EsRecogida = prefijo == CodigoNotaEntrega.PREFIJO_RECOGIDA
+            };
             PedidoNotaEntrega cabecera = await cabeceras.LeerPedido(Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido).ConfigureAwait(false);
             if (cabecera == null || !cabecera.NotaEntrega)
             {
-                return null;
+                return resolucion;
             }
+            resolucion.EsNota = true;
             List<EnvioPedidoNota> envios = await repositorio.LeerEnviosDelPedido(pedido).ConfigureAwait(false) ?? new List<EnvioPedidoNota>();
-            return envios.FirstOrDefault(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
-                && (e.Estado == Constantes.Agencias.ESTADO_TRAMITADO || e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO))?.Numero;
+            List<EnvioPedidoNota> propios = envios.Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO).ToList();
+            resolucion.EnvioId = propios.FirstOrDefault(e => e.Estado == Constantes.Agencias.ESTADO_TRAMITADO || e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO)?.Numero;
+            if (resolucion.EnvioId == null)
+            {
+                resolucion.EnvioEntregado = propios.FirstOrDefault(e => e.Estado == Constantes.Agencias.ESTADO_ENTREGADO)?.Numero;
+            }
+            return resolucion;
         }
 
         /// <summary>Las líneas de texto de la nota, recortadas, sin las vacías y separadas por « - ».</summary>

@@ -739,6 +739,9 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ReglasRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RepositorioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Paradas.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReposicion.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
