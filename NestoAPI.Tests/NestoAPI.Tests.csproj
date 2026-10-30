@@ -551,6 +551,8 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioUbicacionesAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasHuecoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasProductoAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetaEan13Tests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\SinEtiquetaRecepcionTests.cs" />
     <Compile Include="Controllers\EtiquetasProductoControllerTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\LecturasAlmacenTests.cs" />
     <Compile Include="Controllers\LecturasAlmacenControllerTests.cs" />
@@ -843,6 +845,7 @@
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorFamiliasIncompatiblesTests.cs" />
     <Compile Include="Infrastructure\Productos\FamiliasRestringidasTests.cs" />
     <Compile Include="Infrastructure\Productos\ServicioCodigosBarrasTests.cs" />
+    <Compile Include="Infrastructure\Productos\CodigoBarrasInternoTests.cs" />
     <Compile Include="Infrastructure\Productos\ValidadorGtinTests.cs" />
     <Compile Include="Infrastructure\Productos\ServicioSustitucionesProductoTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\GestorPreciosPermisoNecesarioTests.cs" />

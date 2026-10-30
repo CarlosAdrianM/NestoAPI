@@ -87,6 +87,42 @@ namespace NestoAPI.Tests.Infrastructure.Productos
             FichaAlGuardar.Add(string.Join(",", Productos.Select(p => p.Número + ":" + p.CodBarras)));
             return Task.CompletedTask;
         }
+
+        /// <summary>NestoAPI#762: cuántas veces se ha pedido guardar un interno (en la BD, con el bloqueo).</summary>
+        public int InternosPedidos { get; private set; }
+
+        /// <summary>NestoAPI#762: lo mismo que RepositorioCodigosBarras (en memoria no hace falta el bloqueo).</summary>
+        public Task<CodigoInternoGuardado> GuardarInternoEnExclusiva(string empresa, string producto, string candidato, string usuario)
+        {
+            InternosPedidos++;
+            ProductoCodigoBarras suyo = Filas.Where(f => f.Producto == producto && CodigoBarrasInterno.EsInterno(f.Codigo))
+                .OrderByDescending(f => f.Activo).ThenBy(f => f.Id).FirstOrDefault();
+            if (suyo != null)
+            {
+                suyo.Activo = true;
+                return Task.FromResult(new CodigoInternoGuardado { Fila = suyo, Creado = false });
+            }
+            string codigo = candidato;
+            if (codigo == null || Filas.Any(f => f.Codigo == codigo && f.Producto != producto))
+            {
+                codigo = CodigoBarrasInterno.SiguienteDelContador(Filas.Select(f => f.Codigo));
+            }
+            var fila = new ProductoCodigoBarras
+            {
+                Empresa = empresa,
+                Producto = producto,
+                Codigo = codigo,
+                Cantidad = 1,
+                Principal = false,
+                Origen = ServicioCodigosBarras.ORIGEN_ALMACEN,
+                Usuario = usuario,
+                Fecha = new DateTime(2026, 10, 30),
+                Activo = true
+            };
+            Anadir(fila);
+            Guardados++;
+            return Task.FromResult(new CodigoInternoGuardado { Fila = fila, Creado = true });
+        }
     }
 
     [TestClass]

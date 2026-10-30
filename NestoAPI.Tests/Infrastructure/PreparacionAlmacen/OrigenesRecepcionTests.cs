@@ -939,6 +939,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual("Reposición 80905 desde Alcobendas", recepcion.Titulo);
             Assert.AreEqual(1, recepcion.Lineas.Count);
+            // NestoAPI#762: las reposiciones se reciben solo escaneando
+            Assert.IsTrue(recepcion.SoloEscaneando);
             // Si la reposición ya no está en la lista (carrera), el título no se queda sin número
             A.CallTo(() => servicio.LeerPendientes("1", "ALG")).Returns(new List<ReposicionPendienteDTO>());
             Assert.AreEqual("Reposición 80905", (await Reposiciones(servicio).LeerEsperado("1", "ALG", "80905")).Titulo);

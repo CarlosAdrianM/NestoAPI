@@ -116,6 +116,19 @@ namespace NestoAPI.Infraestructure.Productos
         Task<Dictionary<string, List<string>>> CodigosActivos(string empresa, IReadOnlyCollection<string> productos);
         void Anadir(ProductoCodigoBarras fila);
         Task GuardarCambios();
+        /// <summary>
+        /// NestoAPI#762: da al producto su código interno, en exclusiva (un bloqueo de aplicación en una transacción: dos
+        /// peticiones a la vez no crean dos ni se dan el mismo contador). Si ya tiene uno, ese (reactivado si estaba de baja).
+        /// Si no, el <paramref name="candidato"/> (el de la referencia) si no es de otro producto; si no, el siguiente del contador.
+        /// </summary>
+        Task<CodigoInternoGuardado> GuardarInternoEnExclusiva(string empresa, string producto, string candidato, string usuario);
+    }
+
+    /// <summary>NestoAPI#762: la fila del código interno y si se acaba de crear.</summary>
+    public class CodigoInternoGuardado
+    {
+        public ProductoCodigoBarras Fila { get; set; }
+        public bool Creado { get; set; }
     }
 
     public interface IServicioCodigosBarras
@@ -125,6 +138,12 @@ namespace NestoAPI.Infraestructure.Productos
         Task<ResultadoCodigoBarras> MarcarPrincipal(string empresa, string producto, int id, string usuario);
         Task<ResultadoCodigoBarras> DarDeBaja(string empresa, string producto, int id, string usuario);
         Task<List<ProductoPorCodigoBarrasDTO>> BuscarPorCodigo(string empresa, string codigo);
+        /// <summary>
+        /// NestoAPI#762: el código interno del producto (29…, ver <see cref="CodigoBarrasInterno"/>): el que ya tenga o uno
+        /// nuevo (Creado). NoEncontrado si no existe el producto. Con <paramref name="ensayo"/> no guarda nada: dice cuál le
+        /// tocaría (Codigo null si sería del contador).
+        /// </summary>
+        Task<ResultadoCodigoBarras> AsignarInterno(string empresa, string producto, string usuario, bool ensayo = false);
     }
 
     /// <summary>
@@ -225,6 +244,57 @@ namespace NestoAPI.Infraestructure.Productos
 
         public const string TIPO_AVISO_CODIGO_PARECIDO = "CodigoBarrasParecido";
 
+        /// <summary>NestoAPI#762.</summary>
+        public const string MENSAJE_INTERNO_NO_PRINCIPAL =
+            "Un código interno (los que empiezan por 29) no puede ser el principal: solo vale dentro de la empresa y la ficha se manda a las tiendas online.";
+
+        public async Task<ResultadoCodigoBarras> AsignarInterno(string empresa, string producto, string usuario, bool ensayo = false)
+        {
+            string numero = producto?.Trim();
+            string emp = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            if (string.IsNullOrEmpty(numero))
+            {
+                return NoValido("Falta el producto.");
+            }
+            Producto ficha = await repositorio.LeerProducto(emp, numero).ConfigureAwait(false);
+            if (ficha == null)
+            {
+                return new ResultadoCodigoBarras { Estado = EstadoOperacionCodigoBarras.NoEncontrado, Mensaje = $"No existe el producto {numero}." };
+            }
+            List<ProductoCodigoBarras> filas = await repositorio.LeerDelProducto(emp, numero).ConfigureAwait(false) ?? new List<ProductoCodigoBarras>();
+            ProductoCodigoBarras suyo = filas.Where(f => f.Activo && CodigoBarrasInterno.EsInterno(f.Codigo)).OrderBy(f => f.Id).FirstOrDefault();
+            if (suyo != null)
+            {
+                return new ResultadoCodigoBarras { Estado = EstadoOperacionCodigoBarras.Ok, Codigo = ADto(suyo) };
+            }
+            // El de la referencia, salvo que ya sea de otro producto (no debería: nadie usa el 29); entonces, el del contador
+            string candidato = CodigoBarrasInterno.DeReferencia(numero);
+            if (candidato != null)
+            {
+                List<ProductoPorCodigoBarrasDTO> otros = await repositorio.ProductosConCodigo(emp, candidato).ConfigureAwait(false) ?? new List<ProductoPorCodigoBarrasDTO>();
+                if (otros.Any(o => !string.Equals(o.Producto?.Trim(), numero, StringComparison.OrdinalIgnoreCase)))
+                {
+                    candidato = null;
+                }
+            }
+            if (ensayo)
+            {
+                return new ResultadoCodigoBarras
+                {
+                    Estado = EstadoOperacionCodigoBarras.Ok,
+                    Codigo = candidato == null ? null : new CodigoBarrasProductoDTO { Codigo = candidato, Cantidad = 1, Origen = ORIGEN_ALMACEN, Activo = true },
+                    Mensaje = candidato == null ? $"Al {numero} le tocaría el siguiente código interno del contador." : null
+                };
+            }
+            CodigoInternoGuardado guardado = await repositorio.GuardarInternoEnExclusiva(emp, numero, candidato, UsuarioAuditoriaHelper.ParaAuditoria(usuario))
+                .ConfigureAwait(false);
+            return new ResultadoCodigoBarras
+            {
+                Estado = guardado.Creado ? EstadoOperacionCodigoBarras.Creado : EstadoOperacionCodigoBarras.Ok,
+                Codigo = ADto(guardado.Fila)
+            };
+        }
+
         public static bool PuedeEscribir(IPrincipal usuario)
         {
             return usuario != null && gruposQuePuedenEscribir.Any(g => usuario.IsInRoleSinDominio(g));
@@ -303,6 +373,10 @@ namespace NestoAPI.Infraestructure.Productos
             if (proveedor != null && proveedor.Length > 10)
             {
                 return NoValido("El proveedor no puede tener más de 10 caracteres.");
+            }
+            if (nuevo.Principal && CodigoBarrasInterno.EsInterno(codigo))
+            {
+                return NoValido(MENSAJE_INTERNO_NO_PRINCIPAL);
             }
             if (nuevo.Principal && codigo.Length > LONGITUD_MAXIMA_FICHA)
             {
@@ -385,7 +459,9 @@ namespace NestoAPI.Infraestructure.Productos
                 };
             }
             bool hayPrincipal = filas.Any(f => f.Activo && f.Principal);
-            bool principal = nuevo.Principal || (!hayPrincipal && codigo.Length <= LONGITUD_MAXIMA_FICHA && string.IsNullOrWhiteSpace(ficha.CodBarras));
+            // NestoAPI#762: el interno nunca es el principal (la ficha la lee PrestaShop y la manda como GTIN)
+            bool principal = nuevo.Principal || (!hayPrincipal && codigo.Length <= LONGITUD_MAXIMA_FICHA && string.IsNullOrWhiteSpace(ficha.CodBarras)
+                && !CodigoBarrasInterno.EsInterno(codigo));
             var fila = new ProductoCodigoBarras
             {
                 Empresa = empresa,
@@ -441,6 +517,10 @@ namespace NestoAPI.Infraestructure.Productos
             if (fila.Codigo?.Trim().Length > LONGITUD_MAXIMA_FICHA)
             {
                 return NoValido($"Un código de más de {LONGITUD_MAXIMA_FICHA} caracteres no cabe en la ficha: no puede ser el principal.");
+            }
+            if (CodigoBarrasInterno.EsInterno(fila.Codigo))
+            {
+                return NoValido(MENSAJE_INTERNO_NO_PRINCIPAL);
             }
             Producto ficha = await repositorio.LeerProducto(empresa, numero).ConfigureAwait(false);
             if (ficha == null)
@@ -657,6 +737,73 @@ WHERE p.Empresa = @p0 AND p.[Número] IN ({0}) AND RTRIM(ISNULL(p.CodBarras, '')
         }
 
         public void Anadir(ProductoCodigoBarras fila) => db.ProductosCodigosBarras.Add(fila);
+
+        /// <summary>NestoAPI#762: el recurso del bloqueo de aplicación con el que se dan los códigos internos de uno en uno.</summary>
+        internal const string RECURSO_BLOQUEO_INTERNO = "NestoAPI#762 codigo interno";
+
+        internal const string SQL_BLOQUEO_INTERNO = @"
+DECLARE @r int;
+EXEC @r = sp_getapplock @Resource = @recurso, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;
+SELECT @r;";
+
+        // Los del contador que ya hay (en la tabla; en la ficha no puede haber: el interno nunca es el principal)
+        internal const string SQL_CODIGOS_CONTADOR = @"
+SELECT RTRIM(c.Codigo) FROM ProductosCodigosBarras c WHERE c.Empresa = @empresa AND c.Codigo LIKE '299%' AND LEN(c.Codigo) = 13";
+
+        public async Task<CodigoInternoGuardado> GuardarInternoEnExclusiva(string empresa, string producto, string candidato, string usuario)
+        {
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
+            {
+                int bloqueo = await db.Database.SqlQuery<int>(SQL_BLOQUEO_INTERNO,
+                    new SqlParameter("@recurso", System.Data.SqlDbType.NVarChar, 255) { Value = RECURSO_BLOQUEO_INTERNO })
+                    .SingleAsync().ConfigureAwait(false);
+                if (bloqueo < 0)
+                {
+                    throw new InvalidOperationException("No se ha podido reservar el código interno (se está dando otro ahora mismo): inténtelo de nuevo.");
+                }
+                // Dentro del bloqueo, otra vez: si otra petición se lo acaba de dar, ese
+                List<ProductoCodigoBarras> filas = await db.ProductosCodigosBarras.Where(c => c.Empresa == empresa && c.Producto == producto)
+                    .ToListAsync().ConfigureAwait(false);
+                ProductoCodigoBarras suyo = filas.Where(f => CodigoBarrasInterno.EsInterno(f.Codigo))
+                    .OrderByDescending(f => f.Activo).ThenBy(f => f.Id).FirstOrDefault();
+                bool creado = false;
+                if (suyo == null)
+                {
+                    string codigo = candidato;
+                    if (codigo == null || ((await ProductosConCodigo(empresa, codigo).ConfigureAwait(false)) ?? new List<ProductoPorCodigoBarrasDTO>())
+                        .Any(p => !string.Equals(p.Producto?.Trim(), producto, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        List<string> contador = await db.Database.SqlQuery<string>(SQL_CODIGOS_CONTADOR,
+                            new SqlParameter("@empresa", System.Data.SqlDbType.Char, 3) { Value = empresa }).ToListAsync().ConfigureAwait(false);
+                        codigo = CodigoBarrasInterno.SiguienteDelContador(contador);
+                    }
+                    suyo = new ProductoCodigoBarras
+                    {
+                        Empresa = empresa,
+                        Producto = producto,
+                        Codigo = codigo,
+                        Cantidad = 1,
+                        Proveedor = null,
+                        Principal = false,
+                        Origen = ServicioCodigosBarras.ORIGEN_ALMACEN,
+                        Usuario = usuario,
+                        Fecha = DateTime.Now,
+                        Activo = true
+                    };
+                    _ = db.ProductosCodigosBarras.Add(suyo);
+                    creado = true;
+                }
+                else if (!suyo.Activo)
+                {
+                    suyo.Activo = true;
+                    suyo.Usuario = usuario;
+                    suyo.Fecha = DateTime.Now;
+                }
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                transaccion.Commit();
+                return new CodigoInternoGuardado { Fila = suyo, Creado = creado };
+            }
+        }
 
         public Task GuardarCambios() => db.SaveChangesAsync();
 

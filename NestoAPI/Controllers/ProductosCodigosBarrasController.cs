@@ -21,9 +21,42 @@ namespace NestoAPI.Controllers
     {
         private readonly IServicioCodigosBarras servicio;
 
-        public ProductosCodigosBarrasController(IServicioCodigosBarras servicio)
+        private readonly InformeRepuestosSinCodigo repuestosSinCodigo;
+
+        /// <param name="repuestosSinCodigo">NestoAPI#762: el informe de lo repuesto sin código. Sin él, …/RepuestosSinCodigoBarras da 404.</param>
+        public ProductosCodigosBarrasController(IServicioCodigosBarras servicio, InformeRepuestosSinCodigo repuestosSinCodigo = null)
         {
             this.servicio = servicio ?? throw new ArgumentNullException(nameof(servicio));
+            this.repuestosSinCodigo = repuestosSinCodigo;
+        }
+
+        /// <summary>Para los tests: la fecha de hoy.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        // GET api/Productos/RepuestosSinCodigoBarras?meses=3&empresa=1
+        /// <summary>
+        /// NestoAPI#762 (limpieza inicial): los productos repuestos en los últimos <paramref name="meses"/> (3 por defecto, 1-24)
+        /// que no tienen ningún código de barras válido, los de más unidades primero: a esos hay que darles su código interno
+        /// e imprimir sus etiquetas (POST api/Almacen/EtiquetasProducto/Imprimir con Formato Ean13).
+        /// </summary>
+        [HttpGet]
+        [Route("api/Productos/RepuestosSinCodigoBarras")]
+        [ResponseType(typeof(List<ProductoRepuestoSinCodigoDTO>))]
+        public async Task<IHttpActionResult> GetRepuestosSinCodigoBarras(int meses = InformeRepuestosSinCodigo.MESES_POR_DEFECTO,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (repuestosSinCodigo == null)
+            {
+                return NotFound();
+            }
+            try
+            {
+                return Ok(await repuestosSinCodigo.Leer(Empresa(empresa), meses, Hoy()).ConfigureAwait(false));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         // GET api/Productos/32565/CodigosBarras?empresa=1
@@ -57,6 +90,28 @@ namespace NestoAPI.Controllers
             }
             nuevo.Empresa = Empresa(nuevo.Empresa);
             ResultadoCodigoBarras resultado = await servicio.Anadir(producto, nuevo, Usuario()).ConfigureAwait(false);
+            if (resultado.Estado == EstadoOperacionCodigoBarras.Creado)
+            {
+                return Content(HttpStatusCode.Created, resultado.Codigo);
+            }
+            return Respuesta(resultado);
+        }
+
+        // POST api/Productos/32565/CodigosBarras/Interno?empresa=1
+        /// <summary>
+        /// NestoAPI#762: le da al producto su código de barras interno (EAN-13 que empieza por 29; ver CodigoBarrasInterno): 201
+        /// con la fila si se acaba de crear, 200 si ya lo tenía. Nunca es el principal. 404 si no existe el producto.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Productos/{producto}/CodigosBarras/Interno")]
+        [ResponseType(typeof(CodigoBarrasProductoDTO))]
+        public async Task<IHttpActionResult> PostInterno(string producto, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (!ServicioCodigosBarras.PuedeEscribir(User))
+            {
+                return SinPermiso();
+            }
+            ResultadoCodigoBarras resultado = await servicio.AsignarInterno(Empresa(empresa), producto, Usuario()).ConfigureAwait(false);
             if (resultado.Estado == EstadoOperacionCodigoBarras.Creado)
             {
                 return Content(HttpStatusCode.Created, resultado.Codigo);

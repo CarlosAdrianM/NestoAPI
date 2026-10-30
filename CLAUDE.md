@@ -234,6 +234,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Picking system with location management (`GestorUbicaciones`)
 - Stock tracking across warehouses via `GestorStocks`
 
+### Código de barras interno y recibir escaneando (NestoAPI#762, 30/10/26)
+- Todo producto sin código de barras recibe uno **interno**: EAN-13 del rango 29 (`CodigoBarrasInterno`): `290` + referencia a 9
+  cifras + control (17404 → 2900000174047) o `299` + contador para referencias no numéricas o con choque. Va en
+  `ProductosCodigosBarras` (Origen `Almacen`) y **nunca es el principal** (la ficha `Productos.CodBarras` la manda PrestaShop como GTIN).
+  Se da en exclusiva (`sp_getapplock` en `RepositorioCodigosBarras.GuardarInternoEnExclusiva`). En la BD nadie usaba el 29.
+- Etiqueta 3×2 EAN-13: `POST api/Almacen/EtiquetasProducto/Imprimir` con `Formato = "Ean13"` (sin formato, la de siempre con la
+  referencia en Code128). Lleva el EAN-13 de la unidad (Cantidad 1) o, si no tiene, el interno, que se le da al imprimir.
+  Medidas en `GeneradorEtiquetasProducto.EAN_*`; prueba con `Scripts/Issue762_EtiquetaPrueba.ps1`.
+- Las REPO se reciben solo escaneando (`RecepcionDTO.SoloEscaneando`); lo que llega sin etiqueta, unidad a unidad con
+  `POST api/Almacen/Recepciones/{tipo}/{documento}/SinEtiqueta` (avisa al origen y a Compras; la unidad la cuenta la app).
+- Limpieza: `GET api/Productos/RepuestosSinCodigoBarras?meses=3` (o `Scripts/Issue762_ProductosRepuestosSinCodigo.sql`).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
