@@ -1076,6 +1076,7 @@
     <Compile Include="Infraestructure\SugerenciasProductos\EntradasModelo1.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\CalculadoraParesCompradosJuntos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\InformeUsoSugerenciasProductos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\ResumenRespuestasSugerencias.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\MotorSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\PredictorSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\RankingAceptacionSugerencias.cs" />
