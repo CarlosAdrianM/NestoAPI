@@ -9,9 +9,12 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Mail;
+using System.Net.Mime;
 using System.Security.Principal;
 using System.Text;
 using System.Threading.Tasks;
@@ -879,6 +882,10 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
         private readonly IServicioNotificacionesPush notificaciones;
         private readonly Func<string, List<string>> miembrosGrupo;
         private readonly Func<string, Task<string>> enlaceFicha;
+        private readonly Func<string, Task<FotoCorreo>> descargarFoto;
+
+        /// <summary>NestoAPI#752: el Content-ID de la foto metida en el correo.</summary>
+        internal const string ID_FOTO = "foto-ficha";
 
         public AvisadorFichaProducto(IServicioCorreoElectronico correo, IServicioNotificacionesPush notificaciones)
             : this(correo, notificaciones, null, null)
@@ -886,12 +893,13 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
         }
 
         internal AvisadorFichaProducto(IServicioCorreoElectronico correo, IServicioNotificacionesPush notificaciones,
-            Func<string, List<string>> miembrosGrupo, Func<string, Task<string>> enlaceFicha)
+            Func<string, List<string>> miembrosGrupo, Func<string, Task<string>> enlaceFicha, Func<string, Task<FotoCorreo>> descargarFoto = null)
         {
             this.correo = correo ?? throw new ArgumentNullException(nameof(correo));
             this.notificaciones = notificaciones ?? throw new ArgumentNullException(nameof(notificaciones));
             this.miembrosGrupo = miembrosGrupo ?? MiembrosGrupoDominio.Leer;
             this.enlaceFicha = enlaceFicha ?? ProductoDTO.RutaEnlace;
+            this.descargarFoto = descargarFoto ?? DescargaFotoCorreo.Descargar;
         }
 
         /// <summary>NestoAPI#706: UTM del enlace a la tienda del aviso de ficha (correo interno al equipo).</summary>
@@ -930,17 +938,26 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
                 }
             }
 
+            // NestoAPI#752 (sugerencia 901): la foto que vio el mozo va DENTRO del correo. Con solo el enlace, en cuanto la
+            // tienda cambia la foto (que es justo lo que se pide) la URL de PrestaShop da 403/404 y el correo sale sin imagen.
+            // El correo se manda al crear el aviso, así que es ahora cuando la foto aún existe; la descarga tiene tiempo y
+            // tamaño limitados para no frenar a Ariadna. Si no se puede, el correo sale igual con el enlace y una nota.
+            FotoCorreo foto = null;
+            if (!string.IsNullOrWhiteSpace(aviso.UrlFoto))
+            {
+                try
+                {
+                    foto = await descargarFoto(aviso.UrlFoto.Trim()).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Sin foto dentro: va el enlace
+                }
+            }
+
             try
             {
-                var mail = new MailMessage
-                {
-                    From = new MailAddress("nesto@nuevavision.es"),
-                    Subject = titulo,
-                    IsBodyHtml = true,
-                    Body = CuerpoCorreo(aviso, ficha, camposNuevos, enlace, enlaceOtro)
-                };
-                mail.To.Add(new MailAddress(DestinosAvisoFicha.Correo(aviso.Destino)));
-                _ = correo.EnviarCorreoSMTP(mail);
+                _ = correo.EnviarCorreoSMTP(Correo(aviso, ficha, camposNuevos, titulo, enlace, enlaceOtro, foto));
             }
             catch (Exception ex)
             {
@@ -987,6 +1004,41 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             {
                 await notificaciones.GuardarEnBuzonDeUsuario(mozo, Constantes.Aplicaciones.ARIADNA, notificacion).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#752: sin foto, el HTML de siempre. Con foto, texto + HTML (la vista preferida, la última) con la foto
+        /// como recurso enlazado (cid:), como el correo de los cheques regalo.
+        /// </summary>
+        internal static MailMessage Correo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos, string titulo,
+            string enlaceFicha, string enlaceOtro, FotoCorreo foto)
+        {
+            var mail = new MailMessage
+            {
+                From = new MailAddress("nesto@nuevavision.es"),
+                Subject = titulo
+            };
+            mail.To.Add(new MailAddress(DestinosAvisoFicha.Correo(aviso.Destino)));
+            bool conFoto = foto?.Bytes != null && foto.Bytes.Length > 0 && !string.IsNullOrWhiteSpace(aviso.UrlFoto);
+            string html = CuerpoCorreo(aviso, ficha, campos, enlaceFicha, enlaceOtro, conFoto);
+            if (!conFoto)
+            {
+                mail.IsBodyHtml = true;
+                mail.Body = html;
+                return mail;
+            }
+            AlternateView texto = AlternateView.CreateAlternateViewFromString(CuerpoTexto(aviso, ficha, campos), Encoding.UTF8, MediaTypeNames.Text.Plain);
+            AlternateView vista = AlternateView.CreateAlternateViewFromString(html, Encoding.UTF8, MediaTypeNames.Text.Html);
+            var imagen = new LinkedResource(new MemoryStream(foto.Bytes), foto.TipoMime)
+            {
+                ContentId = ID_FOTO,
+                TransferEncoding = TransferEncoding.Base64
+            };
+            imagen.ContentType.Name = $"foto-{aviso.Producto}{foto.Extension}";
+            vista.LinkedResources.Add(imagen);
+            mail.AlternateViews.Add(texto);
+            mail.AlternateViews.Add(vista);
+            return mail;
         }
 
         private static string CuerpoTexto(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos)
@@ -1050,7 +1102,11 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
                 + " Pídele una foto del código del envase o el número que lleva impreso.";
         }
 
-        private static string CuerpoCorreo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos, string enlaceFicha, string enlaceOtro)
+        /// <summary>NestoAPI#752: la nota cuando la foto no ha podido ir dentro del correo.</summary>
+        internal const string NOTA_SIN_FOTO = "No se ha podido meter la foto en el correo (la tienda no la ha servido). Si no se ve, es que la tienda ya la ha cambiado o borrado.";
+
+        internal static string CuerpoCorreo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos, string enlaceFicha, string enlaceOtro,
+            bool fotoDentro = false)
         {
             string H(string s) => WebUtility.HtmlEncode(s ?? string.Empty);
             var html = new StringBuilder();
@@ -1087,7 +1143,16 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             }
             if (!string.IsNullOrWhiteSpace(aviso.UrlFoto))
             {
-                _ = html.Append($"<p>La foto que ha visto:<br/><img src=\"{H(aviso.UrlFoto)}\" style=\"max-width:240px\"/></p>");
+                if (fotoDentro)
+                {
+                    _ = html.Append($"<p>La foto que ha visto:<br/><img src=\"cid:{ID_FOTO}\" alt=\"Foto que ha visto el mozo\" style=\"max-width:240px\"/>"
+                        + $"<br/><a href=\"{H(aviso.UrlFoto)}\" style=\"color:#666;font-size:small\">Dirección de la foto en la tienda</a></p>");
+                }
+                else
+                {
+                    _ = html.Append($"<p>La foto que ha visto:<br/><img src=\"{H(aviso.UrlFoto)}\" style=\"max-width:240px\"/>"
+                        + $"<br/><a href=\"{H(aviso.UrlFoto)}\">Abrir la foto</a><br/><span style=\"color:#666\">{H(NOTA_SIN_FOTO)}</span></p>");
+                }
             }
             if (!string.IsNullOrWhiteSpace(enlaceFicha))
             {
@@ -1098,6 +1163,89 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             _ = html.Append($"<a href=\"{H(EnlaceCerrar(aviso.Clave, EstadosAvisoFicha.ESTABA_BIEN))}\" style=\"padding:8px 16px;background:#E0E0E0;color:#000;text-decoration:none;border-radius:6px\">Estaba bien</a>");
             _ = html.Append("</p><p style=\"color:#666\">Si cambias el dato en la ficha, el aviso se cierra solo. Al cerrarlo, al mozo le llega la respuesta en Ariadna.</p>");
             return html.ToString();
+        }
+    }
+
+    /// <summary>NestoAPI#752: una foto descargada para ir dentro de un correo.</summary>
+    public class FotoCorreo
+    {
+        public byte[] Bytes { get; set; }
+        public string TipoMime { get; set; }
+
+        public string Extension
+        {
+            get
+            {
+                switch (TipoMime?.ToLowerInvariant())
+                {
+                    case "image/jpeg":
+                    case "image/jpg":
+                    case "image/pjpeg": return ".jpg";
+                    case "image/png": return ".png";
+                    case "image/gif": return ".gif";
+                    case "image/webp": return ".webp";
+                    default: return string.Empty;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#752 (sugerencia 901): descarga la foto de la tienda para meterla en el correo del aviso de ficha. Falla en
+    /// silencio (null): si no hay foto dentro, el correo sale con el enlace. Tiempo y tamaño limitados: se hace mientras
+    /// Ariadna espera la respuesta del aviso.
+    /// </summary>
+    public static class DescargaFotoCorreo
+    {
+        internal const int SEGUNDOS_MAXIMO = 5;
+        internal const int BYTES_MAXIMO = 2 * 1024 * 1024;
+
+        private static readonly HttpClient clienteCompartido = new HttpClient { Timeout = TimeSpan.FromSeconds(SEGUNDOS_MAXIMO) };
+
+        public static Task<FotoCorreo> Descargar(string url) => Descargar(clienteCompartido, url, BYTES_MAXIMO);
+
+        internal static async Task<FotoCorreo> Descargar(HttpClient cliente, string url, int bytesMaximo)
+        {
+            if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out Uri uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                return null;
+            }
+            try
+            {
+                using (HttpResponseMessage respuesta = await cliente.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                {
+                    string tipo = respuesta.Content?.Headers?.ContentType?.MediaType;
+                    if (!respuesta.IsSuccessStatusCode || tipo == null || !tipo.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return null;
+                    }
+                    long? declarado = respuesta.Content.Headers.ContentLength;
+                    if (declarado > bytesMaximo)
+                    {
+                        return null;
+                    }
+                    using (Stream origen = await respuesta.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                    using (var destino = new MemoryStream())
+                    {
+                        var bufer = new byte[81920];
+                        int leidos;
+                        while ((leidos = await origen.ReadAsync(bufer, 0, bufer.Length).ConfigureAwait(false)) > 0)
+                        {
+                            if (destino.Length + leidos > bytesMaximo)
+                            {
+                                return null;
+                            }
+                            destino.Write(bufer, 0, leidos);
+                        }
+                        return destino.Length == 0 ? null : new FotoCorreo { Bytes = destino.ToArray(), TipoMime = tipo.ToLowerInvariant() };
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Tiempo agotado, sin red, la tienda caída...: el correo va con el enlace
+                return null;
+            }
         }
     }
 

@@ -392,7 +392,7 @@ namespace NestoAPI
                     });
 
                 // Configurar el dashboard de Hangfire en /hangfire
-                // IMPORTANTE: Restringir acceso en producción con DashboardAuthorizationFilter
+                // NestoAPI#749: solo Dirección e Informática, con autenticación integrada de Windows (ver HangfireAuthorizationFilter)
                 app.UseHangfireDashboard("/hangfire", new DashboardOptions
                 {
                     Authorization = new[] { new HangfireAuthorizationFilter() }
@@ -1294,24 +1294,6 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Jobs recurrentes 'riesgo-abandono-resolver' (L-S 5:10) y 'riesgo-abandono-diario' (L-S 5:20) configurados (sombra)");
             Console.WriteLine("✅ Job recurrente 'clasificar-rapports-nocturno' configurado (diario a las 23:15; solo con la tabla y OpenAIKey)");
-        }
-    }
-
-    /// <summary>
-    /// Filtro de autorización simple para el dashboard de Hangfire
-    /// En producción, deberías implementar autenticación real
-    /// </summary>
-    public class HangfireAuthorizationFilter : Hangfire.Dashboard.IDashboardAuthorizationFilter
-    {
-        public bool Authorize(Hangfire.Dashboard.DashboardContext context)
-        {
-            // TODO: Implementar autenticación real en producción
-            // Por ahora permite acceso a todos (solo para desarrollo/testing)
-            // En producción podrías verificar:
-            // - Usuario autenticado
-            // - Rol específico (ej: Admin)
-            // - IP permitida
-            return true;
         }
     }
 }

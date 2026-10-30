@@ -1065,6 +1065,7 @@
     <Compile Include="Infraestructure\SugerenciasProductos\SugerenciasProductosJobsService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
+    <Compile Include="Infraestructure\HangfireAuthorizationFilter.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />
     <Compile Include="Controllers\IndicadoresStockController.cs" />
     <Compile Include="Infraestructure\IndicadoresStock\CalculadoraIndicadoresStock.cs" />
