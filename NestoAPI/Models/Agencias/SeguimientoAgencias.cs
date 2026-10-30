@@ -246,6 +246,30 @@ namespace NestoAPI.Models.Agencias
                 ? estrategia.ConstruirUrl(datos)
                 : null;
 
+        /// <summary>
+        /// NestoAPI#748: el enlace de seguimiento de un envío guardado (para el botón «Abrir seguimiento» de Nesto), o
+        /// null si no hay. El reparto propio (agencia 14) firma el número del envío con la clave de la API, así que no
+        /// depende del CodigoBarras; el resto de agencias, por su estrategia y con su albarán.
+        /// </summary>
+        public static string UrlDeEnvio(int numero, int agencia, string agenciaNombre, string identificador,
+            string codigoBarras, string codigoPostal, string cliente = null, int pedido = 0)
+        {
+            if (agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                return EnlaceSeguimientoRepartoPropio.Url(numero);
+            }
+            string url = ConstruirUrl(new DatosSeguimientoEnvio
+            {
+                AgenciaNombre = agenciaNombre?.Trim(),
+                Identificador = identificador,
+                CodigoSeguimiento = codigoBarras,
+                CodigoPostal = codigoPostal,
+                Cliente = cliente,
+                Pedido = pedido
+            });
+            return string.IsNullOrWhiteSpace(url) ? null : url;
+        }
+
         /// <summary>Estrategia de la agencia, o null si no está registrada (NestoAPI#258).</summary>
         /// <summary>Todas las estrategias registradas (para la guardia de cobertura por agencia).</summary>
         public static IReadOnlyCollection<IEstrategiaSeguimientoAgencia> Todas => PorNombre.Values.ToList();
