@@ -13,7 +13,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         Ok,
         NoEncontrado,
         Invalido,
-        Conflicto
+        Conflicto,
+        /// <summary>NestoAPI#758: la impresora de etiquetas ha fallado (502).</summary>
+        FalloImpresora
     }
 
     /// <summary>NestoAPI#757: lo que contesta el servicio; el controlador lo traduce a 200/404/400/409.</summary>

@@ -72,8 +72,11 @@ namespace NestoAPI.Infraestructure.Picking
         /// <summary>Rutas de OnTime: las únicas en las que se sugiere pasar a nuestra ruta (00 es fuera de Madrid).</summary>
         public static readonly IReadOnlyList<string> RUTAS_AGENCIA_MADRID = new List<string> { "FW", "OT" }.AsReadOnly();
 
-        /// <summary>Las rutas propias, las mismas que la facturación de rutas (<see cref="Models.Facturas.RutaPropia"/>).</summary>
-        public static readonly IReadOnlyList<string> RUTAS_PROPIAS = new Models.Facturas.RutaPropia().RutasContenidas;
+        /// <summary>
+        /// Las rutas propias, las mismas que la facturación de rutas (<see cref="Models.Facturas.RutaPropia"/>). NestoAPI#758: del
+        /// parámetro RutasRepartoPropio (<see cref="Models.Facturas.RutasPropiasConfiguradas"/>), por eso se lee cada vez.
+        /// </summary>
+        public static IReadOnlyList<string> RUTAS_PROPIAS => Models.Facturas.RutasPropiasConfiguradas.Actuales;
 
         /// <summary>Zonas (3 primeras cifras del código postal) que se sirven por AT; el resto, por la 16 (≈80 % de acierto).</summary>
         public static readonly IReadOnlyList<string> ZONAS_ATENCION_TECNICA = new List<string> { "288", "289", "283" }.AsReadOnly();

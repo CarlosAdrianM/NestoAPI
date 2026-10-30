@@ -45,6 +45,28 @@ namespace NestoAPI.Models.Facturas
         public List<TotalFactura> Totales { get; set; }
         public List<VencimientoFactura> Vencimientos { get; set; }
         public List<VendedorFactura> Vendedores { get; set; }
-        
+        /// <summary>
+        /// NestoAPI#758: los datos propios de una nota de entrega o de recogida (título, Code128 NE/NR, número de nota, bultos y
+        /// teléfonos). Solo lo rellena ServicioDocumentoNotaEntrega; con él, el PDF QuestPDF sale con el formato de la nota.
+        /// </summary>
+        public DatosNotaEntregaFactura NotaEntrega { get; set; }
+
+    }
+
+    /// <summary>NestoAPI#758: lo que la nota de entrega añade al documento del pedido.</summary>
+    public class DatosNotaEntregaFactura
+    {
+        /// <summary>«Entrega» o «Recogida».</summary>
+        public string Tipo { get; set; }
+        /// <summary>«NOTA DE ENTREGA» o «NOTA DE RECOGIDA».</summary>
+        public string Titulo { get; set; }
+        /// <summary>«NE{pedido}» o «NR{pedido}», en Code128.</summary>
+        public string CodigoBarras { get; set; }
+        /// <summary>NotasEntrega.Numero (null si la nota aún no se ha procesado).</summary>
+        public int? NumeroNota { get; set; }
+        /// <summary>Recogida: los de la nota. Entrega: los de su envío del packing (null si aún no tiene).</summary>
+        public short? Bultos { get; set; }
+        public string Telefono { get; set; }
+        public string Movil { get; set; }
     }
 }

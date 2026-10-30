@@ -23,7 +23,28 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));
             if (envio.NumeroEnvio <= 0) throw new ArgumentException("El envío no tiene número: no se puede numerar sus bultos.", nameof(envio));
-            int bultos = envio.Bultos > 0 ? envio.Bultos : 1;
+            var plantilla = new PlantillaEtiquetaRepartoPropio
+            {
+                Titulo = "REPARTO PROPIO",
+                Referencia = envio.Referencia,
+                Bultos = envio.Bultos,
+                CodigoBulto = i => CodigoBultoRepartoPropio.Bulto(envio.NumeroEnvio, i),
+                Pie = "Nueva Visión - Envío " + envio.NumeroEnvio.ToString(CultureInfo.InvariantCulture)
+            };
+            return ConstruirZpl(envio, fecha, plantilla, desdeBulto, hastaBulto);
+        }
+
+        /// <summary>
+        /// NestoAPI#758: la plantilla común (logo, destinatario, dirección, teléfono, observaciones, «Bulto N/M», reembolso,
+        /// Code128 y pie). La usan la etiqueta del envío (RP) y la de los bultos de una nota de recogida (NR), que cambian el
+        /// título, la referencia, el código de cada bulto y el pie.
+        /// </summary>
+        internal static string ConstruirZpl(DatosEnvioRemoto envio, DateTime fecha, PlantillaEtiquetaRepartoPropio plantilla,
+            int? desdeBulto = null, int? hastaBulto = null)
+        {
+            if (envio == null) throw new ArgumentNullException(nameof(envio));
+            if (plantilla?.CodigoBulto == null) throw new ArgumentNullException(nameof(plantilla));
+            int bultos = plantilla.Bultos > 0 ? plantilla.Bultos : 1;
             int desde = Math.Max(1, desdeBulto ?? 1);
             int hasta = Math.Min(bultos, hastaBulto ?? bultos);
 
@@ -38,8 +59,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Linea(zpl, "^LL1218");
                 Linea(zpl, "^LH0,0");
                 Linea(zpl, "^FO20,15" + LogoZplNuevaVision.GRAFICO + "^FS");
-                Linea(zpl, "^FO300,25^A0N,48,44^FDREPARTO PROPIO^FS");
-                Linea(zpl, "^FO300,85^A0N,32,30^FDPedido: " + Texto(envio.Referencia) + "^FS");
+                Linea(zpl, "^FO300,25^A0N," + plantilla.AltoTitulo.ToString(CultureInfo.InvariantCulture) + "," +
+                    (plantilla.AltoTitulo * 11 / 12).ToString(CultureInfo.InvariantCulture) + "^FD" + Texto(plantilla.Titulo) + "^FS");
+                Linea(zpl, "^FO300,85^A0N,32,30^FDPedido: " + Texto(plantilla.Referencia) + "^FS");
                 Linea(zpl, "^FO300,125^A0N,32,30^FDFecha: " + fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) + "^FS");
                 Linea(zpl, "^FO20,165^GB772,3,3^FS");
                 Linea(zpl, "^FO20,180^A0N,24,24^FDDESTINATARIO^FS");
@@ -55,9 +77,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     Linea(zpl, "^FO20,680^GB772,90,4^FS");
                     Linea(zpl, "^FO40,700^A0N,56,50^FDREEMBOLSO: " + reembolso.ToString("N2", Espanol) + " EUR^FS");
                 }
-                Linea(zpl, "^FO60,810^BY3,3,200^BCN,200,Y,N,N^FD" + CodigoBultoRepartoPropio.Bulto(envio.NumeroEnvio, i) + "^FS");
+                Linea(zpl, "^FO60,810^BY3,3,200^BCN,200,Y,N,N^FD" + plantilla.CodigoBulto(i) + "^FS");
                 Linea(zpl, "^FO20,1090^GB772,3,3^FS");
-                Linea(zpl, "^FO20,1110^A0N,28,26^FDNueva Visión - Envío " + envio.NumeroEnvio.ToString(CultureInfo.InvariantCulture) + "^FS");
+                Linea(zpl, "^FO20,1110^A0N,28,26^FD" + Texto(plantilla.Pie) + "^FS");
                 Linea(zpl, "^XZ");
             }
             return zpl.ToString();
@@ -83,5 +105,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         private static void Linea(StringBuilder zpl, string linea) => zpl.Append(linea).Append("\r\n");
+    }
+
+    /// <summary>NestoAPI#758: lo que cambia entre la etiqueta del envío (RP) y la de los bultos de una recogida (NR).</summary>
+    internal class PlantillaEtiquetaRepartoPropio
+    {
+        public string Titulo { get; set; }
+        /// <summary>Alto de la letra del título en puntos (48 en la del envío; la de recogida la quiere grande).</summary>
+        public int AltoTitulo { get; set; } = 48;
+        public string Referencia { get; set; }
+        public int Bultos { get; set; }
+        /// <summary>El Code128 del bulto N (1..Bultos).</summary>
+        public Func<int, string> CodigoBulto { get; set; }
+        public string Pie { get; set; }
     }
 }

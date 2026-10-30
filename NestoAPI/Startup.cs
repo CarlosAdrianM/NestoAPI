@@ -55,6 +55,9 @@ namespace NestoAPI
             {
                 ConfigurarTlsDelProceso();
 
+                // NestoAPI#758: las rutas propias (AT, 16 y las que se añadan) salen del parámetro RutasRepartoPropio de la BD.
+                Models.Facturas.RutasPropiasConfiguradas.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+
                 _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 
                 HttpConfiguration httpConfig = new HttpConfiguration();

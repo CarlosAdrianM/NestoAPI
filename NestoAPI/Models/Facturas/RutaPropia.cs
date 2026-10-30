@@ -8,7 +8,7 @@ namespace NestoAPI.Models.Facturas
     /// <summary>
     /// Implementación de tipo de ruta para rutas propias.
     ///
-    /// RUTAS CONTENIDAS: AT, 16
+    /// RUTAS CONTENIDAS: las de <see cref="RutasPropiasConfiguradas"/> (parámetro RutasRepartoPropio; por defecto AT, 16)
     ///
     /// COMPORTAMIENTO:
     /// - Siempre imprime 2 copias (original + 1 copia)
@@ -17,13 +17,8 @@ namespace NestoAPI.Models.Facturas
     /// </summary>
     public class RutaPropia : ITipoRuta
     {
-        // Lista de rutas que se consideran propias
-        private static readonly List<string> rutasPropias = new List<string>
-        {
-            "AT",
-            "16"
-            // Para agregar más rutas propias, simplemente agregar aquí
-        };
+        // NestoAPI#758: la lista sale del parámetro RutasRepartoPropio («(defecto)», empresa 1); sin él, AT y 16.
+        // Ver RutasPropiasConfiguradas: es la única lista de rutas propias de la API.
 
         public string Id => "PROPIA";
 
@@ -31,22 +26,13 @@ namespace NestoAPI.Models.Facturas
 
         public string Descripcion => "Siempre imprime 2 copias (original + 1 copia), independientemente de comentarios o empresa.";
 
-        public IReadOnlyList<string> RutasContenidas => rutasPropias.AsReadOnly();
+        public IReadOnlyList<string> RutasContenidas => RutasPropiasConfiguradas.Actuales;
 
         /// <summary>
         /// Verifica si un número de ruta pertenece a las rutas propias.
         /// La comparación es case-insensitive y elimina espacios.
         /// </summary>
-        public bool ContieneRuta(string numeroRuta)
-        {
-            if (string.IsNullOrWhiteSpace(numeroRuta))
-            {
-                return false;
-            }
-
-            string rutaNormalizada = numeroRuta.Trim().ToUpperInvariant();
-            return rutasPropias.Any(r => r.Equals(rutaNormalizada, StringComparison.OrdinalIgnoreCase));
-        }
+        public bool ContieneRuta(string numeroRuta) => RutasPropiasConfiguradas.Contiene(numeroRuta);
 
         /// <summary>
         /// Para rutas propias, SIEMPRE se imprimen 2 copias.
