@@ -60,6 +60,14 @@ namespace NestoAPI.Models.Agencias
         /// Orden (nulos al final), fecha y número.
         /// </summary>
         public int? Orden { get; set; }
+        /// <summary>
+        /// NestoAPI#767: dónde está la parada (WGS84), para «Ir», «Ruta completa» y el orden sugerido. En los envíos y las notas,
+        /// la dirección de entrega geocodificada con Nominatim (de la caché DireccionesCoordenadas: nunca se busca en la petición;
+        /// si aún no está, null y la geocodifica un job en segundo plano). En las de reposición, la tienda (coordenadas fijas).
+        /// </summary>
+        public decimal? Latitud { get; set; }
+        /// <summary>NestoAPI#767: ver <see cref="Latitud"/>.</summary>
+        public decimal? Longitud { get; set; }
 
         /// <summary>Para ordenar la lista (no sale en el JSON): la fecha del envío o de la parada de reposición.</summary>
         internal DateTime FechaParada { get; set; }
@@ -177,6 +185,50 @@ namespace NestoAPI.Models.Agencias
         public DateTime? FechaHora { get; set; }
         /// <summary>Los EnvioId de las paradas en el orden nuevo (posición 1..n); las de reposición, negativos.</summary>
         public System.Collections.Generic.List<int> Envios { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#767: POST api/RepartoPropio/OrdenSugerido. Todo opcional. Latitud/Longitud: la posición ACTUAL de la PDA (el
+    /// recorrido sale de ahí: puede recalcular a media ruta); sin ellas (sin GPS o sin permiso), sale del almacén de Algete.
+    /// </summary>
+    public class PeticionOrdenSugeridoDTO
+    {
+        /// <summary>La hora local de la PDA (último gana, como PUT Orden). Sin ella, la del servidor.</summary>
+        public DateTime? FechaHora { get; set; }
+        /// <summary>El día de la lista (como GET Envios?fecha=). Sin él, hoy.</summary>
+        public DateTime? Fecha { get; set; }
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
+    }
+
+    /// <summary>NestoAPI#767: la respuesta de POST api/RepartoPropio/OrdenSugerido.</summary>
+    public class OrdenSugeridoRepartoDTO
+    {
+        public const string MOTOR_OSRM = "OSRM";
+        public const string MOTOR_HEURISTICA = "Heuristica";
+        public const string MOTOR_SIN_COORDENADAS = "SinCoordenadas";
+        public const string ORIGEN_POSICION = "Posicion";
+        public const string ORIGEN_ALMACEN = "Almacen";
+
+        /// <summary>
+        /// Las paradas del repartidor en el orden nuevo (Orden = 1..n): primero las pendientes con coordenadas por el recorrido,
+        /// luego las pendientes sin coordenadas (en su orden de antes) y al final las incidentadas (ya visitadas).
+        /// </summary>
+        public System.Collections.Generic.List<EnvioRepartoDTO> Paradas { get; set; } = new System.Collections.Generic.List<EnvioRepartoDTO>();
+        /// <summary>"OSRM" (por carretera), "Heuristica" (OSRM no respondió: vecino más próximo + 2-opt en línea recta) o "SinCoordenadas".</summary>
+        public string Motor { get; set; }
+        /// <summary>"Posicion" (la de la PDA) o "Almacen" (Algete, porque no vino posición).</summary>
+        public string Origen { get; set; }
+        public decimal OrigenLatitud { get; set; }
+        public decimal OrigenLongitud { get; set; }
+        /// <summary>Del origen a la última parada y vuelta al almacén de Algete. Con la heurística, estimados (línea recta × 1,3).</summary>
+        public decimal? Kilometros { get; set; }
+        /// <summary>Minutos de conducción (solo con OSRM; null con la heurística).</summary>
+        public int? Minutos { get; set; }
+        /// <summary>Paradas pendientes que aún no tienen coordenadas (van detrás de las que sí, sin mover).</summary>
+        public int SinCoordenadas { get; set; }
+        public int Guardados { get; set; }
+        public int Ignorados { get; set; }
     }
 
     /// <summary>NestoAPI#759: la respuesta de PUT api/RepartoPropio/Orden.</summary>

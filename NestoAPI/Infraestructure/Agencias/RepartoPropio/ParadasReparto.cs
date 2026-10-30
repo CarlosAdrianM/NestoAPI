@@ -325,10 +325,16 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         /// <summary>Las etiquetas R{traspaso}-{N} (ReposicionesBultos, NestoAPI#645).</summary>
         public IRepositorioBultosReposicion BultosReposicion { get; set; }
         public IAvisosReparto Avisos { get; set; }
+        /// <summary>NestoAPI#767: la caché de coordenadas (DireccionesCoordenadas) y pedir que se rellene. Null: sin coordenadas.</summary>
+        public ICoordenadasParadas Coordenadas { get; set; }
+        /// <summary>NestoAPI#767: el orden sugerido (OSRM con la heurística de respaldo). Null: solo la heurística.</summary>
+        public IPlanificadorRecorrido Recorrido { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
             {
+                Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),
+                Recorrido = new PlanificadorRecorrido(new MotorRutasOsrm()),
                 Notas = new ServicioParadasNotaEntrega(db),
                 NotasParada = new RepositorioNotasParadaReparto(db),
                 Orden = new RepositorioOrdenReparto(db),
