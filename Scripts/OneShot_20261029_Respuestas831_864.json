@@ -1,0 +1,12 @@
+[
+  {
+    "novedad": 831,
+    "contestados": [465],
+    "texto": "Gracias, Enrique. Era un fallo nuestro: al enviar el mandato por correo, la API buscaba la plantilla del documento en una carpeta equivocada. Ya está corregido y entrará en la próxima actualización de la API, previsiblemente esta tarde; le avisamos aquí cuando esté. Mientras tanto, puede descargar el mandato desde la ficha del cliente, que funciona, y adjuntarlo a mano."
+  },
+  {
+    "novedad": 864,
+    "contestados": [],
+    "texto": "Hola, Paloma. Gracias. En la ventana del pedido ya hay un botón «Copiar datos de transferencia» que copia el número de cuenta, el importe y el número de pedido para pegarlos en un correo o un WhatsApp, pero hoy solo sale cuando el pedido es transferencia con plazo «Prepago». En su captura el plazo es «Contado» (por la cartera vencida) y por eso no le aparece. Lo que entendemos que pide es que salga también con transferencia al contado y, a ser posible, al terminar la plantilla, igual que el enlace de pago. ¿Es eso? Lo estudiamos y le contamos aquí lo que se decida."
+  }
+]

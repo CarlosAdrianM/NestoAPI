@@ -1,0 +1,7 @@
+[
+  {
+    "novedad": 871,
+    "contestados": [],
+    "texto": "Hola, Pilar. Gracias por la captura: con su tamaño de ventana la pantalla de Eventos no cabe bien (el título se queda en dos letras, el panel «Marcar pagada» se descoloca y la lista de inscritos no se ve). Lo estamos corrigiendo para que se vea bien también en ventanas más pequeñas, y además se podrá copiar el enlace de pago desde la lista de inscritos. Una idea para ganar sitio en toda Nesto: después de la actualización de esta tarde, pruebe el diseño nuevo sin la cinta de arriba (Herramientas > Parámetros, «NavegacionLateral» a 1, y salir y volver a entrar). Deja bastante más alto libre. Si no le convence, lo vuelve a poner a 0."
+  }
+]

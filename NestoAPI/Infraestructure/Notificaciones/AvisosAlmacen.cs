@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNet.SignalR;
+using Microsoft.AspNet.SignalR;
 using System;
 using System.Collections.Concurrent;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -195,7 +195,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 : ModoAvisosConDatos.Ambos;
         }
 
-        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3})$",
+        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3}|PagoTPV:\d{1,9}|AutorizacionReembolso:\d{1,9})$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>
@@ -215,6 +215,15 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         /// <summary>«Packing:99633»: todo el picking (la pantalla de packing enseña todas sus entregas).</summary>
         public static string GrupoPacking(int picking) => $"Packing:{picking}";
+
+        /// <summary>
+        /// NestoAPI#773: «PagoTPV:123», el de la PDA que espera el pago de un enlace con tarjeta del reparto (entra al generarlo y sale
+        /// al pagarse o al dejarlo). Evento «pagoCompletado(PagoCompletadoRepartoDTO)».
+        /// </summary>
+        public static string GrupoPagoTPV(int pagoTPVId) => $"PagoTPV:{pagoTPVId}";
+
+        /// <summary>NestoAPI#773: «AutorizacionReembolso:12». Evento «autorizacionRespondida(AutorizacionReembolsoDTO)».</summary>
+        public static string GrupoAutorizacion(int autorizacionId) => $"AutorizacionReembolso:{autorizacionId}";
 
         /// <summary>
         /// Ariadna#51 (corte 2): «recepcion:REPO:81119:ALG», «recepcion:COMP:65:ALG». Lo leído de una recepción en curso, compartido
@@ -244,6 +253,14 @@ namespace NestoAPI.Infraestructure.Notificaciones
             {
                 return GrupoRecepcion(partes[1], partes[2], partes[3]);
             }
+            if (partes.Length == 2 && string.Equals(partes[0], "PagoTPV", StringComparison.OrdinalIgnoreCase))
+            {
+                return GrupoPagoTPV(int.Parse(partes[1]));
+            }
+            if (partes.Length == 2 && string.Equals(partes[0], "AutorizacionReembolso", StringComparison.OrdinalIgnoreCase))
+            {
+                return GrupoAutorizacion(int.Parse(partes[1]));
+            }
             return partes.Length == 3 ? GrupoRecogida(partes[1], int.Parse(partes[2])) : GrupoPacking(int.Parse(partes[1]));
         }
     }
@@ -253,7 +270,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// «haCambiado(grupo, dispositivo)», «lectura(grupo, dispositivo, LecturaAlmacenAvisoDTO)», «lecturas(grupo, dispositivo,
     /// [LecturaAlmacenAvisoDTO])» y «correccion(grupo, dispositivo, CorreccionAlmacenAvisoDTO)».
     /// </summary>
-    public class AvisosAlmacenSignalR : IAvisosAlmacen, Agencias.RepartoPropio.IAvisosReparto
+    public class AvisosAlmacenSignalR : IAvisosAlmacen, Agencias.RepartoPropio.IAvisosReparto, Agencias.RepartoPropio.IAvisosCobroReparto
     {
         private readonly Func<IHubContext> contexto;
         private readonly Func<ModoAvisosConDatos> modo;
@@ -288,6 +305,46 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     FechaHora = fechaHora,
                     Dispositivo = dispositivo
                 }));
+        }
+
+        /// <summary>
+        /// NestoAPI#773: «pagoCompletado(PagoCompletadoRepartoDTO)» al grupo «PagoTPV:{id}» (la PDA que generó el enlace). Sin exclusiones:
+        /// el cambio no lo ha hecho ninguna PDA, sino Redsys. Nunca lanza.
+        /// </summary>
+        public void PagoCompletado(Agencias.RepartoPropio.PagoCompletadoRepartoDTO pago)
+        {
+            if (pago != null)
+            {
+                MandarATodos(AvisosAlmacen.GrupoPagoTPV(pago.PagoTPVId), clientes => clientes.pagoCompletado(pago));
+            }
+        }
+
+        /// <summary>NestoAPI#773: «autorizacionRespondida(AutorizacionReembolsoDTO)» al grupo «AutorizacionReembolso:{id}». Nunca lanza.</summary>
+        public void AutorizacionRespondida(Agencias.RepartoPropio.AutorizacionReembolsoDTO autorizacion)
+        {
+            if (autorizacion != null)
+            {
+                MandarATodos(AvisosAlmacen.GrupoAutorizacion(autorizacion.Id), clientes => clientes.autorizacionRespondida(autorizacion));
+            }
+        }
+
+        private void MandarATodos(string grupo, Action<dynamic> enviar)
+        {
+            try
+            {
+                enviar(contexto().Clients.Group(grupo));
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    ElmahHelper.Log(new Exception($"[SignalR almacén] No se pudo avisar al grupo {grupo}: " + ex.Message, ex));
+                }
+                catch
+                {
+                    // nada
+                }
+            }
         }
 
         public void Lecturas(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, IReadOnlyList<LecturaAlmacenAvisoDTO> lecturas)

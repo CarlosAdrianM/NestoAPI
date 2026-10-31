@@ -39,6 +39,8 @@ namespace NestoAPI.Controllers
                 paradas: DependenciasParadasReparto.DeLaBaseDeDatos(db, new Infraestructure.Notificaciones.AvisosAlmacenSignalR()),
                 firmas: DependenciasFirmasReparto.DeProduccion()))
         {
+            // NestoAPI#773: tarjeta pagada y autorización para no cobrar al entregar
+            servicio.CobroEntrega = new ComprobadorCobroEntrega(new RepositorioCobrosTarjetaReparto(db), new RepositorioAutorizacionesReembolso(db));
         }
 
         // GET api/RepartoPropio/MisCobros?fecha=2026-10-29

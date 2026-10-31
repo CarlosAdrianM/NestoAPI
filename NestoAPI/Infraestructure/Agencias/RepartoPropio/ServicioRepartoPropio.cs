@@ -108,7 +108,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             { IncidenciaRepartoDTO.RECHAZADO, "Rechazado" },
             { IncidenciaRepartoDTO.FALTAN_BULTOS, "Faltan bultos" },
             { IncidenciaRepartoDTO.NADA_QUE_RECOGER, "No había nada que recoger" },
-            { IncidenciaRepartoDTO.OTRO, "Otro" }
+            { IncidenciaRepartoDTO.OTRO, "Otro" },
+            { IncidenciaRepartoDTO.REEMBOLSO_NO_COBRADO, "Reembolso no cobrado" }
         };
 
         private static readonly string[] Cobros =
@@ -320,12 +321,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 if (string.Equals(peticion.CobroReembolso.Trim(), PruebaEntregaReparto.COBRO_TARJETA, StringComparison.OrdinalIgnoreCase))
                 {
-                    return Invalido(MENSAJE_SIN_DATAFONO);
+                    // NestoAPI#773: «Tarjeta» = el enlace con tarjeta del reparto, ya pagado (lo comprueba CobroEntrega). Sin él, como antes.
+                    if (CobroEntrega?.AdmiteTarjeta() != true)
+                    {
+                        return Invalido(MENSAJE_SIN_DATAFONO);
+                    }
+                    cobro = PruebaEntregaReparto.COBRO_TARJETA;
                 }
-                cobro = Cobros.FirstOrDefault(c => string.Equals(c, peticion.CobroReembolso.Trim(), StringComparison.OrdinalIgnoreCase));
+                else
+                {
+                    cobro = Cobros.FirstOrDefault(c => string.Equals(c, peticion.CobroReembolso.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
                 if (cobro == null)
                 {
-                    return Invalido("El cobro del reembolso tiene que ser Efectivo, Enlace o NoCobrado.");
+                    return Invalido("El cobro del reembolso tiene que ser Efectivo, Tarjeta (enlace pagado), Enlace o NoCobrado.");
                 }
             }
             if (peticion.ImporteCobrado.HasValue && peticion.ImporteCobrado.Value < 0)
@@ -381,11 +390,23 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 cobro = PruebaEntregaReparto.COBRO_NO_COBRADO;
             }
+            // NestoAPI#773: «Tarjeta» solo con el enlace del envío pagado; sin cobrar, con autorización; ni efectivo con el enlace pagado.
+            ComprobacionCobroEntrega comprobacion = null;
+            if (CobroEntrega != null)
+            {
+                comprobacion = await CobroEntrega.Comprobar(envio, cobro, peticion, usuario).ConfigureAwait(false);
+                if (comprobacion.Error != null)
+                {
+                    return Invalido(comprobacion.Error);
+                }
+            }
             bool efectivo = cobro == PruebaEntregaReparto.COBRO_EFECTIVO;
             bool enlace = cobro == PruebaEntregaReparto.COBRO_ENLACE;
             // Con enlace, ImporteCobrado es el importe del enlace (aún no cobrado: entra por la notificación de Redsys).
+            // Con tarjeta, lo pagado con el enlace (ya contabilizado por ServicioPagos: aquí no se contabiliza nada).
             decimal? importeCobrado = cobro == null ? peticion.ImporteCobrado
                 : efectivo || enlace ? peticion.ImporteCobrado ?? reembolso
+                : cobro == PruebaEntregaReparto.COBRO_TARJETA ? comprobacion?.ImporteCobrado ?? reembolso
                 : 0m;
             decimal? aContabilizar = null;
             string cuentaCaja = null;
@@ -445,8 +466,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 CobroReembolso = cobro,
                 ImporteCobrado = importeCobrado,
                 CuentaCaja = cuentaCaja,
-                PagoTPVId = pago?.IdPago,
-                UrlPago = pago?.UrlPaginaPago,
+                PagoTPVId = pago?.IdPago ?? comprobacion?.PagoTPVId,
+                UrlPago = pago?.UrlPaginaPago ?? comprobacion?.UrlPago,
                 Texto = observaciones,
                 Latitud = peticion.Latitud,
                 Longitud = peticion.Longitud,
@@ -484,6 +505,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 await GuardarFirmaEnBlob(prueba, envio, firma).ConfigureAwait(false);
             }
+            if (resultado.Tipo == TipoResultadoReparto.Ok && comprobacion != null)
+            {
+                await CobroEntrega.Confirmar(comprobacion, envio, usuario).ConfigureAwait(false); // NestoAPI#773: la autorización por teléfono
+            }
             return resultado;
         }
 
@@ -514,7 +539,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             string motivo = Motivos.Keys.FirstOrDefault(m => string.Equals(m, peticion.Motivo?.Trim(), StringComparison.OrdinalIgnoreCase));
             if (motivo == null)
             {
-                return Invalido("El motivo de la incidencia tiene que ser Ausente, DireccionIncorrecta, Rechazado, FaltanBultos, NadaQueRecoger u Otro.");
+                return Invalido("El motivo de la incidencia tiene que ser Ausente, DireccionIncorrecta, Rechazado, FaltanBultos, NadaQueRecoger, ReembolsoNoCobrado u Otro.");
             }
             string texto = Limpio(peticion.Texto);
             if (motivo == IncidenciaRepartoDTO.OTRO && texto == null)
@@ -547,6 +572,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (motivo == IncidenciaRepartoDTO.NADA_QUE_RECOGER && (await NotaDe(envio.Pedido).ConfigureAwait(false))?.EsRecogida != true)
             {
                 return Invalido("«No había nada que recoger» solo vale para las notas de recogida.");
+            }
+            if (motivo == IncidenciaRepartoDTO.REEMBOLSO_NO_COBRADO)
+            {
+                // NestoAPI#773: la CHECK de Motivo la amplía el script de #773 (sin él, el INSERT fallaría: lección de #698)
+                if (CobroEntrega?.ScriptAplicado() != true)
+                {
+                    return Invalido(ServicioCobroTarjetaReparto.MENSAJE_FALTA_SCRIPT);
+                }
+                if (!(envio.Reembolso > 0))
+                {
+                    return Invalido("«Reembolso no cobrado» solo vale para los envíos con reembolso.");
+                }
             }
 
             DateTime fechaHora = peticion.FechaHora ?? ahora();
@@ -717,7 +754,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         private static string TextoCobro(string cobro, decimal? importe)
             => cobro == PruebaEntregaReparto.COBRO_NO_COBRADO ? "no cobrado"
-            : $"{(cobro == PruebaEntregaReparto.COBRO_ENLACE ? "enlace de pago enviado de" : cobro.ToLowerInvariant())} {(importe ?? 0m).ToString("N2", new System.Globalization.CultureInfo("es-ES"))} €";
+            : $"{(cobro == PruebaEntregaReparto.COBRO_ENLACE ? "enlace de pago enviado de" : cobro == PruebaEntregaReparto.COBRO_TARJETA ? "pagado con tarjeta (enlace)" : cobro.ToLowerInvariant())} {(importe ?? 0m).ToString("N2", new System.Globalization.CultureInfo("es-ES"))} €";
 
         internal static string EstadoTexto(short estado)
         {

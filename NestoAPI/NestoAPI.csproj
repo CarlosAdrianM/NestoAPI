@@ -760,6 +760,10 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Furgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroTarjetaReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\AutorizacionesReembolsoReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosCobroReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Cobros.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
@@ -1279,6 +1283,7 @@
     <Compile Include="Infraestructure\Ubicaciones\RepositorioCuadreUbicaciones.cs" />
     <Compile Include="Controllers\EventosController.cs" />
     <Compile Include="Controllers\RepartoPropioController.cs" />
+    <Compile Include="Controllers\RepartoPropioCobrosController.cs" />
     <Compile Include="Controllers\HorarioPreferibleController.cs" />
     <Compile Include="Controllers\SeguimientoController.cs" />
     <Compile Include="Controllers\ReposicionesController.cs" />

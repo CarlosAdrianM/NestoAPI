@@ -1,0 +1,17 @@
+[
+  {
+    "novedad": 868,
+    "contestados": [],
+    "texto": "Hola, Aida. Tiene razón: con las agencias de antes (GLS, por ejemplo) el número de cliente salía solo, pero CTT ahora se tramita por la API y esa parte se quedó sin el número, por eso sale vacío y hay que escribir el 42073 a mano. Lo apuntamos para que salga ya puesto, como con las demás. Le avisamos aquí cuando esté."
+  },
+  {
+    "novedad": 869,
+    "contestados": [],
+    "texto": "Hola, Pedro. Los bultos no se escriben: son las cajas que se han cerrado en el packing con «Cerrar caja · foto» (F4). Cada caja cerrada es un bulto. Por eso en la etiqueta solo se pide el peso: si el pedido va en dos cajas, cierre las dos con su foto y la etiqueta saldrá con 2 bultos."
+  },
+  {
+    "novedad": 870,
+    "contestados": [],
+    "texto": "Hola, Pedro. Ese aviso salió porque el pedido 929598 estaba aplazado al 30/10 (se aplazó la fecha de entrega cuando ya tenía el picking), y un pedido aplazado no puede salir antes de esa fecha. Ahora ya tiene la fecha de hoy, así que puede pulsar otra vez «Etiqueta de agencia» (F8): el envío 250350 ya está grabado y no se duplica. Si vuelve a salir algún aviso, mándenos la captura por aquí."
+  }
+]

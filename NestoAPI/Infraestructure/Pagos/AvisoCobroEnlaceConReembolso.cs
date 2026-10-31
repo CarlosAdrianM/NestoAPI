@@ -37,16 +37,24 @@ namespace NestoAPI.Infraestructure.Pagos
         [Hangfire.AutomaticRetry(Attempts = 0)]
         public static Task Avisar(int idPago)
         {
-            return Avisar(idPago, LeerDeBd, new ServicioCorreoElectronico(), new ServicioNotificacionesPush(), ex => ElmahHelper.Log(ex));
+            return Avisar(idPago, LeerDeBd, new ServicioCorreoElectronico(), new ServicioNotificacionesPush(), ex => ElmahHelper.Log(ex),
+                Agencias.RepartoPropio.AvisoPagoReparto.EsDelReparto);
         }
 
         /// <returns>True si había que avisar (el envío del pedido está en reparto con reembolso).</returns>
         internal static async Task<bool> Avisar(int idPago, Func<int, Task<CobroEnlaceConEnvioEnReparto>> leer,
-            IServicioCorreoElectronico correo, IServicioNotificacionesPush notificaciones, Action<Exception> registrar)
+            IServicioCorreoElectronico correo, IServicioNotificacionesPush notificaciones, Action<Exception> registrar,
+            Func<int, Task<bool>> esDelReparto = null)
         {
             CobroEnlaceConEnvioEnReparto cobro;
             try
             {
+                // NestoAPI#773: un enlace del reparto propio (cobro con tarjeta por WhatsApp) lo tiene resuelto el repartidor en la mano:
+                // nada de «URGENTE» a logística ni a quien lo creó
+                if (esDelReparto != null && await esDelReparto(idPago).ConfigureAwait(false))
+                {
+                    return false;
+                }
                 cobro = await leer(idPago).ConfigureAwait(false);
             }
             catch (Exception ex)
