@@ -1,5 +1,7 @@
 /*
-    Novedades de la versión 1.10.54.0 de Nesto (31/10/2026).
+    Novedades de la versión 1.10.53.1 de Nesto (31/10/2026). Revisión de la 1.10.53 A PROPÓSITO (Carlos): la ventana de
+    Novedades junta en una página las revisiones de una misma versión (Nesto#549), así quien no abrió Nesto el 30/10 ve las de
+    la 1.10.53.0 y las de hoy juntas, sin tocar «Versión anterior».
     NestoAPI #770 (firma sellada), #771 (seguimiento con trazabilidad y fotos del packing), #772 (furgoneta bulto a bulto),
     #773 (cobro con tarjeta y autorización de reembolsos sin cobrar), #775 (notificaciones urgentes) + Nesto #590, #591, #593,
     el visor de fotos del packing y los globos.
@@ -9,9 +11,9 @@
          Issue773_CobroTarjetaReparto. Contenedor «firmas» creado.
       2) Scripts/Globos.sql (sa) y publicar NestoAPI (con #774 globos y #775 urgentes); reciclar el pool. Activar los globos
          de ejemplo de Globos.sql (revisar textos) después de publicar las apps.
-      3) Publicar la ClickOnce (Clean + Rebuild) → 1.10.54.0 y Ariadna 2.27 EL MISMO DÍA (con #773, la Ariadna 2.26 no puede
+      3) Publicar la ClickOnce (Clean + Rebuild) → 1.10.53.1 y Ariadna 2.27 EL MISMO DÍA (con #773, la Ariadna 2.26 no puede
          entregar un reembolso sin cobrar).
-      4) DESPUÉS: ESTE script y Novedades_Ariadna_2_27.sql. Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.54.0 (con el OK de Carlos).
+      4) DESPUÉS: ESTE script y Novedades_Ariadna_2_27.sql. Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.53.1 (con el OK de Carlos).
 
     Ejecutar en SSMS contra NV como sa. Los literales van con N'...' (columnas nvarchar).
 */
@@ -19,7 +21,7 @@
 SET NOCOUNT ON;
 USE NV;
 
-DECLARE @version VARCHAR(23) = '1.10.54.0';
+DECLARE @version VARCHAR(23) = '1.10.53.1';
 DECLARE @fecha DATE = '2026-10-31';
 
 DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000), Perfiles nvarchar(200));

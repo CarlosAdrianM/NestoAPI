@@ -11,7 +11,7 @@
         (Nesto: globos:Globo.Ancla="…"; Ariadna: globos:Globo.Ancla="…"). NULL = tarjeta centrada. Si el control no existe
         o no está a la vista cuando se enseña, también sale como tarjeta centrada.
       - VersionDesde: la versión de la app a partir de la que sale (la que trae el control nuevo). NULL = todas.
-        Nesto 1.10.54.0; Ariadna 2.27. La app manda la suya (?version=); si no la manda, sale.
+        Nesto 1.10.53.1; Ariadna 2.27. La app manda la suya (?version=); si no la manda, sale.
       - Grupos: a quién (grupos de dominio o roles de Identity sin dominio, o nombres de usuario), separados por comas.
         NULL o vacío = a todos. P. ej. 'Almacén' o 'Almacén, Tiendas' o 'carlos, alfredo'. Sin distinguir mayúsculas ni tildes.
       - FechaDesde / FechaHasta: los días en que sale (los dos incluidos). FechaHasta NULL = sin fin.
@@ -38,7 +38,7 @@ BEGIN
     CREATE TABLE dbo.Globos (
         Id int IDENTITY(1,1) NOT NULL,
         Aplicacion varchar(10) NOT NULL,                    -- Nesto, Ariadna, TNV, NestoApp
-        VersionDesde varchar(23) NULL,                      -- 1.10.54.0 / 2.27; NULL = todas
+        VersionDesde varchar(23) NULL,                      -- 1.10.53.1 / 2.27; NULL = todas
         Pantalla nvarchar(60) NOT NULL,                     -- EnviarReposicion, Reparto, Packing…
         Ancla nvarchar(120) NULL,                           -- Reparto.EnLaFurgoneta; NULL = tarjeta centrada
         Titulo nvarchar(100) NULL,
@@ -104,7 +104,7 @@ GO
 -- GLOBOS DE ESTA VERSIÓN (los activa Carlos: quitar el comentario y AJUSTAR las versiones a las que se publiquen).
 /*
 DECLARE @ariadna varchar(23) = '2.27';      -- <-- AJUSTAR: la versión de Ariadna que trae furgoneta, tarjeta y fotos del packing
-DECLARE @nesto varchar(23) = '1.10.54.0';   -- <-- AJUSTAR: la versión de Nesto que trae los globos
+DECLARE @nesto varchar(23) = '1.10.53.1';   -- <-- AJUSTAR: la versión de Nesto que trae los globos
 DECLARE @hoy date = CAST(GETDATE() AS date);
 DECLARE @fin date = DATEADD(day, 45, @hoy);
 
