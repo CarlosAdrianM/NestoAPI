@@ -647,6 +647,10 @@
     <Compile Include="Controllers\ErroresController.cs" />
     <Compile Include="Controllers\NotificacionesController.cs" />
     <Compile Include="Controllers\EscanerRemotoController.cs" />
+    <Compile Include="Controllers\GlobosController.cs" />
+    <Compile Include="Infraestructure\Globos\ReglasGlobos.cs" />
+    <Compile Include="Infraestructure\Globos\RepositorioGlobos.cs" />
+    <Compile Include="Models\Globos\GloboDTO.cs" />
     <Compile Include="Controllers\VerifactuController.cs" />
     <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />

@@ -290,6 +290,8 @@ namespace NestoAPI
             _ = services.AddSingleton<Infraestructure.Notificaciones.IAvisosAlmacen, Infraestructure.Notificaciones.AvisosAlmacenSignalR>();
             // NestoAPI#768: escáner remoto (Ariadna lee, el Nesto del mismo usuario lo recibe por AvisosHub). Singleton: guarda la idempotencia
             _ = services.AddSingleton<Infraestructure.Notificaciones.IEscanerRemoto, Infraestructure.Notificaciones.ServicioEscanerRemoto>();
+            // NestoAPI#774: globos («consejos») de las apps; el «visto» por usuario (Scripts/Globos.sql)
+            _ = services.AddSingleton<Infraestructure.Globos.IRepositorioGlobos, Infraestructure.Globos.RepositorioGlobosSql>();
             // Ariadna#8: el mozo informa de un dato mal de la ficha (foto → Tienda online; lo demás → Compras)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(_ => Infraestructure.PreparacionAlmacen.RepositorioAvisosFichaSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto, Infraestructure.PreparacionAlmacen.AvisadorFichaProducto>();
