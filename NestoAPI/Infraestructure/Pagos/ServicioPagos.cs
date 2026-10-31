@@ -53,6 +53,12 @@ namespace NestoAPI.Infraestructure.Pagos
         /// NestoAPI#679 (punto 3): encola el aviso a logística y administración del enlace cobrado (id del PagoTPV). El job
         /// comprueba si el envío del pedido va en reparto con reembolso. Sustituible en tests.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#773: el pago autorizado de un enlace del reparto propio (cobro con tarjeta por WhatsApp) avisa a la PDA que lo
+        /// generó («pagoCompletado» por el AlmacenHub). Sustituible en tests.
+        /// </summary>
+        internal Func<PagoTPV, Task> AvisarCobroReparto { get; set; } = Agencias.RepartoPropio.AvisoPagoReparto.AvisarAsync;
+
         internal Action<int> EncolarAvisoCobroConReembolso { get; set; } =
             idPago => Hangfire.BackgroundJob.Enqueue(() => AvisoCobroEnlaceConReembolsoJobs.Avisar(idPago));
 
@@ -347,6 +353,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
                     // NestoAPI#679 (punto 3): si el pedido del enlace va en reparto contra reembolso, aviso a logística (Hangfire)
                     AvisarSiElEnvioVaContraReembolso(pago);
+
+                    // NestoAPI#773: si el enlace es un cobro con tarjeta del reparto propio, la PDA que lo generó se entera ya (SignalR)
+                    await AvisarCobroDelReparto(pago).ConfigureAwait(false);
 
                     // NestoAPI#611: si el enlace es el de una inscripción a un evento, la inscripción pasa a Pagada
                     await RegistrarCobroInscripcionEvento(pago).ConfigureAwait(false);
@@ -1989,6 +1998,22 @@ namespace NestoAPI.Infraestructure.Pagos
         /// NestoAPI#679 (punto 3): el enlace de un pedido se ha cobrado; si su envío va en reparto con reembolso hay que avisar
         /// a logística ya. Solo se encola (lo comprueba el job): la notificación de Redsys no espera. Nunca lanza.
         /// </summary>
+        /// <summary>NestoAPI#773: el aviso a la PDA del reparto que generó el enlace. Nunca lanza.</summary>
+        internal async Task AvisarCobroDelReparto(PagoTPV pago)
+        {
+            try
+            {
+                if (AvisarCobroReparto != null && !EsCobroDeLaTienda(pago))
+                {
+                    await AvisarCobroReparto(pago).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Cobro con tarjeta #773] No se pudo avisar a la PDA del cobro {pago?.NumeroOrden}: {ex.Message}", ex);
+            }
+        }
+
         internal void AvisarSiElEnvioVaContraReembolso(PagoTPV pago)
         {
             try

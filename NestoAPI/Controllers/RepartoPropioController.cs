@@ -38,6 +38,8 @@ namespace NestoAPI.Controllers
                 informes: () => new Infraestructure.Informes.InformesService(db), carga: new RepositorioCargaFurgoneta(db),
                 paradas: DependenciasParadasReparto.DeLaBaseDeDatos(db, new Infraestructure.Notificaciones.AvisosAlmacenSignalR())))
         {
+            // NestoAPI#773: tarjeta pagada y autorización para no cobrar al entregar
+            servicio.CobroEntrega = new ComprobadorCobroEntrega(new RepositorioCobrosTarjetaReparto(db), new RepositorioAutorizacionesReembolso(db));
         }
 
         // GET api/RepartoPropio/MisCobros?fecha=2026-10-29

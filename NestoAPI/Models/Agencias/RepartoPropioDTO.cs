@@ -78,6 +78,8 @@ namespace NestoAPI.Models.Agencias
         /// horario; vacío ("") si tiene horario pero ese día no tiene ninguna franja (ese día no le viene bien).
         /// </summary>
         public string HorarioPreferibleDia { get; set; }
+        /// <summary>NestoAPI#773: se puede cobrar con tarjeta (enlace por WhatsApp): solo la empresa 1; la 3, siempre en efectivo.</summary>
+        public bool AdmiteTarjeta => global::NestoAPI.Infraestructure.Agencias.RepartoPropio.ServicioCobroTarjetaReparto.AdmiteTarjeta(Empresa);
         /// <summary>
         /// NestoAPI#763: solo en la respuesta de POST OrdenSugerido. A qué hora se calcula que se llega (conducción + 5 minutos por
         /// parada, desde la hora de la PDA). Null si no se puede estimar (sin coordenadas, ya visitada).
@@ -193,6 +195,18 @@ namespace NestoAPI.Models.Agencias
         /// y a la historia («Reparto propio: recogido (2 bultos)»); en las demás paradas se ignora.
         /// </summary>
         public int? BultosRecogidos { get; set; }
+        /// <summary>
+        /// NestoAPI#773: con CobroReembolso = "Tarjeta", el PagoTPV del enlace con tarjeta del envío (el que devolvió POST EnlaceTarjeta):
+        /// la API solo lo acepta si está pagado.
+        /// </summary>
+        public int? PagoTPVId { get; set; }
+        /// <summary>NestoAPI#773: sin cobrar, la autorización con la que se entrega (informativo: la API mira la última del envío).</summary>
+        public int? AutorizacionId { get; set; }
+        /// <summary>
+        /// NestoAPI#773: sin cobrar y sin respuesta de Administración, quién lo ha autorizado por teléfono («Autoriza Pepe por teléfono»).
+        /// Se acepta, queda como autorización «Telefonica» y se avisa a Administración para revisarla.
+        /// </summary>
+        public string AutorizacionTelefonica { get; set; }
     }
 
     /// <summary>NestoAPI#759: PUT api/RepartoPropio/Orden. El orden de las paradas del repartidor, tal como lo deja en la PDA.</summary>
@@ -309,6 +323,8 @@ namespace NestoAPI.Models.Agencias
         public const string OTRO = "Otro";
         /// <summary>NestoAPI#759: solo en las notas de recogida.</summary>
         public const string NADA_QUE_RECOGER = "NadaQueRecoger";
+        /// <summary>NestoAPI#773: Administración ha denegado entregar sin cobrar y el cliente no paga: el envío vuelve con el repartidor.</summary>
+        public const string REEMBOLSO_NO_COBRADO = "ReembolsoNoCobrado";
 
         public Guid ClaveIdempotencia { get; set; }
         public DateTime? FechaHora { get; set; }

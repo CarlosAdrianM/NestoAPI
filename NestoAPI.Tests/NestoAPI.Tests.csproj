@@ -447,6 +447,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenSugeridoRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenConHorariosTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroDeudaRepartoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroTarjetaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenRepartoCarreraTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\ServicioEnvioDesdePedidoTests.cs" />
