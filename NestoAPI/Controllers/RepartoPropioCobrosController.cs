@@ -93,7 +93,10 @@ namespace NestoAPI.Controllers
         }
 
         // POST api/RepartoPropio/Envios/251300/Autorizacion { Motivo }
-        /// <summary>Pide a Administración (y Dirección) entregar sin cobrar el reembolso: aviso en la campana de Nesto.</summary>
+        /// <summary>
+        /// Pide a Administración entregar sin cobrar el reembolso: aviso URGENTE en Nesto (NestoAPI#775: ventana roja; si en 2 minutos nadie
+        /// contesta, también a Dirección). La respuesta trae <c>Conectados</c>: cuántos de Administración tienen Nesto abierto (0: que llame).
+        /// </summary>
         [HttpPost]
         [Route("Envios/{envioId:int}/Autorizacion")]
         [ResponseType(typeof(AutorizacionReembolsoDTO))]

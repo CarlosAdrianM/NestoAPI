@@ -91,6 +91,35 @@ namespace NestoAPI.Infraestructure.Notificaciones
             }
         }
 
+        /// <summary>
+        /// NestoAPI#775: de esos usuarios (con o sin dominio, sin distinguir mayúsculas), los que tienen ahora al menos un Nesto
+        /// conectado, sin dominio y sin repetidos (una persona con dos Nesto abiertos cuenta una vez).
+        /// </summary>
+        public static List<string> Conectados(IEnumerable<string> usuarios)
+        {
+            var vivos = new HashSet<string>(conexiones.Values.Select(SinDominio), StringComparer.OrdinalIgnoreCase);
+            return (usuarios ?? Enumerable.Empty<string>())
+                .Select(SinDominio)
+                .Where(u => u.Length > 0 && vivos.Contains(u))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(u => u, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>NestoAPI#775: cuántas conexiones (Nesto abiertos) tiene ese usuario.</summary>
+        public static int ConexionesDe(string usuario)
+        {
+            string buscado = SinDominio(usuario);
+            return buscado.Length == 0 ? 0 : conexiones.Values.Count(u => string.Equals(SinDominio(u), buscado, StringComparison.OrdinalIgnoreCase));
+        }
+
+        internal static string SinDominio(string usuario)
+        {
+            string limpio = (usuario ?? string.Empty).Trim();
+            int barra = limpio.LastIndexOf('\\');
+            return barra >= 0 ? limpio.Substring(barra + 1) : limpio;
+        }
+
         /// <summary>Los usuarios distintos con al menos un Nesto conectado.</summary>
         public static List<string> Usuarios()
             => conexiones.Values.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(u => u, StringComparer.OrdinalIgnoreCase).ToList();
@@ -102,6 +131,18 @@ namespace NestoAPI.Infraestructure.Notificaciones
     {
         /// <summary>Avisa a los Nesto conectados de esos usuarios de que tienen algo nuevo. Nunca lanza.</summary>
         void HayNotificacionesNuevas(IEnumerable<string> usuarios);
+
+        /// <summary>
+        /// NestoAPI#775: «hayNotificacionUrgente» a los Nesto de esos usuarios: piden GET api/Notificaciones/Urgentes y abren la ventana
+        /// roja. Va además de «hayNotificacionesNuevas» (la campana se refresca igual). Nunca lanza.
+        /// </summary>
+        void HayNotificacionUrgente(IEnumerable<string> usuarios);
+
+        /// <summary>
+        /// NestoAPI#775: «notificacionResuelta» {Tipo, Referencia, Respondio, Resultado}: alguien ha contestado una urgente y se cierra en
+        /// todos los Nesto que la tengan abierta. Nunca lanza.
+        /// </summary>
+        void NotificacionResuelta(IEnumerable<string> usuarios, NotificacionResueltaDTO resuelta);
     }
 
     public class AvisosTiempoReal : IAvisosTiempoReal
@@ -111,13 +152,27 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public static string GrupoDe(string usuario) => "usuario:" + (usuario ?? string.Empty).Trim().ToUpperInvariant();
 
         public void HayNotificacionesNuevas(IEnumerable<string> usuarios)
+            => ACadaUno(usuarios, grupo => grupo.hayNotificacionesNuevas());
+
+        public void HayNotificacionUrgente(IEnumerable<string> usuarios)
+            => ACadaUno(usuarios, grupo => grupo.hayNotificacionUrgente());
+
+        public void NotificacionResuelta(IEnumerable<string> usuarios, NotificacionResueltaDTO resuelta)
+        {
+            if (resuelta != null)
+            {
+                ACadaUno(usuarios, grupo => grupo.notificacionResuelta(resuelta));
+            }
+        }
+
+        private static void ACadaUno(IEnumerable<string> usuarios, Action<dynamic> avisar)
         {
             try
             {
                 IHubContext contexto = GlobalHost.ConnectionManager.GetHubContext<AvisosHub>();
                 foreach (string usuario in (usuarios ?? Enumerable.Empty<string>()).Where(u => !string.IsNullOrWhiteSpace(u)).Distinct(StringComparer.OrdinalIgnoreCase))
                 {
-                    contexto.Clients.Group(GrupoDe(usuario)).hayNotificacionesNuevas();
+                    avisar(contexto.Clients.Group(GrupoDe(usuario)));
                 }
             }
             catch (Exception ex)

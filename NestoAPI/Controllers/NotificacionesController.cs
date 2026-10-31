@@ -405,6 +405,28 @@ namespace NestoAPI.Controllers
             return Ok(notificaciones);
         }
 
+        /// <summary>NestoAPI#775: las urgentes pendientes del usuario (sustituible en tests).</summary>
+        internal Func<string, Task<List<NotificacionUrgenteDTO>>> LeerUrgentes { get; set; } = ServicioNotificacionesUrgentes.PendientesDe;
+
+        /// <summary>
+        /// NestoAPI#775: las notificaciones URGENTES del buzón de Nesto del usuario (lista blanca por tipo, últimas 24 h) que siguen
+        /// pendientes, una por referencia. Nesto lo pide al arrancar, al (re)conectar y cuando le llega «hayNotificacionUrgente»; abre una
+        /// ventana roja por cada una. Sin sondeo.
+        /// GET api/Notificaciones/Urgentes
+        /// </summary>
+        [HttpGet]
+        [Route("Urgentes")]
+        [Authorize]
+        public async Task<IHttpActionResult> ObtenerUrgentes()
+        {
+            string usuario = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+            return Ok(await LeerUrgentes(usuario).ConfigureAwait(false));
+        }
+
         /// <summary>Contador para el badge del menú.</summary>
         [HttpGet]
         [Route("Buzon/NoLeidas")]
