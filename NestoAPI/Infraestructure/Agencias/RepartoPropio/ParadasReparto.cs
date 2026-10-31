@@ -374,10 +374,22 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         /// recta. Null: no se reordena (solo se avisa, como en #763).
         /// </summary>
         public IMatrizTiempos Tiempos { get; set; }
+        /// <summary>NestoAPI#772: lo que lleva cada furgoneta (RepartoBultosMovimientos, RepartoJornadas). Null: como antes.</summary>
+        public IRepositorioFurgoneta Furgoneta { get; set; }
+        /// <summary>NestoAPI#772: dejar «Recogida» la reposición de una tienda con el último bulto. Null: no se marca.</summary>
+        public IRecogidaReposicionesReparto RecogidaReposiciones { get; set; }
+        /// <summary>NestoAPI#772: «haCambiado» al grupo «Reposiciones:{tienda}» (Nesto). Null: sin aviso.</summary>
+        public Notificaciones.IAvisosAlmacen AvisosAlmacen { get; set; }
+        /// <summary>NestoAPI#772: la campana de Nesto cuando un repartidor termina con bultos en la furgoneta. Null: sin aviso.</summary>
+        public IAvisosFurgoneta AvisosFurgoneta { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
             {
+                Furgoneta = new RepositorioFurgoneta(db),
+                RecogidaReposiciones = new RecogidaReposicionesReparto(db),
+                AvisosAlmacen = avisos as Notificaciones.IAvisosAlmacen,
+                AvisosFurgoneta = new AvisosFurgonetaSinDescargar(),
                 Horarios = new HorariosParadas(new global::NestoAPI.Infraestructure.Clientes.ServicioHorarioPreferible(
                     new global::NestoAPI.Infraestructure.Clientes.RepositorioHorarioPreferible(db))),
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),

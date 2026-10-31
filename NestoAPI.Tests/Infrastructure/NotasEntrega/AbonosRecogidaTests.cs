@@ -517,8 +517,26 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             Request = new HttpRequestMessage(),
             Configuration = new HttpConfiguration(),
             User = usuario,
-            AbonosRecogida = servicio
+            AbonosRecogida = servicio,
+            FurgonetaAlAbonar = (codigos, quien) =>
+            {
+                furgoneta.Add((codigos.ToList(), quien));
+                return Task.CompletedTask;
+            }
         };
+
+        /// <summary>NestoAPI#772: lo que el abono manda a la red de seguridad de la furgoneta.</summary>
+        private readonly List<(List<string> Codigos, string Usuario)> furgoneta = new List<(List<string>, string)>();
+
+        [TestMethod]
+        public async Task Controlador_Post_NestoAPI772_LaNotaEnteraCuentaComoDescargada_SoloSiVaBien()
+        {
+            _ = await Ejecutar(await Controlador(Usuario("Alfredo", Constantes.GruposSeguridad.ALMACEN)).PostAbonoRecogida(Peticion("NR929554-1")));
+            _ = await Ejecutar(await Controlador(Usuario("vendedor", "Ventas")).PostAbonoRecogida(Peticion("NR929554-1")));
+
+            CollectionAssert.AreEqual(new[] { "NR929554" }, furgoneta.Single().Codigos, "Todas las NR de la nota, no solo la leída");
+            Assert.AreEqual("Alfredo", furgoneta.Single().Usuario);
+        }
 
         private static Task<HttpResponseMessage> Ejecutar(IHttpActionResult resultado) => resultado.ExecuteAsync(CancellationToken.None);
 

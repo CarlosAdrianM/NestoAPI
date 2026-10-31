@@ -430,6 +430,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
 
         /// <summary>
+        /// NestoAPI#772 (red de seguridad de la furgoneta): las etiquetas leídas al recibir (no en parte ni en un ensayo), el usuario
+        /// que recibe y si es en Algete. Las que sigan en una furgoneta cuentan como descargadas (en Algete) o entregadas (en una
+        /// tienda). Null: nada (los tests). Nunca debe lanzar.
+        /// </summary>
+        internal Func<IReadOnlyCollection<string>, string, bool, Task> BultosLeidosAlRecibir { get; set; }
+
+        /// <summary>
         /// NestoAPI#600: lo que se le dice al mozo al recibir una reposición (antes estaba en Ariadna). El detalle de la lista
         /// es el genérico («1 línea · 1 ud. · 06/10»): «Reposición» ya va en el título.
         /// </summary>
@@ -604,6 +611,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             // NestoAPI#673: se da de alta solo lo leído y el resto sigue pendiente (lo enviado frente a lo leído, para contarlo)
             bool parcial = false;
             List<DiferenciaPreparacionDTO> pendiente = null;
+            // NestoAPI#772: las etiquetas leídas, para la furgoneta (después de confirmar)
+            List<string> etiquetasLeidas = new List<string>();
 
             ResultadoTerminarRecepcionDTO resultado = await cierre.EnTransaccion(async transaccion =>
             {
@@ -614,6 +623,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
                 // NestoAPI#645: cada bulto en su reposición (antes de tocar nada)
                 List<string> bultosLeidos = await ComprobarEtiquetas(transaccion, solicitud, traspaso).ConfigureAwait(false);
+                etiquetasLeidas = bultosLeidos ?? new List<string>();
 
                 string diario = await transaccion.DiarioDeEntrada(solicitud.Empresa, solicitud.Almacen).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(diario))
@@ -790,6 +800,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     UnidadesPendientes = unidadesPendientes
                 };
             }, solicitud.Ensayo != null).ConfigureAwait(false);
+
+            if (!resultado.YaEstabaTerminada && !parcial && solicitud.Ensayo == null && etiquetasLeidas.Count > 0 && BultosLeidosAlRecibir != null)
+            {
+                try
+                {
+                    await BultosLeidosAlRecibir(etiquetasLeidas, solicitud.Usuario,
+                        string.Equals(solicitud.Almacen?.Trim(), Constantes.Almacenes.ALGETE, StringComparison.OrdinalIgnoreCase)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Furgoneta #772] La reposición {traspaso} está recibida, pero no se pudo apuntar en la furgoneta: {ex.Message}", ex));
+                }
+            }
 
             if (resultado.YaEstabaTerminada || !diferencias.Any())
             {

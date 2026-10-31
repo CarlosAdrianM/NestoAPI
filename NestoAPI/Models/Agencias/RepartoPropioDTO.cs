@@ -201,6 +201,12 @@ namespace NestoAPI.Models.Agencias
         public string TextoConformidad { get; set; }
 
         public const int MAXIMO_TEXTO_CONFORMIDAD = 500;
+
+        /// <summary>
+        /// NestoAPI#772: los bultos de la parada que se han leído al entregar (opcional mientras RepartoEscaneoEntregaObligatorio
+        /// esté apagado). Vacío o null: se dan por entregados todos los de la parada que llevaba encima. En las recogidas se ignora.
+        /// </summary>
+        public System.Collections.Generic.List<string> BultosEntregados { get; set; }
     }
 
     /// <summary>NestoAPI#759: PUT api/RepartoPropio/Orden. El orden de las paradas del repartidor, tal como lo deja en la PDA.</summary>
@@ -297,6 +303,8 @@ namespace NestoAPI.Models.Agencias
         public const string MOTIVO_CARGA = "Carga";
         public const string MOTIVO_ENTREGA = "Entrega";
         public const string MOTIVO_INCIDENCIA = "Incidencia";
+        /// <summary>NestoAPI#772: recoger, descargar, entregar bultos o terminar la jornada (la furgoneta ha cambiado).</summary>
+        public const string MOTIVO_FURGONETA = "Furgoneta";
 
         /// <summary>Quién lo ha cambiado, sin dominio.</summary>
         public string Usuario { get; set; }
@@ -337,6 +345,8 @@ namespace NestoAPI.Models.Agencias
         public string Estado { get; set; }
         /// <summary>La página del enlace de pago (CobroReembolso = "Enlace"); null si no hay enlace.</summary>
         public string UrlPago { get; set; }
+        /// <summary>NestoAPI#772: los bultos que han salido de la furgoneta con esta entrega. Null sin la tabla de la furgoneta.</summary>
+        public int? BultosEntregados { get; set; }
     }
 
     /// <summary>

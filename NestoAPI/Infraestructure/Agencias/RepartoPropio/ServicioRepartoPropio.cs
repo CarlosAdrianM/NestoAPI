@@ -268,9 +268,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Entregar(int envioId, EntregaRepartoDTO peticion, string usuario,
             OrigenPeticionReparto origen = null)
         {
+            // NestoAPI#772: los bultos leídos tienen que ser de la parada (y, con el interruptor, hay que leerlos).
+            ResultadoReparto<EstadoEnvioRepartoDTO> bultosMal = await ValidarBultosEntrega(envioId, peticion).ConfigureAwait(false);
+            if (bultosMal != null)
+            {
+                return bultosMal;
+            }
             ResultadoReparto<EstadoEnvioRepartoDTO> resultado = NucleoParadasReparto.EsReposicion(envioId)
                 ? await EntregarReposicion(NucleoParadasReparto.IdReposicion(envioId), peticion, usuario).ConfigureAwait(false)
                 : await EntregarEnvio(envioId, peticion, usuario).ConfigureAwait(false);
+            if (resultado.Tipo == TipoResultadoReparto.Ok)
+            {
+                // NestoAPI#772: salen de la furgoneta (los leídos o los de la parada que llevaba). Nunca rompe la entrega.
+                await AnotarEntrega(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
+            }
             Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_ENTREGA, origen);
             return resultado;
         }

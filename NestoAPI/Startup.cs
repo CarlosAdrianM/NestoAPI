@@ -247,7 +247,11 @@ namespace NestoAPI
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorReposiciones>(),
                 sp.GetRequiredService<Infraestructure.Reposiciones.IServicioDiferenciasReposicion>(),
-                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioBultosReposicion>()));
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioBultosReposicion>())
+            {
+                // NestoAPI#772: lo leído al recibir que siga en una furgoneta cuenta como descargado (o entregado en la tienda)
+                BultosLeidosAlRecibir = Infraestructure.Agencias.RepartoPropio.RedSeguridadFurgoneta.LeidosConContextoPropio
+            });
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
             // Ariadna#51 (corte 2): lo leído de una recepción en curso, en el servidor (Nesto y Ariadna ven lo mismo)
             _ = services.AddSingleton<Infraestructure.PreparacionAlmacen.IRepositorioLecturasRecepcion, Infraestructure.PreparacionAlmacen.RepositorioLecturasRecepcionSql>();
@@ -762,6 +766,19 @@ namespace NestoAPI
             // NestoAPI#522: de lunes a viernes a las 8:30, nota en la campana de Nesto al grupo Administración
             // si hay facturas pendientes de Verifactu o incorrectas en la AEAT (al pulsarla se abre la ventana
             // para verlas y reintentarlas). Sin pendientes no avisa. Interruptor: Verifactu:AvisoDiarioPendientes.
+            // NestoAPI#772: de lunes a viernes a las 22:00, los repartidores con bultos en la furgoneta y sin «Terminar jornada»
+            // hoy: aviso en la campana de Nesto a Almacén, Dirección y al repartidor (el mismo que al terminar con bultos).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Agencias.RepartoPropio.FurgonetaSinDescargarJobsService.JOB_ID,
+                () => Infraestructure.Agencias.RepartoPropio.FurgonetaSinDescargarJobsService.Avisar(),
+                Infraestructure.Agencias.RepartoPropio.FurgonetaSinDescargarJobsService.CRON, // Cron: de lunes a viernes a las 22:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'furgoneta-sin-descargar' configurado (L-V a las 22:00)");
+
             RecurringJob.AddOrUpdate(
                 "verifactu-aviso-pendientes",
                 () => Infraestructure.Verifactu.AvisoFacturasPendientesVerifactuJobsService.Avisar(),

@@ -246,6 +246,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `POST api/Almacen/Recepciones/{tipo}/{documento}/SinEtiqueta` (avisa al origen y a Compras; la unidad la cuenta la app).
 - Limpieza: `GET api/Productos/RepuestosSinCodigoBarras?meses=3` (o `Scripts/Issue762_ProductosRepuestosSinCodigo.sql`).
 
+### Furgoneta bulto a bulto (NestoAPI#772, 31/10/26)
+- Cada bulto del reparto propio (`RP{envío}-{N}`, `NR{pedido}-{N}`, `R{traspaso}-{N}`) tiene su historia en `RepartoBultosMovimientos`
+  (`Scripts/Issue772_FurgonetaBultos.sql`): Cargado, Recogido, Entregado, Descargado (Origen Repartidor/Almacen). «Lo que lleva encima»
+  = último movimiento (por FechaHora del aparato e Id) Cargado o Recogido suyo (`NucleoFurgoneta`). `Cargar` sigue escribiendo en
+  `EnviosAgenciaCargaBultos`/`RepartoParadasReposicionBultos` y además su Cargado con la MISMA clave (las NR no: el bulto no existe hasta recogerlo).
+- `GET api/RepartoPropio/Furgoneta`, `POST Recoger`, `POST Descargar`, `POST Jornada/Terminar` (`ServicioRepartoPropio.Furgoneta.cs`);
+  `BultosEntregados` en Entregar (opcional; sin leer, salen los de la parada que llevaba; obligatorio con `RepartoEscaneoEntregaObligatorio`="1" en «(defecto)»).
+- Recoger el ÚLTIMO bulto R de una reposición de tienda → `MarcarRecogida` (como `POST Reposiciones/Recogida`) y `haCambiado` al grupo
+  `Reposiciones:{tienda}` del AlmacenHub (Nesto, Enviar reposición). `GET Reposiciones/Puntual/Estado` trae BultosRecogidos/BultosTotal/RepartidorRecogida.
+- Red de seguridad (`RedSeguridadFurgoneta`): recibir una REPO y el abono de una NR cierran lo que siga en una furgoneta. Job
+  `furgoneta-sin-descargar` L-V 22:00 (campana a Almacén, Dirección y el repartidor). `GET api/Reposiciones/{traspaso}/Seguimiento`.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

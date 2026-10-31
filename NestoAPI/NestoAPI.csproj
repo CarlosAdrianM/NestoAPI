@@ -756,6 +756,9 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReposicion.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\FurgonetaBultos.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Furgoneta.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
@@ -866,6 +869,7 @@
     <Compile Include="Models\Agencias\EnvioDesdePedidoDTO.cs" />
     <Compile Include="Models\Agencias\EtiquetaPackingDTO.cs" />
     <Compile Include="Models\Agencias\RepartoPropioDTO.cs" />
+    <Compile Include="Models\Agencias\FurgonetaRepartoDTO.cs" />
     <Compile Include="Models\Agencias\EnlaceSeguimientoRepartoPropio.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\GuardiaAnulacionCliente.cs" />
@@ -1264,6 +1268,7 @@
     <Compile Include="Infraestructure\Reposiciones\PermisoRellenarReposicionManual.cs" />
     <Compile Include="Infraestructure\Reposiciones\ProductosReposicionPuntual.cs" />
     <Compile Include="Infraestructure\Reposiciones\RecogidaReposiciones.cs" />
+    <Compile Include="Infraestructure\Reposiciones\SeguimientoReposiciones.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicionSql.cs" />
     <Compile Include="Infraestructure\Ubicaciones\CuadreUbicaciones.cs" />

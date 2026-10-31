@@ -577,6 +577,38 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Terminar_NestoAPI772_LasEtiquetasLeidasVanALaFurgoneta_EnUnaTiendaComoEntregadas()
+        {
+            var (cierre, _) = Cierre(DosBultos());
+            var llamadas = new List<(IReadOnlyCollection<string> Codigos, string Usuario, bool EnAlgete)>();
+            OrigenRecepcionReposiciones origen = Origen(cierre);
+            origen.BultosLeidosAlRecibir = (codigos, usuario, enAlgete) =>
+            {
+                llamadas.Add((codigos, usuario, enAlgete));
+                return Task.CompletedTask;
+            };
+
+            _ = await origen.Terminar(Solicitud("R81010-2"));
+
+            CollectionAssert.AreEqual(new[] { "R81010-2" }, llamadas.Single().Codigos.ToList());
+            Assert.AreEqual("NUEVAVISION\\Reina", llamadas.Single().Usuario);
+            Assert.IsFalse(llamadas.Single().EnAlgete, "Se recibe en Reina: entregado, no descargado");
+        }
+
+        [TestMethod]
+        public async Task Terminar_NestoAPI772_SiFallaLaFurgoneta_LaRecepcionSigueHecha()
+        {
+            var (cierre, transaccion) = Cierre(DosBultos());
+            OrigenRecepcionReposiciones origen = Origen(cierre);
+            origen.BultosLeidosAlRecibir = (codigos, usuario, enAlgete) => throw new InvalidOperationException("BD caída");
+
+            ResultadoTerminarRecepcionDTO resultado = await origen.Terminar(Solicitud("R81010-2"));
+
+            Assert.IsFalse(resultado.YaEstabaTerminada);
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", "NUEVAVISION\\Reina")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task Terminar_ConLaEtiquetaConApostrofo_LaReconoceYMarcaLaNormalizada()
         {
             var (cierre, transaccion) = Cierre(DosBultos());
