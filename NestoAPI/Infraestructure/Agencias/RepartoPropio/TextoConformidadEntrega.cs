@@ -28,11 +28,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         /// <summary>
         /// «Confirmo que recibo 3 bultos del pedido 928000 de Nueva Visión en buen estado aparente y que he pagado 45,30 € en
-        /// efectivo al repartidor.» Sin pedido, sin «del pedido …»; sin forma de pago o sin importe, sin la parte del pago.
+        /// efectivo al repartidor.» En una nota de entrega, «de la nota NE929667» (Carlos, 31/10/26). Sin pedido, sin «del pedido …»; sin forma de pago o sin importe, sin la parte del pago.
         /// </summary>
-        public static string Entrega(int bultos, int? pedido, FormaPagoConformidad forma, decimal? importe)
+        public static string Entrega(int bultos, int? pedido, FormaPagoConformidad forma, decimal? importe, bool esNotaEntrega = false)
         {
-            string texto = $"Confirmo que recibo {Bultos(bultos)}" + (pedido > 0 ? $" del pedido {pedido.Value}" : string.Empty)
+            string texto = $"Confirmo que recibo {Bultos(bultos)}" + (pedido > 0 ? (esNotaEntrega ? $" de la nota NE{pedido.Value}" : $" del pedido {pedido.Value}") : string.Empty)
                 + " de Nueva Visión en buen estado aparente";
             if (importe > 0)
             {
