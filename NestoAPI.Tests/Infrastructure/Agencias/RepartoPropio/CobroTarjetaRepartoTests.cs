@@ -186,6 +186,128 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
         }
 
+        // ================================================================ el reembolso con tarjeta liquida la factura (como el efectivo)
+
+        private static EfectoCobroReparto FacturaPendiente(decimal pendiente = 45.30m, string empresa = "1  ")
+            => new EfectoCobroReparto
+            {
+                Id = 3040001, Empresa = empresa, Cliente = "15191     ", Contacto = "0  ", TipoApunte = "2  ", Documento = "NV2614001 ", Efecto = "1 ",
+                Importe = pendiente, ImportePendiente = pendiente, Delegacion = "ALG", FormaVenta = "VAR", Vendedor = "JE ", Ruta = "AT "
+            };
+
+        [TestMethod]
+        public async Task EnlaceEnvio_ConLaFacturaPendiente_LaLiquida_ConSuDocumentoYEfecto()
+        {
+            EnvioConReembolso();
+            tarjetas.EfectoDelReembolso = FacturaPendiente();
+
+            var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            EfectoAPagar efecto = solicitud.Efectos.Single();
+            Assert.AreEqual(3040001, efecto.ExtractoClienteId);
+            Assert.AreEqual(45.30m, efecto.Importe, "Por el reembolso (lo que se cobra), como el efectivo");
+            Assert.AreEqual("NV2614001", efecto.Documento);
+            Assert.AreEqual("1", efecto.Efecto);
+            Assert.AreEqual("0", efecto.Contacto);
+            Assert.AreEqual("ALG", efecto.Delegacion);
+            Assert.AreEqual("VAR", efecto.FormaVenta);
+            Assert.AreEqual("JE", efecto.Vendedor);
+            Assert.AreEqual(45.30m, solicitud.Importe);
+            EnvioHistoria historia = tarjetas.Historia.Single();
+            Assert.AreEqual(251300, historia.NumeroEnvio);
+            StringAssert.Contains(historia.Observaciones, "liquida la factura NV2614001/1");
+            Assert.IsTrue(historia.Campo.Length <= 50 && historia.ValorAnterior.Length <= 50);
+        }
+
+        [TestMethod]
+        public void ContabilizarCobro_DelEnlaceDelReembolso_LiquidaElEfectoConSuDocumento_SinNadaACuenta()
+        {
+            LiquidacionReembolsoTarjeta liquidacion = ServicioCobroTarjetaReparto.EfectoALiquidar(FacturaPendiente(), 45.30m);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191", Contacto = "0", Importe = 45.30m, NumeroOrden = "260000012345", Descripcion = "PAGO PEDIDO 928000",
+                PagosTPV_Efectos = new List<PagoTPV_Efecto>
+                {
+                    new PagoTPV_Efecto
+                    {
+                        ExtractoClienteId = liquidacion.Efecto.ExtractoClienteId, Importe = liquidacion.Efecto.Importe, Documento = liquidacion.Efecto.Documento,
+                        Efecto = liquidacion.Efecto.Efecto, Contacto = liquidacion.Efecto.Contacto, Vendedor = liquidacion.Efecto.Vendedor,
+                        FormaVenta = liquidacion.Efecto.FormaVenta, Delegacion = liquidacion.Efecto.Delegacion, TipoApunte = liquidacion.Efecto.TipoApunte
+                    }
+                }
+            };
+
+            List<PreContabilidad> lineas = ServicioPagos.ConstruirLineasCobro(pago, "57200020", "1", "Pago TPV PAGO PEDIDO 928000");
+
+            Assert.AreEqual(2, lineas.Count, "Banco + la factura: sin línea de diferencia a cuenta");
+            PreContabilidad cliente = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE);
+            Assert.AreEqual(3040001, cliente.Liquidado);
+            Assert.AreEqual(45.30m, cliente.Haber);
+            Assert.AreEqual("NV2614001", cliente.Nº_Documento);
+            Assert.AreEqual("1", cliente.Efecto);
+            Assert.AreEqual("ALG", cliente.Delegación);
+            Assert.AreEqual("VAR", cliente.FormaVenta);
+        }
+
+        [TestMethod]
+        public async Task EnlaceEnvio_SinFactura_ConOtroImporte_DeOtraEmpresa_OSiFallaLaBusqueda_QuedaACuenta_SinBloquear()
+        {
+            EnvioConReembolso();
+            var casos = new List<Action>
+            {
+                () => tarjetas.EfectoDelReembolso = null,
+                () => tarjetas.EfectoDelReembolso = FacturaPendiente(60m),
+                () => tarjetas.EfectoDelReembolso = FacturaPendiente(empresa: "3  "),
+                () => { tarjetas.EfectoDelReembolso = FacturaPendiente(); tarjetas.FallaEfectoDelReembolso = true; }
+            };
+            var motivos = new[] { "ninguna factura pendiente", "es de 60,00 €, no de 45,30 €", "empresa 3", "no se ha podido buscar" };
+            for (int i = 0; i < casos.Count; i++)
+            {
+                tarjetas.Enlaces.Clear();
+                tarjetas.Historia.Clear();
+                tarjetas.FallaEfectoDelReembolso = false;
+                casos[i]();
+
+                var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+                Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, $"Caso {i}: {resultado.Mensaje}");
+                Assert.IsFalse(resultado.Contenido.Reutilizado, $"Caso {i}");
+                Assert.IsTrue(solicitud.Efectos == null || solicitud.Efectos.Count == 0, $"Caso {i}: sin efectos, a cuenta como antes");
+                StringAssert.Contains(tarjetas.Historia.Single().Observaciones, "A CUENTA", $"Caso {i}");
+                StringAssert.Contains(tarjetas.Historia.Single().Observaciones, motivos[i], $"Caso {i}");
+            }
+        }
+
+        [TestMethod]
+        public async Task EnlaceEnvio_AlReutilizarElVivo_NoBuscaNiDuplicaEfectos()
+        {
+            EnvioConReembolso();
+            tarjetas.EfectoDelReembolso = FacturaPendiente();
+            var primero = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+            var segundo = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+            Assert.IsTrue(segundo.Contenido.Reutilizado);
+            Assert.AreEqual(primero.Contenido.PagoTPVId, segundo.Contenido.PagoTPVId);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, tarjetas.BusquedasEfectoDelReembolso, "El efecto solo se busca (y se asocia) al crear el PagoTPV");
+            Assert.AreEqual(1, tarjetas.Historia.Count);
+        }
+
+        [TestMethod]
+        public async Task EnlaceDeuda_NoBuscaLaFacturaDelReembolso_NiAnotaHistoria()
+        {
+            tarjetas.Efectos.Add(new EfectoCobroReparto { Id = 10, Empresa = "1  ", Cliente = "15191", Contacto = "0", Documento = "A26/100", Efecto = "1", ImportePendiente = 30m });
+
+            var resultado = await servicioTarjeta.EnlaceDeuda(new PeticionEnlaceTarjetaDeudaDTO { Cliente = "15191", Efectos = new List<int> { 10 } }, USUARIO, null);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual(10, solicitud.Efectos.Single().ExtractoClienteId);
+            Assert.AreEqual(0, tarjetas.BusquedasEfectoDelReembolso);
+            Assert.AreEqual(0, tarjetas.Historia.Count);
+        }
+
         [TestMethod]
         public void EstadoDeLaCadena_PagadoSiAlgunoAutorizado_DenegadoSoloSiElUltimo_AnuladoSiCancelado()
         {
@@ -322,6 +444,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
             ServicioRepartoPropioTests.Registro registro = reparto.Registros.Single();
             Assert.IsNull(registro.ImporteAContabilizar, "Lo ha contabilizado ServicioPagos al pagarse: aquí, nada (sin doble contabilización)");
+            Assert.AreEqual(1, tarjetas.BusquedasEfectoDelReembolso, "Al entregar no se vuelve a buscar ni liquidar la factura");
             Assert.AreEqual(PruebaEntregaReparto.COBRO_TARJETA, registro.Prueba.CobroReembolso);
             Assert.AreEqual(45.30m, registro.Prueba.ImporteCobrado);
             Assert.AreEqual(enlace.Contenido.PagoTPVId, registro.Prueba.PagoTPVId);
@@ -596,6 +719,25 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             {
                 CorreosMandados.Add(new KeyValuePair<int, string>(pagoTPVId, correo));
                 return Task.FromResult(true);
+            }
+            /// <summary>El efecto que elegiría el efectivo para el reembolso (null = ninguno).</summary>
+            public EfectoCobroReparto EfectoDelReembolso;
+            public bool FallaEfectoDelReembolso;
+            public int BusquedasEfectoDelReembolso;
+            public readonly List<EnvioHistoria> Historia = new List<EnvioHistoria>();
+            public Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe)
+            {
+                BusquedasEfectoDelReembolso++;
+                if (FallaEfectoDelReembolso)
+                {
+                    throw new InvalidOperationException("Sin conexión");
+                }
+                return Task.FromResult(EfectoDelReembolso);
+            }
+            public Task AnotarHistoria(EnvioHistoria fila)
+            {
+                Historia.Add(fila);
+                return Task.CompletedTask;
             }
         }
 

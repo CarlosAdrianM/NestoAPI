@@ -1178,6 +1178,14 @@ namespace NestoAPI.Infraestructure.Agencias
             return movimientos.LastOrDefault();
         }
 
+        /// <summary>
+        /// NestoAPI#773 (tarjeta que liquida): el movimiento del extracto que liquidaría el reembolso del envío por ese importe, con
+        /// la MISMA elección que el cobro en efectivo (<see cref="ContabilizarReembolsoAsync(EnviosAgencia, string, decimal?, string)"/>).
+        /// Null si no hay ninguno (cliente especial o nada pendiente). Solo lee.
+        /// </summary>
+        public Task<ExtractoCliente> BuscarMovimientoALiquidarAsync(EnviosAgencia envio, decimal importe)
+            => CalcularMovimientoLiqAsync(envio, importe);
+
         private async Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio, decimal reembolso)
         {
             string cliente = envio.Cliente?.Trim();
