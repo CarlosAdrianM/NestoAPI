@@ -46,6 +46,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Números de bulto distintos con foto (un bulto compartido por dos pedidos cuenta una vez).</summary>
         public int BultosConFoto { get; set; }
         public int BultosSinFoto { get; set; }
+        /// <summary>NestoAPI#771: fotos libres del packing de la entrega (fotos distintas). 0 sin el script.</summary>
+        public int FotosPacking { get; set; }
         /// <summary>
         /// NestoAPI#720 (Andre, 28/10/26): pedidos de la entrega que ya tienen envío con etiqueta (EnviosAgencia en curso o más allá),
         /// se haya hecho desde el packing de Ariadna o desde Nesto. Con todos los pedidos etiquetados, la entrega está hecha aunque no
@@ -136,6 +138,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// fotos de bulto) en los últimos <paramref name="segundos"/>, con la hora de la base de datos.
         /// </summary>
         Task<List<ActividadPackingAlmacen>> LeerActividadPacking(string empresa, IReadOnlyCollection<int> pickings, int segundos);
+
+        // NestoAPI#771: las fotos libres del packing (sin bulto). Sin el script, las lecturas dan vacío.
+        /// <summary>¿Se ha lanzado Scripts/Issue771_FotosPackingYSeguimiento.sql?</summary>
+        Task<bool> ExisteTablaFotosPacking();
+        Task<FotoPackingAlmacenDTO> LeerFotoPackingPorIdCliente(Guid idCliente);
+        Task<FotoPackingAlmacenDTO> LeerFotoPacking(int id);
+        Task<List<FotoPackingAlmacenDTO>> LeerFotosPacking(string empresa, int pedido);
+        Task<List<FotoPackingAlmacenDTO>> LeerFotosPackingDelPicking(string empresa, int picking);
+        /// <summary>La guarda si no estaba (mismo IdCliente = la misma foto) y devuelve la fila.</summary>
+        Task<FotoPackingAlmacenDTO> GuardarFotoPacking(FotoPackingAlmacenDTO foto, string hashSha256, int tamanoBytes, string dispositivo);
     }
 
     /// <summary>
@@ -509,16 +521,18 @@ FROM (
 ) x
 GROUP BY x.Picking, x.Pedido, x.Usuario";
 
-        // Repetir la foto de un bulto sustituye a la anterior: manda la última
+        // Repetir la foto de un bulto sustituye a la anterior: manda la última. NestoAPI#771: cerrar una caja SIN foto (RutaBlob
+        // null) nunca borra la foto que ya tuviera ese bulto (ni su hash, tamaño y hora).
         internal const string SQL_ACTUALIZAR_BULTO = @"
 UPDATE EnviosAgenciaBultos
-SET IdCliente = @p0, RutaBlob = @p5, HashSha256 = @p6, TamanoBytes = @p7, Usuario = @p8, Dispositivo = @p9,
-    FechaFoto = @p10, FechaRegistro = GETDATE()
+SET IdCliente = @p0, RutaBlob = ISNULL(@p5, RutaBlob), HashSha256 = CASE WHEN @p5 IS NULL THEN HashSha256 ELSE @p6 END,
+    TamanoBytes = CASE WHEN @p5 IS NULL THEN TamanoBytes ELSE @p7 END, Usuario = @p8, Dispositivo = @p9,
+    FechaFoto = CASE WHEN @p5 IS NULL AND RutaBlob IS NOT NULL THEN FechaFoto ELSE @p10 END, FechaRegistro = GETDATE()
 WHERE Empresa = @p1 AND Pedido = @p2 AND Picking = @p3 AND Bulto = @p4";
 
         internal const string SQL_INSERTAR_BULTO = @"
 INSERT INTO EnviosAgenciaBultos (IdCliente, Empresa, Pedido, Picking, Bulto, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
-VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, CASE WHEN @p5 IS NULL THEN NULL ELSE @p7 END, @p8, @p9, @p10)";
 
         // NestoAPI#646: dos PDA que cierran «el bulto 2» de la misma entrega ya no se pisan la foto. Las subidas de una misma
         // entrega (los bultos del picking de los pedidos del mismo cliente y contacto, que es como los cuenta Agencias) se
@@ -556,14 +570,50 @@ IF NOT EXISTS (SELECT 1 FROM @entrega WHERE Pedido = @p2 AND Bulto = @p4 AND Mio
 IF @ocupadoPor IS NOT NULL
     SELECT @bulto = ISNULL(MAX(Bulto), 0) + 1 FROM @entrega;
 UPDATE EnviosAgenciaBultos
-SET IdCliente = @p0, RutaBlob = @p5, HashSha256 = @p6, TamanoBytes = @p7, Usuario = @p8, Dispositivo = @p9,
-    FechaFoto = @p10, FechaRegistro = GETDATE()
+SET IdCliente = @p0, RutaBlob = ISNULL(@p5, RutaBlob), HashSha256 = CASE WHEN @p5 IS NULL THEN HashSha256 ELSE @p6 END,
+    TamanoBytes = CASE WHEN @p5 IS NULL THEN TamanoBytes ELSE @p7 END, Usuario = @p8, Dispositivo = @p9,
+    FechaFoto = CASE WHEN @p5 IS NULL AND RutaBlob IS NOT NULL THEN FechaFoto ELSE @p10 END, FechaRegistro = GETDATE()
 WHERE Empresa = @p1 AND Pedido = @p2 AND Picking = @p3 AND Bulto = @bulto;
 IF @@ROWCOUNT = 0
     INSERT INTO EnviosAgenciaBultos (IdCliente, Empresa, Pedido, Picking, Bulto, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
-    VALUES (@p0, @p1, @p2, @p3, @bulto, @p5, @p6, @p7, @p8, @p9, @p10);
+    VALUES (@p0, @p1, @p2, @p3, @bulto, @p5, @p6, CASE WHEN @p5 IS NULL THEN NULL ELSE @p7 END, @p8, @p9, @p10);
 COMMIT TRANSACTION;
 SELECT @bulto AS Bulto, @ocupadoPor AS OcupadoPor;";
+
+        // ===================================================================== NestoAPI#771: fotos del packing sin bulto
+
+        /// <summary>NestoAPI#771: la tabla de las fotos libres del packing (Scripts/Issue771_FotosPackingYSeguimiento.sql).</summary>
+        public const string TABLA_FOTOS_PACKING = "PreparacionFotosPacking";
+
+        private const string COLUMNAS_FOTO_PACKING = @"
+f.Id, f.IdCliente, RTRIM(f.Empresa) AS Empresa, f.Pedido, f.Picking, CAST(1 AS bit) AS TieneFoto, RTRIM(f.Usuario) AS Usuario,
+f.FechaFoto, f.FechaRegistro, f.RutaBlob";
+
+        // Sin el script, lo mismo pero vacío (con todas las columnas: EF las casa aunque no haya filas). La tabla que falta no se
+        // compila hasta que se ejecuta su rama (resolución diferida de nombres), igual que SQL_SALIDA_TERMINADA.
+        private const string FOTOS_PACKING_VACIAS = @"
+    SELECT TOP 0 CAST(0 AS int) AS Id, CAST(NULL AS uniqueidentifier) AS IdCliente, CAST(NULL AS varchar(3)) AS Empresa, CAST(0 AS int) AS Pedido,
+           CAST(0 AS int) AS Picking, CAST(1 AS bit) AS TieneFoto, CAST(NULL AS varchar(50)) AS Usuario, CAST(NULL AS datetime) AS FechaFoto,
+           GETDATE() AS FechaRegistro, CAST(NULL AS varchar(200)) AS RutaBlob";
+
+        private static string ConsultaFotosPacking(string condicion)
+            => "IF OBJECT_ID('dbo." + TABLA_FOTOS_PACKING + "') IS NULL" + FOTOS_PACKING_VACIAS + @"
+ELSE
+    SELECT" + COLUMNAS_FOTO_PACKING + " FROM dbo." + TABLA_FOTOS_PACKING + " f WHERE " + condicion;
+
+        internal static readonly string SQL_FOTO_PACKING_POR_ID_CLIENTE = ConsultaFotosPacking("f.IdCliente = @p0");
+        internal static readonly string SQL_FOTO_PACKING_POR_ID = ConsultaFotosPacking("f.Id = @p0");
+        internal static readonly string SQL_FOTOS_PACKING_DEL_PEDIDO = ConsultaFotosPacking("f.Empresa = @p0 AND f.Pedido = @p1 ORDER BY f.Picking, f.Id");
+        internal static readonly string SQL_FOTOS_PACKING_DEL_PICKING = ConsultaFotosPacking("f.Empresa = @p0 AND f.Picking = @p1 ORDER BY f.Pedido, f.Id");
+
+        internal const string SQL_EXISTE_TABLA_FOTOS_PACKING =
+            "SELECT CAST(CASE WHEN OBJECT_ID('dbo." + TABLA_FOTOS_PACKING + "') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        // Idempotente por IdCliente: un reenvío de la cola de la PDA no duplica la foto.
+        internal const string SQL_INSERTAR_FOTO_PACKING = @"
+IF NOT EXISTS (SELECT 1 FROM dbo." + TABLA_FOTOS_PACKING + @" WHERE IdCliente = @p0)
+    INSERT INTO dbo." + TABLA_FOTOS_PACKING + @" (IdCliente, Empresa, Pedido, Picking, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
+    VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9);";
 
         // Si la tabla aún no existe (script de Ariadna#6 sin lanzar), ninguna salida está terminada
         internal const string SQL_SALIDA_TERMINADA = @"
@@ -605,6 +655,7 @@ SELECT e.Picking, RTRIM(e.Cliente) AS Cliente, RTRIM(e.Contacto) AS Contacto, RT
        (SELECT COUNT(*) FROM EnviosAgenciaBultos b
         WHERE b.Empresa = @p0 AND b.Picking = e.Picking AND b.RutaBlob IS NULL
               AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS BultosSinFoto,
+       " + MARCA_FOTOS_PACKING + @" AS FotosPacking,
        (SELECT COUNT(DISTINCT ea.Pedido) FROM EnviosAgencia ea
         WHERE ea.Empresa = @p0 AND ea.Estado >= 0
               AND ea.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS PedidosConEtiqueta,
@@ -614,14 +665,69 @@ FROM entregas e
      LEFT JOIN Clientes cl ON cl.Empresa = @p0 AND cl.[Nº Cliente] = e.Cliente AND cl.Contacto = e.Contacto
 ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
 
+        /// <summary>NestoAPI#771: dónde va en SQL_ENTREGAS_POR_EMPAQUETAR el recuento de fotos del packing (o 0 sin el script).</summary>
+        internal const string MARCA_FOTOS_PACKING = "/*FOTOS_PACKING*/0";
+
+        internal const string SUBCONSULTA_FOTOS_PACKING = @"(SELECT COUNT(DISTINCT f.RutaBlob) FROM dbo." + TABLA_FOTOS_PACKING + @" f
+        WHERE f.Empresa = @p0 AND f.Picking = e.Picking
+              AND f.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto))";
+
+        /// <summary>NestoAPI#771: SQL_ENTREGAS_POR_EMPAQUETAR con las fotos del packing si la tabla existe; si no, como antes (0).</summary>
+        internal static string SqlEntregasPorEmpaquetar(bool conFotosPacking)
+            => conFotosPacking ? SQL_ENTREGAS_POR_EMPAQUETAR.Replace(MARCA_FOTOS_PACKING, SUBCONSULTA_FOTOS_PACKING) : SQL_ENTREGAS_POR_EMPAQUETAR;
+
         public async Task<bool> SalidaTerminada(string empresa, string tipo, int numero)
         {
             return await baseDeDatos.SqlQuery<bool>(SQL_SALIDA_TERMINADA, empresa, tipo, numero).FirstAsync().ConfigureAwait(false);
         }
 
-        public Task<List<EntregaPorEmpaquetar>> LeerEntregasPorEmpaquetar(string empresa, string almacen)
+        public async Task<List<EntregaPorEmpaquetar>> LeerEntregasPorEmpaquetar(string empresa, string almacen)
         {
-            return baseDeDatos.SqlQuery<EntregaPorEmpaquetar>(SQL_ENTREGAS_POR_EMPAQUETAR, empresa, almacen).ToListAsync();
+            bool conFotos = await ExisteTablaFotosPacking().ConfigureAwait(false);
+            return await baseDeDatos.SqlQuery<EntregaPorEmpaquetar>(SqlEntregasPorEmpaquetar(conFotos), empresa, almacen).ToListAsync().ConfigureAwait(false);
+        }
+
+        public async Task<bool> ExisteTablaFotosPacking()
+        {
+            return await baseDeDatos.SqlQuery<bool>(SQL_EXISTE_TABLA_FOTOS_PACKING).FirstAsync().ConfigureAwait(false);
+        }
+
+        public async Task<FotoPackingAlmacenDTO> LeerFotoPackingPorIdCliente(Guid idCliente)
+        {
+            return (await baseDeDatos.SqlQuery<FotoPackingAlmacenDTO>(SQL_FOTO_PACKING_POR_ID_CLIENTE, idCliente)
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
+
+        public async Task<FotoPackingAlmacenDTO> LeerFotoPacking(int id)
+        {
+            return (await baseDeDatos.SqlQuery<FotoPackingAlmacenDTO>(SQL_FOTO_PACKING_POR_ID, id)
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
+
+        public Task<List<FotoPackingAlmacenDTO>> LeerFotosPacking(string empresa, int pedido)
+        {
+            return baseDeDatos.SqlQuery<FotoPackingAlmacenDTO>(SQL_FOTOS_PACKING_DEL_PEDIDO, empresa, pedido).ToListAsync();
+        }
+
+        public Task<List<FotoPackingAlmacenDTO>> LeerFotosPackingDelPicking(string empresa, int picking)
+        {
+            return baseDeDatos.SqlQuery<FotoPackingAlmacenDTO>(SQL_FOTOS_PACKING_DEL_PICKING, empresa, picking).ToListAsync();
+        }
+
+        public async Task<FotoPackingAlmacenDTO> GuardarFotoPacking(FotoPackingAlmacenDTO foto, string hashSha256, int tamanoBytes, string dispositivo)
+        {
+            _ = await baseDeDatos.ExecuteSqlCommandAsync(SQL_INSERTAR_FOTO_PACKING,
+                new SqlParameter("@p0", foto.IdCliente),
+                new SqlParameter("@p1", foto.Empresa),
+                new SqlParameter("@p2", foto.Pedido),
+                new SqlParameter("@p3", foto.Picking),
+                Texto("@p4", foto.RutaBlob, 200),
+                Texto("@p5", hashSha256, 64),
+                new SqlParameter("@p6", tamanoBytes),
+                Texto("@p7", foto.Usuario, 50),
+                Texto("@p8", dispositivo, 50),
+                new SqlParameter("@p9", System.Data.SqlDbType.DateTime) { Value = (object)foto.FechaFoto ?? DBNull.Value }).ConfigureAwait(false);
+            return await LeerFotoPackingPorIdCliente(foto.IdCliente).ConfigureAwait(false);
         }
 
         public async Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking)

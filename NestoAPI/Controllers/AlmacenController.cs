@@ -660,6 +660,131 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.LeerBultos(Empresa(empresa), pedido).ConfigureAwait(false));
         }
 
+        /// <summary>NestoAPI#771: «926941,926942» → la lista; null y el texto que no es un número si alguno no lo es.</summary>
+        internal static List<int> LeerOtrosPedidos(string otrosPedidos, out string malo)
+        {
+            malo = null;
+            var otros = new List<int>();
+            foreach (string texto in (otrosPedidos ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!int.TryParse(texto.Trim(), out int otroPedido))
+                {
+                    malo = texto.Trim();
+                    return null;
+                }
+                otros.Add(otroPedido);
+            }
+            return otros;
+        }
+
+        // POST api/Almacen/Bultos/Cerrar?idCliente=...&pedido=926940&picking=99633&bulto=2&otrosPedidos=926941   (sin cuerpo)
+        /// <summary>
+        /// NestoAPI#771: cierra una caja SIN foto (las fotos del packing ya no van ligadas a los bultos: van por
+        /// <c>Packing/Fotos</c>). Mismas reglas que <c>Bultos/Foto</c>: si otra PDA ya tiene ese número en la entrega, el siguiente
+        /// libre (<c>Renumerado</c>); los otros pedidos de la caja, cada uno con su fila; repetir con el mismo idCliente no duplica.
+        /// Cerrar sin foto nunca borra la foto de un bulto que ya la tenía.
+        /// </summary>
+        [HttpPost]
+        [Route("Bultos/Cerrar")]
+        [ResponseType(typeof(BultoAlmacenDTO))]
+        public async Task<IHttpActionResult> PostCerrarBulto(Guid idCliente, int pedido, int picking, int bulto,
+            DateTime? fechaFoto = null, string dispositivo = null, string otrosPedidos = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            List<int> otros = LeerOtrosPedidos(otrosPedidos, out string malo);
+            if (otros == null)
+            {
+                return BadRequest($"«{malo}» no es un número de pedido.");
+            }
+            BultoAlmacenDTO guardado = await servicio.CerrarBultoSinFoto(new FotoBultoAlmacen
+            {
+                IdCliente = idCliente,
+                Empresa = Empresa(empresa),
+                Pedido = pedido,
+                OtrosPedidos = otros,
+                Picking = picking,
+                Bulto = bulto,
+                FechaFoto = fechaFoto,
+                Dispositivo = dispositivo
+            }, Usuario()).ConfigureAwait(false);
+
+            Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(picking), dispositivo); // NestoAPI#646
+            return Ok(guardado);
+        }
+
+        // POST api/Almacen/Packing/Fotos?idCliente=...&pedido=926940&picking=99633&otrosPedidos=926941   (cuerpo: image/jpeg)
+        /// <summary>
+        /// NestoAPI#771: una foto del packing SIN bulto (regla de Carlos 31/10/26: mínimo una por entrega, las que quieran, sin
+        /// relación con el número de cajas). El cuerpo es la imagen, sin envoltorio. Repetir con el mismo idCliente (la cola de la
+        /// PDA) no la duplica. Los otros pedidos de la entrega, separados por comas: cada uno con su fila y la misma foto.
+        /// 400 si falta Scripts/Issue771_FotosPackingYSeguimiento.sql.
+        /// </summary>
+        [HttpPost]
+        [Route("Packing/Fotos")]
+        [ResponseType(typeof(FotoPackingAlmacenDTO))]
+        public async Task<IHttpActionResult> PostFotoPacking(Guid idCliente, int pedido, int picking,
+            DateTime? fechaFoto = null, string dispositivo = null, string otrosPedidos = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            List<int> otros = LeerOtrosPedidos(otrosPedidos, out string malo);
+            if (otros == null)
+            {
+                return BadRequest($"«{malo}» no es un número de pedido.");
+            }
+            long? tamano = Request.Content?.Headers?.ContentLength;
+            if (tamano > ServicioPreparacionAlmacen.TAMANO_MAXIMO_FOTO)
+            {
+                return BadRequest($"La foto pesa demasiado (máximo {ServicioPreparacionAlmacen.TAMANO_MAXIMO_FOTO / 1024} KB).");
+            }
+            byte[] imagen = Request.Content == null
+                ? null
+                : await Request.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+
+            FotoPackingAlmacenDTO guardada = await servicio.GuardarFotoPacking(new FotoBultoAlmacen
+            {
+                IdCliente = idCliente,
+                Empresa = Empresa(empresa),
+                Pedido = pedido,
+                OtrosPedidos = otros,
+                Picking = picking,
+                Imagen = imagen,
+                FechaFoto = fechaFoto,
+                Dispositivo = dispositivo
+            }, Usuario()).ConfigureAwait(false);
+
+            Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(picking), dispositivo);
+            return Ok(guardada);
+        }
+
+        // GET api/Almacen/Pedidos/926940/FotosPacking?empresa=1
+        /// <summary>NestoAPI#771: las fotos del packing sin bulto del pedido (todas sus entregas), con su enlace público.</summary>
+        [HttpGet]
+        [Route("Pedidos/{pedido:int}/FotosPacking")]
+        [ResponseType(typeof(List<FotoPackingAlmacenDTO>))]
+        public async Task<IHttpActionResult> GetFotosPackingDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await servicio.LeerFotosPacking(Empresa(empresa), pedido).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/FotosPacking/17/Foto
+        /// <summary>NestoAPI#771: enlace temporal a una foto del packing (como <c>Bultos/{id}/Foto</c>).</summary>
+        [HttpGet]
+        [Route("FotosPacking/{id:int}/Foto")]
+        [ResponseType(typeof(EnlaceFotoBultoDTO))]
+        public async Task<IHttpActionResult> GetFotoPacking(int id)
+        {
+            Uri enlace = await servicio.EnlaceFotoPacking(id).ConfigureAwait(false);
+            if (enlace == null)
+            {
+                return NotFound();
+            }
+            return Ok(new EnlaceFotoBultoDTO
+            {
+                Url = enlace.AbsoluteUri,
+                MinutosDeVigencia = (int)ServicioPreparacionAlmacen.VIGENCIA_ENLACE_FOTO.TotalMinutes
+            });
+        }
+
         // POST api/Almacen/Pedidos/926940/Etiqueta   { "Empresa": "1", "Peso": 3.5, "Impresora": null, "Confirmaciones": [],
         //   "DescontarPrepagos": null, "Dimensiones": null }
         /// <summary>

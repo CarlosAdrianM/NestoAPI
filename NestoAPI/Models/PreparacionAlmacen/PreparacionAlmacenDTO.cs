@@ -353,6 +353,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// en cada pedido de la caja, con el mismo número). Para refrescar sin pedirlos pedido a pedido.
         /// </summary>
         public List<BultoAlmacenDTO> Bultos { get; set; } = new List<BultoAlmacenDTO>();
+        /// <summary>
+        /// NestoAPI#771: las fotos libres del packing de esta entrega en este picking (sin bulto; una fila por pedido: una foto
+        /// de dos pedidos sale en los dos con el mismo IdCliente de origen). Mínimo una por entrega para darla por empaquetada.
+        /// </summary>
+        public List<FotoPackingAlmacenDTO> Fotos { get; set; } = new List<FotoPackingAlmacenDTO>();
         /// <summary>NestoAPI#646: otro usuario está empaquetando esta entrega (lo último, en los últimos minutos). Null si nadie.</summary>
         public string EmpaquetandoPor { get; set; }
         /// <summary>NestoAPI#646: cuándo fue lo último que hizo (una lectura del packing o una foto de bulto). Null si nadie.</summary>
@@ -485,6 +490,35 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string AvisoRenumerado { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#771: una foto del packing SIN bulto (la regla nueva: mínimo una por entrega, las que se quiera, sin relación con
+    /// el número de cajas). Tabla PreparacionFotosPacking.
+    /// </summary>
+    public class FotoPackingAlmacenDTO
+    {
+        public int Id { get; set; }
+        public Guid IdCliente { get; set; }
+        public string Empresa { get; set; }
+        public int Pedido { get; set; }
+        public int Picking { get; set; }
+        /// <summary>
+        /// La foto en sí (el IdCliente de la subida original): una foto de una entrega con dos pedidos tiene una fila por pedido
+        /// (cada una con su Id e IdCliente) y el mismo IdFoto. Para contarla una vez.
+        /// </summary>
+        public Guid IdFoto { get; set; }
+        /// <summary>Siempre true (una foto del packing es una foto); para que Nesto y Ariadna la pinten como la de un bulto.</summary>
+        public bool TieneFoto { get; set; } = true;
+        public string Usuario { get; set; }
+        public DateTime? FechaFoto { get; set; }
+        /// <summary>La hora del servidor al guardarla.</summary>
+        public DateTime FechaRegistro { get; set; }
+        /// <summary>La ruta dentro del API (sin el servidor) para verla sin usuario (api/Almacen/Fotos/p{id}-{firma}). Null sin clave.</summary>
+        public string RutaFotoPublica { get; set; }
+        /// <summary>Solo para uso interno: no viaja al cliente.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string RutaBlob { get; set; }
+    }
+
     /// <summary>Lo pedido frente a lo leído de un producto.</summary>
     public class DiferenciaPreparacionDTO
     {
@@ -511,6 +545,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<BultoAlmacenDTO> Bultos { get; set; } = new List<BultoAlmacenDTO>();
         /// <summary>Hay al menos un bulto y todos tienen foto.</summary>
         public bool TodosLosBultosConFoto { get; set; }
+        /// <summary>NestoAPI#771: las fotos libres del packing del pedido en este picking.</summary>
+        public List<FotoPackingAlmacenDTO> Fotos { get; set; } = new List<FotoPackingAlmacenDTO>();
+        /// <summary>NestoAPI#771: hay al menos una foto (de un bulto o del packing): la regla nueva del packing.</summary>
+        public bool TieneAlgunaFoto { get; set; }
     }
 }
 

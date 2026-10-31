@@ -865,13 +865,14 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task LeerPackingsPendientes_SoloLosPickingsConAlgunaEntregaSinSusBultosConFoto_ElMasRecientePrimero()
         {
             // Criterio exacto: el mismo que la pantalla de packing. Una entrega está empaquetada si tiene algún bulto y
-            // todos con foto; un picking sale si le queda alguna entrega sin empaquetar.
+            // todos con foto; un picking sale si le queda alguna entrega sin empaquetar. NestoAPI#771: ahora, algún bulto y al
+            // menos una foto (de caja o del packing).
             A.CallTo(() => repositorio.LeerEntregasPorEmpaquetar(EMPRESA, "ALG")).Returns(new List<EntregaPorEmpaquetar>
             {
                 Entrega(99700, "100", bultosConFoto: 2),                       // todo empaquetado: no sale
                 Entrega(99739, "200", bultosConFoto: 1),
                 Entrega(99739, "300", bultosConFoto: 0, terminado: true, pedidos: 2, unidades: 5),
-                Entrega(99739, "400", bultosConFoto: 1, bultosSinFoto: 1, terminado: true),
+                Entrega(99739, "400", bultosConFoto: 0, bultosSinFoto: 2, terminado: true), // NestoAPI#771: cajas sin ninguna foto
                 Entrega(99710, "500", bultosConFoto: 0)
             });
 

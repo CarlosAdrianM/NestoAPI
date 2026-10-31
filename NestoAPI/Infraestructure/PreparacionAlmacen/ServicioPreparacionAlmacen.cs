@@ -34,6 +34,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
         Task<ResultadoEscaneosAlmacenDTO> GuardarEscaneos(string empresa, IEnumerable<EscaneoAlmacenDTO> escaneos, string usuario);
         Task<BultoAlmacenDTO> GuardarFotoBulto(FotoBultoAlmacen foto, string usuario);
+        /// <summary>
+        /// NestoAPI#771: cierra una caja SIN foto (las fotos del packing ya no van ligadas a los bultos). Mismas reglas que
+        /// <see cref="GuardarFotoBulto"/> (renumerado entre PDA, otros pedidos de la caja, idempotente por IdCliente).
+        /// </summary>
+        Task<BultoAlmacenDTO> CerrarBultoSinFoto(FotoBultoAlmacen bulto, string usuario);
+        /// <summary>NestoAPI#771: una foto libre del packing (sin bulto). Idempotente por IdCliente. <c>Bulto</c> no se mira.</summary>
+        Task<FotoPackingAlmacenDTO> GuardarFotoPacking(FotoBultoAlmacen foto, string usuario);
+        /// <summary>NestoAPI#771: las fotos libres del packing del pedido (de todos sus pickings).</summary>
+        Task<List<FotoPackingAlmacenDTO>> LeerFotosPacking(string empresa, int pedido);
+        /// <summary>NestoAPI#771: enlace temporal a una foto del packing. Null si no existe.</summary>
+        Task<Uri> EnlaceFotoPacking(int idFoto);
         Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido);
         /// <summary>Enlace temporal a la foto de un bulto. Null si el bulto no existe o no tiene foto.</summary>
         Task<Uri> EnlaceFotoBulto(int idBulto);
@@ -156,6 +167,26 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return bultos;
         }
 
+        /// <summary>NestoAPI#771: lo mismo para una foto del packing (token «p{id}-…»).</summary>
+        private FotoPackingAlmacenDTO ConEnlacePublico(FotoPackingAlmacenDTO foto)
+        {
+            if (foto != null)
+            {
+                foto.TieneFoto = true;
+                foto.IdFoto = IdFotoDeLaRuta(foto.RutaBlob) ?? foto.IdCliente;
+                foto.RutaFotoPublica = string.IsNullOrWhiteSpace(foto.RutaBlob) || !fotos.Configurado
+                    ? null
+                    : EnlacePublicoFotoBulto.RutaFotoPacking(claveEnlacesFotos, foto.Id, foto.IdCliente);
+            }
+            return foto;
+        }
+
+        private List<FotoPackingAlmacenDTO> ConEnlacePublico(List<FotoPackingAlmacenDTO> lista)
+        {
+            lista?.ForEach(f => ConEnlacePublico(f));
+            return lista;
+        }
+
         public bool FotosConfiguradas => fotos.Configurado;
 
         public async Task<PickingAlmacenDTO> LeerPicking(string empresa, int picking)
@@ -252,18 +283,36 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             List<BultoAlmacenDTO> bultos = ConEnlacePublico(await repositorio.LeerBultosDelPicking(empresa, picking).ConfigureAwait(false))
                 ?? new List<BultoAlmacenDTO>();
+            List<FotoPackingAlmacenDTO> fotosPacking = ConEnlacePublico(await LeerFotosPackingDelPickingSinFallar(empresa, picking).ConfigureAwait(false));
             List<ActividadPackingAlmacen> actividad = await LeerActividadSinFallar(empresa, new[] { picking }).ConfigureAwait(false);
-            RepartirBultosYActividad(packing, bultos, actividad);
+            RepartirBultosYActividad(packing, bultos, actividad, fotosPacking);
         }
 
-        internal static void RepartirBultosYActividad(PackingAlmacenDTO packing, IEnumerable<BultoAlmacenDTO> bultos, IEnumerable<ActividadPackingAlmacen> actividad)
+        /// <summary>NestoAPI#771: las fotos del packing de un picking; si fallan (p. ej. sin el script), ninguna: el packing sale igual.</summary>
+        private async Task<List<FotoPackingAlmacenDTO>> LeerFotosPackingDelPickingSinFallar(string empresa, int picking)
+        {
+            try
+            {
+                return await repositorio.LeerFotosPackingDelPicking(empresa, picking).ConfigureAwait(false) ?? new List<FotoPackingAlmacenDTO>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+                return new List<FotoPackingAlmacenDTO>();
+            }
+        }
+
+        internal static void RepartirBultosYActividad(PackingAlmacenDTO packing, IEnumerable<BultoAlmacenDTO> bultos, IEnumerable<ActividadPackingAlmacen> actividad,
+            IEnumerable<FotoPackingAlmacenDTO> fotosPacking = null)
         {
             List<BultoAlmacenDTO> todos = (bultos ?? Enumerable.Empty<BultoAlmacenDTO>()).Where(b => b.Picking == packing.Picking).ToList();
+            List<FotoPackingAlmacenDTO> todasLasFotos = (fotosPacking ?? Enumerable.Empty<FotoPackingAlmacenDTO>()).Where(f => f != null && f.Picking == packing.Picking).ToList();
             List<ActividadPackingAlmacen> hecho = (actividad ?? Enumerable.Empty<ActividadPackingAlmacen>()).Where(a => a.Picking == packing.Picking).ToList();
             foreach (EntregaPackingAlmacenDTO entrega in packing.Entregas)
             {
                 var pedidos = new HashSet<int>(entrega.Pedidos.Select(p => p.Pedido));
                 entrega.Bultos = todos.Where(b => pedidos.Contains(b.Pedido)).OrderBy(b => b.Bulto).ThenBy(b => b.Pedido).ToList();
+                entrega.Fotos = todasLasFotos.Where(f => pedidos.Contains(f.Pedido)).OrderBy(f => f.FechaRegistro).ThenBy(f => f.Id).ToList();
                 entrega.Actividad = hecho.Where(a => pedidos.Contains(a.Pedido)).ToList();
             }
         }
@@ -343,8 +392,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// pedidos etiquetados (EnviosAgencia en curso o más allá, desde Ariadna o desde Nesto). Hasta hoy solo contaba lo primero y,
         /// como en Algete etiquetan desde Nesto, el picking seguía en la lista hasta el albarán aunque estuviera todo empaquetado.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#771 (Carlos, 31/10/26): las fotos ya no van ligadas a las cajas. Empaquetada = al menos una caja y al menos una
+        /// foto (de una caja, como las de antes, o libre del packing), sin mirar cuántas cajas tienen foto.
+        /// </summary>
         internal static bool EntregaEmpaquetada(EntregaPorEmpaquetar e)
-            => (e.BultosConFoto > 0 && e.BultosSinFoto == 0) || (e.Pedidos > 0 && e.PedidosConEtiqueta >= e.Pedidos);
+            => (e.BultosConFoto + e.BultosSinFoto > 0 && e.BultosConFoto + e.FotosPacking > 0) || (e.Pedidos > 0 && e.PedidosConEtiqueta >= e.Pedidos);
 
         internal static List<PackingPendienteDTO> MontarPackingsPendientes(IEnumerable<EntregaPorEmpaquetar> entregas)
         {
@@ -733,9 +786,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
         }
 
-        public async Task<BultoAlmacenDTO> GuardarFotoBulto(FotoBultoAlmacen foto, string usuario)
+        public Task<BultoAlmacenDTO> GuardarFotoBulto(FotoBultoAlmacen foto, string usuario) => GuardarBulto(foto, usuario, conFoto: true);
+
+        public Task<BultoAlmacenDTO> CerrarBultoSinFoto(FotoBultoAlmacen bulto, string usuario) => GuardarBulto(bulto, usuario, conFoto: false);
+
+        /// <summary>NestoAPI#771: cerrar una caja, con su foto (como siempre) o sin ella (las fotos del packing van aparte).</summary>
+        private async Task<BultoAlmacenDTO> GuardarBulto(FotoBultoAlmacen foto, string usuario, bool conFoto)
         {
-            string motivo = MotivoDeRechazoDeLaFoto(foto);
+            string motivo = conFoto ? MotivoDeRechazoDeLaFoto(foto) : MotivoDeRechazoDelBulto(foto);
             if (motivo != null)
             {
                 throw new NestoBusinessException(motivo);
@@ -743,7 +801,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
             List<int> otrosPedidos = (foto.OtrosPedidos ?? new List<int>())
                 .Where(p => p > 0 && p != foto.Pedido).Distinct().ToList();
-            string hash = HashSha256(foto.Imagen);
+            string hash = conFoto ? HashSha256(foto.Imagen) : null;
+            int tamano = conFoto ? foto.Imagen.Length : 0;
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
 
             // Reenvío de la cola del móvil: la foto ya está guardada, no se sube otra vez
@@ -758,7 +817,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         throw new NestoBusinessException($"El pedido {pedido} no está en el picking {foto.Picking}.");
                     }
                 }
-                if (!fotos.Configurado)
+                if (conFoto && !fotos.Configurado)
                 {
                     throw new NestoBusinessException("El almacenamiento de las fotos de los bultos no está configurado.")
                     {
@@ -769,10 +828,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 DateTime fechaFoto = foto.FechaFoto ?? DateTime.Now;
                 // NestoAPI#646: el nombre es el de esta subida (su IdCliente), no el número de bulto: dos PDA nunca se pisan la
                 // foto aunque pidan el mismo número, y un reenvío de la cola reutiliza el mismo blob
-                string ruta = RutaDeLaFoto(foto.Empresa, foto.Pedido, foto.Picking, foto.IdCliente);
+                string ruta = conFoto ? RutaDeLaFoto(foto.Empresa, foto.Pedido, foto.Picking, foto.IdCliente) : null;
 
                 // Primero la foto y después la fila (fuera de la transacción): una fila sin foto diría que hay evidencia que no existe
-                await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
+                if (conFoto)
+                {
+                    await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
+                }
 
                 // NestoAPI#646: si otra PDA ya ha cerrado ese número en la entrega, el siguiente libre (no se pisa su foto)
                 var bulto = new BultoAlmacenDTO
@@ -786,7 +848,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Usuario = usuarioAuditoria,
                     FechaFoto = fechaFoto
                 };
-                principal = await GuardarBultoReintentandoAsync(bulto, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+                principal = await GuardarBultoReintentandoAsync(bulto, hash, tamano, foto.Dispositivo).ConfigureAwait(false);
             }
             ExplicarRenumerado(principal, foto.Bulto);
             // Los otros pedidos de la caja van con el número que se ha quedado la caja, no con el que mandó la app
@@ -811,7 +873,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     RutaBlob = principal?.RutaBlob,
                     Usuario = usuarioAuditoria,
                     FechaFoto = principal?.FechaFoto
-                }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+                }, hash, tamano, foto.Dispositivo).ConfigureAwait(false);
             }
 
             return ConEnlacePublico(principal);
@@ -883,6 +945,151 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
         }
 
+        /// <summary>NestoAPI#771: lo que tiene que traer una caja que se cierra sin foto.</summary>
+        internal static string MotivoDeRechazoDelBulto(FotoBultoAlmacen bulto)
+        {
+            if (bulto == null)
+            {
+                return "No ha llegado ninguna caja.";
+            }
+            if (bulto.IdCliente == Guid.Empty)
+            {
+                return "Falta el identificador de la caja (IdCliente).";
+            }
+            if (bulto.Pedido <= 0 || bulto.Picking <= 0)
+            {
+                return "Faltan el pedido o el picking del bulto.";
+            }
+            if (bulto.Bulto <= 0 || bulto.Bulto > short.MaxValue)
+            {
+                return "El número de bulto no es válido.";
+            }
+            return null;
+        }
+
+        /// <summary>NestoAPI#771: lo que tiene que traer una foto del packing (la del bulto, sin el número de bulto).</summary>
+        internal static string MotivoDeRechazoDeLaFotoPacking(FotoBultoAlmacen foto)
+        {
+            if (foto == null)
+            {
+                return "No ha llegado ninguna foto.";
+            }
+            // Las mismas reglas que la foto de un bulto (JPEG, tamaño, pedido, picking), con un número de bulto cualquiera
+            int bulto = foto.Bulto;
+            try
+            {
+                foto.Bulto = 1;
+                return MotivoDeRechazoDeLaFoto(foto);
+            }
+            finally
+            {
+                foto.Bulto = bulto;
+            }
+        }
+
+        /// <summary>NestoAPI#771: el IdCliente de la subida original, que va en el nombre del blob («…/packing-{N}.jpg»).</summary>
+        internal static Guid? IdFotoDeLaRuta(string rutaBlob)
+        {
+            string nombre = System.IO.Path.GetFileNameWithoutExtension(rutaBlob?.Trim() ?? string.Empty);
+            return nombre.StartsWith("packing-", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(nombre.Substring("packing-".Length), out Guid id)
+                ? id
+                : (Guid?)null;
+        }
+
+        /// <summary>NestoAPI#771: dentro del contenedor, {empresa}/{pedido}/{picking}/packing-{IdCliente}.jpg.</summary>
+        internal static string RutaDeLaFotoPacking(string empresa, int pedido, int picking, Guid idCliente)
+        {
+            return $"{empresa?.Trim()}/{pedido}/{picking}/packing-{idCliente:N}.jpg";
+        }
+
+        public const string MENSAJE_FALTA_SCRIPT_FOTOS_PACKING = "Las fotos del packing sin caja todavía no están activadas en el servidor " +
+            "(falta lanzar Scripts/Issue771_FotosPackingYSeguimiento.sql). Avise a la oficina.";
+
+        public async Task<FotoPackingAlmacenDTO> GuardarFotoPacking(FotoBultoAlmacen foto, string usuario)
+        {
+            string motivo = MotivoDeRechazoDeLaFotoPacking(foto);
+            if (motivo != null)
+            {
+                throw new NestoBusinessException(motivo);
+            }
+            if (!await repositorio.ExisteTablaFotosPacking().ConfigureAwait(false))
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_FOTOS_PACKING);
+            }
+            List<int> otrosPedidos = (foto.OtrosPedidos ?? new List<int>())
+                .Where(p => p > 0 && p != foto.Pedido).Distinct().ToList();
+            string hash = HashSha256(foto.Imagen);
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+
+            // Reenvío de la cola del móvil: la foto ya está guardada, no se sube otra vez
+            FotoPackingAlmacenDTO principal = await repositorio.LeerFotoPackingPorIdCliente(foto.IdCliente).ConfigureAwait(false);
+            if (principal == null)
+            {
+                foreach (int pedido in new[] { foto.Pedido }.Concat(otrosPedidos))
+                {
+                    if (!await repositorio.ExistePedidoEnPicking(foto.Empresa, pedido, foto.Picking).ConfigureAwait(false))
+                    {
+                        throw new NestoBusinessException($"El pedido {pedido} no está en el picking {foto.Picking}.");
+                    }
+                }
+                if (!fotos.Configurado)
+                {
+                    throw new NestoBusinessException("El almacenamiento de las fotos de los bultos no está configurado.")
+                    {
+                        StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+                    };
+                }
+                string ruta = RutaDeLaFotoPacking(foto.Empresa, foto.Pedido, foto.Picking, foto.IdCliente);
+                // Primero la foto y después la fila: una fila sin foto diría que hay evidencia que no existe
+                await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
+                principal = await repositorio.GuardarFotoPacking(new FotoPackingAlmacenDTO
+                {
+                    IdCliente = foto.IdCliente,
+                    Empresa = foto.Empresa,
+                    Pedido = foto.Pedido,
+                    Picking = foto.Picking,
+                    RutaBlob = ruta,
+                    Usuario = usuarioAuditoria,
+                    FechaFoto = foto.FechaFoto ?? DateTime.Now
+                }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+            }
+            // Los demás pedidos de la entrega: la misma foto, cada uno con su fila (también en un reenvío, por si se quedó a medias)
+            foreach (int pedido in otrosPedidos)
+            {
+                Guid idDerivado = IdParaOtroPedido(foto.IdCliente, pedido);
+                if (await repositorio.LeerFotoPackingPorIdCliente(idDerivado).ConfigureAwait(false) != null)
+                {
+                    continue;
+                }
+                _ = await repositorio.GuardarFotoPacking(new FotoPackingAlmacenDTO
+                {
+                    IdCliente = idDerivado,
+                    Empresa = foto.Empresa,
+                    Pedido = pedido,
+                    Picking = foto.Picking,
+                    RutaBlob = principal?.RutaBlob,
+                    Usuario = usuarioAuditoria,
+                    FechaFoto = principal?.FechaFoto
+                }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+            }
+            return ConEnlacePublico(principal);
+        }
+
+        public async Task<List<FotoPackingAlmacenDTO>> LeerFotosPacking(string empresa, int pedido)
+        {
+            return ConEnlacePublico(await repositorio.LeerFotosPacking(empresa, pedido).ConfigureAwait(false) ?? new List<FotoPackingAlmacenDTO>());
+        }
+
+        public async Task<Uri> EnlaceFotoPacking(int idFoto)
+        {
+            FotoPackingAlmacenDTO foto = await repositorio.LeerFotoPacking(idFoto).ConfigureAwait(false);
+            if (foto == null || string.IsNullOrWhiteSpace(foto.RutaBlob) || !fotos.Configurado)
+            {
+                return null;
+            }
+            return fotos.EnlaceDeLectura(foto.RutaBlob.Trim(), VIGENCIA_ENLACE_FOTO);
+        }
+
         internal static string MotivoDeRechazoDeLaFoto(FotoBultoAlmacen foto)
         {
             if (foto == null)
@@ -944,6 +1151,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public async Task<Uri> EnlaceFotoBultoPublico(string token)
         {
+            // NestoAPI#771: «p{id}-…» es una foto del packing sin bulto
+            if (EnlacePublicoFotoBulto.ClaveValida(claveEnlacesFotos) && EnlacePublicoFotoBulto.TryLeerIdFotoPacking(token, out int idFoto))
+            {
+                FotoPackingAlmacenDTO foto = await repositorio.LeerFotoPacking(idFoto).ConfigureAwait(false);
+                if (foto == null || string.IsNullOrWhiteSpace(foto.RutaBlob) || !fotos.Configurado
+                    || !EnlacePublicoFotoBulto.EsValidoFotoPacking(claveEnlacesFotos, token, foto.Id, foto.IdCliente))
+                {
+                    return null;
+                }
+                return fotos.EnlaceDeLectura(foto.RutaBlob.Trim(), VIGENCIA_ENLACE_FOTO);
+            }
             if (!EnlacePublicoFotoBulto.ClaveValida(claveEnlacesFotos) || !EnlacePublicoFotoBulto.TryLeerId(token, out int idBulto))
             {
                 return null;
@@ -980,6 +1198,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .LeerLecturas(empresa, pedido, pickingDelPedido.Value, CasadorEscaneos.FASE_PACKING).ConfigureAwait(false);
             List<BultoAlmacenDTO> bultos = ConEnlacePublico((await repositorio.LeerBultos(empresa, pedido).ConfigureAwait(false))
                 .Where(b => b.Picking == pickingDelPedido.Value).ToList());
+            List<FotoPackingAlmacenDTO> fotosPacking;
+            try
+            {
+                fotosPacking = ConEnlacePublico((await repositorio.LeerFotosPacking(empresa, pedido).ConfigureAwait(false) ?? new List<FotoPackingAlmacenDTO>())
+                    .Where(f => f != null && f.Picking == pickingDelPedido.Value).ToList());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+                fotosPacking = new List<FotoPackingAlmacenDTO>();
+            }
 
             // NestoAPI#765: las líneas de una nota de solo texto no se escanean (cuentan como metidas): no entran en el casado, y la
             // nota está completa si no se ha leído nada que no sea suyo.
@@ -997,7 +1226,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Productos = diferencias,
                 Completo = soloTexto ? diferencias.All(d => !d.Ajeno) : CasadorEscaneos.EstaCompleto(diferencias),
                 Bultos = bultos,
-                TodosLosBultosConFoto = bultos.Any() && bultos.All(b => b.TieneFoto)
+                TodosLosBultosConFoto = bultos.Any() && bultos.All(b => b.TieneFoto),
+                Fotos = fotosPacking,
+                TieneAlgunaFoto = fotosPacking.Count > 0 || bultos.Any(b => b.TieneFoto)
             };
         }
 

@@ -74,9 +74,17 @@ namespace NestoAPI.Infraestructure.Agencias
     /// <summary>Las cajas de la entrega del pedido en el packing de Ariadna.</summary>
     public class EntregaParaEtiqueta
     {
+        /// <summary>NestoAPI#771: el aviso de la etiqueta cuando la entrega no tiene ninguna foto del packing.</summary>
+        public const string AVISO_SIN_FOTOS_TEXTO = "La entrega no tiene ninguna foto del packing.";
+
         /// <summary>Cajas distintas (una caja compartida por dos pedidos cuenta una vez).</summary>
         public int Bultos { get; set; }
         public int BultosSinFoto { get; set; }
+        /// <summary>
+        /// NestoAPI#771: fotos distintas de la entrega (las de las cajas, como antes, y las libres del packing). La regla nueva es
+        /// mínimo una por entrega, no una por caja. Null si no se sabe (sin packing en curso solo se ven las de las cajas).
+        /// </summary>
+        public int? Fotos { get; set; }
         /// <summary>Los demás pedidos de la misma entrega (mismo cliente y dirección en el picking).</summary>
         public List<int> OtrosPedidos { get; set; } = new List<int>();
 
@@ -93,10 +101,13 @@ namespace NestoAPI.Infraestructure.Agencias
             }
             List<BultoAlmacenDTO> bultos = entrega.Bultos ?? new List<BultoAlmacenDTO>();
             List<IGrouping<string, BultoAlmacenDTO>> cajas = bultos.GroupBy(ClaveCaja).ToList();
+            int fotosLibres = (entrega.Fotos ?? new List<FotoPackingAlmacenDTO>())
+                .Where(f => f != null).Select(f => string.IsNullOrWhiteSpace(f.RutaBlob) ? "id:" + f.Id : f.RutaBlob.Trim()).Distinct().Count();
             return new EntregaParaEtiqueta
             {
                 Bultos = cajas.Count,
                 BultosSinFoto = cajas.Count(c => !c.Any(b => b.TieneFoto)),
+                Fotos = cajas.Count(c => c.Any(b => b.TieneFoto)) + fotosLibres,
                 OtrosPedidos = entrega.Pedidos.Select(p => p.Pedido).Where(p => p != pedido).Distinct().OrderBy(p => p).ToList()
             };
         }
@@ -105,10 +116,13 @@ namespace NestoAPI.Infraestructure.Agencias
         public static EntregaParaEtiqueta De(IEnumerable<BultoAlmacenDTO> bultosDelPedido)
         {
             List<IGrouping<string, BultoAlmacenDTO>> cajas = (bultosDelPedido ?? Enumerable.Empty<BultoAlmacenDTO>()).GroupBy(ClaveCaja).ToList();
+            int conFoto = cajas.Count(c => c.Any(b => b.TieneFoto));
             return new EntregaParaEtiqueta
             {
                 Bultos = cajas.Count,
-                BultosSinFoto = cajas.Count(c => !c.Any(b => b.TieneFoto))
+                BultosSinFoto = cajas.Count(c => !c.Any(b => b.TieneFoto)),
+                // Aquí no se ven las fotos libres del packing: sin ninguna de caja no se sabe si hay (no se avisa)
+                Fotos = conFoto > 0 ? conFoto : (int?)null
             };
         }
 
@@ -270,12 +284,11 @@ namespace NestoAPI.Infraestructure.Agencias
                     envio = creado.Envio.Envio;
                     etiqueta.EnvioNuevo = true;
                     etiqueta.Avisos.AddRange(creado.Envio.Avisos ?? new List<string>());
-                    // Con los bultos tecleados no se cierran cajas: el aviso de cajas sin foto no tiene sentido
-                    if (!bultosTecleados && entrega?.BultosSinFoto > 0)
+                    // Con los bultos tecleados no se cierran cajas: el aviso de las fotos no tiene sentido. NestoAPI#771: ya no hace
+                    // falta una foto por caja (mínimo una por entrega): solo se avisa si la entrega no tiene ninguna.
+                    if (!bultosTecleados && entrega?.Bultos > 0 && entrega.Fotos == 0)
                     {
-                        etiqueta.Avisos.Add(entrega.BultosSinFoto == 1
-                            ? "Hay 1 caja sin foto."
-                            : $"Hay {entrega.BultosSinFoto} cajas sin foto.");
+                        etiqueta.Avisos.Add(EntregaParaEtiqueta.AVISO_SIN_FOTOS_TEXTO);
                     }
                     if (entrega?.OtrosPedidos?.Count > 0)
                     {
