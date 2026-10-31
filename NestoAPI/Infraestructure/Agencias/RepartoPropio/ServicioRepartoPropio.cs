@@ -24,12 +24,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         Task<PruebaEntregaReparto> LeerPorClave(Guid clave);
         /// <summary>La última entrega registrada del envío (sin la firma), o null.</summary>
         Task<PruebaEntregaReparto> LeerUltimaEntrega(int envio);
-        /// <summary>La firma de la última entrega con firma, o null.</summary>
-        Task<byte[]> LeerFirma(int envio);
+        /// <summary>La firma de la última entrega con firma (en el blob o en la columna), o null.</summary>
+        Task<FirmaGuardadaReparto> LeerFirma(int envio);
+        /// <summary>NestoAPI#770: ¿se ha lanzado Scripts/Issue770_FirmasBlob.sql (columna RutaBlob)?</summary>
+        bool TieneRutaBlob();
+        /// <summary>NestoAPI#770: la firma ya está en el blob: RutaBlob = <paramref name="rutaBlob"/> y Firma = NULL.</summary>
+        Task GuardarRutaBlob(int idPrueba, string rutaBlob);
+        /// <summary>NestoAPI#770: cuántas pruebas tienen aún la firma en la columna.</summary>
+        Task<int> ContarFirmasEnColumna();
+        /// <summary>NestoAPI#770: las primeras <paramref name="maximo"/> con la firma en la columna (por Id), con la empresa del envío.</summary>
+        Task<List<FirmaGuardadaReparto>> LeerFirmasEnColumna(int maximo);
         /// <summary>
         /// En UNA transacción: contabiliza el reembolso cobrado (si <paramref name="importeAContabilizar"/> tiene valor, por la
         /// puerta de siempre, TramitacionEnviosService.ContabilizarReembolsoAsync), inserta la prueba con su asiento, la historia
-        /// y el cambio de estado del envío. O todo o nada. Devuelve el asiento (0 sin contabilizar).
+        /// y el cambio de estado del envío. O todo o nada. Devuelve el asiento (0 sin contabilizar) y deja en prueba.Id el de la fila.
         /// </summary>
         /// <exception cref="ClaveIdempotenciaRepetidaException">Otra petición ya registró esa clave.</exception>
         Task<int> Registrar(PruebaEntregaReparto prueba, byte[] firma, EnviosAgencia envio, IList<EnvioHistoria> historia,
@@ -126,8 +134,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <param name="informes">El extracto contable de la caja (MisCobros): el mismo que el de la ventana de Cajas de Nesto.</param>
         public ServicioRepartoPropio(IRepositorioRepartoPropio repositorio, Func<DateTime> ahora = null, Func<EnviosAgencia, Task> avisarIncidencia = null,
             ILectorParametrosUsuario parametros = null, Func<IServicioPagos> pagos = null, Func<IInformesService> informes = null,
-            IRepositorioCargaFurgoneta carga = null, DependenciasParadasReparto paradas = null)
+            IRepositorioCargaFurgoneta carga = null, DependenciasParadasReparto paradas = null, DependenciasFirmasReparto firmas = null)
         {
+            this.firmas = firmas ?? new DependenciasFirmasReparto();
             this.carga = carga;
             this.paradas = paradas ?? new DependenciasParadasReparto();
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
@@ -252,16 +261,6 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Latitud = prueba.Latitud,
                 Longitud = prueba.Longitud
             });
-        }
-
-        public async Task<ResultadoReparto<byte[]>> Firma(int envioId)
-        {
-            if (!repositorio.ScriptAplicado())
-            {
-                return ResultadoReparto<byte[]>.Mal(TipoResultadoReparto.Invalido, MENSAJE_FALTA_SCRIPT);
-            }
-            byte[] firma = await repositorio.LeerFirma(envioId).ConfigureAwait(false);
-            return firma == null || firma.Length == 0 ? ResultadoReparto<byte[]>.Vacio() : ResultadoReparto<byte[]>.Bien(firma);
         }
 
         // ---------------------------------------------------------------- entregar
@@ -456,7 +455,25 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             });
             envio.Usuario = usuario;
 
-            return await Registrar(prueba, firma, envio, historia, aContabilizar, usuario, EnvioRepartoDTO.ESTADO_ENTREGADO).ConfigureAwait(false);
+            // NestoAPI#770: la firma se guarda SELLADA (texto de conformidad, quién, cuándo y dónde); si no se puede sellar, limpia.
+            bool sellada = false;
+            if (firma != null)
+            {
+                string conformidad = TextoConformidad(peticion, envio, recogida, bultosRecogidos, cobro, importeCobrado);
+                byte[] conSello = await SellarFirma(firma, prueba, conformidad).ConfigureAwait(false);
+                if (conSello != null)
+                {
+                    firma = conSello;
+                    sellada = true;
+                }
+            }
+
+            ResultadoReparto<EstadoEnvioRepartoDTO> resultado = await Registrar(prueba, firma, envio, historia, aContabilizar, usuario, EnvioRepartoDTO.ESTADO_ENTREGADO).ConfigureAwait(false);
+            if (firma != null && sellada && resultado.Tipo == TipoResultadoReparto.Ok)
+            {
+                await GuardarFirmaEnBlob(prueba, envio, firma).ConfigureAwait(false);
+            }
+            return resultado;
         }
 
         // ---------------------------------------------------------------- incidencia

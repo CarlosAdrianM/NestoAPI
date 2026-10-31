@@ -22,10 +22,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         internal static readonly string[] COLUMNAS_COBRO = { "CuentaCaja", "PagoTPVId", "UrlPago" };
 
         private const string COLUMNAS_FIJAS = "Id, EnvioId, ClaveIdempotencia, Tipo, FechaHora, Receptor, DniReceptor, CobroReembolso, ImporteCobrado, " +
-            "Motivo, Texto, Latitud, Longitud, Asiento, Usuario, FechaRegistro, CAST(CASE WHEN Firma IS NULL THEN 0 ELSE 1 END AS bit) AS TieneFirma";
+            "Motivo, Texto, Latitud, Longitud, Asiento, Usuario, FechaRegistro";
+
+        /// <summary>NestoAPI#770: con RutaBlob, la firma puede estar en el blob (Firma NULL).</summary>
+        private string COLUMNA_TIENE_FIRMA => TieneRutaBlob()
+            ? ", CAST(CASE WHEN Firma IS NULL AND RutaBlob IS NULL THEN 0 ELSE 1 END AS bit) AS TieneFirma"
+            : ", CAST(CASE WHEN Firma IS NULL THEN 0 ELSE 1 END AS bit) AS TieneFirma";
 
         // SqlQuery<PruebaEntregaReparto> exige una columna por propiedad: sin las columnas del cobro (script de antes), NULL.
-        private string COLUMNAS => COLUMNAS_FIJAS + (TieneColumnasCobro()
+        private string COLUMNAS => COLUMNAS_FIJAS + COLUMNA_TIENE_FIRMA + (TieneColumnasCobro()
             ? ", CuentaCaja, PagoTPVId, UrlPago"
             : ", CAST(NULL AS varchar(15)) AS CuentaCaja, CAST(NULL AS int) AS PagoTPVId, CAST(NULL AS varchar(200)) AS UrlPago")
             + (TieneBultosRecogidos() ? ", BultosRecogidos" : ", CAST(NULL AS smallint) AS BultosRecogidos");
@@ -36,6 +41,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         internal const string COLUMNA_BULTOS_RECOGIDOS = "BultosRecogidos";
 
         private bool TieneBultosRecogidos() => ColumnasOpcionales.Existen(db, TABLA, COLUMNA_BULTOS_RECOGIDOS);
+
+        /// <summary>NestoAPI#770: la columna de Scripts/Issue770_FirmasBlob.sql.</summary>
+        internal const string COLUMNA_RUTA_BLOB = "RutaBlob";
+
+        public bool TieneRutaBlob() => ColumnasOpcionales.Existen(db, TABLA, COLUMNA_RUTA_BLOB);
+
+        // SqlQuery<FirmaGuardadaReparto>: una columna por propiedad.
+        private string ColumnasFirma(string alias, bool conEmpresa)
+            => $"{alias}Id, {alias}EnvioId, {(conEmpresa ? "e.Empresa" : "CAST(NULL AS varchar(3))")} AS Empresa, {alias}FechaHora, " +
+               (TieneRutaBlob() ? $"{alias}RutaBlob" : "CAST(NULL AS varchar(300)) AS RutaBlob") +
+               $", {alias}Firma, CAST(ISNULL(DATALENGTH({alias}Firma), 0) AS int) AS Bytes";
 
         private readonly NVEntities db;
 
@@ -78,10 +94,25 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 $"SELECT TOP 1 {COLUMNAS} FROM dbo.{TABLA} WHERE EnvioId = @p0 AND Tipo = @p1 ORDER BY Id DESC",
                 envio, PruebaEntregaReparto.TIPO_ENTREGA).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
 
-        public async Task<byte[]> LeerFirma(int envio)
-            => (await db.Database.SqlQuery<byte[]>(
-                $"SELECT TOP 1 Firma FROM dbo.{TABLA} WHERE EnvioId = @p0 AND Tipo = @p1 AND Firma IS NOT NULL ORDER BY Id DESC",
+        public async Task<FirmaGuardadaReparto> LeerFirma(int envio)
+            => (await db.Database.SqlQuery<FirmaGuardadaReparto>(
+                $"SELECT TOP 1 {ColumnasFirma(string.Empty, false)} FROM dbo.{TABLA} WHERE EnvioId = @p0 AND Tipo = @p1 AND " +
+                (TieneRutaBlob() ? "(Firma IS NOT NULL OR RutaBlob IS NOT NULL)" : "Firma IS NOT NULL") + " ORDER BY Id DESC",
                 envio, PruebaEntregaReparto.TIPO_ENTREGA).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+
+        public Task GuardarRutaBlob(int idPrueba, string rutaBlob)
+            => db.Database.ExecuteSqlCommandAsync(
+                $"UPDATE dbo.{TABLA} SET RutaBlob = @Ruta, Firma = NULL WHERE Id = @Id",
+                Parametro("@Ruta", SqlDbType.VarChar, rutaBlob),
+                Parametro("@Id", SqlDbType.Int, idPrueba));
+
+        public async Task<int> ContarFirmasEnColumna()
+            => (await db.Database.SqlQuery<int>($"SELECT COUNT(*) FROM dbo.{TABLA} WHERE Firma IS NOT NULL").ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+
+        public Task<List<FirmaGuardadaReparto>> LeerFirmasEnColumna(int maximo)
+            => db.Database.SqlQuery<FirmaGuardadaReparto>(
+                $"SELECT TOP (@p0) {ColumnasFirma("p.", true)} FROM dbo.{TABLA} p INNER JOIN dbo.EnviosAgencia e ON e.Numero = p.EnvioId " +
+                "WHERE p.Firma IS NOT NULL ORDER BY p.Id", maximo).ToListAsync();
 
         public async Task<int> Registrar(PruebaEntregaReparto prueba, byte[] firma, EnviosAgencia envio, IList<EnvioHistoria> historia,
             decimal? importeAContabilizar, string usuario)
@@ -153,6 +184,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     {
                         throw new ClaveIdempotenciaRepetidaException(ex);
                     }
+                    // NestoAPI#770: el Id de la prueba, para la ruta de la firma en el blob (la clave es única).
+                    prueba.Id = (await db.Database.SqlQuery<int>($"SELECT Id FROM dbo.{TABLA} WHERE ClaveIdempotencia = @p0", prueba.ClaveIdempotencia)
+                        .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
 
                     foreach (EnvioHistoria fila in historia ?? new List<EnvioHistoria>())
                     {
