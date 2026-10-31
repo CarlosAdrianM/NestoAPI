@@ -21,7 +21,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public void EntregaEmpaquetada_ConFotoDeTodosLosBultos_OConTodosLosPedidosEtiquetados()
         {
             Assert.IsTrue(ServicioPreparacionAlmacen.EntregaEmpaquetada(Entrega(99958, "1", pedidos: 1, conEtiqueta: 0, bultosConFoto: 2)));
-            Assert.IsFalse(ServicioPreparacionAlmacen.EntregaEmpaquetada(Entrega(99958, "1", pedidos: 1, conEtiqueta: 0, bultosConFoto: 2, bultosSinFoto: 1)), "un bulto sin foto");
+            Assert.IsTrue(ServicioPreparacionAlmacen.EntregaEmpaquetada(Entrega(99958, "1", pedidos: 1, conEtiqueta: 0, bultosConFoto: 2, bultosSinFoto: 1)), "NestoAPI#771: un bulto sin foto ya no impide nada (mínimo una foto por entrega)");
             Assert.IsTrue(ServicioPreparacionAlmacen.EntregaEmpaquetada(Entrega(99958, "1", pedidos: 2, conEtiqueta: 2)), "etiquetas hechas desde Nesto");
             Assert.IsFalse(ServicioPreparacionAlmacen.EntregaEmpaquetada(Entrega(99958, "1", pedidos: 2, conEtiqueta: 1)), "falta un pedido por etiquetar");
             Assert.IsFalse(ServicioPreparacionAlmacen.EntregaEmpaquetada(Entrega(99958, "1", pedidos: 1, conEtiqueta: 0)));

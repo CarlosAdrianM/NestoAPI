@@ -105,16 +105,17 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public async Task Ctt_LosAvisosDeLaGrabacionYLasCajasSinFotoVanEnLaRespuesta()
+        public async Task Ctt_LosAvisosDeLaGrabacionYLaEntregaSinFotosVanEnLaRespuesta()
         {
-            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 3, BultosSinFoto = 1, OtrosPedidos = new List<int> { 926941 } });
+            // NestoAPI#771: ya no se avisa por cada caja sin foto, sino si la entrega no tiene ninguna
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 3, BultosSinFoto = 3, Fotos = 0, OtrosPedidos = new List<int> { 926941 } });
             CreaElEnvio(Constantes.Agencias.AGENCIA_CTT, new List<string> { "La agencia no ha dado la plaza." });
 
             EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
 
             A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Bultos == 3), A<string>._)).MustHaveHappened();
             CollectionAssert.Contains(etiqueta.Avisos, "La agencia no ha dado la plaza.");
-            CollectionAssert.Contains(etiqueta.Avisos, "Hay 1 caja sin foto.");
+            CollectionAssert.Contains(etiqueta.Avisos, EntregaParaEtiqueta.AVISO_SIN_FOTOS_TEXTO);
             Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("926941")));
         }
 
@@ -592,8 +593,65 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.AreEqual(3, entrega.Bultos);
             Assert.AreEqual(1, entrega.BultosSinFoto);
+            Assert.AreEqual(2, entrega.Fotos, "NestoAPI#771: las dos fotos de caja (la compartida cuenta una vez)");
             CollectionAssert.AreEqual(new List<int> { 926941 }, entrega.OtrosPedidos);
             Assert.IsNull(EntregaParaEtiqueta.De(packing, 12345));
+        }
+
+        [TestMethod]
+        public async Task Issue771_CajasSinFotoPeroConFotoDelPacking_SinAviso()
+        {
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 3, BultosSinFoto = 3, Fotos = 1 });
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsFalse(etiqueta.Avisos.Any(a => a.Contains("foto")), "con una foto del packing basta (mínimo 1 por entrega)");
+        }
+
+        [TestMethod]
+        public async Task Issue771_SinSaberLasFotos_NoSeAvisa()
+        {
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, BultosSinFoto = 2, Fotos = null });
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsFalse(etiqueta.Avisos.Any(a => a.Contains("foto")));
+        }
+
+        [TestMethod]
+        public void Issue771_EntregaParaEtiqueta_CuentaLasFotosLibresDelPacking()
+        {
+            var packing = new PackingAlmacenDTO
+            {
+                Picking = 99633,
+                Entregas = new List<EntregaPackingAlmacenDTO>
+                {
+                    new EntregaPackingAlmacenDTO
+                    {
+                        Pedidos = new List<PedidoPackingAlmacenDTO> { new PedidoPackingAlmacenDTO { Pedido = PEDIDO }, new PedidoPackingAlmacenDTO { Pedido = 926941 } },
+                        Bultos = new List<BultoAlmacenDTO>
+                        {
+                            new BultoAlmacenDTO { Pedido = PEDIDO, Picking = 99633, Bulto = 1, TieneFoto = false },
+                            new BultoAlmacenDTO { Pedido = PEDIDO, Picking = 99633, Bulto = 2, TieneFoto = false }
+                        },
+                        Fotos = new List<FotoPackingAlmacenDTO>
+                        {
+                            // la misma foto en los dos pedidos de la entrega cuenta una vez
+                            new FotoPackingAlmacenDTO { Id = 1, Pedido = PEDIDO, Picking = 99633, RutaBlob = "1/926940/99633/packing-a.jpg" },
+                            new FotoPackingAlmacenDTO { Id = 2, Pedido = 926941, Picking = 99633, RutaBlob = "1/926940/99633/packing-a.jpg" },
+                            new FotoPackingAlmacenDTO { Id = 3, Pedido = PEDIDO, Picking = 99633, RutaBlob = "1/926940/99633/packing-b.jpg" }
+                        }
+                    }
+                }
+            };
+
+            EntregaParaEtiqueta entrega = EntregaParaEtiqueta.De(packing, PEDIDO);
+
+            Assert.AreEqual(2, entrega.Bultos);
+            Assert.AreEqual(2, entrega.BultosSinFoto);
+            Assert.AreEqual(2, entrega.Fotos);
         }
 
         [TestMethod]

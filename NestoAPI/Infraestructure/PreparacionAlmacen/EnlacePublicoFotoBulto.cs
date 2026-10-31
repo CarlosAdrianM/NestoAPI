@@ -62,12 +62,54 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return esperado != null && token != null && IgualesEnTiempoConstante(esperado, token.Trim().ToLowerInvariant());
         }
 
-        private static string Firma(string clave, int idBulto, Guid idCliente)
+        // ===================================================================== NestoAPI#771: fotos del packing sin bulto
+
+        /// <summary>NestoAPI#771: lo que distingue el token de una foto del packing («p17-…») del de un bulto («17-…»).</summary>
+        public const string PREFIJO_FOTO_PACKING = "p";
+
+        /// <summary>
+        /// NestoAPI#771: «p{id}-{firma}» para una foto libre del packing (PreparacionFotosPacking). La misma clave que los bultos,
+        /// con otro dominio en el texto firmado («packing|»): un token de bulto nunca vale para una foto del packing ni al revés.
+        /// </summary>
+        public static string TokenFotoPacking(string clave, int idFoto, Guid idCliente)
+        {
+            if (!ClaveValida(clave) || idFoto <= 0)
+            {
+                return null;
+            }
+            return PREFIJO_FOTO_PACKING + idFoto.ToString(CultureInfo.InvariantCulture) + "-" + Firma(clave, idFoto, idCliente, "packing|");
+        }
+
+        public static string RutaFotoPacking(string clave, int idFoto, Guid idCliente)
+        {
+            string token = TokenFotoPacking(clave, idFoto, idCliente);
+            return token == null ? null : RUTA + token;
+        }
+
+        /// <summary>NestoAPI#771: ¿es el token de una foto del packing? Y, si lo es, su Id (la firma se comprueba aparte).</summary>
+        public static bool TryLeerIdFotoPacking(string token, out int idFoto)
+        {
+            idFoto = 0;
+            string limpio = token?.Trim();
+            if (string.IsNullOrEmpty(limpio) || !limpio.StartsWith(PREFIJO_FOTO_PACKING, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            return TryLeerId(limpio.Substring(PREFIJO_FOTO_PACKING.Length), out idFoto);
+        }
+
+        public static bool EsValidoFotoPacking(string clave, string token, int idFoto, Guid idCliente)
+        {
+            string esperado = TokenFotoPacking(clave, idFoto, idCliente);
+            return esperado != null && token != null && IgualesEnTiempoConstante(esperado, token.Trim().ToLowerInvariant());
+        }
+
+        private static string Firma(string clave, int idBulto, Guid idCliente, string dominio = "bulto|")
         {
             using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(clave.Trim())))
             {
                 byte[] firma = hmac.ComputeHash(Encoding.UTF8.GetBytes(
-                    "bulto|" + idBulto.ToString(CultureInfo.InvariantCulture) + "|" + idCliente.ToString("N")));
+                    dominio + idBulto.ToString(CultureInfo.InvariantCulture) + "|" + idCliente.ToString("N")));
                 var texto = new StringBuilder(firma.Length * 2);
                 foreach (byte b in firma)
                 {

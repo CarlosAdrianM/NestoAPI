@@ -449,6 +449,8 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroDeudaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenRepartoCarreraTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropioTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\SeguimientoTrazabilidadTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\FotosPackingTests.cs" />
     <Compile Include="Infrastructure\Agencias\ServicioEnvioDesdePedidoTests.cs" />
     <Compile Include="Infrastructure\Agencias\ServicioEtiquetaPackingTests.cs" />
     <Compile Include="Infrastructure\Agencias\PasosEtiquetaPackingApiTests.cs" />

@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias;
@@ -248,7 +248,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             StringAssert.Contains(pagina.Html, PEDIDO.ToString());
             StringAssert.Contains(pagina.Html, "<dd>3</dd>");
             StringAssert.Contains(pagina.Html, "No había nadie en la dirección de entrega.", "la historia lleva la incidencia anterior");
-            Assert.IsTrue(pagina.Html.IndexOf("12:45") < pagina.Html.IndexOf("10:05"), "lo más reciente arriba");
+            string historia = pagina.Html.Substring(pagina.Html.IndexOf("Historia del envío"));
+            Assert.IsTrue(historia.IndexOf("10:05") < historia.IndexOf("12:45"), "NestoAPI#771: línea de tiempo, de lo más antiguo a lo último");
         }
 
         [TestMethod]
