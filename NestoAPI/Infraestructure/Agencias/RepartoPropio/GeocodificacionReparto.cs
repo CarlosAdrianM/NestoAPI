@@ -220,22 +220,29 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         public async Task<ResultadoGeocodificacion> Buscar(string calle, string codigoPostal, string poblacion)
+            => Leer(await PedirConTurno(Url(calle, codigoPostal, poblacion), CancellationToken.None).ConfigureAwait(false));
+
+        /// <summary>
+        /// Un GET a Nominatim respetando su política para TODO el proceso (el mismo candado y la misma espera mínima para la
+        /// búsqueda de los jobs y la geocodificación inversa de la firma, NestoAPI#770). Con <paramref name="cancelar"/> se corta
+        /// también la espera del turno.
+        /// </summary>
+        internal static async Task<string> PedirConTurno(string url, CancellationToken cancelar)
         {
-            string url = Url(calle, codigoPostal, poblacion);
-            await candado.WaitAsync().ConfigureAwait(false);
+            await candado.WaitAsync(cancelar).ConfigureAwait(false);
             try
             {
                 TimeSpan falta = ESPERA_MINIMA - (DateTime.UtcNow - ultimaPeticion);
                 if (falta > TimeSpan.Zero)
                 {
-                    await Task.Delay(falta).ConfigureAwait(false);
+                    await Task.Delay(falta, cancelar).ConfigureAwait(false);
                 }
                 try
                 {
-                    using (HttpResponseMessage respuesta = await cliente.GetAsync(url).ConfigureAwait(false))
+                    using (HttpResponseMessage respuesta = await cliente.GetAsync(url, cancelar).ConfigureAwait(false))
                     {
                         _ = respuesta.EnsureSuccessStatusCode();
-                        return Leer(await respuesta.Content.ReadAsStringAsync().ConfigureAwait(false));
+                        return await respuesta.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
                 }
                 finally

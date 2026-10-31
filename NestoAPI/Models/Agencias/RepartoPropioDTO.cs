@@ -193,6 +193,14 @@ namespace NestoAPI.Models.Agencias
         /// y a la historia («Reparto propio: recogido (2 bultos)»); en las demás paradas se ignora.
         /// </summary>
         public int? BultosRecogidos { get; set; }
+        /// <summary>
+        /// NestoAPI#770: el texto de conformidad EXACTO que la PDA enseñó encima del recuadro mientras se firmaba (máx.
+        /// <see cref="MAXIMO_TEXTO_CONFORMIDAD"/>, se recorta). Opcional (PDAs viejas): sin él, el servidor lo construye con la
+        /// misma regla (Infraestructure/Agencias/RepartoPropio/TextoConformidadEntrega). Va sellado en la imagen de la firma.
+        /// </summary>
+        public string TextoConformidad { get; set; }
+
+        public const int MAXIMO_TEXTO_CONFORMIDAD = 500;
     }
 
     /// <summary>NestoAPI#759: PUT api/RepartoPropio/Orden. El orden de las paradas del repartidor, tal como lo deja en la PDA.</summary>
@@ -412,5 +420,41 @@ namespace NestoAPI.Models.Agencias
         public bool TieneFirma { get; set; }
         /// <summary>NestoAPI#759: los bultos recogidos (notas de recogida); null en lo demás o sin la columna del script.</summary>
         public short? BultosRecogidos { get; set; }
+    }
+
+    /// <summary>NestoAPI#770: dónde está la firma de una prueba de entrega (en el blob, en la columna Firma o en los dos).</summary>
+    public class FirmaGuardadaReparto
+    {
+        public int Id { get; set; }
+        public int EnvioId { get; set; }
+        public string Empresa { get; set; }
+        public DateTime FechaHora { get; set; }
+        /// <summary>Dentro del contenedor «firmas»; null si sigue en la columna.</summary>
+        public string RutaBlob { get; set; }
+        /// <summary>La columna Firma (null cuando ya está en el blob).</summary>
+        public byte[] Firma { get; set; }
+        public int Bytes { get; set; }
+    }
+
+    /// <summary>NestoAPI#770: POST api/RepartoPropio/PruebasEntrega/MigrarFirmas.</summary>
+    public class ResultadoMigracionFirmasDTO
+    {
+        /// <summary>False: solo se ha contado y listado (no se ha escrito nada).</summary>
+        public bool Aplicado { get; set; }
+        /// <summary>Las firmas que siguen en la columna (antes de este lote).</summary>
+        public int Pendientes { get; set; }
+        public int Migradas { get; set; }
+        public int Errores { get; set; }
+        public System.Collections.Generic.List<FirmaMigradaDTO> Firmas { get; set; } = new System.Collections.Generic.List<FirmaMigradaDTO>();
+    }
+
+    public class FirmaMigradaDTO
+    {
+        public int Id { get; set; }
+        public int EnvioId { get; set; }
+        public DateTime FechaHora { get; set; }
+        public int Bytes { get; set; }
+        public string RutaBlob { get; set; }
+        public string Error { get; set; }
     }
 }

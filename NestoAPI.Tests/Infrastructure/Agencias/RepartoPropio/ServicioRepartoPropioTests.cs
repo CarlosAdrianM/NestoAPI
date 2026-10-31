@@ -819,6 +819,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public IList<EnvioHistoria> Historia;
             public decimal? ImporteAContabilizar;
             public string Usuario;
+            /// <summary>NestoAPI#770: la firma ya está en el blob.</summary>
+            public string RutaBlob;
         }
 
         internal class RepositorioFalso : IRepositorioRepartoPropio
@@ -857,8 +859,58 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public Task<PruebaEntregaReparto> LeerUltimaEntrega(int envio)
                 => Task.FromResult(Registros.Select(r => r.Prueba).LastOrDefault(p => p.EnvioId == envio && p.Tipo == PruebaEntregaReparto.TIPO_ENTREGA));
 
-            public Task<byte[]> LeerFirma(int envio)
-                => Task.FromResult(Registros.LastOrDefault(r => r.Prueba.EnvioId == envio && r.Firma != null)?.Firma);
+            /// <summary>NestoAPI#770: sin la columna RutaBlob (script sin lanzar), false.</summary>
+            public bool ColumnaRutaBlob = true;
+            public Exception FalloGuardarRutaBlob;
+            private int ultimoId;
+
+            public Task<FirmaGuardadaReparto> LeerFirma(int envio)
+            {
+                Registro r = Registros.LastOrDefault(x => x.Prueba.EnvioId == envio && x.Prueba.Tipo == PruebaEntregaReparto.TIPO_ENTREGA && (x.Firma != null || x.RutaBlob != null));
+                return Task.FromResult(r == null ? null : AFirma(r));
+            }
+
+            private static FirmaGuardadaReparto AFirma(Registro r) => new FirmaGuardadaReparto
+            {
+                Id = r.Prueba.Id,
+                EnvioId = r.Prueba.EnvioId,
+                Empresa = "1  ",
+                FechaHora = r.Prueba.FechaHora,
+                RutaBlob = r.RutaBlob,
+                Firma = r.Firma,
+                Bytes = r.Firma?.Length ?? 0
+            };
+
+            public bool TieneRutaBlob() => ColumnaRutaBlob;
+
+            public Task GuardarRutaBlob(int idPrueba, string rutaBlob)
+            {
+                if (FalloGuardarRutaBlob != null)
+                {
+                    throw FalloGuardarRutaBlob;
+                }
+                Registro r = Registros.Single(x => x.Prueba.Id == idPrueba);
+                r.RutaBlob = rutaBlob;
+                r.Firma = null;
+                return Task.CompletedTask;
+            }
+
+            public Task<int> ContarFirmasEnColumna() => Task.FromResult(Registros.Count(r => r.Firma != null));
+
+            public Task<List<FirmaGuardadaReparto>> LeerFirmasEnColumna(int maximo)
+                => Task.FromResult(Registros.Where(r => r.Firma != null).OrderBy(r => r.Prueba.Id).Take(maximo).Select(AFirma).ToList());
+
+            /// <summary>Una prueba vieja (de antes de #770) con la firma en la columna.</summary>
+            public Registro ConFirmaVieja(int envio, byte[] firma, DateTime fechaHora)
+            {
+                var registro = new Registro
+                {
+                    Prueba = new PruebaEntregaReparto { Id = ++ultimoId, EnvioId = envio, Tipo = PruebaEntregaReparto.TIPO_ENTREGA, FechaHora = fechaHora, ClaveIdempotencia = Guid.NewGuid(), TieneFirma = true },
+                    Firma = firma
+                };
+                Registros.Add(registro);
+                return registro;
+            }
 
             public Task<int> Registrar(PruebaEntregaReparto prueba, byte[] firma, EnviosAgencia envio, IList<EnvioHistoria> historia,
                 decimal? importeAContabilizar, string usuario)
@@ -875,6 +927,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 }
                 int asiento = importeAContabilizar.HasValue ? 7001 : 0;
                 prueba.Asiento = asiento > 0 ? asiento : (int?)null;
+                prueba.Id = ++ultimoId;
                 Registros.Add(new Registro { Prueba = prueba, Firma = firma, Historia = historia, ImporteAContabilizar = importeAContabilizar, Usuario = usuario });
                 return Task.FromResult(asiento);
             }

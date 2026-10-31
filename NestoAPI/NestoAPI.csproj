@@ -744,6 +744,11 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Paradas.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.OrdenSugerido.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.HorarioPreferible.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Firmas.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\TextoConformidadEntrega.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\SelloFirmaEntrega.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionInversa.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\AlmacenFirmasEntrega.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionRepartoJobsService.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RecorridoReparto.cs" />

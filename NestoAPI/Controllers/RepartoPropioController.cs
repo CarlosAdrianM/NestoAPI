@@ -36,7 +36,8 @@ namespace NestoAPI.Controllers
         internal RepartoPropioController(NVEntities db)
             : this(db, new ServicioRepartoPropio(new RepositorioRepartoPropio(db), avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
                 informes: () => new Infraestructure.Informes.InformesService(db), carga: new RepositorioCargaFurgoneta(db),
-                paradas: DependenciasParadasReparto.DeLaBaseDeDatos(db, new Infraestructure.Notificaciones.AvisosAlmacenSignalR())))
+                paradas: DependenciasParadasReparto.DeLaBaseDeDatos(db, new Infraestructure.Notificaciones.AvisosAlmacenSignalR()),
+                firmas: DependenciasFirmasReparto.DeProduccion()))
         {
         }
 
@@ -244,6 +245,24 @@ namespace NestoAPI.Controllers
             return ResponseMessage(respuesta);
         }
 
+        // POST api/RepartoPropio/PruebasEntrega/MigrarFirmas?aplicar=false&maximo=100
+        /// <summary>
+        /// NestoAPI#770: sube al contenedor «firmas» las firmas que siguen en la columna Firma (en lotes de <paramref name="maximo"/>,
+        /// hasta 500). Con aplicar=false solo cuenta y lista (Id, envío, fecha, bytes y la ruta que tendría): no escribe nada.
+        /// Solo Dirección e Informática (no devuelve ninguna firma).
+        /// </summary>
+        [HttpPost]
+        [Route("PruebasEntrega/MigrarFirmas")]
+        [ResponseType(typeof(ResultadoMigracionFirmasDTO))]
+        public async Task<IHttpActionResult> MigrarFirmas(bool aplicar = false, int maximo = 100)
+        {
+            if (!PermisosRepartoPropio.PuedeMigrarFirmas(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = "Solo Dirección e Informática pueden migrar las firmas." });
+            }
+            return Responder(await servicio.MigrarFirmas(aplicar, maximo));
+        }
+
         private IHttpActionResult Responder<T>(ResultadoReparto<T> resultado)
         {
             switch (resultado.Tipo)
@@ -315,7 +334,15 @@ namespace NestoAPI.Controllers
             Constantes.GruposSeguridad.ALMACEN, Constantes.GruposSeguridad.ADMINISTRACION, Constantes.GruposSeguridad.DIRECCION
         };
 
+        /// <summary>NestoAPI#770: la migración de las firmas al almacenamiento (mantenimiento; no ve ninguna firma).</summary>
+        public static readonly IReadOnlyList<string> GRUPOS_MIGRAR_FIRMAS = new[]
+        {
+            Constantes.GruposSeguridad.DIRECCION, Constantes.GruposSeguridad.INFORMATICA
+        };
+
         public static bool PuedeRepartir(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_REPARTO);
+
+        public static bool PuedeMigrarFirmas(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_MIGRAR_FIRMAS);
 
         public static bool PuedeVerDatosPersonales(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_DATOS_PERSONALES);
 
