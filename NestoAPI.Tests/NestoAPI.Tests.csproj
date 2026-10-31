@@ -443,6 +443,8 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\AgenciaRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ServicioRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CargaFurgonetaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaBultosTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\SeguimientoReposicionesTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenSugeridoRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenConHorariosTests.cs" />

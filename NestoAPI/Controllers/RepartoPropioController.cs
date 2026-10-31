@@ -121,6 +121,77 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.Cargar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
+        // GET api/RepartoPropio/Furgoneta?usuario=&todos=false
+        /// <summary>
+        /// NestoAPI#772: lo que lleva encima el usuario (los bultos cuyo último movimiento es Cargado o Recogido suyo). Con
+        /// <paramref name="usuario"/> (otro) o <paramref name="todos"/>, solo Almacén y Dirección. 400 sin Scripts/Issue772_FurgonetaBultos.sql.
+        /// </summary>
+        [HttpGet]
+        [Route("Furgoneta")]
+        [ResponseType(typeof(FurgonetaRepartoDTO))]
+        public async Task<IHttpActionResult> GetFurgoneta(string usuario = null, bool todos = false)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            string yo = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            bool otro = !string.IsNullOrWhiteSpace(usuario) && !ServicioRepartoPropio.MismoUsuario(usuario, yo);
+            if ((otro || todos) && !PermisosRepartoPropio.PuedeVerOtrasFurgonetas(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = "Solo Almacén y Dirección pueden ver la furgoneta de otro repartidor." });
+            }
+            return Responder(await servicio.Furgoneta(otro ? usuario.Trim() : yo, todos));
+        }
+
+        // POST api/RepartoPropio/Recoger { Codigo, ClaveIdempotencia, FechaHora, Latitud, Longitud }
+        /// <summary>
+        /// NestoAPI#772: el repartidor lee un bulto que se trae (NR{pedido}-{N} de una nota de recogida o R{traspaso}-{N} de una
+        /// reposición de una tienda a Algete) y pasa a su furgoneta. Con el último bulto de la reposición, queda «Recogida».
+        /// </summary>
+        [HttpPost]
+        [Route("Recoger")]
+        [ResponseType(typeof(ResultadoMovimientoBultoDTO))]
+        public async Task<IHttpActionResult> Recoger([FromBody] MovimientoBultoRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.Recoger(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen(), User));
+        }
+
+        // POST api/RepartoPropio/Descargar { Codigo, ClaveIdempotencia, FechaHora }
+        /// <summary>NestoAPI#772: por la tarde, cada bulto que sale de la furgoneta. 409 NO_EN_FURGONETA si no está en ninguna.</summary>
+        [HttpPost]
+        [Route("Descargar")]
+        [ResponseType(typeof(ResultadoMovimientoBultoDTO))]
+        public async Task<IHttpActionResult> Descargar([FromBody] MovimientoBultoRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.Descargar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
+        // POST api/RepartoPropio/Jornada/Terminar { ClaveIdempotencia, FechaHora, Confirmar }
+        /// <summary>
+        /// NestoAPI#772: terminar la jornada. Vacía, termina; con bultos y sin Confirmar, la lista (sin guardar nada); con Confirmar,
+        /// queda apuntada y avisa a Almacén, Dirección y al repartidor en la campana de Nesto.
+        /// </summary>
+        [HttpPost]
+        [Route("Jornada/Terminar")]
+        [ResponseType(typeof(ResultadoJornadaRepartoDTO))]
+        public async Task<IHttpActionResult> TerminarJornada([FromBody] TerminarJornadaRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.TerminarJornada(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
         // GET api/RepartoPropio/SinCargar?fecha=2026-10-29
         /// <summary>Ariadna#63: los envíos Tramitados de ese día con algún bulto sin cargar.</summary>
         [HttpGet]
@@ -318,6 +389,14 @@ namespace NestoAPI.Controllers
         public static bool PuedeRepartir(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_REPARTO);
 
         public static bool PuedeVerDatosPersonales(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_DATOS_PERSONALES);
+
+        /// <summary>NestoAPI#772: la furgoneta de otro repartidor (o la de todos): Almacén y Dirección.</summary>
+        public static readonly IReadOnlyList<string> GRUPOS_OTRAS_FURGONETAS = new[]
+        {
+            Constantes.GruposSeguridad.ALMACEN, Constantes.GruposSeguridad.DIRECCION
+        };
+
+        public static bool PuedeVerOtrasFurgonetas(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_OTRAS_FURGONETAS);
 
         private static bool EnAlguno(System.Security.Principal.IPrincipal usuario, IEnumerable<string> grupos)
             => usuario != null && grupos.Any(g => usuario.IsInRoleSinDominio(g));

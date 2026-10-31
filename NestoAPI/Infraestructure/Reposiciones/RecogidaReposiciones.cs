@@ -49,6 +49,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// marcar todavía y con la columna en la base de datos.
         /// </summary>
         public bool PuedeMarcarRecogida { get; set; }
+
+        /// <summary>
+        /// NestoAPI#772: los bultos de las reposiciones del viaje de hoy de esta ruta (ReposicionesBultos). Null sin la tabla de la
+        /// furgoneta (Scripts/Issue772_FurgonetaBultos.sql).
+        /// </summary>
+        public int? BultosTotal { get; set; }
+        /// <summary>NestoAPI#772: cuántos de esos ha leído ya el repartidor al recogerlos (Ariadna, «Recoger»).</summary>
+        public int? BultosRecogidos { get; set; }
+        /// <summary>NestoAPI#772: quién ha recogido el último (sin dominio).</summary>
+        public string RepartidorRecogida { get; set; }
+        public DateTime? FechaUltimoBultoRecogido { get; set; }
     }
 
     /// <summary>POST api/Reposiciones/Recogida: el repartidor ya se ha llevado la reposición de hoy de esta ruta.</summary>

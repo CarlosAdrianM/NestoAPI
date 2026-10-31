@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -5,6 +7,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Models;
@@ -63,6 +66,13 @@ namespace NestoAPI.Controllers
             get => abonosRecogida ?? (abonosRecogida = new ServicioAbonosRecogida(new RepositorioAbonosRecogida(db)));
             set => abonosRecogida = value;
         }
+
+        /// <summary>
+        /// NestoAPI#772 (red de seguridad de la furgoneta): al hacer el abono de una recogida, los bultos de esa nota que sigan en una
+        /// furgoneta cuentan como descargados en Algete (Origen Almacen). (códigos, usuario). Nunca lanza.
+        /// </summary>
+        internal Func<IEnumerable<string>, string, Task> FurgonetaAlAbonar { get; set; } =
+            (codigos, usuario) => Infraestructure.Agencias.RepartoPropio.RedSeguridadFurgoneta.LeidosConContextoPropio(codigos, usuario, true);
 
         /// <summary>NestoAPI#758: las etiquetas de recogida (sustituible en los tests).</summary>
         internal IServicioEtiquetasRecogida EtiquetasRecogida
@@ -190,6 +200,12 @@ namespace NestoAPI.Controllers
                 return Prohibido();
             }
             ResultadoAbonoRecogida<AbonoRecogidaDTO> resultado = await AbonosRecogida.CrearAbono(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            if (resultado.Tipo == TipoResultadoNotaEntrega.Ok && FurgonetaAlAbonar != null
+                && CodigoNotaEntrega.TryLeer(peticion?.Codigo, out string prefijo, out int pedidoNota, out _) && prefijo == CodigoNotaEntrega.PREFIJO_RECOGIDA)
+            {
+                // NestoAPI#772: la nota entera (todas sus NR) ya está en el almacén
+                await FurgonetaAlAbonar(new[] { CodigoNotaEntrega.Documento(true, pedidoNota) }, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            }
             if (resultado.Tipo == TipoResultadoNotaEntrega.Ok && resultado.Creado)
             {
                 return Content(HttpStatusCode.Created, resultado.Contenido);

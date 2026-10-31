@@ -195,7 +195,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 : ModoAvisosConDatos.Ambos;
         }
 
-        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto)$",
+        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3})$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>
@@ -203,6 +203,12 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// todos, filtrada por repartidor en GET Envios). Evento «repartoCambiado(RepartoCambiadoDTO)».
         /// </summary>
         public const string GRUPO_REPARTO = "Reparto";
+
+        /// <summary>
+        /// NestoAPI#772: «Reposiciones:REI», el de «Enviar reposición» de Nesto en esa tienda: «haCambiado» cuando el repartidor
+        /// recoge o descarga un bulto de una reposición de la tienda (Nesto relee GET api/Reposiciones/Puntual/Estado).
+        /// </summary>
+        public static string GrupoReposiciones(string almacen) => $"Reposiciones:{(almacen ?? string.Empty).Trim().ToUpperInvariant()}";
 
         /// <summary>«Recogida:PICK:99633», «Recogida:REPO:80905».</summary>
         public static string GrupoRecogida(string tipo, int numero) => $"Recogida:{(tipo ?? string.Empty).Trim().ToUpperInvariant()}:{numero}";
@@ -230,6 +236,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 return GRUPO_REPARTO;
             }
             string[] partes = limpio.Split(':');
+            if (string.Equals(partes[0], "Reposiciones", StringComparison.OrdinalIgnoreCase))
+            {
+                return GrupoReposiciones(partes[1]);
+            }
             if (partes.Length == 4)
             {
                 return GrupoRecepcion(partes[1], partes[2], partes[3]);

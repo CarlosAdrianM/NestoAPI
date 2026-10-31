@@ -136,7 +136,36 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EstadoReposicionPuntualDTO))]
         public async Task<IHttpActionResult> GetEstadoPuntual(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return Ok(await preparacion.LeerEstadoPuntual(empresa, origen).ConfigureAwait(false));
+            EstadoReposicionPuntualDTO estado = await preparacion.LeerEstadoPuntual(empresa, origen).ConfigureAwait(false);
+            // NestoAPI#772: cuántos bultos de la de hoy ha recogido ya el repartidor (Nesto: «Recogidos 6 de 7 bultos por Andre»)
+            await Seguimiento.CompletarRecogida(estado, empresa).ConfigureAwait(false);
+            return Ok(estado);
+        }
+
+        private ServicioSeguimientoReposiciones seguimiento;
+
+        /// <summary>NestoAPI#772: el seguimiento por traspaso y por bulto (sustituible en los tests).</summary>
+        internal ServicioSeguimientoReposiciones Seguimiento
+        {
+            get => seguimiento ?? (seguimiento = new ServicioSeguimientoReposiciones(new RepositorioSeguimientoReposicionesSql(db)));
+            set => seguimiento = value;
+        }
+
+        // GET api/Reposiciones/81010/Seguimiento?empresa=1
+        /// <summary>
+        /// NestoAPI#772: la historia de una reposición: del traspaso (creada, preparada, recogida, recibida) y de cada bulto (etiquetado,
+        /// cargado, entregado, recogido, descargado, recibido), con quién y cuándo, y dónde está ahora cada bulto. 404 si no se sabe
+        /// nada de ese traspaso. Basta con estar identificado (es para consultar).
+        /// </summary>
+        [HttpGet]
+        [Route("{numTraspaso:int}/Seguimiento")]
+        [ResponseType(typeof(SeguimientoReposicionDTO))]
+        public async Task<IHttpActionResult> GetSeguimiento(int numTraspaso, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            SeguimientoReposicionDTO dto = await Seguimiento.Seguimiento(empresa, numTraspaso).ConfigureAwait(false);
+            return dto == null
+                ? (IHttpActionResult)Content(HttpStatusCode.NotFound, new { Message = $"No se sabe nada de la reposición {numTraspaso}." })
+                : Ok(dto);
         }
 
         // POST api/Reposiciones/Recogida   { Empresa, Origen, Destino? (ALG) }

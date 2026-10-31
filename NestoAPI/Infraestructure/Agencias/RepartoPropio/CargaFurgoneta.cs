@@ -134,6 +134,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 && peticion.ClaveIdempotencia != Guid.Empty && !string.IsNullOrWhiteSpace(usuario)
                 ? await CargarReposicion(peticion, traspaso, bultoReposicion, usuario).ConfigureAwait(false)
                 : await CargarEnvio(peticion, usuario).ConfigureAwait(false);
+            if (resultado.Tipo == TipoResultadoReparto.Ok)
+            {
+                // NestoAPI#772: además, el movimiento «Cargado» del bulto en la furgoneta (misma clave). Nunca rompe la carga.
+                await AnotarCarga(peticion, resultado.Contenido, usuario).ConfigureAwait(false);
+            }
             if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido != null && resultado.Contenido.EnvioId > 0)
             {
                 NotaParadaReparto nota = await NotaDeEnvio(resultado.Contenido.EnvioId).ConfigureAwait(false);
