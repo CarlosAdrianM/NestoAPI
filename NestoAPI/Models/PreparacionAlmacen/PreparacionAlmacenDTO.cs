@@ -501,6 +501,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Empresa { get; set; }
         public int Pedido { get; set; }
         public int Picking { get; set; }
+        /// <summary>
+        /// La foto en sí (el IdCliente de la subida original): una foto de una entrega con dos pedidos tiene una fila por pedido
+        /// (cada una con su Id e IdCliente) y el mismo IdFoto. Para contarla una vez.
+        /// </summary>
+        public Guid IdFoto { get; set; }
         /// <summary>Siempre true (una foto del packing es una foto); para que Nesto y Ariadna la pinten como la de un bulto.</summary>
         public bool TieneFoto { get; set; } = true;
         public string Usuario { get; set; }

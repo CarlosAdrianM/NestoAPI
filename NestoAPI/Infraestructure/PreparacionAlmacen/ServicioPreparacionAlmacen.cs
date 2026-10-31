@@ -173,6 +173,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (foto != null)
             {
                 foto.TieneFoto = true;
+                foto.IdFoto = IdFotoDeLaRuta(foto.RutaBlob) ?? foto.IdCliente;
                 foto.RutaFotoPublica = string.IsNullOrWhiteSpace(foto.RutaBlob) || !fotos.Configurado
                     ? null
                     : EnlacePublicoFotoBulto.RutaFotoPacking(claveEnlacesFotos, foto.Id, foto.IdCliente);
@@ -984,6 +985,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 foto.Bulto = bulto;
             }
+        }
+
+        /// <summary>NestoAPI#771: el IdCliente de la subida original, que va en el nombre del blob («…/packing-{N}.jpg»).</summary>
+        internal static Guid? IdFotoDeLaRuta(string rutaBlob)
+        {
+            string nombre = System.IO.Path.GetFileNameWithoutExtension(rutaBlob?.Trim() ?? string.Empty);
+            return nombre.StartsWith("packing-", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(nombre.Substring("packing-".Length), out Guid id)
+                ? id
+                : (Guid?)null;
         }
 
         /// <summary>NestoAPI#771: dentro del contenedor, {empresa}/{pedido}/{picking}/packing-{IdCliente}.jpg.</summary>

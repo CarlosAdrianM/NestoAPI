@@ -110,6 +110,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             CollectionAssert.AreEqual(new[] { PEDIDO, OTRO_PEDIDO }, guardadas.Select(g => g.Pedido).ToList());
             Assert.AreEqual(guardadas[0].RutaBlob, guardadas[1].RutaBlob);
             Assert.AreEqual(ServicioPreparacionAlmacen.IdParaOtroPedido(foto.IdCliente, OTRO_PEDIDO), guardadas[1].IdCliente);
+            Assert.AreEqual(foto.IdCliente, ServicioPreparacionAlmacen.IdFotoDeLaRuta(guardadas[1].RutaBlob), "las dos filas, la misma foto (IdFoto)");
         }
 
         [TestMethod]
