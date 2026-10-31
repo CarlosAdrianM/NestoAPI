@@ -40,6 +40,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         private ServicioRepartoPropio servicioReparto;
         private int siguientePago;
         private SolicitudPagoTPV solicitud;
+        /// <summary>NestoAPI#775: los escalados a Dirección programados (en vez de Hangfire).</summary>
+        private readonly List<int> escalados = new List<int>();
 
         [TestInitialize]
         public void Setup()
@@ -58,7 +60,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             });
             avisador = A.Fake<IAvisadorAutorizacionesReembolso>();
             servicioTarjeta = new ServicioCobroTarjetaReparto(reparto, tarjetas, () => pagos, () => AHORA);
-            servicioAutorizaciones = new ServicioAutorizacionesReembolso(reparto, autorizacionesRepo, avisador, () => AHORA);
+            servicioAutorizaciones = new ServicioAutorizacionesReembolso(reparto, autorizacionesRepo, avisador, () => AHORA, id => escalados.Add(id));
             var parametros = new ServicioRepartoPropioTests.ParametrosFalsos();
             parametros.Caja("Repartidor", "57000001");
             servicioReparto = new ServicioRepartoPropio(reparto, () => AHORA, null, parametros, () => pagos)
@@ -490,7 +492,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(EstadosAutorizacionReembolso.TELEFONICA, fila.Estado);
             Assert.AreEqual("Autoriza Pepe por teléfono", fila.Respondio);
             Assert.AreEqual(45.30m, fila.Importe);
-            A.CallTo(() => avisador.AvisarAdministracion(A<NotificacionPushDTO>.That.Matches(n =>
+            A.CallTo(() => avisador.AvisarAdministracionYDireccion(A<NotificacionPushDTO>.That.Matches(n =>
                 n.Tipo == TextosAutorizacionReembolso.TIPO_NOTIFICACION_TELEFONICA && n.Cuerpo.Contains("Autoriza Pepe")))).MustHaveHappenedOnceExactly();
         }
 

@@ -59,6 +59,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public string Comentario { get; set; }
         /// <summary>«AutorizacionReembolso:12»: el grupo del AlmacenHub en el que se avisa de la respuesta.</summary>
         public string GrupoAvisos { get; set; }
+        /// <summary>
+        /// NestoAPI#775: solo en la respuesta de pedirla (POST …/Autorizacion) mientras está pendiente: cuántas personas de Administración
+        /// (los destinatarios del primer aviso) tienen Nesto abierto ahora mismo. 0: que llame por teléfono. Null en el resto.
+        /// </summary>
+        public int? Conectados { get; set; }
+        /// <summary>NestoAPI#775: sus nombres cortos (sin dominio), para decir «Lo está viendo Laura».</summary>
+        public List<string> ConectadosNombres { get; set; }
     }
 
     /// <summary>Una fila de RepartoAutorizacionesReembolso (Scripts/Issue773_CobroTarjetaReparto.sql).</summary>
@@ -91,13 +98,28 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         Task<bool> Responder(int id, string estadoEsperado, string estado, string respondio, DateTime fecha, string comentario);
     }
 
-    /// <summary>NestoAPI#773: a quién se avisa (campana de Nesto) y cómo llega la respuesta a la PDA (SignalR).</summary>
+    /// <summary>
+    /// NestoAPI#773: a quién se avisa (campana de Nesto) y cómo llega la respuesta a la PDA (SignalR).
+    /// NestoAPI#775: la solicitud (urgente) va primero SOLO a Administración; si a los <see cref="ServicioAutorizacionesReembolso.ESPERA_ESCALADO"/>
+    /// nadie ha contestado, también a Dirección (<see cref="AvisarDireccion"/>). La revisión de las telefónicas sigue yendo a las dos.
+    /// </summary>
     public interface IAvisadorAutorizacionesReembolso
     {
-        /// <summary>Campana de Nesto a Administración y Dirección. Nunca lanza.</summary>
+        /// <summary>Campana de Nesto a Administración (la solicitud, urgente). Nunca lanza.</summary>
         Task AvisarAdministracion(NotificacionPushDTO notificacion);
+        /// <summary>NestoAPI#775: campana de Nesto a Administración y Dirección (la revisión de una telefónica, como antes). Nunca lanza.</summary>
+        Task AvisarAdministracionYDireccion(NotificacionPushDTO notificacion);
+        /// <summary>
+        /// NestoAPI#775 (escalado): campana de Nesto a los de Dirección que no son también de Administración (esos ya la tienen) y vuelve a
+        /// sonar en los de Administración («hayNotificacionUrgente»: quien cerró la ventana la vuelve a ver). Nunca lanza.
+        /// </summary>
+        Task AvisarDireccion(NotificacionPushDTO notificacion);
         /// <summary>«autorizacionRespondida» al grupo de la autorización. Nunca lanza.</summary>
         void Respondida(AutorizacionReembolsoDTO autorizacion);
+        /// <summary>NestoAPI#775: «notificacionResuelta» a Administración y Dirección (se cierra la ventana en todos los Nesto). Nunca lanza.</summary>
+        void Resuelta(NotificacionResueltaDTO resuelta);
+        /// <summary>NestoAPI#775: los de Administración con Nesto abierto ahora (nombres cortos). Nunca lanza (vacía si no se sabe).</summary>
+        List<string> ConectadosAdministracion();
     }
 
     public class AvisadorAutorizacionesReembolso : IAvisadorAutorizacionesReembolso
@@ -107,21 +129,39 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         private readonly IServicioNotificacionesPush notificaciones;
         private readonly Func<string, List<string>> miembros;
         private readonly IAvisosCobroReparto avisos;
+        private readonly IAvisosTiempoReal tiempoReal;
+        private readonly Func<IEnumerable<string>, List<string>> conectados;
 
         public AvisadorAutorizacionesReembolso() : this(null, null, null)
         {
         }
 
-        internal AvisadorAutorizacionesReembolso(IServicioNotificacionesPush notificaciones, Func<string, List<string>> miembros, IAvisosCobroReparto avisos)
+        internal AvisadorAutorizacionesReembolso(IServicioNotificacionesPush notificaciones, Func<string, List<string>> miembros, IAvisosCobroReparto avisos,
+            IAvisosTiempoReal tiempoReal = null, Func<IEnumerable<string>, List<string>> conectados = null)
         {
             this.notificaciones = notificaciones ?? new ServicioNotificacionesPush();
             this.miembros = miembros ?? MiembrosGrupoDominio.Leer;
             this.avisos = avisos ?? new AvisosAlmacenSignalR();
+            this.tiempoReal = tiempoReal ?? new AvisosTiempoReal();
+            this.conectados = conectados ?? UsuariosConectadosNesto.Conectados;
         }
 
         /// <summary>Administración y Dirección, limpios, con dominio y sin repetidos.</summary>
         internal List<string> Destinatarios()
-            => new[] { Constantes.GruposSeguridad.ADMINISTRACION, Constantes.GruposSeguridad.DIRECCION }
+            => DeLosGrupos(Constantes.GruposSeguridad.ADMINISTRACION, Constantes.GruposSeguridad.DIRECCION);
+
+        /// <summary>NestoAPI#775: los del primer aviso (solo Administración).</summary>
+        internal List<string> DestinatariosIniciales() => DeLosGrupos(Constantes.GruposSeguridad.ADMINISTRACION);
+
+        /// <summary>NestoAPI#775: los del escalado: Dirección, menos los que también son de Administración (ya lo tienen).</summary>
+        internal List<string> DestinatariosEscalado()
+        {
+            var iniciales = new HashSet<string>(DestinatariosIniciales(), StringComparer.OrdinalIgnoreCase);
+            return DeLosGrupos(Constantes.GruposSeguridad.DIRECCION).Where(u => !iniciales.Contains(u)).ToList();
+        }
+
+        private List<string> DeLosGrupos(params string[] grupos)
+            => grupos
                 .SelectMany(g => miembros(g) ?? new List<string>())
                 .Select(u => u?.Trim())
                 .Where(u => !string.IsNullOrWhiteSpace(u) && !u.StartsWith("(", StringComparison.Ordinal))
@@ -129,22 +169,66 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-        public async Task AvisarAdministracion(NotificacionPushDTO notificacion)
+        public Task AvisarAdministracion(NotificacionPushDTO notificacion)
+            => AlBuzon(DestinatariosIniciales, notificacion, "Administración");
+
+        public Task AvisarAdministracionYDireccion(NotificacionPushDTO notificacion)
+            => AlBuzon(Destinatarios, notificacion, "Administración y Dirección");
+
+        public async Task AvisarDireccion(NotificacionPushDTO notificacion)
+        {
+            await AlBuzon(DestinatariosEscalado, notificacion, "Dirección").ConfigureAwait(false);
+            try
+            {
+                tiempoReal.HayNotificacionUrgente(DestinatariosIniciales());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Autorización de reembolso #775] No se ha podido volver a avisar a Administración: {ex.Message}", ex));
+            }
+        }
+
+        private async Task AlBuzon(Func<List<string>> destinatarios, NotificacionPushDTO notificacion, string quien)
         {
             try
             {
-                foreach (string usuario in Destinatarios())
+                foreach (string usuario in destinatarios())
                 {
                     await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                ElmahHelper.Log(new Exception($"[Autorización de reembolso #773] No se ha podido avisar a Administración: {ex.Message}", ex));
+                ElmahHelper.Log(new Exception($"[Autorización de reembolso #773] No se ha podido avisar a {quien}: {ex.Message}", ex));
             }
         }
 
         public void Respondida(AutorizacionReembolsoDTO autorizacion) => avisos.AutorizacionRespondida(autorizacion);
+
+        public void Resuelta(NotificacionResueltaDTO resuelta)
+        {
+            try
+            {
+                tiempoReal.NotificacionResuelta(Destinatarios(), resuelta);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Autorización de reembolso #775] No se ha podido avisar de la respuesta a los Nesto: {ex.Message}", ex));
+            }
+        }
+
+        public List<string> ConectadosAdministracion()
+        {
+            try
+            {
+                return conectados(DestinatariosIniciales()) ?? new List<string>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Autorización de reembolso #775] No se ha podido saber quién está conectado: {ex.Message}", ex));
+                return new List<string>();
+            }
+        }
     }
 
     /// <summary>Los textos de la campana de Nesto y de la PDA (de usted).</summary>
@@ -169,6 +253,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             Datos = Datos(a, TIPO_NOTIFICACION)
         };
 
+        /// <summary>
+        /// NestoAPI#775: el escalado a Dirección (nadie de Administración ha contestado en <see cref="ServicioAutorizacionesReembolso.ESPERA_ESCALADO"/>).
+        /// Mismo tipo (urgente, con Autorizar/Denegar) y Datos["escalada"] = «1».
+        /// </summary>
+        public static NotificacionPushDTO Escalado(AutorizacionReembolsoDTO a)
+        {
+            NotificacionPushDTO n = Solicitud(a);
+            n.Titulo = "SIN RESPUESTA: " + n.Titulo;
+            n.Cuerpo = $"Nadie de Administración ha contestado en {(int)ServicioAutorizacionesReembolso.ESPERA_ESCALADO.TotalMinutes} minutos. " + n.Cuerpo;
+            n.Datos[NotificacionesUrgentes.DATO_ESCALADA] = "1";
+            return n;
+        }
+
         public static NotificacionPushDTO Telefonica(AutorizacionReembolsoDTO a) => new NotificacionPushDTO
         {
             Titulo = $"Revisar: entregado sin cobrar {Euros(a.Importe)} con autorización por teléfono (envío {a.EnvioId})",
@@ -188,7 +285,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             ["pedido"] = a.Pedido?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             ["empresa"] = Constantes.Empresas.EMPRESA_POR_DEFECTO,
             ["cliente"] = a.Cliente ?? string.Empty,
-            ["importe"] = a.Importe.ToString("0.00", CultureInfo.InvariantCulture)
+            ["importe"] = a.Importe.ToString("0.00", CultureInfo.InvariantCulture),
+            // NestoAPI#775: la referencia con que se cierra en todos los Nesto y lo que pinta su ventana urgente
+            [NotificacionesUrgentes.DATO_REFERENCIA] = a.Id.ToString(CultureInfo.InvariantCulture),
+            ["repartidor"] = a.Repartidor ?? string.Empty,
+            ["nombre"] = a.Nombre ?? string.Empty,
+            ["motivo"] = a.Motivo ?? string.Empty
         };
     }
 
@@ -201,18 +303,27 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public const string MENSAJE_FALTA_SCRIPT = "Falta lanzar el script Scripts/Issue773_CobroTarjetaReparto.sql (autorizaciones de reembolso). " +
             "Avise a Informática.";
 
+        /// <summary>NestoAPI#775: lo que se espera a Administración antes de avisar también a Dirección.</summary>
+        public static readonly TimeSpan ESPERA_ESCALADO = TimeSpan.FromMinutes(2);
+
         private readonly IRepositorioRepartoPropio reparto;
         private readonly IRepositorioAutorizacionesReembolso repositorio;
         private readonly IAvisadorAutorizacionesReembolso avisador;
         private readonly Func<DateTime> ahora;
+        private readonly Action<int> programarEscalado;
 
+        /// <param name="programarEscalado">
+        /// NestoAPI#775: para los tests; por defecto, Hangfire <c>BackgroundJob.Schedule</c> de <see cref="EscaladoAutorizacionesReembolsoJobs.Escalar"/>
+        /// dentro de <see cref="ESPERA_ESCALADO"/>.
+        /// </param>
         public ServicioAutorizacionesReembolso(IRepositorioRepartoPropio reparto, IRepositorioAutorizacionesReembolso repositorio,
-            IAvisadorAutorizacionesReembolso avisador = null, Func<DateTime> ahora = null)
+            IAvisadorAutorizacionesReembolso avisador = null, Func<DateTime> ahora = null, Action<int> programarEscalado = null)
         {
             this.reparto = reparto ?? throw new ArgumentNullException(nameof(reparto));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.avisador = avisador ?? new AvisadorAutorizacionesReembolso();
             this.ahora = ahora ?? (() => DateTime.Now);
+            this.programarEscalado = programarEscalado ?? EscaladoAutorizacionesReembolsoJobs.Programar;
         }
 
         public async Task<ResultadoReparto<AutorizacionReembolsoDTO>> Pedir(int envioId, PeticionAutorizacionReembolsoDTO peticion, string usuario)
@@ -247,7 +358,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (ultima != null && (ultima.Estado == EstadosAutorizacionReembolso.PENDIENTE || EstadosAutorizacionReembolso.PermiteEntregar(ultima.Estado)))
             {
                 // Ya pedida (o ya autorizada): la misma, sin volver a avisar a nadie
-                return ResultadoReparto<AutorizacionReembolsoDTO>.Bien(ADto(ultima, envio));
+                AutorizacionReembolsoDTO yaPedida = ADto(ultima, envio);
+                if (ultima.Estado == EstadosAutorizacionReembolso.PENDIENTE)
+                {
+                    ConConectados(yaPedida);
+                }
+                return ResultadoReparto<AutorizacionReembolsoDTO>.Bien(yaPedida);
             }
             var nueva = new AutorizacionReembolsoReparto
             {
@@ -261,7 +377,50 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             nueva.Id = await repositorio.Crear(nueva).ConfigureAwait(false);
             AutorizacionReembolsoDTO dto = ADto(nueva, envio);
             await avisador.AvisarAdministracion(TextosAutorizacionReembolso.Solicitud(dto)).ConfigureAwait(false);
+            ProgramarEscalado(nueva.Id);
+            ConConectados(dto);
             return ResultadoReparto<AutorizacionReembolsoDTO>.Bien(dto);
+        }
+
+        /// <summary>NestoAPI#775: quién de Administración tiene Nesto abierto, para que la PDA diga si alguien lo está viendo.</summary>
+        private void ConConectados(AutorizacionReembolsoDTO dto)
+        {
+            List<string> nombres = avisador.ConectadosAdministracion() ?? new List<string>();
+            dto.Conectados = nombres.Count;
+            dto.ConectadosNombres = nombres;
+        }
+
+        private void ProgramarEscalado(int id)
+        {
+            try
+            {
+                programarEscalado(id);
+            }
+            catch (Exception ex)
+            {
+                // Sin Hangfire no hay escalado: Administración ya tiene el aviso y el repartidor puede pedirla por teléfono
+                ElmahHelper.Log(new Exception($"[Autorización de reembolso #775] No se ha podido programar el aviso a Dirección de la {id}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#775 (lo llama el job de Hangfire a los <see cref="ESPERA_ESCALADO"/>): si sigue «Pendiente», aviso urgente también a
+        /// Dirección. True si ha avisado; false si ya está contestada (o no existe): entonces no se hace nada.
+        /// </summary>
+        public async Task<bool> Escalar(int id)
+        {
+            if (!repositorio.ScriptAplicado())
+            {
+                return false;
+            }
+            AutorizacionReembolsoReparto autorizacion = await repositorio.Leer(id).ConfigureAwait(false);
+            if (autorizacion?.Estado?.Trim() != EstadosAutorizacionReembolso.PENDIENTE)
+            {
+                return false;
+            }
+            AutorizacionReembolsoDTO dto = ADto(autorizacion, await reparto.LeerEnvio(autorizacion.EnvioId).ConfigureAwait(false));
+            await avisador.AvisarDireccion(TextosAutorizacionReembolso.Escalado(dto)).ConfigureAwait(false);
+            return true;
         }
 
         public async Task<ResultadoReparto<AutorizacionReembolsoDTO>> Leer(int id)
@@ -316,8 +475,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             autorizacion.Comentario = comentario;
             AutorizacionReembolsoDTO dto = ADto(autorizacion, await reparto.LeerEnvio(autorizacion.EnvioId).ConfigureAwait(false));
             avisador.Respondida(dto);
+            avisador.Resuelta(Resuelta(dto));
             return ResultadoReparto<AutorizacionReembolsoDTO>.Bien(dto);
         }
+
+        /// <summary>NestoAPI#775: el «notificacionResuelta» de una autorización ya contestada.</summary>
+        internal static NotificacionResueltaDTO Resuelta(AutorizacionReembolsoDTO a) => new NotificacionResueltaDTO
+        {
+            Tipo = TextosAutorizacionReembolso.TIPO_NOTIFICACION,
+            Referencia = a.Id.ToString(CultureInfo.InvariantCulture),
+            Respondio = a.Respondio,
+            Resultado = a.Estado
+        };
 
         internal static AutorizacionReembolsoDTO ADto(AutorizacionReembolsoReparto a, EnviosAgencia envio) => new AutorizacionReembolsoDTO
         {
@@ -528,6 +697,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     fila.Estado = EstadosAutorizacionReembolso.TELEFONICA;
                     fila.Respondio = comprobacion.Telefonica;
                     fila.FechaRespuesta = momento;
+                    // NestoAPI#775: la que estaba sonando en los Nesto ya no está pendiente
+                    avisador.Resuelta(ServicioAutorizacionesReembolso.Resuelta(ServicioAutorizacionesReembolso.ADto(fila, envio)));
                 }
                 else
                 {
@@ -545,7 +716,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     fila.Id = await autorizaciones.Crear(fila).ConfigureAwait(false);
                 }
                 AutorizacionReembolsoDTO dto = ServicioAutorizacionesReembolso.ADto(fila, envio);
-                await avisador.AvisarAdministracion(TextosAutorizacionReembolso.Telefonica(dto)).ConfigureAwait(false);
+                await avisador.AvisarAdministracionYDireccion(TextosAutorizacionReembolso.Telefonica(dto)).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -593,5 +764,25 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public string Telefonica { get; set; }
 
         public static ComprobacionCobroEntrega Fallo(string error) => new ComprobacionCobroEntrega { Error = error };
+    }
+    /// <summary>
+    /// NestoAPI#775: el escalado a Dirección con Hangfire (sin temporizadores en los clientes): al pedir la autorización se programa
+    /// <see cref="Escalar"/> dentro de <see cref="ServicioAutorizacionesReembolso.ESPERA_ESCALADO"/>; si para entonces sigue «Pendiente», se
+    /// avisa (urgente) también a Dirección y vuelve a sonar en Administración. Si ya está contestada, no hace nada.
+    /// </summary>
+    public static class EscaladoAutorizacionesReembolsoJobs
+    {
+        public static void Programar(int id)
+            => _ = Hangfire.BackgroundJob.Schedule(() => Escalar(id), ServicioAutorizacionesReembolso.ESPERA_ESCALADO);
+
+        public static async Task Escalar(int id)
+        {
+            using (var db = new NVEntities())
+            {
+                var servicio = new ServicioAutorizacionesReembolso(new RepositorioRepartoPropio(db), new RepositorioAutorizacionesReembolso(db),
+                    programarEscalado: _ => { });
+                _ = await servicio.Escalar(id).ConfigureAwait(false);
+            }
+        }
     }
 }

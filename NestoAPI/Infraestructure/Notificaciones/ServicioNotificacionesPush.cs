@@ -550,6 +550,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 if (aplicacion == Constantes.Aplicaciones.NESTO)
                 {
                     AvisosTiempoReal.HayNotificacionesNuevas(dispositivos.Select(d => d.Usuario));
+                    // NestoAPI#775: y si es urgente (lista blanca por tipo), además la ventana roja con pitido
+                    if (NotificacionesUrgentes.EsUrgente(notificacion))
+                    {
+                        AvisosTiempoReal.HayNotificacionUrgente(dispositivos.Select(d => d.Usuario));
+                    }
                 }
             }
             catch (Exception ex)

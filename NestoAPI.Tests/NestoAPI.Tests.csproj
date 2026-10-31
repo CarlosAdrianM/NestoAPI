@@ -428,6 +428,7 @@
     <Compile Include="Controllers\PedidosVentaPorCanalExternoTests.cs" />
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />
+    <Compile Include="Infraestructure\Notificaciones\NotificacionesUrgentesTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\RecibirConsejosTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
