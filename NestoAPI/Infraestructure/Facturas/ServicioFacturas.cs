@@ -25,6 +25,13 @@ namespace NestoAPI.Infraestructure.Facturas
         private readonly bool dbEsExterno;
         /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. (sustituible en los tests). Solo se consulta sin P.O.</summary>
         internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
+        /// <summary>
+        /// NestoAPI#794 (solo tests): sustituye la llamada a prdCrearFacturaVta (empresa, pedido, usuario → nº de factura).
+        /// <c>null</c> (siempre en producción) = el SP de verdad.
+        /// </summary>
+        internal Func<string, int, string, Task<string>> ProcedimientoCrearFacturaVta { get; set; }
+        /// <summary>NestoAPI#794 (solo tests): sustituye el recálculo preventivo de las líneas. <c>null</c> = el de verdad.</summary>
+        internal Func<CabPedidoVta, Task<bool>> RecalculoPreventivoLineas { get; set; }
         private readonly Verifactu.IServicioVerifactu servicioVerifactu;
         private readonly ILogService logService;
 
@@ -458,7 +465,10 @@ namespace NestoAPI.Infraestructure.Facturas
             string empresaOriginal = empresa;
             CabPedidoVta cabPedido = db.CabPedidoVtas
                 .Include(p => p.LinPedidoVtas)
-                .Single(p => p.Empresa == empresa && p.Número == pedido);
+                .SingleOrDefault(p => p.Empresa == empresa && p.Número == pedido);
+            // NestoAPI#794: el SP no valida la cabecera y con una vacía (sin cliente ni vendedor) revienta con «No se puede
+            // insertar el valor NULL en la columna 'Vendedor'» y el recuento de transacciones descuadrado (Paloma, 03/11/26).
+            ValidarCabeceraParaFacturar(cabPedido, empresa, pedido, usuario);
             // NestoAPI#723: el cliente exige el P.O. y el pedido no lo tiene: ninguna factura por ningún camino
             if (Clientes.ReglaSuPedidoObligatorio.Activa && !Clientes.ReglaSuPedidoObligatorio.TieneSuPedido(cabPedido.SuPedido)
                 && ClienteExigeSuPedido(cabPedido.Empresa, cabPedido.Nº_Cliente))
@@ -505,6 +515,9 @@ namespace NestoAPI.Infraestructure.Facturas
                         .Single(p => p.Empresa == empresa && p.Número == pedido);
                 }
             }
+
+            // NestoAPI#794: prdCrearFacturaVta solo factura las líneas en albarán (estado 2).
+            ValidarLineasParaFacturar(cabPedido, empresa, pedido, usuario);
 
             if (string.IsNullOrEmpty(cabPedido.IVA))
             {
@@ -706,7 +719,9 @@ namespace NestoAPI.Infraestructure.Facturas
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
             // las líneas pueden estar temporalmente en estado 4 y el trigger no permite modificarlas.
-            bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido, usuario, usuarioAutenticado);
+            bool seAplicoAutoFix = RecalculoPreventivoLineas != null
+                ? await RecalculoPreventivoLineas(cabPedido)
+                : await RecalcularLineasPedido(db, cabPedido, usuario, usuarioAutenticado);
             if (seAplicoAutoFix)
             {
                 System.Diagnostics.Debug.WriteLine($"  → AUTO-FIX PREVENTIVO aplicado para pedido {pedido}");
@@ -719,7 +734,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 // NestoAPI#364: reintento ante deadlock (1205). prdCrearFacturaVta abre su propia
                 // transacción, así que la víctima se revierte ENTERA y reejecutar es seguro. Los
                 // SqlParameter se crean DENTRO del intento: no se pueden reutilizar entre comandos.
-                string resultadoProcedimiento = await ReintentosSql.ReintentarSiDeadlockAsync(async () =>
+                string resultadoProcedimiento = ProcedimientoCrearFacturaVta != null
+                    ? await ProcedimientoCrearFacturaVta(empresa, pedido, usuario)
+                    : await ReintentosSql.ReintentarSiDeadlockAsync(async () =>
                 {
                     SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
                     SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
@@ -829,7 +846,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 }).ConfigureAwait(false);
 
                 throw new FacturacionException(
-                    $"Error al ejecutar el procedimiento almacenado de facturación: {sqlEx.Message}",
+                    // NestoAPI#794: el pedido en el mensaje (es lo que se ve en ELMAH; el cuerpo de la petición no queda).
+                    $"Error al ejecutar el procedimiento almacenado de facturación del pedido {pedido} (empresa {empresa?.Trim()}): {sqlEx.Message}",
                     "FACTURACION_STORED_PROCEDURE_ERROR",
                     sqlEx,
                     empresa: empresa,
@@ -852,6 +870,62 @@ namespace NestoAPI.Infraestructure.Facturas
                     pedido: pedido,
                     usuario: usuario)
                     .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#794: el pedido existe y su cabecera tiene cliente y vendedor (prdCrearFacturaVta los copia tal cual a
+        /// CabFacturaVta). Si no, 400 con un mensaje que diga qué falta.
+        /// </summary>
+        internal static void ValidarCabeceraParaFacturar(CabPedidoVta cabPedido, string empresa, int pedido, string usuario)
+        {
+            if (cabPedido == null)
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no existe en la empresa {empresa?.Trim()}",
+                    "FACTURACION_PEDIDO_INEXISTENTE",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
+            if (string.IsNullOrWhiteSpace(cabPedido.Nº_Cliente))
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no tiene cliente",
+                    "FACTURACION_PEDIDO_SIN_CLIENTE",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
+            if (string.IsNullOrWhiteSpace(cabPedido.Vendedor))
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no tiene vendedor",
+                    "FACTURACION_PEDIDO_SIN_VENDEDOR",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#794: el pedido tiene alguna línea en albarán (estado 2), que es lo único que factura prdCrearFacturaVta
+        /// (las que están en curso las albaranea antes quien llama: rutas, Amazon, copia de pedidos, eventos…). Si en memoria
+        /// no hay ninguna se pregunta a la BD: con el contexto compartido las líneas pueden estar cargadas de antes de que
+        /// prdCrearAlbaránVta las pasara a albarán (EF no refresca lo que ya sigue), y el Any va siempre a la BD.
+        /// </summary>
+        internal void ValidarLineasParaFacturar(CabPedidoVta cabPedido, string empresa, int pedido, string usuario)
+        {
+            short albaran = Constantes.EstadosLineaVenta.ALBARAN;
+            bool enMemoria = cabPedido?.LinPedidoVtas != null && cabPedido.LinPedidoVtas.Any(l => l.Estado == albaran);
+            if (!enMemoria && !db.LinPedidoVtas.Any(l => l.Empresa == empresa && l.Número == pedido && l.Estado == albaran))
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no tiene líneas que facturar",
+                    "FACTURACION_PEDIDO_SIN_LINEAS",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
             }
         }
 
