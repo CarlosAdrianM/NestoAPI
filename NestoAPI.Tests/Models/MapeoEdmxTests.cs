@@ -468,6 +468,30 @@ namespace NestoAPI.Tests.Models
             }
         }
 
+        /// <summary>
+        /// NestoAPI#788: Inventarios.PorCodigoBarras (bit NULL) se añadió a mano en las tres capas. NULL = las filas de antes y las
+        /// que no graba la API; si un refresh la dejara NOT NULL, EF mandaría 0 y todo parecería tecleado.
+        /// </summary>
+        [TestMethod]
+        public void Edmx_PorCodigoBarrasDelInventario_EstaEnLasTresCapasYEsNullable()
+        {
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["Inventarios"]
+                .Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "PorCodigoBarras");
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["Inventario"]
+                .Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "PorCodigoBarras");
+            bool mapeada = LeerRecurso("msl").Descendants(MslNs + "EntitySetMapping").Single(m => m.Attribute("Name").Value == "Inventarios")
+                .Descendants(MslNs + "ScalarProperty")
+                .Any(p => p.Attribute("Name").Value == "PorCodigoBarras" && p.Attribute("ColumnName").Value == "PorCodigoBarras");
+
+            Assert.AreEqual("bit", (string)almacen.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)almacen.Attribute("Nullable"));
+            Assert.AreEqual("Boolean", (string)conceptual.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)conceptual.Attribute("Nullable"));
+            Assert.IsTrue(mapeada);
+            Assert.AreEqual(typeof(bool?), typeof(Inventario).GetProperty("PorCodigoBarras").PropertyType);
+            Assert.IsNull(new Inventario().PorCodigoBarras);
+        }
+
         private static void ComprobarTresCapas(string entidad, string conjunto, params string[] esperadas)
         {
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)[entidad];

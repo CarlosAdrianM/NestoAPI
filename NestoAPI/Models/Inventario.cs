@@ -34,6 +34,7 @@ namespace NestoAPI.Models
         public string Columna { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public Nullable<bool> PorCodigoBarras { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual Familia Familia1 { get; set; }
