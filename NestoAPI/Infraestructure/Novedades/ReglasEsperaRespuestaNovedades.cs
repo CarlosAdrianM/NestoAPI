@@ -1,5 +1,7 @@
 using NestoAPI.Models.Novedades;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace NestoAPI.Infraestructure.Novedades
@@ -79,48 +81,152 @@ namespace NestoAPI.Infraestructure.Novedades
             && !string.IsNullOrWhiteSpace(espera.SugeridaPor)
             && string.Equals(espera.SugeridaPor.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase);
 
+        private const char SEPARADOR_ESPERADOS = ';';
+        private const char SEPARADOR_CAMPOS = '|';
+
+        /// <summary>Longitud de la columna Novedades.EsperandoRespuestaDe (Scripts/Issue783_EsperandoRespuestaDe.sql).</summary>
+        public const int LONGITUD_ESPERANDO_RESPUESTA_DE = 1000;
+
         /// <summary>
-        /// Solo el AUTOR de la sugerencia quita la espera (y, si estaba Cerrada, la reabre). Cualquier otro comentario
-        /// (el asistente, otro compañero) la deja como estaba.
+        /// NestoAPI#783: los mencionados en la pregunta del asistente, para la columna EsperandoRespuestaDe
+        /// («Aplicacion|Clave|Nombre;…»). Sin ninguno, null: se espera al autor de la sugerencia, como antes.
+        /// Si no cupieran todos, los que quepan.
         /// </summary>
-        public static DecisionAlComentar AlComentar(EsperaRespuestaNovedad espera, string usuario)
+        public static string SerializarEsperados(IEnumerable<MencionableDTO> esperados)
+        {
+            var partes = new List<string>();
+            int longitud = 0;
+            foreach (MencionableDTO esperado in (esperados ?? Enumerable.Empty<MencionableDTO>()).Where(e => !string.IsNullOrWhiteSpace(e?.Clave)))
+            {
+                string parte = string.Join(SEPARADOR_CAMPOS.ToString(), Limpiar(esperado.Aplicacion), Limpiar(esperado.Clave), Limpiar(esperado.Nombre));
+                int nueva = longitud + parte.Length + (partes.Count > 0 ? 1 : 0);
+                if (nueva > LONGITUD_ESPERANDO_RESPUESTA_DE)
+                {
+                    break;
+                }
+                partes.Add(parte);
+                longitud = nueva;
+            }
+            return partes.Count == 0 ? null : string.Join(SEPARADOR_ESPERADOS.ToString(), partes);
+        }
+
+        /// <summary>NestoAPI#783: a quién se espera, según la columna. Vacía = al autor.</summary>
+        public static List<MencionableDTO> Esperados(EsperaRespuestaNovedad espera)
+        {
+            var resultado = new List<MencionableDTO>();
+            if (string.IsNullOrWhiteSpace(espera?.EsperandoRespuestaDe))
+            {
+                return resultado;
+            }
+            foreach (string parte in espera.EsperandoRespuestaDe.Split(SEPARADOR_ESPERADOS))
+            {
+                string[] campos = parte.Split(SEPARADOR_CAMPOS);
+                if (campos.Length < 3 || string.IsNullOrWhiteSpace(campos[1]))
+                {
+                    continue;
+                }
+                resultado.Add(new MencionableDTO { Aplicacion = campos[0].Trim(), Clave = campos[1].Trim(), Nombre = campos[2].Trim() });
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#783: si quien comenta es una de las personas a las que se espera. Sin mencionados, el autor;
+        /// con mencionados, solo ellos (por su clave o, en las apps, por su nombre de usuario).
+        /// </summary>
+        public static bool EsEsperado(EsperaRespuestaNovedad espera, string usuario, string nombreUsuario = null)
+        {
+            List<MencionableDTO> esperados = Esperados(espera);
+            if (esperados.Count == 0)
+            {
+                return EsDelAutor(espera, usuario);
+            }
+            return esperados.Any(e => Igual(e.Clave, usuario) || Igual(e.Clave, nombreUsuario));
+        }
+
+        /// <summary>
+        /// Solo la persona a la que se espera (NestoAPI#783: la mencionada en la pregunta; sin mención, el AUTOR)
+        /// quita la espera. Si estaba Cerrada, la reabre ella o su autor. Cualquier otro comentario (el asistente,
+        /// otro compañero, el autor cuando se esperaba a otro) la deja como estaba.
+        /// </summary>
+        public static DecisionAlComentar AlComentar(EsperaRespuestaNovedad espera, string usuario, string nombreUsuario = null)
         {
             var decision = new DecisionAlComentar();
-            if (!EsDelAutor(espera, usuario))
+            if (espera == null)
             {
                 return decision;
             }
-            decision.Reabrir = string.Equals(espera.Estado?.Trim(), ReglasSugerenciasNovedades.ESTADO_CERRADA, StringComparison.OrdinalIgnoreCase);
-            decision.BorrarEspera = decision.Reabrir || espera.EsperandoRespuestaDesde != null || espera.RecordatoriosRespuesta > 0;
+            bool esperado = EsEsperado(espera, usuario, nombreUsuario);
+            bool cerrada = string.Equals(espera.Estado?.Trim(), ReglasSugerenciasNovedades.ESTADO_CERRADA, StringComparison.OrdinalIgnoreCase);
+            if (cerrada)
+            {
+                decision.Reabrir = esperado || EsDelAutor(espera, usuario);
+                decision.BorrarEspera = decision.Reabrir;
+                return decision;
+            }
+            decision.BorrarEspera = esperado && (espera.EsperandoRespuestaDesde != null || espera.RecordatoriosRespuesta > 0);
             return decision;
         }
 
         /// <summary>El recordatorio <paramref name="numero"/> (1 o 2), de usted y con la @mención del autor.</summary>
-        public static string TextoRecordatorio(string nombre, int numero, bool esIncidencia)
+        public static string TextoRecordatorio(string nombre, int numero, bool esIncidencia) =>
+            TextoRecordatorio(new[] { nombre }, numero, esIncidencia);
+
+        /// <summary>NestoAPI#783: el recordatorio a quienes se espera (los mencionados o el autor), cada uno con su @mención.</summary>
+        public static string TextoRecordatorio(IEnumerable<string> nombres, int numero, bool esIncidencia)
         {
-            string saludo = Saludo(nombre);
+            string saludo = Saludo(nombres);
             return numero <= 1
                 ? $"{saludo} Le recordamos que estamos esperando su respuesta a la pregunta de arriba para poder seguir con esto."
                 : $"{saludo} Seguimos esperando su respuesta a la pregunta de arriba. Si no tenemos noticias suyas, en unos días daremos {Que(esIncidencia)} por cerrada.";
         }
 
-        public static string TextoCierre(string nombre, bool esIncidencia) =>
-            $"{Saludo(nombre)} Como no hemos tenido respuesta, damos {Que(esIncidencia)} por cerrada. Si la sigue necesitando, escriba aquí y se volverá a abrir.";
+        public static string TextoCierre(string nombre, bool esIncidencia) => TextoCierre(new[] { nombre }, esIncidencia);
+
+        public static string TextoCierre(IEnumerable<string> nombres, bool esIncidencia) =>
+            $"{Saludo(nombres)} Como no hemos tenido respuesta, damos {Que(esIncidencia)} por cerrada. Si la sigue necesitando, escriba aquí y se volverá a abrir.";
+
+        /// <summary>NestoAPI#783: los nombres a los que va el recordatorio (los esperados o, sin ellos, el autor).</summary>
+        public static List<string> NombresDestinatarios(EsperaRespuestaNovedad espera)
+        {
+            List<MencionableDTO> esperados = Esperados(espera);
+            return esperados.Count > 0
+                ? esperados.Select(e => e.Nombre).ToList()
+                : new List<string> { espera?.SugeridaNombre };
+        }
+
+        private static bool Igual(string a, string b) =>
+            !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
+            && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        private static string Limpiar(string valor) =>
+            (valor ?? string.Empty).Trim().Replace(SEPARADOR_ESPERADOS.ToString(), string.Empty).Replace(SEPARADOR_CAMPOS.ToString(), string.Empty);
 
         public static bool EsIncidencia(EsperaRespuestaNovedad espera) =>
             string.Equals(espera?.Categoria?.Trim(), ReglasSugerenciasNovedades.CATEGORIA_INCIDENCIA, StringComparison.OrdinalIgnoreCase);
 
         private static string Que(bool esIncidencia) => esIncidencia ? "esta incidencia" : "esta sugerencia";
 
-        /// <summary>«Hola, @Marta.» (si el nombre no vale como mención, sin la @; sin nombre, «Hola.»).</summary>
-        private static string Saludo(string nombre)
+        /// <summary>
+        /// «Hola, @Marta.» (si el nombre no vale como mención, sin la @; sin nombre, «Hola.»). Con varios:
+        /// «Hola, @Santiago y @Pedro.».
+        /// </summary>
+        private static string Saludo(IEnumerable<string> nombres)
         {
-            string limpio = nombre?.Trim();
-            if (string.IsNullOrEmpty(limpio))
+            List<string> menciones = (nombres ?? Enumerable.Empty<string>())
+                .Select(n => n?.Trim())
+                .Where(n => !string.IsNullOrEmpty(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(n => Regex.IsMatch(n, @"^[\p{L}][\p{L}\p{Nd}_]*$") ? "@" + n : n)
+                .ToList();
+            if (menciones.Count == 0)
             {
                 return "Hola.";
             }
-            return Regex.IsMatch(limpio, @"^[\p{L}][\p{L}\p{Nd}_]*$") ? $"Hola, @{limpio}." : $"Hola, {limpio}.";
+            string lista = menciones.Count == 1
+                ? menciones[0]
+                : string.Join(", ", menciones.Take(menciones.Count - 1)) + " y " + menciones[menciones.Count - 1];
+            return $"Hola, {lista}.";
         }
     }
 }

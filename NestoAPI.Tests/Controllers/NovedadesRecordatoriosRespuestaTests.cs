@@ -66,7 +66,7 @@ namespace NestoAPI.Tests.Controllers
         }
 
         private static EsperaRespuestaNovedad Espera(string estado = "Pendiente", DateTime? desde = null, byte recordatorios = 0,
-            DateTime? ultimo = null, string ambito = "Nesto", string categoria = "Nuevo") => new EsperaRespuestaNovedad
+            DateTime? ultimo = null, string ambito = "Nesto", string categoria = "Nuevo", string esperandoDe = null) => new EsperaRespuestaNovedad
             {
                 Id = 584,
                 Estado = estado,
@@ -77,7 +77,8 @@ namespace NestoAPI.Tests.Controllers
                 SugeridaNombre = "MariaJose",
                 EsperandoRespuestaDesde = desde,
                 RecordatoriosRespuesta = recordatorios,
-                UltimoRecordatorioRespuesta = ultimo
+                UltimoRecordatorioRespuesta = ultimo,
+                EsperandoRespuestaDe = esperandoDe
             };
 
         private RecordatoriosRespuestaNovedades Motor(DateTime ahora, bool activo = true, Func<DateTime, bool> esLaborable = null) =>
@@ -92,7 +93,7 @@ namespace NestoAPI.Tests.Controllers
 
             _ = await controller.PostComentarioAsistente(584, new NuevoComentarioAsistenteDTO { Texto = "¿Qué correo es?", EsperaRespuesta = true });
 
-            A.CallTo(() => espera.MarcarEspera(584, A<DateTime>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => espera.MarcarEspera(584, A<DateTime>._, null)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -102,7 +103,7 @@ namespace NestoAPI.Tests.Controllers
 
             _ = await controller.PostComentarioAsistente(584, new NuevoComentarioAsistenteDTO { Texto = "Ya está corregido." });
 
-            A.CallTo(() => espera.MarcarEspera(A<int>._, A<DateTime>._)).MustNotHaveHappened();
+            A.CallTo(() => espera.MarcarEspera(A<int>._, A<DateTime>._, A<string>._)).MustNotHaveHappened();
             A.CallTo(() => espera.BorrarEspera(A<int>._, A<bool>._, A<string>._)).MustNotHaveHappened();
         }
 
@@ -110,7 +111,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task PostComentarioAsistente_SiFallaLaEspera_ElComentarioSeGrabaIgual()
         {
             ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
-            A.CallTo(() => espera.MarcarEspera(A<int>._, A<DateTime>._)).Throws(new InvalidOperationException("columna inexistente"));
+            A.CallTo(() => espera.MarcarEspera(A<int>._, A<DateTime>._, A<string>._)).Throws(new InvalidOperationException("columna inexistente"));
 
             var resultado = await controller.PostComentarioAsistente(584, new NuevoComentarioAsistenteDTO { Texto = "¿Qué correo es?", EsperaRespuesta = true });
 
@@ -324,6 +325,170 @@ namespace NestoAPI.Tests.Controllers
             _ = await Motor(LUNES.AddDays(2)).Ejecutar(ensayo: false);
 
             A.CallTo(() => notificaciones.EnviarAUsuario("Marta", "NestoApp", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        // ---- NestoAPI#783: la pregunta va a un @mencionado ----
+
+        private const string ESPERANDO_A_SANTIAGO = "Nesto|NUEVAVISION\\Santiago|Santiago";
+
+        private void ConMencionables(params string[] nombres)
+        {
+            A.CallTo(() => feedback.LeerAmbitoNovedad(584)).Returns("Nesto");
+            A.CallTo(() => feedback.LeerMencionables(false)).Returns(nombres
+                .Select(n => new MencionableDTO { Nombre = n, Clave = "NUEVAVISION\\" + n, Aplicacion = "Nesto" }).ToList());
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_ConMencion_EsperaAlMencionado()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            ConMencionables("Santiago", "MariaJose", "Alfredo");
+
+            _ = await controller.PostComentarioAsistente(584, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "@Santiago, ¿puede contar el 46048?",
+                EsperaRespuesta = true
+            });
+
+            A.CallTo(() => espera.MarcarEspera(584, A<DateTime>._, ESPERANDO_A_SANTIAGO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_ConVariasMenciones_EsperaATodos()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            ConMencionables("Santiago", "Alfredo");
+
+            _ = await controller.PostComentarioAsistente(584, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "@Santiago o @Alfredo, ¿pueden contarlo?",
+                EsperaRespuesta = true
+            });
+
+            A.CallTo(() => espera.MarcarEspera(584, A<DateTime>._, ESPERANDO_A_SANTIAGO + ";Nesto|NUEVAVISION\\Alfredo|Alfredo")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_MencionQueNoExiste_EsperaAlAutor()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            ConMencionables("Santiago");
+
+            _ = await controller.PostComentarioAsistente(584, new NuevoComentarioAsistenteDTO { Texto = "@Fulanito, ¿qué correo es?", EsperaRespuesta = true });
+
+            A.CallTo(() => espera.MarcarEspera(584, A<DateTime>._, null)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Ejecutar_ConMencion_ElRecordatorioVaAlMencionadoYNoAlAutor()
+        {
+            DateTime miercoles = new DateTime(2026, 10, 21, 9, 0, 0);
+            A.CallTo(() => espera.LeerEsperando()).Returns(new List<EsperaRespuestaNovedad> { Espera(desde: LUNES, esperandoDe: ESPERANDO_A_SANTIAGO) });
+            ComentarioNovedadAGrabar grabado = null;
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).Invokes((ComentarioNovedadAGrabar c) => grabado = c).Returns(81);
+
+            List<ResultadoRecordatorioRespuestaDTO> resultados = await Motor(miercoles).Ejecutar(ensayo: false);
+
+            Assert.AreEqual("Hola, @Santiago. Le recordamos que estamos esperando su respuesta a la pregunta de arriba para poder seguir con esto.", grabado.Texto);
+            Assert.AreEqual("Santiago", resultados.Single().Destinatarios);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", "Nesto",
+                A<NotificacionPushDTO>.That.Matches(n => n.Datos["novedadId"] == "584" && n.Datos["comentarioId"] == "81")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => espera.GuardarRecordatorio(584, 1, miercoles)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Ejecutar_ConMencion_ElCierreTambienVaAlMencionado()
+        {
+            DateTime martes = new DateTime(2026, 10, 27, 9, 0, 0);
+            A.CallTo(() => espera.LeerEsperando()).Returns(new List<EsperaRespuestaNovedad>
+            {
+                Espera(desde: LUNES, recordatorios: 2, ultimo: new DateTime(2026, 10, 23, 9, 0, 0), esperandoDe: ESPERANDO_A_SANTIAGO + ";Nesto|NUEVAVISION\\Alfredo|Alfredo")
+            });
+            ComentarioNovedadAGrabar grabado = null;
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).Invokes((ComentarioNovedadAGrabar c) => grabado = c).Returns(82);
+
+            _ = await Motor(martes).Ejecutar(ensayo: false);
+
+            Assert.AreEqual("Hola, @Santiago y @Alfredo. Como no hemos tenido respuesta, damos esta sugerencia por cerrada. Si la sigue necesitando, escriba aquí y se volverá a abrir.", grabado.Texto);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => espera.Cerrar(584, martes)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Ejecutar_MencionadoDeNestoApp_LlegaPorPushASuUsuario()
+        {
+            A.CallTo(() => espera.LeerEsperando()).Returns(new List<EsperaRespuestaNovedad>
+            {
+                Espera(desde: LUNES, ambito: "NestoApp", esperandoDe: "NestoApp|Marta|Marta")
+            });
+
+            _ = await Motor(LUNES.AddDays(2)).Ejecutar(ensayo: false);
+
+            A.CallTo(() => notificaciones.EnviarAUsuario("Marta", "NestoApp", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostComentario_ContestaElMencionado_SeBorraLaEspera()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Santiago");
+            A.CallTo(() => espera.Leer(584)).Returns(Espera(desde: LUNES, recordatorios: 1, esperandoDe: ESPERANDO_A_SANTIAGO));
+
+            _ = await controller.PostComentario(584, new NuevoComentarioNovedadDTO { Texto = "Hay 12" });
+
+            A.CallTo(() => espera.BorrarEspera(584, false, "NUEVAVISION\\Santiago")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentario_ComentaElAutorSinSerElEsperado_SigueEsperando()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\MariaJose");
+            A.CallTo(() => espera.Leer(584)).Returns(Espera(desde: LUNES, esperandoDe: ESPERANDO_A_SANTIAGO));
+
+            _ = await controller.PostComentario(584, new NuevoComentarioNovedadDTO { Texto = "Santiago, mírelo cuando pueda" });
+
+            A.CallTo(() => espera.BorrarEspera(A<int>._, A<bool>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void AlComentar_MencionadoDeLaApp_CuentaPorSuNombreDeUsuario()
+        {
+            EsperaRespuestaNovedad e = Espera(desde: LUNES, ambito: "NestoApp", esperandoDe: "NestoApp|Marta|Marta");
+
+            Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(e, "5e63cedf-guid", "Marta").BorrarEspera);
+            Assert.IsFalse(ReglasEsperaRespuestaNovedades.AlComentar(e, "otro-guid", "Pepe").BorrarEspera);
+        }
+
+        [TestMethod]
+        public void AlComentar_CerradaEsperandoAOtro_LaReabrenElMencionadoYElAutor()
+        {
+            EsperaRespuestaNovedad cerrada = Espera(estado: "Cerrada", esperandoDe: ESPERANDO_A_SANTIAGO);
+
+            Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\Santiago").Reabrir);
+            Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\MariaJose").Reabrir);
+            Assert.IsFalse(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\Alfredo").Reabrir);
+        }
+
+        [TestMethod]
+        public void SerializarEsperados_IdaYVuelta()
+        {
+            var esperados = new List<MencionableDTO>
+            {
+                new MencionableDTO { Aplicacion = "Nesto", Clave = "NUEVAVISION\\Santiago", Nombre = "Santiago" },
+                new MencionableDTO { Aplicacion = "NestoApp", Clave = "Marta", Nombre = "Marta" }
+            };
+
+            string guardado = ReglasEsperaRespuestaNovedades.SerializarEsperados(esperados);
+            List<MencionableDTO> leidos = ReglasEsperaRespuestaNovedades.Esperados(new EsperaRespuestaNovedad { EsperandoRespuestaDe = guardado });
+
+            Assert.AreEqual(2, leidos.Count);
+            Assert.AreEqual("NUEVAVISION\\Santiago", leidos[0].Clave);
+            Assert.AreEqual("NestoApp", leidos[1].Aplicacion);
+            Assert.IsNull(ReglasEsperaRespuestaNovedades.SerializarEsperados(new List<MencionableDTO>()));
         }
 
         // ---- Estado Cerrada ----
