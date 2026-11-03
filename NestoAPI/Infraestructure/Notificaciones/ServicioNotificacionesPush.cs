@@ -320,7 +320,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
             using (NVEntities db = _crearContexto())
             {
                 return await db.DispositivosNotificaciones
-                    .Where(d => d.Empresa == empresa && d.Vendedor == vendedor && d.Aplicacion == aplicacion && d.Activo)
+                    .Where(d => (d.Empresa == null || d.Empresa == empresa) && d.Vendedor == vendedor && d.Aplicacion == aplicacion && d.Activo) // 03/11/26: los dispositivos se registran sin empresa (NULL)
                     .ToListAsync()
                     .ConfigureAwait(false);
             }
@@ -331,7 +331,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
             using (NVEntities db = _crearContexto())
             {
                 return await db.DispositivosNotificaciones
-                    .Where(d => d.Empresa == empresa && d.Cliente == cliente && d.Aplicacion == aplicacion && d.Activo)
+                    .Where(d => (d.Empresa == null || d.Empresa == empresa) && d.Cliente == cliente && d.Aplicacion == aplicacion && d.Activo) // 03/11/26: idem
                     .ToListAsync()
                     .ConfigureAwait(false);
             }
