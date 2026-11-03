@@ -197,5 +197,53 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
                 FechaModificacion = modificada ?? CORTE.AddDays(-10)
             };
         }
+
+        #region Empate por redondeo (Issue #547: la BD tiene la media a 2 decimales)
+
+        private static DiferenciaPrecioMedio CompararMedias(decimal mediaBD, decimal mediaCalculada, decimal coste2BD = 12.5m)
+        {
+            ResultadoPrecioMedio calculado = Calculado();
+            calculado.PrecioMedioFinal = mediaCalculada;
+            return ComparadorSombraPreciosMedios.Comparar(calculado, Bd(media: mediaBD, coste2: coste2BD), CORTE);
+        }
+
+        [TestMethod]
+        public void EsSoloRedondeoDeLaMedia_487Frente4865SinLineasDistintas_Si()
+        {
+            DiferenciaPrecioMedio d = CompararMedias(4.87m, 4.865m);
+
+            Assert.IsTrue(d.MediaDistinta);
+            Assert.AreEqual(0, d.LineasDistintas);
+            Assert.IsTrue(d.EsSoloRedondeoDeLaMedia);
+        }
+
+        [TestMethod]
+        public void EsSoloRedondeoDeLaMedia_487Frente488_No()
+        {
+            Assert.IsFalse(CompararMedias(4.87m, 4.88m).EsSoloRedondeoDeLaMedia, "un céntimo justo ya no es redondeo");
+        }
+
+        [TestMethod]
+        public void EsSoloRedondeoDeLaMedia_SinLineasDistintasPeroDosCentimos_No()
+        {
+            Assert.IsFalse(CompararMedias(4.87m, 4.89m).EsSoloRedondeoDeLaMedia);
+        }
+
+        [TestMethod]
+        public void EsSoloRedondeoDeLaMedia_ConLineasDistintasYMedioCentimo_No()
+        {
+            DiferenciaPrecioMedio d = CompararMedias(4.87m, 4.865m, coste2BD: 12.4m);
+
+            Assert.AreEqual(1, d.LineasDistintas);
+            Assert.IsFalse(d.EsSoloRedondeoDeLaMedia);
+        }
+
+        [TestMethod]
+        public void EsSoloRedondeoDeLaMedia_MediaIgual_No()
+        {
+            Assert.IsFalse(CompararMedias(4.87m, 4.87m).EsSoloRedondeoDeLaMedia, "sin diferencia no hay empate que clasificar");
+        }
+
+        #endregion
     }
 }

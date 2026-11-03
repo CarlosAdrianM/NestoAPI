@@ -154,6 +154,37 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         }
 
         [TestMethod]
+        public void Procesar_SoloEmpatesPorRedondeo_LosCuentaAparteYNoMandaCorreo()
+        {
+            Interruptor("1");
+            A.CallTo(() => repositorio.ProductosConCompras("1", "3")).Returns(new List<string> { "IGUAL", "REDONDEO" });
+            A.CallTo(() => repositorio.LeerDatos("1", "3", "REDONDEO", A<bool>._))
+                .Returns(ServicioSombraPreciosMediosTests.ProductoIgual("REDONDEO", 10.005m));
+            List<FilaPreciosMediosSombra> filas = new List<FilaPreciosMediosSombra>();
+            A.CallTo(() => repositorio.GuardarFila(A<FilaPreciosMediosSombra>._)).Invokes((FilaPreciosMediosSombra f) => filas.Add(f));
+
+            ResumenPasadaSombraPrecioMedio resumen = PreciosMediosJobsService.Procesar(lector, CrearServicio, correo, DOMINGO_0630, forzar: false);
+
+            Assert.AreEqual(1, resumen.Empresas[0].Iguales);
+            Assert.AreEqual(1, resumen.Empresas[0].EmpatesRedondeo);
+            Assert.AreEqual(0, resumen.Empresas[0].Empates, "los empates por redondeo van aparte");
+            Assert.AreEqual(0, resumen.Empresas[0].Distintos);
+            Assert.AreEqual(0, resumen.NoEsperados);
+            StringAssert.Contains(resumen.ToString(), "empates por redondeo 1");
+            Assert.IsTrue(filas.Exists(f => f.Producto == "REDONDEO" && f.Clasificacion == "EmpateRedondeo"));
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GenerarHtml_HablaDeLoQueHayEnLaBDNoDelSP()
+        {
+            string html = PreciosMediosJobsService.GenerarHtml(new ResumenPasadaSombraPrecioMedio { FechaPasada = new DateTime(2026, 11, 1) });
+
+            StringAssert.Contains(html, "lo que hay en la BD");
+            Assert.IsFalse(html.Contains("ha dejado el SP"));
+        }
+
+        [TestMethod]
         public void Procesar_SinLaTabla_FallaDeFormaControlada()
         {
             Interruptor("1");

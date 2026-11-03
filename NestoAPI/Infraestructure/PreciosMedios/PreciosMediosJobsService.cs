@@ -30,7 +30,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
     /// <summary>
     /// Issue #547, corte (b): la SOMBRA de los precios medios. Los domingos a las 06:30, después del SP
     /// «Precios Medios» de msdb (00:30), calcula con <see cref="CalculadoraPrecioMedio"/> la media de cada producto
-    /// con compras de las empresas 1, 4 y 5 y la compara al diezmilésimo con lo que ha dejado el SP
+    /// con compras de las empresas 1, 4 y 5 y la compara al diezmilésimo con lo que hay en la BD
     /// (Productos.PrecioMedio, LinPedidoCmp.Coste y, por muestreo, LinPedidoVta.Coste). NO ESCRIBE en ninguna de
     /// esas tablas: solo en PreciosMediosSombra (diagnóstico), un resumen en ELMAH y, si hay diferencias no
     /// esperadas, un correo a Carlos.
@@ -202,8 +202,8 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 13px;'>");
             sb.AppendLine("<h2>Sombra de precios medios (NestoAPI#547)</h2>");
-            sb.AppendLine("<p>La calculadora en C# no coincide al diezmilésimo con lo que ha dejado el SP del domingo en estos productos, " +
-                "y la diferencia no se explica por facturas posteriores al SP ni por empates de fecha. <b>No se ha escrito nada</b>: " +
+            sb.AppendLine("<p>La calculadora en C# no coincide al diezmilésimo con lo que hay en la BD en estos productos, " +
+                "y la diferencia no se explica por facturas posteriores a la última pasada, por empates de fecha ni por el redondeo a 2 decimales de la media. <b>No se ha escrito nada</b>: " +
                 "es solo diagnóstico. Para cada uno, sacar su fixture con la consulta del §3 del plan, añadirla a los tests y corregir la calculadora.</p>");
             sb.AppendLine($"<p>{WebUtility.HtmlEncode(resumen.ToString())}</p>");
             foreach (ResumenEmpresaSombraPrecioMedio empresa in resumen.Empresas.Where(e => e.PrimerosNoEsperados.Any()))

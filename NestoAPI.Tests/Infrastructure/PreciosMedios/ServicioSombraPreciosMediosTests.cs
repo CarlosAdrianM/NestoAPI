@@ -78,12 +78,44 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         [TestMethod]
         public void Evaluar_MediaDistinta_Distinto()
         {
-            ResultadoSombraPrecioMedio r = ServicioSombraPreciosMedios.Evaluar(ProductoIgual(precioMedioBD: 10.0001m), CORTE);
+            ResultadoSombraPrecioMedio r = ServicioSombraPreciosMedios.Evaluar(ProductoIgual(precioMedioBD: 10.02m), CORTE);
 
             Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto, r.Clasificacion);
             Assert.IsTrue(r.Diferencia.MediaDistinta);
             Assert.IsTrue(r.DebeRegistrarse);
             Assert.IsTrue(r.EsNoEsperada);
+        }
+
+        [TestMethod]
+        public void Evaluar_MediaPorMenosDeUnCentimoYComprasIguales_EmpateRedondeo()
+        {
+            // 45942 (sombras del 25/10 y 01/11/26): la BD con la media a 2 decimales y el C# con 4.
+            ResultadoSombraPrecioMedio r = ServicioSombraPreciosMedios.Evaluar(ProductoIgual(precioMedioBD: 10.005m), CORTE);
+
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.EmpateRedondeo, r.Clasificacion);
+            Assert.AreEqual(0, r.Diferencia.LineasDistintas);
+            Assert.IsTrue(r.DebeRegistrarse, "se guarda en PreciosMediosSombra con su clasificación");
+            Assert.IsFalse(r.EsNoEsperada, "no manda correo");
+            Assert.AreEqual("EmpateRedondeo", ServicioSombraPreciosMedios.CrearFila(FECHA_PASADA, r).Clasificacion);
+        }
+
+        [TestMethod]
+        public void Evaluar_MediaPorUnCentimoJusto_Distinto()
+        {
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto,
+                ServicioSombraPreciosMedios.Evaluar(ProductoIgual(precioMedioBD: 10.01m), CORTE).Clasificacion);
+        }
+
+        [TestMethod]
+        public void Evaluar_MediaPorMenosDeUnCentimoPeroConLineasDistintas_Distinto()
+        {
+            DatosProductoPrecioMedio datos = ProductoIgual(precioMedioBD: 10.005m);
+            datos.Compras.Single().Coste = 9.99m;
+
+            ResultadoSombraPrecioMedio r = ServicioSombraPreciosMedios.Evaluar(datos, CORTE);
+
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto, r.Clasificacion);
+            Assert.AreEqual(1, r.Diferencia.LineasDistintas);
         }
 
         [TestMethod]
