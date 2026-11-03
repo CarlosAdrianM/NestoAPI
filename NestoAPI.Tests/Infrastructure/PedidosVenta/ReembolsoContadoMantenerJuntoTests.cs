@@ -29,6 +29,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 Empresa = "1  ",
                 Número = PEDIDO,
                 Nº_Cliente = "36915     ",
+                IVA = "G21", // NestoAPI#718: sin IVA se facturaría por Global
                 Forma_Pago = formaPago,
                 PlazosPago = plazos,
                 Periodo_Facturacion = "NRM",

@@ -79,6 +79,8 @@ namespace NestoAPI.Infraestructure.Agencias
         OpcionEnvioAgencia CosteDeAgencia(string empresa, string codPostal, decimal peso, decimal reembolso, int agencia, byte? servicio, string paisIso);
         /// <summary>La agencia tiene tarifas en el comparador (las demás, como Canteras, no pasan por la red de cobertura).</summary>
         bool EsAgenciaDelComparador(int agencia);
+        /// <summary>NestoAPI#718: una fila de la historia del envío (se graba con el siguiente GuardarCambios).</summary>
+        void AnotarHistoria(EnvioHistoria fila);
     }
 
     /// <summary>NestoAPI#595 (slice 2): el correo «Pedido entregado a la agencia» al cliente.</summary>
@@ -307,12 +309,14 @@ namespace NestoAPI.Infraestructure.Agencias
             // 5. La transacción, como TramitacionEnviosService: grabar, código de barras con el Numero y commit.
             short bultosAntes = existente?.Bultos ?? 0;
             EnviosAgencia envio;
+            bool hayCorreccionReembolso = false;
             try
             {
                 envio = await datos.EnTransaccion(async () =>
                 {
                     EnviosAgencia grabado = Grabar(propuesta, existente, filaAgencia, plaza, usuario);
                     await datos.GuardarCambios();
+                    hayCorreccionReembolso = AnotarCorreccionReembolso(grabado, propuesta, usuario);
                     string codigo = agencia.CalcularCodigoBarras(grabado, filaAgencia?.PrefijoCodigoBarras);
                     if (codigo == null)
                     {
@@ -335,6 +339,13 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 return ResultadoEnvioDesdePedido.Invalido(CodigosErrorEnvioDesdePedido.ENVIO_CAMBIADO,
                     $"El envío {propuesta.EnvioOrigen} ha cambiado mientras se grababa. Vuelva a intentarlo.");
+            }
+
+            // NestoAPI#718: ya grabado (con su fila en la historia), se avisa en la respuesta y queda en ELMAH.
+            if (hayCorreccionReembolso)
+            {
+                avisos.Add(propuesta.CorreccionReembolso);
+                Registrar(new Exception($"[Reembolso corregido #718] Envío {envio.Numero}: {propuesta.CorreccionReembolso}"));
             }
 
             string flujo = FlujoDe(envio.Agencia);
@@ -643,6 +654,44 @@ namespace NestoAPI.Infraestructure.Agencias
             return envio;
         }
 
+        /// <summary>
+        /// NestoAPI#718: el reembolso del pedido se ha corregido porque se factura por Global (empresa espejo, sin IVA) y sus líneas
+        /// llevan IVA. No se impide nada (decisión de Carlos): el envío sale con lo que cobrará la factura, queda en su historia, en
+        /// ELMAH y en los avisos de la respuesta.
+        /// </summary>
+        internal static EnvioHistoria FilaCorreccionReembolso(EnviosAgencia envio, PropuestaEnvioDTO propuesta, string usuario, DateTime ahora)
+        {
+            // El pendiente reutilizado conserva el reembolso que traía: ahí no se ha corregido nada.
+            if (envio == null || propuesta == null || string.IsNullOrWhiteSpace(propuesta.CorreccionReembolso) || envio.Reembolso <= 0m ||
+                propuesta.Origen == PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO)
+            {
+                return null;
+            }
+            string anterior = (propuesta.ReembolsoSegunLineas ?? 0m).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            string quien = string.IsNullOrWhiteSpace(usuario) ? "NestoAPI" : usuario.Trim();
+            return new EnvioHistoria
+            {
+                NumeroEnvio = envio.Numero,
+                Campo = "Reembolso",
+                ValorAnterior = anterior,
+                Observaciones = propuesta.CorreccionReembolso,
+                Usuario = quien.Length > 50 ? quien.Substring(0, 50) : quien,
+                FechaModificacion = ahora
+            };
+        }
+
+        /// <summary>Dentro de la transacción: la fila se graba con el código de barras. True si hay corrección que avisar.</summary>
+        private bool AnotarCorreccionReembolso(EnviosAgencia envio, PropuestaEnvioDTO propuesta, string usuario)
+        {
+            EnvioHistoria fila = FilaCorreccionReembolso(envio, propuesta, usuario, DateTime.Now);
+            if (fila == null)
+            {
+                return false;
+            }
+            datos.AnotarHistoria(fila);
+            return true;
+        }
+
         // ---------------------------------------------------------------- aviso al cliente
 
         /// <summary>
@@ -757,6 +806,8 @@ namespace NestoAPI.Infraestructure.Agencias
             => (await db.EnviosAgencias.Where(e => e.Numero == numero).ToListAsync()).FirstOrDefault();
 
         public void Anadir(EnviosAgencia envio) => db.EnviosAgencias.Add(envio);
+
+        public void AnotarHistoria(EnvioHistoria fila) => db.EnviosHistorias.Add(fila);
 
         public Task GuardarCambios() => db.SaveChangesAsync();
 
