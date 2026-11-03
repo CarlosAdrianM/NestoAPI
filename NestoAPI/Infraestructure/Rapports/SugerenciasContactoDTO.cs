@@ -112,6 +112,14 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>NestoAPI#677: por qué entró en la lista: "Probabilidad", "Cobertura" (cupo de compradores sin contacto este
         /// mes) o "ChequeRegalo". Ver <see cref="OrigenesSugerenciaContacto"/>. Campo nuevo: los clientes que no lo lean no cambian.</summary>
         public string Origen { get; set; }
+        /// <summary>
+        /// Nesto#587 (sugerencia 911, Alberto Sancho): true si desde el día 1 del mes en curso nadie ha hablado con el cliente
+        /// (ningún rapport de CUALQUIER usuario, no solo del vendedor, con Estado 0 «se habló» o -1 «nulo»; no cuentan los
+        /// «no contestó» (1) ni las gestiones administrativas (2), que son los apuntes automáticos del sistema). Solo marca: no
+        /// cambia quién entra en la lista. Ver <see cref="MotorSugerenciasContacto.SinContactoEsteMes"/>. False si el cliente
+        /// ya no está en la cartera (sin dato, sin marca). Campo nuevo: los clientes que no lo lean no cambian.
+        /// </summary>
+        public bool SinContactoEsteMes { get; set; }
     }
 
     /// <summary>NestoAPI#603: GET api/Clientes/SugerenciasContacto/Uso, una fila por vendedor.</summary>
@@ -168,6 +176,12 @@ namespace NestoAPI.Infraestructure.Rapports
         public DateTime? UltimoContacto { get; set; }
         /// <summary>Último rapport Estado 1 (no contestó) de tipo T/V/W.</summary>
         public DateTime? UltimoIntento { get; set; }
+        /// <summary>
+        /// Nesto#587: último rapport del cliente desde el día 1 del mes en curso de CUALQUIER usuario (también el otro vendedor
+        /// que lo lleva) y de cualquier tipo, con Estado 0 (se habló) o -1 (nulo). Fuera el 1 (no contestó: no se habló) y el 2
+        /// (gestión administrativa: los apuntes automáticos, p. ej. «X cambió el estado del extracto…»). Null si no hay ninguno.
+        /// </summary>
+        public DateTime? UltimoContactoMesCualquierUsuario { get; set; }
         public float Probabilidad { get; set; }
         public string GrupoSubgrupoMasVendido { get; set; }
         /// <summary>NestoAPI#618: con el modelo por subgrupo, qué ha comprado del subgrupo elegido («De COS007: 4 pedidos en el último año…»). Null si no.</summary>

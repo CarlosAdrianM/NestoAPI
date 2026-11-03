@@ -881,5 +881,24 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(typeof(T));
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).ReturnsLazily(() => datos.GetEnumerator());
         }
+
+        // ---------------- Nesto#587: sin contacto este mes ----------------
+
+        [TestMethod]
+        public async Task Leer_SinContactoEsteMes_SaleEnCadaSugerenciaSinCambiarLaLista()
+        {
+            // HOY = 07/10: 1001 habló con otro vendedor el 02/10, 1002 solo en septiembre, 1003 y 1004 nada.
+            cartera[0].UltimoContactoMesCualquierUsuario = new DateTime(2026, 10, 2, 11, 0, 0);
+            cartera[1].UltimoContactoMesCualquierUsuario = new DateTime(2026, 9, 29, 11, 0, 0);
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 4, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1001", "1002", "1003", "1004" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray(),
+                "la marca no añade ni quita a nadie");
+            Assert.IsFalse(respuesta.Sugerencias.Single(s => s.Cliente == "1001").SinContactoEsteMes);
+            Assert.IsTrue(respuesta.Sugerencias.Single(s => s.Cliente == "1002").SinContactoEsteMes);
+            Assert.IsTrue(respuesta.Sugerencias.Single(s => s.Cliente == "1003").SinContactoEsteMes);
+            Assert.IsTrue(respuesta.Sugerencias.Single(s => s.Cliente == "1004").SinContactoEsteMes);
+        }
     }
 }

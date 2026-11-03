@@ -111,6 +111,7 @@ namespace NestoAPI.Infraestructure.Rapports
             DECLARE @Hace12Meses date = DATEADD(month, -12, @Hoy);
             DECLARE @Hace24Meses date = DATEADD(month, -@MesesCartera, @Hoy);
             DECLARE @Hace60Dias date = DATEADD(day, -60, @Hoy);
+            DECLARE @InicioMes date = DATEFROMPARTS(YEAR(@Hoy), MONTH(@Hoy), 1);
 " + SQL_ASIGNACION + @"
 
             SELECT c.[Nº Cliente] Cliente, c.Contacto, c.Nombre, c.Dirección Direccion, c.CodPostal, c.Población Poblacion,
@@ -190,6 +191,15 @@ namespace NestoAPI.Infraestructure.Rapports
                     WHERE o.Cliente = s.Número AND o.Contacto = s.Contacto AND o.Vendedor = s.Vendedor)
             GROUP BY s.Número, s.Contacto;
 
+            -- Nesto#587: ¿ha hablado ALGUIEN con el cliente este mes? Cualquier usuario y tipo; Estado 0 (se habló) o -1
+            -- (nulo). Fuera el 1 (no contestó) y el 2 (gestión administrativa: apuntes automáticos del sistema).
+            SELECT s.Número Cliente, s.Contacto, MAX(s.Fecha) UltimoContactoMes
+            INTO #ContactoMes
+            FROM SeguimientoCliente s WITH (NOLOCK)
+            INNER JOIN #Cartera x ON x.Cliente = s.Número AND x.Contacto = s.Contacto
+            WHERE s.Fecha >= @InicioMes AND s.Estado IN (0, -1)
+            GROUP BY s.Número, s.Contacto;
+
             SELECT x.Cliente, x.Contacto, x.Nombre, x.Direccion, x.CodPostal, x.Poblacion, x.Provincia, x.Telefono,
                 SUM(CASE WHEN cp.Dia >= @Hace12Meses THEN 1 ELSE 0 END) Pedidos12Meses,
                 SUM(CASE WHEN cp.Dia >= @Hace12Meses THEN cp.Importe ELSE 0 END) Importe12Meses,
@@ -198,12 +208,14 @@ namespace NestoAPI.Infraestructure.Rapports
                 MAX(ec.Dia) UltimoEnCurso,
                 MAX(pr.Dia) UltimoPedidoCliente,
                 MAX(r.UltimoContacto) UltimoContacto,
-                MAX(r.UltimoIntento) UltimoIntento
+                MAX(r.UltimoIntento) UltimoIntento,
+                MAX(cm.UltimoContactoMes) UltimoContactoMes
             FROM #Cartera x
             INNER JOIN #Compras cp ON cp.Cliente = x.Cliente AND cp.Contacto = x.Contacto
             LEFT JOIN #EnCurso ec ON ec.Cliente = x.Cliente AND ec.Contacto = x.Contacto
             LEFT JOIN #PedidoReciente pr ON pr.Cliente = x.Cliente AND pr.Contacto = x.Contacto
             LEFT JOIN #Rapports r ON r.Cliente = x.Cliente AND r.Contacto = x.Contacto
+            LEFT JOIN #ContactoMes cm ON cm.Cliente = x.Cliente AND cm.Contacto = x.Contacto
             GROUP BY x.Cliente, x.Contacto, x.Nombre, x.Direccion, x.CodPostal, x.Poblacion, x.Provincia, x.Telefono;";
 
         /// <summary>
@@ -268,7 +280,8 @@ namespace NestoAPI.Infraestructure.Rapports
                                 UltimoPedido = MasReciente(ultimaCompra, enCurso),
                                 UltimoPedidoCliente = Fecha(lector["UltimoPedidoCliente"]),
                                 UltimoContacto = Fecha(lector["UltimoContacto"]),
-                                UltimoIntento = Fecha(lector["UltimoIntento"])
+                                UltimoIntento = Fecha(lector["UltimoIntento"]),
+                                UltimoContactoMesCualquierUsuario = Fecha(lector["UltimoContactoMes"])
                             });
                         }
                     }
