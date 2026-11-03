@@ -97,6 +97,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         private static readonly CultureInfo ES = CultureInfo.GetCultureInfo("es-ES");
 
         // Sin reintentos: si falla, mañana vuelve a pasar. Y nunca dos a la vez.
+        // NestoAPI#780: se salta los festivos (push a clientes): ya lo hace el núcleo (MOTIVO_FESTIVO, hoy o mañana festivo).
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 1800)]
         public static async Task Procesar()

@@ -429,6 +429,10 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
         public IRepositorioProveedorVencido Repositorio { get; set; }
         public IServicioCorreoElectronico Correo { get; set; }
         public DateTime Ahora { get; set; } = DateTime.Now;
+        /// <summary>NestoAPI#780: sin él (null), no se miran los festivos.</summary>
+        public Func<DateTime, bool> EsFestivo { get; set; }
+        /// <summary>NestoAPI#780: la traza del festivo (null = ELMAH).</summary>
+        public Action<Exception, string> Trazar { get; set; }
     }
 
     /// <summary>
@@ -440,6 +444,8 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
     public static class ProveedoresVencidosJobsService
     {
         public const string CRON = "0 8 * * 1-5"; // de lunes a viernes a las 8:00
+        internal const string MENSAJE_FESTIVO = "[Proveedor vencido #606] No se manda el correo a Compras: el día es festivo";
+        internal const string USUARIO_SISTEMA = "Sistema (proveedores con fecha vencida)";
         private static readonly CultureInfo es = new CultureInfo("es-ES");
 
         [AutomaticRetry(Attempts = 0)]
@@ -452,7 +458,8 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
                 {
                     Repositorio = RepositorioProveedorVencidoSql.DesdeConfiguracion(),
                     Correo = new ServicioCorreoElectronico(),
-                    Ahora = DateTime.Now
+                    Ahora = DateTime.Now,
+                    EsFestivo = JobsFestivos.EsFestivoAlgete
                 });
             }
             catch (Exception ex)
@@ -465,6 +472,11 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
         /// <summary>Núcleo del job. Devuelve true si ha mandado el correo.</summary>
         internal static bool Procesar(DependenciasProveedoresVencidos deps)
         {
+            // NestoAPI#780: en festivo se salta (es un correo a Compras y nadie lo lee); sale el siguiente laborable con lo que siga vencido.
+            if (JobsFestivos.SaltarSiFestivo(MENSAJE_FESTIVO, USUARIO_SISTEMA, deps.EsFestivo, () => deps.Ahora, deps.Trazar))
+            {
+                return false;
+            }
             DateTime hoy = deps.Ahora.Date;
             List<LineaCompraVencida> lineas = deps.Repositorio.LeerLineasVencidas(Constantes.Empresas.EMPRESA_POR_DEFECTO, null, hoy)
                 ?? new List<LineaCompraVencida>();

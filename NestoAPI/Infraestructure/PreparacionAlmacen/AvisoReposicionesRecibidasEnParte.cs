@@ -217,6 +217,7 @@ WHERE e.Empresa = @p0 AND e.TipoOrigen = 'REPO' AND e.NumeroOrigen = @p1 AND e.F
         public const string ID_JOB = "reposiciones-recibidas-en-parte";
         public const string CRON = "15 9 * * 1-6";
 
+        // NestoAPI#780: sin puerta de festivos por ahora (dudoso: corre L-S para las tiendas, cuyo calendario no es el de Algete, y es solo la campana de Nesto).
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         public static async Task Avisar()

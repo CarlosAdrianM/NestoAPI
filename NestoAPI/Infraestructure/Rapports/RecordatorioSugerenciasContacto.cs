@@ -284,6 +284,7 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <summary>NestoAPI#603 (corte 5): el job de Hangfire «recordatorio-sugerencias-contacto» (lunes a viernes, 9:30).</summary>
     public static class RecordatorioSugerenciasContactoJobsService
     {
+        // NestoAPI#780: se salta los festivos (avisa a los vendedores): ya lo comprueba abajo.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 1800)]
         public static async Task Procesar()

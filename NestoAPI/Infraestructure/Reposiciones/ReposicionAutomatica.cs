@@ -807,6 +807,7 @@ IF @resultado < 0 RAISERROR('Otra ejecución está rellenando las reposiciones d
         /// Sin reintento automático de Hangfire: lo que falla sin apuntarse lo reintenta la siguiente pasada (5 minutos), y
         /// cada ruta lleva su propio applock, así que dos ejecuciones solapadas tampoco duplican.
         /// </summary>
+        // NestoAPI#780: NO se salta los festivos de Algete a propósito: los cortes salen de ReposicionesCalendario, que ya cuenta los festivos de origen y destino; saltarlo perdería los que llegan hoy.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 300)]
         public static async Task RellenarPendientes()

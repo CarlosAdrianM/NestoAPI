@@ -45,11 +45,31 @@ namespace NestoAPI.Infraestructure.Picking
         /// dashboard de Hangfire y se relanza desde ahí con un clic; llegar tarde no tiene ningún
         /// coste.</para>
         /// </summary>
+        // NestoAPI#780: se salta los festivos de Algete (actúa sobre el almacén y le manda correo); ver EjecutarJobCierre.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         public static void SacarPickingDeCierreJob()
         {
-            _ = SacarPickingDeCierre();
+            _ = EjecutarJobCierre(JobsFestivos.EsFestivoAlgete, () => DateTime.Now, () => SacarPickingDeCierre());
+        }
+
+        internal const string MENSAJE_FESTIVO = "[Picking] No se saca el picking automático de cierre: el día es festivo";
+        internal const string USUARIO_SISTEMA = "Sistema (picking automático)";
+
+        /// <summary>
+        /// NestoAPI#780: el job de las 11 no saca picking en festivo de Algete (el 02/11/2026 lo sacó: el cron solo excluye
+        /// sábados y domingos). Deja la traza en ELMAH y no hace nada más. El endpoint manual (<c>api/Picking/Automatico</c>)
+        /// no pasa por aquí: si alguien lo pide a mano en festivo, es su decisión. Devuelve true si ha sacado el picking.
+        /// </summary>
+        internal static bool EjecutarJobCierre(Func<DateTime, bool> esFestivo, Func<DateTime> ahora, Action sacarPicking,
+            Action<Exception, string> trazar = null)
+        {
+            if (JobsFestivos.SaltarSiFestivo(MENSAJE_FESTIVO, USUARIO_SISTEMA, esFestivo, ahora, trazar))
+            {
+                return false;
+            }
+            sacarPicking();
+            return true;
         }
 
         /// <summary>
