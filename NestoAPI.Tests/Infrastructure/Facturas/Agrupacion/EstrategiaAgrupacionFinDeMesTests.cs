@@ -180,6 +180,79 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
         }
 
         [TestMethod]
+        public void SeleccionarGrupos_MismoClienteConDistintoIVA_UnGrupoPorCadaIVA()
+        {
+            // NestoAPI#792, caso real del 31367 (NV2617654): el contacto 0 en E52 y el 2 en G21 se juntaron en una factura.
+            CabPedidoVta e52 = Pedido(928006, "31367", "0", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            e52.IVA = "E52";
+            ConfigurarCabPedidos(
+                e52,
+                Pedido(928008, "31367", "2", Linea(2, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE)),
+                Pedido(928863, "31367", "2", Linea(3, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE)),
+                Pedido(929055, "31367", "2", Linea(4, Constantes.EstadosLineaVenta.ALBARAN, ULTIMO_DIA_TARDE)));
+
+            List<GrupoPedidosFinDeMes> grupos = estrategia.SeleccionarGrupos("1", CORTE).ToList();
+
+            Assert.AreEqual(2, grupos.Count, "una factura por cada tipo de IVA de cabecera");
+            CollectionAssert.AreEqual(new[] { 928006 }, grupos.Single(g => g.IVA == "E52").Pedidos.Select(p => p.Número).ToArray());
+            CollectionAssert.AreEqual(new[] { 928008, 928863, 929055 }, grupos.Single(g => g.IVA == "G21").Pedidos.Select(p => p.Número).ToArray());
+            Assert.IsTrue(grupos.All(g => g.Cliente == "31367"));
+        }
+
+        [TestMethod]
+        public void SeleccionarGrupos_IVAConEspaciosOMinusculas_MismoGrupo()
+        {
+            CabPedidoVta a = Pedido(100, "CLI-1", "0", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            a.IVA = "G21";
+            CabPedidoVta b = Pedido(200, "CLI-1", "5", Linea(2, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            b.IVA = "g21 ";
+            ConfigurarCabPedidos(a, b);
+
+            Assert.AreEqual(1, estrategia.SeleccionarGrupos("1", CORTE).Count());
+        }
+
+        [TestMethod]
+        public void ElegirDestino_ElPrincipalTieneOtroIVA_NoLeCambiaElContacto()
+        {
+            // NestoAPI#792: el grupo G21 del 31367 no puede salir a nombre del contacto principal (0), que es E52.
+            ConfigurarDbSet(s => A.CallTo(() => db.Clientes).Returns(s), new List<Cliente>
+            {
+                new Cliente { Empresa = "1", Nº_Cliente = "31367", Contacto = "0  ", ClientePrincipal = true, IVA = "E52" },
+                new Cliente { Empresa = "1", Nº_Cliente = "31367", Contacto = "2  ", ClientePrincipal = false, IVA = "G21" }
+            });
+            var grupo = new GrupoPedidosFinDeMes
+            {
+                Empresa = "1",
+                Cliente = "31367",
+                IVA = "G21",
+                Pedidos = new List<CabPedidoVta>
+                {
+                    Pedido(928863, "31367", "2", Linea(3, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE)),
+                    Pedido(928008, "31367", "2", Linea(2, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE))
+                }
+            };
+
+            CabPedidoVta destino = estrategia.ElegirDestino(grupo, CORTE);
+
+            Assert.AreEqual(928008, destino.Número, "el más antiguo");
+            Assert.AreEqual("2", destino.Contacto, "se queda con su contacto, que es el del IVA G21");
+        }
+
+        [TestMethod]
+        public void ElegirDestino_ElPrincipalTieneElMismoIVA_LePoneElContactoPrincipal()
+        {
+            ConfigurarDbSet(s => A.CallTo(() => db.Clientes).Returns(s), new List<Cliente>
+            {
+                new Cliente { Empresa = "1", Nº_Cliente = "31367", Contacto = "0  ", ClientePrincipal = true, IVA = "E52" }
+            });
+            CabPedidoVta e52 = Pedido(500, "31367", "7", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            e52.IVA = "E52";
+            var grupo = new GrupoPedidosFinDeMes { Empresa = "1", Cliente = "31367", IVA = "E52", Pedidos = new List<CabPedidoVta> { e52 } };
+
+            Assert.AreEqual("0", estrategia.ElegirDestino(grupo, CORTE).Contacto);
+        }
+
+        [TestMethod]
         public void Motor_ConFechaTope_SoloMueveLosAlbaranesHastaElCorte()
         {
             var motor = new MotorAgrupacionPedidos(db, A.Fake<IPersistenciaMovimientoLineas>());
@@ -200,7 +273,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
 
         private GrupoPedidosFinDeMes Grupo(params CabPedidoVta[] pedidos)
         {
-            return new GrupoPedidosFinDeMes { Empresa = "1", Cliente = "CLI-1", Pedidos = pedidos.ToList() };
+            return new GrupoPedidosFinDeMes { Empresa = "1", Cliente = "CLI-1", IVA = "G21", Pedidos = pedidos.ToList() };
         }
 
         private void ConfigurarCabPedidos(params CabPedidoVta[] pedidos)
@@ -211,7 +284,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
         private void ConfigurarClientes(params (string cliente, string contacto)[] principales)
         {
             List<Cliente> clientes = principales
-                .Select(p => new Cliente { Empresa = "1", Nº_Cliente = p.cliente, Contacto = p.contacto, ClientePrincipal = true })
+                .Select(p => new Cliente { Empresa = "1", Nº_Cliente = p.cliente, Contacto = p.contacto, ClientePrincipal = true, IVA = "G21" })
                 .ToList();
             ConfigurarDbSet(s => A.CallTo(() => db.Clientes).Returns(s), clientes);
         }

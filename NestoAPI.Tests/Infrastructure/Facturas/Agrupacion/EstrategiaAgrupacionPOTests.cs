@@ -41,6 +41,23 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
         }
 
         [TestMethod]
+        public void SeleccionarGrupos_MismoPOConDistintoIVA_UnGrupoPorCadaIVA()
+        {
+            // NestoAPI#792: el IVA es de cabecera; un P.O. con pedidos E52 y G21 no puede ir en una sola factura.
+            CabPedidoVta e52 = NuevoPedido("1", 100, "CLI-1", "0", "PO-1", Linea(Constantes.EstadosLineaVenta.ALBARAN));
+            e52.IVA = "E52";
+            CabPedidoVta g21 = NuevoPedido("1", 200, "CLI-1", "2", "PO-1", Linea(Constantes.EstadosLineaVenta.ALBARAN));
+            g21.IVA = "G21";
+            ConfigurarCabPedidos(e52, g21);
+
+            List<GrupoPedidosPO> grupos = estrategia.SeleccionarGrupos("1").ToList();
+
+            Assert.AreEqual(2, grupos.Count);
+            Assert.AreEqual(100, grupos.Single(g => g.IVA == "E52").Pedidos.Single().Número);
+            Assert.AreEqual(200, grupos.Single(g => g.IVA == "G21").Pedidos.Single().Número);
+        }
+
+        [TestMethod]
         public void SeleccionarGrupos_AlgunPedidoSinAlbaran_NoIncluyeElGrupo()
         {
             ConfigurarCabPedidos(

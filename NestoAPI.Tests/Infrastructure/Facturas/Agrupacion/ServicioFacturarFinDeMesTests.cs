@@ -40,8 +40,10 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
             ConfigurarDbSet(s => A.CallTo(() => db.Modificaciones).Returns(s), modificaciones);
             ConfigurarDbSet(s => A.CallTo(() => db.Clientes).Returns(s), new List<Cliente>
             {
-                new Cliente { Empresa = "1", Nº_Cliente = "CLI-1", Contacto = "0", ClientePrincipal = true },
-                new Cliente { Empresa = "1", Nº_Cliente = "CLI-2", Contacto = "0", ClientePrincipal = true }
+                new Cliente { Empresa = "1", Nº_Cliente = "CLI-1", Contacto = "0", ClientePrincipal = true, IVA = "G21" },
+                new Cliente { Empresa = "1", Nº_Cliente = "CLI-2", Contacto = "0", ClientePrincipal = true, IVA = "G21" },
+                new Cliente { Empresa = "1", Nº_Cliente = "31367", Contacto = "0  ", ClientePrincipal = true, IVA = "E52" },
+                new Cliente { Empresa = "1", Nº_Cliente = "31367", Contacto = "2  ", ClientePrincipal = false, IVA = "G21" }
             });
 
             facturados = new List<int>();
@@ -185,8 +187,9 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
         }
 
         [TestMethod]
-        public async Task Facturar_PedidoSinIva_SeSaltaElClienteSinTocarNada()
+        public async Task Facturar_PedidoSinIva_SeSaltaSoloElSinIva()
         {
+            // NestoAPI#792: los grupos son por IVA de cabecera; el pedido con IVA del mismo cliente se factura aparte.
             CabPedidoVta conIva = Pedido(100, "CLI-1", "5", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
             CabPedidoVta sinIva = Pedido(200, "CLI-1", "0", Linea(2, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
             sinIva.IVA = null;
@@ -195,10 +198,35 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
 
             ResultadoFacturacionFinDeMes resultado = await servicio.Facturar("1", CORTE, null, null, "usuario");
 
-            CollectionAssert.AreEqual(new[] { 300 }, facturados);
+            CollectionAssert.AreEquivalent(new[] { 100, 300 }, facturados);
             StringAssert.Contains(resultado.Saltados.Single().Motivo, "200");
-            Assert.AreEqual("5", conIva.Contacto, "no se le cambia el contacto a un cliente saltado");
-            Assert.IsFalse(conIva.Agrupada);
+            CollectionAssert.AreEqual(new[] { 200 }, resultado.Saltados.Single().Pedidos.ToArray());
+            Assert.AreEqual("0", conIva.Contacto, "el grupo G21 sale a nombre del principal, que también es G21");
+            Assert.IsFalse(sinIva.Agrupada, "al sin IVA no se le toca");
+            Assert.AreEqual(1, sinIva.LinPedidoVtas.Count);
+        }
+
+        [TestMethod]
+        public async Task Facturar_Cliente31367ConE52YG21_UnaFacturaPorCadaIVA()
+        {
+            // NestoAPI#792 (regresión de NV2617654, 30/10/26): 928006 (contacto 0, E52) y 928008/928863/929055 (contacto 2,
+            // G21) se reunieron en 928006 y salió una factura E52 con 28 líneas G21.
+            CabPedidoVta e52 = Pedido(928006, "31367", "0", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            e52.IVA = "E52";
+            CabPedidoVta g21a = Pedido(928008, "31367", "2", Linea(2, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            CabPedidoVta g21b = Pedido(928863, "31367", "2", Linea(3, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            CabPedidoVta g21c = Pedido(929055, "31367", "2", Linea(4, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            ConfigurarCabPedidos(e52, g21a, g21b, g21c);
+
+            ResultadoFacturacionFinDeMes resultado = await servicio.Facturar("1", CORTE, "31367", null, "usuario");
+
+            CollectionAssert.AreEquivalent(new[] { 928006, 928008 }, facturados, "dos facturas: una E52 y otra G21");
+            Assert.AreEqual(2, resultado.Facturas.Count);
+            Assert.AreEqual(0, resultado.Errores.Count);
+            CollectionAssert.AreEquivalent(new[] { 1 }, e52.LinPedidoVtas.Select(l => l.Nº_Orden).ToArray(), "en el E52 solo lo suyo");
+            CollectionAssert.AreEquivalent(new[] { 2, 3, 4 }, g21a.LinPedidoVtas.Select(l => l.Nº_Orden).ToArray());
+            Assert.AreEqual("0", e52.Contacto);
+            Assert.AreEqual("2", g21a.Contacto, "la G21 no se pone a nombre del principal (E52)");
         }
 
         [TestMethod]

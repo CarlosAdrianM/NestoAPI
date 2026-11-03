@@ -38,11 +38,13 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 .ToList();
 
             return candidatos
+                // NestoAPI#792: el IVA es de cabecera; un P.O. con pedidos de distinto IVA da una factura por cada IVA.
                 .GroupBy(c => new
                 {
                     c.Empresa,
                     Cliente = (c.Nº_Cliente ?? string.Empty).Trim(),
-                    SuPedido = (c.SuPedido ?? string.Empty).Trim()
+                    SuPedido = (c.SuPedido ?? string.Empty).Trim(),
+                    IVA = (c.IVA ?? string.Empty).Trim().ToUpperInvariant()
                 })
                 // El grupo está listo solo si TODOS sus pedidos tienen líneas y todas en albarán.
                 .Where(g => g.All(PedidoListoParaAgrupar))
@@ -51,6 +53,7 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                     Empresa = g.Key.Empresa,
                     Cliente = g.Key.Cliente,
                     SuPedido = g.Key.SuPedido,
+                    IVA = g.Key.IVA,
                     Pedidos = g.OrderBy(p => p.Número).ToList()
                 })
                 .ToList();
@@ -68,7 +71,8 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             }
 
             // NestoAPI#727: la elección es común con el fin de mes (DestinoAgrupacion).
-            string contactoPrincipal = DestinoAgrupacion.ContactoClientePrincipal(db, grupo.Empresa, grupo.Cliente);
+            // NestoAPI#792: el contacto principal solo se le pone al destino si tiene el IVA del grupo.
+            string contactoPrincipal = DestinoAgrupacion.ContactoClientePrincipal(db, grupo.Empresa, grupo.Cliente, grupo.IVA);
             return DestinoAgrupacion.Elegir(grupo.Pedidos, contactoPrincipal);
         }
 

@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
         public string Empresa { get; set; }
         public string Cliente { get; set; }
         public string SuPedido { get; set; }
+        /// <summary>NestoAPI#792: el IVA de cabecera común a los pedidos del grupo (recortado, en mayúsculas; "" sin IVA).</summary>
+        public string IVA { get; set; }
         public IList<CabPedidoVta> Pedidos { get; set; } = new List<CabPedidoVta>();
     }
 }

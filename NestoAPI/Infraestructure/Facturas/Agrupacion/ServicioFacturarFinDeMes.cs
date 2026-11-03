@@ -67,14 +67,15 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 
                     // Sin IVA el pedido se factura en la empresa espejo, previo traspaso; CrearFactura con el db compartido no
                     // traspasa (eso lo hace el gestor de rutas) y además no se pueden mezclar en una factura con los que sí
-                    // llevan IVA. Se salta el cliente antes de tocar nada (ElegirDestino puede cambiar el contacto).
+                    // llevan IVA. Se salta el grupo antes de tocar nada (ElegirDestino puede cambiar el contacto). NestoAPI#792:
+                    // los grupos son por IVA de cabecera, así que los del mismo cliente que sí llevan IVA se facturan aparte.
                     List<int> sinIva = grupo.Pedidos
                         .Where(p => Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo(p.IVA))
                         .Select(p => p.Número)
                         .ToList();
                     if (sinIva.Any())
                     {
-                        Saltar(resultado, grupo, numeros, $"Los pedidos {string.Join(", ", sinIva)} del cliente {grupo.Cliente} no tienen IVA (van a la empresa espejo): el fin de mes de este cliente hay que hacerlo desde Nesto.");
+                        Saltar(resultado, grupo, numeros, $"Los pedidos {string.Join(", ", sinIva)} del cliente {grupo.Cliente} no tienen IVA (van a la empresa espejo): facture estos pedidos desde Nesto.");
                         continue;
                     }
 

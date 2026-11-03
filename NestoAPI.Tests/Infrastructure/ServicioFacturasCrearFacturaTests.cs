@@ -46,6 +46,8 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
+                Nº_Cliente = "15191",
                 Número = 100,
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
                 Agrupada = false,
@@ -72,11 +74,13 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
+                Nº_Cliente = "15191",
                 Número = 200,
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
                 Agrupada = true,
                 IVA = null, // Sin IVA para que falle despues del check FDM
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
 
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
@@ -100,12 +104,13 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
                 Número = 922300,
                 Nº_Cliente = "15191",
                 Contacto = "0",
                 CCC = "3",
                 IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
             ConfigurarFakeCCCs(new List<CCC>()); // la cuenta 3 ya no existe
@@ -125,12 +130,13 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
                 Número = 922301,
                 Nº_Cliente = "15191",
                 Contacto = "0",
                 CCC = "3",
                 IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
             ConfigurarFakeCCCs(new List<CCC>
@@ -163,13 +169,14 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
                 Número = 922303,
                 Nº_Cliente = "40652",
                 Contacto = "2",
                 ContactoCobro = "0",
                 CCC = "1",
                 IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
             ConfigurarFakeCCCs(new List<CCC>
@@ -192,12 +199,13 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
                 Número = 922302,
                 Nº_Cliente = "15191",
                 Contacto = "0",
                 CCC = null, // pedido sin cuenta (p. ej. transferencia)
                 IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
             ConfigurarFakeCCCs(new List<CCC>());
@@ -231,12 +239,14 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "2",
+                Vendedor = "NV",
+                Nº_Cliente = "15191",
                 Número = 400,
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 Agrupada = false,
                 IVA = "G", // con IVA, para pasar la validación de IVA y llegar a la de ruta
                 Ruta = "16 ", // ruta que NO existe en Rutas
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
 
@@ -260,11 +270,13 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
+                Nº_Cliente = "15191",
                 Número = 300,
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 Agrupada = false,
                 IVA = null, // Sin IVA para que falle despues del check FDM
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
 
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
@@ -291,13 +303,15 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
+                Nº_Cliente = "15191",
                 Número = 922687,
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 Agrupada = false,
                 IVA = "G21",
                 CCC = null,  // sin CCC ni ruta para pasar las validaciones previas
                 Ruta = null,
-                LinPedidoVtas = new List<LinPedidoVta> { lineaViva, lineaPendiente, lineaYaFacturada }
+                LinPedidoVtas = new List<LinPedidoVta> { lineaViva, lineaPendiente, lineaYaFacturada, LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
 
@@ -325,11 +339,12 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
                 Número = 922700,
                 Nº_Cliente = "30676",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
 
@@ -368,11 +383,12 @@ namespace NestoAPI.Tests.Infrastructure
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
+                Vendedor = "NV",
                 Número = 922701,
                 Nº_Cliente = "30676",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta>()
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
 
@@ -396,6 +412,172 @@ namespace NestoAPI.Tests.Infrastructure
                 Assert.IsFalse(ex.Message.Contains("censo de la AEAT"),
                     $"Con el flag apagado el NIF incorrecto no debe bloquear: {ex.Message}");
             }
+        }
+        // ----- NestoAPI#794: validar el pedido antes de llamar a prdCrearFacturaVta -----
+
+        private static LinPedidoVta LineaAlbaran()
+        {
+            return new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.ALBARAN, VtoBueno = true, Cantidad = 1, Precio = 10, Bruto = 10 };
+        }
+
+        private void ConfigurarFakeLineas(List<LinPedidoVta> lineas)
+        {
+            var fakeLineas = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
+            A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineas);
+            ConfigurarFakeDbSet(fakeLineas, lineas.AsQueryable());
+        }
+
+        /// <summary>El servicio con el SP y el recálculo sustituidos: apunta si se llama al SP.</summary>
+        private ServicioFacturas ServicioQueApuntaElSP(List<int> llamadasAlSP)
+        {
+            return new ServicioFacturas(db)
+            {
+                ClienteExigeSuPedido = (e, c) => false,
+                RecalculoPreventivoLineas = _ => Task.FromResult(false),
+                ProcedimientoCrearFacturaVta = (e, p, u) =>
+                {
+                    llamadasAlSP.Add(p);
+                    throw new System.InvalidOperationException("SP falso: aquí se para el test");
+                }
+            };
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_PedidoInexistente_400SinLlamarAlSP()
+        {
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta>().AsQueryable());
+            var llamadas = new List<int>();
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929999, "test"));
+
+            Assert.AreEqual("El pedido 929999 no existe en la empresa 1", ex.Message);
+            Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
+            Assert.AreEqual(0, llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_CabeceraVaciaSinClienteNiVendedor_400SinLlamarAlSP()
+        {
+            // Caso de Paloma (03/11/26): la cabecera 929448 sin cliente ni vendedor; el SP reventaba con
+            // «No se puede insertar el valor NULL en la columna 'Vendedor'».
+            var pedido = new CabPedidoVta { Empresa = "1", Número = 929448, IVA = "G21", LinPedidoVtas = new List<LinPedidoVta>() };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            var llamadas = new List<int>();
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929448, "test"));
+
+            Assert.AreEqual("El pedido 929448 no tiene cliente", ex.Message);
+            Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
+            Assert.AreEqual(0, llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_SinVendedor_400SinLlamarAlSP()
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 929448,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                Vendedor = "   ",
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            var llamadas = new List<int>();
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929448, "test"));
+
+            Assert.AreEqual("El pedido 929448 no tiene vendedor", ex.Message);
+            Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
+            Assert.AreEqual(0, llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_SinLineasEnAlbaran_400SinLlamarAlSP()
+        {
+            // Solo en curso y pendiente (el SP solo factura estado 2) y tampoco en la BD.
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 929448,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                Vendedor = "NV",
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true },
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.PENDIENTE, VtoBueno = true }
+                }
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            ConfigurarFakeLineas(new List<LinPedidoVta>(pedido.LinPedidoVtas.Select(l => { l.Empresa = "1"; l.Número = 929448; return l; })));
+            var llamadas = new List<int>();
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929448, "test"));
+
+            Assert.AreEqual("El pedido 929448 no tiene líneas que facturar", ex.Message);
+            Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
+            Assert.AreEqual(0, llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_LineasCargadasAntesDelAlbaran_MiraLaBDYLlamaAlSP()
+        {
+            // Contexto compartido (rutas, copia de pedidos): en memoria la línea sigue en curso, pero prdCrearAlbaránVta
+            // ya la ha pasado a albarán en la BD.
+            var enMemoria = new LinPedidoVta { Empresa = "1", Número = 929500, Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true };
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 929500,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                Vendedor = "NV",
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta> { enMemoria }
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            ConfigurarFakeLineas(new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 929500, Estado = Constantes.EstadosLineaVenta.ALBARAN }
+            });
+            var llamadas = new List<int>();
+
+            _ = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929500, "test"));
+
+            CollectionAssert.AreEqual(new[] { 929500 }, llamadas);
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_PedidoNormal_LlamaAlSP()
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 929501,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                Vendedor = "NV",
+                IVA = "G21",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            var llamadas = new List<int>();
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929501, "test"));
+
+            CollectionAssert.AreEqual(new[] { 929501 }, llamadas, "pasa las validaciones y llama al SP");
+            StringAssert.Contains(ex.Message, "929501");
         }
     }
 }
