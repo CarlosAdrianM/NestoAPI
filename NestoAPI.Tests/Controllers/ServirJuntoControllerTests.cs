@@ -500,10 +500,8 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void ConAvisoSiProcede_SinDatosDelPedido_NoGeneraAviso()
         {
-            // Retrocompat: un cliente antiguo que no pase los 5 campos recibe Aviso=null.
-            // GestorPortes.EsContraReembolso con FormaPago=null devuelve true (no pasa los
-            // filtros de CCC/periodo/formaPago/nota) así que por seguridad aquí NO queremos
-            // generar aviso sin datos. Dejamos la lógica al backend tal cual y documentamos.
+            // NestoAPI#781 (Nesto#595): sin forma de pago ni CCC las condiciones son desconocidas
+            // (antes salía el aviso aunque el cliente pagara por banco): no se afirma reembolso.
             var response = new ValidarServirJuntoResponse
             {
                 PuedeDesmarcar = true,
@@ -517,11 +515,75 @@ namespace NestoAPI.Tests.Controllers
 
             var resultado = ServicioValidarServirJunto.ConAvisoSiProcede(response, request);
 
-            // Documenta el comportamiento actual: sin datos GestorPortes.EsContraReembolso
-            // considera que SÍ (no pasa ninguno de los filtros excluyentes). Se podría
-            // endurecer exigiendo al menos FormaPago no-nulo, pero retrocompat es marginal
-            // ya que los clientes activos pasan siempre los datos. Si en despliegue aparece
-            // ruido se restringe aquí.
+            Assert.IsNull(resultado.Aviso);
+        }
+
+        [TestMethod]
+        public void ConAvisoSiProcede_SinFormaPagoNiCccPeroConPlazos_NoGeneraAviso()
+        {
+            // NestoAPI#781: los plazos solos no bastan para saber cómo se cobra.
+            var response = new ValidarServirJuntoResponse
+            {
+                PuedeDesmarcar = true,
+                ProductosProblematicos = new List<ProductoSinStockDTO>()
+            };
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                FormaPago = "",
+                PlazosPago = "CONTADO",
+                CCC = " ",
+                NotaEntrega = false
+            };
+
+            var resultado = ServicioValidarServirJunto.ConAvisoSiProcede(response, request);
+
+            Assert.IsNull(resultado.Aviso);
+        }
+
+        [TestMethod]
+        public void ConAvisoSiProcede_ReciboBancarioConCcc_NoGeneraAviso()
+        {
+            // NestoAPI#781 (Nesto#595, pedido 929816): RCB al contado con CCC va por banco.
+            var response = new ValidarServirJuntoResponse
+            {
+                PuedeDesmarcar = true,
+                ProductosProblematicos = new List<ProductoSinStockDTO>()
+            };
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                FormaPago = Constantes.FormasPago.RECIBO_BANCARIO,
+                PlazosPago = "CONTADO",
+                CCC = "1",
+                NotaEntrega = false
+            };
+
+            var resultado = ServicioValidarServirJunto.ConAvisoSiProcede(response, request);
+
+            Assert.IsNull(resultado.Aviso);
+        }
+
+        [TestMethod]
+        public void ConAvisoSiProcede_EfectivoSinCcc_GeneraAviso()
+        {
+            // NestoAPI#781: con forma de pago conocida (efectivo) y sin CCC, el aviso sigue saliendo.
+            var response = new ValidarServirJuntoResponse
+            {
+                PuedeDesmarcar = true,
+                ProductosProblematicos = new List<ProductoSinStockDTO>()
+            };
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                FormaPago = Constantes.FormasPago.EFECTIVO,
+                PlazosPago = "CONTADO",
+                CCC = null,
+                NotaEntrega = false
+            };
+
+            var resultado = ServicioValidarServirJunto.ConAvisoSiProcede(response, request);
+
             Assert.AreEqual(Constantes.Portes.AVISO_COMISION_REEMBOLSO_SPLIT, resultado.Aviso);
         }
 
