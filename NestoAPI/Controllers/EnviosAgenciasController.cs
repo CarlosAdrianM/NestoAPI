@@ -945,6 +945,50 @@ namespace NestoAPI.Controllers
                     $"el PUT de {usuarioRetorno} lo grababa sin retorno y el pendiente tenía el {registrado.Retorno}. Se conserva."));
             }
 
+            // NestoAPI#785 (929609 / 250432): al registrar (imprimir) una etiqueta pendiente que se creó con reembolso 0 antes del
+            // picking, se recalcula; contra reembolso, ya facturado y a 0 €, no se imprime (409). Cambiar el reembolso de un pendiente
+            // deja la marca de «cambiado a mano», que el registro respeta.
+            EnvioHistoria historiaReembolso = null;
+            var avisos = new List<string>();
+            if (registrado != null && registrado.Estado < Constantes.Agencias.ESTADO_EN_CURSO && registrado.Pedido.HasValue)
+            {
+                string usuarioReembolso = User?.Identity?.Name ?? "NestoAPI";
+                if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+                {
+                    // Solo si la pantalla no trae otro importe (lo que teclee el usuario manda).
+                    ResultadoReembolsoPendiente decision = registrado.Reembolso == 0m && enviosAgencia.Reembolso == 0m
+                        ? DecidirReembolsoPendienteAlRegistrar(registrado)
+                        : null;
+                    if (decision?.Decision == DecisionReembolsoPendiente.Bloqueado)
+                    {
+                        RegistrarEnElmah(new Exception($"[Reembolso pendiente #785] Envío {id} (pedido {registrado.Pedido}): no se registra. {decision.Aviso}"));
+                        var error = new HttpError(decision.Aviso)
+                        {
+                            ["Codigo"] = ReembolsoEtiquetaPendiente.CODIGO_REEMBOLSO_CERO,
+                            ["Mensaje"] = decision.Aviso
+                        };
+                        return ResponseMessage(new HttpResponseMessage(HttpStatusCode.Conflict)
+                        {
+                            Content = new ObjectContent<HttpError>(error, new System.Net.Http.Formatting.JsonMediaTypeFormatter())
+                        });
+                    }
+                    if (decision?.Decision == DecisionReembolsoPendiente.Recalculado)
+                    {
+                        enviosAgencia.Reembolso = decision.Reembolso;
+                        historiaReembolso = ReembolsoEtiquetaPendiente.FilaRecalculado(id, registrado.Reembolso, usuarioReembolso, DateTime.Now);
+                    }
+                    if (decision != null && decision.Aviso != null)
+                    {
+                        avisos.Add(decision.Aviso);
+                        RegistrarEnElmah(new Exception($"[Reembolso pendiente #785] Envío {id} (pedido {registrado.Pedido}): {decision.Aviso}"));
+                    }
+                }
+                else if (registrado.Reembolso != enviosAgencia.Reembolso)
+                {
+                    historiaReembolso = ReembolsoEtiquetaPendiente.FilaCambioManual(id, registrado.Reembolso, enviosAgencia.Reembolso, usuarioReembolso, DateTime.Now);
+                }
+            }
+
             // NestoAPI#546 (28/09/26, envíos 249165/249181/249182): un pendiente de GLS se guardó con el
             // servicio 48 / horario 0 de CTT. Solo se valida si el envío está pendiente o si el PUT toca
             // agencia/servicio/horario/retorno: los tramitados con datos históricos se pueden seguir tocando.
@@ -961,6 +1005,11 @@ namespace NestoAPI.Controllers
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
             // NestoAPI#778: pasa a reparto propio (o cambia su reembolso) → pagado; vuelve a una agencia de fuera → pendiente.
             NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(enviosAgencia, registrado?.Agencia);
+
+            if (historiaReembolso != null)
+            {
+                _ = db.EnviosHistorias.Add(historiaReembolso);
+            }
 
             try
             {
@@ -1004,7 +1053,35 @@ namespace NestoAPI.Controllers
             // Nesto#340 (Agencias, slice A2): se devuelve la RowVersion refrescada para que el
             // cliente pueda encadenar modificaciones sobre el mismo objeto sin recargar (antes
             // 204 sin cuerpo; 200 con cuerpo es compatible con quien solo mira IsSuccessStatusCode).
-            return Ok(new { enviosAgencia.RowVersion });
+            // NestoAPI#785: el reembolso con el que ha quedado y los avisos (recalculado o respetado), para quien los quiera leer.
+            return Ok(new { enviosAgencia.RowVersion, enviosAgencia.Reembolso, Avisos = avisos });
+        }
+
+        private IDatosReembolsoEtiquetaPendiente datosReembolsoPendiente;
+        /// <summary>NestoAPI#785: lo que lee el registro de una etiqueta pendiente para decidir su reembolso. Sustituible en los tests.</summary>
+        internal IDatosReembolsoEtiquetaPendiente DatosReembolsoPendiente
+        {
+            get => datosReembolsoPendiente ?? (datosReembolsoPendiente = new DatosReembolsoEtiquetaPendienteEF(db, () => ServicioPedidosVenta));
+            set => datosReembolsoPendiente = value;
+        }
+
+        /// <summary>NestoAPI#785: best-effort; si no se puede leer, el PUT sigue como antes (y queda en ELMAH).</summary>
+        private ResultadoReembolsoPendiente DecidirReembolsoPendienteAlRegistrar(EnviosAgencia registrado)
+        {
+            try
+            {
+                string empresa = registrado.Empresa?.Trim();
+                int pedido = registrado.Pedido.Value;
+                decimal calculado = DatosReembolsoPendiente.ReembolsoCalculado(empresa, pedido);
+                bool aMano = DatosReembolsoPendiente.ReembolsoCambiadoAMano(registrado.Numero);
+                decimal facturado = calculado > 0m ? 0m : DatosReembolsoPendiente.FacturadoContraReembolsoSinCobrar(empresa, pedido);
+                return ReembolsoEtiquetaPendiente.Decidir(registrado.Numero, registrado.Reembolso, calculado, aMano, facturado);
+            }
+            catch (Exception ex)
+            {
+                RegistrarEnElmah?.Invoke(new Exception($"[Reembolso pendiente #785] Envío {registrado.Numero}: no se pudo comprobar el reembolso. {ex.Message}", ex));
+                return null;
+            }
         }
 
         /// <summary>

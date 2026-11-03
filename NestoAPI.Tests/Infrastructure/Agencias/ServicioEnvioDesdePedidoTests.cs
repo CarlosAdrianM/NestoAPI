@@ -351,6 +351,67 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => notificador.Notificar(A<EnviosAgencia>._)).MustNotHaveHappened();
         }
 
+        // NestoAPI#785 (929609 / 250432): la propuesta ha recalculado el reembolso del pendiente (creado a 0 antes del picking).
+        [TestMethod]
+        public async Task Pendiente_ReembolsoRecalculado_SeGrabaConSuFilaEnLaHistoriaYAviso()
+        {
+            EnviosAgencia pendiente = EnvioExistente(250432, Constantes.Agencias.ESTADO_PENDIENTE, GLS, PEDIDO);
+            pendiente.Reembolso = 0m;
+            propuesta.Origen = PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO;
+            propuesta.EnvioOrigen = 250432;
+            propuesta.Reembolso = 134.16m;
+            propuesta.ReembolsoPendienteRecalculado = true;
+            propuesta.AvisoReembolsoPendiente = "La etiqueta pendiente 250432 se creó con reembolso 0,00 €: se ha recalculado a 134,16 €.";
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(134.16m, pendiente.Reembolso);
+            EnvioHistoria fila = datos.Historias.Single();
+            Assert.AreEqual(250432, fila.NumeroEnvio);
+            Assert.AreEqual("Reembolso", fila.Campo);
+            Assert.AreEqual("0.00", fila.ValorAnterior);
+            Assert.AreEqual(ReembolsoEtiquetaPendiente.OBSERVACIONES_RECALCULADO, fila.Observaciones);
+            CollectionAssert.Contains(resultado.Envio.Avisos, propuesta.AvisoReembolsoPendiente);
+            Assert.IsTrue(registrados.Any(e => e.Message.Contains("#785")));
+        }
+
+        [TestMethod]
+        public async Task Pendiente_SinRecalcular_ElReembolsoNoCambiaNiHayHistoria()
+        {
+            EnviosAgencia pendiente = EnvioExistente(250433, Constantes.Agencias.ESTADO_PENDIENTE, GLS, PEDIDO);
+            pendiente.Reembolso = 0m;
+            propuesta.Origen = PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO;
+            propuesta.EnvioOrigen = 250433;
+            propuesta.Reembolso = 0m;
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(0m, pendiente.Reembolso);
+            Assert.AreEqual(0, datos.Historias.Count);
+        }
+
+        [TestMethod]
+        public async Task Pendiente_ContraReembolsoACeroYFacturado_EsBloqueanteYNoSeGraba()
+        {
+            EnviosAgencia pendiente = EnvioExistente(250434, Constantes.Agencias.ESTADO_PENDIENTE, GLS, PEDIDO);
+            pendiente.Reembolso = 0m;
+            propuesta.Origen = PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO;
+            propuesta.EnvioOrigen = 250434;
+            propuesta.Reembolso = 0m;
+            ConAviso(CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO, TiposAvisoPropuestaEnvio.BLOQUEANTE,
+                ReembolsoEtiquetaPendiente.MensajeBloqueo(250434, 134.16m));
+
+            // Aunque quien llama lo «confirme», no se da por resuelto.
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion(CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO));
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Conflicto, resultado.Tipo);
+            Assert.AreEqual(CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO, resultado.Conflicto.Pendientes.Single().Codigo);
+            Assert.AreEqual((short)Constantes.Agencias.ESTADO_PENDIENTE, pendiente.Estado);
+            Assert.AreEqual(0, datos.Guardados);
+        }
+
         // ---------------------------------------------------------------- ampliación
 
         private EnviosAgencia PrepararAmpliacion(int agencia, int pedidoDelEnvio, short bultosDelEnvio)

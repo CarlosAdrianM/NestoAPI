@@ -433,5 +433,128 @@ namespace NestoAPI.Tests.Controllers
                 "En curso: no es un pendiente");
             Assert.IsFalse(EnviosAgenciasController.QuitaElRetornoDelPendienteSinPedirlo(null, Envio(retorno: 0), false));
         }
+
+        // ---- NestoAPI#785 (929609 / 250432): la etiqueta pendiente creada a 0 antes del picking ----
+
+        private IDatosReembolsoEtiquetaPendiente datosReembolso;
+        private readonly List<Exception> elmah785 = new List<Exception>();
+
+        /// <summary>El pendiente de GLS a 0 (Andre, 30/10) y el PUT de Agencias de Nesto que lo registra (InsertarRegistro).</summary>
+        private EnviosAgencia RegistrarPendienteACero(decimal calculado, bool aMano = false, decimal facturado = 0m, decimal reembolsoPendiente = 0m)
+        {
+            _ = Registrado(agencia: Constantes.Agencias.AGENCIA_GLS, codigoBarras: null, estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: reembolsoPendiente);
+            datosReembolso = A.Fake<IDatosReembolsoEtiquetaPendiente>();
+            A.CallTo(() => datosReembolso.ReembolsoCalculado("1", 929000)).Returns(calculado);
+            A.CallTo(() => datosReembolso.ReembolsoCambiadoAMano(249990)).Returns(aMano);
+            A.CallTo(() => datosReembolso.FacturadoContraReembolsoSinCobrar("1", 929000)).Returns(facturado);
+            controller.DatosReembolsoPendiente = datosReembolso;
+            controller.RegistrarEnElmah = ex => elmah785.Add(ex);
+            return Envio(agencia: Constantes.Agencias.AGENCIA_GLS, codigoBarras: "61197140249990",
+                estado: (short)Constantes.Agencias.ESTADO_EN_CURSO, reembolso: reembolsoPendiente);
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_ACeroYYaConPicking_AlRegistrarSeRecalculaConHistoriaYAviso()
+        {
+            EnviosAgencia enviado = RegistrarPendienteACero(calculado: 134.16m);
+
+            HttpResponseMessage respuesta = await Respuesta(await controller.PutEnviosAgencia(249990, enviado));
+
+            Assert.AreEqual(HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual(134.16m, enviado.Reembolso);
+            EnvioHistoria fila = historia.Single();
+            Assert.AreEqual(249990, fila.NumeroEnvio);
+            Assert.AreEqual("Reembolso", fila.Campo);
+            Assert.AreEqual("0.00", fila.ValorAnterior);
+            Assert.AreEqual(ReembolsoEtiquetaPendiente.OBSERVACIONES_RECALCULADO, fila.Observaciones);
+            Assert.AreEqual("NUEVAVISION\\Alfredo", fila.Usuario);
+            JObject cuerpo = JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(134.16m, (decimal)cuerpo["Reembolso"]);
+            StringAssert.Contains(cuerpo["Avisos"][0].ToString(), "134,16");
+            Assert.IsTrue(elmah785.Any(e => e.Message.Contains("#785")));
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_CambiadoAMano_SeRespetaYSoloAvisa()
+        {
+            EnviosAgencia enviado = RegistrarPendienteACero(calculado: 134.16m, aMano: true);
+
+            HttpResponseMessage respuesta = await Respuesta(await controller.PutEnviosAgencia(249990, enviado));
+
+            Assert.AreEqual(HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual(0m, enviado.Reembolso);
+            Assert.AreEqual(0, historia.Count);
+            StringAssert.Contains(JObject.Parse(await respuesta.Content.ReadAsStringAsync())["Avisos"][0].ToString(), "cambió a mano");
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_NoContraReembolso_SigueACeroSinAviso()
+        {
+            EnviosAgencia enviado = RegistrarPendienteACero(calculado: 0m, facturado: 0m);
+
+            HttpResponseMessage respuesta = await Respuesta(await controller.PutEnviosAgencia(249990, enviado));
+
+            Assert.AreEqual(HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual(0m, enviado.Reembolso);
+            Assert.AreEqual(0, historia.Count);
+            Assert.AreEqual(0, JObject.Parse(await respuesta.Content.ReadAsStringAsync())["Avisos"].Count());
+            Assert.IsFalse(elmah785.Any(e => e.Message.Contains("#785")));
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_ConImporte_NoSeToca()
+        {
+            EnviosAgencia enviado = RegistrarPendienteACero(calculado: 134.16m, reembolsoPendiente: 80m);
+
+            HttpResponseMessage respuesta = await Respuesta(await controller.PutEnviosAgencia(249990, enviado));
+
+            Assert.AreEqual(HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual(80m, enviado.Reembolso);
+            Assert.AreEqual(0, historia.Count);
+            A.CallTo(datosReembolso).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_LaPantallaTraeImporte_MandaElDeLaPantalla()
+        {
+            EnviosAgencia enviado = RegistrarPendienteACero(calculado: 134.16m);
+            enviado.Reembolso = 120m;
+
+            _ = await controller.PutEnviosAgencia(249990, enviado);
+
+            Assert.AreEqual(120m, enviado.Reembolso);
+            A.CallTo(datosReembolso).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_ContraReembolsoYaFacturadoACero_409YNoGuarda()
+        {
+            // La etiqueta se registra cuando el pedido ya está facturado (929609: factura 13:21, etiqueta 13:57).
+            EnviosAgencia enviado = RegistrarPendienteACero(calculado: 0m, facturado: 134.16m);
+
+            HttpResponseMessage respuesta = await Respuesta(await controller.PutEnviosAgencia(249990, enviado));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
+            JObject error = JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(ReembolsoEtiquetaPendiente.CODIGO_REEMBOLSO_CERO, (string)error["Codigo"]);
+            StringAssert.StartsWith((string)error["Message"], "El pedido es contra reembolso y la etiqueta lleva 0 €");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            Assert.AreEqual(0, controller.Marcados.Count);
+        }
+
+        [TestMethod]
+        public async Task Pendiente785_CambiarElReembolsoDelPendiente_DejaLaMarcaDeCambioManual()
+        {
+            _ = Registrado(agencia: Constantes.Agencias.AGENCIA_GLS, codigoBarras: null, estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 134.16m);
+            EnviosAgencia enviado = Envio(agencia: Constantes.Agencias.AGENCIA_GLS, codigoBarras: null,
+                estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 0m);
+
+            _ = await controller.PutEnviosAgencia(249990, enviado);
+
+            EnvioHistoria fila = historia.Single();
+            Assert.AreEqual("134.16", fila.ValorAnterior);
+            StringAssert.StartsWith(fila.Observaciones, ReembolsoEtiquetaPendiente.OBSERVACIONES_CAMBIO_MANUAL);
+            Assert.IsTrue(ReembolsoEtiquetaPendiente.HayCambioManual(historia));
+        }
     }
 }
