@@ -60,6 +60,12 @@ Implementar 971 @{
     Descripcion = "Si en «Entregar» lee un bulto R de la reposición que se recoge en esa misma tienda (o una NR del cliente de la parada), Ariadna le pregunta «¿Recogerlo ahora?» e Intro lo sube a la furgoneta sin salir de la parada, igual que desde «En la furgoneta». Lo avisó Miguel."
 }
 
+Implementar 961 @{
+    Version = $VersionNesto; Categoria = "Corregido"; Perfiles = "Vendedores,Tiendas,Dirección"
+    Titulo = "Eventos: ya no sale un texto raro bajo cada inscripción plegada"
+    Descripcion = "En la lista de inscritos de un evento, bajo cada tarjeta plegada salía el nombre interno del dato («Modulos.Cliente.Models…»). Ya no."
+}
+
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 911 -Texto "@Sancho, ya está en Nesto ${VersionNesto}: en «Clientes para contactar», los que no han tenido ningún contacto desde el día 1 (llamada, visita o rapport de cualquier compañero) salen con un punto naranja y «Sin contacto este mes». Pruébelo y díganos aquí si es lo que necesitaba." | Out-Null
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 962 -Texto "@Manuel, en Nesto ${VersionNesto} el aviso de comisión por reembolso al desmarcar «servir junto» ya no sale cuando el cliente paga por banco: la plantilla mira las condiciones de pago que se aplican de verdad al pedido. Lo del modo de servicio (por qué se queda en «Todo junto» cuando un producto sale desmontando un kit) lo tenemos apuntado para explicarlo en la propia pantalla en una versión próxima." | Out-Null
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 960 -Texto "@Carlos, desde Ariadna ${VersionAriadna} (llega sola por Play Store), al teclear en Salidas el número de una reposición que ya salió e Intro, Ariadna ofrece «Reimprimir etiquetas de bulto»." | Out-Null

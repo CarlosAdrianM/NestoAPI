@@ -5,9 +5,10 @@
     contabilizar desde Nesto, épica NestoAPI#784), #598 (código interno al imprimir, NestoAPI#791);
     NestoAPI #777 (festivos autonómicos), #780 (picking automático no sale en festivo), #776 (códigos de barras no válidos
     limpiados), #792 (fin de mes: una factura por tipo de IVA), #785 (reembolso de la etiqueta pendiente), #796 (orden del
-    bloque de cheques), #718 (IVA Global), #783 (recordatorios de respuesta), #797/Nesto#605 (muestras MMP sin código), Nesto#603 (409 y avisos de la etiqueta pendiente), Nesto#604 (casilla de eventos), Nesto#599 (detalle del modo de servicio), #782 (sync Odoo no graba códigos no válidos) y el agradecimiento a Miguel y Andre (key users).
+    bloque de cheques), #718 (IVA Global), #783 (recordatorios de respuesta), #797/Nesto#605 (muestras MMP sin código), Nesto#603 (409 y avisos de la etiqueta pendiente), Nesto#604 (casilla de eventos), Nesto#599 (detalle del modo de servicio), #799/Nesto#606 (día de reparto por cliente), picking por cliente explicado, #782 (sync Odoo no graba códigos no válidos) y el agradecimiento a Miguel y Andre (key users).
 
     ORDEN:
+      0) Scripts sa de ÚLTIMA HORA: Issue784_prdContabilizarInventario_PorAlmacen.sql (REVISADO: relanzar, parámetro @AlmacenAContabilizar) e Issue799_ClientesDiaReparto.sql ANTES de publicar la API.
       1) Scripts sa YA LANZADOS 03/11: Issue784_prdContabilizarInventario_PorAlmacen, Issue784_Inventarios_PorCodigoBarras,
          Issue784_InventariosFilasSueltas, Issue776_GrantDelete, Issue778, OneShots del 03/11.
       2) Scripts/Issue783_EsperandoRespuestaDe.sql (sa) ANTES de publicar NestoAPI 1dff4f39; después, reencolar en /hangfire los
@@ -70,6 +71,12 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Plantilla: por qué el pedido sale «Todo junto», producto a producto',
      N'La línea gris bajo «Servir» que explica el modo de servicio propuesto lleva ahora un tooltip con el detalle por producto: cuál sale desmontando un kit (y cuál), cuál llega con la reposición de una tienda y cuándo puede salir, cuál espera al proveedor y con qué fecha. Así se ve que no es un fallo cuando no se puede elegir «Ahora lo que tenemos». Gracias, Manuel.',
      N'Vendedores,Tiendas'),
+    ('Nuevo', N'Ficha del cliente: «Día de reparto propio» para las excepciones al código postal',
+     N'Hay clientes que, aunque su código postal sea de un día de nuestra ruta, se sirven otro día (el cliente solo abre los miércoles, por ejemplo). En la ficha del cliente, en cada dirección de entrega, Dirección, Almacén y Administración pueden poner «Día de reparto propio» con el motivo; al guardarlo se recalcula la fecha de entrega de sus pedidos pendientes y Nesto dice cuántos han cambiado. Sin excepción, el día sigue saliendo del código postal. Gracias, Alfredo.',
+     N'Almacén,Administración,Dirección,Vendedores'),
+    ('Mejorado', N'Picking de un cliente: dice por qué no sale cada pedido',
+     N'Al sacar el picking de un cliente y no salir nada, Nesto ya no dice solo «no hay stock»: explica cada pedido como en el picking de un pedido suelto («está en Tras reponer de tiendas y espera el 44553 de Alcobendas», «está en Todo junto y falta…», «es de prepago…»).',
+     N'Almacén,Vendedores,Tiendas,Administración'),
     ('Mejorado', N'Novedades: los recordatorios van a quien se le hizo la pregunta',
      N'Cuando una novedad queda «esperando respuesta», el recordatorio del día siguiente le llega a la persona a la que se le preguntó, no a quien la creó.',
      NULL);
