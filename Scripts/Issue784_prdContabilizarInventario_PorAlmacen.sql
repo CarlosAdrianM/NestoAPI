@@ -7,12 +7,13 @@
 --
 -- Cambios (misma firma: Ariadna vieja y los scripts de siempre siguen valiendo):
 --   1. Al principio, antes de tocar nada (RAISERROR y return -1):
---        - @Delegación no es un almacén de la empresa;
---        - el usuario no tiene filas pendientes (estado 1, NºTraspaso NULL) en @Delegación;
+--        - el usuario no tiene filas pendientes (estado 1, NºTraspaso NULL) en el almacén;
 --        - el usuario tiene filas pendientes en OTRO almacén: «El usuario X tiene 25 filas pendientes en REI, 64 filas
 --          pendientes en ALC: contabilice cada almacén por separado...».
---   2. @Almacen = @Delegación (antes: el de la primera fila pendiente del usuario).
---   3. Filtran además por almacén = @Delegación: la comprobación de filas sin pasillo, el INSERT en #Ubicacion, el DELETE de
+--   2. @Almacen = @Delegación si es un almacén de la empresa (la API); si no (Nesto viejo pasa la delegación del extracto, 'VAR'),
+--      el único almacén con filas pendientes del usuario (REVISIÓN 03/11/26 16:10: la primera versión exigía que @Delegación fuese
+--      un almacén y a Santiago le saltó «El almacén VAR no existe en la empresa 1» desde Nesto viejo).
+--   3. Filtran además por almacén = @Almacen: la comprobación de filas sin pasillo, el INSERT en #Ubicacion, el DELETE de
 --      Ubicaciones del 29/11/22 (que además ahora cruza el almacén de la ubicación con el de la fila), el INSERT en
 --      PreExtrProducto y el UPDATE final de Inventarios.
 --   4. @Delegación sigue yendo al extracto como hasta ahora.
@@ -36,15 +37,15 @@ ALTER PROCEDURE [dbo].[prdContabilizarInventario] @Empresa as char(3), @Usuario 
  *																		*
  * Entrada:	@Empresa	-> Empresa en la que se van a regularizar las existencias								*
  * 		@Usuario	-> Usuario del que se van a contabilizar sus movimientos.								*
- * 		@Delegación	-> Almacén que se contabiliza (y delegación del extracto). Solo se tocan las filas de ese almacén.			*
+ * 		@Delegación	-> Delegación del extracto; si es un almacén, también el almacén que se contabiliza (ver abajo).				*
  *																		*
  * Carlos 03/11/26 (NestoAPI#787, épica #784): hasta ahora se contabilizaban TODAS las filas pendientes (estado 1) del usuario, fuesen del almacén	*
  * que fuesen: @Delegación solo iba al extracto y @Almacen se sacaba de la primera fila. El 22/11/25 el traspaso 77263, lanzado para			*
  * NUEVAVISION\RDS2016$ al contabilizar el inventario, se llevó a la vez 64 filas de ALC y 25 de REI que estaban con StockReal 0 por el INSERT	*
  * inicial de las tiendas, y dejó su stock a cero. Desde ahora:												*
- *   - @Delegación tiene que ser un almacén de la empresa y el usuario tiene que tener filas pendientes en él.					*
+ *   - @Almacen es @Delegación si es un almacén (la API); si no (Nesto viejo: 'VAR'), el único almacén con filas pendientes del usuario.	*
  *   - Si el usuario tiene filas pendientes en OTRO almacén, no se contabiliza nada: hay que contabilizar cada almacén por separado.		*
- *   - Todas las sentencias filtran además por almacén = @Delegación, y @Almacen es @Delegación.						*
+ *   - Todas las sentencias filtran además por almacén = @Almacen. @Delegación sigue yendo al extracto.						*
  ************************************************************************************************************************************************************************************/
 -- Declaración de variables
 declare @Exito as bit
@@ -55,33 +56,31 @@ set @ProductoUbicacion='12375'
 -- Inicialización de variables
 set @Exito = 1 --> Sin errores
 declare @Almacen as char(3)
--- Carlos 03/11/26 (NestoAPI#787): el almacén es @Delegación; antes se deducía de la primera fila pendiente del usuario
---set @Almacen=(select top 1 almacen from inventarios where empresa = @Empresa and usuario = @Usuario and estado = 1 and stockcalculado<>stockreal and nºtraspaso is null)
-set @Almacen = @Delegación
-
--- Carlos 03/11/26 (NestoAPI#787): comprobaciones antes de tocar nada
 declare @Mensaje as varchar(2000)
 declare @OtrosAlmacenes as varchar(1000)
--- 1. @Delegación tiene que ser un almacén de la empresa
-if not exists (select * from almacenes where empresa = @Empresa and número = @Delegación) begin
-	set @Mensaje = 'El almacén ' + isnull(rtrim(@Delegación), '(nulo)') + ' no existe en la empresa ' + isnull(rtrim(@Empresa), '(nula)')
+-- Carlos 03/11/26 (NestoAPI#787): el almacén que se contabiliza (antes se deducía de la primera fila pendiente del usuario, sin más).
+--   * Si @Delegación es un almacén de la empresa (así lo llama la API desde #790): ese.
+--   * Si no (Nesto viejo pasa la delegación del extracto, 'VAR', que no es un almacén; 03/11/26 16:10, inventario de Santiago):
+--     el ÚNICO almacén en el que el usuario tiene filas pendientes. Si tiene en varios, no se contabiliza nada (lo del 22/11/25).
+if exists (select * from almacenes where empresa = @Empresa and número = @Delegación)
+	set @Almacen = @Delegación
+else
+	set @Almacen = (select top 1 almacén from inventarios where empresa = @Empresa and usuario = @Usuario and estado = 1 and nºtraspaso is null order by almacén)
+
+-- 1. el usuario tiene que tener filas pendientes en ese almacén
+if @Almacen is null or not exists (select * from inventarios where empresa = @Empresa and usuario = @Usuario and almacén = @Almacen and estado = 1 and nºtraspaso is null) begin
+	set @Mensaje = 'El usuario ' + isnull(@Usuario, '(nulo)') + ' no tiene filas pendientes de contabilizar' + isnull(' en ' + rtrim(@Almacen), '')
 	raiserror('%s',11,1,@Mensaje)
 	return -1
 end
--- 2. el usuario tiene que tener filas pendientes en ese almacén
-if not exists (select * from inventarios where empresa = @Empresa and usuario = @Usuario and almacén = @Delegación and estado = 1 and nºtraspaso is null) begin
-	set @Mensaje = 'El usuario ' + isnull(@Usuario, '(nulo)') + ' no tiene filas pendientes de contabilizar en ' + rtrim(@Delegación)
-	raiserror('%s',11,1,@Mensaje)
-	return -1
-end
--- 3. si tiene filas pendientes en OTRO almacén no se contabiliza nada (lo del 22/11/25)
+-- 2. si tiene filas pendientes en OTRO almacén no se contabiliza nada (lo del 22/11/25)
 select @OtrosAlmacenes = isnull(@OtrosAlmacenes + ', ', '') + convert(varchar(10), count(*)) + ' filas pendientes en ' + rtrim(almacén)
 	from inventarios
-	where empresa = @Empresa and usuario = @Usuario and almacén <> @Delegación and estado = 1 and nºtraspaso is null
+	where empresa = @Empresa and usuario = @Usuario and almacén <> @Almacen and estado = 1 and nºtraspaso is null
 	group by almacén
 	order by almacén
 if @OtrosAlmacenes is not null begin
-	set @Mensaje = 'El usuario ' + @Usuario + ' tiene ' + @OtrosAlmacenes + ': contabilice cada almacén por separado. No se ha contabilizado nada de ' + rtrim(@Delegación)
+	set @Mensaje = 'El usuario ' + @Usuario + ' tiene ' + @OtrosAlmacenes + ' además de las de ' + rtrim(@Almacen) + ': contabilice cada almacén por separado. No se ha contabilizado nada'
 	raiserror('%s',11,1,@Mensaje)
 	return -1
 end
@@ -100,7 +99,7 @@ if @controlubicaciones!=0 begin
 	-- los que el pasillo sea nulo
 	if exists (
 		select * from  inventarios as i inner join productos as p  on p.empresa=i.empresa and p.numero=i.numero
-			where i.empresa =@empresa and i.usuario =@usuario and i.almacén = @Delegación and i.estado = 1  and i.pasillo is null and p.ubicar=1 -- Carlos 03/11/26: solo @Delegación
+			where i.empresa =@empresa and i.usuario =@usuario and i.almacén = @Almacen and i.estado = 1  and i.pasillo is null and p.ubicar=1 -- Carlos 03/11/26: solo @Almacen
 		) begin
 			raiserror('Hay movimientos sin pasillo. Contabilice primero los inventarios sin control de ubicaciones',11,1)
 			return -1
@@ -128,7 +127,7 @@ if @controlubicaciones!=0 begin
 				on i.empresa=a.empresa and i.almacen=a.número 
 				inner join productos as p
 				on i.empresa=p.empresa and i.numero=p.numero
-				where p.ubicar=1 and i.empresa = @Empresa and i.usuario = @Usuario and i.almacén = @Delegación and i.estado = 1 and i.stockcalculado<>stockreal and i.nºtraspaso is null -- Carlos 03/11/26: solo @Delegación
+				where p.ubicar=1 and i.empresa = @Empresa and i.usuario = @Usuario and i.almacén = @Almacen and i.estado = 1 and i.stockcalculado<>stockreal and i.nºtraspaso is null -- Carlos 03/11/26: solo @Almacen
 				group by a.número,i.número,i.pasillo,i.fila,i.columna
 	if @@error != 0 begin
 		raiserror('No se han podido insertar los productos en la tabla ubicaciones',11,1)
@@ -191,11 +190,11 @@ if @controlubicaciones!=0 begin
 		from inventarios i
 		where empresa = @Empresa and usuario = @Usuario and estado = 1 and stockreal = 0 and nºtraspaso is null
 		and i.Número = u.Número and i.Pasillo = u.Pasillo and i.Fila = u.Fila and i.Columna = u.Columna
-		and i.Almacén = @Delegación and u.Almacén = i.Almacén -- Carlos 03/11/26: solo @Delegación (antes tampoco se cruzaba el almacén de la ubicación)
+		and i.Almacén = @Almacen and u.Almacén = i.Almacén -- Carlos 03/11/26: solo @Almacen (antes tampoco se cruzaba el almacén de la ubicación)
 	)
 end 
 -- Metemos las líneas en PreExtrProducto
-insert into preextrproducto (Empresa, Diario, Número, Fecha, Texto, Almacén, Grupo, Cantidad, [Asiento Automático], Delegación, [Forma Venta], NºTraspaso,pasillo,fila,columna) select @Empresa, '_RegInvent', Número, Fecha, 'Regularización Inventario', Almacén, Grupo, StockReal - StockCalculado, 1, @Delegación, @FormaVenta, @NumTraspaso,pasillo,fila,columna from inventarios where empresa = @Empresa and usuario = @Usuario and almacén = @Delegación and estado = 1 and stockcalculado<>stockreal and nºtraspaso is null -- Carlos 03/11/26: solo @Delegación
+insert into preextrproducto (Empresa, Diario, Número, Fecha, Texto, Almacén, Grupo, Cantidad, [Asiento Automático], Delegación, [Forma Venta], NºTraspaso,pasillo,fila,columna) select @Empresa, '_RegInvent', Número, Fecha, 'Regularización Inventario', Almacén, Grupo, StockReal - StockCalculado, 1, @Delegación, @FormaVenta, @NumTraspaso,pasillo,fila,columna from inventarios where empresa = @Empresa and usuario = @Usuario and almacén = @Almacen and estado = 1 and stockcalculado<>stockreal and nºtraspaso is null -- Carlos 03/11/26: solo @Almacen
 if @@error != 0 begin
 	raiserror ('No se han podido contabilizar las líneas', 11, 1)
 	set @Exito = 0
@@ -226,7 +225,7 @@ update inventarios set
 	Estado = 2,
 	NºTraspaso = @NumTraspaso,
 	Valor = (select isnull(PrecioMedio,0) from productos where Productos.empresa = @Empresa and Productos.Número = Inventarios.Número) 
-where empresa = @Empresa and usuario = @Usuario and almacén = @Delegación and estado = 1 and nºtraspaso is null -- Carlos 03/11/26: solo @Delegación
+where empresa = @Empresa and usuario = @Usuario and almacén = @Almacen and estado = 1 and nºtraspaso is null -- Carlos 03/11/26: solo @Almacen
 if @@error != 0 begin
 	raiserror ('No se han podido actualizar los estados de las líneas', 11, 1)
 	set @Exito = 0
