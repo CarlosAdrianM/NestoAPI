@@ -30,7 +30,12 @@ namespace NestoAPI.Infraestructure.Agencias
         {
             using (NVEntities db = new NVEntities())
             {
-                return db.EnviosAgencias.AsNoTracking().FirstOrDefault(e => e.Numero == numero);
+                // 03/11/26: el correo «Pedido entregado a la agencia» en segundo plano (CorreoEntregaAgenciaJobs, #595) leía
+                // un proxy con carga perezosa y EnvioAgenciaDTO tocaba AgenciasTransporte con el contexto ya cerrado
+                // («The ObjectContext instance has been disposed», 6 correos sin mandar). Sin proxy y con la agencia cargada.
+                db.Configuration.ProxyCreationEnabled = false;
+                db.Configuration.LazyLoadingEnabled = false;
+                return db.EnviosAgencias.AsNoTracking().Include(e => e.AgenciasTransporte).FirstOrDefault(e => e.Numero == numero);
             }
         };
 
