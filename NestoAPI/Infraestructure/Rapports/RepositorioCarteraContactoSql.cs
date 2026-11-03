@@ -122,24 +122,6 @@ namespace NestoAPI.Infraestructure.Rapports
             WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + ESTADOS_EXCLUIDOS_SQL + @");
             CREATE CLUSTERED INDEX IX_Cartera ON #Cartera (Cliente, Contacto);
 
-            -- NestoAPI#620: los OTROS vendedores que llevan hoy al cliente (el de la ficha o el de un grupo, sin el general):
-            -- sus rapports no cuentan como contacto de este vendedor (cada uno, su cadencia). Los de cualquier otro (sin
-            -- vendedor, el general, o alguien que ya no lo lleva) sí cuentan, como antes.
-            SELECT DISTINCT o.Cliente, o.Contacto, o.Vendedor
-            INTO #OtrosVendedores
-            FROM (
-                SELECT c.[Nº Cliente] Cliente, c.Contacto, c.Vendedor
-                FROM Clientes c WITH (NOLOCK)
-                INNER JOIN #Cartera x ON x.Cliente = c.[Nº Cliente] AND x.Contacto = c.Contacto
-                WHERE c.Empresa = '1'
-                UNION ALL
-                SELECT v.Cliente, v.Contacto, v.Vendedor
-                FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)
-                INNER JOIN #Cartera x ON x.Cliente = v.Cliente AND x.Contacto = v.Contacto
-                WHERE v.Empresa = '1'
-            ) o
-            WHERE o.Vendedor IS NOT NULL AND o.Vendedor <> @Vendedor AND o.Vendedor <> '" + Constantes.Vendedores.VENDEDOR_GENERAL + @"';
-
             -- Compras facturadas: un pedido = un Número de pedido con alguna línea facturada, con la fecha del pedido
             -- (CabPedidoVta.Fecha), como #EnCurso. Antes era un día distinto con albarán (no la fecha de factura, que en
             -- los FDM agrupa todo el mes en un día), pero un pedido servido en dos entregas contaba dos veces y el
@@ -180,6 +162,12 @@ namespace NestoAPI.Infraestructure.Rapports
                 AND cab.Fecha >= @Hace60Dias
             GROUP BY l.[Nº Cliente], l.Contacto;
 
+            -- NestoAPI#796 (Carlos, 03/11/26, como Nesto#587): el último contacto (Estado 0) y el último «no contestó»
+            -- (Estado 1) cuentan los rapports T/V/W de CUALQUIER usuario o vendedor. Desde NestoAPI#620 se quitaban los del
+            -- otro vendedor que lleva al cliente (#OtrosVendedores), para que cada vendedor siguiera su propia cadencia con
+            -- el mismo cliente; pero así salía como «sin contacto» un cliente que otro compañero acababa de visitar (el 30998,
+            -- visitado por Israel el 23/10, le salió a Alberto el 03/11). Ahora, si alguien ha hablado con él, cuenta para
+            -- todos: excluye por cadencia y sale en el motivo.
             SELECT s.Número Cliente, s.Contacto,
                 MAX(CASE WHEN s.Estado = 0 THEN s.Fecha END) UltimoContacto,
                 MAX(CASE WHEN s.Estado = 1 THEN s.Fecha END) UltimoIntento
@@ -187,8 +175,6 @@ namespace NestoAPI.Infraestructure.Rapports
             FROM SeguimientoCliente s WITH (NOLOCK)
             INNER JOIN #Cartera x ON x.Cliente = s.Número AND x.Contacto = s.Contacto
             WHERE s.Fecha >= @Hace24Meses AND s.Estado IN (0, 1) AND s.Tipo IN ('T', 'V', 'W')
-                AND NOT EXISTS (SELECT 1 FROM #OtrosVendedores o
-                    WHERE o.Cliente = s.Número AND o.Contacto = s.Contacto AND o.Vendedor = s.Vendedor)
             GROUP BY s.Número, s.Contacto;
 
             -- Nesto#587: ¿ha hablado ALGUIEN con el cliente este mes? Cualquier usuario y tipo; Estado 0 (se habló) o -1

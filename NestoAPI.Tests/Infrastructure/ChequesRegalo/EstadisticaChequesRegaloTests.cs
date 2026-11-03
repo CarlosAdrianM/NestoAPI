@@ -331,6 +331,65 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         }
 
         [TestMethod]
+        public void Impulso_DentroDelBloque_PrimeroLosQueMasDiasLlevanSinContacto_YAIgualdadPorProbabilidad()
+        {
+            // NestoAPI#796 (Carlos, 03/11/26): nadie del cheque se queda fuera; cambia el orden. Ninguno excluido: los
+            // contactos son de antes del 29/10, inicio del impulso.
+            var cartera = new List<ClienteCarteraContacto>
+            {
+                Cartera("3001", "0", 2, 5, 0.9f),       // hace 5 días, la probabilidad más alta
+                Cartera("3002", "0", 2, 10, 0.2f),      // hace 10 días
+                Cartera("3003", "0", 2, null, 0.1f),    // nunca contactado
+                Cartera("3004", "0", 2, 10, 0.6f),      // hace 10 días, más probable que 3002
+                Cartera("3005", "0", 2, null, 0.3f)     // nunca contactado, más probable que 3003
+            };
+            List<SugerenciaContactoDTO> motor = new MotorSugerenciasContacto().Priorizar(cartera, DIA_IMPULSO);
+            Dictionary<string, ClienteConChequeRegalo> conCheque = ImpulsoChequesRegaloContacto.Asignar(cartera,
+                cartera.Select(c => Impulso(c.Cliente)), DIA_IMPULSO);
+            Assert.IsFalse(conCheque.Values.Any(c => c.Excluido));
+
+            List<SugerenciaContactoDTO> lista = ImpulsoChequesRegaloContacto.Aplicar(motor, conCheque, DIA_IMPULSO);
+
+            CollectionAssert.AreEqual(new[] { "3005", "3003", "3004", "3002", "3001" }, lista.Select(s => s.Cliente).ToArray());
+            Assert.IsTrue(lista.All(s => s.Prioridad == PrioridadesContacto.MAXIMA && s.TieneChequeRegalo));
+            CollectionAssert.AreEqual(new[] { 1, 2, 3, 4, 5 }, lista.Select(s => s.Orden).ToArray());
+        }
+
+        [TestMethod]
+        public void Impulso_ContactadoAyerSigueEnElBloque_DetrasYConHabladoAyerEnElMotivo()
+        {
+            // Hablado ayer, antes de que empezara el impulso (empieza hoy): no se excluye y va detrás del de hace 10 días.
+            var cartera = new List<ClienteCarteraContacto> { Cartera("3101", "0", 2, 1, 0.9f), Cartera("3102", "0", 2, 10, 0.1f) };
+            ChequeRegaloImpulso desdeHoy(string cliente)
+            {
+                ChequeRegaloImpulso i = Impulso(cliente);
+                i.InicioImpulso = DIA_IMPULSO;
+                return i;
+            }
+            Dictionary<string, ClienteConChequeRegalo> conCheque = ImpulsoChequesRegaloContacto.Asignar(cartera,
+                new[] { desdeHoy("3101"), desdeHoy("3102") }, DIA_IMPULSO);
+            Assert.IsFalse(conCheque["3101/0"].Excluido, "Excluido no cambia: solo desde el inicio del impulso");
+
+            List<SugerenciaContactoDTO> lista = ImpulsoChequesRegaloContacto.Aplicar(new List<SugerenciaContactoDTO>(), conCheque, DIA_IMPULSO);
+
+            CollectionAssert.AreEqual(new[] { "3102", "3101" }, lista.Select(s => s.Cliente).ToArray());
+            Assert.AreEqual("Tiene un cheque de 50 € sin usar hasta el 07/11", lista[0].Motivo);
+            Assert.AreEqual("Tiene un cheque de 50 € sin usar hasta el 07/11 (hablado ayer)", lista[1].Motivo);
+        }
+
+        [TestMethod]
+        public void Impulso_SinCheques_ElMotivoDelMotorTambienDiceHabladoAyer()
+        {
+            ClienteCarteraContacto cliente = Cartera("3201", "0", 2, 1, 0.9f);
+            var motor = new List<SugerenciaContactoDTO> { MotorSugerenciasContacto.ADTO(cliente, DIA_IMPULSO) };
+            motor[0].Motivo = "Ha comprado 2 veces en el último año";
+
+            List<SugerenciaContactoDTO> lista = ImpulsoChequesRegaloContacto.Aplicar(motor, new Dictionary<string, ClienteConChequeRegalo>(), DIA_IMPULSO);
+
+            Assert.AreEqual("Ha comprado 2 veces en el último año (hablado ayer)", lista[0].Motivo);
+        }
+
+        [TestMethod]
         public void Impulso_NoContestoAyer_NoSube()
         {
             var cartera = new List<ClienteCarteraContacto> { Cartera("2006", "0", 2, 45, diasIntento: 1) };

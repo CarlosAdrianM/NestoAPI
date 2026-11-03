@@ -467,14 +467,20 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
-        public void Cartera_UltimoContacto_SinLosRapportsDelOtroVendedorDelCliente()
+        public void Cartera_UltimoContactoEIntento_CuentanLosRapportsDeCualquierVendedor()
         {
+            // NestoAPI#796 (Carlos, 03/11/26, como Nesto#587): ya no se quitan los rapports del otro vendedor del cliente.
             string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
+            int inicio = sql.IndexOf("INTO #Rapports", StringComparison.Ordinal);
+            int fin = sql.IndexOf("GROUP BY", inicio, StringComparison.Ordinal);
 
-            StringAssert.Contains(sql, "INTO #OtrosVendedores");
-            StringAssert.Contains(sql, "o.Vendedor <> @Vendedor AND o.Vendedor <> 'NV'", "el general no es «otro vendedor»");
-            StringAssert.Contains(sql, "AND NOT EXISTS (SELECT 1 FROM #OtrosVendedores o");
-            StringAssert.Contains(sql, "o.Vendedor = s.Vendedor", "solo se quitan los rapports del otro vendedor; los sin vendedor cuentan");
+            Assert.IsTrue(inicio > 0);
+            string rapports = sql.Substring(inicio, fin - inicio);
+            Assert.IsFalse(sql.Contains("INTO #OtrosVendedores") || sql.Contains("FROM #OtrosVendedores"), "sin filtro por el otro vendedor");
+            Assert.IsFalse(rapports.Contains("Vendedor"), "ni por ningún vendedor");
+            StringAssert.Contains(rapports, "s.Estado IN (0, 1) AND s.Tipo IN ('T', 'V', 'W')", "mismos estados y tipos que antes");
+            StringAssert.Contains(sql, "MAX(CASE WHEN s.Estado = 0 THEN s.Fecha END) UltimoContacto");
+            StringAssert.Contains(sql, "MAX(CASE WHEN s.Estado = 1 THEN s.Fecha END) UltimoIntento");
         }
     }
 }

@@ -121,6 +121,44 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
+        public void Exclusiones_ContactoDeOtroVendedorDentroDeLaCadencia_TambienExcluye()
+        {
+            // NestoAPI#796 (Carlos, 03/11/26): UltimoContacto ya trae los rapports de CUALQUIER usuario o vendedor (la SQL de
+            // la cartera no quita los del otro vendedor). Si Israel visitó al cliente hace 10 días (cadencia 30), a Alberto
+            // hoy no le sale; a los 30 días, sí.
+            ClienteCarteraContacto cliente = Cliente("30998", 12, diasContacto: 10, probabilidad: 0.9f);
+
+            Assert.IsTrue(MotorSugerenciasContacto.EstaExcluido(cliente, HOY));
+            Assert.IsFalse(new MotorSugerenciasContacto().Priorizar(new[] { cliente }, HOY).Any());
+
+            cliente.UltimoContacto = HOY.AddDays(-30);
+            Assert.IsFalse(MotorSugerenciasContacto.EstaExcluido(cliente, HOY));
+        }
+
+        [TestMethod]
+        public void Motivo_HabladoHaceCeroUnoODosDias_SeDiceAlFinal()
+        {
+            Assert.AreEqual("Compra cada 7 días (hablado hoy)", MotorSugerenciasContacto.ConHabladoReciente("Compra cada 7 días", 0));
+            Assert.AreEqual("Compra cada 7 días (hablado ayer)", MotorSugerenciasContacto.ConHabladoReciente("Compra cada 7 días", 1));
+            Assert.AreEqual("Compra cada 7 días (hablado hace 2 días)", MotorSugerenciasContacto.ConHabladoReciente("Compra cada 7 días", 2));
+            Assert.AreEqual("Compra cada 7 días", MotorSugerenciasContacto.ConHabladoReciente("Compra cada 7 días", 3));
+            Assert.AreEqual("Compra cada 7 días", MotorSugerenciasContacto.ConHabladoReciente("Compra cada 7 días", null));
+            Assert.AreEqual("Compra cada 7 días (hablado ayer)",
+                MotorSugerenciasContacto.ConHabladoReciente("Compra cada 7 días (hablado ayer)", 1), "no se repite");
+        }
+
+        [TestMethod]
+        public void Motivo_HabladoReciente_NoPasaDeLaLongitudMaximaYElAvisoNoSeCorta()
+        {
+            string largo = new string('x', MotorSugerenciasContacto.LONGITUD_MAXIMA_MOTIVO);
+
+            string motivo = MotorSugerenciasContacto.ConHabladoReciente(largo, 1);
+
+            Assert.AreEqual(MotorSugerenciasContacto.LONGITUD_MAXIMA_MOTIVO, motivo.Length);
+            StringAssert.EndsWith(motivo, " (hablado ayer)");
+        }
+
+        [TestMethod]
         public void Exclusiones_PedidoRecienteDeOtroGrupo_TampocoSePropone_PeroNoCambiaLaCadencia()
         {
             // NestoAPI#620 (Carlos, 20/10/26): el de peluquería no llama a quien pidió estética hace 2 días, aunque su último

@@ -172,9 +172,10 @@ namespace NestoAPI.Infraestructure.Rapports
         /// poco» (<see cref="UmbralesSugerenciasContacto.DIAS_TRAS_PEDIDO"/>): vale para todos sus vendedores.
         /// </summary>
         public DateTime? UltimoPedidoCliente { get; set; }
-        /// <summary>Último rapport Estado 0 (se habló) de tipo T/V/W. NestoAPI#620: sin los del otro vendedor que lleva al cliente.</summary>
+        /// <summary>Último rapport Estado 0 (se habló) de tipo T/V/W, de cualquier usuario o vendedor (NestoAPI#796; entre
+        /// NestoAPI#620 y #796 no contaban los del otro vendedor que lleva al cliente).</summary>
         public DateTime? UltimoContacto { get; set; }
-        /// <summary>Último rapport Estado 1 (no contestó) de tipo T/V/W.</summary>
+        /// <summary>Último rapport Estado 1 (no contestó) de tipo T/V/W, de cualquier usuario o vendedor (NestoAPI#796).</summary>
         public DateTime? UltimoIntento { get; set; }
         /// <summary>
         /// Nesto#587: último rapport del cliente desde el día 1 del mes en curso de CUALQUIER usuario (también el otro vendedor
