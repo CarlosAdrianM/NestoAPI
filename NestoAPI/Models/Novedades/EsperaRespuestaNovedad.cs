@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace NestoAPI.Models.Novedades
 {
@@ -23,6 +23,12 @@ namespace NestoAPI.Models.Novedades
         public byte RecordatoriosRespuesta { get; set; }
         /// <summary>Cuándo se mandó el último recordatorio (null = ninguno todavía).</summary>
         public DateTime? UltimoRecordatorioRespuesta { get; set; }
+        /// <summary>
+        /// NestoAPI#783: a quién se espera, si la pregunta del asistente iba con @mención: «Aplicacion|Clave|Nombre»
+        /// separados por «;» (<see cref="Infraestructure.Novedades.ReglasEsperaRespuestaNovedades.SerializarEsperados"/>).
+        /// null = al autor de la sugerencia, como siempre.
+        /// </summary>
+        public string EsperandoRespuestaDe { get; set; }
     }
 
     /// <summary>Lo que ha hecho (o haría, en ensayo) el job de recordatorios con cada sugerencia.</summary>
@@ -31,6 +37,8 @@ namespace NestoAPI.Models.Novedades
         public int NovedadId { get; set; }
         public string Titulo { get; set; }
         public string Autor { get; set; }
+        /// <summary>NestoAPI#783: a quién va el recordatorio (los mencionados en la pregunta o, sin mención, el autor).</summary>
+        public string Destinatarios { get; set; }
         public DateTime? EsperandoDesde { get; set; }
         /// <summary>Recordatorio o Cerrar.</summary>
         public string Accion { get; set; }

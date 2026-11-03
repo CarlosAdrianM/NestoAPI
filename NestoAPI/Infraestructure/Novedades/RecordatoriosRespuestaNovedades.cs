@@ -6,6 +6,7 @@ using NestoAPI.Models.RecursosHumanos;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Novedades
@@ -66,18 +67,21 @@ namespace NestoAPI.Infraestructure.Novedades
                     continue;
                 }
                 bool esIncidencia = ReglasEsperaRespuestaNovedades.EsIncidencia(espera);
+                // NestoAPI#783: a quien se le hizo la pregunta (los @mencionados); sin mención, al autor
+                List<string> destinatarios = ReglasEsperaRespuestaNovedades.NombresDestinatarios(espera);
                 int numero = accion == AccionEsperaRespuesta.Recordatorio ? espera.RecordatoriosRespuesta + 1 : 0;
                 var resultado = new ResultadoRecordatorioRespuestaDTO
                 {
                     NovedadId = espera.Id,
                     Titulo = espera.Titulo?.Trim(),
                     Autor = espera.SugeridaNombre?.Trim(),
+                    Destinatarios = string.Join(", ", destinatarios.Where(d => !string.IsNullOrWhiteSpace(d)).Select(d => d.Trim())),
                     EsperandoDesde = espera.EsperandoRespuestaDesde,
                     Accion = accion == AccionEsperaRespuesta.Recordatorio ? ReglasEsperaRespuestaNovedades.ACCION_RECORDATORIO : ReglasEsperaRespuestaNovedades.ACCION_CERRAR,
                     Recordatorio = numero,
                     Texto = accion == AccionEsperaRespuesta.Recordatorio
-                        ? ReglasEsperaRespuestaNovedades.TextoRecordatorio(espera.SugeridaNombre, numero, esIncidencia)
-                        : ReglasEsperaRespuestaNovedades.TextoCierre(espera.SugeridaNombre, esIncidencia),
+                        ? ReglasEsperaRespuestaNovedades.TextoRecordatorio(destinatarios, numero, esIncidencia)
+                        : ReglasEsperaRespuestaNovedades.TextoCierre(destinatarios, esIncidencia),
                     Ensayo = ensayo
                 };
                 resultados.Add(resultado);
@@ -105,7 +109,7 @@ namespace NestoAPI.Infraestructure.Novedades
                     {
                         repositorio.Cerrar(espera.Id, ahora);
                     }
-                    await AvisarAlAutor(espera, comentarioId, resultado.Texto).ConfigureAwait(false);
+                    await AvisarALosEsperados(espera, comentarioId, resultado.Texto).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -117,29 +121,59 @@ namespace NestoAPI.Infraestructure.Novedades
         }
 
         /// <summary>
-        /// El aviso le llega al autor por el programa de la sugerencia, como cuando el asistente le contesta: Nesto,
-        /// a su campana; NestoApp, push; Ariadna, a su campana. Nunca rompe el recordatorio.
+        /// El aviso le llega a quien se espera. Si es el autor, por el programa de la sugerencia, como cuando el
+        /// asistente le contesta: Nesto, a su campana; NestoApp, push; Ariadna, a su campana. NestoAPI#783: si son
+        /// los @mencionados en la pregunta, a cada uno como en las menciones (Nesto, campana; NestoApp, push).
+        /// Nunca rompe el recordatorio.
         /// </summary>
-        private async Task AvisarAlAutor(EsperaRespuestaNovedad espera, int comentarioId, string texto)
+        private async Task AvisarALosEsperados(EsperaRespuestaNovedad espera, int comentarioId, string texto)
         {
             if (notificaciones == null)
             {
                 return;
             }
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = ReglasFeedbackNovedades.NOMBRE_ASISTENTE + " le ha mencionado en Novedades",
+                Cuerpo = texto.Length > 200 ? texto.Substring(0, 197) + "…" : texto,
+                Tipo = TIPO_NOTIFICACION,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = TIPO_NOTIFICACION,
+                    ["novedadId"] = espera.Id.ToString(),
+                    ["comentarioId"] = comentarioId.ToString()
+                }
+            };
+            List<MencionableDTO> esperados = ReglasEsperaRespuestaNovedades.Esperados(espera);
+            if (esperados.Count == 0)
+            {
+                await AvisarAlAutor(espera, notificacion).ConfigureAwait(false);
+                return;
+            }
+            foreach (MencionableDTO esperado in esperados)
+            {
+                try
+                {
+                    if (string.Equals(esperado.Aplicacion, Constantes.Aplicaciones.NESTO_APP, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = await notificaciones.EnviarAUsuario(esperado.Clave, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await notificaciones.GuardarEnBuzonDeUsuario(esperado.Clave, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Registrar(new Exception($"Novedades (recordatorios de respuesta): no se pudo avisar a {esperado.Clave} de la {espera.Id}. {ex.Message}", ex));
+                }
+            }
+        }
+
+        private async Task AvisarAlAutor(EsperaRespuestaNovedad espera, NotificacionPushDTO notificacion)
+        {
             try
             {
-                var notificacion = new NotificacionPushDTO
-                {
-                    Titulo = ReglasFeedbackNovedades.NOMBRE_ASISTENTE + " le ha mencionado en Novedades",
-                    Cuerpo = texto.Length > 200 ? texto.Substring(0, 197) + "…" : texto,
-                    Tipo = TIPO_NOTIFICACION,
-                    Datos = new Dictionary<string, string>
-                    {
-                        ["tipo"] = TIPO_NOTIFICACION,
-                        ["novedadId"] = espera.Id.ToString(),
-                        ["comentarioId"] = comentarioId.ToString()
-                    }
-                };
                 string ambito = espera.Ambito?.Trim();
                 if (string.Equals(ambito, Constantes.Aplicaciones.NESTO_APP, StringComparison.OrdinalIgnoreCase))
                 {

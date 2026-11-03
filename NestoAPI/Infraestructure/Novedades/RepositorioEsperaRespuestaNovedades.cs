@@ -20,15 +20,22 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>Las abiertas (Pendiente o Aceptada), sin versión, que esperan respuesta del autor.</summary>
         List<EsperaRespuestaNovedad> LeerEsperando();
 
-        /// <summary>Empieza (o vuelve a empezar) a esperar al autor: fecha de la pregunta y recordatorios a 0. false si no es una sugerencia.</summary>
-        bool MarcarEspera(int novedadId, DateTime desde);
+        /// <summary>
+        /// Empieza (o vuelve a empezar) a esperar: fecha de la pregunta y recordatorios a 0. NestoAPI#783:
+        /// <paramref name="esperandoDe"/>, los @mencionados en la pregunta (<see cref="ReglasEsperaRespuestaNovedades.SerializarEsperados"/>);
+        /// null = al autor. false si no es una sugerencia.
+        /// </summary>
+        bool MarcarEspera(int novedadId, DateTime desde, string esperandoDe);
 
-        /// <summary>El autor ha contestado: fuera la espera y, si estaba Cerrada, vuelve a Pendiente.</summary>
+        /// <summary>Ha contestado quien se esperaba: fuera la espera y, si estaba Cerrada, vuelve a Pendiente.</summary>
         void BorrarEspera(int novedadId, bool reabrir, string usuario);
 
         void GuardarRecordatorio(int novedadId, byte recordatorios, DateTime fecha);
 
-        /// <summary>Sin respuesta tras el 2.º recordatorio: pasa a Cerrada y deja de esperar.</summary>
+        /// <summary>
+        /// Sin respuesta tras el 2.º recordatorio: pasa a Cerrada y deja de esperar. Guarda a quién se esperaba
+        /// (EsperandoRespuestaDe) para que, si esa persona escribe, se reabra.
+        /// </summary>
         void Cerrar(int novedadId, DateTime fecha);
     }
 
@@ -36,7 +43,7 @@ namespace NestoAPI.Infraestructure.Novedades
     {
         private const string COLUMNAS =
             "Id, Version, Estado, Categoria, Ambito, Titulo, SugeridaPor, SugeridaNombre, " +
-            "EsperandoRespuestaDesde, RecordatoriosRespuesta, UltimoRecordatorioRespuesta";
+            "EsperandoRespuestaDesde, RecordatoriosRespuesta, UltimoRecordatorioRespuesta, EsperandoRespuestaDe";
 
         public EsperaRespuestaNovedad Leer(int novedadId)
         {
@@ -59,7 +66,7 @@ namespace NestoAPI.Infraestructure.Novedades
             }
         }
 
-        public bool MarcarEspera(int novedadId, DateTime desde)
+        public bool MarcarEspera(int novedadId, DateTime desde, string esperandoDe)
         {
             using (var db = new NVEntities())
             {
@@ -67,9 +74,14 @@ namespace NestoAPI.Infraestructure.Novedades
                     UPDATE Novedades SET
                         EsperandoRespuestaDesde = @desde,
                         RecordatoriosRespuesta = 0,
-                        UltimoRecordatorioRespuesta = NULL
+                        UltimoRecordatorioRespuesta = NULL,
+                        EsperandoRespuestaDe = @de
                     WHERE Id = @id AND Version IS NULL AND TextoOriginal IS NOT NULL;",
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde },
+                    new SqlParameter("@de", SqlDbType.NVarChar, ReglasEsperaRespuestaNovedades.LONGITUD_ESPERANDO_RESPUESTA_DE)
+                    {
+                        Value = string.IsNullOrWhiteSpace(esperandoDe) ? (object)DBNull.Value : esperandoDe
+                    },
                     new SqlParameter("@id", novedadId)) > 0;
             }
         }
@@ -83,6 +95,7 @@ namespace NestoAPI.Infraestructure.Novedades
                         EsperandoRespuestaDesde = NULL,
                         RecordatoriosRespuesta = 0,
                         UltimoRecordatorioRespuesta = NULL,
+                        EsperandoRespuestaDe = NULL,
                         Estado = CASE WHEN @reabrir = 1 AND Estado = 'Cerrada' THEN 'Pendiente' ELSE Estado END,
                         Usuario = CASE WHEN @reabrir = 1 AND Estado = 'Cerrada' THEN @usuario ELSE Usuario END,
                         Fecha_Modificación = CASE WHEN @reabrir = 1 AND Estado = 'Cerrada' THEN GETDATE() ELSE Fecha_Modificación END

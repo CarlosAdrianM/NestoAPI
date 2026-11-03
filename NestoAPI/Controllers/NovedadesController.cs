@@ -1651,7 +1651,7 @@ namespace NestoAPI.Controllers
             List<CapturaNovedadDTO> capturasGrabadas = RegistrarCapturas(id, nuevoId, capturas, ReglasFeedbackNovedades.USUARIO_ASISTENTE);
             if (comentario.EsperaRespuesta)
             {
-                MarcarEsperaRespuesta(id);
+                MarcarEsperaRespuesta(id, aGrabar.Texto);
             }
             List<int> contestados = (comentario.ComentariosContestados ?? new List<int>()).Distinct().ToList();
             foreach (int contestado in contestados)
@@ -1680,10 +1680,11 @@ namespace NestoAPI.Controllers
         private static int esperaFalloRegistrado;
 
         /// <summary>
-        /// El asistente le ha preguntado algo al autor: desde ahora se espera su respuesta (fecha de hoy, 0
-        /// recordatorios). Nunca rompe la respuesta del asistente (p. ej. si aún no se ha lanzado el script).
+        /// El asistente ha preguntado algo: desde ahora se espera la respuesta (fecha de hoy, 0 recordatorios).
+        /// NestoAPI#783: de los @mencionados en la pregunta (resueltos como en las menciones); sin ninguno, del
+        /// autor. Nunca rompe la respuesta del asistente (p. ej. si aún no se ha lanzado el script).
         /// </summary>
-        private void MarcarEsperaRespuesta(int novedadId)
+        private void MarcarEsperaRespuesta(int novedadId, string texto)
         {
             if (EsperaRespuesta == null)
             {
@@ -1691,7 +1692,8 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                _ = EsperaRespuesta.MarcarEspera(novedadId, DateTime.Now);
+                _ = EsperaRespuesta.MarcarEspera(novedadId, DateTime.Now,
+                    ReglasEsperaRespuestaNovedades.SerializarEsperados(MencionadosQuePuedenContestar(novedadId, texto)));
             }
             catch (Exception ex)
             {
@@ -1700,7 +1702,33 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Si comenta el autor de la sugerencia, deja de esperarse su respuesta y, si estaba Cerrada por falta de
+        /// NestoAPI#783: los @mencionados en <paramref name="texto"/> que existen en el ámbito de la novedad y pueden
+        /// verla (lo mismo que recibe el aviso de la mención). Si algo falla, ninguno (se espera al autor).
+        /// </summary>
+        private List<MencionableDTO> MencionadosQuePuedenContestar(int novedadId, string texto)
+        {
+            List<string> menciones = ReglasMenciones.Extraer(texto);
+            if (feedback == null || menciones.Count == 0)
+            {
+                return new List<MencionableDTO>();
+            }
+            try
+            {
+                bool deNestoApp = EsDeNestoApp(feedback.LeerAmbitoNovedad(novedadId));
+                return ReglasMenciones.Resolver(menciones, feedback.LeerMencionables(deNestoApp), ReglasFeedbackNovedades.USUARIO_ASISTENTE)
+                    .Where(m => PuedeRecibirAviso(novedadId, m.Clave))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                RegistrarSinRomper(new Exception($"Novedades (recordatorios de respuesta): no se pudieron leer los mencionados de la {novedadId}. " + ex.Message, ex));
+                return new List<MencionableDTO>();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#783: si comenta la persona a la que se espera (la @mencionada en la pregunta o, sin mención,
+        /// el autor de la sugerencia), deja de esperarse su respuesta y, si estaba Cerrada por falta de
         /// respuesta, vuelve a Pendiente (devuelve true). Los comentarios de los demás no tocan nada. Nunca rompe el comentario.
         /// </summary>
         internal bool AlComentarQuitarEspera(int novedadId, string usuario)
@@ -1711,7 +1739,8 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                DecisionAlComentar decision = ReglasEsperaRespuestaNovedades.AlComentar(EsperaRespuesta.Leer(novedadId), usuario);
+                // En las apps la clave es el Id de Identity y el mencionable va por el UserName: se comparan los dos
+                DecisionAlComentar decision = ReglasEsperaRespuestaNovedades.AlComentar(EsperaRespuesta.Leer(novedadId), usuario, User?.Identity?.Name);
                 if (!decision.BorrarEspera)
                 {
                     return false;
