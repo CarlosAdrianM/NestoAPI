@@ -1268,6 +1268,7 @@
     <Compile Include="Infraestructure\Productos\RepuestosSinCodigoBarras.cs" />
     <Compile Include="Infraestructure\Productos\InformeCodigosBarras.cs" />
     <Compile Include="Infraestructure\Productos\ValidadorGtin.cs" />
+    <Compile Include="Infraestructure\Productos\LimpiezaCodigosBarras.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />
     <Compile Include="Infraestructure\Productos\SustitucionesProducto.cs" />
     <Compile Include="Controllers\ProductosSustitucionesController.cs" />

@@ -271,6 +271,9 @@ namespace NestoAPI
             _ = services.AddScoped(sp => new Infraestructure.Productos.InformeRepuestosSinCodigo(
                 new Infraestructure.Productos.RepositorioRepuestosSinCodigoSql(),
                 sp.GetRequiredService<Infraestructure.Productos.IRepositorioCodigosBarras>()));
+            // NestoAPI#776: dejar en blanco los códigos de barras no válidos (mirar y aplicar)
+            _ = services.AddScoped(_ => new Infraestructure.Productos.ServicioLimpiezaCodigosBarras(
+                Infraestructure.Productos.RepositorioLimpiezaCodigosBarrasSql.DesdeConfiguracion()));
             // Ariadna#47: los demás productos con stock en el hueco de cada línea (una consulta por respuesta)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioProductosMismoHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioProductosMismoHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen,Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();

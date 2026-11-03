@@ -23,11 +23,16 @@ namespace NestoAPI.Controllers
 
         private readonly InformeRepuestosSinCodigo repuestosSinCodigo;
 
+        private readonly ServicioLimpiezaCodigosBarras limpieza;
+
         /// <param name="repuestosSinCodigo">NestoAPI#762: el informe de lo repuesto sin código. Sin él, …/RepuestosSinCodigoBarras da 404.</param>
-        public ProductosCodigosBarrasController(IServicioCodigosBarras servicio, InformeRepuestosSinCodigo repuestosSinCodigo = null)
+        /// <param name="limpieza">NestoAPI#776: la limpieza de los códigos no válidos. Sin ella, …/CodigosBarras/LimpiarNoValidos da 404.</param>
+        public ProductosCodigosBarrasController(IServicioCodigosBarras servicio, InformeRepuestosSinCodigo repuestosSinCodigo = null,
+            ServicioLimpiezaCodigosBarras limpieza = null)
         {
             this.servicio = servicio ?? throw new ArgumentNullException(nameof(servicio));
             this.repuestosSinCodigo = repuestosSinCodigo;
+            this.limpieza = limpieza;
         }
 
         /// <summary>Para los tests: la fecha de hoy.</summary>
@@ -57,6 +62,29 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ex.Message);
             }
+        }
+
+        // POST api/Productos/CodigosBarras/LimpiarNoValidos?aplicar=false
+        /// <summary>
+        /// NestoAPI#776: los códigos de barras que no son válidos (la regla del informe semanal: EAN-8, UPC-A, EAN-13 o ITF-14 con
+        /// su dígito de control), de todos los productos y empresas, en la ficha (Productos.CodBarras) y en ProductosCodigosBarras.
+        /// Con aplicar=false (por defecto) solo los enseña; con aplicar=true la ficha queda a NULL y las filas de la tabla se
+        /// borran, cada uno con su fila en Modificaciones. Idempotente. Solo Dirección, Informática y Compras.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Productos/CodigosBarras/LimpiarNoValidos")]
+        [ResponseType(typeof(ResultadoLimpiezaCodigosBarrasDTO))]
+        public IHttpActionResult PostLimpiarNoValidos(bool aplicar = false)
+        {
+            if (!ServicioLimpiezaCodigosBarras.PuedeLimpiar(User))
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, ServicioLimpiezaCodigosBarras.MENSAJE_SIN_PERMISO));
+            }
+            if (limpieza == null)
+            {
+                return NotFound();
+            }
+            return Ok(limpieza.Ejecutar(aplicar, Usuario()));
         }
 
         // GET api/Productos/32565/CodigosBarras?empresa=1
