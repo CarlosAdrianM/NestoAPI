@@ -25,6 +25,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#797: Productos.SubGrupo (el código), para SinCodigoAdmitido. Null en las líneas de texto.</summary>
+        public string SubGrupo { get; set; }
         public int Cantidad { get; set; }
         /// <summary>
         /// NestoAPI#765: una línea de texto de una nota de ENTREGA de solo texto («PRESTAMO HIDRA 7»): Producto vacío, Cantidad 1, el
@@ -180,7 +182,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         // OJO: las líneas se suman UNA vez por línea (Lineas → Reservas agrupadas por línea y hueco → Paradas), no sobre el
         // JOIN con Ubicaciones, que repite la línea por cada fila de reserva: la 329365300 del pedido 929262 (20 uds, dos
         // reservas de 17 + 3) más la 329365400 (2) daban 42 sumando sobre el JOIN y son 22.
-        // Las cuatro columnas fijas del principio son las que rellena después CasadorEscaneos.OrdenarRecorrido:
+        // Las cinco columnas fijas del principio son las que rellena después CasadorEscaneos.OrdenarRecorrido:
         // SqlQuery exige una columna por cada propiedad del DTO.
         internal const string SQL_LINEAS_PICKING = @"
 WITH Lineas AS (
@@ -199,13 +201,14 @@ WITH Lineas AS (
          LEFT JOIN Reservas r ON r.Pedido = x.Pedido AND r.Linea = x.Linea
     GROUP BY x.Producto, r.Pasillo, r.Fila, r.Columna
 )
-SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
+SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS SinCodigoAdmitido, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
        RTRIM(t.Producto) AS Producto,
        RTRIM(p.Nombre) AS Descripcion,
        RTRIM(p.CodBarras) AS CodigoBarras,
        p.[Tamaño] AS Tamano,
        RTRIM(p.UnidadMedida) AS UnidadMedida,
        RTRIM(f.[Descripción]) AS Familia,
+       RTRIM(p.SubGrupo) AS SubGrupoProducto,
        CAST(ABS(ISNULL(t.Reservas, t.Pendiente)) AS int) AS Cantidad,
        CAST(ABS(t.Reservas) AS int) AS Reservado,
        CAST(t.Pendiente AS int) AS PendienteLineas,
@@ -310,13 +313,14 @@ WITH Salida AS (
     SELECT x.[Número], x.Cantidad - ISNULL((SELECT SUM(h.Cantidad) FROM Huecos h WHERE h.[Número] = x.[Número]), 0), NULL, NULL, NULL, NULL
     FROM Salida x
 )
-SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
+SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS SinCodigoAdmitido, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
        RTRIM(t.[Número]) AS Producto,
        RTRIM(MAX(p.Nombre)) AS Descripcion,
        RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
        MAX(p.[Tamaño]) AS Tamano,
        RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
        RTRIM(MAX(f.[Descripción])) AS Familia,
+       RTRIM(MAX(p.SubGrupo)) AS SubGrupoProducto,
        CAST(SUM(t.Cantidad) AS int) AS Cantidad,
        CAST(CASE WHEN MAX(t.Salida) IS NULL THEN NULL ELSE SUM(CASE WHEN t.Salida IS NULL THEN 0 ELSE t.Cantidad END) END AS int) AS Reservado,
        CAST(ISNULL(MAX(t.Salida), SUM(t.Cantidad)) AS int) AS PendienteLineas,
@@ -344,6 +348,7 @@ SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contact
        RTRIM(CAST(c.ComentarioPicking AS nvarchar(max))) AS ComentarioPicking,
        l.[Nº Orden] AS LineaPedido, RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion,
        RTRIM(p.CodBarras) AS CodigoBarras,
+       RTRIM(p.SubGrupo) AS SubGrupo,
        CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad,
        CAST(0 AS bit) AS EsTexto
 FROM LinPedidoVta l
@@ -360,6 +365,7 @@ SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contact
        RTRIM(CAST(c.ComentarioPicking AS nvarchar(max))) AS ComentarioPicking,
        l.[Nº Orden] AS LineaPedido, '' AS Producto, LTRIM(RTRIM(l.Texto)) AS Descripcion,
        CAST(NULL AS varchar(50)) AS CodigoBarras,
+       CAST(NULL AS varchar(10)) AS SubGrupo,
        1 AS Cantidad,
        CAST(1 AS bit) AS EsTexto
 FROM LinPedidoVta l

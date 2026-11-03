@@ -93,6 +93,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
+        /// <summary>
+        /// NestoAPI#797: sin código y muestra (subgrupo MMP): se prepara, envía y recibe tecleando, sin etiqueta y sin avisos.
+        /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
+        /// </summary>
+        public bool SinCodigoAdmitido { get; set; }
         /// <summary>Otro producto de este mismo picking comparte el código: hay que elegir a mano.</summary>
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
@@ -100,6 +105,9 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string UnidadMedida { get; set; }
         /// <summary>Familia (Familias.Descripción): con ella se ordena lo que no tiene ubicación (las tiendas), como el papel de la reposición.</summary>
         public string Familia { get; set; }
+        /// <summary>NestoAPI#797: Productos.SubGrupo (el código, no el nombre), para <see cref="SinCodigoAdmitido"/>. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string SubGrupoProducto { get; set; }
         public string Pasillo { get; set; }
         public string Fila { get; set; }
         public string Columna { get; set; }
@@ -307,6 +315,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
+        /// <summary>
+        /// NestoAPI#797: sin código y muestra (subgrupo MMP): se prepara, envía y recibe tecleando, sin etiqueta y sin avisos.
+        /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
+        /// </summary>
+        public bool SinCodigoAdmitido { get; set; }
         /// <summary>Otro producto del mismo grupo de pedidos comparte el código.</summary>
         public bool CodigoDuplicado { get; set; }
         /// <summary>Lo que va en la caja: la cantidad de la línea menos lo que el cliente recoge.</summary>
@@ -639,6 +652,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
+        /// <summary>
+        /// NestoAPI#797: sin código y muestra (subgrupo MMP): se prepara, envía y recibe tecleando, sin etiqueta y sin avisos.
+        /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
+        /// </summary>
+        public bool SinCodigoAdmitido { get; set; }
         /// <summary>Unidades recibidas que todavía no tienen hueco.</summary>
         public int Cantidad { get; set; }
         public DateTime? DesdeCuando { get; set; }
@@ -763,6 +781,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
+        /// <summary>
+        /// NestoAPI#797: sin código y muestra (subgrupo MMP): se prepara, envía y recibe tecleando, sin etiqueta y sin avisos.
+        /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
+        /// </summary>
+        public bool SinCodigoAdmitido { get; set; }
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
     }
@@ -833,6 +856,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
+        /// <summary>
+        /// NestoAPI#797: sin código y muestra (subgrupo MMP): se prepara, envía y recibe tecleando, sin etiqueta y sin avisos.
+        /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
+        /// </summary>
+        public bool SinCodigoAdmitido { get; set; }
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
     }

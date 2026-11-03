@@ -80,6 +80,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     CodigoBarras = parada.CodigoBarras,
                     CodigosBarras = parada.CodigosBarras ?? new List<string>(),
                     SinCodigo = parada.SinCodigo,
+                    SinCodigoAdmitido = parada.SinCodigoAdmitido,
+                    SubGrupoProducto = parada.SubGrupoProducto,
                     CodigoDuplicado = parada.CodigoDuplicado,
                     Cantidad = parada.Cantidad,
                     Tamano = parada.Tamano,
@@ -259,7 +261,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// El recorrido del picking. La ubicación se ENSEÑA pasillo/fila/columna, pero se RECORRE por
         /// pasillo, columna y fila: así se avanza columna a columna dentro del pasillo y se anda menos
         /// (Carlos, 30/09/26; es también el orden del papel de hoy). Lo que no tiene ubicación va al
-        /// final. Deja puestos Orden, Ubicacion, SinCodigo y CodigoDuplicado.
+        /// final. Deja puestos Orden, Ubicacion, SinCodigo, SinCodigoAdmitido y CodigoDuplicado.
         /// </summary>
         public static List<LineaPickingAlmacenDTO> OrdenarRecorrido(IEnumerable<LineaPickingAlmacenDTO> lineas)
         {
@@ -295,6 +297,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // NestoAPI#674: un código que no es GTIN válido («1», «0», letras) no se manda: el producto cuenta como sin código
                 linea.CodigoBarras = Productos.ValidadorGtin.SoloSiValido(linea.CodigoBarras);
                 linea.SinCodigo = linea.CodigoBarras == null;
+                linea.SinCodigoAdmitido = MuestrasSinCodigo.Admitido(linea.SinCodigo, linea.SubGrupoProducto); // NestoAPI#797
                 linea.CodigoDuplicado = linea.CodigoBarras != null && duplicados.Contains(linea.CodigoBarras);
                 linea.Ubicacion = TextoUbicacion(linea.Pasillo, linea.Fila, linea.Columna);
             }

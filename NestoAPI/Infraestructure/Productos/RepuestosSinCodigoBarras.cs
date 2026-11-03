@@ -72,6 +72,9 @@ namespace NestoAPI.Infraestructure.Productos
 
     public class RepositorioRepuestosSinCodigoSql : IRepositorioRepuestosSinCodigo
     {
+        /// <summary>NestoAPI#797: las muestras (subgrupo MMP) no se etiquetan: no salen en el informe.</summary>
+        internal const string FILTRO_SIN_MUESTRAS = "ISNULL(RTRIM(p.SubGrupo), '') <> '" + Constantes.Productos.SUBGRUPO_MUESTRAS + "'";
+
         // Las ENTRADAS por reposición (cantidad positiva con número de traspaso), sin bloquear: es un informe
         internal const string SQL_REPUESTOS = @"
 SELECT RTRIM(e.[Número]) AS Producto, RTRIM(MAX(p.Nombre)) AS Nombre, RTRIM(MAX(p.Familia)) AS Familia,
@@ -80,6 +83,7 @@ FROM ExtractoProducto e WITH (NOLOCK)
      JOIN Productos p WITH (NOLOCK) ON p.Empresa = e.Empresa AND p.[Número] = e.[Número]
 WHERE e.Empresa = @empresa AND e.Fecha >= @desde AND e.[NºTraspaso] IS NOT NULL AND e.[NºTraspaso] <> 0 AND e.Cantidad > 0
   AND p.Estado >= 0 AND ISNULL(p.Ficticio, 0) = 0
+  AND " + FILTRO_SIN_MUESTRAS + @"
 GROUP BY e.[Número]";
 
         public async Task<List<ProductoRepuestoSinCodigoDTO>> LeerRepuestos(string empresa, DateTime desde)

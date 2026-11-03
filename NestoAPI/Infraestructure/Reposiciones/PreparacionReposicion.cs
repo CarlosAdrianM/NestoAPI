@@ -63,6 +63,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// guiada case por cualquiera. Lo rellena FichasProductoAlmacen.CompletarCodigos (una consulta por respuesta).
         /// </summary>
         public List<string> CodigosBarras { get; set; }
+        /// <summary>
+        /// NestoAPI#797: sin código (principal) y muestra (subgrupo MMP): se envía tecleando, sin etiqueta y sin aviso naranja.
+        /// Nunca true con código. Ver <see cref="MuestrasSinCodigo"/>.
+        /// </summary>
+        public bool SinCodigoAdmitido { get; set; }
         public int Cantidad { get; set; }
         /// <summary>Stock actual del producto en el almacén de origen (lo que la tienda tiene para mandar).</summary>
         public int StockOrigen { get; set; }
@@ -215,6 +220,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Producto { get; set; }
         public string Nombre { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#797: Productos.SubGrupo (el código), para SinCodigoAdmitido.</summary>
+        public string SubGrupo { get; set; }
         public int Cantidad { get; set; }
         public int StockOrigen { get; set; }
         /// <summary>PreExtrProducto.Almacén = el DESTINO (así lo graba Nesto viejo mientras se prepara).</summary>
@@ -311,6 +318,7 @@ SELECT COUNT(*) FROM Inventarios WHERE Empresa = @p0 AND [Almacén] = @p1 AND Es
         // en preparación, está enviada.
         internal const string SQL_LINEAS_EN_PREPARACION = @"
 SELECT p.[Nº Orden] AS NumeroOrden, RTRIM(p.[Número]) AS Producto, RTRIM(pr.Nombre) AS Nombre, RTRIM(pr.CodBarras) AS CodigoBarras,
+       RTRIM(pr.SubGrupo) AS SubGrupo,
        CAST(p.Cantidad AS int) AS Cantidad, RTRIM(p.[Almacén]) AS Almacen, p.Fecha, RTRIM(p.Usuario) AS Usuario,
        CAST(ISNULL((SELECT SUM(e.Cantidad) FROM ExtractoProducto e
                     WHERE e.Empresa = p.Empresa AND e.[Número] = p.[Número] AND e.[Almacén] = @p2), 0) AS int) AS StockOrigen
@@ -1698,7 +1706,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             return reposicion;
         }
 
-        private static ReposicionEnPreparacionDTO Dto(string empresa, string origen, string diario, List<FilaReposicionEnPreparacion> filas, ResumenUbicaciones reservas)
+        internal static ReposicionEnPreparacionDTO Dto(string empresa, string origen, string diario, List<FilaReposicionEnPreparacion> filas, ResumenUbicaciones reservas)
         {
             Dictionary<int, ReservaLineaReposicion> porLinea = (reservas?.Reservas ?? new List<ReservaLineaReposicion>())
                 .GroupBy(r => r.NumeroOrdenEntrada).ToDictionary(g => g.Key, g => g.First());
@@ -1722,6 +1730,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                         Cantidad = f.Cantidad,
                         StockOrigen = f.StockOrigen
                     };
+                    // NestoAPI#797: la muestra sin código se envía sin etiqueta
+                    linea.SinCodigoAdmitido = MuestrasSinCodigo.Admitido(linea.CodigoBarras == null, f.SubGrupo);
                     if (reservas != null)
                     {
                         porLinea.TryGetValue(f.NumeroOrden, out ReservaLineaReposicion reserva);
