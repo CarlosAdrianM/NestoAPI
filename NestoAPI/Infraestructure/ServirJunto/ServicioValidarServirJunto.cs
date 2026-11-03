@@ -126,6 +126,12 @@ namespace NestoAPI.Infraestructure.ServirJunto
         {
             if (response == null || !response.PuedeDesmarcar) return response;
 
+            // NestoAPI#781 (Nesto#595): sin forma de pago ni CCC las condiciones de pago son
+            // desconocidas (la plantilla aún no ha llegado a la pantalla de pago, o un cliente
+            // antiguo): no se afirma que el pedido vaya contra reembolso.
+            if (string.IsNullOrWhiteSpace(request?.FormaPago) && string.IsNullOrWhiteSpace(request?.CCC))
+                return response;
+
             if (GestorPortes.EsContraReembolso(
                     request.FormaPago,
                     request.PlazosPago,
