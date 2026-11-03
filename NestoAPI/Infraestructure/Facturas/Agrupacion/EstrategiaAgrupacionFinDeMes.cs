@@ -8,7 +8,7 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
     /// <summary>
     /// NestoAPI#727 (Carlos, 28/10/26): fin de mes en la API. Para cada cliente con pedidos de periodo FDM, todos los
     /// albaranes hasta la fecha de corte, de TODOS sus contactos, se reúnen en un único pedido (el del cliente principal)
-    /// y se factura ese pedido. Los pedidos con P.O. no entran nunca: el P.O. es la unidad de facturación y los factura
+    /// y se factura ese pedido. NestoAPI#792: uno por cada tipo de IVA de cabecera (una factura por IVA). Los pedidos con P.O. no entran nunca: el P.O. es la unidad de facturación y los factura
     /// <see cref="EstrategiaAgrupacionPO"/>. Las líneas pendientes y los albaranes posteriores al corte se quedan donde están.
     /// </summary>
     public class EstrategiaAgrupacionFinDeMes : IEstrategiaAgrupacionFinDeMes
@@ -62,16 +62,21 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 .ToList();
 
             return candidatos
+                // NestoAPI#792: el IVA es de cabecera (CabPedidoVta.IVA → CabFacturaVta.IVA): pedidos con distinto IVA no
+                // pueden ir en la misma factura (NV2617654 juntó contactos E52 y G21 del 31367). Una factura por cada IVA.
                 .GroupBy(c => new
                 {
                     Empresa = (c.Empresa ?? string.Empty).Trim(),
-                    Cliente = (c.Nº_Cliente ?? string.Empty).Trim()
+                    Cliente = (c.Nº_Cliente ?? string.Empty).Trim(),
+                    IVA = (c.IVA ?? string.Empty).Trim().ToUpperInvariant()
                 })
                 .OrderBy(g => g.Key.Cliente)
+                .ThenBy(g => g.Key.IVA)
                 .Select(g => new GrupoPedidosFinDeMes
                 {
                     Empresa = g.Key.Empresa,
                     Cliente = g.Key.Cliente,
+                    IVA = g.Key.IVA,
                     Pedidos = g.OrderBy(p => p.Número).ToList()
                 })
                 .ToList();
@@ -98,7 +103,8 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 return null;
             }
 
-            string contactoPrincipal = DestinoAgrupacion.ContactoClientePrincipal(db, grupo.Empresa, grupo.Cliente);
+            // NestoAPI#792: el contacto principal solo se le pone al destino si tiene el IVA del grupo.
+            string contactoPrincipal = DestinoAgrupacion.ContactoClientePrincipal(db, grupo.Empresa, grupo.Cliente, grupo.IVA);
             return DestinoAgrupacion.Elegir(limpios, contactoPrincipal);
         }
 

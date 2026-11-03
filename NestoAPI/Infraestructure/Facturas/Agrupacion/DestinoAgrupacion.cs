@@ -46,6 +46,34 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             return destino;
         }
 
+        /// <summary>
+        /// NestoAPI#792: el contacto del cliente principal SOLO si su tipo de IVA es <paramref name="iva"/>. El IVA va en la
+        /// cabecera (CabPedidoVta.IVA → CabFacturaVta.IVA) y cada contacto puede tener el suyo (31367: el 0 en E52 y el 2 en
+        /// G21): si al destino de un grupo G21 se le pusiera el contacto principal E52, la factura saldría a nombre de un
+        /// contacto con otro IVA. Con <c>null</c> el destino se queda con su contacto. Sin <paramref name="iva"/>, como
+        /// <see cref="ContactoClientePrincipal(NVEntities, string, string)"/>.
+        /// </summary>
+        public static string ContactoClientePrincipal(NVEntities db, string empresa, string cliente, string iva)
+        {
+            if (string.IsNullOrWhiteSpace(iva))
+            {
+                return ContactoClientePrincipal(db, empresa, cliente);
+            }
+            var principal = db.Clientes
+                .Where(c => c.Empresa == empresa
+                         && c.Nº_Cliente == cliente
+                         && c.ClientePrincipal)
+                .Select(c => new { c.Contacto, c.IVA })
+                .FirstOrDefault();
+            if (principal == null)
+            {
+                return null;
+            }
+            return string.Equals((principal.IVA ?? string.Empty).Trim(), iva.Trim(), StringComparison.OrdinalIgnoreCase)
+                ? principal.Contacto?.Trim()
+                : null;
+        }
+
         /// <summary>El contacto del cliente principal (recortado), o <c>null</c> si el cliente no tiene ninguno marcado.</summary>
         public static string ContactoClientePrincipal(NVEntities db, string empresa, string cliente)
         {
