@@ -15,12 +15,22 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     public class ProductosSyncHandler : ISyncTableHandler<ProductoSyncMessage>
     {
         private readonly ProductoChangeDetector _changeDetector;
+        private readonly Action<Exception> _trazarCodigoBarrasRechazado;
+
+        /// <summary>NestoAPI#782: usuario con el que queda en ELMAH el rechazo (el handler corre sin petición HTTP).</summary>
+        public const string USUARIO_TRAZA = "Sistema (sincronización de productos)";
 
         public string TableName => "Productos";
 
-        public ProductosSyncHandler()
+        public ProductosSyncHandler() : this(ex => ElmahHelper.Log(ex, USUARIO_TRAZA))
+        {
+        }
+
+        /// <summary>NestoAPI#782: con la traza de los códigos de barras rechazados inyectable (tests).</summary>
+        internal ProductosSyncHandler(Action<Exception> trazarCodigoBarrasRechazado)
         {
             _changeDetector = new ProductoChangeDetector();
+            _trazarCodigoBarrasRechazado = trazarCodigoBarrasRechazado ?? (_ => { });
         }
 
         // Implementación base polimórfica
@@ -113,6 +123,9 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     // perdería en el early-return de "sin cambios".
                     await ActualizarModoPrecioPublico(db, productoNesto, message);
 
+                    // NestoAPI#782: un código de barras no válido no se graba y queda la traza (aunque lo demás no cambie)
+                    TrazarSiCodigoBarrasRechazado(productoNesto, message);
+
                     // Detectar cambios
                     var cambios = _changeDetector.DetectarCambios(productoNesto, message);
 
@@ -148,6 +161,32 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 Console.WriteLine($"❌ Error procesando producto: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#782: si el mensaje trae un código de barras que no se puede grabar, lo deja en ELMAH con el producto, el
+        /// valor rechazado, el motivo y el origen. Nunca lanza: la traza no debe parar la sincronización del resto de campos.
+        /// </summary>
+        internal void TrazarSiCodigoBarrasRechazado(Producto productoNesto, ProductoSyncMessage message)
+        {
+            if (productoNesto == null || message == null)
+            {
+                return;
+            }
+            string motivo = ProductoChangeDetector.MotivoRechazoCodigoBarras(message.CodigoBarras, productoNesto.Número);
+            if (motivo == null)
+            {
+                return;
+            }
+            try
+            {
+                _trazarCodigoBarrasRechazado(new CodigoBarrasSincronizacionRechazadoException(
+                    productoNesto.Número?.Trim(), message.CodigoBarras.Trim(), motivo, message.Source?.Trim(), message.Usuario?.Trim()));
+            }
+            catch
+            {
+                // La traza nunca rompe la sincronización
             }
         }
 
@@ -242,7 +281,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// Actualiza los campos del producto de Nesto con los datos del sistema externo
         /// Solo actualiza campos que vengan informados en el mensaje externo
         /// </summary>
-        private void ActualizarProductoDesdeExterno(Producto productoNesto, ProductoSyncMessage productoExterno)
+        internal void ActualizarProductoDesdeExterno(Producto productoNesto, ProductoSyncMessage productoExterno)
         {
             // Nombre del producto
             if (!string.IsNullOrWhiteSpace(productoExterno.Nombre))
@@ -268,10 +307,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 productoNesto.RoturaStockProveedor = productoExterno.RoturaStockProveedor.Value;
             }
 
-            // Código de barras
-            if (!string.IsNullOrWhiteSpace(productoExterno.CodigoBarras))
+            // Código de barras. NestoAPI#782: solo si es válido (ValidadorGtin y que no sea la referencia); si no, se deja el
+            // que había (aunque tampoco valga: ese lo limpia #776, no la sincronización). La traza la deja HandleAsync.
+            string codigoBarras = ProductoChangeDetector.CodigoBarrasAGrabar(productoExterno.CodigoBarras, productoNesto.Número);
+            if (codigoBarras != null)
             {
-                productoNesto.CodBarras = productoExterno.CodigoBarras;
+                productoNesto.CodBarras = codigoBarras;
             }
 
             // Actualizar campos de auditoría
@@ -280,5 +321,26 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 ? "EXTERNAL_SYNC"
                 : productoExterno.Usuario;
         }
+    }
+
+    /// <summary>
+    /// NestoAPI#782: la traza (ELMAH) de un código de barras que llegó por la sincronización de productos y no se grabó.
+    /// </summary>
+    public class CodigoBarrasSincronizacionRechazadoException : Exception
+    {
+        public CodigoBarrasSincronizacionRechazadoException(string producto, string codigoRechazado, string motivo, string origen, string usuario)
+            : base($"Sincronización de productos: el código de barras '{codigoRechazado}' del producto {producto} no se ha grabado " +
+                   $"({motivo}). Origen={origen ?? "?"}, Usuario={usuario ?? "?"}. Se deja el que tenía la ficha.")
+        {
+            Producto = producto;
+            CodigoRechazado = codigoRechazado;
+            Motivo = motivo;
+            Origen = origen;
+        }
+
+        public string Producto { get; }
+        public string CodigoRechazado { get; }
+        public string Motivo { get; }
+        public string Origen { get; }
     }
 }

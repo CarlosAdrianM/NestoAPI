@@ -882,6 +882,7 @@
     <Compile Include="Infrastructure\ProteccionesSugerenciasTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PrestashopProductosSyncHandlerTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\ProductosSyncHandlerCodigoBarrasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\FormateadorNombreTiendaTests.cs" />
     <Compile Include="Models\ProductoDTONombreTiendaTests.cs" />
     <Compile Include="Infrastructure\ValidadorCambioClienteComercialTests.cs" />
