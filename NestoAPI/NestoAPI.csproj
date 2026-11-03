@@ -592,6 +592,7 @@
     <Compile Include="Models\PreparacionAlmacen\AjusteImpresoraEtiquetasDTO.cs" />
     <Compile Include="Controllers\EtiquetasImpresorasController.cs" />
     <Compile Include="Models\PreparacionAlmacen\FichaProductoAlmacenDTO.cs" />
+    <Compile Include="Models\Inventarios\InventariosDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\BultosReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
@@ -1265,6 +1266,7 @@
     <Compile Include="Models\Picking\CuponesPicking.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
+    <Compile Include="Infraestructure\Productos\LectorProductoLeido.cs" />
     <Compile Include="Infraestructure\Productos\CodigoBarrasInterno.cs" />
     <Compile Include="Infraestructure\Productos\RepuestosSinCodigoBarras.cs" />
     <Compile Include="Infraestructure\Productos\InformeCodigosBarras.cs" />

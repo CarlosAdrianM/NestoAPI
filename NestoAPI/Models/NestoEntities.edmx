@@ -1294,6 +1294,7 @@
           <Property Name="Columna" Type="char" MaxLength="3" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="PorCodigoBarras" Type="bit" />
         </EntityType>
         <EntityType Name="InventariosCuadre">
           <Key>
@@ -10203,6 +10204,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Columna" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="PorCodigoBarras" Type="Boolean" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Inventario_Empresas" FromRole="Inventario" ToRole="Empresa" />
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_Inventarios_Familias" FromRole="Inventario" ToRole="Familia" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_Inventario_Productos" FromRole="Inventario" ToRole="Producto" />
@@ -15199,6 +15201,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="Inventarios">
             <EntityTypeMapping TypeName="NVModel.Inventario">
               <MappingFragment StoreEntitySet="Inventarios">
+                <ScalarProperty Name="PorCodigoBarras" ColumnName="PorCodigoBarras" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Columna" ColumnName="Columna" />

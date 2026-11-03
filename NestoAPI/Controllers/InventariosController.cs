@@ -9,23 +9,32 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using NestoAPI.Infraestructure.Productos;
 using NestoAPI.Models;
+using NestoAPI.Models.Inventarios;
 
 namespace NestoAPI.Controllers
 {
     public class InventariosController : ApiController
     {
         private NVEntities db;
-        
+        private readonly LectorProductoLeido lector;
+
         // Carlos 07/12/15: lo pongo para desactivar el Lazy Loading
         public InventariosController() : this(new NVEntities())
         {
         }
 
-        internal InventariosController(NVEntities db)
+        internal InventariosController(NVEntities db) : this(db, new RepositorioCodigosBarras(db))
+        {
+        }
+
+        /// <param name="codigos">NestoAPI#788: de dónde sale el producto leído (la referencia y los códigos de barras).</param>
+        internal InventariosController(NVEntities db, IRepositorioCodigosBarras codigos)
         {
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
+            lector = new LectorProductoLeido(codigos);
         }
 
         const int ESTADO_INVENTARIO_SIN_CONTABILIZAR = 1;
@@ -38,16 +47,21 @@ namespace NestoAPI.Controllers
             return db.Inventarios.Where(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR).OrderByDescending(i => i.Fecha);
         }
 
-        // GET: api/Inventarios/5
+        // GET: api/Inventarios?empresa=1&almacen=ALG&fecha=11/21/2026&producto=8435454004144
+        /// <summary>
+        /// La línea del día del producto leído (NestoAPI#788: la referencia o cualquiera de sus códigos de barras, igual que al
+        /// recibir una reposición). 404 vacío si el producto aún no tiene línea ese día; 404 con Message si lo leído no es ningún
+        /// producto; 409 con Message y Productos si el código lo llevan varios.
+        /// </summary>
         [ResponseType(typeof(Inventario))]
         public async Task<IHttpActionResult> GetInventario(string empresa, string almacen, DateTime fecha, string producto)
         {
-            // Comprobar si el producto existe
-            Producto productoEncontrado = buscarProducto(empresa, producto);
-            if (productoEncontrado == null)
+            ResultadoProductoLeido leido = await lector.Leer(empresa, producto).ConfigureAwait(false);
+            if (leido.Producto == null)
             {
-                throw new Exception(String.Format("Producto {0} no encontrado", producto));
+                return RespuestaSinProducto(leido);
             }
+            Producto productoEncontrado = leido.Producto;
 
             DateTime fechaMasUno = fecha.AddDays(1);
             // Un producto que aún no se ha contado ese día no tiene línea: es un 404 (Nesto lo trata
@@ -61,9 +75,62 @@ namespace NestoAPI.Controllers
             return Ok(inventario);
         }
 
-        // PUT: api/Inventarios/5
+        // GET: api/Inventarios/Pendientes?empresa=1&almacen=REI&fecha=11/21/2026
+        /// <summary>
+        /// NestoAPI#788: lo pendiente de contabilizar (Estado 1 y sin NºTraspaso) del almacén, por usuario y día: filas, unidades
+        /// contadas y calculadas, y cuántas filas se leyeron por código, cuántas se teclearon y cuántas no lo dicen. Sin fecha,
+        /// todas las pendientes del almacén.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Inventarios/Pendientes")]
+        [ResponseType(typeof(List<InventarioPendienteDTO>))]
+        public async Task<IHttpActionResult> GetPendientes(string almacen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, DateTime? fecha = null)
+        {
+            if (string.IsNullOrWhiteSpace(almacen))
+            {
+                return BadRequest("Falta el almacén.");
+            }
+            empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            almacen = almacen.Trim();
+            IQueryable<Inventario> consulta = db.Inventarios.Where(i => i.Empresa == empresa && i.Almacén == almacen
+                && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR && i.NºTraspaso == null);
+            if (fecha.HasValue)
+            {
+                DateTime desde = fecha.Value.Date;
+                DateTime hasta = desde.AddDays(1);
+                consulta = consulta.Where(i => i.Fecha >= desde && i.Fecha < hasta);
+            }
+            var filas = await consulta
+                .Select(i => new { i.Usuario, i.Fecha, i.StockReal, i.StockCalculado, i.PorCodigoBarras })
+                .ToListAsync().ConfigureAwait(false);
+
+            List<InventarioPendienteDTO> resumen = filas
+                .GroupBy(f => new { Usuario = f.Usuario?.Trim() ?? string.Empty, Fecha = f.Fecha.Date })
+                .Select(g => new InventarioPendienteDTO
+                {
+                    Usuario = g.Key.Usuario,
+                    Fecha = g.Key.Fecha,
+                    Filas = g.Count(),
+                    StockReal = g.Sum(f => f.StockReal ?? 0),
+                    StockCalculado = g.Sum(f => f.StockCalculado ?? 0),
+                    FilasPorCodigoBarras = g.Count(f => f.PorCodigoBarras == true),
+                    FilasTecleadas = g.Count(f => f.PorCodigoBarras == false),
+                    FilasSinMarca = g.Count(f => f.PorCodigoBarras == null)
+                })
+                .OrderBy(r => r.Fecha)
+                .ThenBy(r => r.Usuario, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return Ok(resumen);
+        }
+
+        // PUT: api/Inventarios/5?porCodigoBarras=false
+        /// <param name="porCodigoBarras">
+        /// NestoAPI#788: cómo se ha leído esta vez. False (tecleada la referencia) deja la fila a 0 para siempre; true la deja a 1
+        /// solo si no tenía marca. Sin él no se toca lo que hubiera (lo que traiga el cuerpo se ignora: Nesto manda la línea entera).
+        /// </param>
         [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutInventario(int id, Inventario inventario)
+        public async Task<IHttpActionResult> PutInventario(int id, Inventario inventario, bool? porCodigoBarras = null)
         {
             if (!ModelState.IsValid)
             {
@@ -74,6 +141,10 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest();
             }
+
+            bool? marcaGuardada = (await db.Inventarios.Where(i => i.NºOrden == id).Select(i => i.PorCodigoBarras).ToListAsync().ConfigureAwait(false))
+                .FirstOrDefault();
+            inventario.PorCodigoBarras = MarcaTrasSumar(marcaGuardada, porCodigoBarras);
 
             db.Entry(inventario).State = EntityState.Modified;
 
@@ -97,6 +168,10 @@ namespace NestoAPI.Controllers
         }
 
         // POST: api/Inventarios
+        /// <summary>
+        /// Una línea nueva. En Número puede venir la referencia o un código de barras (NestoAPI#788, la regla de la recepción);
+        /// se graba la referencia y PorCodigoBarras (1 código, 0 referencia tecleada). 404 / 409 como el GET.
+        /// </summary>
         [ResponseType(typeof(Inventario))]
         public async Task<IHttpActionResult> PostInventario(Inventario inventario)
         {
@@ -110,15 +185,15 @@ namespace NestoAPI.Controllers
                 throw new Exception("Es obligatorio especificar el producto");
             }
 
-            //Producto producto = await db.Productos.SingleAsync(p => p.Empresa == inventario.Empresa && p.Número == inventario.Número);
-            Producto producto = buscarProducto(inventario.Empresa, inventario.Número);
-
-            if (producto == null)
+            ResultadoProductoLeido leido = await lector.Leer(inventario.Empresa, inventario.Número).ConfigureAwait(false);
+            if (leido.Producto == null)
             {
-                throw new Exception(String.Format("Producto {0} no encontrado", inventario.Número));
+                return RespuestaSinProducto(leido);
             }
+            Producto producto = leido.Producto;
 
             inventario.Número = producto.Número;
+            inventario.PorCodigoBarras = leido.PorCodigoBarras;
             inventario.Descripción = inventario.Descripción ?? producto.Nombre;
             inventario.Familia = inventario.Familia ?? producto.Familia;
             inventario.Grupo = inventario.Grupo ?? producto.Grupo;
@@ -169,45 +244,30 @@ namespace NestoAPI.Controllers
             return db.Inventarios.Count(e => e.NºOrden == id) > 0;
         }
 
-        private Producto buscarProducto(string empresa, string producto)
+        /// <summary>NestoAPI#788: una lectura tecleada deja la fila a 0 para siempre; una por código solo marca la que no tenía marca.</summary>
+        internal static bool? MarcaTrasSumar(bool? guardada, bool? estaLectura)
         {
-            Producto productoEncontrado = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == producto);
-            // NestoAPI#674: por código de barras solo casa un GTIN válido (la referencia, arriba, se busca siempre)
-            if (productoEncontrado != null || !Infraestructure.Productos.ValidadorGtin.EsCodigoValido(producto))
+            if (estaLectura == false)
             {
-                return productoEncontrado;
+                return false;
             }
-            if (productoEncontrado == null)
+            if (estaLectura == true)
             {
-                productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.Estado >= 0 && p.CodBarras == producto);
+                return guardada ?? true;
             }
-            if (productoEncontrado == null)
-            {
-                productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.CodBarras == producto);
-            }
-            if (productoEncontrado == null)
-            {
-                // NestoAPI#605: un código alternativo activo (ProductosCodigosBarras)
-                string alternativo = db.ProductosCodigosBarras
-                    .Where(c => c.Empresa == empresa && c.Codigo == producto && c.Activo)
-                    .OrderByDescending(c => c.Principal)
-                    .Select(c => c.Producto)
-                    .FirstOrDefault();
-                if (alternativo != null)
-                {
-                    productoEncontrado = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == alternativo);
-                }
-            }
-            if (productoEncontrado == null)
-            {
-                productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.Estado >= 0 && p.CodBarras.Contains(producto));
-            }
-            if (productoEncontrado == null)
-            {
-                productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.CodBarras.Contains(producto));
-            }
+            return guardada;
+        }
 
-            return productoEncontrado;
+        private IHttpActionResult RespuestaSinProducto(ResultadoProductoLeido leido)
+        {
+            if (leido.EsAmbiguo)
+            {
+                return Content(HttpStatusCode.Conflict, new ProductoLeidoInventarioDTO { Message = leido.MensajeAmbiguo, Productos = leido.Candidatos });
+            }
+            return Content(HttpStatusCode.NotFound, new ProductoLeidoInventarioDTO
+            {
+                Message = leido.Leido == null ? "Falta la referencia o el código de barras del producto." : leido.MensajeNoEncontrado
+            });
         }
     }
 }
