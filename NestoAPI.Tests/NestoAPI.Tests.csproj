@@ -426,6 +426,7 @@
     <Compile Include="Infraestructure\Notificaciones\EscanerRemotoTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />
     <Compile Include="Controllers\PedidosVentaListadoTests.cs" />
+    <Compile Include="Controllers\PedidosVentaFechasFuturasTests.cs" />
     <Compile Include="Controllers\PedidosVentaPorCanalExternoTests.cs" />
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />

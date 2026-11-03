@@ -395,17 +395,16 @@ namespace NestoAPI.Controllers
                     .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.Numero).First().CodigoBarras);
 
             // La fecha ajustada depende de la ruta (y de la hora): una por ruta distinta. NestoAPI#764: y, en las rutas
-            // internas, del código postal de entrega (su día de reparto).
+            // internas, del código postal de entrega (su día de reparto). Nesto#588: la regla, la de FechasFuturasPedido.
             Dictionary<string, DateTime> fechaAjustadaPorRuta = new Dictionary<string, DateTime>();
 
             return lista.Select(g =>
             {
                 string ruta = g.Ruta?.Trim() ?? string.Empty;
-                string codigoPostalRuta = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, g.CodPostal).HasValue ? g.CodPostal?.Trim() : null;
-                string claveFecha = codigoPostalRuta == null ? ruta : $"{ruta}|{codigoPostalRuta}";
+                string claveFecha = FechasFuturasPedido.Clave(ruta, g.CodPostal);
                 if (!fechaAjustadaPorRuta.TryGetValue(claveFecha, out DateTime fechaEntregaFutura))
                 {
-                    fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, ruta, string.Empty, codigoPostalRuta);
+                    fechaEntregaFutura = FechasFuturasPedido.FechaEntregaFutura(ruta, g.CodPostal);
                     fechaAjustadaPorRuta[claveFecha] = fechaEntregaFutura;
                 }
                 return new ResumenPedidoVentaDTO
@@ -426,7 +425,7 @@ namespace NestoAPI.Controllers
                     total = g.total,
                     vendedor = g.Vendedor?.Trim(),
                     ruta = ruta,
-                    tieneFechasFuturas = g.ultimaEntregaPendiente.HasValue && g.ultimaEntregaPendiente.Value > fechaEntregaFutura,
+                    tieneFechasFuturas = FechasFuturasPedido.TieneFechasFuturas(g.ultimaEntregaPendiente, fechaEntregaFutura),
                     ultimoSeguimiento = seguimientos.TryGetValue(g.Número, out string codigoBarras) ? codigoBarras : null
                 };
             }).ToList();
@@ -479,7 +478,7 @@ namespace NestoAPI.Controllers
 
             foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
             {
-                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta, string.Empty, cab.codPostal); // NestoAPI#764
+                DateTime fechaEntregaFutura = FechasFuturasPedido.FechaEntregaFutura(cab.ruta, cab.codPostal); // NestoAPI#764 / Nesto#588
                 cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
             }
 
@@ -2368,11 +2367,37 @@ namespace NestoAPI.Controllers
                 avisos.Add(avisoCierreDiaReparto);
             }
 
-            if (avisos.Count > 0)
+            // Nesto#588: «fechas futuras» del pedido tal como ha quedado, con la regla de la lista. Si no se ha podido calcular
+            // y no hay avisos, el 204 de siempre.
+            bool? tieneFechasFuturas = TieneFechasFuturasGrabado(pedido, codigoPostalRutaInterna);
+            if (avisos.Count > 0 || tieneFechasFuturas.HasValue)
             {
-                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
+                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos, tieneFechasFuturas = tieneFechasFuturas });
             }
             return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        /// <summary>
+        /// Nesto#588: «fechas futuras» del pedido recién grabado (POST y PUT), de sus líneas en la BD y con la regla de la lista
+        /// (<see cref="FechasFuturasPedido"/>). Nunca lanza: si no se puede calcular, null (y el cliente hace lo de antes).
+        /// </summary>
+        internal bool? TieneFechasFuturasGrabado(PedidoVentaDTO pedido, string codigoPostalRutaInterna)
+        {
+            try
+            {
+                string empresa = pedido.empresa;
+                int numero = pedido.numero;
+                DateTime? ultimaEntregaPendiente = db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa && l.Número == numero && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                    .Max(l => (DateTime?)l.Fecha_Entrega);
+                return ultimaEntregaPendiente.HasValue &&
+                    FechasFuturasPedido.TieneFechasFuturas(ultimaEntregaPendiente, FechasFuturasPedido.FechaEntregaFutura(pedido.ruta, codigoPostalRutaInterna));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Nesto#588: no se ha podido calcular si el pedido {pedido?.numero} tiene fechas futuras: {ex.Message}", ex));
+                return null;
+            }
         }
 
         /// <summary>
@@ -3097,12 +3122,15 @@ namespace NestoAPI.Controllers
                 Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
 
             // NestoAPI#764: va por ruta interna y el cliente cierra justo su día de reparto (no bloquea; nunca lanza)
-            AvisoPedidoDTO avisoCierreDiaReparto = AvisoCierreDiaReparto(pedido,
-                this.gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta));
+            string codigoPostalRutaInterna = this.gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta);
+            AvisoPedidoDTO avisoCierreDiaReparto = AvisoCierreDiaReparto(pedido, codigoPostalRutaInterna);
             if (avisoCierreDiaReparto != null)
             {
                 pedido.AvisosGrabacion = new List<AvisoPedidoDTO> { avisoCierreDiaReparto };
             }
+
+            // Nesto#588: «fechas futuras» del pedido tal como se ha grabado, con la regla de la lista
+            pedido.tieneFechasFuturas = TieneFechasFuturasGrabado(pedido, codigoPostalRutaInterna);
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);

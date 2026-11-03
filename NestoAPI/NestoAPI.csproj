@@ -1041,6 +1041,7 @@
     <Compile Include="Infraestructure\PedidosVenta\CalculadoraFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalendarioRutasDia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\FechasFuturasPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AvisoClienteCierraDiaReparto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioFechaEntregaAgencia.cs" />
