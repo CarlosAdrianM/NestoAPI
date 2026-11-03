@@ -724,6 +724,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// </summary>
         internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, string codigoPostal)
         {
+            return FechaEntregaAjustadaConCodigoPostal(fecha, ruta, almacen, codigoPostal);
+        }
+
+        /// <summary>
+        /// Nesto#588: lo mismo que <see cref="FechaEntregaAjustada(DateTime, string, string, string)"/> (no usa nada del gestor),
+        /// estático para que lo usen también quienes no tienen gestor (<see cref="FechasFuturasPedido"/>, al leer un pedido).
+        /// </summary>
+        internal static DateTime FechaEntregaAjustadaConCodigoPostal(DateTime fecha, string ruta, string almacen, string codigoPostal)
+        {
             TimeSpan horaCortePicking = Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO);
             DayOfWeek? diaRutaInterna = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal);
             // Mientras el picking automático de las 9 esté apagado, el picking real de la ruta interna es el de las 11 (el de
@@ -1018,6 +1027,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 pedido.Efectos = efectos;
                 pedido.crearEfectosManualmente = efectos.Any();
                 pedido.EsPresupuesto = lineasPedido.Any(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+                // Nesto#588: «fechas futuras», con la regla de la lista (el código postal de entrega solo si puede tener día de ruta).
+                // Nunca impide abrir el pedido: si falla, null y el cliente lo calcula como antes.
+                try
+                {
+                    pedido.tieneFechasFuturas = FechasFuturasPedido.TieneFechasFuturas(lineasPedido, pedido.ruta,
+                        CodigoPostalEntregaSiPuedeTenerDia(db, cabPedidoVta));
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"Nesto#588: no se ha podido calcular si el pedido {numero} tiene fechas futuras: {ex.Message}", ex));
+                }
 
                 decimal totalPedidoLeido = RoundingHelper.DosDecimalesRound(pedido.Total);
                 if (Math.Abs(totalComprobacion - totalPedidoLeido) > 0.05M)
@@ -1027,6 +1047,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
                 return pedido;
             }
+        }
+
+        /// <summary>Nesto#588: el código postal de entrega del pedido (el de su contacto), solo si su ruta puede tener día de reparto.</summary>
+        private static string CodigoPostalEntregaSiPuedeTenerDia(NVEntities db, CabPedidoVta cab)
+        {
+            if (string.IsNullOrWhiteSpace(cab.Nº_Cliente) || !DiasRepartoCodigosPostales.PuedeTenerDia(cab.Ruta?.Trim()))
+            {
+                return null;
+            }
+            return db.Clientes
+                .Where(c => c.Empresa == cab.Empresa && c.Nº_Cliente == cab.Nº_Cliente && c.Contacto == cab.Contacto)
+                .Select(c => c.CodPostal)
+                .FirstOrDefault()?.Trim();
         }
 
         // Issue #279: marcar los regalos Ganavisiones CONFIRMADOS contra la tabla Ganavision (mismo

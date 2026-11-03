@@ -91,6 +91,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// POST api/PedidosVenta/{empresa}/{nota}/ServirPendienteAlHaberStock).</summary>
         public bool? servirPendienteAlHaberStock { get; set; }
         public string suPedido { get; set; }
+        /// <summary>
+        /// Nesto#588: ¿alguna línea pendiente o en curso se entrega después de la fecha de entrega mínima de hoy? La MISMA regla que
+        /// la lista de pedidos (<see cref="Infraestructure.PedidosVenta.FechasFuturasPedido"/>; ruta interna con su día de reparto,
+        /// NestoAPI#764). Solo de salida: lo rellenan GET, POST y PUT; null = no se ha podido calcular (el cliente, como antes).
+        /// </summary>
+        public bool? tieneFechasFuturas { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }
