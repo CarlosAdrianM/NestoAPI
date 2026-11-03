@@ -82,6 +82,14 @@ namespace NestoAPI.Models.Agencias
         public string CorreccionReembolso { get; set; }
         /// <summary>NestoAPI#718: con <see cref="CorreccionReembolso"/>, lo que habría salido sumando las líneas.</summary>
         public decimal? ReembolsoSegunLineas { get; set; }
+        /// <summary>
+        /// NestoAPI#785: con Origen PendienteReutilizado, qué ha pasado con el reembolso del pendiente (recalculado porque se creó a 0
+        /// antes del picking, o respetado porque se cambió a mano); null si nada. Informativo: lo bloqueante va en AvisosDetalle
+        /// (<see cref="CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO"/>).
+        /// </summary>
+        public string AvisoReembolsoPendiente { get; set; }
+        /// <summary>NestoAPI#785: el reembolso del pendiente (que era 0) se ha recalculado: al grabar se pone <see cref="Reembolso"/> y queda en su historia.</summary>
+        public bool ReembolsoPendienteRecalculado { get; set; }
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): un aviso de la propuesta de envío.</summary>
@@ -131,6 +139,11 @@ namespace NestoAPI.Models.Agencias
         public const string CONSULTA_REEMBOLSO_ABIERTA = "ConsultaReembolsoAbierta";
         /// <summary>NestoAPI#686: pedido al contado con «Mantener junto» y líneas pendientes: el envío sale sin reembolso.</summary>
         public const string CONTADO_MANTENER_JUNTO = "ContadoMantenerJunto";
+        /// <summary>
+        /// NestoAPI#785: la etiqueta pendiente de un pedido contra reembolso se registraría con 0 € y la factura tiene importe pendiente
+        /// de cobro. Bloqueante: no se graba hasta que se ponga el reembolso en el pendiente.
+        /// </summary>
+        public const string REEMBOLSO_CERO_CONTRA_REEMBOLSO = "ReembolsoCeroContraReembolso";
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): qué tiene que hacer quien llama con cada aviso.</summary>

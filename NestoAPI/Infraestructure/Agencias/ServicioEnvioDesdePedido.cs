@@ -310,6 +310,9 @@ namespace NestoAPI.Infraestructure.Agencias
             short bultosAntes = existente?.Bultos ?? 0;
             EnviosAgencia envio;
             bool hayCorreccionReembolso = false;
+            // NestoAPI#785: antes de grabar (Grabar le pone el reembolso recalculado al pendiente).
+            bool recalculaPendiente = ReembolsoPendienteRecalculado(propuesta, existente);
+            decimal reembolsoAnteriorPendiente = existente?.Reembolso ?? 0m;
             try
             {
                 envio = await datos.EnTransaccion(async () =>
@@ -317,6 +320,10 @@ namespace NestoAPI.Infraestructure.Agencias
                     EnviosAgencia grabado = Grabar(propuesta, existente, filaAgencia, plaza, usuario);
                     await datos.GuardarCambios();
                     hayCorreccionReembolso = AnotarCorreccionReembolso(grabado, propuesta, usuario);
+                    if (recalculaPendiente)
+                    {
+                        datos.AnotarHistoria(ReembolsoEtiquetaPendiente.FilaRecalculado(grabado.Numero, reembolsoAnteriorPendiente, usuario, DateTime.Now));
+                    }
                     string codigo = agencia.CalcularCodigoBarras(grabado, filaAgencia?.PrefijoCodigoBarras);
                     if (codigo == null)
                     {
@@ -346,6 +353,12 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 avisos.Add(propuesta.CorreccionReembolso);
                 Registrar(new Exception($"[Reembolso corregido #718] Envío {envio.Numero}: {propuesta.CorreccionReembolso}"));
+            }
+            // NestoAPI#785: el reembolso del pendiente, recalculado (con su fila en la historia) o respetado por haberse cambiado a mano.
+            if (propuesta.Origen == PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO && !string.IsNullOrWhiteSpace(propuesta.AvisoReembolsoPendiente))
+            {
+                avisos.Add(propuesta.AvisoReembolsoPendiente);
+                Registrar(new Exception($"[Reembolso pendiente #785] Envío {envio.Numero} (pedido {peticion.Pedido}): {propuesta.AvisoReembolsoPendiente}"));
             }
 
             string flujo = FlujoDe(envio.Agencia);
@@ -562,7 +575,9 @@ namespace NestoAPI.Infraestructure.Agencias
                     default:
                         // Bloqueante (sin agencia): ya ha dado 400. NestoAPI#734: la consulta a Administración abierta NO se da
                         // por resuelta nunca (el pedido espera su respuesta).
-                        resuelto = !string.Equals(aviso.Codigo, CodigosAvisoPropuestaEnvio.CONSULTA_REEMBOLSO_ABIERTA, StringComparison.OrdinalIgnoreCase);
+                        // NestoAPI#785: tampoco la etiqueta pendiente contra reembolso a 0 € (hay que ponerle el reembolso antes).
+                        resuelto = !string.Equals(aviso.Codigo, CodigosAvisoPropuestaEnvio.CONSULTA_REEMBOLSO_ABIERTA, StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(aviso.Codigo, CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO, StringComparison.OrdinalIgnoreCase);
                         break;
                 }
                 if (!resuelto)
@@ -574,6 +589,11 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         // ---------------------------------------------------------------- grabar
+
+        /// <summary>NestoAPI#785: el pendiente (aún a 0) se graba con el reembolso que la propuesta ha recalculado.</summary>
+        private static bool ReembolsoPendienteRecalculado(PropuestaEnvioDTO propuesta, EnviosAgencia existente)
+            => propuesta.Origen == PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO && propuesta.ReembolsoPendienteRecalculado
+               && existente != null && existente.Reembolso == 0m && propuesta.Reembolso > 0m;
 
         /// <summary>VB InsertarRegistro (l.3612-3672): el envío tal como lo graba Nesto según el origen.</summary>
         private EnviosAgencia Grabar(PropuestaEnvioDTO propuesta, EnviosAgencia existente, AgenciaTransporte filaAgencia, PlazaAgencia plaza, string usuario)
@@ -594,6 +614,11 @@ namespace NestoAPI.Infraestructure.Agencias
                 }
                 // #569: si se descuentan los prepagos, también del reembolso del pendiente.
                 if (propuesta.Reembolso >= 0m && propuesta.Reembolso != envio.Reembolso && envio.Reembolso > 0m)
+                {
+                    envio.Reembolso = propuesta.Reembolso;
+                }
+                // NestoAPI#785: el pendiente se creó a 0 antes del picking; la propuesta lo ha recalculado con las líneas con picking.
+                else if (ReembolsoPendienteRecalculado(propuesta, envio))
                 {
                     envio.Reembolso = propuesta.Reembolso;
                 }

@@ -611,6 +611,42 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
+        /// NestoAPI#785: lo que la factura de un pedido contra reembolso tiene aún pendiente de cobrar en efectivo (efectos EFC del
+        /// extracto de sus facturas), menos lo que ya llevan contra reembolso los envíos del pedido que han salido. Es la comprobación
+        /// de la etiqueta pendiente que se registra con reembolso 0 cuando el pedido ya está facturado (sus líneas ya no están «en curso
+        /// con picking» y <see cref="CalcularReembolso"/> da 0). 0 si el pedido no es contra reembolso, mandan los efectos manuales
+        /// (ya los cuenta <see cref="CalcularReembolso"/>) o no está facturado.
+        /// </summary>
+        internal static decimal FacturadoContraReembolsoSinCobrar(CabPedidoVta pedido, IServicioPedidosVenta servicio)
+        {
+            if (pedido == null || servicio == null)
+            {
+                return 0m;
+            }
+            if (ImporteEfectosManualesEnEfectivo(pedido, servicio).HasValue)
+            {
+                return 0m;
+            }
+            if (!GestorPortes.EsContraReembolso(pedido.Forma_Pago?.Trim(), pedido.PlazosPago, pedido.CCC,
+                pedido.Periodo_Facturacion?.Trim(), pedido.NotaEntrega))
+            {
+                return 0m;
+            }
+            string empresa = pedido.Empresa?.Trim();
+            List<string> facturas = servicio.FacturasDelPedido(empresa, pedido.Número) ?? new List<string>();
+            if (!facturas.Any())
+            {
+                return 0m;
+            }
+            decimal pendiente = servicio.PendienteEfectivoDeFacturas(empresa, pedido.Nº_Cliente?.Trim(), facturas);
+            decimal yaEnEnvios = servicio.ReembolsosCobradosDelPedido(empresa, pedido.Número, FECHA_MINIMA_REEMBOLSOS_COBRADOS);
+            decimal resto = RoundingHelper.DosDecimalesRound(pendiente - yaEnEnvios);
+            return resto < 0m ? 0m : resto;
+        }
+
+        private static readonly DateTime FECHA_MINIMA_REEMBOLSOS_COBRADOS = new DateTime(2000, 1, 1);
+
+        /// <summary>
         /// Issue #250 / NestoAPI#513: si el pedido tiene efectos manuales, mandan ellos (y no la forma de
         /// pago): se cobra la suma de los que son en efectivo. Si el pedido ya está facturado, esos
         /// efectos pueden estar cobrados (entrada pagada por adelantado, 925835): manda lo que quede

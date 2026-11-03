@@ -1110,6 +1110,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal decimal ImporteReembolso(string empresa, int pedido) => CalcularReembolso(empresa, pedido).Importe;
 
+        /// <summary>NestoAPI#785: <see cref="GestorEnviosAgencia.FacturadoContraReembolsoSinCobrar"/> del pedido de la BD.</summary>
+        internal decimal FacturadoContraReembolsoSinCobrar(string empresa, int pedido)
+            => GestorEnviosAgencia.FacturadoContraReembolsoSinCobrar(servicio.LeerCabPedidoVta(empresa, pedido), servicio);
+
         /// <summary>NestoAPI#718: el reembolso con su diagnóstico (si se ha corregido por facturarse en la empresa espejo).</summary>
         internal ReembolsoCalculado CalcularReembolso(string empresa, int pedido)
         {

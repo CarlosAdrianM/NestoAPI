@@ -57,6 +57,10 @@ namespace NestoAPI.Infraestructure.Agencias
         List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido);
         /// <summary>NestoAPI#686: el envío sale sin reembolso porque el pedido es al contado con «Mantener junto» y le quedan líneas pendientes.</summary>
         bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido);
+        /// <summary>NestoAPI#785: el reembolso de la etiqueta pendiente se cambió a mano (<see cref="ReembolsoEtiquetaPendiente.HayCambioManual"/>).</summary>
+        bool ReembolsoPendienteCambiadoAMano(int numeroEnvio);
+        /// <summary>NestoAPI#785: <see cref="GestorEnviosAgencia.FacturadoContraReembolsoSinCobrar"/>.</summary>
+        decimal FacturadoContraReembolsoSinCobrar(string empresa, int pedido);
         /// <summary>Bultos distintos del packing de Ariadna (GET Almacen/Pedidos/{pedido}/Bultos); 0 si no hay.</summary>
         Task<int> BultosPacking(string empresa, int pedido);
         Task<List<AgenciaTransporte>> LeerAgencias();
@@ -151,6 +155,11 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 propuesta.Reembolso = 0m;
             }
+            // NestoAPI#785: el pendiente se creó a 0 antes del picking. Si Administración dijo «sin reembolso» (#734), eso manda.
+            else if (pendiente != null)
+            {
+                DecidirReembolsoDelPendiente(propuesta, pendiente, empresa, pedido, reembolsoPedido);
+            }
 
             propuesta.AgenciaNombre = agencias.FirstOrDefault(a => a.Numero == propuesta.Agencia)?.Nombre?.Trim();
             await AnadirAvisos(propuesta, empresa, pedido).ConfigureAwait(false);
@@ -197,6 +206,46 @@ namespace NestoAPI.Infraestructure.Agencias
             // VB 3513-3517 (#238): ImporteGasto con el coste real si se tiene; si no, el que tuviera.
             decimal coste = CosteDeAgencia(empresa, propuesta, reembolsoPedido);
             propuesta.ImporteGasto = coste > 0 ? coste : pendiente.ImporteGasto;
+        }
+
+        /// <summary>
+        /// NestoAPI#785 (929609 / 250432): el pendiente conserva su reembolso salvo si es 0 y el pedido ya tiene picking (se recalcula y
+        /// al grabar queda en la historia) o, contra reembolso y ya facturado, la etiqueta saldría a 0 € (aviso bloqueante). Si alguien
+        /// lo cambió a mano, se respeta y solo se avisa. Best-effort: si no se puede leer, como antes.
+        /// </summary>
+        private void DecidirReembolsoDelPendiente(PropuestaEnvioDTO propuesta, EnviosAgencia pendiente, string empresa, int pedido, decimal reembolsoPedido)
+        {
+            if (pendiente.Reembolso != 0m)
+            {
+                return;
+            }
+            ResultadoReembolsoPendiente decision;
+            try
+            {
+                bool aMano = datos.ReembolsoPendienteCambiadoAMano(pendiente.Numero);
+                decimal facturado = reembolsoPedido > 0m ? 0m : datos.FacturadoContraReembolsoSinCobrar(empresa, pedido);
+                decision = ReembolsoEtiquetaPendiente.Decidir(pendiente.Numero, pendiente.Reembolso, reembolsoPedido, aMano, facturado);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudo comprobar el reembolso del pendiente {pendiente.Numero} (#785). {ex.Message}", ex));
+                return;
+            }
+
+            switch (decision.Decision)
+            {
+                case DecisionReembolsoPendiente.Recalculado:
+                    propuesta.Reembolso = decision.Reembolso;
+                    propuesta.ReembolsoPendienteRecalculado = true;
+                    propuesta.AvisoReembolsoPendiente = decision.Aviso;
+                    break;
+                case DecisionReembolsoPendiente.RespetadoCambioManual:
+                    propuesta.AvisoReembolsoPendiente = decision.Aviso;
+                    break;
+                case DecisionReembolsoPendiente.Bloqueado:
+                    Avisar(propuesta, CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO, TiposAvisoPropuestaEnvio.BLOQUEANTE, decision.Aviso);
+                    break;
+            }
         }
 
         // ---------------------------------------------------------------- nuevo / ampliación
@@ -786,6 +835,12 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido)
             => new GestorPedidosVenta(servicioPedidosVenta()).SaleSinReembolsoPorMantenerJunto(empresa, pedido);
+
+        public bool ReembolsoPendienteCambiadoAMano(int numeroEnvio)
+            => new DatosReembolsoEtiquetaPendienteEF(db, servicioPedidosVenta).ReembolsoCambiadoAMano(numeroEnvio);
+
+        public decimal FacturadoContraReembolsoSinCobrar(string empresa, int pedido)
+            => new GestorPedidosVenta(servicioPedidosVenta()).FacturadoContraReembolsoSinCobrar(empresa, pedido);
 
         public async Task<int> BultosPacking(string empresa, int pedido)
         {

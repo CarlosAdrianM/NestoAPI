@@ -232,6 +232,95 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => datos.LeerEnvioAmpliacion(A<string>._, A<string>._, A<string>._, A<int?>._)).MustNotHaveHappened();
         }
 
+        // ------------------------------------------------------------ NestoAPI#785: reembolso del pendiente creado antes del picking
+
+        private EnviosAgencia PendienteACero()
+        {
+            EnviosAgencia pendiente = Pendiente();
+            pendiente.Numero = 250432;
+            pendiente.Reembolso = 0m;
+            A.CallTo(() => datos.LeerEnvioPendiente(EMPRESA, PEDIDO)).Returns(Task.FromResult(pendiente));
+            return pendiente;
+        }
+
+        [TestMethod]
+        public async Task ConPendiente_ACeroYYaConPicking_SeRecalcula()
+        {
+            // 929609 / 250432: creado a 0 antes del picking; hoy las líneas con picking + la comisión de 3 € dan 134,16.
+            ConTarifas(new TarifaGLSBusinessParcel(), new TarifaCTT48h(), new TarifaCTT24h());
+            _ = PendienteACero();
+            A.CallTo(() => datos.ImporteReembolso(EMPRESA, PEDIDO)).Returns(134.16m);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 2m);
+
+            Assert.AreEqual(134.16m, p.Reembolso);
+            Assert.IsTrue(p.ReembolsoPendienteRecalculado);
+            StringAssert.Contains(p.AvisoReembolsoPendiente, "134,16");
+            Assert.IsFalse(p.AvisosDetalle.Any(a => a.Tipo == TiposAvisoPropuestaEnvio.BLOQUEANTE));
+        }
+
+        [TestMethod]
+        public async Task ConPendiente_ACeroCambiadoAMano_SeRespetaYSeAvisa()
+        {
+            ConTarifas(new TarifaGLSBusinessParcel(), new TarifaCTT48h(), new TarifaCTT24h());
+            _ = PendienteACero();
+            A.CallTo(() => datos.ImporteReembolso(EMPRESA, PEDIDO)).Returns(134.16m);
+            A.CallTo(() => datos.ReembolsoPendienteCambiadoAMano(250432)).Returns(true);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 2m);
+
+            Assert.AreEqual(0m, p.Reembolso);
+            Assert.IsFalse(p.ReembolsoPendienteRecalculado);
+            StringAssert.Contains(p.AvisoReembolsoPendiente, "cambió a mano");
+        }
+
+        [TestMethod]
+        public async Task ConPendiente_ACeroYNoContraReembolso_SigueACeroSinAviso()
+        {
+            ConTarifas(new TarifaGLSBusinessParcel(), new TarifaCTT48h(), new TarifaCTT24h());
+            _ = PendienteACero();
+            A.CallTo(() => datos.ImporteReembolso(EMPRESA, PEDIDO)).Returns(0m);
+            A.CallTo(() => datos.FacturadoContraReembolsoSinCobrar(EMPRESA, PEDIDO)).Returns(0m);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 2m);
+
+            Assert.AreEqual(0m, p.Reembolso);
+            Assert.IsNull(p.AvisoReembolsoPendiente);
+            Assert.IsFalse(p.AvisosDetalle.Any(a => a.Codigo == CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO));
+        }
+
+        [TestMethod]
+        public async Task ConPendiente_ConImporte_NoSeToca()
+        {
+            ConTarifas(new TarifaGLSBusinessParcel(), new TarifaCTT48h(), new TarifaCTT24h());
+            EnviosAgencia pendiente = PendienteACero();
+            pendiente.Reembolso = 80m;
+            A.CallTo(() => datos.ImporteReembolso(EMPRESA, PEDIDO)).Returns(134.16m);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 2m);
+
+            Assert.AreEqual(80m, p.Reembolso);
+            Assert.IsFalse(p.ReembolsoPendienteRecalculado);
+            A.CallTo(() => datos.ReembolsoPendienteCambiadoAMano(A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ConPendiente_ACeroContraReembolsoYYaFacturado_AvisoBloqueante()
+        {
+            // La etiqueta se registra cuando el pedido ya está facturado: sus líneas no están «en curso con picking».
+            ConTarifas(new TarifaGLSBusinessParcel(), new TarifaCTT48h(), new TarifaCTT24h());
+            _ = PendienteACero();
+            A.CallTo(() => datos.ImporteReembolso(EMPRESA, PEDIDO)).Returns(0m);
+            A.CallTo(() => datos.FacturadoContraReembolsoSinCobrar(EMPRESA, PEDIDO)).Returns(134.16m);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 2m);
+
+            AvisoPropuestaEnvio aviso = p.AvisosDetalle.Single(a => a.Codigo == CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO);
+            Assert.AreEqual(TiposAvisoPropuestaEnvio.BLOQUEANTE, aviso.Tipo);
+            StringAssert.Contains(aviso.Texto, ReembolsoEtiquetaPendiente.MENSAJE_BLOQUEO);
+            CollectionAssert.Contains(p.Avisos, aviso.Texto);
+        }
+
         [TestMethod]
         public async Task ConPendiente_ServicioQueNoEsDeSuAgencia_ElDeFecto()
         {
