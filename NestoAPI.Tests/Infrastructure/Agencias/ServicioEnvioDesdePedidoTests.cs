@@ -243,6 +243,23 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => notificador.Notificar(envio)).MustHaveHappenedOnceExactly();
         }
 
+        // ---------------------------------------------------------------- NestoAPI#778: reembolso del reparto propio
+        // (la 14 no entra por DesdePedido: no tiene plaza en RegistroPlazasAgencias; nace por el POST, ver
+        // EnviosAgenciasCatalogoServiciosTests. Aquí, que una agencia de fuera sigue naciendo pendiente de la agencia.)
+
+        [TestMethod]
+        public async Task Nuevo_CttConReembolso_SinFechaPagoReembolso()
+        {
+            CrearEnvioDesdePedidoDTO peticion = Peticion();
+            peticion.Cambios = new CambiosEnvioDesdePedidoDTO { Agencia = CTT, Servicio = 48, Horario = 0, Retorno = 0, Reembolso = 100m };
+
+            ResultadoEnvioDesdePedido resultado = await Crear(peticion);
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(100m, resultado.Envio.Envio.Reembolso);
+            Assert.IsNull(resultado.Envio.Envio.FechaPagoReembolso, "lo paga la agencia con «Contabilizar reembolsos»");
+        }
+
         [TestMethod]
         public async Task Nuevo_CambiosDeLaPantalla_SeAplicanYSeRecalculaElCoste()
         {

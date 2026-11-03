@@ -122,6 +122,47 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(insertado, "Sending (histórica) no tiene catálogo: no se valida");
         }
 
+        // ---- NestoAPI#778: el reembolso del reparto propio nace pagado ----
+
+        [TestMethod]
+        public async Task Post_RepartoPropioConReembolso_FechaPagoReembolsoIgualALaFecha()
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, 96, 18, 0);
+            envio.Reembolso = 453.87m;
+            envio.Fecha = new System.DateTime(2026, 10, 30, 11, 15, 0);
+
+            _ = await controller.PostEnviosAgencia(envio);
+
+            Assert.IsNotNull(insertado);
+            Assert.AreEqual(453.87m, insertado.Reembolso, "el importe sigue en Reembolso: es lo que cobra Ariadna");
+            Assert.AreEqual(new System.DateTime(2026, 10, 30), insertado.FechaPagoReembolso, "la fecha del envío, sin hora");
+        }
+
+        [TestMethod]
+        public async Task Post_CttConReembolso_SinFechaPagoReembolso()
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_CTT, 0, 0, 0);
+            envio.Reembolso = 120m;
+            envio.Fecha = new System.DateTime(2026, 10, 30);
+
+            _ = await controller.PostEnviosAgencia(envio);
+
+            Assert.IsNotNull(insertado);
+            Assert.IsNull(insertado.FechaPagoReembolso, "lo paga CTT con «Contabilizar reembolsos»");
+        }
+
+        [TestMethod]
+        public async Task Post_RepartoPropioSinReembolso_SinFechaPagoReembolso()
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, 96, 18, 0);
+            envio.Fecha = new System.DateTime(2026, 10, 30);
+
+            _ = await controller.PostEnviosAgencia(envio);
+
+            Assert.IsNotNull(insertado);
+            Assert.IsNull(insertado.FechaPagoReembolso);
+        }
+
         // ---- PUT ----
 
         [TestMethod]

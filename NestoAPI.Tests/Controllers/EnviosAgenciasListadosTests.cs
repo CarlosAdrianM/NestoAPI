@@ -503,6 +503,22 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Reembolsos_RepartoPropio_NuncaSalen()
+        {
+            // NestoAPI#778: el reembolso del reparto propio lo cobra el repartidor; «Contabilizar reembolsos» no lo ve, ni
+            // con la fecha que ya lleva al nacer ni sin ella (los de antes del script).
+            int propio = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            ConEnvios(
+                Envio(1, estado: 2, reembolso: 453.87M, agencia: propio),
+                Envio(2, estado: 2, reembolso: 206.81M, agencia: propio, fechaPagoReembolso: new DateTime(2026, 10, 30)));
+
+            var resultado = await controller.GetEnviosReembolsos("1", propio) as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
         public async Task Reembolsos_SoloTramitadosConReembolsoSinPagar()
         {
             ConEnvios(

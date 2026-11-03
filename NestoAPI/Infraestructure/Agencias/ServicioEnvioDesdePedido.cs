@@ -579,6 +579,7 @@ namespace NestoAPI.Infraestructure.Agencias
         private EnviosAgencia Grabar(PropuestaEnvioDTO propuesta, EnviosAgencia existente, AgenciaTransporte filaAgencia, PlazaAgencia plaza, string usuario)
         {
             EnviosAgencia envio;
+            int? agenciaAnterior = existente?.Agencia;
             if (propuesta.Origen == PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO)
             {
                 envio = existente;
@@ -646,6 +647,8 @@ namespace NestoAPI.Infraestructure.Agencias
             EnviosAgenciasController.RecortarTextosLibres(envio);
             envio.Usuario = string.IsNullOrWhiteSpace(usuario) ? "NestoAPI" : usuario;
             envio.FechaModificacion = DateTime.Now;
+            // NestoAPI#778: el reembolso del reparto propio nace pagado (lo cobra el repartidor, no una agencia).
+            NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(envio, agenciaAnterior);
 
             if (existente == null)
             {
