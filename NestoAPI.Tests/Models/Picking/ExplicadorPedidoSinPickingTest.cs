@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
@@ -202,6 +202,37 @@ namespace NestoAPI.Tests.Models.Picking
             NestoBusinessException error = ExplicadorPedidoSinPicking.Error(pedido, sinNombres, sinCompras);
             StringAssert.Contains(error.Message, "P8 (falta 1; sin pedido a proveedor), y 3 más");
             Assert.IsFalse(error.Message.Contains("P9 "));
+        }
+    
+        [TestMethod]
+        public void ErrorVarios_SinErrores_Null()
+        {
+            Assert.IsNull(ExplicadorPedidoSinPicking.ErrorVarios(null));
+            Assert.IsNull(ExplicadorPedidoSinPicking.ErrorVarios(new List<NestoBusinessException>()));
+        }
+
+        [TestMethod]
+        public void ErrorVarios_UnoSolo_ElMismo()
+        {
+            var uno = new NestoBusinessException("El pedido 929864 no sale: está en «Tras reponer de tiendas»", new ErrorContext { ErrorCode = "PICKING_ESPERA_REPOSICION_TIENDAS" });
+
+            Assert.AreSame(uno, ExplicadorPedidoSinPicking.ErrorVarios(new List<NestoBusinessException> { uno }));
+        }
+
+        [TestMethod]
+        public void ErrorVarios_Varios_UnaLineaPorPedidoYElCodigoDelPrimero()
+        {
+            // Carlos 03/11/26 (cliente 15191, pedido 929864): el picking de un cliente decía «no hay stock» cuando el motivo era el modo de servicio
+            var a = new NestoBusinessException("El pedido 929864 no sale: está en «Tras reponer de tiendas»", new ErrorContext { ErrorCode = "PICKING_ESPERA_REPOSICION_TIENDAS" });
+            var b = new NestoBusinessException("El pedido 929865 no sale: está en «Todo junto» y falta stock de: 44553", new ErrorContext { ErrorCode = "PICKING_TODO_JUNTO_SIN_STOCK" });
+
+            NestoBusinessException error = ExplicadorPedidoSinPicking.ErrorVarios(new List<NestoBusinessException> { a, b });
+
+            Assert.AreEqual("PICKING_ESPERA_REPOSICION_TIENDAS", error.Context.ErrorCode);
+            Assert.IsTrue(error.IsWarning);
+            StringAssert.Contains(error.Message, "929864");
+            StringAssert.Contains(error.Message, "929865");
+            Assert.AreEqual(2, error.Message.Split(new[] { Environment.NewLine }, StringSplitOptions.None).Length);
         }
     }
 }

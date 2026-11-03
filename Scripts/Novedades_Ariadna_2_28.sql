@@ -24,15 +24,9 @@ INSERT INTO @n VALUES
 (5, N'Corregido', N'Recepción «Sin etiqueta»: sin avisos repetidos',
  N'Si al dar una unidad «Sin etiqueta» la PDA pierde la cobertura y reintentas, el aviso al origen y a Compras ya no se manda dos veces.',
  N'Almacén'),
-(6, N'Mejorado', N'Reparto: recoger la reposición desde la propia parada',
- N'Si en «Entregar» lee un bulto R de la reposición que se recoge en esa misma tienda (o una NR del cliente de la parada), Ariadna ya no le dice solo «no es de esta parada»: le pregunta «¿Recogerlo ahora?» e Intro lo sube a la furgoneta sin salir de la parada, igual que desde «En la furgoneta». Gracias, Miguel.',
- N'Almacén'),
 (7, N'Mejorado', N'Muestras sin código de barras: se cuentan tecleando',
  N'Las muestras (subgrupo MMP) que no traen código de barras del fabricante ya no hay que etiquetarlas. En el recorrido, el packing y Enviar reposición, Ariadna dice «Muestra sin código de barras: teclee su referencia (o la cantidad y F1) para contarla» y no pide imprimir etiqueta. Al recibir una reposición, en esas líneas teclear la referencia o la cantidad cuenta, sin pasar por «Sin etiqueta». Lo pidió Almacén.',
- N'Almacén,Tiendas'),
-(8, N'Mejorado', N'Packing: el número del pedido le lleva a su entrega',
- N'Dentro de Empaquetar, teclee o lea el número de un pedido (6 cifras) y Ariadna le lleva a su entrega y a su caja («Pedido 929582: entrega de X, caja 1»). Si el pedido es de otro picking, le pregunta si quiere abrirlo. Las entregas siguen agrupadas por cliente, porque los pedidos del mismo cliente van en la misma caja. Gracias, Alfredo.',
- N'Almacén');
+ N'Almacén,Tiendas');
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT '2.28', '2026-11-03', n.Categoria, n.Titulo, n.Descripcion, 'Ariadna', 1, 'sa', n.Perfiles

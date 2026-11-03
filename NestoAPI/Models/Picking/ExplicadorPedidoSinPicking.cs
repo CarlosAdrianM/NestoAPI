@@ -160,6 +160,30 @@ namespace NestoAPI.Models.Picking
             return string.Join(", ", partes);
         }
 
+        /// <summary>Carlos 03/11/26: en el picking de un cliente se explican como mucho estos pedidos.</summary>
+        public const int MAXIMO_PEDIDOS_EXPLICADOS = 5;
+
+        /// <summary>
+        /// Carlos 03/11/26 (pedido 929864): el error del picking de un CLIENTE cuando no sale ninguno de sus pedidos. Uno solo, tal
+        /// cual; varios, un mensaje por pedido (una línea cada uno) con el código del primero. Sin ninguno, null (el mensaje de siempre).
+        /// </summary>
+        public static NestoBusinessException ErrorVarios(IList<NestoBusinessException> errores)
+        {
+            if (errores == null || errores.Count == 0)
+            {
+                return null;
+            }
+            if (errores.Count == 1)
+            {
+                return errores[0];
+            }
+            string mensaje = string.Join(Environment.NewLine, errores.Select(e => e.Message));
+            return new NestoBusinessException(mensaje, new ErrorContext { ErrorCode = errores[0].Context?.ErrorCode })
+            {
+                IsWarning = true
+            };
+        }
+
         private static NestoBusinessException Crear(string mensaje, string codigo, PedidoPicking pedido)
         {
             return new NestoBusinessException(mensaje, new ErrorContext

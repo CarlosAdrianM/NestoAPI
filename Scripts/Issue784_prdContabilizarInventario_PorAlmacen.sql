@@ -9,11 +9,11 @@
 --   1. Al principio, antes de tocar nada (RAISERROR y return -1):
 --        - el usuario no tiene filas pendientes (estado 1, NºTraspaso NULL) en el almacén;
 --        - (solo si @Delegación no es un almacén) el usuario tiene filas pendientes en varios almacenes: no se sabe cuál quiere.
---   2. @Almacen = @Delegación si es un almacén de la empresa (la API y Nesto nuevo): se contabiliza ese y SOLO ese; lo pendiente
---      en otros almacenes se queda para otra llamada (Carlos 03/11/26: «en cada llamada se contabilice lo que se quiere»).
---      Si no (Nesto viejo pasa la delegación del extracto, 'VAR'), el único almacén con filas pendientes del usuario; con varios,
---      no se contabiliza nada (REVISIÓN 03/11/26 16:10: la primera versión exigía que @Delegación fuese un almacén y a Santiago
---      le saltó «El almacén VAR no existe en la empresa 1» desde Nesto viejo; la segunda abortaba también con almacén explícito).
+--   2. Parámetro NUEVO y opcional @Almacén (misma firma para Nesto viejo y los scripts de siempre, que pasan cuatro). Con él (la
+--      API y Nesto nuevo) se contabiliza ese almacén y SOLO ese; lo pendiente en otros se queda para otra llamada (Carlos 03/11/26:
+--      «en cada llamada se contabilice lo que se quiere»). Sin él, el único almacén con filas pendientes del usuario; con varios, nada.
+--      @Delegación es la delegación del extracto y NO se usa como almacén (REVISIÓN 03/11/26 16:10: la primera versión exigía que
+--      @Delegación fuese un almacén y a Santiago le saltó «El almacén VAR no existe en la empresa 1» desde Nesto viejo).
 --   3. Filtran además por almacén = @Almacen: la comprobación de filas sin pasillo, el INSERT en #Ubicacion, el DELETE de
 --      Ubicaciones del 29/11/22 (que además ahora cruza el almacén de la ubicación con el de la fila), el INSERT en
 --      PreExtrProducto y el UPDATE final de Inventarios.
@@ -28,7 +28,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER OFF
 GO
-ALTER PROCEDURE [dbo].[prdContabilizarInventario] @Empresa as char(3), @Usuario as varchar(30), @Delegación as char(3), @FormaVenta as char(3) AS
+ALTER PROCEDURE [dbo].[prdContabilizarInventario] @Empresa as char(3), @Usuario as varchar(30), @Delegación as char(3), @FormaVenta as char(3), @AlmacenAContabilizar as char(3) = NULL AS
 /************************************************************************************************************************************************************************************
  * prdContabilizarInventario - Carlos Adrián Martínez -> 12/11/02											*
  * --------------------------------------------------------------------------------------------------											*
@@ -38,13 +38,14 @@ ALTER PROCEDURE [dbo].[prdContabilizarInventario] @Empresa as char(3), @Usuario 
  *																		*
  * Entrada:	@Empresa	-> Empresa en la que se van a regularizar las existencias								*
  * 		@Usuario	-> Usuario del que se van a contabilizar sus movimientos.								*
- * 		@Delegación	-> Delegación del extracto; si es un almacén, también el almacén que se contabiliza (ver abajo).				*
+ * 		@Delegación	-> Delegación del extracto (no es el almacén).											*
+ * 		@Almacén	-> (opcional, 03/11/26) Almacén que se contabiliza. Sin él, el único con filas pendientes del usuario.		*
  *																		*
  * Carlos 03/11/26 (NestoAPI#787, épica #784): hasta ahora se contabilizaban TODAS las filas pendientes (estado 1) del usuario, fuesen del almacén	*
  * que fuesen: @Delegación solo iba al extracto y @Almacen se sacaba de la primera fila. El 22/11/25 el traspaso 77263, lanzado para			*
  * NUEVAVISION\RDS2016$ al contabilizar el inventario, se llevó a la vez 64 filas de ALC y 25 de REI que estaban con StockReal 0 por el INSERT	*
  * inicial de las tiendas, y dejó su stock a cero. Desde ahora:												*
- *   - @Almacen es @Delegación si es un almacén (la API); si no (Nesto viejo: 'VAR'), el único almacén con filas pendientes del usuario.	*
+ *   - @Almacen es el parámetro @Almacén si viene; si no (Nesto viejo), el único almacén con filas pendientes del usuario.			*
  *   - Con almacén explícito se contabiliza solo ese; lo pendiente en otros se queda. Con 'VAR' y varios almacenes, nada.			*
  *   - Todas las sentencias filtran además por almacén = @Almacen. @Delegación sigue yendo al extracto.						*
  ************************************************************************************************************************************************************************************/
@@ -60,14 +61,21 @@ declare @Almacen as char(3)
 declare @Mensaje as varchar(2000)
 declare @OtrosAlmacenes as varchar(1000)
 -- Carlos 03/11/26 (NestoAPI#787): el almacén que se contabiliza. Antes se deducía de la primera fila pendiente del usuario y se
--- contabilizaban TODAS sus filas, fuesen del almacén que fuesen (lo del 22/11/25). Ahora cada llamada contabiliza SOLO un almacén:
---   * Si @Delegación es un almacén de la empresa (así lo llama la API desde #790, y Nesto nuevo elige el almacén): ese, y solo ese.
---     Las filas pendientes que el usuario tenga en otros almacenes se quedan como están, para contabilizarlas en otra llamada.
---   * Si no (Nesto viejo pasa la delegación del extracto, 'VAR', que no es un almacén; 03/11/26 16:10, inventario de Santiago):
---     el único almacén en el que el usuario tiene filas pendientes. Si las tiene en varios no se puede saber cuál quiere y no se
---     contabiliza nada: hay que hacerlo desde Nesto nuevo (o Ariadna), eligiendo el almacén.
-if exists (select * from almacenes where empresa = @Empresa and número = @Delegación)
-	set @Almacen = @Delegación
+-- contabilizaban TODAS sus filas, fuesen del almacén que fuesen (lo del 22/11/25). Ahora cada llamada contabiliza SOLO un almacén.
+-- La delegación (@Delegación) es otra cosa: va al extracto y no se toca (Carlos 03/11/26: «no se puede convertir una delegación en almacén»).
+--   * Con @AlmacenAContabilizar (parámetro nuevo, opcional; «@Almacén» chocaría con la variable @Almacen por la intercalación; lo pasa la API desde #790 y Nesto nuevo elige el almacén): ese, y solo ese. Las filas
+--     pendientes que el usuario tenga en otros almacenes se quedan como están, para contabilizarlas en otra llamada.
+--   * Sin @Almacén (Nesto viejo y los scripts de siempre llaman con cuatro parámetros): el único almacén en el que el usuario tiene
+--     filas pendientes. Si las tiene en varios no se puede saber cuál quiere y no se contabiliza nada: hay que hacerlo desde Nesto
+--     nuevo (o Ariadna), eligiendo el almacén.
+if @AlmacenAContabilizar is not null begin
+	if not exists (select * from almacenes where empresa = @Empresa and número = @AlmacenAContabilizar) begin
+		set @Mensaje = 'El almacén ' + rtrim(@AlmacenAContabilizar) + ' no existe en la empresa ' + isnull(rtrim(@Empresa), '(nula)')
+		raiserror('%s',11,1,@Mensaje)
+		return -1
+	end
+	set @Almacen = @AlmacenAContabilizar
+end
 else begin
 	select @OtrosAlmacenes = isnull(@OtrosAlmacenes + ', ', '') + convert(varchar(10), count(*)) + ' en ' + rtrim(almacén)
 		from inventarios
@@ -75,7 +83,7 @@ else begin
 		group by almacén
 		order by almacén
 	if (select count(distinct almacén) from inventarios where empresa = @Empresa and usuario = @Usuario and estado = 1 and nºtraspaso is null) > 1 begin
-		set @Mensaje = 'El usuario ' + @Usuario + ' tiene filas pendientes en varios almacenes (' + @OtrosAlmacenes + ') y «' + isnull(rtrim(@Delegación), '') + '» no es un almacén: contabilice cada almacén por separado desde Nesto nuevo o Ariadna. No se ha contabilizado nada'
+		set @Mensaje = 'El usuario ' + @Usuario + ' tiene filas pendientes en varios almacenes (' + @OtrosAlmacenes + '): contabilice cada almacén por separado desde Nesto nuevo o Ariadna. No se ha contabilizado nada'
 		raiserror('%s',11,1,@Mensaje)
 		return -1
 	end

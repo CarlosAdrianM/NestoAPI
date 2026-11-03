@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -70,7 +70,7 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// <summary>Las filas de Ubicaciones del almacén con estado ≥ 0 (solo se pide en almacenes con control de ubicaciones).</summary>
         Task<List<UbicacionAlmacenInventario>> LeerUbicaciones(string almacen);
         /// <summary>
-        /// EXEC prdContabilizarInventario @Empresa, @Usuario, @Delegación = <paramref name="almacen"/>, @FormaVenta = 'VAR'. ÚNICO call
+        /// EXEC prdContabilizarInventario @Empresa, @Usuario, @Delegación = 'VAR', @FormaVenta = 'VAR', @AlmacenAContabilizar = <paramref name="almacen"/>. ÚNICO call
         /// site del SP. Devuelve su return (1 bien); si el SP hace RAISERROR, lanza la SqlException.
         /// </summary>
         Task<int> Contabilizar(string empresa, string usuario, string almacen);
@@ -117,7 +117,12 @@ FROM dbo.Ubicaciones u
 LEFT JOIN dbo.Productos p ON p.Empresa = u.Empresa AND p.Número = u.Número
 WHERE u.Almacén = @p0 AND u.Estado >= 0 AND u.Pasillo IS NOT NULL";
 
-        internal const string SQL_CONTABILIZAR = "EXEC @Resultado = dbo.prdContabilizarInventario @Empresa, @Usuario, @Delegacion, @FormaVenta";
+        /// <summary>
+        /// Carlos 03/11/26: la delegación del extracto NO es el almacén («no se puede convertir una delegación en almacén»); el
+        /// almacén va en el parámetro nuevo @Almacén del SP y la delegación es la de los inventarios de siempre (VAR, como Nesto viejo).
+        /// </summary>
+        public const string DELEGACION = "VAR";
+        internal const string SQL_CONTABILIZAR = "EXEC @Resultado = dbo.prdContabilizarInventario @Empresa, @Usuario, @Delegacion, @FormaVenta, @AlmacenAContabilizar";
 
         internal const string SQL_TRASPASO = @"
 SELECT MAX(i.NºTraspaso) FROM dbo.Inventarios i
@@ -170,8 +175,9 @@ WHERE i.Empresa = @p0 AND i.Almacén = @p1 AND ISNULL(i.StockReal, 0) <> ISNULL(
                 resultado,
                 new SqlParameter("@Empresa", SqlDbType.Char, 3) { Value = empresa },
                 new SqlParameter("@Usuario", SqlDbType.VarChar, 30) { Value = usuario },
-                new SqlParameter("@Delegacion", SqlDbType.Char, 3) { Value = almacen },
-                new SqlParameter("@FormaVenta", SqlDbType.Char, 3) { Value = FORMA_VENTA }
+                new SqlParameter("@Delegacion", SqlDbType.Char, 3) { Value = DELEGACION },
+                new SqlParameter("@FormaVenta", SqlDbType.Char, 3) { Value = FORMA_VENTA },
+                new SqlParameter("@AlmacenAContabilizar", SqlDbType.Char, 3) { Value = almacen }
             };
             db.Database.CommandTimeout = SEGUNDOS_CONTABILIZAR;
             // Sin la transacción que EF abre por defecto: el SP lleva la suya y hace ROLLBACK si falla (dentro de una de EF saldría

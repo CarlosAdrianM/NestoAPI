@@ -348,19 +348,25 @@ namespace NestoAPI.Models.Picking
         /// </summary>
         private Infraestructure.Exceptions.NestoBusinessException ErrorSinPicking(List<PedidoPicking> descartados)
         {
-            if (sinSalirPorCierreCliente.Count == 0 && pedidoUnico.HasValue)
+            if (sinSalirPorCierreCliente.Count == 0 && descartados != null)
             {
-                PedidoPicking pedido = descartados.FirstOrDefault(p => p.Id == pedidoUnico.Value);
-                if (pedido != null)
+                // Carlos 03/11/26 (pedido 929864, cliente 15191): también en el picking de UN CLIENTE, que decía «no hay stock»
+                // cuando el pedido estaba en «Tras reponer de tiendas». Se explican sus pedidos (hasta MAXIMO_PEDIDOS_EXPLICADOS).
+                List<PedidoPicking> aExplicar = pedidoUnico.HasValue
+                    ? descartados.Where(p => p.Id == pedidoUnico.Value).ToList()
+                    : descartados.Take(ExplicadorPedidoSinPicking.MAXIMO_PEDIDOS_EXPLICADOS).ToList();
+                var errores = new List<Infraestructure.Exceptions.NestoBusinessException>();
+                foreach (PedidoPicking pedido in aExplicar)
                 {
                     try
                     {
+                        string empresa = pedidoUnico.HasValue ? empresaPedidoUnico : pedido.Empresa?.Trim();
                         List<string> productos = ExplicadorPedidoSinPicking.ProductosANombrar(pedido);
                         var error = ExplicadorPedidoSinPicking.Error(pedido,
-                            NombresProductos(empresaPedidoUnico, productos), ComprasPendientes(empresaPedidoUnico, productos));
+                            NombresProductos(empresa, productos), ComprasPendientes(empresa, productos));
                         if (error != null)
                         {
-                            return error;
+                            errores.Add(error);
                         }
                     }
                     catch (Exception ex)
@@ -368,6 +374,11 @@ namespace NestoAPI.Models.Picking
                         // Explicar es cortesía: si falla la consulta, el mensaje de siempre
                         System.Diagnostics.Trace.WriteLine($"[Picking#608] No se pudo explicar el pedido {pedido.Id}: {ex.Message}");
                     }
+                }
+                var combinado = ExplicadorPedidoSinPicking.ErrorVarios(errores);
+                if (combinado != null)
+                {
+                    return combinado;
                 }
             }
             return GestorDiasEnServir.ErrorSinPicking(sinSalirPorCierreCliente, diaEntregaPicking);

@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Inventarios;
 using NestoAPI.Models.Inventarios;
@@ -374,7 +374,7 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         }
 
         [TestMethod]
-        public async Task Contabilizar_SinBloqueantes_UnaVezPorUsuarioConElAlmacenComoDelegacion()
+        public async Task Contabilizar_SinBloqueantes_UnaVezPorUsuarioConSuAlmacen()
         {
             Pendientes(Fila("NUEVAVISION\\Paloma", 1), Fila("NUEVAVISION\\Paloma", 2), Fila("NUEVAVISION\\Laura", 3));
             A.CallTo(() => repositorio.LeerTraspaso("1", "REI", "NUEVAVISION\\Paloma", DIA)).Returns(Task.FromResult<int?>(80001));
