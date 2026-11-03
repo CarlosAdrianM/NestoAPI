@@ -859,6 +859,7 @@
     <Compile Include="Infrastructure\Productos\ServicioCodigosBarrasTests.cs" />
     <Compile Include="Infrastructure\Productos\CodigoBarrasInternoTests.cs" />
     <Compile Include="Infrastructure\Productos\ValidadorGtinTests.cs" />
+    <Compile Include="Infrastructure\Productos\LimpiezaCodigosBarrasTests.cs" />
     <Compile Include="Infrastructure\Productos\ServicioSustitucionesProductoTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\GestorPreciosPermisoNecesarioTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />

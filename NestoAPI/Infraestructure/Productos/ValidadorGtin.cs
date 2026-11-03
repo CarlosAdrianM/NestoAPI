@@ -16,26 +16,42 @@ namespace NestoAPI.Infraestructure.Productos
         /// <summary>True si es un EAN-8, UPC-A, EAN-13 o GTIN-14 con el dígito de control correcto (admite espacios alrededor).</summary>
         public static bool EsCodigoValido(string codigo)
         {
+            return MotivoNoValido(codigo) == null;
+        }
+
+        /// <summary>
+        /// NestoAPI#776: por qué no vale un código (null si vale). Es LA regla: <see cref="EsCodigoValido"/> no es más que
+        /// «no hay motivo», así que el informe semanal y la limpieza de los no válidos no pueden discrepar.
+        /// </summary>
+        public static string MotivoNoValido(string codigo)
+        {
             string limpio = codigo?.Trim();
             if (string.IsNullOrEmpty(limpio))
             {
-                return false;
-            }
-            if (limpio.Length != 8 && limpio.Length != 12 && limpio.Length != 13 && limpio.Length != 14)
-            {
-                return false;
+                return MOTIVO_VACIO;
             }
             if (!limpio.All(c => c >= '0' && c <= '9'))
             {
-                return false;
+                return MOTIVO_NO_SOLO_CIFRAS;
+            }
+            if (limpio.Length != 8 && limpio.Length != 12 && limpio.Length != 13 && limpio.Length != 14)
+            {
+                return string.Format(MOTIVO_LONGITUD, limpio.Length, limpio.Length == 1 ? "cifra" : "cifras");
             }
             // Todo ceros pasa el dígito de control, pero no es el código de ningún producto: es relleno
             if (limpio.All(c => c == '0'))
             {
-                return false;
+                return MOTIVO_TODO_CEROS;
             }
-            return DigitoControl(limpio.Substring(0, limpio.Length - 1)) == limpio[limpio.Length - 1] - '0';
+            int control = DigitoControl(limpio.Substring(0, limpio.Length - 1));
+            return control == limpio[limpio.Length - 1] - '0' ? null : string.Format(MOTIVO_DIGITO_CONTROL, control);
         }
+
+        public const string MOTIVO_VACIO = "Está vacío";
+        public const string MOTIVO_NO_SOLO_CIFRAS = "Lleva letras u otros signos: un código de barras solo tiene cifras";
+        public const string MOTIVO_LONGITUD = "Tiene {0} {1}: un código de barras tiene 8, 12, 13 o 14";
+        public const string MOTIVO_TODO_CEROS = "Es todo ceros (relleno)";
+        public const string MOTIVO_DIGITO_CONTROL = "El dígito de control no cuadra (debería ser {0})";
 
         /// <summary>El código recortado si es válido; null si no lo es (o no hay): así cuenta como «sin código».</summary>
         public static string SoloSiValido(string codigo)
