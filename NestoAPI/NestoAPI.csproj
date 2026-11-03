@@ -606,6 +606,8 @@
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
+    <Compile Include="Controllers\InventariosController.Rellenar.cs" />
+    <Compile Include="Infraestructure\Inventarios\ServicioRellenarInventario.cs" />
     <Compile Include="Controllers\ParametrosIvaController.cs" />
     <Compile Include="Controllers\TokenRefreshController.cs" />
     <Compile Include="Controllers\SyncWebhookController.cs" />

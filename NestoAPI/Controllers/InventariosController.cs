@@ -15,7 +15,7 @@ using NestoAPI.Models.Inventarios;
 
 namespace NestoAPI.Controllers
 {
-    public class InventariosController : ApiController
+    public partial class InventariosController : ApiController
     {
         private NVEntities db;
         private readonly LectorProductoLeido lector;
