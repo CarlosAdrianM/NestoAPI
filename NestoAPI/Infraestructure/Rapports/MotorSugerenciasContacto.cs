@@ -393,8 +393,20 @@ namespace NestoAPI.Infraestructure.Rapports
                 CadenciaDias = Cadencia(c),
                 PedidosUltimos12Meses = c.Pedidos12Meses,
                 ImporteUltimos12Meses = c.Importe12Meses,
-                GrupoSubgrupoMasVendido = c.GrupoSubgrupoMasVendido?.Trim()
+                GrupoSubgrupoMasVendido = c.GrupoSubgrupoMasVendido?.Trim(),
+                SinContactoEsteMes = SinContactoEsteMes(c, hoy)
             };
+        }
+
+        /// <summary>
+        /// Nesto#587 (sugerencia 911): nadie ha hablado con el cliente desde el día 1 del mes de <paramref name="hoy"/> (ver
+        /// <see cref="ClienteCarteraContacto.UltimoContactoMesCualquierUsuario"/>: rapports de cualquier usuario, sin los «no
+        /// contestó» ni las gestiones administrativas automáticas).
+        /// </summary>
+        public static bool SinContactoEsteMes(ClienteCarteraContacto c, DateTime hoy)
+        {
+            DateTime? ultimo = c?.UltimoContactoMesCualquierUsuario;
+            return !ultimo.HasValue || ultimo.Value < RepositorioCarteraContactoSql.InicioMes(hoy);
         }
 
         /// <summary>Una frase que explica por qué hoy toca llamarle.</summary>

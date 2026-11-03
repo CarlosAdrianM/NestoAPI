@@ -551,5 +551,68 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(3, s.ObjetivoHoy);
             Assert.AreEqual(0, s.Faltan, "3 de 3 hoy");
         }
+
+        // ---------------- Nesto#587: sin contacto este mes ----------------
+
+        private static ClienteCarteraContacto ConContactoMes(DateTime? ultimoContactoMes)
+        {
+            ClienteCarteraContacto c = Cliente("a", 5);
+            c.UltimoContactoMesCualquierUsuario = ultimoContactoMes;
+            return c;
+        }
+
+        [TestMethod]
+        public void SinContactoEsteMes_RapportEsteMes_False()
+        {
+            ClienteCarteraContacto c = ConContactoMes(new DateTime(2026, 10, 1, 9, 0, 0));
+            c.UltimoContacto = c.UltimoContactoMesCualquierUsuario;
+
+            Assert.IsFalse(MotorSugerenciasContacto.SinContactoEsteMes(c, HOY), "el día 1 ya cuenta");
+            Assert.IsFalse(MotorSugerenciasContacto.ADTO(c, HOY).SinContactoEsteMes);
+        }
+
+        [TestMethod]
+        public void SinContactoEsteMes_RapportSoloElMesPasado_True()
+        {
+            ClienteCarteraContacto c = ConContactoMes(new DateTime(2026, 9, 30, 18, 0, 0));
+            c.UltimoContacto = c.UltimoContactoMesCualquierUsuario;
+
+            Assert.IsTrue(MotorSugerenciasContacto.SinContactoEsteMes(c, HOY));
+            Assert.IsTrue(MotorSugerenciasContacto.ADTO(c, HOY).SinContactoEsteMes);
+        }
+
+        [TestMethod]
+        public void SinContactoEsteMes_SinRapports_True()
+        {
+            ClienteCarteraContacto c = ConContactoMes(null);
+
+            Assert.IsTrue(MotorSugerenciasContacto.SinContactoEsteMes(c, HOY));
+            Assert.IsTrue(MotorSugerenciasContacto.ADTO(c, HOY).SinContactoEsteMes);
+        }
+
+        [TestMethod]
+        public void SinContactoEsteMes_RapportDeOtroVendedorEsteMes_False()
+        {
+            // El rapport del otro vendedor no cuenta para su cadencia (UltimoContacto sigue vacío), pero sí para la marca.
+            ClienteCarteraContacto c = ConContactoMes(HOY.AddDays(-2).AddHours(12));
+            c.UltimoContacto = null;
+
+            Assert.IsFalse(MotorSugerenciasContacto.SinContactoEsteMes(c, HOY));
+            Assert.IsFalse(MotorSugerenciasContacto.ADTO(c, HOY).SinContactoEsteMes);
+        }
+
+        [TestMethod]
+        public void SinContactoEsteMes_SqlCarteraCuentaCualquierUsuarioDesdeElDiaUno()
+        {
+            // Nesto#587: la consulta del mes no filtra por vendedor ni por tipo y deja fuera «no contestó» y las gestiones administrativas.
+            string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
+            int inicio = sql.IndexOf("INTO #ContactoMes", StringComparison.Ordinal);
+            Assert.IsTrue(inicio > 0);
+            string consulta = sql.Substring(inicio, sql.IndexOf("GROUP BY", inicio, StringComparison.Ordinal) - inicio);
+            StringAssert.Contains(consulta, "s.Fecha >= @InicioMes AND s.Estado IN (0, -1)");
+            Assert.IsFalse(consulta.Contains("Vendedor"), "de cualquier usuario");
+            Assert.IsFalse(consulta.Contains("Tipo"), "de cualquier tipo");
+            StringAssert.Contains(sql, "DATEFROMPARTS(YEAR(@Hoy), MONTH(@Hoy), 1)");
+        }
     }
 }
