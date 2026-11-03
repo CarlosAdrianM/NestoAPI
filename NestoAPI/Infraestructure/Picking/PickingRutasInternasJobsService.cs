@@ -56,6 +56,7 @@ namespace NestoAPI.Infraestructure.Picking
         }
 
         /// <summary>Punto de entrada para Hangfire. Void a propósito (NestoAPI#416) y sin reintentos (como el de las 11).</summary>
+        // NestoAPI#780: se salta los festivos de Algete (actúa sobre el almacén): ya lo comprueba Ejecutar con esFestivo.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         public static void SacarPickingRutasInternasJob()

@@ -1418,6 +1418,7 @@
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
     <Compile Include="Infraestructure\ExtractosProducto\ServicioExtractoProducto.cs" />
     <Compile Include="Infraestructure\ElmahHelper.cs" />
+    <Compile Include="Infraestructure\JobsFestivos.cs" />
     <Compile Include="Infraestructure\ColumnasOpcionales.cs" />
     <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />
     <Compile Include="Infraestructure\ServirJunto\ServicioValidarServirJunto.cs" />

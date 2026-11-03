@@ -69,6 +69,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        // NestoAPI#780: se salta los festivos (correo a personas): ya lo comprueba abajo; la pasada nocturna, que solo calcula, no.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         public static async Task EnviarCorreoResumen()

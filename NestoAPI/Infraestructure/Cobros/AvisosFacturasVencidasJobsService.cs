@@ -74,6 +74,7 @@ namespace NestoAPI.Infraestructure.Cobros
         internal const string NOMBRE_REMITENTE = "Administración - Nueva Visión";
 
         // Sin reintentos: si falla, mañana vuelve a pasar. Y nunca dos a la vez.
+        // NestoAPI#780: se salta los festivos (correo a clientes): ya lo hace el núcleo con DependenciasAvisosFacturasVencidas.EsFestivo.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         public static async Task Procesar()

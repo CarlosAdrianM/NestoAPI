@@ -130,12 +130,21 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         private readonly IRepositorioFurgoneta repositorio;
         private readonly IAvisosFurgoneta avisos;
         private readonly Func<DateTime> ahora;
+        private readonly Func<DateTime, bool> esFestivo;
+        private readonly Action<Exception, string> trazar;
 
-        internal FurgonetaSinDescargarJobsService(IRepositorioFurgoneta repositorio, IAvisosFurgoneta avisos, Func<DateTime> ahora = null)
+        internal const string MENSAJE_FESTIVO = "[Furgoneta #772] No se avisa de las furgonetas sin descargar: el día es festivo";
+        internal const string USUARIO_SISTEMA = "Sistema (furgoneta sin descargar)";
+
+        /// <param name="esFestivo">NestoAPI#780: sin él (null), no se miran los festivos.</param>
+        internal FurgonetaSinDescargarJobsService(IRepositorioFurgoneta repositorio, IAvisosFurgoneta avisos, Func<DateTime> ahora = null,
+            Func<DateTime, bool> esFestivo = null, Action<Exception, string> trazar = null)
         {
             this.repositorio = repositorio;
             this.avisos = avisos;
             this.ahora = ahora ?? (() => DateTime.Now);
+            this.esFestivo = esFestivo;
+            this.trazar = trazar;
         }
 
         /// <summary>Punto de entrada de Hangfire.</summary>
@@ -143,13 +152,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         {
             using (var db = new NVEntities())
             {
-                _ = await new FurgonetaSinDescargarJobsService(new RepositorioFurgoneta(db), new AvisosFurgonetaSinDescargar()).AvisarSinDescargar().ConfigureAwait(false);
+                _ = await new FurgonetaSinDescargarJobsService(new RepositorioFurgoneta(db), new AvisosFurgonetaSinDescargar(),
+                    esFestivo: JobsFestivos.EsFestivoAlgete).AvisarSinDescargar().ConfigureAwait(false);
             }
         }
 
         /// <summary>A cuántos repartidores se ha avisado.</summary>
         public async Task<int> AvisarSinDescargar()
         {
+            // NestoAPI#780: en festivo se salta (manda push a Almacén, Dirección y al repartidor, y nadie reparte); lo que siga
+            // en la furgoneta se avisa el siguiente laborable a las 22:00.
+            if (JobsFestivos.SaltarSiFestivo(MENSAJE_FESTIVO, USUARIO_SISTEMA, esFestivo, ahora, trazar))
+            {
+                return 0;
+            }
             try
             {
                 if (repositorio == null || !repositorio.ScriptAplicado())

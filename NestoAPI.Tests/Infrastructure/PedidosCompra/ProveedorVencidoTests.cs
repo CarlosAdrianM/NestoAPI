@@ -242,6 +242,28 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
+        public void Correo_EnFestivo_NoSeMandaNiSeLeeYSeTraza()
+        {
+            // NestoAPI#780: en festivo no sale el correo a Compras (sale el siguiente laborable)
+            IServicioCorreoElectronico servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            var trazas = new List<string>();
+
+            bool resultado = ProveedoresVencidosJobsService.Procesar(new DependenciasProveedoresVencidos
+            {
+                Repositorio = repositorio,
+                Correo = servicioCorreo,
+                Ahora = AHORA,
+                EsFestivo = d => d == AHORA.Date,
+                Trazar = (ex, usuario) => trazas.Add(ex.Message)
+            });
+
+            Assert.IsFalse(resultado);
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.LeerLineasVencidas(A<string>._, A<IEnumerable<string>>._, A<DateTime>._)).MustNotHaveHappened();
+            CollectionAssert.AreEqual(new[] { ProveedoresVencidosJobsService.MENSAJE_FESTIVO }, trazas);
+        }
+
+        [TestMethod]
         public void Correo_SinNadaVencido_NoSeManda()
         {
             Assert.IsFalse(ProcesarCorreo(new List<LineaCompraVencida>(), new Dictionary<string, EsperaClientesProducto>(), out MailMessage correo));

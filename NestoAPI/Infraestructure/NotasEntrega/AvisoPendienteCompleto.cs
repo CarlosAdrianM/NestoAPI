@@ -205,6 +205,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// <summary>Cada hora en punto, de 8:00 a 19:00, de lunes a viernes.</summary>
         public const string CRON = "0 8-19 * * 1-5";
 
+        // NestoAPI#780: se salta los festivos (avisa a personas): ya lo hace EnHorarioLaboral con EsLaborableOficina.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 1800)]
         public static async Task Procesar()

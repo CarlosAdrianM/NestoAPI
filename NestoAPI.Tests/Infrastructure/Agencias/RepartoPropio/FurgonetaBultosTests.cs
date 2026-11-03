@@ -724,6 +724,20 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
+        public async Task Job22_EnFestivo_NoAvisaYDejaTraza()
+        {
+            // NestoAPI#780: en festivo no se manda la push de las 22:00 aunque haya bultos encima
+            furgoneta.Filas.Add(Mov(1, "RP1-1", TiposMovimientoBulto.CARGADO, ANDRE, AHORA));
+            var trazas = new List<string>();
+            var job = new FurgonetaSinDescargarJobsService(furgoneta, avisosFurgoneta, () => AHORA.Date.AddHours(22),
+                esFestivo: d => d == AHORA.Date, trazar: (ex, usuario) => trazas.Add(ex.Message));
+
+            Assert.AreEqual(0, await job.AvisarSinDescargar());
+            Assert.AreEqual(0, avisosFurgoneta.Llamadas.Count);
+            CollectionAssert.AreEqual(new[] { FurgonetaSinDescargarJobsService.MENSAJE_FESTIVO }, trazas);
+        }
+
+        [TestMethod]
         public async Task Job22_SinScript_NoHaceNada()
         {
             furgoneta.Script = false;

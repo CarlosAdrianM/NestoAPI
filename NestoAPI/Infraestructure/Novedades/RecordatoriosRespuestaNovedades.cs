@@ -184,6 +184,7 @@ namespace NestoAPI.Infraestructure.Novedades
         public static bool Activo() =>
             string.Equals(ConfigurationManager.AppSettings[ReglasEsperaRespuestaNovedades.CLAVE_INTERRUPTOR]?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
+        // NestoAPI#780: se salta los festivos (avisa a personas): ya lo comprueba abajo con EsLaborableOficina.
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 1800)]
         public static async Task Procesar()
