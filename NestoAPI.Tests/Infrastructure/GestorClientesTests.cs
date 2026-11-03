@@ -3235,5 +3235,34 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(NestoAPI.Infraestructure.Clientes.AltaClienteEspecial.MOTIVO_EXCLUYENTES, ex.InnerException.Message);
         }
 
+    
+        [TestMethod]
+        public async Task GestorClientes_LeerMandato_SinLaCuenta_NotFoundConMensajeClaro()
+        {
+            // 03/11/26 (ELMAH 12:22): pedir el mandato de una cuenta que el cliente no tiene daba NullReference
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(new Cliente { Nombre = "Cliente", CIF_NIF = "12345678A" });
+            A.CallTo(() => servicio.BuscarCCC("1", "1234", "0", "9")).Returns((CCC)null);
+            GestorClientes gestor = CrearGestorClientes(servicio);
+
+            NotFoundException ex = await Assert.ThrowsExceptionAsync<NotFoundException>(() => gestor.LeerMandato("1", "1234", "0", "9"));
+
+            StringAssert.Contains(ex.Message, "no tiene la cuenta bancaria");
+        }
+
+        [TestMethod]
+        public async Task GestorClientes_LeerMandato_ClienteConCamposNulos_NoRevienta()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(new Cliente { Nombre = "Cliente", CIF_NIF = null, Dirección = null });
+            A.CallTo(() => servicio.BuscarCCC("1", "1234", "0", "1")).Returns(new CCC { Pais = "ES", DC_IBAN = "91", Entidad = "2100", Oficina = "0418", DC = "45", Nº_Cuenta = "0200051332" });
+            GestorClientes gestor = CrearGestorClientes(servicio);
+
+            Mandato mandato = await gestor.LeerMandato("1", "1234", "0", "1");
+
+            Assert.AreEqual(string.Empty, mandato.PersonaFirmante);
+            Assert.AreEqual(string.Empty, mandato.DireccionDeudor);
+        }
+
     }
 }

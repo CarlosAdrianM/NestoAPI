@@ -1570,6 +1570,11 @@ namespace NestoAPI.Infraestructure
                 throw new NotFoundException($"No existe el cliente {empresa}/{cliente}/{contacto}");
             }
             CCC cccDB = await servicio.BuscarCCC(empresa, cliente, contacto, ccc).ConfigureAwait(false);
+            // 03/11/26 (ELMAH 12:22): sin la cuenta saltaba un NullReference al montar el mandato
+            if (cccDB == null)
+            {
+                throw new NotFoundException($"El cliente {empresa}/{cliente}/{contacto} no tiene la cuenta bancaria «{ccc}»: no se puede generar el mandato");
+            }
 
             Mandato mandato = new Mandato
             {
@@ -1581,15 +1586,15 @@ namespace NestoAPI.Infraestructure
                 PoblacionAcreedor = "Algete",
                 ProvinciaAcreedor = "Madrid",
                 PaisAcreedor = "España",
-                NombreDeudor = clienteDB.Nombre.Trim(),
-                DireccionDeudor = clienteDB.Dirección.Trim(),
-                CodigoPostalDeudor = clienteDB.CodPostal.Trim(),
-                PoblacionDeudor = clienteDB.Población.Trim(),
-                ProvinciaDeudor = clienteDB.Provincia.Trim(),
+                NombreDeudor = clienteDB.Nombre?.Trim() ?? string.Empty,
+                DireccionDeudor = clienteDB.Dirección?.Trim() ?? string.Empty,
+                CodigoPostalDeudor = clienteDB.CodPostal?.Trim() ?? string.Empty,
+                PoblacionDeudor = clienteDB.Población?.Trim() ?? string.Empty,
+                ProvinciaDeudor = clienteDB.Provincia?.Trim() ?? string.Empty,
                 PaisDeudor = "España",
                 Iban = new Iban($"{cccDB.Pais}{cccDB.DC_IBAN}{cccDB.Entidad}{cccDB.Oficina}{cccDB.DC}{cccDB.Nº_Cuenta}"),
                 SwiftBic = cccDB.BIC,
-                PersonaFirmante = "0123456789XY".Contains(clienteDB.CIF_NIF.Substring(0, 1)) ? clienteDB.Nombre : string.Empty
+                PersonaFirmante = !string.IsNullOrWhiteSpace(clienteDB.CIF_NIF) && "0123456789XY".Contains(clienteDB.CIF_NIF.Trim().Substring(0, 1)) ? clienteDB.Nombre : string.Empty
             };
 
             return mandato;
