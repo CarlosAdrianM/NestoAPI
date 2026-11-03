@@ -38,7 +38,14 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         SinFicha,
 
         /// <summary>Ha fallado la lectura o el cálculo.</summary>
-        Error
+        Error,
+
+        /// <summary>
+        /// Las compras coinciden y la media solo difiere en menos de 0,01 €: la BD la tiene redondeada a 2 decimales
+        /// y el C# la calcula con 4 (p. ej. 4,87 frente a 4,865). Esperado; no manda correo (Issue #547).
+        /// Va al final para no mover el valor numérico de los demás.
+        /// </summary>
+        EmpateRedondeo
     }
 
     /// <summary>Resultado de la sombra para un producto.</summary>
@@ -82,6 +89,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public int IgualesConAvisos { get; set; }
         public int Pendientes { get; set; }
         public int Empates { get; set; }
+        public int EmpatesRedondeo { get; set; }
         public int Distintos { get; set; }
         public int NoProcesados { get; set; }
         public int SinFicha { get; set; }
@@ -120,16 +128,16 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             }
             return string.Format(CultureInfo.InvariantCulture, "Sombra de precios medios {0:dd/MM/yyyy} (corte SP {1:dd/MM/yyyy HH:mm}): ", FechaPasada, CorteSP) +
                 string.Join(" | ", Empresas.Select(e => string.Format(CultureInfo.InvariantCulture,
-                    "empresa {0}: {1}/{2} productos en {3:0}s{4}; iguales {5}, con avisos {6}, pendientes {7}, empates {8}, DISTINTOS {9}, errores {10}, no procesados {11}; ventas {12} comparadas, {13} distintas",
+                    "empresa {0}: {1}/{2} productos en {3:0}s{4}; iguales {5}, con avisos {6}, pendientes {7}, empates {8}, empates por redondeo {9}, DISTINTOS {10}, errores {11}, no procesados {12}; ventas {13} comparadas, {14} distintas",
                     e.Empresa, e.Revisados, e.Productos, e.Segundos, e.Interrumpida ? " (INTERRUMPIDA por tiempo)" : "",
-                    e.Iguales, e.IgualesConAvisos, e.Pendientes, e.Empates, e.Distintos, e.Errores, e.NoProcesados,
+                    e.Iguales, e.IgualesConAvisos, e.Pendientes, e.Empates, e.EmpatesRedondeo, e.Distintos, e.Errores, e.NoProcesados,
                     e.VentasComparadas, e.VentasDistintas)));
         }
     }
 
     /// <summary>
     /// Sombra de los precios medios (Issue #547, corte b): calcula con <see cref="CalculadoraPrecioMedio"/> y
-    /// COMPARA con lo que dejó el SP del domingo. NUNCA escribe en Productos, LinPedidoCmp ni LinPedidoVta: lo
+    /// COMPARA con lo que hay en la BD. NUNCA escribe en Productos, LinPedidoCmp ni LinPedidoVta: lo
     /// único que escribe (si se pide) es la tabla de diagnóstico <c>PreciosMediosSombra</c>.
     /// </summary>
     public class ServicioSombraPreciosMedios
@@ -238,6 +246,12 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                     resultado.Clasificacion = ClasificacionSombraPrecioMedio.Pendiente;
                     return resultado;
                 }
+            }
+
+            if (resultado.Diferencia.EsSoloRedondeoDeLaMedia)
+            {
+                resultado.Clasificacion = ClasificacionSombraPrecioMedio.EmpateRedondeo;
+                return resultado;
             }
 
             resultado.Clasificacion = calculoSP.Avisos.Any(a => AVISOS_DE_EMPATE.Contains(a.Tipo))
@@ -371,6 +385,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 case ClasificacionSombraPrecioMedio.IgualConAvisos: r.IgualesConAvisos++; break;
                 case ClasificacionSombraPrecioMedio.Pendiente: r.Pendientes++; break;
                 case ClasificacionSombraPrecioMedio.Empate: r.Empates++; break;
+                case ClasificacionSombraPrecioMedio.EmpateRedondeo: r.EmpatesRedondeo++; break;
                 case ClasificacionSombraPrecioMedio.Distinto: r.Distintos++; break;
                 case ClasificacionSombraPrecioMedio.NoProcesado: r.NoProcesados++; break;
                 case ClasificacionSombraPrecioMedio.SinFicha: r.SinFicha++; break;
@@ -460,6 +475,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                         e.IgualesConAvisos,
                         e.Pendientes,
                         e.Empates,
+                        e.EmpatesRedondeo,
                         e.Distintos,
                         e.NoProcesados,
                         e.SinFicha,

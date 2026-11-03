@@ -5,7 +5,7 @@ using System.Linq;
 namespace NestoAPI.Infraestructure.PreciosMedios
 {
     /// <summary>
-    /// Lo que hay AHORA en la BD para un producto: lo que dejó el SP (Issue #547, corte b).
+    /// Lo que hay AHORA en la BD para un producto (Issue #547, corte b).
     /// </summary>
     public sealed class EstadoActualPrecioMedio
     {
@@ -29,10 +29,16 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         }
     }
 
-    /// <summary>Resultado de comparar lo calculado en C# con lo que dejó el SP.</summary>
+    /// <summary>Resultado de comparar lo calculado en C# con lo que hay en la BD.</summary>
     public sealed class DiferenciaPrecioMedio
     {
         public const int MAXIMO_DETALLES = 50;
+
+        /// <summary>
+        /// Diferencia de la media (en valor absoluto) por debajo de la cual, si las compras coinciden, es solo el
+        /// redondeo a 2 decimales que tiene la BD (Issue #547: 45942, BD 4,87 y C# 4,865).
+        /// </summary>
+        public const decimal TOLERANCIA_REDONDEO = 0.01m;
 
         public decimal? PrecioMedioBD { get; set; }
         public decimal? PrecioMedioCalculado { get; set; }
@@ -61,6 +67,17 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public List<DetalleDiferenciaPrecioMedio> Detalles { get; } = new List<DetalleDiferenciaPrecioMedio>();
 
         public bool HayDiferencia => MediaDistinta || LineasDistintas > 0 || (VentasDistintas ?? 0) > 0;
+
+        /// <summary>
+        /// La única diferencia es la media, y por menos de un céntimo: las compras (y, si se han muestreado, las
+        /// ventas) coinciden al diezmilésimo. Es el redondeo a 2 decimales con el que se queda la BD, no un fallo
+        /// de paridad (Issue #547, «EmpateRedondeo»).
+        /// </summary>
+        public bool EsSoloRedondeoDeLaMedia =>
+            MediaComparada && MediaDistinta &&
+            LineasDistintas == 0 && (VentasDistintas ?? 0) == 0 &&
+            PrecioMedioBD.HasValue && PrecioMedioCalculado.HasValue &&
+            Math.Abs(PrecioMedioBD.Value - PrecioMedioCalculado.Value) < TOLERANCIA_REDONDEO;
     }
 
     public sealed class DetalleDiferenciaPrecioMedio
@@ -76,7 +93,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
 
     /// <summary>
     /// Compara, SIN tolerancia (igualdad al diezmilésimo, que es lo que guarda <c>money</c>), lo que calcula
-    /// <see cref="CalculadoraPrecioMedio"/> con lo que dejó el SP (Issue #547, §4 del plan):
+    /// <see cref="CalculadoraPrecioMedio"/> con lo que hay en la BD (Issue #547, §4 del plan):
     /// 1. <c>Productos.PrecioMedio</c> vs la media final.
     /// 2. <c>LinPedidoCmp.Coste</c> de cada línea que el SP reescribe vs <c>CostesPorLinea</c>.
     /// 3. <c>LinPedidoVta.Coste</c> (solo si se ha muestreado) vs los tramos: estado ≥ 2 con fecha de albarán en
