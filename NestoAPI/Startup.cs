@@ -59,6 +59,8 @@ namespace NestoAPI
                 Models.Facturas.RutasPropiasConfiguradas.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#764: el día de reparto de nuestra ruta por código postal (tabla CodigosPostalesDiaReparto).
                 Infraestructure.PedidosVenta.DiasRepartoCodigosPostales.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // NestoAPI#799: y la excepción por cliente y contacto, que manda sobre el código postal (tabla ClientesDiaReparto).
+                Infraestructure.PedidosVenta.DiasRepartoClientes.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
 
                 _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 

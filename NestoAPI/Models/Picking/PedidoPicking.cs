@@ -74,6 +74,8 @@ namespace NestoAPI.Models.Picking
         public bool AvisarConImporteAlCogerPicking { get; set; }
         public string Vendedor { get; set; }
         public string Cliente { get; set; }
+        /// <summary>NestoAPI#799: el contacto (dirección de entrega), por si tiene excepción de día de reparto.</summary>
+        public string Contacto { get; set; }
         /// <summary>NestoAPI#362: Clientes.DiasEnServir ("11111" = abre L-V, '0' = cierra ese
         /// día). Null o formato raro = abierto. Lo usa GestorDiasEnServir para no sacar picking
         /// de pedidos cuya entrega caería en día cerrado.</summary>

@@ -91,16 +91,32 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         /// <summary>¿La ruta es interna (de las de <see cref="RutasPropiasConfiguradas"/>) y hay algún código postal con día?
         /// Sirve para no leer el código postal del pedido cuando no puede tener día.</summary>
-        public static bool PuedeTenerDia(string ruta) => RutasPropiasConfiguradas.Contiene(ruta) && Actuales.Count > 0;
+        public static bool PuedeTenerDia(string ruta) =>
+            RutasPropiasConfiguradas.Contiene(ruta) && (Actuales.Count > 0 || DiasRepartoClientes.HayAlguna);
 
         /// <summary>
-        /// LA REGLA: el día de reparto de un pedido que va por ruta interna (<paramref name="ruta"/> en
+        /// LA REGLA (sin cliente): el día de reparto de un pedido que va por ruta interna (<paramref name="ruta"/> en
         /// <see cref="RutasPropiasConfiguradas"/>) al código postal <paramref name="codigoPostal"/>; null si no va por ruta
-        /// interna o el código postal no tiene día (entonces, como hasta ahora).
+        /// interna o el código postal no tiene día (entonces, como hasta ahora). Si se conoce el cliente, mejor la sobrecarga
+        /// con cliente y contacto (NestoAPI#799).
         /// </summary>
         public static DayOfWeek? DiaRutaInterna(string ruta, string codigoPostal)
         {
             return RutasPropiasConfiguradas.Contiene(ruta) ? DiaDe(codigoPostal) : null;
+        }
+
+        /// <summary>
+        /// NestoAPI#799: LA REGLA con el cliente. Si va por ruta interna, PRIMERO la excepción del contacto
+        /// (<see cref="DiasRepartoClientes"/>, «este contacto se sirve los miércoles aunque su CP sea de martes») y, si no
+        /// tiene, el día de su código postal. Sin cliente o contacto, como <see cref="DiaRutaInterna(string, string)"/>.
+        /// </summary>
+        public static DayOfWeek? DiaRutaInterna(string ruta, string codigoPostal, string empresa, string cliente, string contacto)
+        {
+            if (!RutasPropiasConfiguradas.Contiene(ruta))
+            {
+                return null;
+            }
+            return DiasRepartoClientes.DiaDe(empresa, cliente, contacto) ?? DiaDe(codigoPostal);
         }
 
         /// <summary>Filas (CP, '01'..'05') → diccionario. Ignora las filas vacías y las rutas que no son de 01 a 05.</summary>

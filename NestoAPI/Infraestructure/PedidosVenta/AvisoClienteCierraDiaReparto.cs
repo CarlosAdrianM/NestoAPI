@@ -20,9 +20,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// «El cliente cierra el martes, que es su día de reparto por nuestra ruta: envíelo por agencia o cambie el día.», o null
         /// si no hay nada que avisar (no va por ruta interna, su código postal no tiene día o el cliente abre ese día).
         /// </summary>
-        public static string Mensaje(string ruta, string codigoPostal, string diasEnServir)
+        public static string Mensaje(string ruta, string codigoPostal, string diasEnServir,
+            string empresa = null, string cliente = null, string contacto = null)
         {
-            DayOfWeek? dia = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal);
+            // NestoAPI#799: con el cliente, su excepción de día de reparto manda sobre el código postal
+            DayOfWeek? dia = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal, empresa, cliente, contacto);
             if (!dia.HasValue)
             {
                 return null;
@@ -37,16 +39,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>El aviso para la respuesta del POST/PUT del pedido, o null.</summary>
-        public static AvisoPedidoDTO Crear(string ruta, string codigoPostal, string diasEnServir)
+        public static AvisoPedidoDTO Crear(string ruta, string codigoPostal, string diasEnServir,
+            string empresa = null, string cliente = null, string contacto = null)
         {
-            string mensaje = Mensaje(ruta, codigoPostal, diasEnServir);
+            string mensaje = Mensaje(ruta, codigoPostal, diasEnServir, empresa, cliente, contacto);
             return mensaje == null
                 ? null
                 : new AvisoPedidoDTO
                 {
                     Tipo = TIPO,
                     Mensaje = mensaje,
-                    Datos = new { DiaReparto = CalendarioRutasDia.Nombre(DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal).Value) }
+                    Datos = new { DiaReparto = CalendarioRutasDia.Nombre(DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal, empresa, cliente, contacto).Value) }
                 };
         }
     }
