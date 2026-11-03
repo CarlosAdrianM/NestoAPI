@@ -486,6 +486,7 @@ namespace NestoAPI.Tests.Controllers
                 Empresa = "1  ",
                 Número = 12345,
                 Nº_Cliente = "10000",
+                IVA = "G21", // NestoAPI#718: sin IVA se facturaría por Global
                 Contacto = "0  ",
                 Forma_Pago = formaPago,
                 PlazosPago = "CONTADO",

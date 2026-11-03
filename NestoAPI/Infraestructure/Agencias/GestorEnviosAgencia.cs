@@ -416,18 +416,28 @@ namespace NestoAPI.Infraestructure.Agencias
         internal static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado,
             IEnumerable<LinPedidoVta> lineasPendientes, IEnumerable<LinPedidoVta> lineasEnCursoConPicking,
             IServicioPedidosVenta servicio, IEnumerable<LinPedidoVta> lineasAlbaranSinFacturar = null)
+            => CalcularReembolso(pedidoSeleccionado, lineasPendientes, lineasEnCursoConPicking, servicio, lineasAlbaranSinFacturar).Importe;
+
+        /// <summary>
+        /// El reembolso con su diagnóstico (NestoAPI#718): si el pedido se factura por la empresa espejo (Global, serie GB),
+        /// <see cref="ReembolsoCalculado.Importe"/> es lo que cobrará la factura y <see cref="ReembolsoCalculado.ImporteSegunLineas"/>
+        /// la suma de los Total de las líneas tal como están (lo que salía antes).
+        /// </summary>
+        internal static ReembolsoCalculado CalcularReembolso(CabPedidoVta pedidoSeleccionado,
+            IEnumerable<LinPedidoVta> lineasPendientes, IEnumerable<LinPedidoVta> lineasEnCursoConPicking,
+            IServicioPedidosVenta servicio, IEnumerable<LinPedidoVta> lineasAlbaranSinFacturar = null)
         {
             // La "deuda del extracto" (calcularDeuda) llevaba años comentada y a 0 en las dos copias:
             // se quita. El reembolso es lo de ESTE pedido, no la deuda antigua del cliente.
             if (pedidoSeleccionado == null)
             {
-                return 0;
+                return ReembolsoCalculado.Sin(0);
             }
 
             decimal? efectivoManual = ImporteEfectosManualesEnEfectivo(pedidoSeleccionado, servicio);
             if (efectivoManual.HasValue)
             {
-                return efectivoManual.Value;
+                return ReembolsoCalculado.Sin(efectivoManual.Value);
             }
 
             if (!GestorPortes.EsContraReembolso(
@@ -437,23 +447,30 @@ namespace NestoAPI.Infraestructure.Agencias
                 pedidoSeleccionado.Periodo_Facturacion?.Trim(),
                 pedidoSeleccionado.NotaEntrega))
             {
-                return 0;
+                return ReembolsoCalculado.Sin(0);
             }
 
             // Servir junto con líneas aún pendientes: no sale nada todavía, no hay reembolso.
             if (pedidoSeleccionado.MantenerJunto && (lineasPendientes?.Any() ?? false))
             {
-                return 0;
+                return ReembolsoCalculado.Sin(0);
             }
 
             // Lo que sale en este envío: las líneas en curso con picking.
             List<LinPedidoVta> conPicking = (lineasEnCursoConPicking ?? Enumerable.Empty<LinPedidoVta>()).ToList();
             if (!conPicking.Any())
             {
-                return 0;
+                return ReembolsoCalculado.Sin(0);
             }
 
-            decimal importeFinal = conPicking.Sum(l => l.Total);
+            // NestoAPI#718: lo que cobra la factura. Un pedido que se factura por la empresa espejo se recalcula al traspasarlo
+            // con los ParámetrosIVA de la espejo (todos al 0 %), así que el Total de la línea en la empresa 1 no vale.
+            bool espejo = SeFacturaPorEmpresaEspejo(pedidoSeleccionado);
+            var totalQueFactura = new TotalLineaQueFactura(espejo, servicio);
+            var cobradas = new List<LinPedidoVta>(conPicking);
+
+            decimal importeFinal = conPicking.Sum(totalQueFactura.De);
+            decimal importeSegunLineas = conPicking.Sum(l => l.Total);
 
             // NestoAPI#686 (pedido 928220): con «Mantener junto» los albaranes anteriores no se facturaron (ni se cobraron:
             // su envío salió con reembolso 0, arriba). Este envío completa el pedido y se factura TODO, así que cobra
@@ -467,16 +484,97 @@ namespace NestoAPI.Infraestructure.Agencias
                     .ToList();
                 if (albaranesSinFacturar.Any())
                 {
-                    importeFinal += albaranesSinFacturar.Sum(l => l.Total);
+                    cobradas.AddRange(albaranesSinFacturar);
+                    importeFinal += albaranesSinFacturar.Sum(totalQueFactura.De);
+                    importeSegunLineas += albaranesSinFacturar.Sum(l => l.Total);
                     DateTime desde = albaranesSinFacturar.Min(l => l.Fecha_Albarán ?? l.Fecha_Entrega).Date;
-                    importeFinal -= servicio.ReembolsosCobradosDelPedido(pedidoSeleccionado.Empresa?.Trim(), pedidoSeleccionado.Número, desde);
+                    decimal yaCobrado = servicio.ReembolsosCobradosDelPedido(pedidoSeleccionado.Empresa?.Trim(), pedidoSeleccionado.Número, desde);
+                    importeFinal -= yaCobrado;
+                    importeSegunLineas -= yaCobrado;
                 }
             }
 
             importeFinal = RoundingHelper.DosDecimalesRound(importeFinal);
+            importeSegunLineas = RoundingHelper.DosDecimalesRound(importeSegunLineas);
 
             // Evitamos los reembolsos negativos
-            return importeFinal < 0 ? 0 : importeFinal;
+            return new ReembolsoCalculado
+            {
+                Importe = importeFinal < 0 ? 0 : importeFinal,
+                ImporteSegunLineas = importeSegunLineas < 0 ? 0 : importeSegunLineas,
+                FacturaPorEmpresaEspejo = espejo,
+                IvaMezclado = HayIvaMezclado(cobradas),
+                Pedido = pedidoSeleccionado.Número
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#718: el pedido se factura por la empresa espejo (Global, serie GB, que factura todo al 0 %): ya está en ella,
+        /// o está en la empresa 1 con la cabecera sin IVA, que es la regla del traspaso (ServicioTraspasoEmpresa.HayQueTraspasar).
+        /// </summary>
+        internal static bool SeFacturaPorEmpresaEspejo(CabPedidoVta pedido)
+        {
+            if (pedido == null)
+            {
+                return false;
+            }
+            string empresa = pedido.Empresa?.Trim();
+            if (empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
+            {
+                return true;
+            }
+            return empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo(pedido.IVA);
+        }
+
+        /// <summary>NestoAPI#718: entre las líneas con importe, unas llevan IVA (o recargo) y otras no.</summary>
+        internal static bool HayIvaMezclado(IEnumerable<LinPedidoVta> lineas)
+        {
+            return (lineas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => l.Base_Imponible != 0)
+                .Select(l => l.Total != l.Base_Imponible)
+                .Distinct()
+                .Count() > 1;
+        }
+
+        /// <summary>
+        /// NestoAPI#718: el Total con el que la factura cobra la línea. Fuera de la espejo, el de la línea. En la espejo, el que le
+        /// deja el traspaso (GestorPedidosVenta.RecalcularImportesLineasPedido con la cabecera de la espejo, IVA G21): la base de
+        /// la línea más el IVA y el recargo de los ParámetrosIVA de la espejo; sin parámetro, sin IVA (como CalcularImportesLinea).
+        /// </summary>
+        private sealed class TotalLineaQueFactura
+        {
+            private readonly bool espejo;
+            private readonly IServicioPedidosVenta servicio;
+            private readonly Dictionary<string, ParametroIVA> parametros = new Dictionary<string, ParametroIVA>();
+
+            internal TotalLineaQueFactura(bool espejo, IServicioPedidosVenta servicio)
+            {
+                this.espejo = espejo;
+                this.servicio = servicio;
+            }
+
+            internal decimal De(LinPedidoVta linea)
+            {
+                if (!espejo)
+                {
+                    return linea.Total;
+                }
+                string ivaProducto = linea.IVA?.Trim() ?? string.Empty;
+                if (!parametros.TryGetValue(ivaProducto, out ParametroIVA parametro))
+                {
+                    parametro = string.IsNullOrEmpty(ivaProducto) ? null
+                        : servicio?.LeerParametroIVA(Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, Constantes.Empresas.IVA_POR_DEFECTO, ivaProducto);
+                    parametros[ivaProducto] = parametro;
+                }
+                decimal baseImponible = linea.Base_Imponible;
+                if (parametro == null)
+                {
+                    return baseImponible;
+                }
+                decimal porcentajeIva = (byte)(parametro.C__IVA ?? 0);
+                decimal porcentajeRe = (parametro.C__RE ?? 0) / 100;
+                return baseImponible + (baseImponible * porcentajeIva / 100) + (baseImponible * porcentajeRe);
+            }
         }
 
         /// <summary>

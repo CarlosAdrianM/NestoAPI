@@ -669,6 +669,7 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\ReembolsoCalculado.cs" />
     <Compile Include="Infraestructure\Agencias\PropuestaEnvioService.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnvioDesdePedido.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEtiquetaPacking.cs" />

@@ -167,7 +167,7 @@ namespace NestoAPI.Tests.Infrastructure
                 new EfectoPedidoVenta { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 500m, FormaPago = Constantes.FormasPago.EFECTIVO }
             });
             A.CallTo(() => servicio.FacturasDelPedido(EMPRESA, PEDIDO)).Returns(new List<string>());
-            var cabecera = new CabPedidoVta { Empresa = "1  ", Número = PEDIDO, Forma_Pago = "EFC" };
+            var cabecera = new CabPedidoVta { Empresa = "1  ", Número = PEDIDO, IVA = "G21", Forma_Pago = "EFC" };
             var lineas = new List<LinPedidoVta> { Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 100m) };
 
             Assert.AreEqual(500m, GestorEnviosAgencia.ImporteReembolso(cabecera, lineas, servicio));
@@ -178,7 +178,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             var servicio = A.Fake<IServicioPedidosVenta>();
             A.CallTo(() => servicio.CargarEfectosPedido(A<string>._, A<int>._)).Returns(new List<EfectoPedidoVenta>());
-            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC" };
+            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, IVA = "G21", Forma_Pago = "EFC" };
             var lineas = new List<LinPedidoVta>
             {
                 Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 50.004m),
@@ -194,7 +194,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             var servicio = A.Fake<IServicioPedidosVenta>();
             A.CallTo(() => servicio.CargarEfectosPedido(A<string>._, A<int>._)).Returns(new List<EfectoPedidoVenta>());
-            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC", MantenerJunto = true };
+            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, IVA = "G21", Forma_Pago = "EFC", MantenerJunto = true };
             var lineas = new List<LinPedidoVta>
             {
                 Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 50m),
@@ -208,7 +208,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void ImporteReembolso_DesdeBD_JuntaPendientesYConPickingYUsaElMismoCalculo()
         {
             var servicio = A.Fake<IServicioPedidosVenta>();
-            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC", MantenerJunto = true });
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, IVA = "G21", Forma_Pago = "EFC", MantenerJunto = true });
             A.CallTo(() => servicio.CargarEfectosPedido(A<string>._, A<int>._)).Returns(new List<EfectoPedidoVenta>());
             A.CallTo(() => servicio.CargarLineasPedidoPendientes(PEDIDO)).Returns(new List<LinPedidoVta> { Linea(Constantes.EstadosLineaVenta.PENDIENTE, 0, 20m) });
             A.CallTo(() => servicio.CargarLineasPedidoSinPicking(PEDIDO)).Returns(new List<LinPedidoVta> { Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 50m) });
@@ -276,7 +276,7 @@ namespace NestoAPI.Tests.Infrastructure
             var servicio = A.Fake<IServicioPedidosVenta>();
             var gestor = new GestorPedidosVenta(servicio);
 
-            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC" };
+            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, IVA = "G21", Forma_Pago = "EFC" };
             A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(cabecera);
 
             // Sin efectos manuales

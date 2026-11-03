@@ -414,20 +414,38 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             // Si hubiese en dos empresas el mismo pedido, va a dar error
             CabPedidoVta pedido = servicio.LeerCabPedidoVta(empresa, numeroPedido);
+            return CrearLineaVta(linea, empresa, pedido, pedido.IVA, vendedorContable);
+        }
+
+        /// <summary>
+        /// NestoAPI#718: la línea nueva de un PUT, con el IVA que la cabecera tiene en ESE guardado (<paramref name="ivaCabecera"/>),
+        /// no con el que lee <see cref="IServicioPedidosVenta.LeerCabPedidoVta"/>, que va por otro contexto y ve la cabecera como
+        /// estaba en la BD antes del PUT. Al pasar un pedido a «sin IVA» (Cambiar IVA de la plantilla → se factura por Global) el
+        /// PUT dejaba las líneas que ya tenía a 0 % y creaba las nuevas al 21 % (928370, 929262): el reembolso salió mal.
+        /// La empresa es la del pedido (la de sus líneas), no la que mande el cliente.
+        /// </summary>
+        public LinPedidoVta CrearLineaVtaConIvaCabecera(LineaPedidoVentaDTO linea, string empresa, int numeroPedido, string vendedorContable, string ivaCabecera)
+        {
+            CabPedidoVta pedido = servicio.LeerCabPedidoVta(empresa, numeroPedido);
+            return CrearLineaVta(linea, empresa, pedido, ivaCabecera, vendedorContable);
+        }
+
+        private LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, string empresa, CabPedidoVta pedido, string ivaCabecera, string vendedorContable)
+        {
             PlazoPago plazo = servicio.LeerPlazosPago(pedido.Empresa, pedido.PlazosPago);
-            if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+            if (ivaCabecera != null && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
             {
                 // ELMAH 13/10/26 (Inaki, NestoApp, PUT): con un producto que no existe, NullReferenceException aquí.
                 Producto producto = LeerProductoQueExiste(empresa, linea.Producto);
                 linea.iva = producto.IVA_Repercutido;
             }
-            else if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
+            else if (ivaCabecera != null && linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
             {
                 PlanCuenta cuenta = servicio.LeerPlanCuenta(empresa, linea.Producto);
                 linea.iva = cuenta.IVA;
             }
             string vendedor = string.IsNullOrWhiteSpace(vendedorContable) ? pedido.Vendedor : vendedorContable;
-            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, vendedor, pedido.Usuario);
+            return CrearLineaVta(linea, pedido.Número, pedido.Empresa, ivaCabecera, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, vendedor, pedido.Usuario);
         }
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
         {
@@ -1057,7 +1075,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
-        internal decimal ImporteReembolso(string empresa, int pedido)
+        internal decimal ImporteReembolso(string empresa, int pedido) => CalcularReembolso(empresa, pedido).Importe;
+
+        /// <summary>NestoAPI#718: el reembolso con su diagnóstico (si se ha corregido por facturarse en la empresa espejo).</summary>
+        internal ReembolsoCalculado CalcularReembolso(string empresa, int pedido)
         {
             // NestoAPI#513: un único cálculo, el de GestorEnviosAgencia. Aquí solo se leen de BD
             // la cabecera y las líneas que mira (pendientes, para servir junto, y en curso con picking),
@@ -1065,10 +1086,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             CabPedidoVta pedidoBD = servicio.LeerCabPedidoVta(empresa, pedido);
             if (pedidoBD == null)
             {
-                return 0;
+                return ReembolsoCalculado.Sin(0);
             }
             // NestoAPI#686: con «Mantener junto» o «Todo ahora», también los albaranes sin facturar (se facturan con este envío).
-            return GestorEnviosAgencia.ImporteReembolso(pedidoBD,
+            return GestorEnviosAgencia.CalcularReembolso(pedidoBD,
                 servicio.CargarLineasPedidoPendientes(pedido),
                 servicio.CargarLineasPedidoSinPicking(pedido),
                 servicio,

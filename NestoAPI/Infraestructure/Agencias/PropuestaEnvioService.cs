@@ -49,6 +49,8 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<EnviosAgencia> LeerEnvioAmpliacion(string cliente, string contacto, string direccion, int? excluirEnvio);
         /// <summary>GET PedidosVenta/ImporteReembolso.</summary>
         decimal ImporteReembolso(string empresa, int pedido);
+        /// <summary>NestoAPI#718: el diagnóstico del mismo cálculo (si se ha corregido por facturarse en la empresa espejo).</summary>
+        ReembolsoCalculado DiagnosticoReembolso(string empresa, int pedido);
         /// <summary>GET PedidosVenta/PrepagosPendientes (#569).</summary>
         decimal PrepagosPendientes(string empresa, int pedido);
         /// <summary>NestoAPI#679: los enlaces de pago (TPV virtual) pendientes o autorizados del pedido.</summary>
@@ -99,6 +101,9 @@ namespace NestoAPI.Infraestructure.Agencias
             // VB 493-494: la ficha del cliente/contacto del pedido y el reembolso que propone el servidor.
             ClienteParaAgenciaDTO ficha = pedidoAgencia.ClienteFicha ?? new ClienteParaAgenciaDTO();
             decimal reembolsoPedido = datos.ImporteReembolso(empresa, pedido);
+            // NestoAPI#718: si se ha corregido por facturarse por Global, se dice (informativo, no se confirma nada).
+            ReembolsoCalculado diagnostico = datos.DiagnosticoReembolso(empresa, pedido);
+            string correccion = diagnostico != null && diagnostico.Corregido ? diagnostico.Explicacion : null;
             // VB 480-488 (#569): best-effort, si no se pueden leer no hay aviso.
             decimal prepagos = LeerPrepagos(empresa, pedido);
             // NestoAPI#679: los enlaces de pago del pedido (best-effort, como los prepagos). Los cobrados ya van en prepagos.
@@ -118,7 +123,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 EnlacesPagoAutorizados = EnlacesPagoPedido.ImporteAutorizado(enlaces),
                 EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now),
                 // NestoAPI#734: si se ha consultado a Administración, qué dijo (best-effort: sin ella, como antes).
-                ConsultaReembolso = await LeerConsultaReembolso(empresa, pedido).ConfigureAwait(false)
+                ConsultaReembolso = await LeerConsultaReembolso(empresa, pedido).ConfigureAwait(false),
+                CorreccionReembolso = correccion,
+                ReembolsoSegunLineas = correccion != null ? diagnostico.ImporteSegunLineas : (decimal?)null
             };
 
             List<AgenciaTransporte> agencias = await datos.LeerAgencias().ConfigureAwait(false) ?? new List<AgenciaTransporte>();
@@ -754,8 +761,22 @@ namespace NestoAPI.Infraestructure.Agencias
                 .FirstOrDefaultAsync();
         }
 
-        public decimal ImporteReembolso(string empresa, int pedido)
-            => new GestorPedidosVenta(servicioPedidosVenta()).ImporteReembolso(empresa, pedido);
+        public decimal ImporteReembolso(string empresa, int pedido) => DiagnosticoReembolso(empresa, pedido).Importe;
+
+        private ReembolsoCalculado ultimoReembolso;
+        private string claveUltimoReembolso;
+
+        /// <summary>NestoAPI#718: el mismo cálculo que <see cref="ImporteReembolso"/>; el último se guarda para no repetirlo.</summary>
+        public ReembolsoCalculado DiagnosticoReembolso(string empresa, int pedido)
+        {
+            string clave = (empresa?.Trim() ?? string.Empty) + "/" + pedido;
+            if (ultimoReembolso == null || claveUltimoReembolso != clave)
+            {
+                ultimoReembolso = new GestorPedidosVenta(servicioPedidosVenta()).CalcularReembolso(empresa, pedido);
+                claveUltimoReembolso = clave;
+            }
+            return ultimoReembolso;
+        }
 
         public decimal PrepagosPendientes(string empresa, int pedido)
             => new GestorPedidosVenta(servicioPedidosVenta()).ImportePrepagosPendientes(empresa, pedido);

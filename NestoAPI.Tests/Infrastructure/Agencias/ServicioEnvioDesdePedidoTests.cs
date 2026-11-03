@@ -179,6 +179,38 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         // ---------------------------------------------------------------- nuevo
 
         [TestMethod]
+        public async Task Nuevo_ReembolsoCorregidoPorGlobal_DejaFilaEnLaHistoriaAvisaYElmah()
+        {
+            // NestoAPI#718 (envío 250264, pedido 928370): el reembolso es el de la factura de Global (175,93), no la suma de
+            // las líneas (182,44). No se impide nada: queda en la historia del envío, en los avisos y en ELMAH.
+            propuesta.Reembolso = 175.93m;
+            propuesta.CorreccionReembolso = "NestoAPI#718: el pedido 928370 se factura por Global";
+            propuesta.ReembolsoSegunLineas = 182.44m;
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(175.93m, resultado.Envio.Envio.Reembolso);
+            EnvioHistoria fila = datos.Historias.Single();
+            Assert.AreEqual(250000, fila.NumeroEnvio);
+            Assert.AreEqual("Reembolso", fila.Campo);
+            Assert.AreEqual("182.44", fila.ValorAnterior);
+            Assert.AreEqual(propuesta.CorreccionReembolso, fila.Observaciones);
+            CollectionAssert.Contains(resultado.Envio.Avisos, propuesta.CorreccionReembolso);
+            Assert.IsTrue(registrados.Any(e => e.Message.Contains("#718")));
+        }
+
+        [TestMethod]
+        public async Task Nuevo_SinCorreccionDelReembolso_NoHayFilaEnLaHistoria()
+        {
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(0, datos.Historias.Count);
+            Assert.IsFalse(registrados.Any(e => e.Message.Contains("#718")));
+        }
+
+        [TestMethod]
         public async Task Nuevo_Gls_GrabaConPlazaYCodigoDelServidorYAvisaAlCliente()
         {
             ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
@@ -732,6 +764,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 => Task.FromResult(Envios.TryGetValue(numero, out EnviosAgencia e) ? e : null);
 
             public void Anadir(EnviosAgencia envio) => Anadidos.Add(envio);
+
+            public List<EnvioHistoria> Historias { get; } = new List<EnvioHistoria>();
+
+            public void AnotarHistoria(EnvioHistoria fila) => Historias.Add(fila);
 
             public Task GuardarCambios()
             {

@@ -75,6 +75,13 @@ namespace NestoAPI.Models.Agencias
         /// contestada, ya no se avisa del enlace pendiente.
         /// </summary>
         public PedidosVenta.ConsultaReembolsoDTO ConsultaReembolso { get; set; }
+        /// <summary>
+        /// NestoAPI#718: si el reembolso del pedido se ha corregido porque se factura por Global (empresa espejo, sin IVA) y sus
+        /// líneas llevan IVA (o lo tienen mezclado), la explicación; null si no. Es informativo: no hay que confirmar nada.
+        /// </summary>
+        public string CorreccionReembolso { get; set; }
+        /// <summary>NestoAPI#718: con <see cref="CorreccionReembolso"/>, lo que habría salido sumando las líneas.</summary>
+        public decimal? ReembolsoSegunLineas { get; set; }
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): un aviso de la propuesta de envío.</summary>

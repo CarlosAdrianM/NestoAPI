@@ -1709,7 +1709,7 @@ namespace NestoAPI.Controllers
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
                         }
-                        this.gestor.CalcularImportesLinea(linea);
+                        this.gestor.CalcularImportesLinea(linea, cabPedidoVta.IVA); // NestoAPI#718: el IVA de la cabecera en este PUT, no el de la BD
                     }
                     //lineaEncontrada.BaseImponible = linea.Base_Imponible;
                     //lineaEncontrada.Total = linea.Total;
@@ -1730,7 +1730,7 @@ namespace NestoAPI.Controllers
                         // NestoAPI#503: el estado de una línea nueva lo decide el servidor según la
                         // transición y el estado real del pedido, no lo que traiga el DTO.
                         linea.estado = TransicionPresupuesto.EstadoLineaNueva(transicion, pedidoEsPresupuestoVivoEnBD, linea.estado);
-                        lineaPedido = this.gestor.CrearLineaVta(linea, pedido.empresa, pedido.numero);
+                        lineaPedido = this.gestor.CrearLineaVtaConIvaCabecera(linea, pedido.empresa, pedido.numero, null, cabPedidoVta.IVA);
                         _ = db.LinPedidoVtas.Add(lineaPedido);
                         //linea.BaseImponible = lineaPedido.Base_Imponible;
                         //linea.Total = lineaPedido.Total;
@@ -1984,7 +1984,7 @@ namespace NestoAPI.Controllers
                     var lineaPortesPut = GestorPortes.CrearLineaPortesPut(resultadoPortesPut, pedido.Lineas, cabPedidoVta.LinPedidoVtas, pedido.iva);
                     if (lineaPortesPut != null)
                     {
-                        var linPedidoPortes = this.gestor.CrearLineaVta(lineaPortesPut, pedido.empresa, pedido.numero, vendedorContablePut);
+                        var linPedidoPortes = this.gestor.CrearLineaVtaConIvaCabecera(lineaPortesPut, pedido.empresa, pedido.numero, vendedorContablePut, cabPedidoVta.IVA);
                         _ = db.LinPedidoVtas.Add(linPedidoPortes);
                         pedido.Lineas.Add(lineaPortesPut);
                     }
@@ -2039,7 +2039,7 @@ namespace NestoAPI.Controllers
                                 // NestoAPI#508: misma regla que la línea de portes.
                                 fechaEntrega = GestorPortes.FechaEntregaLineaCuentaContable(cabPedidoVta.LinPedidoVtas, lineaRefReemb.fechaEntrega)
                             };
-                            var linPedidoReemb = this.gestor.CrearLineaVta(lineaReembolso, pedido.empresa, pedido.numero, vendedorContablePut);
+                            var linPedidoReemb = this.gestor.CrearLineaVtaConIvaCabecera(lineaReembolso, pedido.empresa, pedido.numero, vendedorContablePut, cabPedidoVta.IVA);
                             _ = db.LinPedidoVtas.Add(linPedidoReemb);
                             pedido.Lineas.Add(lineaReembolso);
                         }
@@ -3329,8 +3329,14 @@ namespace NestoAPI.Controllers
         [Route("api/PedidosVenta/ImporteReembolso")]
         public IHttpActionResult ImporteReembolso(string empresa, int pedido)
         {
-            var importeReembolso = gestor.ImporteReembolso(empresa, pedido);
-            return Ok(importeReembolso);
+            // NestoAPI#718: si se ha corregido porque el pedido se factura por Global (sin IVA) con líneas al 21 %, sale lo que
+            // cobrará la factura y se deja en ELMAH (no se impide la etiqueta: decisión de Carlos).
+            var reembolso = gestor.CalcularReembolso(empresa, pedido);
+            if (reembolso.Corregido)
+            {
+                ElmahHelper.Log(new Exception($"[Reembolso corregido #718] Pedido {empresa?.Trim()}/{pedido}: {reembolso.Explicacion}"));
+            }
+            return Ok(reembolso.Importe);
         }
 
         // GET: api/PedidosVenta/AvisoReembolso?empresa=1&pedido=928220
