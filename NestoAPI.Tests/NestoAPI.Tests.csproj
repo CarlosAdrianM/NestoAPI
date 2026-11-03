@@ -345,6 +345,7 @@
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
     <Compile Include="Controllers\InventariosControllerTests.cs" />
     <Compile Include="Controllers\InventariosLecturaCodigosTests.cs" />
+    <Compile Include="Controllers\InventariosRellenarTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VigenciaCampanasJobsServiceTests.cs" />
