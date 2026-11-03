@@ -14,7 +14,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 {
     /// <summary>
     /// NestoAPI#762: la etiqueta 3×2 con el EAN-13 (módulo de 2 puntos a 203 ppp, ~80 % del nominal): el del fabricante si la
-    /// unidad tiene uno y, si no, el código interno (29…), que se le da al imprimir. En las pruebas la impresora es un fake.
+    /// unidad tiene uno y, si no, el código interno (29…), que se le da al imprimir. NestoAPI#791: es la única etiqueta de
+    /// producto, se pida el formato que se pida. En las pruebas la impresora es un fake.
     /// </summary>
     [TestClass]
     public class EtiquetaEan13Tests
@@ -201,28 +202,69 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.IsFalse(codigos.Filas.Any(f => f.Producto == "17404"));
         }
 
+        // ---- NestoAPI#791: la EAN-13 es la única; el formato se acepta y se ignora ----
+
         [TestMethod]
-        public async Task Imprimir_SinFormato_LaDeSiempreConLaReferencia()
+        public async Task Imprimir_SinFormato_LaEan13DelProducto()
+        {
+            ResultadoEtiquetasProductoDTO resultado = await Imprimir("32565", formato: null);
+
+            Assert.AreEqual("8437017506379", resultado.CodigoBarras);
+            Assert.IsFalse(resultado.CodigoInterno);
+            Assert.IsFalse(resultado.CodigoAsignado);
+            Assert.AreEqual(1, resultado.Impresas);
+            StringAssert.Contains(impreso.Zpl, "^BEN,80,Y,N^FD843701750637^FS");
+            Assert.IsFalse(impreso.Zpl.Contains("^BC"), "nada de Code128 con la referencia en ZPL");
+            Assert.IsFalse(impreso.Epl.Contains(",0,1,2,2,52,"), "nada de Code128 con la referencia en EPL");
+        }
+
+        [TestMethod]
+        public async Task Imprimir_SinFormatoNiCodigo_LeDaElInternoNuevoYLoImprime()
         {
             ResultadoEtiquetasProductoDTO resultado = await Imprimir("17404", formato: null);
 
-            Assert.IsNull(resultado.CodigoBarras);
-            StringAssert.Contains(impreso.Zpl, "^BCN,52,N,N,N,A^FH^FD17404^FS");
-            Assert.IsFalse(codigos.Filas.Any(f => f.Producto == "17404"));
+            Assert.AreEqual("2900000174047", resultado.CodigoBarras);
+            Assert.IsTrue(resultado.CodigoInterno);
+            Assert.IsTrue(resultado.CodigoAsignado);
+            Assert.AreEqual(1, codigos.Filas.Count(f => f.Producto == "17404" && f.Codigo == "2900000174047"));
+            StringAssert.Contains(impreso.Zpl, "^BEN,80,Y,N^FD290000017404^FS");
+            StringAssert.Contains(resultado.Mensaje, ", recién dado");
         }
 
         [TestMethod]
-        public async Task Imprimir_FormatoDesconocido_ArgumentException()
+        public async Task Imprimir_SinFormatoConElInternoYaDado_ElMismoSinCrearOtro()
         {
-            await Assert.ThrowsExceptionAsync<ArgumentException>(() => Imprimir("17404", formato: "QR"));
+            _ = codigos.Fila("17404", "2900000174047");
+
+            ResultadoEtiquetasProductoDTO resultado = await Imprimir("17404", formato: null);
+
+            Assert.AreEqual("2900000174047", resultado.CodigoBarras);
+            Assert.IsTrue(resultado.CodigoInterno);
+            Assert.IsFalse(resultado.CodigoAsignado);
+            Assert.AreEqual(1, codigos.Filas.Count(f => f.Producto == "17404"));
+            StringAssert.Contains(impreso.Zpl, "^FD290000017404^FS");
         }
 
         [TestMethod]
-        public async Task Imprimir_Ean13SinServicioDeCodigos_ArgumentException()
+        public async Task Imprimir_FormatoReferenciaODesconocido_TambienLaEan13()
         {
-            servicio = new ServicioEtiquetasProducto(fichas, parametros, impresora);
+            foreach (string formato in new[] { "Referencia", "QR", "  ", "Ean13", "EAN-13" })
+            {
+                impreso = null;
+                ResultadoEtiquetasProductoDTO resultado = await Imprimir("32565", formato: formato);
 
-            await Assert.ThrowsExceptionAsync<ArgumentException>(() => Imprimir("17404"));
+                Assert.AreEqual("8437017506379", resultado.CodigoBarras, formato);
+                StringAssert.Contains(impreso.Zpl, "^BEN,80,Y,N^FD843701750637^FS", formato);
+            }
+        }
+
+        [TestMethod]
+        public async Task Imprimir_EnLaImpresoraDeCodigosDeBarrasDelUsuario()
+        {
+            _ = await Imprimir("32565", formato: null);
+
+            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\zebraalg", A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => parametros.LeerParametro(EMPRESA, "Andre", "ImpresoraCodBarras")).MustHaveHappened();
         }
 
         [TestMethod]

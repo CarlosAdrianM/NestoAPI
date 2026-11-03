@@ -239,8 +239,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   cifras + control (17404 → 2900000174047) o `299` + contador para referencias no numéricas o con choque. Va en
   `ProductosCodigosBarras` (Origen `Almacen`) y **nunca es el principal** (la ficha `Productos.CodBarras` la manda PrestaShop como GTIN).
   Se da en exclusiva (`sp_getapplock` en `RepositorioCodigosBarras.GuardarInternoEnExclusiva`). En la BD nadie usaba el 29.
-- Etiqueta 3×2 EAN-13: `POST api/Almacen/EtiquetasProducto/Imprimir` con `Formato = "Ean13"` (sin formato, la de siempre con la
-  referencia en Code128). Lleva el EAN-13 de la unidad (Cantidad 1) o, si no tiene, el interno, que se le da al imprimir.
+- Etiqueta 3×2 EAN-13: `POST api/Almacen/EtiquetasProducto/Imprimir`. Desde NestoAPI#791 es la ÚNICA etiqueta de producto
+  (`Formato` se acepta y se ignora; ya no hay Code128 con la referencia). Lleva el EAN-13 de la unidad (Cantidad 1) o, si no
+  tiene, el interno, que se le da al imprimir (`CodigoBarras`, `CodigoInterno`, `CodigoAsignado` en la respuesta).
   Medidas en `GeneradorEtiquetasProducto.EAN_*`; prueba con `Scripts/Issue762_EtiquetaPrueba.ps1`.
 - Las REPO se reciben solo escaneando (`RecepcionDTO.SoloEscaneando`); lo que llega sin etiqueta, unidad a unidad con
   `POST api/Almacen/Recepciones/{tipo}/{documento}/SinEtiqueta` (avisa al origen y a Compras; la unidad la cuenta la app).
