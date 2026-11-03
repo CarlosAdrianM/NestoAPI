@@ -593,6 +593,7 @@
     <Compile Include="Controllers\EtiquetasImpresorasController.cs" />
     <Compile Include="Models\PreparacionAlmacen\FichaProductoAlmacenDTO.cs" />
     <Compile Include="Models\Inventarios\InventariosDTO.cs" />
+    <Compile Include="Models\Inventarios\ContabilizarInventarioDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\BultosReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
@@ -608,6 +609,11 @@
     <Compile Include="Controllers\InventariosController.cs" />
     <Compile Include="Controllers\InventariosController.Rellenar.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioRellenarInventario.cs" />
+    <Compile Include="Controllers\InventariosController.Contabilizar.cs" />
+    <Compile Include="Infraestructure\Inventarios\ComprobadorInventario.cs" />
+    <Compile Include="Infraestructure\Inventarios\PermisosInventario.cs" />
+    <Compile Include="Infraestructure\Inventarios\RepositorioContabilizarInventario.cs" />
+    <Compile Include="Infraestructure\Inventarios\ServicioContabilizarInventario.cs" />
     <Compile Include="Controllers\ParametrosIvaController.cs" />
     <Compile Include="Controllers\TokenRefreshController.cs" />
     <Compile Include="Controllers\SyncWebhookController.cs" />
