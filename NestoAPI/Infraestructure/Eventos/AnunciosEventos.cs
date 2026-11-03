@@ -443,8 +443,10 @@ WHERE Id = @id";
         public async Task<List<ClienteAppTiendas>> ClientesConAppTiendas(string empresa)
         {
             string aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS;
+            // 03/11/26: los dispositivos de la app de la tienda se registran SIN empresa (la columna está a NULL en todos):
+            // el filtro «d.Empresa == empresa» dejaba la lista vacía y el anuncio del evento 4 fue a 0 clientes de TNV.
             var dispositivos = await db.DispositivosNotificaciones
-                .Where(d => d.Aplicacion == aplicacion && d.Activo && d.Empresa == empresa && d.Cliente != null)
+                .Where(d => d.Aplicacion == aplicacion && d.Activo && (d.Empresa == null || d.Empresa == empresa) && d.Cliente != null)
                 .Select(d => new { d.Cliente, d.Contacto })
                 .Distinct()
                 .ToListAsync().ConfigureAwait(false);
