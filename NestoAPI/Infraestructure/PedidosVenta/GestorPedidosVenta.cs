@@ -595,7 +595,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Producto = linea.Producto,
                 Texto = TruncarTexto(linea.texto), // 50 es la longitud del campo; NestoAPI#352: null-safe
                 Cantidad = (short)linea.Cantidad,
-                Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta, linea.almacen, CodigoPostalSiRutaInterna(empresa, cliente, contacto, ruta)),
+                Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta, linea.almacen, CodigoPostalSiRutaInterna(empresa, cliente, contacto, ruta), empresa, cliente, contacto),
                 Precio = linea.PrecioUnitario,
                 PrecioTarifa = precioTarifa,
                 Coste = coste,
@@ -746,13 +746,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// NestoAPI#799: con el cliente y contacto del pedido: si el contacto tiene excepción de día de reparto
+        /// (<see cref="DiasRepartoClientes"/>), manda sobre la de su código postal.
+        /// </summary>
+        internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, string codigoPostal, string empresa, string cliente, string contacto)
+        {
+            return FechaEntregaAjustadaConCodigoPostal(fecha, ruta, almacen, codigoPostal, empresa, cliente, contacto);
+        }
+
+        /// <summary>
         /// Nesto#588: lo mismo que <see cref="FechaEntregaAjustada(DateTime, string, string, string)"/> (no usa nada del gestor),
         /// estático para que lo usen también quienes no tienen gestor (<see cref="FechasFuturasPedido"/>, al leer un pedido).
         /// </summary>
-        internal static DateTime FechaEntregaAjustadaConCodigoPostal(DateTime fecha, string ruta, string almacen, string codigoPostal)
+        internal static DateTime FechaEntregaAjustadaConCodigoPostal(DateTime fecha, string ruta, string almacen, string codigoPostal,
+            string empresa = null, string cliente = null, string contacto = null)
         {
             TimeSpan horaCortePicking = Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO);
-            DayOfWeek? diaRutaInterna = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal);
+            // NestoAPI#799: la excepción del contacto (si se conoce) manda sobre el código postal
+            DayOfWeek? diaRutaInterna = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, codigoPostal, empresa, cliente, contacto);
             // Mientras el picking automático de las 9 esté apagado, el picking real de la ruta interna es el de las 11 (el de
             // siempre): si se cortara a las 9, un pedido del día de su ruta grabado entre las 9 y las 11 se iría a la semana siguiente.
             TimeSpan horaCorteRutaInterna = diaRutaInterna.HasValue && PickingRutasInternasEncendido() ? CalendarioRutasDia.HORA_CORTE : horaCortePicking;
@@ -1050,7 +1061,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 try
                 {
                     pedido.tieneFechasFuturas = FechasFuturasPedido.TieneFechasFuturas(lineasPedido, pedido.ruta,
-                        CodigoPostalEntregaSiPuedeTenerDia(db, cabPedidoVta));
+                        CodigoPostalEntregaSiPuedeTenerDia(db, cabPedidoVta), cabPedidoVta.Empresa, cabPedidoVta.Nº_Cliente, cabPedidoVta.Contacto);
                 }
                 catch (Exception ex)
                 {

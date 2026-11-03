@@ -53,7 +53,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     c.ModoFacturacion,
                     c.MantenerJunto,
                     c.Cliente.DiasEnServir,
-                    c.Cliente.CodPostal
+                    c.Cliente.CodPostal,
+                    c.Nº_Cliente,
+                    c.Contacto
                 })
                 .FirstOrDefaultAsync().ConfigureAwait(false);
             if (cabecera == null)
@@ -90,6 +92,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 MantenerJunto = cabecera.MantenerJunto,
                 DiasEnServir = cabecera.DiasEnServir,
                 CodigoPostal = cabecera.CodPostal?.Trim(),
+                Cliente = cabecera.Nº_Cliente?.Trim(),
+                Contacto = cabecera.Contacto?.Trim(),
                 TieneLineasServidas = lineas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN),
                 // Como RellenadorPickingService: pendientes y en curso, Cantidad − Recoger, por fecha de modificación y Nº orden.
                 Lineas = lineas

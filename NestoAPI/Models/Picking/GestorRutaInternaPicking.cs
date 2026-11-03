@@ -23,7 +23,8 @@ namespace NestoAPI.Models.Picking
         /// <summary>El día de reparto del pedido por nuestra ruta, o null si no tiene (y entonces nada cambia).</summary>
         public static DayOfWeek? DiaReparto(PedidoPicking pedido)
         {
-            return pedido == null ? null : DiasRepartoCodigosPostales.DiaRutaInterna(pedido.Ruta, pedido.CodigoPostal);
+            // NestoAPI#799: la excepción del contacto (ClientesDiaReparto) manda sobre el código postal
+            return pedido == null ? null : DiasRepartoCodigosPostales.DiaRutaInterna(pedido.Ruta, pedido.CodigoPostal, pedido.Empresa, pedido.Cliente, pedido.Contacto);
         }
 
         /// <summary>

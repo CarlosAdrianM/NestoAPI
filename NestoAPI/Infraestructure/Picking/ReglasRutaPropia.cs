@@ -184,7 +184,9 @@ namespace NestoAPI.Infraestructure.Picking
             {
                 return;
             }
-            DayOfWeek? dia = PedidosVenta.DiasRepartoCodigosPostales.DiaDe(sugerencia.CodigoPostal);
+            // NestoAPI#799: si el contacto tiene excepción de día de reparto, esa; si no, la de su código postal
+            DayOfWeek? dia = PedidosVenta.DiasRepartoClientes.DiaDe(sugerencia.Empresa, sugerencia.Cliente, sugerencia.Contacto)
+                ?? PedidosVenta.DiasRepartoCodigosPostales.DiaDe(sugerencia.CodigoPostal);
             if (!dia.HasValue)
             {
                 return;

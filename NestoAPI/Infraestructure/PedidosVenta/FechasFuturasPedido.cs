@@ -1,4 +1,5 @@
 using NestoAPI.Models;
+using NestoAPI.Models.Facturas;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -20,20 +21,31 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return DiasRepartoCodigosPostales.DiaRutaInterna(ruta?.Trim(), codigoPostal).HasValue ? codigoPostal?.Trim() : null;
         }
 
-        /// <summary>Lo que hace distinta la fecha mínima de un pedido a otro (la ruta y, en ruta interna, el código postal).</summary>
-        internal static string Clave(string ruta, string codigoPostal)
+        /// <summary>
+        /// Lo que hace distinta la fecha mínima de un pedido a otro (la ruta y, en ruta interna, el código postal; NestoAPI#799: o
+        /// el día de la excepción del contacto, si se conoce y la tiene).
+        /// </summary>
+        internal static string Clave(string ruta, string codigoPostal, string empresa = null, string cliente = null, string contacto = null)
         {
             string rutaLimpia = ruta?.Trim() ?? string.Empty;
+            DayOfWeek? diaCliente = RutasPropiasConfiguradas.Contiene(rutaLimpia) ? DiasRepartoClientes.DiaDe(empresa, cliente, contacto) : null;
+            if (diaCliente.HasValue)
+            {
+                return $"{rutaLimpia}|@{(int)diaCliente.Value}";
+            }
             string cp = CodigoPostalQueCuenta(rutaLimpia, codigoPostal);
             return cp == null ? rutaLimpia : $"{rutaLimpia}|{cp}";
         }
 
-        /// <summary>La fecha de entrega mínima de hoy para la ruta (y el código postal de entrega): lo que llegue después es futuro.</summary>
-        internal static DateTime FechaEntregaFutura(string ruta, string codigoPostal)
+        /// <summary>
+        /// La fecha de entrega mínima de hoy para la ruta (y el código postal de entrega; NestoAPI#799: o la excepción del contacto,
+        /// que manda): lo que llegue después es futuro.
+        /// </summary>
+        internal static DateTime FechaEntregaFutura(string ruta, string codigoPostal, string empresa = null, string cliente = null, string contacto = null)
         {
             string rutaLimpia = ruta?.Trim() ?? string.Empty;
             return GestorPedidosVenta.FechaEntregaAjustadaConCodigoPostal(DateTime.Now, rutaLimpia, string.Empty,
-                CodigoPostalQueCuenta(rutaLimpia, codigoPostal));
+                CodigoPostalQueCuenta(rutaLimpia, codigoPostal), empresa, cliente, contacto);
         }
 
         internal static bool EstaPendiente(short estado)
@@ -54,10 +66,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>Con las líneas del pedido (sin líneas pendientes, false; entonces ni se calcula la fecha mínima).</summary>
-        internal static bool TieneFechasFuturas(IEnumerable<LineaPedidoVentaDTO> lineas, string ruta, string codigoPostal)
+        internal static bool TieneFechasFuturas(IEnumerable<LineaPedidoVentaDTO> lineas, string ruta, string codigoPostal,
+            string empresa = null, string cliente = null, string contacto = null)
         {
             DateTime? ultima = UltimaEntregaPendiente(lineas);
-            return ultima.HasValue && TieneFechasFuturas(ultima, FechaEntregaFutura(ruta, codigoPostal));
+            return ultima.HasValue && TieneFechasFuturas(ultima, FechaEntregaFutura(ruta, codigoPostal, empresa, cliente, contacto));
         }
     }
 }

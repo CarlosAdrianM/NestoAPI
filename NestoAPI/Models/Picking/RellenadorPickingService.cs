@@ -173,6 +173,7 @@ namespace NestoAPI.Models.Picking
                 AvisarConImporteAlCogerPicking = p.AvisarConImporteAlCogerPicking,
                 Vendedor = p.Vendedor?.Trim(),
                 Cliente = p.Nº_Cliente?.Trim(),
+                Contacto = p.Contacto, // NestoAPI#799
                 // NestoAPI#362: los días que el cliente cierra, para no entregarle en día cerrado
                 DiasEnServir = p.Cliente.DiasEnServir,
                 Lineas = p.LinPedidoVtas.Where(l => l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && l.Empresa == p.Empresa && l.Número == p.Número && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking == null || l.Picking == 0))

@@ -275,6 +275,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   en Administración. La revisión de las telefónicas sigue yendo a las dos. `POST …/Envios/{id}/Autorizacion` devuelve `Conectados`
   (Administración con Nesto abierto, `UsuariosConectadosNesto.Conectados`) y `ConectadosNombres`.
 
+### Día de reparto de nuestra ruta: código postal y excepción por contacto (NestoAPI#764, #799)
+- Las rutas propias (`RutasPropiasConfiguradas`: AT, 16…) tienen día de reparto: el del CP de entrega en `CodigosPostalesDiaReparto`
+  (`DiasRepartoCodigosPostales`) o, si el contacto tiene excepción, el de `ClientesDiaReparto` (`DiasRepartoClientes`, #799,
+  `Scripts/Issue799_ClientesDiaReparto.sql`). Ambas fuera del EDMX, caché de 10 min, sin tabla = sin días.
+- LA REGLA: `DiasRepartoCodigosPostales.DiaRutaInterna(ruta, cp, empresa, cliente, contacto)` (la excepción manda). Úsala siempre que
+  se conozca el cliente (fecha de entrega, FechaEntregaAgencia, fechas futuras, aviso de cierre, picking, sugerencia de ruta).
+- `GET/PUT api/Clientes/DiaReparto` (PUT: Dirección/Almacén/Administración; Ruta null quita): invalida la caché y recalcula las líneas
+  pendientes sin picking del contacto por ruta propia al día nuevo de ESA semana (`RepositorioDiasRepartoClientes.NuevaFechaEntrega`).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

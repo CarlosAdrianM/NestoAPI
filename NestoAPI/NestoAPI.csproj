@@ -505,6 +505,7 @@
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
+    <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\RemesasController.cs" />
@@ -1057,6 +1058,8 @@
     <Compile Include="Infraestructure\PedidosVenta\CalculadoraFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalendarioRutasDia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\DiasRepartoClientes.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\RepositorioDiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FechasFuturasPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AvisoClienteCierraDiaReparto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />

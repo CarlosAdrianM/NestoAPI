@@ -353,13 +353,14 @@ namespace NestoAPI.Controllers
 
             var grupos = lineas
                 .Join(cabeceras, l => new { l.Empresa, Numero = l.Número }, c => new { c.Empresa, Numero = c.Número },
-                    (l, c) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
-                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
+                    (l, c) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Contacto, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Contacto, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
                 .Select(x => new
                 {
                     x.Key.Empresa,
                     x.Key.Número,
                     x.Key.Nº_Cliente,
+                    x.Key.Contacto,
                     x.Key.Nombre,
                     x.Key.Dirección,
                     x.Key.CodPostal,
@@ -401,10 +402,10 @@ namespace NestoAPI.Controllers
             return lista.Select(g =>
             {
                 string ruta = g.Ruta?.Trim() ?? string.Empty;
-                string claveFecha = FechasFuturasPedido.Clave(ruta, g.CodPostal);
+                string claveFecha = FechasFuturasPedido.Clave(ruta, g.CodPostal, g.Empresa, g.Nº_Cliente, g.Contacto); // NestoAPI#799
                 if (!fechaAjustadaPorRuta.TryGetValue(claveFecha, out DateTime fechaEntregaFutura))
                 {
-                    fechaEntregaFutura = FechasFuturasPedido.FechaEntregaFutura(ruta, g.CodPostal);
+                    fechaEntregaFutura = FechasFuturasPedido.FechaEntregaFutura(ruta, g.CodPostal, g.Empresa, g.Nº_Cliente, g.Contacto);
                     fechaAjustadaPorRuta[claveFecha] = fechaEntregaFutura;
                 }
                 return new ResumenPedidoVentaDTO
@@ -1591,7 +1592,7 @@ namespace NestoAPI.Controllers
                         {
                             errorPersonalizado(Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.MensajeRechazo(pedido.numero, envioEnAgencia));
                         }
-                        DateTime fechaNueva = this.gestor.FechaEntregaAjustada(lineaEncontrada.fechaEntrega.Date, pedido.ruta, linea.Almacén, codigoPostalRutaInterna);
+                        DateTime fechaNueva = this.gestor.FechaEntregaAjustada(lineaEncontrada.fechaEntrega.Date, pedido.ruta, linea.Almacén, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto);
                         lineasAplazadas.Add(new Infraestructure.PedidosVenta.Retencion.LineaAplazable
                         {
                             NumeroOrden = linea.Nº_Orden,
@@ -1612,7 +1613,7 @@ namespace NestoAPI.Controllers
 
                 if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))
                 {
-                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna)))
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto)))
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
@@ -1704,7 +1705,7 @@ namespace NestoAPI.Controllers
                     if (modificado)
                     {
                         hayAlgunaLineaModificada = true;
-                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna)))
+                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto)))
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
                         }
@@ -2391,7 +2392,7 @@ namespace NestoAPI.Controllers
                     .Where(l => l.Empresa == empresa && l.Número == numero && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
                     .Max(l => (DateTime?)l.Fecha_Entrega);
                 return ultimaEntregaPendiente.HasValue &&
-                    FechasFuturasPedido.TieneFechasFuturas(ultimaEntregaPendiente, FechasFuturasPedido.FechaEntregaFutura(pedido.ruta, codigoPostalRutaInterna));
+                    FechasFuturasPedido.TieneFechasFuturas(ultimaEntregaPendiente, FechasFuturasPedido.FechaEntregaFutura(pedido.ruta, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto));
             }
             catch (Exception ex)
             {
@@ -2424,7 +2425,7 @@ namespace NestoAPI.Controllers
         {
             TimeSpan horaCorte = Models.Picking.HoraCortePicking.Leer(pedido.empresa);
             if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen,
-                    gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta)) <= DateTime.Today
+                    gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta), pedido.empresa, pedido.cliente, pedido.contacto) <= DateTime.Today
                 && DateTime.Now.TimeOfDay >= horaCorte)
             {
                 errorPersonalizado("No se pueden insertar líneas porque son más de las " + horaCorte.ToString(@"hh\:mm") + " y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
@@ -3148,7 +3149,7 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                if (pedido == null || !DiasRepartoCodigosPostales.DiaRutaInterna(pedido.ruta, codigoPostal).HasValue)
+                if (pedido == null || !DiasRepartoCodigosPostales.DiaRutaInterna(pedido.ruta, codigoPostal, pedido.empresa, pedido.cliente, pedido.contacto).HasValue)
                 {
                     return null;
                 }
@@ -3156,7 +3157,8 @@ namespace NestoAPI.Controllers
                     .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)
                     .Select(c => c.DiasEnServir)
                     .FirstOrDefault());
-                return AvisoClienteCierraDiaReparto.Crear(pedido.ruta, codigoPostal, leer(pedido.empresa, pedido.cliente, pedido.contacto));
+                return AvisoClienteCierraDiaReparto.Crear(pedido.ruta, codigoPostal, leer(pedido.empresa, pedido.cliente, pedido.contacto),
+                    pedido.empresa, pedido.cliente, pedido.contacto);
             }
             catch (Exception ex)
             {
@@ -3345,10 +3347,12 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [ResponseType(typeof(DateTime))]
         [Route("api/PedidosVenta/FechaAjustada")]
-        public IHttpActionResult CalcularFechaEntrega(DateTime fecha, string ruta, string almacen, string codigoPostal = null)
+        public IHttpActionResult CalcularFechaEntrega(DateTime fecha, string ruta, string almacen, string codigoPostal = null,
+            string empresa = null, string cliente = null, string contacto = null)
         {
-            // NestoAPI#764: con el código postal de entrega (opcional), las rutas internas dan el próximo día de su reparto
-            var fechaAjustada = gestor.FechaEntregaAjustada(fecha, ruta, almacen, codigoPostal);
+            // NestoAPI#764: con el código postal de entrega (opcional), las rutas internas dan el próximo día de su reparto.
+            // NestoAPI#799: con el cliente y contacto (opcionales), su excepción de día de reparto manda sobre el código postal.
+            var fechaAjustada = gestor.FechaEntregaAjustada(fecha, ruta, almacen, codigoPostal, empresa, cliente, contacto);
             return Ok(fechaAjustada);
         }
 

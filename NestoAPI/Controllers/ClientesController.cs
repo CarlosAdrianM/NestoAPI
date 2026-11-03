@@ -29,7 +29,7 @@ using System.Web.Http.Description;
 namespace NestoAPI.Controllers
 {
 
-    public class ClientesController : ApiController
+    public partial class ClientesController : ApiController
     {
         private IServicioVendedores servicioVendedores { get; }
         private readonly NVEntities db;
