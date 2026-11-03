@@ -115,7 +115,9 @@ namespace NestoAPI.Models.RecursosHumanos
             }
 
             // Buscar en la lista Fiestas si hay algún elemento que coincida con la fecha y el tipo de festivo
-            var festivoEncontrado = Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Nacional);
+            // NestoAPI#777: las autonómicas (Jueves Santo, 2 de mayo, traslados de la Comunidad de Madrid) cuentan en todas
+            // las delegaciones (Algete, Alcobendas y Reina están en la Comunidad de Madrid) y también sin delegación.
+            var festivoEncontrado = Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Nacional || f.TipoFestivo == TipoFestivo.Autonómica));
             if (festivoEncontrado)
             {
                 return true;
@@ -489,6 +491,12 @@ namespace NestoAPI.Models.RecursosHumanos
             {
                 Fecha = new DateTime(2026, 5, 2),
                 Fiesta = "Día de la Comunidad de Madrid",
+                TipoFestivo = TipoFestivo.Autonómica
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 11, 2),
+                Fiesta = "Traslado de Todos los Santos (Comunidad de Madrid)",
                 TipoFestivo = TipoFestivo.Autonómica
             },
             new Festivo()
