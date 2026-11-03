@@ -8,11 +8,12 @@
 -- Cambios (misma firma: Ariadna vieja y los scripts de siempre siguen valiendo):
 --   1. Al principio, antes de tocar nada (RAISERROR y return -1):
 --        - el usuario no tiene filas pendientes (estado 1, NºTraspaso NULL) en el almacén;
---        - el usuario tiene filas pendientes en OTRO almacén: «El usuario X tiene 25 filas pendientes en REI, 64 filas
---          pendientes en ALC: contabilice cada almacén por separado...».
---   2. @Almacen = @Delegación si es un almacén de la empresa (la API); si no (Nesto viejo pasa la delegación del extracto, 'VAR'),
---      el único almacén con filas pendientes del usuario (REVISIÓN 03/11/26 16:10: la primera versión exigía que @Delegación fuese
---      un almacén y a Santiago le saltó «El almacén VAR no existe en la empresa 1» desde Nesto viejo).
+--        - (solo si @Delegación no es un almacén) el usuario tiene filas pendientes en varios almacenes: no se sabe cuál quiere.
+--   2. @Almacen = @Delegación si es un almacén de la empresa (la API y Nesto nuevo): se contabiliza ese y SOLO ese; lo pendiente
+--      en otros almacenes se queda para otra llamada (Carlos 03/11/26: «en cada llamada se contabilice lo que se quiere»).
+--      Si no (Nesto viejo pasa la delegación del extracto, 'VAR'), el único almacén con filas pendientes del usuario; con varios,
+--      no se contabiliza nada (REVISIÓN 03/11/26 16:10: la primera versión exigía que @Delegación fuese un almacén y a Santiago
+--      le saltó «El almacén VAR no existe en la empresa 1» desde Nesto viejo; la segunda abortaba también con almacén explícito).
 --   3. Filtran además por almacén = @Almacen: la comprobación de filas sin pasillo, el INSERT en #Ubicacion, el DELETE de
 --      Ubicaciones del 29/11/22 (que además ahora cruza el almacén de la ubicación con el de la fila), el INSERT en
 --      PreExtrProducto y el UPDATE final de Inventarios.
@@ -44,7 +45,7 @@ ALTER PROCEDURE [dbo].[prdContabilizarInventario] @Empresa as char(3), @Usuario 
  * NUEVAVISION\RDS2016$ al contabilizar el inventario, se llevó a la vez 64 filas de ALC y 25 de REI que estaban con StockReal 0 por el INSERT	*
  * inicial de las tiendas, y dejó su stock a cero. Desde ahora:												*
  *   - @Almacen es @Delegación si es un almacén (la API); si no (Nesto viejo: 'VAR'), el único almacén con filas pendientes del usuario.	*
- *   - Si el usuario tiene filas pendientes en OTRO almacén, no se contabiliza nada: hay que contabilizar cada almacén por separado.		*
+ *   - Con almacén explícito se contabiliza solo ese; lo pendiente en otros se queda. Con 'VAR' y varios almacenes, nada.			*
  *   - Todas las sentencias filtran además por almacén = @Almacen. @Delegación sigue yendo al extracto.						*
  ************************************************************************************************************************************************************************************/
 -- Declaración de variables
@@ -58,29 +59,32 @@ set @Exito = 1 --> Sin errores
 declare @Almacen as char(3)
 declare @Mensaje as varchar(2000)
 declare @OtrosAlmacenes as varchar(1000)
--- Carlos 03/11/26 (NestoAPI#787): el almacén que se contabiliza (antes se deducía de la primera fila pendiente del usuario, sin más).
---   * Si @Delegación es un almacén de la empresa (así lo llama la API desde #790): ese.
+-- Carlos 03/11/26 (NestoAPI#787): el almacén que se contabiliza. Antes se deducía de la primera fila pendiente del usuario y se
+-- contabilizaban TODAS sus filas, fuesen del almacén que fuesen (lo del 22/11/25). Ahora cada llamada contabiliza SOLO un almacén:
+--   * Si @Delegación es un almacén de la empresa (así lo llama la API desde #790, y Nesto nuevo elige el almacén): ese, y solo ese.
+--     Las filas pendientes que el usuario tenga en otros almacenes se quedan como están, para contabilizarlas en otra llamada.
 --   * Si no (Nesto viejo pasa la delegación del extracto, 'VAR', que no es un almacén; 03/11/26 16:10, inventario de Santiago):
---     el ÚNICO almacén en el que el usuario tiene filas pendientes. Si tiene en varios, no se contabiliza nada (lo del 22/11/25).
+--     el único almacén en el que el usuario tiene filas pendientes. Si las tiene en varios no se puede saber cuál quiere y no se
+--     contabiliza nada: hay que hacerlo desde Nesto nuevo (o Ariadna), eligiendo el almacén.
 if exists (select * from almacenes where empresa = @Empresa and número = @Delegación)
 	set @Almacen = @Delegación
-else
-	set @Almacen = (select top 1 almacén from inventarios where empresa = @Empresa and usuario = @Usuario and estado = 1 and nºtraspaso is null order by almacén)
+else begin
+	select @OtrosAlmacenes = isnull(@OtrosAlmacenes + ', ', '') + convert(varchar(10), count(*)) + ' en ' + rtrim(almacén)
+		from inventarios
+		where empresa = @Empresa and usuario = @Usuario and estado = 1 and nºtraspaso is null
+		group by almacén
+		order by almacén
+	if (select count(distinct almacén) from inventarios where empresa = @Empresa and usuario = @Usuario and estado = 1 and nºtraspaso is null) > 1 begin
+		set @Mensaje = 'El usuario ' + @Usuario + ' tiene filas pendientes en varios almacenes (' + @OtrosAlmacenes + ') y «' + isnull(rtrim(@Delegación), '') + '» no es un almacén: contabilice cada almacén por separado desde Nesto nuevo o Ariadna. No se ha contabilizado nada'
+		raiserror('%s',11,1,@Mensaje)
+		return -1
+	end
+	set @Almacen = (select top 1 almacén from inventarios where empresa = @Empresa and usuario = @Usuario and estado = 1 and nºtraspaso is null)
+end
 
--- 1. el usuario tiene que tener filas pendientes en ese almacén
+-- el usuario tiene que tener filas pendientes en ese almacén
 if @Almacen is null or not exists (select * from inventarios where empresa = @Empresa and usuario = @Usuario and almacén = @Almacen and estado = 1 and nºtraspaso is null) begin
 	set @Mensaje = 'El usuario ' + isnull(@Usuario, '(nulo)') + ' no tiene filas pendientes de contabilizar' + isnull(' en ' + rtrim(@Almacen), '')
-	raiserror('%s',11,1,@Mensaje)
-	return -1
-end
--- 2. si tiene filas pendientes en OTRO almacén no se contabiliza nada (lo del 22/11/25)
-select @OtrosAlmacenes = isnull(@OtrosAlmacenes + ', ', '') + convert(varchar(10), count(*)) + ' filas pendientes en ' + rtrim(almacén)
-	from inventarios
-	where empresa = @Empresa and usuario = @Usuario and almacén <> @Almacen and estado = 1 and nºtraspaso is null
-	group by almacén
-	order by almacén
-if @OtrosAlmacenes is not null begin
-	set @Mensaje = 'El usuario ' + @Usuario + ' tiene ' + @OtrosAlmacenes + ' además de las de ' + rtrim(@Almacen) + ': contabilice cada almacén por separado. No se ha contabilizado nada'
 	raiserror('%s',11,1,@Mensaje)
 	return -1
 end
