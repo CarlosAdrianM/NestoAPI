@@ -348,6 +348,8 @@
     <Compile Include="Controllers\InventariosRellenarTests.cs" />
     <Compile Include="Controllers\InventariosContabilizarControllerTests.cs" />
     <Compile Include="Infrastructure\Inventarios\ContabilizarInventarioTests.cs" />
+    <Compile Include="Infrastructure\Inventarios\InventarioUbicacionesTests.cs" />
+    <Compile Include="Controllers\InventariosAriadnaControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VigenciaCampanasJobsServiceTests.cs" />

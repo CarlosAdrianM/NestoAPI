@@ -27,6 +27,8 @@ namespace NestoAPI.Infraestructure.Inventarios
             "El inventario lo consultan las tiendas (el suyo), Almacén, Compras, Administración y Dirección.";
         public const string MENSAJE_SIN_PERMISO_CONTABILIZAR =
             "Contabilizar el inventario lo hacen las tiendas (el suyo), Administración y Dirección.";
+        public const string MENSAJE_SIN_PERMISO_CONTAR =
+            "El inventario lo cuentan las tiendas (el suyo), Almacén, Administración y Dirección.";
         public const string MENSAJE_SOLO_SU_TIENDA = "Solo puede trabajar con el inventario de su tienda ({0}).";
         public const string MENSAJE_SIN_TIENDA = "No tiene tienda asignada (parámetro AlmacénPedidoVta): pídasela a Informática.";
         public const string MENSAJE_COSTE_TIENDAS = "Las diferencias del inventario de las tiendas se ven a PVP, no a coste.";
@@ -63,6 +65,19 @@ namespace NestoAPI.Infraestructure.Inventarios
                 return null;
             }
             return MotivoTienda(usuario, almacenUsuario, almacen, MENSAJE_SIN_PERMISO_CONTABILIZAR);
+        }
+
+        /// <summary>
+        /// NestoAPI#795: null si puede contar (rellenar y meter lo contado) en el inventario de <paramref name="almacen"/>: Almacén y los de
+        /// <see cref="EsGlobal"/> cualquiera; Tiendas, el suyo. Compras no cuenta.
+        /// </summary>
+        public static string MotivoNoPuedeContar(IPrincipal usuario, string almacenUsuario, string almacen)
+        {
+            if (EsGlobal(usuario) || (usuario != null && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN)))
+            {
+                return null;
+            }
+            return MotivoTienda(usuario, almacenUsuario, almacen, MENSAJE_SIN_PERMISO_CONTAR);
         }
 
         /// <summary>

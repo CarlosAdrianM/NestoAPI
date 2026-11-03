@@ -48,13 +48,19 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/Inventarios?empresa=1&almacen=ALG&fecha=11/21/2026&producto=8435454004144
+        // GET: api/Inventarios?empresa=1&almacen=ALG&fecha=11/21/2026&producto=8435454004144&pasillo=003&fila=001&columna=002
         /// <summary>
         /// La línea del día del producto leído (NestoAPI#788: la referencia o cualquiera de sus códigos de barras, igual que al
         /// recibir una reposición). 404 vacío si el producto aún no tiene línea ese día; 404 con Message si lo leído no es ningún
         /// producto; 409 con Message y Productos si el código lo llevan varios.
         /// </summary>
+        /// <param name="pasillo">
+        /// NestoAPI#795: en almacenes con ubicaciones, la línea de esa ubicación (el mismo producto puede estar en varias). Pasillo, fila
+        /// y columna van juntos: si viene alguno, se buscan los tres (el que falte, sin ubicación). Sin ninguno, como siempre.
+        /// </param>
         [ResponseType(typeof(Inventario))]
-        public async Task<IHttpActionResult> GetInventario(string empresa, string almacen, DateTime fecha, string producto)
+        public async Task<IHttpActionResult> GetInventario(string empresa, string almacen, DateTime fecha, string producto,
+            string pasillo = null, string fila = null, string columna = null)
         {
             ResultadoProductoLeido leido = await lector.Leer(empresa, producto).ConfigureAwait(false);
             if (leido.Producto == null)
@@ -66,7 +72,16 @@ namespace NestoAPI.Controllers
             DateTime fechaMasUno = fecha.AddDays(1);
             // Un producto que aún no se ha contado ese día no tiene línea: es un 404 (Nesto lo trata
             // como «no hay línea»), no un 500 de SingleAsync que ensucie ELMAH.
-            Inventario inventario = await db.Inventarios.SingleOrDefaultAsync(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Número == productoEncontrado.Número && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR);
+            IQueryable<Inventario> consulta = db.Inventarios.Where(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Número == productoEncontrado.Número && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR);
+            if (!string.IsNullOrWhiteSpace(pasillo) || !string.IsNullOrWhiteSpace(fila) || !string.IsNullOrWhiteSpace(columna))
+            {
+                // NestoAPI#795: la columna es char(3), así que en SQL «003» casa con «003 »; aquí solo se quitan los espacios de lo pedido.
+                string p = string.IsNullOrWhiteSpace(pasillo) ? null : pasillo.Trim();
+                string f = string.IsNullOrWhiteSpace(fila) ? null : fila.Trim();
+                string c = string.IsNullOrWhiteSpace(columna) ? null : columna.Trim();
+                consulta = consulta.Where(i => i.Pasillo == p && i.Fila == f && i.Columna == c);
+            }
+            Inventario inventario = await consulta.SingleOrDefaultAsync();
             if (inventario == null)
             {
                 return NotFound();
