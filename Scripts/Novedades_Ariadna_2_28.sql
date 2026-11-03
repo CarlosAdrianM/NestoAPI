@@ -1,6 +1,6 @@
 /*
     Novedades de Ariadna 2.28 (03/11/26): Ariadna#79 (pantalla de Inventario, NestoAPI#795/#784), #78 (Salidas: reimprimir),
-    #80 (código interno al imprimir, NestoAPI#791), #77 (Sin etiqueta sin duplicados) y el agradecimiento a Miguel y Andre.
+    #80 (código interno al imprimir, NestoAPI#791), #77 (Sin etiqueta sin duplicados), #82 (recoger desde la parada), #84 (muestras MMP sin código) y el agradecimiento a Miguel y Andre.
     Necesita la API del 03/11 (1dff4f39) y los scripts Issue784_* (ya lanzados).
     Ejecutar en SSMS contra NV como sa cuando la 2.28 llegue a la prueba cerrada. Idempotente (compara por Ámbito + Título).
     NO duplicar: la sugerencia 960 (Carlos, reimprimir desde Salidas) ya está marcada Implementada en 2.28 por la API.
@@ -23,7 +23,14 @@ INSERT INTO @n VALUES
  N'Almacén,Tiendas'),
 (5, N'Corregido', N'Recepción «Sin etiqueta»: sin avisos repetidos',
  N'Si al dar una unidad «Sin etiqueta» la PDA pierde la cobertura y reintentas, el aviso al origen y a Compras ya no se manda dos veces.',
- N'Almacén');
+ N'Almacén'),
+(6, N'Mejorado', N'Reparto: recoger la reposición desde la propia parada',
+ N'Si en «Entregar» lee un bulto R de la reposición que se recoge en esa misma tienda (o una NR del cliente de la parada), Ariadna ya no le dice solo «no es de esta parada»: le pregunta «¿Recogerlo ahora?» e Intro lo sube a la furgoneta sin salir de la parada, igual que desde «En la furgoneta». Gracias, Miguel.',
+ N'Almacén'),
+(7, N'Mejorado', N'Muestras sin código de barras: se cuentan tecleando',
+ N'Las muestras (subgrupo MMP) que no traen código de barras del fabricante ya no hay que etiquetarlas. En el recorrido, el packing y Enviar reposición, Ariadna dice «Muestra sin código de barras: teclee su referencia (o la cantidad y F1) para contarla» y no pide imprimir etiqueta. Al recibir una reposición, en esas líneas teclear la referencia o la cantidad cuenta, sin pasar por «Sin etiqueta». Lo pidió Almacén.',
+ N'Almacén,Tiendas');
+
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT '2.28', '2026-11-03', n.Categoria, n.Titulo, n.Descripcion, 'Ariadna', 1, 'sa', n.Perfiles
 FROM @n n

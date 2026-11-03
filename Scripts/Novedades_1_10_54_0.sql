@@ -5,7 +5,7 @@
     contabilizar desde Nesto, épica NestoAPI#784), #598 (código interno al imprimir, NestoAPI#791);
     NestoAPI #777 (festivos autonómicos), #780 (picking automático no sale en festivo), #776 (códigos de barras no válidos
     limpiados), #792 (fin de mes: una factura por tipo de IVA), #785 (reembolso de la etiqueta pendiente), #796 (orden del
-    bloque de cheques), #718 (IVA Global), #783 (recordatorios de respuesta) y el agradecimiento a Miguel y Andre (key users).
+    bloque de cheques), #718 (IVA Global), #783 (recordatorios de respuesta), #797/Nesto#605 (muestras MMP sin código), Nesto#603 (409 y avisos de la etiqueta pendiente), Nesto#604 (casilla de eventos), Nesto#599 (detalle del modo de servicio), #782 (sync Odoo no graba códigos no válidos) y el agradecimiento a Miguel y Andre (key users).
 
     ORDEN:
       1) Scripts sa YA LANZADOS 03/11: Issue784_prdContabilizarInventario_PorAlmacen, Issue784_Inventarios_PorCodigoBarras,
@@ -64,6 +64,18 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Códigos de barras no válidos, limpiados',
      N'Se han dejado en blanco los códigos de barras que no eran tales («0», «1», la propia referencia, EAN con el dígito de control mal…) en todas las empresas: 2.760 productos. A cada uno se le dará su código interno (empieza por 29) la primera vez que se imprima su etiqueta. Gracias, Compras, por la lista.',
      N'Compras,Almacén,Tiendas'),
+    ('Mejorado', N'Muestras sin código de barras: se mandan y se reciben sin etiqueta',
+     N'Las muestras (subgrupo MMP) que no traen código de barras del fabricante ya no hay que etiquetarlas. En «Enviar reposición» no salen como «sin código: imprima su etiqueta» y se mandan tal cual, y al recibir la reposición se cuentan tecleando su referencia o la cantidad, sin pasar por «Sin etiqueta». Lo pidió Almacén.',
+     N'Almacén,Tiendas,Compras'),
+    ('Mejorado', N'Etiqueta pendiente: el reembolso recalculado se ve al registrarla',
+     N'Al registrar una etiqueta que se creó pendiente antes del picking, Nesto enseña el aviso de reembolso recalculado y la etiqueta sale con el importe bueno. Si el pedido es contra reembolso, la etiqueta va a 0 € y la factura está pendiente de cobro, Nesto no la imprime: enseña el motivo y deja el envío en pendientes para que se le ponga el reembolso.',
+     N'Almacén,Administración'),
+    ('Mejorado', N'Eventos: la casilla de «Hay que comprar» acepta referencia o código de barras',
+     N'En la ficha del evento, la casilla pequeña de «Hay que comprar» lleva el texto «Referencia o código de barras…», Intro añade el producto y acepta tanto la referencia como el código de barras leído con el lector. La lista de arriba explica para qué es. Gracias, Reina.',
+     N'Vendedores,Tiendas,Dirección'),
+    ('Mejorado', N'Plantilla: por qué el pedido sale «Todo junto», producto a producto',
+     N'La línea gris bajo «Servir» que explica el modo de servicio propuesto lleva ahora un tooltip con el detalle por producto: cuál sale desmontando un kit (y cuál), cuál llega con la reposición de una tienda y cuándo puede salir, cuál espera al proveedor y con qué fecha. Así se ve que no es un fallo cuando no se puede elegir «Ahora lo que tenemos». Gracias, Manuel.',
+     N'Vendedores,Tiendas'),
     ('Mejorado', N'Novedades: los recordatorios van a quien se le hizo la pregunta',
      N'Cuando una novedad queda «esperando respuesta», el recordatorio del día siguiente le llega a la persona a la que se le preguntó, no a quien la creó.',
      NULL);
