@@ -443,6 +443,42 @@ namespace NestoAPI.Infraestructure.Rapports
             return texto.Length > LONGITUD_MAXIMA_MOTIVO ? texto.Substring(0, LONGITUD_MAXIMA_MOTIVO) : texto;
         }
 
+        /// <summary>
+        /// NestoAPI#796 (Carlos, 03/11/26): si con el cliente se habló hace 0, 1 o 2 días (<see cref="ClienteCarteraContacto.UltimoContacto"/>:
+        /// rapport T/V/W Estado 0 de cualquier usuario), se dice al final del motivo, para que el vendedor lo vea antes de
+        /// llamar. Sin pasar de <see cref="LONGITUD_MAXIMA_MOTIVO"/>: si no cabe, se recorta el motivo, no el aviso.
+        /// </summary>
+        public static string ConHabladoReciente(string motivo, int? diasDesdeUltimoContacto)
+        {
+            string aviso = HabladoReciente(diasDesdeUltimoContacto);
+            if (aviso == null)
+            {
+                return motivo;
+            }
+            string baseMotivo = (motivo ?? string.Empty).TrimEnd();
+            if (baseMotivo.EndsWith(aviso, StringComparison.Ordinal))
+            {
+                return motivo;
+            }
+            if (baseMotivo.Length + aviso.Length > LONGITUD_MAXIMA_MOTIVO)
+            {
+                baseMotivo = baseMotivo.Substring(0, Math.Max(0, LONGITUD_MAXIMA_MOTIVO - aviso.Length)).TrimEnd();
+            }
+            return (baseMotivo + aviso).Trim();
+        }
+
+        /// <summary>NestoAPI#796: « (hablado hoy)», « (hablado ayer)», « (hablado hace 2 días)» o null.</summary>
+        public static string HabladoReciente(int? diasDesdeUltimoContacto)
+        {
+            switch (diasDesdeUltimoContacto)
+            {
+                case 0: return " (hablado hoy)";
+                case 1: return " (hablado ayer)";
+                case 2: return " (hablado hace 2 días)";
+                default: return null;
+            }
+        }
+
         private static string Pedidos(int n) => n == 1 ? "1 pedido" : $"{n} pedidos";
         private static string Veces(int n) => n == 1 ? "1 vez" : $"{n} veces";
 

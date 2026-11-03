@@ -394,6 +394,30 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
+        public void Ordenar_BloqueDelCheque_PrimeroLosQueMasDiasLlevanSinContacto_YAIgualdadPorProbabilidad()
+        {
+            // NestoAPI#796: la respuesta ordena el bloque del cheque igual que ImpulsoChequesRegaloContacto.Aplicar.
+            SugerenciaContactoDTO Cheque(string cliente, int? dias, float probabilidad) => new SugerenciaContactoDTO
+            {
+                Cliente = cliente, Contacto = "0", TieneChequeRegalo = true, Prioridad = PrioridadesContacto.MAXIMA,
+                DiasDesdeUltimoContacto = dias, Probabilidad = probabilidad, Origen = OrigenesSugerenciaContacto.CHEQUE_REGALO
+            };
+            var registradas = new List<SugerenciaContactoDTO>
+            {
+                Cheque("1", 1, 0.9f),
+                new SugerenciaContactoDTO { Cliente = "2", Contacto = "0", Prioridad = PrioridadesContacto.MAXIMA, Probabilidad = 0.99f, DiasDesdeUltimoContacto = 40 },
+                Cheque("3", 10, 0.2f),
+                Cheque("4", null, 0.1f),
+                Cheque("5", 10, 0.5f)
+            };
+
+            List<SugerenciaContactoDTO> ordenadas = ServicioSugerenciasContacto.Ordenar(registradas);
+
+            CollectionAssert.AreEqual(new[] { "4", "5", "3", "1", "2" }, ordenadas.Select(s => s.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { 1, 2, 3, 4, 5 }, ordenadas.Select(s => s.Orden).ToArray());
+        }
+
+        [TestMethod]
         public async Task Leer_FallanLosCheques_LaListaSaleIgualSinImpulso()
         {
             IChequesRegaloParaSugerencias cheques = A.Fake<IChequesRegaloParaSugerencias>();

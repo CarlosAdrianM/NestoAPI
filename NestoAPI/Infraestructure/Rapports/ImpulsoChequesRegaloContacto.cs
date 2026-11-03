@@ -64,21 +64,25 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         /// <summary>
-        /// La lista del motor con los clientes del cheque (no excluidos) delante, en Máxima, por probabilidad y días sin
-        /// contacto; luego el resto como venía. Orden = 1, 2, 3…
+        /// La lista del motor con los clientes del cheque (no excluidos) delante, en Máxima; luego el resto como venía.
+        /// Orden = 1, 2, 3…
+        /// <para>NestoAPI#796 (Carlos, 03/11/26): nadie del cheque se queda fuera, pero dentro del bloque van primero los
+        /// que más días llevan sin contacto (sin contacto nunca, el primero) y, a igualdad, por probabilidad: antes iba por
+        /// probabilidad y los recién llamados podían salir arriba. A cualquier sugerencia con un contacto hablado hace 0-2
+        /// días se le añade «(hablado hoy/ayer/hace 2 días)» al motivo (<see cref="MotorSugerenciasContacto.ConHabladoReciente"/>).</para>
         /// </summary>
         public static List<SugerenciaContactoDTO> Aplicar(IList<SugerenciaContactoDTO> priorizadas, IDictionary<string, ClienteConChequeRegalo> conCheque, DateTime hoy)
         {
             List<SugerenciaContactoDTO> lista = (priorizadas ?? new List<SugerenciaContactoDTO>()).ToList();
             if (conCheque == null || conCheque.Count == 0)
             {
-                return lista;
+                return ConHabladoReciente(lista);
             }
             List<SugerenciaContactoDTO> subidos = conCheque.Values
                 .Where(c => !c.Excluido)
                 .Select(c => new { Con = c, DiasContacto = MotorSugerenciasContacto.DiasDesde(c.Cliente.UltimoContacto, hoy) })
-                .OrderByDescending(x => x.Con.Cliente.Probabilidad)
-                .ThenByDescending(x => x.DiasContacto ?? int.MaxValue)
+                .OrderByDescending(x => x.DiasContacto ?? int.MaxValue)
+                .ThenByDescending(x => x.Con.Cliente.Probabilidad)
                 .ThenBy(x => x.Con.Cliente.Clave, StringComparer.Ordinal)
                 .Select(x =>
                 {
@@ -101,12 +105,22 @@ namespace NestoAPI.Infraestructure.Rapports
                     s.Motivo = Motivo(con, hoy);
                 }
             }
-            List<SugerenciaContactoDTO> resultado = subidos.Concat(resto).ToList();
+            List<SugerenciaContactoDTO> resultado = ConHabladoReciente(subidos.Concat(resto).ToList());
             for (int i = 0; i < resultado.Count; i++)
             {
                 resultado[i].Orden = i + 1;
             }
             return resultado;
+        }
+
+        /// <summary>NestoAPI#796: el «(hablado ayer)» detrás del motivo, con los días sin contacto que ya lleva la sugerencia.</summary>
+        private static List<SugerenciaContactoDTO> ConHabladoReciente(List<SugerenciaContactoDTO> lista)
+        {
+            foreach (SugerenciaContactoDTO s in lista)
+            {
+                s.Motivo = MotorSugerenciasContacto.ConHabladoReciente(s.Motivo, s.DiasDesdeUltimoContacto);
+            }
+            return lista;
         }
 
         /// <summary>La frase del cheque y, detrás, el motivo de siempre si hoy le tocaba por sí solo.</summary>

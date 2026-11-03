@@ -153,7 +153,9 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>
         /// NestoAPI#617: quién entra en la lista lo fija el registro del día (orden registrado), pero el orden de la
         /// respuesta sigue al filtro de esta llamada, con el mismo criterio que <see cref="MotorSugerenciasContacto.ElegirDelDia"/>
-        /// (NestoAPI#677): delante las subidas por el cheque regalo; luego las de probabilidad por la probabilidad de ESTA
+        /// (NestoAPI#677): delante las subidas por el cheque regalo (NestoAPI#796: primero las que más días llevan sin
+        /// contacto —sin contacto nunca, la primera— y, a igualdad, por probabilidad, como en
+        /// <see cref="ImpulsoChequesRegaloContacto.Aplicar"/>); luego las de probabilidad por la probabilidad de ESTA
         /// llamada, con las del cupo de cobertura intercaladas en su orden registrado. El Orden registrado desempata.
         /// Orden = 1..n en la respuesta (en BD no cambia).
         /// </summary>
@@ -162,7 +164,8 @@ namespace NestoAPI.Infraestructure.Rapports
             var conPuesto = registradas.Select((s, i) => new { Sugerencia = s, Registrado = i }).ToList();
             List<SugerenciaContactoDTO> delante = conPuesto
                 .Where(x => x.Sugerencia.TieneChequeRegalo && x.Sugerencia.Prioridad == PrioridadesContacto.MAXIMA)
-                .OrderByDescending(x => x.Sugerencia.Probabilidad)
+                .OrderByDescending(x => x.Sugerencia.DiasDesdeUltimoContacto ?? int.MaxValue)
+                .ThenByDescending(x => x.Sugerencia.Probabilidad)
                 .ThenBy(x => x.Registrado)
                 .Select(x => x.Sugerencia)
                 .ToList();
@@ -260,6 +263,8 @@ namespace NestoAPI.Infraestructure.Rapports
             if (enCartera)
             {
                 dto.Motivo = ConMotivoSubgrupo(dto.Motivo, cliente.MotivoSubgrupo);
+                // NestoAPI#796: «(hablado ayer)» al final, con el último contacto de cualquier usuario.
+                dto.Motivo = MotorSugerenciasContacto.ConHabladoReciente(dto.Motivo, dto.DiasDesdeUltimoContacto);
             }
             return dto;
         }

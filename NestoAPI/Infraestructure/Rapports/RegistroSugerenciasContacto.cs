@@ -206,8 +206,9 @@ namespace NestoAPI.Infraestructure.Rapports
         /// atiende la sugerencia de <paramref name="vendedorSugerencia"/> salvo que lo haya hecho OTRO de los vendedores que
         /// llevan hoy al cliente (<paramref name="vendedoresDelCliente"/>): cada uno tiene su cadencia y su lista. El rapport
         /// sin vendedor (alguien que no lleva al cliente), el del vendedor general o el de alguien que ya no lo lleva sí
-        /// atiende, como antes. Es la misma regla que el último contacto de la cartera (#OtrosVendedores de
-        /// <see cref="RepositorioCarteraContactoSql.SQL_CARTERA"/>).
+        /// atiende, como antes. Era la misma regla que el último contacto de la cartera; desde NestoAPI#796 (03/11/26) el último
+        /// contacto de <see cref="RepositorioCarteraContactoSql.SQL_CARTERA"/> cuenta los rapports de cualquier usuario, pero
+        /// marcar la sugerencia como atendida sigue con esta regla.
         /// </summary>
         internal static bool RapportCuentaPara(string vendedorSugerencia, string vendedorRapport, ICollection<string> vendedoresDelCliente)
         {
