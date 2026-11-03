@@ -684,6 +684,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosReembolsos(string empresa, int agencia)
         {
+            // NestoAPI#778: el reembolso del reparto propio lo cobra el repartidor; ninguna agencia nos lo debe ni lo liquida.
+            if (NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(agencia))
+            {
+                return Ok(new List<EnvioAgenciaListadoDTO>());
+            }
             List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Empresa == empresa && e.Agencia == agencia
                     && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
@@ -920,7 +925,8 @@ namespace NestoAPI.Controllers
                     Content = new ObjectContent<HttpError>(error, new System.Net.Http.Formatting.JsonMediaTypeFormatter())
                 });
             }
-            if (cambiosQueViajaron.Any(c => c.Campo == "Reembolso") && registrado.FechaPagoReembolso.HasValue)
+            // NestoAPI#778: en el reparto propio la FechaPagoReembolso no es «cobrado por la agencia» (la lleva desde que nace).
+            if (cambiosQueViajaron.Any(c => c.Campo == "Reembolso") && NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.PagadoPorLaAgencia(registrado))
             {
                 // Como en «Modificar datos» (Carlos 14/12/16): un reembolso ya cobrado no se toca.
                 return BadRequest($"No se puede cambiar el reembolso del envío {id}, porque ya está cobrado.");
@@ -953,6 +959,8 @@ namespace NestoAPI.Controllers
             }
 
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            // NestoAPI#778: pasa a reparto propio (o cambia su reembolso) → pagado; vuelve a una agencia de fuera → pendiente.
+            NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(enviosAgencia, registrado?.Agencia);
 
             try
             {
@@ -1855,7 +1863,7 @@ namespace NestoAPI.Controllers
 
             // El reembolso ya cobrado/pagado implica que el envío llegó a destino: anularlo en la
             // agencia dejaría la contabilidad descuadrada. Regla heredada del procedimiento manual.
-            if (envio.FechaPagoReembolso != null)
+            if (NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.PagadoPorLaAgencia(envio))
             {
                 return BadRequest("El reembolso de este envío ya está pagado: no se puede anular. " +
                     "Cualquier problema se gestiona como incidencia con la agencia.");
@@ -2897,6 +2905,8 @@ namespace NestoAPI.Controllers
             // NestoAPI#596: el CP se graba canónico («4480 670» -> «4480-670»). También cubre la
             // importación de Canales Externos, que entra por aquí.
             enviosAgencia.CodPostal = CodigoPostalEnvio(enviosAgencia.CodPostal, Infraestructure.Direcciones.CodigoPostal.PaisIso(enviosAgencia.Pais));
+            // NestoAPI#778: el reembolso del reparto propio nace pagado.
+            NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(enviosAgencia);
             db.EnviosAgencias.Add(enviosAgencia);
             await db.SaveChangesAsync();
 
@@ -3119,6 +3129,8 @@ namespace NestoAPI.Controllers
                 return BadRequest(errorCatalogo);
             }
 
+            // NestoAPI#778: el reembolso del reparto propio nace pagado.
+            NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(envio);
             db.EnviosAgencias.Add(envio);
             await db.SaveChangesAsync();
 

@@ -196,6 +196,52 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.Contains(JObject.Parse(await respuesta.Content.ReadAsStringAsync())["Campos"].ToString(), "Dirección");
         }
 
+        // ---- NestoAPI#778: el reembolso del reparto propio nace pagado ----
+
+        [TestMethod]
+        public async Task Pendiente_DeCttARepartoPropio_ConReembolso_FechaPagoReembolsoIgualALaFecha()
+        {
+            _ = Registrado(codigoBarras: null, estado: (short)Constantes.Agencias.ESTADO_PENDIENTE);
+            EnviosAgencia enviado = Envio(agencia: Constantes.Agencias.AGENCIA_REPARTO_PROPIO, codigoBarras: null,
+                estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 500M);
+
+            IHttpActionResult resultado = await controller.PutEnviosAgencia(249990, enviado);
+
+            Assert.IsNotInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual(1, controller.Marcados.Count);
+            Assert.AreEqual(new DateTime(2026, 10, 27), controller.Marcados.Single().FechaPagoReembolso);
+            Assert.AreEqual(500M, controller.Marcados.Single().Reembolso);
+        }
+
+        [TestMethod]
+        public async Task Pendiente_DeRepartoPropioACtt_FechaPagoReembolsoVuelveANull()
+        {
+            EnviosAgencia registrado = Registrado(agencia: Constantes.Agencias.AGENCIA_REPARTO_PROPIO, codigoBarras: null,
+                estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 500M);
+            registrado.FechaPagoReembolso = new DateTime(2026, 10, 27);
+            EnviosAgencia enviado = Envio(codigoBarras: null, estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 500M);
+            enviado.FechaPagoReembolso = new DateTime(2026, 10, 27); // Nesto manda lo que cargó
+
+            IHttpActionResult resultado = await controller.PutEnviosAgencia(249990, enviado);
+
+            Assert.IsNotInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual(1, controller.Marcados.Count);
+            Assert.IsNull(controller.Marcados.Single().FechaPagoReembolso, "vuelve a estar pendiente de que CTT lo pague");
+        }
+
+        [TestMethod]
+        public async Task Pendiente_DeCttAGls_ConReembolsoYaPagado_NoSeToca()
+        {
+            _ = Registrado(codigoBarras: null, estado: (short)Constantes.Agencias.ESTADO_PENDIENTE);
+            EnviosAgencia enviado = Envio(agencia: Constantes.Agencias.AGENCIA_GLS, codigoBarras: null,
+                estado: (short)Constantes.Agencias.ESTADO_PENDIENTE, reembolso: 500M);
+            enviado.FechaPagoReembolso = new DateTime(2026, 10, 20);
+
+            _ = await controller.PutEnviosAgencia(249990, enviado);
+
+            Assert.AreEqual(new DateTime(2026, 10, 20), enviado.FechaPagoReembolso, "entre agencias de fuera la fecha es suya");
+        }
+
         // ---- Sin cambios en lo que viajó, pendientes y GLS: como siempre ----
 
         [TestMethod]

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Configuration;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -56,6 +56,61 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public static bool EstaActivo() => EstaActivo(ConfigurationManager.AppSettings[CLAVE]);
 
         public static bool EstaActivo(string valor) => string.Equals(valor?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// NestoAPI#778 (Carlos 03/11/26, «al crear el envío»): el reembolso de un envío del reparto propio no es nunca un reembolso
+    /// «pendiente de cobrar por la agencia» (FechaPagoReembolso NULL): lo cobra nuestro repartidor (efectivo a su caja, tarjeta
+    /// que liquida la factura, #773). Por eso nace ya con FechaPagoReembolso = Fecha (sin hora) y el correo de cuadre de
+    /// agencias con la 55500092 (Reembolso &lt;&gt; 0 AND FechaPagoReembolso IS NULL) no lo ve. El importe sigue en Reembolso,
+    /// que es lo que Ariadna cobra y lo que sale en la firma. Único sitio de la regla: todos los caminos que crean o cambian un
+    /// envío llaman a <see cref="AplicarFechaPago"/>.
+    /// </summary>
+    public static class ReembolsoRepartoPropio
+    {
+        /// <summary>
+        /// ¿El reembolso de esta agencia lo cobramos nosotros? Es la misma regla que decide cuándo se contabiliza
+        /// (<see cref="MomentosContabilizarReembolso.De(int)"/>: al entregar, contra la caja del repartidor), no una copia.
+        /// </summary>
+        public static bool EsAgenciaRepartoPropio(int agencia)
+            => MomentosContabilizarReembolso.De(agencia) == MomentoContabilizarReembolso.AlEntregar;
+
+        /// <summary>
+        /// Deja FechaPagoReembolso como le toca al envío tras crearlo o cambiarlo:
+        /// <list type="bullet">
+        /// <item>Reparto propio con reembolso (≠ 0) y sin fecha: FechaPagoReembolso = Fecha (sin hora).</item>
+        /// <item>Reparto propio sin reembolso: no se toca.</item>
+        /// <item>Agencia de fuera que ANTES era de reparto propio (<paramref name="agenciaAnterior"/>): NULL, vuelve a estar
+        /// pendiente de que la agencia lo pague.</item>
+        /// <item>Agencia de fuera que ya lo era: no se toca (su fecha la pone «Contabilizar reembolsos»).</item>
+        /// </list>
+        /// </summary>
+        public static void AplicarFechaPago(EnviosAgencia envio, int? agenciaAnterior = null)
+        {
+            if (envio == null)
+            {
+                return;
+            }
+            if (EsAgenciaRepartoPropio(envio.Agencia))
+            {
+                if (envio.Reembolso != 0m && !envio.FechaPagoReembolso.HasValue)
+                {
+                    envio.FechaPagoReembolso = envio.Fecha.Date;
+                }
+                return;
+            }
+            if (agenciaAnterior.HasValue && EsAgenciaRepartoPropio(agenciaAnterior.Value))
+            {
+                envio.FechaPagoReembolso = null;
+            }
+        }
+
+        /// <summary>
+        /// ¿El reembolso está ya pagado por la agencia (y por tanto no se puede cambiar ni anular el envío)? En el reparto propio
+        /// la FechaPagoReembolso no significa eso (la lleva desde que nace, #778), así que nunca bloquea: como antes de #778.
+        /// </summary>
+        public static bool PagadoPorLaAgencia(EnviosAgencia envio)
+            => envio != null && envio.FechaPagoReembolso.HasValue && !EsAgenciaRepartoPropio(envio.Agencia);
     }
 
     /// <summary>NestoAPI#739: qué pedidos van por el reparto propio. Las rutas son las de la «Ruta propia» de Facturar rutas.</summary>

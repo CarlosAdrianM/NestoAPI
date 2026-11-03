@@ -287,6 +287,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             };
             envio.CodPostal = EnviosAgenciasController.CodigoPostalEnvio(envio.CodPostal, Direcciones.CodigoPostal.PaisIso(envio.Pais));
             EnviosAgenciasController.RecortarTextosLibres(envio);
+            // NestoAPI#778: hoy sin reembolso (no hace nada), pero la regla del reparto propio se aplica en todos los caminos.
+            ReembolsoRepartoPropio.AplicarFechaPago(envio);
             return envio;
         }
 

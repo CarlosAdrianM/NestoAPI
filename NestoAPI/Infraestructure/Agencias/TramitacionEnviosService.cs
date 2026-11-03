@@ -484,6 +484,11 @@ namespace NestoAPI.Infraestructure.Agencias
                 {
                     errores.Add($"El envío {numero} (pedido {envio.Pedido}) no tiene reembolso.");
                 }
+                if (RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(envio.Agencia))
+                {
+                    // NestoAPI#778: lo cobra el repartidor (caja o tarjeta); ninguna agencia lo liquida.
+                    errores.Add($"El envío {numero} (pedido {envio.Pedido}) es del reparto propio: su reembolso lo cobra el repartidor.");
+                }
                 if (envio.AgenciasTransporte == null || string.IsNullOrWhiteSpace(envio.AgenciasTransporte.CuentaReembolsos))
                 {
                     errores.Add($"La agencia del envío {numero} no tiene establecida una cuenta de reembolsos.");
@@ -603,9 +608,10 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 throw new NestoBusinessException($"No existe el envío {numeroEnvio}.");
             }
-            if (envio.FechaPagoReembolso.HasValue)
+            if (RepartoPropio.ReembolsoRepartoPropio.PagadoPorLaAgencia(envio))
             {
-                // Carlos 14/12/16: no se pueden modificar los envíos que estén cobrados.
+                // Carlos 14/12/16: no se pueden modificar los envíos que estén cobrados. NestoAPI#778: el reparto propio no
+                // cuenta (su FechaPagoReembolso la lleva desde que nace).
                 throw new NestoBusinessException("No se puede modificar este envío, porque ya está cobrado");
             }
 
@@ -850,7 +856,7 @@ namespace NestoAPI.Infraestructure.Agencias
             => envio != null
             && envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO
             && envio.Reembolso > 0
-            && !envio.FechaPagoReembolso.HasValue;
+            && !RepartoPropio.ReembolsoRepartoPropio.PagadoPorLaAgencia(envio);
 
         /// <summary>
         /// Sugerencia 544: el seguimiento ha pasado el envío a DEVUELTO y ningún devuelto cobra reembolso, así
@@ -1066,6 +1072,8 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 envio.Servicio = datos.Servicio.Value;
             }
+            // NestoAPI#778: si el reparto propio pasa a tener reembolso, nace pagado.
+            RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(envio);
         }
 
         /// <summary>
