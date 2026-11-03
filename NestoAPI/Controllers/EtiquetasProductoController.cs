@@ -13,7 +13,8 @@ namespace NestoAPI.Controllers
 {
     /// <summary>
     /// NestoAPI#654 (sugerencia 546): la etiqueta de código de barras de un producto (30×20 mm), en la impresora de etiquetas
-    /// del usuario (ImpresoraCodBarras). La piden Nesto (ficha del producto y Recibir reposición) y, cuando haga falta, Ariadna.
+    /// del usuario (ImpresoraCodBarras). La piden Nesto (ficha del producto, Enviar y Recibir reposición) y Ariadna.
+    /// NestoAPI#791: siempre con el EAN-13 de la unidad (el del fabricante o el interno del 29, que se crea al imprimir).
     ///
     /// <para>Va en un controlador propio, SIN el filtro EscrituraSoloAlmacen del resto de api/Almacen (igual que Recepciones):
     /// la usan también las tiendas, que no son de Almacén. Imprimir no cambia datos, pero manda papel a una impresora: pueden
@@ -35,8 +36,10 @@ namespace NestoAPI.Controllers
 
         // POST api/Almacen/EtiquetasProducto/Imprimir?empresa=1&ensayo=false   { "Producto": "17404", "Copias": 1 }
         /// <summary>
-        /// Imprime las etiquetas del producto (nombre, subgrupo y tamaño; el código de barras con el número del producto y el
-        /// número debajo). Con ensayo=true no imprime: dice qué llevaría y en qué impresora. La impresión la hace el servidor.
+        /// Imprime las etiquetas del producto: el nombre y «Ref. 17404 · 100 m» y, debajo, el EAN-13 de la unidad con sus cifras.
+        /// Si el producto no tiene EAN-13 de unidad, se le da el interno del 29 (en exclusiva) y se imprime ese: la respuesta lo
+        /// dice en CodigoBarras, CodigoInterno y CodigoAsignado. «Formato» se acepta y se ignora (NestoAPI#791). Con
+        /// ensayo=true no imprime ni crea el código: dice qué llevaría y en qué impresora. La impresión la hace el servidor.
         /// 400 si el producto no existe, sobran copias o el usuario no tiene impresora; 403 sin permiso; 502 si Windows no deja
         /// imprimir.
         /// </summary>
