@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#797: Productos.SubGrupo (el código, no el nombre), para SinCodigoAdmitido.</summary>
+        public string SubGrupo { get; set; }
         public int Cantidad { get; set; }
     }
 
@@ -211,7 +213,7 @@ ORDER BY x.Traspaso";
 
         internal const string SQL_LINEAS = @"
 SELECT RTRIM(p.[Número]) AS Producto, RTRIM(MAX(pr.Nombre)) AS Descripcion, RTRIM(MAX(pr.CodBarras)) AS CodigoBarras,
-       CAST(SUM(p.Cantidad) AS int) AS Cantidad
+       RTRIM(MAX(pr.SubGrupo)) AS SubGrupo, CAST(SUM(p.Cantidad) AS int) AS Cantidad
 FROM PreExtrProducto p
      JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
      LEFT JOIN Productos pr ON pr.Empresa = p.Empresa AND pr.[Número] = p.[Número]
@@ -340,6 +342,7 @@ ORDER BY e.FechaEscaneo";
                         Descripcion = f.Descripcion?.Trim(),
                         CodigoBarras = codigo,
                         SinCodigo = codigo == null,
+                        SinCodigoAdmitido = MuestrasSinCodigo.Admitido(codigo == null, f.SubGrupo), // NestoAPI#797
                         CodigoDuplicado = codigo != null && duplicados.Contains(codigo),
                         Cantidad = f.Cantidad
                     };

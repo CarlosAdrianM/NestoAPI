@@ -60,6 +60,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public const int LONGITUD_MAXIMA_CLAVE = 100;
 
+        /// <summary>NestoAPI#797: lo que dice la respuesta de una muestra (MMP) sin código, que no avisa a nadie.</summary>
+        public const string TEXTO_MUESTRA_SIN_CODIGO = "muestra sin código de barras: no se avisa a nadie";
+
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IAvisadorSinEtiqueta avisador;
         private readonly IRepositorioIdempotenciaSinEtiqueta idempotencia;
@@ -162,13 +165,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new ArgumentException($"El {producto} no viene en la reposición {traspaso}: «Sin etiqueta» es para lo que viene en ella.");
             }
+            string ud = unidades == 1 ? "1 unidad" : $"{unidades} unidades";
+            if (linea.SinCodigoAdmitido)
+            {
+                // NestoAPI#797: una muestra (MMP) sin código no se etiqueta: se cuenta y no se avisa ni al origen ni a Compras
+                return new ResultadoSinEtiquetaRecepcionDTO
+                {
+                    Mensaje = $"Apuntada {ud} sin etiqueta del {producto}: {TEXTO_MUESTRA_SIN_CODIGO}.",
+                    Avisados = new List<string>()
+                };
+            }
             ReposicionPendienteDTO pendiente = (await reposiciones.LeerPendientes(empresa, almacen).ConfigureAwait(false) ?? new List<ReposicionPendienteDTO>())
                 .FirstOrDefault(r => r.Traspaso == traspaso);
             string origen = pendiente?.Origen?.Trim();
             string nombreOrigen = string.IsNullOrWhiteSpace(pendiente?.NombreOrigen) ? origen : pendiente.NombreOrigen.Trim();
             string quien = string.IsNullOrWhiteSpace(usuario) ? "Alguien" : usuario.Trim().Substring(usuario.Trim().LastIndexOf('\\') + 1);
             string nombreProducto = string.IsNullOrWhiteSpace(linea.Descripcion) ? producto : $"{producto} {linea.Descripcion.Trim()}";
-            string ud = unidades == 1 ? "1 unidad" : $"{unidades} unidades";
             string titulo = $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): llega sin etiqueta el {producto}";
             var lineas = new List<string>
             {

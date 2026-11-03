@@ -637,6 +637,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                                 Descripcion = f.Descripcion?.Trim(),
                                 CodigoBarras = codigo,
                                 SinCodigo = codigo == null,
+                                SinCodigoAdmitido = MuestrasSinCodigo.Admitido(codigo == null, f.SubGrupo), // NestoAPI#797
                                 CodigoDuplicado = codigo != null && duplicados.Contains(codigo),
                                 Cantidad = f.Cantidad
                             };

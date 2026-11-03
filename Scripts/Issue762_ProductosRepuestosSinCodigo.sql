@@ -24,6 +24,7 @@ SELECT RTRIM(r.Producto) AS Producto, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Familia
 FROM Repuestos r
      JOIN Productos p WITH (NOLOCK) ON p.Empresa = @empresa AND p.[Número] = r.Producto
 WHERE p.Estado >= 0 AND ISNULL(p.Ficticio, 0) = 0
+  AND ISNULL(RTRIM(p.SubGrupo), '') <> 'MMP' -- NestoAPI#797: las muestras no se etiquetan
   AND NOT EXISTS (
       SELECT 1 FROM ProductosCodigosBarras c WITH (NOLOCK)
       WHERE c.Empresa = p.Empresa AND c.Producto = p.[Número] AND c.Activo = 1

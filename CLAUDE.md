@@ -246,6 +246,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Las REPO se reciben solo escaneando (`RecepcionDTO.SoloEscaneando`); lo que llega sin etiqueta, unidad a unidad con
   `POST api/Almacen/Recepciones/{tipo}/{documento}/SinEtiqueta` (avisa al origen y a Compras; la unidad la cuenta la app).
 - Limpieza: `GET api/Productos/RepuestosSinCodigoBarras?meses=3` (o `Scripts/Issue762_ProductosRepuestosSinCodigo.sql`).
+- **Muestras sin código (NestoAPI#797, 03/11/26)**: las muestras (subgrupo MMP) sin código NO se etiquetan. Toda línea con `SinCodigo`
+  (recorrido, packing, Ubicar, Recibir COMP/REPO, y Enviar reposición) lleva `SinCodigoAdmitido` = sin código Y MMP (regla única
+  `MuestrasSinCodigo.Admitido`; cada consulta trae `Productos.SubGrupo`): se teclea, sin aviso. `SinEtiqueta` de una línea admitida
+  cuenta y no llama a `IAvisadorSinEtiqueta`; `RepuestosSinCodigoBarras` y su script excluyen MMP. Imprimir etiqueta de una muestra sigue valiendo.
 
 ### Furgoneta bulto a bulto (NestoAPI#772, 31/10/26)
 - Cada bulto del reparto propio (`RP{envío}-{N}`, `NR{pedido}-{N}`, `R{traspaso}-{N}`) tiene su historia en `RepartoBultosMovimientos`

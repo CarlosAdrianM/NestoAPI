@@ -25,6 +25,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#797: Productos.SubGrupo (el código, no el nombre), para SinCodigoAdmitido.</summary>
+        public string SubGrupo { get; set; }
         public int Cantidad { get; set; }
     }
 
@@ -107,7 +109,7 @@ ORDER BY MIN(l.[FechaRecepción]), l.[Número]";
 
         private const string COLUMNAS_LINEA = @"
 SELECT l.[NºOrden] AS LineaPedido, l.[Número] AS Pedido, RTRIM(l.[NºProveedor]) AS Proveedor, RTRIM(pr.Nombre) AS NombreProveedor,
-       RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion, RTRIM(p.CodBarras) AS CodigoBarras,
+       RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion, RTRIM(p.CodBarras) AS CodigoBarras, RTRIM(p.SubGrupo) AS SubGrupo,
        CAST(l.Cantidad AS int) AS Cantidad, l.Estado AS Estado, l.[FechaRecepción] AS FechaRecepcion
 FROM LinPedidoCmp l
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
@@ -294,6 +296,7 @@ ORDER BY l.[Número], l.[NºOrden]";
                         Descripcion = f.Descripcion?.Trim(),
                         CodigoBarras = codigo,
                         SinCodigo = codigo == null,
+                        SinCodigoAdmitido = MuestrasSinCodigo.Admitido(codigo == null, f.SubGrupo), // NestoAPI#797
                         CodigoDuplicado = codigo != null && duplicados.Contains(codigo),
                         Cantidad = f.Cantidad
                     };

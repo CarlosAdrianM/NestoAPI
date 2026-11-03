@@ -180,6 +180,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Producto = g.Key,
                     Descripcion = g.Select(f => f.Descripcion?.Trim()).FirstOrDefault(d => !string.IsNullOrEmpty(d)),
                     Codigo = Productos.ValidadorGtin.SoloSiValido(g.Select(f => f.CodigoBarras?.Trim()).FirstOrDefault(c => !string.IsNullOrEmpty(c))), // NestoAPI#674
+                    SubGrupo = g.Select(f => f.SubGrupo?.Trim()).FirstOrDefault(s => !string.IsNullOrEmpty(s)),
                     Cantidad = g.Where(f => f.Estado == PlanificadorRecepcionCompra.ESTADO_PENDIENTE).Sum(f => f.Cantidad),
                     // Lo dado por no servido hace poco: si llega, entra con su pedido (la más antigua primero)
                     Recuperables = g.Where(f => f.Estado == PlanificadorRecepcionCompra.ESTADO_ANULADA)
@@ -205,6 +206,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Descripcion = p.Descripcion,
                     CodigoBarras = p.Codigo,
                     SinCodigo = p.Codigo == null,
+                    SinCodigoAdmitido = MuestrasSinCodigo.Admitido(p.Codigo == null, p.SubGrupo), // NestoAPI#797
                     CodigoDuplicado = p.Codigo != null && duplicados.Contains(p.Codigo),
                     Cantidad = p.Cantidad,
                     Recuperables = p.Recuperables
@@ -593,6 +595,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Descripcion = l.Descripcion,
                     CodigoBarras = l.CodigoBarras,
                     SinCodigo = l.SinCodigo,
+                    SinCodigoAdmitido = l.SinCodigoAdmitido, // NestoAPI#797
                     CodigoDuplicado = l.CodigoDuplicado,
                     Cantidad = l.Cantidad
                 }).ToList()

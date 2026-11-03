@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#797: Productos.SubGrupo (el código, no el nombre), para SinCodigoAdmitido.</summary>
+        public string SubGrupo { get; set; }
         public int? PedidoCompra { get; set; }
         public int? AlbaranCompra { get; set; }
         public int? TraspasoReposicion { get; set; }
@@ -84,6 +86,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         internal const string SQL_PENDIENTE_DE_UBICAR = @"
 SELECT RTRIM(u.[Número]) AS Producto, RTRIM(MAX(p.Nombre)) AS Descripcion, RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
+       RTRIM(MAX(p.SubGrupo)) AS SubGrupo,
        u.PedidoCmp AS PedidoCompra, u.[AlbaránCmp] AS AlbaranCompra, u.[NºTraspasoRepo] AS TraspasoReposicion,
        u.PedidoVta AS PedidoVenta, u.[NºTraspaso] AS Traspaso,
        CAST(SUM(u.Cantidad) AS int) AS Cantidad, MIN(u.[FechaCreación]) AS DesdeCuando
@@ -324,6 +327,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                         Descripcion = g.First().Descripcion?.Trim(),
                         CodigoBarras = codigo,
                         SinCodigo = codigo == null,
+                        SinCodigoAdmitido = MuestrasSinCodigo.Admitido(codigo == null, g.Select(f => f.SubGrupo).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))), // NestoAPI#797
                         Cantidad = g.Sum(f => f.Cantidad),
                         DesdeCuando = g.Min(f => f.DesdeCuando),
                         Origenes = g.Select(f => new OrigenPendienteDeUbicarDTO
