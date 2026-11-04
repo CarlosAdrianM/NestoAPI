@@ -2194,6 +2194,10 @@
     <Compile Include="Models\RecursosHumanos\GestorDiasNoLaborables.cs" />
     <Compile Include="Models\RecursosHumanos\GestorEmpleados.cs" />
     <Compile Include="Models\RecursosHumanos\GestorFestivos.cs" />
+    <Compile Include="Models\RecursosHumanos\CalendarioFestivos.cs" />
+    <Compile Include="Infraestructure\Festivos\RepositorioFestivos.cs" />
+    <Compile Include="Infraestructure\Festivos\AvisoFestivosSinCargarJobsService.cs" />
+    <Compile Include="Controllers\FestivosController.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
     <Compile Include="Models\RecursosHumanos\IDiaNoLaborable.cs" />
     <Compile Include="Models\RecursosHumanos\IGestorDiasNoLaborables.cs" />

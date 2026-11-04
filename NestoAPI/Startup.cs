@@ -61,6 +61,8 @@ namespace NestoAPI
                 Infraestructure.PedidosVenta.DiasRepartoCodigosPostales.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#799: y la excepción por cliente y contacto, que manda sobre el código postal (tabla ClientesDiaReparto).
                 Infraestructure.PedidosVenta.DiasRepartoClientes.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // NestoAPI#779: los festivos salen de la tabla Festivos (si no existe o le falta el año, de la lista de GestorFestivos).
+                Models.RecursosHumanos.CalendarioFestivos.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
 
                 _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 
@@ -785,6 +787,19 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'furgoneta-sin-descargar' configurado (L-V a las 22:00)");
+
+            // NestoAPI#779: el día 1 de cada mes, si el calendario no tiene festivos del año que toca (en diciembre, el siguiente),
+            // aviso a Dirección en la campana de Nesto y por correo.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Festivos.AvisoFestivosSinCargarJobsService.JOB_ID,
+                () => Infraestructure.Festivos.AvisoFestivosSinCargarJobsService.Comprobar(),
+                Infraestructure.Festivos.AvisoFestivosSinCargarJobsService.CRON, // Cron: el día 1 de cada mes a las 9:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'festivos-sin-cargar' configurado (día 1 de cada mes a las 9:00)");
 
             RecurringJob.AddOrUpdate(
                 "verifactu-aviso-pendientes",

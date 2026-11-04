@@ -114,10 +114,14 @@ namespace NestoAPI.Models.RecursosHumanos
                 return true;
             }
 
+            // NestoAPI#779: los festivos del año salen de la tabla Festivos (CalendarioFestivos, caché de 10 min) o, si no
+            // hay tabla (o no tiene ese año), de la lista de este fichero (FiestasDelCodigo), como hasta ahora.
+            IReadOnlyList<Festivo> fiestas = CalendarioFestivos.DelAnio(fechaSinHora.Year);
+
             // Buscar en la lista Fiestas si hay algún elemento que coincida con la fecha y el tipo de festivo
             // NestoAPI#777: las autonómicas (Jueves Santo, 2 de mayo, traslados de la Comunidad de Madrid) cuentan en todas
             // las delegaciones (Algete, Alcobendas y Reina están en la Comunidad de Madrid) y también sin delegación.
-            var festivoEncontrado = Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Nacional || f.TipoFestivo == TipoFestivo.Autonómica));
+            var festivoEncontrado = fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Nacional || f.TipoFestivo == TipoFestivo.Autonómica));
             if (festivoEncontrado)
             {
                 return true;
@@ -127,11 +131,11 @@ namespace NestoAPI.Models.RecursosHumanos
             switch (delegacion)
             {
                 case Constantes.Almacenes.ALGETE:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Empresa));
+                    return fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.ALCOBENDAS:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Alcobendas || f.TipoFestivo == TipoFestivo.Empresa));
+                    return fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Alcobendas || f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.REINA:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Madrid || f.TipoFestivo == TipoFestivo.Empresa));
+                    return fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Madrid || f.TipoFestivo == TipoFestivo.Empresa));
                 default:
                     return false;
             }
@@ -171,7 +175,24 @@ namespace NestoAPI.Models.RecursosHumanos
             return dia.DayOfWeek != DayOfWeek.Saturday && dia.DayOfWeek != DayOfWeek.Sunday && !esFestivo(dia, delegacion);
         }
 
-        private static readonly List<Festivo> Fiestas = new List<Festivo>
+        /// <summary>
+        /// NestoAPI#779: los festivos de ese año que hay en ESTE fichero (el respaldo de la tabla Festivos mientras no esté en
+        /// producción o si le falta un año). Se quitará cuando la tabla esté en producción. Nunca null.
+        /// </summary>
+        internal static IReadOnlyList<Festivo> FestivosDelCodigo(int anio)
+            => DelCodigoPorAnio.Value.TryGetValue(anio, out IReadOnlyList<Festivo> delAnio) ? delAnio : SinFestivos;
+
+        private static readonly IReadOnlyList<Festivo> SinFestivos = new List<Festivo>();
+        private static readonly Lazy<Dictionary<int, IReadOnlyList<Festivo>>> DelCodigoPorAnio =
+            new Lazy<Dictionary<int, IReadOnlyList<Festivo>>>(() => FiestasDelCodigo
+                .GroupBy(f => f.Fecha.Year)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<Festivo>)g.ToList()));
+
+        /// <summary>NestoAPI#779: toda la lista del código (para comprobar que el script carga exactamente lo mismo).</summary>
+        internal static IReadOnlyList<Festivo> TodosLosFestivosDelCodigo => FiestasDelCodigo;
+
+        // NestoAPI#779: el respaldo de la tabla Festivos (Scripts/Issue779_Festivos.sql la carga con EXACTAMENTE esto).
+        private static readonly List<Festivo> FiestasDelCodigo = new List<Festivo>
         {
             #region 2024
             new Festivo()

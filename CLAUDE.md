@@ -284,6 +284,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `GET/PUT api/Clientes/DiaReparto` (PUT: Dirección/Almacén/Administración; Ruta null quita): invalida la caché y recalcula las líneas
   pendientes sin picking del contacto por ruta propia al día nuevo de ESA semana (`RepositorioDiasRepartoClientes.NuevaFechaEntrega`).
 
+### Festivos en tabla (NestoAPI#779, 04/11/26)
+- `GestorFestivos.EsFestivo` (remesas, fechas de entrega, picking, `JobsFestivos`, avisos…) lee los festivos del año de
+  `CalendarioFestivos.DelAnio`: tabla `dbo.Festivos` (Fecha, Tipo, Descripcion, Usuario, FechaModificacion; fuera del EDMX;
+  `Scripts/Issue779_Festivos.sql`), caché de 10 min, `Invalidar` al escribir. Tipos = enum `TipoFestivo`; las reglas por delegación no cambian.
+- Respaldo: sin tabla → la lista del código (`FiestasDelCodigo`, sin ELMAH); tabla sin filas del año → ELMAH una vez por año y la
+  lista del código de ese año (o nada). La lista del código se quita cuando la tabla esté en producción.
+- `GET api/Festivos?anio=`, `POST api/Festivos`, `DELETE api/Festivos/{fecha}/{tipo}` (escribir: Administración/Dirección/Informática).
+  Job `festivos-sin-cargar` (día 1 de cada mes; en diciembre mira el año siguiente) avisa a Dirección (campana + correo).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
