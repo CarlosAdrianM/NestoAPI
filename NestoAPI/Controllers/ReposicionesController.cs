@@ -197,7 +197,19 @@ namespace NestoAPI.Controllers
             }
         }
 
-        // POST api/Reposiciones/Puntual   { Empresa, Origen, Destino? (ALG), Lineas: [{ Producto, Cantidad }] }
+        private Infraestructure.Notificaciones.IAvisosAlmacen avisos;
+
+        /// <summary>
+        /// NestoAPI#814: el AlmacenHub (grupo «Reposiciones:{tienda}»). Sin base de datos (tests de los controladores), ninguno
+        /// salvo que el test ponga uno.
+        /// </summary>
+        internal Infraestructure.Notificaciones.IAvisosAlmacen Avisos
+        {
+            get => avisos ?? (db == null ? null : avisos = new Infraestructure.Notificaciones.AvisosAlmacenSignalR());
+            set => avisos = value;
+        }
+
+        // POST api/Reposiciones/Puntual   { Empresa, Origen, Destino? (ALG), Lineas: [{ Producto, Cantidad }], LaLleva? }
         /// <summary>
         /// Sugerencia 581 (Paloma): una reposición PUNTUAL de una tienda a Algete con solo los productos que dice la petición,
         /// aparte de la del calendario, para cuando alguien pide que se mande algo concreto después de la hora de cierre. Se
@@ -207,6 +219,9 @@ namespace NestoAPI.Controllers
         /// la ha llevado (POST Recogida) o hay un inventario en curso; 400 si falta
         /// stock en la tienda, si no hay líneas o si no es de una tienda a Algete. Ver
         /// <see cref="ServicioPreparacionReposicion.CrearPuntual"/>.
+        /// NestoAPI#814: con LaLleva (texto libre, «Manuel») la lleva un compañero: queda recogida en el acto, sin bultos ni
+        /// furgoneta, y se puede aunque el repartidor ya se haya llevado la de hoy. Sin LaLleva, como siempre (y 409 si el
+        /// repartidor ya ha pasado). Avisa al grupo «Reposiciones:{tienda}» del AlmacenHub («haCambiado»).
         /// </summary>
         [HttpPost]
         [Route("Puntual")]
@@ -220,11 +235,30 @@ namespace NestoAPI.Controllers
             try
             {
                 ResultadoTerminarReposicionDTO resultado = await preparacion.CrearPuntual(peticion, User).ConfigureAwait(false);
+                AvisarReposiciones(resultado?.Origen ?? peticion.Origen);
                 return Content(HttpStatusCode.Created, resultado);
             }
             catch (UnauthorizedAccessException ex)
             {
                 return Prohibido(ex);
+            }
+        }
+
+        /// <summary>NestoAPI#814: las demás pantallas «Enviar reposición» de la tienda releen el estado y las enviadas. Nunca lanza.</summary>
+        private void AvisarReposiciones(string tienda)
+        {
+            if (string.IsNullOrWhiteSpace(tienda))
+            {
+                return;
+            }
+            try
+            {
+                Avisos?.HaCambiado(Infraestructure.Notificaciones.AvisosAlmacen.GrupoReposiciones(tienda),
+                    UsuarioAuditoriaHelper.ParaAuditoria(User?.Identity?.Name), null, null);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reposición puntual #814] No se pudo avisar a las reposiciones de {tienda}: {ex.Message}", ex));
             }
         }
 

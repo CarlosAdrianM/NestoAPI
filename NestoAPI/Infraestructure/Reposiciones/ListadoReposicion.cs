@@ -95,6 +95,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Unidades { get; set; }
         /// <summary>Cuántas etiquetas de bulto tiene (NestoAPI#645); 0 si no tiene o si aún no existe la tabla.</summary>
         public int Bultos { get; set; }
+        /// <summary>NestoAPI#814: la puntual la lleva un compañero («Manuel»). Null: el repartidor (o sin la columna).</summary>
+        public string LaLleva { get; set; }
+        /// <summary>NestoAPI#814: cuándo se le entregó al compañero. Null si la lleva el repartidor.</summary>
+        public DateTime? FechaEntregada { get; set; }
     }
 
     /// <summary>Familia y hueco de un producto en un almacén.</summary>
@@ -163,8 +167,9 @@ ELSE
         // NestoAPI#685: lo mismo que «pendiente de recibir» (RepositorioRecepcionReposiciones.SQL_PENDIENTES: la entrada en el
         // diario de entrada de reposiciones del destino, ya sin salida en el del origen), pero desde el origen (Delegación de
         // las filas de entrada). PreExtrProducto es pequeña. {0}: los bultos (0 si aún no existe ReposicionesBultos).
+        // NestoAPI#814: {1}, quién la lleva (LA_LLEVA_CON_COLUMNA o LA_LLEVA_SIN_COLUMNA).
         internal const string SQL_ENVIADAS = @"
-SELECT x.Traspaso, x.Origen, x.Destino, x.NombreDestino, x.Lineas, x.Unidades, x.Fecha, x.Usuario, {0} AS Bultos
+SELECT x.Traspaso, x.Origen, x.Destino, x.NombreDestino, x.Lineas, x.Unidades, x.Fecha, x.Usuario, {0} AS Bultos, {1}
 FROM (
 SELECT p.[NºTraspaso] AS Traspaso, RTRIM(MAX(p.[Delegación])) AS Origen, RTRIM(MAX(p.[Almacén])) AS Destino,
        RTRIM(MAX(a.[Descripción])) AS NombreDestino, COUNT(*) AS Lineas, CAST(SUM(p.Cantidad) AS int) AS Unidades,
@@ -178,6 +183,12 @@ GROUP BY p.[NºTraspaso]
 ORDER BY x.Traspaso DESC";
 
         internal const string BULTOS_CON_TABLA = "(SELECT COUNT(*) FROM dbo.ReposicionesBultos b WHERE b.Empresa = @p0 AND b.NumTraspaso = x.Traspaso)";
+
+        internal const string LA_LLEVA_CON_COLUMNA =
+            "(SELECT TOP 1 RTRIM(r.LaLleva) FROM dbo.ReposicionesTraspasos r WHERE r.Empresa = @p0 AND r.NumTraspaso = x.Traspaso AND r.LaLleva IS NOT NULL) AS LaLleva, " +
+            "(SELECT TOP 1 r.FechaRecogida FROM dbo.ReposicionesTraspasos r WHERE r.Empresa = @p0 AND r.NumTraspaso = x.Traspaso AND r.LaLleva IS NOT NULL) AS FechaEntregada";
+
+        internal const string LA_LLEVA_SIN_COLUMNA = "CAST(NULL AS varchar(50)) AS LaLleva, CAST(NULL AS datetime) AS FechaEntregada";
 
         private readonly NVEntities db;
 
@@ -234,7 +245,8 @@ ORDER BY x.Traspaso DESC";
         public async Task<List<ReposicionEnviadaDTO>> LeerEnviadas(string empresa, string origen)
         {
             bool conBultos = await ReposicionesBultosSql.ExisteTabla(db.Database).ConfigureAwait(false);
-            string sql = string.Format(SQL_ENVIADAS, conBultos ? BULTOS_CON_TABLA : "0");
+            bool conLaLleva = ColumnasOpcionales.Existen(db, "ReposicionesTraspasos", "LaLleva", "FechaRecogida");
+            string sql = string.Format(SQL_ENVIADAS, conBultos ? BULTOS_CON_TABLA : "0", conLaLleva ? LA_LLEVA_CON_COLUMNA : LA_LLEVA_SIN_COLUMNA);
             return await db.Database.SqlQuery<ReposicionEnviadaDTO>(sql,
                     RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), RegistroReposicionesTraspasosSql.Char("@p1", origen, 3))
                 .ToListAsync().ConfigureAwait(false);

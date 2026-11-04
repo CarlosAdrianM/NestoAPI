@@ -20,6 +20,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Origen { get; set; }
         public string Destino { get; set; }
         public string Herramienta { get; set; }
+        /// <summary>
+        /// NestoAPI#814: la puntual la lleva un compañero (texto libre, «Manuel»), no el repartidor: sus bultos no pasan por la
+        /// furgoneta. Null: el repartidor.
+        /// </summary>
+        public string LaLleva { get; set; }
         /// <summary>Del traspaso: Creada, Preparada, Recogida, Recibida (por FechaHora).</summary>
         public List<EventoSeguimientoReposicionDTO> Eventos { get; set; } = new List<EventoSeguimientoReposicionDTO>();
         public List<BultoSeguimientoReposicionDTO> Bultos { get; set; } = new List<BultoSeguimientoReposicionDTO>();
@@ -68,6 +73,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public DateTime? FechaRecibida { get; set; }
         public DateTime? FechaRecogida { get; set; }
         public string UsuarioRecogida { get; set; }
+        /// <summary>NestoAPI#814: el compañero que la lleva (null: el repartidor, o sin la columna).</summary>
+        public string LaLleva { get; set; }
     }
 
     /// <summary>NestoAPI#772: una fila de ReposicionesBultos con quién la etiquetó.</summary>
@@ -107,7 +114,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task<List<CargaAntiguaSeguimiento>> LeerCargasParadas(string empresa, int traspaso);
         /// <summary>
         /// Los traspasos del viaje de hoy de la ruta: los del job con el corte <paramref name="diaCorte"/> y los que se han hecho a mano
-        /// (Nesto, Ariadna, puntual) hoy.
+        /// (Nesto, Ariadna, puntual) hoy. NestoAPI#814: sin las puntuales que lleva un compañero (el repartidor no las recoge).
         /// </summary>
         Task<List<int>> TraspasosDelViaje(string empresa, string origen, string destino, DateTime diaCorte, DateTime hoy);
         /// <summary>Los bultos (ReposicionesBultos) de esos traspasos. Vacía sin la tabla.</summary>
@@ -152,13 +159,15 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 Traspaso = traspaso,
                 Origen = origen,
                 Destino = destino,
-                Herramienta = cabecera?.Herramienta?.Trim()
+                Herramienta = cabecera?.Herramienta?.Trim(),
+                LaLleva = string.IsNullOrWhiteSpace(cabecera?.LaLleva) ? null : cabecera.LaLleva.Trim()
             };
             if (cabecera != null)
             {
                 Anadir(dto.Eventos, cabecera.FechaCreacion, EventoSeguimientoReposicionDTO.CREADA, cabecera.UsuarioCreacion, null, cabecera.Herramienta?.Trim());
                 Anadir(dto.Eventos, cabecera.FechaPreparada, EventoSeguimientoReposicionDTO.PREPARADA, cabecera.UsuarioPreparacion, null, "Enviada desde " + Nombre(origen));
-                Anadir(dto.Eventos, cabecera.FechaRecogida, EventoSeguimientoReposicionDTO.RECOGIDA, cabecera.UsuarioRecogida, null, "El repartidor se la ha llevado");
+                Anadir(dto.Eventos, cabecera.FechaRecogida, EventoSeguimientoReposicionDTO.RECOGIDA, cabecera.UsuarioRecogida, null,
+                    dto.LaLleva == null ? "El repartidor se la ha llevado" : TextoCompanero(dto.LaLleva, cabecera.FechaRecogida));
                 Anadir(dto.Eventos, cabecera.FechaRecibida, EventoSeguimientoReposicionDTO.RECIBIDA, cabecera.UsuarioRecepcion, null, "Recibida en " + Nombre(destino));
                 dto.Eventos = dto.Eventos.OrderBy(e => e.FechaHora).ToList();
             }
@@ -196,7 +205,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     }
                 }
                 bulto.Eventos = bulto.Eventos.OrderBy(e => e.FechaHora).ThenBy(e => Orden(e.Tipo)).ToList();
-                bulto.Estado = EstadoBulto(bulto.Eventos, origen, destino);
+                bulto.Estado = EstadoBulto(bulto.Eventos, origen, destino, dto.LaLleva);
                 dto.Bultos.Add(bulto);
             }
             return dto;
@@ -287,12 +296,22 @@ namespace NestoAPI.Infraestructure.Reposiciones
             }
         }
 
-        internal static string EstadoBulto(List<EventoSeguimientoReposicionDTO> eventos, string origen, string destino)
+        /// <summary>NestoAPI#814: «Entregada a Manuel a las 13:10 (la lleva un compañero, sin bultos)».</summary>
+        internal static string TextoCompanero(string laLleva, DateTime? fecha)
+            => ReglasReposicionPuntual.TextoEntregadaA(laLleva, fecha) + " (la lleva un compañero, sin bultos)";
+
+        /// <param name="laLleva">NestoAPI#814: el compañero que lleva la puntual (null: el repartidor).</param>
+        internal static string EstadoBulto(List<EventoSeguimientoReposicionDTO> eventos, string origen, string destino, string laLleva = null)
         {
             EventoSeguimientoReposicionDTO ultimo = eventos.LastOrDefault();
             if (eventos.Any(e => e.Tipo == EventoSeguimientoReposicionDTO.RECIBIDO))
             {
                 return "Recibido en " + Nombre(destino);
+            }
+            if (!string.IsNullOrWhiteSpace(laLleva) && !eventos.Any(e => e.Tipo != EventoSeguimientoReposicionDTO.ETIQUETADO))
+            {
+                // Sin furgoneta: lo lleva el compañero hasta que Algete lo recibe
+                return $"Lo lleva {laLleva.Trim()}, sin recibir";
             }
             if (ultimo == null)
             {
@@ -322,6 +341,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
             this.db = db;
         }
 
+        /// <summary>NestoAPI#814: fuera del viaje del repartidor las puntuales que lleva un compañero.</summary>
+        internal const string SIN_COMPANERO = " AND LaLleva IS NULL";
+
         public bool FurgonetaDisponible() => db != null && ColumnasOpcionales.ExisteTabla(db, RepositorioFurgoneta.TABLA);
 
         public async Task<CabeceraSeguimientoReposicion> LeerCabecera(string empresa, int traspaso)
@@ -332,6 +354,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
             }
             bool conRecogida = ColumnasOpcionales.Existen(db, "ReposicionesTraspasos", "FechaRecogida", "UsuarioRecogida");
             string recogida = conRecogida ? "FechaRecogida, RTRIM(UsuarioRecogida) AS UsuarioRecogida" : "CAST(NULL AS datetime) AS FechaRecogida, CAST(NULL AS varchar(30)) AS UsuarioRecogida";
+            // NestoAPI#814
+            recogida += ColumnasOpcionales.Existen(db, "ReposicionesTraspasos", "LaLleva") ? ", RTRIM(LaLleva) AS LaLleva" : ", CAST(NULL AS varchar(50)) AS LaLleva";
             return (await db.Database.SqlQuery<CabeceraSeguimientoReposicion>($@"
 SELECT TOP 1 RTRIM(Origen) AS Origen, RTRIM(Destino) AS Destino, RTRIM(Herramienta) AS Herramienta, RTRIM(UsuarioCreacion) AS UsuarioCreacion,
        FechaCreacion, RTRIM(UsuarioPreparacion) AS UsuarioPreparacion, FechaPreparada, RTRIM(UsuarioRecepcion) AS UsuarioRecepcion, FechaRecibida, {recogida}
@@ -385,9 +409,11 @@ WHERE b.Empresa = @e AND b.NumTraspaso = @t ORDER BY b.Id",
             {
                 return new List<int>();
             }
+            // NestoAPI#814: las que lleva un compañero no las recoge el repartidor (no cuentan en «Recogidos 6 de 7 bultos»)
+            string sinCompanero = ColumnasOpcionales.Existen(db, "ReposicionesTraspasos", "LaLleva") ? SIN_COMPANERO : string.Empty;
             return await db.Database.SqlQuery<int>(@"
 SELECT NumTraspaso FROM dbo.ReposicionesTraspasos
-WHERE Empresa = @e AND Origen = @o AND Destino = @d AND NumTraspaso IS NOT NULL AND Omitida IS NULL
+WHERE Empresa = @e AND Origen = @o AND Destino = @d AND NumTraspaso IS NOT NULL AND Omitida IS NULL" + sinCompanero + @"
   AND ((Herramienta = 'Automatico' AND FechaCorte >= @dia AND FechaCorte < DATEADD(day, 1, @dia))
     OR (Herramienta <> 'Automatico' AND FechaCreacion >= @hoy AND FechaCreacion < DATEADD(day, 1, @hoy)))",
                 new SqlParameter("@e", SqlDbType.Char, 3) { Value = empresa }, new SqlParameter("@o", SqlDbType.Char, 3) { Value = origen },

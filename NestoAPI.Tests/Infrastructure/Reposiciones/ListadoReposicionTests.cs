@@ -471,6 +471,19 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         }
 
         [TestMethod]
+        public void SqlEnviadas_NestoAPI814_QuienLaLleva_ConYSinLaColumna()
+        {
+            Assert.AreEqual(1, RepositorioListadoReposicionSql.SQL_ENVIADAS.Split(new[] { "{1}" }, StringSplitOptions.None).Length - 1);
+            string con = string.Format(RepositorioListadoReposicionSql.SQL_ENVIADAS, "0", RepositorioListadoReposicionSql.LA_LLEVA_CON_COLUMNA);
+            string sin = string.Format(RepositorioListadoReposicionSql.SQL_ENVIADAS, "0", RepositorioListadoReposicionSql.LA_LLEVA_SIN_COLUMNA);
+            StringAssert.Contains(con, "AS LaLleva");
+            StringAssert.Contains(con, "AS FechaEntregada");
+            StringAssert.Contains(con, "r.NumTraspaso = x.Traspaso AND r.LaLleva IS NOT NULL");
+            StringAssert.Contains(sin, "CAST(NULL AS varchar(50)) AS LaLleva");
+            Assert.IsFalse(sin.Contains("r.LaLleva"), "Sin la columna no se nombra");
+        }
+
+        [TestMethod]
         public async Task GetRecepcionPdf_DevuelveElPdfYSiNoEstaPendiente404()
         {
             IServicioListadoReposicion listado = A.Fake<IServicioListadoReposicion>();

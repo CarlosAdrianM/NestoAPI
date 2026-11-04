@@ -69,6 +69,33 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         }
 
         [TestMethod]
+        public async Task Seguimiento_PuntualQueLlevaUnCompanero_EntregadaASinBultosNiFurgoneta()
+        {
+            // NestoAPI#814: Paloma se la da a Manuel a las 13:10; él no lee nada
+            repositorio.Cabecera = new CabeceraSeguimientoReposicion
+            {
+                Origen = "ALC", Destino = "ALG", Herramienta = "Puntual", UsuarioCreacion = @"NUEVAVISION\Paloma", FechaCreacion = HOY.AddHours(13).AddMinutes(10),
+                UsuarioPreparacion = @"NUEVAVISION\Paloma", FechaPreparada = HOY.AddHours(13).AddMinutes(10),
+                FechaRecogida = HOY.AddHours(13).AddMinutes(10), UsuarioRecogida = @"NUEVAVISION\Paloma", LaLleva = " Manuel "
+            };
+            repositorio.Bultos.Add(new FilaBultoSeguimiento { Codigo = "R81030-1", Bulto = 1, Total = 1, FechaCreacion = HOY.AddHours(13).AddMinutes(11), UsuarioCreacion = "Paloma" });
+
+            SeguimientoReposicionDTO dto = await servicio.Seguimiento("1", 81030);
+
+            Assert.AreEqual("Manuel", dto.LaLleva);
+            EventoSeguimientoReposicionDTO recogida = dto.Eventos.Single(e => e.Tipo == EventoSeguimientoReposicionDTO.RECOGIDA);
+            Assert.AreEqual("Entregada a Manuel a las 13:10 (la lleva un compañero, sin bultos)", recogida.Detalle);
+            Assert.AreEqual("Paloma", recogida.Usuario);
+            Assert.AreEqual("Lo lleva Manuel, sin recibir", dto.Bultos.Single().Estado);
+        }
+
+        [TestMethod]
+        public void TraspasosDelViaje_SinLasPuntualesQueLlevaUnCompanero()
+        {
+            Assert.AreEqual(" AND LaLleva IS NULL", RepositorioSeguimientoReposicionesSql.SIN_COMPANERO);
+        }
+
+        [TestMethod]
         public async Task Seguimiento_CargasDeAntesDelScript_YLaEntregaDeLaParada()
         {
             Guid conMovimiento = Guid.NewGuid();
