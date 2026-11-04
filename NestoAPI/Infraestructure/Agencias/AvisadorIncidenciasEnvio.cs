@@ -117,7 +117,7 @@ namespace NestoAPI.Infraestructure.Agencias
             // NestoAPI#697 (Carlos 23/10/26): la web de la agencia casi siempre explica mejor la incidencia que el
             // estado que nos llega (motivo, intentos, oficina...). Sin agencia registrada o sin datos, sin enlace.
             string enlace = EnlaceSeguimiento(envio, agencia, identificadorAgencia);
-            string numeroSeguimiento = string.IsNullOrEmpty(enlace)
+            string numeroSeguimiento = string.IsNullOrEmpty(enlace) || string.IsNullOrWhiteSpace(envio.CodigoBarras)
                 ? $"<b>{Html(envio.CodigoBarras?.Trim())}</b>"
                 : $"<a href=\"{Html(enlace)}\"><b>{Html(envio.CodigoBarras?.Trim())}</b></a>";
             string documento = envio.Pedido.HasValue ? $"el pedido {envio.Pedido}" : $"el envío {envio.Numero}";
@@ -220,24 +220,33 @@ namespace NestoAPI.Infraestructure.Agencias
             return string.IsNullOrWhiteSpace(nombre) ? numero : $"{numero} - {nombre}";
         }
 
-        /// <summary>NestoAPI#697: el enlace de seguimiento de la agencia, o null si no se puede construir.</summary>
+        /// <summary>
+        /// NestoAPI#697: el enlace de seguimiento de la agencia, o null si no se puede construir. Reparto propio
+        /// (agencia 14): la página pública firmada (NestoAPI#744) con el número del envío, haya o no CodigoBarras; sin
+        /// clave de firma configurada, sin enlace. El resto, por la estrategia de su nombre, con el albarán y el CP.
+        /// </summary>
         internal static string EnlaceSeguimiento(EnviosAgencia envio, string agencia, string identificadorAgencia)
         {
-            string codigo = envio?.CodigoBarras?.Trim();
-            if (string.IsNullOrEmpty(codigo) || string.IsNullOrEmpty(agencia))
+            if (envio == null)
             {
                 return null;
             }
-            string url = RegistroSeguimientoAgencias.ConstruirUrl(new DatosSeguimientoEnvio
+            string codigo = envio.CodigoBarras?.Trim();
+            if (envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+                && (string.IsNullOrEmpty(codigo) || string.IsNullOrEmpty(agencia)))
             {
-                AgenciaNombre = agencia,
-                Identificador = identificadorAgencia,
-                CodigoSeguimiento = codigo,
-                CodigoPostal = envio.CodPostal?.Trim(),
-                Cliente = envio.Cliente?.Trim(),
-                Pedido = envio.Pedido ?? 0
-            });
-            return string.IsNullOrWhiteSpace(url) ? null : url;
+                return null;
+            }
+            try
+            {
+                return RegistroSeguimientoAgencias.UrlDeEnvio(envio.Numero, envio.Agencia, agencia, identificadorAgencia,
+                    codigo, envio.CodPostal?.Trim(), envio.Cliente?.Trim(), envio.Pedido ?? 0);
+            }
+            catch
+            {
+                // Un enlace que no se puede construir no debe impedir el aviso: el correo sale como antes, sin enlace.
+                return null;
+            }
         }
 
         private static string Html(string texto) => WebUtility.HtmlEncode(texto ?? string.Empty);

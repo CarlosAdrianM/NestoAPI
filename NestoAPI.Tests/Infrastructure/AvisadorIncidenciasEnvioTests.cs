@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
+using NestoAPI.Models.Agencias;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -108,6 +109,60 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsFalse(mail.Body.Contains("href="), mail.Body);
             StringAssert.Contains(mail.Body, "Número de seguimiento");
+        }
+
+        // NestoAPI#697: el reparto propio (agencia 14) no tiene web de agencia; el enlace es nuestra página pública
+        // firmada (NestoAPI#744), con el número del envío, aunque no haya CodigoBarras.
+        [DataTestMethod]
+        [DataRow("RP250001", DisplayName = "Con albarán RP")]
+        [DataRow(null, DisplayName = "Sin CodigoBarras")]
+        public void ComponerCorreo_RepartoPropio_LlevaLaPaginaPublicaFirmada(string codigo)
+        {
+            System.Func<string> clave = EnlaceSeguimientoRepartoPropio.LeerClave;
+            System.Func<string> urlBase = EnlaceSeguimientoRepartoPropio.LeerUrlBase;
+            try
+            {
+                EnlaceSeguimientoRepartoPropio.LeerClave = () => "clave-de-pruebas-del-seguimiento-reparto-propio-697";
+                EnlaceSeguimientoRepartoPropio.LeerUrlBase = () => "https://api.nuevavision.es/";
+                EnviosAgencia envio = Envio();
+                envio.Agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+                envio.CodigoBarras = codigo;
+
+                MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(envio, Comerciales(), "Reparto propio");
+
+                string esperado = "https://api.nuevavision.es/seguimiento/"
+                    + EnlaceSeguimientoRepartoPropio.Token("clave-de-pruebas-del-seguimiento-reparto-propio-697", 250001);
+                StringAssert.Contains(mail.Body, $"href=\"{esperado}\"");
+                StringAssert.Contains(mail.Body, "Ver el seguimiento en la web de la agencia");
+                Assert.IsFalse(mail.Body.Contains("<a href=\"" + esperado + "\"><b></b></a>"), "Sin código no se enlaza un número vacío");
+            }
+            finally
+            {
+                EnlaceSeguimientoRepartoPropio.LeerClave = clave;
+                EnlaceSeguimientoRepartoPropio.LeerUrlBase = urlBase;
+            }
+        }
+
+        [TestMethod]
+        public void ComponerCorreo_RepartoPropioSinClave_SaleSinEnlace()
+        {
+            System.Func<string> clave = EnlaceSeguimientoRepartoPropio.LeerClave;
+            try
+            {
+                EnlaceSeguimientoRepartoPropio.LeerClave = () => null;
+                EnviosAgencia envio = Envio();
+                envio.Agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+                envio.CodigoBarras = "RP250001";
+
+                MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(envio, Comerciales(), "Reparto propio");
+
+                Assert.IsFalse(mail.Body.Contains("href="), mail.Body);
+                StringAssert.Contains(mail.Body, "RP250001");
+            }
+            finally
+            {
+                EnlaceSeguimientoRepartoPropio.LeerClave = clave;
+            }
         }
 
         [TestMethod]
