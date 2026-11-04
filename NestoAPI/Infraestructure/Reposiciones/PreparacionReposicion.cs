@@ -41,6 +41,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// Ver <see cref="HerramientasReposicion.Resolver"/>.
         /// </summary>
         public string Herramienta { get; set; }
+        /// <summary>
+        /// NestoAPI#814 (Carlos, 04/11/26), solo en la puntual (POST api/Reposiciones/Puntual): quién la lleva a Algete. Vacío o
+        /// null: el repartidor, como siempre (bultos R, los recoge con Ariadna). Con texto (libre, «Manuel»; hasta 50 caracteres):
+        /// un compañero que pasa por la tienda y va a Algete; queda recogida en el acto (sin leer bultos ni furgoneta) y se puede
+        /// aunque el repartidor ya se haya llevado la de hoy.
+        /// </summary>
+        public string LaLleva { get; set; }
     }
 
     public class LineaCrearReposicionDTO
@@ -185,6 +192,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public List<string> Cambios { get; set; } = new List<string>();
         /// <summary>Sugerencia 753: los Cambios en un texto para enseñarlo tal cual. Null si no hay nada que contar.</summary>
         public string Mensaje { get; set; }
+        /// <summary>NestoAPI#814: en la puntual, el compañero que la lleva (null: el repartidor).</summary>
+        public string LaLleva { get; set; }
+        /// <summary>NestoAPI#814: cuándo se le ha entregado al compañero (null: el repartidor).</summary>
+        public DateTime? FechaRecogida { get; set; }
     }
 
     /// <summary>NestoAPI#622: lo que ha hecho el job al sumar la reposición de hoy a la que la tienda tenía sin enviar.</summary>
@@ -670,8 +681,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         Task<EstadoReposicionPuntualDTO> LeerEstadoPuntual(string empresa, string origen);
         /// <summary>
         /// Sugerencia 581 (Carlos, 13/10/26): el repartidor ya se ha llevado la reposición de hoy de la tienda a Algete. Desde ese
-        /// momento no se puede hacer otra puntual hoy. 409 si hoy no hay viaje, la de hoy no está rellena o enviada, ya estaba
-        /// marcada o falta el script; 403 sin permiso.
+        /// momento la puntual de hoy solo puede ir con un compañero (NestoAPI#814). 409 si hoy no hay viaje, la de hoy no está
+        /// rellena o enviada, ya estaba marcada o falta el script; 403 sin permiso.
         /// </summary>
         Task<EstadoReposicionPuntualDTO> MarcarRecogida(MarcarRecogidaReposicionDTO peticion, IPrincipal usuario);
     }
@@ -1282,6 +1293,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// <item>Carlos, 13/10/26 (409 con el motivo, <see cref="ReglasReposicionPuntual"/>): solo los días con viaje de la tienda a
         /// Algete (si no, no la recoge nadie), cuando el job ya ha rellenado la de hoy (antes, esos productos pueden ir en la
         /// automática) y hasta que la tienda marca que el repartidor se la ha llevado (<see cref="MarcarRecogida"/>).</item>
+        /// <item>NestoAPI#814 (Carlos, 04/11/26): con <see cref="CrearReposicionDTO.LaLleva"/> la lleva un compañero (texto libre):
+        /// se puede aunque el repartidor ya haya pasado y queda recogida en el acto en su cabecera (LaLleva, FechaRecogida,
+        /// UsuarioRecogida), sin bultos ni furgoneta. Las etiquetas de bulto se imprimen igual (van con la caja).</item>
         /// <item>Cada producto tiene que tener stock en la tienda (400 con la lista; prdExtrProducto también lo impediría).</item>
         /// <item>Cabecera ReposicionesTraspasos con Herramienta «Puntual», número, quién y cuándo, ya preparada y sin FechaCorte:
         /// no cubre el viaje del calendario (el job la descarta en BuscarTraspasoQueCubre), no es «abierta» (Terminar no la
@@ -1320,6 +1334,12 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             {
                 throw new NestoBusinessException($"La cantidad de una línea no puede pasar de {short.MaxValue}.");
             }
+            // NestoAPI#814: vacío, el repartidor; con texto, el compañero que la lleva
+            string laLleva = string.IsNullOrWhiteSpace(peticion.LaLleva) ? null : peticion.LaLleva.Trim();
+            if (laLleva != null && laLleva.Length > ReglasReposicionPuntual.LARGO_LA_LLEVA)
+            {
+                throw new NestoBusinessException($"El nombre de quien la lleva no puede pasar de {ReglasReposicionPuntual.LARGO_LA_LLEVA} caracteres.");
+            }
 
             DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
             if (almacenOrigen.ControlUbicaciones)
@@ -1338,6 +1358,15 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             if (!estado.SePuede)
             {
                 throw Conflicto(estado.Motivo);
+            }
+            // NestoAPI#814: si el repartidor ya ha pasado, solo con un compañero
+            if (laLleva == null && estado.SoloConCompanero && estado.FechaRecogida.HasValue)
+            {
+                throw Conflicto(ReglasReposicionPuntual.TextoRecogidaSoloCompanero(estado.FechaRecogida.Value));
+            }
+            if (laLleva != null && !estado.PuedeLlevarlaCompanero)
+            {
+                throw Conflicto("Todavía no se puede mandar con un compañero: falta lanzar Scripts/Issue814_ReposicionesTraspasos_LaLleva.sql en la base de datos.");
             }
             DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
             if (await repositorio.HayInventarioEnCurso(empresa, origen).ConfigureAwait(false))
@@ -1360,11 +1389,15 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     throw new ReposicionYaEnPreparacionException($"{ReglasReposicionPuntual.TEXTO_SIN_ENVIAR} {origen} tiene una reposición a " +
                         $"{existentes.First().Almacen?.Trim()} en preparación ({existentes.Count} líneas) sin enviar: termínala antes de hacer una puntual.");
                 }
-                // Y que no se haya marcado la recogida mientras tanto (MarcarRecogida usa el mismo bloqueo)
-                ViajeReposicionDelDia viajeAhora = await viajes.LeerViajeDelDia(empresa, origen, destino, estado.CierreHoy.Value.Date).ConfigureAwait(false);
-                if (viajeAhora?.FechaRecogida != null)
+                // Y que no se haya marcado la recogida mientras tanto (MarcarRecogida usa el mismo bloqueo). NestoAPI#814: con un
+                // compañero da igual: no la lleva el repartidor.
+                if (laLleva == null)
                 {
-                    throw Conflicto(ReglasReposicionPuntual.TextoRecogida(viajeAhora.FechaRecogida.Value));
+                    ViajeReposicionDelDia viajeAhora = await viajes.LeerViajeDelDia(empresa, origen, destino, estado.CierreHoy.Value.Date).ConfigureAwait(false);
+                    if (viajeAhora?.FechaRecogida != null)
+                    {
+                        throw Conflicto(ReglasReposicionPuntual.TextoRecogidaSoloCompanero(viajeAhora.FechaRecogida.Value));
+                    }
                 }
                 await ComprobarQueNoFaltaParaSusPedidos(empresa, origen, lineas).ConfigureAwait(false);
                 numeroTraspaso = await repositorio.EnTransaccion(async () =>
@@ -1400,6 +1433,11 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                         FechaCorte = null
                     }).ConfigureAwait(false);
                     await registro.MarcarPreparada(empresa, numero, quien).ConfigureAwait(false);
+                    if (laLleva != null)
+                    {
+                        // NestoAPI#814: entregada al compañero en el acto, sin bultos ni furgoneta (las etiquetas se imprimen igual)
+                        await viajes.MarcarLlevadaPorCompanero(empresa, numero, laLleva, momento, quien).ConfigureAwait(false);
+                    }
                     return numero;
                 }).ConfigureAwait(false);
             }
@@ -1411,7 +1449,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 Destino = destino,
                 DiarioSalida = diario,
                 DiarioEntrada = almacenDestino.DiarioEntradaRep,
-                Lineas = creadas.Select(f => new LineaTraspasoTerminadoDTO { Producto = f.Producto, Nombre = f.Nombre, Cantidad = f.Cantidad }).ToList()
+                Lineas = creadas.Select(f => new LineaTraspasoTerminadoDTO { Producto = f.Producto, Nombre = f.Nombre, Cantidad = f.Cantidad }).ToList(),
+                LaLleva = laLleva,
+                FechaRecogida = laLleva == null ? (DateTime?)null : momento
             };
         }
 

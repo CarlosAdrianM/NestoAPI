@@ -1129,6 +1129,7 @@ namespace NestoAPI.Tests.Infrastructure
             CalculadoraFechaReposicion calculadora = null)
         {
             registro = new RegistroEnMemoria(repositorio);
+            viajes.Registro = repositorio.Llamadas;
             return new ServicioPreparacionReposicion(repositorio,
                 (empresa, origen, destino, corte) =>
                 {
@@ -1383,6 +1384,21 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task Controlador_Puntual_AvisaAlGrupoDeReposicionesDeLaTienda()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            var peticion = new CrearReposicionDTO { Origen = "alc", LaLleva = "Manuel", Lineas = new List<LineaCrearReposicionDTO>() };
+            A.CallTo(() => servicio.CrearPuntual(peticion, A<IPrincipal>.Ignored))
+                .Returns(new ResultadoTerminarReposicionDTO { NumTraspaso = 80951, Origen = "ALC", LaLleva = "Manuel" });
+            NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma, Avisos = avisos };
+
+            _ = await controlador.PostPuntual(peticion);
+
+            A.CallTo(() => avisos.HaCambiado("Reposiciones:ALC", A<string>._, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task Controlador_Puntual_SinPermiso_Es403()
         {
             IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
@@ -1447,6 +1463,10 @@ namespace NestoAPI.Tests.Infrastructure
             };
             public bool HayCabecera = true;
             public bool HayColumna = true;
+            /// <summary>NestoAPI#814: la columna LaLleva.</summary>
+            public bool HayColumnaLaLleva = true;
+            /// <summary>NestoAPI#814: dónde se apunta la entrega al compañero (las llamadas del repositorio, para ver el orden).</summary>
+            public List<string> Registro;
             public DateTime? FechaRecogida;
             public string UsuarioRecogida;
             public readonly List<string> Marcas = new List<string>();
@@ -1466,8 +1486,15 @@ namespace NestoAPI.Tests.Infrastructure
                 Lecturas.Add($"{empresa} {origen}→{destino} {diaCorte:dd/MM/yyyy}");
                 return Task.FromResult(new ViajeReposicionDelDia
                 {
-                    HayCabecera = HayCabecera, HayColumnaRecogida = HayColumna, FechaRecogida = FechaRecogida, UsuarioRecogida = UsuarioRecogida
+                    HayCabecera = HayCabecera, HayColumnaRecogida = HayColumna, HayColumnaLaLleva = HayColumna && HayColumnaLaLleva,
+                    FechaRecogida = FechaRecogida, UsuarioRecogida = UsuarioRecogida
                 });
+            }
+
+            public Task MarcarLlevadaPorCompanero(string empresa, int numTraspaso, string laLleva, DateTime fecha, string usuario)
+            {
+                Registro?.Add($"COMPAÑERO {empresa} {numTraspaso} «{laLleva}» {fecha:HH:mm} {usuario}");
+                return Task.CompletedTask;
             }
 
             public Task MarcarRecogida(string empresa, string origen, string destino, DateTime diaCorte, DateTime fecha, string usuario)
@@ -1547,8 +1574,103 @@ namespace NestoAPI.Tests.Infrastructure
 
             NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
 
-            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 9:15): lo que quede va en la siguiente.", error.Message);
+            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 9:15): lo que quede va en la siguiente. " +
+                "Si la lleva un compañero, indique quién.", error.Message, "NestoAPI#814: con el repartidor, como antes");
             Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#814: la puntual que lleva un compañero
+
+        private static CrearReposicionDTO PeticionConCompanero(string laLleva, params (string producto, int cantidad)[] lineas)
+        {
+            CrearReposicionDTO peticion = Peticion(lineas);
+            peticion.LaLleva = laLleva;
+            return peticion;
+        }
+
+        [TestMethod]
+        public async Task Puntual_RepartidorYaHaPasado_ConUnCompanero_SeMandaYQuedaEntregadaSinBultosNiTocarElViaje()
+        {
+            viajes.FechaRecogida = new DateTime(2026, 10, 6, 9, 15, 0);
+            viajes.UsuarioRecogida = "NUEVAVISION\\Paloma";
+            repositorio.Stocks["41980"] = 5;
+            repositorio.UltimoTraspaso = 80950;
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(PeticionConCompanero("  Manuel ", ("41980", 2)), Paloma);
+
+            Assert.AreEqual(80951, resultado.NumTraspaso);
+            Assert.AreEqual("Manuel", resultado.LaLleva);
+            Assert.AreEqual(AHORA, resultado.FechaRecogida);
+            // Dentro de la transacción, después de la cabecera: solo esa puntual, sin bultos ni furgoneta
+            int preparada = repositorio.Llamadas.IndexOf("CABECERA preparada 80951 NUEVAVISION\\Paloma");
+            int companero = repositorio.Llamadas.IndexOf("COMPAÑERO 1 80951 «Manuel» 09:32 NUEVAVISION\\Paloma");
+            Assert.IsTrue(preparada >= 0 && companero == preparada + 1, string.Join(" | ", repositorio.Llamadas));
+            Assert.AreEqual("COMMIT", repositorio.Llamadas[companero + 1]);
+            Assert.AreEqual(0, viajes.Marcas.Count, "La recogida del viaje no se toca");
+        }
+
+        [TestMethod]
+        public async Task Puntual_ViajeSinRecoger_ConUnCompanero_SoloMarcaEsaPuntual_YElViajeSigueEsperandoAlRepartidor()
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(PeticionConCompanero("Mª José", ("41980", 1)), Paloma);
+
+            Assert.AreEqual("Mª José", resultado.LaLleva);
+            Assert.IsTrue(repositorio.Llamadas.Any(l => l.StartsWith("COMPAÑERO 1 ") && l.Contains("«Mª José»")));
+            Assert.AreEqual(0, viajes.Marcas.Count);
+            EstadoReposicionPuntualDTO estado = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
+            Assert.AreEqual(SituacionesReposicionPuntual.ABIERTA, estado.Situacion);
+        }
+
+        [TestMethod]
+        public async Task Puntual_SinLaLleva_ComoAntes_NiCompaneroNiNada()
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(PeticionConCompanero("   ", ("41980", 1)), Paloma);
+
+            Assert.IsNull(resultado.LaLleva);
+            Assert.IsNull(resultado.FechaRecogida);
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("COMPAÑERO")));
+        }
+
+        [TestMethod]
+        public async Task Puntual_ConUnCompanero_SinElScript_Es409SinEscribirNada()
+        {
+            viajes.HayColumnaLaLleva = false;
+            repositorio.Stocks["41980"] = 5;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(PeticionConCompanero("Manuel", ("41980", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            StringAssert.Contains(error.Message, "Issue814_ReposicionesTraspasos_LaLleva.sql");
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_ConUnCompanero_NombreDeMasDe50_Es400()
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(PeticionConCompanero(new string('M', 51), ("41980", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task EstadoPuntual_RecogidaPeroConLaDeHoySinEnviar_NoSePuede_PrimeroEnviala()
+        {
+            viajes.FechaRecogida = new DateTime(2026, 10, 6, 9, 15, 0);
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+
+            EstadoReposicionPuntualDTO estado = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, estado.Situacion);
+            Assert.IsFalse(estado.SePuede);
+            Assert.AreEqual("Primero envía la de hoy.", estado.Motivo);
         }
 
         [TestMethod]
@@ -1595,7 +1717,10 @@ namespace NestoAPI.Tests.Infrastructure
             viajes.UsuarioRecogida = "NUEVAVISION\\Paloma";
             EstadoReposicionPuntualDTO recogida = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
             Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, recogida.Situacion);
-            Assert.IsFalse(recogida.SePuede);
+            Assert.IsTrue(recogida.SePuede, "NestoAPI#814: ya no bloquea (con un compañero)");
+            Assert.IsTrue(recogida.SoloConCompanero);
+            Assert.IsTrue(recogida.PuedeLlevarlaCompanero);
+            Assert.IsFalse(recogida.PuedeMarcarRecogida);
             Assert.AreEqual(new DateTime(2026, 10, 6, 9, 20, 0), recogida.FechaRecogida);
             Assert.AreEqual("NUEVAVISION\\Paloma", recogida.UsuarioRecogida);
             StringAssert.Contains(recogida.Motivo, "(a las 9:20)");
@@ -1638,7 +1763,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 9:32): lo que quede va en la siguiente.", estado.Motivo);
 
             NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
-            Assert.AreEqual(estado.Motivo, error.Message);
+            Assert.AreEqual(estado.Motivo + " Si la lleva un compañero, indique quién.", error.Message);
         }
 
         [TestMethod]
@@ -1734,8 +1859,14 @@ namespace NestoAPI.Tests.Infrastructure
             var viaje = new CorteReposicion { Origen = "ALC", Destino = "ALG", Corte = new DateTime(2026, 10, 6, 9, 0, 0) };
             var recogido = new ViajeReposicionDelDia { HayCabecera = true, HayColumnaRecogida = true, FechaRecogida = new DateTime(2026, 10, 6, 9, 5, 0) };
 
-            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA,
-                ReglasReposicionPuntual.Calcular("ALC", "ALG", null, null, viaje, false, recogido, enPreparacion: true, AHORA).Situacion);
+            EstadoReposicionPuntualDTO recogidaSinEnviar = ReglasReposicionPuntual.Calcular("ALC", "ALG", null, null, viaje, false, recogido, enPreparacion: true, AHORA);
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, recogidaSinEnviar.Situacion);
+            Assert.IsFalse(recogidaSinEnviar.SePuede, "NestoAPI#814: «Primero envía la de hoy» sigue bloqueando");
+            Assert.AreEqual(ReglasReposicionPuntual.TEXTO_SIN_ENVIAR, recogidaSinEnviar.Motivo);
+            EstadoReposicionPuntualDTO soloRecogida = ReglasReposicionPuntual.Calcular("ALC", "ALG", null, null, viaje, false, recogido, enPreparacion: false, AHORA);
+            Assert.IsTrue(soloRecogida.SePuede);
+            Assert.IsTrue(soloRecogida.SoloConCompanero);
+            Assert.IsFalse(soloRecogida.PuedeLlevarlaCompanero, "Sin la columna LaLleva");
             EstadoReposicionPuntualDTO sinViaje = ReglasReposicionPuntual.Calcular("ALC", "ALG", null, null, null, false, null, false, AHORA);
             Assert.AreEqual("Hoy no hay viaje de ALC a ALG.", sinViaje.Motivo, "Sin nombre, el código");
         }

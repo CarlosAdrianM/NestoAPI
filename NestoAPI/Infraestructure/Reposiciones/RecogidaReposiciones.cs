@@ -18,7 +18,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public const string SIN_RELLENAR = "SinRellenar";
         /// <summary>La de hoy está rellena pero en preparación: primero se envía esa.</summary>
         public const string SIN_ENVIAR = "SinEnviar";
-        /// <summary>La tienda ha marcado que el repartidor ya se ha llevado la de hoy: lo que quede va en la siguiente.</summary>
+        /// <summary>
+        /// La tienda ha marcado que el repartidor ya se ha llevado la de hoy: lo que quede va en la siguiente. NestoAPI#814: aun así
+        /// se puede hacer la puntual si la lleva un compañero (<see cref="CrearReposicionDTO.LaLleva"/>).
+        /// </summary>
         public const string RECOGIDA = "Recogida";
         /// <summary>La de hoy está enviada y el repartidor no ha pasado: se puede hacer la puntual (y marcar la recogida).</summary>
         public const string ABIERTA = "Abierta";
@@ -34,10 +37,27 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Destino { get; set; }
         /// <summary>Ver <see cref="SituacionesReposicionPuntual"/>.</summary>
         public string Situacion { get; set; }
-        /// <summary>Se puede hacer la puntual ahora (<see cref="SituacionesReposicionPuntual.ABIERTA"/>).</summary>
+        /// <summary>
+        /// Se puede hacer la puntual ahora (<see cref="SituacionesReposicionPuntual.ABIERTA"/>). NestoAPI#814: también con
+        /// <see cref="SituacionesReposicionPuntual.RECOGIDA"/>, pero entonces solo si la lleva un compañero
+        /// (<see cref="SoloConCompanero"/>).
+        /// </summary>
         public bool SePuede { get; set; }
-        /// <summary>Por qué no se puede, para enseñarlo tal cual (el mismo texto que el 409). Null si se puede.</summary>
+        /// <summary>
+        /// Por qué no se puede, para enseñarlo tal cual (el mismo texto que el 409). Null si se puede. NestoAPI#814: con
+        /// <see cref="SituacionesReposicionPuntual.RECOGIDA"/> se puede (con un compañero) y dice que el repartidor ya se la ha llevado.
+        /// </summary>
         public string Motivo { get; set; }
+        /// <summary>
+        /// NestoAPI#814: la puntual se puede mandar con un compañero que la lleva a Algete (<see cref="CrearReposicionDTO.LaLleva"/>):
+        /// hace falta la columna LaLleva (Scripts/Issue814_ReposicionesTraspasos_LaLleva.sql).
+        /// </summary>
+        public bool PuedeLlevarlaCompanero { get; set; }
+        /// <summary>
+        /// NestoAPI#814: el repartidor ya se ha llevado la de hoy, así que la puntual solo puede ir con un compañero (sin
+        /// <see cref="CrearReposicionDTO.LaLleva"/>, 409).
+        /// </summary>
+        public bool SoloConCompanero { get; set; }
         /// <summary>Cuándo se rellena (o se rellenó) sola la de hoy: el corte del calendario. Null sin viaje hoy.</summary>
         public DateTime? CierreHoy { get; set; }
         /// <summary>Cuándo se marcó que el repartidor se ha llevado la de hoy. Null si no se ha marcado.</summary>
@@ -79,6 +99,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public bool HayCabecera { get; set; }
         /// <summary>Existen las columnas FechaRecogida y UsuarioRecogida (Scripts/Issue581_ReposicionesTraspasos_Recogida.sql).</summary>
         public bool HayColumnaRecogida { get; set; }
+        /// <summary>NestoAPI#814: existen la columna LaLleva y las de la recogida (Scripts/Issue814_ReposicionesTraspasos_LaLleva.sql).</summary>
+        public bool HayColumnaLaLleva { get; set; }
         public DateTime? FechaRecogida { get; set; }
         public string UsuarioRecogida { get; set; }
     }
@@ -101,6 +123,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <paramref name="fecha"/> (el mismo día), las que aún no la tienen. No hace nada sin las columnas.
         /// </summary>
         Task MarcarRecogida(string empresa, string origen, string destino, DateTime diaCorte, DateTime fecha, string usuario);
+
+        /// <summary>
+        /// NestoAPI#814: la puntual <paramref name="numTraspaso"/> la lleva un compañero (<paramref name="laLleva"/>, texto libre):
+        /// queda recogida en el acto (FechaRecogida, UsuarioRecogida = quien lo apunta, LaLleva), sin bultos ni furgoneta. Solo esa
+        /// cabecera: el viaje de hoy sigue esperando al repartidor. No hace nada sin las columnas.
+        /// </summary>
+        Task MarcarLlevadaPorCompanero(string empresa, int numTraspaso, string laLleva, DateTime fecha, string usuario);
     }
 
     /// <summary>Para las pruebas que no lo miran: hay viaje todos los días, ya relleno y sin recoger (sin columnas).</summary>
@@ -130,6 +159,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
         public Task MarcarRecogida(string empresa, string origen, string destino, DateTime diaCorte, DateTime fecha, string usuario)
             => Task.CompletedTask;
+
+        public Task MarcarLlevadaPorCompanero(string empresa, int numTraspaso, string laLleva, DateTime fecha, string usuario)
+            => Task.CompletedTask;
     }
 
     public class ViajesReposicionPuntualSql : IViajesReposicionPuntual
@@ -139,6 +171,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         internal const string SQL_VIAJE_DEL_DIA = @"
 DECLARE @hayColumna bit = CASE WHEN COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NULL
                                  OR COL_LENGTH('dbo.ReposicionesTraspasos', 'UsuarioRecogida') IS NULL THEN 0 ELSE 1 END;
+DECLARE @hayLaLleva bit = CASE WHEN @hayColumna = 1 AND COL_LENGTH('dbo.ReposicionesTraspasos', 'LaLleva') IS NOT NULL THEN 1 ELSE 0 END;
 DECLARE @hayCabecera bit = 0, @fecha datetime = NULL, @usuario varchar(30) = NULL;
 IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
     SET @hayCabecera = CASE WHEN EXISTS (
@@ -153,7 +186,8 @@ IF @hayColumna = 1
         ORDER BY FechaRecogida',
         N'@e char(3), @o char(3), @d char(3), @dia datetime, @fecha datetime OUTPUT, @usuario varchar(30) OUTPUT',
         @e = @p0, @o = @p1, @d = @p2, @dia = @p3, @fecha = @fecha OUTPUT, @usuario = @usuario OUTPUT;
-SELECT @hayCabecera AS HayCabecera, @hayColumna AS HayColumnaRecogida, @fecha AS FechaRecogida, @usuario AS UsuarioRecogida;";
+SELECT @hayCabecera AS HayCabecera, @hayColumna AS HayColumnaRecogida, @hayLaLleva AS HayColumnaLaLleva,
+       @fecha AS FechaRecogida, @usuario AS UsuarioRecogida;";
 
         internal const string SQL_MARCAR_RECOGIDA = @"
 IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_LENGTH('dbo.ReposicionesTraspasos', 'UsuarioRecogida') IS NOT NULL
@@ -163,6 +197,15 @@ IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_
             OR (Herramienta = ''Puntual'' AND FechaCreacion >= @hoy AND FechaCreacion < DATEADD(day, 1, @hoy)))',
         N'@e char(3), @o char(3), @d char(3), @dia datetime, @hoy datetime, @fecha datetime, @usuario varchar(30)',
         @e = @p0, @o = @p1, @d = @p2, @dia = @p3, @hoy = @p4, @fecha = @p5, @usuario = @p6";
+
+        // NestoAPI#814: solo la cabecera de esa puntual (recién creada)
+        internal const string SQL_MARCAR_LLEVADA_POR_COMPANERO = @"
+IF COL_LENGTH('dbo.ReposicionesTraspasos', 'LaLleva') IS NOT NULL AND COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL
+    AND COL_LENGTH('dbo.ReposicionesTraspasos', 'UsuarioRecogida') IS NOT NULL
+    EXEC sp_executesql N'UPDATE dbo.ReposicionesTraspasos SET LaLleva = @lleva, FechaRecogida = @fecha, UsuarioRecogida = @usuario
+        WHERE Empresa = @e AND NumTraspaso = @t',
+        N'@e char(3), @t int, @lleva varchar(50), @fecha datetime, @usuario varchar(30)',
+        @e = @p0, @t = @p1, @lleva = @p2, @fecha = @p3, @usuario = @p4";
 
         private readonly NVEntities db;
 
@@ -194,6 +237,15 @@ IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_
                 RegistroReposicionesTraspasosSql.Fecha("@p4", fecha.Date), RegistroReposicionesTraspasosSql.Fecha("@p5", fecha),
                 RegistroReposicionesTraspasosSql.VarChar("@p6", UsuarioAuditoriaHelper.ParaAuditoria(usuario), 30));
         }
+
+        public Task MarcarLlevadaPorCompanero(string empresa, int numTraspaso, string laLleva, DateTime fecha, string usuario)
+        {
+            return db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_LLEVADA_POR_COMPANERO,
+                RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), new SqlParameter("@p1", SqlDbType.Int) { Value = numTraspaso },
+                RegistroReposicionesTraspasosSql.VarChar("@p2", laLleva, ReglasReposicionPuntual.LARGO_LA_LLEVA),
+                RegistroReposicionesTraspasosSql.Fecha("@p3", fecha),
+                RegistroReposicionesTraspasosSql.VarChar("@p4", UsuarioAuditoriaHelper.ParaAuditoria(usuario), 30));
+        }
     }
 
     /// <summary>
@@ -205,7 +257,8 @@ IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_
     /// <item>El job ya ha rellenado la de hoy (su cabecera del día: rellena, vacía, ya cubierta…). Antes, esos productos
     /// pueden entrar en la automática.</item>
     /// <item>La de hoy no está en preparación (ya enviada).</item>
-    /// <item>El repartidor no se la ha llevado todavía (lo marca la tienda: no pasa siempre a la misma hora).</item>
+    /// <item>El repartidor no se la ha llevado todavía (lo marca la tienda: no pasa siempre a la misma hora). NestoAPI#814: si ya
+    /// se la ha llevado, se puede igual cuando la lleva un compañero (<see cref="EstadoReposicionPuntualDTO.SoloConCompanero"/>).</item>
     /// </list>
     /// </summary>
     public static class ReglasReposicionPuntual
@@ -235,7 +288,13 @@ IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_
             }
             if (viaje.FechaRecogida.HasValue)
             {
-                return Con(estado, SituacionesReposicionPuntual.RECOGIDA, TextoRecogida(viaje.FechaRecogida.Value));
+                // NestoAPI#814 (Carlos, 04/11/26): ya no bloquea: la puntual puede ir con un compañero que pasa por la tienda y
+                // va a Algete. Lo que sí bloquea es tener una sin enviar.
+                Con(estado, SituacionesReposicionPuntual.RECOGIDA, enPreparacion ? TEXTO_SIN_ENVIAR : TextoRecogida(viaje.FechaRecogida.Value));
+                estado.SePuede = !enPreparacion;
+                estado.SoloConCompanero = true;
+                estado.PuedeLlevarlaCompanero = viaje.HayColumnaLaLleva;
+                return estado;
             }
             if (enPreparacion)
             {
@@ -244,8 +303,20 @@ IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_
             estado.Situacion = SituacionesReposicionPuntual.ABIERTA;
             estado.SePuede = true;
             estado.PuedeMarcarRecogida = viaje.HayColumnaRecogida;
+            estado.PuedeLlevarlaCompanero = viaje.HayColumnaLaLleva;
             return estado;
         }
+
+        /// <summary>NestoAPI#814: lo más largo que cabe en ReposicionesTraspasos.LaLleva.</summary>
+        public const int LARGO_LA_LLEVA = 50;
+
+        /// <summary>NestoAPI#814: el 409 al mandar con el repartidor una puntual cuando ya ha pasado.</summary>
+        public static string TextoRecogidaSoloCompanero(DateTime fechaRecogida)
+            => TextoRecogida(fechaRecogida) + " Si la lleva un compañero, indique quién.";
+
+        /// <summary>NestoAPI#814: «Entregada a Manuel a las 13:10».</summary>
+        public static string TextoEntregadaA(string laLleva, DateTime? fecha)
+            => $"Entregada a {laLleva?.Trim()}" + (fecha.HasValue ? $" a las {fecha.Value:H:mm}" : string.Empty);
 
         public const string TEXTO_SIN_ENVIAR = "Primero envía la de hoy.";
 
