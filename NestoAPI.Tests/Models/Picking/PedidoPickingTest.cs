@@ -1014,5 +1014,129 @@ namespace NestoAPI.Tests.Models.Picking
                 l.Producto == Constantes.Cuentas.CUENTA_PORTES_ONTIME),
                 "La línea de portes del canal externo sigue presente");
         }
+    
+        #region NestoAPI#815: factura contra reembolso pendiente de entrega (reembolso diferido, #742)
+
+        // Datos de la incidencia 1013 (Laura, 04/11/26): cliente 31517, pedido prepago 929888 cubierto por su prepago;
+        // la NV2617724 (70,87 €, pedido 929773, envío 250452) salió contra reembolso, está en reparto y figura pendiente y
+        // vencida porque el reembolso diferido no se contabiliza hasta que la agencia entrega.
+        private static PedidoPicking PedidoPrepago929888(IRellenadorPrepagosService rellenador)
+        {
+            PedidoPicking pedido = new PedidoPicking(rellenador)
+            {
+                Id = 929888,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking
+                    {
+                        Id = 1,
+                        TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                        Producto = "A",
+                        Cantidad = 1,
+                        CantidadReservada = 1,
+                        Total = 45.30M
+                    }
+                }
+            };
+            return pedido;
+        }
+
+        private static IRellenadorPrepagosService RellenadorConFacturaContraReembolso(bool pendienteDeEntrega)
+        {
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO> { new PrepagoDTO { Importe = 45.30M } });
+            var extracto = new ExtractoClienteDTO
+            {
+                importePendiente = 70.87M,
+                estado = null,
+                documento = "NV2617724 ",
+                vencimiento = DateTime.Today.AddDays(-1)
+            };
+            if (pendienteDeEntrega)
+            {
+                RellenadorPrepagosService.MarcarReembolsosPendientes(new List<ExtractoClienteDTO> { extracto },
+                    new Dictionary<string, int> { { "NV2617724", 929773 } });
+            }
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO> { extracto });
+            return rellenador;
+        }
+
+        [TestMethod]
+        public void PedidoPicking_CubiertoPorPrepago_FacturaContraReembolsoPendienteDeEntrega_NoCuentaComoDeudaYSale()
+        {
+            PedidoPicking pedido = PedidoPrepago929888(RellenadorConFacturaContraReembolso(pendienteDeEntrega: true));
+
+            Assert.IsTrue(pedido.CubiertoPorPrepago(), "La factura contra reembolso aún sin entregar no es deuda vencida");
+            Assert.IsTrue(pedido.saleEnPicking());
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
+            Assert.AreEqual(45.30M, pedido.ImporteDisponiblePrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_CubiertoPorPrepago_FacturaContraReembolsoYaContabilizadaOSinDiferir_RetieneComoAntes()
+        {
+            // Sin fila pendiente en EnviosAgenciaReembolsosAlEntregar (reembolso ya contabilizado o envío sin diferir):
+            // la factura pendiente y vencida es deuda, como siempre.
+            PedidoPicking pedido = PedidoPrepago929888(RellenadorConFacturaContraReembolso(pendienteDeEntrega: false));
+
+            Assert.IsFalse(pedido.CubiertoPorPrepago());
+            Assert.IsFalse(pedido.saleEnPicking());
+            Assert.IsTrue(pedido.RetenidoPorPrepago);
+            Assert.AreEqual(MotivoNoSalePicking.RetenidoPorPrepago, pedido.MotivoNoSale);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_CubiertoPorPrepago_FacturaContraReembolsoPendienteMasOtraDeudaVencida_SoloRetieneLaOtra()
+        {
+            IRellenadorPrepagosService rellenador = RellenadorConFacturaContraReembolso(pendienteDeEntrega: true);
+            List<ExtractoClienteDTO> extractos = rellenador.ExtractosPendientes(929888);
+            extractos.Add(new ExtractoClienteDTO
+            {
+                importePendiente = 10M,
+                estado = null,
+                documento = "NV2617000",
+                vencimiento = DateTime.Today.AddDays(-20)
+            });
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored)).Returns(extractos);
+            PedidoPicking pedido = PedidoPrepago929888(rellenador);
+
+            Assert.IsFalse(pedido.saleEnPicking());
+            Assert.AreEqual(35.30M, pedido.ImporteDisponiblePrepago, "Solo resta la deuda vencida que no es reembolso pendiente");
+            string mensaje = ExplicadorPedidoSinPicking.Error(pedido, null, null).Message;
+            StringAssert.Contains(mensaje, "La NV2617724 está pendiente de que la agencia entregue el pedido 929773: no cuenta como deuda.");
+        }
+
+        [TestMethod]
+        public void RellenadorPrepagos_MarcarReembolsosPendientes_SoloLasDeudasDeEsasFacturas()
+        {
+            var deEsaFactura = new ExtractoClienteDTO { importePendiente = 70.87M, documento = "NV2617724 " };
+            var otraFactura = new ExtractoClienteDTO { importePendiente = 30M, documento = "NV2617000" };
+            var cobroAFavor = new ExtractoClienteDTO { importePendiente = -70.87M, documento = "NV2617724" };
+
+            RellenadorPrepagosService.MarcarReembolsosPendientes(new List<ExtractoClienteDTO> { deEsaFactura, otraFactura, cobroAFavor },
+                new Dictionary<string, int> { { "NV2617724", 929773 } });
+
+            Assert.IsTrue(deEsaFactura.ReembolsoPendienteDeEntrega);
+            Assert.AreEqual(929773, deEsaFactura.PedidoReembolsoPendiente);
+            Assert.IsFalse(otraFactura.ReembolsoPendienteDeEntrega);
+            Assert.IsFalse(cobroAFavor.ReembolsoPendienteDeEntrega, "Un saldo a favor no es deuda: no se marca");
+        }
+
+        [TestMethod]
+        public void RellenadorPrepagos_MarcarReembolsosPendientes_SinFacturasPendientes_NoCambiaNada()
+        {
+            var extracto = new ExtractoClienteDTO { importePendiente = 70.87M, documento = "NV2617724" };
+
+            RellenadorPrepagosService.MarcarReembolsosPendientes(new List<ExtractoClienteDTO> { extracto }, new Dictionary<string, int>());
+
+            Assert.IsFalse(extracto.ReembolsoPendienteDeEntrega);
+            Assert.IsNull(extracto.PedidoReembolsoPendiente);
+        }
+
+        #endregion
     }
 }

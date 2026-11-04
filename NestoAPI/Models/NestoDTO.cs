@@ -247,6 +247,12 @@ namespace NestoAPI.Models
         public string usuario { get; set; }
         /// <summary>NestoAPI#492: el nº de documento es una factura existente (CabFacturaVta, misma empresa). Nesto abre la factura desde el Extracto Cliente.</summary>
         public bool tieneFactura { get; set; }
+        /// <summary>NestoAPI#815: el apunte es la factura de un pedido que salió contra reembolso con el reembolso diferido
+        /// (#742) y la agencia aún no lo ha entregado: el reembolso se contabilizará al entregarse. Para el prepago del
+        /// picking (<c>PedidoPicking.CubiertoPorPrepago</c>) no cuenta como deuda vencida. Solo lo rellena el picking.</summary>
+        public bool ReembolsoPendienteDeEntrega { get; set; }
+        /// <summary>NestoAPI#815: el pedido de esa factura (el del envío con el reembolso pendiente), para explicarlo.</summary>
+        public int? PedidoReembolsoPendiente { get; set; }
     }
     public class FormaPagoDTO
     {
