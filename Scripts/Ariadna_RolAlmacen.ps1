@@ -25,6 +25,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Con «pwsh -File … -Usuarios Paloma,Reina» el parámetro llega como UNA cadena «Paloma,Reina» (no como array): se parte por comas.
+$Usuarios = @($Usuarios | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 if ($Usuarios -contains "RevisionGoogle") {
     throw "RevisionGoogle no puede tener el rol ${Rol}: es el usuario de los revisores de Google Play (solo lectura)."
