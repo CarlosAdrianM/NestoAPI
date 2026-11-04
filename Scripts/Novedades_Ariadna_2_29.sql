@@ -33,6 +33,9 @@ INSERT INTO @n VALUES
 (5, N'Nuevo', N'Packing: la etiqueta de un pedido de nuestra ruta',
  N'En Empaquetar, F8 «Etiqueta de agencia» también vale para los pedidos que van por reparto propio: crea el envío y saca las etiquetas de bulto RP, igual que las de GLS o CTT. Antes decía «la agencia 14 no se puede insertar desde el servidor».',
  N'Almacén'),
+(12, N'Mejorado', N'Packing: avisa de lo que se dio por falta en el picking y de otro picking pendiente del pedido',
+ N'En la cabecera de la entrega salen dos avisos cuando toca: «En el picking se dio por falta: 2 × 43498 ILUMINA SERUM (Andre, 11:09). Si aparece, avise.» y «Este pedido tiene otro picking pendiente (100003: 2 × 43498). Métalo en la misma caja o cierre antes el otro picking». Así la hoja y la pantalla no chocan (fue lo del 929911). Lo avisó Alfredo.',
+ N'Almacén'),
 (9, N'Nuevo', N'Reparto: paradas de solo cobro (NC)',
  N'Las notas de cobro que crean desde Nesto salen en el reparto como «COBRO · NC…» con el importe y los efectos pendientes, sin bultos: «Cobrar» abre el cobro con el efectivo y el importe ya puestos (F6 tarjeta si se admite, F7 autorización sin cobro) y el cliente firma «Confirmo que he pagado…». Leer un NC abre su parada; no se carga en la furgoneta.',
  N'Almacén');

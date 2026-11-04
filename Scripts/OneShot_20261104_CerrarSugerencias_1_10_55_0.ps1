@@ -1,4 +1,4 @@
-# Nesto 1.10.55.0 y Ariadna 2.29 (04/11/26): lanzar DESPUÉS de publicar la ClickOnce y de que la 2.29 llegue a la prueba cerrada.
+﻿# Nesto 1.10.55.0 y Ariadna 2.29 (04/11/26): lanzar DESPUÉS de publicar la ClickOnce y de que la 2.29 llegue a la prueba cerrada.
 # Marca Implementada cada sugerencia (la sugerencia ES la novedad: no hay fila aparte en Novedades_1_10_55_0.sql ni en
 # Novedades_Ariadna_2_29.sql) y después contesta en cada hilo con la versión. Idempotente (el PUT y el comentario se pueden repetir,
 # pero el comentario saldría dos veces: lanzarlo una sola vez).
@@ -159,3 +159,17 @@ Implementar 1017 @{
     Titulo = "Packing: la etiqueta de agencia vuelve a facturar el pedido"
     Descripcion = "Desde el 3 de noviembre, al sacar la etiqueta desde Ariadna el pedido no se albaranaba ni se facturaba (el parámetro «Facturar al imprimir etiqueta» estaba a 0 para los usuarios de la PDA). Desde el 4 de noviembre a las 14:00 vuelve a facturar igual que la casilla de Agencias en Nesto. Lo avisó Alfredo."
 }
+
+Implementar 1021 @{
+    Version = $VersionNesto; Categoria = "Nuevo"; Perfiles = $null
+    Titulo = "Eventos: la pestaña la ven todos, de consulta salvo los permisos de cada uno"
+    Descripcion = "La pestaña de Eventos se ve ya para todos los usuarios: fechas, aforo, cuántos hay apuntados y quiénes. Cada uno puede hacer dentro lo que le dejan sus permisos: inscribir a sus clientes (cada comercial a los suyos, el jefe de equipo a los de su equipo), y crear eventos, marcar pagos o pasar lista solo quien lo hacía. En la lista de inscritos hay un filtro «Solo mis clientes». Lo pidió Alberto Sancho."
+}
+Contestar 1021 "@Sancho, ya está en Nesto 1.10.55.0: la pestaña de Eventos se ve para todos (fechas, aforo e inscritos), con el filtro «Solo mis clientes» en la lista de inscritos, y cada uno puede inscribir a sus clientes."
+
+Implementar 1022 @{
+    Version = $VersionNesto; Categoria = "Corregido"; Perfiles = "Dirección,Vendedores"
+    Titulo = "Informes: el detalle de rapports de un mes entero ya se genera"
+    Descripcion = "El PDF del detalle de rapports de un mes entero (octubre: más de 4.000 rapports) daba «InternalServerError» porque el generador de PDF cortaba en 250 páginas. Ya no corta hasta las 5.000. Lo avisó Manuel."
+}
+Contestar 1022 "@Manuel, ya está publicado: el detalle de rapports de un mes entero vuelve a generarse (el límite del PDF pasa de 250 a 5.000 páginas)."
