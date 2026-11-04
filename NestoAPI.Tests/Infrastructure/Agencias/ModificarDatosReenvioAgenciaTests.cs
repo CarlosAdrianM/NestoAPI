@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias;
@@ -42,6 +42,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private readonly List<EnviosAgencia> envios = new List<EnviosAgencia>();
         private readonly List<EnvioHistoria> historiaGuardada = new List<EnvioHistoria>();
         private readonly List<(bool Exito, string Error)> auditorias = new List<(bool, string)>();
+        private readonly List<ExtractoCliente> extracto = new List<ExtractoCliente>();
+        private IProcedimientosExtractoCliente procedimientos;
 
         private class TransaccionDirecta : IAmbitoTransaccion
         {
@@ -57,7 +59,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             DbSet<EnviosAgencia> fakeEnvios = FakeDbSet(envios);
             A.CallTo(() => fakeEnvios.Include(A<string>.Ignored)).Returns(fakeEnvios);
             A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
-            A.CallTo(() => db.ExtractosCliente).Returns(FakeDbSet(new List<ExtractoCliente>()));
+            A.CallTo(() => db.ExtractosCliente).Returns(FakeDbSet(extracto));
             DbSet<EnvioHistoria> fakeHistoria = A.Fake<DbSet<EnvioHistoria>>();
             A.CallTo(() => fakeHistoria.Add(A<EnvioHistoria>.Ignored)).Invokes((EnvioHistoria h) => historiaGuardada.Add(h)).ReturnsLazily((EnvioHistoria h) => h);
             A.CallTo(() => db.EnviosHistorias).Returns(fakeHistoria);
@@ -72,7 +74,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => fabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(innovatrans);
             A.CallTo(() => fabrica.Crear(Constantes.Agencias.AGENCIA_GLS)).Returns((IAgenciaRemota)null);
 
-            servicio = new TramitacionEnviosService(db, contabilidad, () => HOY, A.Fake<IProcedimientosExtractoCliente>(), new TransaccionDirecta(),
+            procedimientos = A.Fake<IProcedimientosExtractoCliente>();
+            servicio = new TramitacionEnviosService(db, contabilidad, () => HOY, procedimientos, new TransaccionDirecta(),
                 fabrica, (envio, agencia, exito, error) => { auditorias.Add((exito, error)); return Task.CompletedTask; });
         }
 
@@ -492,17 +495,224 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(147.09M, envio.Reembolso);
         }
 
-        [TestMethod]
-        public async Task Entregado_CambiaReembolso_Sigue409()
+        // ===== NestoAPI#809 (Aida, transferencia CTT 20261103_002): entregado y sin pagar, el reembolso se iguala a lo que cobró la agencia =====
+
+        private static readonly DateTime TRAMITADO = new DateTime(2026, 10, 27);
+
+        private EnviosAgencia EnvioCttEntregado(decimal reembolso = 182.44M)
         {
-            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_ENTREGADO, ALBARAN_CTT, "CTT", 50M);
+            // El caso real: envío 250264, pedido 928370, CTT entregado con 182,44 y CTT cobró 175,93.
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_ENTREGADO, ALBARAN_CTT, "CTT", reembolso);
+            envio.Numero = 250264;
+            envio.Pedido = 928370;
+            envio.Fecha = TRAMITADO;
+            return envio;
+        }
+
+        /// <summary>El S/Pago que liquidó la factura al contabilizar el reembolso (en la fecha que se diga).</summary>
+        private ExtractoCliente PagoReembolsoLiquidado(EnviosAgencia envio, DateTime fecha)
+        {
+            ExtractoCliente pago = new ExtractoCliente
+            {
+                Nº_Orden = 7777001,
+                Empresa = envio.Empresa,
+                Número = envio.Cliente,
+                Contacto = envio.Contacto,
+                Fecha = fecha,
+                TipoApunte = Constantes.ExtractosCliente.TiposApunte.PAGO,
+                Concepto = TramitacionEnviosService.GenerarConcepto(envio),
+                Importe = -envio.Reembolso,
+                ImportePdte = 0M,
+                Nº_Documento = envio.Pedido.ToString()
+            };
+            extracto.Add(pago);
+            return pago;
+        }
+
+        private TramitacionEnviosService ServicioConRegistro(IRegistroReembolsosAlEntregar registro)
+            => new TramitacionEnviosService(db, contabilidad, () => HOY, procedimientos, new TransaccionDirecta(),
+                fabrica, (e, agencia, exito, error) => { auditorias.Add((exito, error)); return Task.CompletedTask; }, registro);
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_CambiaSoloElReembolso_SinLlamarALaAgenciaConAsientoYAviso()
+        {
+            EnviosAgencia envio = EnvioCttEntregado();
             ModificarDatosEnvioDTO datos = SinCambios(envio);
-            datos.Reembolso = 0M;
+            datos.Reembolso = 175.93M;
+
+            ResultadoModificacionEnvio resultado = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            Assert.AreEqual(175.93M, envio.Reembolso);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, envio.Estado);
+            Assert.AreEqual(90001, resultado.Asiento);
+            CollectionAssert.AreEqual(new[] { "Reembolso" }, resultado.CamposModificados);
+            Assert.AreEqual("Reembolso", historiaGuardada.Single().Campo);
+            Assert.AreEqual("Envío entregado: el reembolso se cambia solo en Nesto (lo que cobró la agencia), sin avisar a la agencia.", resultado.Aviso);
+            Assert.IsFalse(resultado.ReenviadoAAgencia);
+            Assert.AreEqual(ALBARAN_CTT, envio.CodigoBarras);
+            A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual(0, auditorias.Count);
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(l =>
+                l.Count == 2
+                && l[0].Debe == 182.44M && l[0].Concepto.StartsWith("Deshago Reembolso 928370")
+                && l[1].Haber == 175.93M && l[1].Concepto.StartsWith("Rehago Reembolso 928370")))).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_ContabilizadoAlTramitar_DesliquidaElPagoDeLaFechaDelEnvio()
+        {
+            // Los de octubre: el S/Pago se apuntó al tramitar, con la fecha del envío.
+            EnviosAgencia envio = EnvioCttEntregado();
+            ExtractoCliente pago = PagoReembolsoLiquidado(envio, TRAMITADO);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+
+            _ = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            A.CallTo(() => procedimientos.DesliquidarAsync(db, "1", pago.Nº_Orden)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(l =>
+                l.Count == 2 && l[0].Debe == 182.44M && l[0].Liquidado == pago.Nº_Orden && l[1].Haber == 175.93M))).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_DiferidoContabilizadoAlEntregar_DesliquidaElPagoDeLaFechaContable()
+        {
+            // NestoAPI#742: el S/Pago se apuntó al entregar; su fecha es la que guardó el registro, no la del envío.
+            DateTime entregado = new DateTime(2026, 10, 29);
+            EnviosAgencia envio = EnvioCttEntregado();
+            ExtractoCliente pago = PagoReembolsoLiquidado(envio, entregado);
+            IRegistroReembolsosAlEntregar registro = A.Fake<IRegistroReembolsosAlEntregar>();
+            A.CallTo(() => registro.LeerAsync(envio.Numero)).Returns(Task.FromResult(
+                new RegistroReembolsoAlEntregar { EnvioId = envio.Numero, Asiento = 88001, FechaContable = entregado }));
+            servicio = ServicioConRegistro(registro);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+
+            ResultadoModificacionEnvio resultado = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            Assert.AreEqual(90001, resultado.Asiento);
+            Assert.AreEqual(175.93M, envio.Reembolso);
+            A.CallTo(() => procedimientos.DesliquidarAsync(db, "1", pago.Nº_Orden)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(l =>
+                l.Count == 2 && l[0].Debe == 182.44M && l[0].Liquidado == pago.Nº_Orden && l[1].Haber == 175.93M))).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_DiferidoContabilizadoAlEntregar_NoBuscaElPagoEnLaFechaDelEnvio()
+        {
+            // Si se buscara con la fecha de tramitar, no se desliquidaría el S/Pago que de verdad liquidó la factura.
+            DateTime entregado = new DateTime(2026, 10, 29);
+            EnviosAgencia envio = EnvioCttEntregado();
+            ExtractoCliente pagoEnFechaDeTramitar = PagoReembolsoLiquidado(envio, TRAMITADO);
+            IRegistroReembolsosAlEntregar registro = A.Fake<IRegistroReembolsosAlEntregar>();
+            A.CallTo(() => registro.LeerAsync(envio.Numero)).Returns(Task.FromResult(
+                new RegistroReembolsoAlEntregar { EnvioId = envio.Numero, Asiento = 88001, FechaContable = entregado }));
+            servicio = ServicioConRegistro(registro);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+
+            _ = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            A.CallTo(() => procedimientos.DesliquidarAsync(A<NVEntities>.Ignored, A<string>.Ignored, pagoEnFechaDeTramitar.Nº_Orden)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_DiferidoAunSinContabilizar_SoloElCampoSinApuntes()
+        {
+            EnviosAgencia envio = EnvioCttEntregado();
+            IRegistroReembolsosAlEntregar registro = A.Fake<IRegistroReembolsosAlEntregar>();
+            A.CallTo(() => registro.LeerAsync(envio.Numero)).Returns(Task.FromResult(new RegistroReembolsoAlEntregar { EnvioId = envio.Numero }));
+            servicio = ServicioConRegistro(registro);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+
+            ResultadoModificacionEnvio resultado = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            Assert.AreEqual(175.93M, envio.Reembolso);
+            Assert.AreEqual(0, resultado.Asiento);
+            A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>.Ignored, A<List<PreContabilidad>>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_CambiaRetorno_Sigue409()
+        {
+            EnviosAgencia envio = EnvioCttEntregado();
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(0, envio.Retorno);
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_CambiaReembolsoYRetornoALaVez_Sigue409()
+        {
+            EnviosAgencia envio = EnvioCttEntregado();
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(182.44M, envio.Reembolso);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>.Ignored, A<List<PreContabilidad>>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinPagar_CambiaReembolsoYServicio_Sigue409()
+        {
+            EnviosAgencia envio = EnvioCttEntregado();
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+            datos.Servicio = 24;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(182.44M, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task EntregadoYaPagadoPorLaAgencia_CambiaReembolso_YaEstaCobrado()
+        {
+            EnviosAgencia envio = EnvioCttEntregado();
+            envio.FechaPagoReembolso = HOY;
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 175.93M;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual("No se puede modificar este envío, porque ya está cobrado", ex.Message);
+            Assert.AreEqual(182.44M, envio.Reembolso);
+            A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>.Ignored, A<List<PreContabilidad>>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RepartoPropioEntregado_CambiaReembolso_NoEntraPorAquiSigue409()
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, Constantes.Agencias.ESTADO_ENTREGADO, "RP249483", "Reparto propio", 50M);
+            envio.FechaPagoReembolso = HOY; // #778: nace pagado
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 40M;
 
             NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             Assert.AreEqual(50M, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public void EsCambioSoloDeReembolsoDeUnEntregadoSinPagar_RepartoPropioSinFechaDePago_TampocoEntra()
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, Constantes.Agencias.ESTADO_ENTREGADO, "RP249483", "Reparto propio", 50M);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 40M;
+
+            Assert.IsFalse(TramitacionEnviosService.EsCambioSoloDeReembolsoDeUnEntregadoSinPagar(envio, datos));
         }
 
         [TestMethod]
