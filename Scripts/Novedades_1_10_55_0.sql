@@ -1,4 +1,4 @@
-/*
+﻿/*
     Novedades de la versión 1.10.55.0 de Nesto (04/11/2026).
     Nesto #608 (behavior de productos en «Hay que comprar»), #609 (copiar el Nº Envío), #610 (botón −1 al recibir), #611 (concepto
     del enlace de pago), #612/#613 (cheque regalo en la plantilla; ampliar respeta el modo de entrega), #614 (asistentes por
@@ -9,7 +9,8 @@
     #813 (cliente sin vendedor) y #806 (impresión en el servidor, con el interruptor APAGADO: no se anuncia todavía).
 
     ORDEN:
-      1) Scripts sa ANTES de publicar la API: Issue800_prdCuadreAgenciasContabilidad_ReembolsosDiferidos.sql,
+      1) Scripts sa ANTES de publicar la API: Issue800_prdCuadreAgenciasContabilidad_ReembolsosDiferidos.sql, Issue779_Festivos.sql
+         (tabla Festivos con 2024-2026 como el código; el bloque 2027 va comentado «REVISAR» con la fuente BOE: decide Dirección),
          Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
          el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado) y, si lo trae #813, Issue813_*.sql.
       2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.55.0 → flujos de Ariadna 2.29.
@@ -56,6 +57,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Corregido', N'Facturar un cliente sin vendedor ya no da el error de SQL',
      N'Al albaranar o facturar en tienda un pedido de un cliente sin vendedor en la ficha, Nesto daba «No se puede insertar el valor NULL en la columna Vendedor». Ahora se usa el vendedor de la cabecera del pedido y, si tampoco hay, un mensaje claro para ponérselo en la ficha. Le pasó a Paloma el martes y a Reina hoy.',
      N'Tiendas,Administración'),
+    ('Mejorado', N'Correo «Incidencia de la agencia en el pedido»: con el enlace de seguimiento también en nuestra ruta',
+     N'El correo que avisa de una incidencia de la agencia lleva el número de seguimiento como enlace a la web de la agencia (GLS, CTT, Innovatrans) y, en los envíos de nuestra ruta, el enlace público de seguimiento del reparto.',
+     N'Administración,Vendedores,Almacén'),
     ('Mejorado', N'Tienda online: los pedidos que van por nuestra ruta se confirman en PrestaShop',
      N'Los envíos de la tienda online que van por el reparto propio ya se pueden confirmar en PrestaShop desde Agencias (antes decía que la agencia no tenía transportista). Llevan el enlace público de seguimiento del reparto.',
      N'Administración,Dirección');
