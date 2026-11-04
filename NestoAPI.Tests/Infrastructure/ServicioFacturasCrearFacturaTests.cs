@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Facturas;
@@ -474,9 +474,9 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task CrearFactura_SinVendedorNiEnLaFicha_400ConElClienteSinLlamarAlSP_813()
+        public async Task CrearFactura_SinVendedorEnLaCabecera_400SinLlamarAlSP_813()
         {
-            // NestoAPI#813 (antes #794 decía «El pedido X no tiene vendedor»): ahora se mira la ficha y, si tampoco, se dice qué hacer.
+            // NestoAPI#813 (antes #794 decía «El pedido X no tiene vendedor»): se dice qué hacer y no se toca el pedido (Carlos 04/11).
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
@@ -491,20 +491,21 @@ namespace NestoAPI.Tests.Infrastructure
             var llamadas = new List<int>();
             var fijados = new List<string>();
             ServicioFacturas servicio = ServicioQueApuntaElSP(llamadas);
-            servicio.GuardiaVendedor = GuardiaVendedor(pedido, null, fijados);
+            servicio.GuardiaVendedor = GuardiaVendedor(pedido, fijados);
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
                 () => servicio.CrearFactura("1", 929448, "test"));
 
-            Assert.AreEqual("El cliente 15191 no tiene vendedor asignado: póngaselo en la ficha antes de facturar", ex.Message);
+            Assert.AreEqual("El pedido 929448 del cliente 15191 no tiene vendedor: póngaselo en el pedido antes de albaranar o facturar", ex.Message);
             Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
             Assert.AreEqual(0, llamadas.Count);
             Assert.AreEqual(0, fijados.Count);
         }
 
         [TestMethod]
-        public async Task CrearFactura_SinVendedorEnLaCabecera_UsaElDeLaFichaYLlamaAlSP_Paloma03Nov()
+        public async Task CrearFactura_SinVendedorEnLaCabecera_400AunqueLaFichaLoTenga_Paloma03Nov()
         {
+            // Carlos 04/11/26: no se toma el de la ficha ni se escribe en el pedido; que lo pongan a mano.
             var pedido = new CabPedidoVta
             {
                 Empresa = "3",
@@ -519,27 +520,25 @@ namespace NestoAPI.Tests.Infrastructure
             var llamadas = new List<int>();
             var fijados = new List<string>();
             ServicioFacturas servicio = ServicioQueApuntaElSP(llamadas);
-            servicio.GuardiaVendedor = GuardiaVendedor(pedido, "PA ", fijados);
+            servicio.GuardiaVendedor = GuardiaVendedor(pedido, fijados);
 
-            // El SP falso para el test justo al llamarlo: lo que importa es que se llega con vendedor.
-            _ = await Assert.ThrowsExceptionAsync<FacturacionException>(() => servicio.CrearFactura("3", 929429, "test"));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.CrearFactura("3", 929429, "test"));
 
-            CollectionAssert.AreEqual(new[] { "3/929429/PA" }, fijados);
-            Assert.AreEqual("PA", pedido.Vendedor);
-            CollectionAssert.AreEqual(new[] { 929429 }, llamadas);
+            Assert.AreEqual("El pedido 929429 del cliente 9057 no tiene vendedor: póngaselo en el pedido antes de albaranar o facturar", ex.Message);
+            Assert.IsNull(pedido.Vendedor, "el pedido no se toca");
+            Assert.AreEqual(0, fijados.Count);
+            Assert.AreEqual(0, llamadas.Count);
         }
 
-        private static NestoAPI.Infraestructure.PedidosVenta.VendedorParaFacturar GuardiaVendedor(CabPedidoVta pedido, string vendedorFicha, List<string> fijados)
+        private static NestoAPI.Infraestructure.PedidosVenta.VendedorParaFacturar GuardiaVendedor(CabPedidoVta pedido, List<string> fijados)
         {
             return new NestoAPI.Infraestructure.PedidosVenta.VendedorParaFacturar(
                 (e, p) => Task.FromResult(new NestoAPI.Infraestructure.PedidosVenta.VendedoresPedidoYCliente
                 {
                     Cliente = pedido.Nº_Cliente,
                     Contacto = pedido.Contacto,
-                    VendedorPedido = pedido.Vendedor,
-                    VendedorCliente = vendedorFicha
-                }),
-                (e, p, v) => { fijados.Add($"{e}/{p}/{v}"); return Task.CompletedTask; });
+                    VendedorPedido = pedido.Vendedor
+                }));
         }
 
         [TestMethod]

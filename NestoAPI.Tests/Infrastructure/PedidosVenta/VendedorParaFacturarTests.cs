@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -22,56 +22,43 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
     /// NestoAPI#813 (Paloma 03/11/26 ×6, factura del pedido 929429; Reina 04/11/26, albarán del 929909 del cliente 27040):
     /// prdCrearAlbaránVta y prdCrearFacturaVta toman el vendedor de la cabecera del pedido cuando el grupo no tiene; con la
     /// cabecera sin vendedor metían NULL («No se puede insertar el valor NULL en la columna Vendedor»). Antes de llamarlos
-    /// se le pone el de la ficha del cliente; sin ninguno, 400 con lo que hay que hacer.
+    /// 400 con lo que hay que hacer (Carlos 04/11/26: solo avisar, no se toma el de la ficha ni se escribe en el pedido).
     /// </summary>
     [TestClass]
     public class VendedorParaFacturarTests
     {
-        private const string MENSAJE_27040 = "El cliente 27040 no tiene vendedor asignado: póngaselo en la ficha antes de facturar";
+        private const string MENSAJE_27040 = "El pedido 929909 del cliente 27040 no tiene vendedor: póngaselo en el pedido antes de albaranar o facturar";
 
         private static VendedorParaFacturar Guardia(VendedoresPedidoYCliente datos, List<string> fijados)
-            => new VendedorParaFacturar(
-                (e, p) => Task.FromResult(datos),
-                (e, p, v) => { fijados.Add($"{e}/{p}/{v}"); return Task.CompletedTask; });
+            => new VendedorParaFacturar((e, p) => Task.FromResult(datos));
 
         // ============================================================ núcleo
 
         [TestMethod]
-        public void Resolver_MandaLaCabeceraYSiNoLaFicha()
+        public void Resolver_SoloLaCabecera()
         {
-            Assert.AreEqual("PA", VendedorParaFacturar.Resolver("PA ", "NV"));
-            Assert.AreEqual("NV", VendedorParaFacturar.Resolver("   ", "NV "));
-            Assert.AreEqual("NV", VendedorParaFacturar.Resolver(null, "NV"));
-            Assert.IsNull(VendedorParaFacturar.Resolver(null, "  "));
-            Assert.IsNull(VendedorParaFacturar.Resolver("", null));
+            Assert.AreEqual("PA", VendedorParaFacturar.Resolver("PA "));
+            Assert.IsNull(VendedorParaFacturar.Resolver("   "));
+            Assert.IsNull(VendedorParaFacturar.Resolver(null));
         }
 
         [TestMethod]
         public async Task Asegurar_PedidoConVendedor_LoDevuelveSinTocarNada()
         {
             var fijados = new List<string>();
-            string vendedor = await Guardia(new VendedoresPedidoYCliente { Cliente = "27040", VendedorPedido = "NV ", VendedorCliente = null }, fijados)
+            string vendedor = await Guardia(new VendedoresPedidoYCliente { Cliente = "27040", VendedorPedido = "NV " }, fijados)
                 .Asegurar("1", 929909);
             Assert.AreEqual("NV", vendedor);
             Assert.AreEqual(0, fijados.Count);
         }
 
+        /// <summary>Carlos 04/11/26: sin vendedor en la cabecera solo se avisa; ni se toma el de la ficha ni se escribe en el pedido.</summary>
         [TestMethod]
-        public async Task Asegurar_PedidoSinVendedor_LePoneElDeLaFicha()
-        {
-            var fijados = new List<string>();
-            string vendedor = await Guardia(new VendedoresPedidoYCliente { Cliente = "27040", VendedorPedido = null, VendedorCliente = "NV " }, fijados)
-                .Asegurar("1", 929909);
-            Assert.AreEqual("NV", vendedor);
-            CollectionAssert.AreEqual(new[] { "1/929909/NV" }, fijados);
-        }
-
-        [TestMethod]
-        public async Task Asegurar_SinVendedorEnNingunSitio_400ConElCliente()
+        public async Task Asegurar_PedidoSinVendedor_400SinTocarElPedido()
         {
             var fijados = new List<string>();
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
-                Guardia(new VendedoresPedidoYCliente { Cliente = "27040", VendedorPedido = "  ", VendedorCliente = null }, fijados).Asegurar("1", 929909));
+                Guardia(new VendedoresPedidoYCliente { Cliente = "27040", VendedorPedido = "  " }, fijados).Asegurar("1", 929909));
             Assert.AreEqual(MENSAJE_27040, ex.Message);
             Assert.AreEqual(HttpStatusCode.BadRequest, ex.StatusCode);
             Assert.AreEqual(0, fijados.Count);
@@ -94,33 +81,22 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 (e, p) => Task.FromResult(new List<FaltaSinQuitar>()),
                 (e, p) => Task.FromResult<string>(null))
             {
-                GuardiaVendedor = new VendedorParaFacturar(
-                    (e, p) => Task.FromResult(datos),
-                    (e, p, v) => { pasos.Add("vendedor " + v); return Task.CompletedTask; }),
+                GuardiaVendedor = new VendedorParaFacturar((e, p) => Task.FromResult(datos)),
                 ProcedimientoCrearAlbaranVta = (e, p, f, u) => { pasos.Add("SP " + p); return Task.FromResult(0); }
             };
-        }
-
-        [TestMethod]
-        public async Task CrearAlbaran_ClienteSinVendedorEnLaCabecera_UsaElDeLaFichaAntesDelSP_Reina04Nov()
-        {
-            var pasos = new List<string>();
-            await ServicioAlbaran(new VendedoresPedidoYCliente { Cliente = "27040", Contacto = "0", VendedorPedido = null, VendedorCliente = "NV" }, pasos)
-                .CrearAlbaran("1", 929909, "NUEVAVISION\\Reina");
-            CollectionAssert.AreEqual(new[] { "vendedor NV", "SP 929909" }, pasos);
         }
 
         [TestMethod]
         public async Task CrearAlbaran_ConVendedorEnLaCabecera_NoTocaNadaYLlamaAlSP()
         {
             var pasos = new List<string>();
-            await ServicioAlbaran(new VendedoresPedidoYCliente { Cliente = "27040", Contacto = "0", VendedorPedido = "NV", VendedorCliente = null }, pasos)
+            await ServicioAlbaran(new VendedoresPedidoYCliente { Cliente = "27040", Contacto = "0", VendedorPedido = "NV" }, pasos)
                 .CrearAlbaran("1", 929909, "NUEVAVISION\\Reina");
             CollectionAssert.AreEqual(new[] { "SP 929909" }, pasos);
         }
 
         [TestMethod]
-        public async Task CrearAlbaran_SinVendedorEnNingunSitio_400SinLlamarAlSP()
+        public async Task CrearAlbaran_SinVendedorEnLaCabecera_400SinLlamarAlSP_Reina04Nov()
         {
             var pasos = new List<string>();
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>

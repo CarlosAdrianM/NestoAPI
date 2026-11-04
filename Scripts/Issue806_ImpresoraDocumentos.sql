@@ -1,9 +1,10 @@
--- NestoAPI#806 (sugerencia 973 de Alfredo, 04/11/26): la API imprime EN EL SERVIDOR (RDS2016) la factura/albarán en papel al
+﻿-- NestoAPI#806 (sugerencia 973 de Alfredo, 04/11/26): la API imprime EN EL SERVIDOR (RDS2016) la factura/albarán en papel al
 -- facturar por cualquier camino, con el interruptor Facturacion:ImprimirDocumentosEnServidor del Web.config. La impresora es
 -- POR USUARIO: parámetro nuevo ImpresoraDocumentos = nombre de la impresora tal como está instalada en RDS2016 (el que sale
 -- en «Dispositivos e impresoras», p. ej. el de la de Administración). La fila «(defecto)» es la de quien no tenga la suya; cada
 -- usuario la cambia desde Nesto → Parámetros. La API crea la fila de cada usuario al leerla, copiando la de «(defecto)».
 -- ¡¡CAMBIAR EL VALOR DE RELLENO!! Mientras sea el de relleno, cada documento en papel dará el aviso «no está instalada».
+-- Carlos 04/11/26: el valor «(predeterminada)» vale para usar la impresora predeterminada de Windows en RDS2016 sin escribir su nombre.
 -- Sin GRANT: ParametrosUsuario ya lo lee y escribe NestoAPI. Idempotente: se puede repetir sin miedo (no pisa un valor ya puesto).
 -- Lanzar en la BD NV (NestoConnection) como sa.
 

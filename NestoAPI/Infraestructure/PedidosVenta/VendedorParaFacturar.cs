@@ -1,8 +1,7 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using System;
 using System.Data.Entity;
-using System.Data.SqlClient;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -15,7 +14,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string Cliente { get; set; }
         public string Contacto { get; set; }
         public string VendedorPedido { get; set; }
-        public string VendedorCliente { get; set; }
     }
 
     /// <summary>
@@ -23,49 +21,32 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// VendedorLinPedidoVta) y prdCrearFacturaVta (CabFacturaVta.Vendedor) toman el vendedor de cada grupo de
     /// VendedoresPedidoGrupoProducto y, si no hay, el de la CABECERA del pedido. Con la cabecera sin vendedor (pedido grabado
     /// cuando la ficha del cliente aún no lo tenía) revientan con «No se puede insertar el valor NULL en la columna
-    /// 'Vendedor'» y el recuento de transacciones descuadrado. Antes de llamarlos: si la cabecera no tiene vendedor se le
-    /// pone el de la ficha del cliente; si tampoco hay, 400 con lo que tiene que hacer el usuario.
+    /// 'Vendedor'» y el recuento de transacciones descuadrado. Antes de llamarlos: si la cabecera no tiene vendedor, 400 con
+    /// lo que tiene que hacer el usuario (Carlos 04/11/26: solo avisar; no se toma el de la ficha ni se escribe en el pedido).
     /// </summary>
     public class VendedorParaFacturar
     {
         private readonly Func<string, int, Task<VendedoresPedidoYCliente>> leer;
-        private readonly Func<string, int, string, Task> fijarEnPedido;
 
-        public VendedorParaFacturar(Func<string, int, Task<VendedoresPedidoYCliente>> leer, Func<string, int, string, Task> fijarEnPedido)
+        public VendedorParaFacturar(Func<string, int, Task<VendedoresPedidoYCliente>> leer)
         {
             this.leer = leer ?? throw new ArgumentNullException(nameof(leer));
-            this.fijarEnPedido = fijarEnPedido ?? throw new ArgumentNullException(nameof(fijarEnPedido));
         }
 
-        /// <summary>En producción: lee y escribe en la BD con el mismo contexto (y la misma conexión) que luego llama al SP.</summary>
+        /// <summary>En producción: lee la cabecera con el mismo contexto que luego llama al SP.</summary>
         public static VendedorParaFacturar ConContexto(NVEntities db)
-        {
-            return new VendedorParaFacturar(
-                (empresa, pedido) => LeerDeLaBaseDeDatos(db, empresa, pedido),
-                (empresa, pedido, vendedor) => db.Database.ExecuteSqlCommandAsync(
-                    "UPDATE CabPedidoVta SET Vendedor = @Vendedor WHERE Empresa = @Empresa AND Número = @Pedido " +
-                    "AND (Vendedor IS NULL OR LTRIM(RTRIM(Vendedor)) = '')",
-                    new SqlParameter("@Vendedor", vendedor),
-                    new SqlParameter("@Empresa", empresa),
-                    new SqlParameter("@Pedido", pedido)));
-        }
+            => new VendedorParaFacturar((empresa, pedido) => LeerDeLaBaseDeDatos(db, empresa, pedido));
 
-        internal static string Mensaje(string cliente)
-            => $"El cliente {cliente?.Trim()} no tiene vendedor asignado: póngaselo en la ficha antes de facturar";
+        internal static string Mensaje(int pedido, string cliente)
+            => $"El pedido {pedido} del cliente {cliente?.Trim()} no tiene vendedor: póngaselo en el pedido antes de albaranar o facturar";
 
-        /// <summary>El de la cabecera; si no tiene, el de la ficha del cliente; si tampoco, null.</summary>
-        internal static string Resolver(string vendedorPedido, string vendedorCliente)
-        {
-            if (!string.IsNullOrWhiteSpace(vendedorPedido))
-            {
-                return vendedorPedido.Trim();
-            }
-            return string.IsNullOrWhiteSpace(vendedorCliente) ? null : vendedorCliente.Trim();
-        }
+        /// <summary>El de la cabecera, recortado; null si no tiene.</summary>
+        internal static string Resolver(string vendedorPedido)
+            => string.IsNullOrWhiteSpace(vendedorPedido) ? null : vendedorPedido.Trim();
 
         /// <summary>
-        /// Devuelve el vendedor con el que va a trabajar el SP (y, si la cabecera no lo tenía, se lo pone). Pedido inexistente:
-        /// null (de eso se ocupa cada camino). Sin vendedor en ningún sitio: <see cref="NestoBusinessException"/> 400.
+        /// Devuelve el vendedor de la cabecera con el que va a trabajar el SP. Pedido inexistente: null (de eso se ocupa cada
+        /// camino). Sin vendedor en la cabecera: <see cref="NestoBusinessException"/> 400 (no se toca el pedido).
         /// </summary>
         public async Task<string> Asegurar(string empresa, int pedido)
         {
@@ -74,17 +55,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return null;
             }
-            string vendedor = Resolver(datos.VendedorPedido, datos.VendedorCliente);
+            string vendedor = Resolver(datos.VendedorPedido);
             if (vendedor == null)
             {
-                throw new NestoBusinessException(Mensaje(datos.Cliente))
+                throw new NestoBusinessException(Mensaje(pedido, datos.Cliente))
                 {
                     StatusCode = HttpStatusCode.BadRequest
                 };
-            }
-            if (string.IsNullOrWhiteSpace(datos.VendedorPedido))
-            {
-                await fijarEnPedido(empresa, pedido, vendedor).ConfigureAwait(false);
             }
             return vendedor;
         }
@@ -99,20 +76,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return null;
             }
-            string vendedorCliente = null;
-            if (string.IsNullOrWhiteSpace(cabecera.Vendedor))
-            {
-                vendedorCliente = await db.Clientes.AsNoTracking()
-                    .Where(c => c.Empresa == empresa && c.Nº_Cliente == cabecera.Nº_Cliente && c.Contacto == cabecera.Contacto)
-                    .Select(c => c.Vendedor)
-                    .FirstOrDefaultAsync().ConfigureAwait(false);
-            }
             return new VendedoresPedidoYCliente
             {
                 Cliente = cabecera.Nº_Cliente?.Trim(),
                 Contacto = cabecera.Contacto?.Trim(),
-                VendedorPedido = cabecera.Vendedor,
-                VendedorCliente = vendedorCliente
+                VendedorPedido = cabecera.Vendedor
             };
         }
     }

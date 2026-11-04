@@ -1,4 +1,4 @@
-using NestoAPI.Models.Facturas;
+﻿using NestoAPI.Models.Facturas;
 using PdfiumViewer;
 using System;
 using System.Collections.Generic;
@@ -46,10 +46,17 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 // En el servidor no hay nadie delante: nada de diálogos de «Imprimiendo…».
                 impresion.PrintController = new StandardPrintController();
-                impresion.PrinterSettings.PrinterName = impresora.Trim();
+                // «(predeterminada)» = la predeterminada de Windows en el servidor (PrinterSettings sin nombre); si no, la del nombre
+                bool predeterminada = ImpresionDocumentosServidor.EsPredeterminada(impresora);
+                if (!predeterminada)
+                {
+                    impresion.PrinterSettings.PrinterName = impresora.Trim();
+                }
                 if (!impresion.PrinterSettings.IsValid)
                 {
-                    throw new InvalidOperationException($"la impresora «{impresora.Trim()}» no está instalada en el servidor");
+                    throw new InvalidOperationException(predeterminada
+                        ? "el servidor no tiene impresora predeterminada (parámetro ImpresoraDocumentos = «(predeterminada)»)"
+                        : $"la impresora «{impresora.Trim()}» no está instalada en el servidor");
                 }
                 impresion.PrinterSettings.Copies = (short)Math.Max(1, Math.Min(copias, short.MaxValue));
 

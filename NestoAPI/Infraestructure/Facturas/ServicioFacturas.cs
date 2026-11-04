@@ -472,15 +472,11 @@ namespace NestoAPI.Infraestructure.Facturas
             CabPedidoVta cabPedido = db.CabPedidoVtas
                 .Include(p => p.LinPedidoVtas)
                 .SingleOrDefault(p => p.Empresa == empresa && p.Número == pedido);
-            // NestoAPI#813 (Paloma 03/11/26 ×6): con la cabecera sin vendedor el SP mete NULL en CabFacturaVta.Vendedor. Se le
-            // pone el de la ficha del cliente y, si tampoco hay, 400 «El cliente X no tiene vendedor asignado…».
+            // NestoAPI#813 (Paloma 03/11/26 ×6): con la cabecera sin vendedor el SP mete NULL en CabFacturaVta.Vendedor. Antes
+            // de llamarlo, 400 «El pedido X del cliente Y no tiene vendedor…» (Carlos 04/11/26: solo avisar, sin tocar el pedido).
             if (cabPedido != null && !string.IsNullOrWhiteSpace(cabPedido.Nº_Cliente) && string.IsNullOrWhiteSpace(cabPedido.Vendedor))
             {
-                string vendedor = await (GuardiaVendedor ?? PedidosVenta.VendedorParaFacturar.ConContexto(db)).Asegurar(empresa, pedido);
-                if (vendedor != null)
-                {
-                    cabPedido.Vendedor = vendedor;
-                }
+                _ = await (GuardiaVendedor ?? PedidosVenta.VendedorParaFacturar.ConContexto(db)).Asegurar(empresa, pedido);
             }
             // NestoAPI#794: el SP no valida la cabecera y con una vacía (sin cliente ni vendedor) revienta con «No se puede
             // insertar el valor NULL en la columna 'Vendedor'» y el recuento de transacciones descuadrado (Paloma, 03/11/26).

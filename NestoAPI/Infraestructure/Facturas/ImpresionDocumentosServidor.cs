@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
@@ -66,6 +66,15 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         public const string PARAMETRO_IMPRESORA = "ImpresoraDocumentos";
         public const string USUARIO_DEFECTO = "(defecto)";
+        /// <summary>
+        /// Carlos 04/11/26: el parámetro también admite este valor, que significa «la impresora predeterminada de Windows en el
+        /// servidor» (la de RDS2016), sin tener que escribir su nombre.
+        /// </summary>
+        public const string IMPRESORA_PREDETERMINADA = "(predeterminada)";
+
+        /// <summary>¿El valor del parámetro pide la impresora predeterminada del servidor?</summary>
+        public static bool EsPredeterminada(string impresora)
+            => !string.IsNullOrWhiteSpace(impresora) && string.Equals(impresora.Trim(), IMPRESORA_PREDETERMINADA, StringComparison.OrdinalIgnoreCase);
         public const string TIPO_ERROR = "Impresión en servidor";
 
         private readonly ILectorParametrosUsuario lector;

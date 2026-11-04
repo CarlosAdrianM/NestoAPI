@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -72,6 +72,17 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
 
             Assert.AreEqual(IMPRESORA_DEFECTO, Servicio(true).ElegirImpresora(USUARIO));
             Assert.AreEqual(IMPRESORA_DEFECTO, Servicio(true).ElegirImpresora(null));
+        }
+
+        /// <summary>Carlos 04/11/26: «(predeterminada)» en el parámetro = la impresora predeterminada de Windows en el servidor.</summary>
+        [TestMethod]
+        public void EsPredeterminada_SoloConElValorEspecial_SinDistinguirMayusculas()
+        {
+            Assert.IsTrue(ImpresionDocumentosServidor.EsPredeterminada("(predeterminada)"));
+            Assert.IsTrue(ImpresionDocumentosServidor.EsPredeterminada("  (Predeterminada) "));
+            Assert.IsFalse(ImpresionDocumentosServidor.EsPredeterminada("HP Administracion"));
+            Assert.IsFalse(ImpresionDocumentosServidor.EsPredeterminada(null));
+            Assert.IsFalse(ImpresionDocumentosServidor.EsPredeterminada(""));
         }
 
         [TestMethod]
