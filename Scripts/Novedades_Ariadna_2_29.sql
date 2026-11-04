@@ -27,6 +27,9 @@ INSERT INTO @n VALUES
 (6, N'Corregido', N'Picking entre dos PDA: lo que lee el compañero se descuenta de su parada',
  N'Cuando dos PDA preparan el mismo picking, lo que lee una se apunta en la otra en la parada de la que se leyó (antes iba a la primera parada del producto, y los pendientes de ubicar salían a los dos). Fue lo del picking 100001. Lo avisó Alfredo.',
  N'Almacén'),
+(7, N'Mejorado', N'Recibir: los avisos de la reposición se ven al abrirla',
+ N'Si algún producto de la reposición se regularizó por inventario en el destino después de enviarla, al abrir la recepción Ariadna lo avisa («compruebe que no se cuenta dos veces»), igual que lo hace Nesto. Y si su Ariadna se queda anticuada, la propia app se lo dirá con un botón para actualizarla desde Play Store.',
+ N'Almacén,Tiendas'),
 (5, N'Nuevo', N'Packing: la etiqueta de un pedido de nuestra ruta',
  N'En Empaquetar, F8 «Etiqueta de agencia» también vale para los pedidos que van por reparto propio: crea el envío y saca las etiquetas de bulto RP, igual que las de GLS o CTT. Antes decía «la agencia 14 no se puede insertar desde el servidor».',
  N'Almacén');
