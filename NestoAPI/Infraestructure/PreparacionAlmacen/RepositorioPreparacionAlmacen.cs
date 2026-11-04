@@ -76,6 +76,31 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Faltas { get; set; }
     }
 
+    /// <summary>Ariadna#95: lo dado por falta de un producto en la fase PICK de un picking (neto), con quién y cuándo (la última).</summary>
+    public class FaltaPickingAlmacen
+    {
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public int Cantidad { get; set; }
+        public string Usuario { get; set; }
+        public DateTime? Fecha { get; set; }
+    }
+
+    /// <summary>
+    /// Ariadna#95: una línea sin servir (pendiente o en otro picking) de un pedido que está en el packing de un picking, fuera de
+    /// ese picking. Las de otro picking (Estado 1) son «otro picking pendiente»; las pendientes sirven para saber de qué pedido
+    /// era una falta del picking.
+    /// </summary>
+    public class LineaFueraDelPicking
+    {
+        public int Pedido { get; set; }
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public int Cantidad { get; set; }
+        public int Picking { get; set; }
+        public int Estado { get; set; }
+    }
+
     /// <summary>Lo leído y lo dado por falta de un producto en el picking por ola.</summary>
     public class LecturaPickingAlmacen
     {
@@ -118,6 +143,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Lo metido y lo dado por falta en el packing del picking, por pedido y producto.</summary>
         /// <param name="pedido">Null = todos los pedidos del picking.</param>
         Task<List<LecturaPackingAlmacen>> LeerLecturasPacking(string empresa, int picking, int? pedido);
+        /// <summary>Ariadna#95: lo dado por falta en la fase PICK del picking, neto por producto (solo lo que queda en positivo).</summary>
+        Task<List<FaltaPickingAlmacen>> LeerFaltasDelPicking(string empresa, int picking);
+        /// <summary>
+        /// Ariadna#95: las líneas sin servir (Estado -1 o 1) de los pedidos que siguen en el picking, que NO están en ese picking.
+        /// Una consulta por packing.
+        /// </summary>
+        /// <param name="pedido">Null = todos los pedidos del picking.</param>
+        Task<List<LineaFueraDelPicking>> LeerLineasFueraDelPicking(string empresa, int picking, int? pedido);
         /// <summary>El picking que tiene ahora mismo el pedido sin servir, o null si no tiene ninguno.</summary>
         Task<int?> PickingEnCursoDelPedido(string empresa, int pedido);
         Task<bool> ExistePedidoEnPicking(string empresa, int pedido, int picking);
@@ -416,6 +449,35 @@ FROM PreparacionEscaneos e
 WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PACK' AND e.Pedido IS NOT NULL
       AND (@p2 IS NULL OR e.Pedido = @p2)
 GROUP BY e.Pedido, e.Producto";
+
+        // Ariadna#95: lo dado por falta al recoger el picking (Metodo FALTA, con su «deshacer» en negativo), neto por producto. El
+        // picking por ola no guarda el pedido de la falta (Pedido NULL): el servicio lo busca en las líneas que han salido del picking.
+        internal const string SQL_FALTAS_DEL_PICKING = @"
+SELECT RTRIM(e.Producto) AS Producto,
+       (SELECT TOP 1 RTRIM(p.Nombre) FROM Productos p WHERE p.Empresa = e.Empresa AND p.[Número] = e.Producto) AS Descripcion,
+       CAST(SUM(e.Cantidad) AS int) AS Cantidad,
+       (SELECT TOP 1 RTRIM(u.Usuario) FROM PreparacionEscaneos u
+        WHERE u.Empresa = e.Empresa AND u.TipoOrigen = 'PICK' AND u.NumeroOrigen = e.NumeroOrigen AND u.Fase = 'PICK'
+              AND u.Metodo = 'FALTA' AND u.Producto = e.Producto AND u.Cantidad > 0
+        ORDER BY u.FechaEscaneo DESC) AS Usuario,
+       MAX(CASE WHEN e.Cantidad > 0 THEN e.FechaEscaneo END) AS Fecha
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PICK' AND e.Metodo = 'FALTA'
+GROUP BY e.Empresa, e.NumeroOrigen, e.Producto
+HAVING SUM(e.Cantidad) > 0";
+
+        // Ariadna#95: las líneas sin servir de los pedidos del packing que no están en este picking (otro picking o pendientes).
+        internal const string SQL_LINEAS_FUERA_DEL_PICKING = @"
+SELECT l.[Número] AS Pedido, RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion,
+       CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad,
+       CAST(ISNULL(l.Picking, 0) AS int) AS Picking, CAST(l.Estado AS int) AS Estado
+FROM LinPedidoVta l
+     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+WHERE l.Empresa = @p0 AND l.TipoLinea = 1 AND l.Estado IN (-1, 1) AND ISNULL(l.Picking, 0) <> @p1 AND ISNULL(p.Ficticio, 0) = 0
+      AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) > 0
+      AND l.[Número] IN (SELECT x.[Número] FROM LinPedidoVta x
+                         WHERE x.Empresa = @p0 AND x.Picking = @p1 AND x.Estado = 1 AND (@p2 IS NULL OR x.[Número] = @p2))
+ORDER BY l.Picking, l.[Número], l.[Nº Orden]";
 
         internal const string SQL_PICKING_EN_CURSO = @"
 SELECT MAX(l.Picking) FROM LinPedidoVta l
@@ -849,6 +911,18 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
         public Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido)
         {
             return baseDeDatos.SqlQuery<FilaPackingAlmacen>(SQL_LINEAS_PACKING,
+                new SqlParameter("@p0", empresa), new SqlParameter("@p1", picking),
+                new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)pedido ?? DBNull.Value }).ToListAsync();
+        }
+
+        public Task<List<FaltaPickingAlmacen>> LeerFaltasDelPicking(string empresa, int picking)
+        {
+            return baseDeDatos.SqlQuery<FaltaPickingAlmacen>(SQL_FALTAS_DEL_PICKING, empresa, picking).ToListAsync();
+        }
+
+        public Task<List<LineaFueraDelPicking>> LeerLineasFueraDelPicking(string empresa, int picking, int? pedido)
+        {
+            return baseDeDatos.SqlQuery<LineaFueraDelPicking>(SQL_LINEAS_FUERA_DEL_PICKING,
                 new SqlParameter("@p0", empresa), new SqlParameter("@p1", picking),
                 new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)pedido ?? DBNull.Value }).ToListAsync();
         }

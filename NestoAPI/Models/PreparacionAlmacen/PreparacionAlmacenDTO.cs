@@ -382,6 +382,45 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#646: lo hecho en el packing de esta entrega en los últimos minutos, de cualquier usuario. No viaja.</summary>
         [Newtonsoft.Json.JsonIgnore]
         public List<ActividadPackingAlmacen> Actividad { get; set; } = new List<ActividadPackingAlmacen>();
+        /// <summary>
+        /// Ariadna#95 (envío 929911, 04/11/26): lo que se dio por falta en el picking de este packing y era de algún pedido de esta
+        /// entrega: al terminar el picking esas unidades salen del pedido y la hoja impresa antes ya no coincide con la pantalla.
+        /// Vacía si no hay.
+        /// </summary>
+        public List<FaltaPickingPackingDTO> FaltasDelPicking { get; set; } = new List<FaltaPickingPackingDTO>();
+        /// <summary>
+        /// Ariadna#95: otros pickings con líneas sin servir (Estado 1) de los pedidos de esta entrega. Hay que meterlas en la misma
+        /// caja o cerrar antes el otro picking. Vacía si no hay.
+        /// </summary>
+        public List<OtroPickingPendienteDTO> OtrosPickingsPendientes { get; set; } = new List<OtroPickingPendienteDTO>();
+    }
+
+    /// <summary>Ariadna#95: unidades de un producto dadas por falta en el picking (neto de los «deshacer»).</summary>
+    public class FaltaPickingPackingDTO
+    {
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public int Cantidad { get; set; }
+        /// <summary>Quién la dio por falta (la última vez), sin el dominio. Null si no se sabe.</summary>
+        public string Usuario { get; set; }
+        /// <summary>Cuándo (la hora de la PDA de la última falta).</summary>
+        public DateTime? Fecha { get; set; }
+    }
+
+    /// <summary>Ariadna#95: otro picking con líneas sin servir de los pedidos de una entrega.</summary>
+    public class OtroPickingPendienteDTO
+    {
+        public int Picking { get; set; }
+        public List<LineaOtroPickingDTO> Lineas { get; set; } = new List<LineaOtroPickingDTO>();
+    }
+
+    /// <summary>Ariadna#95: una línea de otro picking pendiente.</summary>
+    public class LineaOtroPickingDTO
+    {
+        public int Pedido { get; set; }
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public int Cantidad { get; set; }
     }
 
     /// <summary>Un picking sacado que todavía tiene líneas sin servir.</summary>
