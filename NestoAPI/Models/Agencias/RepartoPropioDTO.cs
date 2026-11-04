@@ -367,12 +367,25 @@ namespace NestoAPI.Models.Agencias
 
     /// <summary>
     /// GET api/RepartoPropio/MisCobros?fecha=yyyy-MM-dd: el extracto contable de ese día de la caja del usuario (su CajaDefecto),
-    /// el mismo que el de la ventana de Cajas de Nesto (api/Informes/ExtractoContable).
+    /// el mismo que el de la ventana de Cajas de Nesto (api/Informes/ExtractoContable). NestoAPI#802: SaldoAnterior, Apuntes,
+    /// TotalDia y SaldoFinal son los TOTALES de todas las empresas; <see cref="Empresas"/>, el detalle de cada una.
     /// </summary>
     public class MisCobrosRepartoDTO
     {
         public string Cuenta { get; set; }
         public DateTime Fecha { get; set; }
+        public decimal SaldoAnterior { get; set; }
+        public System.Collections.Generic.List<ApunteCajaRepartoDTO> Apuntes { get; set; } = new System.Collections.Generic.List<ApunteCajaRepartoDTO>();
+        public decimal TotalDia { get; set; }
+        public decimal SaldoFinal { get; set; }
+        /// <summary>NestoAPI#802: siempre la empresa 1; las demás (hoy la 3) solo si tienen apuntes ese día o saldo distinto de cero.</summary>
+        public System.Collections.Generic.List<CobrosEmpresaRepartoDTO> Empresas { get; set; } = new System.Collections.Generic.List<CobrosEmpresaRepartoDTO>();
+    }
+
+    /// <summary>NestoAPI#802: la caja del repartidor en una empresa ese día.</summary>
+    public class CobrosEmpresaRepartoDTO
+    {
+        public string Empresa { get; set; }
         public decimal SaldoAnterior { get; set; }
         public System.Collections.Generic.List<ApunteCajaRepartoDTO> Apuntes { get; set; } = new System.Collections.Generic.List<ApunteCajaRepartoDTO>();
         public decimal TotalDia { get; set; }
@@ -387,6 +400,8 @@ namespace NestoAPI.Models.Agencias
         public decimal Importe { get; set; }
         public int? Asiento { get; set; }
         public string Documento { get; set; }
+        /// <summary>NestoAPI#802: la empresa del apunte ("1" o "3").</summary>
+        public string Empresa { get; set; }
     }
 
     /// <summary>GET api/RepartoPropio/Envios/{envioId}/PruebaEntrega (la firma va aparte, en .../Firma).</summary>

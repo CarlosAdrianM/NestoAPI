@@ -205,6 +205,8 @@ namespace NestoAPI.Models
             public const string CUENTA_PORTES_GLOVO = "62400017";
             public const string CUENTA_PORTES_CEX = "62400005";
             public const string CUENTA_PORTES_ONTIME = "62400002";
+            /// <summary>NestoAPI#802: caja pendiente de recibir de las tiendas (y de los repartidores), igual que en Nesto.</summary>
+            public const string CAJA_PENDIENTE_RECIBIR_TIENDAS = "57000016";
             public const short ESTADO_ACTIVA = 0;
             public const short NIVEL_MAXIMO = 8;
         }
@@ -1325,6 +1327,8 @@ namespace NestoAPI.Models
                 public const string DIARIO_REEMBOLSOS = "_Reembolso";
                 // Nesto#415 (A4.3): diario del pago que la agencia hace de los reembolsos cobrados.
                 public const string DIARIO_PAGO_REEMBOLSOS = "_PagoReemb";
+                // NestoAPI#802: traspasos de caja (Nesto: Constantes.DiariosContables.DIARIO_TRASPASOS_CAJA).
+                public const string DIARIO_TRASPASOS_CAJA = "_TraspCaja";
             }
 
             public static class TiposCuenta
