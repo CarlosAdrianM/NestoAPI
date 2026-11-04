@@ -78,6 +78,44 @@ namespace NestoAPI.Controllers
         }
         private IGuardiaNotaSinPacking guardiaNotas;
 
+        /// <summary>NestoAPI#810: los reembolsos del reparto propio desfasados tras facturar. Lee del db del controller; se sustituye en los tests.</summary>
+        internal Infraestructure.Agencias.RepartoPropio.IDetectorReembolsosDesfasados DetectorReembolsos
+        {
+            get => detectorReembolsos ?? (detectorReembolsos = new Infraestructure.Agencias.RepartoPropio.DetectorReembolsosDesfasados(db));
+            set => detectorReembolsos = value;
+        }
+        private Infraestructure.Agencias.RepartoPropio.IDetectorReembolsosDesfasados detectorReembolsos;
+
+        /// <summary>
+        /// NestoAPI#810: tras facturar, los envíos del reparto propio sin entregar de los pedidos facturados cuyo reembolso no es lo
+        /// facturado van en <see cref="FacturarRutasResponseDTO.ReembolsosDesfasados"/>. No cambia nada (pregunta el cliente) y nunca
+        /// hace fallar la facturación: si algo falla, la lista sale vacía y a ELMAH.
+        /// </summary>
+        internal async Task AnotarReembolsosDesfasados(FacturarRutasResponseDTO response)
+        {
+            if (response?.Facturas == null || !response.Facturas.Any())
+            {
+                return;
+            }
+            try
+            {
+                var desfasados = await DetectorReembolsos.Detectar(response.Facturas.Select(f => f.NumeroPedido)).ConfigureAwait(true);
+                if (desfasados != null && desfasados.Any())
+                {
+                    if (response.ReembolsosDesfasados == null)
+                    {
+                        response.ReembolsosDesfasados = new System.Collections.Generic.List<ReembolsoDesfasadoDTO>();
+                    }
+                    response.ReembolsosDesfasados.AddRange(desfasados);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#810: no se han podido comprobar los reembolsos del reparto propio de los pedidos " +
+                    $"{string.Join(", ", response.Facturas.Select(f => f.NumeroPedido).Distinct())}: {ex.Message}", ex));
+            }
+        }
+
         // Para tests: sustituye el gestor real (con sus servicios) por uno falso.
         private readonly Func<IGestorFacturacionRutas> fabricaGestor;
 
@@ -257,6 +295,7 @@ namespace NestoAPI.Controllers
                 // 2. Procesar facturación
                 var response = await CrearGestor().FacturarRutas(pedidos, usuario, fechaDesde);
                 VolcarResultadoPO(resultadoPO, response);
+                await AnotarReembolsosDesfasados(response);
 
                 return Ok(response);
             }
@@ -342,6 +381,7 @@ namespace NestoAPI.Controllers
 
                 var response = await CrearGestor().FacturarRutas(
                     new System.Collections.Generic.List<CabPedidoVta> { pedido }, usuario, fechaDesde);
+                await AnotarReembolsosDesfasados(response);
                 return Ok(response);
             }
             catch (Exception ex)

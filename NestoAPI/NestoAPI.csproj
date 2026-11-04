@@ -783,6 +783,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CierreCajaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EmpresaDelCobroReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ReembolsoDesfasadoRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroTarjetaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AutorizacionesReembolsoReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosCobroReparto.cs" />
@@ -1835,6 +1836,7 @@
     <Compile Include="Models\Facturas\FacturarRutasRequestDTO.cs" />
     <Compile Include="Models\Facturas\FacturarPedidoRequestDTO.cs" />
     <Compile Include="Models\Facturas\FacturarRutasResponseDTO.cs" />
+    <Compile Include="Models\Facturas\ReembolsoDesfasadoDTO.cs" />
     <Compile Include="Models\Facturas\ISerieFactura.cs" />
     <Compile Include="Models\Facturas\ITipoRuta.cs" />
     <Compile Include="Models\Facturas\RutaAgencia.cs" />

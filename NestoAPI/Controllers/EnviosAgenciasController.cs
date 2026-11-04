@@ -169,6 +169,27 @@ namespace NestoAPI.Controllers
     }
 
     /// <summary>
+    /// NestoAPI#810: cuerpo de PUT api/EnviosAgencias/{id}/Reembolso (solo reparto propio sin entregar). Reembolso = el importe
+    /// nuevo (no lo que se suma ni se resta); Observaciones, opcional, va a EnviosHistoria.
+    /// </summary>
+    public class CambiarReembolsoEnvioDTO
+    {
+        public decimal Reembolso { get; set; }
+        public string Observaciones { get; set; }
+    }
+
+    /// <summary>NestoAPI#810: respuesta de PUT api/EnviosAgencias/{id}/Reembolso.</summary>
+    public class ReembolsoEnvioCambiadoDTO
+    {
+        public int Numero { get; set; }
+        public int? Pedido { get; set; }
+        public decimal ReembolsoAnterior { get; set; }
+        public decimal Reembolso { get; set; }
+        /// <summary>False si el importe pedido era el que ya tenía (no se ha escrito nada).</summary>
+        public bool Cambiado { get; set; }
+    }
+
+    /// <summary>
     /// Nesto#340 (Agencias, slice A4.2): respuesta de POST EnviosAgencias/{id}/RecibirRetorno.
     /// La fecha la pone el servidor, para que el cliente la refleje sin recargar la lista.
     /// </summary>
@@ -2151,6 +2172,58 @@ namespace NestoAPI.Controllers
             _ = await db.SaveChangesAsync();
 
             return Ok(new RestarReembolsoResponseDTO { Numero = envio.Numero, Reembolso = envio.Reembolso });
+        }
+
+        // PUT: api/EnviosAgencias/5/Reembolso
+        /// <summary>
+        /// NestoAPI#810 (pedido 928723, envío 250518): cambia el reembolso de un envío del REPARTO PROPIO aún sin entregar, por
+        /// ejemplo a lo facturado tras una ampliación (FacturarPedido lo devuelve en ReembolsosDesfasados y Nesto pregunta). Solo el
+        /// campo y su fila en EnviosHistoria: NO contabiliza (el reparto propio cobra al entregar contra la caja del repartidor).
+        /// 400 si el envío no es del reparto propio (las demás van por ModificarDatos) o el importe es negativo; 409 si ya está
+        /// entregado (o devuelto, cerrado…).
+        /// </summary>
+        [HttpPut]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/Reembolso")]
+        [ResponseType(typeof(ReembolsoEnvioCambiadoDTO))]
+        public async Task<IHttpActionResult> CambiarReembolsoRepartoPropio(int id, CambiarReembolsoEnvioDTO datos)
+        {
+            if (datos == null)
+            {
+                return BadRequest("Falta el reembolso.");
+            }
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+            Infraestructure.Agencias.RepartoPropio.RechazoCambioReembolso rechazo =
+                Infraestructure.Agencias.RepartoPropio.CambioReembolsoRepartoPropio.Validar(envio, datos.Reembolso);
+            if (rechazo != null)
+            {
+                return rechazo.Estado == HttpStatusCode.BadRequest
+                    ? BadRequest(rechazo.Motivo)
+                    : (IHttpActionResult)Content(rechazo.Estado, rechazo.Motivo);
+            }
+
+            decimal anterior = envio.Reembolso;
+            string usuario = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            EnvioHistoria fila = Infraestructure.Agencias.RepartoPropio.CambioReembolsoRepartoPropio.Aplicar(
+                envio, datos.Reembolso, datos.Observaciones, usuario, DateTime.Now);
+            if (fila != null)
+            {
+                _ = db.EnviosHistorias.Add(fila);
+                _ = await db.SaveChangesAsync();
+            }
+
+            return Ok(new ReembolsoEnvioCambiadoDTO
+            {
+                Numero = envio.Numero,
+                Pedido = envio.Pedido,
+                ReembolsoAnterior = anterior,
+                Reembolso = envio.Reembolso,
+                Cambiado = fila != null
+            });
         }
 
         // POST: api/EnviosAgencias/5/ConfirmarTramitacion
