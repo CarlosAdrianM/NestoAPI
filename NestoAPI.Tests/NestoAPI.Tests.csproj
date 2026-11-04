@@ -978,6 +978,9 @@
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgeteTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorEmpleadosTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorFestivosAutonomicasTests.cs" />
+    <Compile Include="Models\RecursosHumanos\CalendarioFestivosTests.cs" />
+    <Compile Include="Controllers\FestivosControllerTests.cs" />
+    <Compile Include="Infrastructure\AvisoFestivosSinCargarJobsServiceTests.cs" />
     <Compile Include="Models\RecursosHumanos\GestorFestivosPrimerLaborableTests.cs" />
     <Compile Include="Models\RecursosHumanos\EmpleadoTest.cs" />
     <Compile Include="Models\RecursosHumanos\AccionTest.cs" />
