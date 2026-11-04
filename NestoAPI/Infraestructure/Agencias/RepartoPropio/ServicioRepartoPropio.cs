@@ -631,6 +631,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>
         /// GET api/RepartoPropio/MisCobros: el extracto contable del día de la caja del usuario (su CajaDefecto), el mismo que el
         /// de la ventana de Cajas de Nesto (api/Informes/ExtractoContable). Importe = Debe − Haber de la caja (positivo, entra).
+        /// NestoAPI#802: por empresa (siempre la 1; la 3 si tiene apuntes ese día o saldo) y los campos de arriba, los totales.
         /// </summary>
         public async Task<ResultadoReparto<MisCobrosRepartoDTO>> MisCobros(DateTime? fecha, string usuario)
         {
@@ -640,32 +641,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return ResultadoReparto<MisCobrosRepartoDTO>.Mal(TipoResultadoReparto.Invalido, MENSAJE_SIN_CAJA);
             }
             DateTime dia = (fecha ?? ahora()).Date;
-            IInformesService servicioInformes = informes();
-            decimal saldoAnterior = await servicioInformes.LeerSaldoContableAnteriorAsync(Constantes.Empresas.EMPRESA_POR_DEFECTO, cuenta, dia)
-                .ConfigureAwait(false);
-            List<ExtractoContableDTO> lineas = await servicioInformes.LeerExtractoContableAsync(Constantes.Empresas.EMPRESA_POR_DEFECTO, cuenta, dia, dia)
-                .ConfigureAwait(false) ?? new List<ExtractoContableDTO>();
-            List<ApunteCajaRepartoDTO> apuntes = lineas
-                .OrderBy(l => l.Fecha).ThenBy(l => l.Id)
-                .Select(l => new ApunteCajaRepartoDTO
-                {
-                    Fecha = l.Fecha,
-                    Concepto = l.Concepto?.Trim(),
-                    Importe = l.Debe - l.Haber,
-                    Asiento = l.Asiento,
-                    Documento = l.Documento?.Trim()
-                })
-                .ToList();
-            decimal totalDia = apuntes.Sum(a => a.Importe);
-            return ResultadoReparto<MisCobrosRepartoDTO>.Bien(new MisCobrosRepartoDTO
-            {
-                Cuenta = cuenta,
-                Fecha = dia,
-                SaldoAnterior = saldoAnterior,
-                Apuntes = apuntes,
-                TotalDia = totalDia,
-                SaldoFinal = saldoAnterior + totalDia
-            });
+            MisCobrosRepartoDTO cobros = await CajaReparto.Leer(informes(), cuenta, dia).ConfigureAwait(false);
+            return ResultadoReparto<MisCobrosRepartoDTO>.Bien(cobros);
         }
 
         // ---------------------------------------------------------------- piezas
@@ -680,9 +657,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return null;
             }
-            string sinDominio = usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
-            string caja = parametros.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, sinDominio, PARAMETRO_CAJA)?.Trim();
-            return string.IsNullOrEmpty(caja) ? null : caja;
+            return CajaReparto.CajaDelUsuario(parametros, usuario);
         }
 
         private async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Registrar(PruebaEntregaReparto prueba, byte[] firma, EnviosAgencia envio,

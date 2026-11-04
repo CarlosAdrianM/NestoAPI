@@ -90,6 +90,35 @@ namespace NestoAPI.Controllers
             return Responder(await ServicioCobros.Cobrar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
         }
 
+        private ServicioCierreCajaReparto servicioCierreCaja;
+
+        /// <summary>NestoAPI#802: el cierre de caja del repartidor (sustituible en tests).</summary>
+        internal ServicioCierreCajaReparto ServicioCierreCaja
+        {
+            get => servicioCierreCaja ?? (servicioCierreCaja = new ServicioCierreCajaReparto(new RepositorioCierresCajaReparto(db),
+                informes: () => new Infraestructure.Informes.InformesService(db)));
+            set => servicioCierreCaja = value;
+        }
+
+        // POST api/RepartoPropio/Caja/Cierre { Importe, ClaveIdempotencia, FechaHora }
+        /// <summary>
+        /// NestoAPI#802 (Ariadna#85): el repartidor cierra su caja (CajaDefecto de su fila; sin ella, 400) con lo que lleva. Si cuadra con
+        /// el saldo de la caja en las empresas 1 y 3, un traspaso por empresa a la 57000016 como Nesto → Cajas → Traspasar de las
+        /// tiendas (y punteo por importe). 400 si la caja está a cero; 409 si alguna empresa está en negativo o no cuadra.
+        /// Idempotente por ClaveIdempotencia.
+        /// </summary>
+        [HttpPost]
+        [Route("Caja/Cierre")]
+        [ResponseType(typeof(ResultadoCierreCajaDTO))]
+        public async Task<IHttpActionResult> CerrarCaja([FromBody] CierreCajaRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await ServicioCierreCaja.Cerrar(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
         // GET api/RepartoPropio/Envios?fecha=2026-10-29&soloMios=true
         /// <summary>
         /// Ariadna#63: con Repartidor y BultosCargados. NestoAPI#759: las paradas (envíos, notas y reposiciones) por Orden; con

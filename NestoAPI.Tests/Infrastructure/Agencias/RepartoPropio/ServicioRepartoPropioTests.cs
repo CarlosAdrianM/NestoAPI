@@ -596,7 +596,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         [TestMethod]
         public async Task MisCobros_SinFecha_Hoy_YSinApuntes_SaldoIgual()
         {
-            A.CallTo(() => informes.LeerSaldoContableAnteriorAsync(A<string>._, A<string>._, A<DateTime>._)).Returns(20m);
+            A.CallTo(() => informes.LeerSaldoContableAnteriorAsync("1", A<string>._, A<DateTime>._)).Returns(20m);
             A.CallTo(() => informes.LeerExtractoContableAsync(A<string>._, A<string>._, A<DateTime>._, A<DateTime>._)).Returns(new List<ExtractoContableDTO>());
 
             var resultado = await servicio.MisCobros(null, USUARIO);
