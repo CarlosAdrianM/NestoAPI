@@ -72,6 +72,15 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         public const string IMPRESORA_PREDETERMINADA = "(predeterminada)";
 
+        /// <summary>
+        /// Carlos 04/11/26 (al encender el interruptor): Nesto todavía no respeta ImpresoEnServidor (Nesto#620) e imprime en local, y las
+        /// tiendas y Administración tienen su impresora en Nesto, no en el servidor. Hasta entonces el servidor imprime SOLO para los
+        /// usuarios sin dominio (Ariadna, NestoApp: los que no tienen Nesto delante); para «NUEVAVISION\…» (Nesto) no imprime ni lee
+        /// el parámetro, y Nesto sigue imprimiendo como siempre. Quitar esta regla cuando Nesto#620 esté publicada.
+        /// </summary>
+        public static bool ImprimeParaEsteUsuario(string usuario)
+            => !string.IsNullOrWhiteSpace(usuario) && !usuario.Contains("\\");
+
         /// <summary>¿El valor del parámetro pide la impresora predeterminada del servidor?</summary>
         public static bool EsPredeterminada(string impresora)
             => !string.IsNullOrWhiteSpace(impresora) && string.Equals(impresora.Trim(), IMPRESORA_PREDETERMINADA, StringComparison.OrdinalIgnoreCase);
@@ -116,7 +125,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public void Imprimir(FacturarRutasResponseDTO respuesta, string usuario)
         {
-            if (respuesta == null || !EstaActivo())
+            if (respuesta == null || !EstaActivo() || !ImprimeParaEsteUsuario(usuario))
             {
                 return;
             }
@@ -174,7 +183,7 @@ namespace NestoAPI.Infraestructure.Facturas
         public List<string> Imprimir(IEnumerable<DocumentoAImprimirEnServidor> documentos, string usuario)
         {
             var avisos = new List<string>();
-            if (documentos == null || !EstaActivo())
+            if (documentos == null || !EstaActivo() || !ImprimeParaEsteUsuario(usuario))
             {
                 return avisos;
             }

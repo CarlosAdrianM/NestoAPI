@@ -14,7 +14,8 @@
          Administración desde Nesto: Carlos 04/11),
          Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql («(defecto)» = HP LaserJet 600 M601 M602
          M603 PCL6, la de Algete, para todos los de Ariadna; el interruptor Facturacion:ImprimirDocumentosEnServidor va ENCENDIDO
-         en el Web.config del repo: Carlos 04/11 17:05; comprobar que la impresora existe con ese nombre en RDS2016),
+         en el Web.config del repo: Carlos 04/11 17:05; comprobar que la impresora existe con ese nombre en RDS2016; el servidor
+         SOLO imprime para usuarios sin dominio = Ariadna; los de Nesto siguen con su impresora en local hasta Nesto#620),
          Issue699_EnviosAgenciaReenvios.sql (tabla de decisiones de los devueltos: Reenviar/Abonar/EntregadoPorLaAgencia; versión
          con EnvioAnulado y GRANT UPDATE), Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos),
          Issue786b_NotaCobroRepartidor.sql (después del anterior: NotasEntregaCabecera.Repartidor, la NC se asigna a un repartidor)

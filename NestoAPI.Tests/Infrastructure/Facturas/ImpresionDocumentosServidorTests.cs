@@ -28,6 +28,8 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
     public class ImpresionDocumentosServidorTests
     {
         private const string USUARIO = "NUEVAVISION\\Alfredo";
+        /// <summary>El usuario de Ariadna (Identity, sin dominio): el único para el que el servidor imprime (Carlos 04/11/26, Nesto#620).</summary>
+        private const string USUARIO_ARIADNA = "Alfredo";
         private const string IMPRESORA_ALFREDO = "HP Administración Alfredo";
         private const string IMPRESORA_DEFECTO = "HP Administración";
         private static readonly byte[] PDF = { 0x25, 0x50, 0x44, 0x46 };
@@ -118,10 +120,10 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [TestMethod]
         public void Imprimir_Encendido_ImprimeCadaDocumentoConSusCopiasYSuBandejaEnLaImpresoraDelUsuario()
         {
-            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(USUARIO_ARIADNA, IMPRESORA_ALFREDO);
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
-            Servicio(true).Imprimir(respuesta, USUARIO);
+            Servicio(true).Imprimir(respuesta, USUARIO_ARIADNA);
 
             A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 1, TipoBandejaImpresion.Lower)).MustHaveHappenedOnceExactly();
             A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 2, TipoBandejaImpresion.Middle)).MustHaveHappenedOnceExactly();
@@ -134,11 +136,31 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         [TestMethod]
+        public void Imprimir_UsuarioDeNestoConDominio_NiImprimeNiLeeElParametro_Nesto620()
+        {
+            // Carlos 04/11/26: Nesto imprime en local y no respeta aún ImpresoEnServidor; el servidor solo imprime para Ariadna.
+            ImpresoraDelUsuario(ImpresionDocumentosServidor.USUARIO_DEFECTO, IMPRESORA_DEFECTO);
+            FacturarRutasResponseDTO respuesta = RespuestaConPapel();
+
+            Servicio(true).Imprimir(respuesta, USUARIO);
+            List<string> avisos = Servicio(true).Imprimir(new[] { new DocumentoAImprimirEnServidor { Descripcion = "la factura NV1", Datos = Datos(1, TipoBandejaImpresion.Lower) } }, USUARIO);
+
+            A.CallTo(impresora).MustNotHaveHappened();
+            A.CallTo(lector).MustNotHaveHappened();
+            Assert.IsNull(respuesta.Facturas[0].DatosImpresion.ImpresoEnServidor);
+            Assert.AreEqual(0, respuesta.PedidosConErrores.Count);
+            Assert.AreEqual(0, avisos.Count);
+            Assert.IsTrue(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(USUARIO_ARIADNA));
+            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(USUARIO));
+            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(null));
+        }
+
+        [TestMethod]
         public void Imprimir_Apagado_NiImprimeNiLeeElParametro()
         {
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
-            Servicio(false).Imprimir(respuesta, USUARIO);
+            Servicio(false).Imprimir(respuesta, USUARIO_ARIADNA);
 
             A.CallTo(impresora).MustNotHaveHappened();
             A.CallTo(lector).MustNotHaveHappened();
@@ -149,12 +171,12 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [TestMethod]
         public void Imprimir_FallaUnDocumento_AvisoComoWarningYSigueConLosDemas()
         {
-            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(USUARIO_ARIADNA, IMPRESORA_ALFREDO);
             A.CallTo(() => impresora.Imprimir(A<byte[]>._, A<string>._, 1, A<TipoBandejaImpresion>._))
                 .Throws(new InvalidOperationException("la impresora «HP Administración Alfredo» no está instalada en el servidor"));
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
-            Servicio(true).Imprimir(respuesta, USUARIO);
+            Servicio(true).Imprimir(respuesta, USUARIO_ARIADNA);
 
             PedidoConErrorDTO aviso = respuesta.PedidosConErrores.Single();
             Assert.AreEqual(NivelSeveridad.Warning, aviso.Severidad);
@@ -171,7 +193,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         {
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
-            Servicio(true).Imprimir(respuesta, USUARIO);
+            Servicio(true).Imprimir(respuesta, USUARIO_ARIADNA);
 
             A.CallTo(impresora).MustNotHaveHappened();
             Assert.AreEqual(2, respuesta.PedidosConErrores.Count);
@@ -186,7 +208,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._)).Throws(new Exception("sin conexión"));
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
-            Servicio(true).Imprimir(respuesta, USUARIO);
+            Servicio(true).Imprimir(respuesta, USUARIO_ARIADNA);
 
             A.CallTo(impresora).MustNotHaveHappened();
             Assert.AreEqual(2, respuesta.PedidosConErrores.Count);
@@ -196,12 +218,12 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [TestMethod]
         public void Imprimir_CeroCopiasOPdfVacio_NoImprime()
         {
-            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(USUARIO_ARIADNA, IMPRESORA_ALFREDO);
             var respuesta = new FacturarRutasResponseDTO();
             respuesta.Facturas.Add(new FacturaCreadaDTO { NumeroFactura = "NV1", DatosImpresion = Datos(0, TipoBandejaImpresion.Lower) });
             respuesta.NotasEntrega.Add(new NotaEntregaCreadaDTO { NumeroPedido = 1, DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[0], NumeroCopias = 1 } });
 
-            Servicio(true).Imprimir(respuesta, USUARIO);
+            Servicio(true).Imprimir(respuesta, USUARIO_ARIADNA);
 
             A.CallTo(impresora).MustNotHaveHappened();
             Assert.AreEqual(0, respuesta.PedidosConErrores.Count);
@@ -299,12 +321,12 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [DataRow(false)]
         public async Task FacturarRutas_ImprimeEnElServidorSoloConElInterruptor(bool activo)
         {
-            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(USUARIO_ARIADNA, IMPRESORA_ALFREDO);
             CabPedidoVta pedido = NotaConPapel();
             var notas = A.Fake<IServicioNotasEntrega>();
-            A.CallTo(() => notas.ProcesarNotaEntrega(pedido, USUARIO)).Returns(new NotaEntregaCreadaDTO { Empresa = "1", NumeroPedido = 929734, NumeroLineas = 1 });
+            A.CallTo(() => notas.ProcesarNotaEntrega(pedido, USUARIO_ARIADNA)).Returns(new NotaEntregaCreadaDTO { Empresa = "1", NumeroPedido = 929734, NumeroLineas = 1 });
 
-            FacturarRutasResponseDTO respuesta = await Gestor(notas, activo).FacturarRutas(new List<CabPedidoVta> { pedido }, USUARIO, DateTime.Today);
+            FacturarRutasResponseDTO respuesta = await Gestor(notas, activo).FacturarRutas(new List<CabPedidoVta> { pedido }, USUARIO_ARIADNA, DateTime.Today);
 
             DocumentoParaImprimir datos = respuesta.NotasEntrega.Single().DatosImpresion;
             Assert.IsNotNull(datos, "la respuesta sigue llevando los DatosImpresion");
@@ -366,18 +388,18 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [DataRow(false)]
         public async Task Detalle_FacturaFisica_DatosImpresionYSoloConElInterruptorSeImprime(bool activo)
         {
-            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(USUARIO_ARIADNA, IMPRESORA_ALFREDO);
             IGestorFacturas gestorFacturas = GestorFacturasConPdf();
             CrearFacturaResponseDTO factura = Factura();
 
             await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Número = 929244, Ruta = "FW", ComentarioPicking = "Factura física." }, activo)
-                .Completar(factura, USUARIO);
+                .Completar(factura, USUARIO_ARIADNA);
 
             Assert.IsNotNull(factura.DatosImpresion);
             Assert.AreEqual(1, factura.DatosImpresion.NumeroCopias);
             Assert.AreEqual(TipoBandejaImpresion.Lower, factura.DatosImpresion.TipoBandeja);
             CollectionAssert.AreEqual(PDF, factura.DatosImpresion.BytesPDF);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, true, USUARIO, A<bool>._, A<bool>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, true, USUARIO_ARIADNA, A<bool>._, A<bool>._)).MustHaveHappenedOnceExactly();
             if (activo)
             {
                 A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 1, TipoBandejaImpresion.Lower)).MustHaveHappenedOnceExactly();
@@ -397,7 +419,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             IGestorFacturas gestorFacturas = GestorFacturasConPdf();
             CrearFacturaResponseDTO factura = Factura();
 
-            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "AT", Comentarios = "Nada especial" }, activo: true).Completar(factura, USUARIO);
+            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "AT", Comentarios = "Nada especial" }, activo: true).Completar(factura, USUARIO_ARIADNA);
 
             Assert.IsNull(factura.DatosImpresion);
             A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, A<bool>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
@@ -410,7 +432,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             IGestorFacturas gestorFacturas = GestorFacturasConPdf();
             CrearFacturaResponseDTO factura = Factura();
 
-            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "FW", Comentarios = "Nada especial" }, activo: true).Completar(factura, USUARIO);
+            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "FW", Comentarios = "Nada especial" }, activo: true).Completar(factura, USUARIO_ARIADNA);
 
             Assert.IsNull(factura.DatosImpresion);
             A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, A<bool>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
@@ -420,11 +442,11 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [TestMethod]
         public async Task Detalle_FallaLaImpresora_AvisoEnLaFacturaYNoLanza()
         {
-            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(USUARIO_ARIADNA, IMPRESORA_ALFREDO);
             A.CallTo(() => impresora.Imprimir(A<byte[]>._, A<string>._, A<int>._, A<TipoBandejaImpresion>._)).Throws(new Exception("Sin papel."));
             CrearFacturaResponseDTO factura = Factura();
 
-            await Detalle(GestorFacturasConPdf(), new CabPedidoVta { Empresa = "1", Ruta = "FW", ComentarioPicking = "Factura en papel" }, activo: true).Completar(factura, USUARIO);
+            await Detalle(GestorFacturasConPdf(), new CabPedidoVta { Empresa = "1", Ruta = "FW", ComentarioPicking = "Factura en papel" }, activo: true).Completar(factura, USUARIO_ARIADNA);
 
             Assert.AreEqual("No se ha podido imprimir la factura NV2617700 en «HP Administración Alfredo»: Sin papel. Imprímalo desde Nesto.", factura.Avisos.Single());
             Assert.IsNull(factura.DatosImpresion.ImpresoEnServidor);
@@ -437,7 +459,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             A.CallTo(() => gestorFacturas.LeerFactura(A<string>._, A<string>._)).Throws(new Exception("no existe"));
             CrearFacturaResponseDTO factura = Factura();
 
-            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "FW", ComentarioPicking = "Factura física" }, activo: true).Completar(factura, USUARIO);
+            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "FW", ComentarioPicking = "Factura física" }, activo: true).Completar(factura, USUARIO_ARIADNA);
 
             Assert.IsNull(factura.DatosImpresion);
             Assert.IsTrue(factura.Avisos.Single().Contains("no se ha podido generar el documento"));
