@@ -17,8 +17,9 @@ namespace NestoAPI.Infraestructure.Agencias
     /// <list type="number">
     /// <item>Grabar el envío desde el pedido (slice 2, <see cref="IServicioEnvioDesdePedido"/>) con los bultos de la entrega
     /// en el packing (cajas distintas). Si ya hay un envío en curso del pedido (un intento anterior), no se graba otro.</item>
-    /// <item>Registrarlo en la agencia (/Tramitar) si su flujo es «registrar al imprimir» (CTT, Innovatrans) y aún no tiene
-    /// albarán.</item>
+    /// <item>Registrarlo en la agencia (/Tramitar) si su flujo es «registrar al imprimir» (CTT, Innovatrans y, desde
+    /// NestoAPI#803, el reparto propio: albarán RP{envío}, etiquetas de bulto RP{envío}-{N} y Tramitado en el acto) y aún no
+    /// tiene albarán.</item>
     /// <item>Imprimir la etiqueta en el servidor (/ImprimirEtiqueta, slice 4), en la impresora pedida o en la del usuario.</item>
     /// <item>Facturar el pedido por el camino de rutas (#592) si el usuario tiene «FacturarAlImprimirEtiqueta».</item>
     /// </list>
@@ -154,7 +155,10 @@ namespace NestoAPI.Infraestructure.Agencias
     /// </summary>
     public interface IPasosEtiquetaPacking : IDisposable
     {
-        /// <summary>El último envío EN CURSO (Estado 0) del pedido, como el «envío actual» de Agencias; null si no hay.</summary>
+        /// <summary>
+        /// El último envío EN CURSO (Estado 0) del pedido, como el «envío actual» de Agencias; null si no hay. NestoAPI#803: o
+        /// el del reparto propio de hoy ya registrado (Tramitado con su albarán RP), que se reimprime.
+        /// </summary>
         Task<EnviosAgencia> LeerEnvioEnCurso(string empresa, int pedido);
         /// <summary>Las cajas de la entrega en el packing; null si el pedido no tiene packing ni bultos.</summary>
         Task<EntregaParaEtiqueta> LeerEntrega(string empresa, int pedido);

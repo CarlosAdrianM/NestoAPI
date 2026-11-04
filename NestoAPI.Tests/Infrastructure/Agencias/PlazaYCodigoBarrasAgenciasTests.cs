@@ -41,6 +41,26 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_CANTERAS), typeof(PlazaYCodigoBarrasFija));
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_INNOVATRANS), typeof(PlazaYCodigoBarrasFija));
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_CTT), typeof(PlazaYCodigoBarrasFija));
+            Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_REPARTO_PROPIO), typeof(PlazaYCodigoBarrasFija));
+        }
+
+        [TestMethod]
+        public async Task RepartoPropio_Soportada_PlazaRPYSinCodigoComoAgenciaRepartoPropioDeNesto()
+        {
+            // NestoAPI#803: el packing de Ariadna (F8) daba «La agencia 14 no se puede insertar desde el servidor» (pedido 929779,
+            // ruta AT). Plaza como AgenciaRepartoPropio.vb («RP», «Reparto propio»); el albarán RP{envío} lo da /Tramitar.
+            Assert.IsTrue(registro.Soporta(Constantes.Agencias.AGENCIA_REPARTO_PROPIO));
+            IPlazaYCodigoBarrasAgencia agencia = registro.Para(Constantes.Agencias.AGENCIA_REPARTO_PROPIO);
+
+            PlazaAgencia plaza = await agencia.CalcularPlazaAsync("28110", 34);
+
+            Assert.AreEqual("RP", plaza.Nemonico);
+            Assert.AreEqual("Reparto propio", plaza.Nombre);
+            Assert.AreEqual(string.Empty, plaza.Telefono);
+            Assert.AreEqual(string.Empty, plaza.Email);
+            Assert.IsFalse(agencia.PlazaConsultaLaAgencia);
+            Assert.AreEqual(string.Empty, agencia.CalcularCodigoBarras(Envio(250468), null), "no hace falta prefijo: el código lo da /Tramitar");
+            A.CallTo(() => clienteGls.EnviarAsync(A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -186,7 +206,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             {
                 { Constantes.Agencias.AGENCIA_CANTERAS, ("CN", "Canteras") },
                 { Constantes.Agencias.AGENCIA_CTT, ("CT", "CTT") },
-                { Constantes.Agencias.AGENCIA_INNOVATRANS, ("IN", "Innovatrans") }
+                { Constantes.Agencias.AGENCIA_INNOVATRANS, ("IN", "Innovatrans") },
+                { Constantes.Agencias.AGENCIA_REPARTO_PROPIO, ("RP", "Reparto propio") }
             };
             foreach (var esperada in esperadas)
             {

@@ -176,5 +176,33 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => preparacion.LeerBultos("1", 926940)).Returns(new List<BultoAlmacenDTO> { new BultoAlmacenDTO { Bulto = 1, TieneFoto = true, RutaBlob = "a" } });
             Assert.AreEqual(1, (await pasos.LeerEntrega("1", 926940)).Bultos);
         }
+
+        [TestMethod]
+        public void EnvioDelIntentoAnterior_RepartoPropioDeHoyYaRegistrado_SeReimprimeEnVezDeAmpliar()
+        {
+            // NestoAPI#803: Tramitar deja el envío de la 14 Tramitado en el acto; si la impresora falló, repetir la etiqueta
+            // tiene que encontrarlo (y no parecer una ampliación).
+            var hoy = new System.DateTime(2026, 11, 4);
+            int propio = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            var registrado = new EnviosAgencia { Numero = 250500, Agencia = propio, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Fecha = hoy, CodigoBarras = "RP250500" };
+
+            Assert.AreSame(registrado, PasosEtiquetaPackingApi.EnvioDelIntentoAnterior(new[] { registrado }, hoy));
+        }
+
+        [TestMethod]
+        public void EnvioDelIntentoAnterior_SoloEnCursoODelRepartoPropioDeHoyConAlbaran()
+        {
+            var hoy = new System.DateTime(2026, 11, 4);
+            int propio = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            var deAyer = new EnviosAgencia { Numero = 250400, Agencia = propio, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Fecha = hoy.AddDays(-1), CodigoBarras = "RP250400" };
+            var cttTramitado = new EnviosAgencia { Numero = 250401, Agencia = Constantes.Agencias.AGENCIA_CTT, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Fecha = hoy, CodigoBarras = "0082800082809772536836" };
+            var sinAlbaran = new EnviosAgencia { Numero = 250402, Agencia = propio, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Fecha = hoy, CodigoBarras = " " };
+            var entregado = new EnviosAgencia { Numero = 250403, Agencia = propio, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Fecha = hoy, CodigoBarras = "RP250403" };
+
+            Assert.IsNull(PasosEtiquetaPackingApi.EnvioDelIntentoAnterior(new[] { deAyer, cttTramitado, sinAlbaran, entregado }, hoy));
+
+            var enCurso = new EnviosAgencia { Numero = 250300, Agencia = Constantes.Agencias.AGENCIA_CTT, Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO, Fecha = hoy.AddDays(-3) };
+            Assert.AreSame(enCurso, PasosEtiquetaPackingApi.EnvioDelIntentoAnterior(new[] { deAyer, enCurso, entregado }, hoy), "el en curso, como siempre");
+        }
     }
 }

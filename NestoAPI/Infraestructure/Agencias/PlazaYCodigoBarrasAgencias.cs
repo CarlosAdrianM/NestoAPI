@@ -96,8 +96,9 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
-        /// Las agencias de hoy: GLS (1 y la de la empresa espejo, 5), Canteras (11), Innovatrans (12) y CTT (13). Correos
-        /// Express (8) se quitó el 20/10/26 (ya no se usa): es una agencia no soportada más.
+        /// Las agencias de hoy: GLS (1 y la de la empresa espejo, 5), Canteras (11), Innovatrans (12), CTT (13) y el reparto
+        /// propio (14, NestoAPI#803: el packing de Ariadna crea su envío con F8). Correos Express (8) se quitó el 20/10/26 (ya
+        /// no se usa): es una agencia no soportada más.
         /// </summary>
         /// <param name="clienteGls">El transporte de GetPlazaXCP (null = el real, contra asmred).</param>
         /// <param name="registrar">Dónde se registran los fallos de la plaza de GLS (null = ELMAH).</param>
@@ -107,7 +108,8 @@ namespace NestoAPI.Infraestructure.Agencias
                 new PlazaYCodigoBarrasGls(clienteGls ?? new ClientePlazaGls(), registrar),
                 PlazaYCodigoBarrasFija.Canteras(),
                 PlazaYCodigoBarrasFija.Innovatrans(),
-                PlazaYCodigoBarrasFija.Ctt()
+                PlazaYCodigoBarrasFija.Ctt(),
+                PlazaYCodigoBarrasFija.RepartoPropio()
             });
 
         public bool Soporta(int agencia) => _porAgencia.ContainsKey(agencia);
@@ -127,6 +129,9 @@ namespace NestoAPI.Infraestructure.Agencias
     /// NestoAPI#595 (slice 2, 20/10/26): agencias con plaza fija y sin código de barras en local: Canteras (AgenciaCanteras.vb:
     /// «CN», el nº de envío llega por correo) y las gestionadas por la API (AgenciaGestionadaPorApi.vb l.221-231: CTT «CT»,
     /// Innovatrans «IN», con el nombre de la agencia; el albarán lo da /Tramitar).
+    /// <para>NestoAPI#803: también el reparto propio (AgenciaRepartoPropio.vb, que hereda de AgenciaGestionadaPorApi: «RP» y
+    /// «Reparto propio»). Su albarán «RP{envío}» y las etiquetas de bulto «RP{envío}-{N}» los da /Tramitar
+    /// (AgenciaRemotaRepartoPropio), que además lo deja Tramitado para que el repartidor lo vea en Ariadna.</para>
     /// </summary>
     public class PlazaYCodigoBarrasFija : IPlazaYCodigoBarrasAgencia
     {
@@ -141,6 +146,7 @@ namespace NestoAPI.Infraestructure.Agencias
         public static PlazaYCodigoBarrasFija Canteras() => new PlazaYCodigoBarrasFija(Constantes.Agencias.AGENCIA_CANTERAS, "CN", "Canteras");
         public static PlazaYCodigoBarrasFija Innovatrans() => new PlazaYCodigoBarrasFija(Constantes.Agencias.AGENCIA_INNOVATRANS, "IN", "Innovatrans");
         public static PlazaYCodigoBarrasFija Ctt() => new PlazaYCodigoBarrasFija(Constantes.Agencias.AGENCIA_CTT, "CT", "CTT");
+        public static PlazaYCodigoBarrasFija RepartoPropio() => new PlazaYCodigoBarrasFija(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, "RP", "Reparto propio");
 
         public IReadOnlyCollection<int> Agencias { get; }
 
