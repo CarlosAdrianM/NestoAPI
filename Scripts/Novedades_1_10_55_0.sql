@@ -13,7 +13,8 @@
          (tabla Festivos con 2024-2026 como el código; el bloque 2027 va comentado «REVISAR» con la fuente BOE: decide Dirección),
          Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
          el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado; Alfredo espera las facturas físicas desde Ariadna:
-         sugerencia 1017) e Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos).
+         sugerencia 1017), Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos)
+         e Issue814_ReposicionesTraspasos_LaLleva.sql (columna LaLleva: puntual que se lleva un compañero; necesita el de Issue581).
          YA HECHO el 04/11 a las 14:00 por la API: ParámetrosUsuario FacturarAlImprimirEtiqueta = 1 para «(defecto)», Alfredo, Andre,
          Pedro y Santiago (la etiqueta desde Ariadna albarana y factura; antes estaba a 0 y no facturaba: sugerencia 1017).
       2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.55.0 → flujos de Ariadna 2.29.
@@ -21,8 +22,8 @@
          sugerencias y contesta en cada hilo). Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.55.0 solo con el OK de Carlos.
       4) Rol «Tiendas» en Identity para Paloma, Reina, Pilar y LauraC (Ariadna_RolAlmacen.ps1 -Rol Tiendas …), para que impriman
          etiquetas desde Ariadna (sugerencia 1009).
-      NO duplicar: las sugerencias 969, 970, 979, 1003, 1005, 1006, 1010 y 794 las marca Implementadas en 1.10.55.0 el OneShot
-      (la sugerencia ES la novedad); aquí no llevan fila.
+      NO duplicar: las sugerencias 969, 970, 979, 1003, 1005, 1006, 1010, 794, 1020 (#814, puntual con compañero) y 1013 (#815,
+      reembolso diferido no retiene) las marca Implementadas en 1.10.55.0 el OneShot (la sugerencia ES la novedad); aquí no llevan fila.
 
     Ejecutar en SSMS contra NV como sa. Idempotente (compara por versión y título). Los literales van con N'...'.
 */

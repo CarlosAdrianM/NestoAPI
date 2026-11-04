@@ -117,3 +117,45 @@ Implementar 1004 @{
     Titulo = "Picking: Terminar ya no se bloquea por una falta de un producto que se quitó del pedido"
     Descripcion = "Si se da por falta un producto cuya línea alguien ha sacado del pedido después de crear el picking, Terminar ya no da «no hay tanto que sacar»: la falta se ignora y el picking se cierra. Fue lo del picking 99998. Lo avisó Alfredo."
 }
+
+# ---------------- Añadidas por la tarde (04/11/26): sugerencias 1012-1020 ----------------
+Implementar 1020 @{
+    Version = $VersionNesto; Categoria = "Mejorado"; Perfiles = "Tiendas,Almacén,Dirección"
+    Titulo = "Enviar reposición: la puntual que se lleva un compañero, también después de la recogida"
+    Descripcion = "Cuando un compañero pasa por la tienda y va luego a Algete (Manuel, Lidia, Mª José…), se le puede dar una reposición puntual aunque Miguel ya se haya llevado la de hoy. Al mandarla, Nesto pregunta «¿Quién la lleva?»: el repartidor (como siempre) o un compañero, con su nombre. Con compañero queda entregada en el acto («Entregada a Manuel a las 13:10»), sin leer bultos ni pasar por la furgoneta, y en Algete la reciben como siempre. Lo pidió Paloma."
+}
+Contestar 1020 "@Paloma, ya está en Nesto 1.10.55.0: la puntual se puede mandar aunque Miguel ya se haya llevado la de hoy; al enviarla, elija «Un compañero» y escriba su nombre, y queda «Entregada a Manuel a las 13:10» sin leer bultos. En Algete la reciben como siempre."
+
+Implementar 1013 @{
+    Version = $VersionNesto; Categoria = "Corregido"; Perfiles = "Administración,Tiendas,Almacén"
+    Titulo = "Picking: una factura contra reembolso que aún no se ha entregado no retiene los pedidos prepago del cliente"
+    Descripcion = "Desde que el reembolso se contabiliza al entregar, la factura contra reembolso figuraba pendiente (y vencida) mientras la agencia la llevaba, y el picking la contaba como deuda: un pedido prepago del mismo cliente se quedaba retenido aunque tuviera su prepago (el 929888 del 31517). Ya no cuenta como deuda hasta que se entregue. Lo avisó Laura."
+}
+Contestar 1013 "@Laura, ya está publicado: una factura contra reembolso cuyo pedido aún no se ha entregado ya no cuenta como deuda y no retiene los pedidos prepago del cliente. El 929888 cogerá picking en la primera pasada."
+
+Implementar 1012 @{
+    Version = $VersionAriadna; Categoria = "Mejorado"; Perfiles = "Almacén,Tiendas"
+    Titulo = "Recibir: «No lleva etiqueta» solo para los productos sin código de barras"
+    Descripcion = "Si el producto tiene código de barras en la ficha, al elegir «1 No lleva etiqueta» Ariadna ya no avisa a Algete: le dice «el 14774 tiene código de barras 8436042870615: léalo del envase». Si el envase lleva otro código o no se lee, elija «2» o «3»: ese aviso va a Compras, que es quien tiene que arreglar el código. Lo avisó Alfredo."
+}
+Contestar 1012 "@Alfredo, @Reina, ya está en Ariadna 2.29 (llega sola por Play Store): con un producto que tiene código de barras en la ficha, «1 No lleva etiqueta» ya no avisa a Algete, sino que pide leer el código del envase; «2» y «3» avisan a Compras."
+
+Implementar 1018 @{
+    Version = $VersionAriadna; Categoria = "Mejorado"; Perfiles = "Almacén"
+    Titulo = "Packing: el 3+1 se mete como 4 y la tarjeta se vacía al terminar"
+    Descripcion = "Las líneas del mismo producto (las de pago y la de regalo de una oferta) salen como una sola tarjeta («Quedan: 4/4») y lo que mete se reparte entre ellas; y al meter la última unidad la tarjeta grande se vacía y queda solo «Todo dentro. Cierre la caja». Lo pidió Santiago."
+}
+Contestar 1018 "@Santiago, ya está en Ariadna 2.29: el 3+1 sale como una sola tarjeta de 4 y lo que mete se reparte entre las dos líneas."
+
+Implementar 1015 @{
+    Version = $VersionAriadna; Categoria = "Mejorado"; Perfiles = "Almacén"
+    Titulo = "Packing: la tarjeta se vacía al meter la última unidad"
+    Descripcion = "Al meter la última unidad de la entrega, la tarjeta grande del producto se vacía y queda solo «Todo dentro. Cierre la caja (Intro)» con la lista de líneas hechas debajo. Lo pidió Santiago."
+}
+Contestar 1015 "@Santiago, ya está en Ariadna 2.29: al meter la última unidad la tarjeta se vacía y queda solo «Todo dentro. Cierre la caja»."
+
+Implementar 1017 @{
+    Version = $VersionAriadna; Categoria = "Corregido"; Perfiles = "Almacén"
+    Titulo = "Packing: la etiqueta de agencia vuelve a facturar el pedido"
+    Descripcion = "Desde el 3 de noviembre, al sacar la etiqueta desde Ariadna el pedido no se albaranaba ni se facturaba (el parámetro «Facturar al imprimir etiqueta» estaba a 0 para los usuarios de la PDA). Desde el 4 de noviembre a las 14:00 vuelve a facturar igual que la casilla de Agencias en Nesto. Lo avisó Alfredo."
+}

@@ -5,8 +5,8 @@
     #812 (picking entre dos PDA), Ariadna#90 API (familia y tamaño en Enviar reposición).
     Necesita la API del 04/11 (master tras 620ff191).
     Ejecutar en SSMS contra NV como sa cuando la 2.29 llegue a la prueba cerrada. Idempotente (compara por Ámbito + Título).
-    NO duplicar: las sugerencias 958, 965, 968, 1004, 1007 y 1008 las marca Implementadas en 2.29 el OneShot (la sugerencia ES
-    la novedad); aquí no llevan fila.
+    NO duplicar: las sugerencias 958, 965, 968, 1004, 1007, 1008, 1012 (Ariadna#92), 1015 y 1018 (Ariadna#93) y 1017 (la etiqueta
+    vuelve a facturar) las marca Implementadas en 2.29 el OneShot (la sugerencia ES la novedad); aquí no llevan fila.
 */
 SET NOCOUNT ON;
 USE NV;
@@ -32,9 +32,6 @@ INSERT INTO @n VALUES
  N'Almacén,Tiendas'),
 (5, N'Nuevo', N'Packing: la etiqueta de un pedido de nuestra ruta',
  N'En Empaquetar, F8 «Etiqueta de agencia» también vale para los pedidos que van por reparto propio: crea el envío y saca las etiquetas de bulto RP, igual que las de GLS o CTT. Antes decía «la agencia 14 no se puede insertar desde el servidor».',
- N'Almacén'),
-(8, N'Corregido', N'Packing: la etiqueta de agencia vuelve a facturar el pedido',
- N'Desde el 3 de noviembre, al sacar la etiqueta desde Ariadna el pedido no se albaranaba ni se facturaba (el parámetro «Facturar al imprimir etiqueta» estaba a 0 para los usuarios de la PDA). Desde el 4 de noviembre a las 14:00 vuelve a facturar igual que la casilla de Agencias en Nesto. Lo avisó Alfredo.',
  N'Almacén'),
 (9, N'Nuevo', N'Reparto: paradas de solo cobro (NC)',
  N'Las notas de cobro que crean desde Nesto salen en el reparto como «COBRO · NC…» con el importe y los efectos pendientes, sin bultos: «Cobrar» abre el cobro con el efectivo y el importe ya puestos (F6 tarjeta si se admite, F7 autorización sin cobro) y el cliente firma «Confirmo que he pagado…». Leer un NC abre su parada; no se carga en la furgoneta.',
