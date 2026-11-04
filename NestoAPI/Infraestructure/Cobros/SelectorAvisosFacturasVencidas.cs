@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.Remesas;
+﻿using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.Remesas;
 using NestoAPI.Models;
 using NestoAPI.Models.Cobros;
 using System;
@@ -26,7 +27,9 @@ namespace NestoAPI.Infraestructure.Cobros
     /// abonos pendientes de liquidar (puede que ya hayan pagado), los que la agencia aún no ha
     /// entregado (el MISMO gating que la remesa, <see cref="GatingEntregaFacturas"/>), los de clientes
     /// que han pagado algo hace poco (NestoAPI#549: quien acaba de pagar una parte está pagando; que
-    /// no le llegue la reclamación del resto al día siguiente) y los que no tienen correo al que escribir.
+    /// no le llegue la reclamación del resto al día siguiente), los contra reembolso cuyo pedido la agencia
+    /// aún no ha entregado (NestoAPI#815, la regla común <see cref="IFacturasConReembolsoPendienteDeEntrega"/>)
+    /// y los que no tienen correo al que escribir.
     ///
     /// Solo lee: no manda nada ni registra nada. NestoAPI#544 (corte 2): además consulta la memoria
     /// (<see cref="IAlmacenAvisosFacturasVencidas"/>) y aplica la cadencia
@@ -59,21 +62,28 @@ namespace NestoAPI.Infraestructure.Cobros
         public const string MOTIVO_SIN_CORREO = "No se avisa: la ficha no tiene correo de cobros ni de facturación.";
         public const string MOTIVO_CLIENTE_CON_NEGATIVOS = "No se avisa: el cliente tiene cobros o abonos pendientes de liquidar (puede que ya haya pagado).";
         public const string MOTIVO_PAGO_RECIENTE_PREFIJO = "No se avisa: pago reciente el ";
+        public const string MOTIVO_REEMBOLSO_PENDIENTE_PREFIJO = "No se avisa: la factura es contra reembolso y la agencia aún no ha entregado el pedido ";
 
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
         private readonly GatingEntregaFacturas gatingEntrega;
         private readonly IAlmacenAvisosFacturasVencidas almacen;
+        private readonly IFacturasConReembolsoPendienteDeEntrega reembolsosPendientes;
 
         public SelectorAvisosFacturasVencidas(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null,
-            Func<int[]> leerAgenciasConSeguimiento = null, IAlmacenAvisosFacturasVencidas almacen = null)
+            Func<int[]> leerAgenciasConSeguimiento = null, IAlmacenAvisosFacturasVencidas almacen = null,
+            IFacturasConReembolsoPendienteDeEntrega reembolsosPendientes = null)
         {
             this.db = db;
             this.leerEstadosQueBloquean = leerEstadosQueBloquean
                 ?? (e => SelectorEfectosCobrables.LeerEstadosQueBloqueanBd(db, e));
             gatingEntrega = new GatingEntregaFacturas(db, leerAgenciasConSeguimiento);
             this.almacen = almacen ?? new AlmacenAvisosFacturasVencidasSql(db);
+            this.reembolsosPendientes = reembolsosPendientes ?? new FacturasConReembolsoPendienteDeEntrega(db);
         }
+
+        /// <summary>NestoAPI#815: «No se avisa: la factura es contra reembolso y la agencia aún no ha entregado el pedido 929773.»</summary>
+        public static string MotivoReembolsoPendiente(int pedido) => MOTIVO_REEMBOLSO_PENDIENTE_PREFIJO + pedido + ".";
 
         /// <summary>
         /// Todos los efectos que cumplen el criterio, con <c>Motivo</c> null si se avisarían.
@@ -138,6 +148,20 @@ namespace NestoAPI.Infraestructure.Cobros
             Dictionary<string, short> peorEstadoPorFactura = await gatingEntrega
                 .PeorEstadoSinEntregarPorFactura(empresa, documentos)
                 .ConfigureAwait(false);
+
+            // NestoAPI#815: la factura contra reembolso cuyo pedido la agencia aún no ha entregado no es deuda vencida
+            // (el reembolso diferido de #742 se contabiliza al entregar). Si la lectura falla, ELMAH y se sigue sin la regla.
+            IDictionary<string, int> pedidoConReembolsoPendientePorFactura;
+            try
+            {
+                pedidoConReembolsoPendientePorFactura = reembolsosPendientes.Leer(documentos) ?? new Dictionary<string, int>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception("[Aviso facturas vencidas #815] No se han podido leer las facturas con reembolso " +
+                    "pendiente de entrega; hoy no se descartan: " + ex.Message, ex));
+                pedidoConReembolsoPendientePorFactura = new Dictionary<string, int>();
+            }
 
             List<string> clientes = efectos.Select(e => e.Número?.Trim()).Distinct().ToList();
             var fichas = await db.Clientes
@@ -217,6 +241,10 @@ namespace NestoAPI.Infraestructure.Cobros
                 if (!tieneFactura)
                 {
                     motivo = MOTIVO_SIN_FACTURA;
+                }
+                else if (pedidoConReembolsoPendientePorFactura.TryGetValue(documento, out int pedidoReembolso))
+                {
+                    motivo = MotivoReembolsoPendiente(pedidoReembolso);
                 }
                 else if (!string.IsNullOrEmpty(estadoEfecto) && estadosBloqueados.Contains(estadoEfecto))
                 {

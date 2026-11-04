@@ -838,5 +838,41 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(0, enviados.Count);
         }
+    
+        [TestMethod]
+        public async Task Procesar_Activo_815_LaFacturaContraReembolsoSinEntregarNoSeReclamaNiCuentaEnElImporte()
+        {
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, "Activo");
+
+            await Ejecutar(new List<AvisoFacturaVencidaDTO>
+            {
+                Aviso(factura: "NV2612000", nOrden: 1, importe: 100m),
+                Aviso(factura: "NV2617724", nOrden: 2, importe: 555.55m,
+                    motivo: SelectorAvisosFacturasVencidas.MotivoReembolsoPendiente(929773))
+            });
+
+            MailMessage ana = enviados.Single(m => m.To.Any(t => t.Address == "cobros@ana.es"));
+            Assert.AreEqual("Factura NV2612000 pendiente de pago", ana.Subject);
+            Assert.IsFalse(ana.Body.Contains("NV2617724"), "La factura contra reembolso no aparece en el aviso");
+            Assert.IsFalse(ana.Body.Contains("555,55"), "Ni cuenta en el importe");
+            CollectionAssert.AreEquivalent(new[] { "NV2612000" }, pdfsPedidos);
+            Assert.IsFalse(registrados.Any(r => r.NumOrden == 2), "No se registra como avisada");
+        }
+
+        [TestMethod]
+        public async Task Procesar_EnSombra_815_ElReembolsoPendienteSaleComoMotivoEnElResumen()
+        {
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, "Sombra");
+
+            await Ejecutar(new List<AvisoFacturaVencidaDTO>
+            {
+                Aviso(factura: "NV2617724", cliente: "31517", motivo: SelectorAvisosFacturasVencidas.MotivoReembolsoPendiente(929773))
+            });
+
+            string body = enviados.Single().Body;
+            StringAssert.Contains(body, "NV2617724");
+            StringAssert.Contains(body, "contra reembolso");
+            StringAssert.Contains(body, "929773");
+        }
     }
 }

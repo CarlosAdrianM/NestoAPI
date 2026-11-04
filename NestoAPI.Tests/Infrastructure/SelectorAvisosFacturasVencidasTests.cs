@@ -1,6 +1,7 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Cobros;
 using NestoAPI.Models;
 using NestoAPI.Models.Cobros;
@@ -36,6 +37,8 @@ namespace NestoAPI.Tests.Infrastructure
         private IAlmacenAvisosFacturasVencidas almacen;
         private Dictionary<int, AvisoFacturaVencidaRegistrado> memoria;
         private SelectorAvisosFacturasVencidas selector;
+        private IFacturasConReembolsoPendienteDeEntrega reembolsosPendientes;
+        private Dictionary<string, int> pedidoConReembolsoPendiente;
 
         [TestInitialize]
         public void Setup()
@@ -80,8 +83,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => almacen.UltimoAvisoPorEfecto("1", A<IEnumerable<int>>._))
                 .ReturnsLazily((string e, IEnumerable<int> ordenes) => Task.FromResult(
                     memoria.Where(m => ordenes.Contains(m.Key)).ToDictionary(m => m.Key, m => m.Value)));
+            // NestoAPI#815: la regla común de los reembolsos pendientes de entrega va por su interfaz; ninguna por defecto
+            reembolsosPendientes = A.Fake<IFacturasConReembolsoPendienteDeEntrega>();
+            pedidoConReembolsoPendiente = new Dictionary<string, int>();
+            A.CallTo(() => reembolsosPendientes.Leer(A<IEnumerable<string>>._))
+                .ReturnsLazily((IEnumerable<string> facturas) => (IDictionary<string, int>)pedidoConReembolsoPendiente
+                    .Where(p => facturas.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value));
             selector = new SelectorAvisosFacturasVencidas(db, e => Task.FromResult(estadosQueBloquean),
-                () => agenciasConSeguimiento.ToArray(), almacen);
+                () => agenciasConSeguimiento.ToArray(), almacen, reembolsosPendientes);
         }
 
         private static DbSet<T> Crear<T>() where T : class
@@ -645,6 +654,68 @@ namespace NestoAPI.Tests.Infrastructure
             });
 
             Assert.IsTrue((await selector.Candidatos("1", 5, HOY_35544)).Single().SeAvisaria);
+        }
+    
+        [TestMethod]
+        public async Task Candidatos_815_FacturaContraReembolsoQueLaAgenciaNoHaEntregado_NoSeReclamaYDiceElPedido()
+        {
+            // NestoAPI#815 (cliente 31517, NV2617724 del pedido 929773): con el reembolso diferido (#742) la factura figura
+            // vencida hasta que la agencia entrega y se contabiliza el reembolso; no se le reclama al cliente
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612000"),
+                Efecto(id: 2, documento: "NV2612001", pendiente: 99.90m)
+            });
+            pedidoConReembolsoPendiente["NV2612001"] = 929773;
+
+            List<AvisoFacturaVencidaDTO> candidatos = await selector.Candidatos("1", 5, HOY);
+
+            Assert.IsTrue(candidatos.Single(c => c.NOrden == 1).SeAvisaria, "La otra factura del cliente se sigue avisando");
+            AvisoFacturaVencidaDTO reembolso = candidatos.Single(c => c.NOrden == 2);
+            Assert.IsFalse(reembolso.SeAvisaria);
+            Assert.AreEqual("No se avisa: la factura es contra reembolso y la agencia aún no ha entregado el pedido 929773.", reembolso.Motivo);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_815_UsaLaReglaComun_EnvioConReembolsoSinContabilizarDelPedidoDeLaFactura()
+        {
+            // La misma regla que el picking y PlazosPagoController: registro #742 → envío → pedido → factura
+            IRegistroReembolsosAlEntregar registro = A.Fake<IRegistroReembolsosAlEntregar>();
+            A.CallTo(() => registro.LeerPendientesAsync()).Returns(Task.FromResult(new HashSet<int> { 7 }));
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612001"),
+                Efecto(id: 2, documento: "NV2612002")
+            });
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 929773, Nº_Factura = "NV2612001" },
+                new LinPedidoVta { Empresa = "1", Número = 929774, Nº_Factura = "NV2612002" }
+            });
+            // Entregados los dos (el gating de entrega no frena): solo el 7 tiene el reembolso aún sin contabilizar
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
+            {
+                new EnviosAgencia { Numero = 7, Empresa = "1", Pedido = 929773, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Fecha = HOY.AddDays(-12) },
+                new EnviosAgencia { Numero = 8, Empresa = "1", Pedido = 929774, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Fecha = HOY.AddDays(-12) }
+            });
+            SelectorAvisosFacturasVencidas conReglaReal = new SelectorAvisosFacturasVencidas(db, e => Task.FromResult(estadosQueBloquean),
+                () => agenciasConSeguimiento.ToArray(), almacen, new FacturasConReembolsoPendienteDeEntrega(db, registro));
+
+            List<AvisoFacturaVencidaDTO> candidatos = await conReglaReal.Candidatos("1", 5, HOY);
+
+            Assert.AreEqual(SelectorAvisosFacturasVencidas.MotivoReembolsoPendiente(929773), candidatos.Single(c => c.NOrden == 1).Motivo);
+            Assert.IsTrue(candidatos.Single(c => c.NOrden == 2).SeAvisaria, candidatos.Single(c => c.NOrden == 2).Motivo);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_815_SiFallaLaLecturaDeLosReembolsos_NoSeCaeYSeAvisaComoAntes()
+        {
+            A.CallTo(() => reembolsosPendientes.Leer(A<IEnumerable<string>>._)).Throws(new Exception("Tabla bloqueada"));
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { Efecto() });
+
+            List<AvisoFacturaVencidaDTO> candidatos = await selector.Candidatos("1", 5, HOY);
+
+            Assert.IsTrue(candidatos.Single().SeAvisaria, candidatos.Single().Motivo);
         }
     }
 }
