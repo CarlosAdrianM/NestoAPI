@@ -87,6 +87,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// que mira el producto suma las filas, así que cuadra igual que antes. Null en las de antes de #640 o en las pruebas.
         /// </summary>
         public string Usuario { get; set; }
+        /// <summary>
+        /// NestoAPI#812: cuánto tenía la parada desde la que se leyó (PreparacionEscaneos.TotalParada, NestoAPI#713), para
+        /// apuntar lo leído a esa parada y no a la primera del producto. Las lecturas vienen también por este valor. Null
+        /// si no se sabe (Ariadna anterior, sin las columnas o en las pruebas): va en el orden del recorrido, como siempre.
+        /// </summary>
+        public int? TotalParada { get; set; }
     }
 
     /// <summary>
@@ -234,13 +240,26 @@ WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.TipoLinea = 
 GROUP BY l.Picking
 ORDER BY l.Picking DESC";
 
-        // NestoAPI#640: por producto Y por usuario, para saber quién ha leído cada parada (ServicioPreparacionAlmacen.RepartirLectores).
+        // NestoAPI#640: por producto Y por usuario, para saber quién ha leído cada parada (ServicioPreparacionAlmacen.RepartirLoResuelto).
+        // NestoAPI#812: y por la parada desde la que se leyó (TotalParada), para apuntarlo a esa parada.
         // Todo lo demás suma las filas del producto, así que el resultado es el mismo que agrupando solo por producto.
+        // Sin las columnas de la parada (NestoAPI#713) se usan las de _SIN_PARADA, con TotalParada a NULL.
         internal const string SQL_LECTURAS_DEL_PICKING = @"
 SELECT RTRIM(e.Producto) AS Producto,
        CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
        CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas,
-       RTRIM(e.Usuario) AS Usuario
+       RTRIM(e.Usuario) AS Usuario,
+       e.TotalParada AS TotalParada
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PICK'
+GROUP BY e.Producto, e.Usuario, e.TotalParada";
+
+        internal const string SQL_LECTURAS_DEL_PICKING_SIN_PARADA = @"
+SELECT RTRIM(e.Producto) AS Producto,
+       CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas,
+       RTRIM(e.Usuario) AS Usuario,
+       CAST(NULL AS int) AS TotalParada
 FROM PreparacionEscaneos e
 WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PICK'
 GROUP BY e.Producto, e.Usuario";
@@ -249,7 +268,18 @@ GROUP BY e.Producto, e.Usuario";
 SELECT RTRIM(e.Producto) AS Producto,
        CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
        CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas,
-       RTRIM(e.Usuario) AS Usuario
+       RTRIM(e.Usuario) AS Usuario,
+       e.TotalParada AS TotalParada
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.TipoOrigen = @p1 AND e.NumeroOrigen = @p2 AND e.Fase = 'PICK'
+GROUP BY e.Producto, e.Usuario, e.TotalParada";
+
+        internal const string SQL_LECTURAS_DE_SALIDA_SIN_PARADA = @"
+SELECT RTRIM(e.Producto) AS Producto,
+       CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas,
+       RTRIM(e.Usuario) AS Usuario,
+       CAST(NULL AS int) AS TotalParada
 FROM PreparacionEscaneos e
 WHERE e.Empresa = @p0 AND e.TipoOrigen = @p1 AND e.NumeroOrigen = @p2 AND e.Fase = 'PICK'
 GROUP BY e.Producto, e.Usuario";
@@ -754,14 +784,22 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
                 .FirstOrDefault();
         }
 
-        public Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking)
+        public async Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking)
         {
-            return baseDeDatos.SqlQuery<LecturaPickingAlmacen>(SQL_LECTURAS_DEL_PICKING, empresa, picking).ToListAsync();
+            string sql = await HayColumnasParadaEnBaseDeDatos().ConfigureAwait(false) ? SQL_LECTURAS_DEL_PICKING : SQL_LECTURAS_DEL_PICKING_SIN_PARADA;
+            return await baseDeDatos.SqlQuery<LecturaPickingAlmacen>(sql, empresa, picking).ToListAsync().ConfigureAwait(false);
         }
 
-        public Task<List<LecturaPickingAlmacen>> LeerLecturasDeSalida(string empresa, string tipoOrigen, int numero)
+        public async Task<List<LecturaPickingAlmacen>> LeerLecturasDeSalida(string empresa, string tipoOrigen, int numero)
         {
-            return baseDeDatos.SqlQuery<LecturaPickingAlmacen>(SQL_LECTURAS_DE_SALIDA, empresa, tipoOrigen, numero).ToListAsync();
+            string sql = await HayColumnasParadaEnBaseDeDatos().ConfigureAwait(false) ? SQL_LECTURAS_DE_SALIDA : SQL_LECTURAS_DE_SALIDA_SIN_PARADA;
+            return await baseDeDatos.SqlQuery<LecturaPickingAlmacen>(sql, empresa, tipoOrigen, numero).ToListAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>NestoAPI#812: ¿están PendienteParada y TotalParada en esta base de datos? (la misma comprobación que al guardar).</summary>
+        private Task<bool> HayColumnasParadaEnBaseDeDatos()
+        {
+            return HayColumnasParada(() => baseDeDatos.SqlQuery<bool>(SQL_HAY_COLUMNAS_PARADA).FirstAsync());
         }
 
         public Task<List<ReposicionPorSalir>> LeerReposicionesPorSalir(string empresa, string almacen)

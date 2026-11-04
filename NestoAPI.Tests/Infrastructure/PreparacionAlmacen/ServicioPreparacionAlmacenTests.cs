@@ -998,6 +998,131 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         private static string Lectores(LineaRecogidaDTO linea)
             => string.Join(" ", linea.Lectores.Select(l => $"{l.Usuario}:{l.Leido}/{l.Faltas}"));
 
+        #region NestoAPI#812: la parada sin hueco (pendiente de ubicar) con dos PDA (picking 100001, sugerencia 1010)
+
+        private static LineaPickingAlmacenDTO ParadaSinHueco(int orden, string producto, int cantidad)
+        {
+            return new LineaPickingAlmacenDTO
+            {
+                Orden = orden, Producto = producto, Descripcion = "PRODUCTO " + producto, CodigoBarras = "84" + producto, Cantidad = cantidad
+            };
+        }
+
+        private static LecturaPickingAlmacen Leido(string producto, string usuario, int unidades, int? totalParada, int faltas = 0)
+            => new LecturaPickingAlmacen { Producto = producto, Usuario = usuario, Unidades = unidades, Faltas = faltas, TotalParada = totalParada };
+
+        [TestMethod]
+        public void MontarRecogida_LoCogidoEnLaParadaSinHueco_SeApuntaAEsaParadaYNoALaDelHueco()
+        {
+            // 29610 del picking 100001: 2 en el hueco 004/005/011 y 7 pendientes de ubicar. Pedro coge los 7 de la parada sin
+            // hueco (la parada tenía 7). Antes se apuntaban 2 al hueco (que nadie había tocado) y 5 a la sin hueco, y a las dos
+            // PDA les seguían saliendo 2 por coger en la sin hueco, que ya estaba vacía.
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "29610", 2, "004"), Parada(2, "B", 1, "005"), ParadaSinHueco(3, "29610", 7) };
+            var lecturas = new List<LecturaPickingAlmacen> { Leido("29610", "Pedro", 7, 7) };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 0, 0, 7 }, recogida.Lineas.Select(l => l.Resuelto).ToArray());
+            CollectionAssert.AreEqual(new[] { 2, 1, 0 }, recogida.Lineas.Select(l => l.Pendiente).ToArray(),
+                "La parada sin hueco ya no sale pendiente; la del hueco, sí");
+            Assert.AreEqual(1, recogida.SiguienteOrden);
+            Assert.AreEqual("Pedro:7/0", Lectores(recogida.Lineas[2]));
+            Assert.AreEqual(0, recogida.Lineas[0].Lectores.Count, "Nadie ha cogido nada del hueco");
+        }
+
+        [TestMethod]
+        public void MontarRecogida_DosPdaConHuecoYSinHueco_CadaUnaEnLaSuya()
+        {
+            // Andre coge los 7 sin hueco y Pedro los 2 del hueco: todo resuelto y cada uno en su parada (antes, por orden de
+            // usuario, los 2 del hueco se apuntaban a Andre)
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "29610", 2, "004"), ParadaSinHueco(2, "29610", 7) };
+            var lecturas = new List<LecturaPickingAlmacen> { Leido("29610", "Andre", 7, 7), Leido("29610", "Pedro", 2, 2) };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 2, 7 }, recogida.Lineas.Select(l => l.Resuelto).ToArray());
+            Assert.IsNull(recogida.SiguienteOrden);
+            Assert.IsTrue(recogida.Terminada);
+            Assert.AreEqual("Pedro:2/0", Lectores(recogida.Lineas[0]));
+            Assert.AreEqual("Andre:7/0", Lectores(recogida.Lineas[1]));
+        }
+
+        [TestMethod]
+        public void MontarRecogida_ProductoSoloSinHueco_LoDeLasDosPdaLaRecorta()
+        {
+            // 29625: solo en la parada sin hueco (sin reserva en ningún hueco). Lo de cada PDA la recorta para las dos.
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "A", 1, "001"), ParadaSinHueco(2, "29625", 9) };
+            var lecturas = new List<LecturaPickingAlmacen> { Leido("29625", "Pedro", 5, 9), Leido("29625", "Andre", 3, 4) };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            Assert.AreEqual(8, recogida.Lineas[1].Resuelto);
+            Assert.AreEqual(1, recogida.Lineas[1].Pendiente);
+            Assert.AreEqual("Andre:3/0 Pedro:5/0", Lectores(recogida.Lineas[1]),
+                "Una pista que no casa con ninguna parada (4) va en el orden del recorrido");
+            Assert.AreEqual(1, recogida.SiguienteOrden);
+        }
+
+        [TestMethod]
+        public void MontarRecogida_FaltaEnElHuecoYCogidoSinHueco_LaFaltaEsDelHueco()
+        {
+            // Andre da por falta los 2 del hueco y Pedro coge los 7 sin hueco: la falta (la que se puede deshacer) es del hueco
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "29610", 2, "004"), ParadaSinHueco(2, "29610", 7) };
+            var lecturas = new List<LecturaPickingAlmacen> { Leido("29610", "Pedro", 7, 7), Leido("29610", "Andre", 0, 2, faltas: 2) };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 2, 7 }, recogida.Lineas.Select(l => l.Resuelto).ToArray());
+            CollectionAssert.AreEqual(new[] { 2, 0 }, recogida.Lineas.Select(l => l.Faltas).ToArray());
+            Assert.AreEqual("Andre:0/2", Lectores(recogida.Lineas[0]));
+            Assert.AreEqual("Pedro:7/0", Lectores(recogida.Lineas[1]));
+            Assert.AreEqual(2, recogida.UnidadesEnFalta);
+        }
+
+        [TestMethod]
+        public void MontarRecogida_LasDosPdaEnLaMismaParada_LoQueNoCabeVaALaOtraSinPasarse()
+        {
+            // 29706: 6 en el hueco y 3 sin hueco; las dos PDA leen 3 desde la sin hueco (y Pedro 4 más sin pista). Lo que no
+            // cabe en ella va a la otra parada del producto, y nunca más de lo que hay en cada una.
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "29706", 6, "004"), ParadaSinHueco(2, "29706", 3) };
+            var lecturas = new List<LecturaPickingAlmacen> { Leido("29706", "Pedro", 3, 3), Leido("29706", "Andre", 3, 3), Leido("29706", "Pedro", 4, null) };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 6, 3 }, recogida.Lineas.Select(l => l.Resuelto).ToArray(), "Se leyeron 10 de 9: el de más no se apunta");
+            Assert.IsNull(recogida.SiguienteOrden);
+            foreach (LineaRecogidaDTO linea in recogida.Lineas)
+            {
+                Assert.AreEqual(linea.Resuelto - linea.Faltas, linea.Lectores.Sum(l => l.Leido), "Lo leído de cada parada cuadra");
+            }
+        }
+
+        [TestMethod]
+        public void MontarRecogida_UnDeshacerConPista_QuitaDeEsaParada()
+        {
+            // NestoAPI#646: la corrección se guarda con lo que tenía la parada (TotalParada): se quita de la parada corregida
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "29610", 2, "004"), ParadaSinHueco(2, "29610", 7) };
+            var lecturas = new List<LecturaPickingAlmacen> { Leido("29610", "Pedro", 7 - 3, 7), Leido("29610", "Andre", 2, 2) };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 0, 3 }, recogida.Lineas.Select(l => l.Pendiente).ToArray());
+            Assert.AreEqual(2, recogida.SiguienteOrden);
+        }
+
+        [TestMethod]
+        public void SqlLecturas_TraenLaParadaDesdeLaQueSeLeyo()
+        {
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LECTURAS_DEL_PICKING, "GROUP BY e.Producto, e.Usuario, e.TotalParada");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LECTURAS_DE_SALIDA, "GROUP BY e.Producto, e.Usuario, e.TotalParada");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LECTURAS_DEL_PICKING_SIN_PARADA, "CAST(NULL AS int) AS TotalParada");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LECTURAS_DE_SALIDA_SIN_PARADA, "CAST(NULL AS int) AS TotalParada");
+            Assert.IsFalse(RepositorioPreparacionAlmacen.SQL_LECTURAS_DEL_PICKING_SIN_PARADA.Contains("e.TotalParada"));
+            Assert.IsFalse(RepositorioPreparacionAlmacen.SQL_LECTURAS_DE_SALIDA_SIN_PARADA.Contains("e.TotalParada"));
+        }
+
+        #endregion
+
         [TestMethod]
         public void MontarRecogida_UnaFaltaDeshecha_NoQuedaEnFalta()
         {
