@@ -20,7 +20,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private static IEnumerable<IPerfilAgencia> PerfilesQueEnvian()
             => RegistroAgencias.PorReflexionSinPuerta().Perfiles
                 .Where(p => p is IPerfilConSeguimiento || p is IPerfilConGestionRemota)
-                // NestoAPI#739: el reparto propio no sirve Amazon ni la tienda online (lo declara su perfil).
+                // NestoAPI#739: el reparto propio no sirve Amazon (lo declara su perfil); la tienda, sí (#804, test aparte).
                 .Where(p => !(p is IPerfilSinCanalesExternos));
 
         [TestMethod]
@@ -62,6 +62,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.AreEqual(0, incompletas.Count,
                 "Estrategias sin datos de canal (CarrierNameAmazon/ShippingMethodAmazon/TransportistaPrestashop): " + string.Join(", ", incompletas));
+        }
+
+        [TestMethod]
+        public void RepartoPropio_DeclaraTransportistaYTrackingDePrestashopComoLasDemas()
+        {
+            // NestoAPI#804: la 14 sirve pedidos de la tienda online (rutas propias); Amazon no (IPerfilSinCanalesExternos).
+            IEnumerable<IPerfilAgencia> sinAmazon = RegistroAgencias.PorReflexionSinPuerta().Perfiles.Where(p => p is IPerfilSinCanalesExternos);
+            CollectionAssert.Contains(sinAmazon.Select(p => p.AgenciaId).ToList(), Constantes.Agencias.AGENCIA_REPARTO_PROPIO);
+            foreach (IPerfilAgencia perfil in sinAmazon)
+            {
+                IEstrategiaSeguimientoAgencia estrategia = RegistroSeguimientoAgencias.Todas.FirstOrDefault(e => e.AgenciasId.Contains(perfil.AgenciaId));
+                Assert.IsNotNull(estrategia, $"agencia {perfil.AgenciaId} sin estrategia de seguimiento");
+                Assert.IsFalse(string.IsNullOrWhiteSpace(estrategia.TransportistaPrestashop), $"{estrategia.Nombre}: sin transportista de Prestashop");
+                var datos = new DatosSeguimientoEnvio { AgenciaNombre = estrategia.Nombre, CodigoSeguimiento = "RP250468", CodigoPostal = "28110" };
+                Assert.IsFalse(string.IsNullOrWhiteSpace(estrategia.TrackingPrestashop(datos)), $"{estrategia.Nombre}: sin tracking para Prestashop");
+            }
         }
 
         [TestMethod]
