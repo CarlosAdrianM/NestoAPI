@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace NestoAPI.Models.PreparacionAlmacen
 {
@@ -118,6 +118,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>Quién la ha hecho, con el mismo nombre que se guarda (el de los Lectores de la recogida).</summary>
         public string Usuario { get; set; }
         public System.DateTime FechaEscaneo { get; set; }
+        /// <summary>
+        /// Ariadna#91 (complemento de NestoAPI#812): la cantidad total de la parada desde la que se leyó (la
+        /// <see cref="EscaneoAlmacenDTO.TotalParada"/> del escaneo, NestoAPI#713). La PDA que lo recibe apunta la lectura a la
+        /// parada del producto cuya cantidad coincide, con la misma regla que el servidor (ServicioPreparacionAlmacen). Null si el
+        /// escaneo no lo trae (Ariadna anterior o fuera de una parada): entonces, como antes, a la primera pendiente. El escaneo no
+        /// trae el hueco, así que no viaja.
+        /// </summary>
+        public int? TotalParada { get; set; }
         /// <summary>
         /// Detrás de este evento va el «haCambiado» de compatibilidad del mismo cambio (Almacen:AvisosConDatos = Ambos): la PDA
         /// que ya aplica los datos no tiene que releer por él.
