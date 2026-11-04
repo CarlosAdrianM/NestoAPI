@@ -79,12 +79,15 @@ namespace NestoAPI.Infraestructure.Eventos
             Dictionary<int, MarcaPlazasLlenas> marcas = await PlazasLlenas.Leer(
                 inscripciones.Where(ReglasPlazasLlenas.EsReservaSinPagar).Select(i => i.Id).ToList()).ConfigureAwait(false)
                 ?? new Dictionary<int, MarcaPlazasLlenas>();
+            // NestoAPI#811: cada inscripción ocupa sus asistentes (sin la columna, 1)
+            Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                inscripciones.Where(OcupaPlaza).Select(i => i.Id)).ConfigureAwait(false);
 
             bool cambios = false;
             foreach (Evento evento in eventos.OrderBy(e => e.Fecha).ThenBy(e => e.Id))
             {
                 List<EventoInscripcion> suyas = inscripciones.Where(i => i.EventoId == evento.Id).ToList();
-                int ocupadas = suyas.Count(OcupaPlaza);
+                int ocupadas = ReglasAsistentesEvento.PlazasOcupadas(suyas, asistentes);
                 List<EventoInscripcion> sinPagar = suyas.Where(ReglasPlazasLlenas.EsReservaSinPagar).OrderBy(i => i.FechaCreacion).ThenBy(i => i.Id).ToList();
 
                 // 1. Plazos vencidos
@@ -104,7 +107,7 @@ namespace NestoAPI.Infraestructure.Eventos
                                 Inscripcion = vencida,
                                 Plazo = marcas[vencida.Id].PlazoPagoPlazasLlenas.Value
                             });
-                            ocupadas--;
+                            ocupadas -= ReglasAsistentesEvento.De(vencida.Id, asistentes);
                             cambios = true;
                         }
                     }
@@ -213,7 +216,9 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 List<EventoInscripcion> suyas = await db.EventosInscripciones
                     .Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false);
-                if (ReglasPlazasLlenas.EstaLleno(evento, suyas.Count(OcupaPlaza)) && suyas.Any(ReglasPlazasLlenas.EsReservaSinPagar))
+                int ocupadas = ReglasAsistentesEvento.PlazasOcupadas(suyas, await RepositorioAsistentesEventos.LeerSinFallar(
+                    AsistentesInscripciones, suyas.Where(OcupaPlaza).Select(i => i.Id)).ConfigureAwait(false));
+                if (ReglasPlazasLlenas.EstaLleno(evento, ocupadas) && suyas.Any(ReglasPlazasLlenas.EsReservaSinPagar))
                 {
                     EncolarPlazasLlenas(evento.Id);
                 }
@@ -233,8 +238,9 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             try
             {
-                int ocupadas = (await db.EventosInscripciones.Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false))
-                    .Count(OcupaPlaza);
+                List<EventoInscripcion> suyas = await db.EventosInscripciones.Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false);
+                int ocupadas = ReglasAsistentesEvento.PlazasOcupadas(suyas, await RepositorioAsistentesEventos.LeerSinFallar(
+                    AsistentesInscripciones, suyas.Where(OcupaPlaza).Select(i => i.Id)).ConfigureAwait(false));
                 ElmahHelper.Log(new Exception($"[Plazas llenas de eventos] Pago de la inscripción {inscripcion.Id} (cliente {Limpiar(inscripcion.Cliente)}, " +
                     $"evento «{evento.Titulo?.Trim()}») que estaba {ReglasInscripcionEvento.Texto(estadoAnterior).ToLowerInvariant()}; " +
                     $"plazas ocupadas {ocupadas}{(evento.Plazas.HasValue ? " de " + evento.Plazas.Value : "")}. Se avisa a Administración."));

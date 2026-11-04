@@ -705,6 +705,7 @@
     <Compile Include="Infrastructure\CambioModoConPickingTests.cs" />
     <Compile Include="Infrastructure\CambioAlmacenPedidoTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioTransitoReposicionesTests.cs" />
+    <Compile Include="Infrastructure\Eventos\AsistentesInscripcionEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\EstadoSenalEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\EventoDTOJsonTests.cs" />
     <Compile Include="Infrastructure\Eventos\ServicioEventosTests.cs" />

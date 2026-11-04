@@ -340,7 +340,11 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             this.db = db;
             this.reloj = reloj ?? (() => DateTime.Now);
+            AsistentesInscripciones = new RepositorioAsistentesEventos(db);
         }
+
+        /// <summary>NestoAPI#811: cuántas plazas ocupa cada inscripción. Null o sin la columna: 1 cada una.</summary>
+        internal IRepositorioAsistentesEventos AsistentesInscripciones { get; set; }
 
         public async Task<List<EventoCursoDTO>> EventosDeProducto(string empresa, string producto)
         {
@@ -387,13 +391,16 @@ namespace NestoAPI.Infraestructure.Eventos
                 return new Dictionary<int, int>();
             }
             List<string> estados = ReglasInscripcionEvento.OCUPAN_PLAZA.Select(e => e.ToString()).ToList();
-            var filas = await db.EventosInscripciones
+            var filas = (await db.EventosInscripciones
                 .Where(i => ids.Contains(i.EventoId) && estados.Contains(i.Estado))
-                .Select(i => new { i.EventoId, i.Estado, i.AsistenciaRespuesta })
-                .ToListAsync().ConfigureAwait(false);
-            return filas
+                .Select(i => new { i.Id, i.EventoId, i.Estado, i.AsistenciaRespuesta })
+                .ToListAsync().ConfigureAwait(false))
                 .Where(f => ReglasInscripcionEvento.OcupaPlaza(new EventoInscripcion { Estado = f.Estado, AsistenciaRespuesta = f.AsistenciaRespuesta }))
-                .GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Count());
+                .ToList();
+            // NestoAPI#811: cada inscripción ocupa sus asistentes (sin la columna, 1)
+            Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                filas.Select(f => f.Id)).ConfigureAwait(false);
+            return filas.GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Sum(f => ReglasAsistentesEvento.De(f.Id, asistentes)));
         }
 
         private static int Ocupadas(Dictionary<int, int> ocupadas, int id) => ocupadas.TryGetValue(id, out int n) ? n : 0;

@@ -287,7 +287,14 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
             PedidoMinimoCupon = new RepositorioPedidoMinimoCuponEventos(db);
+            AsistentesInscripciones = new RepositorioAsistentesEventos(db);
         }
+
+        /// <summary>
+        /// NestoAPI#811: cuántas plazas ocupa cada inscripción (EventosInscripciones.Asistentes, fuera del EDMX). Null (tests) o
+        /// sin la columna: 1 cada una.
+        /// </summary>
+        internal IRepositorioAsistentesEventos AsistentesInscripciones { get; set; }
 
         /// <summary>
         /// NestoAPI#732: los productos requeridos de los eventos «gratuitos por compra» (fuera del EDMX). Null (tests): los eventos
@@ -701,13 +708,17 @@ namespace NestoAPI.Infraestructure.Eventos
                 return;
             }
             string reservada = EstadoInscripcionEvento.Reservada.ToString();
-            var filas = await db.EventosInscripciones
+            var filas = (await db.EventosInscripciones
                 .Where(i => ids.Contains(i.EventoId) && i.Estado == reservada)
-                .Select(i => new { i.EventoId, i.Estado, i.AsistenciaRespuesta })
-                .ToListAsync().ConfigureAwait(false);
-            Dictionary<int, int> sinPagar = filas
+                .Select(i => new { i.Id, i.EventoId, i.Estado, i.AsistenciaRespuesta })
+                .ToListAsync().ConfigureAwait(false))
                 .Where(f => ReglasPlazasLlenas.EsReservaSinPagar(new EventoInscripcion { Estado = f.Estado, AsistenciaRespuesta = f.AsistenciaRespuesta }))
-                .GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Count());
+                .ToList();
+            // NestoAPI#811: plazas, no inscripciones (cada reserva ocupa sus asistentes)
+            Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                filas.Select(f => f.Id)).ConfigureAwait(false);
+            Dictionary<int, int> sinPagar = filas
+                .GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Sum(f => ReglasAsistentesEvento.De(f.Id, asistentes)));
             foreach (EventoDTO dto in lista)
             {
                 dto.PlazasSinPagar = sinPagar.TryGetValue(dto.Id, out int n) ? n : 0;
@@ -723,13 +734,16 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             List<string> estados = ReglasInscripcionEvento.OCUPAN_PLAZA.Select(e => e.ToString()).ToList();
             // Carlos (22/10/26): «No podré ir» libera la plaza (ReglasInscripcionEvento.OcupaPlaza)
-            var filas = await db.EventosInscripciones
+            var filas = (await db.EventosInscripciones
                 .Where(i => ids.Contains(i.EventoId) && estados.Contains(i.Estado))
-                .Select(i => new { i.EventoId, i.Estado, i.AsistenciaRespuesta })
-                .ToListAsync().ConfigureAwait(false);
-            return filas
+                .Select(i => new { i.Id, i.EventoId, i.Estado, i.AsistenciaRespuesta })
+                .ToListAsync().ConfigureAwait(false))
                 .Where(f => ReglasInscripcionEvento.OcupaPlaza(new EventoInscripcion { Estado = f.Estado, AsistenciaRespuesta = f.AsistenciaRespuesta }))
-                .GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Count());
+                .ToList();
+            // NestoAPI#811: cada inscripción ocupa sus asistentes (sin la columna, 1)
+            Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                filas.Select(f => f.Id)).ConfigureAwait(false);
+            return filas.GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Sum(f => ReglasAsistentesEvento.De(f.Id, asistentes)));
         }
 
         public async Task<EventoDTO> CrearEvento(EventoDTO evento, string usuario)
@@ -775,7 +789,7 @@ namespace NestoAPI.Infraestructure.Eventos
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
             {
                 throw new NestoBusinessException(
-                    $"Ya hay {ocupadasEvento} inscripciones: no se pueden dejar {evento.Plazas.Value} plazas. Anule antes las que sobren.");
+                    $"Ya hay {ocupadasEvento} plazas ocupadas: no se pueden dejar {evento.Plazas.Value} plazas. Anule antes las inscripciones (o los asistentes) que sobren.");
             }
             bool eraGratuito = ReglasModalidadEvento.EsGratuito(entidad);
             Copiar(evento, entidad, usuario);
