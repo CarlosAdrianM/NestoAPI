@@ -86,6 +86,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Corregido', N'Cajas: cobrar a la vez una deuda de la empresa 1 y otra de la 3 ya no deja líneas colgadas',
      N'Al cobrar en una caja varias deudas de distintas empresas (una factura NV y una GB), solo se contabilizaba la empresa de la primera línea; las líneas de la otra se quedaban en la precontabilidad y los cobros siguientes de ese cliente fallaban con «No se ha podido liquidar…» (le pasó a Laura Camacho el 28/10 con la GB2601662). Ahora se hace un asiento por empresa, cada cobro liquida su efecto y entra en la caja de su empresa, y si uno falla no se graba nada. La lista de deudas lleva la columna «Empresa».',
      N'Administración,Tiendas'),
+    ('Corregido', N'Informes: el detalle de rapports de un mes entero ya se genera',
+     N'El PDF del detalle de rapports de un mes entero (octubre: más de 4.000 rapports) daba «InternalServerError» porque el generador de PDF cortaba en 250 páginas. Ya no corta hasta las 5.000. Lo avisó Manuel.',
+     N'Dirección,Vendedores'),
     ('Mejorado', N'Detalle del pedido: las fotos del packing con miniatura y en grande dentro de Nesto',
      N'En la pestaña del seguimiento de la agencia, cada bulto y cada foto del packing de Ariadna llevan su miniatura; al pincharla se abre en grande dentro de Nesto, con «Descargar», «Abrir con el visor» y «Copiar enlace para el cliente».',
      NULL);
