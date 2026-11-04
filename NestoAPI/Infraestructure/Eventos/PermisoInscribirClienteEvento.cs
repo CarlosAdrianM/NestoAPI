@@ -28,6 +28,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// (VendedoresClienteGrupoProducto, PEL) del contacto y del contacto principal.
         /// </summary>
         Task<List<string>> VendedoresDelCliente(string empresa, string cliente, string contacto);
+
+        /// <summary>
+        /// Nesto#619: lo mismo que <see cref="VendedoresDelCliente"/> para muchos clientes a la vez (dos consultas): clave
+        /// <see cref="LectorVendedoresInscripcion.ClaveClienteContacto"/> («15191/0») → sus vendedores.
+        /// </summary>
+        Task<Dictionary<string, List<string>>> VendedoresDeLosClientes(string empresa, IEnumerable<KeyValuePair<string, string>> clientesYContactos);
     }
 
     /// <summary>NestoAPI#741: el lector de producción (ParametrosUsuario, EquiposVenta y la ficha del cliente).</summary>
@@ -69,32 +75,64 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public async Task<List<string>> VendedoresDelCliente(string empresa, string cliente, string contacto)
         {
-            string contactoLimpio = contacto?.Trim();
-            var fichas = await db.Clientes
-                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
-                .Select(c => new { c.Contacto, c.ClientePrincipal, c.Vendedor })
-                .ToListAsync().ConfigureAwait(false);
-            string grupoPeluqueria = Constantes.Productos.GRUPO_PELUQUERIA;
-            var peluqueria = await db.VendedoresClientesGruposProductos
-                .Where(v => v.Empresa == empresa && v.Cliente == cliente && v.GrupoProducto == grupoPeluqueria)
-                .Select(v => new { v.Contacto, v.Vendedor })
-                .ToListAsync().ConfigureAwait(false);
-
-            var ficha = fichas.FirstOrDefault(f => f.Contacto?.Trim() == contactoLimpio)
-                ?? fichas.FirstOrDefault(f => f.ClientePrincipal);
-            string principal = fichas.FirstOrDefault(f => f.ClientePrincipal)?.Contacto?.Trim();
-            string delContacto = ficha?.Contacto?.Trim();
-
-            var vendedores = new List<string> { ficha?.Vendedor };
-            vendedores.AddRange(peluqueria
-                .Where(p => p.Contacto?.Trim() == delContacto || (principal != null && p.Contacto?.Trim() == principal))
-                .Select(p => p.Vendedor));
-            return vendedores
-                .Select(v => v?.Trim())
-                .Where(v => !string.IsNullOrEmpty(v))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            Dictionary<string, List<string>> vendedores = await VendedoresDeLosClientes(empresa,
+                new[] { new KeyValuePair<string, string>(cliente, contacto) }).ConfigureAwait(false);
+            return vendedores.TryGetValue(ClaveClienteContacto(cliente, contacto), out List<string> suyos) ? suyos : new List<string>();
         }
+
+        public async Task<Dictionary<string, List<string>>> VendedoresDeLosClientes(string empresa,
+            IEnumerable<KeyValuePair<string, string>> clientesYContactos)
+        {
+            var pedidos = (clientesYContactos ?? Enumerable.Empty<KeyValuePair<string, string>>())
+                .Where(p => !string.IsNullOrWhiteSpace(p.Key))
+                .Select(p => new KeyValuePair<string, string>(p.Key.Trim(), p.Value?.Trim()))
+                .ToList();
+            var resultado = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            if (!pedidos.Any())
+            {
+                return resultado;
+            }
+            List<string> clientes = pedidos.Select(p => p.Key).Distinct().ToList();
+            var fichas = (await db.Clientes
+                .Where(c => c.Empresa == empresa && clientes.Contains(c.Nº_Cliente))
+                .Select(c => new { c.Nº_Cliente, c.Contacto, c.ClientePrincipal, c.Vendedor })
+                .ToListAsync().ConfigureAwait(false))
+                .ToLookup(c => c.Nº_Cliente?.Trim(), StringComparer.OrdinalIgnoreCase);
+            string grupoPeluqueria = Constantes.Productos.GRUPO_PELUQUERIA;
+            var peluqueria = (await db.VendedoresClientesGruposProductos
+                .Where(v => v.Empresa == empresa && clientes.Contains(v.Cliente) && v.GrupoProducto == grupoPeluqueria)
+                .Select(v => new { v.Cliente, v.Contacto, v.Vendedor })
+                .ToListAsync().ConfigureAwait(false))
+                .ToLookup(v => v.Cliente?.Trim(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (KeyValuePair<string, string> pedido in pedidos)
+            {
+                string clave = ClaveClienteContacto(pedido.Key, pedido.Value);
+                if (resultado.ContainsKey(clave))
+                {
+                    continue;
+                }
+                var delCliente = fichas[pedido.Key].ToList();
+                var ficha = delCliente.FirstOrDefault(f => f.Contacto?.Trim() == pedido.Value)
+                    ?? delCliente.FirstOrDefault(f => f.ClientePrincipal);
+                string principal = delCliente.FirstOrDefault(f => f.ClientePrincipal)?.Contacto?.Trim();
+                string delContacto = ficha?.Contacto?.Trim();
+
+                var vendedores = new List<string> { ficha?.Vendedor };
+                vendedores.AddRange(peluqueria[pedido.Key]
+                    .Where(p => p.Contacto?.Trim() == delContacto || (principal != null && p.Contacto?.Trim() == principal))
+                    .Select(p => p.Vendedor));
+                resultado[clave] = vendedores
+                    .Select(v => v?.Trim())
+                    .Where(v => !string.IsNullOrEmpty(v))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            return resultado;
+        }
+
+        /// <summary>«15191/0»: la clave de <see cref="ILectorVendedoresInscripcion.VendedoresDeLosClientes"/>.</summary>
+        public static string ClaveClienteContacto(string cliente, string contacto) => $"{cliente?.Trim()}/{contacto?.Trim()}";
     }
 
     /// <summary>
@@ -130,6 +168,43 @@ namespace NestoAPI.Infraestructure.Eventos
             List<string> equipo = await lector.VendedoresDelEquipo(empresa, vendedor).ConfigureAwait(false);
             List<string> delCliente = await lector.VendedoresDelCliente(empresa, cliente, contacto).ConfigureAwait(false);
             return PermisosEventos.PuedeInscribir(usuario, cliente, vendedor, equipo, delCliente);
+        }
+
+        /// <summary>
+        /// Nesto#619 (sugerencia 1021 de Sancho): en la lista de inscritos de un evento, los vendedores de cada cliente
+        /// (<see cref="InscripcionEventoDTO.Vendedores"/>) y si es de los clientes del usuario
+        /// (<see cref="InscripcionEventoDTO.EsDeMisClientes"/>): su vendedor de estética o de peluquería es el del usuario o, si
+        /// es jefe de equipo, de su equipo (la misma regla que para inscribir a un comercial, sin el «a cualquiera» de
+        /// Administración, Tiendas y Dirección). Un usuario sin vendedor no tiene clientes: todas a false.
+        /// </summary>
+        public async Task MarcarMisClientes(IPrincipal usuario, string empresa, List<InscripcionEventoDTO> lista)
+        {
+            if (lista == null || !lista.Any())
+            {
+                return;
+            }
+            Dictionary<string, List<string>> vendedores = await lector.VendedoresDeLosClientes(empresa,
+                lista.Select(i => new KeyValuePair<string, string>(i.Cliente, i.Contacto))).ConfigureAwait(false)
+                ?? new Dictionary<string, List<string>>();
+            string vendedor = lector.VendedorDelUsuario(usuario)?.Trim();
+            var suyos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(vendedor))
+            {
+                _ = suyos.Add(vendedor);
+                foreach (string delEquipo in await lector.VendedoresDelEquipo(empresa, vendedor).ConfigureAwait(false) ?? new List<string>())
+                {
+                    if (!string.IsNullOrWhiteSpace(delEquipo))
+                    {
+                        _ = suyos.Add(delEquipo.Trim());
+                    }
+                }
+            }
+            foreach (InscripcionEventoDTO inscripcion in lista)
+            {
+                inscripcion.Vendedores = vendedores.TryGetValue(LectorVendedoresInscripcion.ClaveClienteContacto(inscripcion.Cliente, inscripcion.Contacto),
+                    out List<string> delCliente) && delCliente != null ? delCliente : new List<string>();
+                inscripcion.EsDeMisClientes = inscripcion.Vendedores.Any(v => suyos.Contains(v));
+            }
         }
 
         /// <summary>Como <see cref="PuedeInscribir"/>, pero si no puede lanza el 403 de usted.</summary>

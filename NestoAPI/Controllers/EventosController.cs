@@ -310,7 +310,11 @@ namespace NestoAPI.Controllers
         }
 
         // GET api/Eventos/5/Inscripciones
-        /// <summary>Los inscritos del evento (todas, también caducadas y anuladas). Solo la casa.</summary>
+        /// <summary>
+        /// Los inscritos del evento (todas, también caducadas y anuladas). Solo la casa: cualquier usuario de Nesto (Nesto#619,
+        /// la pestaña Eventos es para todos), el cliente de la tienda online no. Cada inscrito trae sus Vendedores y si
+        /// EsDeMisClientes (el vendedor del usuario o de su equipo), para el filtro «Solo mis clientes».
+        /// </summary>
         [HttpGet]
         [Route("{id:int}/Inscripciones")]
         [ResponseType(typeof(List<InscripcionEventoDTO>))]
