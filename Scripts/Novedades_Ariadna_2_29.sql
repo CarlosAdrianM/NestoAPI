@@ -32,6 +32,12 @@ INSERT INTO @n VALUES
  N'Almacén,Tiendas'),
 (5, N'Nuevo', N'Packing: la etiqueta de un pedido de nuestra ruta',
  N'En Empaquetar, F8 «Etiqueta de agencia» también vale para los pedidos que van por reparto propio: crea el envío y saca las etiquetas de bulto RP, igual que las de GLS o CTT. Antes decía «la agencia 14 no se puede insertar desde el servidor».',
+ N'Almacén'),
+(8, N'Corregido', N'Packing: la etiqueta de agencia vuelve a facturar el pedido',
+ N'Desde el 3 de noviembre, al sacar la etiqueta desde Ariadna el pedido no se albaranaba ni se facturaba (el parámetro «Facturar al imprimir etiqueta» estaba a 0 para los usuarios de la PDA). Desde el 4 de noviembre a las 14:00 vuelve a facturar igual que la casilla de Agencias en Nesto. Lo avisó Alfredo.',
+ N'Almacén'),
+(9, N'Nuevo', N'Reparto: paradas de solo cobro (NC)',
+ N'Las notas de cobro que crean desde Nesto salen en el reparto como «COBRO · NC…» con el importe y los efectos pendientes, sin bultos: «Cobrar» abre el cobro con el efectivo y el importe ya puestos (F6 tarjeta si se admite, F7 autorización sin cobro) y el cliente firma «Confirmo que he pagado…». Leer un NC abre su parada; no se carga en la furgoneta.',
  N'Almacén');
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)

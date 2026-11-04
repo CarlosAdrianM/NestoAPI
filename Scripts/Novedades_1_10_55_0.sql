@@ -12,7 +12,10 @@
       1) Scripts sa ANTES de publicar la API: Issue800_prdCuadreAgenciasContabilidad_ReembolsosDiferidos.sql, Issue779_Festivos.sql
          (tabla Festivos con 2024-2026 como el código; el bloque 2027 va comentado «REVISAR» con la fuente BOE: decide Dirección),
          Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
-         el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado) y, si lo trae #813, Issue813_*.sql.
+         el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado; Alfredo espera las facturas físicas desde Ariadna:
+         sugerencia 1017) e Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos).
+         YA HECHO el 04/11 a las 14:00 por la API: ParámetrosUsuario FacturarAlImprimirEtiqueta = 1 para «(defecto)», Alfredo, Andre,
+         Pedro y Santiago (la etiqueta desde Ariadna albarana y factura; antes estaba a 0 y no facturaba: sugerencia 1017).
       2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.55.0 → flujos de Ariadna 2.29.
       3) DESPUÉS: ESTE script, Novedades_Ariadna_2_29.sql, OneShot_20261104_GlobosFichaProducto.sql (globos de la ficha) y OneShot_20261104_CerrarSugerencias_1_10_55_0.ps1 (marca Implementadas las
          sugerencias y contesta en cada hilo). Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.55.0 solo con el OK de Carlos.
@@ -68,7 +71,16 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
      N'Administración,Vendedores,Almacén'),
     ('Mejorado', N'Tienda online: los pedidos que van por nuestra ruta se confirman en PrestaShop',
      N'Los envíos de la tienda online que van por el reparto propio ya se pueden confirmar en PrestaShop desde Agencias (antes decía que la agencia no tenía transportista). Llevan el enlace público de seguimiento del reparto.',
-     N'Administración,Dirección');
+     N'Administración,Dirección'),
+    ('Nuevo', N'Nueva nota de cobro: una parada del reparto solo para cobrar',
+     N'Desde el detalle del pedido o la ficha del cliente, «Nueva nota de cobro» crea una parada del reparto propio solo para cobrar (NC + número): se marcan los efectos pendientes del extracto (empresas 1 y 3), el importe, el día y un comentario para el repartidor. No pasa por picking ni packing. Miguel la ve en Ariadna como «COBRO · NC…», cobra en efectivo (liquida esos efectos) o con tarjeta y el cliente firma «Confirmo que he pagado…». Antes había que hacer una nota de entrega de solo texto y cobrar la deuda a mano en la parada (pedido 929609).',
+     N'Administración,Dirección,Vendedores'),
+    ('Corregido', N'Cajas: cobrar a la vez una deuda de la empresa 1 y otra de la 3 ya no deja líneas colgadas',
+     N'Al cobrar en una caja varias deudas de distintas empresas (una factura NV y una GB), solo se contabilizaba la empresa de la primera línea; las líneas de la otra se quedaban en la precontabilidad y los cobros siguientes de ese cliente fallaban con «No se ha podido liquidar…» (le pasó a Laura Camacho el 28/10 con la GB2601662). Ahora se hace un asiento por empresa, cada cobro liquida su efecto y entra en la caja de su empresa, y si uno falla no se graba nada. La lista de deudas lleva la columna «Empresa».',
+     N'Administración,Tiendas'),
+    ('Mejorado', N'Detalle del pedido: las fotos del packing con miniatura y en grande dentro de Nesto',
+     N'En la pestaña del seguimiento de la agencia, cada bulto y cada foto del packing de Ariadna llevan su miniatura; al pincharla se abre en grande dentro de Nesto, con «Descargar», «Abrir con el visor» y «Copiar enlace para el cliente».',
+     NULL);
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa', n.Perfiles
