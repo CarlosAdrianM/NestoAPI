@@ -1,4 +1,4 @@
-/*
+﻿/*
     Novedades de Ariadna 2.29 (04/11/26): Ariadna#85 (cerrar caja del reparto, NestoAPI#802), #86 (Cobrar una deuda: pregunta antes
     de dejarlo a cuenta), #87 («Leídas 2 de 2 · quedan 0»), #88 (siguiente caja en el packing), #89 (botón Leer a la derecha),
     #90 (familia y tamaño en la línea destacada); API: #803 (etiqueta de reparto propio desde el packing), #805 (picking colgado),
@@ -23,6 +23,9 @@ INSERT INTO @n VALUES
  N'Almacén'),
 (4, N'Corregido', N'Picking: Terminar ya no se bloquea por una falta de un producto que se quitó del pedido',
  N'Si se da por falta un producto cuya línea alguien ha sacado del pedido después de crear el picking, Terminar ya no da «no hay tanto que sacar»: la falta se ignora y el picking se cierra. Fue lo del picking 99998 esta mañana.',
+ N'Almacén'),
+(6, N'Corregido', N'Picking entre dos PDA: lo que lee el compañero se descuenta de su parada',
+ N'Cuando dos PDA preparan el mismo picking, lo que lee una se apunta en la otra en la parada de la que se leyó (antes iba a la primera parada del producto, y los pendientes de ubicar salían a los dos). Fue lo del picking 100001. Lo avisó Alfredo.',
  N'Almacén'),
 (5, N'Nuevo', N'Packing: la etiqueta de un pedido de nuestra ruta',
  N'En Empaquetar, F8 «Etiqueta de agencia» también vale para los pedidos que van por reparto propio: crea el envío y saca las etiquetas de bulto RP, igual que las de GLS o CTT. Antes decía «la agencia 14 no se puede insertar desde el servidor».',
