@@ -1253,6 +1253,308 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
 
         #endregion
 
+        #region Rehacer el pedido devuelto por la agencia (NestoAPI#699)
+
+        // La agencia devuelve el pedido y el cliente lo sigue queriendo: al hacer el abono, el pedido
+        // se rehace en el mismo paso, para el mismo cliente y con las mismas condiciones, y queda
+        // pendiente de servir para que salga por el picking normal. Los portes «nos los comemos».
+
+        private const string FACTURA_ORIGINAL = "NV26/000001";
+        private const int PEDIDO_ORIGINAL = 900001;
+        private const int PEDIDO_ABONO = 927001;
+        private const int PEDIDO_SEGUNDO = 927002;
+
+        private sealed class EscenarioCopia
+        {
+            public NVEntities Db;
+            public IServicioPedidosVenta ServicioPedidos;
+            public IServicioAlbaranesVenta ServicioAlbaranes;
+            public IServicioFacturas ServicioFacturas;
+            public IAlmacenRectificativasPendientes Pendientes;
+            public List<CabPedidoVta> CabecerasNuevas = new List<CabPedidoVta>();
+            public List<LinPedidoVta> LineasNuevas = new List<LinPedidoVta>();
+            public List<VendedorPedidoGrupoProducto> VendedoresNuevos = new List<VendedorPedidoGrupoProducto>();
+
+            public GestorCopiaPedidos Gestor() => new GestorCopiaPedidos(Db, ServicioPedidos, ServicioAlbaranes, ServicioFacturas, Pendientes);
+            public CabPedidoVta Cabecera(int numero) => CabecerasNuevas.Single(c => c.Número == numero);
+            public List<LinPedidoVta> Lineas(int numero) => LineasNuevas.Where(l => l.Número == numero).ToList();
+        }
+
+        private static DbSet<T> FakeDbSet<T>(IEnumerable<T> datos, List<T> anadidos) where T : class
+        {
+            var set = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>().Implements<IDbAsyncEnumerable<T>>());
+            ConfigurarFakeDbSet(set, datos.ToList().AsQueryable());
+            A.CallTo(() => set.Add(A<T>._)).ReturnsLazily((T e) => { anadidos?.Add(e); return e; });
+            return set;
+        }
+
+        private static EscenarioCopia CrearEscenarioFacturaDevuelta(bool conReembolso = false)
+        {
+            var e = new EscenarioCopia
+            {
+                Db = A.Fake<NVEntities>(),
+                ServicioPedidos = A.Fake<IServicioPedidosVenta>(),
+                ServicioAlbaranes = A.Fake<IServicioAlbaranesVenta>(),
+                ServicioFacturas = A.Fake<IServicioFacturas>(),
+                Pendientes = A.Fake<IAlmacenRectificativasPendientes>()
+            };
+
+            LinPedidoVta Linea(int orden, byte tipo, string producto, short cantidad, decimal precio, decimal descuento, string texto) => new LinPedidoVta
+            {
+                Empresa = "1", Número = PEDIDO_ORIGINAL, Nº_Orden = orden, Nº_Factura = FACTURA_ORIGINAL,
+                Estado = Constantes.EstadosLineaVenta.FACTURA, TipoLinea = tipo, Producto = producto, Texto = texto,
+                Cantidad = cantidad, Precio = precio, Descuento = descuento, DescuentoCliente = 0.05M, Aplicar_Dto = tipo == 1,
+                Nº_Cliente = "15234", Contacto = "2", IVA = "G21", Almacén = "ALG", Forma_Venta = "VAR"
+            };
+            var lineasOriginales = new List<LinPedidoVta>
+            {
+                Linea(1, 1, "17404", 3, 12.5M, 0.10M, "CHAMPÚ"),
+                Linea(2, 1, "29353", 2, 8M, 0M, "MASCARILLA"),
+                Linea(3, 2, Constantes.Cuentas.CUENTA_PORTES_CEX, 1, 7M, 0M, "Portes")
+            };
+            if (conReembolso)
+            {
+                lineasOriginales.Add(Linea(4, 2, Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL, 1, 3M, 0M, Constantes.Portes.TEXTO_COMISION_REEMBOLSO));
+            }
+            A.CallTo(() => e.Db.LinPedidoVtas).Returns(FakeDbSet(lineasOriginales, e.LineasNuevas));
+
+            var cliente = new Cliente { Empresa = "1", Nº_Cliente = "15234", Contacto = "2", IVA = "G21", Vendedor = "FICHA", CCC = "9", Ruta = "FW", PeriodoFacturación = "NRM" };
+            var clientes = FakeDbSet(new[] { cliente }, null);
+            A.CallTo(() => clientes.Include(A<string>._)).Returns(clientes);
+            A.CallTo(() => e.Db.Clientes).Returns(clientes);
+
+            var original = new CabPedidoVta
+            {
+                Empresa = "1", Número = PEDIDO_ORIGINAL, Nº_Cliente = "15234", Contacto = "2", Serie = "NV",
+                Forma_Pago = "RCB", PlazosPago = "30D", Vendedor = "PA", CCC = "1", Ruta = "AT", Periodo_Facturacion = "FDM",
+                Comentarios = "Llamar antes de ir", ComentarioPicking = "Frágil", IVA = "G21"
+            };
+            A.CallTo(() => e.Db.CabPedidoVtas).Returns(FakeDbSet(new[] { original }, e.CabecerasNuevas));
+
+            A.CallTo(() => e.Db.PlazosPago).Returns(FakeDbSet(new[]
+            {
+                new PlazoPago { Empresa = "1", Número = "30D", DíasPrimerPlazo = 30 }
+            }, null));
+            A.CallTo(() => e.Db.VendedoresPedidosGruposProductos).Returns(FakeDbSet(new[]
+            {
+                new VendedorPedidoGrupoProducto { Empresa = "1", Pedido = PEDIDO_ORIGINAL, GrupoProducto = "PEL", Vendedor = "JE" }
+            }, e.VendedoresNuevos));
+            A.CallTo(() => e.Db.CabsFacturasVtas).Returns(FakeDbSet(new List<CabFacturaVta>(), null));
+            A.CallTo(() => e.Db.LinFacturaVtaRectificaciones).Returns(FakeDbSet(new List<LinFacturaVtaRectificacion>(), null));
+
+            A.CallTo(() => e.Db.TomarSiguienteNumeroPedido()).ReturnsNextFromSequence(PEDIDO_ABONO, PEDIDO_SEGUNDO);
+            A.CallTo(() => e.Db.SaveChangesAsync()).Returns(Task.FromResult(1));
+            A.CallTo(() => e.ServicioPedidos.LeerParametroIVA(A<string>._, A<string>._, A<string>._))
+                .Returns(new ParametroIVA { C__IVA = 21, C__RE = 0 });
+            A.CallTo(() => e.ServicioAlbaranes.CrearAlbaran(A<string>._, A<int>._, A<string>._, A<DateTime?>._))
+                .Returns(Task.FromResult(555));
+            A.CallTo(() => e.ServicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._))
+                .ReturnsLazily((string emp, int pedido, string u, string ua) => Task.FromResult(
+                    new NestoAPI.Models.Facturas.CrearFacturaResponseDTO { NumeroFactura = pedido == PEDIDO_ABONO ? "RV26/000001" : "NV26/999999" }));
+            return e;
+        }
+
+        private static CopiarFacturaRequest RequestRehacer(bool crearAlbaranYFactura = true, bool incluirPortes = false) => new CopiarFacturaRequest
+        {
+            Empresa = "1",
+            Cliente = "15234",
+            NumeroFactura = FACTURA_ORIGINAL,
+            InvertirCantidades = true, // como viene del diálogo; se ignora
+            CrearAlbaranYFactura = crearAlbaranYFactura,
+            RehacerPedido = true,
+            IncluirPortes = incluirPortes
+        };
+
+        [TestMethod]
+        public void CopiarFacturaRequest_RehacerPedidoEIncluirPortes_PorDefectoSonFalse()
+        {
+            var request = new CopiarFacturaRequest();
+
+            Assert.IsFalse(request.RehacerPedido);
+            Assert.IsFalse(request.IncluirPortes, "Por defecto los portes del reenvío no se cobran otra vez");
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_MismoCliente_HaceElAbonoYDejaElPedidoNuevoPendiente()
+        {
+            var e = CrearEscenarioFacturaDevuelta();
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestRehacer(), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            Assert.AreEqual(PEDIDO_ABONO, respuesta.Abono.NumeroPedido);
+            Assert.AreEqual("RV26/000001", respuesta.Abono.NumeroFactura);
+            Assert.AreEqual(PEDIDO_SEGUNDO, respuesta.PedidoRehecho.NumeroPedido);
+            Assert.AreEqual(PEDIDO_SEGUNDO, respuesta.NumeroPedido, "«Abrir pedido» abre el pedido nuevo");
+            Assert.IsNull(respuesta.Cargo);
+            // El abono se albaranea y factura; el pedido nuevo, no: sale por el picking normal.
+            A.CallTo(() => e.ServicioAlbaranes.CrearAlbaran("1", PEDIDO_ABONO, A<string>._, A<DateTime?>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => e.ServicioFacturas.CrearFactura("1", PEDIDO_ABONO, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => e.ServicioAlbaranes.CrearAlbaran(A<string>._, PEDIDO_SEGUNDO, A<string>._, A<DateTime?>._)).MustNotHaveHappened();
+            A.CallTo(() => e.ServicioFacturas.CrearFactura(A<string>._, PEDIDO_SEGUNDO, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => e.ServicioFacturas.EnviarRectificativaAVerifactu("1", "RV26/000001")).MustHaveHappenedOnceExactly();
+
+            List<LinPedidoVta> abono = e.Lineas(PEDIDO_ABONO);
+            CollectionAssert.AreEqual(new short?[] { -3, -2, -1 }, abono.Select(l => l.Cantidad).ToList());
+            Assert.AreEqual("RV", e.Cabecera(PEDIDO_ABONO).Serie);
+
+            List<LinPedidoVta> nuevo = e.Lineas(PEDIDO_SEGUNDO);
+            CollectionAssert.AreEqual(new short?[] { 3, 2, 1 }, nuevo.Select(l => l.Cantidad).ToList());
+            Assert.IsTrue(nuevo.All(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO && l.Picking == 0),
+                "El pedido nuevo queda por servir, sin picking");
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_PedidoNuevo_LlevaLasMismasCondicionesQueElOriginal()
+        {
+            var e = CrearEscenarioFacturaDevuelta();
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestRehacer(), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            CabPedidoVta cab = e.Cabecera(PEDIDO_SEGUNDO);
+            Assert.AreEqual("15234", cab.Nº_Cliente.Trim());
+            Assert.AreEqual("2", cab.Contacto.Trim(), "Misma dirección de entrega");
+            Assert.AreEqual("RCB", cab.Forma_Pago);
+            Assert.AreEqual("30D", cab.PlazosPago);
+            Assert.AreEqual(DateTime.Today.AddDays(30), cab.Primer_Vencimiento, "El vencimiento con los plazos del pedido");
+            Assert.AreEqual("PA", cab.Vendedor);
+            Assert.AreEqual("1", cab.CCC);
+            Assert.AreEqual("AT", cab.Ruta);
+            Assert.AreEqual("FDM", cab.Periodo_Facturacion);
+            Assert.AreEqual("NV", cab.Serie);
+            Assert.AreEqual("Frágil", cab.ComentarioPicking);
+            Assert.IsNull(cab.PedidoOrigen, "PedidoOrigen es de las notas de entrega");
+            StringAssert.Contains(cab.Comentarios, "[Rehecho de la factura NV26/000001 (pedido 900001), devuelto por la agencia]");
+            StringAssert.Contains(cab.Comentarios, "Llamar antes de ir");
+
+            List<LinPedidoVta> nuevo = e.Lineas(PEDIDO_SEGUNDO);
+            LinPedidoVta champu = nuevo.Single(l => l.Producto == "17404");
+            Assert.AreEqual(12.5M, champu.Precio);
+            Assert.AreEqual(0.10M, champu.Descuento);
+            Assert.AreEqual(0.05M, champu.DescuentoCliente);
+            Assert.AreEqual(champu.Precio * champu.Cantidad, champu.Bruto, "CK_LinPedidoVta_5");
+
+            VendedorPedidoGrupoProducto vendedorGrupo = e.VendedoresNuevos.Single();
+            Assert.AreEqual(PEDIDO_SEGUNDO, vendedorGrupo.Pedido);
+            Assert.AreEqual("PEL", vendedorGrupo.GrupoProducto);
+            Assert.AreEqual("JE", vendedorGrupo.Vendedor);
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_PorDefecto_LosPortesNoSeCobranOtraVez()
+        {
+            var e = CrearEscenarioFacturaDevuelta(conReembolso: true);
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestRehacer(), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            List<LinPedidoVta> gastosEnvio = e.Lineas(PEDIDO_SEGUNDO).Where(l => l.TipoLinea == 2).ToList();
+            Assert.AreEqual(2, gastosEnvio.Count, "Siguen en el pedido para que el picking no los vuelva a añadir");
+            foreach (LinPedidoVta linea in gastosEnvio)
+            {
+                Assert.AreEqual(1M, linea.Descuento, linea.Texto);
+                Assert.AreEqual(0M, linea.Base_Imponible, linea.Texto);
+                Assert.AreEqual(linea.Precio * linea.Cantidad, linea.Bruto, "CK_LinPedidoVta_5: el precio no se toca");
+            }
+            // Los productos sí se cobran
+            Assert.AreEqual(Math.Round(3 * 12.5M, 2) - Math.Round(3 * 12.5M * (1 - 0.95M * 0.9M), 2),
+                e.Lineas(PEDIDO_SEGUNDO).Single(l => l.Producto == "17404").Base_Imponible);
+            // El abono devuelve los portes que pagó
+            Assert.AreEqual(-7M, e.Lineas(PEDIDO_ABONO).Single(l => l.Producto == Constantes.Cuentas.CUENTA_PORTES_CEX).Base_Imponible);
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_ConIncluirPortes_LosPortesSeCopianTalCual()
+        {
+            var e = CrearEscenarioFacturaDevuelta();
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestRehacer(incluirPortes: true), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            LinPedidoVta portes = e.Lineas(PEDIDO_SEGUNDO).Single(l => l.Producto == Constantes.Cuentas.CUENTA_PORTES_CEX);
+            Assert.AreEqual(0M, portes.Descuento);
+            Assert.AreEqual(7M, portes.Base_Imponible);
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_SinFacturarElAbono_NoFacturaNadaYGuardaLaRectificacionPendiente()
+        {
+            var e = CrearEscenarioFacturaDevuelta();
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestRehacer(crearAlbaranYFactura: false), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            Assert.IsNull(respuesta.Abono.NumeroFactura);
+            Assert.AreEqual(PEDIDO_SEGUNDO, respuesta.NumeroPedido);
+            A.CallTo(() => e.ServicioAlbaranes.CrearAlbaran(A<string>._, A<int>._, A<string>._, A<DateTime?>._)).MustNotHaveHappened();
+            A.CallTo(() => e.ServicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => e.Pendientes.GuardarPendientes("1", PEDIDO_ABONO, A<List<RectificativaPendienteDTO>>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => e.Pendientes.GuardarPendientes(A<string>._, PEDIDO_SEGUNDO, A<List<RectificativaPendienteDTO>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_ConOtroCliente_NoHaceNadaYDiceQueUseAbonoYCargo()
+        {
+            var e = CrearEscenarioFacturaDevuelta();
+            CopiarFacturaRequest request = RequestRehacer();
+            request.ClienteDestino = "18456";
+            request.ContactoDestino = "0";
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(request, "Carlos");
+
+            Assert.IsFalse(respuesta.Exitoso);
+            StringAssert.Contains(respuesta.Mensaje, "mismo cliente");
+            Assert.AreEqual(0, e.CabecerasNuevas.Count + e.LineasNuevas.Count);
+        }
+
+        [TestMethod]
+        public async Task AbonoYCargo_ConOtroCliente_SigueFacturandoElCargoAlDestinoConSusPortes()
+        {
+            // El comportamiento de CrearAbonoYCargo no cambia con #699.
+            var e = CrearEscenarioFacturaDevuelta();
+            var destino = new Cliente { Empresa = "1", Nº_Cliente = "18456", Contacto = "0", IVA = "G21", Vendedor = "DE", CCC = "5", Ruta = "FW" };
+            var clientes = FakeDbSet(new[]
+            {
+                new Cliente { Empresa = "1", Nº_Cliente = "15234", Contacto = "2", IVA = "G21", Vendedor = "FICHA" },
+                destino
+            }, null);
+            A.CallTo(() => clientes.Include(A<string>._)).Returns(clientes);
+            A.CallTo(() => e.Db.Clientes).Returns(clientes);
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(new CopiarFacturaRequest
+            {
+                Empresa = "1",
+                Cliente = "15234",
+                NumeroFactura = FACTURA_ORIGINAL,
+                CrearAbonoYCargo = true,
+                ClienteDestino = "18456",
+                ContactoDestino = "0"
+            }, "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            Assert.IsNull(respuesta.PedidoRehecho);
+            Assert.AreEqual(PEDIDO_SEGUNDO, respuesta.Cargo.NumeroPedido);
+            Assert.AreEqual("NV26/999999", respuesta.Cargo.NumeroFactura);
+            A.CallTo(() => e.ServicioFacturas.CrearFactura("1", PEDIDO_SEGUNDO, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            CabPedidoVta cargo = e.Cabecera(PEDIDO_SEGUNDO);
+            Assert.AreEqual("18456", cargo.Nº_Cliente);
+            Assert.AreEqual("FW", cargo.Ruta, "El cargo lleva la ruta de la ficha del destino, como siempre");
+            Assert.AreEqual(7M, e.Lineas(PEDIDO_SEGUNDO).Single(l => l.Producto == Constantes.Cuentas.CUENTA_PORTES_CEX).Base_Imponible);
+            Assert.AreEqual(0, e.VendedoresNuevos.Count);
+        }
+
+        [TestMethod]
+        public void EsLineaGastosEnvio_PortesYReembolsoSi_ProductosYOtrasCuentasNo()
+        {
+            Assert.IsTrue(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 2, Producto = "62400005 " }));
+            Assert.IsTrue(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 2, Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL, Texto = "Comisión contra reembolso" }));
+            Assert.IsFalse(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 1, Producto = "62400" }));
+            Assert.IsFalse(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 2, Producto = "75900000" }));
+        }
+
+        #endregion
+
         #region SerieParaPedidoNuevo (NestoAPI#39: rectificativas a serie RV/RC)
 
         // Art. 6.1.a RD 1619/2012: las rectificativas exigen serie específica. Con la serie

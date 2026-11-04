@@ -100,5 +100,26 @@ namespace NestoAPI.Models.Rectificativas
         /// Por defecto true.
         /// </summary>
         public bool UsarVendedorFacturaOriginal { get; set; } = true;
+
+        /// <summary>
+        /// NestoAPI#699: la agencia devuelve el pedido y el cliente lo sigue queriendo. En un solo paso:
+        /// 1. Abono (rectificativa con las cantidades invertidas) de la factura, como siempre; con
+        ///    albarán y factura si se marca <see cref="CrearAlbaranYFactura"/>.
+        /// 2. Pedido nuevo para el MISMO cliente y contacto (misma dirección de entrega), con las mismas
+        ///    líneas, precios, descuentos, forma y plazos de pago y vendedor que el pedido de la factura.
+        ///    Queda pendiente de servir (sin albarán ni factura) para que salga por el picking normal.
+        ///
+        /// Solo con una factura y sin cambio de cliente (para otro cliente está <see cref="CrearAbonoYCargo"/>).
+        /// Ignora <see cref="InvertirCantidades"/> y <see cref="AnadirAPedidoOriginal"/>.
+        /// </summary>
+        public bool RehacerPedido { get; set; }
+
+        /// <summary>
+        /// NestoAPI#699: solo con <see cref="RehacerPedido"/>. Por defecto (false) los portes del reenvío
+        /// «nos los comemos»: las líneas de portes y de comisión contra reembolso de la factura pasan al
+        /// pedido nuevo con un 100 % de descuento (a 0 €), para que ni el picking ni el guardado del
+        /// pedido vuelvan a cobrarlos. Con true se copian tal cual y el cliente los paga otra vez.
+        /// </summary>
+        public bool IncluirPortes { get; set; }
     }
 }

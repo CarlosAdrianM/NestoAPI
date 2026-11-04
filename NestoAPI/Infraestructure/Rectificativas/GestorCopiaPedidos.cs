@@ -46,6 +46,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 // Validar request
                 ValidarRequest(request);
 
+                // NestoAPI#699: abono + pedido nuevo para el mismo cliente (devuelto por la agencia)
+                if (request.RehacerPedido)
+                {
+                    return await EjecutarAbonoYRehacerPedido(request, usuario);
+                }
+
                 // Si es operación AbonoYCargo, ejecutar flujo especial
                 if (request.CrearAbonoYCargo)
                 {
@@ -483,7 +489,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
         private async Task<CabPedidoVta> CrearPedidoNuevo(
             CopiarFacturaRequest request,
             LinPedidoVta lineaReferencia,
-            string usuario)
+            string usuario,
+            OpcionesRehacerPedido rehacer = null)
         {
             // Determinar cliente destino
             string clienteDestino = request.EsCambioCliente ? request.ClienteDestino : request.Cliente;
@@ -517,9 +524,13 @@ namespace NestoAPI.Infraestructure.Rectificativas
             // que PostPedidoVenta, para que dos peticiones concurrentes no cojan el mismo número)
             int numeroPedido = _db.TomarSiguienteNumeroPedido();
 
-            // Calcular primer vencimiento
+            // Calcular primer vencimiento. NestoAPI#699: el pedido rehecho lleva los plazos del pedido
+            // original, así que el vencimiento se calcula con esos y no con los de la ficha.
+            string plazosParaVencimiento = rehacer != null && !string.IsNullOrWhiteSpace(pedidoOriginal?.PlazosPago)
+                ? pedidoOriginal.PlazosPago
+                : plazosPagoCliente;
             var plazoPago = await _db.PlazosPago
-                .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == plazosPagoCliente);
+                .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == plazosParaVencimiento);
 
             DateTime primerVencimiento = DateTime.Today;
             if (plazoPago != null)
@@ -569,10 +580,41 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 Usuario = usuario
             };
 
+            // NestoAPI#699: el pedido rehecho es el mismo envío otra vez: misma ruta, periodo de
+            // facturación, CCC (va con la forma de pago) y comentario para el almacén que el original.
+            // OJO: PedidoOrigen NO se rellena; en Nesto significa «nota de entrega del pedido X».
+            if (rehacer != null && pedidoOriginal != null)
+            {
+                pedidoNuevo.Ruta = pedidoOriginal.Ruta ?? pedidoNuevo.Ruta;
+                pedidoNuevo.Periodo_Facturacion = pedidoOriginal.Periodo_Facturacion ?? pedidoNuevo.Periodo_Facturacion;
+                pedidoNuevo.CCC = pedidoOriginal.CCC;
+                pedidoNuevo.ComentarioPicking = pedidoOriginal.ComentarioPicking;
+            }
+
             // NestoAPI#538: aquí NO se guarda. La cabecera entra en el mismo SaveChanges que las
             // líneas (CopiarLineas / CopiarLineasMultiples), que EF hace en una sola transacción:
             // si falla la copia de líneas no queda en la BD una cabecera sin ninguna línea.
             _db.CabPedidoVtas.Add(pedidoNuevo);
+
+            // NestoAPI#699: y los vendedores por grupo de producto (#249) del pedido original, para que
+            // el pedido rehecho comisione igual. Mismo SaveChanges que la cabecera.
+            if (rehacer != null && pedidoOriginal != null && request.UsarVendedorFacturaOriginal)
+            {
+                var vendedoresGrupo = await _db.VendedoresPedidosGruposProductos
+                    .Where(v => v.Empresa == request.Empresa && v.Pedido == pedidoOriginal.Número)
+                    .ToListAsync();
+                foreach (var vendedorGrupo in vendedoresGrupo.Where(v => !string.IsNullOrWhiteSpace(v.Vendedor)))
+                {
+                    _db.VendedoresPedidosGruposProductos.Add(new VendedorPedidoGrupoProducto
+                    {
+                        Empresa = pedidoNuevo.Empresa,
+                        Pedido = pedidoNuevo.Número,
+                        GrupoProducto = vendedorGrupo.GrupoProducto,
+                        Vendedor = vendedorGrupo.Vendedor,
+                        Usuario = usuario
+                    });
+                }
+            }
 
             return pedidoNuevo;
         }
@@ -581,7 +623,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             CopiarFacturaRequest request,
             List<LinPedidoVta> lineasOrigen,
             CabPedidoVta pedidoDestino,
-            string usuario)
+            string usuario,
+            OpcionesRehacerPedido rehacer = null)
         {
             var lineasCopiadas = new List<LineaCopiadaDTO>();
 
@@ -673,6 +716,15 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     lineaNueva.DescuentoCliente = descuentoClienteDestino?.Descuento ?? 0;
                     lineaNueva.DescuentoPP = plazoPagoDestino?.DtoProntoPago ?? 0;
                     lineaNueva.Aplicar_Dto = lineaOrigen.Aplicar_Dto;
+                }
+
+                // NestoAPI#699: los portes del reenvío «nos los comemos». La línea va con un 100 % de
+                // descuento (como se hace a mano) en vez de no copiarla: sin línea de portes, el picking
+                // (PedidoPicking.hayQueSumarPortes) y el PUT del pedido los volverían a añadir, porque
+                // la factura original no llegaba al mínimo. Precio y Bruto no cambian (CK_LinPedidoVta_5).
+                if (rehacer != null && !rehacer.IncluirPortes && EsLineaGastosEnvio(lineaOrigen))
+                {
+                    lineaNueva.Descuento = 1M;
                 }
 
                 // Calcular importes
@@ -998,10 +1050,180 @@ namespace NestoAPI.Infraestructure.Rectificativas
         }
 
         /// <summary>
+        /// NestoAPI#699: lo que cambia en la copia cuando se rehace el pedido de una factura devuelta.
+        /// </summary>
+        private sealed class OpcionesRehacerPedido
+        {
+            public bool IncluirPortes { get; set; }
+            public string ComentarioTrazabilidad { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#699: líneas de gastos de envío: portes (cuentas 624) y comisión contra reembolso
+        /// (que también cuelga de una 624). Las dos se cobran por envío.
+        /// </summary>
+        internal static bool EsLineaGastosEnvio(LinPedidoVta linea)
+        {
+            return linea != null
+                && linea.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
+                && linea.Producto != null
+                && linea.Producto.Trim().StartsWith("624");
+        }
+
+        internal static string ComentarioPedidoRehecho(string factura, int pedidoOriginal)
+            => $"[Rehecho de la factura {factura} (pedido {pedidoOriginal}), devuelto por la agencia]";
+
+        /// <summary>
+        /// NestoAPI#699: la agencia devuelve el pedido y el cliente lo sigue queriendo.
+        /// 1. Abono de la factura al mismo cliente (como un abono normal: rectificativa con las
+        ///    cantidades invertidas, con albarán y factura si se pidió).
+        /// 2. Pedido nuevo para el mismo cliente y contacto con las mismas condiciones, PENDIENTE de
+        ///    servir: sin albarán ni factura, para que salga por el picking normal.
+        ///
+        /// Es una opción aparte de CrearAbonoYCargo porque es otra operación: aquel factura al momento
+        /// el cargo a OTRO cliente; aquí el pedido nuevo no se factura (tiene que volver a prepararse y
+        /// a salir), es del mismo cliente y los portes no se cobran otra vez.
+        /// </summary>
+        private async Task<CopiarFacturaResponse> EjecutarAbonoYRehacerPedido(CopiarFacturaRequest request, string usuario)
+        {
+            var response = new CopiarFacturaResponse();
+
+            if (request.CrearAbonoYCargo)
+            {
+                throw new NestoBusinessException("No se puede rehacer el pedido y hacer a la vez abono y cargo a otro cliente. Elija solo una de las dos opciones.",
+                    new ErrorContext { ErrorCode = "REHACER_PEDIDO_CON_ABONO_Y_CARGO", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim(), Factura = request.NumeroFactura?.Trim() });
+            }
+            if (request.EsCambioCliente)
+            {
+                throw new NestoBusinessException("El pedido se rehace para el mismo cliente de la factura. Para pasarlo a otro cliente use «Crear abono y cargo».",
+                    new ErrorContext { ErrorCode = "REHACER_PEDIDO_CON_CAMBIO_CLIENTE", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim(), Factura = request.NumeroFactura?.Trim() });
+            }
+            if (request.NumerosFactura != null && request.NumerosFactura.Count > 1)
+            {
+                throw new NestoBusinessException("Para rehacer el pedido seleccione una sola factura.",
+                    new ErrorContext { ErrorCode = "REHACER_PEDIDO_VARIAS_FACTURAS", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim() });
+            }
+
+            var (lineasOrigen, numeroFacturaReal, error) = await ObtenerLineasFacturaOPedido(request.Empresa, request.NumeroFactura);
+            if (!string.IsNullOrEmpty(error))
+            {
+                response.Mensaje = error;
+                return response;
+            }
+            if (!lineasOrigen.Any())
+            {
+                response.Mensaje = $"No se encontraron líneas para '{request.NumeroFactura}'";
+                return response;
+            }
+
+            string facturaAUsar = numeroFacturaReal ?? request.NumeroFactura?.Trim();
+            var primeraLinea = lineasOrigen.First();
+            int pedidoOriginal = primeraLinea.Número;
+            string clienteOrigen = primeraLinea.Nº_Cliente?.Trim();
+            string contactoOrigen = primeraLinea.Contacto?.Trim();
+
+            // ========== PASO 1: ABONO ==========
+            var requestAbono = new CopiarFacturaRequest
+            {
+                Empresa = request.Empresa,
+                Cliente = clienteOrigen,
+                NumeroFactura = facturaAUsar,
+                InvertirCantidades = true,
+                AnadirAPedidoOriginal = false,
+                MantenerCondicionesOriginales = true,
+                CrearAlbaranYFactura = request.CrearAlbaranYFactura,
+                Comentarios = request.Comentarios,
+                UsarVendedorFacturaOriginal = request.UsarVendedorFacturaOriginal
+            };
+            var responseAbono = await CopiarFacturaInterno(requestAbono, usuario);
+            if (!responseAbono.Exitoso)
+            {
+                response.Mensaje = $"No se pudo hacer el abono: {responseAbono.Mensaje}";
+                return response;
+            }
+            response.Abono = new OperacionFacturaDTO
+            {
+                Cliente = clienteOrigen,
+                Contacto = contactoOrigen,
+                NumeroPedido = responseAbono.NumeroPedido,
+                NumeroAlbaran = responseAbono.NumeroAlbaran,
+                NumeroFactura = responseAbono.NumeroFactura,
+                Lineas = responseAbono.LineasCopiadas
+            };
+
+            // ========== PASO 2: PEDIDO REHECHO (pendiente de servir) ==========
+            var requestRehecho = new CopiarFacturaRequest
+            {
+                Empresa = request.Empresa,
+                Cliente = clienteOrigen,
+                NumeroFactura = facturaAUsar,
+                InvertirCantidades = false,
+                AnadirAPedidoOriginal = false,
+                MantenerCondicionesOriginales = true,
+                CrearAlbaranYFactura = false, // sale por el picking normal
+                Comentarios = request.Comentarios,
+                UsarVendedorFacturaOriginal = request.UsarVendedorFacturaOriginal
+            };
+            var opciones = new OpcionesRehacerPedido
+            {
+                IncluirPortes = request.IncluirPortes,
+                ComentarioTrazabilidad = ComentarioPedidoRehecho(facturaAUsar, pedidoOriginal)
+            };
+            CopiarFacturaResponse responseRehecho;
+            try
+            {
+                responseRehecho = await CopiarFacturaInterno(requestRehecho, usuario, opciones);
+            }
+            catch (Exception ex)
+            {
+                if (Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(ex))
+                {
+                    ElmahHelper.Notificar(ex);
+                }
+                responseRehecho = new CopiarFacturaResponse { Exitoso = false, Mensaje = ex.Message };
+            }
+            if (!responseRehecho.Exitoso)
+            {
+                // El abono ya está hecho: lo que falta se puede hacer con «Copiar factura» sin invertir.
+                response.Exitoso = false;
+                response.Mensaje = $"ATENCIÓN: el abono está hecho ({DescripcionAbono(response.Abono)}), pero no se pudo rehacer el pedido: {responseRehecho.Mensaje}. " +
+                    $"Puede rehacerlo con «Copiar factura» de la factura {facturaAUsar} sin invertir cantidades.";
+                return response;
+            }
+
+            response.PedidoRehecho = new OperacionFacturaDTO
+            {
+                Cliente = clienteOrigen,
+                Contacto = contactoOrigen,
+                NumeroPedido = responseRehecho.NumeroPedido,
+                Lineas = responseRehecho.LineasCopiadas
+            };
+            // El que hay que abrir es el pedido nuevo
+            response.NumeroPedido = responseRehecho.NumeroPedido;
+            response.LineasCopiadas = responseRehecho.LineasCopiadas;
+            response.Exitoso = true;
+            response.Mensaje = $"Abono hecho ({DescripcionAbono(response.Abono)}). " +
+                $"Pedido {responseRehecho.NumeroPedido} rehecho para el cliente {clienteOrigen}/{contactoOrigen}, pendiente de servir: saldrá por el picking normal. " +
+                (request.IncluirPortes ? "Los portes se cobran otra vez." : "Los portes no se cobran otra vez.");
+            return response;
+        }
+
+        private static string DescripcionAbono(OperacionFacturaDTO abono)
+        {
+            if (abono == null)
+            {
+                return string.Empty;
+            }
+            return string.IsNullOrEmpty(abono.NumeroFactura)
+                ? $"pedido {abono.NumeroPedido}, sin facturar"
+                : $"factura {abono.NumeroFactura}, pedido {abono.NumeroPedido}";
+        }
+
+        /// <summary>
         /// Método interno que ejecuta la copia sin la validación de CrearAbonoYCargo
         /// (para evitar recursión infinita).
         /// </summary>
-        private async Task<CopiarFacturaResponse> CopiarFacturaInterno(CopiarFacturaRequest request, string usuario)
+        private async Task<CopiarFacturaResponse> CopiarFacturaInterno(CopiarFacturaRequest request, string usuario, OpcionesRehacerPedido rehacer = null)
         {
             var response = new CopiarFacturaResponse();
 
@@ -1042,7 +1264,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
             }
             else
             {
-                pedidoDestino = await CrearPedidoNuevo(request, lineasOrigen.First(), usuario);
+                pedidoDestino = await CrearPedidoNuevo(request, lineasOrigen.First(), usuario, rehacer);
                 numeroPedido = pedidoDestino.Número;
             }
 
@@ -1053,7 +1275,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 request,
                 lineasOrigen,
                 pedidoDestino,
-                usuario);
+                usuario,
+                rehacer);
 
             response.LineasCopiadas = lineasCopiadas;
 
@@ -1062,6 +1285,10 @@ namespace NestoAPI.Infraestructure.Rectificativas
             if (request.InvertirCantidades)
             {
                 comentarioTrazabilidad = $"[Rectificativa de factura {request.NumeroFactura}]";
+            }
+            if (rehacer != null)
+            {
+                comentarioTrazabilidad = rehacer.ComentarioTrazabilidad;
             }
             if (request.EsCambioCliente)
             {
