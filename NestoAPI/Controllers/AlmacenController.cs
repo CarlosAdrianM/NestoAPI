@@ -499,7 +499,9 @@ namespace NestoAPI.Controllers
                     Bulto = e.Bulto,
                     Motivo = e.Motivo?.Trim(),
                     Usuario = usuario,
-                    FechaEscaneo = e.FechaEscaneo
+                    FechaEscaneo = e.FechaEscaneo,
+                    // Ariadna#91: la parada de la que se leyó, para que las demás PDA la apunten donde el servidor (NestoAPI#812)
+                    TotalParada = e.TotalParada
                 });
             }
             return porGrupo;

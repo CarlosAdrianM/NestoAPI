@@ -100,6 +100,44 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task PostEscaneos_LaLecturaLlevaElTotalDeLaParadaDeLaQueSeLeyo()
+        {
+            // Ariadna#91 (complemento de NestoAPI#812, picking 100001): las demás PDA la apuntan a la parada cuya cantidad coincide
+            var conParada = new EscaneoAlmacenDTO
+            {
+                IdCliente = Guid.NewGuid(), Picking = 100001, Producto = "29610", Fase = "PICK", Cantidad = 1, Metodo = "SCAN",
+                Dispositivo = "PDA-1", FechaEscaneo = new DateTime(2026, 11, 4, 9, 0, 0), PendienteParada = 7, TotalParada = 7
+            };
+            var sinParada = new EscaneoAlmacenDTO
+            {
+                IdCliente = Guid.NewGuid(), Picking = 100001, Producto = "29610", Fase = "PICK", Cantidad = 1, Metodo = "SCAN",
+                Dispositivo = "PDA-1", FechaEscaneo = new DateTime(2026, 11, 4, 9, 0, 1)
+            };
+            var lote = new List<EscaneoAlmacenDTO> { conParada, sinParada };
+            A.CallTo(() => servicio.GuardarEscaneos("1", lote, "Andrey")).Returns(new ResultadoEscaneosAlmacenDTO { Guardados = 2 });
+            IReadOnlyList<LecturaAlmacenAvisoDTO> mandadas = null;
+            A.CallTo(() => avisos.Lecturas(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<LecturaAlmacenAvisoDTO>>._))
+                .Invokes((string g, string u, string c, string d, IReadOnlyList<LecturaAlmacenAvisoDTO> l) => mandadas = l);
+
+            _ = await controller.PostEscaneos(lote);
+
+            Assert.AreEqual(2, mandadas.Count);
+            Assert.AreEqual(7, mandadas.Single(l => l.IdCliente == conParada.IdCliente).TotalParada);
+            // Sin pista (Ariadna anterior): null, y la PDA hace como siempre (primera parada pendiente)
+            Assert.IsNull(mandadas.Single(l => l.IdCliente == sinParada.IdCliente).TotalParada);
+        }
+
+        [TestMethod]
+        public void LecturaAlmacenAvisoDTO_TotalParadaEsOpcionalEnElJson()
+        {
+            // Ariadna#91: las PDA viejas no conocen el campo y lo ignoran; las nuevas lo leen por su nombre
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(new LecturaAlmacenAvisoDTO { Producto = "29610", Cantidad = 1, TotalParada = 2 });
+            StringAssert.Contains(json, "\"TotalParada\":2");
+            LecturaAlmacenAvisoDTO vieja = Newtonsoft.Json.JsonConvert.DeserializeObject<LecturaAlmacenAvisoDTO>("{\"Producto\":\"29610\",\"Cantidad\":1}");
+            Assert.IsNull(vieja.TotalParada);
+        }
+
+        [TestMethod]
         public async Task PostEscaneos_UnaFalta_ViajaConSuHueco()
         {
             var falta = Escaneo("PICK");
