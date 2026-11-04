@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.EnlacesDescarga;
 using NestoAPI.Infraestructure.Informes;
+using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
@@ -134,7 +135,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     public class LiquidacionReembolsoTarjeta
     {
         public EfectoAPagar Efecto { get; set; }
+        /// <summary>NestoAPI#786: los de una nota de cobro (varios, en su orden; suman justo el importe). Null: <see cref="Efecto"/>.</summary>
+        public List<EfectoAPagar> Efectos { get; set; }
         public string MotivoACuenta { get; set; }
+
+        /// <summary>Lo que va en SolicitudPagoTPV.Efectos (null: a cuenta).</summary>
+        public List<EfectoAPagar> AlEnlace() => Efectos != null && Efectos.Count > 0 ? Efectos : Efecto == null ? null : new List<EfectoAPagar> { Efecto };
     }
 
     /// <summary>Lo que se sabe del cliente para mandarle el enlace.</summary>
@@ -203,10 +209,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         private readonly IRepositorioCobrosTarjetaReparto repositorio;
         private readonly Func<IServicioPagos> pagos;
         private readonly Func<DateTime> ahora;
+        /// <summary>NestoAPI#786: las notas de cobro (sus efectos). Null: un envío de una nota de cobro se cobra como cualquier reembolso.</summary>
+        private readonly IRepositorioNotasParadaReparto notas;
 
         public ServicioCobroTarjetaReparto(IRepositorioRepartoPropio reparto, IRepositorioCobrosTarjetaReparto repositorio,
-            Func<IServicioPagos> pagos = null, Func<DateTime> ahora = null)
+            Func<IServicioPagos> pagos = null, Func<DateTime> ahora = null, IRepositorioNotasParadaReparto notas = null)
         {
+            this.notas = notas;
             this.reparto = reparto ?? throw new ArgumentNullException(nameof(reparto));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.pagos = pagos ?? (() => new ServicioPagos(new RedsysService(), new Contabilidad.ContabilidadService(), new LectorParametrosUsuario()));
@@ -239,6 +248,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             // de la 1 puede facturarse en la 3): con la factura pendiente en la 3 no hay enlace, se cobra siempre en efectivo.
             CobroEnvioReparto destino = await repositorio.LeerCobroDelEnvio(envio).ConfigureAwait(false);
             string empresa = string.IsNullOrWhiteSpace(destino?.Empresa) ? EmpresaDelCobroReparto.SinExtracto(null, envio.Empresa) : destino.Empresa.Trim();
+            // NestoAPI#786: en una nota de cobro mandan sus efectos (con uno de la 3, siempre en efectivo)
+            NotaParadaReparto notaCobro = await NotaCobroDelEnvio(envio).ConfigureAwait(false);
+            empresa = ServicioNotasCobro.EmpresaCobro(notaCobro?.EfectosCobro) ?? empresa;
             if (!AdmiteTarjeta(empresa))
             {
                 return Invalido(string.Format(MENSAJE_EMPRESA_EFECTIVO, empresa));
@@ -265,6 +277,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             string correoPropuesto = correo ?? CorreoValido(envio.Email) ?? CorreoValido(datos.Correo);
             string concepto = ServicioRepartoPropio.ConceptoEnlace(envio);
             string queSePaga = envio.Pedido.HasValue ? $"el pedido {envio.Pedido.Value} de Nueva Visión" : $"el envío {envio.Numero} de Nueva Visión";
+            if (notaCobro != null)
+            {
+                // El cliente no conoce el número de la nota: lo que paga son sus facturas (o «sus recibos pendientes»)
+                List<string> documentos = notaCobro.EfectosCobro.Select(e => e.Documento?.Trim()).Where(d => !string.IsNullOrEmpty(d)).Distinct().ToList();
+                queSePaga = documentos.Count == 0 ? "sus recibos pendientes con Nueva Visión"
+                    : documentos.Count == 1 ? $"el documento {documentos[0]} de Nueva Visión"
+                    : $"los documentos {string.Join(", ", documentos.Take(5))}{(documentos.Count > 5 ? "…" : string.Empty)} de Nueva Visión";
+                concepto = documentos.Count == 1 ? $"Pago {documentos[0]} cliente {cliente}" : $"Pago efectos cliente {cliente}";
+            }
 
             EnlaceTarjetaReparto previo = await repositorio.LeerUltimoDelEnvio(envio.Numero).ConfigureAwait(false);
             // Carlos 31/10/26: como el efectivo, el cobro con tarjeta LIQUIDA el efecto de la factura (copia su Nº documento, efecto…).
@@ -272,7 +293,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             LiquidacionReembolsoTarjeta liquidacion = null;
             return await CrearOReutilizar(previo, importe, async () =>
             {
-                liquidacion = await LiquidacionDelReembolso(envio, importe, empresa, destino?.Movimiento).ConfigureAwait(false);
+                liquidacion = notaCobro != null
+                    ? LiquidacionNotaCobro(notaCobro.EfectosCobro, importe)
+                    : await LiquidacionDelReembolso(envio, importe, empresa, destino?.Movimiento).ConfigureAwait(false);
                 return new SolicitudPagoTPV
                 {
                     Empresa = empresa,
@@ -282,7 +305,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     Descripcion = concepto,
                     Correo = correo,
                     Vendedor = envio.Vendedor?.Trim(),
-                    Efectos = liquidacion.Efecto == null ? null : new List<EfectoAPagar> { liquidacion.Efecto }
+                    Efectos = liquidacion.AlEnlace()
                 };
             }, new EnlaceTarjetaReparto
             {
@@ -323,6 +346,66 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return new LiquidacionReembolsoTarjeta { MotivoACuenta = "no se ha podido buscar la factura pendiente" };
             }
             return EfectoALiquidar(movimiento, importe);
+        }
+
+        /// <summary>NestoAPI#786: la nota de cobro del envío (con sus efectos), o null si no lo es (o sin el repositorio).</summary>
+        private async Task<NotaParadaReparto> NotaCobroDelEnvio(EnviosAgencia envio)
+        {
+            if (notas == null || !envio.Pedido.HasValue)
+            {
+                return null;
+            }
+            List<NotaParadaReparto> leidas = await notas.LeerNotas(new[] { envio.Pedido.Value }).ConfigureAwait(false) ?? new List<NotaParadaReparto>();
+            NotaParadaReparto nota = leidas.FirstOrDefault(n => n.Pedido == envio.Pedido.Value);
+            return nota?.EsCobro == true ? nota : null;
+        }
+
+        /// <summary>
+        /// NestoAPI#786 (pura, para los tests): los efectos que liquida el enlace de una nota de cobro: lo pendiente de cada uno en su
+        /// orden hasta llegar al importe (el último, en parte si hace falta). Tienen que sumar JUSTO el importe (el asiento del cobro con
+        /// tarjeta es una línea por efecto contra el banco): si el importe pasa de lo pendiente, o no hay efectos, a cuenta.
+        /// </summary>
+        internal static LiquidacionReembolsoTarjeta LiquidacionNotaCobro(IEnumerable<EfectoCobroReparto> efectos, decimal importe)
+        {
+            List<EfectoCobroReparto> pendientes = (efectos ?? Enumerable.Empty<EfectoCobroReparto>())
+                .Where(e => e != null && e.ImportePendiente > 0 && e.Estado?.Trim() != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
+                .ToList();
+            if (pendientes.Count == 0)
+            {
+                return new LiquidacionReembolsoTarjeta { MotivoACuenta = "la nota de cobro no tiene efectos pendientes" };
+            }
+            decimal total = Math.Round(pendientes.Sum(e => e.ImportePendiente), 2, MidpointRounding.AwayFromZero);
+            if (importe > total)
+            {
+                return new LiquidacionReembolsoTarjeta
+                {
+                    MotivoACuenta = $"el importe ({importe.ToString("N2", Espanol)} €) pasa de lo pendiente de sus efectos ({total.ToString("N2", Espanol)} €)"
+                };
+            }
+            var resultado = new List<EfectoAPagar>();
+            decimal restante = importe;
+            foreach (EfectoCobroReparto e in pendientes)
+            {
+                if (restante <= 0)
+                {
+                    break;
+                }
+                decimal parte = Math.Min(Math.Round(e.ImportePendiente, 2, MidpointRounding.AwayFromZero), restante);
+                restante -= parte;
+                resultado.Add(new EfectoAPagar
+                {
+                    ExtractoClienteId = e.Id,
+                    Importe = parte,
+                    Documento = e.Documento?.Trim(),
+                    Efecto = e.Efecto?.Trim(),
+                    Contacto = e.Contacto?.Trim(),
+                    Vendedor = e.Vendedor?.Trim(),
+                    FormaVenta = e.FormaVenta?.Trim(),
+                    Delegacion = e.Delegacion?.Trim(),
+                    TipoApunte = e.TipoApunte?.Trim()
+                });
+            }
+            return new LiquidacionReembolsoTarjeta { Efectos = resultado, Efecto = resultado[0] };
         }
 
         /// <summary>El efecto de un movimiento del extracto (null si no hay).</summary>
@@ -393,7 +476,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return;
             }
-            string texto = liquidacion.Efecto != null
+            string texto = liquidacion.Efectos != null && liquidacion.Efectos.Count > 1
+                ? $"Reparto propio: enlace de pago con tarjeta {pagoId} de {importe.ToString("N2", Espanol)} €; al pagarse liquida " +
+                  string.Join(", ", liquidacion.Efectos.Select(e => e.Documento + (string.IsNullOrEmpty(e.Efecto) ? string.Empty : "/" + e.Efecto)))
+                : liquidacion.Efecto != null
                 ? $"Reparto propio: enlace de pago con tarjeta {pagoId} de {importe.ToString("N2", Espanol)} €; al pagarse liquida la factura " +
                   $"{liquidacion.Efecto.Documento}{(string.IsNullOrEmpty(liquidacion.Efecto.Efecto) ? string.Empty : "/" + liquidacion.Efecto.Efecto)}"
                 : $"Reparto propio: enlace de pago con tarjeta {pagoId} de {importe.ToString("N2", Espanol)} €; al pagarse queda A CUENTA del " +

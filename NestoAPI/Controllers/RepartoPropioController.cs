@@ -41,6 +41,8 @@ namespace NestoAPI.Controllers
         {
             // NestoAPI#773: tarjeta pagada y autorización para no cobrar al entregar
             servicio.CobroEntrega = new ComprobadorCobroEntrega(new RepositorioCobrosTarjetaReparto(db), new RepositorioAutorizacionesReembolso(db));
+            // NestoAPI#786: el efectivo de una nota de cobro liquida sus efectos como «Cobrar una deuda»
+            servicio.CobrosDeuda = new ServicioCobrosReparto(new RepositorioCobrosReparto(db));
         }
 
         // GET api/RepartoPropio/MisCobros?fecha=2026-10-29

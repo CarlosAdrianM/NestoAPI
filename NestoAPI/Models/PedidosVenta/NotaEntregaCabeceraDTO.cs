@@ -8,7 +8,7 @@ namespace NestoAPI.Models.PedidosVenta
     {
         public string Empresa { get; set; }
         public int Pedido { get; set; }
-        /// <summary>"Entrega" o "Recogida" (<see cref="TiposNotaEntrega"/>).</summary>
+        /// <summary>"Entrega", "Recogida" o, NestoAPI#786, "Cobro" (<see cref="TiposNotaEntrega"/>).</summary>
         public string Tipo { get; set; }
         /// <summary>Solo tiene sentido en las de Recogida; en las de Entrega los da el packing (Carlos 30/10/26).</summary>
         public short Bultos { get; set; }
@@ -24,7 +24,7 @@ namespace NestoAPI.Models.PedidosVenta
         public int? EnvioId { get; set; }
         /// <summary>"Tramitado", "Incidentado", "Entregado" o null (sin envío o sin tramitar).</summary>
         public string EstadoEnvio { get; set; }
-        /// <summary>"NE{pedido}" en las de entrega, "NR{pedido}" en las de recogida.</summary>
+        /// <summary>"NE{pedido}" en las de entrega, "NR{pedido}" en las de recogida, "NC{pedido}" en las de cobro (NestoAPI#786).</summary>
         public string CodigoDocumento { get; set; }
     }
 
@@ -60,10 +60,15 @@ namespace NestoAPI.Models.PedidosVenta
     {
         public const string ENTREGA = "Entrega";
         public const string RECOGIDA = "Recogida";
+        /// <summary>
+        /// NestoAPI#786: nota de solo COBRO (volver a casa del cliente a cobrar). Sin líneas ni bultos: no pasa por picking, packing
+        /// ni furgoneta. Se crea con POST api/NotasEntrega/Cobro (no con el POST de pedidos) y entra en el reparto como parada NC{pedido}.
+        /// </summary>
+        public const string COBRO = "Cobro";
         public const short BULTOS_POR_DEFECTO = 1;
         public const short BULTOS_MAXIMO = 999;
 
-        /// <summary>El tipo bien escrito ("Entrega"/"Recogida") sin importar mayúsculas ni espacios; null si no es ninguno.</summary>
+        /// <summary>El tipo bien escrito ("Entrega"/"Recogida"/"Cobro") sin importar mayúsculas ni espacios; null si no es ninguno.</summary>
         public static string Normalizar(string tipo)
         {
             string t = tipo?.Trim();
@@ -75,13 +80,20 @@ namespace NestoAPI.Models.PedidosVenta
             {
                 return RECOGIDA;
             }
+            if (string.Equals(t, COBRO, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return COBRO;
+            }
             return null;
         }
 
+        /// <summary>«NE{pedido}», «NR{pedido}» o, NestoAPI#786, «NC{pedido}».</summary>
         public static string CodigoDocumento(string tipo, int pedido)
-            => Infraestructure.Agencias.RepartoPropio.CodigoNotaEntrega.Documento(tipo == RECOGIDA, pedido);
+            => tipo == COBRO
+                ? Infraestructure.Agencias.RepartoPropio.CodigoNotaEntrega.DocumentoCobro(pedido)
+                : Infraestructure.Agencias.RepartoPropio.CodigoNotaEntrega.Documento(tipo == RECOGIDA, pedido);
 
-        /// <summary>NestoAPI#758: «NOTA DE ENTREGA» / «NOTA DE RECOGIDA», el título del documento.</summary>
-        public static string Titulo(string tipo) => tipo == RECOGIDA ? "NOTA DE RECOGIDA" : Constantes.Facturas.TiposDocumento.NOTA_ENTREGA;
+        /// <summary>NestoAPI#758: «NOTA DE ENTREGA» / «NOTA DE RECOGIDA» (NestoAPI#786: «NOTA DE COBRO»), el título del documento.</summary>
+        public static string Titulo(string tipo) => tipo == RECOGIDA ? "NOTA DE RECOGIDA" : tipo == COBRO ? "NOTA DE COBRO" : Constantes.Facturas.TiposDocumento.NOTA_ENTREGA;
     }
 }

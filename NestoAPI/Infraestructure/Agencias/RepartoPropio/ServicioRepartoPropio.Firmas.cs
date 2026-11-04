@@ -34,13 +34,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// El texto que vio quien firma: el que manda la PDA (recortado a <see cref="EntregaRepartoDTO.MAXIMO_TEXTO_CONFORMIDAD"/>)
         /// o, si es una PDA vieja, el de la misma regla que Ariadna (<see cref="TextoConformidadEntrega"/>).
         /// </summary>
+        /// <param name="esCobro">NestoAPI#786: parada de solo cobro (sin bultos): «he pagado X €».</param>
         internal static string TextoConformidad(EntregaRepartoDTO peticion, EnviosAgencia envio, bool recogida, short? bultosRecogidos,
-            string cobro, decimal? importeCobrado)
+            string cobro, decimal? importeCobrado, bool esCobro = false)
         {
             string enviado = Limpio(peticion?.TextoConformidad);
             if (enviado != null)
             {
                 return Recortar(enviado, EntregaRepartoDTO.MAXIMO_TEXTO_CONFORMIDAD);
+            }
+            if (esCobro)
+            {
+                FormaPagoConformidad forma = TextoConformidadEntrega.FormaDe(cobro);
+                decimal importe = forma == FormaPagoConformidad.Ninguno ? envio.Reembolso : importeCobrado ?? envio.Reembolso;
+                return TextoConformidadEntrega.Cobro(envio.Pedido, forma, importe);
             }
             int bultosEnvio = Math.Max((int)envio.Bultos, 1);
             return recogida

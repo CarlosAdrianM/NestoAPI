@@ -539,7 +539,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return null;
             }
-            if (envioId > 0 && (await NotaDeEnvio(envioId).ConfigureAwait(false))?.EsRecogida == true)
+            // Ni las recogidas ni, NestoAPI#786, las notas de cobro (no tienen bultos: no se leen aunque el escaneo sea obligatorio).
+            NotaParadaReparto nota = envioId > 0 ? await NotaDeEnvio(envioId).ConfigureAwait(false) : null;
+            if (nota?.EsRecogida == true || nota?.EsCobro == true)
             {
                 return null;
             }
@@ -627,6 +629,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     {
                         await AnotarRecogidaSinLeer(envio, nota.Pedido, peticion, usuario, fechaHora, momento).ConfigureAwait(false);
                         return;
+                    }
+                    if (nota?.EsCobro == true)
+                    {
+                        return; // NestoAPI#786: una nota de cobro no lleva nada en la furgoneta
                     }
                 }
                 List<MovimientoBultoReparto> deLaParada = NucleoFurgoneta.Ultimos(await paradas.Furgoneta.LeerHistoria(

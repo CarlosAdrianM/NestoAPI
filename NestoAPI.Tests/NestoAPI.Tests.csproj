@@ -387,6 +387,7 @@
     <Compile Include="Infrastructure\NotasEntrega\AbonosRecogidaTests.cs" />
     <Compile Include="Infrastructure\NotasEntrega\NotasEntregaCabeceraTests.cs" />
     <Compile Include="Infrastructure\NotasEntrega\NotasEntregaRepartoTests.cs" />
+    <Compile Include="Infrastructure\NotasEntrega\NotasCobroTests.cs" />
     <Compile Include="Infrastructure\NotasEntrega\GuardiaNotaSinPackingTests.cs" />
     <Compile Include="Infrastructure\CreadorNotaEntregaPendienteTests.cs" />
     <Compile Include="Infrastructure\FechaEntregaNotasTests.cs" />

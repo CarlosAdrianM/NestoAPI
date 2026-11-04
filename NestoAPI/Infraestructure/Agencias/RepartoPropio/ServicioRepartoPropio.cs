@@ -407,6 +407,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     return Invalido(comprobacion.Error);
                 }
             }
+            // NestoAPI#759: en las notas de recogida, los bultos que se trae. NestoAPI#786: una nota de cobro liquida sus efectos.
+            NotaParadaReparto nota = await NotaDe(envio.Pedido).ConfigureAwait(false);
+            bool recogida = nota?.EsRecogida == true;
+            bool notaCobro = nota?.EsCobro == true;
             bool efectivo = cobro == PruebaEntregaReparto.COBRO_EFECTIVO;
             bool enlace = cobro == PruebaEntregaReparto.COBRO_ENLACE;
             // Con enlace, ImporteCobrado es el importe del enlace (aún no cobrado: entra por la notificación de Redsys).
@@ -417,6 +421,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 : 0m;
             decimal? aContabilizar = null;
             string cuentaCaja = null;
+            bool cobrarEfectosNota = false;
             if (efectivo && importeCobrado > 0 && MomentosContabilizarReembolso.De(envio.Agencia) == MomentoContabilizarReembolso.AlEntregar)
             {
                 // Carlos 29/10/26: la caja es del REPARTIDOR, no de la agencia (con dos repartidores, cada uno cobra en su caja).
@@ -425,7 +430,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     return Invalido(MENSAJE_SIN_CAJA);
                 }
-                aContabilizar = importeCobrado;
+                // NestoAPI#786: la nota de cobro se cobra como «Cobrar una deuda» (#766): sus efectos en su orden y lo que sobre, a cuenta.
+                if (notaCobro && CobrosDeuda != null)
+                {
+                    cobrarEfectosNota = true;
+                }
+                else
+                {
+                    aContabilizar = importeCobrado;
+                }
             }
             RespuestaIniciarPago pago = null;
             if (enlace)
@@ -463,8 +476,30 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 }
             }
 
+            // Antes de tocar el envío (lo cambia AplicarSeguimiento y el cobro guarda en el mismo contexto): si el cobro falla, nada cambia.
+            int? asientoNota = null;
+            if (cobrarEfectosNota)
+            {
+                // NestoAPI#786: el efectivo de la nota de cobro, por la puerta de «Cobrar una deuda» (#766) con la MISMA clave que la
+                // entrega: idempotente, así que un reintento (también si falla lo de abajo) no contabiliza dos veces.
+                ResultadoReparto<ResultadoCobroDeudaDTO> cobrado = await CobrosDeuda.Cobrar(new CobroDeudaRepartoDTO
+                {
+                    Cliente = envio.Cliente?.Trim(),
+                    Contacto = envio.Contacto?.Trim(),
+                    Efectos = (nota.EfectosCobro ?? new List<EfectoCobroReparto>()).Select(e => e.Id).ToList(),
+                    Importe = importeCobrado.Value,
+                    ClaveIdempotencia = peticion.ClaveIdempotencia,
+                    FechaHora = peticion.FechaHora ?? ahora()
+                }, usuario).ConfigureAwait(false);
+                if (cobrado.Tipo != TipoResultadoReparto.Ok || cobrado.Contenido == null)
+                {
+                    return Invalido($"No se ha registrado el cobro de la nota de cobro {envio.Pedido}: {cobrado.Mensaje}");
+                }
+                asientoNota = cobrado.Contenido.Asiento > 0 ? cobrado.Contenido.Asiento : (int?)null;
+                cuentaCaja = cobrado.Contenido.Caja ?? cuentaCaja;
+            }
+
             // NestoAPI#759: en las notas de recogida, los bultos que se trae (en las demás paradas se ignoran).
-            bool recogida = (await NotaDe(envio.Pedido).ConfigureAwait(false))?.EsRecogida == true;
             short? bultosRecogidos = recogida && peticion.BultosRecogidos.HasValue ? (short?)peticion.BultosRecogidos.Value : null;
 
             DateTime fechaHora = peticion.FechaHora ?? ahora();
@@ -480,6 +515,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 CobroReembolso = cobro,
                 ImporteCobrado = importeCobrado,
                 CuentaCaja = cuentaCaja,
+                Asiento = asientoNota,
                 PagoTPVId = pago?.IdPago ?? comprobacion?.PagoTPVId,
                 UrlPago = pago?.UrlPaginaPago ?? comprobacion?.UrlPago,
                 Texto = observaciones,
@@ -491,6 +527,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             };
             string observacionesHistoria = recogida
                 ? "Reparto propio: recogido" + (bultosRecogidos.HasValue ? $" ({bultosRecogidos.Value} {(bultosRecogidos.Value == 1 ? "bulto" : "bultos")})" : string.Empty)
+                : notaCobro
+                ? "Reparto propio: nota de cobro" + (cobro == null ? string.Empty : $" ({TextoCobro(cobro, importeCobrado)})")
                 : "Reparto propio: entregado" + (cobro == null ? string.Empty : $" (reembolso: {TextoCobro(cobro, importeCobrado)})");
             List<EnvioHistoria> historia = Historia(envio, observacionesHistoria, usuario);
             SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
@@ -505,7 +543,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             bool sellada = false;
             if (firma != null)
             {
-                string conformidad = TextoConformidad(peticion, envio, recogida, bultosRecogidos, cobro, importeCobrado);
+                string conformidad = TextoConformidad(peticion, envio, recogida, bultosRecogidos, cobro, importeCobrado, notaCobro);
                 byte[] conSello = await SellarFirma(firma, prueba, conformidad).ConfigureAwait(false);
                 if (conSello != null)
                 {
@@ -680,7 +718,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             try
             {
                 int asiento = await repositorio.Registrar(prueba, firma, envio, historia, aContabilizar, usuario).ConfigureAwait(false);
-                prueba.Asiento = asiento > 0 ? asiento : (int?)null;
+                // NestoAPI#786: el asiento del cobro de una nota de cobro ya viene puesto (lo contabiliza «Cobrar una deuda»)
+                prueba.Asiento = asiento > 0 ? asiento : prueba.Asiento;
             }
             catch (ClaveIdempotenciaRepetidaException)
             {

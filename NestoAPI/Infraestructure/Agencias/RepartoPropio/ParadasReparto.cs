@@ -104,8 +104,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public string Texto { get; set; }
 
         public bool EsRecogida => Tipo == TiposNotaEntrega.RECOGIDA;
-        public string TipoParada => EsRecogida ? TiposParadaReparto.NOTA_RECOGIDA : TiposParadaReparto.NOTA_ENTREGA;
-        public string CodigoDocumento => CodigoNotaEntrega.Documento(EsRecogida, Pedido);
+        /// <summary>NestoAPI#786: nota de solo cobro (sin bultos).</summary>
+        public bool EsCobro => Tipo == TiposNotaEntrega.COBRO;
+        public string TipoParada => EsRecogida ? TiposParadaReparto.NOTA_RECOGIDA : EsCobro ? TiposParadaReparto.NOTA_COBRO : TiposParadaReparto.NOTA_ENTREGA;
+        public string CodigoDocumento => TiposNotaEntrega.CodigoDocumento(Tipo, Pedido);
+        /// <summary>NestoAPI#786: en las de cobro, lo que hay que cobrar (NotasEntregaCabecera.ImporteCobro); null en las demás.</summary>
+        public decimal? ImporteCobro { get; set; }
+        /// <summary>
+        /// NestoAPI#786: en las de cobro, los efectos que se liquidan al cobrarla, en su orden y con lo pendiente de AHORA (los que ya no
+        /// existen no vienen). Vacía en las demás y en las de solo importe.
+        /// </summary>
+        public List<EfectoCobroReparto> EfectosCobro { get; set; } = new List<EfectoCobroReparto>();
     }
 
     public interface IRepositorioNotasParadaReparto
@@ -124,10 +133,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         private readonly NVEntities db;
+        private readonly IRepositorioNotasCobro notasCobro;
 
         public RepositorioNotasParadaReparto(NVEntities db)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
+            notasCobro = new RepositorioNotasCobro(db);
         }
 
         public async Task<List<NotaParadaReparto>> LeerNotas(IReadOnlyCollection<int> pedidos)
@@ -174,13 +185,40 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                                  select new { Pedido = g.Key, Numero = g.Max() })
                 .ToListAsync().ConfigureAwait(false);
 
-            return notas.Select(n => new NotaParadaReparto
+            List<NotaParadaReparto> resultado = notas.Select(n => new NotaParadaReparto
             {
                 Pedido = n,
                 Tipo = tipos.TryGetValue(n, out string tipo) ? tipo : TiposNotaEntrega.ENTREGA,
                 NumeroNota = numeros.Where(x => x.Pedido == n).Select(x => (int?)x.Numero).FirstOrDefault(),
                 Texto = Texto(textos.Where(t => t.Número == n).Select(t => t.Texto))
             }).ToList();
+            await CompletarCobros(empresa, resultado).ConfigureAwait(false);
+            return resultado;
+        }
+
+        /// <summary>NestoAPI#786: el importe y los efectos (con lo pendiente de ahora) de las notas de cobro, y su texto.</summary>
+        private async Task CompletarCobros(string empresa, List<NotaParadaReparto> notas)
+        {
+            List<NotaParadaReparto> cobros = notas.Where(n => n.EsCobro).ToList();
+            if (cobros.Count == 0)
+            {
+                return;
+            }
+            Dictionary<int, DatosNotaCobro> datos = await notasCobro.LeerDatos(empresa, cobros.Select(n => n.Pedido).ToList()).ConfigureAwait(false)
+                ?? new Dictionary<int, DatosNotaCobro>();
+            List<int> ids = datos.Values.SelectMany(d => d.Efectos).Distinct().ToList();
+            List<EfectoCobroReparto> efectos = ids.Count == 0 ? new List<EfectoCobroReparto>()
+                : await notasCobro.LeerEfectos(ids).ConfigureAwait(false) ?? new List<EfectoCobroReparto>();
+            foreach (NotaParadaReparto nota in cobros)
+            {
+                if (!datos.TryGetValue(nota.Pedido, out DatosNotaCobro dato))
+                {
+                    continue;
+                }
+                nota.ImporteCobro = dato.Importe;
+                nota.EfectosCobro = dato.Efectos.Select(id => efectos.FirstOrDefault(e => e.Id == id)).Where(e => e != null).ToList();
+                nota.Texto = ServicioNotasCobro.Texto(dato.Importe, nota.EfectosCobro);
+            }
         }
 
         /// <summary>Las líneas de texto recortadas y sin las vacías, separadas por \n; null si no queda ninguna.</summary>

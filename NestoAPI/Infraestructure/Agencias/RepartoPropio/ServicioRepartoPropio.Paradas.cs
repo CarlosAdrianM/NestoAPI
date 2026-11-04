@@ -222,6 +222,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     envio.TextoNota = nota.Texto;
                     envio.NumeroNota = nota.NumeroNota;
                     envio.CodigoDocumento = nota.CodigoDocumento;
+                    if (nota.EsCobro)
+                    {
+                        // NestoAPI#786: lo que liquida el cobro y, con efectos, su empresa (con uno de la 3, sin tarjeta: siempre efectivo)
+                        envio.EfectosCobro = (nota.EfectosCobro ?? new List<EfectoCobroReparto>()).Select(ServicioNotasCobro.AEfectoDto).ToList();
+                        envio.EmpresaCobro = ServicioNotasCobro.EmpresaCobro(nota.EfectosCobro) ?? envio.EmpresaCobro;
+                    }
                 }
             }
         }

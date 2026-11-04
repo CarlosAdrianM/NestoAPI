@@ -95,7 +95,9 @@ WHERE c.Empresa = @p0 AND c.[Número] = @p1";
 
         internal static string MotivoSinPacking(EstadoNotaPacking estado, int pedido)
         {
-            if (estado == null || !estado.NotaEntrega || TiposNotaEntrega.Normalizar(estado.Tipo) == TiposNotaEntrega.RECOGIDA)
+            // Las de recogida no pasan por packing y las de cobro (NestoAPI#786) ni tienen líneas ni bultos.
+            string tipo = TiposNotaEntrega.Normalizar(estado?.Tipo);
+            if (estado == null || !estado.NotaEntrega || tipo == TiposNotaEntrega.RECOGIDA || tipo == TiposNotaEntrega.COBRO)
             {
                 return null;
             }

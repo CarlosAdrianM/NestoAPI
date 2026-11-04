@@ -141,11 +141,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                             .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value, prueba.CuentaCaja, destino.Empresa, destino.Movimiento)
                             .ConfigureAwait(false);
                     }
-                    else
+                    else if (!prueba.Asiento.HasValue)
                     {
+                        // NestoAPI#786: con el asiento ya puesto (el cobro de una nota de cobro), su caja se queda
                         prueba.CuentaCaja = null;
                     }
-                    prueba.Asiento = asiento > 0 ? asiento : (int?)null;
+                    prueba.Asiento = asiento > 0 ? asiento : prueba.Asiento;
                     bool conCobro = TieneColumnasCobro();
                     // NestoAPI#759: sin la columna (script sin lanzar) los bultos recogidos se quedan solo en la historia.
                     bool conBultos = TieneBultosRecogidos();
