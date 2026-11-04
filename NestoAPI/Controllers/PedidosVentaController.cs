@@ -150,6 +150,34 @@ namespace NestoAPI.Controllers
             set => servicioCanje = value;
         }
 
+        // NestoAPI#808: el aviso del cheque regalo sin usar en la respuesta del POST/PUT. Para tests.
+        private Infraestructure.ChequesRegalo.IAvisadorChequeRegaloSinUsar avisadorChequeSinUsar;
+        internal Infraestructure.ChequesRegalo.IAvisadorChequeRegaloSinUsar AvisadorChequeSinUsar
+        {
+            get => avisadorChequeSinUsar ?? (avisadorChequeSinUsar = new Infraestructure.ChequesRegalo.AvisadorChequeRegaloSinUsar(
+                ServicioCanje, new Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo(db),
+                (empresa, numero) => db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero).ToListAsync()));
+            set => avisadorChequeSinUsar = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#808: el cliente tiene un cheque regalo disponible, el pedido grabado supera el mínimo y no lleva la línea del
+        /// cheque. Nunca lanza ni bloquea: si algo falla, sin aviso.
+        /// </summary>
+        internal async Task<AvisoPedidoDTO> AvisoChequeRegaloSinUsar(PedidoVentaDTO pedido)
+        {
+            try
+            {
+                return pedido == null ? null
+                    : await AvisadorChequeSinUsar.Aviso(pedido.empresa, pedido.numero, pedido.cliente).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#808: no se ha podido comprobar el cheque regalo sin usar del pedido {pedido?.numero}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
         /// <summary>
         /// NestoAPI#593 (c4): guarda el pedido y, en la MISMA transacción, reserva el cheque regalo (UPDATE condicionado:
         /// si otro pedido lo ha cogido a la vez, no se guarda nada y sale CHEQUE_REGALO_YA_USADO) y suelta los que ya no le
@@ -2368,6 +2396,13 @@ namespace NestoAPI.Controllers
                 avisos.Add(avisoCierreDiaReparto);
             }
 
+            // NestoAPI#808: cheque regalo disponible que el pedido podría usar y no lleva (no bloquea; nunca lanza)
+            AvisoPedidoDTO avisoChequeSinUsar = await AvisoChequeRegaloSinUsar(pedido).ConfigureAwait(true);
+            if (avisoChequeSinUsar != null)
+            {
+                avisos.Add(avisoChequeSinUsar);
+            }
+
             // Nesto#588: «fechas futuras» del pedido tal como ha quedado, con la regla de la lista. Si no se ha podido calcular
             // y no hay avisos, el 204 de siempre.
             bool? tieneFechasFuturas = TieneFechasFuturasGrabado(pedido, codigoPostalRutaInterna);
@@ -3128,6 +3163,14 @@ namespace NestoAPI.Controllers
             if (avisoCierreDiaReparto != null)
             {
                 pedido.AvisosGrabacion = new List<AvisoPedidoDTO> { avisoCierreDiaReparto };
+            }
+
+            // NestoAPI#808: cheque regalo disponible que el pedido podría usar y no lleva (no bloquea; nunca lanza)
+            AvisoPedidoDTO avisoChequeSinUsar = await AvisoChequeRegaloSinUsar(pedido).ConfigureAwait(true);
+            if (avisoChequeSinUsar != null)
+            {
+                pedido.AvisosGrabacion = pedido.AvisosGrabacion ?? new List<AvisoPedidoDTO>();
+                pedido.AvisosGrabacion.Add(avisoChequeSinUsar);
             }
 
             // Nesto#588: «fechas futuras» del pedido tal como se ha grabado, con la regla de la lista

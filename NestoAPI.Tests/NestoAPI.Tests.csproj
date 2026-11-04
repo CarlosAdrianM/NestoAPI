@@ -463,6 +463,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CierreCajaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroDeudaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\EmpresaDelCobroRepartoTests.cs" />
+    <Compile Include="Infrastructure\ChequesRegalo\AvisoChequeRegaloSinUsarTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroTarjetaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenRepartoCarreraTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropioTests.cs" />
