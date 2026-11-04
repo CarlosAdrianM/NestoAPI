@@ -1,0 +1,36 @@
+/*
+    Novedades de Ariadna 2.29 (04/11/26): Ariadna#85 (cerrar caja del reparto, NestoAPI#802), #86 (Cobrar una deuda: pregunta antes
+    de dejarlo a cuenta), #87 («Leídas 2 de 2 · quedan 0»), #88 (siguiente caja en el packing), #89 (botón Leer a la derecha),
+    #90 (familia y tamaño en la línea destacada); API: #803 (etiqueta de reparto propio desde el packing), #805 (picking colgado),
+    #812 (picking entre dos PDA), Ariadna#90 API (familia y tamaño en Enviar reposición).
+    Necesita la API del 04/11 (master tras 620ff191).
+    Ejecutar en SSMS contra NV como sa cuando la 2.29 llegue a la prueba cerrada. Idempotente (compara por Ámbito + Título).
+    NO duplicar: las sugerencias 958, 965, 968, 1004, 1007 y 1008 las marca Implementadas en 2.29 el OneShot (la sugerencia ES
+    la novedad); aquí no llevan fila.
+*/
+SET NOCOUNT ON;
+USE NV;
+DECLARE @n TABLE (Orden int, Categoria nvarchar(20), Titulo nvarchar(200), Descripcion nvarchar(max), Perfiles nvarchar(200));
+INSERT INTO @n VALUES
+(1, N'Nuevo', N'Gracias, Paloma y Andre',
+ N'El botón «Leer» a la derecha, la familia y el tamaño en la línea, el texto de «quedan» que se entendía al revés, la siguiente caja en el packing y los productos que salían a los dos en el picking vienen de lo que Paloma y Andre nos han contado hoy por «Novedades», con captura. Gracias a los dos, y a Alfredo y Miguel, que siguen probándolo todo.',
+ NULL),
+(2, N'Nuevo', N'Reparto: cerrar la caja',
+ N'En Reparto, menú «⋯» → «Cerrar caja» (o F8 en «Mis cobros»): Ariadna enseña lo que dice la contabilidad de su caja, por empresa y en total, y le pide cuánto dinero lleva. Si coincide, se hace el traspaso a Administración (uno por empresa) y su caja queda a cero; si no coincide, no se cierra y hay que verlo con Administración antes. Hace falta cobertura y que no queden entregas o cobros sin subir.',
+ N'Almacén'),
+(3, N'Mejorado', N'Cobrar una deuda: con facturas pendientes, pregunta antes de dejarlo todo a cuenta',
+ N'Si el cliente tiene facturas pendientes y pulsa Cobrar sin marcar ninguna, Ariadna pregunta «¿Dejar los X € a cuenta?»: Intro o F2 marca todas (lo normal) y F7 lo deja a cuenta de verdad. Así un cobro no se queda sin liquidar por olvidar marcar la factura.',
+ N'Almacén'),
+(4, N'Corregido', N'Picking: Terminar ya no se bloquea por una falta de un producto que se quitó del pedido',
+ N'Si se da por falta un producto cuya línea alguien ha sacado del pedido después de crear el picking, Terminar ya no da «no hay tanto que sacar»: la falta se ignora y el picking se cierra. Fue lo del picking 99998 esta mañana.',
+ N'Almacén'),
+(5, N'Nuevo', N'Packing: la etiqueta de un pedido de nuestra ruta',
+ N'En Empaquetar, F8 «Etiqueta de agencia» también vale para los pedidos que van por reparto propio: crea el envío y saca las etiquetas de bulto RP, igual que las de GLS o CTT. Antes decía «la agencia 14 no se puede insertar desde el servidor».',
+ N'Almacén');
+
+INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
+SELECT '2.29', '2026-11-04', n.Categoria, n.Titulo, n.Descripcion, 'Ariadna', 1, 'sa', n.Perfiles
+FROM @n n
+WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Ambito = 'Ariadna' AND x.Titulo = n.Titulo)
+ORDER BY n.Orden;
+SELECT @@ROWCOUNT AS NovedadesAriadnaInsertadasAhora;

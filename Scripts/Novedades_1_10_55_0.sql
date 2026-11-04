@@ -1,0 +1,68 @@
+/*
+    Novedades de la versión 1.10.55.0 de Nesto (04/11/2026).
+    Nesto #608 (behavior de productos en «Hay que comprar»), #609 (copiar el Nº Envío), #610 (botón −1 al recibir), #611 (concepto
+    del enlace de pago), #612/#613 (cheque regalo en la plantilla; ampliar respeta el modo de entrega), #614 (asistentes por
+    inscripción), #615 (reembolso del reparto propio desfasado al facturar), Cajas 10 días;
+    NestoAPI #800 (cuadre de agencias), #801/#807 (cobros del reparto propio a la empresa de la factura), #802 (cierre de caja del
+    repartidor), #803/#804 (etiqueta de reparto propio desde el packing; transportista de PrestaShop), #805 (picking colgado por una
+    falta), #808 (aviso de cheque sin usar), #809 (reembolso de entregados), #810, #811 (asistentes), #812 (picking entre dos),
+    #813 (cliente sin vendedor) y #806 (impresión en el servidor, con el interruptor APAGADO: no se anuncia todavía).
+
+    ORDEN:
+      1) Scripts sa ANTES de publicar la API: Issue800_prdCuadreAgenciasContabilidad_ReembolsosDiferidos.sql,
+         Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
+         el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado) y, si lo trae #813, Issue813_*.sql.
+      2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.55.0 → flujos de Ariadna 2.29.
+      3) DESPUÉS: ESTE script, Novedades_Ariadna_2_29.sql y OneShot_20261104_CerrarSugerencias_1_10_55_0.ps1 (marca Implementadas las
+         sugerencias y contesta en cada hilo). Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.55.0 solo con el OK de Carlos.
+      4) Rol «Tiendas» en Identity para Paloma, Reina, Pilar y LauraC (Ariadna_RolAlmacen.ps1 -Rol Tiendas …), para que impriman
+         etiquetas desde Ariadna (sugerencia 1009).
+      NO duplicar: las sugerencias 969, 970, 979, 1003, 1005, 1006, 1010 y 794 las marca Implementadas en 1.10.55.0 el OneShot
+      (la sugerencia ES la novedad); aquí no llevan fila.
+
+    Ejecutar en SSMS contra NV como sa. Idempotente (compara por versión y título). Los literales van con N'...'.
+*/
+
+SET NOCOUNT ON;
+USE NV;
+
+DECLARE @version VARCHAR(23) = '1.10.55.0';
+DECLARE @fecha DATE = '2026-11-04';
+
+DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000), Perfiles nvarchar(200));
+
+INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
+    ('Nuevo', N'Gracias, Paloma, Reina y Alfredo',
+     N'Casi todo lo que sale en esta versión viene de lo que nos habéis contado hoy por «Novedades»: el botón que no se veía al recibir, el cheque que no se ofrecía, las dos personas de un mismo centro en un evento, el picking que no se dejaba terminar y el reembolso que no cuadraba. Gracias por contarlo con detalle y con captura: así se arregla en el día. Y gracias a Aida, Andre y Miguel, que siguen probándolo todo.',
+     NULL),
+    ('Nuevo', N'Caja del repartidor: Miguel la cierra desde Ariadna y Administración la recibe como la de una tienda',
+     N'Miguel cierra su caja desde Ariadna tecleando lo que lleva; si coincide con lo que dice la contabilidad (empresa 1 y empresa 3 por separado), se hacen los dos traspasos a la caja pendiente de recibir (57000016), uno por empresa, y sus dos cajas quedan a cero. Si no coincide, no se cierra y tiene que verlo con Administración. En Cajas → Traspasos, Administración recibe el traspaso de Miguel igual que el de Paloma o el de Laura Camacho, sin tener que cuadrar los cobros uno a uno.',
+     N'Administración,Dirección,Almacén'),
+    ('Corregido', N'Cobros del reparto propio: a la empresa de la factura',
+     N'Lo que cobra Miguel al entregar (en efectivo o con tarjeta) se apunta ahora en la empresa de la factura pendiente del cliente, aunque el envío figure en la empresa 1: el cobro de un pedido facturado en la empresa 3 (GB) liquida esa factura en la 3 y entra en la caja de la 3. Antes se quedaba a cuenta en la empresa 1 y había que deshacerlo a mano. Lo «a cuenta» de «Cobrar una deuda» va a la empresa de los efectos marcados. Si la factura pendiente es de la empresa 3, no se puede cobrar con enlace de tarjeta: se cobra en efectivo.',
+     N'Administración,Dirección'),
+    ('Corregido', N'Aviso de descuadre en agencia: ya no cuenta los reembolsos que aún no se han entregado',
+     N'El correo «Aviso descuadre en Agencia» daba descuadre por los envíos tramitados cuyo reembolso se contabiliza al entregar (desde el 29/10): mientras están en camino no tienen apunte. Ya no los cuenta.',
+     N'Administración'),
+    ('Nuevo', N'Al grabar un pedido, aviso si el cliente tiene un cheque regalo sin usar',
+     N'Si el cliente tiene un cheque regalo disponible, el pedido supera los 250 € de producto que cuentan y no lleva la línea del cheque, al grabar o modificar el pedido Nesto avisa: «El cliente tiene un cheque regalo de 50,00 € sin usar…». No bloquea nada: se añade desde el detalle del pedido si se quiere.',
+     N'Vendedores,Tiendas,Dirección'),
+    ('Mejorado', N'Ficha del cliente: el enlace de pago sin efectos marcados pide el concepto',
+     N'Al generar un enlace de pago desde la ficha del cliente sin marcar ningún efecto (o cuando el importe no cuadra con los marcados), Nesto pide el concepto en pantalla («Pago pedido 123456», «Pago señal curso…») en vez de mandar la petición y devolver un error. Reina lo intentó cinco veces el martes.',
+     N'Administración,Tiendas,Vendedores'),
+    ('Mejorado', N'Eventos: la casilla «Hay que comprar» con el buscador de productos',
+     N'La casilla «Hay que comprar» del evento usa el mismo buscador que las líneas del pedido: referencia, código de barras leído con la pistola (añade directamente) o escribir parte del nombre y elegir de la lista.',
+     N'Vendedores,Tiendas,Dirección'),
+    ('Corregido', N'Facturar un cliente sin vendedor ya no da el error de SQL',
+     N'Al albaranar o facturar en tienda un pedido de un cliente sin vendedor en la ficha, Nesto daba «No se puede insertar el valor NULL en la columna Vendedor». Ahora se usa el vendedor de la cabecera del pedido y, si tampoco hay, un mensaje claro para ponérselo en la ficha. Le pasó a Paloma el martes y a Reina hoy.',
+     N'Tiendas,Administración'),
+    ('Mejorado', N'Tienda online: los pedidos que van por nuestra ruta se confirman en PrestaShop',
+     N'Los envíos de la tienda online que van por el reparto propio ya se pueden confirmar en PrestaShop desde Agencias (antes decía que la agencia no tenía transportista). Llevan el enlace público de seguimiento del reparto.',
+     N'Administración,Dirección');
+
+INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
+SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa', n.Perfiles
+FROM @novedades n
+WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Titulo = n.Titulo);
+
+SELECT @@ROWCOUNT AS NovedadesNestoInsertadasAhora;
