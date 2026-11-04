@@ -227,6 +227,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         // NestoAPI#786: lo que liquida el cobro y, con efectos, su empresa (con uno de la 3, sin tarjeta: siempre efectivo)
                         envio.EfectosCobro = (nota.EfectosCobro ?? new List<EfectoCobroReparto>()).Select(ServicioNotasCobro.AEfectoDto).ToList();
                         envio.EmpresaCobro = ServicioNotasCobro.EmpresaCobro(nota.EfectosCobro) ?? envio.EmpresaCobro;
+                        // NestoAPI#786: no se carga en la furgoneta: la lleva el repartidor al que se asignó (con soloMios, solo a él)
+                        envio.Repartidor = nota.RepartidorCobro ?? envio.Repartidor;
                     }
                 }
             }

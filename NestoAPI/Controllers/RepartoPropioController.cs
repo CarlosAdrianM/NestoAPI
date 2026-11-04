@@ -138,6 +138,32 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.Envios(fecha, soloMios, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
         }
 
+        private ServicioRepartidores repartidores;
+
+        /// <summary>NestoAPI#786: los repartidores (sustituible en los tests).</summary>
+        internal ServicioRepartidores Repartidores
+        {
+            get => repartidores ?? (repartidores = new ServicioRepartidores(new RepositorioRepartidores(db)));
+            set => repartidores = value;
+        }
+
+        // GET api/RepartoPropio/Repartidores
+        /// <summary>
+        /// NestoAPI#786: a quién se puede asignar una nota de cobro (Nesto, «Nueva nota de cobro»): los que han movido o cargado bultos
+        /// de la furgoneta en los últimos 90 días y el que lo pide, sin dominio y por nombre. [{ Usuario, Nombre }].
+        /// </summary>
+        [HttpGet]
+        [Route("Repartidores")]
+        [ResponseType(typeof(List<RepartidorDTO>))]
+        public async Task<IHttpActionResult> GetRepartidores()
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Ok(await Repartidores.Lista(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
         // POST api/RepartoPropio/Cargar { Codigo, ClaveIdempotencia, FechaHora, Reasignar }
         /// <summary>
         /// Ariadna#63: el repartidor escanea un bulto al cargarlo en la furgoneta. 409 ENVIO_DE_OTRO_REPARTIDOR (error.details.repartidor)

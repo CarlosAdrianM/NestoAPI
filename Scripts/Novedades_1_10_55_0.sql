@@ -13,7 +13,8 @@
          (tabla Festivos con 2024-2026 como el código; el bloque 2027 va comentado «REVISAR» con la fuente BOE: decide Dirección),
          Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
          el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado; Alfredo espera las facturas físicas desde Ariadna:
-         sugerencia 1017), Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos)
+         sugerencia 1017), Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos),
+         Issue786b_NotaCobroRepartidor.sql (después del anterior: NotasEntregaCabecera.Repartidor, la NC se asigna a un repartidor)
          e Issue814_ReposicionesTraspasos_LaLleva.sql (columna LaLleva: puntual que se lleva un compañero; necesita el de Issue581).
          YA HECHO el 04/11 a las 14:00 por la API: ParámetrosUsuario FacturarAlImprimirEtiqueta = 1 para «(defecto)», Alfredo, Andre,
          Pedro y Santiago (la etiqueta desde Ariadna albarana y factura; antes estaba a 0 y no facturaba: sugerencia 1017).

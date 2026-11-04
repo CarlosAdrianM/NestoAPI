@@ -26,6 +26,11 @@ namespace NestoAPI.Models.PedidosVenta
         public DateTime? Fecha { get; set; }
         /// <summary>Para el repartidor (va en las observaciones de la parada, recortado a 80 con el importe delante) y en los comentarios del pedido.</summary>
         public string Comentario { get; set; }
+        /// <summary>
+        /// NestoAPI#786 (04/11/26): el repartidor que va a cobrarla (Usuario de GET api/RepartoPropio/Repartidores, sin dominio).
+        /// Obligatorio: solo él la ve en «Mis envíos» de Ariadna.
+        /// </summary>
+        public string Repartidor { get; set; }
     }
 
     /// <summary>NestoAPI#786: la respuesta (201) de POST api/NotasEntrega/Cobro.</summary>
@@ -49,6 +54,8 @@ namespace NestoAPI.Models.PedidosVenta
         public DateTime Fecha { get; set; }
         /// <summary>Lo que ve el repartidor («Cobro de 134,16 €» y una línea por efecto).</summary>
         public string Texto { get; set; }
+        /// <summary>NestoAPI#786: el repartidor al que se ha asignado (sin dominio).</summary>
+        public string Repartidor { get; set; }
     }
 
     /// <summary>NestoAPI#786: un efecto (ExtractoCliente) de una nota de cobro, con lo que tiene pendiente AHORA.</summary>

@@ -309,6 +309,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Entregar: efectivo → `ServicioCobrosReparto.Cobrar` (#766) con sus efectos y la MISMA clave que la entrega (idempotente; antes de tocar
   el envío), asiento y caja en la prueba; tarjeta → el enlace del envío lleva los efectos (`LiquidacionNotaCobro`: suman justo el importe,
   si no, a cuenta); sin cobro → autorización (#773). Firma: `TextoConformidadEntrega.Cobro` («he pagado X €»). Gemelas: Ariadna (PDA) y Nesto (pantalla).
+- **Repartidor asignado (Carlos 04/11/26)**: `Repartidor` obligatorio en el POST (400 si no es de `GET api/RepartoPropio/Repartidores`:
+  sin grupo de seguridad de reparto, son los que han movido o cargado bultos de la furgoneta en 90 días + el que lo pide,
+  `ServicioRepartidores`). Se guarda en `NotasEntregaCabecera.Repartidor` (`Scripts/Issue786b_NotaCobroRepartidor.sql`; sin él, 400 al
+  crear). En `GET Envios` la NC lleva ese `Repartidor` (no se carga: `CompletarCarga` no lo borra) y con soloMios solo le sale a él;
+  las NC de antes (sin repartidor) siguen saliendo a todos. Ariadna no filtra: lo hace la API.
 
 ### Agency and Shipping
 - Multiple shipping agencies supported
