@@ -156,6 +156,136 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(resultado.Mensaje, "no se ha podido avisar a nadie");
         }
 
+        // ---- Ariadna#92 (sugerencia 1012, Carlos 04/11/26): producto con código de barras ----
+
+        private void ConCodigoEnLaFicha(string codigoFicha, List<string> activos = null)
+        {
+            A.CallTo(() => reposiciones.LeerRecepcion("1", "REI", 81198)).Returns(new RecepcionReposicionDTO
+            {
+                Empresa = "1",
+                Almacen = "REI",
+                Traspaso = 81198,
+                Lineas = new List<LineaReposicionDTO>
+                {
+                    new LineaReposicionDTO
+                    {
+                        Producto = "17404", Descripcion = "ROLLO PAPEL CAMILLA", Cantidad = 3,
+                        CodigoBarras = codigoFicha, SinCodigo = codigoFicha == null, CodigosBarras = activos ?? new List<string>()
+                    }
+                }
+            });
+        }
+
+        private void AvisoACompras()
+        {
+            A.CallTo(() => avisador.AvisarACompras(A<string>._, A<IEnumerable<string>>._))
+                .ReturnsLazily((string titulo, IEnumerable<string> lineas) =>
+                {
+                    tituloAvisado = titulo;
+                    lineasAvisadas = lineas.ToList();
+                    return Task.FromResult(new List<string> { "Compras" });
+                });
+        }
+
+        [TestMethod]
+        public async Task Apuntar_NoLlevaConCodigoEnLaFicha_ArgumentExceptionYNoAvisa()
+        {
+            ConCodigoEnLaFicha("8436042870615");
+
+            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Apuntar("NoLleva"));
+
+            Assert.AreEqual("El 17404 tiene código de barras 8436042870615: léalo del envase; «no lleva etiqueta» es solo para los productos sin código.", ex.Message);
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+            A.CallTo(() => avisador.AvisarACompras(A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Apuntar_NoLlevaConCodigoSoloEnProductosCodigosBarras_ArgumentException()
+        {
+            var codigos = A.Fake<NestoAPI.Infraestructure.Productos.IRepositorioCodigosBarras>();
+            A.CallTo(() => codigos.CodigosActivos("1", A<IReadOnlyCollection<string>>._)).Returns(new Dictionary<string, List<string>>
+            {
+                ["17404"] = new List<string> { "8436042870615" }
+            });
+            servicio = new ServicioSinEtiquetaRecepcion(reposiciones, avisador, null, codigos);
+
+            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Apuntar("NoLleva"));
+
+            StringAssert.StartsWith(ex.Message, "El 17404 tiene código de barras 8436042870615");
+        }
+
+        [TestMethod]
+        public async Task Apuntar_NoLlevaConSoloCodigoInterno_AvisaAlOrigenComoAntes()
+        {
+            // El interno (29…) va en la etiqueta que pone el origen: sin ella no se puede leer
+            ConCodigoEnLaFicha(null, new List<string> { NestoAPI.Infraestructure.Productos.CodigoBarrasInterno.DeReferencia("17404") });
+
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar("NoLleva");
+
+            Assert.AreEqual("Apuntada 1 unidad sin etiqueta del 17404: se ha avisado a Algete y a Compras.", resultado.Mensaje);
+            A.CallTo(() => avisador.AvisarACompras(A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Apuntar_NoSeLeeConCodigo_SoloACompras()
+        {
+            ConCodigoEnLaFicha("8436042870615");
+            AvisoACompras();
+
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar("NoSeLee");
+
+            Assert.AreEqual("Apuntada 1 unidad sin etiqueta del 17404: se ha avisado a Compras.", resultado.Mensaje);
+            CollectionAssert.AreEqual(new[] { "Compras" }, resultado.Avisados);
+            Assert.AreEqual("Reposición 81198 (ALG → REI): el código del 17404 no se lee o no coincide", tituloAvisado);
+            Assert.IsTrue(lineasAvisadas.Any(l => l.Contains("8436042870615")));
+            StringAssert.Contains(lineasAvisadas[0], "el código no se lee");
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Apuntar_OtroConCodigo_SoloAComprasConElComentario()
+        {
+            ConCodigoEnLaFicha("8436042870615");
+            AvisoACompras();
+
+            _ = await Apuntar("Otro", "el envase trae otro código");
+
+            StringAssert.Contains(lineasAvisadas[0], "otro motivo: el envase trae otro código.");
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostSinEtiqueta_NoLlevaConCodigo_400ConElCodigo()
+        {
+            ConCodigoEnLaFicha("8436042870615");
+
+            var resultado = await Controlador(servicio).PostSinEtiqueta("REPO", "81198", new SinEtiquetaRecepcionDTO { Producto = "17404", Motivo = "NoLleva" }, "REI")
+                as BadRequestErrorMessageResult;
+
+            Assert.IsNotNull(resultado);
+            StringAssert.StartsWith(resultado.Message, "El 17404 tiene código de barras 8436042870615: léalo del envase");
+        }
+
+        [TestMethod]
+        public async Task Avisador_AvisarACompras_SoloCompras_EnNestoYEnAriadna()
+        {
+            var push = A.Fake<IServicioNotificacionesPush>();
+            var grupos = new Dictionary<string, List<string>>
+            {
+                [Constantes.GruposSeguridad.ALMACEN] = new List<string> { "Alfredo" },
+                [Constantes.GruposSeguridad.COMPRAS] = new List<string> { "Laura" }
+            };
+            var aviso = new AvisadorSinEtiqueta(push, g => grupos[g], (e, a) => Task.FromResult(new List<string> { "NoDebe" }));
+
+            List<string> avisados = await aviso.AvisarACompras("título", new[] { "línea" });
+
+            CollectionAssert.AreEqual(new[] { "Compras" }, avisados);
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(@"NUEVAVISION\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("Laura", Constantes.Aplicaciones.ARIADNA, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>.That.Matches(u => u.Contains("Alfredo") || u.Contains("NoDebe")), A<string>._, A<NotificacionPushDTO>._))
+                .MustNotHaveHappened();
+        }
+
         // ---- El avisador: a quién ----
 
         [TestMethod]

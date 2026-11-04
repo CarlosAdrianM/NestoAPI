@@ -66,14 +66,49 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IAvisadorSinEtiqueta avisador;
         private readonly IRepositorioIdempotenciaSinEtiqueta idempotencia;
+        private readonly Productos.IRepositorioCodigosBarras codigos;
 
         /// <param name="idempotencia">Dónde se apuntan las claves ya procesadas. Sin él, la clave se ignora (se avisa siempre).</param>
+        /// <param name="codigos">Ariadna#92: los códigos activos del producto (ProductosCodigosBarras). Sin él, solo el de la ficha.</param>
         public ServicioSinEtiquetaRecepcion(IServicioRecepcionReposiciones reposiciones, IAvisadorSinEtiqueta avisador,
-            IRepositorioIdempotenciaSinEtiqueta idempotencia = null)
+            IRepositorioIdempotenciaSinEtiqueta idempotencia = null, Productos.IRepositorioCodigosBarras codigos = null)
         {
             this.reposiciones = reposiciones ?? throw new ArgumentNullException(nameof(reposiciones));
             this.avisador = avisador ?? throw new ArgumentNullException(nameof(avisador));
             this.idempotencia = idempotencia;
+            this.codigos = codigos;
+        }
+
+        /// <summary>
+        /// Ariadna#92: el código de barras que el producto trae en el envase (el de la ficha o uno activo de ProductosCodigosBarras;
+        /// los internos del 29 no cuentan, porque esos van en la etiqueta que pone el origen), o null si no tiene.
+        /// </summary>
+        public static string CodigoDelEnvase(string codigoFicha, IEnumerable<string> activos)
+        {
+            return Productos.CompletadorCodigosBarras.Juntar(codigoFicha, activos)
+                .FirstOrDefault(c => !Productos.CodigoBarrasInterno.EsInterno(c));
+        }
+
+        private async Task<string> LeerCodigoDelEnvase(string empresa, LineaReposicionDTO linea)
+        {
+            List<string> activos = linea.CodigosBarras;
+            if ((activos == null || activos.Count == 0) && codigos != null)
+            {
+                try
+                {
+                    Dictionary<string, List<string>> leidos = await codigos.CodigosActivos(empresa, new List<string> { linea.Producto.Trim() }).ConfigureAwait(false);
+                    if (leidos != null && leidos.TryGetValue(linea.Producto.Trim(), out List<string> suyos))
+                    {
+                        activos = suyos;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Sin los códigos activos, se decide con el de la ficha
+                    ElmahHelper.Log(new Exception($"[Sin etiqueta 92] No se han podido leer los códigos del {linea.Producto}: {ex.Message}", ex));
+                }
+            }
+            return CodigoDelEnvase(linea.CodigoBarras, activos);
         }
 
         /// <summary>La clave tal como se apunta: con el documento, para que la misma clave en otra reposición no choque.</summary>
@@ -175,12 +210,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Avisados = new List<string>()
                 };
             }
+            string codigoEnvase = await LeerCodigoDelEnvase(empresa, linea).ConfigureAwait(false);
+            if (codigoEnvase != null && motivo == MOTIVO_NO_LLEVA)
+            {
+                // Ariadna#92 (Carlos 04/11/26): con código no hace falta etiqueta: se lee el del envase
+                throw new ArgumentException($"El {producto} tiene código de barras {codigoEnvase}: léalo del envase; «no lleva etiqueta» es solo para los productos sin código.");
+            }
             ReposicionPendienteDTO pendiente = (await reposiciones.LeerPendientes(empresa, almacen).ConfigureAwait(false) ?? new List<ReposicionPendienteDTO>())
                 .FirstOrDefault(r => r.Traspaso == traspaso);
             string origen = pendiente?.Origen?.Trim();
             string nombreOrigen = string.IsNullOrWhiteSpace(pendiente?.NombreOrigen) ? origen : pendiente.NombreOrigen.Trim();
             string quien = string.IsNullOrWhiteSpace(usuario) ? "Alguien" : usuario.Trim().Substring(usuario.Trim().LastIndexOf('\\') + 1);
             string nombreProducto = string.IsNullOrWhiteSpace(linea.Descripcion) ? producto : $"{producto} {linea.Descripcion.Trim()}";
+            if (codigoEnvase != null)
+            {
+                return await AvisarACompras(traspaso, origen, almacen, producto, nombreProducto, codigoEnvase, quien, ud, motivo, comentario,
+                    peticion.Dispositivo).ConfigureAwait(false);
+            }
             string titulo = $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): llega sin etiqueta el {producto}";
             var lineas = new List<string>
             {
@@ -200,10 +246,38 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 lineas.Add($"Desde {peticion.Dispositivo.Trim()}.");
             }
 
+            return await Resultado(traspaso, producto, ud,
+                () => avisador.Avisar(empresa, origen, nombreOrigen, pendiente?.Usuario, titulo, lineas)).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Ariadna#92: el producto tiene código y el del envase no se lee o no coincide: no es cosa del origen (no tenía que
+        /// etiquetarlo), sino de Compras, que tiene que dar de alta o cambiar el código.
+        /// </summary>
+        private Task<ResultadoSinEtiquetaRecepcionDTO> AvisarACompras(int traspaso, string origen, string almacen, string producto,
+            string nombreProducto, string codigoEnvase, string quien, string ud, string motivo, string comentario, string dispositivo)
+        {
+            string titulo = $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): el código del {producto} no se lee o no coincide";
+            string queLePasa = motivo == MOTIVO_NO_SE_LEE ? "el código no se lee" : TextoMotivo(motivo, comentario);
+            var lineas = new List<string>
+            {
+                $"{quien} ha recibido {ud} del {nombreProducto} sin poder escanearla: {queLePasa}.",
+                $"El código de barras de la ficha es {codigoEnvase}.",
+                "Compras: compruebe el código del envase y, si es otro, dele de alta o cambie el de la ficha."
+            };
+            if (!string.IsNullOrWhiteSpace(dispositivo))
+            {
+                lineas.Add($"Desde {dispositivo.Trim()}.");
+            }
+            return Resultado(traspaso, producto, ud, () => avisador.AvisarACompras(titulo, lineas));
+        }
+
+        private static async Task<ResultadoSinEtiquetaRecepcionDTO> Resultado(int traspaso, string producto, string ud, Func<Task<List<string>>> avisar)
+        {
             List<string> avisados;
             try
             {
-                avisados = await avisador.Avisar(empresa, origen, nombreOrigen, pendiente?.Usuario, titulo, lineas).ConfigureAwait(false) ?? new List<string>();
+                avisados = await avisar().ConfigureAwait(false) ?? new List<string>();
             }
             catch (Exception ex)
             {
@@ -297,6 +371,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         /// <returns>A quién se ha avisado, para el usuario («Algete», «Compras»).</returns>
         Task<List<string>> Avisar(string empresa, string origen, string nombreOrigen, string creador, string titulo, IEnumerable<string> lineas);
+
+        /// <summary>Ariadna#92: solo al grupo Compras (el producto tiene código y el del envase no se lee o no coincide).</summary>
+        /// <returns>«Compras», o vacía si no hay nadie en el grupo.</returns>
+        Task<List<string>> AvisarACompras(string titulo, IEnumerable<string> lineas);
     }
 
     /// <summary>
@@ -359,6 +437,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             candidatos.AddRange(compras);
 
+            return await Enviar(candidatos, titulo, lineas).ConfigureAwait(false) ? avisados : new List<string>();
+        }
+
+        public async Task<List<string>> AvisarACompras(string titulo, IEnumerable<string> lineas)
+        {
+            List<string> compras = miembrosDelGrupo(Constantes.GruposSeguridad.COMPRAS) ?? new List<string>();
+            return await Enviar(compras, titulo, lineas).ConfigureAwait(false) ? new List<string> { "Compras" } : new List<string>();
+        }
+
+        /// <returns>false si no había a quién.</returns>
+        private async Task<bool> Enviar(IEnumerable<string> candidatos, string titulo, IEnumerable<string> lineas)
+        {
             List<string> usuarios = candidatos
                 .Select(u => u?.Trim())
                 .Where(u => !string.IsNullOrWhiteSpace(u) && !u.StartsWith("(", StringComparison.Ordinal))
@@ -368,7 +458,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (!usuarios.Any())
             {
                 ElmahHelper.Log(new Exception($"[Sin etiqueta 762] No hay a quién avisar: {titulo}"));
-                return new List<string>();
+                return false;
             }
             var notificacion = new NotificacionPushDTO
             {
@@ -383,7 +473,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 await notificaciones.GuardarEnBuzonDeUsuario(usuario.Substring(usuario.LastIndexOf('\\') + 1), Constantes.Aplicaciones.ARIADNA, notificacion)
                     .ConfigureAwait(false);
             }
-            return avisados;
+            return true;
         }
     }
 }
