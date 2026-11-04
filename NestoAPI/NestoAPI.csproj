@@ -781,6 +781,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Furgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\EmpresaDelCobroReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroTarjetaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AutorizacionesReembolsoReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosCobroReparto.cs" />

@@ -309,17 +309,27 @@ namespace NestoAPI.Infraestructure.Agencias
         /// cobra en la caja del repartidor que entrega (su parámetro CajaDefecto, decisión de Carlos 29/10/26: con dos
         /// repartidores, cada uno en su caja). Las demás agencias siguen por la sobrecarga sin cuenta.
         /// </summary>
-        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida)
+        public Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida)
+            => ContabilizarReembolsoAsync(envio, usuario, importe, cuentaContrapartida, null);
+
+        /// <summary>
+        /// NestoAPI#801: lo mismo en una empresa explícita (la del PEDIDO en el reparto propio, <see cref="RepartoPropio.EmpresaDelCobroReparto"/>):
+        /// el apunte va a esa empresa y la factura a liquidar se busca en ella. Null = <c>envio.Empresa</c>, como siempre (las agencias
+        /// de fuera no cambian).
+        /// </summary>
+        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida, string empresa)
         {
             if (string.IsNullOrWhiteSpace(cuentaContrapartida))
             {
                 throw new NestoBusinessException("No hay cuenta contra la que contabilizar el reembolso. No se puede contabilizar.");
             }
 
+            string empresaCobro = EmpresaDelCobro(envio, empresa);
             ExtractoCliente movimientoLiq = importe.HasValue
-                ? await CalcularMovimientoLiqAsync(envio, importe.Value).ConfigureAwait(false)
-                : await CalcularMovimientoLiqAsync(envio).ConfigureAwait(false);
-            PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario);
+                ? await CalcularMovimientoLiqAsync(envio, importe.Value, empresaCobro).ConfigureAwait(false)
+                : await CalcularMovimientoLiqAsync(envio, empresaCobro).ConfigureAwait(false);
+            Empresa datosEmpresa = await DatosEmpresaAsync(envio, empresaCobro).ConfigureAwait(false);
+            PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario, empresaCobro, datosEmpresa);
             linea.Contrapartida = cuentaContrapartida.Trim();
             if (importe.HasValue)
             {
@@ -1192,16 +1202,23 @@ namespace NestoAPI.Infraestructure.Agencias
         /// Null si no hay ninguno (cliente especial o nada pendiente). Solo lee.
         /// </summary>
         public Task<ExtractoCliente> BuscarMovimientoALiquidarAsync(EnviosAgencia envio, decimal importe)
-            => CalcularMovimientoLiqAsync(envio, importe);
+            => CalcularMovimientoLiqAsync(envio, importe, envio.Empresa);
 
-        private async Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio, decimal reembolso)
+        /// <summary>NestoAPI#801: lo mismo buscando en una empresa explícita (la del pedido en el reparto propio). Null = la del envío.</summary>
+        public Task<ExtractoCliente> BuscarMovimientoALiquidarAsync(EnviosAgencia envio, decimal importe, string empresa)
+            => CalcularMovimientoLiqAsync(envio, importe, EmpresaDelCobro(envio, empresa));
+
+        private Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio, decimal reembolso)
+            => CalcularMovimientoLiqAsync(envio, reembolso, envio.Empresa);
+
+        private async Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio, decimal reembolso, string empresa)
         {
             string cliente = envio.Cliente?.Trim();
             if (cliente == Constantes.ClientesEspeciales.AMAZON || cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE)
             {
                 return null;
             }
-            List<ExtractoCliente> movimientos = await LeerExtractoPendienteAsync(envio.Empresa, envio.Cliente, reembolso > 0).ConfigureAwait(false);
+            List<ExtractoCliente> movimientos = await LeerExtractoPendienteAsync(empresa, envio.Cliente, reembolso > 0).ConfigureAwait(false);
             return ElegirMovimientoLiq(movimientos, reembolso, _hoy());
         }
 
@@ -1227,11 +1244,18 @@ namespace NestoAPI.Infraestructure.Agencias
         /// antes: identifica a la persona, no a la cuenta con la que se conecta la aplicación.
         /// </summary>
         internal static PreContabilidad ConstruirApunteReembolso(EnviosAgencia envio, ExtractoCliente movimientoLiq, DateTime hoy, string usuario)
+            => ConstruirApunteReembolso(envio, movimientoLiq, hoy, usuario, envio.Empresa, envio.Empresa1);
+
+        /// <summary>
+        /// NestoAPI#801: el mismo apunte en otra empresa (la del pedido en el reparto propio), con los datos «varios» y la forma de
+        /// pago en efectivo de ESA empresa.
+        /// </summary>
+        internal static PreContabilidad ConstruirApunteReembolso(EnviosAgencia envio, ExtractoCliente movimientoLiq, DateTime hoy, string usuario,
+            string codigoEmpresa, Empresa empresa)
         {
-            Empresa empresa = envio.Empresa1;
             PreContabilidad linea = new PreContabilidad
             {
-                Empresa = envio.Empresa.Trim(),
+                Empresa = codigoEmpresa.Trim(),
                 Diario = Constantes.Contabilidad.Diarios.DIARIO_REEMBOLSOS,
                 TipoApunte = Constantes.ExtractosCliente.TiposApunte.PAGO,
                 TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
@@ -1287,8 +1311,30 @@ namespace NestoAPI.Infraestructure.Agencias
             return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
         }
 
+        /// <summary>NestoAPI#801: la empresa explícita (recortada) o, sin ella, la del envío (sin recortar, como siempre).</summary>
+        private static string EmpresaDelCobro(EnviosAgencia envio, string empresa)
+            => string.IsNullOrWhiteSpace(empresa) ? envio.Empresa : empresa.Trim();
+
+        /// <summary>
+        /// La ficha de la empresa del apunte (forma de pago en efectivo, delegación y forma de venta «varios»): la del envío si es la
+        /// misma (la de siempre, ya cargada); si no (#801, pedido de otra empresa), la de la tabla Empresas.
+        /// </summary>
+        private async Task<Empresa> DatosEmpresaAsync(EnviosAgencia envio, string empresa)
+        {
+            string codigo = empresa?.Trim();
+            if (string.Equals(codigo, envio.Empresa?.Trim(), StringComparison.Ordinal))
+            {
+                return envio.Empresa1;
+            }
+            List<Empresa> empresas = await _db.Empresas.Where(e => e.Número == codigo).ToListAsync().ConfigureAwait(false);
+            return empresas.FirstOrDefault(e => string.Equals(e.Número?.Trim(), codigo, StringComparison.Ordinal)) ?? empresas.FirstOrDefault();
+        }
+
+        private Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio)
+            => CalcularMovimientoLiqAsync(envio, envio.Empresa);
+
         // Busca en el extracto del cliente la deuda que este reembolso liquida.
-        private async Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio)
+        private async Task<ExtractoCliente> CalcularMovimientoLiqAsync(EnviosAgencia envio, string empresa)
         {
             string cliente = envio.Cliente?.Trim();
             if (cliente == Constantes.ClientesEspeciales.AMAZON || cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE)
@@ -1298,7 +1344,7 @@ namespace NestoAPI.Infraestructure.Agencias
             }
 
             bool positivos = envio.Reembolso > 0;
-            List<ExtractoCliente> movimientos = await LeerExtractoPendienteAsync(envio.Empresa, envio.Cliente, positivos)
+            List<ExtractoCliente> movimientos = await LeerExtractoPendienteAsync(empresa, envio.Cliente, positivos)
                 .ConfigureAwait(false);
             return ElegirMovimientoLiq(movimientos, envio.Reembolso, _hoy());
         }

@@ -131,8 +131,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         {
                             throw new NestoBusinessException("No hay caja del repartidor contra la que contabilizar el reembolso.");
                         }
+                        // NestoAPI#801: en la empresa del PEDIDO (EnviosAgencia.Empresa es siempre la 1), liquidando su factura.
+                        string empresaCobro = await EmpresaDelCobroReparto.DeEnvioAsync(db, envio).ConfigureAwait(false);
                         asiento = await new TramitacionEnviosService(db)
-                            .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value, prueba.CuentaCaja)
+                            .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value, prueba.CuentaCaja, empresaCobro)
                             .ConfigureAwait(false);
                     }
                     else

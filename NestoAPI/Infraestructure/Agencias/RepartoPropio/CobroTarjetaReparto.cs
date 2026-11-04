@@ -168,7 +168,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// El efecto (ExtractoCliente pendiente) que liquidaría el reembolso del envío por ese importe: el MISMO que elige el cobro en
         /// efectivo (TramitacionEnviosService.BuscarMovimientoALiquidarAsync). Null si no hay ninguno.
         /// </summary>
-        Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe);
+        /// <remarks>NestoAPI#801: se busca en <paramref name="empresa"/> (la del cobro, <see cref="EmpresaDelCobroReparto"/>).</remarks>
+        Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe, string empresa);
+        /// <summary>
+        /// NestoAPI#801: la empresa del cobro del reembolso del envío (<see cref="EmpresaDelCobroReparto.DeEnvio"/>: la del PEDIDO, porque
+        /// EnviosAgencia.Empresa es siempre la 1).
+        /// </summary>
+        Task<string> LeerEmpresaDelCobro(EnviosAgencia envio);
         /// <summary>Una fila en EnviosHistoria (fuera de cualquier transacción).</summary>
         Task AnotarHistoria(EnvioHistoria fila);
     }
@@ -226,7 +232,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return ResultadoReparto<EnlaceTarjetaRepartoDTO>.Mal(TipoResultadoReparto.NoEncontrado, $"No existe el envío {envioId} del reparto propio.");
             }
-            string empresa = envio.Empresa?.Trim();
+            // NestoAPI#801: la empresa del PEDIDO (EnviosAgencia.Empresa es siempre la 1): un pedido de la 3 se cobra en efectivo.
+            string empresa = EmpresaDelCobroReparto.DeEnvio(await repositorio.LeerEmpresaDelCobro(envio).ConfigureAwait(false), envio.Empresa);
             if (!AdmiteTarjeta(empresa))
             {
                 return Invalido(string.Format(MENSAJE_EMPRESA_EFECTIVO, empresa));
@@ -260,7 +267,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             LiquidacionReembolsoTarjeta liquidacion = null;
             return await CrearOReutilizar(previo, importe, async () =>
             {
-                liquidacion = await LiquidacionDelReembolso(envio, importe).ConfigureAwait(false);
+                liquidacion = await LiquidacionDelReembolso(envio, importe, empresa).ConfigureAwait(false);
                 return new SolicitudPagoTPV
                 {
                     Empresa = empresa,
@@ -291,12 +298,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// El efecto que liquida el enlace del reembolso: el que elegiría el efectivo (TramitacionEnviosService), solo si su pendiente
         /// es justo el reembolso. Si no hay o no cuadra, el cobro sigue «a cuenta» (como antes): nunca se bloquea por esto.
         /// </summary>
-        private async Task<LiquidacionReembolsoTarjeta> LiquidacionDelReembolso(EnviosAgencia envio, decimal importe)
+        private async Task<LiquidacionReembolsoTarjeta> LiquidacionDelReembolso(EnviosAgencia envio, decimal importe, string empresa)
         {
             EfectoCobroReparto movimiento;
             try
             {
-                movimiento = await repositorio.LeerEfectoDelReembolso(envio, importe).ConfigureAwait(false);
+                movimiento = await repositorio.LeerEfectoDelReembolso(envio, importe, empresa).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -728,9 +735,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         public Task<List<EfectoCobroReparto>> LeerEfectos(IReadOnlyCollection<int> ids) => new RepositorioCobrosReparto(db).LeerEfectos(ids);
 
-        public async Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe)
+        public Task<string> LeerEmpresaDelCobro(EnviosAgencia envio) => EmpresaDelCobroReparto.DeEnvioAsync(db, envio);
+
+        public async Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe, string empresa)
         {
-            ExtractoCliente movimiento = await new TramitacionEnviosService(db).BuscarMovimientoALiquidarAsync(envio, importe).ConfigureAwait(false);
+            ExtractoCliente movimiento = await new TramitacionEnviosService(db).BuscarMovimientoALiquidarAsync(envio, importe, empresa).ConfigureAwait(false);
             return movimiento == null ? null : new EfectoCobroReparto
             {
                 Id = movimiento.Nº_Orden,
