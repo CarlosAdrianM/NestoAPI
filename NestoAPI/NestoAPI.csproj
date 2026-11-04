@@ -763,6 +763,7 @@
     <Compile Include="Infraestructure\Agencias\TramitacionEnviosService.cs" />
     <Compile Include="Infraestructure\Agencias\ReembolsosAlEntregar.cs" />
     <Compile Include="Infraestructure\Agencias\FacturasConReembolsoPendienteDeEntrega.cs" />
+    <Compile Include="Infraestructure\Agencias\ReenviosEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AgenciaRemotaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EtiquetaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\LogoZplNuevaVision.cs" />

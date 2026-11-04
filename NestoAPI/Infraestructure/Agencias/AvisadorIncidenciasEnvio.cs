@@ -22,6 +22,8 @@ namespace NestoAPI.Infraestructure.Agencias
     {
         /// <summary>Tipo del aviso en la campana de Nesto.</summary>
         public const string TIPO_NOTIFICACION = "IncidenciaEnvioAgencia";
+        /// <summary>NestoAPI#699: tipo del aviso de envío DEVUELTO (¿lo sigue queriendo el cliente?), en la campana y en NestoApp.</summary>
+        public const string TIPO_NOTIFICACION_DEVOLUCION = "DevolucionEnvioAgencia";
         private const string CORREO_REMITENTE = "nesto@nuevavision.es";
 
         private readonly NVEntities db;
@@ -29,13 +31,19 @@ namespace NestoAPI.Infraestructure.Agencias
         private readonly IServicioCorreoElectronico servicioCorreo;
         private readonly IServicioNotificacionesPush notificaciones;
 
+        private readonly Func<int, Task<bool>> yaDecidido;
+
+        /// <param name="yaDecidido">NestoAPI#699: ¿alguien ha decidido ya qué hacer con el envío devuelto? (null = la tabla
+        /// EnviosAgenciaReenvios; sin tabla, no).</param>
         public AvisadorIncidenciasEnvio(NVEntities db, ILectorComercialesPedido lector = null,
-            IServicioCorreoElectronico servicioCorreo = null, IServicioNotificacionesPush notificaciones = null)
+            IServicioCorreoElectronico servicioCorreo = null, IServicioNotificacionesPush notificaciones = null,
+            Func<int, Task<bool>> yaDecidido = null)
         {
             this.db = db;
             this.lector = lector ?? new LectorComercialesPedido(db);
             this.servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
             this.notificaciones = notificaciones ?? new ServicioNotificacionesPush();
+            this.yaDecidido = yaDecidido ?? (async envio => await new RepositorioReenviosEnvio(db).LeerAsync(envio).ConfigureAwait(false) != null);
         }
 
         /// <summary>
@@ -47,6 +55,20 @@ namespace NestoAPI.Infraestructure.Agencias
             envio != null
             && estadoAnterior != Constantes.Agencias.ESTADO_INCIDENTADO
             && envio.Estado == Constantes.Agencias.ESTADO_INCIDENTADO;
+
+        /// <summary>
+        /// NestoAPI#699: ¿el envío acaba de pasar a DEVUELTO? (de cualquier otro estado, incidentado incluido). La agencia lo
+        /// devuelve y la caja tarda días en llegar: se pregunta YA al vendedor si el cliente lo sigue queriendo, para que el
+        /// almacén lo sepa antes de que llegue (Alfredo, 04/11/26).
+        /// </summary>
+        public static bool PasaADevuelto(short estadoAnterior, EnviosAgencia envio) =>
+            envio != null
+            && estadoAnterior != Constantes.Agencias.ESTADO_DEVUELTO
+            && envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO;
+
+        /// <summary>Incidencia nueva (#666) o devolución nueva (#699): las dos avisan a los comerciales.</summary>
+        public static bool HayQueAvisar(short estadoAnterior, EnviosAgencia envio) =>
+            PasaAIncidencia(estadoAnterior, envio) || PasaADevuelto(estadoAnterior, envio);
 
         /// <summary>
         /// Punto de entrada del job y de la actualización a demanda: con su propio contexto, para no mezclarse
@@ -77,16 +99,26 @@ namespace NestoAPI.Infraestructure.Agencias
             }
             try
             {
+                bool devuelto = envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO;
+                // NestoAPI#699: si ya se decidió (p. ej. se reenvió estando incidentado), no se pregunta otra vez.
+                if (devuelto && await YaDecididoSinFallar(envio.Numero).ConfigureAwait(false))
+                {
+                    return;
+                }
                 ComercialesPedido comerciales = LeerComerciales(envio);
                 var datosAgencia = db.AgenciasTransportes
                     .Where(a => a.Numero == envio.Agencia)
                     .Select(a => new { a.Nombre, a.Identificador }).FirstOrDefault();
                 string agencia = datosAgencia?.Nombre?.Trim();
 
-                MailMessage mail = ComponerCorreo(envio, comerciales, agencia, datosAgencia?.Identificador?.Trim());
+                MailMessage mail = devuelto
+                    ? ComponerCorreoDevolucion(envio, comerciales, agencia, datosAgencia?.Identificador?.Trim())
+                    : ComponerCorreo(envio, comerciales, agencia, datosAgencia?.Identificador?.Trim());
                 _ = servicioCorreo.EnviarCorreoSMTP(mail);
 
-                NotificacionPushDTO notificacion = ComponerNotificacion(envio, comerciales, agencia);
+                NotificacionPushDTO notificacion = devuelto
+                    ? ComponerNotificacionDevolucion(envio, comerciales, agencia)
+                    : ComponerNotificacion(envio, comerciales, agencia);
                 foreach (string usuario in comerciales.UsuariosBuzon())
                 {
                     await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
@@ -100,6 +132,19 @@ namespace NestoAPI.Infraestructure.Agencias
             catch (Exception ex)
             {
                 Registrar(envio, ex);
+            }
+        }
+
+        private async Task<bool> YaDecididoSinFallar(int envio)
+        {
+            try
+            {
+                return await yaDecidido(envio).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Mejor preguntar de más que no preguntar.
+                return false;
             }
         }
 
@@ -142,6 +187,47 @@ namespace NestoAPI.Infraestructure.Agencias
                     "<p>Revise el envío en Nesto (Agencias, pestaña de incidentados) y, si hace falta, " +
                     "póngase en contacto con el cliente para solucionarlo cuanto antes.</p>"
             };
+            AnadirDestinatarios(mail, envio, comerciales);
+            return mail;
+        }
+
+        /// <summary>
+        /// NestoAPI#699: la agencia ha DEVUELTO el envío. Se pregunta a los comerciales si el cliente lo sigue queriendo, ANTES
+        /// de que llegue la caja: con la respuesta, el almacén la vuelve a poner con la etiqueta nueva o la abona y la ubica.
+        /// Mismos destinatarios que la incidencia (#666, #716).
+        /// </summary>
+        internal static MailMessage ComponerCorreoDevolucion(EnviosAgencia envio, ComercialesPedido comerciales, string agencia,
+            string identificadorAgencia = null)
+        {
+            string cliente = TextoCliente(envio, comerciales);
+            string enlace = EnlaceSeguimiento(envio, agencia, identificadorAgencia);
+            string pedido = envio.Pedido.HasValue ? $" del pedido {envio.Pedido}" : string.Empty;
+            var mail = new MailMessage
+            {
+                From = new MailAddress(CORREO_REMITENTE),
+                Subject = $"Envío devuelto{pedido} - c/ {cliente}: ¿lo sigue queriendo el cliente?",
+                IsBodyHtml = true,
+                Body =
+                    $"<p>El envío <b>{envio.Numero}</b>{Html(pedido)} de <b>{Html(cliente)}</b> viene <b>devuelto</b> " +
+                    $"({Html(DescripcionIncidencia(envio))}).</p>" +
+                    "<ul>" +
+                    (envio.Pedido.HasValue ? $"<li>Pedido: <b>{envio.Pedido}</b></li>" : string.Empty) +
+                    $"<li>Cliente: <b>{Html(cliente)}</b></li>" +
+                    $"<li>Agencia: {Html(agencia ?? envio.Agencia.ToString())}</li>" +
+                    $"<li>Número de seguimiento: <b>{Html(envio.CodigoBarras?.Trim())}</b> (envío {envio.Numero})</li>" +
+                    $"<li>Dirección: {Html(envio.Direccion?.Trim())}, {Html(envio.CodPostal?.Trim())} {Html(envio.Poblacion?.Trim())}</li>" +
+                    "</ul>" +
+                    (string.IsNullOrEmpty(enlace) ? string.Empty
+                        : $"<p><a href=\"{Html(enlace)}\">Ver el seguimiento en la web de la agencia</a>.</p>") +
+                    "<p><b>¿Lo sigue queriendo el cliente?</b> Contéstelo en Nesto › Agencias › Devueltos: «volver a enviar» " +
+                    "(con la dirección corregida si hace falta) o «abonar». Así el almacén sabe qué hacer con la caja en cuanto llegue.</p>"
+            };
+            AnadirDestinatarios(mail, envio, comerciales);
+            return mail;
+        }
+
+        private static void AnadirDestinatarios(MailMessage mail, EnviosAgencia envio, ComercialesPedido comerciales)
+        {
             List<string> destinatarios = comerciales?.Correos() ?? new List<string>();
             // Novedad 716 (Laura, 22/10/26): las incidencias de los pedidos de la tienda online y de Amazon (y demás
             // canales externos) las llevan Laura y Enrique desde tiendaonline@. Se AÑADE a quien ya lo recibía
@@ -160,7 +246,6 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 mail.To.Add(new MailAddress(Constantes.Correos.LOGISTICA));
             }
-            return mail;
         }
 
         /// <summary>
@@ -200,6 +285,20 @@ namespace NestoAPI.Infraestructure.Agencias
                 Tipo = TIPO_NOTIFICACION,
                 Datos = datos
             };
+        }
+
+        /// <summary>NestoAPI#699: la campana de Nesto y la push de NestoApp del envío devuelto (Datos para contestar desde la app).</summary>
+        internal static NotificacionPushDTO ComponerNotificacionDevolucion(EnviosAgencia envio, ComercialesPedido comerciales, string agencia)
+        {
+            NotificacionPushDTO notificacion = ComponerNotificacion(envio, comerciales, agencia);
+            notificacion.Tipo = TIPO_NOTIFICACION_DEVOLUCION;
+            notificacion.Datos["tipo"] = TIPO_NOTIFICACION_DEVOLUCION;
+            notificacion.Titulo = envio.Pedido.HasValue
+                ? $"Envío devuelto del pedido {envio.Pedido}: ¿lo sigue queriendo el cliente?"
+                : $"Envío {envio.Numero} devuelto: ¿lo sigue queriendo el cliente?";
+            notificacion.Cuerpo = $"Cliente {TextoCliente(envio, comerciales)}. {agencia ?? "La agencia"} lo devuelve " +
+                $"({DescripcionIncidencia(envio)}). Contéstelo en Nesto › Agencias › Devueltos.";
+            return notificacion;
         }
 
         /// <summary>Los comerciales reales del aviso (no el vendedor general), una vez cada uno: a sus móviles con NestoApp.</summary>

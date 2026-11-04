@@ -57,6 +57,13 @@ namespace NestoAPI.Models.Rectificativas
         /// </summary>
         public OperacionFacturaDTO Cargo { get; set; }
 
+        /// <summary>
+        /// NestoAPI#699: pedido nuevo, pendiente de servir, para el mismo cliente.
+        /// Solo se rellena cuando RehacerPedido=true (el abono va en <see cref="Abono"/>).
+        /// NumeroPedido de la respuesta es también el de este pedido, que es el que hay que abrir.
+        /// </summary>
+        public OperacionFacturaDTO PedidoRehecho { get; set; }
+
         // ========== Propiedades para múltiples facturas (Issue #279) ==========
 
         /// <summary>

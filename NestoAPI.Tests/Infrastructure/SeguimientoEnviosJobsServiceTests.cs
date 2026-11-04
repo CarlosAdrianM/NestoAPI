@@ -286,6 +286,31 @@ namespace NestoAPI.Tests.Infrastructure
             CollectionAssert.AreEqual(new[] { "guardar", "avisar 1" }, orden);
         }
 
+        // NestoAPI#699: al pasar a DEVUELTO también se avisa (se pregunta al vendedor si el cliente lo sigue queriendo),
+        // venga de tramitado o de incidentado; un envío que ya estaba devuelto no está en vuelo y no vuelve a avisar.
+        [TestMethod]
+        public async Task PasaADevuelto_AvisaDespuesDeGuardar_TambienSiVeniaDeIncidentado()
+        {
+            EnviosAgencia incidentado = Envio(2, "ALB2", new DateTime(2026, 10, 1));
+            incidentado.Estado = Constantes.Agencias.ESTADO_INCIDENTADO;
+            incidentado.DetalleEstado = "AUSENTE";
+            EnviosEnVuelo(Envio(1, "ALB1", new DateTime(2026, 10, 1)), incidentado, Envio(3, "ALB3", new DateTime(2026, 10, 1)));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB1"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Devuelto, Detalle = "DEVOLUCIÓN" }));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB2"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Devuelto, Detalle = "DEVOLUCIÓN" }));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB3"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Entregado, FechaEntrega = new DateTime(2026, 10, 2) }));
+            var orden = new List<string>();
+            A.CallTo(() => _db.SaveChangesAsync()).Invokes(() => orden.Add("guardar")).Returns(Task.FromResult(1));
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: _ => { },
+                avisarIncidencia: envio => { orden.Add($"avisar {envio.Numero} {envio.Estado}"); return Task.CompletedTask; });
+
+            _ = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            CollectionAssert.AreEqual(new[] { "guardar", "avisar 1 4", "avisar 2 4" }, orden);
+        }
+
         [TestMethod]
         public async Task PasaAIncidentado_SegundaPasada_NoVuelveAAvisar()
         {
