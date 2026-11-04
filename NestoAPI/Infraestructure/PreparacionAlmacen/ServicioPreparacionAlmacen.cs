@@ -439,11 +439,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<LineaPickingAlmacenDTO> recorrido, List<LecturaPickingAlmacen> lecturas)
         {
             EstadoPickingDTO estado = MontarEstadoPicking(empresa, numero, recorrido, lecturas);
-            List<LineaRecogidaDTO> lineas = CasadorEscaneos.RepartirLoResuelto(recorrido,
-                (lecturas ?? new List<LecturaPickingAlmacen>())
-                    .Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Unidades + l.Faltas }));
-            RepartirLasFaltas(lineas, lecturas);
-            RepartirLectores(lineas, lecturas);
+            // Las paradas como siempre (sin nada resuelto) y lo resuelto, cada lectura a su parada si se sabe (NestoAPI#812)
+            List<LineaRecogidaDTO> lineas = CasadorEscaneos.RepartirLoResuelto(recorrido, null);
+            RepartirLoResuelto(lineas, lecturas);
             return new RecogidaAlmacenDTO
             {
                 Empresa = empresa,
@@ -459,73 +457,164 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         /// <summary>
-        /// Ariadna «La encontré» (Carlos 13/10/26): de lo resuelto de cada parada, cuánto está en falta, para que la app
-        /// pueda deshacer una falta dada en otra sesión u otra PDA (sube la FALTA en negativo, como el Deshacer). Las
-        /// lecturas dicen el producto, no el hueco: las faltas de un producto van a sus últimas paradas, sin pasar nunca de
-        /// lo resuelto en cada una (lo que se coge, se coge en orden). Al terminar manda el total por producto
-        /// (<see cref="PlanificadorFaltasSalida.AgruparFaltas"/>), así que el hueco elegido aquí no cambia lo que se quita.
+        /// NestoAPI#812 (picking 100001, sugerencia 1010 de Alfredo, 04/11/26): lo resuelto de cada parada (cogido y en falta)
+        /// y quién lo ha resuelto (NestoAPI#640, varias PDA en la misma salida). Las lecturas dicen el producto y el usuario,
+        /// no el hueco; pero Ariadna manda con cada una cuánto tenía la parada desde la que se leyó
+        /// (<see cref="LecturaPickingAlmacen.TotalParada"/>, NestoAPI#713), y eso basta casi siempre para saber de qué parada
+        /// del producto era. Primero va cada lectura a su parada (la primera del producto con esa cantidad y sitio), y lo que
+        /// no tenga pista o no quepa, en el orden del recorrido como siempre (y las faltas, detrás de lo cogido).
+        /// <para>Sin la pista, lo que Pedro cogía en la parada «sin hueco» (pendiente de ubicar, la última del producto) se
+        /// apuntaba a la parada CON hueco, que se daba por hecha sin que nadie la hubiera tocado, y la parada sin hueco seguía
+        /// pendiente para las dos PDA: Andre cogía otra vez lo que ya había cogido Pedro.</para>
+        /// <para>Nunca pasa de lo que hay en cada parada: lo leído de más no se apunta a ninguna. Ariadna «La encontré»
+        /// (Carlos 13/10/26): las faltas van detrás de lo cogido, así que con lo leído de más se quedan las faltas (se pueden
+        /// deshacer). Al terminar manda el total por producto (<see cref="PlanificadorFaltasSalida.AgruparFaltas"/>), así que
+        /// la parada elegida aquí no cambia lo que se quita.</para>
         /// </summary>
-        internal static void RepartirLasFaltas(List<LineaRecogidaDTO> lineas, IEnumerable<LecturaPickingAlmacen> lecturas)
+        internal static void RepartirLoResuelto(List<LineaRecogidaDTO> lineas, IEnumerable<LecturaPickingAlmacen> lecturas)
         {
-            Dictionary<string, int> faltas = (lecturas ?? Enumerable.Empty<LecturaPickingAlmacen>())
-                .GroupBy(l => l.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => Math.Max(0, g.Sum(l => l.Faltas)), StringComparer.OrdinalIgnoreCase);
-            for (int i = lineas.Count - 1; i >= 0; i--)
+            foreach (LineaRecogidaDTO linea in lineas)
             {
-                LineaRecogidaDTO linea = lineas[i];
-                string producto = linea.Producto?.Trim() ?? string.Empty;
-                if (!faltas.TryGetValue(producto, out int quedan) || quedan <= 0)
+                linea.Resuelto = 0;
+                linea.Faltas = 0;
+                linea.Lectores = new List<LectorLineaRecogidaDTO>();
+            }
+            foreach (IGrouping<string, LecturaPickingAlmacen> producto in (lecturas ?? Enumerable.Empty<LecturaPickingAlmacen>())
+                .Where(l => l != null)
+                .GroupBy(l => l.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            {
+                List<LineaRecogidaDTO> paradas = lineas
+                    .Where(l => string.Equals(l.Producto?.Trim() ?? string.Empty, producto.Key, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(l => l.Orden)
+                    .ToList();
+                if (paradas.Count > 0)
                 {
-                    continue;
+                    RepartirProducto(paradas, producto.ToList());
                 }
-                linea.Faltas = Math.Min(quedan, Math.Max(0, linea.Resuelto));
-                faltas[producto] = quedan - linea.Faltas;
+            }
+        }
+
+        /// <summary>Lo leído (o en falta) por un usuario de un producto, con la cantidad de la parada desde la que se leyó.</summary>
+        private class TrozoLeido
+        {
+            public string Usuario;
+            public int? Pista;
+            public int Unidades;
+        }
+
+        private static void RepartirProducto(List<LineaRecogidaDTO> paradas, List<LecturaPickingAlmacen> lecturas)
+        {
+            List<TrozoLeido> leido = Trozos(lecturas, l => l.Unidades);
+            List<TrozoLeido> faltas = Trozos(lecturas, l => l.Faltas);
+            Dictionary<LineaRecogidaDTO, int> sitio = paradas.ToDictionary(p => p, p => Math.Max(0, p.Cantidad));
+            Dictionary<LineaRecogidaDTO, Dictionary<string, LectorLineaRecogidaDTO>> porUsuario = paradas.ToDictionary(p => p,
+                p => new Dictionary<string, LectorLineaRecogidaDTO>(StringComparer.OrdinalIgnoreCase));
+
+            void Apuntar(LineaRecogidaDTO parada, TrozoLeido trozo, int unidades, bool esFalta)
+            {
+                sitio[parada] -= unidades;
+                trozo.Unidades -= unidades;
+                parada.Resuelto += unidades;
+                string clave = trozo.Usuario ?? string.Empty;
+                if (!porUsuario[parada].TryGetValue(clave, out LectorLineaRecogidaDTO lector))
+                {
+                    lector = new LectorLineaRecogidaDTO { Usuario = trozo.Usuario };
+                    porUsuario[parada][clave] = lector;
+                }
+                if (esFalta)
+                {
+                    parada.Faltas += unidades;
+                    lector.Faltas += unidades;
+                }
+                else
+                {
+                    lector.Leido += unidades;
+                }
+            }
+
+            // 1. Cada lectura con pista, a la parada desde la que se leyó (las faltas antes: con lo leído de más, se quedan)
+            foreach ((List<TrozoLeido> trozos, bool esFalta) in new[] { (faltas, true), (leido, false) })
+            {
+                foreach (TrozoLeido trozo in trozos.Where(t => t.Pista.HasValue))
+                {
+                    foreach (LineaRecogidaDTO parada in paradas.Where(p => p.Cantidad == trozo.Pista.Value))
+                    {
+                        int unidades = Math.Min(trozo.Unidades, sitio[parada]);
+                        if (unidades > 0)
+                        {
+                            Apuntar(parada, trozo, unidades, esFalta);
+                        }
+                    }
+                }
+            }
+
+            // 2. Lo demás, en el orden del recorrido: primero lo cogido y detrás las faltas, que tienen su sitio guardado
+            int sitioQueda = sitio.Values.Sum();
+            int faltasQuedan = Math.Min(faltas.Sum(t => t.Unidades), sitioQueda);
+            int leidoQueda = Math.Min(leido.Sum(t => t.Unidades), sitioQueda - faltasQuedan);
+            foreach ((List<TrozoLeido> trozos, bool esFalta, int tope) in new[] { (leido, false, leidoQueda), (faltas, true, faltasQuedan) })
+            {
+                int quedan = tope;
+                foreach (TrozoLeido trozo in trozos)
+                {
+                    foreach (LineaRecogidaDTO parada in paradas)
+                    {
+                        int unidades = Math.Min(Math.Min(trozo.Unidades, sitio[parada]), quedan);
+                        if (unidades > 0)
+                        {
+                            Apuntar(parada, trozo, unidades, esFalta);
+                            quedan -= unidades;
+                        }
+                    }
+                }
+            }
+
+            foreach (LineaRecogidaDTO parada in paradas)
+            {
+                parada.Lectores = porUsuario[parada].Values
+                    .Where(l => l.Leido > 0 || l.Faltas > 0)
+                    .OrderBy(l => l.Usuario ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
             }
         }
 
         /// <summary>
-        /// NestoAPI#640 (varias PDA en la misma salida): quién ha resuelto cada parada. Las lecturas dicen el producto y el
-        /// usuario, no el hueco, así que se reparten como lo resuelto: lo cogido de cada parada (Resuelto − Faltas) sale de
-        /// lo leído por cada usuario, por orden de parada y de usuario, y sus faltas, de las faltas de cada uno. Nunca pasa de
-        /// lo que hay en la parada: lo leído de más no se asigna a ninguna.
+        /// Lo leído (o en falta) de un producto por usuario (en orden) y, dentro de cada uno, por la parada desde la que se
+        /// leyó (lo que tiene pista, primero). Un «deshacer» resta de lo suyo; lo de cada usuario y lo del producto nunca
+        /// bajan de 0 (si el producto suma menos que sus usuarios, se recorta por el final).
         /// </summary>
-        internal static void RepartirLectores(List<LineaRecogidaDTO> lineas, IEnumerable<LecturaPickingAlmacen> lecturas)
+        private static List<TrozoLeido> Trozos(List<LecturaPickingAlmacen> lecturas, Func<LecturaPickingAlmacen, int> cantidad)
         {
-            Dictionary<string, List<LectorLineaRecogidaDTO>> porProducto = (lecturas ?? Enumerable.Empty<LecturaPickingAlmacen>())
-                .GroupBy(l => l.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g
-                    .GroupBy(l => l.Usuario?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(u => u.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(u => new LectorLineaRecogidaDTO
-                    {
-                        Usuario = u.Key.Length == 0 ? null : u.Key,
-                        Leido = Math.Max(0, u.Sum(l => l.Unidades)),
-                        Faltas = Math.Max(0, u.Sum(l => l.Faltas))
-                    })
-                    .ToList(), StringComparer.OrdinalIgnoreCase);
-
-            foreach (LineaRecogidaDTO linea in lineas.OrderBy(l => l.Orden))
+            var trozos = new List<TrozoLeido>();
+            foreach (IGrouping<string, LecturaPickingAlmacen> usuario in lecturas
+                .GroupBy(l => l.Usuario?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(u => u.Key, StringComparer.OrdinalIgnoreCase))
             {
-                linea.Lectores = new List<LectorLineaRecogidaDTO>();
-                if (!porProducto.TryGetValue(linea.Producto?.Trim() ?? string.Empty, out List<LectorLineaRecogidaDTO> quedan))
-                {
-                    continue;
-                }
-                int cogido = Math.Max(0, linea.Resuelto - linea.Faltas);
-                int enFalta = Math.Max(0, linea.Faltas);
-                foreach (LectorLineaRecogidaDTO lector in quedan)
-                {
-                    int leido = Math.Min(cogido, lector.Leido);
-                    int faltas = Math.Min(enFalta, lector.Faltas);
-                    lector.Leido -= leido;
-                    lector.Faltas -= faltas;
-                    cogido -= leido;
-                    enFalta -= faltas;
-                    if (leido > 0 || faltas > 0)
-                    {
-                        linea.Lectores.Add(new LectorLineaRecogidaDTO { Usuario = lector.Usuario, Leido = leido, Faltas = faltas });
-                    }
-                }
+                string nombre = usuario.Key.Length == 0 ? null : usuario.Key;
+                int total = Math.Max(0, usuario.Sum(cantidad));
+                List<TrozoLeido> delUsuario = usuario
+                    .Where(l => l.TotalParada.HasValue && l.TotalParada.Value > 0)
+                    .GroupBy(l => l.TotalParada.Value)
+                    .Select(g => new TrozoLeido { Usuario = nombre, Pista = g.Key, Unidades = g.Sum(cantidad) })
+                    .Where(t => t.Unidades > 0)
+                    .ToList();
+                Recortar(delUsuario, total);
+                delUsuario.Add(new TrozoLeido { Usuario = nombre, Unidades = total - delUsuario.Sum(t => t.Unidades) });
+                trozos.AddRange(delUsuario);
+            }
+            Recortar(trozos, Math.Max(0, lecturas.Sum(cantidad)));
+            return trozos.Where(t => t.Unidades > 0).ToList();
+        }
+
+        /// <summary>Deja la suma de los trozos en <paramref name="tope"/> como mucho, quitando de los últimos.</summary>
+        private static void Recortar(List<TrozoLeido> trozos, int tope)
+        {
+            int sobra = trozos.Sum(t => t.Unidades) - tope;
+            for (int i = trozos.Count - 1; i >= 0 && sobra > 0; i--)
+            {
+                int quita = Math.Min(sobra, trozos[i].Unidades);
+                trozos[i].Unidades -= quita;
+                sobra -= quita;
             }
         }
 
