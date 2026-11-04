@@ -437,6 +437,21 @@ namespace NestoAPI.Controllers
             return Ok(await inscripciones.CambiarPersonaContacto(id, peticion, User).ConfigureAwait(false));
         }
 
+        // PUT api/Eventos/Inscripciones/7/Asistentes   { Asistentes: 2 }
+        /// <summary>
+        /// NestoAPI#811: cambia cuántas personas vienen con la inscripción (mínimo 1; ocupa esas plazas). Si sube, revalida las
+        /// plazas y, en un evento «gratuito por compra», que haya una unidad comprada por asistente (400 EVENTO_REQUIERE_COMPRA;
+        /// Dirección se lo salta con un aviso en Avisos). Quien mantiene el evento (la tienda del evento, Administración o
+        /// Dirección), como la persona que asiste. Devuelve la inscripción.
+        /// </summary>
+        [HttpPut]
+        [Route("Inscripciones/{id:int}/Asistentes")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PutAsistentesInscripcion(int id, [FromBody] CambiarAsistentesInscripcionDTO peticion)
+        {
+            return Ok(await inscripciones.CambiarAsistentes(id, peticion, User).ConfigureAwait(false));
+        }
+
         // GET api/Clientes/1/15191/Inscripciones?contacto=0
         /// <summary>Las inscripciones de un cliente (de todos sus contactos si no se pide uno). El cliente de la tienda, solo las suyas.</summary>
         [HttpGet]

@@ -85,6 +85,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// Dirección; nunca la tienda online). Entra aunque el evento esté lleno; sin enlace de pago.
         /// </summary>
         public MarcarPagoInscripcionDTO Pago { get; set; }
+        /// <summary>
+        /// NestoAPI#811: opcional, cuántas personas vienen con esta inscripción (un centro que compra 2 kits trae a 2). Si no
+        /// viene, 1. Mínimo 1. Ocupa esas plazas y, en un evento «gratuito por compra», pide una unidad comprada por asistente.
+        /// </summary>
+        public int? Asistentes { get; set; }
     }
 
     /// <summary>NestoAPI#690: POST api/Eventos/Inscripciones/{id}/ConfirmarAsistencia.</summary>
@@ -234,6 +239,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// producto requerido). Null en el resto. Si se borra ese pedido o se le quita la línea, la inscripción se anula.
         /// </summary>
         public int? PedidoJustificante { get; set; }
+        /// <summary>
+        /// NestoAPI#811: cuántas personas vienen con esta inscripción (ocupa esas plazas). 1 en las de antes y sin el script. Se
+        /// pone al inscribir (InscribirEventoDTO.Asistentes) y se cambia con PUT api/Eventos/Inscripciones/{id}/Asistentes.
+        /// La persona que asiste (<see cref="PersonaContacto"/>) es la principal; el resto cuentan como «+N».
+        /// </summary>
+        public int Asistentes { get; set; } = ReglasAsistentesEvento.POR_DEFECTO;
     }
 
     /// <summary>
@@ -284,6 +295,8 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<List<PersonaContactoEventoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto, IPrincipal usuario);
         /// <summary>NestoAPI#731: cambia (o quita) la persona que asiste. Quien mantiene el evento.</summary>
         Task<InscripcionEventoDTO> CambiarPersonaContacto(int id, CambiarPersonaContactoInscripcionDTO peticion, IPrincipal usuario);
+        /// <summary>NestoAPI#811: cambia el número de asistentes (revalida plazas y compra). Quien mantiene el evento.</summary>
+        Task<InscripcionEventoDTO> CambiarAsistentes(int id, CambiarAsistentesInscripcionDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -392,6 +405,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         {
             baseImponibleDia = new LectorBaseImponibleDia(db);
             PersonasAsistentes = new RepositorioPersonaAsistenteEventos(db);
+            AsistentesInscripciones = new RepositorioAsistentesEventos(db);
             ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
             // NestoAPI#746: reservas sin pagar con el evento lleno
             PlazasLlenas = new RepositorioPlazasLlenas(db);
@@ -432,6 +446,12 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         /// </summary>
         internal IRepositorioPersonaAsistenteEventos PersonasAsistentes { get; set; }
 
+        /// <summary>
+        /// NestoAPI#811: la columna EventosInscripciones.Asistentes (fuera del EDMX). Null (tests) o sin la columna: todas las
+        /// inscripciones son de 1 asistente, inscribir más de 1 y el PUT contestan que falta el script.
+        /// </summary>
+        internal IRepositorioAsistentesEventos AsistentesInscripciones { get; set; }
+
         /// <param name="pagos">Para generar el enlace (perezoso: solo se crea si hace falta).</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
         /// <param name="procesador">El enganche del corte 2. Null: <see cref="ProcesadorInscripcionPagadaPendiente"/>.</param>
@@ -464,6 +484,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             }
             string empresa = EmpresaOPorDefecto(peticion.Empresa);
             string cliente = Limpiar(peticion.Cliente);
+            // NestoAPI#811: sin decir nada, 1 (lo que mandan hoy Nesto, NestoApp y la tienda)
+            int asistentes = ReglasAsistentesEvento.Normalizar(peticion.Asistentes);
 
             // El cliente de la tienda online solo se inscribe a sí mismo, y su origen es TNV diga lo que diga.
             string clienteDelToken = PermisosEventos.ClienteDelToken(usuario);
@@ -507,6 +529,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 throw new NestoBusinessException($"El evento «{evento.Titulo?.Trim()}» ya ha pasado.");
             }
+            if (asistentes > ReglasAsistentesEvento.POR_DEFECTO)
+            {
+                ComprobarColumnaAsistentes();
+            }
 
             // NestoAPI#746: inscribir ya pagada (efectivo, datáfono, transferencia recibida). Quien puede marcar pagos; entra
             // aunque el evento esté lleno (las reservas sin pagar reciben el aviso para pagar o perder la plaza).
@@ -549,15 +575,25 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             if (yaInscrita != null)
             {
                 throw new NestoBusinessException(OcupaPlaza(yaInscrita)
-                    ? $"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}»."
+                    ? $"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}». Si vienen más personas del " +
+                      "mismo centro, cambie el número de asistentes de esa inscripción."
                     : $"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}», pero dijo que no podría ir: " +
                       "si al final viene, confirme su asistencia en esa inscripción.");
             }
             // NestoAPI#746 (Pilar/Carlos, 30/10/26): sin plazas no se reserva sin pagar; el mensaje dice cuántas son reservas
             // sin pagar y cuándo vencen. La que entra ya pagada pasa igual.
-            if (evento.Plazas.HasValue && ocupan.Count >= evento.Plazas.Value && formaPagada == null)
+            // NestoAPI#811: cada inscripción ocupa sus asistentes; si quedan plazas pero no tantas, se dice cuántas quedan.
+            if (evento.Plazas.HasValue && formaPagada == null)
             {
-                throw new NestoBusinessException(await MensajeSinPlazas(evento, delEvento).ConfigureAwait(false));
+                int ocupadas = ReglasAsistentesEvento.PlazasOcupadas(ocupan,
+                    await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones, ocupan.Select(i => i.Id)).ConfigureAwait(false));
+                if (!ReglasAsistentesEvento.Caben(evento, ocupadas, asistentes))
+                {
+                    int libres = ReglasAsistentesEvento.Libres(evento, ocupadas) ?? 0;
+                    throw new NestoBusinessException(libres > 0
+                        ? ReglasAsistentesEvento.MensajeNoCaben(evento, libres, asistentes)
+                        : await MensajeSinPlazas(evento, delEvento).ConfigureAwait(false));
+                }
             }
 
             // NestoAPI#731: la persona que asiste (opcional). Si la dicen, tiene que ser de la ficha.
@@ -592,6 +628,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                     DateTime desde = ReglasProductosRequeridosEvento.Desde(requeridos);
                     bool exigeTodos = (await ProductosRequeridos.EventosQueExigenTodos(new List<int> { evento.Id }).ConfigureAwait(false))?
                         .Contains(evento.Id) == true;
+                    bool habiaCompra;
                     if (exigeTodos)
                     {
                         List<ProductoRequeridoLeido> faltan;
@@ -604,6 +641,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                             }
                             sinCompraPorDireccion = ReglasProductosRequeridosEvento.AvisoSinCompraPorDireccion(evento.Titulo, faltan, desde, todos: true);
                         }
+                        habiaCompra = !faltan.Any();
                     }
                     else
                     {
@@ -617,6 +655,13 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                             }
                             sinCompraPorDireccion = ReglasProductosRequeridosEvento.AvisoSinCompraPorDireccion(evento.Titulo, requeridos, desde, todos: false);
                         }
+                        habiaCompra = justificante != null;
+                    }
+                    // NestoAPI#811: con varios asistentes, una unidad comprada por asistente (con uno basta con que haya compra)
+                    if (habiaCompra)
+                    {
+                        sinCompraPorDireccion = await ComprobarUnidadesCompradas(evento, empresa, cliente, contacto, requeridos, desde,
+                            exigeTodos, asistentes, exigirCompra).ConfigureAwait(false);
                     }
                 }
             }
@@ -653,6 +698,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             };
             db.EventosInscripciones.Add(inscripcion);
             await db.SaveChangesAsync().ConfigureAwait(false);
+            if (asistentes != ReglasAsistentesEvento.POR_DEFECTO)
+            {
+                await GuardarAsistentesOQuitar(inscripcion, asistentes).ConfigureAwait(false);
+            }
             bool personaGuardada = await GuardarPersonaSinFallar(inscripcion.Id, personaAsiste).ConfigureAwait(false);
             bool justificanteGuardado = await GuardarJustificanteSinFallar(inscripcion.Id, justificante?.Pedido).ConfigureAwait(false);
             if (sinCompraPorDireccion != null)
@@ -704,6 +753,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
             InscripcionEventoDTO dto = Componer(inscripcion, evento, ficha.Nombre?.Trim());
             dto.UrlPago = urlPago;
+            dto.Asistentes = asistentes;
             // NestoAPI#731: lo de la ficha (solo lectura) y la persona que asiste
             personasCliente = personasCliente ?? await LeerPersonasSinFallar(empresa, cliente).ConfigureAwait(false);
             RellenarFicha(dto, ficha.Dirección, ficha.CodPostal, ficha.Población, ficha.Provincia,
@@ -789,6 +839,178 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             await db.SaveChangesAsync().ConfigureAwait(false);
             return (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
                 .Single();
+        }
+
+        // ---------------- Asistentes (NestoAPI#811) ----------------
+
+        /// <summary>
+        /// NestoAPI#811: cambia cuántas personas vienen con la inscripción (mínimo 1). Quien mantiene el evento, como la persona
+        /// que asiste. Si sube, revalida las plazas (si la inscripción ocupa plaza) y, en un evento «gratuito por compra», que
+        /// haya una unidad comprada por asistente (Dirección se lo salta, con aviso, como al inscribir). Solo inscripciones vivas.
+        /// </summary>
+        public async Task<InscripcionEventoDTO> CambiarAsistentes(int id, CambiarAsistentesInscripcionDTO peticion, IPrincipal usuario)
+        {
+            EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
+            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+            ComprobarPuedeMantener(usuario, evento);
+            if (peticion?.Asistentes == null)
+            {
+                throw new NestoBusinessException("Indique el número de asistentes.");
+            }
+            int nuevos = ReglasAsistentesEvento.Normalizar(peticion.Asistentes);
+            EstadoInscripcionEvento estado = EstadoDe(inscripcion);
+            if (!ReglasInscripcionEvento.OCUPAN_PLAZA.Contains(estado))
+            {
+                throw new NestoBusinessException($"La inscripción {inscripcion.Id} está {ReglasInscripcionEvento.Texto(estado).ToLowerInvariant()}: " +
+                    "no se puede cambiar el número de asistentes.");
+            }
+            ComprobarColumnaAsistentes();
+
+            List<EventoInscripcion> delEvento = await db.EventosInscripciones
+                .Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false);
+            Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                delEvento.Select(i => i.Id).Concat(new[] { inscripcion.Id })).ConfigureAwait(false);
+            int actuales = ReglasAsistentesEvento.De(inscripcion.Id, asistentes);
+            List<string> avisos = null;
+            if (nuevos > actuales)
+            {
+                if (OcupaPlaza(inscripcion) && evento.Plazas.HasValue)
+                {
+                    int ocupadas = ReglasAsistentesEvento.PlazasOcupadas(delEvento.Where(i => i.Id != inscripcion.Id), asistentes);
+                    if (!ReglasAsistentesEvento.Caben(evento, ocupadas, nuevos))
+                    {
+                        int libres = ReglasAsistentesEvento.Libres(evento, ocupadas) ?? 0;
+                        throw new NestoBusinessException(libres > 0
+                            ? ReglasAsistentesEvento.MensajeNoCaben(evento, libres, nuevos)
+                            : $"No quedan plazas en «{evento.Titulo?.Trim()}»: no se pueden añadir asistentes a esta inscripción.");
+                    }
+                }
+                string aviso = await ComprobarUnidadesDeLaInscripcion(evento, inscripcion, nuevos, !PermisosEventos.EsDireccion(usuario)).ConfigureAwait(false);
+                if (aviso != null)
+                {
+                    avisos = new List<string> { aviso };
+                }
+            }
+            if (nuevos != actuales)
+            {
+                if (!await AsistentesInscripciones.Poner(inscripcion.Id, nuevos).ConfigureAwait(false))
+                {
+                    throw FaltaScriptAsistentes();
+                }
+                inscripcion.Usuario = UsuarioDe(usuario);
+                inscripcion.FechaModificacion = reloj();
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            InscripcionEventoDTO dto = (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
+                .Single();
+            dto.Asistentes = nuevos;
+            dto.Avisos = avisos;
+            if (nuevos > actuales)
+            {
+                await AvisarSiSeLlena(evento).ConfigureAwait(false);
+            }
+            return dto;
+        }
+
+        /// <summary>NestoAPI#811: más de 1 asistente necesita la columna (si no, se perdería el número).</summary>
+        private void ComprobarColumnaAsistentes()
+        {
+            bool disponible;
+            try
+            {
+                disponible = AsistentesInscripciones?.Disponible() == true;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #811] No se ha podido comprobar la columna EventosInscripciones.Asistentes: {ex.Message}", ex));
+                disponible = false;
+            }
+            if (!disponible)
+            {
+                throw FaltaScriptAsistentes();
+            }
+        }
+
+        private static NestoBusinessException FaltaScriptAsistentes() =>
+            new NestoBusinessException("Todavía no se puede inscribir a más de un asistente por inscripción: falta lanzar el script " +
+                "Scripts/Issue811_EventosInscripcionesAsistentes.sql. Avise a Informática.");
+
+        /// <summary>
+        /// NestoAPI#811: guarda los asistentes de la inscripción recién creada. Si no se puede, se quita la inscripción (contaría 1
+        /// plaza en vez de varias) y se dice por qué.
+        /// </summary>
+        private async Task GuardarAsistentesOQuitar(EventoInscripcion inscripcion, int asistentes)
+        {
+            string motivo = null;
+            try
+            {
+                if (AsistentesInscripciones == null || !await AsistentesInscripciones.Poner(inscripcion.Id, asistentes).ConfigureAwait(false))
+                {
+                    motivo = "falta la columna EventosInscripciones.Asistentes";
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #811] No se han podido guardar los {asistentes} asistentes de la inscripción {inscripcion.Id}: {ex.Message}", ex));
+                motivo = ex.Message;
+            }
+            if (motivo == null)
+            {
+                return;
+            }
+            db.EventosInscripciones.Remove(inscripcion);
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            throw motivo.StartsWith("falta la columna", StringComparison.Ordinal)
+                ? FaltaScriptAsistentes()
+                : new NestoBusinessException($"No se ha podido guardar el número de asistentes ({asistentes}): {motivo}. No se ha hecho la inscripción.");
+        }
+
+        /// <summary>
+        /// NestoAPI#811: con varios asistentes, hace falta una unidad comprada del producto requerido por asistente (la suma de
+        /// Cantidad de las líneas que cuentan; con el modo «Todos», de cada producto). Con 1 no se mira (basta con que haya
+        /// compra, como antes). Si no llega: 400 EVENTO_REQUIERE_COMPRA o, si es Dirección (<paramref name="exigirCompra"/> false),
+        /// el aviso que lo cuenta. Null si llega.
+        /// </summary>
+        private async Task<string> ComprobarUnidadesCompradas(Evento evento, string empresa, string cliente, string contacto,
+            List<ProductoRequeridoLeido> requeridos, DateTime desde, bool exigeTodos, int asistentes, bool exigirCompra)
+        {
+            if (asistentes <= ReglasAsistentesEvento.POR_DEFECTO || ProductosRequeridos == null || requeridos == null || !requeridos.Any())
+            {
+                return null;
+            }
+            Dictionary<string, int> unidades = await ProductosRequeridos.UnidadesCompradas(empresa, cliente,
+                requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false) ?? new Dictionary<string, int>();
+            int compradas = ReglasAsistentesEvento.UnidadesQueCuentan(requeridos, unidades, exigeTodos);
+            if (compradas >= asistentes)
+            {
+                return null;
+            }
+            string mensaje = ReglasAsistentesEvento.MensajeFaltanUnidades(evento.Titulo, cliente, contacto, requeridos, exigeTodos, compradas, asistentes, desde);
+            if (exigirCompra)
+            {
+                throw ReglasAsistentesEvento.FaltanUnidades(mensaje, requeridos, exigeTodos, compradas, asistentes, desde);
+            }
+            return ReglasAsistentesEvento.AvisoFaltanUnidadesPorDireccion(mensaje);
+        }
+
+        /// <summary>NestoAPI#811: lo mismo para una inscripción ya hecha (PUT de asistentes).</summary>
+        private async Task<string> ComprobarUnidadesDeLaInscripcion(Evento evento, EventoInscripcion inscripcion, int asistentes, bool exigirCompra)
+        {
+            if (asistentes <= ReglasAsistentesEvento.POR_DEFECTO || ProductosRequeridos == null)
+            {
+                return null;
+            }
+            List<ProductoRequeridoLeido> requeridos = (await ProductosRequeridos.Leer(new List<int> { evento.Id }).ConfigureAwait(false))?
+                .FirstOrDefault().Value ?? new List<ProductoRequeridoLeido>();
+            if (!requeridos.Any())
+            {
+                return null;
+            }
+            bool exigeTodos = (await ProductosRequeridos.EventosQueExigenTodos(new List<int> { evento.Id }).ConfigureAwait(false))?
+                .Contains(evento.Id) == true;
+            return await ComprobarUnidadesCompradas(evento, EmpresaOPorDefecto(inscripcion.Empresa), Limpiar(inscripcion.Cliente),
+                Limpiar(inscripcion.Contacto), requeridos, ReglasProductosRequeridosEvento.Desde(requeridos), exigeTodos, asistentes,
+                exigirCompra).ConfigureAwait(false);
         }
 
         /// <summary>Las personas de contacto de unos clientes (cliente → persona), ya limpias.</summary>
@@ -1619,7 +1841,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 throw new NestoBusinessException(motivo);
             }
             await Contestar(inscripcion, evento, respuesta, origen, UsuarioDe(usuario)).ConfigureAwait(false);
-            return Componer(inscripcion, evento, null);
+            InscripcionEventoDTO dto = Componer(inscripcion, evento, null);
+            dto.Asistentes = ReglasAsistentesEvento.De(inscripcion.Id,
+                await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones, new[] { inscripcion.Id }).ConfigureAwait(false));
+            return dto;
         }
 
         /// <summary>
@@ -1639,13 +1864,21 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             EstadoInscripcionEvento estado = EstadoDe(inscripcion);
             if (respuesta == RespuestaAsistenciaEvento.Confirma && !OcupaPlaza(inscripcion) && evento.Plazas.HasValue)
             {
-                // Vuelve a ocupar plaza: solo si queda alguna (la suya la puede haber cogido otro)
-                int ocupadas = (await db.EventosInscripciones.Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false))
-                    .Count(i => i.Id != inscripcion.Id && OcupaPlaza(i));
-                if (ocupadas >= evento.Plazas.Value)
+                // Vuelve a ocupar plaza: solo si queda alguna (la suya la puede haber cogido otro). NestoAPI#811: tantas como
+                // asistentes tiene la inscripción.
+                List<EventoInscripcion> otras = (await db.EventosInscripciones.Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false))
+                    .Where(i => i.Id != inscripcion.Id && OcupaPlaza(i)).ToList();
+                Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                    otras.Select(i => i.Id).Concat(new[] { inscripcion.Id })).ConfigureAwait(false);
+                int ocupadas = ReglasAsistentesEvento.PlazasOcupadas(otras, asistentes);
+                int suyos = ReglasAsistentesEvento.De(inscripcion.Id, asistentes);
+                if (!ReglasAsistentesEvento.Caben(evento, ocupadas, suyos))
                 {
-                    throw new NestoBusinessException($"Lo sentimos: ya no quedan plazas en «{evento.Titulo?.Trim()}». " +
-                        "Su plaza quedó libre cuando nos dijo que no podría ir.");
+                    int libres = ReglasAsistentesEvento.Libres(evento, ocupadas) ?? 0;
+                    throw new NestoBusinessException(libres > 0
+                        ? ReglasAsistentesEvento.MensajeNoCabenAlConfirmar(evento, libres, suyos)
+                        : $"Lo sentimos: ya no quedan plazas en «{evento.Titulo?.Trim()}». " +
+                          "Su plaza quedó libre cuando nos dijo que no podría ir.");
                 }
             }
             ApuntarRespuesta(inscripcion, respuesta, origen, usuario);
@@ -2182,6 +2415,9 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             }
             ILookup<string, PersonaContactoEventoDTO> personasPorCliente = personas.ToLookup(p => p.Key, p => p.Value);
             Dictionary<int, int> justificantes = await LeerJustificantesSinFallar(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false);
+            // NestoAPI#811: cuántas personas trae cada una (sin la columna o si falla, 1)
+            Dictionary<int, int> cuantos = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                inscripciones.Select(i => i.Id)).ConfigureAwait(false);
 
             var porPagar = new HashSet<int>(inscripciones
                 .Where(i => i.PagoTPVId.HasValue && (EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada))
@@ -2206,6 +2442,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 eventos.TryGetValue(i.EventoId, out Evento evento);
                 fichas.TryGetValue(Limpiar(i.Cliente) + "/" + Limpiar(i.Contacto), out var ficha);
                 InscripcionEventoDTO dto = Componer(i, evento, ficha?.Nombre?.Trim());
+                dto.Asistentes = ReglasAsistentesEvento.De(i.Id, cuantos);
                 asistentes.TryGetValue(i.Id, out string asiste);
                 RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia,
                     personasPorCliente[Limpiar(i.Cliente) ?? ""], asiste);

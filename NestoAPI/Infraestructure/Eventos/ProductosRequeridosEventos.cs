@@ -211,6 +211,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>Deja exactamente esos productos (los que ya estaban conservan su FechaCreacion). False sin la tabla.</summary>
         Task<bool> Guardar(int eventoId, IReadOnlyCollection<string> productos, string usuario);
         Task<JustificanteCompraEvento> BuscarJustificante(string empresa, string cliente, IReadOnlyCollection<string> productos, DateTime desde);
+        /// <summary>
+        /// NestoAPI#811: producto → unidades compradas o pedidas (suma de Cantidad de las mismas líneas que valen de justificante:
+        /// cantidad positiva, estado -1/1/2/4, pedidos desde <paramref name="desde"/>). Los que no tiene no salen.
+        /// </summary>
+        Task<Dictionary<string, int>> UnidadesCompradas(string empresa, string cliente, IReadOnlyCollection<string> productos, DateTime desde);
         /// <summary>False sin la columna.</summary>
         Task<bool> PonerJustificante(int inscripcion, int pedido);
         Task<Dictionary<int, int>> LeerJustificantes(IReadOnlyCollection<int> inscripciones);
@@ -244,6 +249,14 @@ JOIN dbo.LinPedidoVta l WITH (NOLOCK) ON l.Empresa = c.Empresa AND l.Número = c
 WHERE c.Empresa = @empresa AND c.[Nº Cliente] = @cliente AND c.Fecha >= @desde
   AND l.Producto IN ({0}) AND l.Estado IN (-1, 1, 2, 4) AND l.Cantidad > 0
 ORDER BY l.Estado DESC, c.Número DESC";
+
+        internal const string SQL_UNIDADES = @"
+SELECT RTRIM(l.Producto) AS Producto, CAST(SUM(CAST(l.Cantidad AS int)) AS int) AS Unidades
+FROM dbo.CabPedidoVta c WITH (NOLOCK)
+JOIN dbo.LinPedidoVta l WITH (NOLOCK) ON l.Empresa = c.Empresa AND l.Número = c.Número
+WHERE c.Empresa = @empresa AND c.[Nº Cliente] = @cliente AND c.Fecha >= @desde
+  AND l.Producto IN ({0}) AND l.Estado IN (-1, 1, 2, 4) AND l.Cantidad > 0
+GROUP BY RTRIM(l.Producto)";
 
         internal const string SQL_PONER_JUSTIFICANTE = "UPDATE dbo.EventosInscripciones SET PedidoJustificante = @pedido WHERE Id = @id";
         internal const string SQL_LEER_JUSTIFICANTES = "SELECT Id, PedidoJustificante FROM dbo.EventosInscripciones WITH (NOLOCK) " +
@@ -334,6 +347,44 @@ ORDER BY l.Estado DESC, c.Número DESC";
             return await db.Database
                 .SqlQuery<JustificanteCompraEvento>(string.Format(SQL_JUSTIFICANTE, string.Join(", ", nombres)), parametros.ToArray())
                 .FirstOrDefaultAsync().ConfigureAwait(false);
+        }
+
+        public async Task<Dictionary<string, int>> UnidadesCompradas(string empresa, string cliente, IReadOnlyCollection<string> productos, DateTime desde)
+        {
+            List<string> lista = (productos ?? new List<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToList();
+            var resultado = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (!lista.Any())
+            {
+                return resultado;
+            }
+            var parametros = new List<object>
+            {
+                new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO },
+                new SqlParameter("@cliente", SqlDbType.Char, 10) { Value = cliente?.Trim() ?? "" },
+                new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde.Date }
+            };
+            var nombres = new List<string>();
+            for (int i = 0; i < lista.Count; i++)
+            {
+                nombres.Add("@p" + i);
+                parametros.Add(new SqlParameter("@p" + i, SqlDbType.Char, 15) { Value = lista[i] });
+            }
+            foreach (FilaUnidades fila in await db.Database
+                .SqlQuery<FilaUnidades>(string.Format(SQL_UNIDADES, string.Join(", ", nombres)), parametros.ToArray())
+                .ToListAsync().ConfigureAwait(false))
+            {
+                if (!string.IsNullOrWhiteSpace(fila.Producto))
+                {
+                    resultado[fila.Producto.Trim()] = fila.Unidades ?? 0;
+                }
+            }
+            return resultado;
+        }
+
+        private class FilaUnidades
+        {
+            public string Producto { get; set; }
+            public int? Unidades { get; set; }
         }
 
         public async Task<bool> PonerJustificante(int inscripcion, int pedido)
