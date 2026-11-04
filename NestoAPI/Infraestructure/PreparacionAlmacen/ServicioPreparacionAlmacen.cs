@@ -288,6 +288,95 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             RepartirBultosYActividad(packing, bultos, actividad, fotosPacking);
         }
 
+        /// <summary>
+        /// Ariadna#95 (envío 929911): a cada entrega, lo dado por falta en el picking que era suyo y los otros pickings de sus
+        /// pedidos con líneas sin servir. Dos consultas por packing. Si fallan, el packing sale igual, sin avisos.
+        /// </summary>
+        private async Task CompletarAvisosDelPicking(string empresa, int picking, int? pedido, PackingAlmacenDTO packing)
+        {
+            if (packing?.Entregas == null || packing.Entregas.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                List<FaltaPickingAlmacen> faltas = await repositorio.LeerFaltasDelPicking(empresa, picking).ConfigureAwait(false);
+                List<LineaFueraDelPicking> fuera = await repositorio.LeerLineasFueraDelPicking(empresa, picking, pedido).ConfigureAwait(false);
+                RepartirAvisosDelPicking(packing, faltas, fuera);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+            }
+        }
+
+        /// <summary>
+        /// Ariadna#95. Otros pickings: las líneas en Estado 1 de otro picking de los pedidos de la entrega, agrupadas por picking.
+        /// Faltas: el picking por ola no guarda el pedido de la falta, así que una falta va a las entregas con una línea de ese
+        /// producto fuera del picking (pendiente o en otro picking: así la deja la falta al terminar); si no hay ninguna (el
+        /// picking aún no se ha terminado), a las entregas que lo llevan en este picking.
+        /// </summary>
+        internal static void RepartirAvisosDelPicking(PackingAlmacenDTO packing, IEnumerable<FaltaPickingAlmacen> faltas,
+            IEnumerable<LineaFueraDelPicking> lineasFuera)
+        {
+            if (packing?.Entregas == null)
+            {
+                return;
+            }
+            List<LineaFueraDelPicking> fuera = (lineasFuera ?? Enumerable.Empty<LineaFueraDelPicking>()).Where(l => l != null).ToList();
+            List<FaltaPickingAlmacen> netas = (faltas ?? Enumerable.Empty<FaltaPickingAlmacen>())
+                .Where(f => f != null && f.Cantidad > 0 && !string.IsNullOrWhiteSpace(f.Producto)).ToList();
+
+            foreach (EntregaPackingAlmacenDTO entrega in packing.Entregas)
+            {
+                var pedidos = new HashSet<int>(entrega.Pedidos.Select(p => p.Pedido));
+                entrega.OtrosPickingsPendientes = fuera
+                    .Where(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO && l.Picking > 0 && l.Picking != packing.Picking && pedidos.Contains(l.Pedido))
+                    .GroupBy(l => l.Picking)
+                    .OrderBy(g => g.Key)
+                    .Select(g => new OtroPickingPendienteDTO
+                    {
+                        Picking = g.Key,
+                        Lineas = g.Select(l => new LineaOtroPickingDTO
+                        {
+                            Pedido = l.Pedido,
+                            Producto = l.Producto?.Trim(),
+                            Descripcion = l.Descripcion?.Trim(),
+                            Cantidad = l.Cantidad
+                        }).ToList()
+                    }).ToList();
+                entrega.FaltasDelPicking = new List<FaltaPickingPackingDTO>();
+            }
+
+            foreach (FaltaPickingAlmacen falta in netas)
+            {
+                string producto = falta.Producto.Trim();
+                List<EntregaPackingAlmacenDTO> suyas = packing.Entregas
+                    .Where(e => fuera.Any(l => MismoProducto(l.Producto, producto) && e.Pedidos.Any(p => p.Pedido == l.Pedido)))
+                    .ToList();
+                if (suyas.Count == 0)
+                {
+                    suyas = packing.Entregas
+                        .Where(e => e.Pedidos.Any(p => p.Lineas.Any(l => !l.EsTexto && MismoProducto(l.Producto, producto))))
+                        .ToList();
+                }
+                foreach (EntregaPackingAlmacenDTO entrega in suyas)
+                {
+                    entrega.FaltasDelPicking.Add(new FaltaPickingPackingDTO
+                    {
+                        Producto = producto,
+                        Descripcion = falta.Descripcion?.Trim(),
+                        Cantidad = falta.Cantidad,
+                        Usuario = SinDominio(falta.Usuario),
+                        Fecha = falta.Fecha
+                    });
+                }
+            }
+        }
+
+        private static bool MismoProducto(string uno, string otro)
+            => string.Equals(uno?.Trim(), otro?.Trim(), StringComparison.OrdinalIgnoreCase);
+
         /// <summary>NestoAPI#771: las fotos del packing de un picking; si fallan (p. ej. sin el script), ninguna: el packing sale igual.</summary>
         private async Task<List<FotoPackingAlmacenDTO>> LeerFotosPackingDelPickingSinFallar(string empresa, int picking)
         {
@@ -656,6 +745,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<LecturaPackingAlmacen> lecturas = await repositorio.LeerLecturasPacking(empresa, picking, null).ConfigureAwait(false);
             PackingAlmacenDTO packing = MontarPacking(empresa, picking, filas, lecturas);
             await CompletarBultosYActividad(empresa, picking, packing).ConfigureAwait(false);
+            await CompletarAvisosDelPicking(empresa, picking, null, packing).ConfigureAwait(false);
             return packing;
         }
 
@@ -670,6 +760,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<LecturaPackingAlmacen> lecturas = await repositorio.LeerLecturasPacking(empresa, picking.Value, pedido).ConfigureAwait(false);
             PackingAlmacenDTO packing = MontarPacking(empresa, picking.Value, filas, lecturas);
             await CompletarBultosYActividad(empresa, picking.Value, packing).ConfigureAwait(false);
+            await CompletarAvisosDelPicking(empresa, picking.Value, pedido, packing).ConfigureAwait(false);
             return packing;
         }
 
