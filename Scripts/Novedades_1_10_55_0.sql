@@ -14,7 +14,7 @@
          Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
          el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado) y, si lo trae #813, Issue813_*.sql.
       2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.55.0 → flujos de Ariadna 2.29.
-      3) DESPUÉS: ESTE script, Novedades_Ariadna_2_29.sql y OneShot_20261104_CerrarSugerencias_1_10_55_0.ps1 (marca Implementadas las
+      3) DESPUÉS: ESTE script, Novedades_Ariadna_2_29.sql, OneShot_20261104_GlobosFichaProducto.sql (globos de la ficha) y OneShot_20261104_CerrarSugerencias_1_10_55_0.ps1 (marca Implementadas las
          sugerencias y contesta en cada hilo). Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.55.0 solo con el OK de Carlos.
       4) Rol «Tiendas» en Identity para Paloma, Reina, Pilar y LauraC (Ariadna_RolAlmacen.ps1 -Rol Tiendas …), para que impriman
          etiquetas desde Ariadna (sugerencia 1009).
@@ -57,6 +57,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Corregido', N'Facturar un cliente sin vendedor ya no da el error de SQL',
      N'Al albaranar o facturar en tienda un pedido de un cliente sin vendedor en la ficha, Nesto daba «No se puede insertar el valor NULL en la columna Vendedor». Ahora se usa el vendedor de la cabecera del pedido y, si tampoco hay, un mensaje claro para ponérselo en la ficha. Le pasó a Paloma el martes y a Reina hoy.',
      N'Tiendas,Administración'),
+    ('Mejorado', N'Ficha de producto: buscar desde la referencia o teclear la referencia en el filtro de nombre',
+     N'En la ficha de producto, el campo de la referencia admite ahora teclear la referencia, leer el código de barras o escribir parte del nombre y elegir de la lista. Y si en el filtro de nombre teclea una referencia (solo cifras) e Intro, se abre directamente su ficha sin pasar por la lista. Así vale tanto para quien busca por nombre como para quien se sabe la referencia.',
+     NULL),
     ('Nuevo', N'Festivos: se mantienen desde Nesto (Herramientas › Recursos Humanos › Festivos)',
      N'Los festivos que usan las remesas, las fechas de entrega, el picking de nuestras rutas y los avisos ya no van dentro del programa: se dan de alta por año (nacional, autonómico, de empresa o de cada tienda) desde Herramientas › Recursos Humanos › Festivos, para Administración, Dirección e Informática. Si a 1 de diciembre no están los del año siguiente, Nesto avisa a Dirección.',
      N'Administración,Dirección'),
