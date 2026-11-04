@@ -38,45 +38,15 @@ namespace NestoAPI.Models.Picking
 
         /// <summary>
         /// NestoAPI#815: de las facturas pendientes del cliente (las deudas), las que son de un pedido con un envío cuyo
-        /// reembolso diferido (#742) sigue sin contabilizar, con su pedido. Sin la tabla de #742 (o sin envíos pendientes)
-        /// no hay ninguna y nada cambia. Dos consultas en total, no una por apunte.
+        /// reembolso diferido (#742) sigue sin contabilizar, con su pedido. La regla vive en
+        /// <see cref="FacturasConReembolsoPendienteDeEntrega"/> (la comparte la cartera vencida de PlazosPagoController).
         /// </summary>
-        private Dictionary<string, int> PedidosConReembolsoPendiente(List<ExtractoClienteDTO> extractos)
+        private IDictionary<string, int> PedidosConReembolsoPendiente(List<ExtractoClienteDTO> extractos)
         {
-            var resultado = new Dictionary<string, int>();
-            List<string> facturas = extractos
-                .Where(e => e.importePendiente > 0 && !string.IsNullOrWhiteSpace(e.documento))
-                .Select(e => e.documento.Trim())
-                .Distinct()
-                .ToList();
-            if (!facturas.Any())
-            {
-                return resultado;
-            }
-            // LeerPendientesAsync espera con ConfigureAwait(false): esperarla aquí no bloquea el contexto de la petición.
-            HashSet<int> envios = new RegistroReembolsosAlEntregar(db).LeerPendientesAsync().GetAwaiter().GetResult();
-            if (!envios.Any())
-            {
-                return resultado;
-            }
-            List<int> listaEnvios = envios.ToList();
-            var facturasPedidos = (from e in db.EnviosAgencias
-                                   where listaEnvios.Contains(e.Numero) && e.Pedido != null
-                                   join l in db.LinPedidoVtas
-                                       on new { Empresa = e.Empresa, Pedido = e.Pedido.Value } equals new { Empresa = l.Empresa, Pedido = l.Número }
-                                   where l.Nº_Factura != null && facturas.Contains(l.Nº_Factura)
-                                   select new { Factura = l.Nº_Factura, Pedido = l.Número })
-                                  .Distinct()
-                                  .ToList();
-            foreach (var fp in facturasPedidos)
-            {
-                string factura = fp.Factura.Trim();
-                if (!resultado.ContainsKey(factura))
-                {
-                    resultado.Add(factura, fp.Pedido);
-                }
-            }
-            return resultado;
+            IEnumerable<string> facturas = extractos
+                .Where(e => e.importePendiente > 0)
+                .Select(e => e.documento);
+            return FacturasConReembolsoPendienteDeEntrega.Leer(db, facturas);
         }
 
         /// <summary>

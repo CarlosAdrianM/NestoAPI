@@ -1,11 +1,17 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Models;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
 {
@@ -512,6 +518,198 @@ namespace NestoAPI.Tests.Controllers
             // Combinación INVÁLIDA: RCB + cualquier plazo cuando hay deuda
             // El recibo puede venir devuelto
             Assert.Fail("Pendiente de implementar");
+        }
+
+        #endregion
+
+        #region NestoAPI#815: factura contra reembolso pendiente de entrega (reembolso diferido, #742)
+
+        // Como en el picking (incidencia 1013, cliente 31517): la NV2617724 (70,87 €, pedido 929773, envío 250452) salió
+        // contra reembolso y está en reparto; figura pendiente y vencida porque el reembolso diferido no se contabiliza hasta
+        // que la agencia entrega. No es cartera vencida: se le ofrecen todos los plazos.
+        private const string CLIENTE_815 = "31517";
+        private const string FACTURA_815 = "NV2617724";
+        private const int PEDIDO_815 = 929773;
+        private const int ENVIO_815 = 250452;
+
+        [TestCleanup]
+        public void Limpiar()
+        {
+            ColumnasOpcionales.ForzarParaTests = null;
+        }
+
+        private static ExtractoCliente FacturaVencida(string documento, decimal importe, int diasVencida)
+        {
+            return new ExtractoCliente
+            {
+                Empresa = "1  ",
+                Número = CLIENTE_815,
+                Nº_Documento = documento + "  ",
+                ImportePdte = importe,
+                TipoApunte = "1",
+                Fecha = DateTime.Today.AddDays(-diasVencida - 30),
+                FechaVto = DateTime.Today.AddDays(-diasVencida)
+            };
+        }
+
+        private static IRegistroReembolsosAlEntregar RegistroConPendientes(params int[] envios)
+        {
+            IRegistroReembolsosAlEntregar registro = A.Fake<IRegistroReembolsosAlEntregar>();
+            A.CallTo(() => registro.LeerPendientesAsync()).Returns(Task.FromResult(new HashSet<int>(envios)));
+            return registro;
+        }
+
+        /// <summary>Prepara la BD: extractos, el envío 250452 del pedido 929773 (facturado en la NV2617724), la ficha del
+        /// cliente (30 días) y los plazos CONTADO, PRE, CR y 30D. Devuelve el controlador con la regla de verdad sobre
+        /// ese registro de #742.</summary>
+        private PlazosPagoController Controlador815(IRegistroReembolsosAlEntregar registro, params ExtractoCliente[] extractos)
+        {
+            ConfigurarFakeDbSet(fakeExtractosCliente, extractos.AsQueryable());
+
+            DbSet<EnviosAgencia> envios = FakeDbSet(new List<EnviosAgencia>
+            {
+                new EnviosAgencia { Numero = ENVIO_815, Empresa = "1", Pedido = PEDIDO_815 }
+            });
+            A.CallTo(() => db.EnviosAgencias).Returns(envios);
+            DbSet<LinPedidoVta> lineas = FakeDbSet(new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = PEDIDO_815, Nº_Factura = FACTURA_815 },
+                new LinPedidoVta { Empresa = "1", Número = PEDIDO_815, Nº_Factura = FACTURA_815 }
+            });
+            A.CallTo(() => db.LinPedidoVtas).Returns(lineas);
+
+            var cliente = new Cliente { Empresa = "1", Nº_Cliente = CLIENTE_815, Contacto = "0", ClientePrincipal = true };
+            cliente.CondPagoClientes.Add(new CondPagoCliente { Empresa = "1", Nº_Cliente = CLIENTE_815, PlazosPago = "30D" });
+            DbSet<Cliente> clientes = FakeDbSet(new List<Cliente> { cliente });
+            A.CallTo(() => clientes.Include(A<string>.Ignored)).Returns(clientes);
+            A.CallTo(() => db.Clientes).Returns(clientes);
+
+            DbSet<PlazoPago> plazos = FakeDbSet(new List<PlazoPago>
+            {
+                new PlazoPago { Empresa = "1", Número = Constantes.PlazosPago.CONTADO, Descripción = "Contado", Nº_Plazos = 1, Financiacion = 0 },
+                new PlazoPago { Empresa = "1", Número = Constantes.PlazosPago.PREPAGO, Descripción = "Prepago", Nº_Plazos = 1, Financiacion = 0 },
+                new PlazoPago { Empresa = "1", Número = Constantes.PlazosPago.CONTADO_RIGUROSO, Descripción = "Contado riguroso", Nº_Plazos = 1, Financiacion = 0 },
+                new PlazoPago { Empresa = "1", Número = "30D", Descripción = "30 días", Nº_Plazos = 1, DíasPrimerPlazo = 30, Financiacion = 0 }
+            });
+            A.CallTo(() => db.PlazosPago).Returns(plazos);
+
+            return new PlazosPagoController(db, new FacturasConReembolsoPendienteDeEntrega(db, registro));
+        }
+
+        private static async Task<List<string>> PlazosOfrecidos(PlazosPagoController controlador)
+        {
+            var resultado = await controlador.GetPlazosPago("1", CLIENTE_815) as OkNegotiatedContentResult<List<PlazoPagoDTO>>;
+            Assert.IsNotNull(resultado, "GetPlazosPago debe devolver Ok con la lista de plazos");
+            return resultado.Content.Select(p => p.plazoPago).OrderBy(p => p).ToList();
+        }
+
+        private static readonly string[] SOLO_CONTADO_Y_PREPAGO =
+            { Constantes.PlazosPago.CONTADO, Constantes.PlazosPago.CONTADO_RIGUROSO, Constantes.PlazosPago.PREPAGO };
+
+        [TestMethod]
+        public async Task GetPlazosPago_FacturaContraReembolsoVencidaPendienteDeEntrega_OfreceTodosLosPlazos()
+        {
+            PlazosPagoController controlador = Controlador815(RegistroConPendientes(ENVIO_815), FacturaVencida(FACTURA_815, 70.87M, 1));
+
+            List<string> plazos = await PlazosOfrecidos(controlador);
+
+            CollectionAssert.Contains(plazos, "30D", "La factura contra reembolso aún sin entregar no es cartera vencida");
+        }
+
+        [TestMethod]
+        public async Task GetPlazosPago_FacturaContraReembolsoYaContabilizada_SoloContadoYPrepago()
+        {
+            // El envío ya no está pendiente en EnviosAgenciaReembolsosAlEntregar (tiene Asiento): si la factura sigue
+            // pendiente y vencida, es cartera vencida como cualquier otra.
+            PlazosPagoController controlador = Controlador815(RegistroConPendientes(), FacturaVencida(FACTURA_815, 70.87M, 1));
+
+            List<string> plazos = await PlazosOfrecidos(controlador);
+
+            CollectionAssert.AreEquivalent(SOLO_CONTADO_Y_PREPAGO, plazos);
+        }
+
+        [TestMethod]
+        public async Task GetPlazosPago_SinTablaDeReembolsosAlEntregar_ComoAntes()
+        {
+            ColumnasOpcionales.ForzarParaTests = false;
+            PlazosPagoController controlador = Controlador815(new RegistroReembolsosAlEntregar(db), FacturaVencida(FACTURA_815, 70.87M, 1));
+
+            List<string> plazos = await PlazosOfrecidos(controlador);
+
+            CollectionAssert.AreEquivalent(SOLO_CONTADO_Y_PREPAGO, plazos);
+        }
+
+        [TestMethod]
+        public async Task GetPlazosPago_OtraFacturaVencidaAdemasDeLaContraReembolso_SoloContadoYPrepago()
+        {
+            PlazosPagoController controlador = Controlador815(RegistroConPendientes(ENVIO_815),
+                FacturaVencida(FACTURA_815, 70.87M, 1), FacturaVencida("NV2610000", 100M, 20));
+
+            List<string> plazos = await PlazosOfrecidos(controlador);
+
+            CollectionAssert.AreEquivalent(SOLO_CONTADO_Y_PREPAGO, plazos, "La otra factura sí es cartera vencida");
+        }
+
+        [TestMethod]
+        public void ObtenerInfoDeuda_FacturaContraReembolsoPendienteDeEntrega_NoEsCarteraVencida()
+        {
+            PlazosPagoController controlador = Controlador815(RegistroConPendientes(ENVIO_815), FacturaVencida(FACTURA_815, 70.87M, 1));
+
+            InfoDeudaClienteDTO info = controlador.ObtenerInfoDeuda(CLIENTE_815);
+
+            Assert.IsFalse(info.TieneDeudaVencida);
+            Assert.IsNull(info.ImporteDeudaVencida);
+            Assert.IsNull(info.MotivoRestriccion);
+        }
+
+        [TestMethod]
+        public void ObtenerInfoDeuda_FacturaContraReembolsoPendienteYOtraVencida_SoloCuentaLaOtra()
+        {
+            PlazosPagoController controlador = Controlador815(RegistroConPendientes(ENVIO_815),
+                FacturaVencida(FACTURA_815, 70.87M, 30), FacturaVencida("NV2610000", 100M, 20));
+
+            InfoDeudaClienteDTO info = controlador.ObtenerInfoDeuda(CLIENTE_815);
+
+            Assert.IsTrue(info.TieneDeudaVencida);
+            Assert.AreEqual(100M, info.ImporteDeudaVencida);
+            Assert.AreEqual(20, info.DiasVencimiento, "La más antigua que cuenta es la otra, no la contra reembolso");
+        }
+
+        [TestMethod]
+        public void FacturasConReembolsoPendienteDeEntrega_SinFacturas_NoConsultaElRegistro()
+        {
+            IRegistroReembolsosAlEntregar registro = RegistroConPendientes(ENVIO_815);
+
+            IDictionary<string, int> resultado = new FacturasConReembolsoPendienteDeEntrega(db, registro).Leer(new[] { null, " " });
+
+            Assert.AreEqual(0, resultado.Count);
+            A.CallTo(() => registro.LeerPendientesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void FacturasConReembolsoPendienteDeEntrega_FacturaDelPedidoDelEnvioPendiente_DevuelveSuPedido()
+        {
+            IRegistroReembolsosAlEntregar registro = RegistroConPendientes(ENVIO_815);
+            _ = Controlador815(registro);
+
+            IDictionary<string, int> resultado = new FacturasConReembolsoPendienteDeEntrega(db, registro)
+                .Leer(new[] { FACTURA_815 + "  ", "NV2610000" });
+
+            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual(PEDIDO_815, resultado[FACTURA_815]);
+        }
+
+        private static DbSet<T> FakeDbSet<T>(List<T> datos) where T : class
+        {
+            IQueryable<T> data = datos.AsQueryable();
+            DbSet<T> set = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>().Implements<IDbAsyncEnumerable<T>>());
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)set).GetAsyncEnumerator())
+                .ReturnsLazily(() => new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)set).Provider).Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)set).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)set).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)set).GetEnumerator()).ReturnsLazily(() => data.GetEnumerator());
+            return set;
         }
 
         #endregion

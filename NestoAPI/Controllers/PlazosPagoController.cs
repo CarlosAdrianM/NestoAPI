@@ -11,6 +11,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using System.Web.Http.Results;
 using NestoAPI.Infraestructure.Seguridad;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.RecursosHumanos;
@@ -21,6 +22,7 @@ namespace NestoAPI.Controllers
     public class PlazosPagoController : ApiController
     {
         private NVEntities db;
+        private readonly IFacturasConReembolsoPendienteDeEntrega facturasConReembolsoPendiente;
 
         // Carlos 06/11/15: lo pongo para desactivar el Lazy Loading
         public PlazosPagoController() : this(new NVEntities())
@@ -28,10 +30,16 @@ namespace NestoAPI.Controllers
         }
 
         // Constructor interno para testing (inyección de dependencias)
-        internal PlazosPagoController(NVEntities dbContext)
+        internal PlazosPagoController(NVEntities dbContext) : this(dbContext, null)
+        {
+        }
+
+        /// <param name="facturasConReembolsoPendiente">NestoAPI#815: null = la de verdad, sobre <paramref name="dbContext"/>.</param>
+        internal PlazosPagoController(NVEntities dbContext, IFacturasConReembolsoPendienteDeEntrega facturasConReembolsoPendiente)
         {
             db = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             db.Configuration.LazyLoadingEnabled = false;
+            this.facturasConReembolsoPendiente = facturasConReembolsoPendiente ?? new FacturasConReembolsoPendienteDeEntrega(db);
         }
 
         // GET: api/PlazosPago
@@ -95,10 +103,10 @@ namespace NestoAPI.Controllers
             DateTime fechaDesdeVencida = System.DateTime.Today;
             DateTime diaLaborableAnterior = CalcularDiaLaborableAnterior(fechaDesdeVencida);
             ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO).FirstOrDefault();
-            ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida
-                && !(e.FechaVto == e.Fecha && e.FechaVto >= diaLaborableAnterior)).FirstOrDefault();
+            // NestoAPI#815: sin las facturas contra reembolso pendientes de que la agencia entregue el pedido.
+            bool tieneDeudaVencida = CarteraVencida(cliente, fechaDesdeVencida, diaLaborableAnterior).Any();
 
-            if (impagado != null || deudaVencida != null)
+            if (impagado != null || tieneDeudaVencida)
             {
                 plazosPago = plazosPago.Where(p => p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 && p.numeroPlazos == 1).ToList();
                 return Ok(plazosPago);
@@ -433,15 +441,9 @@ namespace NestoAPI.Controllers
                     && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
                 .ToList();
 
-            // Buscar cartera vencida (excluyendo impagados y efectos pendientes de remesar)
-            var deudasVencidas = db.ExtractosCliente
-                .Where(e => e.Número == cliente
-                    && e.ImportePdte > 0
-                    && e.FechaVto < fechaDesdeVencida
-                    && !(e.FechaVto == e.Fecha && e.FechaVto >= diaLaborableAnterior)
-                    && e.TipoApunte != Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
-                .OrderBy(e => e.FechaVto)
-                .ToList();
+            // Buscar cartera vencida (excluyendo impagados, efectos pendientes de remesar y, NestoAPI#815, facturas
+            // contra reembolso cuyo pedido la agencia aún no ha entregado)
+            List<ExtractoCliente> deudasVencidas = CarteraVencida(cliente, fechaDesdeVencida, diaLaborableAnterior);
 
             bool tieneImpagados = impagados.Any();
             bool tieneDeudaVencida = deudasVencidas.Any();
@@ -471,6 +473,36 @@ namespace NestoAPI.Controllers
                 ImporteImpagados = importeImpagados,
                 MotivoRestriccion = motivoRestriccion
             };
+        }
+
+        /// <summary>
+        /// Cartera vencida del cliente, de la más antigua a la más moderna: lo pendiente con el vencimiento pasado, sin los
+        /// impagados (van aparte), sin los efectos que aún no se han podido remesar y, NestoAPI#815, sin las facturas contra
+        /// reembolso cuyo pedido la agencia aún no ha entregado (reembolso diferido, #742: se contabiliza al entregar).
+        /// La usan GetPlazosPago (solo contado/prepago) y ObtenerInfoDeuda (InfoDeuda, formas de pago, política del canal).
+        /// </summary>
+        private List<ExtractoCliente> CarteraVencida(string cliente, DateTime fechaDesdeVencida, DateTime diaLaborableAnterior)
+        {
+            List<ExtractoCliente> vencidas = db.ExtractosCliente
+                .Where(e => e.Número == cliente
+                    && e.ImportePdte > 0
+                    && e.FechaVto < fechaDesdeVencida
+                    && !(e.FechaVto == e.Fecha && e.FechaVto >= diaLaborableAnterior)
+                    && e.TipoApunte != Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
+                .OrderBy(e => e.FechaVto)
+                .ToList();
+            if (!vencidas.Any())
+            {
+                return vencidas;
+            }
+            IDictionary<string, int> pendientesDeEntrega = facturasConReembolsoPendiente.Leer(vencidas.Select(e => e.Nº_Documento));
+            if (pendientesDeEntrega.Count == 0)
+            {
+                return vencidas;
+            }
+            return vencidas
+                .Where(e => string.IsNullOrWhiteSpace(e.Nº_Documento) || !pendientesDeEntrega.ContainsKey(e.Nº_Documento.Trim()))
+                .ToList();
         }
 
         protected override void Dispose(bool disposing)
