@@ -5,6 +5,8 @@
 -- usuario la cambia desde Nesto → Parámetros. La API crea la fila de cada usuario al leerla, copiando la de «(defecto)».
 -- ¡¡CAMBIAR EL VALOR DE RELLENO!! Mientras sea el de relleno, cada documento en papel dará el aviso «no está instalada».
 -- Carlos 04/11/26: el valor «(predeterminada)» vale para usar la impresora predeterminada de Windows en RDS2016 sin escribir su nombre.
+-- Carlos 04/11/26 (17:05): «(defecto)» = «HP LaserJet 600 M601 M602 M603 PCL6» (la de Algete), que es la que usan todos los
+-- usuarios de Ariadna; el interruptor Facturacion:ImprimirDocumentosEnServidor va ENCENDIDO en el Web.config del repo.
 -- Sin GRANT: ParametrosUsuario ya lo lee y escribe NestoAPI. Idempotente: se puede repetir sin miedo (no pisa un valor ya puesto).
 -- Lanzar en la BD NV (NestoConnection) como sa.
 
@@ -16,7 +18,7 @@ WHERE Empresa = '1' AND Usuario = '(defecto)' AND Clave IN ('ImpresoraDocumentos
 IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Usuario = '(defecto)' AND Clave = 'ImpresoraDocumentos')
 BEGIN
     INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
-    VALUES ('1', 'ImpresoraDocumentos', '(defecto)', 'CAMBIAR - impresora de Administracion en RDS2016', 'Issue806', GETDATE());
+    VALUES ('1', 'ImpresoraDocumentos', '(defecto)', 'HP LaserJet 600 M601 M602 M603 PCL6', 'Issue806', GETDATE());
 END
 GO
 

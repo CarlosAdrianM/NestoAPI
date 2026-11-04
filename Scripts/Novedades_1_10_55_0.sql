@@ -11,9 +11,10 @@
     ORDEN:
       1) Scripts sa ANTES de publicar la API: Issue800_prdCuadreAgenciasContabilidad_ReembolsosDiferidos.sql, Issue779_Festivos.sql
          (tabla Festivos con 2024-2026 como el código; el bloque 2027 va comentado «REVISAR» con la fuente BOE: decide Dirección),
-         Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql (crea el parámetro con un valor de relleno;
-         el interruptor Facturacion:ImprimirDocumentosEnServidor sigue apagado; Alfredo espera las facturas físicas desde Ariadna:
-         sugerencia 1017), Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos),
+         Issue811_EventosInscripcionesAsistentes.sql, Issue806_ImpresoraDocumentos.sql («(defecto)» = HP LaserJet 600 M601 M602
+         M603 PCL6, la de Algete, para todos los de Ariadna; el interruptor Facturacion:ImprimirDocumentosEnServidor va ENCENDIDO
+         en el Web.config del repo: Carlos 04/11 17:05; comprobar que la impresora existe con ese nombre en RDS2016),
+         Issue699_EnviosAgenciaReenvios.sql (tabla de decisiones de los devueltos: Reenviar/Abonar), Issue786_NotasCobro.sql (nota de cobro NC: CHECK de Tipo, ImporteCobro y NotasEntregaCobroEfectos),
          Issue786b_NotaCobroRepartidor.sql (después del anterior: NotasEntregaCabecera.Repartidor, la NC se asigna a un repartidor)
          e Issue814_ReposicionesTraspasos_LaLleva.sql (columna LaLleva: puntual que se lleva un compañero; necesita el de Issue581).
          YA HECHO el 04/11 a las 14:00 por la API: ParámetrosUsuario FacturarAlImprimirEtiqueta = 1 para «(defecto)», Alfredo, Andre,
@@ -74,8 +75,11 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Tienda online: los pedidos que van por nuestra ruta se confirman en PrestaShop',
      N'Los envíos de la tienda online que van por el reparto propio ya se pueden confirmar en PrestaShop desde Agencias (antes decía que la agencia no tenía transportista). Llevan el enlace público de seguimiento del reparto.',
      N'Administración,Dirección'),
+    ('Nuevo', N'Agencias: pestaña «Devueltos» para volver a enviar la misma caja cuando el cliente sigue queriendo el pedido',
+     N'Cuando la agencia devuelve un envío (o lo deja incidentado), el vendedor recibe un correo y un aviso en la app preguntando si el cliente lo sigue queriendo. En Agencias › Devueltos, el almacén o el vendedor eligen: «El cliente lo sigue queriendo: volver a enviar» (se corrige la dirección si hace falta, con la casilla de cobrar los portes desmarcada) crea un envío nuevo del mismo pedido, sin abono, sin picking y sin factura, y la caja sale con la etiqueta nueva en cuanto llega; o «No lo quiere: abonar», que es lo de siempre con Copiar factura. Y en Copiar factura hay una casilla «El cliente lo sigue queriendo: rehacer el pedido» (abono + pedido nuevo pendiente del mismo cliente) para cuando ya se abonó y ubicó. Lo pedían los vendedores desde hace tiempo; Alfredo nos ayudó a montarlo para que ninguna caja se quede dando vueltas.',
+     N'Administración,Almacén,Vendedores,Dirección'),
     ('Nuevo', N'Nueva nota de cobro: una parada del reparto solo para cobrar',
-     N'Desde el detalle del pedido o la ficha del cliente, «Nueva nota de cobro» crea una parada del reparto propio solo para cobrar (NC + número): se marcan los efectos pendientes del extracto (empresas 1 y 3), el importe, el día y un comentario para el repartidor. No pasa por picking ni packing. Miguel la ve en Ariadna como «COBRO · NC…», cobra en efectivo (liquida esos efectos) o con tarjeta y el cliente firma «Confirmo que he pagado…». Antes había que hacer una nota de entrega de solo texto y cobrar la deuda a mano en la parada (pedido 929609).',
+     N'Desde el detalle del pedido o la ficha del cliente, «Nueva nota de cobro» crea una parada del reparto propio solo para cobrar (NC + número): se marcan los efectos pendientes del extracto (empresas 1 y 3), el importe, el día, el repartidor que irá y un comentario para él. No pasa por picking ni packing. Miguel la ve en Ariadna como «COBRO · NC…», cobra en efectivo (liquida esos efectos) o con tarjeta y el cliente firma «Confirmo que he pagado…». Antes había que hacer una nota de entrega de solo texto y cobrar la deuda a mano en la parada (pedido 929609).',
      N'Administración,Dirección,Vendedores'),
     ('Corregido', N'Cajas: cobrar a la vez una deuda de la empresa 1 y otra de la 3 ya no deja líneas colgadas',
      N'Al cobrar en una caja varias deudas de distintas empresas (una factura NV y una GB), solo se contabilizaba la empresa de la primera línea; las líneas de la otra se quedaban en la precontabilidad y los cobros siguientes de ese cliente fallaban con «No se ha podido liquidar…» (le pasó a Laura Camacho el 28/10 con la GB2601662). Ahora se hace un asiento por empresa, cada cobro liquida su efecto y entra en la caja de su empresa, y si uno falla no se graba nada. La lista de deudas lleva la columna «Empresa».',
