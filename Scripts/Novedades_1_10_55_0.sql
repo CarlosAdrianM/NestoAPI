@@ -24,8 +24,8 @@
       2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.55.0 → flujos de Ariadna 2.29.
       3) DESPUÉS: ESTE script, Novedades_Ariadna_2_29.sql, OneShot_20261104_GlobosFichaProducto.sql (globos de la ficha) y OneShot_20261104_CerrarSugerencias_1_10_55_0.ps1 (marca Implementadas las
          sugerencias y contesta en cada hilo). Luego AvisarNuevaVersionNesto.ps1 -Version 1.10.55.0 solo con el OK de Carlos.
-      4) Rol «Tiendas» en Identity para Paloma, Reina, Pilar y LauraC (Ariadna_RolAlmacen.ps1 -Rol Tiendas …), para que impriman
-         etiquetas desde Ariadna (sugerencia 1009).
+      4) HECHO 04/11 16:35: rol «Tiendas» en Identity para Paloma, Reina y Pilar (Laura Camacho entra como «Reina»; no existe
+         «LauraC»), con Ariadna_RolAlmacen.ps1 -Rol Tiendas. Paloma avisada (1009): tienen que volver a entrar en Ariadna.
       NO duplicar: las sugerencias 969, 970, 979, 1003, 1005, 1006, 1010, 794, 1020 (#814, puntual con compañero) y 1013 (#815,
       reembolso diferido no retiene) las marca Implementadas en 1.10.55.0 el OneShot (la sugerencia ES la novedad); aquí no llevan fila.
 
