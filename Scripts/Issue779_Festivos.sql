@@ -117,7 +117,9 @@ PRINT CONCAT(@@ROWCOUNT, N' festivos de 2024-2026 insertados');
 GO
 
 /*
-    2027 — REVISAR ANTES DE LANZAR (no se ha lanzado nada: descomentar el bloque cuando se haya revisado).
+    2027 — Carlos (04/11/26): se cargan YA los festivos NACIONALES de 2027; los autonómicos (San José, Jueves Santo, lunes
+    16/08) y los locales los da de alta Administración desde Nesto › Herramientas › Recursos Humanos › Festivos (el job
+    festivos-sin-cargar avisa el 1 de diciembre si falta algo). Los autonómicos quedan abajo comentados como referencia.
     Fuente: BOE de 13/10/2026, Resolución de 8 de octubre de 2026, de la Dirección General de Trabajo, por la que se
     publica la relación de fiestas laborales para el año 2027, BOE-A-2026-21254, anexo, columna de Madrid:
     https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-21254
@@ -128,7 +130,7 @@ GO
     16/08 (las que la Comunidad elige), Autonómica.
     NO van: las fiestas locales de Madrid (REI), Alcobendas (ALC) y Algete de 2027, ni Nochebuena/Nochevieja (Empresa) de
     2027 (24/12 y 31/12 caen en viernes): eso lo decide Dirección y se da de alta desde Nesto o POST api/Festivos.
-
+*/
 INSERT INTO dbo.Festivos (Fecha, Tipo, Descripcion, Usuario)
 SELECT f.Fecha, f.Tipo, f.Descripcion, N'Script Issue779'
 FROM (VALUES
@@ -140,13 +142,15 @@ FROM (VALUES
     ('20271101', N'Nacional', N'Todos los Santos'),
     ('20271206', N'Nacional', N'Día de la Constitución Española'),
     ('20271208', N'Nacional', N'Inmaculada Concepción'),
-    ('20271225', N'Nacional', N'Natividad del Señor'),
+    ('20271225', N'Nacional', N'Natividad del Señor')
+) AS f (Fecha, Tipo, Descripcion)
+WHERE NOT EXISTS (SELECT 1 FROM dbo.Festivos t WHERE t.Fecha = CAST(f.Fecha AS date) AND t.Tipo = f.Tipo);
+PRINT CONCAT(@@ROWCOUNT, N' festivos nacionales de 2027 insertados');
+GO
+/* Autonómicos de 2027 (columna de Madrid del BOE-A-2026-21254), para darlos de alta desde Nesto cuando lo decida Dirección:
     ('20270319', N'Autonómica', N'San José'),
     ('20270325', N'Autonómica', N'Jueves Santo'),
     ('20270816', N'Autonómica', N'Lunes siguiente a la Asunción de la Virgen')
-) AS f (Fecha, Tipo, Descripcion)
-WHERE NOT EXISTS (SELECT 1 FROM dbo.Festivos t WHERE t.Fecha = CAST(f.Fecha AS date) AND t.Tipo = f.Tipo);
-PRINT CONCAT(@@ROWCOUNT, N' festivos de 2027 insertados');
 */
 
 -- Comprobación
