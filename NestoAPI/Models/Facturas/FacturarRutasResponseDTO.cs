@@ -17,6 +17,7 @@ namespace NestoAPI.Models.Facturas
             NotasEntrega = new List<NotaEntregaCreadaDTO>();
             FacturasPorPO = new List<string>();
             ErroresPorPO = new List<string>();
+            ReembolsosDesfasados = new List<ReembolsoDesfasadoDTO>();
         }
 
         /// <summary>
@@ -64,6 +65,13 @@ namespace NestoAPI.Models.Facturas
         /// no bloquean ni la facturación de otros PO ni la facturación normal de la ruta).
         /// </summary>
         public List<string> ErroresPorPO { get; set; }
+
+        /// <summary>
+        /// NestoAPI#810: envíos del reparto propio sin entregar de los pedidos facturados cuyo reembolso no es lo que queda por
+        /// cobrar de sus facturas (p. ej. tras una ampliación). No se cambian solos: el cliente pregunta y llama a
+        /// PUT api/EnviosAgencias/{Envio}/Reembolso con ReembolsoFacturado. Vacía si no hay ninguno.
+        /// </summary>
+        public List<ReembolsoDesfasadoDTO> ReembolsosDesfasados { get; set; }
 
         // Propiedades de conveniencia para contadores (compatibilidad con código existente)
 
