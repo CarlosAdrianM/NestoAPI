@@ -784,6 +784,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ParadasReposicion.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\RepartidoresReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FurgonetaBultos.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Furgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosFurgoneta.cs" />

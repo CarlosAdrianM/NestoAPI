@@ -30,8 +30,10 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         private const string CLIENTE = "15191";
         private const string MIGUEL = "Miguel";
         private const string CAJA_MIGUEL = "57000032";
+        private const string ANDRE = "Andre";
 
         private NotasCobroFalsas repositorio;
+        private RepartidoresFalsos repartidores;
         private ServicioNotasCobro servicio;
 
         [TestInitialize]
@@ -51,7 +53,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
                 Ruta = "AT",
                 Iva = "G21"
             };
-            servicio = new ServicioNotasCobro(repositorio, () => true, () => AHORA);
+            repartidores = new RepartidoresFalsos();
+            repartidores.Usuarios.AddRange(new[] { "NUEVAVISION\\Andre", "Pedro", "andre" });
+            servicio = new ServicioNotasCobro(repositorio, new ServicioRepartidores(repartidores, () => AHORA), () => true, () => AHORA);
         }
 
         [TestCleanup]
@@ -86,7 +90,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             repositorio.Efectos.Add(Efecto(501, 100m));
             repositorio.Efectos.Add(Efecto(502, 34.16m, "NV26/001300"));
 
-            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Efectos = new List<int> { 502, 501 } }, MIGUEL);
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Efectos = new List<int> { 502, 501 } }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo, r.Mensaje);
             Assert.AreEqual(134.16m, r.Contenido.Importe);
@@ -115,7 +119,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             Assert.AreEqual(AHORA.Date, envio.FechaPagoReembolso, "NestoAPI#778: lo cobra nuestro repartidor");
             Assert.AreEqual(NotasCobroFalsas.PEDIDO, envio.Pedido);
             Assert.AreEqual("Cobrar 134,16 €", envio.Observaciones);
-            Assert.AreEqual(ServicioNotasCobro.HISTORIA_PARADA, repositorio.HistoriaGuardada);
+            Assert.AreEqual(ServicioNotasCobro.HISTORIA_PARADA + " (la cobra Andre)", repositorio.HistoriaGuardada);
+            Assert.AreEqual(ANDRE, repositorio.RepartidorGuardado);
+            Assert.AreEqual(ANDRE, r.Contenido.Repartidor);
             Assert.AreEqual(NotasCobroFalsas.ENVIO, r.Contenido.EnvioId);
             StringAssert.StartsWith(r.Contenido.Texto, "Cobro de 134,16 €\nFactura NV26/001300/1 (vto. 30/10/26): 34,16 €");
         }
@@ -125,7 +131,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         {
             ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO
             {
-                Cliente = CLIENTE, Contacto = "0", Importe = 134.16m, Fecha = AHORA.AddDays(2), Comentario = "Por la tarde"
+                Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 134.16m, Fecha = AHORA.AddDays(2), Comentario = "Por la tarde"
             }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo, r.Mensaje);
@@ -138,7 +144,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         [TestMethod]
         public async Task Crear_FechaPasada_Hoy()
         {
-            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0", Importe = 10m, Fecha = AHORA.AddDays(-3) }, MIGUEL);
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 10m, Fecha = AHORA.AddDays(-3) }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo, r.Mensaje);
             Assert.AreEqual(AHORA.Date, repositorio.EnvioGuardado.Fecha);
@@ -147,7 +153,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         [TestMethod]
         public async Task Crear_SinEfectosNiImporte_400()
         {
-            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0" }, MIGUEL);
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0" }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
             Assert.IsNull(repositorio.CabeceraGuardada);
@@ -159,8 +165,8 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             repositorio.Efectos.Add(Efecto(501, 100m, cliente: "99999"));
             repositorio.Efectos.Add(Efecto(502, 0m));
 
-            ResultadoNotaCobro deOtro = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Efectos = new List<int> { 501 } }, MIGUEL);
-            ResultadoNotaCobro cobrado = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Efectos = new List<int> { 502 } }, MIGUEL);
+            ResultadoNotaCobro deOtro = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Efectos = new List<int> { 501 } }, MIGUEL);
+            ResultadoNotaCobro cobrado = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Efectos = new List<int> { 502 } }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, deOtro.Tipo);
             StringAssert.Contains(deOtro.Mensaje, "99999");
@@ -174,7 +180,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         {
             repositorio.Fichas[CLIENTE + "/0"].Ruta = "FW";
 
-            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
             StringAssert.Contains(r.Mensaje, "FW");
@@ -186,7 +192,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         {
             repositorio.EnReparto.Add(929600);
 
-            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Conflicto, r.Tipo);
             StringAssert.Contains(r.Mensaje, "NC929600");
@@ -197,7 +203,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         {
             repositorio.Script = false;
 
-            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
 
             Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
             Assert.AreEqual(ServicioNotasCobro.MENSAJE_FALTA_SCRIPT, r.Mensaje);
@@ -209,7 +215,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             repositorio.FalloGuardar = new InvalidOperationException("caída");
 
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-                servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL));
+                servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL));
 
             CollectionAssert.AreEqual(new[] { NotasCobroFalsas.PEDIDO }, repositorio.Devueltos);
         }
@@ -253,6 +259,128 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             A.CallTo(() => cabeceras.Guardar(A<FilaNotaEntregaCabecera>._, A<Modificacion>._)).MustNotHaveHappened();
         }
 
+        // ================================================================ el repartidor (NestoAPI#786, 04/11/26)
+
+        [TestMethod]
+        public async Task Crear_SinRepartidor_400_YNoGuardaNada()
+        {
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
+            Assert.AreEqual("Indique el repartidor que va a ir a cobrar.", r.Mensaje);
+            Assert.IsNull(repositorio.EnvioGuardado);
+        }
+
+        [TestMethod]
+        public async Task Crear_ConQuienNoEsRepartidor_400_YNoGuardaNada()
+        {
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = "Laura", Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
+            Assert.AreEqual("«Laura» no es un repartidor: elija uno de la lista.", r.Mensaje);
+            Assert.IsNull(repositorio.EnvioGuardado);
+        }
+
+        [TestMethod]
+        public async Task Crear_ConElRepartidorConDominioYEnMinusculas_GuardaElDeLaLista()
+        {
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO
+            {
+                Repartidor = "NUEVAVISION\\pedro", Cliente = CLIENTE, Contacto = "0", Importe = 50m
+            }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual("Pedro", repositorio.RepartidorGuardado);
+            Assert.AreEqual("Pedro", r.Contenido.Repartidor);
+            StringAssert.Contains(repositorio.ModificacionGuardada.Nuevo, "la cobra Pedro");
+        }
+
+        [TestMethod]
+        public async Task Crear_ElQueLaPideTambienPuedeLlevarla()
+        {
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = MIGUEL, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(MIGUEL, repositorio.RepartidorGuardado);
+        }
+
+        [TestMethod]
+        public async Task Crear_SinElScriptDelRepartidor_400()
+        {
+            repositorio.ScriptRepartidor = false;
+
+            ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
+            Assert.AreEqual(ServicioNotasCobro.MENSAJE_FALTA_SCRIPT_REPARTIDOR, r.Mensaje);
+            Assert.IsNull(repositorio.EnvioGuardado);
+        }
+
+        [TestMethod]
+        public async Task Repartidores_SinDominio_SinRepetidos_ConElQueLoPide_YPorNombre()
+        {
+            repartidores.Usuarios.Add("NUEVAVISION\\miguel");
+            var lista = new ServicioRepartidores(repartidores, () => AHORA);
+
+            List<RepartidorDTO> r = await lista.Lista("NUEVAVISION\\Carlos");
+
+            CollectionAssert.AreEqual(new[] { "Andre", "Carlos", "miguel", "Pedro" }, r.Select(x => x.Usuario).ToArray());
+            CollectionAssert.AreEqual(new[] { "Andre", "Carlos", "Miguel", "Pedro" }, r.Select(x => x.Nombre).ToArray());
+            Assert.AreEqual(AHORA.Date.AddDays(-ServicioRepartidores.DIAS), repartidores.Desde, "Los de los últimos 90 días");
+        }
+
+        [TestMethod]
+        public async Task Repartidores_Buscar_SinNombreONoEsta_Null()
+        {
+            var lista = new ServicioRepartidores(repartidores, () => AHORA);
+
+            Assert.IsNull(await lista.Buscar(" ", MIGUEL));
+            Assert.IsNull(await lista.Buscar("Laura", MIGUEL));
+            Assert.AreEqual(ANDRE, (await lista.Buscar("andre", MIGUEL)).Usuario);
+        }
+
+        [TestMethod]
+        public async Task GetRepartidores_Almacen_200_ConLaLista()
+        {
+            var usuario = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "NUEVAVISION\\Carlos"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, Constantes.GruposSeguridad.ADMINISTRACION)
+            }, "prueba"));
+            var controlador = new NestoAPI.Controllers.RepartoPropioController(null, new ServicioRepartoPropio(new ServicioRepartoPropioTests.RepositorioFalso()))
+            {
+                Request = new System.Net.Http.HttpRequestMessage(),
+                Configuration = new System.Web.Http.HttpConfiguration(),
+                User = usuario,
+                Repartidores = new ServicioRepartidores(repartidores, () => AHORA)
+            };
+
+            var respuesta = await controlador.GetRepartidores() as System.Web.Http.Results.OkNegotiatedContentResult<List<RepartidorDTO>>;
+
+            Assert.IsNotNull(respuesta);
+            CollectionAssert.AreEqual(new[] { "Andre", "Carlos", "Pedro" }, respuesta.Content.Select(x => x.Usuario).ToArray());
+        }
+
+        [TestMethod]
+        public async Task GetRepartidores_SinGrupoDeReparto_403()
+        {
+            var usuario = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "Laura")
+            }, "prueba"));
+            var controlador = new NestoAPI.Controllers.RepartoPropioController(null, new ServicioRepartoPropio(new ServicioRepartoPropioTests.RepositorioFalso()))
+            {
+                Request = new System.Net.Http.HttpRequestMessage(),
+                Configuration = new System.Web.Http.HttpConfiguration(),
+                User = usuario,
+                Repartidores = new ServicioRepartidores(repartidores, () => AHORA)
+            };
+
+            System.Net.Http.HttpResponseMessage respuesta = await (await controlador.GetRepartidores()).ExecuteAsync(System.Threading.CancellationToken.None);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, respuesta.StatusCode);
+        }
+
         // ================================================================ la parada en el reparto
 
         private const int ENVIO_NC = 251400;
@@ -268,6 +396,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         private CobroTarjetaRepartoTests.TarjetasFalsas tarjetas;
         private CobroTarjetaRepartoTests.AutorizacionesFalsas autorizaciones;
 
+        /// <summary>NestoAPI#786: el repartidor asignado a la nota de PrepararReparto (null: una de antes del script, sin asignar).</summary>
+        private string repartidorNota;
+
         private void PrepararReparto(params EfectoCobroReparto[] efectos)
         {
             reparto = new ServicioRepartoPropioTests.RepositorioFalso();
@@ -280,6 +411,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             {
                 Pedido = PEDIDO_NC,
                 Tipo = TiposNotaEntrega.COBRO,
+                RepartidorCobro = repartidorNota,
                 ImporteCobro = 134.16m,
                 EfectosCobro = efectos.ToList(),
                 Texto = ServicioNotasCobro.Texto(134.16m, efectos)
@@ -331,6 +463,32 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             Assert.AreEqual("NV26/001234", parada.EfectosCobro[0].Documento);
             Assert.IsTrue(parada.AdmiteTarjeta);
             StringAssert.StartsWith(parada.TextoNota, "Cobro de 134,16 €\n");
+        }
+
+        [TestMethod]
+        public async Task Envios_SoloMios_LaNotaDeCobroSoloLaVeSuRepartidor()
+        {
+            repartidorNota = ANDRE;
+            PrepararReparto(Efecto(501, 100m));
+
+            List<EnvioRepartoDTO> deAndre = (await repartoServicio.Envios(AHORA, true, "NUEVAVISION\\andre")).Contenido;
+            List<EnvioRepartoDTO> deMiguel = (await repartoServicio.Envios(AHORA, true, MIGUEL)).Contenido;
+            List<EnvioRepartoDTO> todas = (await repartoServicio.Envios(AHORA, false, MIGUEL)).Contenido;
+
+            Assert.AreEqual(ANDRE, deAndre.Single(p => p.EnvioId == ENVIO_NC).Repartidor, "La lleva Andre aunque nadie la cargue");
+            Assert.IsFalse(deMiguel.Any(p => p.EnvioId == ENVIO_NC), "A Miguel no le sale en «Mis envíos»");
+            Assert.AreEqual(ANDRE, todas.Single(p => p.EnvioId == ENVIO_NC).Repartidor, "Sin soloMios (Dirección, Almacén) sale con su repartidor");
+        }
+
+        [TestMethod]
+        public async Task Envios_SoloMios_UnaNotaDeCobroSinRepartidor_SaleATodos()
+        {
+            repartidorNota = null;
+            PrepararReparto(Efecto(501, 100m));
+
+            List<EnvioRepartoDTO> deMiguel = (await repartoServicio.Envios(AHORA, true, MIGUEL)).Contenido;
+
+            Assert.IsNull(deMiguel.Single(p => p.EnvioId == ENVIO_NC).Repartidor, "Las de antes del script, como las paradas sin repartidor");
         }
 
         [TestMethod]
@@ -528,6 +686,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             public const int ENVIO = 251400;
 
             public bool Script = true;
+            public bool ScriptRepartidor = true;
+            public string RepartidorGuardado;
+            public Modificacion ModificacionGuardada;
             public readonly Dictionary<string, FichaNotaCobro> Fichas = new Dictionary<string, FichaNotaCobro>();
             public readonly List<EfectoCobroReparto> Efectos = new List<EfectoCobroReparto>();
             public readonly List<int> EnReparto = new List<int>();
@@ -541,6 +702,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             public string HistoriaGuardada;
 
             public bool ScriptAplicado() => Script;
+            public bool ScriptRepartidorAplicado() => ScriptRepartidor;
             public Task<FichaNotaCobro> LeerFicha(string empresa, string cliente, string contacto)
                 => Task.FromResult(Fichas.TryGetValue(cliente + "/" + contacto, out FichaNotaCobro f) ? f : null);
             public Task<List<EfectoCobroReparto>> LeerEfectos(IReadOnlyCollection<int> ids) => Task.FromResult(Efectos.Where(e => ids.Contains(e.Id)).ToList());
@@ -549,7 +711,7 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             public int ReservarNumeroPedido() => PEDIDO;
             public void DevolverNumeroPedido(int numero) => Devueltos.Add(numero);
             public Task<int> Guardar(CabPedidoVta cabecera, FilaNotaEntregaCabecera fila, decimal importe, IReadOnlyList<int> efectos,
-                EnviosAgencia envio, string historia, Modificacion modificacion)
+                EnviosAgencia envio, string historia, Modificacion modificacion, string repartidor)
             {
                 if (FalloGuardar != null)
                 {
@@ -561,11 +723,25 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
                 EfectosGuardados = efectos.ToList();
                 EnvioGuardado = envio;
                 HistoriaGuardada = historia;
+                RepartidorGuardado = repartidor;
+                ModificacionGuardada = modificacion;
                 envio.Numero = ENVIO;
                 return Task.FromResult(ENVIO);
             }
             public Task<Dictionary<int, DatosNotaCobro>> LeerDatos(string empresa, IReadOnlyCollection<int> pedidos)
                 => Task.FromResult(new Dictionary<int, DatosNotaCobro>());
+        }
+
+        internal class RepartidoresFalsos : IRepositorioRepartidores
+        {
+            public readonly List<string> Usuarios = new List<string>();
+            public DateTime? Desde;
+
+            public Task<List<string>> LeerUsuarios(DateTime desde)
+            {
+                Desde = desde;
+                return Task.FromResult(Usuarios.ToList());
+            }
         }
     }
 }

@@ -4,6 +4,15 @@ namespace NestoAPI.Models.Agencias
 {
     // NestoAPI#739: el contrato de api/RepartoPropio (comentario de la issue del 29/10/26). JSON en PascalCase.
 
+    /// <summary>NestoAPI#786: un repartidor de GET api/RepartoPropio/Repartidores (a quién se asigna una nota de cobro).</summary>
+    public class RepartidorDTO
+    {
+        /// <summary>El usuario sin dominio («Miguel»): lo que se manda en Repartidor de POST api/NotasEntrega/Cobro.</summary>
+        public string Usuario { get; set; }
+        /// <summary>Para enseñarlo (el usuario con la primera letra en mayúscula).</summary>
+        public string Nombre { get; set; }
+    }
+
     /// <summary>Un envío del reparto propio, como lo ve el repartidor en Ariadna.</summary>
     public class EnvioRepartoDTO
     {
@@ -35,7 +44,8 @@ namespace NestoAPI.Models.Agencias
         public string Observaciones { get; set; }
         /// <summary>
         /// Ariadna#63: quién lo lleva (el último que cargó un bulto suyo en la furgoneta), sin dominio. Null si nadie ha cargado
-        /// nada (o sin Scripts/Issue739_CargaFurgoneta.sql).
+        /// nada (o sin Scripts/Issue739_CargaFurgoneta.sql). NestoAPI#786: en una nota de cobro (que no se carga), el repartidor al
+        /// que se asignó al crearla: con soloMios solo le sale a él.
         /// </summary>
         public string Repartidor { get; set; }
         /// <summary>Ariadna#63: bultos distintos que ha cargado el repartidor (0 sin repartidor).</summary>

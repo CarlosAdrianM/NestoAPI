@@ -317,7 +317,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 List<CargaBultoReparto> suyas = cargas.Where(c => c.EnvioId == envio.EnvioId).ToList();
                 string repartidor = Repartidor(suyas);
-                envio.Repartidor = NombreRepartidor(repartidor);
+                // NestoAPI#786: una nota de cobro no se carga: sin cargas sigue siendo del repartidor asignado (CompletarNotas)
+                envio.Repartidor = NombreRepartidor(repartidor)
+                    ?? (envio.TipoParada == TiposParadaReparto.NOTA_COBRO ? envio.Repartidor : null);
                 envio.BultosCargados = BultosCargados(suyas, repartidor);
             }
         }

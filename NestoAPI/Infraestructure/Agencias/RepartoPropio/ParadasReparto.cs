@@ -115,6 +115,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// existen no vienen). Vacía en las demás y en las de solo importe.
         /// </summary>
         public List<EfectoCobroReparto> EfectosCobro { get; set; } = new List<EfectoCobroReparto>();
+        /// <summary>NestoAPI#786: en las de cobro, el repartidor al que se asignó (sin dominio); null en las demás o sin asignar.</summary>
+        public string RepartidorCobro { get; set; }
     }
 
     public interface IRepositorioNotasParadaReparto
@@ -216,6 +218,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     continue;
                 }
                 nota.ImporteCobro = dato.Importe;
+                nota.RepartidorCobro = dato.Repartidor;
                 nota.EfectosCobro = dato.Efectos.Select(id => efectos.FirstOrDefault(e => e.Id == id)).Where(e => e != null).ToList();
                 nota.Texto = ServicioNotasCobro.Texto(dato.Importe, nota.EfectosCobro);
             }

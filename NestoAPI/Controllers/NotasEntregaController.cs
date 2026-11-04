@@ -218,7 +218,8 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#786: las notas de cobro (sustituible en los tests).</summary>
         internal ServicioNotasCobro NotasCobro
         {
-            get => notasCobro ?? (notasCobro = new ServicioNotasCobro(new RepositorioNotasCobro(db)));
+            get => notasCobro ?? (notasCobro = new ServicioNotasCobro(new RepositorioNotasCobro(db),
+                new ServicioRepartidores(new RepositorioRepartidores(db))));
             set => notasCobro = value;
         }
 
@@ -226,12 +227,13 @@ namespace NestoAPI.Controllers
         internal Action<string> AvisarReparto { get; set; } = usuario =>
             new Infraestructure.Notificaciones.AvisosAlmacenSignalR().RepartoCambiado(usuario, Models.Agencias.RepartoCambiadoDTO.MOTIVO_PARADA, DateTime.Now, null);
 
-        // POST api/NotasEntrega/Cobro { Empresa?, Cliente, Contacto?, Efectos?: [NºOrden…], Importe?, Fecha?, Comentario? }
+        // POST api/NotasEntrega/Cobro { Empresa?, Cliente, Contacto?, Efectos?: [NºOrden…], Importe?, Fecha?, Comentario?, Repartidor }
         /// <summary>
         /// NestoAPI#786: «Nueva nota de cobro» (Nesto, desde el detalle del pedido o la ficha del cliente). Crea la nota de solo COBRO
         /// (un pedido con NotaEntrega = 1 y SIN líneas: no pasa por picking, packing ni Facturar rutas) y, en la misma transacción, su
         /// parada del reparto propio: un envío de la agencia 14 ya tramitado con Bultos 0 y Reembolso = el importe, que sale en
-        /// GET api/RepartoPropio/Envios como «NotaCobro» (NC{pedido}). 201 con <see cref="NotaCobroDTO"/>. 400 (de usted) sin efectos
+        /// GET api/RepartoPropio/Envios como «NotaCobro» (NC{pedido}), con soloMios solo al Repartidor asignado (obligatorio, uno de
+        /// GET api/RepartoPropio/Repartidores; 400 si no lo es). 201 con <see cref="NotaCobroDTO"/>. 400 (de usted) sin efectos
         /// ni importe, con un efecto de otro cliente o que ya no está pendiente, si el cliente no es de nuestra ruta o falta el script;
         /// 404 si no existe el cliente/contacto; 409 si ese cliente/contacto ya tiene otra nota de cobro en el reparto.
         /// </summary>

@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Models;
+using NestoAPI.Models.Agencias;
 using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.NotasEntrega
@@ -35,12 +36,16 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         public decimal Importe { get; set; }
         /// <summary>Los Nº Orden de ExtractoCliente, en el orden en que se liquidan.</summary>
         public List<int> Efectos { get; set; } = new List<int>();
+        /// <summary>NestoAPI#786: el repartidor asignado (NotasEntregaCabecera.Repartidor, sin dominio); null sin Scripts/Issue786b.</summary>
+        public string Repartidor { get; set; }
     }
 
     public interface IRepositorioNotasCobro
     {
         /// <summary>¿Se ha lanzado Scripts/Issue786_NotasCobro.sql (tabla NotasEntregaCobroEfectos y columna ImporteCobro)?</summary>
         bool ScriptAplicado();
+        /// <summary>NestoAPI#786: ¿Se ha lanzado Scripts/Issue786b_NotaCobroRepartidor.sql (columna NotasEntregaCabecera.Repartidor)?</summary>
+        bool ScriptRepartidorAplicado();
         /// <summary>La ficha del cliente/contacto, o null si no existe.</summary>
         Task<FichaNotaCobro> LeerFicha(string empresa, string cliente, string contacto);
         /// <summary>Esos efectos de ExtractoCliente (en cualquier empresa; los que no existen no vienen).</summary>
@@ -57,8 +62,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// con su albarán RP{envío} y la historia). Devuelve el número del envío.
         /// </summary>
         Task<int> Guardar(CabPedidoVta cabecera, FilaNotaEntregaCabecera fila, decimal importe, IReadOnlyList<int> efectos,
-            EnviosAgencia envio, string historia, Modificacion modificacion);
-        /// <summary>El importe y los efectos de esas notas de cobro (las que no lo son, o sin el script, no vienen).</summary>
+            EnviosAgencia envio, string historia, Modificacion modificacion, string repartidor);
+        /// <summary>El importe, el repartidor y los efectos de esas notas de cobro (las que no lo son, o sin el script, no vienen).</summary>
         Task<Dictionary<int, DatosNotaCobro>> LeerDatos(string empresa, IReadOnlyCollection<int> pedidos);
     }
 
@@ -71,6 +76,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     /// Tipo «Cobro», Bultos 0, el importe y los efectos (NotasEntregaCobroEfectos).</item>
     /// <item>Al crearla, su parada: un envío de la agencia 14 ya tramitado (como las recogidas, <see cref="ServicioParadasNotaEntrega"/>),
     /// Bultos 0 y Reembolso = el importe. Sale en GET api/RepartoPropio/Envios como «NotaCobro» (NC{pedido}) y no en la furgoneta.</item>
+    /// <item>Se asigna a un repartidor (NestoAPI#786, 04/11/26): solo él la ve en «Mis envíos» de Ariadna (GET Envios con soloMios).</item>
     /// <item>Al entregarla, el cobro (efectivo a la caja del repartidor, tarjeta por enlace o sin cobrar con autorización, #773)
     /// liquida esos efectos (<see cref="ServicioRepartoPropio"/>).</item>
     /// </list>
@@ -80,6 +86,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     {
         public const string MENSAJE_FALTA_SCRIPT = "No se pueden crear notas de cobro: falta lanzar el script Scripts/Issue786_NotasCobro.sql. " +
             "Avise a Informática.";
+        public const string MENSAJE_FALTA_SCRIPT_REPARTIDOR = "No se pueden crear notas de cobro: falta lanzar el script " +
+            "Scripts/Issue786b_NotaCobroRepartidor.sql. Avise a Informática.";
         public const string HISTORIA_PARADA = "Nota de cobro en reparto propio";
         public const string TABLA_MODIFICACIONES = "Pedidos";
         internal const int MAXIMO_EFECTOS = 50;
@@ -88,12 +96,16 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         private static readonly CultureInfo Espanol = new CultureInfo("es-ES");
 
         private readonly IRepositorioNotasCobro repositorio;
+        private readonly ServicioRepartidores repartidores;
         private readonly Func<bool> repartoPropioActivo;
         private readonly Func<DateTime> ahora;
 
-        public ServicioNotasCobro(IRepositorioNotasCobro repositorio, Func<bool> repartoPropioActivo = null, Func<DateTime> ahora = null)
+        /// <param name="repartidores">NestoAPI#786: a quién se puede asignar (GET api/RepartoPropio/Repartidores).</param>
+        public ServicioNotasCobro(IRepositorioNotasCobro repositorio, ServicioRepartidores repartidores, Func<bool> repartoPropioActivo = null,
+            Func<DateTime> ahora = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.repartidores = repartidores ?? throw new ArgumentNullException(nameof(repartidores));
             this.repartoPropioActivo = repartoPropioActivo ?? InterruptorRepartoPropio.EstaActivo;
             this.ahora = ahora ?? (() => DateTime.Now);
         }
@@ -103,6 +115,10 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             if (!repositorio.ScriptAplicado())
             {
                 return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.Invalido, MENSAJE_FALTA_SCRIPT);
+            }
+            if (!repositorio.ScriptRepartidorAplicado())
+            {
+                return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.Invalido, MENSAJE_FALTA_SCRIPT_REPARTIDOR);
             }
             if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente))
             {
@@ -117,6 +133,16 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             if (!repartoPropioActivo())
             {
                 return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.Invalido, "El reparto propio está apagado: no se pueden crear notas de cobro.");
+            }
+            if (string.IsNullOrWhiteSpace(peticion.Repartidor))
+            {
+                return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.Invalido, "Indique el repartidor que va a ir a cobrar.");
+            }
+            RepartidorDTO repartidor = await repartidores.Buscar(peticion.Repartidor, usuario).ConfigureAwait(false);
+            if (repartidor == null)
+            {
+                return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.Invalido,
+                    $"«{peticion.Repartidor.Trim()}» no es un repartidor: elija uno de la lista.");
             }
             string cliente = peticion.Cliente.Trim();
             string comentario = string.IsNullOrWhiteSpace(peticion.Comentario) ? null : peticion.Comentario.Trim();
@@ -219,7 +245,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             {
                 Tabla = TABLA_MODIFICACIONES,
                 Anterior = $"Nota de cobro {numero}: nueva",
-                Nuevo = Recortar($"Nota de cobro {numero} de {Euros(importe)} para {cliente}/{contacto}" +
+                Nuevo = Recortar($"Nota de cobro {numero} de {Euros(importe)} para {cliente}/{contacto}, la cobra {repartidor.Usuario}" +
                     (efectos.Count == 0 ? " (solo importe)" : $", efectos {string.Join(", ", efectos.Select(e => e.Id.ToString(CultureInfo.InvariantCulture)))}") +
                     $" (NestoAPI#786, usuario {usuario})", 4000),
                 Usuario = Recortar(usuario, 50)
@@ -228,8 +254,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             int envioId;
             try
             {
-                envioId = await repositorio.Guardar(cabecera, fila, importe, efectos.Select(e => e.Id).ToList(), envio, HISTORIA_PARADA, modificacion)
-                    .ConfigureAwait(false);
+                envioId = await repositorio.Guardar(cabecera, fila, importe, efectos.Select(e => e.Id).ToList(), envio,
+                    $"{HISTORIA_PARADA} (la cobra {repartidor.Usuario})", modificacion, repartidor.Usuario).ConfigureAwait(false);
             }
             catch
             {
@@ -250,7 +276,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 CodigoDocumento = CodigoNotaEntrega.DocumentoCobro(numero),
                 EnvioId = envioId,
                 Fecha = fecha,
-                Texto = Texto(importe, efectos)
+                Texto = Texto(importe, efectos),
+                Repartidor = repartidor.Usuario
             });
         }
 
@@ -368,10 +395,12 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     {
         public const string TABLA_EFECTOS = "NotasEntregaCobroEfectos";
         public const string COLUMNA_IMPORTE = "ImporteCobro";
+        /// <summary>NestoAPI#786: NotasEntregaCabecera.Repartidor (Scripts/Issue786b_NotaCobroRepartidor.sql).</summary>
+        public const string COLUMNA_REPARTIDOR = "Repartidor";
 
         internal const string SQL_INSERTAR_CABECERA = "INSERT INTO dbo." + RepositorioNotasEntregaCabecera.TABLA +
-            " (Empresa, Pedido, Tipo, Bultos, FacturaOriginal, Usuario, FechaModificacion, " + COLUMNA_IMPORTE + ") " +
-            "VALUES (@Empresa, @Pedido, @Tipo, 0, NULL, @Usuario, GETDATE(), @Importe)";
+            " (Empresa, Pedido, Tipo, Bultos, FacturaOriginal, Usuario, FechaModificacion, " + COLUMNA_IMPORTE + ", " + COLUMNA_REPARTIDOR + ") " +
+            "VALUES (@Empresa, @Pedido, @Tipo, 0, NULL, @Usuario, GETDATE(), @Importe, @Repartidor)";
 
         internal const string SQL_INSERTAR_EFECTO = "INSERT INTO dbo." + TABLA_EFECTOS + " (Empresa, Pedido, ExtractoId, Orden) " +
             "VALUES (@Empresa, @Pedido, @Extracto, @Orden)";
@@ -385,6 +414,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
         public bool ScriptAplicado()
             => ColumnasOpcionales.ExisteTabla(db, TABLA_EFECTOS) && ColumnasOpcionales.Existen(db, RepositorioNotasEntregaCabecera.TABLA, COLUMNA_IMPORTE);
+
+        public bool ScriptRepartidorAplicado() => ColumnasOpcionales.Existen(db, RepositorioNotasEntregaCabecera.TABLA, COLUMNA_REPARTIDOR);
 
         public async Task<FichaNotaCobro> LeerFicha(string empresa, string cliente, string contacto)
         {
@@ -432,7 +463,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         public void DevolverNumeroPedido(int numero) => db.DevolverNumeroPedido(numero);
 
         public async Task<int> Guardar(CabPedidoVta cabecera, FilaNotaEntregaCabecera fila, decimal importe, IReadOnlyList<int> efectos,
-            EnviosAgencia envio, string historia, Modificacion modificacion)
+            EnviosAgencia envio, string historia, Modificacion modificacion, string repartidor)
         {
             using (DbContextTransaction transaccion = db.Database.BeginTransaction())
             {
@@ -452,7 +483,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                         Parametro("@Pedido", SqlDbType.Int, fila.Pedido),
                         Parametro("@Tipo", SqlDbType.VarChar, fila.Tipo),
                         Parametro("@Usuario", SqlDbType.VarChar, Recortar(fila.Usuario, 50) ?? "NestoAPI"),
-                        new SqlParameter("@Importe", SqlDbType.Decimal) { Precision = 12, Scale = 2, Value = importe }).ConfigureAwait(false);
+                        new SqlParameter("@Importe", SqlDbType.Decimal) { Precision = 12, Scale = 2, Value = importe },
+                        Parametro("@Repartidor", SqlDbType.VarChar, Recortar(repartidor, 50))).ConfigureAwait(false);
                     short orden = 0;
                     foreach (int efecto in efectos ?? new List<int>())
                     {
@@ -494,6 +526,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         {
             public int Pedido { get; set; }
             public decimal? Importe { get; set; }
+            public string Repartidor { get; set; }
         }
 
         private class FilaEfecto
@@ -513,8 +546,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             }
             // Enteros en el texto (sin inyección posible).
             string ids = string.Join(", ", lista.Select(p => p.ToString(CultureInfo.InvariantCulture)));
+            string repartidor = ScriptRepartidorAplicado() ? $"RTRIM({COLUMNA_REPARTIDOR})" : "CAST(NULL AS varchar(50))";
             List<FilaDatos> cabeceras = await db.Database.SqlQuery<FilaDatos>(
-                $"SELECT Pedido, {COLUMNA_IMPORTE} AS Importe FROM dbo.{RepositorioNotasEntregaCabecera.TABLA} WITH (NOLOCK) " +
+                $"SELECT Pedido, {COLUMNA_IMPORTE} AS Importe, {repartidor} AS Repartidor FROM dbo.{RepositorioNotasEntregaCabecera.TABLA} WITH (NOLOCK) " +
                 $"WHERE Empresa = @p0 AND Pedido IN ({ids}) AND Tipo = '{TiposNotaEntrega.COBRO}'", empresa).ToListAsync().ConfigureAwait(false);
             if (cabeceras.Count == 0)
             {
@@ -529,6 +563,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 {
                     Pedido = cabecera.Pedido,
                     Importe = cabecera.Importe ?? 0m,
+                    Repartidor = ServicioRepartoPropio.NombreRepartidor(cabecera.Repartidor),
                     Efectos = efectos.Where(e => e.Pedido == cabecera.Pedido).OrderBy(e => e.Orden).Select(e => e.ExtractoId).ToList()
                 };
             }
