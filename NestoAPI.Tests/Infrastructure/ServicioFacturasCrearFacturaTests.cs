@@ -474,8 +474,9 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task CrearFactura_SinVendedor_400SinLlamarAlSP()
+        public async Task CrearFactura_SinVendedorNiEnLaFicha_400ConElClienteSinLlamarAlSP_813()
         {
+            // NestoAPI#813 (antes #794 decía «El pedido X no tiene vendedor»): ahora se mira la ficha y, si tampoco, se dice qué hacer.
             var pedido = new CabPedidoVta
             {
                 Empresa = "1",
@@ -488,13 +489,57 @@ namespace NestoAPI.Tests.Infrastructure
             };
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
             var llamadas = new List<int>();
+            var fijados = new List<string>();
+            ServicioFacturas servicio = ServicioQueApuntaElSP(llamadas);
+            servicio.GuardiaVendedor = GuardiaVendedor(pedido, null, fijados);
 
-            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
-                () => ServicioQueApuntaElSP(llamadas).CrearFactura("1", 929448, "test"));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => servicio.CrearFactura("1", 929448, "test"));
 
-            Assert.AreEqual("El pedido 929448 no tiene vendedor", ex.Message);
+            Assert.AreEqual("El cliente 15191 no tiene vendedor asignado: póngaselo en la ficha antes de facturar", ex.Message);
             Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
             Assert.AreEqual(0, llamadas.Count);
+            Assert.AreEqual(0, fijados.Count);
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_SinVendedorEnLaCabecera_UsaElDeLaFichaYLlamaAlSP_Paloma03Nov()
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "3",
+                Número = 929429,
+                Nº_Cliente = "9057",
+                Contacto = "0",
+                Vendedor = null,
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta> { LineaAlbaran() }
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            var llamadas = new List<int>();
+            var fijados = new List<string>();
+            ServicioFacturas servicio = ServicioQueApuntaElSP(llamadas);
+            servicio.GuardiaVendedor = GuardiaVendedor(pedido, "PA ", fijados);
+
+            // El SP falso para el test justo al llamarlo: lo que importa es que se llega con vendedor.
+            _ = await Assert.ThrowsExceptionAsync<FacturacionException>(() => servicio.CrearFactura("3", 929429, "test"));
+
+            CollectionAssert.AreEqual(new[] { "3/929429/PA" }, fijados);
+            Assert.AreEqual("PA", pedido.Vendedor);
+            CollectionAssert.AreEqual(new[] { 929429 }, llamadas);
+        }
+
+        private static NestoAPI.Infraestructure.PedidosVenta.VendedorParaFacturar GuardiaVendedor(CabPedidoVta pedido, string vendedorFicha, List<string> fijados)
+        {
+            return new NestoAPI.Infraestructure.PedidosVenta.VendedorParaFacturar(
+                (e, p) => Task.FromResult(new NestoAPI.Infraestructure.PedidosVenta.VendedoresPedidoYCliente
+                {
+                    Cliente = pedido.Nº_Cliente,
+                    Contacto = pedido.Contacto,
+                    VendedorPedido = pedido.Vendedor,
+                    VendedorCliente = vendedorFicha
+                }),
+                (e, p, v) => { fijados.Add($"{e}/{p}/{v}"); return Task.CompletedTask; });
         }
 
         [TestMethod]

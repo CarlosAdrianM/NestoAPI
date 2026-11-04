@@ -32,6 +32,12 @@ namespace NestoAPI.Infraestructure.Facturas
         internal Func<string, int, string, Task<string>> ProcedimientoCrearFacturaVta { get; set; }
         /// <summary>NestoAPI#794 (solo tests): sustituye el recálculo preventivo de las líneas. <c>null</c> = el de verdad.</summary>
         internal Func<CabPedidoVta, Task<bool>> RecalculoPreventivoLineas { get; set; }
+
+        /// <summary>
+        /// NestoAPI#813: el vendedor que prdCrearFacturaVta copia a CabFacturaVta (el de la cabecera; si no hay, el de la ficha
+        /// del cliente). <c>null</c> (siempre en producción) = el de verdad con este contexto.
+        /// </summary>
+        internal PedidosVenta.VendedorParaFacturar GuardiaVendedor { get; set; }
         private readonly Verifactu.IServicioVerifactu servicioVerifactu;
         private readonly ILogService logService;
 
@@ -466,6 +472,16 @@ namespace NestoAPI.Infraestructure.Facturas
             CabPedidoVta cabPedido = db.CabPedidoVtas
                 .Include(p => p.LinPedidoVtas)
                 .SingleOrDefault(p => p.Empresa == empresa && p.Número == pedido);
+            // NestoAPI#813 (Paloma 03/11/26 ×6): con la cabecera sin vendedor el SP mete NULL en CabFacturaVta.Vendedor. Se le
+            // pone el de la ficha del cliente y, si tampoco hay, 400 «El cliente X no tiene vendedor asignado…».
+            if (cabPedido != null && !string.IsNullOrWhiteSpace(cabPedido.Nº_Cliente) && string.IsNullOrWhiteSpace(cabPedido.Vendedor))
+            {
+                string vendedor = await (GuardiaVendedor ?? PedidosVenta.VendedorParaFacturar.ConContexto(db)).Asegurar(empresa, pedido);
+                if (vendedor != null)
+                {
+                    cabPedido.Vendedor = vendedor;
+                }
+            }
             // NestoAPI#794: el SP no valida la cabecera y con una vacía (sin cliente ni vendedor) revienta con «No se puede
             // insertar el valor NULL en la columna 'Vendedor'» y el recuento de transacciones descuadrado (Paloma, 03/11/26).
             ValidarCabeceraParaFacturar(cabPedido, empresa, pedido, usuario);

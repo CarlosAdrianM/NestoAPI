@@ -511,6 +511,7 @@
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
+    <Compile Include="Controllers\ClientesController.SinVendedor.cs" />
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\RemesasController.cs" />
@@ -1093,6 +1094,7 @@
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AplazamientoPedidoConPicking.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AvisadorRetencionAlmacen.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\GuardiaPedidoRetenido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\VendedorParaFacturar.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\PedidosRetenidosJobsService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\RepositorioPedidosRetenidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\RetencionPedido.cs" />
