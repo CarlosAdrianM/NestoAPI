@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Inventarios;
@@ -19,7 +19,7 @@ namespace NestoAPI.Tests.Controllers
 {
     /// <summary>
     /// NestoAPI#790: permisos de Comprobaciones, Contabilizar y Diferencias de api/Inventarios. Tiendas solo su almacén y a PVP;
-    /// Administración, Dirección e Informática cualquiera; Almacén y Compras solo consultan; el coste nunca a las tiendas.
+    /// Administración, Dirección e Informática cualquiera; Almacén consulta y contabiliza solo ALG; Compras solo consulta; el coste nunca a las tiendas.
     /// </summary>
     [TestClass]
     public class InventariosContabilizarControllerTests
@@ -156,6 +156,34 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Contabilizar_AlmacenEnAlgete_Ok_784()
+        {
+            // Carlos (04/11/26): el inventario de Algete lo contabilizan Santiago, Andre o Alfredo desde Nesto.
+            controller.User = Usuario("Andre", "Almacén");
+            A.CallTo(() => servicio.Contabilizar("1", "ALG", DIA)).Returns(new ResultadoContabilizarInventario
+            {
+                Contabilizacion = new ContabilizacionInventarioDTO
+                {
+                    Almacen = "ALG",
+                    Contabilizados = new List<UsuarioContabilizadoInventarioDTO> { new UsuarioContabilizadoInventarioDTO { Usuario = "NUEVAVISION\\Andre", Filas = 1200, Traspaso = 80002 } }
+                }
+            });
+
+            var ok = (OkNegotiatedContentResult<ContabilizacionInventarioDTO>)await controller.PostContabilizar(Peticion("ALG"));
+
+            Assert.AreEqual(80002, ok.Content.Contabilizados.Single().Traspaso);
+        }
+
+        [TestMethod]
+        public async Task Contabilizar_AlmacenEnUnaTienda_403_784()
+        {
+            controller.User = Usuario("Andre", "Almacén");
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await controller.PostContabilizar(Peticion("REI"))));
+            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Contabilizar_TiendaOtroAlmacen_403()
         {
             controller.User = Usuario("Paloma", "Tiendas");
@@ -165,11 +193,9 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task Contabilizar_AlmacenYCompras_SoloLectura_403()
+        public async Task Contabilizar_Compras_SoloLectura_403()
         {
-            controller.User = Usuario("Andre", "Almacén");
-            Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await controller.PostContabilizar(Peticion("ALG"))));
-
+            // Almacén SÍ contabiliza Algete desde el 04/11/26 (#784, Carlos): ver Contabilizar_AlmacenEnAlgete_Ok_784.
             controller.User = Usuario("Sancho", "Compras");
             Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await controller.PostContabilizar(Peticion("ALG"))));
 

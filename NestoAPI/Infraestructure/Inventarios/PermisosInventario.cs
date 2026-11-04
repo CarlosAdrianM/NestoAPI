@@ -9,7 +9,8 @@ namespace NestoAPI.Infraestructure.Inventarios
     /// NestoAPI#790 (Carlos, 03/11/26): quién consulta, contabiliza y a qué precio ve las diferencias del inventario.
     /// <list type="bullet">
     /// <item>Administración, Dirección e Informática: cualquier almacén; consultan y contabilizan.</item>
-    /// <item>Almacén y Compras: cualquier almacén, solo consultan (comprobaciones y diferencias), no contabilizan.</item>
+    /// <item>Almacén y Compras: cualquier almacén, consultan (comprobaciones y diferencias). Almacén además contabiliza ALG (Carlos 04/11/26);
+    /// Compras no contabiliza.</item>
     /// <item>Tiendas: solo su almacén (AlmacenInventario o, si no lo tiene, AlmacénPedidoVta); consultan y contabilizan.</item>
     /// </list>
     /// Valoración: a coste (PrecioMedio) por defecto para Compras, Almacén, Administración, Dirección e Informática, que pueden pedir
@@ -26,7 +27,7 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const string MENSAJE_SIN_PERMISO =
             "El inventario lo consultan las tiendas (el suyo), Almacén, Compras, Administración y Dirección.";
         public const string MENSAJE_SIN_PERMISO_CONTABILIZAR =
-            "Contabilizar el inventario lo hacen las tiendas (el suyo), Administración y Dirección.";
+            "Contabilizar el inventario lo hacen las tiendas (el suyo), Almacén (Algete), Administración y Dirección.";
         public const string MENSAJE_SIN_PERMISO_CONTAR =
             "El inventario lo cuentan las tiendas (el suyo), Almacén, Administración y Dirección.";
         public const string MENSAJE_SOLO_SU_TIENDA = "Solo puede trabajar con el inventario de su tienda ({0}).";
@@ -57,15 +58,30 @@ namespace NestoAPI.Infraestructure.Inventarios
             return MotivoTienda(usuario, almacenUsuario, almacen, MENSAJE_SIN_PERMISO);
         }
 
-        /// <summary>null si puede contabilizar el inventario de <paramref name="almacen"/>; si no, el motivo (403).</summary>
+        /// <summary>
+        /// null si puede contabilizar el inventario de <paramref name="almacen"/>; si no, el motivo (403).
+        /// NestoAPI#784 (Carlos, 04/11/26): el inventario de Algete lo contabilizan Santiago, Andre o Alfredo (grupo Almacén) desde
+        /// Nesto; Almacén solo puede contabilizar ALG (las tiendas siguen siendo de cada tienda, Administración o Dirección).
+        /// </summary>
         public static string MotivoNoPuedeContabilizar(IPrincipal usuario, string almacenUsuario, string almacen)
         {
             if (EsGlobal(usuario))
             {
                 return null;
             }
+            if (EsAlmacen(usuario))
+            {
+                return string.Equals(almacen?.Trim(), Constantes.Almacenes.ALGETE, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : MENSAJE_ALMACEN_SOLO_ALGETE;
+            }
             return MotivoTienda(usuario, almacenUsuario, almacen, MENSAJE_SIN_PERMISO_CONTABILIZAR);
         }
+
+        public const string MENSAJE_ALMACEN_SOLO_ALGETE = "Almacén solo puede contabilizar el inventario de Algete (ALG); el de las tiendas lo contabiliza cada tienda, Administración o Dirección.";
+
+        public static bool EsAlmacen(IPrincipal usuario) =>
+            usuario != null && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN);
 
         /// <summary>
         /// NestoAPI#795: null si puede contar (rellenar y meter lo contado) en el inventario de <paramref name="almacen"/>: Almacén y los de

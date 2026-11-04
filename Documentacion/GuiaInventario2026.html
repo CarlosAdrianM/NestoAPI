@@ -99,9 +99,9 @@
 <tr><th>Almacén</th><th>Quién</th><th>Desde dónde</th></tr>
 <tr><td class="tema">Reina</td><td>La tienda, al terminar de contar (o Administración, Dirección o Informática)</td><td>Nesto, pantalla de inventario, botón «Contabilizar inventario», almacén REI, fecha 21/11/2026</td></tr>
 <tr><td class="tema">Alcobendas</td><td>La tienda, al terminar de contar (o Administración, Dirección o Informática)</td><td>Igual, con almacén ALC</td></tr>
-<tr><td class="tema">Algete</td><td>Carlos (o Administración o Dirección), cuando <b>todas</b> las PDA hayan terminado</td><td>Nesto, mismo botón, con almacén ALG (o Ariadna nueva, <kbd>F6</kbd>)</td></tr>
+<tr><td class="tema">Algete</td><td><b>Santiago, Andre o Alfredo</b> (Almacén), cuando <b>todas</b> las PDA hayan terminado</td><td>Nesto, mismo botón, con almacén ALG (o Ariadna nueva, <kbd>F6</kbd>)</td></tr>
 </table>
-<p>Almacén y Compras pueden ver las diferencias, pero no contabilizar. Una tienda solo puede contabilizar la suya. Contabilizar lo hace el servidor <b>por usuario</b>: si contaron tres personas, salen tres traspasos, y cada uno se hace entero o no se hace.</p>
+<p>Compras puede ver las diferencias, pero no contabilizar. Almacén (Santiago, Andre, Alfredo) solo puede contabilizar Algete, y una tienda solo la suya. Contabilizar lo hace el servidor <b>por usuario</b>: si contaron tres personas, salen tres traspasos, y cada uno se hace entero o no se hace.</p>
 
 <h2 class="salto">3. El día en Reina y Alcobendas (con Nesto)</h2>
 
@@ -185,7 +185,7 @@
 <h2 class="salto">4. El día en Algete</h2>
 
 <h3>4.1. Lo de siempre: Ariadna vieja, ubicación a ubicación</h3>
-<p>Como el año pasado: cada PDA va ubicación a ubicación con la Ariadna vieja, que rellena la ubicación con lo que debería haber y se cuenta lo que hay. No cambia nada para quien cuenta. Lo único que cambia es al final: <b>Carlos contabiliza desde Nesto</b> («Contabilizar inventario» con almacén ALG), no desde SQL Server.</p>
+<p>Como el año pasado: cada PDA va ubicación a ubicación con la Ariadna vieja, que rellena la ubicación con lo que debería haber y se cuenta lo que hay. No cambia nada para quien cuenta. Lo único que cambia es al final: <b>Santiago, Andre o Alfredo contabilizan desde Nesto</b> («Contabilizar inventario» con almacén ALG), no desde SQL Server.</p>
 
 <h3>4.2. La opción nueva: Ariadna 2.28, «Inventario (+)»</h3>
 <p>Solo si se decide tras la prueba, y en <b>pasillos enteros asignados</b> a la Ariadna nueva.</p>
@@ -275,12 +275,12 @@
 <table>
 <tr><td class="tema">Propuesta</td><td><b>37533 · QUITACUTÍCULAS CON PINCEL</b> (Paraíso, ACC). EAN-13 <b>8424629110506</b>. Sin ventas en los últimos 120 días. A fecha de 04/11: 1 unidad en Reina, 1 en Alcobendas y 1 en Algete, en una sola ubicación (<b>002/003/010</b>). PVP 5,16 €.</td></tr>
 <tr><td class="tema">Alternativas</td><td>44576 RECOVERY SKIN BALM (EAN 4779044930296; Algete 001/006/006) · 42078 MATT PRIMER (EAN 8435167520542; Algete 004/005/001).</td></tr>
-<tr><td class="tema">A confirmar por Carlos</td><td>Que la ubicación de Algete tenga <b>solo</b> esa referencia (en la Ariadna nueva se rellena la ubicación entera); si tiene más, en la prueba se cuentan todos sus productos. Que el stock siga siendo el mismo el día de la prueba.</td></tr>
+<tr><td class="tema">Confirmada por Carlos (04/11)</td><td>Es la referencia de la prueba. Antes de hacerla, comprobar que la ubicación de Algete tenga <b>solo</b> esa referencia (en la Ariadna nueva se rellena la ubicación entera; si tiene más, se cuentan todos sus productos) y que el stock siga siendo el mismo ese día.</td></tr>
 </table>
 
 <h3>8.2. Antes de la prueba</h3>
 <ul>
-<li>Que no haya filas pendientes en el almacén de la prueba. Hoy (04/11) hay <b>una en Algete</b>: NºOrden 943018, producto 45383, ubicación 012/001/005, de Santiago (03/11), con lo contado a 0. Las comprobaciones la sacarán como bloqueante («otra fecha») hasta que se contabilice o se borre. Carlos lo habla con Santiago.</li>
+<li>Que no haya filas pendientes en el almacén de la prueba. Hoy (04/11) hay <b>una en Algete</b>: NºOrden 943018, producto 45383, ubicación 012/001/005, de Santiago (03/11), con lo contado a 0. Las comprobaciones la sacarán como bloqueante («otra fecha») hasta que se contabilice o se borre. Carlos decidió el 04/11 borrarla (era una prueba de Ariadna 2.28).</li>
 <li>Nesto 1.10.54.0 en la tienda y Ariadna 2.28 en la PDA o el móvil de la prueba.</li>
 <li>La unidad física localizada: se cuenta lo que hay de verdad.</li>
 </ul>
