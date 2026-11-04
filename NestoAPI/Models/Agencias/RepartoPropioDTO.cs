@@ -78,8 +78,16 @@ namespace NestoAPI.Models.Agencias
         /// horario; vacío ("") si tiene horario pero ese día no tiene ninguna franja (ese día no le viene bien).
         /// </summary>
         public string HorarioPreferibleDia { get; set; }
-        /// <summary>NestoAPI#773: se puede cobrar con tarjeta (enlace por WhatsApp): solo la empresa 1; la 3, siempre en efectivo.</summary>
-        public bool AdmiteTarjeta => global::NestoAPI.Infraestructure.Agencias.RepartoPropio.ServicioCobroTarjetaReparto.AdmiteTarjeta(Empresa);
+        /// <summary>
+        /// NestoAPI#807: la empresa a la que va el cobro del reembolso: la de su factura pendiente en el extracto del cliente (un pedido
+        /// de la 1 puede facturarse en la 3). Null si no lleva reembolso o no se ha podido leer (manda <see cref="Empresa"/>).
+        /// </summary>
+        public string EmpresaCobro { get; set; }
+        /// <summary>
+        /// NestoAPI#773: se puede cobrar con tarjeta (enlace por WhatsApp): solo la empresa 1; la 3, siempre en efectivo. NestoAPI#807:
+        /// con la empresa del cobro (<see cref="EmpresaCobro"/>), no la del envío (siempre la 1).
+        /// </summary>
+        public bool AdmiteTarjeta => global::NestoAPI.Infraestructure.Agencias.RepartoPropio.ServicioCobroTarjetaReparto.AdmiteTarjeta(EmpresaCobro ?? Empresa);
         /// <summary>
         /// NestoAPI#763: solo en la respuesta de POST OrdenSugerido. A qué hora se calcula que se llega (conducción + 5 minutos por
         /// parada, desde la hora de la PDA). Null si no se puede estimar (sin coordenadas, ya visitada).

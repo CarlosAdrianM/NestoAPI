@@ -100,11 +100,13 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
-        public async Task EnlaceEnvio_EnvioDeLa1ConPedidoDeLa3_SinTarjeta_400_YNoSeCreaEnlace()
+        public async Task EnlaceEnvio_EnvioDeLa1ConFacturaPendienteEnLa3_SinTarjeta_400_YNoSeCreaEnlace()
         {
-            // NestoAPI#801: EnviosAgencia.Empresa es siempre «1»; manda la empresa del PEDIDO (la 3 se cobra siempre en efectivo)
+            // NestoAPI#807: EnviosAgencia.Empresa es siempre «1»; manda la empresa de la factura pendiente del pedido en el EXTRACTO
+            // (pedido de la 1 facturado en la 3, GB): la 3 se cobra siempre en efectivo.
             EnvioConReembolso("1  ");
-            tarjetas.EmpresaDelPedido = "3  ";
+            tarjetas.EmpresaDelCobro = "3  ";
+            tarjetas.MovimientoDelCobro = new ExtractoCliente { Nº_Orden = 7001, Empresa = "3  ", Nº_Documento = "GB2601735", ImportePdte = 45.30m };
 
             var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
 
@@ -115,16 +117,36 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
-        public async Task EnlaceEnvio_PedidoDeLa1_BuscaLaFacturaEnLaEmpresaDelPedido()
+        public async Task EnlaceEnvio_SinFacturaDeLaRegla_BuscaLaFacturaEnLaEmpresaDelCobro()
         {
             EnvioConReembolso("1  ");
-            tarjetas.EmpresaDelPedido = "1  ";
+            tarjetas.EmpresaDelCobro = "1  ";
             tarjetas.EfectoDelReembolso = FacturaPendiente();
 
             var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
 
             Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
             Assert.AreEqual("1", tarjetas.EmpresaBusquedaEfecto);
+            Assert.AreEqual("1", solicitud.Empresa);
+        }
+
+        [TestMethod]
+        public async Task EnlaceEnvio_LaReglaDaLaFacturaDelPedido_LaLiquidaSinBuscarOtra()
+        {
+            // NestoAPI#807: la factura pendiente del pedido que ha dado el extracto es la que liquida el enlace (como el efectivo)
+            EnvioConReembolso("1  ");
+            tarjetas.EmpresaDelCobro = "1";
+            tarjetas.MovimientoDelCobro = new ExtractoCliente
+            {
+                Nº_Orden = 8123, Empresa = "1  ", Número = "15191     ", Contacto = "0  ", Nº_Documento = "NV26012345", Efecto = "1",
+                Importe = 45.30m, ImportePdte = 45.30m, Fecha = AHORA.Date
+            };
+
+            var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual(0, tarjetas.BusquedasEfectoDelReembolso, "No se busca otra factura: manda la del pedido");
+            Assert.AreEqual(8123, solicitud.Efectos.Single().ExtractoClienteId);
             Assert.AreEqual("1", solicitud.Empresa);
         }
 
@@ -754,11 +776,17 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public bool FallaEfectoDelReembolso;
             public int BusquedasEfectoDelReembolso;
             public readonly List<EnvioHistoria> Historia = new List<EnvioHistoria>();
-            /// <summary>NestoAPI#801: la empresa del pedido del envío (null = no existe: la del envío).</summary>
-            public string EmpresaDelPedido;
+            /// <summary>NestoAPI#807: la empresa del cobro según el extracto (null = la regla no da nada: la del envío).</summary>
+            public string EmpresaDelCobro;
+            /// <summary>NestoAPI#807: la factura pendiente del pedido que da la regla del extracto (null = se busca como antes).</summary>
+            public ExtractoCliente MovimientoDelCobro;
             /// <summary>La empresa con la que se buscó el efecto la última vez.</summary>
             public string EmpresaBusquedaEfecto;
-            public Task<string> LeerEmpresaDelCobro(EnviosAgencia envio) => Task.FromResult(EmpresaDelCobroReparto.DeEnvio(EmpresaDelPedido, envio.Empresa));
+            public Task<CobroEnvioReparto> LeerCobroDelEnvio(EnviosAgencia envio) => Task.FromResult(new CobroEnvioReparto
+            {
+                Empresa = EmpresaDelCobroReparto.SinExtracto(EmpresaDelCobro, envio.Empresa),
+                Movimiento = MovimientoDelCobro
+            });
             public Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe, string empresa)
             {
                 BusquedasEfectoDelReembolso++;

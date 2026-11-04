@@ -831,6 +831,23 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public DateTime Desde, Hasta;
             public PruebaEntregaReparto SimularCarreraCon;
             public Exception FalloContabilizar;
+            /// <summary>NestoAPI#807: la empresa del cobro de cada envío según el extracto (sin entrada: la regla no da nada).</summary>
+            public readonly Dictionary<int, CobroEnvioReparto> Cobros = new Dictionary<int, CobroEnvioReparto>();
+            /// <summary>NestoAPI#807: cuántas veces se ha leído la empresa del cobro y de cuántos envíos la última.</summary>
+            public int LecturasCobros;
+            public int EnviosUltimaLecturaCobros;
+            public Exception FalloLeerCobros;
+
+            public Task<Dictionary<int, CobroEnvioReparto>> LeerCobrosDeEnvios(IReadOnlyCollection<EnviosAgencia> envios)
+            {
+                LecturasCobros++;
+                EnviosUltimaLecturaCobros = envios.Count;
+                if (FalloLeerCobros != null)
+                {
+                    throw FalloLeerCobros;
+                }
+                return Task.FromResult(envios.Where(e => Cobros.ContainsKey(e.Numero)).ToDictionary(e => e.Numero, e => Cobros[e.Numero]));
+            }
 
             public EnviosAgencia Con(EnviosAgencia envio)
             {
