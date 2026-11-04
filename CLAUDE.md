@@ -288,6 +288,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `GestorFestivos.EsFestivo` (remesas, fechas de entrega, picking, `JobsFestivos`, avisos…) lee los festivos del año de
   `CalendarioFestivos.DelAnio`: tabla `dbo.Festivos` (Fecha, Tipo, Descripcion, Usuario, FechaModificacion; fuera del EDMX;
   `Scripts/Issue779_Festivos.sql`), caché de 10 min, `Invalidar` al escribir. Tipos = enum `TipoFestivo`; las reglas por delegación no cambian.
+- Por qué «Algete» NO cuenta para ALG (Carlos 04/11/26): en Algete unos empleados cogen las fiestas de Algete y otros las de Madrid, pero el
+  almacén abre; Algete solo cierra en nacionales y autonómicas. Reina cierra en las locales de Madrid y Alcobendas en las de Alcobendas.
 - Respaldo: sin tabla → la lista del código (`FiestasDelCodigo`, sin ELMAH); tabla sin filas del año → ELMAH una vez por año y la
   lista del código de ese año (o nada). La lista del código se quita cuando la tabla esté en producción.
 - `GET api/Festivos?anio=`, `POST api/Festivos`, `DELETE api/Festivos/{fecha}/{tipo}` (escribir: Administración/Dirección/Informática).
