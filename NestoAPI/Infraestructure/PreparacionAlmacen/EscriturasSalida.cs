@@ -209,9 +209,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 List<PiezaSalida> delProducto = todas
                     .Where(p => string.Equals(p.Producto?.Trim(), falta.Producto?.Trim(), StringComparison.OrdinalIgnoreCase))
                     .ToList();
+                // NestoAPI#805 (04/11/26, picking 99998): si el producto ya no está en ninguna línea del picking (se modificó el
+                // pedido después de crear el picking y la línea volvió a pendiente: 929866/37547), no hay nada que quitar y la
+                // falta no puede impedir Terminar. Antes reventaba con «no hay tanto que sacar» y el picking se quedaba colgado.
+                if (!delProducto.Any())
+                {
+                    continue;
+                }
                 // NestoAPI#593: una falta nunca se aplica a una línea en negativo (cheque regalo, cupón, abono): no se
                 // recoge. Si el producto solo está en líneas así, la falta no quita nada
-                if (delProducto.Any() && delProducto.All(p => p.NoAdmiteFalta))
+                if (delProducto.All(p => p.NoAdmiteFalta))
                 {
                     continue;
                 }

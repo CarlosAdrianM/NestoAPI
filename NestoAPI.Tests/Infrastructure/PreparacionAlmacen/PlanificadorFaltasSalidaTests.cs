@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
@@ -104,6 +104,23 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 });
 
             Assert.AreEqual(10, recortes.Single().Pieza.Linea);
+        }
+
+        /// <summary>
+        /// NestoAPI#805 (04/11/26): picking 99998, Andre dio por falta 1 del 37547 en su parada, pero Jesús había sacado esa
+        /// línea del pedido 929866 la tarde anterior (volvió a pendiente, sin picking). Terminar daba «no hay tanto que sacar»
+        /// cinco veces y el picking se quedó colgado. Sin ninguna pieza del producto no hay nada que quitar: se ignora.
+        /// </summary>
+        [TestMethod]
+        public void Repartir_FaltaDeUnProductoQueYaNoEstaEnElPicking_SeIgnora()
+        {
+            List<RecorteSalida> recortes = PlanificadorFaltasSalida.Repartir(
+                new[] { Falta("37547", 1, "002/003/010"), Falta("B", 1) },
+                new[] { Pieza(10, 929877, "B", "001/001/001", 2) });
+
+            Assert.AreEqual(1, recortes.Count, "solo se quita la falta del producto que sí está");
+            Assert.AreEqual("B", recortes.Single().Pieza.Producto);
+            Assert.AreEqual(1, recortes.Single().Cantidad);
         }
 
         [TestMethod]
