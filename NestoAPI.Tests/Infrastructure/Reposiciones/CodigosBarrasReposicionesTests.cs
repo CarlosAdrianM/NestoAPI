@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -84,6 +84,35 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             // Sin alternativos en la tabla: solo el principal de la ficha
             CollectionAssert.AreEqual(new List<string> { PRINCIPAL_GUANTES }, ok.Content.Lineas[1].CodigosBarras);
             Assert.AreEqual(PRINCIPAL_CERA, ok.Content.Lineas[0].CodigoBarras, "CodigoBarras sigue siendo el principal");
+        }
+
+        /// <summary>Ariadna#90 (Paloma, sugerencia 1008): la línea destacada de Enviar reposición enseña «Familia · Tamaño».</summary>
+        [TestMethod]
+        public async Task GetEnPreparacion_CadaLineaTraeFamiliaYTamanoDeLaFicha()
+        {
+            A.CallTo(() => preparacion.LeerEnPreparacion("1", "ALC")).Returns(Reposicion());
+            IRepositorioFichasProducto repositorioFichas = A.Fake<IRepositorioFichasProducto>();
+            A.CallTo(() => repositorioFichas.LeerFichas("1", A<IReadOnlyCollection<string>>._)).Returns(new List<FichaProductoAlmacen>
+            {
+                new FichaProductoAlmacen { Producto = "22624", Familia = "Eva Visnú", Subgrupo = "Cera", Tamano = 250, UnidadMedida = "ml." }
+            });
+            IPermisoRellenarReposicionManual permiso = A.Fake<IPermisoRellenarReposicionManual>();
+            A.CallTo(() => permiso.Puede(A<IPrincipal>._)).Returns(true);
+            var controlador = new ReposicionesController(null, preparacion, permisoManual: permiso,
+                fichas: new FichasProductoAlmacen(repositorioFichas, codigos: codigos))
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "Paloma"), new Claim(ClaimTypes.Role, "Tiendas") }, "Bearer"))
+            };
+
+            var ok = (OkNegotiatedContentResult<ReposicionEnPreparacionDTO>)await controlador.GetEnPreparacion("ALC");
+
+            Assert.AreEqual("Eva Visnú", ok.Content.Lineas[0].Familia);
+            Assert.AreEqual((short)250, ok.Content.Lineas[0].Tamano);
+            Assert.AreEqual("ml.", ok.Content.Lineas[0].UnidadMedida);
+            Assert.IsNull(ok.Content.Lineas[1].Familia, "el 18004 no tiene ficha: sin familia");
+            CollectionAssert.AreEqual(new List<string> { PRINCIPAL_CERA, ALTERNATIVO_CERA, CAJA_CERA }, ok.Content.Lineas[0].CodigosBarras, "los códigos siguen llegando");
         }
 
         [TestMethod]

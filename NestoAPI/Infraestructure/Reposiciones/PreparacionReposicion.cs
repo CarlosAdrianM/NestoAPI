@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PedidosVenta;
+﻿using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Contadores;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.ExtractosProducto;
@@ -50,12 +50,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
     }
 
     public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto, Models.PreparacionAlmacen.IConProductosMismoHueco,
-        Models.PreparacionAlmacen.IConReferenciaProveedor, Models.PreparacionAlmacen.IConCodigosBarras
+        Models.PreparacionAlmacen.IConFichaProducto, Models.PreparacionAlmacen.IConCodigosBarras
     {
         /// <summary>PreExtrProducto.[Nº Orden]: con él se cambia la cantidad.</summary>
         public int NumeroOrden { get; set; }
         public string Producto { get; set; }
         public string Nombre { get; set; }
+        /// <summary>Ariadna#90 (Paloma, sugerencia 1008): la ficha (familia, subgrupo, tamaño y unidad) para la línea destacada de Enviar reposición. Las rellena FichasProductoAlmacen.Completar.</summary>
+        public string Familia { get; set; }
+        public string Subgrupo { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
         /// <summary>El código principal (el de la ficha, Productos.CodBarras).</summary>
         public string CodigoBarras { get; set; }
         /// <summary>

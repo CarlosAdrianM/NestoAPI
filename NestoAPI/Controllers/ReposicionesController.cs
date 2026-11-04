@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
@@ -97,11 +97,13 @@ namespace NestoAPI.Controllers
         {
             // Ariadna#47: con los demás productos del hueco de cada línea (solo las que salen de un hueco: desde Algete)
             // Ariadna#22 (NestoAPI#605): y todos los códigos de barras de cada producto (una consulta para todas las líneas)
+            // Ariadna#90 (Paloma, 1008): Completar trae la ficha (familia, tamaño, unidad) y, con ella, los códigos, la foto y la
+            // referencia del proveedor (una consulta de cada para todas las líneas), así que sustituye a CompletarFotosYReferencias
+            // y a CompletarCodigos en este camino.
             await Task.WhenAll(
-                CompletarFotosYReferencias(reposicion?.Empresa, reposicion?.Lineas),
                 fichas == null || reposicion?.Lineas == null
                     ? Task.CompletedTask
-                    : fichas.CompletarCodigos(string.IsNullOrWhiteSpace(reposicion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : reposicion.Empresa.Trim(),
+                    : fichas.Completar(string.IsNullOrWhiteSpace(reposicion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : reposicion.Empresa.Trim(),
                         reposicion.Lineas),
                 fichas == null || reposicion?.Lineas == null || string.IsNullOrWhiteSpace(reposicion.Origen)
                     ? Task.CompletedTask
