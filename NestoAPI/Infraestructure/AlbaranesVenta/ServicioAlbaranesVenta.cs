@@ -75,7 +75,19 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
                 dbEsExterno = false;
             }
             this.faltasSinQuitar = faltasSinQuitar ?? new FaltasSinQuitarSalida(db).Leer;
+            GuardiaVendedor = PedidosVenta.VendedorParaFacturar.ConContexto(db);
         }
+
+        /// <summary>
+        /// NestoAPI#813: el vendedor con el que prdCrearAlbaránVta guarda VendedorLinPedidoVta (sustituible en tests).
+        /// </summary>
+        internal PedidosVenta.VendedorParaFacturar GuardiaVendedor { get; set; }
+
+        /// <summary>
+        /// NestoAPI#813 (solo tests): sustituye la llamada a prdCrearAlbaránVta (empresa, pedido, fecha de entrega, usuario → nº de
+        /// albarán). <c>null</c> (siempre en producción) = el SP de verdad.
+        /// </summary>
+        internal Func<string, int, DateTime, string, Task<int>> ProcedimientoCrearAlbaranVta { get; set; }
 
         public async Task<int> CrearAlbaran(string empresa, int pedido, string usuario, DateTime? fechaEntrega = null)
         {
@@ -96,6 +108,10 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
             {
                 throw new NestoBusinessException(retenido) { StatusCode = System.Net.HttpStatusCode.Conflict };
             }
+
+            // NestoAPI#813 (Reina 04/11/26): sin vendedor en la cabecera, prdActualizarComisionesPorGrupoProducto mete NULL en
+            // VendedorLinPedidoVta y el SP revienta. Se le pone el de la ficha del cliente o, si tampoco hay, 400 claro.
+            _ = await GuardiaVendedor.Asegurar(empresa, pedido).ConfigureAwait(false);
 
             // Usar el db de la clase (puede ser externo o interno según el constructor)
             SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
@@ -128,6 +144,10 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
             int resultadoProcedimiento;
             try
             {
+                if (ProcedimientoCrearAlbaranVta != null)
+                {
+                    return await ProcedimientoCrearAlbaranVta(empresa, pedido, (DateTime)fechaEntregaParam.Value, usuario).ConfigureAwait(false);
+                }
                 // Ejecutar el procedimiento almacenado y capturar el valor de retorno
                 var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearAlbaránVta @Empresa, @Pedido, @FechaEntrega, @ImporteMinimo, @Usuario", resultadoParametro, empresaParam, pedidoParam, fechaEntregaParam, importeMinimoParam, usuarioParam);
                 // Obtener el valor de retorno del parámetro
