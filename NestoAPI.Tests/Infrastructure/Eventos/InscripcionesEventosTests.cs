@@ -1247,6 +1247,43 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
+        public async Task LeerInscripcionesEvento_Acotado_TraeVendedoresYSiEsDeMisClientes()
+        {
+            // Nesto#619: un comercial ve TODOS los inscritos (la lista es para todos); EsDeMisClientes marca los suyos.
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Pagada);
+            Inscripcion(2, EVENTO_REINA, "20000", EstadoInscripcionEvento.Pagada);
+            ILectorVendedoresInscripcion lector = LectorDeJesus();
+            A.CallTo(() => lector.VendedoresDeLosClientes("1", A<IEnumerable<KeyValuePair<string, string>>>._))
+                .Returns(Task.FromResult(new Dictionary<string, List<string>>
+                {
+                    ["15191/0"] = new List<string> { "JE" },
+                    ["20000/0"] = new List<string> { "NV" }
+                }));
+
+            List<InscripcionEventoDTO> lista = await ServicioAcotado(lector).LeerInscripcionesEvento(EVENTO_REINA, VENDEDOR);
+
+            Assert.AreEqual(2, lista.Count);
+            Assert.AreEqual(true, lista.Single(i => i.Id == 1).EsDeMisClientes);
+            Assert.AreEqual(false, lista.Single(i => i.Id == 2).EsDeMisClientes);
+            CollectionAssert.AreEqual(new[] { "NV" }, lista.Single(i => i.Id == 2).Vendedores);
+        }
+
+        [TestMethod]
+        public async Task LeerInscripcionesEvento_Acotado_SiFallanLosVendedores_LaListaSaleIgualSinEllos()
+        {
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Pagada);
+            ILectorVendedoresInscripcion lector = LectorDeJesus();
+            A.CallTo(() => lector.VendedoresDeLosClientes(A<string>._, A<IEnumerable<KeyValuePair<string, string>>>._))
+                .ThrowsAsync(new InvalidOperationException("caída"));
+
+            List<InscripcionEventoDTO> lista = await ServicioAcotado(lector).LeerInscripcionesEvento(EVENTO_REINA, VENDEDOR);
+
+            Assert.AreEqual(1, lista.Count);
+            Assert.IsNull(lista[0].EsDeMisClientes);
+            Assert.IsNull(lista[0].Vendedores);
+        }
+
+        [TestMethod]
         public async Task LeerInscripcionesEvento_ClienteDeLaTienda_403()
         {
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().LeerInscripcionesEvento(EVENTO_REINA, ClienteTienda("15191")));

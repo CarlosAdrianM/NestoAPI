@@ -179,6 +179,99 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
+        public async Task Lector_VendedoresDeLosClientes_VariosClientesYContactos_ComoUnoAUno()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            A.CallTo(() => db.Clientes).Returns(Crear(new List<Cliente>
+            {
+                new Cliente { Empresa = "1", Nº_Cliente = "15191", Contacto = "0  ", ClientePrincipal = true, Vendedor = "JE " },
+                new Cliente { Empresa = "1", Nº_Cliente = "15191", Contacto = "1  ", ClientePrincipal = false, Vendedor = "PA " },
+                new Cliente { Empresa = "1", Nº_Cliente = "20000", Contacto = "0  ", ClientePrincipal = true, Vendedor = "NV " }
+            }));
+            A.CallTo(() => db.VendedoresClientesGruposProductos).Returns(Crear(new List<VendedorClienteGrupoProducto>
+            {
+                new VendedorClienteGrupoProducto { Empresa = "1", Cliente = "15191", Contacto = "0  ", GrupoProducto = "PEL", Vendedor = "RV " },
+                new VendedorClienteGrupoProducto { Empresa = "1", Cliente = "20000", Contacto = "0  ", GrupoProducto = "PEL", Vendedor = "AL " }
+            }));
+
+            Dictionary<string, List<string>> vendedores = await new LectorVendedoresInscripcion(db, A.Fake<IServicioVendedores>())
+                .VendedoresDeLosClientes("1", new[]
+                {
+                    new KeyValuePair<string, string>("15191", "1"),
+                    new KeyValuePair<string, string>("15191 ", "0  "),
+                    new KeyValuePair<string, string>("20000", "0"),
+                    new KeyValuePair<string, string>("99999", "0")
+                });
+
+            CollectionAssert.AreEquivalent(new[] { "PA", "RV" }, vendedores["15191/1"], "Estética del contacto y peluquería del principal");
+            CollectionAssert.AreEquivalent(new[] { "JE", "RV" }, vendedores["15191/0"]);
+            CollectionAssert.AreEquivalent(new[] { "NV", "AL" }, vendedores["20000/0"]);
+            Assert.AreEqual(0, vendedores["99999/0"].Count, "Sin ficha: sin vendedores");
+        }
+
+        // ---------------- Nesto#619: «Solo mis clientes» en la lista de inscritos ----------------
+
+        private static ILectorVendedoresInscripcion LectorParaLista(string vendedorUsuario, List<string> equipo)
+        {
+            var lector = A.Fake<ILectorVendedoresInscripcion>();
+            A.CallTo(() => lector.VendedorDelUsuario(A<IPrincipal>._)).Returns(vendedorUsuario);
+            A.CallTo(() => lector.VendedoresDelEquipo(A<string>._, A<string>._)).Returns(Task.FromResult(equipo));
+            A.CallTo(() => lector.VendedoresDeLosClientes(A<string>._, A<IEnumerable<KeyValuePair<string, string>>>._))
+                .Returns(Task.FromResult(new Dictionary<string, List<string>>
+                {
+                    ["15191/0"] = new List<string> { "JE" },
+                    ["20000/0"] = new List<string> { "NV", "PA" },
+                    ["30000/0"] = new List<string> { "RV" }
+                }));
+            return lector;
+        }
+
+        private static List<InscripcionEventoDTO> TresInscritos() => new List<InscripcionEventoDTO>
+        {
+            new InscripcionEventoDTO { Id = 1, Cliente = "15191", Contacto = "0" },
+            new InscripcionEventoDTO { Id = 2, Cliente = "20000", Contacto = "0  " },
+            new InscripcionEventoDTO { Id = 3, Cliente = "30000", Contacto = "0" }
+        };
+
+        [TestMethod]
+        public async Task MarcarMisClientes_Comercial_SoloLosSuyosConSusVendedores()
+        {
+            List<InscripcionEventoDTO> lista = TresInscritos();
+
+            await Autorizador(LectorParaLista("JE", new List<string> { "JE" })).MarcarMisClientes(COMERCIAL, "1", lista);
+
+            Assert.IsTrue(lista[0].EsDeMisClientes.Value);
+            Assert.IsFalse(lista[1].EsDeMisClientes.Value);
+            Assert.IsFalse(lista[2].EsDeMisClientes.Value);
+            CollectionAssert.AreEqual(new[] { "NV", "PA" }, lista[1].Vendedores);
+        }
+
+        [TestMethod]
+        public async Task MarcarMisClientes_JefeDeEquipo_LosDeSuEquipoTambien()
+        {
+            List<InscripcionEventoDTO> lista = TresInscritos();
+
+            await Autorizador(LectorParaLista("JE", new List<string> { "JE", "PA" })).MarcarMisClientes(JEFE, "1", lista);
+
+            Assert.IsTrue(lista[0].EsDeMisClientes.Value);
+            Assert.IsTrue(lista[1].EsDeMisClientes.Value, "PA es de su equipo (peluquería)");
+            Assert.IsFalse(lista[2].EsDeMisClientes.Value);
+        }
+
+        [TestMethod]
+        public async Task MarcarMisClientes_SinVendedor_NingunoEsSuyoPeroTraenSusVendedores()
+        {
+            List<InscripcionEventoDTO> lista = TresInscritos();
+            var lector = LectorParaLista(null, null);
+
+            await Autorizador(lector).MarcarMisClientes(Usuario("NUEVAVISION\\Laura", "Administración"), "1", lista);
+
+            Assert.IsTrue(lista.All(i => i.EsDeMisClientes == false));
+            CollectionAssert.AreEqual(new[] { "RV" }, lista[2].Vendedores);
+            A.CallTo(() => lector.VendedoresDelEquipo(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public void Lector_VendedorDelUsuario_ClaimYSiNoSuParametroSinDominio_NoElDeDefecto()
         {
             NVEntities db = A.Fake<NVEntities>();

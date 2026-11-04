@@ -245,6 +245,19 @@ namespace NestoAPI.Infraestructure.Eventos
         /// La persona que asiste (<see cref="PersonaContacto"/>) es la principal; el resto cuentan como «+N».
         /// </summary>
         public int Asistentes { get; set; } = ReglasAsistentesEvento.POR_DEFECTO;
+        /// <summary>
+        /// Nesto#619: los vendedores del cliente (el de estética del contacto y el de peluquería), como para inscribir
+        /// (NestoAPI#741). Solo en la lista de inscritos del evento (GET api/Eventos/{id}/Inscripciones); null en el resto.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<string> Vendedores { get; set; }
+        /// <summary>
+        /// Nesto#619 (sugerencia 1021 de Sancho): es de los clientes del usuario que pide la lista (su vendedor o, si es jefe de
+        /// equipo, uno de su equipo), para el filtro «Solo mis clientes» de Nesto. Solo en la lista de inscritos del evento;
+        /// null en el resto (o si no se ha podido calcular).
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public bool? EsDeMisClientes { get; set; }
     }
 
     /// <summary>
@@ -1199,7 +1212,33 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 .Where(i => i.EventoId == eventoId).ToListAsync().ConfigureAwait(false);
             List<InscripcionEventoDTO> lista = await Completar(inscripciones, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false);
             await RellenarBaseImponibleDia(lista, evento).ConfigureAwait(false);
+            await MarcarMisClientesSinFallar(lista, evento, usuario).ConfigureAwait(false);
             return lista.OrderBy(i => OrdenEstado(i.Estado)).ThenBy(i => i.Nombre).ThenBy(i => i.Cliente).ToList();
+        }
+
+        /// <summary>
+        /// Nesto#619: los vendedores de cada inscrito y si es de los clientes del usuario (solo en la petición de un usuario,
+        /// con <see cref="AutorizadorInscripcion"/>). Un fallo no rompe la lista: se queda sin ello (null) y va a ELMAH.
+        /// </summary>
+        private async Task MarcarMisClientesSinFallar(List<InscripcionEventoDTO> lista, Evento evento, IPrincipal usuario)
+        {
+            if (AutorizadorInscripcion == null || lista == null || !lista.Any())
+            {
+                return;
+            }
+            try
+            {
+                await AutorizadorInscripcion.MarcarMisClientes(usuario, EmpresaOPorDefecto(evento.Empresa), lista).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                foreach (InscripcionEventoDTO inscripcion in lista)
+                {
+                    inscripcion.Vendedores = null;
+                    inscripcion.EsDeMisClientes = null;
+                }
+                ElmahHelper.Log(new Exception($"[Eventos Nesto#619] No se han podido leer los vendedores de los inscritos del evento {evento.Id}: {ex.Message}", ex));
+            }
         }
 
         /// <summary>
