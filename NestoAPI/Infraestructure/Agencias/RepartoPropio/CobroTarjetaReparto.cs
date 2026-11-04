@@ -168,13 +168,16 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// El efecto (ExtractoCliente pendiente) que liquidaría el reembolso del envío por ese importe: el MISMO que elige el cobro en
         /// efectivo (TramitacionEnviosService.BuscarMovimientoALiquidarAsync). Null si no hay ninguno.
         /// </summary>
-        /// <remarks>NestoAPI#801: se busca en <paramref name="empresa"/> (la del cobro, <see cref="EmpresaDelCobroReparto"/>).</remarks>
+        /// <remarks>
+        /// NestoAPI#801: se busca en <paramref name="empresa"/> (la del cobro). NestoAPI#807: solo si la regla del extracto no ha dado
+        /// ya el movimiento (<see cref="LeerCobroDelEnvio"/>).
+        /// </remarks>
         Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe, string empresa);
         /// <summary>
-        /// NestoAPI#801: la empresa del cobro del reembolso del envío (<see cref="EmpresaDelCobroReparto.DeEnvio"/>: la del PEDIDO, porque
-        /// EnviosAgencia.Empresa es siempre la 1).
+        /// NestoAPI#807: la empresa del cobro del reembolso del envío y la factura que liquida, según el EXTRACTO del cliente
+        /// (<see cref="EmpresaDelCobroReparto.DeEnvio"/>): EnviosAgencia.Empresa es siempre la 1 y un pedido de la 1 puede facturarse en la 3.
         /// </summary>
-        Task<string> LeerEmpresaDelCobro(EnviosAgencia envio);
+        Task<CobroEnvioReparto> LeerCobroDelEnvio(EnviosAgencia envio);
         /// <summary>Una fila en EnviosHistoria (fuera de cualquier transacción).</summary>
         Task AnotarHistoria(EnvioHistoria fila);
     }
@@ -232,8 +235,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return ResultadoReparto<EnlaceTarjetaRepartoDTO>.Mal(TipoResultadoReparto.NoEncontrado, $"No existe el envío {envioId} del reparto propio.");
             }
-            // NestoAPI#801: la empresa del PEDIDO (EnviosAgencia.Empresa es siempre la 1): un pedido de la 3 se cobra en efectivo.
-            string empresa = EmpresaDelCobroReparto.DeEnvio(await repositorio.LeerEmpresaDelCobro(envio).ConfigureAwait(false), envio.Empresa);
+            // NestoAPI#807: la empresa de la factura pendiente del pedido en el EXTRACTO (EnviosAgencia.Empresa es siempre la 1 y un pedido
+            // de la 1 puede facturarse en la 3): con la factura pendiente en la 3 no hay enlace, se cobra siempre en efectivo.
+            CobroEnvioReparto destino = await repositorio.LeerCobroDelEnvio(envio).ConfigureAwait(false);
+            string empresa = string.IsNullOrWhiteSpace(destino?.Empresa) ? EmpresaDelCobroReparto.SinExtracto(null, envio.Empresa) : destino.Empresa.Trim();
             if (!AdmiteTarjeta(empresa))
             {
                 return Invalido(string.Format(MENSAJE_EMPRESA_EFECTIVO, empresa));
@@ -267,7 +272,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             LiquidacionReembolsoTarjeta liquidacion = null;
             return await CrearOReutilizar(previo, importe, async () =>
             {
-                liquidacion = await LiquidacionDelReembolso(envio, importe, empresa).ConfigureAwait(false);
+                liquidacion = await LiquidacionDelReembolso(envio, importe, empresa, destino?.Movimiento).ConfigureAwait(false);
                 return new SolicitudPagoTPV
                 {
                     Empresa = empresa,
@@ -298,8 +303,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// El efecto que liquida el enlace del reembolso: el que elegiría el efectivo (TramitacionEnviosService), solo si su pendiente
         /// es justo el reembolso. Si no hay o no cuadra, el cobro sigue «a cuenta» (como antes): nunca se bloquea por esto.
         /// </summary>
-        private async Task<LiquidacionReembolsoTarjeta> LiquidacionDelReembolso(EnviosAgencia envio, decimal importe, string empresa)
+        private async Task<LiquidacionReembolsoTarjeta> LiquidacionDelReembolso(EnviosAgencia envio, decimal importe, string empresa,
+            ExtractoCliente movimientoDeLaRegla)
         {
+            if (movimientoDeLaRegla != null)
+            {
+                // NestoAPI#807: la factura pendiente del pedido que ya ha dado la regla del extracto (la misma que liquida el efectivo).
+                return EfectoALiquidar(AEfecto(movimientoDeLaRegla), importe);
+            }
             EfectoCobroReparto movimiento;
             try
             {
@@ -313,6 +324,27 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             return EfectoALiquidar(movimiento, importe);
         }
+
+        /// <summary>El efecto de un movimiento del extracto (null si no hay).</summary>
+        internal static EfectoCobroReparto AEfecto(ExtractoCliente movimiento)
+            => movimiento == null ? null : new EfectoCobroReparto
+            {
+                Id = movimiento.Nº_Orden,
+                Empresa = movimiento.Empresa,
+                Cliente = movimiento.Número,
+                Contacto = movimiento.Contacto,
+                TipoApunte = movimiento.TipoApunte,
+                Documento = movimiento.Nº_Documento,
+                Efecto = movimiento.Efecto,
+                Importe = movimiento.Importe,
+                ImportePendiente = movimiento.ImportePdte,
+                Vencimiento = movimiento.FechaVto ?? movimiento.Fecha,
+                Delegacion = movimiento.Delegación,
+                FormaVenta = movimiento.FormaVenta,
+                Ruta = movimiento.Ruta,
+                Vendedor = movimiento.Vendedor,
+                Estado = movimiento.Estado
+            };
 
         /// <summary>
         /// Pura (para los tests): el EfectoAPagar del enlace o, si no se liquida, el motivo. Se liquida solo si el pendiente del efecto
@@ -735,29 +767,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         public Task<List<EfectoCobroReparto>> LeerEfectos(IReadOnlyCollection<int> ids) => new RepositorioCobrosReparto(db).LeerEfectos(ids);
 
-        public Task<string> LeerEmpresaDelCobro(EnviosAgencia envio) => EmpresaDelCobroReparto.DeEnvioAsync(db, envio);
+        public Task<CobroEnvioReparto> LeerCobroDelEnvio(EnviosAgencia envio) => EmpresaDelCobroReparto.DeEnvioAsync(db, envio);
 
         public async Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe, string empresa)
         {
             ExtractoCliente movimiento = await new TramitacionEnviosService(db).BuscarMovimientoALiquidarAsync(envio, importe, empresa).ConfigureAwait(false);
-            return movimiento == null ? null : new EfectoCobroReparto
-            {
-                Id = movimiento.Nº_Orden,
-                Empresa = movimiento.Empresa,
-                Cliente = movimiento.Número,
-                Contacto = movimiento.Contacto,
-                TipoApunte = movimiento.TipoApunte,
-                Documento = movimiento.Nº_Documento,
-                Efecto = movimiento.Efecto,
-                Importe = movimiento.Importe,
-                ImportePendiente = movimiento.ImportePdte,
-                Vencimiento = movimiento.FechaVto ?? movimiento.Fecha,
-                Delegacion = movimiento.Delegación,
-                FormaVenta = movimiento.FormaVenta,
-                Ruta = movimiento.Ruta,
-                Vendedor = movimiento.Vendedor,
-                Estado = movimiento.Estado
-            };
+            return ServicioCobroTarjetaReparto.AEfecto(movimiento);
         }
 
         public async Task AnotarHistoria(EnvioHistoria fila)

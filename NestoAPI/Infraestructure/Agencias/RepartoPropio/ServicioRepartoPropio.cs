@@ -42,6 +42,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <exception cref="ClaveIdempotenciaRepetidaException">Otra petición ya registró esa clave.</exception>
         Task<int> Registrar(PruebaEntregaReparto prueba, byte[] firma, EnviosAgencia envio, IList<EnvioHistoria> historia,
             decimal? importeAContabilizar, string usuario);
+        /// <summary>
+        /// NestoAPI#807: la empresa del cobro de cada envío (y la factura que liquida) según el extracto del cliente
+        /// (<see cref="EmpresaDelCobroReparto.DeEnvio"/>), con unas pocas consultas para toda la lista. Por número de envío.
+        /// </summary>
+        Task<Dictionary<int, CobroEnvioReparto>> LeerCobrosDeEnvios(IReadOnlyCollection<EnviosAgencia> envios);
     }
 
     /// <summary>La clave de idempotencia ya está en la tabla (dos peticiones a la vez con la misma clave).</summary>
@@ -170,6 +175,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .OrderBy(e => e.Fecha).ThenBy(e => e.Numero)
                 .Select(e => ADto(e, new EnvioRepartoDTO()))
                 .ToList();
+            await CompletarEmpresaCobro(lista, envios).ConfigureAwait(false);
             await CompletarNotas(lista).ConfigureAwait(false);
             if (CargaDisponible())
             {
@@ -225,6 +231,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             EnvioRepartoBultoDTO dto = ADto(envio, new EnvioRepartoBultoDTO());
             dto.Bulto = bulto;
+            await CompletarEmpresaCobro(new List<EnvioRepartoDTO> { dto }, new[] { envio }).ConfigureAwait(false);
             await CompletarNotas(new List<EnvioRepartoDTO> { dto }).ConfigureAwait(false);
             if (CargaDisponible())
             {
@@ -427,6 +434,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     return Invalido("No hay importe para el enlace de pago: indique el importe a cobrar.");
                 }
+                // NestoAPI#807: la empresa de la factura pendiente del pedido según el extracto (EnviosAgencia.Empresa es siempre la 1);
+                // si es la 3, no hay enlace: se cobra siempre en efectivo.
+                CobroEnvioReparto destino = await CobroDelEnvio(envio).ConfigureAwait(false);
+                if (!ServicioCobroTarjetaReparto.AdmiteTarjeta(destino.Empresa))
+                {
+                    return Invalido(string.Format(ServicioCobroTarjetaReparto.MENSAJE_EMPRESA_EFECTIVO, destino.Empresa));
+                }
                 // El mismo enlace que manda Nesto desde el pedido («Pago pedido N de Nueva Visión»): el concepto lleva el pedido
                 // (#679, EnlacesPagoPedido). Antes de tocar nada: si falla, el envío sigue como estaba. Un reintento con la misma
                 // clave ya registrada no llega aquí (YaRegistrada devuelve el enlace guardado).
@@ -434,7 +448,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     pago = await pagos().IniciarPago(new SolicitudPagoTPV
                     {
-                        Empresa = envio.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        Empresa = destino.Empresa,
                         Cliente = envio.Cliente?.Trim(),
                         Contacto = envio.Contacto?.Trim(),
                         Importe = importeCobrado.Value,
@@ -702,6 +716,50 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 // El enlace que ya se mandó: un reintento no crea otro.
                 UrlPago = previa.UrlPago
             });
+        }
+
+        /// <summary>NestoAPI#807: la empresa del cobro del envío (y la factura que liquida) según el extracto del cliente.</summary>
+        private async Task<CobroEnvioReparto> CobroDelEnvio(EnviosAgencia envio)
+        {
+            Dictionary<int, CobroEnvioReparto> cobros = await repositorio.LeerCobrosDeEnvios(new[] { envio }).ConfigureAwait(false);
+            return cobros != null && cobros.TryGetValue(envio.Numero, out CobroEnvioReparto cobro) && !string.IsNullOrWhiteSpace(cobro?.Empresa)
+                ? cobro
+                : new CobroEnvioReparto { Empresa = EmpresaDelCobroReparto.SinExtracto(null, envio.Empresa) };
+        }
+
+        /// <summary>
+        /// NestoAPI#807: la empresa del cobro de las paradas con reembolso (de ella sale <c>AdmiteTarjeta</c>: la PDA no ofrece tarjeta
+        /// si la factura pendiente es de la 3), con una sola lectura para toda la lista. Si falla, la lista sale igual (sin ella) y
+        /// el enlace se sigue rechazando al pedirlo.
+        /// </summary>
+        private async Task CompletarEmpresaCobro(List<EnvioRepartoDTO> lista, IEnumerable<EnviosAgencia> envios)
+        {
+            var enLista = new HashSet<int>(lista.Select(p => p.EnvioId));
+            List<EnviosAgencia> conReembolso = (envios ?? Enumerable.Empty<EnviosAgencia>())
+                .Where(e => e != null && e.Reembolso > 0 && enLista.Contains(e.Numero))
+                .ToList();
+            if (conReembolso.Count == 0)
+            {
+                return;
+            }
+            Dictionary<int, CobroEnvioReparto> cobros;
+            try
+            {
+                cobros = await repositorio.LeerCobrosDeEnvios(conReembolso).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto propio #807] No se ha podido leer la empresa del cobro de {conReembolso.Count} paradas: " +
+                    ex.Message, ex));
+                return;
+            }
+            foreach (EnvioRepartoDTO parada in lista)
+            {
+                if (cobros != null && cobros.TryGetValue(parada.EnvioId, out CobroEnvioReparto cobro) && !string.IsNullOrWhiteSpace(cobro?.Empresa))
+                {
+                    parada.EmpresaCobro = cobro.Empresa;
+                }
+            }
         }
 
         /// <summary>«Pago pedido 928000 de Nueva Visión», como el enlace que manda Nesto desde el pedido. Sin pedido, el envío.</summary>

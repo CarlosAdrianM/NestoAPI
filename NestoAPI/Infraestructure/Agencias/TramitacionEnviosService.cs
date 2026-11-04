@@ -317,7 +317,16 @@ namespace NestoAPI.Infraestructure.Agencias
         /// el apunte va a esa empresa y la factura a liquidar se busca en ella. Null = <c>envio.Empresa</c>, como siempre (las agencias
         /// de fuera no cambian).
         /// </summary>
-        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida, string empresa)
+        public Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida, string empresa)
+            => ContabilizarReembolsoAsync(envio, usuario, importe, cuentaContrapartida, empresa, null);
+
+        /// <summary>
+        /// NestoAPI#807: lo mismo liquidando un movimiento ya elegido (<paramref name="movimientoALiquidar"/>: la factura pendiente del
+        /// pedido que da <see cref="RepartoPropio.EmpresaDelCobroReparto"/>, en el reparto propio). Null = se busca como siempre en
+        /// <paramref name="empresa"/>.
+        /// </summary>
+        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe, string cuentaContrapartida, string empresa,
+            ExtractoCliente movimientoALiquidar)
         {
             if (string.IsNullOrWhiteSpace(cuentaContrapartida))
             {
@@ -325,9 +334,10 @@ namespace NestoAPI.Infraestructure.Agencias
             }
 
             string empresaCobro = EmpresaDelCobro(envio, empresa);
-            ExtractoCliente movimientoLiq = importe.HasValue
-                ? await CalcularMovimientoLiqAsync(envio, importe.Value, empresaCobro).ConfigureAwait(false)
-                : await CalcularMovimientoLiqAsync(envio, empresaCobro).ConfigureAwait(false);
+            ExtractoCliente movimientoLiq = movimientoALiquidar
+                ?? (importe.HasValue
+                    ? await CalcularMovimientoLiqAsync(envio, importe.Value, empresaCobro).ConfigureAwait(false)
+                    : await CalcularMovimientoLiqAsync(envio, empresaCobro).ConfigureAwait(false));
             Empresa datosEmpresa = await DatosEmpresaAsync(envio, empresaCobro).ConfigureAwait(false);
             PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario, empresaCobro, datosEmpresa);
             linea.Contrapartida = cuentaContrapartida.Trim();

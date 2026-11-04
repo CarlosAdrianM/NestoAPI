@@ -89,6 +89,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             => (await db.Database.SqlQuery<PruebaEntregaReparto>(
                 $"SELECT TOP 1 {COLUMNAS} FROM dbo.{TABLA} WHERE ClaveIdempotencia = @p0", clave).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
 
+        public Task<Dictionary<int, CobroEnvioReparto>> LeerCobrosDeEnvios(IReadOnlyCollection<EnviosAgencia> envios)
+            => EmpresaDelCobroReparto.DeEnviosAsync(db, envios);
+
         public async Task<PruebaEntregaReparto> LeerUltimaEntrega(int envio)
             => (await db.Database.SqlQuery<PruebaEntregaReparto>(
                 $"SELECT TOP 1 {COLUMNAS} FROM dbo.{TABLA} WHERE EnvioId = @p0 AND Tipo = @p1 ORDER BY Id DESC",
@@ -131,10 +134,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         {
                             throw new NestoBusinessException("No hay caja del repartidor contra la que contabilizar el reembolso.");
                         }
-                        // NestoAPI#801: en la empresa del PEDIDO (EnviosAgencia.Empresa es siempre la 1), liquidando su factura.
-                        string empresaCobro = await EmpresaDelCobroReparto.DeEnvioAsync(db, envio).ConfigureAwait(false);
+                        // NestoAPI#807: en la empresa de la factura pendiente del pedido según el EXTRACTO (EnviosAgencia.Empresa es
+                        // siempre la 1 y un pedido de la 1 puede facturarse en la 3), liquidando esa factura.
+                        CobroEnvioReparto destino = await EmpresaDelCobroReparto.DeEnvioAsync(db, envio).ConfigureAwait(false);
                         asiento = await new TramitacionEnviosService(db)
-                            .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value, prueba.CuentaCaja, empresaCobro)
+                            .ContabilizarReembolsoAsync(envio, usuario, importeAContabilizar.Value, prueba.CuentaCaja, destino.Empresa, destino.Movimiento)
                             .ConfigureAwait(false);
                     }
                     else
