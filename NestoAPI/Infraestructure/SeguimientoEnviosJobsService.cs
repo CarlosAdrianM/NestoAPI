@@ -60,6 +60,7 @@ namespace NestoAPI.Infraestructure
         private readonly Func<EnviosAgencia, Task> _avisarIncidencia;
         private readonly Func<Task<List<int>>> _leerReembolsosPendientesEntregados;
         private readonly Func<int, Task<int>> _contabilizarReembolsoEntregado;
+        private readonly Func<EnviosAgencia, Task> _resolverReenvioEntregado;
 
         /// <summary>
         /// Sugerencia 544: usuario de la historia del envío y de los apuntes cuando el seguimiento quita el
@@ -73,8 +74,10 @@ namespace NestoAPI.Infraestructure
         public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null,
             Action<Exception> avisar = null, Func<DateTime> hoy = null, Func<int, Task> quitarReembolsoDevuelto = null,
             Func<EnviosAgencia, Task> avisarIncidencia = null, Func<Task<List<int>>> leerReembolsosPendientesEntregados = null,
-            Func<int, Task<int>> contabilizarReembolsoEntregado = null)
+            Func<int, Task<int>> contabilizarReembolsoEntregado = null, Func<EnviosAgencia, Task> resolverReenvioEntregado = null)
         {
+            // NestoAPI#699: el envío que se decidió reenviar y la agencia acaba entregando. Null = no se mira.
+            _resolverReenvioEntregado = resolverReenvioEntregado;
             // NestoAPI#742: contabilizar los reembolsos diferidos de los envíos ya entregados. Null = no se contabiliza.
             _leerReembolsosPendientesEntregados = leerReembolsosPendientesEntregados;
             _contabilizarReembolsoEntregado = contabilizarReembolsoEntregado;
@@ -170,6 +173,7 @@ namespace NestoAPI.Infraestructure
                         TimeSpan.FromMinutes(REINTENTO_TRAS_MINUTOS)),
                     quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync,
                     avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
+                    resolverReenvioEntregado: ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync,
                     leerReembolsosPendientesEntregados: LeerReembolsosPendientesEntregadosAsync,
                     contabilizarReembolsoEntregado: ContabilizarReembolsoEntregadoAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE);
@@ -186,6 +190,7 @@ namespace NestoAPI.Infraestructure
             return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
                     quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync,
                     avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync,
+                    resolverReenvioEntregado: ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync,
                     leerReembolsosPendientesEntregados: LeerReembolsosPendientesEntregadosAsync,
                     contabilizarReembolsoEntregado: ContabilizarReembolsoEntregadoAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE, esReintento: true);
@@ -290,6 +295,8 @@ namespace NestoAPI.Infraestructure
             // NestoAPI#666: envíos que esta pasada deja INCIDENTADOS viniendo de otro estado (los que ya lo estaban
             // no cuentan: así no se avisa en cada pasada de la misma incidencia).
             List<EnviosAgencia> nuevasIncidencias = new List<EnviosAgencia>();
+            // NestoAPI#699: envíos que esta pasada deja ENTREGADOS (por si tenían un reenvío que ya no hace falta).
+            List<EnviosAgencia> nuevosEntregados = new List<EnviosAgencia>();
             // NestoAPI#264: Desconocido = la agencia no devolvió datos del envío. Algún suelto es normal
             // (envío recién creado aún no registrado), pero MUCHOS a la vez delatan un problema
             // (rate-limit de GLS por ráfaga, uid mal, WS caído) que antes pasaba desapercibido porque se
@@ -315,6 +322,10 @@ namespace NestoAPI.Infraestructure
                     if (AvisadorIncidenciasEnvio.HayQueAvisar(estadoAnterior, envio))
                     {
                         nuevasIncidencias.Add(envio);
+                    }
+                    if (ReenvioEntregadoPorLaAgencia.PasaAEntregado(estadoAnterior, envio))
+                    {
+                        nuevosEntregados.Add(envio);
                     }
                 }
             }
@@ -404,6 +415,9 @@ namespace NestoAPI.Infraestructure
             // vuelve a ver la transición; una vez guardado como incidentado, ya no vuelve a avisar.
             await AvisarNuevasIncidenciasAsync(nuevasIncidencias).ConfigureAwait(false);
 
+            // NestoAPI#699: también DESPUÉS de guardar (el viejo ya consta entregado).
+            await ResolverReenviosEntregadosAsync(nuevosEntregados).ConfigureAwait(false);
+
             // NestoAPI#264: si una parte grande de los envíos no devuelve estado (Desconocido), casi seguro
             // es un fallo de configuración de seguimiento (uid mal, WS caído), no que todos sean nuevos.
             if (desconocidos >= 10 || (envios.Count > 0 && desconocidos > envios.Count / 2))
@@ -482,6 +496,30 @@ namespace NestoAPI.Infraestructure
                 {
                     _avisar(new Exception(
                         $"No se pudo avisar de la incidencia del envío {envio.Numero} (pedido {envio.Pedido}): {ex.Message}", ex));
+                }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#699: de los envíos que acaban de entregarse, los que tenían decidido un reenvío: se anula si aún no tiene
+        /// etiqueta, o se avisa de que hay dos vivos. Best-effort por envío.
+        /// </summary>
+        private async Task ResolverReenviosEntregadosAsync(List<EnviosAgencia> entregados)
+        {
+            if (_resolverReenvioEntregado == null)
+            {
+                return;
+            }
+            foreach (EnviosAgencia envio in entregados)
+            {
+                try
+                {
+                    await _resolverReenvioEntregado(envio).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _avisar(new Exception(
+                        $"No se pudo resolver el reenvío del envío {envio.Numero} (pedido {envio.Pedido}), entregado: {ex.Message}", ex));
                 }
             }
         }

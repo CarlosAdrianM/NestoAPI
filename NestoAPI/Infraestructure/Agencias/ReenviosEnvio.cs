@@ -19,6 +19,11 @@ namespace NestoAPI.Infraestructure.Agencias
         public const string REENVIAR = "Reenviar";
         /// <summary>El cliente no lo quiere: el almacén lo abona con Copiar factura.</summary>
         public const string ABONAR = "Abonar";
+        /// <summary>
+        /// Se decidió reenviar, pero la agencia acabó entregando el envío original: el reenvío, que aún no tenía etiqueta, se
+        /// ha borrado (su número queda en EnvioAnulado). Lo pone el seguimiento, no una persona.
+        /// </summary>
+        public const string ENTREGADO_POR_LA_AGENCIA = "EntregadoPorLaAgencia";
     }
 
     /// <summary>NestoAPI#699: una fila de EnviosAgenciaReenvios (fuera del EDMX).</summary>
@@ -28,6 +33,8 @@ namespace NestoAPI.Infraestructure.Agencias
         public int EnvioOrigen { get; set; }
         public string Decision { get; set; }
         public int? EnvioNuevo { get; set; }
+        /// <summary>Con <see cref="DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA"/>: el número del reenvío que se borró (sin FK).</summary>
+        public int? EnvioAnulado { get; set; }
         public string Direccion { get; set; }
         public string CodPostal { get; set; }
         public string Poblacion { get; set; }
@@ -38,6 +45,17 @@ namespace NestoAPI.Infraestructure.Agencias
         public bool IncluirPortes { get; set; }
         public string Usuario { get; set; }
         public DateTime Fecha { get; set; }
+    }
+
+    /// <summary>NestoAPI#699: qué pasó al intentar anular el reenvío de un envío que la agencia acabó entregando.</summary>
+    public enum ResultadoAnulacionReenvio
+    {
+        /// <summary>Borrado el envío nuevo y la fila pasada a EntregadoPorLaAgencia, con su historia en el viejo.</summary>
+        Anulado = 0,
+        /// <summary>El envío nuevo ya está tramitado (o ya no existe en curso): no se ha tocado nada.</summary>
+        YaTramitado = 1,
+        /// <summary>La fila ya no es un Reenviar con ese envío nuevo (otra pasada se ha adelantado): nada que hacer.</summary>
+        SinReenvioPendiente = 2
     }
 
     /// <summary>NestoAPI#699: POST api/EnviosAgencias/{id}/Reenviar. Lo que no venga (null) se copia del envío devuelto.</summary>
@@ -72,9 +90,11 @@ namespace NestoAPI.Infraestructure.Agencias
     /// <summary>NestoAPI#699: GET api/EnviosAgencias/Devueltos. El listado de siempre con la decisión.</summary>
     public class EnvioDevueltoDTO : EnvioAgenciaListadoDTO
     {
-        /// <summary><see cref="DecisionesReenvio"/>: SinDecidir, Reenviar o Abonar.</summary>
+        /// <summary><see cref="DecisionesReenvio"/>: SinDecidir, Reenviar, Abonar o EntregadoPorLaAgencia.</summary>
         public string Decision { get; set; }
         public int? EnvioNuevo { get; set; }
+        /// <summary>Con EntregadoPorLaAgencia: el reenvío que se borró porque la agencia acabó entregando el original.</summary>
+        public int? EnvioAnulado { get; set; }
         /// <summary>El estado del envío nuevo (0 en curso, 1 tramitado...).</summary>
         public short? EstadoEnvioNuevo { get; set; }
         /// <summary>El envío nuevo ya está tramitado con la agencia (tiene su etiqueta).</summary>
@@ -95,12 +115,20 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<Dictionary<int, RegistroReenvioEnvio>> LeerAsync(IEnumerable<int> enviosOrigen);
         /// <summary>Inserta la decisión si el envío no tenía ninguna. False si ya la tenía (otra sesión se ha adelantado).</summary>
         Task<bool> InsertarAsync(RegistroReenvioEnvio registro);
+        /// <summary>Los envíos de origen con esa decisión (para enseñar en Devueltos los que la agencia acabó entregando).</summary>
+        Task<List<int>> LeerOrigenesConDecisionAsync(string decision);
+        /// <summary>
+        /// En una transacción: si la fila sigue siendo Reenviar con ese envío nuevo y el envío nuevo sigue sin tramitar
+        /// (Estado &lt; 1), la pasa a EntregadoPorLaAgencia (EnvioAnulado = el nuevo), borra el envío nuevo con su historia y
+        /// deja constancia en la historia del viejo. Si no, no toca nada.
+        /// </summary>
+        Task<ResultadoAnulacionReenvio> AnularPorEntregaAsync(int envioOrigen, int envioNuevo, string usuario, string observaciones);
     }
 
     public class RepositorioReenviosEnvio : IRepositorioReenviosEnvio
     {
         public const string TABLA = "EnviosAgenciaReenvios";
-        private const string COLUMNAS = "Id, EnvioOrigen, Decision, EnvioNuevo, Direccion, CodPostal, Poblacion, Provincia, Telefono, Movil, " +
+        private const string COLUMNAS = "Id, EnvioOrigen, Decision, EnvioNuevo, EnvioAnulado, Direccion, CodPostal, Poblacion, Provincia, Telefono, Movil, " +
             "Observaciones, IncluirPortes, Usuario, Fecha";
 
         private readonly NVEntities db;
@@ -148,6 +176,43 @@ namespace NestoAPI.Infraestructure.Agencias
                 Nulo(r.Telefono, 50), Nulo(r.Movil, 50), Nulo(r.Observaciones, 255), r.IncluirPortes,
                 Nulo(string.IsNullOrWhiteSpace(r.Usuario) ? "NestoAPI" : r.Usuario.Trim(), 50)).ConfigureAwait(false);
             return filas == 1;
+        }
+
+        public async Task<List<int>> LeerOrigenesConDecisionAsync(string decision)
+        {
+            if (string.IsNullOrWhiteSpace(decision) || !TablaDisponible())
+            {
+                return new List<int>();
+            }
+            return await db.Database.SqlQuery<int>($"SELECT EnvioOrigen FROM dbo.{TABLA} WHERE Decision = @p0", decision)
+                .ToListAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>El Campo de la fila de EnviosHistoria que deja la anulación en el envío viejo (ValorAnterior = el reenvío).</summary>
+        public const string CAMPO_HISTORIA = "Reenvio";
+
+        public async Task<ResultadoAnulacionReenvio> AnularPorEntregaAsync(int envioOrigen, int envioNuevo, string usuario, string observaciones)
+        {
+            // Todo o nada, en un solo lote: la FK de EnvioNuevo obliga a soltarlo antes de borrar el envío, y el borrado solo
+            // vale si el envío nuevo sigue sin etiqueta (Estado < 1) en ese momento.
+            string sql =
+                "SET XACT_ABORT ON; BEGIN TRANSACTION; " +
+                $"IF NOT EXISTS (SELECT 1 FROM dbo.{TABLA} WITH (UPDLOCK, HOLDLOCK) WHERE EnvioOrigen = @p0 AND Decision = @p2 AND EnvioNuevo = @p1) " +
+                $"BEGIN ROLLBACK TRANSACTION; SELECT {(int)ResultadoAnulacionReenvio.SinReenvioPendiente}; RETURN; END; " +
+                $"IF NOT EXISTS (SELECT 1 FROM dbo.EnviosAgencia WITH (UPDLOCK, HOLDLOCK) WHERE Numero = @p1 AND Estado < {Constantes.Agencias.ESTADO_TRAMITADO}) " +
+                $"BEGIN ROLLBACK TRANSACTION; SELECT {(int)ResultadoAnulacionReenvio.YaTramitado}; RETURN; END; " +
+                $"UPDATE dbo.{TABLA} SET Decision = @p3, EnvioAnulado = @p1, EnvioNuevo = NULL WHERE EnvioOrigen = @p0; " +
+                "DELETE FROM dbo.EnviosHistoria WHERE NumeroEnvio = @p1; " +
+                "DELETE FROM dbo.EnviosAgencia WHERE Numero = @p1; " +
+                "INSERT INTO dbo.EnviosHistoria (NumeroEnvio, Campo, ValorAnterior, Observaciones, Usuario, FechaModificacion) " +
+                "VALUES (@p0, @p4, @p5, @p6, @p7, GETDATE()); " +
+                "COMMIT TRANSACTION; " +
+                $"SELECT {(int)ResultadoAnulacionReenvio.Anulado};";
+            List<int> resultado = await db.Database.SqlQuery<int>(sql,
+                envioOrigen, envioNuevo, DecisionesReenvio.REENVIAR, DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA,
+                CAMPO_HISTORIA, envioNuevo.ToString(CultureInfo.InvariantCulture), observaciones ?? string.Empty,
+                Nulo(string.IsNullOrWhiteSpace(usuario) ? "NestoAPI" : usuario.Trim(), 50)).ToListAsync().ConfigureAwait(false);
+            return resultado.Any() ? (ResultadoAnulacionReenvio)resultado.First() : ResultadoAnulacionReenvio.SinReenvioPendiente;
         }
 
         private static object Nulo(string texto, int longitud)
@@ -463,6 +528,7 @@ namespace NestoAPI.Infraestructure.Agencias
                 {
                     d.Decision = decision.Decision?.Trim();
                     d.EnvioNuevo = decision.EnvioNuevo;
+                    d.EnvioAnulado = decision.EnvioAnulado;
                     d.PortesIncluidos = decision.IncluirPortes;
                     d.UsuarioDecision = decision.Usuario?.Trim();
                     d.FechaDecision = decision.Fecha;
@@ -637,11 +703,17 @@ namespace NestoAPI.Infraestructure.Agencias
             return ServicioReenviosEnvio.LeerImporteHistoria(filas.FirstOrDefault()?.ValorAnterior);
         }
 
-        public Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde)
-            => EnviosAgenciasController.ProyectarListado(db.EnviosAgencias
+        public async Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde)
+        {
+            // Más los que la agencia acabó entregando tras decidir reenviarlos: ya no están devueltos ni incidentados, pero el
+            // almacén tiene que ver que su reenvío se anuló.
+            List<int> entregados = await Reenvios.LeerOrigenesConDecisionAsync(DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA);
+            return await EnviosAgenciasController.ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Empresa == empresa && e.Fecha >= desde
-                    && (e.Estado == Constantes.Agencias.ESTADO_DEVUELTO || e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO)))
+                    && (e.Estado == Constantes.Agencias.ESTADO_DEVUELTO || e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO
+                        || entregados.Contains(e.Numero))))
                 .ToListAsync();
+        }
 
         public async Task<Dictionary<int, short>> LeerEstadosAsync(IEnumerable<int> envios)
         {

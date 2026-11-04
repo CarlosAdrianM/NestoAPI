@@ -338,6 +338,10 @@ namespace NestoAPI.Controllers
         /// Sustituible en tests (null = no se avisa).</summary>
         internal Func<EnviosAgencia, Task> AvisarIncidencia { get; set; } = AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync;
 
+        /// <summary>NestoAPI#699: el envío que se decidió reenviar y la consulta a demanda ve entregado. Sustituible en tests
+        /// (null = no se mira).</summary>
+        internal Func<EnviosAgencia, Task> ResolverReenvioEntregado { get; set; } = ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync;
+
         // NestoAPI#513: el reembolso de la etiqueta mira los efectos manuales del pedido. Perezoso
         // (ServicioPedidosVenta abre su propia conexión al construirse) e inyectable para los tests.
         private IServicioPedidosVenta servicioPedidosVenta;
@@ -2541,6 +2545,21 @@ namespace NestoAPI.Controllers
                 catch (System.Exception ex)
                 {
                     ElmahHelper.Log(new System.Exception($"No se pudo avisar de la incidencia del envío {envio.Numero}: {ex.Message}", ex),
+                        "Sistema (seguimiento de envíos)");
+                }
+            }
+
+            // NestoAPI#699: si la consulta a demanda es la que ve la entrega de un envío que se decidió reenviar, anula el
+            // reenvío sin etiqueta (o avisa de que hay dos vivos). Nunca lanza.
+            if (ReenvioEntregadoPorLaAgencia.PasaAEntregado(estadoAnterior, envio) && ResolverReenvioEntregado != null)
+            {
+                try
+                {
+                    await ResolverReenvioEntregado(envio);
+                }
+                catch (System.Exception ex)
+                {
+                    ElmahHelper.Log(new System.Exception($"No se pudo resolver el reenvío del envío {envio.Numero}, entregado: {ex.Message}", ex),
                         "Sistema (seguimiento de envíos)");
                 }
             }

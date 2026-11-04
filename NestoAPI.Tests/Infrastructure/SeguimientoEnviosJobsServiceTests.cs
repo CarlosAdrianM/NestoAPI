@@ -311,6 +311,57 @@ namespace NestoAPI.Tests.Infrastructure
             CollectionAssert.AreEqual(new[] { "guardar", "avisar 1 4", "avisar 2 4" }, orden);
         }
 
+        // NestoAPI#699: al pasar a ENTREGADO (de tramitado o de incidentado) se mira si tenía un reenvío decidido, después de
+        // guardar; lo que no pasa a entregado no se mira.
+        [TestMethod]
+        public async Task PasaAEntregado_ResuelveElReenvioDespuesDeGuardar()
+        {
+            EnviosAgencia incidentado = Envio(2, "ALB2", new DateTime(2026, 10, 1));
+            incidentado.Estado = Constantes.Agencias.ESTADO_INCIDENTADO;
+            incidentado.DetalleEstado = "AUSENTE";
+            EnviosEnVuelo(Envio(1, "ALB1", new DateTime(2026, 10, 1)), incidentado, Envio(3, "ALB3", new DateTime(2026, 10, 1)));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB1"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Entregado, FechaEntrega = new DateTime(2026, 10, 2) }));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB2"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Entregado, FechaEntrega = new DateTime(2026, 10, 3) }));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB3"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Incidentado, Detalle = "AUSENTE" }));
+            var orden = new List<string>();
+            A.CallTo(() => _db.SaveChangesAsync()).Invokes(() => orden.Add("guardar")).Returns(Task.FromResult(1));
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: _ => { },
+                resolverReenvioEntregado: envio => { orden.Add($"reenvio {envio.Numero}"); return Task.CompletedTask; });
+
+            _ = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            CollectionAssert.AreEqual(new[] { "guardar", "reenvio 1", "reenvio 2" }, orden);
+        }
+
+        [TestMethod]
+        public async Task PasaAEntregado_SiFallaElReenvio_AvisaYSigueConElResto()
+        {
+            EnviosEnVuelo(Envio(1, "ALB1", new DateTime(2026, 10, 1)), Envio(2, "ALB2", new DateTime(2026, 10, 1)));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync(A<string>._))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Entregado, FechaEntrega = new DateTime(2026, 10, 2) }));
+            var avisos = new List<Exception>();
+            var resueltos = new List<int>();
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: avisos.Add,
+                resolverReenvioEntregado: envio =>
+                {
+                    if (envio.Numero == 1)
+                    {
+                        throw new Exception("BD caída");
+                    }
+                    resueltos.Add(envio.Numero);
+                    return Task.CompletedTask;
+                });
+
+            _ = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            CollectionAssert.AreEqual(new[] { 2 }, resueltos);
+            Assert.AreEqual(1, avisos.Count);
+            StringAssert.Contains(avisos[0].Message, "envío 1");
+        }
+
         [TestMethod]
         public async Task PasaAIncidentado_SegundaPasada_NoVuelveAAvisar()
         {

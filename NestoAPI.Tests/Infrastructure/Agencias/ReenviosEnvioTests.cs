@@ -533,6 +533,182 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             return (avisador, correo, notificaciones);
         }
 
+        // ===== NestoAPI#699: la agencia acaba entregando el envío que se decidió reenviar =====
+
+        private readonly List<(int Origen, int? Nuevo, bool Anulado, RegistroReenvioEnvio Fila)> avisosEntrega =
+            new List<(int, int?, bool, RegistroReenvioEnvio)>();
+
+        private ReenvioEntregadoPorLaAgencia Entrega() => new ReenvioEntregadoPorLaAgencia(datos, (origen, fila, nuevo, anulado) =>
+        {
+            avisosEntrega.Add((origen.Numero, nuevo?.Numero, anulado, fila));
+            return Task.CompletedTask;
+        });
+
+        private EnviosAgencia EntregadoConReenvio(short estadoNuevo, bool portes = false)
+        {
+            EnviosAgencia viejo = Devuelto(estado: Constantes.Agencias.ESTADO_ENTREGADO);
+            datos.Envios[251300] = viejo;
+            datos.Envios[300000] = new EnviosAgencia { Numero = 300000, Estado = estadoNuevo, Pedido = 925137, CodigoBarras = "ETQ300000" };
+            datos.Repo.Filas[251300] = new RegistroReenvioEnvio
+            {
+                EnvioOrigen = 251300,
+                Decision = DecisionesReenvio.REENVIAR,
+                EnvioNuevo = 300000,
+                IncluirPortes = portes,
+                Usuario = "Alfredo",
+                Fecha = HOY
+            };
+            return viejo;
+        }
+
+        [DataTestMethod]
+        [DataRow(Constantes.Agencias.ESTADO_TRAMITADO, Constantes.Agencias.ESTADO_ENTREGADO, true)]
+        [DataRow(Constantes.Agencias.ESTADO_INCIDENTADO, Constantes.Agencias.ESTADO_ENTREGADO, true)]
+        [DataRow(Constantes.Agencias.ESTADO_CERRADO_A_MANO, Constantes.Agencias.ESTADO_ENTREGADO, true)]
+        [DataRow(Constantes.Agencias.ESTADO_ENTREGADO, Constantes.Agencias.ESTADO_ENTREGADO, false)]
+        [DataRow(Constantes.Agencias.ESTADO_DEVUELTO, Constantes.Agencias.ESTADO_ENTREGADO, false)]
+        [DataRow(Constantes.Agencias.ESTADO_INCIDENTADO, Constantes.Agencias.ESTADO_TRAMITADO, false)]
+        public void PasaAEntregado_SoloEnLaTransicionYNoDesdeDevuelto(short anterior, short nuevo, bool esperado)
+        {
+            Assert.AreEqual(esperado, ReenvioEntregadoPorLaAgencia.PasaAEntregado(anterior, new EnviosAgencia { Estado = nuevo }));
+        }
+
+        [DataTestMethod]
+        [DataRow(Constantes.Agencias.ESTADO_EN_CURSO)]
+        [DataRow(Constantes.Agencias.ESTADO_PENDIENTE)]
+        public async Task EntregadoConReenvioSinEtiqueta_BorraElReenvioPasaLaFilaYAvisa(int estadoNuevo)
+        {
+            EnviosAgencia viejo = EntregadoConReenvio((short)estadoNuevo, portes: true);
+
+            ResultadoReenvioEntregado r = await Entrega().ResolverAsync(viejo);
+
+            Assert.AreEqual(ResultadoReenvioEntregado.ReenvioAnulado, r);
+            Assert.IsFalse(datos.Envios.ContainsKey(300000), "El envío nuevo se borra");
+            RegistroReenvioEnvio fila = datos.Repo.Filas[251300];
+            Assert.AreEqual(DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, fila.Decision);
+            Assert.IsNull(fila.EnvioNuevo);
+            Assert.AreEqual(300000, fila.EnvioAnulado);
+            Assert.AreEqual("La agencia acabó entregándolo: se anula el reenvío 300000.", datos.Repo.HistoriaAnulacion);
+            Assert.AreEqual(ReenvioEntregadoPorLaAgencia.USUARIO, datos.Repo.UsuarioAnulacion);
+            var aviso = avisosEntrega.Single();
+            Assert.AreEqual(251300, aviso.Origen);
+            Assert.AreEqual(300000, aviso.Nuevo);
+            Assert.IsTrue(aviso.Anulado);
+            Assert.IsTrue(aviso.Fila.IncluirPortes);
+        }
+
+        [TestMethod]
+        public async Task EntregadoConReenvioYaTramitado_NoTocaNadaYAvisaDeDosEnviosVivos()
+        {
+            EnviosAgencia viejo = EntregadoConReenvio(Constantes.Agencias.ESTADO_TRAMITADO);
+
+            ResultadoReenvioEntregado r = await Entrega().ResolverAsync(viejo);
+
+            Assert.AreEqual(ResultadoReenvioEntregado.DosEnviosVivos, r);
+            Assert.IsTrue(datos.Envios.ContainsKey(300000));
+            Assert.AreEqual(DecisionesReenvio.REENVIAR, datos.Repo.Filas[251300].Decision);
+            Assert.AreEqual(300000, datos.Repo.Filas[251300].EnvioNuevo);
+            Assert.AreEqual(0, datos.Repo.Anulaciones, "Ni se intenta anular");
+            Assert.IsFalse(avisosEntrega.Single().Anulado);
+        }
+
+        [TestMethod]
+        public async Task EntregadoConReenvio_LoTramitanALaVez_NoSeBorraYAvisaDeDosEnviosVivos()
+        {
+            EnviosAgencia viejo = EntregadoConReenvio(Constantes.Agencias.ESTADO_EN_CURSO);
+            datos.Repo.ForzarResultado = ResultadoAnulacionReenvio.YaTramitado;
+
+            ResultadoReenvioEntregado r = await Entrega().ResolverAsync(viejo);
+
+            Assert.AreEqual(ResultadoReenvioEntregado.DosEnviosVivos, r);
+            Assert.IsTrue(datos.Envios.ContainsKey(300000));
+            Assert.IsFalse(avisosEntrega.Single().Anulado);
+        }
+
+        [TestMethod]
+        public async Task EntregadoConReenvio_OtraPasadaSeHaAdelantado_NoAvisaDosVeces()
+        {
+            EnviosAgencia viejo = EntregadoConReenvio(Constantes.Agencias.ESTADO_EN_CURSO);
+            datos.Repo.ForzarResultado = ResultadoAnulacionReenvio.SinReenvioPendiente;
+
+            Assert.AreEqual(ResultadoReenvioEntregado.SinReenvio, await Entrega().ResolverAsync(viejo));
+            Assert.AreEqual(0, avisosEntrega.Count);
+        }
+
+        [TestMethod]
+        public async Task EntregadoSinReenvio_SinDecisionOMarcadoParaAbonarOSinTabla_NoHaceNada()
+        {
+            EnviosAgencia viejo = Devuelto(estado: Constantes.Agencias.ESTADO_ENTREGADO);
+            Assert.AreEqual(ResultadoReenvioEntregado.SinReenvio, await Entrega().ResolverAsync(viejo));
+
+            datos.Repo.Filas[251300] = new RegistroReenvioEnvio { EnvioOrigen = 251300, Decision = DecisionesReenvio.ABONAR };
+            Assert.AreEqual(ResultadoReenvioEntregado.SinReenvio, await Entrega().ResolverAsync(viejo));
+
+            EntregadoConReenvio(Constantes.Agencias.ESTADO_EN_CURSO);
+            datos.Repo.Tabla = false;
+            Assert.AreEqual(ResultadoReenvioEntregado.SinReenvio, await Entrega().ResolverAsync(viejo));
+
+            Assert.AreEqual(0, datos.Repo.Anulaciones);
+            Assert.AreEqual(0, avisosEntrega.Count);
+        }
+
+        [TestMethod]
+        public async Task EntregadoConReenvio_SiFallaElAviso_NoSeCae()
+        {
+            EnviosAgencia viejo = EntregadoConReenvio(Constantes.Agencias.ESTADO_EN_CURSO);
+            var entrega = new ReenvioEntregadoPorLaAgencia(datos, (o, f, n, a) => throw new Exception("SMTP caído"));
+
+            Assert.AreEqual(ResultadoReenvioEntregado.ReenvioAnulado, await entrega.ResolverAsync(viejo));
+        }
+
+        [TestMethod]
+        public void Devueltos_EntregadoPorLaAgencia_SeEnsenaConElReenvioAnulado()
+        {
+            var envios = new List<EnvioAgenciaListadoDTO>
+            {
+                new EnvioAgenciaListadoDTO { Numero = 1, Fecha = new DateTime(2026, 11, 3), Estado = Constantes.Agencias.ESTADO_ENTREGADO, Pedido = 11 }
+            };
+            var decisiones = new Dictionary<int, RegistroReenvioEnvio>
+            {
+                [1] = new RegistroReenvioEnvio { EnvioOrigen = 1, Decision = DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, EnvioAnulado = 300000, Usuario = "Alfredo" }
+            };
+
+            EnvioDevueltoDTO d = ServicioReenviosEnvio.Combinar(envios, decisiones, new Dictionary<int, short>()).Single();
+
+            Assert.AreEqual(DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, d.Decision);
+            Assert.IsNull(d.EnvioNuevo);
+            Assert.AreEqual(300000, d.EnvioAnulado);
+            Assert.IsFalse(d.EnvioNuevoConEtiqueta);
+        }
+
+        [TestMethod]
+        public void ComponerCorreoReenvioEntregado_Anulado_DiceQueNoHayQueMandarNadaYLosPortes()
+        {
+            RegistroReenvioEnvio fila = new RegistroReenvioEnvio { EnvioOrigen = 251300, EnvioNuevo = 300000, IncluirPortes = true, Usuario = "Alfredo", Fecha = HOY };
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreoReenvioEntregado(Devuelto(estado: Constantes.Agencias.ESTADO_ENTREGADO), fila,
+                new EnviosAgencia { Numero = 300000 }, true, Comerciales(), "CTT");
+
+            Assert.AreEqual("La agencia entregó el envío 251300 del pedido 925137 - c/ 15191 - Peluquería Ejemplo: se anula el reenvío 300000", mail.Subject);
+            Assert.AreEqual("santiago@nuevavision.es", mail.To.Single().Address);
+            Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
+            StringAssert.Contains(mail.Body, "se ha anulado");
+            StringAssert.Contains(mail.Body, "portes");
+        }
+
+        [TestMethod]
+        public void ComponerCorreoReenvioEntregado_YaTramitado_AvisaDeDosEnviosVivos()
+        {
+            RegistroReenvioEnvio fila = new RegistroReenvioEnvio { EnvioOrigen = 251300, EnvioNuevo = 300000 };
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreoReenvioEntregado(Devuelto(estado: Constantes.Agencias.ESTADO_ENTREGADO), fila,
+                new EnviosAgencia { Numero = 300000, CodigoBarras = "ETQ300000" }, false, Comerciales(), "CTT");
+
+            StringAssert.Contains(mail.Subject, "ya está tramitado");
+            StringAssert.Contains(mail.Body, "hay dos envíos vivos del mismo pedido");
+            StringAssert.Contains(mail.Body, "ETQ300000");
+            Assert.IsFalse(mail.Body.Contains("portes"));
+            Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
+        }
+
         // ===== Los falsos =====
 
         private sealed class RepoFalso : IRepositorioReenviosEnvio
@@ -548,6 +724,40 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             public Task<Dictionary<int, RegistroReenvioEnvio>> LeerAsync(IEnumerable<int> enviosOrigen)
                 => Task.FromResult(enviosOrigen.Where(Filas.ContainsKey).Distinct().ToDictionary(n => n, n => Filas[n]));
+
+            /// <summary>Los envíos «de la BD» (los de DatosFalsos), para que la anulación borre el nuevo.</summary>
+            public Dictionary<int, EnviosAgencia> Envios { get; set; }
+            public ResultadoAnulacionReenvio? ForzarResultado { get; set; }
+            public int Anulaciones { get; private set; }
+            public string HistoriaAnulacion { get; private set; }
+            public string UsuarioAnulacion { get; private set; }
+
+            public Task<List<int>> LeerOrigenesConDecisionAsync(string decision)
+                => Task.FromResult(Filas.Values.Where(f => f.Decision == decision).Select(f => f.EnvioOrigen).ToList());
+
+            public Task<ResultadoAnulacionReenvio> AnularPorEntregaAsync(int envioOrigen, int envioNuevo, string usuario, string observaciones)
+            {
+                Anulaciones++;
+                if (ForzarResultado.HasValue)
+                {
+                    return Task.FromResult(ForzarResultado.Value);
+                }
+                if (!Filas.TryGetValue(envioOrigen, out RegistroReenvioEnvio f) || f.Decision != DecisionesReenvio.REENVIAR || f.EnvioNuevo != envioNuevo)
+                {
+                    return Task.FromResult(ResultadoAnulacionReenvio.SinReenvioPendiente);
+                }
+                if (!Envios.TryGetValue(envioNuevo, out EnviosAgencia nuevo) || nuevo.Estado >= Constantes.Agencias.ESTADO_TRAMITADO)
+                {
+                    return Task.FromResult(ResultadoAnulacionReenvio.YaTramitado);
+                }
+                f.Decision = DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA;
+                f.EnvioAnulado = envioNuevo;
+                f.EnvioNuevo = null;
+                Envios.Remove(envioNuevo);
+                HistoriaAnulacion = observaciones;
+                UsuarioAnulacion = usuario;
+                return Task.FromResult(ResultadoAnulacionReenvio.Anulado);
+            }
 
             public Task<bool> InsertarAsync(RegistroReenvioEnvio registro)
             {
@@ -568,6 +778,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             public RepoFalso Repo { get; } = new RepoFalso();
             public IRepositorioReenviosEnvio Reenvios => Repo;
             public Dictionary<int, EnviosAgencia> Envios { get; } = new Dictionary<int, EnviosAgencia>();
+
+            public DatosFalsos()
+            {
+                Repo.Envios = Envios;
+            }
             public List<EnviosAgencia> Anadidos { get; } = new List<EnviosAgencia>();
             public List<EnviosAgencia> PortesAnadidos { get; } = new List<EnviosAgencia>();
             public AgenciaTransporte Agencia { get; set; }

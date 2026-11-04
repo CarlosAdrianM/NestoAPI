@@ -135,6 +135,74 @@ namespace NestoAPI.Infraestructure.Agencias
             }
         }
 
+        /// <summary>
+        /// NestoAPI#699: la agencia ha entregado un envío que se había decidido volver a enviar. Correo a los comerciales del
+        /// pedido con copia a Logística (los mismos destinatarios que la devolución): si el reenvío se ha anulado, para que lo
+        /// sepan; si ya estaba tramitado, para que lo resuelvan a mano. Nunca lanza.
+        /// </summary>
+        public Task AvisarReenvioEntregadoAsync(EnviosAgencia origen, RegistroReenvioEnvio fila, EnviosAgencia nuevo, bool anulado)
+        {
+            try
+            {
+                ComercialesPedido comerciales = LeerComerciales(origen);
+                string agencia = db.AgenciasTransportes
+                    .Where(a => a.Numero == origen.Agencia)
+                    .Select(a => a.Nombre).FirstOrDefault()?.Trim();
+                _ = servicioCorreo.EnviarCorreoSMTP(ComponerCorreoReenvioEntregado(origen, fila, nuevo, anulado, comerciales, agencia));
+            }
+            catch (Exception ex)
+            {
+                Registrar(origen, ex);
+            }
+            return Task.CompletedTask;
+        }
+
+        /// <summary>NestoAPI#699: el correo de <see cref="AvisarReenvioEntregadoAsync"/>.</summary>
+        internal static MailMessage ComponerCorreoReenvioEntregado(EnviosAgencia origen, RegistroReenvioEnvio fila, EnviosAgencia nuevo,
+            bool anulado, ComercialesPedido comerciales, string agencia)
+        {
+            string cliente = TextoCliente(origen, comerciales);
+            string pedido = origen.Pedido.HasValue ? $" del pedido {origen.Pedido}" : string.Empty;
+            int numeroNuevo = nuevo?.Numero ?? fila?.EnvioNuevo ?? 0;
+            string nombreAgencia = agencia ?? origen.Agencia.ToString();
+            string entregado =
+                $"<p>La agencia <b>{Html(nombreAgencia)}</b> ha <b>entregado</b> el envío <b>{origen.Numero}</b>{Html(pedido)} de " +
+                $"<b>{Html(cliente)}</b> (número de seguimiento {Html(origen.CodigoBarras?.Trim())}). Tenía una incidencia y se había " +
+                $"decidido volver a enviarlo en el envío <b>{numeroNuevo}</b>" +
+                (string.IsNullOrWhiteSpace(fila?.Usuario) ? string.Empty : $" ({Html(fila.Usuario.Trim())}, {fila.Fecha:dd/MM/yyyy})") + ".</p>";
+            string cuerpo;
+            string asunto;
+            if (anulado)
+            {
+                asunto = $"La agencia entregó el envío {origen.Numero}{pedido} - c/ {cliente}: se anula el reenvío {numeroNuevo}";
+                cuerpo = entregado +
+                    $"<p>Como el reenvío {numeroNuevo} aún no tenía etiqueta, <b>se ha anulado</b>: no hay que mandar nada más. " +
+                    "Si la caja ya estaba preparada para salir otra vez, no le pegue la etiqueta y devuelva la mercancía a su ubicación.</p>" +
+                    (fila?.IncluirPortes == true
+                        ? $"<p>El reenvío añadió una línea de portes al pedido{Html(pedido)}: quítela si no se debe cobrar.</p>"
+                        : string.Empty);
+            }
+            else
+            {
+                asunto = $"La agencia entregó el envío {origen.Numero}{pedido} - c/ {cliente}, pero el reenvío {numeroNuevo} ya está tramitado: hay dos envíos";
+                cuerpo = entregado +
+                    $"<p>El reenvío <b>{numeroNuevo}</b> ya tiene etiqueta" +
+                    (string.IsNullOrWhiteSpace(nuevo?.CodigoBarras) ? string.Empty : $" ({Html(nuevo.CodigoBarras.Trim())})") +
+                    ", así que <b>hay dos envíos vivos del mismo pedido</b> y no se ha tocado nada. Resuélvalo a mano: si el reenvío " +
+                    "aún no ha salido, anúlelo en la agencia y en Nesto › Agencias; si ya ha salido, hable con el cliente y con la " +
+                    "agencia para que lo devuelvan.</p>";
+            }
+            var mail = new MailMessage
+            {
+                From = new MailAddress(CORREO_REMITENTE),
+                Subject = asunto,
+                IsBodyHtml = true,
+                Body = cuerpo
+            };
+            AnadirDestinatarios(mail, origen, comerciales);
+            return mail;
+        }
+
         private async Task<bool> YaDecididoSinFallar(int envio)
         {
             try
