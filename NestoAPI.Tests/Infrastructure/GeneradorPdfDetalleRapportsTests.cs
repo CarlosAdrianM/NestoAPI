@@ -27,6 +27,18 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GenerarPdf_UnMesEntero_NoCortaALas250Paginas_Novedad1022()
+        {
+            // Manuel (04/11/26): el detalle de octubre (4.213 rapports) daba InternalServerError porque QuestPDF corta por
+            // defecto en 250 páginas. Con usar el generador, el límite global queda en PAGINAS_MAXIMAS.
+            _ = new GeneradorPdfDetalleRapports();
+
+            Assert.IsTrue(QuestPDF.Settings.DocumentLayoutExceptionThreshold >= GeneradorPdfDetalleRapports.PAGINAS_MAXIMAS,
+                $"QuestPDF sigue cortando en {QuestPDF.Settings.DocumentLayoutExceptionThreshold} páginas");
+            Assert.IsTrue(GeneradorPdfDetalleRapports.PAGINAS_MAXIMAS > 250);
+        }
+
+        [TestMethod]
         public void GenerarPdf_ConVariosUsuarios_DevuelvePdfValido()
         {
             var rapports = new List<DetalleRapportsDTO>

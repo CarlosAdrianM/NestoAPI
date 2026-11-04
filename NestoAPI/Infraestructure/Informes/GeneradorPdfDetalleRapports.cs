@@ -23,6 +23,22 @@ namespace NestoAPI.Infraestructure.Informes
     {
         private static readonly CultureInfo Cultura = CultureInfo.GetCultureInfo("es-ES");
 
+        /// <summary>
+        /// Novedades 1022 (Manuel, 04/11/26): el detalle de un mes entero (octubre: 4.213 rapports de 14 vendedores) pasa de las
+        /// 250 páginas con las que QuestPDF corta por defecto («Composed layout generates infinite document») y el informe daba
+        /// InternalServerError. Es un ajuste GLOBAL de QuestPDF (vale para todos los PDF del servidor): con esto deja de cortar
+        /// hasta las <see cref="PAGINAS_MAXIMAS"/>; un documento mal compuesto (caso 2 del aviso) se seguiría detectando ahí.
+        /// </summary>
+        public const int PAGINAS_MAXIMAS = 5000;
+
+        static GeneradorPdfDetalleRapports()
+        {
+            if (QuestPDF.Settings.DocumentLayoutExceptionThreshold < PAGINAS_MAXIMAS)
+            {
+                QuestPDF.Settings.DocumentLayoutExceptionThreshold = PAGINAS_MAXIMAS;
+            }
+        }
+
         public ByteArrayContent GenerarPdf(DateTime fechaDesde, DateTime fechaHasta, IList<DetalleRapportsDTO> rapports)
         {
             List<DetalleRapportsDTO> datos = rapports?.ToList() ?? new List<DetalleRapportsDTO>();
