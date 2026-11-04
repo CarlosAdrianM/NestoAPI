@@ -31,5 +31,12 @@ namespace NestoAPI.Models.Facturas
         /// el cliente debe mostrarlos a quien factura.
         /// </summary>
         public List<string> Avisos { get; set; } = new List<string>();
+
+        /// <summary>
+        /// NestoAPI#806: la factura en papel («Factura física»… en los comentarios o en el de picking), con la misma regla que
+        /// Facturar rutas (copias y bandeja). Solo la rellena «Crear factura» del detalle del pedido (api/Facturas/CrearFactura);
+        /// null = no lleva papel. Con el interruptor Facturacion:ImprimirDocumentosEnServidor ya va impresa (ImpresoEnServidor).
+        /// </summary>
+        public DocumentoParaImprimir DatosImpresion { get; set; }
     }
 }

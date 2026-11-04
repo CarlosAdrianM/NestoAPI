@@ -69,50 +69,7 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Detecta en un texto las frases que piden imprimir el documento (ver la sobrecarga del pedido).
         /// </summary>
-        public bool DebeImprimirDocumento(string comentarios)
-        {
-            if (string.IsNullOrWhiteSpace(comentarios))
-            {
-                return false;
-            }
-
-            // Normalizar: quitar tildes y convertir a minúsculas
-            string comentariosNormalizados = RemoverTildes(comentarios.ToLower());
-
-            // Lista de frases que indican que se debe imprimir
-            var frasesImpresion = new[]
-            {
-                "factura fisica",
-                "factura en papel",
-                "albaran fisico"
-            };
-
-            return frasesImpresion.Any(frase => comentariosNormalizados.Contains(frase));
-        }
-
-        /// <summary>
-        /// Remueve tildes de un texto para normalización.
-        /// </summary>
-        private string RemoverTildes(string texto)
-        {
-            if (string.IsNullOrEmpty(texto))
-            {
-                return texto;
-            }
-
-            var normalized = texto.Normalize(NormalizationForm.FormD);
-            var sb = new StringBuilder();
-
-            foreach (char c in normalized)
-            {
-                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-                {
-                    _ = sb.Append(c);
-                }
-            }
-
-            return sb.ToString().Normalize(NormalizationForm.FormC);
-        }
+        public bool DebeImprimirDocumento(string comentarios) => ReglaImpresionDocumentos.DebeImprimir(comentarios); // NestoAPI#806: la regla vive en ReglaImpresionDocumentos
 
         private IServicioParadasNotaEntrega paradasNotaEntrega;
         private IServicioEtiquetasRecogida etiquetasRecogida;
@@ -138,6 +95,9 @@ namespace NestoAPI.Infraestructure.Facturas
             get => documentoNotaEntrega ?? (documentoNotaEntrega = new ServicioDocumentoNotaEntrega(db, gestorFacturas));
             set => documentoNotaEntrega = value;
         }
+
+        /// <summary>NestoAPI#806: imprime en el servidor los documentos en papel (sustituible en los tests).</summary>
+        internal IImpresionDocumentosServidor ImpresionDocumentos { get; set; } = new ImpresionDocumentosServidor();
 
         /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. (sustituible en los tests). Solo se consulta sin P.O.</summary>
         internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
@@ -338,6 +298,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
             }
             System.Diagnostics.Debug.WriteLine($"Tiempo total: {response.TiempoTotal.TotalSeconds:F2} segundos");
+
+            // NestoAPI#806: con Facturacion:ImprimirDocumentosEnServidor, los DatosImpresion salen ya por la impresora del usuario.
+            ImpresionDocumentos.Imprimir(response, usuario);
 
             return response;
         }
