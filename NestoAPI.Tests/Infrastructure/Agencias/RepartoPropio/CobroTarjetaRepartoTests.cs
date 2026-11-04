@@ -100,6 +100,35 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
+        public async Task EnlaceEnvio_EnvioDeLa1ConPedidoDeLa3_SinTarjeta_400_YNoSeCreaEnlace()
+        {
+            // NestoAPI#801: EnviosAgencia.Empresa es siempre «1»; manda la empresa del PEDIDO (la 3 se cobra siempre en efectivo)
+            EnvioConReembolso("1  ");
+            tarjetas.EmpresaDelPedido = "3  ";
+
+            var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, resultado.Tipo);
+            StringAssert.Contains(resultado.Mensaje, "empresa 3");
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual(0, tarjetas.BusquedasEfectoDelReembolso);
+        }
+
+        [TestMethod]
+        public async Task EnlaceEnvio_PedidoDeLa1_BuscaLaFacturaEnLaEmpresaDelPedido()
+        {
+            EnvioConReembolso("1  ");
+            tarjetas.EmpresaDelPedido = "1  ";
+            tarjetas.EfectoDelReembolso = FacturaPendiente();
+
+            var resultado = await servicioTarjeta.EnlaceEnvio(251300, null, USUARIO, "PDA1");
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual("1", tarjetas.EmpresaBusquedaEfecto);
+            Assert.AreEqual("1", solicitud.Empresa);
+        }
+
+        [TestMethod]
         public async Task EnlaceEnvio_CreaElEnlaceDelReembolso_ConWhatsAppDeUsted_YLoGuarda()
         {
             EnvioConReembolso();
@@ -725,9 +754,15 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public bool FallaEfectoDelReembolso;
             public int BusquedasEfectoDelReembolso;
             public readonly List<EnvioHistoria> Historia = new List<EnvioHistoria>();
-            public Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe)
+            /// <summary>NestoAPI#801: la empresa del pedido del envío (null = no existe: la del envío).</summary>
+            public string EmpresaDelPedido;
+            /// <summary>La empresa con la que se buscó el efecto la última vez.</summary>
+            public string EmpresaBusquedaEfecto;
+            public Task<string> LeerEmpresaDelCobro(EnviosAgencia envio) => Task.FromResult(EmpresaDelCobroReparto.DeEnvio(EmpresaDelPedido, envio.Empresa));
+            public Task<EfectoCobroReparto> LeerEfectoDelReembolso(EnviosAgencia envio, decimal importe, string empresa)
             {
                 BusquedasEfectoDelReembolso++;
+                EmpresaBusquedaEfecto = empresa;
                 if (FallaEfectoDelReembolso)
                 {
                     throw new InvalidOperationException("Sin conexión");

@@ -181,6 +181,62 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(60m, Caja(registradas, "3").Debe);
         }
 
+        // ================================================================ NestoAPI#801: a qué empresa va lo «a cuenta»
+
+        private PreContabilidad ACuenta() => registradas.Single(l => l.Nº_Documento == "A CUENTA" && l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE);
+
+        [TestMethod]
+        public async Task Cobrar_EfectosMarcadosDeLa3ConSobrante_LoACuentaVaALa3YASuCaja()
+        {
+            Efecto(1, 50m, empresa: "3  ");
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await servicio.Cobrar(Peticion(70m, 1), MIGUEL);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(20m, r.Contenido.ImporteACuenta);
+            Assert.AreEqual("3", ACuenta().Empresa);
+            Assert.AreEqual(70m, Caja(registradas, "3").Debe, "Lo a cuenta entra en la contrapartida de la caja de la 3");
+            Assert.IsFalse(registradas.Any(l => l.Empresa.Trim() == "1"), "Nada en la empresa 1");
+            A.CallTo(() => repositorio.LeerEmpresaUltimaPendiente(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Cobrar_SinMarcarYUltimaPendienteEnLa3_TodoACuentaEnLa3()
+        {
+            A.CallTo(() => repositorio.LeerEmpresaUltimaPendiente("15191")).Returns(Task.FromResult("3  "));
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await servicio.Cobrar(Peticion(150m), MIGUEL);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual("3", ACuenta().Empresa);
+            Assert.AreEqual(150m, Caja(registradas, "3").Debe);
+            Assert.AreEqual(2, registradas.Count);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_SinMarcarYSinNadaPendiente_ACuentaEnLa1()
+        {
+            A.CallTo(() => repositorio.LeerEmpresaUltimaPendiente("15191")).Returns(Task.FromResult<string>(null));
+
+            await servicio.Cobrar(Peticion(25m), MIGUEL);
+
+            Assert.AreEqual("1", ACuenta().Empresa);
+            Assert.AreEqual(25m, Caja(registradas, "1").Debe);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_EfectosMarcadosDeDosEmpresasConSobrante_LoACuentaALa1()
+        {
+            Efecto(1, 40m, empresa: "1  ");
+            Efecto(2, 60m, empresa: "3  ");
+
+            await servicio.Cobrar(Peticion(110m, 1, 2), MIGUEL);
+
+            Assert.AreEqual("1", ACuenta().Empresa);
+            Assert.AreEqual(50m, Caja(registradas, "1").Debe);
+            Assert.AreEqual(60m, Caja(registradas, "3").Debe);
+        }
+
         [TestMethod]
         public async Task Cobrar_Impagado_ElConceptoLoDice()
         {

@@ -135,14 +135,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// <summary>
     /// Los apuntes del cobro, la MISMA regla que <c>CajasViewModel.ContabilizarCobro</c> de Nesto (Modulos/Cajas), con efectivo
     /// contra la caja del usuario: un pago por efecto (con Liquidado) repartiendo el importe (los abonos primero: suman a lo que hay
-    /// que repartir), lo que sobra «a cuenta» (empresa 1) y una contrapartida a la caja por empresa con lo cobrado en ella.
+    /// que repartir), lo que sobra «a cuenta» (en <c>empresaACuenta</c>, NestoAPI#801; sin ella, la 1) y una contrapartida a la caja
+    /// por empresa con lo cobrado en ella.
     /// </summary>
     public static class ConstructorApuntesCobroDeuda
     {
         internal const string DOCUMENTO_A_CUENTA = "A CUENTA";
 
         public static ApuntesCobroDeuda Construir(string cliente, string contacto, IList<EfectoCobroReparto> efectos, decimal importe,
-            DateTime fecha, CajaUsuarioCobro caja, string usuario, DateTime ahora)
+            DateTime fecha, CajaUsuarioCobro caja, string usuario, DateTime ahora, string empresaACuenta = null)
         {
             var resultado = new ApuntesCobroDeuda();
             List<EfectoCobroReparto> deudas = (efectos ?? new List<EfectoCobroReparto>()).ToList();
@@ -205,7 +206,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 resultado.Lineas.Add(new PreContabilidad
                 {
-                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    // NestoAPI#801: recortada, para que entre en la contrapartida a la caja de SU empresa (se agrupa por Empresa)
+                    Empresa = string.IsNullOrWhiteSpace(empresaACuenta) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresaACuenta.Trim(),
                     TipoApunte = Constantes.ExtractosCliente.TiposApunte.PAGO,
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
                     Nº_Cuenta = cliente,
@@ -296,6 +298,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         Task<ResultadoCobroDeudaDTO> LeerPorClave(Guid clave);
         /// <summary>Esos efectos de ExtractoCliente (los que no existen no vienen).</summary>
         Task<List<EfectoCobroReparto>> LeerEfectos(IReadOnlyCollection<int> ids);
+        /// <summary>
+        /// NestoAPI#801: la empresa de la última factura pendiente del cliente (ExtractoCliente con ImportePdte distinto de 0, la más
+        /// reciente por Fecha y Nº Orden), o null si no tiene nada pendiente. Para lo «a cuenta» de un cobro sin efectos marcados.
+        /// </summary>
+        Task<string> LeerEmpresaUltimaPendiente(string cliente);
         /// <summary>
         /// En UNA transacción: las líneas a PreContabilidad, el diario contabilizado (prdContabilizar, por empresa) y la marca de la
         /// clave. Devuelve el asiento (el de la empresa 1 si hay varias).
@@ -398,7 +405,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             DateTime hoy = ahora();
             DateTime fecha = (peticion.FechaHora.HasValue && peticion.FechaHora.Value.Date <= hoy.Date ? peticion.FechaHora.Value : hoy).Date;
 
-            ApuntesCobroDeuda apuntes = ConstructorApuntesCobroDeuda.Construir(cliente, contacto, pendientes, importe, fecha, caja, usuario, hoy);
+            // NestoAPI#801 (Carlos 04/11/26): lo «a cuenta», a la empresa de los efectos marcados (si son de una sola); sin marcar, a la
+            // de la última factura pendiente del cliente; sin nada, a la 1.
+            string empresaUltimaPendiente = leidos.Count == 0
+                ? await repositorio.LeerEmpresaUltimaPendiente(cliente).ConfigureAwait(false)
+                : null;
+            string empresaACuenta = EmpresaDelCobroReparto.DeACuenta(leidos.Select(e => e.Empresa), empresaUltimaPendiente);
+            ApuntesCobroDeuda apuntes = ConstructorApuntesCobroDeuda.Construir(cliente, contacto, pendientes, importe, fecha, caja, usuario, hoy,
+                empresaACuenta);
             var resultado = new ResultadoCobroDeudaDTO
             {
                 Importe = importe,
@@ -507,6 +521,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     Estado = e.Estado
                 })
                 .ToListAsync();
+        }
+
+        public async Task<string> LeerEmpresaUltimaPendiente(string cliente)
+        {
+            string empresa = (await db.ExtractosCliente
+                .Where(e => e.Número == cliente && e.ImportePdte != 0)
+                .OrderByDescending(e => e.Fecha)
+                .ThenByDescending(e => e.Nº_Orden)
+                .Select(e => e.Empresa)
+                .Take(1)
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            return string.IsNullOrWhiteSpace(empresa) ? null : empresa.Trim();
         }
 
         /// <summary>El JSON de <c>Modificaciones.Nuevo</c>: el resultado con la auditoría si llega (y siempre el usuario).</summary>
