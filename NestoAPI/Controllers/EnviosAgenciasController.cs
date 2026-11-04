@@ -371,7 +371,7 @@ namespace NestoAPI.Controllers
         // para que la migración por pestañas sea un cambio de origen de datos sin cambio de
         // comportamiento. La proyección aplana el nombre de la agencia (sin Include ni entidades).
 
-        private static IQueryable<EnvioAgenciaListadoDTO> ProyectarListado(IQueryable<EnviosAgencia> envios)
+        internal static IQueryable<EnvioAgenciaListadoDTO> ProyectarListado(IQueryable<EnviosAgencia> envios)
         {
             return envios.Select(e => new EnvioAgenciaListadoDTO
             {
@@ -2399,6 +2399,85 @@ namespace NestoAPI.Controllers
             });
         }
 
+        // ========== NestoAPI#699 (corte 2): «Volver a enviar» un envío devuelto o incidentado ==========
+
+        private IServicioReenviosEnvio servicioReenvios;
+
+        /// <summary>NestoAPI#699: el servicio de reenvíos (perezoso e inyectable para los tests).</summary>
+        internal IServicioReenviosEnvio ServicioReenvios
+        {
+            get => servicioReenvios ?? (servicioReenvios = new ServicioReenviosEnvio(new DatosReenviosEnvioEF(db), PlazasAgencias));
+            set => servicioReenvios = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#699: los envíos DEVUELTOS (4) e INCIDENTADOS (3) de los últimos 60 días con la decisión de cada uno:
+        /// SinDecidir (primero), Reenviar (con el envío nuevo y si ya tiene etiqueta) o Abonar. Pestaña Devueltos de Agencias.
+        /// 400 si falta el script de la tabla.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Devueltos")]
+        [ResponseType(typeof(List<EnvioDevueltoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosDevueltos(string empresa)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                return BadRequest("Indique la empresa.");
+            }
+            List<EnvioDevueltoDTO> envios = await ServicioReenvios.LeerDevueltosAsync(empresa);
+            if (envios == null)
+            {
+                return BadRequest(ServicioReenviosEnvio.MENSAJE_SIN_TABLA);
+            }
+            return Ok(envios);
+        }
+
+        /// <summary>
+        /// NestoAPI#699: el cliente sigue queriendo el pedido de un envío devuelto o incidentado. Crea un envío NUEVO del mismo
+        /// pedido (clon del devuelto, con la dirección y los teléfonos corregidos si vienen), en curso y sin etiqueta: se tramita
+        /// e imprime como cualquier otro. Sin abono, sin stock, sin picking y sin factura. <c>IncluirPortes</c> añade al pedido una
+        /// línea de portes (por defecto no: «nos los comemos»). 409 si ya tiene decisión, si está entregado o si no está devuelto
+        /// ni incidentado; 400 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/Reenviar")]
+        [ResponseType(typeof(DecisionReenvioDTO))]
+        public async Task<IHttpActionResult> Reenviar(int id, ReenviarEnvioDTO datos)
+        {
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            return RespuestaReenvio(await ServicioReenvios.ReenviarAsync(id, datos, usuario));
+        }
+
+        /// <summary>
+        /// NestoAPI#699: el cliente NO quiere el pedido de un envío devuelto o incidentado. Solo deja la decisión: el abono lo hace
+        /// el almacén con Copiar factura, como siempre. Mismos 409 y 400 que Reenviar.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/Abonar")]
+        [ResponseType(typeof(DecisionReenvioDTO))]
+        public async Task<IHttpActionResult> Abonar(int id)
+        {
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            return RespuestaReenvio(await ServicioReenvios.AbonarAsync(id, usuario));
+        }
+
+        private IHttpActionResult RespuestaReenvio(ResultadoReenvio resultado)
+        {
+            switch (resultado.Tipo)
+            {
+                case TipoResultadoReenvio.Correcto:
+                    return Ok(resultado.Decision);
+                case TipoResultadoReenvio.NoEncontrado:
+                    return NotFound();
+                case TipoResultadoReenvio.Conflicto:
+                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                default:
+                    return BadRequest(resultado.Mensaje);
+            }
+        }
+
         // POST: api/EnviosAgencias/5/ActualizarSeguimiento
         // Actualiza el estado de UN envío a demanda (sin esperar al job de Hangfire que corre cada 2h):
         // consulta el seguimiento de su agencia por el albarán y persiste Estado/FechaEntrega. Reutiliza
@@ -2452,7 +2531,8 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#666: si la consulta a demanda es la que descubre la incidencia, avisa ella (el job ya lo verá
             // incidentado y no avisará). Nunca lanza.
-            if (AvisadorIncidenciasEnvio.PasaAIncidencia(estadoAnterior, envio) && AvisarIncidencia != null)
+            // NestoAPI#699: también al pasar a DEVUELTO (se pregunta al vendedor si el cliente lo sigue queriendo).
+            if (AvisadorIncidenciasEnvio.HayQueAvisar(estadoAnterior, envio) && AvisarIncidencia != null)
             {
                 try
                 {

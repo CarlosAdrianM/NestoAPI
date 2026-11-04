@@ -311,7 +311,8 @@ namespace NestoAPI.Infraestructure
                     {
                         devueltosConReembolso.Add(envio);
                     }
-                    if (AvisadorIncidenciasEnvio.PasaAIncidencia(estadoAnterior, envio))
+                    // NestoAPI#699: también al pasar a DEVUELTO (¿lo sigue queriendo el cliente?).
+                    if (AvisadorIncidenciasEnvio.HayQueAvisar(estadoAnterior, envio))
                     {
                         nuevasIncidencias.Add(envio);
                     }
