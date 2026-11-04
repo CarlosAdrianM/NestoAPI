@@ -890,6 +890,7 @@
     <Compile Include="Infrastructure\CosteSugerenciasOfertasTests.cs" />
     <Compile Include="Infrastructure\ProteccionesSugerenciasTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceTests.cs" />
+    <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceCobroMixtoTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PrestashopProductosSyncHandlerTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\ProductosSyncHandlerCodigoBarrasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\FormateadorNombreTiendaTests.cs" />

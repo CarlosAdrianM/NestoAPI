@@ -566,18 +566,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     }
 
                     _ = await contabilidad.CrearLineas(db, lineas).ConfigureAwait(false);
-                    int asiento = 0;
-                    foreach (string empresa in lineas.Select(l => l.Empresa).Distinct())
+                    // Nesto#561: el mismo núcleo que el cobro de la caja (un prdContabilizar por empresa)
+                    int asiento = await ContabilidadService.ContabilizarPorEmpresaYDiario(lineas,
+                        (empresa, diario) => contabilidad.ContabilizarDiario(db, empresa, diario, usuario)).ConfigureAwait(false);
+                    if (asiento <= 0)
                     {
-                        int asientoEmpresa = await contabilidad.ContabilizarDiario(db, empresa, lineas[0].Diario, usuario).ConfigureAwait(false);
-                        if (asientoEmpresa <= 0)
-                        {
-                            throw new NestoBusinessException("No se ha podido contabilizar el cobro.");
-                        }
-                        if (asiento == 0 || empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
-                        {
-                            asiento = asientoEmpresa;
-                        }
+                        throw new NestoBusinessException("No se ha podido contabilizar el cobro.");
                     }
                     resultado.Asiento = asiento;
 

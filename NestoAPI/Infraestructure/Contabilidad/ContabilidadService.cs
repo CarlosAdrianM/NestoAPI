@@ -204,6 +204,13 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     errores.Add($"La línea del cliente {cliente} liquida contra el movimiento {destinoId}, que es del cliente {destino.Número?.Trim()}: deben ser del mismo cliente.");
                     continue;
                 }
+                // Nesto#561: prdLiquidar busca el movimiento en la empresa de la línea; si es de otra no lo encuentra.
+                if (!string.IsNullOrWhiteSpace(linea.Empresa) && !string.IsNullOrWhiteSpace(destino.Empresa)
+                    && linea.Empresa.Trim() != destino.Empresa.Trim())
+                {
+                    errores.Add($"La línea del cliente {cliente} es de la empresa {linea.Empresa.Trim()} y liquida contra el movimiento {destinoId}, que es de la empresa {destino.Empresa.Trim()}: el cobro tiene que ir en la empresa del efecto.");
+                    continue;
+                }
                 if (!EsParLiquidable(importeLinea, destino.ImportePdte))
                 {
                     errores.Add($"No se puede liquidar el movimiento {destinoId} del cliente {cliente}: los importes deben tener signo contrario y ser distintos de 0 (línea {importeLinea:C}, pendiente del movimiento {destino.ImportePdte:C}).");
@@ -379,8 +386,40 @@ namespace NestoAPI.Infraestructure.Contabilidad
         {
             // Ojo, aquí hay que entrar ya en transacción y hacer try/catch con el rollback y el commit desde el método que llama            
             _ = await CrearLineas(db, lineas);
-            int resultado = await ContabilizarDiario(db, lineas[0].Empresa, lineas[0].Diario, lineas[0].Usuario);
-            return resultado;
+            // Nesto#561: un diario por cada empresa (y diario) de las líneas, no solo el de la primera. El cobro
+            // de la caja con deudas de la 1 y de la 3 (Nesto#514) contabilizaba solo la empresa de la primera
+            // línea y dejaba las de la otra colgadas en PreContabilidad (GB2601662, Reina, 28/10/26).
+            return await ContabilizarPorEmpresaYDiario(lineas,
+                (empresa, diario) => ContabilizarDiario(db, empresa, diario, lineas[0].Usuario)).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Nesto#561: prdContabilizar trabaja por empresa y diario, así que unas líneas de varias empresas
+        /// (cobro de la caja con facturas de la 1 y de la 3) se contabilizan con una llamada por cada
+        /// pareja empresa/diario (sin relleno: "3" y "3  " son la misma), en el orden en que aparecen.
+        /// Devuelve el asiento de la empresa por defecto si la hay (si no, el primero); si una llamada no
+        /// da asiento (&lt;= 0) para y devuelve ese resultado, para que quien llama deshaga la transacción.
+        /// </summary>
+        internal static async Task<int> ContabilizarPorEmpresaYDiario(IEnumerable<PreContabilidad> lineas, Func<string, string, Task<int>> contabilizar)
+        {
+            int asiento = 0;
+            var grupos = lineas
+                .Select(l => new { Empresa = l.Empresa?.Trim(), Diario = l.Diario?.Trim() })
+                .Distinct()
+                .ToList();
+            foreach (var grupo in grupos)
+            {
+                int asientoGrupo = await contabilizar(grupo.Empresa, grupo.Diario).ConfigureAwait(false);
+                if (asientoGrupo <= 0)
+                {
+                    return asientoGrupo;
+                }
+                if (asiento == 0 || grupo.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                {
+                    asiento = asientoGrupo;
+                }
+            }
+            return asiento;
         }
 
         public async Task<bool> PersistirCuaderno43(ContenidoCuaderno43 contenido)
