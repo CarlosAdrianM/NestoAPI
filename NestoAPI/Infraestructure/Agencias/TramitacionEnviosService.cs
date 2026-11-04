@@ -769,6 +769,13 @@ namespace NestoAPI.Infraestructure.Agencias
                 // etiqueta ya no está viva.
                 return new ReenvioAgencia { NombreAgencia = NombreAgencia(envio), Aviso = AVISO_REEMBOLSO_DEVUELTO };
             }
+            if (EsCambioSoloDeReembolsoDeUnEntregadoSinPagar(envio, datos))
+            {
+                // NestoAPI#809 (Aida, transferencia CTT 20261103_002; Carlos 04/11/26): la agencia ya cobró lo que cobró y nos
+                // lo va a pagar; el reembolso se iguala a eso en Nesto para que «Contabilizar reembolsos» cuadre. La etiqueta ya
+                // no está viva: sin llamar a la agencia. Recontabiliza como cualquier cambio manual (Deshago + Rehago).
+                return new ReenvioAgencia { NombreAgencia = NombreAgencia(envio), Aviso = AVISO_REEMBOLSO_ENTREGADO };
+            }
             if (EstaEntregadoORecogido(envio))
             {
                 throw new NestoBusinessException($"El envío {envio.Numero} ya está entregado/recogido: el siguiente albarán crea un envío " +
@@ -853,6 +860,9 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>Sugerencia 544: lo que se le dice al usuario al cambiar el reembolso de un envío devuelto.</summary>
         internal const string AVISO_REEMBOLSO_DEVUELTO = "Envío devuelto: el reembolso se cambia solo en Nesto, sin avisar a la agencia.";
 
+        /// <summary>NestoAPI#809: lo que se le dice al usuario al cambiar el reembolso de un envío entregado y sin pagar por la agencia.</summary>
+        internal const string AVISO_REEMBOLSO_ENTREGADO = "Envío entregado: el reembolso se cambia solo en Nesto (lo que cobró la agencia), sin avisar a la agencia.";
+
         /// <summary>Sugerencia 544: lo que queda en la historia cuando el seguimiento quita el reembolso de un devuelto.</summary>
         internal const string OBSERVACIONES_REEMBOLSO_DEVUELTO = "Reembolso quitado automáticamente: envío devuelto a origen";
 
@@ -864,6 +874,20 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         internal static bool EsCambioSoloDeReembolsoDeUnDevuelto(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
             => envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO
+            && envio.Reembolso != datos.Reembolso
+            && envio.Retorno == datos.Retorno
+            && (!datos.Servicio.HasValue || datos.Servicio.Value == envio.Servicio);
+
+        /// <summary>
+        /// NestoAPI#809 (Carlos 04/11/26): en un envío ENTREGADO (Estado 2) cuyo reembolso aún no ha pagado la agencia
+        /// (FechaPagoReembolso null) se puede cambiar el reembolso, y solo el reembolso, para dejarlo en lo que cobró de verdad
+        /// la agencia. Retorno y servicio siguen bloqueados (409). El reparto propio no entra: su reembolso lo cobra nuestro
+        /// repartidor y nace con FechaPagoReembolso (#778), así que sigue como estaba.
+        /// </summary>
+        internal static bool EsCambioSoloDeReembolsoDeUnEntregadoSinPagar(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
+            => envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO
+            && !envio.FechaPagoReembolso.HasValue
+            && !RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(envio.Agencia)
             && envio.Reembolso != datos.Reembolso
             && envio.Retorno == datos.Retorno
             && (!datos.Servicio.HasValue || datos.Servicio.Value == envio.Servicio);
