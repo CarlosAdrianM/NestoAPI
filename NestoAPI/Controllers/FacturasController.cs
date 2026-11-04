@@ -424,7 +424,19 @@ namespace NestoAPI.Controllers
             // Las excepciones se propagan automáticamente al GlobalExceptionFilter
             // que las formatea con información rica de contexto
             var resultado = await gestor.CrearFactura(empresa, pedido, usuario, usuarioAutenticado);
+
+            // NestoAPI#806: la factura en papel, con la misma regla que Facturar rutas (DatosImpresion) y, con el interruptor
+            // Facturacion:ImprimirDocumentosEnServidor, impresa ya en la impresora de documentos del usuario. Nunca lanza.
+            await DocumentoDetalle.Completar(resultado, UsuarioAuditoriaHelper.Resolver(User, usuario));
             return Ok(resultado);
         }
+
+        /// <summary>NestoAPI#806: el documento en papel de «Crear factura» (sustituible en los tests).</summary>
+        internal DocumentoFacturaDetalle DocumentoDetalle
+        {
+            get => documentoDetalle ?? (documentoDetalle = new DocumentoFacturaDetalle(gestor));
+            set => documentoDetalle = value;
+        }
+        private DocumentoFacturaDetalle documentoDetalle;
     }
 }

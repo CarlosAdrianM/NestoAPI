@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Security.Principal;
 using System.Threading.Tasks;
+using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
 using NestoAPI.Models.Facturas;
@@ -466,9 +467,20 @@ namespace NestoAPI.Infraestructure.Agencias
                     ? $"No se ha facturado: {error.TipoError?.Trim()}: {error.MensajeError?.Trim()}"
                     : error.MensajeError?.Trim());
             }
-            bool hayQueImprimir = facturas.Any(f => f.DatosImpresion != null) || albaranes.Any(a => a.DatosImpresion != null)
-                || notas.Any(n => n.DatosImpresion != null);
-            if (hayQueImprimir)
+            // NestoAPI#806: con Facturacion:ImprimirDocumentosEnServidor el papel ya sale por la impresora de documentos del usuario
+            // (ImpresoEnServidor). Si no se ha podido, el motivo ya viene en PedidosConErrores (y dice «Imprímalo desde Nesto»).
+            List<DocumentoParaImprimir> enPapel = facturas.Select(f => f.DatosImpresion)
+                .Concat(albaranes.Select(a => a.DatosImpresion))
+                .Concat(notas.Select(n => n.DatosImpresion))
+                .Where(d => d != null)
+                .ToList();
+            foreach (string impresora in enPapel.Select(d => d.ImpresoEnServidor).Where(i => !string.IsNullOrWhiteSpace(i)).Distinct())
+            {
+                avisos.Add($"El documento en papel del pedido {pedido} se ha impreso en «{impresora}».");
+            }
+            bool avisadoFalloImpresion = (respuesta.PedidosConErrores ?? new List<PedidoConErrorDTO>())
+                .Any(e => e.TipoError == ImpresionDocumentosServidor.TIPO_ERROR);
+            if (enPapel.Any(d => string.IsNullOrWhiteSpace(d.ImpresoEnServidor)) && !avisadoFalloImpresion)
             {
                 avisos.Add($"El pedido {pedido} lleva el documento en papel: imprímalo desde Nesto.");
             }

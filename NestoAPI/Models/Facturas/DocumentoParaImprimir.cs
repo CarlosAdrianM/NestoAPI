@@ -54,5 +54,11 @@ namespace NestoAPI.Models.Facturas
         /// Usa valores estándar compatibles con todas las impresoras.
         /// </summary>
         public TipoBandejaImpresion TipoBandeja { get; set; }
+
+        /// <summary>
+        /// NestoAPI#806: la impresora del servidor (RDS2016) en la que la API ya lo ha impreso
+        /// (interruptor Facturacion:ImprimirDocumentosEnServidor). Null = no se ha impreso en el servidor: lo imprime el cliente.
+        /// </summary>
+        public string ImpresoEnServidor { get; set; }
     }
 }
