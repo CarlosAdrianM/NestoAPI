@@ -259,9 +259,12 @@ namespace NestoAPI.Models.Picking
                 // Saldo a favor del cliente (importePendiente negativo): siempre se suma
                 var saldoAFavor = -extractosValidos.Where(e => e.importePendiente < 0).Sum(e => e.importePendiente);
 
-                // Deuda del cliente (importePendiente positivo): solo se resta si está vencida
+                // Deuda del cliente (importePendiente positivo): solo se resta si está vencida.
+                // NestoAPI#815: la factura de un pedido contra reembolso que la agencia aún no ha entregado (reembolso
+                // diferido, #742) no es deuda: el reembolso se contabilizará al entregarse. Nunca retiene un pedido.
                 var deudaVencida = extractosValidos
-                    .Where(e => e.importePendiente > 0 && e.vencimiento.HasValue && e.vencimiento.Value < DateTime.Today)
+                    .Where(e => e.importePendiente > 0 && e.vencimiento.HasValue && e.vencimiento.Value < DateTime.Today
+                        && !e.ReembolsoPendienteDeEntrega)
                     .Sum(e => e.importePendiente);
 
                 // Sumar prepagos + saldo a favor - deuda vencida
@@ -287,11 +290,29 @@ namespace NestoAPI.Models.Picking
                         $"SaldoAFavor={saldoAFavor}, DeudaVencida={deudaVencida}, " +
                         $"Disponible={importeTotalDisponible}, " +
                         $"ExtractosPendientesCount={ExtractosPendientes?.Count ?? 0}, " +
-                        $"ExtractosValidosCount={extractosValidos.Count()}");
+                        $"ExtractosValidosCount={extractosValidos.Count()}." +
+                        TextoReembolsosPendientesDeEntrega(ExtractosPendientes));
                     RetenidoPorPrepago = true;
                     return false;
                 }
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#815: « La NV2617724 está pendiente de que la agencia entregue el pedido 929773: no cuenta como deuda.»
+        /// por cada factura contra reembolso pendiente de entrega; vacío si no hay ninguna.
+        /// </summary>
+        internal static string TextoReembolsosPendientesDeEntrega(IEnumerable<ExtractoClienteDTO> extractos)
+        {
+            if (extractos == null)
+            {
+                return string.Empty;
+            }
+            var textos = extractos
+                .Where(e => e.ReembolsoPendienteDeEntrega)
+                .Select(e => $" La {e.documento?.Trim()} está pendiente de que la agencia entregue el pedido {e.PedidoReembolsoPendiente}: no cuenta como deuda.")
+                .Distinct();
+            return string.Concat(textos);
         }
 
         public bool hayQueSumarPortes()

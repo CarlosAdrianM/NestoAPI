@@ -83,7 +83,8 @@ namespace NestoAPI.Models.Picking
                         ERROR_ESPERA_REPOSICION_TIENDAS, pedido);
                 case MotivoNoSalePicking.RetenidoPorPrepago:
                     return Crear(inicio + $"es de prepago y el pago no está cubierto (total {pedido.ImporteTotalPrepago.ToString("N2", castellano)} €, " +
-                        $"disponible {pedido.ImporteDisponiblePrepago.ToString("N2", castellano)} €). Saldrá cuando se registre el pago.",
+                        $"disponible {pedido.ImporteDisponiblePrepago.ToString("N2", castellano)} €). Saldrá cuando se registre el pago." +
+                        PedidoPicking.TextoReembolsosPendientesDeEntrega(pedido.ExtractosPendientes),
                         ERROR_RETENIDO_PREPAGO, pedido);
                 case MotivoNoSalePicking.SinLineas when pedido.PrimeraEntregaFuturaQuitada.HasValue:
                     return Crear(inicio + "todas sus líneas pendientes tienen fecha de entrega posterior " +
