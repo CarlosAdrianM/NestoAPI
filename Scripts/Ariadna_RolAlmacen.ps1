@@ -48,7 +48,9 @@ if (-not $token) { throw "No se ha podido entrar con ese usuario." }
 $cabeceras = @{ Authorization = "Bearer $token" }
 
 function Json($objeto) {
-    [System.Text.Encoding]::UTF8.GetBytes(($objeto | ConvertTo-Json))
+    # Texto, no bytes: en PowerShell 7 un byte[] en -Body llegaba como «123» (el primer byte, «{») y la API daba 400 (Carlos 04/11/26).
+    # Invoke-RestMethod ya manda el texto en UTF-8 con el charset del ContentType.
+    ($objeto | ConvertTo-Json -Compress)
 }
 
 # 1) El rol
