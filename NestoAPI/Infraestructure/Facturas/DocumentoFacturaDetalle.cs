@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
@@ -49,6 +49,12 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 string empresa = string.IsNullOrWhiteSpace(factura.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : factura.Empresa.Trim();
                 CabPedidoVta pedido = await leerPedido(empresa, factura.NumeroPedido).ConfigureAwait(false);
+                // Carlos 04/11/26: desde el detalle del pedido solo se imprime si el pedido pide papel («factura física»…); las 2
+                // copias de la ruta propia sin la frase son cosa de Facturar rutas, no de aquí.
+                if (!ReglaImpresionDocumentos.DebeImprimir(pedido))
+                {
+                    return;
+                }
                 int copias = ReglaImpresionDocumentos.NumeroCopias(pedido);
                 if (copias <= 0)
                 {

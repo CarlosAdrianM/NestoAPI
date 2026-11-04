@@ -390,6 +390,20 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Assert.AreEqual(0, factura.Avisos.Count);
         }
 
+        /// <summary>Carlos 04/11/26: desde el detalle, la ruta propia sin la frase NO lleva papel (las 2 copias son de Facturar rutas).</summary>
+        [TestMethod]
+        public async Task Detalle_RutaPropiaSinLaFrase_NiPdfNiImpresion()
+        {
+            IGestorFacturas gestorFacturas = GestorFacturasConPdf();
+            CrearFacturaResponseDTO factura = Factura();
+
+            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = "1", Ruta = "AT", Comentarios = "Nada especial" }, activo: true).Completar(factura, USUARIO);
+
+            Assert.IsNull(factura.DatosImpresion);
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, A<bool>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
+            A.CallTo(impresora).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task Detalle_SinPapel_NiPdfNiImpresion()
         {
