@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía inventario 21/11/26</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10pt; break-inside: avoid; }
+  table.larga { break-inside: auto; }
+  table.larga tr { break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 20%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9.5pt; white-space: nowrap; }
+  code, pre { font-family: Consolas, monospace; font-size: 9pt; }
+  pre { background: #f6f6f6; border: 1px solid #ddd; padding: 6px 9px; white-space: pre-wrap; break-inside: avoid; margin: 6px 0 10px; }
+  .regla { background: #fdecea; border: 2px solid #c62828; padding: 9px 13px; margin: 12px 0; break-inside: avoid; }
+  .regla p { margin: 3px 0; }
+  .regla .titulo { color: #b71c1c; font-size: 13pt; font-weight: 700; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+  .salto { break-before: page; }
+  .check td:first-child { width: 4%; text-align: center; }
+
+  /* Maqueta sencilla de la pantalla de Nesto */
+  .maquetas { display: flex; gap: 14px; margin: 10px 0 6px; break-inside: avoid; }
+  .pantalla { flex: 1; border: 2px solid #444; border-radius: 6px; padding: 8px; background: #fafafa; font-size: 8.6pt; line-height: 1.3; }
+  .pantalla.pda { border-radius: 14px; }
+  .pantalla .tit { font-weight: 700; font-size: 9.5pt; margin-bottom: 5px; }
+  .m-campo { display: flex; gap: 6px; margin-bottom: 3px; }
+  .m-campo span:first-child { width: 62px; color: #444; }
+  .m-campo span:last-child { flex: 1; background: #fff; border: 1px solid #999; padding: 0 4px; }
+  .m-boton { display: inline-block; border: 1px solid #999; border-radius: 4px; padding: 1px 6px; background: #eee; margin: 4px 4px 0 0; }
+  .m-boton.prim { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+  .m-tabla { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 8pt; }
+  .m-tabla td, .m-tabla th { border: 1px solid #ccc; padding: 1px 4px; }
+  .m-cuadro { border: 2px solid #bbb; background: #fff; border-radius: 8px; padding: 4px 7px; margin: 5px 0; }
+  .m-ok { color: #2E7D32; font-weight: 600; margin: 3px 0; }
+  .m-lista div { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 2px 6px; margin-bottom: 3px; display: flex; justify-content: space-between; }
+  .m-lista div.sel { border: 2px solid #1565C0; }
+  .leyenda { font-size: 9.5pt; color: #444; margin: 2px 0 10px; }
+</style>
+</head>
+<body>
+<h1>Inventario del sábado 21 de noviembre de 2026</h1>
+<p class="sub">Para Algete, Reina y Alcobendas · Nesto 1.10.54.0 y Ariadna 2.28 · 4 de noviembre de 2026</p>
+
+<div class="box">
+<p><b>En resumen.</b> Este año el sistema es el de siempre, con mejoras pequeñas:</p>
+<ul>
+<li><b>Reina y Alcobendas</b> cuentan con <b>Nesto</b> (Productos › Inventarios › <b>Tienda</b>). Antes de leer nada, Nesto pide <b>rellenar el inventario</b> con el stock actual: hay que decir que sí. Al terminar, la tienda <b>contabiliza desde el mismo Nesto</b> con el botón <b>«Contabilizar inventario»</b>, que antes hace las comprobaciones.</li>
+<li><b>Algete</b> cuenta con <b>Ariadna vieja</b>, ubicación a ubicación, como siempre. La <b>Ariadna nueva</b> (tecla <kbd>+</kbd> en el inicio) también sabe hacerlo; si se usa, que sea en pasillos enteros asignados. <b>En Algete nunca se cuenta con Nesto.</b></li>
+<li>Nadie contabiliza desde SQL Server a mano. Se contabiliza solo desde Nesto (o Ariadna, F6), que contabiliza <b>un almacén y nada más</b>.</li>
+<li>Si algo falla: <b>Novedades › «Algo no funciona»</b> con una captura, y llamada a Carlos si es urgente.</li>
+</ul>
+</div>
+
+<div class="regla">
+<p class="titulo">⛔ Cada lectura y cada cantidad SUMAN a lo ya contado</p>
+<p>En Nesto, cada lectura suma 1 (o la cantidad que ponga con «Activar Cantidad»). En Ariadna, cada lectura suma 1 y <kbd>N</kbd> + <kbd>F1</kbd> suma N más. Si un producto ya llevaba 5 contadas y teclea 5, queda en <b>10</b>. No se teclea nunca «el total».</p>
+<p>Si se ha equivocado, en Ariadna <kbd>F2</kbd> quita una. En Nesto, avise antes de contabilizar (véase el apartado 7).</p>
+</div>
+
+<h2>1. Qué pasó en 2025 y por qué ya no puede pasar</h2>
+<p>El 22/11/25, al contabilizar el inventario se lanzó el procedimiento de contabilizar <b>a mano desde SQL Server</b> para un usuario. Ese procedimiento contabilizaba <b>todas</b> las filas pendientes de ese usuario, fueran del almacén que fueran. Ese usuario tenía también las filas con las que se habían rellenado <b>Reina (25)</b> y <b>Alcobendas (64)</b>, todavía con lo contado a 0, y el procedimiento las regularizó: el stock de esos productos en las tiendas <b>quedó a cero</b> (traspaso 77263).</p>
+<p>Lo que ha cambiado (NestoAPI#787, #789, #790):</p>
+<ul>
+<li>El procedimiento <b>solo contabiliza el almacén que se le pide</b>. Lo pendiente en otro almacén se queda como está, para contabilizarlo aparte.</li>
+<li>Se contabiliza desde <b>un único sitio</b>: el botón «Contabilizar inventario» de Nesto (o F6 en Ariadna nueva). Pide almacén y fecha y, antes de tocar nada, hace las <b>comprobaciones</b>. Si hay algo grave (un bloqueante), no deja contabilizar.</li>
+<li>El relleno de las tiendas (antes un INSERT desde SQL Server) lo hace Nesto, con el usuario de quien cuenta y solo para su tienda.</li>
+<li>Después de contabilizar se ven las <b>diferencias valoradas</b> en Nesto: a <b>PVP</b> para las tiendas y a coste para Compras, Almacén, Administración y Dirección.</li>
+</ul>
+
+<h2>2. Antes del día: lo que tiene que estar hecho</h2>
+<table class="check larga">
+<tr><th>✓</th><th>Qué</th><th>Quién</th><th>Cuándo</th></tr>
+<tr><td>☐</td><td><b>Prueba de inventario de una referencia</b> en Reina, Alcobendas y Algete (apartado 8). Sin la prueba superada, el 21 no se usa la Ariadna nueva en Algete.</td><td>Carlos con cada tienda y con Algete</td><td>Antes del viernes 13/11</td></tr>
+<tr><td>☐</td><td><b>Ninguna fila de inventario pendiente</b> en ningún almacén el viernes 20 por la tarde. Las filas pendientes de otra fecha <b>bloquean</b> la contabilización del día 21 (las comprobaciones lo dicen). Las sueltas de los inventarios de una referencia de diario se contabilizan o se borran.</td><td>Carlos</td><td>Viernes 20/11</td></tr>
+<tr><td>☐</td><td><b>Nesto 1.10.54.0 o posterior</b> en los ordenadores de Reina y Alcobendas (lo dice la barra de título). En la pantalla de inventario tienen que verse los botones «Contabilizar inventario» y «Ver diferencias».</td><td>Cada tienda</td><td>Semana del 16/11</td></tr>
+<tr><td>☐</td><td>En Nesto, el parámetro <b>AlmacenInventario</b> de cada tienda con su almacén (REI o ALC): es el almacén que sale al abrir la pantalla y el único que la tienda puede contabilizar.</td><td>Informática</td><td>Semana del 16/11</td></tr>
+<tr><td>☐</td><td><b>Ariadna 2.28 o posterior</b> en las PDA de Algete (y en los móviles de las tiendas, si se va a usar). En el inicio debe verse el botón <b>«Inventario (+)»</b>.</td><td>Almacén / Informática</td><td>Semana del 16/11</td></tr>
+<tr><td>☐</td><td><b>Ariadna vieja</b> funcionando en las PDA de Algete, como el año pasado (es la forma principal en Algete).</td><td>Almacén</td><td>Semana del 16/11</td></tr>
+<tr><td>☐</td><td><b>Etiquetas</b>: las que se impriman desde ahora son siempre EAN-13 (la del producto o, si no tiene, un código interno que empieza por 29 y que se crea al imprimir; NestoAPI#791). Conviene etiquetar antes del día lo que no tiene código y se vende suelto. Las etiquetas viejas con la referencia siguen leyéndose.</td><td>Tiendas y Almacén</td><td>Hasta el 20/11</td></tr>
+<tr><td>☐</td><td>Decidir si en Algete se usa la Ariadna nueva en algún pasillo, y cuáles. Por defecto: <b>no</b>, todo con Ariadna vieja.</td><td>Carlos con Almacén</td><td>Tras la prueba</td></tr>
+<tr><td>☐</td><td>Repasar esta guía con quien vaya a contar.</td><td>Responsable de cada almacén</td><td>Semana del 16/11</td></tr>
+</table>
+
+<h3>Quién contabiliza y desde dónde</h3>
+<table>
+<tr><th>Almacén</th><th>Quién</th><th>Desde dónde</th></tr>
+<tr><td class="tema">Reina</td><td>La tienda, al terminar de contar (o Administración, Dirección o Informática)</td><td>Nesto, pantalla de inventario, botón «Contabilizar inventario», almacén REI, fecha 21/11/2026</td></tr>
+<tr><td class="tema">Alcobendas</td><td>La tienda, al terminar de contar (o Administración, Dirección o Informática)</td><td>Igual, con almacén ALC</td></tr>
+<tr><td class="tema">Algete</td><td>Carlos (o Administración o Dirección), cuando <b>todas</b> las PDA hayan terminado</td><td>Nesto, mismo botón, con almacén ALG (o Ariadna nueva, <kbd>F6</kbd>)</td></tr>
+</table>
+<p>Almacén y Compras pueden ver las diferencias, pero no contabilizar. Una tienda solo puede contabilizar la suya. Contabilizar lo hace el servidor <b>por usuario</b>: si contaron tres personas, salen tres traspasos, y cada uno se hace entero o no se hace.</p>
+
+<h2 class="salto">3. El día en Reina y Alcobendas (con Nesto)</h2>
+
+<div class="maquetas">
+  <div class="pantalla">
+    <div class="tit">Nesto · Inventario</div>
+    <div class="m-campo"><span>Almacén:</span><span>REI</span></div>
+    <div class="m-campo"><span>Fecha:</span><span>21/11/2026</span></div>
+    <div class="m-campo"><span>Producto:</span><span>8424629110506</span></div>
+    <div class="m-campo"><span>Cantidad:</span><span style="color:#999">1</span></div>
+    <div>☐ Activar Cantidad</div>
+    <div><span class="m-boton prim">Contabilizar inventario</span><span class="m-boton">Ver diferencias</span></div>
+    <table class="m-tabla">
+      <tr><th>Producto</th><th>Descripción</th><th>Stock</th><th>Leído</th></tr>
+      <tr><td>37533</td><td>QUITACUTÍCULAS CON PINCEL</td><td>1</td><td>código</td></tr>
+      <tr><td>17404</td><td>CHAMPÚ …</td><td>1</td><td>tecleado</td></tr>
+    </table>
+    <div style="margin-top:3px;color:#666">Pestañas abajo: Recientes · Completo</div>
+  </div>
+</div>
+<p class="leyenda">Maqueta simplificada (no es una captura). Arriba los campos; en Nesto, a la derecha, la lista de lo leído («Recientes» lo de esta sesión y «Completo» todo lo del día, con el botón «Actualizar»).</p>
+
+<h3>3.1. Abrir y rellenar</h3>
+<ol>
+<li>En Nesto: pestaña <b>Productos</b> › grupo <b>Inventarios</b> › botón <b>Tienda</b>.</li>
+<li>Compruebe el <b>Almacén</b> (REI o ALC) y la <b>Fecha</b> (21/11/2026). Todo lo de ese día tiene que ir con la misma fecha.</li>
+<li>Al abrir, Nesto pregunta: <i>«Antes de contar hay que rellenar el inventario con el stock actual de REI. ¿Rellenar ahora?»</i>. Conteste <b>Sí</b>. Sale <i>«Inventario rellenado: N productos, M unidades.»</i>. Es una fila por cada producto con stock en la tienda, con lo contado a 0.</li>
+<li>Si otra persona de la tienda ya lo rellenó, Nesto lo dice y deja contar igual. Solo se rellena <b>una vez</b> por tienda y día.</li>
+</ol>
+<div class="ojo"><p><b>Sin rellenar no se puede contar:</b> si contesta «No», Nesto no graba ninguna lectura y vuelve a preguntar al leer la primera. Rellenar es lo que hace que los productos que tenían stock y no aparecen se queden a 0 al contabilizar.</p></div>
+
+<h3>3.2. Leer</h3>
+<ul>
+<li>Con el cursor en <b>Producto</b>, lea el código de barras de cada unidad. Cada lectura <b>suma 1</b> y la fila aparece en la lista.</li>
+<li>La lectura funciona <b>igual que al recibir una reposición</b>: vale el código de barras de la ficha, cualquier otro código del producto, el interno del 29 de las etiquetas nuevas y la referencia.</li>
+<li>Si no hay código que leer, <b>teclee la referencia</b> y pulse <kbd>Intro</kbd>. Vale, pero queda apuntado: en la columna <b>Leído</b> pone <b>«tecleado»</b> en vez de «código».</li>
+<li><b>Muchas unidades iguales:</b> marque <b>«Activar Cantidad»</b>, lea el producto, pulse <kbd>Intro</kbd>, teclee cuántas y pulse <kbd>Intro</kbd>. Se <b>suman</b> a las que ya llevara. Desmarque la casilla al acabar con ese producto.</li>
+<li>Si el código lo comparten varios productos, Nesto da la lista: teclee la referencia del que tiene en la mano.</li>
+<li>Si dice que no encuentra el producto, teclee la referencia. Si tampoco, apártelo y apúntelo en un papel (referencia, nombre y cuántas) para resolverlo al final con Carlos.</li>
+</ul>
+<div class="ojo"><p><b>Ojo con leer un código en la casilla Cantidad.</b> Si queda un número enorme o igual a una referencia, las comprobaciones lo paran (bloqueante «StockReal &gt; 9999 o igual a una referencia»).</p></div>
+
+<h3>3.3. Un producto que no se lee</h3>
+<ol>
+<li>Pruebe otro código del envase (algunos tienen dos).</li>
+<li>Teclee la referencia (queda «tecleado»; está permitido).</li>
+<li>Las <b>muestras</b> (material promocional) sin código se teclean siempre, sin más.</li>
+<li>Apunte en un papel los productos que no se han podido leer. Después del inventario, desde la ficha del producto, «Imprimir etiqueta» da su EAN-13 (o le crea el interno del 29) para la próxima vez.</li>
+</ol>
+
+<h3>3.4. Contabilizar (al terminar de contar)</h3>
+<ol>
+<li>Asegúrese de que <b>todos</b> los de la tienda han terminado de leer.</li>
+<li>Pulse <b>«Contabilizar inventario»</b>. Primero salen las <b>Comprobaciones del inventario</b> (tabla siguiente).</li>
+<li>Con <b>bloqueantes</b> (en rojo) no deja seguir: corríjalos o avise a Carlos.</li>
+<li>Con solo <b>avisos</b>, revíselos y, si están bien, continúe.</li>
+<li>Nesto confirma: <i>«Se va a contabilizar el inventario de REI del 21/11/2026: N filas de M usuarios. ¿Continuar?»</i>. Pulse <b>Sí</b>.</li>
+<li>Sale el resultado por usuario con su <b>traspaso</b>: <i>«• NUEVAVISION\reina: 812 filas, traspaso 81500»</i>. <b>Haga una captura</b> y mándela a Carlos. Si alguno sale en «No se ha podido contabilizar», no reintente: avise.</li>
+<li>Se abre la ventana de <b>Diferencias de inventario</b>.</li>
+</ol>
+
+<table class="larga">
+<tr><th style="width:24%">Comprobación</th><th style="width:14%">Tipo</th><th>Qué significa y qué hacer</th></tr>
+<tr><td>Filas pendientes con otra fecha</td><td>Bloqueante</td><td>Hay filas del almacén de otro día sin contabilizar. Avise a Carlos: no se contabiliza hasta resolverlas.</td></tr>
+<tr><td>Cantidad &gt; 9999 o igual a una referencia</td><td>Bloqueante</td><td>Se leyó un código en la cantidad. Avise para corregir esa fila.</td></tr>
+<tr><td>Producto ficticio con cantidad</td><td>Bloqueante</td><td>Se contó algo que no es un producto físico. Avise.</td></tr>
+<tr><td>Productos anulados con cantidad</td><td>Aviso</td><td>Normal si queda producto viejo en la estantería. Continúe.</td></tr>
+<tr><td>Precio medio 0 con cantidad</td><td>Aviso</td><td>Para Compras; no impide contabilizar.</td></tr>
+<tr><td>Stock calculado negativo</td><td>Aviso</td><td>Se vendió más de lo que había; el inventario lo corrige.</td></tr>
+<tr><td>Recuento por usuario</td><td>Información</td><td>Cuántas filas ha metido cada persona. Compruebe que están todos.</td></tr>
+</table>
+
+<h3>3.5. La ventana de diferencias</h3>
+<ul>
+<li>Por producto: <b>Calculado</b> (lo que decía Nesto), <b>Real</b> (lo contado), <b>Diferencia</b>, <b>Valor unitario</b> y <b>Valor diferencia</b>, con totales por grupo y por familia.</li>
+<li>En las tiendas el valor va a <b>PVP</b> (precio profesional). La cabecera lo dice: «Valoración: PVP».</li>
+<li>«Importe mínimo (€)» enseña solo las diferencias grandes. Revise las diez más grandes: si algo no cuadra (por ejemplo, un producto a 0 que está en la estantería), avise a Carlos <b>ese mismo día</b>.</li>
+<li>La ventana también se abre sola con <b>«Ver diferencias»</b>, por fecha o por número de traspaso.</li>
+</ul>
+
+<h2 class="salto">4. El día en Algete</h2>
+
+<h3>4.1. Lo de siempre: Ariadna vieja, ubicación a ubicación</h3>
+<p>Como el año pasado: cada PDA va ubicación a ubicación con la Ariadna vieja, que rellena la ubicación con lo que debería haber y se cuenta lo que hay. No cambia nada para quien cuenta. Lo único que cambia es al final: <b>Carlos contabiliza desde Nesto</b> («Contabilizar inventario» con almacén ALG), no desde SQL Server.</p>
+
+<h3>4.2. La opción nueva: Ariadna 2.28, «Inventario (+)»</h3>
+<p>Solo si se decide tras la prueba, y en <b>pasillos enteros asignados</b> a la Ariadna nueva.</p>
+<div class="maquetas">
+  <div class="pantalla pda">
+    <div class="tit">Ubicación 002/003/010</div>
+    <div class="m-ok">+1 QUITACUTÍCULAS CON PINCEL: contado 1 de 1</div>
+    <div class="m-cuadro"><b>Lea el código o teclee la referencia</b></div>
+    <div class="m-lista"><div class="sel"><span>37533 · Quitacutículas con pincel</span><b>1 / 1</b></div><div><span>…</span><b>0 / 2</b></div></div>
+    <div style="color:#555;margin-top:4px">Lea cada unidad · N + F1 suma N a la elegida · F2 quitar una · F3 siguiente ubicación · F4 lo contado · Esc otra ubicación</div>
+  </div>
+  <div class="pantalla pda">
+    <div class="tit">Siguientes ubicaciones</div>
+    <div class="m-cuadro"><b>Lea la etiqueta de la ubicación</b></div>
+    <div class="m-lista"><div class="sel"><span>004/005/001 · 3 productos</span><b>412 días</b></div><div><span>004/005/002 · 1 producto</span><b>398 días</b></div><div><span>002/003/010 · 1 producto · ya hoy</span><b></b></div></div>
+    <div style="color:#555;margin-top:4px">↑↓ elegir · Intro contar la elegida · lea la etiqueta de otra · F4 lo contado · Esc volver</div>
+  </div>
+</div>
+<p class="leyenda">Maqueta simplificada (no es una captura). A la derecha, la lista de ubicaciones que tocan; a la izquierda, contando una ubicación.</p>
+<table class="larga">
+<tr><th style="width:22%">Qué</th><th>Cómo</th></tr>
+<tr><td class="tema">Entrar</td><td>En el inicio de Ariadna, botón <b>«Inventario (+)»</b> o tecla <kbd>+</kbd>. Con el perfil de Algete entra en el modo <b>por ubicaciones</b>.</td></tr>
+<tr><td class="tema">Elegir ubicación</td><td>Lea la <b>etiqueta del hueco</b> (o teclee <kbd>2*4*1</kbd>: pasillo, fila y columna), o elija una de las «Siguientes ubicaciones» con <kbd>↑</kbd><kbd>↓</kbd> e <kbd>Intro</kbd>. Ariadna rellena la ubicación con lo que debería tener: «3 productos en 004/005/001».</td></tr>
+<tr><td class="tema">Contar</td><td>Lea <b>cada unidad</b>: cada lectura suma 1 a su fila. Lo que no estaba en la ubicación se añade («no estaba en la ubicación: añadido»).</td></tr>
+<tr><td class="tema">Muchas iguales</td><td>Lea una, teclee <b>cuántas más</b> y pulse <kbd>F1</kbd>: <b>suma</b> N a la fila elegida. No es el total.</td></tr>
+<tr><td class="tema">Equivocarse</td><td><kbd>F2</kbd> quita una de la fila elegida.</td></tr>
+<tr><td class="tema">Siguiente</td><td><kbd>F3</kbd> la siguiente ubicación; <kbd>Esc</kbd> otra ubicación. Una ubicación ya empezada hoy se puede seguir: «ya estaba empezada hoy: siga contando».</td></tr>
+<tr><td class="tema">Lo contado</td><td><kbd>F4</kbd>: lo metido hoy por ubicación; leyendo un producto, lo suyo (quién y cuándo). Para las dudas de «¿esto ya se ha contado?».</td></tr>
+<tr><td class="tema">Comprobar</td><td><kbd>F6</kbd>: las comprobaciones. Contabilizar solo puede quien tiene permiso (Carlos, Administración, Dirección).</td></tr>
+</table>
+<div class="ojo">
+<p><b>Límites de la Ariadna nueva (2.28):</b></p>
+<ul>
+<li><b>Sin red no cuenta.</b> No guarda lecturas para luego: dice «Sin conexión: la lectura NO se ha contado. Vuelva a leerla cuando haya red.». Hay que volver a leer esa unidad. Mire bien los mensajes en las zonas con mala cobertura.</li>
+<li><kbd>Intro</kbd> vacío <b>no rellena</b> nada sin querer: para contar una ubicación hay que elegirla o leer su etiqueta.</li>
+<li>Al entrar en una ubicación se rellena <b>entera</b>, con todos sus productos. Lo que no se lea se queda a 0 y, al contabilizar, se regulariza a 0. <b>Una ubicación empezada se termina.</b></li>
+<li>Es nueva: menos rodada que la vieja. Si algo no se entiende, se para y se sigue esa ubicación con la Ariadna vieja… pero solo si la nueva no ha entrado en ella (regla siguiente).</li>
+</ul>
+</div>
+<div class="regla">
+<p class="titulo">⛔ Una ubicación, una sola Ariadna</p>
+<p>Si la vieja y la nueva cuentan la misma ubicación, el producto queda <b>contado dos veces</b> (dos filas de dos usuarios con su teórico cada una). Los pasillos de la Ariadna nueva se asignan antes de empezar y no se mezclan.</p>
+</div>
+
+<div class="regla">
+<p class="titulo">⛔ En Algete, nunca con Nesto</p>
+<p>La pantalla de inventario de Nesto no pide ubicación. Una sola fila de Algete sin ubicación hace que el procedimiento <b>aborte todo</b> («Hay movimientos sin pasillo») y las comprobaciones lo bloquean («filas sin ubicación con producto que se ubica»).</p>
+</div>
+
+<h2>5. Qué NO hacer</h2>
+<ul>
+<li><b>No contabilizar desde SQL Server (SSMS) a mano</b>, con <code>prdContabilizarInventario</code> ni con ningún script. Se contabiliza solo con el botón de Nesto (o <kbd>F6</kbd> en Ariadna).</li>
+<li><b>No dejar filas pendientes de otro almacén ni de otro día</b>. Antes del 21, nada pendiente; el 21, cada almacén se contabiliza cuando ha terminado, el suyo y solo el suyo.</li>
+<li><b>No contar sin rellenar</b> en las tiendas: si contesta «No», no se graba nada.</li>
+<li><b>No rellenar la tienda entera para probar</b> (ni en la prueba ni otro día): deja cientos de filas pendientes a 0 que, si alguien contabiliza, ponen el stock a cero. Para una sola referencia, el evolutivo (apartado 8).</li>
+<li><b>No teclear el total</b>: todo suma.</li>
+<li><b>No mezclar</b> Ariadna vieja y nueva en la misma ubicación; no contar Algete con Nesto.</li>
+<li><b>No cambiar la fecha</b> en Nesto a mitad del inventario.</li>
+<li><b>No reintentar</b> una contabilización que ha fallado: captura y aviso.</li>
+</ul>
+
+<h2>6. Si algo falla: quién avisa a quién</h2>
+<table>
+<tr><th style="width:30%">Qué pasa</th><th>Qué hacer</th></tr>
+<tr><td>Un mensaje de error o algo raro en Nesto o Ariadna</td><td><b>Novedades › «Algo no funciona»</b> (en Ariadna, <kbd>F9</kbd>) con una <b>captura</b> de la pantalla entera y una frase: qué estaba haciendo y qué esperaba. Siga contando lo que pueda.</td></tr>
+<tr><td>No se puede contar (no lee nada, no hay red, Nesto no abre)</td><td>Llame a <b>Carlos</b> (Informática) directamente. No se cuenta en papel para meterlo «luego» sin hablarlo antes.</td></tr>
+<tr><td>Bloqueante en las comprobaciones</td><td>Captura de la ventana y aviso a Carlos. No se contabiliza hasta resolverlo.</td></tr>
+<tr><td>Falla la contabilización o una diferencia enorme</td><td>Captura y llamada a Carlos el mismo día. Solo Carlos puede deshacer un inventario contabilizado.</td></tr>
+</table>
+<p>Carlos responde de los avisos de Novedades el mismo día. Lo urgente del sábado, por teléfono.</p>
+
+<h2 class="salto">7. Errores frecuentes</h2>
+<ul>
+<li><b>Nesto no graba la lectura y pregunta si rellena:</b> no se ha rellenado la tienda. Conteste «Sí» (el día 21).</li>
+<li><b>He contado de más en Nesto:</b> apunte la referencia y cuántas sobran, y avise a Carlos antes de contabilizar (se corrige la fila).</li>
+<li><b>He contado de más en Ariadna:</b> elija la fila y pulse <kbd>F2</kbd> tantas veces como sobren.</li>
+<li><b>«No hay filas pendientes de contabilizar en REI el …»:</b> la fecha o el almacén no son los del inventario.</li>
+<li><b>No veo el botón «Contabilizar inventario»:</b> su usuario no está en Tiendas, Administración, Dirección ni Informática, o la versión de Nesto es anterior a la 1.10.54.0.</li>
+<li><b>«No tiene permiso para contabilizar el inventario»</b> (Ariadna): normal en Almacén; lo contabiliza Carlos.</li>
+<li><b>¿Esto ya está contado?</b> En Nesto, pestaña <b>Completo</b> › «Actualizar». En Ariadna, <kbd>F4</kbd>.</li>
+</ul>
+
+<h2 class="salto">8. Plan de la prueba de una referencia (antes del 21/11)</h2>
+<p>Objetivo: hacer de verdad, con una sola referencia, todo el recorrido del día (contar, comprobar, contabilizar y ver diferencias) en cada almacén y con cada herramienta, <b>sin tocar nada más</b>.</p>
+
+<h3>8.1. La referencia</h3>
+<table>
+<tr><td class="tema">Propuesta</td><td><b>37533 · QUITACUTÍCULAS CON PINCEL</b> (Paraíso, ACC). EAN-13 <b>8424629110506</b>. Sin ventas en los últimos 120 días. A fecha de 04/11: 1 unidad en Reina, 1 en Alcobendas y 1 en Algete, en una sola ubicación (<b>002/003/010</b>). PVP 5,16 €.</td></tr>
+<tr><td class="tema">Alternativas</td><td>44576 RECOVERY SKIN BALM (EAN 4779044930296; Algete 001/006/006) · 42078 MATT PRIMER (EAN 8435167520542; Algete 004/005/001).</td></tr>
+<tr><td class="tema">A confirmar por Carlos</td><td>Que la ubicación de Algete tenga <b>solo</b> esa referencia (en la Ariadna nueva se rellena la ubicación entera); si tiene más, en la prueba se cuentan todos sus productos. Que el stock siga siendo el mismo el día de la prueba.</td></tr>
+</table>
+
+<h3>8.2. Antes de la prueba</h3>
+<ul>
+<li>Que no haya filas pendientes en el almacén de la prueba. Hoy (04/11) hay <b>una en Algete</b>: NºOrden 943018, producto 45383, ubicación 012/001/005, de Santiago (03/11), con lo contado a 0. Las comprobaciones la sacarán como bloqueante («otra fecha») hasta que se contabilice o se borre. Carlos lo habla con Santiago.</li>
+<li>Nesto 1.10.54.0 en la tienda y Ariadna 2.28 en la PDA o el móvil de la prueba.</li>
+<li>La unidad física localizada: se cuenta lo que hay de verdad.</li>
+</ul>
+
+<h3>8.3. Reina y Alcobendas, desde Nesto</h3>
+<p>En la prueba <b>no se rellena la tienda entera</b>. Se crea solo la fila de la referencia con un <b>evolutivo</b> y Nesto, al ver que ya hay filas del día, deja contar.</p>
+<ol>
+<li><b>Rellenar solo la referencia</b>: en Ariadna 2.28 con el perfil de la tienda, «Inventario (+)» › <kbd>3</kbd> «Evolutivo: una referencia» › lea el código o teclee <kbd>37533</kbd> › <kbd>Intro</kbd>. Debe decir «Evolutivo rellenado: 1 productos.». (Sin Ariadna en la tienda, Carlos lo hace por la API: <code>POST api/Inventarios/RellenarParcial {Empresa:"1", Almacen:"REI", Fecha:hoy, Producto:"37533"}</code>.)</li>
+<li>Abrir Nesto › Productos › Inventarios › Tienda. Almacén REI (o ALC) y fecha de hoy. <b>No debe preguntar</b> si rellena (ya hay una fila del día). Si lo pregunta, conteste <b>«No»</b> y avise: algo no cuadra.</li>
+<li>Leer el código de la unidad. En la lista: 37533, Stock 1, Leído <b>«código»</b>.</li>
+<li>Pulsar «Contabilizar inventario». Se espera en Comprobaciones: <b>ningún bloqueante</b>, quizá algún aviso, y el recuento con 1 fila (o 1 fila de cada usuario si el evolutivo lo hizo otro usuario).</li>
+<li>Confirmar. Se espera: «1 filas, traspaso N» por usuario. Captura.</li>
+<li>Diferencias: <b>Valoración: PVP</b>. Si se contó lo que decía Nesto, diferencia 0 (no sale nada, o la fila con 0).</li>
+<li>Repetir en la otra tienda. Variante para una de las dos: teclear <kbd>37533</kbd> en vez de leer y comprobar que pone «tecleado».</li>
+</ol>
+
+<h3>8.4. Algete, con la Ariadna nueva (por ubicación)</h3>
+<ol>
+<li>En la PDA, «Inventario (+)». Lea la etiqueta de la ubicación <b>002/003/010</b> (o teclee <kbd>2*3*10</kbd>). Debe decir «1 productos en 002/003/010».</li>
+<li>Lea la unidad: «+1 QUITACUTÍCULAS CON PINCEL: contado 1 de 1».</li>
+<li>Pruebe <kbd>F2</kbd> (queda 0 de 1) y vuelva a leer (1 de 1). Pruebe <kbd>F4</kbd> «Lo contado hoy».</li>
+<li><kbd>F6</kbd> Comprobar. Con permiso de Almacén debe decir «Sin bloqueantes. Contabilizar lo hace quien tenga permiso.». Se espera el aviso <b>«ubicaciones con stock sin rellenar»</b> con casi todo Algete: es normal en una prueba de una ubicación.</li>
+<li>Carlos contabiliza desde Nesto (almacén ALG, fecha de hoy) o con <kbd>F6</kbd> en su Ariadna. Se espera 1 fila y un traspaso; diferencias a coste.</li>
+</ol>
+
+<h3>8.5. Algete, con la Ariadna vieja</h3>
+<ol>
+<li>Después de contabilizar la prueba anterior (si no, la ubicación tendría dos inventarios pendientes), la misma ubicación con la Ariadna vieja, como siempre.</li>
+<li>Carlos contabiliza desde <b>Nesto</b> (almacén ALG): es lo que se hará el 21 con las filas de la Ariadna vieja. Se espera 1 fila del usuario de la PDA y su traspaso.</li>
+<li>Variante opcional: una fila sin ubicación desde Nesto en ALG, solo para ver que las comprobaciones la bloquean. <b>Se comprueba y no se contabiliza</b>; después Carlos la borra.</li>
+</ol>
+
+<h3>8.6. Verificar después (consultas de solo lectura, para Carlos)</h3>
+<pre>-- Filas de la prueba: deben estar en Estado 2 con su traspaso
+SELECT [NºOrden], [Almacén], [Fecha], [Número], [StockCalculado], [StockReal], [Estado], [Valor],
+       [NºTraspaso], [Aplicacion], [Pasillo], [Fila], [Columna], [Usuario], [PorCodigoBarras]
+FROM Inventarios
+WHERE Empresa = '1' AND [Número] = '37533' AND [Fecha] &gt;= '20261105'
+ORDER BY [NºOrden];
+
+-- Que no queda nada pendiente en ningún almacén (Estado 1 sin traspaso)
+SELECT TOP 50 [NºOrden], [Almacén], [Fecha], [Número], [StockReal], [Usuario]
+FROM Inventarios
+WHERE Estado = 1 AND [NºTraspaso] IS NULL;</pre>
+<p>Se espera: una fila por almacén y prueba, <b>Estado 2</b>, con <b>NºTraspaso</b>, <b>Valor</b> a coste (precio medio), PorCodigoBarras 1 si se leyó (0 si se tecleó), y en Algete con pasillo, fila y columna. El movimiento de stock lo mira Carlos en Nesto, en el <b>extracto del producto</b> 37533 (un movimiento de inventario por traspaso, solo si hubo diferencia) y en el stock de cada almacén, que tiene que ser el contado. Las ubicaciones de Algete, en la ficha del producto.</p>
+
+<h3>8.7. Si sale mal: cómo se deshace</h3>
+<ul>
+<li>Lo deshace <b>solo Carlos</b>. Nadie más toca nada.</li>
+<li><b>Contabilizado con un error</b> (cantidad o almacén mal): Carlos lanza en SSMS <code>prdDeshacerInventario @Empresa = '1', @Traspaso = &lt;traspaso&gt;, @Número = '37533'</code>, producto a producto. Recupera el stock y las ubicaciones y quita el movimiento. La fila vuelve a <b>pendiente</b>: hay que corregirla y contabilizarla otra vez desde Nesto, o borrarla, para que no bloquee el día 21.</li>
+<li><b>Sin contabilizar</b> (se quedó a medias): la fila pendiente se borra con un script de Carlos (como <code>Issue784_InventariosFilasSueltas.sql</code>) o se completa y se contabiliza.</li>
+<li>Si alguien rellenó por error la <b>tienda entera</b>: no contabilizar. Avisar a Carlos para que borre esas filas.</li>
+<li>Cada incidencia de la prueba se apunta como comentario en NestoAPI#784 y, si es un fallo, como issue nueva antes del 21.</li>
+</ul>
+
+<p class="pie">Nueva Visión · Guía del inventario del 21/11/26 (NestoAPI#784) · Si algo de esta guía no coincide con lo que ve en pantalla, díganoslo en Novedades.</p>
+</body>
+</html>
