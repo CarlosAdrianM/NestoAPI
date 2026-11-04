@@ -180,6 +180,14 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 return resultado;
             }
 
+            // NestoAPI#786: una nota de cobro nace con su parada (POST api/NotasEntrega/Cobro) y no tiene líneas que facturar: si
+            // aquí no la tiene, no se le inventa una de 1 bulto y sin reembolso.
+            if (resultado.Tipo == TiposNotaEntrega.COBRO)
+            {
+                resultado.Aviso = $"La nota de cobro {numero} no tiene su parada del reparto: créela de nuevo con «Nueva nota de cobro».";
+                return resultado;
+            }
+
             // 3. El packing eligió otra agencia: no se toca.
             EnvioPedidoNota otra = envios.FirstOrDefault(e => e.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO && ESTADOS_ACTIVOS.Contains(e.Estado));
             if (otra != null)
@@ -247,8 +255,10 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// El envío de la parada como lo grabaría el packing para la 14 (servicio y horario por defecto de la agencia, datos de la
         /// ficha del cliente/contacto), pero ya tramitado, sin reembolso y con el texto de la nota en las observaciones.
         /// </summary>
+        /// <param name="reembolso">NestoAPI#786: lo que hay que cobrar (notas de cobro); 0 en las demás.</param>
+        /// <param name="sinBultos">NestoAPI#786: la parada no lleva bultos (nota de cobro): Bultos 0 en vez del mínimo de 1.</param>
         internal static EnviosAgencia ConstruirEnvio(CabPedidoVta pedido, DestinoNotaEntrega destino, string empresaAgencia, short bultos,
-            string usuario, DateTime fecha)
+            string usuario, DateTime fecha, decimal reembolso = 0m, bool sinBultos = false)
         {
             var defectos = PropuestaEnvioService.DefaultsDe(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, destino.CodPostal);
             var telefono = new Telefono(destino.Telefonos);
@@ -266,7 +276,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Servicio = defectos.Servicio,
                 Horario = defectos.Horario,
                 Retorno = 0,
-                Bultos = bultos < 1 ? (short)1 : bultos,
+                Bultos = sinBultos ? (short)0 : bultos < 1 ? (short)1 : bultos,
                 Nombre = nombre,
                 Direccion = (destino.Direccion ?? string.Empty).Replace("\"", string.Empty),
                 CodPostal = destino.CodPostal ?? string.Empty,
@@ -278,7 +288,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Email = string.Empty,
                 Atencion = nombre,
                 Observaciones = Recortar((destino.Texto ?? string.Empty).Replace("\"", string.Empty), LONGITUD_OBSERVACIONES),
-                Reembolso = 0m,
+                Reembolso = reembolso > 0 ? reembolso : 0m,
                 Vendedor = string.IsNullOrWhiteSpace(pedido.Vendedor) ? (string.IsNullOrWhiteSpace(destino.Vendedor) ? "NV" : destino.Vendedor) : pedido.Vendedor.Trim(),
                 Peso = 0m,
                 ImporteGasto = 0m,
@@ -287,7 +297,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             };
             envio.CodPostal = EnviosAgenciasController.CodigoPostalEnvio(envio.CodPostal, Direcciones.CodigoPostal.PaisIso(envio.Pais));
             EnviosAgenciasController.RecortarTextosLibres(envio);
-            // NestoAPI#778: hoy sin reembolso (no hace nada), pero la regla del reparto propio se aplica en todos los caminos.
+            // NestoAPI#778: la regla del reparto propio se aplica en todos los caminos (con el reembolso de una nota de cobro, #786,
+            // FechaPagoReembolso = Fecha: el correo de cuadre de agencias no lo ve como pendiente de la agencia).
             ReembolsoRepartoPropio.AplicarFechaPago(envio);
             return envio;
         }

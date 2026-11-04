@@ -213,6 +213,54 @@ namespace NestoAPI.Controllers
             return Responder(resultado);
         }
 
+        private ServicioNotasCobro notasCobro;
+
+        /// <summary>NestoAPI#786: las notas de cobro (sustituible en los tests).</summary>
+        internal ServicioNotasCobro NotasCobro
+        {
+            get => notasCobro ?? (notasCobro = new ServicioNotasCobro(new RepositorioNotasCobro(db)));
+            set => notasCobro = value;
+        }
+
+        /// <summary>NestoAPI#786: avisar a las PDA del reparto de que hay una parada nueva (sustituible en los tests). Nunca lanza.</summary>
+        internal Action<string> AvisarReparto { get; set; } = usuario =>
+            new Infraestructure.Notificaciones.AvisosAlmacenSignalR().RepartoCambiado(usuario, Models.Agencias.RepartoCambiadoDTO.MOTIVO_PARADA, DateTime.Now, null);
+
+        // POST api/NotasEntrega/Cobro { Empresa?, Cliente, Contacto?, Efectos?: [NºOrden…], Importe?, Fecha?, Comentario? }
+        /// <summary>
+        /// NestoAPI#786: «Nueva nota de cobro» (Nesto, desde el detalle del pedido o la ficha del cliente). Crea la nota de solo COBRO
+        /// (un pedido con NotaEntrega = 1 y SIN líneas: no pasa por picking, packing ni Facturar rutas) y, en la misma transacción, su
+        /// parada del reparto propio: un envío de la agencia 14 ya tramitado con Bultos 0 y Reembolso = el importe, que sale en
+        /// GET api/RepartoPropio/Envios como «NotaCobro» (NC{pedido}). 201 con <see cref="NotaCobroDTO"/>. 400 (de usted) sin efectos
+        /// ni importe, con un efecto de otro cliente o que ya no está pendiente, si el cliente no es de nuestra ruta o falta el script;
+        /// 404 si no existe el cliente/contacto; 409 si ese cliente/contacto ya tiene otra nota de cobro en el reparto.
+        /// </summary>
+        [HttpPost]
+        [Route("Cobro")]
+        [ResponseType(typeof(NotaCobroDTO))]
+        public async Task<IHttpActionResult> PostNotaCobro([FromBody] CrearNotaCobroDTO peticion)
+        {
+            if (!PermisosNotasEntrega.Puede(User))
+            {
+                return Prohibido();
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ResultadoNotaCobro resultado = await NotasCobro.Crear(peticion, usuario);
+            if (resultado.Tipo != TipoResultadoNotaEntrega.Ok)
+            {
+                return Responder<object>(resultado.Tipo, resultado.Mensaje, null);
+            }
+            try
+            {
+                AvisarReparto?.Invoke(usuario);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Nota de cobro #786] La nota {resultado.Contenido.Pedido} está creada, pero no se ha podido avisar a las PDA: {ex.Message}", ex));
+            }
+            return Content(HttpStatusCode.Created, resultado.Contenido);
+        }
+
         private IHttpActionResult Responder<T>(ResultadoAbonoRecogida<T> resultado)
         {
             if (resultado.Tipo == TipoResultadoNotaEntrega.Conflicto && resultado.Codigo != null)

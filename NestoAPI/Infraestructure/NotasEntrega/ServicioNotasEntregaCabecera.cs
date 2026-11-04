@@ -73,6 +73,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     public class ServicioNotasEntregaCabecera : IServicioNotasEntregaCabecera
     {
         public const string TABLA_MODIFICACIONES = "NotasEntregaCabecera";
+        /// <summary>NestoAPI#786: las de cobro no se crean ni se cambian por aquí (no llevan líneas ni bultos).</summary>
+        internal const string MENSAJE_COBRO_APARTE = "Las notas de cobro se crean con «Nueva nota de cobro» (POST api/NotasEntrega/Cobro), " +
+            "no como una nota de entrega con líneas.";
         internal const string MENSAJE_FALTA_SCRIPT = "No se puede guardar el tipo de la nota de entrega: falta lanzar el script " +
             "Scripts/Issue757_NotasEntregaCabecera.sql. Avise a Informática.";
 
@@ -138,6 +141,12 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             }
 
             FilaNotaEntregaCabecera anterior = await repositorio.Leer(empresa, pedido).ConfigureAwait(false);
+            if (TiposNotaEntrega.Normalizar(anterior?.Tipo) == TiposNotaEntrega.COBRO)
+            {
+                // NestoAPI#786: una nota de cobro no tiene líneas ni bultos; su parada ya está en el reparto con su importe.
+                return ResultadoNotaEntregaCabecera.Invalido($"La nota {pedido} es una nota de cobro: no se puede cambiar su tipo ni sus bultos. " +
+                    "Si ya no hay que cobrar, anule su parada del reparto.");
+            }
             var nueva = new FilaNotaEntregaCabecera
             {
                 Empresa = empresa,
@@ -303,6 +312,10 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             if (tipo == null)
             {
                 return new ValoresCabecera { Error = MotivoTipoInvalido(tipoPedido) };
+            }
+            if (tipo == TiposNotaEntrega.COBRO)
+            {
+                return new ValoresCabecera { Error = MENSAJE_COBRO_APARTE };
             }
             if (tipo == TiposNotaEntrega.ENTREGA)
             {

@@ -35,7 +35,8 @@ namespace NestoAPI.Controllers
         }
 
         internal RepartoPropioCobrosController(NVEntities db)
-            : this(db, new ServicioCobroTarjetaReparto(new RepositorioRepartoPropio(db), new RepositorioCobrosTarjetaReparto(db)),
+            : this(db, new ServicioCobroTarjetaReparto(new RepositorioRepartoPropio(db), new RepositorioCobrosTarjetaReparto(db),
+                    notas: new RepositorioNotasParadaReparto(db)), // NestoAPI#786: el enlace de una nota de cobro liquida sus efectos
                 new ServicioAutorizacionesReembolso(new RepositorioRepartoPropio(db), new RepositorioAutorizacionesReembolso(db)))
         {
         }

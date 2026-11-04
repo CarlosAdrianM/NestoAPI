@@ -296,7 +296,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         CodigoDocumento = nota?.CodigoDocumento
                     };
                 })
-                .Where(e => e.BultosCargados < e.Bultos)
+                // NestoAPI#786: una nota de cobro no tiene bultos que cargar
+                .Where(e => e.BultosCargados < e.Bultos && e.TipoParada != TiposParadaReparto.NOTA_COBRO)
                 .OrderBy(e => e.Poblacion, StringComparer.OrdinalIgnoreCase).ThenBy(e => e.EnvioId)
                 .ToList());
         }

@@ -295,6 +295,19 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `GET api/Festivos?anio=`, `POST api/Festivos`, `DELETE api/Festivos/{fecha}/{tipo}` (escribir: Administración/Dirección/Informática).
   Job `festivos-sin-cargar` (día 1 de cada mes; en diciembre mira el año siguiente) avisa a Dirección (campana + correo).
 
+### Nota de cobro: parada de solo cobro (NestoAPI#786, 04/11/26)
+- `NotasEntregaCabecera.Tipo` = «Cobro» (`TiposNotaEntrega.COBRO`; `Scripts/Issue786_NotasCobro.sql`: CHECK ampliada, columna
+  `ImporteCobro` y tabla `NotasEntregaCobroEfectos` con los Nº Orden de ExtractoCliente en su orden). Pedido con NotaEntrega = 1 **sin
+  líneas**: no entra en picking, packing ni Facturar rutas. No se crea ni se cambia por POST PedidosVenta / PUT Cabecera (400).
+- `POST api/NotasEntrega/Cobro` (`ServicioNotasCobro`) `{ Cliente, Contacto?, Efectos?, Importe?, Fecha?, Comentario? }` → 201
+  `NotaCobroDTO`; en la MISMA transacción crea la parada: envío de la agencia 14 ya tramitado, Bultos 0, Reembolso = importe (la suma de
+  lo pendiente si no se da). Solo rutas propias; 409 si el contacto ya tiene otra en el reparto. Avisa `repartoCambiado` (Motivo «Parada»).
+- En `GET api/RepartoPropio/Envios`: `TipoParada` «NotaCobro», `EsNotaCobro`, `CodigoDocumento` NC{pedido}, `EfectosCobro` (pendiente de
+  ahora) y `EmpresaCobro` de los efectos (uno de la 3 → sin tarjeta). No va en la furgoneta, ni en SinCargar, ni se leen bultos al entregar.
+- Entregar: efectivo → `ServicioCobrosReparto.Cobrar` (#766) con sus efectos y la MISMA clave que la entrega (idempotente; antes de tocar
+  el envío), asiento y caja en la prueba; tarjeta → el enlace del envío lleva los efectos (`LiquidacionNotaCobro`: suman justo el importe,
+  si no, a cuenta); sin cobro → autorización (#773). Firma: `TextoConformidadEntrega.Cobro` («he pagado X €»). Gemelas: Ariadna (PDA) y Nesto (pantalla).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

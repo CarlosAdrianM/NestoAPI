@@ -943,7 +943,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     throw FalloContabilizar;
                 }
                 int asiento = importeAContabilizar.HasValue ? 7001 : 0;
-                prueba.Asiento = asiento > 0 ? asiento : (int?)null;
+                prueba.Asiento = asiento > 0 ? asiento : prueba.Asiento; // NestoAPI#786: como el de verdad, el ya puesto se queda
                 prueba.Id = ++ultimoId;
                 Registros.Add(new Registro { Prueba = prueba, Firma = firma, Historia = historia, ImporteAContabilizar = importeAContabilizar, Usuario = usuario });
                 return Task.FromResult(asiento);

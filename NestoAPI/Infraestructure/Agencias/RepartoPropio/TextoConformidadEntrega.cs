@@ -49,6 +49,29 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return texto + ".";
         }
 
+        /// <summary>
+        /// NestoAPI#786: la parada de solo cobro (nota NC, sin bultos), con lo cobrado:
+        /// <list type="bullet">
+        /// <item>Efectivo: «Confirmo que he pagado 134,16 € en efectivo al repartidor de Nueva Visión (nota NC929700).»</item>
+        /// <item>Tarjeta: «Confirmo que he pagado 134,16 € con tarjeta a Nueva Visión (nota NC929700).»</item>
+        /// <item>Sin cobro (autorizado): «Confirmo que el repartidor de Nueva Visión ha pasado a cobrar la nota NC929700 (134,16 €).»</item>
+        /// </list>
+        /// Sin pedido, sin el paréntesis (y sin «la nota NC…»). La misma regla que Ariadna.Core/Reparto/TextoConformidadEntrega.Cobro.
+        /// </summary>
+        public static string Cobro(int? pedido, FormaPagoConformidad forma, decimal importe)
+        {
+            string nota = pedido > 0 ? $"NC{pedido.Value}" : null;
+            switch (forma)
+            {
+                case FormaPagoConformidad.Efectivo:
+                    return $"Confirmo que he pagado {Importe(importe)} en efectivo al repartidor de Nueva Visión" + (nota == null ? "." : $" (nota {nota}).");
+                case FormaPagoConformidad.Tarjeta:
+                    return $"Confirmo que he pagado {Importe(importe)} con tarjeta a Nueva Visión" + (nota == null ? "." : $" (nota {nota}).");
+                default:
+                    return "Confirmo que el repartidor de Nueva Visión ha pasado a cobrar" + (nota == null ? $" ({Importe(importe)})." : $" la nota {nota} ({Importe(importe)}).");
+            }
+        }
+
         /// <summary>«Confirmo que entrego 2 bultos al repartidor de Nueva Visión.»</summary>
         public static string Recogida(int bultos) => $"Confirmo que entrego {Bultos(bultos)} al repartidor de Nueva Visión.";
 

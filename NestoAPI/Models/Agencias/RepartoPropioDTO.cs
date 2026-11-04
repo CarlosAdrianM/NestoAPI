@@ -53,8 +53,18 @@ namespace NestoAPI.Models.Agencias
         public string TextoNota { get; set; }
         /// <summary>NestoAPI#759: el número de la nota (NotasEntrega.Numero), o null.</summary>
         public int? NumeroNota { get; set; }
-        /// <summary>NestoAPI#759: «NE929667» / «NR929554» en las notas; null en las demás.</summary>
+        /// <summary>NestoAPI#759: «NE929667» / «NR929554» en las notas (NestoAPI#786: «NC929700» en las de cobro); null en las demás.</summary>
         public string CodigoDocumento { get; set; }
+        /// <summary>
+        /// NestoAPI#786: parada de solo COBRO (nota de tipo Cobro): Bultos 0, Reembolso = lo que hay que cobrar, no va en la furgoneta y
+        /// al entregarla no se leen bultos; el cobro liquida <see cref="EfectosCobro"/>.
+        /// </summary>
+        public bool EsNotaCobro => TipoParada == TiposParadaReparto.NOTA_COBRO;
+        /// <summary>
+        /// NestoAPI#786: en las de cobro, los efectos (ExtractoCliente) que liquida el cobro, en su orden y con lo pendiente de ahora; vacía
+        /// si la nota es solo por importe. Null en las demás paradas.
+        /// </summary>
+        public System.Collections.Generic.List<NestoAPI.Models.PedidosVenta.EfectoNotaCobroDTO> EfectosCobro { get; set; }
         /// <summary>
         /// NestoAPI#759: la posición que le dio su repartidor (PUT Orden), o null si nadie la ha ordenado. La lista ya viene por
         /// Orden (nulos al final), fecha y número.
@@ -106,6 +116,8 @@ namespace NestoAPI.Models.Agencias
         public const string ENVIO = "Envio";
         public const string NOTA_ENTREGA = "NotaEntrega";
         public const string NOTA_RECOGIDA = "NotaRecogida";
+        /// <summary>NestoAPI#786: nota de solo cobro (NC{pedido}).</summary>
+        public const string NOTA_COBRO = "NotaCobro";
         public const string REPOSICION = "Reposicion";
     }
 
@@ -327,6 +339,8 @@ namespace NestoAPI.Models.Agencias
         public const string MOTIVO_INCIDENCIA = "Incidencia";
         /// <summary>NestoAPI#772: recoger, descargar, entregar bultos o terminar la jornada (la furgoneta ha cambiado).</summary>
         public const string MOTIVO_FURGONETA = "Furgoneta";
+        /// <summary>NestoAPI#786: hay una parada nueva (una nota de cobro recién creada): que relean la lista.</summary>
+        public const string MOTIVO_PARADA = "Parada";
 
         /// <summary>Quién lo ha cambiado, sin dominio.</summary>
         public string Usuario { get; set; }

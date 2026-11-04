@@ -166,11 +166,16 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     {
         public const string PREFIJO_ENTREGA = "NE";
         public const string PREFIJO_RECOGIDA = "NR";
+        /// <summary>NestoAPI#786: la parada de una nota de COBRO. No es un código de bulto (no tiene): no se lee al cargar.</summary>
+        public const string PREFIJO_COBRO = "NC";
         private static readonly Regex formato = new Regex(@"^(NE|NR)(\d{1,9})(?:-(\d{1,4}))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>«NE930123» o «NR930123».</summary>
         public static string Documento(bool esRecogida, int pedido)
             => (esRecogida ? PREFIJO_RECOGIDA : PREFIJO_ENTREGA) + pedido.ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>NestoAPI#786: «NC930123».</summary>
+        public static string DocumentoCobro(int pedido) => PREFIJO_COBRO + pedido.ToString(CultureInfo.InvariantCulture);
 
         /// <summary>«NR930123-2».</summary>
         public static string BultoRecogida(int pedido, int bulto)
