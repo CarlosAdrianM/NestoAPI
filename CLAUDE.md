@@ -245,6 +245,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Medidas en `GeneradorEtiquetasProducto.EAN_*`; prueba con `Scripts/Issue762_EtiquetaPrueba.ps1`.
 - Las REPO se reciben solo escaneando (`RecepcionDTO.SoloEscaneando`); lo que llega sin etiqueta, unidad a unidad con
   `POST api/Almacen/Recepciones/{tipo}/{documento}/SinEtiqueta` (avisa al origen y a Compras; la unidad la cuenta la app).
+  Ariadna#92: si el producto tiene código de envase (ficha o ProductosCodigosBarras activo, sin contar los internos 29), `NoLleva`
+  → 400 «léalo del envase» y `NoSeLee`/`Otro` avisan SOLO a Compras (`IAvisadorSinEtiqueta.AvisarACompras`).
 - Limpieza: `GET api/Productos/RepuestosSinCodigoBarras?meses=3` (o `Scripts/Issue762_ProductosRepuestosSinCodigo.sql`).
 - **Muestras sin código (NestoAPI#797, 03/11/26)**: las muestras (subgrupo MMP) sin código NO se etiquetan. Toda línea con `SinCodigo`
   (recorrido, packing, Ubicar, Recibir COMP/REPO, y Enviar reposición) lleva `SinCodigoAdmitido` = sin código Y MMP (regla única
