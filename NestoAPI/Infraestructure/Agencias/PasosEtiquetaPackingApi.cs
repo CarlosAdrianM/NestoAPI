@@ -59,11 +59,28 @@ namespace NestoAPI.Infraestructure.Agencias
         {
             // Where + ToListAsync (no FirstOrDefaultAsync): ver el «Limit1» de TramitacionEnviosService. Con seguimiento: Tramitar
             // lo vuelve a buscar en el mismo contexto.
+            // NestoAPI#803: también el del reparto propio que ya registró un intento anterior de hoy (Tramitar lo deja Tramitado
+            // en el acto): si no, al repetir la etiqueta (la impresora falló) parecería una ampliación.
+            DateTime hoy = DateTime.Today;
             List<EnviosAgencia> enCurso = await Db.EnviosAgencias
-                .Where(e => e.Pedido == pedido && e.Estado == Constantes.Agencias.ESTADO_EN_CURSO)
+                .Where(e => e.Pedido == pedido && (e.Estado == Constantes.Agencias.ESTADO_EN_CURSO
+                    || (e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && e.Estado == Constantes.Agencias.ESTADO_TRAMITADO
+                        && e.Fecha >= hoy)))
                 .ToListAsync();
-            return enCurso.OrderByDescending(e => e.Numero).FirstOrDefault();
+            return EnvioDelIntentoAnterior(enCurso, hoy);
         }
+
+        /// <summary>
+        /// El «envío actual» del pedido para la etiqueta del packing: el último en curso (Estado 0) o, NestoAPI#803, el último
+        /// del reparto propio ya registrado (Tramitado, con albarán RP) con fecha de hoy o posterior, que se reimprime.
+        /// </summary>
+        internal static EnviosAgencia EnvioDelIntentoAnterior(IEnumerable<EnviosAgencia> envios, DateTime hoy)
+            => (envios ?? Enumerable.Empty<EnviosAgencia>())
+                .Where(e => e != null && (e.Estado == Constantes.Agencias.ESTADO_EN_CURSO
+                    || (e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && e.Estado == Constantes.Agencias.ESTADO_TRAMITADO
+                        && e.Fecha.Date >= hoy.Date && !string.IsNullOrWhiteSpace(e.CodigoBarras))))
+                .OrderByDescending(e => e.Numero)
+                .FirstOrDefault();
 
         public async Task<EntregaParaEtiqueta> LeerEntrega(string empresa, int pedido)
         {

@@ -105,6 +105,50 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task RepartoPropio_Nuevo_GrabaRegistraConAlbaranRPEImprimeEnLaImpresoraPedida()
+        {
+            // NestoAPI#803 (pedido 929779, ruta AT): el envío de la 14 sale del packing con sus etiquetas RP{envío}-{N}.
+            int propio = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            CreaElEnvio(propio);
+            A.CallTo(() => pasos.NombreAgencia(propio)).Returns("Reparto propio");
+            A.CallTo(() => pasos.Tramitar(5001)).Returns(PasoEtiquetaAgencia.Bien("RP5001", 2));
+            A.CallTo(() => pasos.Imprimir(5001, A<string>._)).ReturnsLazily((int _, string impresora) =>
+                Task.FromResult(PasoEtiquetaAgencia.Bien("RP5001", 2, impresora)));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(2m, "ZEBRA BOLSAS"), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Hecha, resultado.Tipo);
+            EtiquetaPackingDTO etiqueta = resultado.Etiqueta;
+            Assert.IsFalse(etiqueta.EtiquetaEnNesto);
+            Assert.IsTrue(etiqueta.Impresa);
+            Assert.IsTrue(etiqueta.EnvioNuevo);
+            Assert.AreEqual(propio, etiqueta.Agencia);
+            Assert.AreEqual("RP5001", etiqueta.CodigoBarras);
+            Assert.AreEqual("Etiqueta de Reparto propio impresa en ZEBRA BOLSAS (2 bultos).", etiqueta.Message);
+            A.CallTo(() => pasos.Tramitar(5001)).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => pasos.Imprimir(5001, "ZEBRA BOLSAS")).MustHaveHappenedOnceExactly());
+        }
+
+        [TestMethod]
+        public async Task RepartoPropio_YaRegistrado_SeReimprimeSinGrabarNiTramitarOtraVez()
+        {
+            // NestoAPI#803: el intento anterior lo dejó Tramitado con su albarán (falló la impresora): solo se imprime.
+            int propio = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            EnviosAgencia registrado = Envio(propio, "RP5001");
+            registrado.Estado = Constantes.Agencias.ESTADO_TRAMITADO;
+            A.CallTo(() => pasos.LeerEnvioEnCurso("1", PEDIDO)).Returns(registrado);
+            A.CallTo(() => pasos.Imprimir(5001, A<string>._)).Returns(PasoEtiquetaAgencia.Bien("RP5001", 2, "ZEBRA BOLSAS"));
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsTrue(etiqueta.Reimpresion);
+            Assert.IsTrue(etiqueta.Impresa);
+            Assert.AreEqual("RP5001", etiqueta.CodigoBarras);
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Ctt_LosAvisosDeLaGrabacionYLaEntregaSinFotosVanEnLaRespuesta()
         {
             // NestoAPI#771: ya no se avisa por cada caja sin foto, sino si la entrega no tiene ninguna

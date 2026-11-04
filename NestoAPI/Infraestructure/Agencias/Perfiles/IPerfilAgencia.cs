@@ -72,10 +72,10 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>
-    /// NestoAPI#739: la agencia no sirve pedidos de canales externos (Amazon, tienda online): no tiene transportista en
-    /// Prestashop ni código en Amazon (su enlace de seguimiento es nuestra propia página, NestoAPI#744). Hoy, el reparto
-    /// propio (rutas AT y 16). La guardia de cobertura de seguimiento (CoberturaSeguimientoAgenciasTests) no le exige datos
-    /// de canal.
+    /// NestoAPI#739: la agencia no sirve pedidos de Amazon: no tiene código en Amazon (su enlace de seguimiento es nuestra
+    /// propia página, NestoAPI#744). Hoy, el reparto propio (rutas AT y 16). La guardia de cobertura de seguimiento
+    /// (CoberturaSeguimientoAgenciasTests) no le exige los datos de Amazon. NestoAPI#804: la tienda online SÍ (un cliente
+    /// de ruta propia que compra en la web): declara transportista y tracking de Prestashop como las demás.
     /// </summary>
     public interface IPerfilSinCanalesExternos : IPerfilAgencia
     {

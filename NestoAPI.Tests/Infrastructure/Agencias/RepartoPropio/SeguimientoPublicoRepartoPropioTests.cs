@@ -158,12 +158,30 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
-        public void EnvioAgenciaDTO_CanalesExternos_NullNuncaElTextoDeError()
+        public void EnvioAgenciaDTO_Prestashop_TransportistaGenerico160ConElEnlaceSinEsquema()
+        {
+            // NestoAPI#804 (Enrique, envío 250468 del pedido 929779 de la tienda online): «no declara transportista de Prestashop».
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "Reparto propio", CodigoBarras = "RP123456 " };
+
+            Assert.AreEqual("160", dto.TransportistaPrestashop, "el genérico de GLS, Innovatrans y CTT (plantilla vacía)");
+            Assert.AreEqual("api.nuevavision.es/seguimiento/" + EnlaceSeguimientoRepartoPropio.Token(ENVIO), dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void EnvioAgenciaDTO_Prestashop_SinClaveDeFirma_ElAlbaranPelado()
+        {
+            EnlaceSeguimientoRepartoPropio.LeerClave = () => null;
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "Reparto propio", CodigoBarras = "RP123456 " };
+
+            Assert.AreEqual("160", dto.TransportistaPrestashop);
+            Assert.AreEqual("RP123456", dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void EnvioAgenciaDTO_Amazon_NullNuncaElTextoDeError()
         {
             var dto = new EnvioAgenciaDTO { AgenciaNombre = "Reparto propio", CodigoBarras = "RP123456" };
 
-            Assert.IsNull(dto.TransportistaPrestashop);
-            Assert.IsNull(dto.TrackingPrestashop);
             Assert.IsNull(dto.CarrierCodeAmazon);
             Assert.IsNull(dto.CarrierNameAmazon);
             Assert.IsNull(dto.ShippingMethodAmazon);

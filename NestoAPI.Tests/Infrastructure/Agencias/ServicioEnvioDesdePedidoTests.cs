@@ -2,7 +2,9 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Agencias.Gls;
+using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
+using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
 using System;
@@ -25,6 +27,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private const int GLS = Constantes.Agencias.AGENCIA_GLS;
         private const int CTT = Constantes.Agencias.AGENCIA_CTT;
         private const int CANTERAS = Constantes.Agencias.AGENCIA_CANTERAS;
+        private const int REPARTO_PROPIO = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
 
         [TestMethod]
         public async Task NotificadorCorreo_SoloEncolaElNumero_SinEsperarAlCorreo()
@@ -243,9 +246,116 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => notificador.Notificar(envio)).MustHaveHappenedOnceExactly();
         }
 
-        // ---------------------------------------------------------------- NestoAPI#778: reembolso del reparto propio
-        // (la 14 no entra por DesdePedido: no tiene plaza en RegistroPlazasAgencias; nace por el POST, ver
-        // EnviosAgenciasCatalogoServiciosTests. Aquí, que una agencia de fuera sigue naciendo pendiente de la agencia.)
+        // ---------------------------------------------------------------- NestoAPI#803: el reparto propio desde el packing
+        // (pedido 929779, cliente 31517, ruta AT: el packing de Ariadna daba «La agencia 14 no se puede insertar desde el
+        // servidor» y el envío 250468 lo tuvo que crear Nesto). La propuesta elige la 14 para las rutas propias.
+
+        private void PropuestaDeRepartoPropio(decimal reembolso = 120m)
+        {
+            propuesta.Agencia = REPARTO_PROPIO;
+            propuesta.AgenciaNombre = "Reparto propio";
+            propuesta.Cliente = "31517";
+            propuesta.Pedido = PEDIDO;
+            propuesta.Servicio = 0;
+            propuesta.Horario = 0;
+            propuesta.Reembolso = reembolso;
+            propuesta.CodPostal = "28110";
+            propuesta.Poblacion = "ALGETE";
+        }
+
+        [TestMethod]
+        public async Task Nuevo_RepartoPropio_SeGrabaComoNestoYSeRegistraAlImprimir()
+        {
+            PropuestaDeRepartoPropio();
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            EnviosAgencia envio = resultado.Envio.Envio;
+            Assert.AreEqual(REPARTO_PROPIO, envio.Agencia);
+            Assert.AreEqual((short)Constantes.Agencias.ESTADO_EN_CURSO, envio.Estado, "lo deja Tramitado el /Tramitar del packing");
+            Assert.AreEqual("RP", envio.Nemonico, "AgenciaRepartoPropio.vb (calcularPlaza)");
+            Assert.AreEqual("Reparto propio", envio.NombrePlaza);
+            Assert.AreEqual(string.Empty, envio.CodigoBarras, "el albarán RP{envío} lo da /Tramitar");
+            Assert.AreEqual(FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR, resultado.Envio.Flujo);
+            Assert.IsFalse(resultado.Envio.EtiquetaEnNesto, "la etiqueta la saca la API, no Nesto");
+            Assert.IsTrue(resultado.Envio.HayQueImprimir);
+            Assert.IsFalse(resultado.Envio.CorreoEnviado, "sin el correo «entregado a la agencia»: no hay agencia");
+            A.CallTo(notificador).MustNotHaveHappened();
+            A.CallTo(() => clienteGls.EnviarAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Nuevo_RepartoPropioConReembolso_NacePagadoConLaFechaDelEnvio()
+        {
+            // NestoAPI#778: el reembolso lo cobra el repartidor (ReembolsoRepartoPropio), no una agencia.
+            PropuestaDeRepartoPropio(85.40m);
+
+            EnviosAgencia envio = (await Crear(Peticion())).Envio.Envio;
+
+            Assert.AreEqual(85.40m, envio.Reembolso, "es lo que cobra Ariadna al entregar");
+            Assert.AreEqual(propuesta.Fecha.Date, envio.FechaPagoReembolso);
+        }
+
+        [TestMethod]
+        public async Task Nuevo_RepartoPropioSinReembolso_SinFechaPagoReembolso()
+        {
+            PropuestaDeRepartoPropio(0m);
+
+            EnviosAgencia envio = (await Crear(Peticion())).Envio.Envio;
+
+            Assert.IsNull(envio.FechaPagoReembolso);
+        }
+
+        [TestMethod]
+        public async Task Nuevo_RepartoPropio_AlTramitarDaElAlbaranRPYUnaEtiquetaPorBulto()
+        {
+            // Lo que hace después el /Tramitar del packing con el envío grabado (AgenciaRemotaRepartoPropio).
+            PropuestaDeRepartoPropio(120m);
+            EnviosAgencia envio = (await Crear(Peticion())).Envio.Envio;
+            var remota = new AgenciaRemotaRepartoPropio(n => Task.FromResult(envio), () => propuesta.Fecha);
+
+            ResultadoTramitacionRemota registrado = await remota.InsertarYEtiquetarAsync(DatosEnvioRemoto.DesdeEnvio(envio));
+
+            Assert.IsTrue(registrado.Exito, registrado.Error);
+            Assert.AreEqual("RP250000", registrado.Albaran);
+            Assert.AreEqual(2, registrado.Bultos);
+            Assert.AreEqual("ZPL", registrado.Etiqueta.Tipo);
+            StringAssert.Contains(registrado.Etiqueta.Contenido, "^FDRP250000-1^FS");
+            StringAssert.Contains(registrado.Etiqueta.Contenido, "^FDRP250000-2^FS");
+            Assert.IsFalse(registrado.Etiqueta.Contenido.Contains("RP250000-3"));
+            StringAssert.Contains(registrado.Etiqueta.Contenido, "REEMBOLSO: 120,00 EUR");
+        }
+
+        [TestMethod]
+        public async Task Nuevo_RepartoPropioDelPacking_FacturarRutasLoReutilizaYNoLoDuplica()
+        {
+            // El envío del packing ya tramitado (RP{envío}): la nota de entrega de esa ruta AT lo reutiliza como parada.
+            PropuestaDeRepartoPropio();
+            EnviosAgencia envio = (await Crear(Peticion())).Envio.Envio;
+            envio.CodigoBarras = CodigoBultoRepartoPropio.Albaran(envio.Numero);
+            envio.Estado = Constantes.Agencias.ESTADO_TRAMITADO;
+            var repositorio = A.Fake<IRepositorioParadasNotaEntrega>();
+            A.CallTo(() => repositorio.LeerEnviosDelPedido(PEDIDO)).Returns(new List<EnvioPedidoNota>
+            {
+                new EnvioPedidoNota { Numero = envio.Numero, Agencia = envio.Agencia, Estado = envio.Estado, Bultos = envio.Bultos }
+            });
+            var cabeceras = A.Fake<IRepositorioNotasEntregaCabecera>();
+            A.CallTo(() => cabeceras.Leer(A<string>._, A<int>._)).Returns(Task.FromResult<FilaNotaEntregaCabecera>(null));
+            var paradas = new ServicioParadasNotaEntrega(repositorio, cabeceras, () => true, _ => { }, () => propuesta.Fecha);
+
+            ResultadoParadaNotaEntrega parada = await paradas.AsegurarParada(new CabPedidoVta
+            {
+                Empresa = EMPRESA, Número = PEDIDO, Nº_Cliente = "31517", Contacto = "0", Ruta = "AT", NotaEntrega = true
+            }, "Andre");
+
+            Assert.AreEqual(AccionParadaNotaEntrega.Reutilizada, parada.Accion);
+            Assert.AreEqual(envio.Numero, parada.EnvioId);
+            Assert.AreEqual((short)2, parada.Bultos, "los del packing");
+            A.CallTo(() => repositorio.CrearEnvioTramitado(A<EnviosAgencia>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        // NestoAPI#778: una agencia de fuera sigue naciendo pendiente de que la agencia pague el reembolso.
 
         [TestMethod]
         public async Task Nuevo_CttConReembolso_SinFechaPagoReembolso()
@@ -797,6 +907,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR, ServicioEnvioDesdePedido.FlujoDe(CTT));
             Assert.AreEqual(FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR, ServicioEnvioDesdePedido.FlujoDe(Constantes.Agencias.AGENCIA_INNOVATRANS));
             Assert.AreEqual(FlujosEnvioDesdePedido.MANUAL, ServicioEnvioDesdePedido.FlujoDe(CANTERAS));
+            Assert.AreEqual(FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR, ServicioEnvioDesdePedido.FlujoDe(REPARTO_PROPIO));
         }
 
         private EnviosAgencia EnvioExistente(int numero, int estado, int agencia, int pedido)
@@ -822,6 +933,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 { Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO, new AgenciaTransporte { Numero = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO, Empresa = "3  ", Nombre = "ASM" } },
                 { CTT, new AgenciaTransporte { Numero = CTT, Empresa = "1  ", Nombre = "CTT" } },
                 { CANTERAS, new AgenciaTransporte { Numero = CANTERAS, Empresa = "1  ", Nombre = "Canteras" } },
+                { REPARTO_PROPIO, new AgenciaTransporte { Numero = REPARTO_PROPIO, Empresa = "1  ", Nombre = "Reparto propio" } },
                 { Constantes.Agencias.AGENCIA_GLOVO, new AgenciaTransporte { Numero = Constantes.Agencias.AGENCIA_GLOVO, Empresa = "1  ", Nombre = "Glovo" } },
                 { Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, new AgenciaTransporte { Numero = Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, Empresa = "1  ", Nombre = "Correos Express" } }
             };

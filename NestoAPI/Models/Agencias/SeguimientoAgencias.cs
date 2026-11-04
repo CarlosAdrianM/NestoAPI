@@ -184,9 +184,10 @@ namespace NestoAPI.Models.Agencias
     /// NestoAPI#744: el reparto propio (agencia 14, rutas AT y 16). No hay web de agencia: el enlace es nuestra propia
     /// página pública (<c>{UrlPublicaApi}/seguimiento/{token}</c>, ver <see cref="EnlaceSeguimientoRepartoPropio"/>). El
     /// envío sale del albarán «RP{envío}» (CodigoBarras) o de un bulto «RP{envío}-{n}».
-    /// <para>Canales externos: null en todo. El reparto propio no sirve pedidos de Amazon ni de la tienda online (su perfil
-    /// es <see cref="Infraestructure.Agencias.Perfiles.IPerfilSinCanalesExternos"/>); si algún día los sirviera, habría que
-    /// dar de alta un transportista en Prestashop que apunte a esta página y decidir el «Other» de Amazon.</para>
+    /// <para>Tienda online (NestoAPI#804, envío 250468 del pedido 929779): SÍ sirve pedidos de la tienda cuando el cliente
+    /// es de una ruta propia. Va por el transportista genérico 160 de Prestashop (el de GLS, Innovatrans y CTT, con la
+    /// plantilla de URL vacía), así que viaja el enlace entero a nuestra página, sin esquema; sin clave de firma, el
+    /// albarán pelado. Amazon: null (no servimos pedidos de Amazon por el reparto propio).</para>
     /// </summary>
     internal class SeguimientoRepartoPropio : IEstrategiaSeguimientoAgencia
     {
@@ -194,7 +195,7 @@ namespace NestoAPI.Models.Agencias
         public const string NOMBRE = "Reparto propio";
         public string Nombre => NOMBRE;
         public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_REPARTO_PROPIO };
-        public string TransportistaPrestashop => null;
+        public string TransportistaPrestashop => "160";
         public string CarrierCodeAmazon => null;
         public string CarrierNameAmazon => null;
         public string ShippingMethodAmazon => null;
@@ -208,7 +209,9 @@ namespace NestoAPI.Models.Agencias
             }
             return null;
         }
-        public string TrackingPrestashop(DatosSeguimientoEnvio d) => null;
+        // Transportista genérico sin plantilla: viaja el enlace entero (sin esquema); sin clave, el albarán RP{envío}.
+        public string TrackingPrestashop(DatosSeguimientoEnvio d)
+            => SeguimientoUrl.SinEsquema(ConstruirUrl(d)) ?? d?.CodigoSeguimiento?.Trim();
     }
 
     internal static class SeguimientoUrl
