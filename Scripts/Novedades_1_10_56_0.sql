@@ -5,13 +5,15 @@
     NestoAPI #726 (Management API de CTT), #818 (stock de la web al momento), #819 (alta de cliente: textos recortados y 400 claro),
     #820 (Hangfire robusto), #821 (CP españoles nuevos con dirección de Google), #823 (una persona, una identidad), #824 (enlace pagado
     y reembolso por cliente; céntimo de redondeo), #825 (packing por pedido en factura simplificada), #827 (una sola grafía por persona),
-    #829 (forma de asistencia en eventos mixtos), #830 (la ruta del pedido es la de la empresa 1), #735 (fuera RDLC) y #738 (estado de
-    productos por la API).
+    #829 (forma de asistencia en eventos mixtos), #830 (la ruta del pedido es la de la empresa 1), #735 (fuera RDLC), #738 (estado de
+    productos por la API), #822 (campana por persona en Nesto, Ariadna y NestoApp; GET api/Novedades/{id}), #826 (direcciones extranjeras
+    sin reordenar) y #623 cortes 1 y 5 (origen del cliente: leads de Meta Harmonia, llamada < 24 h laborables; Nesto#523).
 
     ORDEN:
       1) Scripts sa ANTES de publicar la API: Issue818_ExtractoProducto_EncolarSyncTienda.sql (disparador que encola en Nesto_sync cada
          apunte de ExtractoProducto que no sume cero: el stock de la web al momento) e Issue829_EventosInscripcionesModalidad.sql
-         (formato «Mixto» en la CHECK de Eventos y columna EventosInscripciones.FormaAsistencia).
+         (formato «Mixto» en la CHECK de Eventos y columna EventosInscripciones.FormaAsistencia) e Issue623_OrigenesCliente.sql (tablas
+         OrigenesCliente con la fila META-HARMONIA-0926 y ClientesOrigen, GRANT a RDS2016$).
          YA HECHOS hoy por Carlos: OneShot GrantExecute_ApiSPs (EXECUTE a RDS2016$ en 10 SPs), REVOKE INSERT/UPDATE de CódigosPostales a
          «Eva Visnú», borrado de los rellenos de inventario (REI 2512, ALG 8, ALC 3206) y de las 44 filas antiguas de Andre.
       2) Publicar la API (master) → ClickOnce (Clean + Rebuild) → 1.10.56.0 → flujos de Ariadna 2.30.
@@ -72,6 +74,15 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Tienda online: el stock de la web se actualiza al momento',
      N'Cada movimiento de stock (venta, recepción, traspaso, inventario, regularización) manda el producto a la web en cuanto se apunta, sin esperar a la sincronización de la noche. Los movimientos que suman cero (meter y sacar de una carpeta, cambiar de ubicación) no la molestan.',
      N'Dirección,Compras,Tiendas'),
+    ('Nuevo', N'Origen del cliente: los leads de la campaña de Meta de Harmonia, con llamada en menos de 24 h',
+     N'En «Crear cliente» hay un desplegable «Origen» (por ahora «Lead de Meta · campaña Harmonia»); también se ve y se cambia en la ficha del cliente. Un cliente con ese origen sale el primero en «clientes para contactar» de su vendedor con «Lead de Meta: llamar antes de las hh:mm del dd/MM» (24 horas laborables desde el alta) hasta que tenga un rapport; si se pasa el plazo, aviso en la campana al vendedor y a su jefe de ventas. Importar el fichero de leads de Meta y el informe por origen vienen después.',
+     N'Vendedores,Tiendas,Administración,Dirección'),
+    ('Mejorado', N'La campana es la misma persona en Nesto, Ariadna y NestoApp',
+     N'Los avisos que llegan a una persona se ven en cualquiera de las tres aplicaciones, y leer o borrar uno en una se refleja en las demás. Un mismo aviso ya no sale dos veces aunque se mande a Nesto y a la app.',
+     NULL),
+    ('Corregido', N'Alta de cliente extranjero: la dirección se deja como viene',
+     N'Para los clientes de fuera de España, la dirección ya no se reordena al formato español (número detrás de la calle con coma): se deja como la teclea el usuario. Lo contó Enrique con una dirección francesa. Cuando la dirección se elige en el buscador de Google, Nesto todavía la monta a la española; queda pendiente.',
+     N'Vendedores,Tiendas,Administración');
     ('Mejorado', N'Eventos: formato «Mixto» y, en cada inscrita, si viene presencial u online',
      N'Un evento puede ser presencial, online o mixto. En los mixtos, la tarjeta de cada inscrita lleva un desplegable presencial / online que se guarda al elegirlo, y la lista de inscritos tiene un contador «N presencial · M online», un filtro y la opción de ordenar por eso. Lo pidió Reina.',
      N'Tiendas,Vendedores,Dirección');
