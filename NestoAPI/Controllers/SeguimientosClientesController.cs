@@ -880,10 +880,13 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
             SeguimientoCliente seguimientoCliente = db.SeguimientosClientes.SingleOrDefault(s => s.NºOrden == seguimientoClienteDTO.Id);
 
-            if (seguimientoCliente.Usuario.Trim() != seguimientoClienteDTO.Usuario.Trim())
+            // NestoAPI#827: la misma persona aunque venga con otra caja («NUEVAVISION\Dlopez» edita lo de «NUEVAVISION\dlopez»);
+            // y lo que se toca queda con la grafía canónica.
+            if (!UsuarioAuditoriaHelper.MismaPersona(seguimientoCliente.Usuario, seguimientoClienteDTO.Usuario))
             {
                 throw new Exception("No se pueden modificar los rapport de otro usuario");
             }
+            seguimientoCliente.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(seguimientoCliente.Usuario);
 
             // NestoAPI#716: el resultado del rapport es un catálogo cerrado; lo que no case es un 400 antes de tocar nada.
             string motivoResultado = ResultadoRapport.MotivoParaNoGuardar(seguimientoClienteDTO.Resultado);
@@ -942,6 +945,12 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
         }
 
 
+        /// <summary>
+        /// NestoAPI#827 (sugerencia 959; Carlos 05/11/26): el usuario que se graba en un rapport (POST y Copiar): la persona
+        /// con su grafía canónica, recortada a la columna (varchar(30)) y nunca vacía.
+        /// </summary>
+        internal static string UsuarioParaGrabar(string usuario) => UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+
         // POST: api/SeguimientosClientes
         [ResponseType(typeof(SeguimientoCliente))]
         public async Task<IHttpActionResult> PostSeguimientoCliente(SeguimientoClienteDTO seguimientoClienteDTO)
@@ -955,6 +964,9 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             {
                 return BadRequest("El seguimiento debe llevar usuario.");
             }
+            // NestoAPI#827 (sugerencia 959; Carlos 05/11/26): una sola grafía por persona. Nesto manda el usuario de Windows con
+            // la caja con la que se tecleó al iniciar sesión («NUEVAVISION\Dlopez»); se graba la canónica («NUEVAVISION\DLopez»).
+            seguimientoClienteDTO.Usuario = UsuarioParaGrabar(seguimientoClienteDTO.Usuario);
             string motivoEmpleados = PoliticaEmpleadosCliente.MotivoParaNoGuardar(seguimientoClienteDTO.Empleados);
             if (motivoEmpleados != null)
             {
@@ -1273,7 +1285,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                     Cosmetica = origen.Cosmetica,
                     PersonaQueDecide = origen.PersonaQueDecide,
                     PosibleVenta = origen.PosibleVenta,
-                    Usuario = usuario
+                    Usuario = UsuarioParaGrabar(usuario) // NestoAPI#827
                 };
                 db.SeguimientosClientes.Add(copia);
             }

@@ -39,6 +39,16 @@ namespace NestoAPI.Infraestructure
     /// <para>Se consulta como mucho una vez cada <see cref="DURACION_CACHE"/> por nombre. Sin consultor configurado
     /// (las pruebas) no se resuelve nada. Si la consulta falla se devuelve el nombre tal cual (esto nunca rompe una
     /// petición) y se registra en ELMAH una vez.</para>
+    /// <para><b>NestoAPI#827 (sugerencia 959; Carlos 05/11/26): una sola grafía por persona.</b> Windows devuelve el usuario
+    /// con la caja con la que se tecleó al iniciar sesión y Nesto lo mandaba tal cual: «NUEVAVISION\dlopez» y
+    /// «NUEVAVISION\Dlopez» partían a Daniel en dos en el informe de rapports. Ahora <see cref="Persona"/> devuelve todo
+    /// usuario de dominio (venga con dominio o resuelto desde el gemelo) como <c>NUEVAVISION\&lt;grafía canónica&gt;</c>:
+    /// la del usuario de Identity con ese nombre («DLopez», «MariaJose») o, si no lo hay (o la de Identity está entera en
+    /// minúsculas o en mayúsculas, o falla la consulta), la inicial en mayúscula y el resto en minúscula («Santiago», «Reina»,
+    /// «Aida»). Cacheada como el gemelo. Solo cambia la caja: SQL compara sin ella, así que FechasPermitidas,
+    /// ParámetrosUsuario y los SPs siguen igual. Las cuentas de máquina (<c>RDS2016$</c>) y los nombres con más de una
+    /// barra se dejan como vienen. Se enciende con <see cref="UsarBaseDeDatos"/> (Startup) o <see cref="ConfigurarGrafia"/>
+    /// (pruebas); con <see cref="Configurar"/> solo, queda apagada (el comportamiento de #823 tal cual).</para>
     /// </remarks>
     public static class UsuarioAuditoriaHelper
     {
@@ -82,6 +92,15 @@ namespace NestoAPI.Infraestructure
         private static Func<DateTime> reloj = () => DateTime.UtcNow;
         private static bool errorAvisado;
 
+        /// <summary>NestoAPI#827: grafía canónica (apagada hasta ConfigurarGrafia/UsarBaseDeDatos).</summary>
+        private static Func<string, string> buscarEnIdentity;
+        private static bool grafiaActiva;
+        private static bool errorIdentityAvisado;
+        private static readonly Dictionary<string, Entrada> cacheGrafia = new Dictionary<string, Entrada>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>NestoAPI#827: AspNetUsers.UserName es nvarchar(256); se compara sin caja (la intercalación de la BD).</summary>
+        internal const string SQL_IDENTITY = "SELECT TOP 1 UserName FROM dbo.AspNetUsers WITH (NOLOCK) WHERE UserName = @nombre";
+
         /// <summary>
         /// NestoAPI#823: el nombre tal como viene en el token de la petición en curso (sin resolver); lo pone
         /// <see cref="UserSyncHandler"/>. Para las pocas reglas que dependen de la APLICACIÓN y no de la persona (imprimir en
@@ -124,9 +143,11 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
-        /// NestoAPI#823: la identidad única de la persona. Sin dominio y con gemelo → el gemelo (con la caja de su fila);
-        /// en cualquier otro caso (con dominio, un correo, sin gemelo, sin BD o si falla la consulta), tal cual. Null y
-        /// vacío se devuelven igual. Nunca lanza.
+        /// NestoAPI#823: la identidad única de la persona. Sin dominio y con gemelo → el gemelo; en cualquier otro caso (un
+        /// correo, sin gemelo, sin BD o si falla la consulta), tal cual. Null y vacío se devuelven igual. Nunca lanza.
+        /// <para>NestoAPI#827: con la grafía encendida, todo usuario <c>NUEVAVISION\x</c> (el que llega con dominio y el
+        /// gemelo) sale con la grafía canónica (<see cref="GrafiaCanonica"/>); apagada, el gemelo con la caja de su fila y el
+        /// de dominio tal cual.</para>
         /// </summary>
         public static string Persona(string usuario)
         {
@@ -135,11 +156,161 @@ namespace NestoAPI.Infraestructure
                 return usuario;
             }
             string limpio = usuario.Trim();
-            if (!PuedeTenerGemelo(limpio))
+            if (PuedeTenerGemelo(limpio))
+            {
+                string gemelo = Gemelo(limpio);
+                return gemelo == null ? usuario : ConGrafiaCanonica(gemelo);
+            }
+            string canonico = ConGrafiaCanonica(limpio);
+            // Si no cambia nada, se devuelve lo que vino (con sus espacios), como en #823.
+            return string.Equals(canonico, limpio, StringComparison.Ordinal) ? usuario : canonico;
+        }
+
+        /// <summary>
+        /// NestoAPI#827: «NUEVAVISION\DLopez» a partir de «nuevavision\dlopez» (y así con cualquier caja). Lo que no es un
+        /// usuario del dominio principal con un solo nombre detrás (otro dominio, sin dominio, cuenta de máquina con «$», más
+        /// de una barra) o con la grafía apagada, tal cual (recortado).
+        /// </summary>
+        internal static string ConGrafiaCanonica(string usuario)
+        {
+            string limpio = usuario?.Trim();
+            if (string.IsNullOrEmpty(limpio) || !grafiaActiva)
+            {
+                return limpio;
+            }
+            int barra = limpio.IndexOf('\\');
+            if (barra < 0 || barra != limpio.LastIndexOf('\\')
+                || !string.Equals(limpio.Substring(0, barra), DOMINIO, StringComparison.OrdinalIgnoreCase))
+            {
+                return limpio;
+            }
+            string nombre = limpio.Substring(barra + 1).Trim();
+            if (nombre.Length == 0 || nombre.IndexOf('$') >= 0 || nombre.IndexOf('@') >= 0)
+            {
+                return limpio;
+            }
+            return DOMINIO + "\\" + GrafiaCanonica(nombre);
+        }
+
+        /// <summary>
+        /// NestoAPI#827: la grafía «bonita» de un nombre de usuario (sin dominio): la de su usuario de Identity si la tiene y
+        /// tiene forma de nombre («DLopez», «MariaJose»); si no, inicial en mayúscula y el resto en minúscula («Santiago»,
+        /// «Reina», «Aida»). Con la grafía apagada, tal cual. Cacheada <see cref="DURACION_CACHE"/>. Nunca lanza: si falla la
+        /// consulta a Identity, la regla general (y ELMAH una vez).
+        /// </summary>
+        internal static string GrafiaCanonica(string nombre)
+        {
+            string limpio = nombre?.Trim();
+            if (string.IsNullOrEmpty(limpio) || !grafiaActiva)
+            {
+                return limpio;
+            }
+            DateTime ahora = reloj();
+            lock (candado)
+            {
+                if (cacheGrafia.TryGetValue(limpio, out Entrada entrada) && ahora < entrada.CaducaEn)
+                {
+                    return entrada.Resultado;
+                }
+            }
+            string deIdentity = null;
+            Exception error = null;
+            Func<string, string> buscador = buscarEnIdentity;
+            if (buscador != null)
+            {
+                try
+                {
+                    deIdentity = buscador(limpio)?.Trim();
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+            }
+            string resultado = EsGrafiaDeIdentityValida(deIdentity, limpio) ? deIdentity : InicialMayuscula(limpio);
+            bool avisar = false;
+            lock (candado)
+            {
+                if (error != null)
+                {
+                    avisar = !errorIdentityAvisado;
+                    errorIdentityAvisado = true;
+                }
+                cacheGrafia[limpio] = new Entrada { Resultado = resultado, CaducaEn = ahora + DURACION_CACHE };
+            }
+            if (avisar)
+            {
+                try
+                {
+                    registrar?.Invoke(new Exception($"[NestoAPI#827] No se ha podido leer la grafía de «{limpio}» en Identity " +
+                        $"(se usa «{resultado}»; no se vuelve a avisar hasta reiniciar): {error.Message}", error));
+                }
+                catch
+                {
+                    // El registro nunca puede tumbar una petición.
+                }
+            }
+            return resultado;
+        }
+
+        /// <summary>NestoAPI#827: «Santiago» de «SANTIAGO» o «santiago».</summary>
+        internal static string InicialMayuscula(string nombre)
+        {
+            if (string.IsNullOrEmpty(nombre))
+            {
+                return nombre;
+            }
+            return char.ToUpperInvariant(nombre[0]) + nombre.Substring(1).ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// NestoAPI#827: la de Identity vale si es el mismo nombre (sin caja) y tiene forma de nombre: empieza por mayúscula y
+        /// no está entera en mayúsculas (un «dlopez» o un «CARLOS» guardado así en Identity se pone bonito con la regla general).
+        /// </summary>
+        private static bool EsGrafiaDeIdentityValida(string deIdentity, string nombre)
+        {
+            if (string.IsNullOrEmpty(deIdentity) || !string.Equals(deIdentity, nombre, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            if (!char.IsUpper(deIdentity[0]))
+            {
+                return false;
+            }
+            return deIdentity.Length == 1 || !string.Equals(deIdentity, deIdentity.ToUpperInvariant(), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// NestoAPI#827: el usuario tal como se enseña en un informe por usuario: la persona con su grafía canónica, recortado;
+        /// vacío si no hay. Para agrupar, compárese sin caja (<see cref="StringComparer.OrdinalIgnoreCase"/>).
+        /// </summary>
+        public static string ParaMostrar(string usuario) => Persona(usuario?.Trim())?.Trim() ?? string.Empty;
+
+        /// <summary>
+        /// NestoAPI#827: solo la grafía. Un usuario de dominio sale con la canónica («NUEVAVISION\Dlopez» → «NUEVAVISION\DLopez»);
+        /// cualquier otro (sin dominio, correo, vacío) se devuelve tal cual, SIN resolver el gemelo. Para los flujos que
+        /// grababan el usuario del DTO y donde cambiar de persona no toca (pedidos: lo que se graba en las cabeceras, líneas,
+        /// efectos y orígenes sigue siendo quien lo mandó, solo que con una caja).
+        /// </summary>
+        public static string SoloGrafia(string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario) || usuario.IndexOf('\\') < 0)
             {
                 return usuario;
             }
-            return Gemelo(limpio) ?? usuario;
+            string canonico = ConGrafiaCanonica(usuario);
+            return string.Equals(canonico, usuario.Trim(), StringComparison.Ordinal) ? usuario : canonico;
+        }
+
+        /// <summary>
+        /// NestoAPI#827: si los dos nombres son la misma persona (resueltos con <see cref="Persona"/> y sin distinguir
+        /// mayúsculas). Dos vacíos o nulos no son nadie: false.
+        /// </summary>
+        public static bool MismaPersona(string uno, string otro)
+        {
+            string a = Persona(uno?.Trim())?.Trim();
+            string b = Persona(otro?.Trim())?.Trim();
+            return !string.IsNullOrEmpty(a) && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -203,13 +374,30 @@ namespace NestoAPI.Infraestructure
             lock (candado)
             {
                 cache.Clear();
+                cacheGrafia.Clear();
             }
         }
 
-        /// <summary>Startup: busca el gemelo con su propio contexto.</summary>
+        /// <summary>Startup: busca el gemelo con su propio contexto y enciende la grafía canónica con Identity (NestoAPI#827).</summary>
         public static void UsarBaseDeDatos(Action<Exception> registrarError)
         {
             Configurar(BuscarGemeloEnLaBaseDeDatos, registrarError);
+            ConfigurarGrafia(BuscarEnIdentity);
+        }
+
+        /// <summary>
+        /// NestoAPI#827: enciende la grafía canónica con este buscador en Identity (null = sin Identity: solo la regla
+        /// general) y vacía su caché. Va después de <see cref="Configurar"/>, que la apaga.
+        /// </summary>
+        internal static void ConfigurarGrafia(Func<string, string> buscadorIdentity)
+        {
+            lock (candado)
+            {
+                buscarEnIdentity = buscadorIdentity;
+                grafiaActiva = true;
+                cacheGrafia.Clear();
+                errorIdentityAvisado = false;
+            }
         }
 
         /// <summary>Pone el consultor (null = sin BD: no se resuelve nada) y vacía la caché y el aviso ya dado.</summary>
@@ -223,6 +411,11 @@ namespace NestoAPI.Infraestructure
                 reloj = nuevoReloj ?? (() => DateTime.UtcNow);
                 cache.Clear();
                 errorAvisado = false;
+                // NestoAPI#827: la grafía canónica se enciende aparte (ConfigurarGrafia / UsarBaseDeDatos).
+                buscarEnIdentity = null;
+                grafiaActiva = false;
+                cacheGrafia.Clear();
+                errorIdentityAvisado = false;
             }
         }
 
@@ -284,6 +477,20 @@ namespace NestoAPI.Infraestructure
                 }
             }
             return resultado;
+        }
+
+        /// <summary>NestoAPI#827: la grafía del usuario de Identity (AspNetUsers), con su propia conexión y fuera de la transacción.</summary>
+        internal static string BuscarEnIdentity(string nombre)
+        {
+            using (var sinTransaccion = new TransactionScope(TransactionScopeOption.Suppress))
+            using (var db = new ApplicationDbContext())
+            {
+                string fila = db.Database.SqlQuery<string>(SQL_IDENTITY,
+                        new SqlParameter("@nombre", System.Data.SqlDbType.NVarChar, 256) { Value = nombre })
+                    .FirstOrDefault();
+                sinTransaccion.Complete();
+                return fila;
+            }
         }
 
         internal static string BuscarGemeloEnLaBaseDeDatos(string gemelo)

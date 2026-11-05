@@ -43,10 +43,7 @@ namespace NestoAPI.Infraestructure.Informes
         {
             List<DetalleRapportsDTO> datos = rapports?.ToList() ?? new List<DetalleRapportsDTO>();
 
-            List<IGrouping<string, DetalleRapportsDTO>> grupos = datos
-                .GroupBy(r => r.Usuario?.Trim() ?? string.Empty)
-                .OrderBy(g => g.Key)
-                .ToList();
+            List<IGrouping<string, DetalleRapportsDTO>> grupos = AgruparPorUsuario(datos);
 
             var documento = Document.Create(container =>
             {
@@ -79,6 +76,41 @@ namespace NestoAPI.Infraestructure.Informes
 
             byte[] pdfBytes = documento.GeneratePdf();
             return new ByteArrayContent(pdfBytes);
+        }
+
+        /// <summary>
+        /// NestoAPI#827 (sugerencia 959; Carlos 05/11/26): un bloque por PERSONA, sin distinguir mayúsculas. Los rapports
+        /// llevaban el usuario con varias grafías («NUEVAVISION\dlopez» y «NUEVAVISION\Dlopez») y el GroupBy ordinal partía a
+        /// Daniel en dos bloques con dos resúmenes. La clave que se enseña es la grafía canónica
+        /// (<see cref="UsuarioAuditoriaHelper.ParaMostrar"/>; sin BD, la del primero) y se ordena también sin caja.
+        /// </summary>
+        internal static List<IGrouping<string, DetalleRapportsDTO>> AgruparPorUsuario(IEnumerable<DetalleRapportsDTO> rapports)
+        {
+            return (rapports ?? Enumerable.Empty<DetalleRapportsDTO>())
+                .GroupBy(r => r.Usuario?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new GrupoUsuario(UsuarioAuditoriaHelper.ParaMostrar(g.Key), g))
+                // La grafía canónica puede juntar lo que el comparador aún separaba (un gemelo sin dominio): se vuelve a juntar.
+                .GroupBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => (IGrouping<string, DetalleRapportsDTO>)new GrupoUsuario(g.First().Key, g.SelectMany(x => x)))
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private sealed class GrupoUsuario : IGrouping<string, DetalleRapportsDTO>
+        {
+            private readonly List<DetalleRapportsDTO> elementos;
+
+            internal GrupoUsuario(string clave, IEnumerable<DetalleRapportsDTO> elementos)
+            {
+                Key = clave;
+                this.elementos = elementos.ToList();
+            }
+
+            public string Key { get; }
+
+            public IEnumerator<DetalleRapportsDTO> GetEnumerator() => elementos.GetEnumerator();
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
         private static void ConfigurarPagina(PageDescriptor page, DateTime fechaDesde, DateTime fechaHasta, string usuario = null)
