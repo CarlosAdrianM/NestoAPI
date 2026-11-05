@@ -287,6 +287,7 @@
 
 <h3>8.3. Reina y Alcobendas, desde Nesto</h3>
 <p>En la prueba <b>no se rellena la tienda entera</b>. Se crea solo la fila de la referencia con un <b>evolutivo</b> y Nesto, al ver que ya hay filas del día, deja contar.</p>
+<div class="regla"><p><b>El orden importa (pasó en Reina el 05/11/26)</b>: primero el evolutivo en Ariadna y <b>después</b> Nesto. Si se abre Nesto antes, pregunta «¿Rellenar ahora?» y un <b>Sí</b> crea una fila a 0 por cada producto de la tienda (2.512 en Reina), que si se contabiliza pone el stock a cero. Ante esa pregunta, en la prueba, <b>siempre No</b>. En Nesto no hay tecla F6: las comprobaciones van dentro de «Contabilizar inventario», así que en la prueba ese botón <b>no se pulsa</b> (contabiliza Carlos).</p></div>
 <ol>
 <li><b>Rellenar solo la referencia</b>: en Ariadna 2.28 con el perfil de la tienda, «Inventario (+)» › <kbd>3</kbd> «Evolutivo: una referencia» › lea el código o teclee <kbd>37533</kbd> › <kbd>Intro</kbd>. Debe decir «Evolutivo rellenado: 1 productos.». (Sin Ariadna en la tienda, Carlos lo hace por la API: <code>POST api/Inventarios/RellenarParcial {Empresa:"1", Almacen:"REI", Fecha:hoy, Producto:"37533"}</code>.)</li>
 <li>Abrir Nesto › Productos › Inventarios › Tienda. Almacén REI (o ALC) y fecha de hoy. <b>No debe preguntar</b> si rellena (ya hay una fila del día). Si lo pregunta, conteste <b>«No»</b> y avise: algo no cuadra.</li>
