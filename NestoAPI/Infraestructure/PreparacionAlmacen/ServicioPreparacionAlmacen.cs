@@ -766,7 +766,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>
         /// Agrupa las líneas como el packing list de hoy: por cliente y dirección de entrega, y dentro
-        /// por pedido. Un código es «duplicado» si lo comparten dos productos de la misma entrega. Cada línea lleva lo
+        /// por pedido (NestoAPI#825: el pedido de un cliente de factura simplificada, solo; <see cref="PedidosQueVanSolos"/>). Un código es «duplicado» si lo comparten dos productos de la misma entrega. Cada línea lleva lo
         /// ya metido en la caja de su pedido y lo dado por falta (<paramref name="lecturas"/>, fase PACK).
         /// </summary>
         internal static PackingAlmacenDTO MontarPacking(string empresa, int picking, IEnumerable<FilaPackingAlmacen> filas,
@@ -774,8 +774,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             var packing = new PackingAlmacenDTO { Empresa = empresa, Picking = picking };
 
+            // NestoAPI#825 (sugerencia 1056, Santiago; Carlos 05/11/26): el pedido de un cliente de factura simplificada (Amazon, tienda
+            // online…) es un envío a otra persona: va solo, con sus cajas, aunque comparta cliente y contacto con otros del picking.
             foreach (var entrega in (filas ?? Enumerable.Empty<FilaPackingAlmacen>())
-                .GroupBy(f => new { Cliente = f.Cliente?.Trim(), Contacto = f.Contacto?.Trim() }))
+                .GroupBy(f => new { Cliente = f.Cliente?.Trim(), Contacto = f.Contacto?.Trim(), Solo = PedidosQueVanSolos.ClaveSolo(f.Cliente, f.Pedido) }))
             {
                 FilaPackingAlmacen primera = entrega.First();
                 HashSet<string> duplicados = CasadorEscaneos.CodigosDuplicados(

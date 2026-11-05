@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.Informes;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -85,12 +86,16 @@ namespace NestoAPI.Infraestructure.Informes
         {
             List<PackingDTO> datos = lineas ?? new List<PackingDTO>();
 
+            // NestoAPI#825 (sugerencia 1056, Santiago; Carlos 05/11/26): el pedido de un cliente de factura simplificada (Amazon,
+            // tienda online…) va a otra persona: su propio bloque (su hoja), aunque la ficha dé a todos la misma dirección. Sus
+            // pendientes van con su pedido; los de otro pedido de ese cliente que no está en el picking no son de esta entrega.
             return datos
                 .GroupBy(l => new
                 {
                     Cliente = l.NºCliente?.Trim(),
                     Contacto = l.Contacto?.Trim(),
-                    Direccion = l.Direccion?.Trim()
+                    Direccion = l.Direccion?.Trim(),
+                    Solo = PedidosQueVanSolos.ClaveSolo(l.NºCliente, l.Número)
                 })
                 // El RDLC ordena el grupo Cliente por Fields!Número.Value (= el pedido de la
                 // primera fila del bloque en el orden del SP). Sin esto los bloques salen por
@@ -136,6 +141,7 @@ namespace NestoAPI.Infraestructure.Informes
                             .ToList()
                     };
                 })
+                .Where(b => b.Pedidos.Count > 0 || !PedidosQueVanSolos.PedidoVaSolo(b.Cliente))
                 .ToList();
         }
 

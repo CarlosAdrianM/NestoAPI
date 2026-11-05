@@ -639,12 +639,15 @@ VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, CASE WHEN @p5 IS NULL THEN NULL ELSE 
         // entregas que comparten rango podían interbloquearse, SQL 1205). Si en 10 s no se consigue, error claro y no se toca
         // nada. «Mío» = mismo usuario y, si las dos lo dicen, misma PDA. Si esta PDA ya tiene ese bulto en ese pedido, es repetir la foto: se sustituye, como siempre.
         // Si no, y el número lo tiene otro, va al siguiente libre de la entrega. Mismos parámetros que SQL_ACTUALIZAR_BULTO.
-        internal const string SQL_GUARDAR_BULTO_SIN_PISAR = @"
+        // NestoAPI#825 (sugerencia 1056, Santiago; Carlos 05/11/26): @solo = el pedido si es de un cliente de factura simplificada
+        // (su entrega es solo él: ni comparte cerrojo ni numeración de cajas con los otros pedidos de Amazon del picking) o 0.
+        internal static readonly string SQL_GUARDAR_BULTO_SIN_PISAR = @"
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 DECLARE @cliente varchar(20), @contacto varchar(10);
 SELECT @cliente = [Nº Cliente], @contacto = Contacto FROM CabPedidoVta WHERE Empresa = @p1 AND [Número] = @p2;
-DECLARE @recurso nvarchar(255) = CONCAT(N'EnviosAgenciaBultos:', RTRIM(@p1), N':', @p3, N':', RTRIM(ISNULL(@cliente, '')), N':', RTRIM(ISNULL(@contacto, '')));
+DECLARE @solo int = " + PedidosQueVanSolos.ClaveSoloSql("@cliente", "@p2") + @";
+DECLARE @recurso nvarchar(255) = CONCAT(N'EnviosAgenciaBultos:', RTRIM(@p1), N':', @p3, N':', RTRIM(ISNULL(@cliente, '')), N':', RTRIM(ISNULL(@contacto, '')), N':', @solo);
 DECLARE @cerrojo int;
 EXEC @cerrojo = sp_getapplock @Resource = @recurso, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
 IF @cerrojo < 0
@@ -660,8 +663,8 @@ SELECT b.Pedido, b.Bulto, RTRIM(b.Usuario), RTRIM(b.Dispositivo),
                  AND (b.Dispositivo IS NULL OR @p9 IS NULL OR RTRIM(b.Dispositivo) = @p9) THEN 1 ELSE 0 END
 FROM EnviosAgenciaBultos b
 WHERE b.Empresa = @p1 AND b.Picking = @p3
-  AND (b.Pedido = @p2 OR b.Pedido IN (SELECT c.[Número] FROM CabPedidoVta c
-                                      WHERE c.Empresa = @p1 AND c.[Nº Cliente] = @cliente AND c.Contacto = @contacto));
+  AND (b.Pedido = @p2 OR (@solo = 0 AND b.Pedido IN (SELECT c.[Número] FROM CabPedidoVta c
+                                      WHERE c.Empresa = @p1 AND c.[Nº Cliente] = @cliente AND c.Contacto = @contacto)));
 DECLARE @bulto int = @p4, @ocupadoPor varchar(50) = NULL;
 IF NOT EXISTS (SELECT 1 FROM @entrega WHERE Pedido = @p2 AND Bulto = @p4 AND Mio = 1)
     SELECT TOP 1 @ocupadoPor = ISNULL(Usuario, '') FROM @entrega WHERE Bulto = @p4 AND Mio = 0 ORDER BY Pedido;
@@ -725,9 +728,12 @@ ELSE
         // (siguen en el picking y llevan algo a la caja) y mismas entregas que MontarPacking (cliente + contacto); los
         // bultos, los de EnviosAgenciaBultos de ese picking y de los pedidos de la entrega, contando cada número una vez
         // (un bulto compartido tiene una fila por pedido). Comprobado en producción el 04/10/26: 10 entregas, al momento.
-        internal const string SQL_ENTREGAS_POR_EMPAQUETAR = @"
+        // NestoAPI#825 (sugerencia 1056, Santiago; Carlos 05/11/26): Solo = el pedido si es de un cliente de factura simplificada
+        // (cada uno es un envío a otra persona y va solo) o 0 (se agrupa por cliente y contacto, como siempre). PedidosQueVanSolos.
+        internal static readonly string SQL_ENTREGAS_POR_EMPAQUETAR = @"
 WITH lineas AS (
     SELECT l.Picking, l.[Número] AS Pedido, c.[Nº Cliente] AS Cliente, c.Contacto,
+           " + PedidosQueVanSolos.ClaveSoloSql("c.[Nº Cliente]", "l.[Número]") + @" AS Solo,
            ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS Unidades
     FROM LinPedidoVta l
          JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
@@ -736,39 +742,40 @@ WITH lineas AS (
           AND ISNULL(p.Ficticio, 0) = 0
           AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0
     UNION ALL
-    SELECT l.Picking, l.[Número] AS Pedido, c.[Nº Cliente] AS Cliente, c.Contacto, 1 AS Unidades
+    SELECT l.Picking, l.[Número] AS Pedido, c.[Nº Cliente] AS Cliente, c.Contacto,
+           " + PedidosQueVanSolos.ClaveSoloSql("c.[Nº Cliente]", "l.[Número]") + @" AS Solo, 1 AS Unidades
     FROM LinPedidoVta l
          JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
     WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.Picking > 0
           AND " + CONDICION_NOTA_SOLO_TEXTO + @"
 ), entregas AS (
-    SELECT Picking, Cliente, Contacto, MIN(Pedido) AS PrimerPedido, COUNT(DISTINCT Pedido) AS Pedidos, SUM(Unidades) AS Unidades
-    FROM lineas GROUP BY Picking, Cliente, Contacto
+    SELECT Picking, Cliente, Contacto, Solo, MIN(Pedido) AS PrimerPedido, COUNT(DISTINCT Pedido) AS Pedidos, SUM(Unidades) AS Unidades
+    FROM lineas GROUP BY Picking, Cliente, Contacto, Solo
 )
 SELECT e.Picking, RTRIM(e.Cliente) AS Cliente, RTRIM(e.Contacto) AS Contacto, RTRIM(cl.Nombre) AS Nombre, e.PrimerPedido, e.Pedidos,
        CAST(e.Unidades AS int) AS Unidades,
        (SELECT COUNT(DISTINCT b.Bulto) FROM EnviosAgenciaBultos b
         WHERE b.Empresa = @p0 AND b.Picking = e.Picking AND b.RutaBlob IS NOT NULL
-              AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS BultosConFoto,
+              AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto AND li.Solo = e.Solo)) AS BultosConFoto,
        (SELECT COUNT(*) FROM EnviosAgenciaBultos b
         WHERE b.Empresa = @p0 AND b.Picking = e.Picking AND b.RutaBlob IS NULL
-              AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS BultosSinFoto,
+              AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto AND li.Solo = e.Solo)) AS BultosSinFoto,
        " + MARCA_FOTOS_PACKING + @" AS FotosPacking,
        (SELECT COUNT(DISTINCT ea.Pedido) FROM EnviosAgencia ea
         WHERE ea.Empresa = @p0 AND ea.Estado >= 0
-              AND ea.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS PedidosConEtiqueta,
+              AND ea.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto AND li.Solo = e.Solo)) AS PedidosConEtiqueta,
        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas t
                               WHERE t.Empresa = @p0 AND t.TipoOrigen = 'PICK' AND t.NumeroOrigen = e.Picking) THEN 1 ELSE 0 END AS bit) AS Terminado
 FROM entregas e
      LEFT JOIN Clientes cl ON cl.Empresa = @p0 AND cl.[Nº Cliente] = e.Cliente AND cl.Contacto = e.Contacto
-ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
+ORDER BY e.Picking DESC, e.Cliente, e.Contacto, e.Solo";
 
         /// <summary>NestoAPI#771: dónde va en SQL_ENTREGAS_POR_EMPAQUETAR el recuento de fotos del packing (o 0 sin el script).</summary>
         internal const string MARCA_FOTOS_PACKING = "/*FOTOS_PACKING*/0";
 
-        internal const string SUBCONSULTA_FOTOS_PACKING = @"(SELECT COUNT(DISTINCT f.RutaBlob) FROM dbo." + TABLA_FOTOS_PACKING + @" f
+        internal static readonly string SUBCONSULTA_FOTOS_PACKING = @"(SELECT COUNT(DISTINCT f.RutaBlob) FROM dbo." + TABLA_FOTOS_PACKING + @" f
         WHERE f.Empresa = @p0 AND f.Picking = e.Picking
-              AND f.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto))";
+              AND f.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto AND li.Solo = e.Solo))";
 
         /// <summary>NestoAPI#771: SQL_ENTREGAS_POR_EMPAQUETAR con las fotos del packing si la tabla existe; si no, como antes (0).</summary>
         internal static string SqlEntregasPorEmpaquetar(bool conFotosPacking)
