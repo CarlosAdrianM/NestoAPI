@@ -2,6 +2,7 @@
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.Productos;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
@@ -34,12 +35,19 @@ namespace NestoAPI.Controllers
             _gestorProductos = new GestorProductos(new SincronizacionEventWrapper(new GooglePubSubEventPublisher()));
         }
 
-        public ProductosController(NVEntities db, IGestorSincronizacion gestorSincronizacion = null, IGestorProductos gestorProductos = null)
+        public ProductosController(NVEntities db, IGestorSincronizacion gestorSincronizacion = null, IGestorProductos gestorProductos = null,
+            IServicioEstadoProductos servicioEstado = null)
         {
             this.db = db;
             _gestorSincronizacion = gestorSincronizacion ?? new GestorSincronizacion(db);
             _gestorProductos = gestorProductos;
+            _servicioEstado = servicioEstado;
         }
+
+        private IServicioEstadoProductos _servicioEstado;
+
+        /// <summary>NestoAPI#738: se crea al usarlo (el resto de endpoints no necesitan el motor de las propuestas de stock).</summary>
+        private IServicioEstadoProductos ServicioEstado => _servicioEstado ?? (_servicioEstado = new ServicioEstadoProductos(new RepositorioEstadoProductos(db)));
 
         /*
         // GET: api/Productos
@@ -837,6 +845,79 @@ namespace NestoAPI.Controllers
             string usuario = $"Republicar ({User?.Identity?.Name ?? "API"})";
             int encolados = await db.EncolarProductosSync(limpios, usuario).ConfigureAwait(false);
             return Ok(encolados);
+        }
+
+        /// <summary>
+        /// NestoAPI#738 (sugerencia 793, Manuel): los estados que se pueden poner (tabla EstadosProducto), para el desplegable
+        /// de la ficha y de la ventana de cambio masivo.
+        /// GET: api/Productos/Estados?empresa=1
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Productos/Estados")]
+        [ResponseType(typeof(List<EstadoProductoDTO>))]
+        public async Task<IHttpActionResult> GetEstadosProducto(string empresa = null)
+        {
+            return Ok(await ServicioEstado.Estados(empresa).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// NestoAPI#738: vista previa del cambio de estado (masivo o de un solo producto, con una lista de uno): estado actual →
+        /// nuevo, stock por almacén, pendiente de recibir, pedidos pendientes, controles de stock y los sugeridos al volver a
+        /// Disponible. No cambia nada; la puede pedir cualquiera (<c>PuedeCambiar</c> dice si puede aplicarla).
+        /// POST: api/Productos/Estado/VistaPrevia
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Productos/Estado/VistaPrevia")]
+        [ResponseType(typeof(VistaPreviaEstadoProductosDTO))]
+        public async Task<IHttpActionResult> PostEstadoVistaPrevia([FromBody] VistaPreviaEstadoProductosPeticion peticion)
+        {
+            try
+            {
+                return Ok(await ServicioEstado.VistaPrevia(peticion, ReglasEstadoProducto.PuedeCambiar(User)).ConfigureAwait(false));
+            }
+            catch (PeticionEstadoProductosNoValidaException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#738: cambia el estado de los productos (solo Compras y Dirección). Los que salen de Disponible con controles
+        /// de stock se omiten salvo que venga <c>QuitarControlesStock</c> (la pantalla pregunta una vez por lote y repite con
+        /// true); los que vuelven a Disponible reciben los controles de stock sugeridos. Todo en una transacción.
+        /// POST: api/Productos/Estado
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Productos/Estado")]
+        [ResponseType(typeof(ResultadoCambioEstadoProductosDTO))]
+        public async Task<IHttpActionResult> PostEstado([FromBody] CambioEstadoProductosPeticion peticion)
+        {
+            if (!ReglasEstadoProducto.PuedeCambiar(User))
+            {
+                return Content(HttpStatusCode.Forbidden, ReglasEstadoProducto.MENSAJE_SIN_PERMISO);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
+            try
+            {
+                return Ok(await ServicioEstado.Cambiar(peticion, usuario).ConfigureAwait(false));
+            }
+            catch (PeticionEstadoProductosNoValidaException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (System.Data.Entity.Infrastructure.DbUpdateException ex)
+            {
+                Exception interna = ex;
+                while (interna.InnerException != null)
+                {
+                    interna = interna.InnerException;
+                }
+                ElmahHelper.Log(ex);
+                return Content(HttpStatusCode.InternalServerError, $"No se ha cambiado el estado de ningún producto: {interna.Message}");
+            }
         }
 
         /// <summary>

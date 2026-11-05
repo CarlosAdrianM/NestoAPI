@@ -1252,6 +1252,10 @@
     <Compile Include="Infraestructure\Stocks\Tendencias\RepositorioTendenciasSql.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ServicioPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ServicioPropuestaStockProducto.cs" />
+    <Compile Include="Infraestructure\Productos\ReglasEstadoProducto.cs" />
+    <Compile Include="Infraestructure\Productos\RepositorioEstadoProductos.cs" />
+    <Compile Include="Infraestructure\Productos\ServicioEstadoProductos.cs" />
+    <Compile Include="Models\Productos\EstadoProductosDTO.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\GeneradorExcelPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\PropuestasStockJobsService.cs" />
     <Compile Include="Controllers\PropuestasStockController.cs" />
