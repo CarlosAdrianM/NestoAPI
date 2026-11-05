@@ -1503,7 +1503,7 @@ namespace NestoAPI.Infraestructure.Pagos
         /// <param name="efectos">NestoAPI#824: los efectos que liquida, si no son los de <c>pago.PagosTPV_Efectos</c> (los de la factura
         /// del pedido del enlace, que no se guardan en PagosTPV_Efectos). Null: los del pago.</param>
         /// <param name="efectosEnteros">NestoAPI#824: cada efecto se liquida por todo su pendiente. Solo entonces una diferencia de
-        /// redondeo (<see cref="ToleranciaRedondeoCobro"/>) va a <see cref="Constantes.Cuentas.REGULARIZACION_SALDO"/> en vez de
+        /// redondeo (<see cref="ToleranciaRedondeoCobro"/>) va a Regularización de saldo (65900004 de menos, 75900004 de más) en vez de
         /// quedarse en el cliente (a favor o pendiente).</param>
         internal static List<PreContabilidad> ConstruirLineasCobro(PagoTPV pago, string cuentaBanco, string empresa, string concepto,
             IEnumerable<PagoTPV_Efecto> efectos = null, bool efectosEnteros = false)
@@ -1607,12 +1607,13 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 // NestoAPI#824 (929852, 05/11/26): el enlace de 40,02 € contra la factura de 40,03 €. El efecto se liquida entero
                 // y el céntimo va a Regularización saldo (como lo regulariza Administración a mano): ni 0,01 € pendiente en el
-                // cliente (que volvería a salir de reembolso) ni a favor.
+                // cliente (que volvería a salir de reembolso) ni a favor. Carlos 05/11/26: de menos, al Debe de 65900004 (gasto);
+                // de más, al Haber de 75900004 (ingreso).
                 PreContabilidad plantilla = lineas.First();
                 lineas.Add(new PreContabilidad
                 {
                     Empresa = empresa,
-                    Nº_Cuenta = Constantes.Cuentas.REGULARIZACION_SALDO,
+                    Nº_Cuenta = diferencia < 0 ? Constantes.Cuentas.REGULARIZACION_SALDO : Constantes.Cuentas.REGULARIZACION_SALDO_INGRESO,
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
                     TipoApunte = TiposExtractoCliente.PAGO,
                     Haber = diferencia > 0 ? diferencia : 0,

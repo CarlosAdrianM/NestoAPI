@@ -663,7 +663,30 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.AreEqual(Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE, ajuste.TipoCuenta);
             Assert.AreEqual(0.01m, ajuste.Debe);
             Assert.AreEqual(0m, ajuste.Haber);
+            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO_INGRESO), "de menos: gasto, no ingreso");
             Assert.AreEqual(3, lineas.Count, "ni a cuenta ni céntimo pendiente en el cliente");
+        }
+
+        [TestMethod]
+        public void Issue824_Liquidacion_ClientePagaDeMas_LiquidaElEfectoEnteroYLaDiferenciaAlHaberDe75900004()
+        {
+            List<PagoTPV_Efecto> efectos = ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824() }, 40.05m);
+            PagoTPV pago = Pago998();
+            pago.Importe = 40.05m;
+
+            List<PreContabilidad> lineas = NestoAPI.Infraestructure.Pagos.ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Pago TPV Pago pedido 929852", efectos, efectosEnteros: true);
+
+            Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber), "el asiento cuadra");
+            Assert.AreEqual(40.05m, lineas.Single(l => l.Nº_Cuenta == "57200013").Debe);
+            Assert.AreEqual(40.03m, lineas.Single(l => l.Liquidado == 3062417).Haber, "el efecto entero");
+            PreContabilidad ajuste = lineas.Single(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO_INGRESO);
+            Assert.AreEqual("75900004", ajuste.Nº_Cuenta);
+            Assert.AreEqual(Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE, ajuste.TipoCuenta);
+            Assert.AreEqual(0.02m, ajuste.Haber);
+            Assert.AreEqual(0m, ajuste.Debe);
+            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO), "de más: ingreso, no gasto");
+            Assert.IsFalse(lineas.Any(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == null), "nada a favor del cliente");
+            Assert.AreEqual(3, lineas.Count);
         }
 
         [TestMethod]
@@ -676,7 +699,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             List<PreContabilidad> lineas = NestoAPI.Infraestructure.Pagos.ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Pago TPV Pago pedido 929852", efectos, efectosEnteros: true);
 
             Assert.AreEqual(2, lineas.Count, "banco + efecto, sin ajuste");
-            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO));
+            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO || l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO_INGRESO));
             Assert.AreEqual(40.03m, lineas.Single(l => l.Liquidado == 3062417).Haber);
         }
 
@@ -702,7 +725,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.IsFalse(NestoAPI.Infraestructure.Pagos.ServicioPagos.SeLiquidanEnteros(pago.PagosTPV_Efectos, new[] { EfectoNV2617824() }));
             List<PreContabilidad> lineas = NestoAPI.Infraestructure.Pagos.ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Pago TPV", efectosEnteros: false);
 
-            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO));
+            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO || l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO_INGRESO));
             Assert.AreEqual(0.02m, lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == null).Haber);
         }
 

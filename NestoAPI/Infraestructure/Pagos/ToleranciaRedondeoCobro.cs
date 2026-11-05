@@ -13,8 +13,10 @@ namespace NestoAPI.Infraestructure.Pagos
     /// pendiente y el reembolso del envío no bajó aunque el cliente ya había pagado: la agencia fue a cobrarle otra vez.</para>
     /// <para>Por qué 0,05 €: es una diferencia que solo puede venir del redondeo (varias líneas redondeadas al céntimo), nunca
     /// de un pago parcial real; por encima sigue la regla estricta (a cuenta), porque ya puede ser otra cosa. El efecto se
-    /// liquida ENTERO y la diferencia va a <see cref="Constantes.Cuentas.REGULARIZACION_SALDO"/>, la misma cuenta en la que
-    /// Administración regulariza hoy a mano esos céntimos.</para>
+    /// liquida ENTERO y la diferencia va a la pareja de cuentas en la que Administración regulariza hoy a mano esos céntimos
+    /// (Carlos 05/11/26): si el cliente paga de menos, al Debe de <see cref="Constantes.Cuentas.REGULARIZACION_SALDO"/>
+    /// (65900004, gasto); si paga de más, al Haber de <see cref="Constantes.Cuentas.REGULARIZACION_SALDO_INGRESO"/> (75900004,
+    /// ingreso).</para>
     /// </summary>
     public static class ToleranciaRedondeoCobro
     {
