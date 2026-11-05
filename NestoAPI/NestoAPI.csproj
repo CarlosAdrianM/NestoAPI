@@ -917,6 +917,8 @@
     <Compile Include="Infraestructure\Clientes\PoliticaEmpleadosCliente.cs" />
     <Compile Include="Infraestructure\Clientes\MotivoCambioEstadoCliente.cs" />
     <Compile Include="Infraestructure\Clientes\DatosAltaCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\MensajesValidacionCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\NormalizadorClienteCrear.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\BuscadorClientesPorFactura.cs" />

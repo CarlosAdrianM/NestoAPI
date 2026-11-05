@@ -6,6 +6,7 @@ using System.Web;
 
 namespace NestoAPI.Models.Clientes
 {
+    // NestoAPI#819: los mensajes de los límites van en castellano; MensajesValidacionCliente los completa con la longitud real.
     public class ClienteCrear
     {
         public string Empresa { get; set; }
@@ -13,11 +14,11 @@ namespace NestoAPI.Models.Clientes
         public string Contacto { get; set; }
         public string CodigoPostal { get; set; }
         public string Comentarios { get; set; }
-        [StringLength(50)]
+        [StringLength(50, ErrorMessage = "El comentario de picking no puede superar {1} caracteres.")]
         public string ComentariosPicking { get; set; }
-        [StringLength(50)]
+        [StringLength(50, ErrorMessage = "El comentario de ruta no puede superar {1} caracteres.")]
         public string ComentariosRuta { get; set; }
-        [StringLength(50)]
+        [StringLength(50, ErrorMessage = "La dirección no puede superar {1} caracteres.")]
         public string Direccion { get; set; }
         /// <summary>
         /// NestoAPI#499: la dirección la eligió el usuario de entre las que propone Google (Nesto#480,
@@ -44,18 +45,18 @@ namespace NestoAPI.Models.Clientes
         public string Nif {get;set;}
         /// <summary>NestoAPI#355: país del cliente (ISO-2). Null/vacío = ES (default de la casa).
         /// Para país ≠ ES el NIF puede ser un NIF-IVA intracomunitario (varchar(20), #356).</summary>
-        [StringLength(2)]
+        [StringLength(2, ErrorMessage = "El país no puede superar {1} caracteres (código ISO de dos letras).")]
         public string Pais { get; set; }
-        [StringLength(50)]
+        [StringLength(50, ErrorMessage = "El nombre fiscal no puede superar {1} caracteres.")]
         public string Nombre { get; set; }
         public bool Peluqueria { get; set; }
         public string PlazosPago { get; set; }
-        [StringLength(50)]
+        [StringLength(50, ErrorMessage = "La población no puede superar {1} caracteres.")]
         public string Poblacion { get; set; }
-        [StringLength(50)]
+        [StringLength(50, ErrorMessage = "La provincia no puede superar {1} caracteres.")]
         public string Provincia { get; set; }
         public string Ruta { get; set; }
-        [StringLength(29)]
+        [StringLength(29, ErrorMessage = "El teléfono no puede superar {1} caracteres.")]
         public string Telefono { get; set; }
         public string VendedorEstetica { get; set; }
         public string VendedorPeluqueria { get; set; }

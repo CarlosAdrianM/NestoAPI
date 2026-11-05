@@ -1271,11 +1271,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(Cliente))]
         public async Task<IHttpActionResult> PutCliente(ClienteCrear clienteCrear)
         {
-            if (!ModelState.IsValid)
+            IHttpActionResult invalido = NormalizarYValidar(clienteCrear);
+            if (invalido != null)
             {
-                return BadRequest(ModelState);
+                return invalido;
             }
-
 
             try
             {
@@ -1304,13 +1304,33 @@ namespace NestoAPI.Controllers
         }
 
 
+        /// <summary>
+        /// NestoAPI#819 (sugerencia 1049, Alfredo 05/11/26): un correo con espacios al final pasaba de 50 caracteres y el
+        /// alta devolvía «La solicitud no es válida» sin decir qué campo. Ahora se recortan los textos ANTES de validar
+        /// y, si sigue sin pasar, el 400 dice en castellano qué campo y cuál es el límite. Null = todo bien.
+        /// Los atributos se vuelven a comprobar sobre el objeto ya recortado (MensajesValidacionCliente), porque el ModelState
+        /// del binding se calculó con los espacios; de ese ModelState solo cuentan los datos que no se pudieron leer.
+        /// </summary>
+        private IHttpActionResult NormalizarYValidar(ClienteCrear clienteCrear)
+        {
+            if (clienteCrear == null)
+            {
+                return BadRequest(MensajesValidacionCliente.SIN_DATOS);
+            }
+            NormalizadorClienteCrear.Normalizar(clienteCrear);
+            string mensaje = MensajesValidacionCliente.Desde(clienteCrear) ?? MensajesValidacionCliente.DatosIlegibles(ModelState);
+            return mensaje == null ? null : BadRequest(mensaje);
+        }
+
+
         // POST: api/Clientes
         [ResponseType(typeof(Cliente))]
         public async Task<IHttpActionResult> PostCliente(ClienteCrear clienteCrear)
         {
-            if (!ModelState.IsValid)
+            IHttpActionResult invalido = NormalizarYValidar(clienteCrear);
+            if (invalido != null)
             {
-                return BadRequest(ModelState);
+                return invalido;
             }
 
             try
