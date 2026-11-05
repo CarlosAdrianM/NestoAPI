@@ -1155,6 +1155,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(RespuestaModificacionPedidoDTO))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
         {
+            // NestoAPI#827 (sugerencia 959; Carlos 05/11/26): el usuario de dominio con su grafía canónica.
+            if (pedido != null)
+            {
+                pedido.Usuario = UsuarioAuditoriaHelper.SoloGrafia(pedido.Usuario);
+            }
             var avisos = new List<AvisoPedidoDTO>();
             // NestoAPI#335: avisos que además del canal de respuesta deben llegar por correo
             // (el correo de modificación es el único canal que los clientes muestran seguro hoy).
@@ -2521,6 +2526,11 @@ namespace NestoAPI.Controllers
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
+            }
+            // NestoAPI#827 (sugerencia 959; Carlos 05/11/26): el usuario de dominio con su grafía canónica.
+            if (pedido != null)
+            {
+                pedido.Usuario = UsuarioAuditoriaHelper.SoloGrafia(pedido.Usuario);
             }
             if (pedido?.Lineas == null || ValidarDatosObligatoriosPedido(pedido) != null)
             {

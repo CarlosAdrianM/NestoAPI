@@ -121,10 +121,11 @@ namespace NestoAPI.Controllers
                 .ToListAsync().ConfigureAwait(false);
 
             List<InventarioPendienteDTO> resumen = filas
-                .GroupBy(f => new { Usuario = f.Usuario?.Trim() ?? string.Empty, Fecha = f.Fecha.Date })
+                // NestoAPI#827: una persona, un renglón, aunque su usuario esté grabado con varias cajas.
+                .GroupBy(f => new { Usuario = (f.Usuario?.Trim() ?? string.Empty).ToUpperInvariant(), Fecha = f.Fecha.Date })
                 .Select(g => new InventarioPendienteDTO
                 {
-                    Usuario = g.Key.Usuario,
+                    Usuario = NestoAPI.Infraestructure.UsuarioAuditoriaHelper.ParaMostrar(g.First().Usuario),
                     Fecha = g.Key.Fecha,
                     Filas = g.Count(),
                     StockReal = g.Sum(f => f.StockReal ?? 0),
