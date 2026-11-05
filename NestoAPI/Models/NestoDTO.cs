@@ -306,8 +306,11 @@ namespace NestoAPI.Models
     public class PersonaContactoDTO
     {
         public int Numero { get; set; }
+        // NestoAPI#819: los límites son los de PersonasContactoCliente (Nombre y CorreoElectrónico char(50), Teléfono char(29)).
+        [StringLength(50, ErrorMessage = "El nombre de la persona de contacto no puede superar {1} caracteres.")]
         public string Nombre { get; set; }
-        [EmailAddress]
+        [EmailAddress(ErrorMessage = "El correo electrónico de la persona de contacto no es válido.")]
+        [StringLength(50, ErrorMessage = "El correo electrónico de la persona de contacto no puede superar {1} caracteres.")]
         public string CorreoElectronico { get; set; }
         public bool FacturacionElectronica { get; set; }
 
@@ -319,6 +322,7 @@ namespace NestoAPI.Models
 
         /// <summary>NestoAPI#446: ve la tarifa pero no descuentos ni importes (cargo 31).</summary>
         public bool PedidosSinDescuentos { get; set; }
+        [StringLength(29, ErrorMessage = "El teléfono de la persona de contacto no puede superar {1} caracteres.")]
         public string Telefono { get; set; }
         // Nesto#340 (1C.8, slice 4): campos que la ficha comercial de Nesto mostraba a través de
         // la entidad EF (grid de personas de contacto) y que el DTO no exponía. Cargo permite a
