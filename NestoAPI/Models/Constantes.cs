@@ -391,6 +391,8 @@ namespace NestoAPI.Models
             public const string INFORMATICA = "Informática";
             public const string TIENDA_ON_LINE = "TiendaOnline";
             public const string TIENDAS = "Tiendas";
+            /// <summary>NestoAPI#623: el grupo de los vendedores (como en ReglasPerfilesNovedades.VENDEDORES).</summary>
+            public const string VENDEDORES = "Vendedores";
         }
 
         public static class TiposPagoTPV

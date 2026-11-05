@@ -858,6 +858,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'festivos-sin-cargar' configurado (día 1 de cada mes a las 9:00)");
 
+            // NestoAPI#623: cada hora de 8 a 20 (L-V), los leads de campaña con el plazo de llamada vencido y sin rapport: aviso en
+            // la campana al vendedor y a su jefe de ventas (o a Dirección), una sola vez por lead.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Clientes.Origenes.LeadsSinLlamarJobsService.JOB_ID,
+                () => Infraestructure.Clientes.Origenes.LeadsSinLlamarJobsService.Avisar(),
+                Infraestructure.Clientes.Origenes.LeadsSinLlamarJobsService.CRON, // Cron: a en punto de 8 a 20, de lunes a viernes
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'leads-sin-llamar' configurado (L-V cada hora de 8 a 20)");
+
             RecurringJob.AddOrUpdate(
                 "verifactu-aviso-pendientes",
                 () => Infraestructure.Verifactu.AvisoFacturasPendientesVerifactuJobsService.Avisar(),

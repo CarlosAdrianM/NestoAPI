@@ -43,6 +43,10 @@ namespace NestoAPI.Models
         public bool mantenerJunto { get; set; }
         /// <summary>NestoAPI#723: el cliente exige el P.O. («Su pedido») en todos sus pedidos (tabla ClientesSuPedidoObligatorio).</summary>
         public bool suPedidoObligatorio { get; set; }
+        /// <summary>NestoAPI#623: código del origen del cliente (tabla ClientesOrigen), o null si no tiene. Solo en GET api/Clientes.</summary>
+        public string Origen { get; set; }
+        /// <summary>NestoAPI#623: descripción del origen («Lead de Meta · campaña Harmonia»), o null.</summary>
+        public string OrigenDescripcion { get; set; }
         public string usuario { get; set; }
 
         // NestoAPI#464: 0 = sin empleados, 1..4, 5 = "5 o más"; null = no se ha preguntado.

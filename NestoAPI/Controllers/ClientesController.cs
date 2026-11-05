@@ -711,6 +711,10 @@ namespace NestoAPI.Controllers
                 PersonasContacto = await _gestorClientes.LeerPersonasContacto(
                     clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente, clienteEncontrado.Contacto)
             };
+            // NestoAPI#623: el origen del cliente (tabla ClientesOrigen); sin origen o sin tabla, null.
+            Infraestructure.Clientes.Origenes.OrigenAsignadoCliente origenCliente = await LeerOrigenSeguro(clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente);
+            clienteDTO.Origen = origenCliente?.Origen?.Trim();
+            clienteDTO.OrigenDescripcion = origenCliente?.Descripcion;
 
             return Ok(clienteDTO);
         }
@@ -779,6 +783,11 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetClienteCrear(string empresa, string cliente, string contacto)
         {
             ClienteCrear respuesta = await _gestorClientes.ConstruirClienteCrear(empresa, cliente, contacto);
+            // NestoAPI#623: el origen del cliente, para que la modificación lo enseñe (null si no tiene o no se puede leer).
+            if (respuesta != null)
+            {
+                respuesta.Origen = (await LeerOrigenSeguro(empresa, cliente))?.Origen?.Trim();
+            }
 
             return Ok(respuesta);
         }
@@ -1301,9 +1310,18 @@ namespace NestoAPI.Controllers
                 return invalido;
             }
 
+            // NestoAPI#623: el origen (opcional), antes de tocar nada. Si es el que ya tenía (Nesto lo reenvía tal cual lo leyó
+            // de GetClienteCrear), no se valida: un origen que ya no está activo no puede impedir modificar el cliente.
+            string errorOrigen = await ValidarOrigenAlModificar(clienteCrear.Empresa, clienteCrear.Cliente, clienteCrear.Origen);
+            if (errorOrigen != null)
+            {
+                return BadRequest(errorOrigen);
+            }
+
             try
             {
                 Cliente cliente = await _gestorClientes.ModificarCliente(clienteCrear, db);
+                await GuardarOrigenTrasGuardarCliente(cliente.Empresa, cliente.Nº_Cliente, clienteCrear.Origen, esAlta: false);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
                     cliente);
@@ -1362,11 +1380,19 @@ namespace NestoAPI.Controllers
                 return invalido;
             }
 
+            // NestoAPI#623: el origen (opcional), antes de dar de alta.
+            string errorOrigen = await ValidarOrigen(string.IsNullOrWhiteSpace(clienteCrear.Origen) ? null : clienteCrear.Origen.Trim().ToUpperInvariant());
+            if (errorOrigen != null)
+            {
+                return BadRequest(errorOrigen);
+            }
+
             try
             {
                 // NestoAPI#716: desde qué aplicación se da de alta (Clientes.AplicacionAlta); si no lo manda, se deduce del token.
                 clienteCrear.AplicacionAlta = DatosAltaCliente.DeducirAplicacion(User, clienteCrear.AplicacionAlta);
                 Cliente cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
+                await GuardarOrigenTrasGuardarCliente(cliente.Empresa, cliente.Nº_Cliente, clienteCrear.Origen, esAlta: true);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
                     cliente);
