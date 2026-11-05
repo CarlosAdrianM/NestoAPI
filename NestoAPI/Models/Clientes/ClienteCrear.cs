@@ -83,6 +83,13 @@ namespace NestoAPI.Models.Clientes
         /// Opcional: si no viene, la API lo deduce de cómo se autenticó quien llama (Nesto, NestoApp, TiendaOnline).
         /// </summary>
         public string AplicacionAlta { get; set; }
+        /// <summary>
+        /// NestoAPI#623: código del catálogo de orígenes (GET api/Clientes/Origenes), p. ej. «META-HARMONIA-0926». Opcional: null = no
+        /// se toca (en el alta, sin origen); en el alta se graba si viene; en la modificación, si viene distinto. Para quitarlo,
+        /// PUT api/Clientes/{empresa}/{cliente}/Origen con Origen null. Va por cliente (todos sus contactos), en la tabla
+        /// ClientesOrigen. 400 si no existe o no está activo. GET api/Clientes/GetClienteCrear lo trae relleno.
+        /// </summary>
+        public string Origen { get; set; }
 
 
         public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }

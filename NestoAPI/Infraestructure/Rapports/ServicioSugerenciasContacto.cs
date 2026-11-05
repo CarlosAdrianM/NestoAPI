@@ -1,5 +1,6 @@
 using Elmah;
 using NestoAPI.Infraestructure.ChequesRegalo;
+using NestoAPI.Infraestructure.Clientes.Origenes;
 using NestoAPI.Models;
 using NestoAPI.Models.RecursosHumanos;
 using System;
@@ -40,20 +41,26 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly IServicioFrasesRitmo frases;
         private readonly IBloqueoSugerenciasDelDia bloqueo;
         private readonly IChequesRegaloParaSugerencias chequesRegalo;
+        private readonly IRepositorioOrigenesCliente origenes;
 
         public ServicioSugerenciasContacto(NVEntities db)
             : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo,
-                  new ServicioFrasesRitmo(), null, new ServicioEstadisticaChequesRegalo(new RepositorioEstadisticaChequesRegalo(db)))
+                  new ServicioFrasesRitmo(), null, new ServicioEstadisticaChequesRegalo(new RepositorioEstadisticaChequesRegalo(db)),
+                  new RepositorioOrigenesClienteSql())
         {
         }
 
         /// <param name="frases">NestoAPI#603 (corte 4): la frase del ritmo. Null = la plantilla fija del corte 1.</param>
         /// <param name="chequesRegalo">NestoAPI#593: los clientes con el cheque sin usar en los últimos días de la campaña
         /// (<see cref="ImpulsoChequesRegaloContacto"/>). Null = sin impulso.</param>
+        /// <param name="origenes">NestoAPI#623: los leads de campaña sin llamar, los primeros (<see cref="ImpulsoLeadsCampanaContacto"/>).
+        /// Null = sin leads.</param>
         internal ServicioSugerenciasContacto(NVEntities db, IRepositorioCarteraContacto repositorio, IProbabilidadesContacto probabilidades,
             Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null,
-            IBloqueoSugerenciasDelDia bloqueo = null, IChequesRegaloParaSugerencias chequesRegalo = null)
+            IBloqueoSugerenciasDelDia bloqueo = null, IChequesRegaloParaSugerencias chequesRegalo = null,
+            IRepositorioOrigenesCliente origenes = null)
         {
+            this.origenes = origenes;
             this.chequesRegalo = chequesRegalo;
             this.bloqueo = bloqueo;
             this.frases = frases;
@@ -142,11 +149,13 @@ namespace NestoAPI.Infraestructure.Rapports
                 Fecha = ahora,
                 Ritmo = ritmo,
                 // Lo ya registrado en el día no desaparece aunque el objetivo de hoy baje al ir llamando.
-                Sugerencias = Ordenar(delDia
+                // NestoAPI#623: los leads de campaña sin llamar, delante de todo (sin registrar: salen aunque la lista ya esté fijada).
+                Sugerencias = ImpulsoLeadsCampanaContacto.Aplicar(Ordenar(delDia
                     .OrderBy(s => s.Orden)
                     .Take(Math.Min(NUMERO_MAXIMO, Math.Max(numero, delDia.Count)))
                     .Select(s => ADTO(s, porClave, conCheque, hoy))
-                    .ToList())
+                    .ToList()),
+                    await LeerLeads(vendedorLimpio).ConfigureAwait(false), ahora, ReglasLeadsCampana.Laborable(esFestivo, delegacion))
             };
         }
 
@@ -217,6 +226,25 @@ namespace NestoAPI.Infraestructure.Rapports
                 ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
                     $"NestoAPI#593: no se han podido leer los cheques regalo para las sugerencias de {vendedor}; la lista sale sin impulso", ex)));
                 return new List<ChequeRegaloImpulso>();
+            }
+        }
+
+        /// <summary>NestoAPI#623: los leads de campaña del vendedor. Si falla, la lista sale igual, sin leads (y queda en ELMAH).</summary>
+        private async Task<List<LeadCampana>> LeerLeads(string vendedor)
+        {
+            if (origenes == null)
+            {
+                return new List<LeadCampana>();
+            }
+            try
+            {
+                return await origenes.LeerLeads(vendedor).ConfigureAwait(false) ?? new List<LeadCampana>();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                    $"NestoAPI#623: no se han podido leer los leads de campaña para las sugerencias de {vendedor}; la lista sale sin ellos", ex)));
+                return new List<LeadCampana>();
             }
         }
 

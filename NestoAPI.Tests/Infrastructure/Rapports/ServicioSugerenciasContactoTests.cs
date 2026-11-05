@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.ChequesRegalo;
+using NestoAPI.Infraestructure.Clientes.Origenes;
 using NestoAPI.Infraestructure.Rapports;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
@@ -348,6 +349,44 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
         private ServicioSugerenciasContacto ServicioConCheques(IChequesRegaloParaSugerencias cheques) => new ServicioSugerenciasContacto(db, repositorio,
             probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo, cheques);
+
+        // ---------------- NestoAPI#623: leads de campaña ----------------
+
+        private ServicioSugerenciasContacto ServicioConLeads(params LeadCampana[] leads)
+        {
+            IRepositorioOrigenesCliente origenes = A.Fake<IRepositorioOrigenesCliente>();
+            A.CallTo(() => origenes.LeerLeads("MPP")).Returns(Task.FromResult(leads.ToList()));
+            return new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo,
+                ChequesDe("1005"), origenes);
+        }
+
+        private static LeadCampana LeadMeta(string cliente, DateTime fechaOrigen, DateTime? ultimoRapport = null) => new LeadCampana
+        {
+            Empresa = "1", Cliente = cliente, Contacto = "0", Nombre = "Lead " + cliente, Vendedor = "MPP", Origen = "META-HARMONIA-0926",
+            FechaOrigen = fechaOrigen, HorasParaLlamar = 24, UltimoRapport = ultimoRapport
+        };
+
+        [TestMethod]
+        public async Task Leer_LeadDeCampanaSinRapport_SaleElPrimeroDelanteDelChequeYSinRegistrar()
+        {
+            // AHORA = miércoles 07/10/26 9:30; el lead entró el martes a las 16:00 → plazo hoy a las 16:00.
+            SugerenciasContactoDTO respuesta = await ServicioConLeads(LeadMeta("42109", new DateTime(2026, 10, 6, 16, 0, 0))).Leer("mpp", "Llamada", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "42109", "1005", "1001", "1002" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+            Assert.AreEqual("Lead de Meta: llamar antes de las 16:00 del 07/10", respuesta.Sugerencias[0].Motivo);
+            Assert.AreEqual(PrioridadesContacto.MAXIMA, respuesta.Sugerencias[0].Prioridad);
+            Assert.AreEqual(1, respuesta.Sugerencias[0].Orden);
+            Assert.AreEqual(0, respuesta.Sugerencias[0].SugerenciaId);
+            Assert.IsFalse(sugerencias.Any(s => s.Cliente == "42109"), "el lead no entra en el registro del día");
+        }
+
+        [TestMethod]
+        public async Task Leer_LeadConRapportDesdeSuOrigen_NoSale()
+        {
+            SugerenciasContactoDTO respuesta = await ServicioConLeads(LeadMeta("42109", new DateTime(2026, 10, 6, 16, 0, 0), HOY)).Leer("MPP", "Llamada", 3, "", "u");
+            Assert.IsFalse(respuesta.Sugerencias.Any(s => s.Cliente == "42109"));
+            Assert.AreEqual("1005", respuesta.Sugerencias[0].Cliente);
+        }
 
         private static IChequesRegaloParaSugerencias ChequesDe(params string[] clientes)
         {
