@@ -1,3 +1,4 @@
+using Hangfire;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -47,6 +48,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// Punto de entrada para Hangfire, cada 30 minutos: primer presupuesto y primer pedido,
         /// que son los que mueven los leads y conviene que lleguen el mismo día.
         /// </summary>
+        [Queue(Infraestructure.SincronizacionJobsService.COLA)] // NestoAPI#820: llama fuera; en su cola para no parar «default»
         public static Task EncolarClientesConPrimerasCompras(int minutosVentana)
         {
             return Encolar(DateTime.Now.AddMinutes(-minutosVentana), incluirUltimoPedido: false,
@@ -58,6 +60,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// para no republicar cada cliente con cada pedido durante el día; para la segunda fase del
         /// marketing (clientes que llevan tiempo sin comprar) basta con que llegue al día siguiente.
         /// </summary>
+        [Queue(Infraestructure.SincronizacionJobsService.COLA)] // NestoAPI#820: llama fuera; en su cola para no parar «default»
         public static Task EncolarClientesConUltimoPedido(int horasVentana)
         {
             return Encolar(DateTime.Now.AddHours(-horasVentana), incluirUltimoPedido: true,
