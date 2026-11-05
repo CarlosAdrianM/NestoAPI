@@ -12,7 +12,7 @@ namespace NestoAPI.Infraestructure
         Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre);
         // pais (Nesto#436): ISO-2 del país de la DIRECCIÓN; para país != ES no se valida contra la
         // tabla española de CPs ni se pasa por el geocoding de España.
-        Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null);
+        Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null, string poblacion = null, string provincia = null);
         RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string iban);
         Task<ClienteCrear> ConstruirClienteCrear(string empresa, string cliente, string contacto);
         Task<List<PersonaContactoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto);

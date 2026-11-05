@@ -47,7 +47,7 @@ namespace NestoAPI.Infraestructure
             _sincronizacionEventWrapper = sincronizacionEventWrapper;
         }
 
-        public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null)
+        public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null, string poblacion = null, string provincia = null)
         {
             if (string.IsNullOrWhiteSpace(direccion))
             {
@@ -83,7 +83,25 @@ namespace NestoAPI.Infraestructure
             }
             else
             {
-                respuesta = await servicio.CogerDatosCodigoPostal(codigoPostal);
+                // NestoAPI#821 (Carlos 05/11/26): con la dirección de Google, un CP español que aún no está
+                // en la tabla no es un error: se dará de alta al guardar el cliente (AsegurarCodigoPostal).
+                // Aquí solo se comprueba (no se escribe) y se devuelve lo que tendrá la fila nueva.
+                if (direccionVerificada && await servicio.BuscarCodigoPostal(Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoPostal).ConfigureAwait(false) == null)
+                {
+                    respuesta = new RespuestaDatosGeneralesClientes
+                    {
+                        CodigoPostal = codigoPostal,
+                        // Las de Google si el cliente las manda; si no, null (Nesto conserva las suyas).
+                        Poblacion = string.IsNullOrWhiteSpace(poblacion) ? null : Truncar(poblacion.ToUpper().Trim(), 30),
+                        Provincia = string.IsNullOrWhiteSpace(provincia) ? null : Truncar(provincia.ToUpper().Trim(), 30),
+                        Ruta = await RutaParaCodigoPostalNuevo(Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoPostal).ConfigureAwait(false),
+                        VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL
+                    };
+                }
+                else
+                {
+                    respuesta = await servicio.CogerDatosCodigoPostal(codigoPostal);
+                }
 
                 if (direccionVerificada)
                 {
@@ -122,11 +140,39 @@ namespace NestoAPI.Infraestructure
             => !string.IsNullOrWhiteSpace(pais) && !string.Equals(pais.Trim(), "ES", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// NestoAPI#376: los CPs extranjeros no están en CódigosPostales y la FK
-        /// FK_Clientes_CódigosPostales impide guardar el cliente; se dan de alta al vuelo
-        /// en la ruta 00 de clientes extranjeros.
+        /// NestoAPI#821 (Carlos 05/11/26): el mensaje cuando un CP español no está en la tabla y no se
+        /// puede dar de alta (la dirección no viene del buscador de Google). Desde el REVOKE del 05/11
+        /// solo la API escribe en CódigosPostales, así que el usuario no tiene otra forma de crearlo.
         /// </summary>
-        internal async Task<(CodigoPostal CodigoPostal, bool EsNuevo)> AsegurarCodigoPostalExtranjero(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais)
+        internal static string MensajeCodigoPostalNoExiste(string codigoPostal)
+            => $"No existe el código postal {codigoPostal?.Trim()}. Elija la dirección en el buscador de Google para darlo de alta.";
+
+        /// <summary>
+        /// NestoAPI#376: envoltorio con el nombre antiguo; los CPs extranjeros se crean igual que siempre.
+        /// </summary>
+        internal Task<(CodigoPostal CodigoPostal, bool EsNuevo)> AsegurarCodigoPostalExtranjero(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais)
+            => AsegurarCodigoPostal(db, empresa, codigoPostal, poblacion, provincia, pais, direccionVerificada: false);
+
+        /// <summary>
+        /// Devuelve la fila de CódigosPostales del CP, creándola si hace falta (la FK
+        /// FK_Clientes_CódigosPostales impide guardar el cliente sin ella).
+        /// <list type="bullet">
+        /// <item>NestoAPI#376: extranjero que no existe → se crea siempre, en la ruta 00 de clientes
+        /// extranjeros (si existe, se autocompletan país y textos: #378/#409).</item>
+        /// <item>NestoAPI#821 (Carlos 05/11/26): español (país vacío o ES) que no existe → se crea SOLO si
+        /// <paramref name="direccionVerificada"/> (la dirección la eligió el usuario en el combo de
+        /// Google Places: si Google da ese CP, existe; Correos crea alguno cada año). Sin verificar →
+        /// <see cref="CodigoPostalNoExisteException"/> (un ArgumentException; 400 en PUT/POST) con <see cref="MensajeCodigoPostalNoExiste"/>. Sin población
+        /// o provincia tampoco se crea (no se da de alta en blanco). Un CP español existente no se
+        /// toca (ni se adjunta al contexto).</item>
+        /// </list>
+        /// La fila española nueva: Descripción/Provincia = las de Google, Pais = ES, Vendedor = NV y
+        /// Ruta = la más frecuente entre los CP de la misma provincia (las dos primeras cifras del CP son
+        /// el código de provincia, más fiable que el texto: «VIZCAYA»/«BIZKAIA») o 00 si no hay ninguno.
+        /// Es una conjetura razonable: el trigger trgCodigosPostalesUpd manda el «Informe de Códigos
+        /// Postales» con la fila nueva y Dirección corrige ruta/vendedor en la ventana de CPs.
+        /// </summary>
+        internal async Task<(CodigoPostal CodigoPostal, bool EsNuevo)> AsegurarCodigoPostal(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais, bool direccionVerificada)
         {
             empresa = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             // ELMAH 10/08/26: el CP puede llegar con blancos invisibles al PRINCIPIO (espacio,
@@ -139,6 +185,12 @@ namespace NestoAPI.Infraestructure
             // siga acumulando el mismo CP en tres formatos (CodigoPostalParaGuardar ya hace el Trim).
             codigoPostal = await CodigoPostalParaGuardar(empresa, codigoPostal, pais).ConfigureAwait(false);
             CodigoPostal cpDb = await servicio.BuscarCodigoPostal(empresa, codigoPostal).ConfigureAwait(false);
+            if (!EsPaisExtranjero(pais))
+            {
+                return cpDb != null
+                    ? (cpDb, false) // NestoAPI#821: el español existente no se toca
+                    : (await CrearCodigoPostalEspanol(db, empresa, codigoPostal, poblacion, provincia, direccionVerificada).ConfigureAwait(false), true);
+            }
             if (cpDb != null)
             {
                 // NestoAPI#403: BuscarCodigoPostal abre su PROPIO DbContext y lo cierra, así que
@@ -197,6 +249,42 @@ namespace NestoAPI.Infraestructure
             };
             _ = db.CodigosPostales.Add(cpDb);
             return (cpDb, true);
+        }
+
+        /// <summary>NestoAPI#821: alta de un CP español que no está en la tabla (ver <see cref="AsegurarCodigoPostal"/>).</summary>
+        private async Task<CodigoPostal> CrearCodigoPostalEspanol(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, bool direccionVerificada)
+        {
+            if (!direccionVerificada)
+            {
+                throw new CodigoPostalNoExisteException(MensajeCodigoPostalNoExiste(codigoPostal));
+            }
+            if (string.IsNullOrWhiteSpace(poblacion) || string.IsNullOrWhiteSpace(provincia))
+            {
+                // No se crea en blanco: la población de la fila acaba en las fichas y en las etiquetas.
+                throw new CodigoPostalNoExisteException($"No existe el código postal {codigoPostal?.Trim()} y no se puede dar de alta sin la población y la provincia. Vuelva a elegir la dirección en el buscador de Google.");
+            }
+            CodigoPostal cpDb = new CodigoPostal
+            {
+                Empresa = empresa,
+                Número = codigoPostal,
+                Descripción = Truncar(poblacion.ToUpper().Trim(), 50),
+                Provincia = Truncar(provincia.ToUpper().Trim(), 30),
+                Ruta = await RutaParaCodigoPostalNuevo(empresa, codigoPostal).ConfigureAwait(false),
+                Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL,
+                Pais = "ES"
+            };
+            _ = db.CodigosPostales.Add(cpDb);
+            return cpDb;
+        }
+
+        /// <summary>
+        /// NestoAPI#821: la ruta de un CP español nuevo = la más frecuente entre los CP de su provincia
+        /// (mismas dos primeras cifras) o 00 («fuera de Madrid») si no hay ninguno.
+        /// </summary>
+        internal async Task<string> RutaParaCodigoPostalNuevo(string empresa, string codigoPostal)
+        {
+            string ruta = await servicio.RutaMasFrecuenteProvincia(empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoPostal).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(ruta) ? Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS : ruta.Trim();
         }
 
         /// <summary>
@@ -1144,13 +1232,11 @@ namespace NestoAPI.Infraestructure
             if (clienteDB.CodPostal?.Trim() != clienteModificar.CodigoPostal)
             {
                 CodigoPostal cp = await servicio.BuscarCodigoPostal(clienteModificar.Empresa, clienteModificar.CodigoPostal).ConfigureAwait(false);
-                if (cp == null && EsPaisExtranjero(clienteDB.Pais))
-                {
-                    cp = (await AsegurarCodigoPostalExtranjero(db, clienteModificar.Empresa, clienteModificar.CodigoPostal, clienteModificar.Poblacion, clienteModificar.Provincia, clienteDB.Pais.Trim()).ConfigureAwait(false)).CodigoPostal;
-                }
                 if (cp == null)
                 {
-                    throw new ArgumentException($"No existe el código postal {clienteModificar.CodigoPostal} en la base de datos");
+                    // NestoAPI#376 (extranjero) y NestoAPI#821 (español con la dirección de Google): se crea;
+                    // español sin verificar → ArgumentException «No existe el código postal X. Elija...».
+                    cp = (await AsegurarCodigoPostal(db, clienteModificar.Empresa, clienteModificar.CodigoPostal, clienteModificar.Poblacion, clienteModificar.Provincia, clienteDB.Pais?.Trim(), clienteModificar.DireccionVerificada).ConfigureAwait(false)).CodigoPostal;
                 }
                 // #409: en un CP extranjero la tabla puede no tener población/provincia (se crean
                 // en blanco a propósito); si el DTO las trae, mandan las del DTO. Antes el cliente
@@ -1434,8 +1520,10 @@ namespace NestoAPI.Infraestructure
                 Usuario = clienteCrear.Usuario
             };
 
-            if (EsPaisExtranjero(cliente.Pais) && !string.IsNullOrWhiteSpace(cliente.CodPostal))
+            if (!string.IsNullOrWhiteSpace(cliente.CodPostal))
             {
+                // NestoAPI#821: también los españoles (se crean solo con la dirección de Google; si no,
+                // ArgumentException «No existe el código postal X...» en vez del choque con la FK al guardar).
                 // NestoAPI#403: la navegación se cuelga SOLO si el código postal hay que crearlo, para
                 // que EF sepa que debe insertarlo ANTES que el cliente. Si ya existía basta con el FK
                 // escalar (cliente.CodPostal), que ya está puesto y apunta a una fila real.
@@ -1447,8 +1535,8 @@ namespace NestoAPI.Infraestructure
                 // fixup posterior de EF fallaba con "A referential integrity constraint violation
                 // occurred" y el usuario veía un error en un alta que SÍ se había hecho (caso real:
                 // cliente 41864 de Enrique, 24/08/26).
-                (CodigoPostal codigoPostal, bool esNuevo) = await AsegurarCodigoPostalExtranjero(
-                    db, cliente.Empresa, cliente.CodPostal, cliente.Población, cliente.Provincia, cliente.Pais).ConfigureAwait(false);
+                (CodigoPostal codigoPostal, bool esNuevo) = await AsegurarCodigoPostal(
+                    db, cliente.Empresa, cliente.CodPostal, cliente.Población, cliente.Provincia, cliente.Pais, clienteCrear.DireccionVerificada).ConfigureAwait(false);
                 if (esNuevo)
                 {
                     cliente.CódigosPostales = codigoPostal;

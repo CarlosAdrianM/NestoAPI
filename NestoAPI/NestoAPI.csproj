@@ -903,6 +903,7 @@
     <Compile Include="Models\Agencias\FurgonetaRepartoDTO.cs" />
     <Compile Include="Models\Agencias\EnlaceSeguimientoRepartoPropio.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
+    <Compile Include="Infraestructure\Clientes\CodigoPostalNoExisteException.cs" />
     <Compile Include="Infraestructure\Clientes\GuardiaAnulacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\CambioDiasEnServirConPicking.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPersonasContacto.cs" />
