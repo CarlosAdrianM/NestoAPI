@@ -531,14 +531,24 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 // resuelta («Alfredo» de Ariadna → «NUEVAVISION\Alfredo»), la escriba quien la escriba; al leer se busca por
                 // el mismo nombre resuelto (y por el sin dominio, lo grabado antes de #823). La Aplicacion separa los buzones.
                 List<string> usuariosAvisados = dispositivos.Select(d => UsuarioAuditoriaHelper.Persona(d.Usuario)?.Trim()).ToList();
+                string titulo = RecortarTitulo(notificacion.Titulo);
+                bool deEmpleados = EsAplicacionDeEmpleados(aplicacion);
                 using (NVEntities db = _crearContexto())
                 {
                     var destinatarios = dispositivos
                         .GroupBy(d => new { Usuario = UsuarioAuditoriaHelper.Persona(d.Usuario)?.Trim(), d.Empresa, d.Vendedor, d.Cliente, d.Contacto })
-                        .Select(g => g.Key);
+                        .Select(g => g.Key)
+                        .ToList();
 
                     foreach (var destinatario in destinatarios)
                     {
+                        // NestoAPI#822: el buzón de un empleado es uno solo para Nesto, Ariadna y NestoApp. Muchos avisos se
+                        // graban a la vez para Nesto y para Ariadna (o NestoApp): si la persona ya tiene ese mismo aviso de
+                        // hace un momento en otra de sus aplicaciones, no se repite (la push sale igual).
+                        if (deEmpleados && await YaLoTiene(db, destinatario.Usuario, titulo, notificacion.Cuerpo, datos).ConfigureAwait(false))
+                        {
+                            continue;
+                        }
                         _ = db.NotificacionesBuzon.Add(new NotificacionBuzon
                         {
                             Usuario = destinatario.Usuario,
@@ -547,7 +557,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                             Cliente = destinatario.Cliente,
                             Contacto = destinatario.Contacto,
                             Aplicacion = aplicacion,
-                            Titulo = RecortarTitulo(notificacion.Titulo),
+                            Titulo = titulo,
                             Cuerpo = notificacion.Cuerpo,
                             Datos = datos,
                             FechaCreacion = DateTime.Now
@@ -558,9 +568,13 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 }
 
                 // NestoAPI#536: Nesto no recibe push; se le avisa por SignalR para que refresque la campana.
-                if (aplicacion == Constantes.Aplicaciones.NESTO)
+                // NestoAPI#822: también si el aviso es de Ariadna o NestoApp, porque sale en la misma campana.
+                if (deEmpleados)
                 {
                     AvisosTiempoReal.HayNotificacionesNuevas(usuariosAvisados);
+                }
+                if (aplicacion == Constantes.Aplicaciones.NESTO)
+                {
                     // NestoAPI#775: y si es urgente (lista blanca por tipo), además la ventana roja con pitido
                     if (NotificacionesUrgentes.EsUrgente(notificacion))
                     {
@@ -648,6 +662,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 {
                     notificacion.FechaLeida = DateTime.Now;
                     _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                    AvisarCambioEnElBuzon(nombres);
                 }
 
                 return true;
@@ -680,6 +695,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 }
 
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                AvisarCambioEnElBuzon(UsuarioAuditoriaHelper.NombresDeLaPersona(usuario));
                 return pendientes.Count;
             }
         }
@@ -701,20 +717,88 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 // Borrado lógico: la fila se conserva para poder auditar qué se envió.
                 notificacion.FechaEliminada = DateTime.Now;
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                AvisarCambioEnElBuzon(nombres);
                 return true;
             }
         }
 
         /// <summary>
-        /// NestoAPI#823: las del buzón de la persona en esa aplicación, por todos sus nombres: el resuelto (con el que se graba
-        /// desde #823) y el sin dominio si es un gemelo (lo grabado antes, hasta que pase Scripts/Issue823_UsuariosAriadnaADominio.sql).
-        /// Así crear, leer, contar, marcar y borrar usan la misma persona, la pida Ariadna con «Alfredo» o venga ya resuelta.
+        /// NestoAPI#822: las aplicaciones de los empleados (Nesto, Ariadna y NestoApp) comparten buzón: la persona ve lo mismo
+        /// en la campana de las tres. La tienda (NestoTiendas, clientes) sigue con el suyo.
+        /// </summary>
+        internal static readonly string[] APLICACIONES_DE_EMPLEADOS =
+        {
+            Constantes.Aplicaciones.NESTO,
+            Constantes.Aplicaciones.ARIADNA,
+            Constantes.Aplicaciones.NESTO_APP
+        };
+
+        /// <summary>NestoAPI#822: si el buzón de esa aplicación es el compartido de los empleados.</summary>
+        internal static bool EsAplicacionDeEmpleados(string aplicacion)
+            => APLICACIONES_DE_EMPLEADOS.Contains(aplicacion?.Trim(), StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>NestoAPI#822: las aplicaciones cuyo buzón se lee al pedir el de <paramref name="aplicacion"/>.</summary>
+        internal static List<string> AplicacionesDelBuzon(string aplicacion)
+            => EsAplicacionDeEmpleados(aplicacion) ? APLICACIONES_DE_EMPLEADOS.ToList() : new List<string> { aplicacion };
+
+        /// <summary>
+        /// NestoAPI#822: margen para considerar que un aviso igual (título, cuerpo y datos) para la misma persona es el mismo
+        /// grabado para otra aplicación (los avisadores graban Nesto y Ariadna, o Nesto y NestoApp, seguidos).
+        /// </summary>
+        internal static readonly TimeSpan MARGEN_AVISO_REPETIDO = TimeSpan.FromMinutes(2);
+
+        private static async Task<bool> YaLoTiene(NVEntities db, string usuario, string titulo, string cuerpo, string datos)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return false;
+            }
+            List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
+            List<string> aplicaciones = APLICACIONES_DE_EMPLEADOS.ToList();
+            DateTime desde = DateTime.Now - MARGEN_AVISO_REPETIDO;
+            try
+            {
+                return await db.NotificacionesBuzon
+                    .AnyAsync(n => nombres.Contains(n.Usuario) && aplicaciones.Contains(n.Aplicacion) && n.FechaEliminada == null
+                        && n.FechaCreacion >= desde && n.Titulo == titulo && n.Cuerpo == cuerpo && n.Datos == datos)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Mirar si está repetido es un extra: si falla, mejor un aviso dos veces que ninguno.
+                LogearEnElmah(new Exception($"[Buzón] No se pudo mirar si {usuario} ya tenía «{titulo}»: {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#822: marcar leída o borrar desde una aplicación cambia la campana de las otras: a los Nesto abiertos de la
+        /// persona (por todos sus nombres) se les manda «hayNotificacionesNuevas» para que la refresquen. Nunca lanza.
+        /// </summary>
+        private void AvisarCambioEnElBuzon(List<string> nombres)
+        {
+            try
+            {
+                AvisosTiempoReal.HayNotificacionesNuevas(nombres);
+            }
+            catch (Exception ex)
+            {
+                LogearEnElmah(ex);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#823: las del buzón de la persona, por todos sus nombres: el resuelto (con el que se graba desde #823) y el
+        /// sin dominio si es un gemelo (lo grabado antes, hasta que pase Scripts/Issue823_UsuariosAriadnaADominio.sql).
+        /// NestoAPI#822: y en cualquiera de las aplicaciones de los empleados (Nesto, Ariadna, NestoApp): lo que llega a
+        /// «NUEVAVISION\Carlos» en Nesto lo ve «Carlos» en Ariadna y al revés. Crear, leer, contar, marcar y borrar usan lo mismo.
         /// </summary>
         private static IQueryable<NotificacionBuzon> ConsultaDelUsuario(NVEntities db, string usuario, string aplicacion)
         {
             List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
+            List<string> aplicaciones = AplicacionesDelBuzon(aplicacion);
             return db.NotificacionesBuzon
-                .Where(n => nombres.Contains(n.Usuario) && n.Aplicacion == aplicacion && n.FechaEliminada == null);
+                .Where(n => nombres.Contains(n.Usuario) && aplicaciones.Contains(n.Aplicacion) && n.FechaEliminada == null);
         }
 
         private static NotificacionBuzonDTO AConvertirDTO(NotificacionBuzon notificacion)
@@ -741,7 +825,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 Cuerpo = notificacion.Cuerpo,
                 Datos = datos,
                 FechaCreacion = notificacion.FechaCreacion,
-                Leida = notificacion.FechaLeida != null
+                Leida = notificacion.FechaLeida != null,
+                Aplicacion = notificacion.Aplicacion
             };
         }
 

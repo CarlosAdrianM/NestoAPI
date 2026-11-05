@@ -324,8 +324,8 @@ namespace NestoAPI.Tests.Infraestructure
             buzon.Add(new NotificacionBuzon { Id = 1, Usuario = "Pedro", Aplicacion = ARIADNA, Titulo = "De Pedro", FechaCreacion = new DateTime(2026, 11, 4) });
             buzon.Add(new NotificacionBuzon { Id = 2, Usuario = @"NUEVAVISION\Alfredo", Aplicacion = "Nesto", Titulo = "De su Nesto", FechaCreacion = new DateTime(2026, 11, 4) });
 
-            Assert.AreEqual(0, (await servicio.ObtenerBuzon("Alfredo", ARIADNA, false, 1, 20)).Count,
-                "Ni la de Pedro ni la de su buzón de Nesto: la aplicación sigue separando");
+            Assert.AreEqual(1, (await servicio.ObtenerBuzon("Alfredo", ARIADNA, false, 1, 20)).Count,
+                "La de Pedro no; la de su Nesto sí (NestoAPI#822: un buzón por persona)");
             Assert.IsFalse(await servicio.MarcarLeida(1, "Alfredo"));
         }
 

@@ -445,6 +445,7 @@
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelperIdentidadUnicaTests.cs" />
+    <Compile Include="Infraestructure\BuzonPorPersonaTests.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelperUnaGrafiaTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\NotificacionesUrgentesTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
@@ -697,6 +698,7 @@
     <Compile Include="Controllers\NovedadesFeedbackTests.cs" />
     <Compile Include="Controllers\NovedadesIncidenciasTests.cs" />
     <Compile Include="Controllers\NovedadesSugerenciasTests.cs" />
+    <Compile Include="Controllers\NovedadesPorIdTests.cs" />
     <Compile Include="Controllers\NovedadesPrivadasTests.cs" />
     <Compile Include="Controllers\NovedadesActividadSupervisorTests.cs" />
     <Compile Include="Controllers\NovedadesMencionesTests.cs" />

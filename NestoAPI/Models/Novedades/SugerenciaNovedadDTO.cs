@@ -28,6 +28,8 @@ namespace NestoAPI.Models.Novedades
         public List<CapturaNovedadDTO> Capturas { get; set; } = new List<CapturaNovedadDTO>();
         /// <summary>NestoAPI#558: «Algo no funciona» (categoría Incidencia), no una idea nueva.</summary>
         public bool EsIncidencia { get; set; }
+        /// <summary>NestoAPI#822: siempre true (ver <see cref="NovedadDTO.EsSugerencia"/>).</summary>
+        public override bool EsSugerencia => true;
         /// <summary>
         /// NestoAPI#558: en las incidencias, la versión, la pantalla y los errores de ELMAH del usuario de
         /// la última hora. Solo lo ven Dirección / Informática (a los demás les llega a null).
