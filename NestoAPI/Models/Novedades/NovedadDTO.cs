@@ -36,6 +36,11 @@ namespace NestoAPI.Models.Novedades
         public bool TieneVideo { get; set; }
         /// <summary>NestoAPI#711: los bytes del vídeo (null si no tiene).</summary>
         public int? VideoTamano { get; set; }
+        /// <summary>
+        /// NestoAPI#822 (GET api/Novedades/{id}): si es una sugerencia (SugerenciaNovedadDTO) o una novedad del changelog.
+        /// Solo de salida.
+        /// </summary>
+        public virtual bool EsSugerencia => false;
     }
 
     /// <summary>Sugerencia 551: PUT api/Novedades/{id}/Perfiles. Vacía, null o con «Todos» = para todos.</summary>

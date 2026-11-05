@@ -22,7 +22,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
             string usuario = Context.User?.Identity?.Name;
             if (!string.IsNullOrWhiteSpace(usuario))
             {
-                _ = Groups.Add(Context.ConnectionId, AvisosTiempoReal.GrupoDe(usuario));
+                foreach (string grupo in AvisosTiempoReal.GruposDe(usuario))
+                {
+                    _ = Groups.Add(Context.ConnectionId, grupo);
+                }
                 UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario);
             }
             return base.OnConnected();
@@ -33,7 +36,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
             string usuario = Context.User?.Identity?.Name;
             if (!string.IsNullOrWhiteSpace(usuario))
             {
-                _ = Groups.Add(Context.ConnectionId, AvisosTiempoReal.GrupoDe(usuario));
+                foreach (string grupo in AvisosTiempoReal.GruposDe(usuario))
+                {
+                    _ = Groups.Add(Context.ConnectionId, grupo);
+                }
                 UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario);
             }
             return base.OnReconnected();
@@ -149,27 +155,70 @@ namespace NestoAPI.Infraestructure.Notificaciones
     {
         public const string RUTA = "/signalr";
 
+        private readonly Func<IHubContext> hubAvisos;
+        private readonly Func<IHubContext> hubAlmacen;
+
+        public AvisosTiempoReal() : this(() => GlobalHost.ConnectionManager.GetHubContext<AvisosHub>(),
+            () => GlobalHost.ConnectionManager.GetHubContext<AlmacenHub>())
+        {
+        }
+
+        internal AvisosTiempoReal(Func<IHubContext> hubAvisos, Func<IHubContext> hubAlmacen)
+        {
+            this.hubAvisos = hubAvisos;
+            this.hubAlmacen = hubAlmacen;
+        }
+
         public static string GrupoDe(string usuario) => "usuario:" + (usuario ?? string.Empty).Trim().ToUpperInvariant();
 
+        /// <summary>
+        /// NestoAPI#822: los grupos en los que entra una conexión: el del nombre del token y el de la persona
+        /// (<see cref="UsuarioAuditoriaHelper.Persona"/>). Así «Carlos» (Ariadna, NestoApp) y «NUEVAVISION\Carlos» (Nesto)
+        /// reciben los avisos de su buzón, que es uno solo, los manden con el nombre que los manden. Sin repetidos.
+        /// </summary>
+        public static List<string> GruposDe(string usuario)
+        {
+            var grupos = new List<string>();
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return grupos;
+            }
+            grupos.Add(GrupoDe(usuario));
+            string persona = UsuarioAuditoriaHelper.Persona(usuario.Trim());
+            if (!string.IsNullOrWhiteSpace(persona) && !grupos.Contains(GrupoDe(persona)))
+            {
+                grupos.Add(GrupoDe(persona));
+            }
+            return grupos;
+        }
+
+        /// <summary>
+        /// A los Nesto (AvisosHub) y, NestoAPI#822, también a las Ariadna (AlmacenHub) de esos usuarios: «hayNotificacionesNuevas»
+        /// sin datos y la campana se refresca (Ariadna#97; así Ariadna puede quitar su reloj). Nunca lanza.
+        /// </summary>
         public void HayNotificacionesNuevas(IEnumerable<string> usuarios)
-            => ACadaUno(usuarios, grupo => grupo.hayNotificacionesNuevas());
+        {
+            List<string> lista = (usuarios ?? Enumerable.Empty<string>()).ToList();
+            ACadaUno(hubAvisos, lista, grupo => grupo.hayNotificacionesNuevas());
+            ACadaUno(hubAlmacen, lista, grupo => grupo.hayNotificacionesNuevas());
+        }
 
         public void HayNotificacionUrgente(IEnumerable<string> usuarios)
-            => ACadaUno(usuarios, grupo => grupo.hayNotificacionUrgente());
+            => ACadaUno(hubAvisos, usuarios, grupo => grupo.hayNotificacionUrgente());
 
         public void NotificacionResuelta(IEnumerable<string> usuarios, NotificacionResueltaDTO resuelta)
         {
             if (resuelta != null)
             {
-                ACadaUno(usuarios, grupo => grupo.notificacionResuelta(resuelta));
+                ACadaUno(hubAvisos, usuarios, grupo => grupo.notificacionResuelta(resuelta));
             }
         }
 
-        private static void ACadaUno(IEnumerable<string> usuarios, Action<dynamic> avisar)
+        private static void ACadaUno(Func<IHubContext> hub, IEnumerable<string> usuarios, Action<dynamic> avisar)
         {
             try
             {
-                IHubContext contexto = GlobalHost.ConnectionManager.GetHubContext<AvisosHub>();
+                IHubContext contexto = hub();
                 foreach (string usuario in (usuarios ?? Enumerable.Empty<string>()).Where(u => !string.IsNullOrWhiteSpace(u)).Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     avisar(contexto.Clients.Group(GrupoDe(usuario)));

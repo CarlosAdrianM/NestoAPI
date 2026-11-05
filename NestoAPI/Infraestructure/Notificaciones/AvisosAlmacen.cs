@@ -22,6 +22,32 @@ namespace NestoAPI.Infraestructure.Notificaciones
     [Authorize]
     public class AlmacenHub : Hub
     {
+        /// <summary>
+        /// NestoAPI#822: cada Ariadna entra al conectar en el grupo de su usuario y en el de su persona
+        /// (<see cref="AvisosTiempoReal.GruposDe"/>, «usuario:NOMBRE» en mayúsculas, como en AvisosHub) para recibir
+        /// «hayNotificacionesNuevas» cuando cambia su campana (Ariadna#97).
+        /// </summary>
+        public override Task OnConnected()
+        {
+            EntrarEnLosGruposDelUsuario();
+            return base.OnConnected();
+        }
+
+        public override Task OnReconnected()
+        {
+            EntrarEnLosGruposDelUsuario();
+            return base.OnReconnected();
+        }
+
+        private void EntrarEnLosGruposDelUsuario()
+        {
+            string usuario = Context.User?.Identity?.Name;
+            foreach (string grupo in AvisosTiempoReal.GruposDe(usuario))
+            {
+                _ = Groups.Add(Context.ConnectionId, grupo);
+            }
+        }
+
         /// <summary>La PDA abre un recorrido o un packing (sin decir su dispositivo: versiones sin él). False si el grupo no vale.</summary>
         public Task<bool> Entrar(string grupo) => Entrar(grupo, null);
 

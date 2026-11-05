@@ -319,6 +319,48 @@ namespace NestoAPI.Controllers
                 .ToList());
         }
 
+        // GET api/Novedades/1053  (NestoAPI#822, para Nesto#623)
+        // Una novedad o sugerencia por su id, sea del ámbito que sea (Nesto, NestoApp, Ariadna) y esté como esté (las cerradas
+        // también): la campana es una sola por persona y un aviso puede ser de una sugerencia de otra aplicación. Mismo DTO
+        // que las listas: NovedadConFeedbackDTO si es del changelog (con versión) y SugerenciaNovedadDTO si es una sugerencia;
+        // «Ambito» dice de qué aplicación es y «EsSugerencia» cuál de las dos. 404 si no existe o, si es privada, no la puede ver.
+        [HttpGet]
+        [Route("api/Novedades/{id:int}")]
+        [Authorize]
+        [ResponseType(typeof(NovedadDTO))]
+        public IHttpActionResult GetNovedad(int id)
+        {
+            if (!PuedeVerNovedad(id))
+            {
+                return NotFound();
+            }
+
+            NovedadDTO novedad = servicio.LeerNovedadesPublicadas()?.FirstOrDefault(n => n.Id == id);
+            if (novedad != null)
+            {
+                var una = new List<NovedadDTO> { novedad };
+                RellenarPerfiles(una);
+                List<NovedadDTO> resultado = ConFeedback(una);
+                RellenarAdjuntos(resultado);
+                RellenarVideos(resultado);
+                return Ok(resultado[0]);
+            }
+
+            NovedadConSugerenciaFila fila = servicio.LeerSugerencias(true)?.FirstOrDefault(n => n.Id == id);
+            if (fila == null)
+            {
+                return NotFound();
+            }
+            var sugerencias = new List<SugerenciaNovedadDTO> { fila.ADto() };
+            MarcarPrivadas(sugerencias, Privacidad());
+            OcultarContextoSiNoRevisa(sugerencias);
+            _ = RellenarFeedback(sugerencias);
+            RellenarAdjuntos(sugerencias);
+            RellenarVideos(sugerencias);
+            RellenarCapturasSugerencias(sugerencias);
+            return Ok(sugerencias[0]);
+        }
+
         #region NestoAPI#650: sugerencias privadas
 
         private static int privadasFalloRegistrado;
