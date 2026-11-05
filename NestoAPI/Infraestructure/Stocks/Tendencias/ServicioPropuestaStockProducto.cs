@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.Caching;
 
 namespace NestoAPI.Infraestructure.Stocks.Tendencias
@@ -12,6 +13,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// producto no entra en el cálculo (no existe, ficticio, materias primas o muestras).
         /// </summary>
         ResultadoTendencia Calcular(string producto);
+
+        /// <summary>
+        /// NestoAPI#738 (sugerencia 793, Manuel): la propuesta de ALG de varios productos COMO SI ya estuvieran en estado 0
+        /// (Disponible), para crear sus controles de stock al volver a Disponible con los máximos y mínimos sugeridos y no con los
+        /// por defecto del almacén. Sin forzar el estado, el motor no da máximos a los de estado 3, 4 o nulos. Las series se
+        /// completan en un solo lote. Solo trae los que entran en el cálculo (los que no, como en <see cref="Calcular"/>, no salen).
+        /// </summary>
+        Dictionary<string, ResultadoTendencia> CalcularComoDisponibles(IEnumerable<string> productos);
     }
 
     /// <summary>
@@ -58,6 +67,34 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             repositorio.CompletarLote(new List<DatosProductoTendencia> { d }, mesReferencia, p.MesesFaseA, p.DiasRetraso);
             decimal[] indices = IndicesFamilia(d.Familia?.Trim(), mesReferencia, p);
             return MotorTendencias.Calcular(d, indices, mesReferencia, p);
+        }
+
+        public Dictionary<string, ResultadoTendencia> CalcularComoDisponibles(IEnumerable<string> productos)
+        {
+            Dictionary<string, ResultadoTendencia> resultado = new Dictionary<string, ResultadoTendencia>(StringComparer.OrdinalIgnoreCase);
+            List<DatosProductoTendencia> lote = new List<DatosProductoTendencia>();
+            foreach (string producto in (productos ?? Enumerable.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct())
+            {
+                DatosProductoTendencia d = repositorio.LeerProducto(producto);
+                if (d != null)
+                {
+                    d.Estado = 0;
+                    lote.Add(d);
+                }
+            }
+            if (lote.Count == 0)
+            {
+                return resultado;
+            }
+            ParametrosTendencias p = leerParametros() ?? new ParametrosTendencias();
+            DateTime mesReferencia = PropuestasStockJobsService.MesCerrado(ahora());
+            repositorio.CompletarLote(lote, mesReferencia, p.MesesFaseA, p.DiasRetraso);
+            foreach (DatosProductoTendencia d in lote)
+            {
+                decimal[] indices = IndicesFamilia(d.Familia?.Trim(), mesReferencia, p);
+                resultado[d.Producto?.Trim() ?? string.Empty] = MotorTendencias.Calcular(d, indices, mesReferencia, p);
+            }
+            return resultado;
         }
 
         private decimal[] IndicesFamilia(string familia, DateTime mesReferencia, ParametrosTendencias p)
