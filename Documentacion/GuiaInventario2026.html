@@ -285,6 +285,18 @@
 <li>La unidad física localizada: se cuenta lo que hay de verdad.</li>
 </ul>
 
+<h3>8.2 bis. Estado de la prueba el 05/11/26 y lo que queda</h3>
+<p>Todo se coordina en Novedades, en el hilo <b>«Inventario del 21/11: hilo único de las pruebas»</b> (sugerencia 1057), y por la campana; nada de correos.</p>
+<ul>
+<li><b>Algete</b>: Alfredo contó la 002/003/010 (8 referencias, todas cuadraban) pero la contabilización falló por un permiso de la base de datos (ya dado) y las filas se borraron porque, mientras estaban pendientes, <b>bloqueaban las etiquetas</b> de esos productos. Queda: repetir y contabilizar en el momento (Alfredo, Santiago o Andre).</li>
+<li><b>Reina</b>: se rellenó la tienda entera por entrar en Nesto antes del evolutivo (borrado). Queda: la prueba solo con Ariadna (evolutivo, leer el código, F6).</li>
+<li><b>Alcobendas</b>: queda la prueba con Ariadna, tecleando la referencia en vez de leerla («tecleado»).</li>
+<li><b>Contabilizar una tienda</b> (Carlos o el asistente, por la API): comprobaciones, recuento, traspaso y diferencias a PVP. Sin probar.</li>
+<li><b>Filas sueltas de Andre</b> (46, enero a septiembre, ALG/REI/ALC): salen como bloqueante «otra fecha». Hay que borrarlas o contabilizarlas antes del 21.</li>
+<li><b>Nesto 1.10.56.0</b>: comprobar en una tienda que la ventana de inventario no se cierra al cambiar de pestaña y que el informe de ubicaciones se puede imprimir dos veces (fallos del 05/11).</li>
+<li><b>Rellenar una tienda entera</b> (lo del día 21): probarlo un día tranquilo con una o dos ubicaciones contadas y contabilizar en el día.</li>
+</ul>
+
 <h3>8.3. Reina y Alcobendas, desde Nesto</h3>
 <p>En la prueba <b>no se rellena la tienda entera</b>. Se crea solo la fila de la referencia con un <b>evolutivo</b> y Nesto, al ver que ya hay filas del día, deja contar.</p>
 <div class="regla"><p><b>El orden importa (pasó en Reina el 05/11/26)</b>: primero el evolutivo en Ariadna y <b>después</b> Nesto. Si se abre Nesto antes, pregunta «¿Rellenar ahora?» y un <b>Sí</b> crea una fila a 0 por cada producto de la tienda (2.512 en Reina), que si se contabiliza pone el stock a cero. Ante esa pregunta, en la prueba, <b>siempre No</b>. En Nesto no hay tecla F6: las comprobaciones van dentro de «Contabilizar inventario», así que en la prueba ese botón <b>no se pulsa</b> (contabiliza Carlos).</p></div>
