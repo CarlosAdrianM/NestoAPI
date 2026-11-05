@@ -432,6 +432,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>
         /// Pura (para los tests): el EfectoAPagar del enlace o, si no se liquida, el motivo. Se liquida solo si el pendiente del efecto
         /// es exactamente el reembolso (el efectivo, en cambio, liquida el elegido por lo cobrado aunque no cuadre).
+        /// <para>NestoAPI#824 (929852, 05/11/26): o si solo se diferencia en el redondeo (<see cref="ToleranciaRedondeoCobro"/>,
+        /// hasta 0,05 €). Entonces el efecto se liquida ENTERO (por su pendiente) y ServicioPagos.ConstruirLineasCobro lleva la
+        /// diferencia a Regularización saldo: si quedara a cuenta, el efecto seguiría pendiente por unos céntimos de redondeo.</para>
         /// </summary>
         internal static LiquidacionReembolsoTarjeta EfectoALiquidar(EfectoCobroReparto movimiento, decimal importe)
         {
@@ -445,7 +448,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return new LiquidacionReembolsoTarjeta { MotivoACuenta = $"la factura pendiente {documento} es de la empresa {movimiento.Empresa?.Trim()}" };
             }
-            if (pendiente != importe)
+            if (!ToleranciaRedondeoCobro.CuadraConRedondeo(pendiente, importe))
             {
                 return new LiquidacionReembolsoTarjeta
                 {
@@ -457,7 +460,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Efecto = new EfectoAPagar
                 {
                     ExtractoClienteId = movimiento.Id,
-                    Importe = importe,
+                    // NestoAPI#824: el efecto entero (su pendiente), aunque lo cobrado se quede a céntimos de redondeo
+                    Importe = pendiente,
                     Documento = documento,
                     Efecto = movimiento.Efecto?.Trim(),
                     Contacto = movimiento.Contacto?.Trim(),

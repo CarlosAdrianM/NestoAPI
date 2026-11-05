@@ -95,7 +95,9 @@ namespace NestoAPI.Infraestructure.Pagos
         /// El aviso de la propuesta de envío (NestoAPI#679, punto 1): «Este pedido tiene un enlace de pago pendiente de
         /// 252,94 € (enviado el 16/10/2026): ¿seguro que sale contra reembolso?».
         /// </summary>
-        public static string TextoAvisoPendientes(IReadOnlyList<EnlacePagoPedido> pendientes)
+        /// <param name="pedido">NestoAPI#824: el pedido del envío. Si algún enlace es de OTRO pedido del cliente, el aviso dice de qué
+        /// pedido es cada uno («El cliente tiene un enlace de pago pendiente de 40,02 € del pedido 929852 …»).</param>
+        public static string TextoAvisoPendientes(IReadOnlyList<EnlacePagoPedido> pendientes, int? pedido = null)
         {
             if (pendientes == null || pendientes.Count == 0)
             {
@@ -103,11 +105,40 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             EnlacePagoPedido ultimo = pendientes.OrderByDescending(e => e.FechaCreacion).First();
             string fecha = ultimo.FechaCreacion.ToString("dd/MM/yyyy", Espanol);
+            if (pendientes.Any(e => !EsDeEstePedido(e, pedido)))
+            {
+                // NestoAPI#824 (929852, 05/11/26): el enlace del 929852 no se vio al tramitar el envío del 929323, que llevaba su factura
+                string Uno(EnlacePagoPedido e) => string.Format(Espanol, "{0:C} {1} (enviado el {2})", e.Importe,
+                    EsDeEstePedido(e, pedido) ? "de este pedido" : "del pedido " + e.Pedido.Value.ToString(CultureInfo.InvariantCulture),
+                    e.FechaCreacion.ToString("dd/MM/yyyy", Espanol));
+                List<string> enlaces = pendientes.OrderByDescending(e => e.FechaCreacion).Select(Uno).ToList();
+                return pendientes.Count == 1
+                    ? $"El cliente tiene un enlace de pago pendiente de {enlaces[0]}: ¿seguro que sale contra reembolso?"
+                    : $"El cliente tiene {pendientes.Count} enlaces de pago pendientes: {string.Join(", ", enlaces.Take(enlaces.Count - 1))} " +
+                      $"y {enlaces[enlaces.Count - 1]}: ¿seguro que sale contra reembolso?";
+            }
             return pendientes.Count == 1
                 ? string.Format(Espanol, "Este pedido tiene un enlace de pago pendiente de {0:C} (enviado el {1}): ¿seguro que sale contra reembolso?",
                     ultimo.Importe, fecha)
                 : string.Format(Espanol, "Este pedido tiene {0} enlaces de pago pendientes (el último, de {1:C}, enviado el {2}): ¿seguro que sale contra reembolso?",
                     pendientes.Count, ultimo.Importe, fecha);
+        }
+
+        private static bool EsDeEstePedido(EnlacePagoPedido enlace, int? pedido)
+            => !enlace.Pedido.HasValue || !pedido.HasValue || enlace.Pedido.Value == pedido.Value;
+
+        /// <summary>
+        /// NestoAPI#824: <see cref="PendientesVivos"/> pedido a pedido (lo de «posterior al último cobrado» es de cada pedido), todos
+        /// juntos del más reciente al más antiguo. Para los enlaces de varios pedidos del mismo cliente.
+        /// </summary>
+        public static List<EnlacePagoPedido> PendientesVivosPorPedido(IEnumerable<EnlacePagoPedido> enlaces, DateTime ahora)
+        {
+            return (enlaces ?? Enumerable.Empty<EnlacePagoPedido>())
+                .Where(e => e != null)
+                .GroupBy(e => e.Pedido ?? 0)
+                .SelectMany(g => PendientesVivos(g, ahora))
+                .OrderByDescending(e => e.FechaCreacion)
+                .ToList();
         }
 
         // ---------------------------------------------------------------- envíos (puntos 2 y 3)
@@ -129,6 +160,21 @@ namespace NestoAPI.Infraestructure.Pagos
                 .Where(e => e != null && EstaEnReparto(e.Estado) && e.Reembolso > 0m)
                 .OrderByDescending(e => e.Numero)
                 .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// NestoAPI#824 (929852, 05/11/26): TODOS los envíos en reparto con reembolso (el criterio de
+        /// <see cref="EnvioEnRepartoConReembolso"/>): primero los del pedido (si se da) y después los demás, del más reciente al más
+        /// antiguo. El reembolso se calcula con lo pendiente del CLIENTE, así que la factura de un pedido puede ir en el envío de otro.
+        /// </summary>
+        public static List<EnviosAgencia> EnviosEnRepartoConReembolso(IEnumerable<EnviosAgencia> envios, int? pedidoPrimero = null)
+        {
+            return (envios ?? Enumerable.Empty<EnviosAgencia>())
+                .Where(e => e != null && EstaEnReparto(e.Estado) && e.Reembolso > 0m)
+                .GroupBy(e => e.Numero).Select(g => g.First())
+                .OrderByDescending(e => pedidoPrimero.HasValue && e.Pedido == pedidoPrimero.Value)
+                .ThenByDescending(e => e.Numero)
+                .ToList();
         }
 
         /// <summary>
@@ -201,7 +247,58 @@ namespace NestoAPI.Infraestructure.Pagos
                     FechaCreacion = p.FechaCreacion,
                     FechaActualizacion = p.FechaActualizacion,
                     Usuario = p.Usuario?.Trim(),
-                    Descripcion = p.Descripcion?.Trim()
+                    Descripcion = p.Descripcion?.Trim(),
+                    Pedido = pedido
+                })
+                .ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#824 (929852, 05/11/26): los enlaces de pago (TPV virtual) pendientes o autorizados de los OTROS pedidos del mismo
+        /// cliente y contacto, de los últimos <see cref="EnlacesPagoPedido.DIAS_ENLACE_PENDIENTE_VIVO"/> días. El enlace no guarda el
+        /// contacto de forma fiable (PagosTPV.Contacto va a NULL en los de Nesto): se mira el del pedido del concepto.
+        /// </summary>
+        public static List<EnlacePagoPedido> LeerDeOtrosPedidosDelCliente(NVEntities db, string empresa, string cliente, string contacto,
+            int excluirPedido, DateTime ahora)
+        {
+            string empresaPedido = empresa?.Trim();
+            string clientePedido = cliente?.Trim();
+            string contactoPedido = contacto?.Trim();
+            if (string.IsNullOrEmpty(clientePedido))
+            {
+                return new List<EnlacePagoPedido>();
+            }
+            DateTime desde = ahora.AddDays(-EnlacesPagoPedido.DIAS_ENLACE_PENDIENTE_VIVO);
+            var candidatos = db.PagosTPV.AsNoTracking()
+                .Where(p => p.Empresa == empresaPedido && p.Cliente == clientePedido && p.Tipo == Constantes.TiposPagoTPV.TPV_VIRTUAL &&
+                            (p.Estado == Constantes.EstadosPagoTPV.PENDIENTE || p.Estado == Constantes.EstadosPagoTPV.AUTORIZADO) &&
+                            p.FechaCreacion >= desde)
+                .Select(p => new { p.Id, p.Tipo, p.Descripcion, p.Importe, p.Estado, p.FechaCreacion, p.FechaActualizacion, p.Usuario })
+                .ToList()
+                .Select(p => new { Pago = p, Pedido = EnlacesPagoPedido.PedidoDelConcepto(p.Descripcion) })
+                .Where(p => p.Pedido.HasValue && p.Pedido.Value != excluirPedido && EnlacesPagoPedido.EsEnlaceDelPedido(p.Pago.Tipo, p.Pago.Descripcion, p.Pedido.Value))
+                .ToList();
+            if (candidatos.Count == 0)
+            {
+                return new List<EnlacePagoPedido>();
+            }
+            List<int> pedidos = candidatos.Select(c => c.Pedido.Value).Distinct().ToList();
+            HashSet<int> delContacto = new HashSet<int>(db.CabPedidoVtas.AsNoTracking()
+                .Where(c => c.Empresa == empresaPedido && pedidos.Contains(c.Número) && c.Nº_Cliente == clientePedido && c.Contacto == contactoPedido)
+                .Select(c => c.Número)
+                .ToList());
+            return candidatos
+                .Where(c => delContacto.Contains(c.Pedido.Value))
+                .Select(c => new EnlacePagoPedido
+                {
+                    Id = c.Pago.Id,
+                    Importe = c.Pago.Importe,
+                    Estado = c.Pago.Estado?.Trim(),
+                    FechaCreacion = c.Pago.FechaCreacion,
+                    FechaActualizacion = c.Pago.FechaActualizacion,
+                    Usuario = c.Pago.Usuario?.Trim(),
+                    Descripcion = c.Pago.Descripcion?.Trim(),
+                    Pedido = c.Pedido
                 })
                 .ToList();
         }

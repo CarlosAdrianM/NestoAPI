@@ -1365,29 +1365,45 @@ namespace NestoAPI.Infraestructure.Pagos
                 concepto = concepto.Substring(0, 50);
             }
 
-            List<PreContabilidad> lineas = ConstruirLineasCobro(pago, cuentaBanco, empresa, concepto);
+            // NestoAPI#824 (929852, 05/11/26): el enlace de pago de un pedido (Nesto/NestoApp, sin efectos) liquida la factura del
+            // pedido si ya está facturado y lo cobrado cuadra con su pendiente (o se queda a céntimos de redondeo); si no, a cuenta
+            // como siempre. Sin esto, el efecto seguía pendiente y el reembolso del envío no bajaba aunque el cliente hubiera pagado.
+            List<PagoTPV_Efecto> efectosDelPedido = await EfectosDelEnlaceDePedido(pago, empresa).ConfigureAwait(false);
+            List<PagoTPV_Efecto> efectos = efectosDelPedido ?? pago.PagosTPV_Efectos?.ToList() ?? new List<PagoTPV_Efecto>();
+
+            var numerosOrden = efectos.Select(e => e.ExtractoClienteId).ToList();
+            if (efectos.Count == 0 && pago.ExtractoClienteId.HasValue)
+            {
+                numerosOrden.Add(pago.ExtractoClienteId.Value);
+            }
+            numerosOrden = numerosOrden.Distinct().ToList();
+            var movimientosOriginales = new List<ExtractoCliente>();
+            if (numerosOrden.Any())
+            {
+                using (NVEntities db = new NVEntities())
+                {
+                    movimientosOriginales = await db.ExtractosCliente
+                        .Where(e => e.Empresa == empresa && numerosOrden.Contains(e.Nº_Orden))
+                        .ToListAsync()
+                        .ConfigureAwait(false);
+                }
+            }
+
+            List<PreContabilidad> lineas = ConstruirLineasCobro(pago, cuentaBanco, empresa, concepto, efectosDelPedido,
+                SeLiquidanEnteros(efectos, movimientosOriginales));
 
             // Si hay Liquidado, copiar Nº_Documento, Vendedor y Ruta del movimiento original
             var lineasConLiquidado = lineas.Where(l => l.Liquidado.HasValue).ToList();
             if (lineasConLiquidado.Any())
             {
-                var numerosOrden = lineasConLiquidado.Select(l => l.Liquidado.Value).Distinct().ToList();
-                using (NVEntities db = new NVEntities())
+                foreach (var linea in lineasConLiquidado)
                 {
-                    var movimientosOriginales = await db.ExtractosCliente
-                        .Where(e => e.Empresa == empresa && numerosOrden.Contains(e.Nº_Orden))
-                        .ToListAsync()
-                        .ConfigureAwait(false);
-
-                    foreach (var linea in lineasConLiquidado)
+                    var original = movimientosOriginales.FirstOrDefault(e => e.Nº_Orden == linea.Liquidado.Value);
+                    if (original != null)
                     {
-                        var original = movimientosOriginales.FirstOrDefault(e => e.Nº_Orden == linea.Liquidado.Value);
-                        if (original != null)
-                        {
-                            linea.Nº_Documento = original.Nº_Documento?.Trim();
-                            linea.Vendedor = original.Vendedor?.Trim();
-                            linea.Ruta = original.Ruta?.Trim();
-                        }
+                        linea.Nº_Documento = original.Nº_Documento?.Trim();
+                        linea.Vendedor = original.Vendedor?.Trim();
+                        linea.Ruta = original.Ruta?.Trim();
                     }
                 }
 
@@ -1403,19 +1419,102 @@ namespace NestoAPI.Infraestructure.Pagos
             await _contabilidadService.CrearLineasYContabilizarDiario(lineas).ConfigureAwait(false);
         }
 
+        /// <summary>NestoAPI#824: los efectos de cartera pendientes de la factura del pedido (empresa, cliente, pedido). Sustituible en los tests.</summary>
+        internal Func<string, string, int, Task<List<ExtractoCliente>>> LeerEfectosFacturaPedido { get; set; } = LeerEfectosPendientesFacturaPedido;
+
+        /// <summary>
+        /// NestoAPI#824 (929852, 05/11/26): los efectos de la factura que liquida el enlace de pago de un pedido (el de Nesto/NestoApp,
+        /// que no lleva efectos: «Pago pedido 929852 de Nueva Visión»), con la tolerancia de <see cref="ToleranciaRedondeoCobro"/>.
+        /// Null (a cuenta, como hasta ahora) si el pago ya lleva sus efectos, no es el enlace de un pedido, el pedido aún no está
+        /// facturado o lo cobrado no cuadra. Nunca lanza: si falla la lectura, a cuenta y a ELMAH.
+        /// </summary>
+        internal async Task<List<PagoTPV_Efecto>> EfectosDelEnlaceDePedido(PagoTPV pago, string empresa)
+        {
+            if (pago == null || (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any()) || pago.ExtractoClienteId.HasValue
+                || LeerEfectosFacturaPedido == null)
+            {
+                return null;
+            }
+            int? pedido = EnlacesPagoPedido.PedidoDelConcepto(pago.Descripcion);
+            if (!pedido.HasValue || !EnlacesPagoPedido.EsEnlaceDelPedido(pago.Tipo, pago.Descripcion, pedido.Value))
+            {
+                return null;
+            }
+            try
+            {
+                List<ExtractoCliente> deLaFactura = await LeerEfectosFacturaPedido(empresa, pago.Cliente?.Trim(), pedido.Value).ConfigureAwait(false);
+                return ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(deLaFactura, pago.Importe);
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Enlace de pago #824] No se ha podido buscar la factura del pedido {pedido} para liquidarla con el " +
+                    $"cobro {pago.NumeroOrden}: queda a cuenta. {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#824 (pura): ¿cada efecto se liquida por todo su pendiente? Solo entonces la diferencia de redondeo va a
+        /// Regularización saldo; en un cobro parcial elegido a mano la diferencia sigue quedando en el cliente.
+        /// </summary>
+        internal static bool SeLiquidanEnteros(IEnumerable<PagoTPV_Efecto> efectos, IEnumerable<ExtractoCliente> movimientosOriginales)
+        {
+            List<PagoTPV_Efecto> lista = (efectos ?? Enumerable.Empty<PagoTPV_Efecto>()).ToList();
+            List<ExtractoCliente> originales = (movimientosOriginales ?? Enumerable.Empty<ExtractoCliente>()).ToList();
+            return lista.Count > 0 && lista.GroupBy(e => e.ExtractoClienteId).All(g =>
+            {
+                ExtractoCliente original = originales.FirstOrDefault(o => o.Nº_Orden == g.Key);
+                return original != null
+                    && RoundingHelper.DosDecimalesRound(original.ImportePdte) == RoundingHelper.DosDecimalesRound(g.Sum(e => e.Importe));
+            });
+        }
+
+        private static async Task<List<ExtractoCliente>> LeerEfectosPendientesFacturaPedido(string empresa, string cliente, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                db.Configuration.ProxyCreationEnabled = false;
+                List<string> facturas = (await db.LinPedidoVtas
+                        .Where(l => l.Empresa == empresa && l.Número == pedido && l.Nº_Factura != null)
+                        .Select(l => l.Nº_Factura)
+                        .Distinct()
+                        .ToListAsync().ConfigureAwait(false))
+                    .Select(f => f?.Trim())
+                    .Where(f => !string.IsNullOrEmpty(f))
+                    .Distinct()
+                    .ToList();
+                if (facturas.Count == 0)
+                {
+                    return new List<ExtractoCliente>();
+                }
+                return await db.ExtractosCliente.AsNoTracking()
+                    .Where(e => e.Empresa == empresa && e.Número == cliente && facturas.Contains(e.Nº_Documento)
+                        && e.TipoApunte == TiposExtractoCliente.CARTERA && e.ImportePdte > 0)
+                    .ToListAsync().ConfigureAwait(false);
+            }
+        }
+
         /// <summary>
         /// Construye las líneas de PreContabilidad de un cobro TPV: una línea HABER por cada efecto
         /// liquidado (o una línea legacy si no hay efectos) y la línea DEBE del banco por el importe cobrado.
         /// No accede a base de datos para que sea testeable de forma aislada.
         /// </summary>
-        internal static List<PreContabilidad> ConstruirLineasCobro(PagoTPV pago, string cuentaBanco, string empresa, string concepto)
+        /// <param name="efectos">NestoAPI#824: los efectos que liquida, si no son los de <c>pago.PagosTPV_Efectos</c> (los de la factura
+        /// del pedido del enlace, que no se guardan en PagosTPV_Efectos). Null: los del pago.</param>
+        /// <param name="efectosEnteros">NestoAPI#824: cada efecto se liquida por todo su pendiente. Solo entonces una diferencia de
+        /// redondeo (<see cref="ToleranciaRedondeoCobro"/>) va a <see cref="Constantes.Cuentas.REGULARIZACION_SALDO"/> en vez de
+        /// quedarse en el cliente (a favor o pendiente).</param>
+        internal static List<PreContabilidad> ConstruirLineasCobro(PagoTPV pago, string cuentaBanco, string empresa, string concepto,
+            IEnumerable<PagoTPV_Efecto> efectos = null, bool efectosEnteros = false)
         {
             var lineas = new List<PreContabilidad>();
+            List<PagoTPV_Efecto> efectosQueLiquida = efectos?.ToList() ?? pago.PagosTPV_Efectos?.ToList();
 
-            if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
+            if (efectosQueLiquida != null && efectosQueLiquida.Any())
             {
                 // Pagos multiples: una linea HABER por cada efecto
-                foreach (var efecto in pago.PagosTPV_Efectos)
+                foreach (var efecto in efectosQueLiquida)
                 {
                     string docEfecto = efecto.Documento?.Trim();
                     if (string.IsNullOrWhiteSpace(docEfecto))
@@ -1504,7 +1603,36 @@ namespace NestoAPI.Infraestructure.Pagos
             // En el caso normal (importe == suma de efectos) la diferencia es 0 y no se añade nada.
             decimal sumaHaberEfectos = lineas.Sum(l => l.Haber);
             decimal diferencia = pago.Importe - sumaHaberEfectos;
-            if (diferencia != 0)
+            if (efectosEnteros && ToleranciaRedondeoCobro.EsRedondeo(diferencia))
+            {
+                // NestoAPI#824 (929852, 05/11/26): el enlace de 40,02 € contra la factura de 40,03 €. El efecto se liquida entero
+                // y el céntimo va a Regularización saldo (como lo regulariza Administración a mano): ni 0,01 € pendiente en el
+                // cliente (que volvería a salir de reembolso) ni a favor.
+                PreContabilidad plantilla = lineas.First();
+                lineas.Add(new PreContabilidad
+                {
+                    Empresa = empresa,
+                    Nº_Cuenta = Constantes.Cuentas.REGULARIZACION_SALDO,
+                    TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
+                    TipoApunte = TiposExtractoCliente.PAGO,
+                    Haber = diferencia > 0 ? diferencia : 0,
+                    Debe = diferencia < 0 ? -diferencia : 0,
+                    Concepto = concepto,
+                    Nº_Documento = plantilla.Nº_Documento,
+                    Diario = "_CobrosTPV",
+                    Fecha = DateTime.Today,
+                    FechaVto = DateTime.Today,
+                    Asiento = 1,
+                    Asiento_Automático = true,
+                    Delegación = plantilla.Delegación,
+                    FormaVenta = plantilla.FormaVenta,
+                    FormaPago = Constantes.FormasPago.TARJETA,
+                    Origen = Empresas.EMPRESA_POR_DEFECTO,
+                    Usuario = "NestoAPI",
+                    Fecha_Modificación = DateTime.Now
+                });
+            }
+            else if (diferencia != 0)
             {
                 PreContabilidad plantilla = lineas.First();
                 lineas.Add(new PreContabilidad

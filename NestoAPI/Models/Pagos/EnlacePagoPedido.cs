@@ -18,6 +18,11 @@ namespace NestoAPI.Models.Pagos
         public string Usuario { get; set; }
         /// <summary>NestoAPI#734: el concepto del enlace («Pago pedido 928521 de Nueva Visión»), para que Administración sepa de qué es.</summary>
         public string Descripcion { get; set; }
+        /// <summary>
+        /// NestoAPI#824 (929852, 05/11/26): el pedido del enlace (por el concepto). La propuesta de envío también mira los enlaces de
+        /// los OTROS pedidos del mismo cliente y contacto (su mercancía puede ir «con este pedido»), y el aviso dice de cuál es cada uno.
+        /// </summary>
+        public int? Pedido { get; set; }
     }
 
     /// <summary>NestoAPI#679: un aviso al crear un enlace de pago (no bloquea: el enlace ya está creado).</summary>

@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Notificaciones;
@@ -476,6 +477,282 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.IsNull(EnlacesPagoPedido.EnvioEnRepartoConReembolso(new[] { Envio249871(Constantes.Agencias.ESTADO_DEVUELTO) }));
             Assert.IsNull(EnlacesPagoPedido.EnvioEnRepartoConReembolso(new[] { Envio249871(Constantes.Agencias.ESTADO_INCIDENTADO, 0m) }), "ya le quitaron el reembolso");
             Assert.AreEqual(249871, EnlacesPagoPedido.EnvioEnRepartoConReembolso(new[] { Envio249871(Constantes.Agencias.ESTADO_INCIDENTADO) }).Numero);
+        }
+
+        // ================================================================ NestoAPI#824 (929852, 05/11/26): por cliente, no por pedido
+        // Cliente 18522: el 929852 (EFC, factura NV2617824 de 40,03 €) salió «con este pedido» en el envío 250527 del 929323 (ASM,
+        // reembolso 40,03 €). El enlace 998 (40,02 €) se creó a las 09:41, antes de la etiqueta, y se pagó a las 17:00.
+
+        private const int PEDIDO_929852 = 929852;
+        private const int PEDIDO_929323 = 929323;
+
+        private static EnviosAgencia Envio250527(short estado = Constantes.Agencias.ESTADO_INCIDENTADO, int agencia = Constantes.Agencias.AGENCIA_GLS)
+            => new EnviosAgencia { Numero = 250527, Empresa = "1  ", Pedido = PEDIDO_929323, Cliente = "18522     ", Contacto = "0  ", Agencia = agencia, Estado = estado, Reembolso = 40.03m, CodigoBarras = "61771234567890" };
+
+        private static PagoTPV Pago998() => new PagoTPV
+        {
+            Id = 998,
+            Tipo = Constantes.TiposPagoTPV.TPV_VIRTUAL,
+            Empresa = "1",
+            Cliente = "18522",
+            Importe = 40.02m,
+            Descripcion = "Pago pedido 929852 de Nueva Visión",
+            Estado = Constantes.EstadosPagoTPV.AUTORIZADO,
+            NumeroOrden = "2611041700AB",
+            Usuario = "NUEVAVISION\\MariaJose"
+        };
+
+        private static ExtractoCliente EfectoNV2617824(decimal pendiente = 40.03m, int? remesa = null) => new ExtractoCliente
+        {
+            Empresa = "1  ", Nº_Orden = 3062417, Número = "18522     ", Contacto = "0  ", TipoApunte = "2  ", Nº_Documento = "NV2617824 ", Efecto = "1 ",
+            Importe = 40.03m, ImportePdte = pendiente, Delegación = "ALG", FormaVenta = "TEL", Vendedor = "MJ ", Remesa = remesa
+        };
+
+        [TestMethod]
+        public async Task Issue824_Job_EnlaceDeUnPedidoConElEnvioVivoDeOtroPedidoDelCliente_AvisaConLosDosNumeros()
+        {
+            var correo = A.Fake<IServicioCorreoElectronico>();
+            string asunto = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Invokes((MailMessage m) => asunto = m.Subject).Returns(true);
+            var notificaciones = A.Fake<IServicioNotificacionesPush>();
+            var cobro = new CobroEnlaceConEnvioEnReparto
+            {
+                Pago = Pago998(),
+                Pedido = PEDIDO_929852,
+                Envios = new List<EnvioVivoConReembolso> { new EnvioVivoConReembolso { Envio = Envio250527(), NombreAgencia = "ASM" } }
+            };
+
+            bool avisado = await AvisoCobroEnlaceConReembolsoJobs.Avisar(998, _ => Task.FromResult(cobro), correo, notificaciones, _ => { });
+
+            Assert.IsTrue(avisado);
+            Assert.AreEqual("URGENTE: pedido 929852 pagado por enlace con el envío 250527 (pedido 929323) en reparto contra reembolso de 40,03 €", N(asunto));
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo.Contains("929852") && n.Cuerpo.Contains("envío 250527 (pedido 929323)")
+                    && n.Datos["envio"] == "250527" && n.Datos["pedidoEnvio"] == "929323" && n.Datos["pedido"] == "929852")))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual("El envío 250527 (pedido 929323) lleva reembolso de 40,03 € y el cliente acaba de pagar el pedido 929852 por enlace. " +
+                "Llame a la agencia para que entreguen sin cobrar.", N(AvisoCobroEnlaceConReembolsoJobs.TextoEnvio(Envio250527(), PEDIDO_929852)));
+        }
+
+        [TestMethod]
+        public void Issue824_AgenciaSinCambioPorApi_ElAvisoDiceLlameALaAgencia()
+        {
+            foreach (int agencia in new[] { Constantes.Agencias.AGENCIA_GLS, Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO, Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.AGENCIA_INNOVATRANS })
+            {
+                Assert.IsFalse(CambioReembolsoEnReparto.AdmiteQuitarPorApi(agencia), $"Agencia {agencia}: hoy ninguna (TODO #726)");
+                Assert.AreEqual("Llame a la agencia para que entreguen sin cobrar.", CambioReembolsoEnReparto.QueHacer(agencia));
+                StringAssert.Contains(AvisoCobroEnlaceConReembolsoJobs.TextoEnvio(Envio250527(agencia: agencia), PEDIDO_929852), "Llame a la agencia para que entreguen sin cobrar.");
+            }
+            Assert.AreEqual("Avise al repartidor para que entregue sin cobrar.", CambioReembolsoEnReparto.QueHacer(Constantes.Agencias.AGENCIA_REPARTO_PROPIO));
+        }
+
+        [TestMethod]
+        public void Issue824_Job_ElMismoPedido_ElCorreoSigueComoAntes_YConVariosEnviosLosCuenta()
+        {
+            var cobro = new CobroEnlaceConEnvioEnReparto
+            {
+                Pago = Pago998(),
+                Pedido = PEDIDO_929852,
+                Envios = new List<EnvioVivoConReembolso>
+                {
+                    new EnvioVivoConReembolso { Envio = new EnviosAgencia { Numero = 250600, Pedido = PEDIDO_929852, Agencia = 1, Estado = 1, Reembolso = 40.03m } },
+                    new EnvioVivoConReembolso { Envio = Envio250527(), NombreAgencia = "ASM" }
+                }
+            };
+
+            using (MailMessage mail = AvisoCobroEnlaceConReembolsoJobs.ComponerCorreo(cobro))
+            {
+                Assert.AreEqual("URGENTE: pedido 929852 pagado por enlace con el envío 250600 y 1 más en reparto contra reembolso de 40,03 €", N(mail.Subject));
+                StringAssert.Contains(mail.Body, "250527");
+                StringAssert.Contains(mail.Body, "929323");
+                StringAssert.Contains(mail.Body, "<strong>Llame a la agencia para que entreguen sin cobrar.</strong>");
+            }
+        }
+
+        [TestMethod]
+        public void Issue824_EnviosEnRepartoConReembolso_DelClienteConElDelPedidoPrimero()
+        {
+            var envios = new[]
+            {
+                Envio250527(),
+                new EnviosAgencia { Numero = 250415, Pedido = PEDIDO_929323, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Reembolso = 0m },
+                new EnviosAgencia { Numero = 250400, Pedido = PEDIDO_929852, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Reembolso = 12m },
+                new EnviosAgencia { Numero = 250700, Pedido = 929999, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Reembolso = 50m }
+            };
+
+            List<EnviosAgencia> vivos = EnlacesPagoPedido.EnviosEnRepartoConReembolso(envios, PEDIDO_929852);
+
+            CollectionAssert.AreEqual(new[] { 250400, 250527 }, vivos.Select(e => e.Numero).ToArray(), "el del pedido primero; entregados y sin reembolso, fuera");
+            Assert.AreEqual(0, EnlacesPagoPedido.EnviosEnRepartoConReembolso(null).Count);
+        }
+
+        [TestMethod]
+        public async Task Issue824_Propuesta_ConEnlacePendienteDeOtroPedidoDelCliente_AvisaYDiceDeQuePedidoEs()
+        {
+            IDatosPropuestaEnvio datos = DatosPropuesta(258.56m, 0m, new List<EnlacePagoPedido>());
+            var delOtro = Enlace(998, 40.02m, Constantes.EstadosPagoTPV.PENDIENTE, DateTime.Now.AddHours(-1));
+            delOtro.Pedido = PEDIDO_929852;
+            A.CallTo(() => datos.EnlacesDePagoDeOtrosPedidos(EMPRESA, A<string>._, A<string>._, PEDIDO)).Returns(new List<EnlacePagoPedido> { delOtro });
+
+            PropuestaEnvioDTO p = await new PropuestaEnvioService(datos).Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            AvisoPropuestaEnvio aviso = p.AvisosDetalle.SingleOrDefault(a => a.Codigo == CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE);
+            Assert.IsNotNull(aviso, string.Join(" | ", p.Avisos));
+            Assert.AreEqual(TiposAvisoPropuestaEnvio.CONFIRMAR, aviso.Tipo);
+            Assert.AreEqual($"El cliente tiene un enlace de pago pendiente de 40,02 € del pedido 929852 (enviado el {delOtro.FechaCreacion.ToString("dd/MM/yyyy", new System.Globalization.CultureInfo("es-ES"))}): " +
+                "¿seguro que sale contra reembolso?", N(aviso.Texto));
+            Assert.AreEqual(PEDIDO_929852, p.EnlacesPagoPendientes.Single().Pedido);
+            Assert.AreEqual(0m, p.EnlacesPagoAutorizados, "lo cobrado de otro pedido no es un prepago de este");
+            A.CallTo(() => datos.EnlacesDePagoDeOtrosPedidos(EMPRESA, "40026     ", "0  ", PEDIDO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Issue824_Propuesta_ElOtroPedidoYaPagoSuUltimoEnlace_OSiFallaLaLectura_SinAviso()
+        {
+            IDatosPropuestaEnvio datos = DatosPropuesta(258.56m, 0m, new List<EnlacePagoPedido>());
+            var viejo = Enlace(990, 40.02m, Constantes.EstadosPagoTPV.PENDIENTE, DateTime.Now.AddDays(-2));
+            var pagado = Enlace(998, 40.02m, Constantes.EstadosPagoTPV.AUTORIZADO, DateTime.Now.AddDays(-1));
+            viejo.Pedido = pagado.Pedido = PEDIDO_929852;
+            A.CallTo(() => datos.EnlacesDePagoDeOtrosPedidos(EMPRESA, A<string>._, A<string>._, PEDIDO)).Returns(new List<EnlacePagoPedido> { viejo, pagado });
+
+            PropuestaEnvioDTO p = await new PropuestaEnvioService(datos).Calcular(EMPRESA, PEDIDO, 1, 1m);
+            Assert.IsFalse(p.AvisosDetalle.Any(a => a.Codigo == CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE), "el pendiente anterior al cobrado se da por sustituido");
+
+            A.CallTo(() => datos.EnlacesDePagoDeOtrosPedidos(EMPRESA, A<string>._, A<string>._, PEDIDO)).Throws(new InvalidOperationException("caída"));
+            p = await new PropuestaEnvioService(datos).Calcular(EMPRESA, PEDIDO, 1, 1m);
+            Assert.IsNotNull(p);
+            Assert.AreEqual(0, p.EnlacesPagoPendientes.Count);
+        }
+
+        [TestMethod]
+        public void Issue824_TextoAvisoPendientes_DelPedidoYDeOtro_DiceDeCualEsCadaUno()
+        {
+            var propio = Enlace(990, 12m, Constantes.EstadosPagoTPV.PENDIENTE, new DateTime(2026, 11, 3, 10, 0, 0));
+            propio.Pedido = PEDIDO_929323;
+            var otro = Enlace(998, 40.02m, Constantes.EstadosPagoTPV.PENDIENTE, new DateTime(2026, 11, 4, 9, 41, 0));
+            otro.Pedido = PEDIDO_929852;
+
+            Assert.AreEqual("El cliente tiene 2 enlaces de pago pendientes: 40,02 € del pedido 929852 (enviado el 04/11/2026) y 12,00 € de este pedido " +
+                "(enviado el 03/11/2026): ¿seguro que sale contra reembolso?",
+                N(EnlacesPagoPedido.TextoAvisoPendientes(new List<EnlacePagoPedido> { propio, otro }, PEDIDO_929323)));
+            Assert.AreEqual("Este pedido tiene un enlace de pago pendiente de 12,00 € (enviado el 03/11/2026): ¿seguro que sale contra reembolso?",
+                N(EnlacesPagoPedido.TextoAvisoPendientes(new List<EnlacePagoPedido> { propio }, PEDIDO_929323)), "solo los suyos: como antes");
+        }
+
+        // ---------------------------------------------------------------- punto 3: el céntimo
+
+        [TestMethod]
+        public void Issue824_Liquidacion_UnCentimoDeDiferencia_LiquidaElEfectoEnteroYElCentimoARegularizacion()
+        {
+            List<PagoTPV_Efecto> efectos = ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824() }, 40.02m);
+
+            Assert.IsNotNull(efectos, "40,02 € contra 40,03 €: redondeo, se liquida");
+            Assert.AreEqual(3062417, efectos.Single().ExtractoClienteId);
+            Assert.AreEqual(40.03m, efectos.Single().Importe, "el efecto entero");
+            Assert.AreEqual("NV2617824", efectos.Single().Documento);
+            Assert.IsTrue(NestoAPI.Infraestructure.Pagos.ServicioPagos.SeLiquidanEnteros(efectos, new[] { EfectoNV2617824() }));
+
+            List<PreContabilidad> lineas = NestoAPI.Infraestructure.Pagos.ServicioPagos.ConstruirLineasCobro(Pago998(), "57200013", "1", "Pago TPV Pago pedido 929852", efectos, efectosEnteros: true);
+
+            Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber), "el asiento cuadra");
+            Assert.AreEqual(40.02m, lineas.Single(l => l.Nº_Cuenta == "57200013").Debe);
+            PreContabilidad cliente = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE);
+            Assert.AreEqual(3062417, cliente.Liquidado);
+            Assert.AreEqual(40.03m, cliente.Haber);
+            PreContabilidad ajuste = lineas.Single(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO);
+            Assert.AreEqual(Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE, ajuste.TipoCuenta);
+            Assert.AreEqual(0.01m, ajuste.Debe);
+            Assert.AreEqual(0m, ajuste.Haber);
+            Assert.AreEqual(3, lineas.Count, "ni a cuenta ni céntimo pendiente en el cliente");
+        }
+
+        [TestMethod]
+        public void Issue824_Liquidacion_SinDiferencia_ComoHoy_BancoYEfecto()
+        {
+            List<PagoTPV_Efecto> efectos = ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824() }, 40.03m);
+            PagoTPV pago = Pago998();
+            pago.Importe = 40.03m;
+
+            List<PreContabilidad> lineas = NestoAPI.Infraestructure.Pagos.ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Pago TPV Pago pedido 929852", efectos, efectosEnteros: true);
+
+            Assert.AreEqual(2, lineas.Count, "banco + efecto, sin ajuste");
+            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO));
+            Assert.AreEqual(40.03m, lineas.Single(l => l.Liquidado == 3062417).Haber);
+        }
+
+        [TestMethod]
+        public void Issue824_Liquidacion_FueraDeLaTolerancia_SinFacturar_ORemesado_QuedaACuenta()
+        {
+            Assert.IsNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824() }, 39.97m), "6 céntimos: ya no es redondeo");
+            Assert.IsNotNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824() }, 39.98m), "5 céntimos: todavía sí");
+            Assert.IsNotNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824() }, 40.08m), "y por arriba igual");
+            Assert.IsNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new ExtractoCliente[0], 40.02m), "sin facturar: a cuenta");
+            Assert.IsNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(null, 40.02m));
+            Assert.IsNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824(remesa: 10950) }, 40.02m), "remesado: lo cobra el banco");
+            Assert.IsNull(ToleranciaRedondeoCobro.EfectosDelEnlaceDePedido(new[] { EfectoNV2617824(pendiente: 0m) }, 40.02m), "ya liquidado");
+        }
+
+        [TestMethod]
+        public void Issue824_Liquidacion_CobroParcialElegidoAMano_LaDiferenciaSigueEnElCliente()
+        {
+            // Un efecto elegido en «Reclamar deuda» por menos de su pendiente: la diferencia no es un redondeo nuestro
+            var pago = Pago998();
+            pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto { ExtractoClienteId = 3062417, Importe = 40.00m, Documento = "NV2617824", Contacto = "0" });
+
+            Assert.IsFalse(NestoAPI.Infraestructure.Pagos.ServicioPagos.SeLiquidanEnteros(pago.PagosTPV_Efectos, new[] { EfectoNV2617824() }));
+            List<PreContabilidad> lineas = NestoAPI.Infraestructure.Pagos.ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Pago TPV", efectosEnteros: false);
+
+            Assert.IsFalse(lineas.Any(l => l.Nº_Cuenta == Constantes.Cuentas.REGULARIZACION_SALDO));
+            Assert.AreEqual(0.02m, lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == null).Haber);
+        }
+
+        [TestMethod]
+        public async Task Issue824_ServicioPagos_EfectosDelEnlaceDePedido_BuscaLaFacturaDelPedidoDelConcepto()
+        {
+            ServicioPagos servicio = ServicioPagos();
+            string leido = null;
+            servicio.LeerEfectosFacturaPedido = (empresa, cliente, pedido) =>
+            {
+                leido = $"{empresa}/{cliente}/{pedido}";
+                return Task.FromResult(new List<ExtractoCliente> { EfectoNV2617824() });
+            };
+
+            List<PagoTPV_Efecto> efectos = await servicio.EfectosDelEnlaceDePedido(Pago998(), "1");
+
+            Assert.AreEqual("1/18522/929852", leido);
+            Assert.AreEqual(40.03m, efectos.Single().Importe);
+
+            // Con sus propios efectos (los de «Reclamar deuda» o del reparto) no se busca nada
+            leido = null;
+            PagoTPV conEfectos = Pago998();
+            conEfectos.PagosTPV_Efectos.Add(new PagoTPV_Efecto { ExtractoClienteId = 1, Importe = 40.02m });
+            Assert.IsNull(await servicio.EfectosDelEnlaceDePedido(conEfectos, "1"));
+            PagoTPV sinPedido = Pago998();
+            sinPedido.Descripcion = "Pago señal curso quiromasaje";
+            Assert.IsNull(await servicio.EfectosDelEnlaceDePedido(sinPedido, "1"));
+            Assert.IsNull(leido);
+
+            // Si falla la lectura: a cuenta, como antes, y a ELMAH
+            servicio.LeerEfectosFacturaPedido = (e, c, p) => throw new InvalidOperationException("BD caída");
+            Assert.IsNull(await servicio.EfectosDelEnlaceDePedido(Pago998(), "1"));
+            A.CallTo(() => log.LogError(A<string>.That.Contains("#824"), A<Exception>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Issue824_EnlaceDelReparto_UnCentimoDeDiferencia_LiquidaElEfectoEntero()
+        {
+            var factura = new EfectoCobroReparto
+            {
+                Id = 3062417, Empresa = "1  ", Cliente = "18522     ", Contacto = "0  ", TipoApunte = "2  ", Documento = "NV2617824 ", Efecto = "1 ",
+                Importe = 40.03m, ImportePendiente = 40.03m, Delegacion = "ALG", FormaVenta = "TEL"
+            };
+
+            LiquidacionReembolsoTarjeta conCentimo = ServicioCobroTarjetaReparto.EfectoALiquidar(factura, 40.02m);
+            Assert.IsNull(conCentimo.MotivoACuenta, conCentimo.MotivoACuenta);
+            Assert.AreEqual(40.03m, conCentimo.Efecto.Importe, "el efecto entero; el céntimo, a Regularización saldo al contabilizar");
+
+            Assert.AreEqual(40.03m, ServicioCobroTarjetaReparto.EfectoALiquidar(factura, 40.03m).Efecto.Importe, "sin diferencia: como hoy");
+            StringAssert.Contains(N(ServicioCobroTarjetaReparto.EfectoALiquidar(factura, 39.90m).MotivoACuenta), "es de 40,03 €, no de 39,90 €");
         }
     }
 }
