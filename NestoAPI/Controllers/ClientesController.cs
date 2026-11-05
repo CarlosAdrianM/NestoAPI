@@ -696,7 +696,7 @@ namespace NestoAPI.Controllers
                 periodoFacturacion = clienteEncontrado.PeriodoFacturación,
                 poblacion = clienteEncontrado.Población,
                 provincia = clienteEncontrado.Provincia,
-                ruta = clienteEncontrado.Ruta,
+                ruta = RutaQueValeContacto(clienteEncontrado), // NestoAPI#830
                 servirJunto = clienteEncontrado.ServirJunto,
                 telefono = clienteEncontrado.Teléfono,
                 vendedor = clienteEncontrado.Vendedor,
@@ -713,6 +713,28 @@ namespace NestoAPI.Controllers
             };
 
             return Ok(clienteDTO);
+        }
+
+        /// <summary>
+        /// NestoAPI#830: la ruta que se propone para el pedido. En la empresa 1, la de la ficha (tal cual, como siempre); fuera de
+        /// ella, la que vale (la de la ficha de la empresa 1 si la tiene). Nunca lanza.
+        /// </summary>
+        internal string RutaQueValeContacto(Cliente ficha)
+        {
+            if (Infraestructure.PedidosVenta.RutaQueVale.EsEmpresaQueManda(ficha.Empresa))
+            {
+                return ficha.Ruta;
+            }
+            try
+            {
+                string rutaEmpresa1 = Infraestructure.PedidosVenta.RutaQueVale.RutasEmpresa1DelCliente(db, ficha.Nº_Cliente)
+                    .TryGetValue(ficha.Contacto?.Trim() ?? string.Empty, out string ruta) ? ruta : null;
+                return Infraestructure.PedidosVenta.RutaQueVale.Elegir(ficha.Empresa, ficha.Ruta, rutaEmpresa1);
+            }
+            catch (Exception)
+            {
+                return ficha.Ruta;
+            }
         }
 
         /// <summary>NestoAPI#723: (empresa, cliente) → si exige el P.O. (sustituible en los tests).</summary>
