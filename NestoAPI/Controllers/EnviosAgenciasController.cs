@@ -291,7 +291,7 @@ namespace NestoAPI.Controllers
     // IClienteApiFactory desde 1.10.9.0), NestoApp (interceptor Bearer + refresh desde v2.17.2)
     // y TiendasNuevaVision (MyHttpClient con AuthHeaderHandler). Lo anónimo, explícito abajo.
     [Authorize]
-    public class EnviosAgenciasController : ApiController
+    public partial class EnviosAgenciasController : ApiController
     {
         public EnviosAgenciasController() : this(new NVEntities())
         {
