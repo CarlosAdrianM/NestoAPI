@@ -82,7 +82,7 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
      NULL),
     ('Corregido', N'Alta de cliente extranjero: la dirección se deja como viene',
      N'Para los clientes de fuera de España, la dirección ya no se reordena al formato español (número detrás de la calle con coma): se deja como la teclea el usuario. Lo contó Enrique con una dirección francesa. Cuando la dirección se elige en el buscador de Google, Nesto todavía la monta a la española; queda pendiente.',
-     N'Vendedores,Tiendas,Administración');
+     N'Vendedores,Tiendas,Administración'),
     ('Mejorado', N'Eventos: formato «Mixto» y, en cada inscrita, si viene presencial u online',
      N'Un evento puede ser presencial, online o mixto. En los mixtos, la tarjeta de cada inscrita lleva un desplegable presencial / online que se guarda al elegirlo, y la lista de inscritos tiene un contador «N presencial · M online», un filtro y la opción de ordenar por eso. Lo pidió Reina.',
      N'Tiendas,Vendedores,Dirección');
