@@ -137,6 +137,47 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicioAgencias.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
+        // NestoAPI#826 (sugerencia 1058, Enrique): fuera de España la dirección no se pasa al formato
+        // español (coma antes del número, abreviaturas C/, Av.…): solo recorte y mayúsculas.
+        [DataTestMethod]
+        [DataRow("12 Rue de la Paix", "FR", true, "12 RUE DE LA PAIX")]
+        [DataRow("  12 Rue de la Paix  ", "FR", false, "12 RUE DE LA PAIX")]
+        [DataRow("Rue de la Paix 12", "fr", true, "RUE DE LA PAIX 12")]
+        [DataRow("Avenida da Liberdade 110", "PT", true, "AVENIDA DA LIBERDADE 110")]
+        [DataRow("Rua do Carmo 21", "PT", false, "RUA DO CARMO 21")]
+        [DataRow("Bahnhofstrasse 5", "DE", true, "BAHNHOFSTRASSE 5")]
+        [DataRow("Via Colonia 3", "IT", true, "VIA COLONIA 3")]
+        public async Task ComprobarDatosGenerales_PaisExtranjero_NoReordenaNiAbreviaAlFormatoEspanol(string direccion, string pais, bool verificada, string esperada)
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
+
+            var respuesta = await gestor.ComprobarDatosGenerales(direccion, "75002", "+33123456789", direccionVerificada: verificada, pais: pais);
+
+            Assert.AreEqual(esperada, respuesta.DireccionFormateada);
+            A.CallTo(() => servicioAgencias.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        // NestoAPI#826: en España (país vacío, nulo o ES) se sigue normalizando como hasta ahora.
+        [DataTestMethod]
+        [DataRow(null)]
+        [DataRow("")]
+        [DataRow("ES")]
+        [DataRow(" es ")]
+        public async Task ComprobarDatosGenerales_Espana_SigueConElFormatoEspanol(string pais)
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            _ = A.CallTo(() => servicio.CogerDatosCodigoPostal("28013"))
+                .Returns(new NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
+
+            var respuesta = await gestor.ComprobarDatosGenerales("Calle Mayor 12", "28013", "915311923", direccionVerificada: true, pais: pais);
+
+            Assert.AreEqual("C/ MAYOR, 12", respuesta.DireccionFormateada);
+        }
+
         [TestMethod]
         public void EsPaisExtranjero_EspanaVacioONuloNoLoSon()
         {

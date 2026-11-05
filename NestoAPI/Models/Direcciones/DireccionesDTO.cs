@@ -27,5 +27,12 @@ namespace NestoAPI.Models.Direcciones
 
         /// <summary>Nesto#436: código ISO 3166-1 alpha-2 del país ("IT"), para la ficha del cliente.</summary>
         public string PaisIso { get; set; }
+
+        /// <summary>
+        /// NestoAPI#826 (sugerencia 1058): calle y número juntos en el formato del país de la dirección,
+        /// para el campo «Dirección» del alta. España: «Calle Mayor, 12»; Francia y los países donde el
+        /// número va delante: «12 Rue de la Paix»; el resto: «Via Roma 1». Sin número, solo la calle.
+        /// </summary>
+        public string DireccionCalleNumero { get; set; }
     }
 }
