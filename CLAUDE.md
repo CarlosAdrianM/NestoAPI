@@ -315,6 +315,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   crear). En `GET Envios` la NC lleva ese `Repartidor` (no se carga: `CompletarCarga` no lo borra) y con soloMios solo le sale a él;
   las NC de antes (sin repartidor) siguen saliendo a todos. Ariadna no filtra: lo hace la API.
 
+### Stock de la web al momento (NestoAPI#818, 05/11/26)
+- La fuente de verdad es `ExtractoProducto`: el disparador `trgExtractoProducto_SyncTienda` (AFTER INSERT/UPDATE/DELETE,
+  `Scripts/Issue818_ExtractoProducto_EncolarSyncTienda.sql`) encola en `Nesto_sync` cada producto (y sus kits) cuya sentencia
+  no sume cero por producto y almacén (empresas 1 y 3; ALG, REI, ALC; ficha de la empresa 1 con Estado >= 0; sin repetir pendientes).
+  El +1/-1 de la carpeta o de un cambio de ubicación suma cero y no encola (Carlos 05/11/26). Nunca tumba el apunte (TRY/CATCH sin ROLLBACK).
+- No hace falta encolar a mano al recibir, inventariar o regularizar, ni pasar `sincronizar-stocks-nocturno` a horario: queda
+  de red (LinPedidoVta por fuera de la API, DescuentosProducto, encolados perdidos). Tras encolar, `@@IDENTITY` es el Id de Nesto_sync.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
