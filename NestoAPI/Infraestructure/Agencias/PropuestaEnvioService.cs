@@ -55,6 +55,12 @@ namespace NestoAPI.Infraestructure.Agencias
         decimal PrepagosPendientes(string empresa, int pedido);
         /// <summary>NestoAPI#679: los enlaces de pago (TPV virtual) pendientes o autorizados del pedido.</summary>
         List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido);
+        /// <summary>
+        /// NestoAPI#824 (929852, 05/11/26): los enlaces de pago pendientes o autorizados de los OTROS pedidos del mismo cliente y
+        /// contacto (<see cref="LectorEnlacesPagoPedido.LeerDeOtrosPedidosDelCliente"/>): el reembolso se calcula con lo pendiente
+        /// del cliente, así que la factura de otro pedido puede ir en este envío.
+        /// </summary>
+        List<EnlacePagoPedido> EnlacesDePagoDeOtrosPedidos(string empresa, string cliente, string contacto, int pedido);
         /// <summary>NestoAPI#686: el envío sale sin reembolso porque el pedido es al contado con «Mantener junto» y le quedan líneas pendientes.</summary>
         bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido);
         /// <summary>NestoAPI#785: el reembolso de la etiqueta pendiente se cambió a mano (<see cref="ReembolsoEtiquetaPendiente.HayCambioManual"/>).</summary>
@@ -125,7 +131,10 @@ namespace NestoAPI.Infraestructure.Agencias
                 Peso = pesoPropuesto,
                 PrepagosPendientes = prepagos,
                 EnlacesPagoAutorizados = EnlacesPagoPedido.ImporteAutorizado(enlaces),
-                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now),
+                // NestoAPI#824: y los de los otros pedidos del cliente y contacto (cada uno con su pedido, para decirlo en el aviso)
+                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivosPorPedido(
+                    EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now)
+                        .Concat(LeerEnlacesDeOtrosPedidos(empresa, pedidoAgencia.Cliente, pedidoAgencia.Contacto, pedido)), DateTime.Now),
                 // NestoAPI#734: si se ha consultado a Administración, qué dijo (best-effort: sin ella, como antes).
                 ConsultaReembolso = await LeerConsultaReembolso(empresa, pedido).ConfigureAwait(false),
                 CorreccionReembolso = correccion,
@@ -456,7 +465,7 @@ namespace NestoAPI.Infraestructure.Agencias
                 && !DecisionCubreLosEnlaces(propuesta.ConsultaReembolso, propuesta.EnlacesPagoPendientes))
             {
                 Avisar(propuesta, CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE, TiposAvisoPropuestaEnvio.CONFIRMAR,
-                    EnlacesPagoPedido.TextoAvisoPendientes(propuesta.EnlacesPagoPendientes), AccionesAvisoPropuestaEnvio.CONSULTAR_ADMINISTRACION);
+                    EnlacesPagoPedido.TextoAvisoPendientes(propuesta.EnlacesPagoPendientes, propuesta.Pedido), AccionesAvisoPropuestaEnvio.CONSULTAR_ADMINISTRACION);
             }
             // VB 2110-2124 (Nesto#367): Canteras (DimensionesBultosObligatorias) pide las dimensiones al imprimir.
             if (propuesta.Agencia == Constantes.Agencias.AGENCIA_CANTERAS)
@@ -532,6 +541,23 @@ namespace NestoAPI.Infraestructure.Agencias
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudieron leer los enlaces de pago (#679). {ex.Message}", ex));
+                return new List<EnlacePagoPedido>();
+            }
+        }
+
+        /// <summary>NestoAPI#824: best-effort, como los del pedido: si no se pueden leer, sin aviso.</summary>
+        private List<EnlacePagoPedido> LeerEnlacesDeOtrosPedidos(string empresa, string cliente, string contacto, int pedido)
+        {
+            try
+            {
+                return (datos.EnlacesDePagoDeOtrosPedidos(empresa, cliente, contacto, pedido) ?? new List<EnlacePagoPedido>())
+                    .Where(e => e != null && e.Pedido != pedido)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudieron leer los enlaces de pago de los otros pedidos " +
+                    $"del cliente {cliente?.Trim()} (#824). {ex.Message}", ex));
                 return new List<EnlacePagoPedido>();
             }
         }
@@ -832,6 +858,9 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido)
             => LectorEnlacesPagoPedido.Leer(db, empresa, pedido);
+
+        public List<EnlacePagoPedido> EnlacesDePagoDeOtrosPedidos(string empresa, string cliente, string contacto, int pedido)
+            => LectorEnlacesPagoPedido.LeerDeOtrosPedidosDelCliente(db, empresa, cliente, contacto, pedido, DateTime.Now);
 
         public bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido)
             => new GestorPedidosVenta(servicioPedidosVenta()).SaleSinReembolsoPorMantenerJunto(empresa, pedido);

@@ -207,6 +207,18 @@ namespace NestoAPI.Models
             public const string CUENTA_PORTES_ONTIME = "62400002";
             /// <summary>NestoAPI#802: caja pendiente de recibir de las tiendas (y de los repartidores), igual que en Nesto.</summary>
             public const string CAJA_PENDIENTE_RECIBIR_TIENDAS = "57000016";
+            /// <summary>
+            /// NestoAPI#824 (929852, 05/11/26): «Regularización saldo», la cuenta en la que Administración (diario _DiarioReg)
+            /// regulariza a mano los céntimos que quedan en los clientes. Aquí va la diferencia de redondeo al liquidar un efecto
+            /// entero con un cobro con tarjeta que se queda a céntimos (<see cref="Infraestructure.Pagos.ToleranciaRedondeoCobro"/>).
+            /// </summary>
+            public const string REGULARIZACION_SALDO = "65900004";
+            /// <summary>
+            /// NestoAPI#824 (Carlos 05/11/26): «Regularización de Saldo» (ingreso), la pareja de <see cref="REGULARIZACION_SALDO"/>
+            /// (gasto). La diferencia de redondeo va al Debe de 65900004 cuando el cliente paga DE MENOS y al Haber de 75900004
+            /// cuando paga DE MÁS. (77800001 «Ajustes» no es para esto.)
+            /// </summary>
+            public const string REGULARIZACION_SALDO_INGRESO = "75900004";
             public const short ESTADO_ACTIVA = 0;
             public const short NIVEL_MAXIMO = 8;
         }

@@ -1403,6 +1403,7 @@
     <Compile Include="Infraestructure\Pagos\AvisoCobroEnlaceConReembolso.cs" />
     <Compile Include="Infraestructure\Pagos\AvisoCobroNestoPago.cs" />
     <Compile Include="Infraestructure\Pagos\EnlacesPagoPedido.cs" />
+    <Compile Include="Infraestructure\Pagos\ToleranciaRedondeoCobro.cs" />
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\FirmadorRedsys.cs" />
