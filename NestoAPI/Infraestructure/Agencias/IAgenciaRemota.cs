@@ -216,6 +216,43 @@ namespace NestoAPI.Infraestructure.Agencias
         IReadOnlyList<IntercambioRemoto> Intercambios { get; }
     }
 
+    /// <summary>
+    /// NestoAPI#726: la dirección nueva de entrega de un envío que ya viaja (cambio de dirección en tránsito).
+    /// <see cref="Pais"/> en ISO2 (por defecto ES). Cada agencia decide qué es obligatorio (CTT: teléfono y correo).
+    /// </summary>
+    public class DireccionEntregaRemota
+    {
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string CodigoPostal { get; set; }
+        public string Poblacion { get; set; }
+        public string Pais { get; set; } = "ES";
+        public string Telefono { get; set; }
+        public string Correo { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#726: gestión de un envío que YA tiene la agencia (recogido, en tránsito, en reparto, en incidencia o
+    /// entregado), sin anularlo ni volver a etiquetar: parar en vuelo, logística inversa (retorno), cambiar la fecha
+    /// o la dirección de entrega. Opcional: hoy solo la implementa CTT (Management API). Cada operación lanza
+    /// <see cref="AgenciaRemotaException"/> con el motivo de la agencia si la rechaza (p. ej. 403 por el estado) y
+    /// <see cref="System.ArgumentException"/> si faltan datos que la agencia exige (antes de llamar).
+    /// </summary>
+    public interface IGestionEnTransitoAgenciaRemota
+    {
+        /// <summary>Para el envío en vuelo: entra en incidencia y vuelve a origen (CTT: tiene coste de ida y vuelta).</summary>
+        Task<ResultadoOperacionRemota> PararEnVueloAsync(string albaran);
+
+        /// <summary>Crea el envío de retorno (logística inversa) de un envío ENTREGADO y devuelve su código (albarán nuevo).</summary>
+        Task<string> CrearRetornoAsync(string albaran);
+
+        /// <summary>Cambia la fecha de entrega de un envío que ya viaja (conserva el código y el reembolso).</summary>
+        Task<ResultadoOperacionRemota> CambiarFechaEntregaAsync(string albaran, System.DateTime fecha);
+
+        /// <summary>Cambia la dirección de entrega de un envío que ya viaja (conserva el código y el reembolso).</summary>
+        Task<ResultadoOperacionRemota> CambiarDireccionEntregaAsync(string albaran, DireccionEntregaRemota direccion);
+    }
+
     public interface IAgenciaRemota : ISeguimientoAgenciaRemota, IAnulacionAgenciaRemota
     {
         /// <summary>Inserta el envío en la agencia (asigna albarán) y obtiene su etiqueta. Crea envío REAL.</summary>

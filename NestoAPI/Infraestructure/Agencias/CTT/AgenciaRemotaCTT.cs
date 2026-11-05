@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
     ///   GET  trf/web-tracking/v1.0/shippings?...&amp;shipping_date=A[range]B -> 200 {data:[{shipping_code, shipping_status_code...}], pagination}
     /// CTT no tiene "modificar": se anula y se registra de nuevo (albarán nuevo, etiqueta nueva).
     /// </summary>
-    public class AgenciaRemotaCTT : IAgenciaRemota, ISeguimientoPorLotes, IEtiquetaPdfRemota
+    public class AgenciaRemotaCTT : IAgenciaRemota, ISeguimientoPorLotes, IEtiquetaPdfRemota, IGestionEnTransitoAgenciaRemota
     {
         // CTT pide medidas por bulto; no guardamos dimensiones (solo el peso), así que va la caja
         // MEDIANA, la más usada, igual que en Innovatrans. Si DatosEnvioRemoto trae medidas, prevalecen.
@@ -51,6 +51,18 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// </summary>
         internal const int DIAS_LISTADO_SI_CUPO_AGOTADO = 30;
         internal const string CLAVE_YA_ANULADO = "ALREADY_NULLED_SHIPPING";
+
+        // NestoAPI#726: Management API (probada en el sandbox el 05/11/26 con los envíos 827791/2/3 que grabó CTT).
+        //   POST trf/v1.0/management/v1/shippings/{centro}/{código}/rpc-stop-on-the-fly   sin cuerpo -> 204
+        //   POST .../rpc-create-reverse-shipping   sin cuerpo NI Content-Type -> 200 {"reverse_shipping_code":"..."}
+        //   POST .../rpc-change-delivery-options   {"new_delivery_date":"AAAA-MM-DD"} -> 202 (nunca {}: CTT lo acepta vacío)
+        //   POST .../rpc-change-delivery-address   {"new_delivery_address":{recipient_*, recipient_phones[], recipient_email}} -> 204
+        // Con el envío en un estado que no lo admite, CTT contesta 403 «Can not perform action X over shipping ...».
+        internal const string RUTA_GESTION = "trf/v1.0/management/v1/shippings/";
+        internal const string OPERACION_PARAR_EN_VUELO = "rpc-stop-on-the-fly";
+        internal const string OPERACION_CREAR_RETORNO = "rpc-create-reverse-shipping";
+        internal const string OPERACION_CAMBIAR_FECHA = "rpc-change-delivery-options";
+        internal const string OPERACION_CAMBIAR_DIRECCION = "rpc-change-delivery-address";
 
         // NestoAPI#494: tipos de retorno de CTT (EnviosAgencia.Retorno), los que ofrece Nesto en su lista.
         public const short RETORNO_NINGUNO = 0;
@@ -190,6 +202,119 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
             return await InsertarYEtiquetarAsync(envio).ConfigureAwait(false);
         }
+
+
+        // ---- NestoAPI#726: gestión en tránsito (Management API) ----
+
+        public async Task<ResultadoOperacionRemota> PararEnVueloAsync(string albaran)
+        {
+            await EjecutarGestionAsync(albaran, OPERACION_PARAR_EN_VUELO, null, "Parar en vuelo", "parar en vuelo").ConfigureAwait(false);
+            return new ResultadoOperacionRemota { Exito = true };
+        }
+
+        public async Task<string> CrearRetornoAsync(string albaran)
+        {
+            RespuestaCTT respuesta = await EjecutarGestionAsync(albaran, OPERACION_CREAR_RETORNO, null, "Crear retorno", "crear el retorno").ConfigureAwait(false);
+            // El código del retorno SOLO viene aquí: ni cabecera Location ni rastro en el seguimiento del original.
+            string codigo = (respuesta.Json as JObject)?["reverse_shipping_code"]?.ToString();
+            if (string.IsNullOrWhiteSpace(codigo))
+            {
+                throw new AgenciaRemotaException($"CTT aceptó el retorno del envío {albaran.Trim()} pero la respuesta no trae reverse_shipping_code: {respuesta.Cuerpo}");
+            }
+            return codigo.Trim();
+        }
+
+        public async Task<ResultadoOperacionRemota> CambiarFechaEntregaAsync(string albaran, DateTime fecha)
+        {
+            var cuerpo = new JObject { ["new_delivery_date"] = fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
+            await EjecutarGestionAsync(albaran, OPERACION_CAMBIAR_FECHA, cuerpo, "Cambiar fecha de entrega", "cambiar la fecha de entrega").ConfigureAwait(false);
+            return new ResultadoOperacionRemota { Exito = true };
+        }
+
+        public async Task<ResultadoOperacionRemota> CambiarDireccionEntregaAsync(string albaran, DireccionEntregaRemota direccion)
+        {
+            JObject cuerpo = ConstruirDireccionEntrega(direccion);
+            await EjecutarGestionAsync(albaran, OPERACION_CAMBIAR_DIRECCION, cuerpo, "Cambiar dirección de entrega", "cambiar la dirección de entrega").ConfigureAwait(false);
+            return new ResultadoOperacionRemota { Exito = true };
+        }
+
+        /// <summary>
+        /// NestoAPI#726: el cuerpo de rpc-change-delivery-address. CTT exige teléfono y correo (validación de esquema):
+        /// si faltan, <see cref="ArgumentException"/> con un mensaje claro ANTES de llamar.
+        /// </summary>
+        internal static JObject ConstruirDireccionEntrega(DireccionEntregaRemota direccion)
+        {
+            if (direccion == null) throw new ArgumentException("Faltan los datos de la dirección nueva.");
+            var faltan = new List<string>();
+            if (string.IsNullOrWhiteSpace(direccion.Nombre)) faltan.Add("el nombre");
+            if (string.IsNullOrWhiteSpace(direccion.Direccion)) faltan.Add("la dirección");
+            if (string.IsNullOrWhiteSpace(direccion.CodigoPostal)) faltan.Add("el código postal");
+            if (string.IsNullOrWhiteSpace(direccion.Poblacion)) faltan.Add("la población");
+            JArray telefonos = TelefonosDeTexto(direccion.Telefono);
+            if (telefonos.Count == 0) faltan.Add("el teléfono");
+            string correo = direccion.Correo?.Trim();
+            if (string.IsNullOrWhiteSpace(correo)) faltan.Add("el correo electrónico");
+            if (faltan.Count > 0)
+            {
+                throw new ArgumentException("Para cambiar la dirección de entrega en CTT falta " + UnirFaltan(faltan) +
+                    ". CTT exige el teléfono y el correo del destinatario.");
+            }
+
+            string pais = string.IsNullOrWhiteSpace(direccion.Pais) ? "ES" : direccion.Pais.Trim().ToUpperInvariant();
+            return new JObject
+            {
+                ["new_delivery_address"] = new JObject
+                {
+                    ["recipient_name"] = Acotar(direccion.Nombre, 60),
+                    ["recipient_address"] = Acotar(direccion.Direccion, 100),
+                    ["recipient_postal_code"] = Direcciones.CodigoPostal.ParaCTT(direccion.CodigoPostal.Trim(), pais),
+                    ["recipient_town"] = Acotar(direccion.Poblacion, 60),
+                    ["recipient_country_code"] = pais,
+                    ["recipient_phones"] = telefonos,
+                    ["recipient_email"] = correo
+                }
+            };
+        }
+
+        private static string UnirFaltan(List<string> faltan)
+            => faltan.Count == 1 ? faltan[0] : string.Join(", ", faltan.Take(faltan.Count - 1)) + " y " + faltan.Last();
+
+        /// <summary>Los teléfonos de un texto («600111222 / 916000000»), sin repetir.</summary>
+        private static JArray TelefonosDeTexto(string texto)
+        {
+            var lista = new List<string>();
+            foreach (string t in (texto ?? string.Empty).Split(new[] { '/', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string limpio = t.Trim();
+                if (limpio.Length > 0 && !lista.Contains(limpio)) lista.Add(limpio);
+            }
+            return new JArray(lista.Cast<object>().ToArray());
+        }
+
+        /// <summary>
+        /// NestoAPI#726: núcleo común de las cuatro operaciones: la ruta con el centro de cliente, la llamada y el error de
+        /// CTT traducido. Cuerpo null = sin cuerpo ni Content-Type (lo que piden la inversa y el stop).
+        /// </summary>
+        private async Task<RespuestaCTT> EjecutarGestionAsync(string albaran, string operacionCtt, JObject cuerpo, string nombreOperacion, string queSeHacia)
+        {
+            if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+            if (string.IsNullOrWhiteSpace(_config.ClientCenterCode))
+            {
+                throw new AgenciaRemotaException("CTT: falta el código de centro de cliente (CTT:ClientCenterCode en Web.config).");
+            }
+            string codigo = albaran.Trim();
+            RespuestaCTT respuesta = await _cliente.EnviarAsync(HttpMethod.Post, RutaGestion(_config.ClientCenterCode, codigo, operacionCtt), cuerpo, nombreOperacion).ConfigureAwait(false);
+            LanzarSiCupoAgotado(respuesta, nombreOperacion);
+            if (!respuesta.Exito)
+            {
+                string estado = respuesta.Codigo == (int)HttpStatusCode.Forbidden ? " CTT no lo permite en el estado actual del envío." : string.Empty;
+                throw new AgenciaRemotaException($"No se pudo {queSeHacia} del envío {codigo} en CTT.{estado} {respuesta.Error}");
+            }
+            return respuesta;
+        }
+
+        internal static string RutaGestion(string centro, string albaran, string operacionCtt)
+            => $"{RUTA_GESTION}{centro.Trim()}/{albaran.Trim()}/{operacionCtt}";
 
         public async Task<SeguimientoEnvioRemoto> ConsultarSeguimientoAsync(string albaran)
         {
