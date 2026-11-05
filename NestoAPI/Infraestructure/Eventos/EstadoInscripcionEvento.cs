@@ -445,13 +445,22 @@ namespace NestoAPI.Infraestructure.Eventos
     {
         public const string PRESENCIAL = "Presencial";
         public const string ONLINE = "Online";
+        /// <summary>
+        /// NestoAPI#829 (Reina, sugerencia 1064): presencial y online a la vez. Cada inscripción dice cómo viene
+        /// (<see cref="ReglasFormaAsistenciaEvento"/>). Para todo lo demás (recordatorios, anuncios, enlace) cuenta como presencial:
+        /// <see cref="EsOnline"/> sigue siendo solo «Online».
+        /// </summary>
+        public const string MIXTO = "Mixto";
 
         public static bool EsOnline(Evento evento) => string.Equals(evento?.Formato?.Trim(), ONLINE, StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>El formato del evento para el DTO: «Presencial» u «Online».</summary>
-        public static string De(Evento evento) => EsOnline(evento) ? ONLINE : PRESENCIAL;
+        /// <summary>NestoAPI#829: presencial y online a la vez.</summary>
+        public static bool EsMixto(Evento evento) => string.Equals(evento?.Formato?.Trim(), MIXTO, StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>«online» → «Online»; null o vacío → Presencial. Lanza si no es ninguno de los dos.</summary>
+        /// <summary>El formato del evento para el DTO: «Presencial», «Online» o «Mixto».</summary>
+        public static string De(Evento evento) => EsOnline(evento) ? ONLINE : EsMixto(evento) ? MIXTO : PRESENCIAL;
+
+        /// <summary>«online» → «Online», «mixto» → «Mixto»; null o vacío → Presencial. Lanza si no es ninguno de los tres.</summary>
         public static string Interpretar(string texto)
         {
             string limpio = texto?.Trim();
@@ -463,7 +472,11 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 return ONLINE;
             }
-            throw new NestoBusinessException("El formato del evento tiene que ser Presencial u Online.");
+            if (string.Equals(limpio, MIXTO, StringComparison.OrdinalIgnoreCase))
+            {
+                return MIXTO;
+            }
+            throw new NestoBusinessException("El formato del evento tiene que ser Presencial, Online o Mixto.");
         }
 
         /// <summary>

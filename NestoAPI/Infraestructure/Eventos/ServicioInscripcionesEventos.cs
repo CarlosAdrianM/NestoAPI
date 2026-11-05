@@ -246,6 +246,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// </summary>
         public int Asistentes { get; set; } = ReglasAsistentesEvento.POR_DEFECTO;
         /// <summary>
+        /// NestoAPI#829 (Reina, sugerencia 1064): en un evento mixto, si viene «Presencial» u «Online». Null = sin indicar (y
+        /// siempre en los eventos que no son mixtos, o sin el script). Se cambia con PUT api/Eventos/Inscripciones/{id}/FormaAsistencia.
+        /// </summary>
+        public string FormaAsistencia { get; set; }
+        /// <summary>
         /// Nesto#619: los vendedores del cliente (el de estética del contacto y el de peluquería), como para inscribir
         /// (NestoAPI#741). Solo en la lista de inscritos del evento (GET api/Eventos/{id}/Inscripciones); null en el resto.
         /// </summary>
@@ -310,6 +315,8 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<InscripcionEventoDTO> CambiarPersonaContacto(int id, CambiarPersonaContactoInscripcionDTO peticion, IPrincipal usuario);
         /// <summary>NestoAPI#811: cambia el número de asistentes (revalida plazas y compra). Quien mantiene el evento.</summary>
         Task<InscripcionEventoDTO> CambiarAsistentes(int id, CambiarAsistentesInscripcionDTO peticion, IPrincipal usuario);
+        /// <summary>NestoAPI#829: en un evento mixto, si viene presencial u online (null lo quita). Quien mantiene el evento.</summary>
+        Task<InscripcionEventoDTO> CambiarFormaAsistencia(int id, CambiarFormaAsistenciaInscripcionDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -419,6 +426,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             baseImponibleDia = new LectorBaseImponibleDia(db);
             PersonasAsistentes = new RepositorioPersonaAsistenteEventos(db);
             AsistentesInscripciones = new RepositorioAsistentesEventos(db);
+            FormasAsistencia = new RepositorioFormaAsistenciaEventos(db);
             ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
             // NestoAPI#746: reservas sin pagar con el evento lleno
             PlazasLlenas = new RepositorioPlazasLlenas(db);
@@ -464,6 +472,12 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         /// inscripciones son de 1 asistente, inscribir más de 1 y el PUT contestan que falta el script.
         /// </summary>
         internal IRepositorioAsistentesEventos AsistentesInscripciones { get; set; }
+
+        /// <summary>
+        /// NestoAPI#829: la columna EventosInscripciones.FormaAsistencia (fuera del EDMX). Null (tests) o sin la columna: ninguna
+        /// inscripción la tiene y el PUT contesta que falta el script.
+        /// </summary>
+        internal IRepositorioFormaAsistenciaEventos FormasAsistencia { get; set; }
 
         /// <param name="pagos">Para generar el enlace (perezoso: solo se crea si hace falta).</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
@@ -922,6 +936,33 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 await AvisarSiSeLlena(evento).ConfigureAwait(false);
             }
+            return dto;
+        }
+
+        // ---------------- Presencial u online (NestoAPI#829) ----------------
+
+        /// <summary>
+        /// NestoAPI#829 (Reina, sugerencia 1064): en un evento mixto, apunta si la inscripción viene presencial u online (null o
+        /// vacío lo quita). Quien mantiene el evento, como la persona que asiste y los asistentes. No cambia plazas, estado ni
+        /// pago: vale para cualquier inscripción del evento (también la de alguien que ya vino).
+        /// </summary>
+        public async Task<InscripcionEventoDTO> CambiarFormaAsistencia(int id, CambiarFormaAsistenciaInscripcionDTO peticion, IPrincipal usuario)
+        {
+            EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
+            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+            ComprobarPuedeMantener(usuario, evento);
+            ReglasFormaAsistenciaEvento.ComprobarEventoMixto(evento);
+            string forma = ReglasFormaAsistenciaEvento.Interpretar(peticion?.FormaAsistencia);
+            if (FormasAsistencia == null || !await FormasAsistencia.Poner(inscripcion.Id, forma).ConfigureAwait(false))
+            {
+                throw ReglasFormaAsistenciaEvento.FaltaScript();
+            }
+            inscripcion.Usuario = UsuarioDe(usuario);
+            inscripcion.FechaModificacion = reloj();
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            InscripcionEventoDTO dto = (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
+                .Single();
+            dto.FormaAsistencia = forma;
             return dto;
         }
 
@@ -2457,6 +2498,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             // NestoAPI#811: cuántas personas trae cada una (sin la columna o si falla, 1)
             Dictionary<int, int> cuantos = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
                 inscripciones.Select(i => i.Id)).ConfigureAwait(false);
+            // NestoAPI#829: presencial u online, solo en los eventos mixtos (sin la columna o si falla, sin indicar)
+            List<int> deMixtos = inscripciones
+                .Where(i => eventos.TryGetValue(i.EventoId, out Evento e) && FormatosEvento.EsMixto(e))
+                .Select(i => i.Id).ToList();
+            Dictionary<int, string> formas = await RepositorioFormaAsistenciaEventos.LeerSinFallar(FormasAsistencia, deMixtos).ConfigureAwait(false);
 
             var porPagar = new HashSet<int>(inscripciones
                 .Where(i => i.PagoTPVId.HasValue && (EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada))
@@ -2482,6 +2528,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 fichas.TryGetValue(Limpiar(i.Cliente) + "/" + Limpiar(i.Contacto), out var ficha);
                 InscripcionEventoDTO dto = Componer(i, evento, ficha?.Nombre?.Trim());
                 dto.Asistentes = ReglasAsistentesEvento.De(i.Id, cuantos);
+                dto.FormaAsistencia = ReglasFormaAsistenciaEvento.De(i.Id, formas);
                 asistentes.TryGetValue(i.Id, out string asiste);
                 RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia,
                     personasPorCliente[Limpiar(i.Cliente) ?? ""], asiste);

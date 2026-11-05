@@ -288,7 +288,14 @@ namespace NestoAPI.Infraestructure.Eventos
             ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
             PedidoMinimoCupon = new RepositorioPedidoMinimoCuponEventos(db);
             AsistentesInscripciones = new RepositorioAsistentesEventos(db);
+            FormasAsistencia = new RepositorioFormaAsistenciaEventos(db);
         }
+
+        /// <summary>
+        /// NestoAPI#829: si está el script de los eventos mixtos (sin él, guardar «Mixto» chocaría con el CHECK de Eventos.Formato).
+        /// Null (tests): se da por lanzado.
+        /// </summary>
+        internal IRepositorioFormaAsistenciaEventos FormasAsistencia { get; set; }
 
         /// <summary>
         /// NestoAPI#811: cuántas plazas ocupa cada inscripción (EventosInscripciones.Asistentes, fuera del EDMX). Null (tests) o
@@ -861,7 +868,11 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             if (evento.Trae(nameof(EventoDTO.Formato)))
             {
-                _ = FormatosEvento.Interpretar(evento.Formato);
+                // NestoAPI#829: «Mixto» necesita el script (CHECK de Eventos.Formato y la columna de las inscripciones)
+                if (FormatosEvento.Interpretar(evento.Formato) == FormatosEvento.MIXTO && FormasAsistencia != null && !FormasAsistencia.Disponible())
+                {
+                    throw ReglasFormaAsistenciaEvento.FaltaScript();
+                }
             }
             if (evento.Plazas.HasValue && evento.Plazas.Value <= 0)
             {

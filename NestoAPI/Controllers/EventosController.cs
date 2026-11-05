@@ -456,6 +456,20 @@ namespace NestoAPI.Controllers
             return Ok(await inscripciones.CambiarAsistentes(id, peticion, User).ConfigureAwait(false));
         }
 
+        // PUT api/Eventos/Inscripciones/7/FormaAsistencia   { FormaAsistencia: "Online" }   (null o "" = sin indicar)
+        /// <summary>
+        /// NestoAPI#829 (Reina, sugerencia 1064): en un evento mixto (presencial y online a la vez), si la inscripción viene
+        /// presencial u online. 400 si el evento no es mixto o el valor no es Presencial / Online. Quien mantiene el evento (la tienda
+        /// del evento, Administración o Dirección), como la persona que asiste. Devuelve la inscripción.
+        /// </summary>
+        [HttpPut]
+        [Route("Inscripciones/{id:int}/FormaAsistencia")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PutFormaAsistenciaInscripcion(int id, [FromBody] CambiarFormaAsistenciaInscripcionDTO peticion)
+        {
+            return Ok(await inscripciones.CambiarFormaAsistencia(id, peticion, User).ConfigureAwait(false));
+        }
+
         // GET api/Clientes/1/15191/Inscripciones?contacto=0
         /// <summary>Las inscripciones de un cliente (de todos sus contactos si no se pide uno). El cliente de la tienda, solo las suyas.</summary>
         [HttpGet]
