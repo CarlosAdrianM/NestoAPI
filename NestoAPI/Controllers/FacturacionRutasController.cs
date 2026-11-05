@@ -622,8 +622,9 @@ namespace NestoAPI.Controllers
             // Intentar obtener el nombre de usuario desde User.Identity.Name
             if (!string.IsNullOrEmpty(User.Identity.Name))
             {
-                // Devolver el nombre completo CON dominio (ej: NUEVAVISION\Carlos)
-                return User.Identity.Name;
+                // Devolver el nombre completo CON dominio (ej: NUEVAVISION\Carlos). NestoAPI#823: y si viene sin dominio
+                // (Ariadna/NestoApp) con gemelo, el de dominio: va al SP de facturar, que mira FechasPermitidas.
+                return UsuarioAuditoriaHelper.Resolver(User, User.Identity.Name);
             }
 
             // Si no está en Identity.Name, buscar en claims

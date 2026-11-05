@@ -386,7 +386,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 throw new NestoBusinessException($"Las recepciones de tipo {origen.Tipo} todavía no se pueden terminar desde aquí: " +
                     "se pueden leer y comparar, pero se terminan como hasta ahora.");
             }
-            string nombre = usuario?.Identity?.IsAuthenticated == true ? usuario.Identity.Name : null;
+            string nombre = usuario?.Identity?.IsAuthenticated == true ? UsuarioAuditoriaHelper.Resolver(usuario, null) : null; // NestoAPI#823: a los SPs de recibir
             if (string.IsNullOrWhiteSpace(nombre))
             {
                 // Quién recibe queda grabado: sin usuario no se inventa uno

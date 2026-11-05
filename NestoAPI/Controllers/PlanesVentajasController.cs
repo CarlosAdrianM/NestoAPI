@@ -91,7 +91,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            string usuario = User?.Identity?.Name;
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
             var creado = await _servicio.CrearPlanAsync(plan, usuario).ConfigureAwait(false);
             return Ok(creado);
         }
@@ -106,7 +106,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            string usuario = User?.Identity?.Name;
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
             var actualizado = await _servicio.ActualizarPlanAsync(numero, plan, usuario).ConfigureAwait(false);
             if (actualizado == null)
             {

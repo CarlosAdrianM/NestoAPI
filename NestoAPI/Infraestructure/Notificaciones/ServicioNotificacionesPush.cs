@@ -304,12 +304,18 @@ namespace NestoAPI.Infraestructure.Notificaciones
         internal static bool TokenCompartidoPorVariosUsuarios(string aplicacion)
             => string.Equals(aplicacion?.Trim(), Constantes.Aplicaciones.ARIADNA, StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// NestoAPI#823 (Carlos 05/11/26): una persona, una identidad. Los dispositivos se registran con el usuario del token
+        /// («Alfredo» en Ariadna y NestoApp), pero quien avisa ya pasa la persona resuelta («NUEVAVISION\Alfredo»): se buscan
+        /// por todos sus nombres (<see cref="UsuarioAuditoriaHelper.NombresDeLaPersona"/>).
+        /// </summary>
         public async Task<List<DispositivoNotificacion>> ObtenerDispositivosUsuario(string usuario, string aplicacion)
         {
+            List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
             using (NVEntities db = _crearContexto())
             {
                 return await db.DispositivosNotificaciones
-                    .Where(d => d.Usuario == usuario && d.Aplicacion == aplicacion && d.Activo)
+                    .Where(d => nombres.Contains(d.Usuario) && d.Aplicacion == aplicacion && d.Activo)
                     .ToListAsync()
                     .ConfigureAwait(false);
             }
@@ -366,7 +372,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 {
                     return;
                 }
-                _ = await EnviadorDatos(tokens, DatosPushAriadna(usuario, notificacion), Constantes.Aplicaciones.ARIADNA).ConfigureAwait(false);
+                // NestoAPI#823: la PDA compara «usuarioDestino» con el mozo que está dentro (el usuario de Identity, sin dominio).
+                _ = await EnviadorDatos(tokens, DatosPushAriadna(UsuarioAuditoriaHelper.SinDominio(usuario), notificacion), Constantes.Aplicaciones.ARIADNA).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -520,10 +527,14 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     ? Newtonsoft.Json.JsonConvert.SerializeObject(notificacion.Datos)
                     : null;
 
+                // NestoAPI#823 (Carlos 05/11/26): una persona, una identidad. La fila del buzón va a nombre de la persona
+                // resuelta («Alfredo» de Ariadna → «NUEVAVISION\Alfredo»), la escriba quien la escriba; al leer se busca por
+                // el mismo nombre resuelto (y por el sin dominio, lo grabado antes de #823). La Aplicacion separa los buzones.
+                List<string> usuariosAvisados = dispositivos.Select(d => UsuarioAuditoriaHelper.Persona(d.Usuario)?.Trim()).ToList();
                 using (NVEntities db = _crearContexto())
                 {
                     var destinatarios = dispositivos
-                        .GroupBy(d => new { d.Usuario, d.Empresa, d.Vendedor, d.Cliente, d.Contacto })
+                        .GroupBy(d => new { Usuario = UsuarioAuditoriaHelper.Persona(d.Usuario)?.Trim(), d.Empresa, d.Vendedor, d.Cliente, d.Contacto })
                         .Select(g => g.Key);
 
                     foreach (var destinatario in destinatarios)
@@ -549,11 +560,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 // NestoAPI#536: Nesto no recibe push; se le avisa por SignalR para que refresque la campana.
                 if (aplicacion == Constantes.Aplicaciones.NESTO)
                 {
-                    AvisosTiempoReal.HayNotificacionesNuevas(dispositivos.Select(d => d.Usuario));
+                    AvisosTiempoReal.HayNotificacionesNuevas(usuariosAvisados);
                     // NestoAPI#775: y si es urgente (lista blanca por tipo), además la ventana roja con pitido
                     if (NotificacionesUrgentes.EsUrgente(notificacion))
                     {
-                        AvisosTiempoReal.HayNotificacionUrgente(dispositivos.Select(d => d.Usuario));
+                        AvisosTiempoReal.HayNotificacionUrgente(usuariosAvisados);
                     }
                 }
             }
@@ -619,12 +630,13 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         public async Task<bool> MarcarLeida(int id, string usuario)
         {
+            List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
             using (NVEntities db = _crearContexto())
             {
                 // El filtro por usuario NO es decorativo: sin él, cualquiera podría marcar por id
-                // las notificaciones de otro.
+                // las notificaciones de otro. NestoAPI#823: por los nombres de la persona, como al leer.
                 NotificacionBuzon notificacion = await db.NotificacionesBuzon
-                    .FirstOrDefaultAsync(n => n.Id == id && n.Usuario == usuario && n.FechaEliminada == null)
+                    .FirstOrDefaultAsync(n => n.Id == id && nombres.Contains(n.Usuario) && n.FechaEliminada == null)
                     .ConfigureAwait(false);
 
                 if (notificacion == null)
@@ -674,10 +686,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         public async Task<bool> EliminarDelBuzon(int id, string usuario)
         {
+            List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
             using (NVEntities db = _crearContexto())
             {
                 NotificacionBuzon notificacion = await db.NotificacionesBuzon
-                    .FirstOrDefaultAsync(n => n.Id == id && n.Usuario == usuario && n.FechaEliminada == null)
+                    .FirstOrDefaultAsync(n => n.Id == id && nombres.Contains(n.Usuario) && n.FechaEliminada == null)
                     .ConfigureAwait(false);
 
                 if (notificacion == null)
@@ -692,10 +705,16 @@ namespace NestoAPI.Infraestructure.Notificaciones
             }
         }
 
+        /// <summary>
+        /// NestoAPI#823: las del buzón de la persona en esa aplicación, por todos sus nombres: el resuelto (con el que se graba
+        /// desde #823) y el sin dominio si es un gemelo (lo grabado antes, hasta que pase Scripts/Issue823_UsuariosAriadnaADominio.sql).
+        /// Así crear, leer, contar, marcar y borrar usan la misma persona, la pida Ariadna con «Alfredo» o venga ya resuelta.
+        /// </summary>
         private static IQueryable<NotificacionBuzon> ConsultaDelUsuario(NVEntities db, string usuario, string aplicacion)
         {
+            List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
             return db.NotificacionesBuzon
-                .Where(n => n.Usuario == usuario && n.Aplicacion == aplicacion && n.FechaEliminada == null);
+                .Where(n => nombres.Contains(n.Usuario) && n.Aplicacion == aplicacion && n.FechaEliminada == null);
         }
 
         private static NotificacionBuzonDTO AConvertirDTO(NotificacionBuzon notificacion)
