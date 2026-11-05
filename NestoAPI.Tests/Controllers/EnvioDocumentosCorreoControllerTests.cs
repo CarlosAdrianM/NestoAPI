@@ -38,7 +38,7 @@ namespace NestoAPI.Tests.Controllers
                 Contacto = "0",
                 Remitente = new MailAddress("administracion@nuevavision.es")
             }));
-            A.CallTo(() => proveedor.PdfMandato(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(new DocumentoParaCorreo
+            A.CallTo(() => proveedor.PdfMandato(A<string>._, A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(new DocumentoParaCorreo
             {
                 Pdf = new byte[] { 1 },
                 NombreFichero = "MandatoSEPA_15191_1.pdf",
@@ -137,7 +137,7 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task EnviarMandatoPorCorreo_UnEmpleado_LoMandaConLaCuentaYElMotor()
+        public async Task EnviarMandatoPorCorreo_UnEmpleado_LoMandaConLaCuenta_YElMotorSeIgnora()
         {
             var envio = new EnvioMandatoCorreoDTO { Ccc = "1", Motor = "RDLC", Destinatarios = new List<string> { "cliente@correo.es" } };
 
@@ -146,7 +146,8 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual("MandatoSEPA_15191_1.pdf", resultado.Content.Adjunto);
-            A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", "1", "RDLC")).MustHaveHappenedOnceExactly();
+            // NestoAPI#735: el Motor que aún manda Nesto ya no llega al proveedor (siempre QuestPDF)
+            A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", "1")).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -157,7 +158,7 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
-            A.CallTo(() => proveedor.PdfMandato(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => proveedor.PdfMandato(A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

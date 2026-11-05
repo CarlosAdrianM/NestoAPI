@@ -12,8 +12,7 @@ namespace NestoAPI.Infraestructure.Informes
     /// <summary>
     /// Nesto#490 / Nesto#340 (RDLC → QuestPDF): orden de domiciliación de adeudo directo SEPA
     /// (mandato CORE), sustituto de Models\Clientes\MandatoCoreSEPA.rdlc. Es un papel que va al
-    /// CLIENTE para que lo firme: va detrás del parámetro por usuario MotorPdfMandatoSepa (Nesto
-    /// añade «motor=QuestPDF» a la URL); sin él sigue saliendo el RDLC.
+    /// CLIENTE para que lo firme. NestoAPI#735: el RDLC se quitó (05/11/26); este es el único generador.
     ///
     /// Replica el RDLC: A4 con márgenes de 1 cm; logo arriba a la izquierda con la referencia y
     /// el identificador del acreedor a la derecha; título centrado (12 pt negrita + subtítulo en

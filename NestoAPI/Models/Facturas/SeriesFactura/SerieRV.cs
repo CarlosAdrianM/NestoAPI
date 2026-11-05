@@ -10,7 +10,6 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
     /// </summary>
     public class SerieRV : ISerieFacturaVerifactu
     {
-        public string RutaInforme => @"Models\Facturas\Factura.rdlc";
 
         public List<NotaFactura> Notas => new List<NotaFactura>
             {

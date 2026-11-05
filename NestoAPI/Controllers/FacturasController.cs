@@ -1,5 +1,4 @@
-﻿using Microsoft.Reporting.WebForms;
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infrastructure;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models;
@@ -181,7 +180,7 @@ namespace NestoAPI.Controllers
                 List<Factura> facturas = gestor.LeerFacturas(lista);
 
                 // TiendasNuevaVision#15: los clientes de la tienda online (token con claim "cliente")
-                // usan siempre QuestPDF; no tienen ParametrosUsuario y no queremos RDLC para ellos
+                // no tienen ParametrosUsuario (desde NestoAPI#735 ya no hay RDLC: todo es QuestPDF)
                 bool esClienteTienda = (User as System.Security.Claims.ClaimsPrincipal)?.HasClaim(c => c.Type == "cliente") == true;
 
                 var result = new HttpResponseMessage(HttpStatusCode.OK)

@@ -8,7 +8,6 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
         // GestorBuy - Serie especial que NO permite envío de facturas por correo electrónico
         // pero SÍ permite impresión física en facturación de rutas
 
-        public string RutaInforme => @"Models\Facturas\FacturaGB.rdlc";
 
         public List<NotaFactura> Notas => new List<NotaFactura>();
 

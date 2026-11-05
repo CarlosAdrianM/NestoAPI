@@ -26,7 +26,7 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
         /// <summary>El PDF del pedido (el mismo «Descargar PDF» del detalle del pedido). Null si el pedido no existe.</summary>
         Task<DocumentoParaCorreo> PdfPedido(string empresa, int numero, string usuario);
         /// <summary>El PDF del mandato SEPA de esa cuenta (sin cuenta, la del contacto). Null si no existe el cliente o la cuenta.</summary>
-        Task<DocumentoParaCorreo> PdfMandato(string empresa, string cliente, string contacto, string ccc, string motor);
+        Task<DocumentoParaCorreo> PdfMandato(string empresa, string cliente, string contacto, string ccc);
         /// <summary>Correos de las personas de contacto activas del cliente/contacto, sin repetir.</summary>
         Task<List<string>> CorreosContacto(string empresa, string cliente, string contacto);
         /// <summary>El correo del usuario (CorreoDefecto de ParametrosUsuario, sin dominio). Null si no tiene.</summary>

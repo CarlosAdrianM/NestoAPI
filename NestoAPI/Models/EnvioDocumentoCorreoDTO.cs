@@ -18,7 +18,7 @@ namespace NestoAPI.Models
     public class EnvioMandatoCorreoDTO : EnvioDocumentoCorreoDTO
     {
         public string Ccc { get; set; }
-        /// <summary>«QuestPDF» o «RDLC» (el parámetro MotorPdfMandatoSepa del usuario); sin él, QuestPDF.</summary>
+        /// <summary>NestoAPI#735: se ignora (el mandato sale siempre de QuestPDF). Se deja para no romper a quien aún lo mande (Nesto).</summary>
         public string Motor { get; set; }
     }
 

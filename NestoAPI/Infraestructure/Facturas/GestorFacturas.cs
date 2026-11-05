@@ -1,5 +1,4 @@
-﻿using Microsoft.Reporting.WebForms;
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
@@ -233,8 +232,8 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Nesto#340 (Fase 2, retirada de flags 20/08/26): el flag MotorPdfFacturas llevaba
         /// semanas al 100% en QuestPDF (el "(defecto)" y TODOS los usuarios de ParametrosUsuario):
-        /// el camino RDLC era código muerto. Switch directo; el generador RDLC y su .rdlc se
-        /// eliminarán en la purga final junto a ManifiestoAgencia y EtiquetasTienda.
+        /// el camino RDLC era código muerto. Switch directo. NestoAPI#735: GeneradorPdfFacturasRdlc y los
+        /// .rdlc de factura ya se han borrado.
         /// </summary>
         internal IGeneradorPdfFacturas ObtenerGeneradorPdf(string usuario)
         {
@@ -502,7 +501,6 @@ namespace NestoAPI.Infraestructure.Facturas
                 EsDocumentoProvisional = esDocumentoProvisional,
                 NumeroFactura = cabFactura.Número?.Trim(),
                 Ruta = cabPedido.Ruta?.Trim(),
-                RutaInforme = serieFactura.RutaInforme,
                 Serie = cabFactura.Serie?.Trim(),
                 SuPedido = cabFactura.SuPedido?.Trim(),
                 TipoDocumento = tipoDocumento,
@@ -659,7 +657,6 @@ namespace NestoAPI.Infraestructure.Facturas
                 NotasAlPie = serieFactura.Notas,
                 NumeroFactura = cabPedido.Número.ToString(),
                 Ruta = cabPedido.Ruta?.Trim(),
-                RutaInforme = serieFactura.RutaInforme,
                 Serie = cabPedido.Serie?.Trim(),
                 SuPedido = cabPedido.SuPedido?.Trim(),
                 TipoDocumento = tipoDocumento,
@@ -1169,7 +1166,6 @@ namespace NestoAPI.Infraestructure.Facturas
                 NotasAlPie = serieFactura.Notas,
                 NumeroFactura = numeroAlbaran.ToString(),
                 Ruta = cabPedido.Ruta?.Trim(),
-                RutaInforme = serieFactura.RutaInforme,
                 Serie = cabPedido.Serie?.Trim(),
                 SuPedido = cabPedido.SuPedido?.Trim(),
                 TipoDocumento = Constantes.Facturas.TiposDocumento.ALBARAN,

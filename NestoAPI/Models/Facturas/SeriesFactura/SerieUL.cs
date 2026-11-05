@@ -7,7 +7,6 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
     // EV) y pasa a tramitar Verifactu: son ventas reales que estaban quedando sin declarar.
     public class SerieUL : ISerieFacturaVerifactu
     {
-        public string RutaInforme => @"Models\Facturas\FacturaUL.rdlc";
 
         public List<NotaFactura> Notas => new List<NotaFactura>
             {

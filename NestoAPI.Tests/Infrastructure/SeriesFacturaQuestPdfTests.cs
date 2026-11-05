@@ -180,7 +180,6 @@ namespace NestoAPI.Tests.Infrastructure
                 var urlLogo = serie.UrlLogo;
                 var esDescargable = serie.EsDescargable;
                 var esImprimible = serie.EsImprimible;
-                var rutaInforme = serie.RutaInforme;
                 var notas = serie.Notas;
             }
         }
