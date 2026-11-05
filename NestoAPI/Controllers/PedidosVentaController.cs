@@ -983,6 +983,8 @@ namespace NestoAPI.Controllers
             }
             // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
             _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
+            // NestoAPI#830: con la ruta que se grabará
+            _ = RutaQueVale.AjustarPedido(db, pedido);
             return Ok(await ServicioFechaEntregaAgencia.CalcularPlantilla(pedido).ConfigureAwait(false));
         }
 
@@ -1181,6 +1183,8 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+            // NestoAPI#830: fuera de la empresa 1, la ruta que vale es la de la ficha de la empresa 1 (antes de las fechas de entrega)
+            _ = RutaQueVale.AjustarPedido(db, pedido);
             // NestoAPI#764: el código postal de entrega, solo si el pedido va por ruta interna (para su día de reparto)
             string codigoPostalRutaInterna = this.gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta);
             // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae
@@ -2573,6 +2577,9 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(faltanDatos);
             }
+            // NestoAPI#830: fuera de la empresa 1, la ruta que vale es la de la ficha de la empresa 1. ANTES de todo lo que mira
+            // la ruta (modo de servicio, portes, fecha de entrega, día de ruta interna).
+            _ = RutaQueVale.AjustarPedido(db, pedido);
             // NestoAPI#757: Almacén, Administración, Dirección e Informática pueden crear notas de entrega (con tipo y bultos);
             // para los demás notaEntrega sigue a false, como siempre. ANTES de los portes y del modo de facturación.
             string motivoNota = await ServicioNotasEntregaCabecera.PrepararAlCrear(pedido, PrincipalParaValidacion()).ConfigureAwait(true);

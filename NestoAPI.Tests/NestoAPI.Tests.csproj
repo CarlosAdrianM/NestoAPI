@@ -610,6 +610,7 @@
     <Compile Include="Infrastructure\ClienteChangeDetectorTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorSerieTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ReglaIvaContactoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\RutaQueValeTests.cs" />
     <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
     <Compile Include="Infrastructure\ParametrosFromBodyOpcionalesTests.cs" />
     <Compile Include="Infrastructure\HangfireAuthorizationFilterTests.cs" />

@@ -252,10 +252,33 @@ namespace NestoAPI.Controllers
                     tieneFacturacionElectronica = clienteEncontrado.PersonasContactoClientes.Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
                     nif = clienteEncontrado.CIF_NIF != null ? clienteEncontrado.CIF_NIF.Trim() : string.Empty,
                 });
-
-
+            // NestoAPI#830: fuera de la empresa 1, la ruta que se propone para el pedido es la que vale (la de la ficha de la empresa 1)
+            if (!Infraestructure.PedidosVenta.RutaQueVale.EsEmpresaQueManda(empresa))
+            {
+                List<DireccionesEntregaClienteDTO> direcciones = clientes.OrderBy(c => c.contacto).ToList();
+                AplicarRutaQueVale(empresa, clienteDirecciones, direcciones);
+                return direcciones.AsQueryable();
+            }
 
             return clientes.OrderBy(c => c.contacto);
+        }
+
+        /// <summary>NestoAPI#830: pone en cada dirección de entrega la ruta que vale. Nunca lanza (sin la ficha de la 1, la de siempre).</summary>
+        internal void AplicarRutaQueVale(string empresa, string cliente, List<DireccionesEntregaClienteDTO> direcciones)
+        {
+            try
+            {
+                Dictionary<string, string> rutasEmpresa1 = Infraestructure.PedidosVenta.RutaQueVale.RutasEmpresa1DelCliente(db, cliente);
+                foreach (DireccionesEntregaClienteDTO direccion in direcciones)
+                {
+                    _ = rutasEmpresa1.TryGetValue(direccion.contacto?.Trim() ?? string.Empty, out string rutaEmpresa1);
+                    direccion.ruta = Infraestructure.PedidosVenta.RutaQueVale.Elegir(empresa, direccion.ruta, rutaEmpresa1);
+                }
+            }
+            catch (Exception)
+            {
+                // sin la ficha de la empresa 1 legible: la ruta de su empresa, como hasta ahora
+            }
         }
 
         [HttpGet]
