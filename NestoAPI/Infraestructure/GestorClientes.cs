@@ -1,7 +1,6 @@
 ﻿using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.Rapports;
-using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Picking;
@@ -1532,35 +1531,17 @@ namespace NestoAPI.Infraestructure
 
 
         /// <summary>
-        /// Nesto#490 / Nesto#340: con motor = "QuestPDF" el mandato sale del generador QuestPDF
-        /// (GeneradorPdfMandatoSepa); con cualquier otro valor, del RDLC de siempre. El mandato va al
-        /// cliente, así que el cambio va detrás del parámetro por usuario MotorPdfMandatoSepa de Nesto.
+        /// Nesto#490 / Nesto#340: el mandato SEPA sale de QuestPDF (GeneradorPdfMandatoSepa).
+        /// NestoAPI#735: desde el 29/10/26 MotorPdfMandatoSepa estaba en QuestPDF para todos y sin quejas;
+        /// se quitan el RDLC (MandatoCoreSEPA.rdlc) y el ReportViewer: ya no hay motor que elegir.
         /// </summary>
-        public ByteArrayContent MandatoEnPDF(List<Mandato> mandatos, string motor = null)
+        public ByteArrayContent MandatoEnPDF(List<Mandato> mandatos)
         {
-            if (EsMotorQuestPdf(motor))
-            {
-                return new GeneradorPdfMandatoSepa().GenerarPdf(mandatos);
-            }
-
-            ReportViewer viewer = new ReportViewer();
-            viewer.LocalReport.ReportPath = Informes.RutaInformeRdlc.Absoluta(@"Models\Clientes\MandatoCoreSEPA.rdlc");
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("MandatoDataSet", mandatos));
-            viewer.LocalReport.EnableExternalImages = true;
-
-            viewer.LocalReport.Refresh();
-            var bytes = viewer.LocalReport.Render("PDF", null, out _, out _, out _, out _, out _);
-
-            viewer.LocalReport.Dispose();
-            viewer.Dispose();
-
-            return new ByteArrayContent(bytes);
+            return CrearGeneradorMandato().GenerarPdf(mandatos);
         }
 
-        internal static bool EsMotorQuestPdf(string motor)
-        {
-            return string.Equals(motor?.Trim(), "QuestPDF", StringComparison.OrdinalIgnoreCase);
-        }
+        /// <summary>NestoAPI#735: para los tests (que no vayan a internet a por el logo).</summary>
+        internal Func<GeneradorPdfMandatoSepa> CrearGeneradorMandato { get; set; } = () => new GeneradorPdfMandatoSepa();
 
         public async Task<Mandato> LeerMandato(string empresa, string cliente, string contacto, string ccc)
         {

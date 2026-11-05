@@ -8,7 +8,6 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
     // son ventas reales que estaban quedando sin declarar.
     public class SerieEV : ISerieFacturaVerifactu
     {
-        public string RutaInforme => @"Models\Facturas\FacturaVC.rdlc";
 
         public List<NotaFactura> Notas => new List<NotaFactura>
             {

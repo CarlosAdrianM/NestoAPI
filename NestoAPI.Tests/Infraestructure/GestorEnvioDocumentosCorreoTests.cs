@@ -57,7 +57,7 @@ namespace NestoAPI.Tests.Infraestructure
                 Remitente = new MailAddress("administracion@nuevavision.es"),
                 Firma = "<p>Departamento de Administración</p>"
             }));
-            A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", A<string>._, A<string>._)).Returns(Task.FromResult(new DocumentoParaCorreo
+            A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", A<string>._)).Returns(Task.FromResult(new DocumentoParaCorreo
             {
                 Pdf = PDF,
                 NombreFichero = "MandatoSEPA_15191_1.pdf",
@@ -195,7 +195,7 @@ namespace NestoAPI.Tests.Infraestructure
 
             ResultadoEnvioDocumentoCorreoDTO resultado = await gestor.EnviarMandato("1", "15191", "0", envio, "NUEVAVISION\\MariaJose");
 
-            A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", "1", "QuestPDF")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", "1")).MustHaveHappenedOnceExactly();
             Assert.AreEqual("MandatoSEPA_15191_1.pdf", NombreAdjunto);
             CollectionAssert.AreEqual(PDF, adjuntoEnviado);
             Assert.AreEqual("Orden de domiciliación SEPA", Asunto);
@@ -220,7 +220,7 @@ namespace NestoAPI.Tests.Infraestructure
         [TestMethod]
         public async Task EnviarMandato_ClienteOCuentaQueNoExiste_404()
         {
-            A.CallTo(() => proveedor.PdfMandato("1", "99999", "0", A<string>._, A<string>._)).Returns(Task.FromResult<DocumentoParaCorreo>(null));
+            A.CallTo(() => proveedor.PdfMandato("1", "99999", "0", A<string>._)).Returns(Task.FromResult<DocumentoParaCorreo>(null));
 
             NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
                 () => gestor.EnviarMandato("1", "99999", "0", new EnvioMandatoCorreoDTO { Ccc = "1" }, "NUEVAVISION\\MariaJose"));

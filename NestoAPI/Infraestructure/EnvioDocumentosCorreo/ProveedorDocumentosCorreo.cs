@@ -55,7 +55,7 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             };
         }
 
-        public async Task<DocumentoParaCorreo> PdfMandato(string empresa, string cliente, string contacto, string ccc, string motor)
+        public async Task<DocumentoParaCorreo> PdfMandato(string empresa, string cliente, string contacto, string ccc)
         {
             var servicio = new ServicioGestorClientes();
             Cliente ficha = await servicio.BuscarCliente(empresa, cliente, contacto).ConfigureAwait(false);
@@ -76,7 +76,7 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             {
                 throw new Exceptions.NestoBusinessException($"El IBAN {mandato.Iban.Formateado} no es válido");
             }
-            byte[] pdf = await gestorClientes.MandatoEnPDF(new List<Mandato> { mandato }, string.IsNullOrWhiteSpace(motor) ? "QuestPDF" : motor)
+            byte[] pdf = await gestorClientes.MandatoEnPDF(new List<Mandato> { mandato })
                 .ReadAsByteArrayAsync().ConfigureAwait(false);
             ISerieFactura serieNV = GestorFacturas.LeerSerie("NV");
             return new DocumentoParaCorreo

@@ -50,7 +50,7 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
 
         public async Task<ResultadoEnvioDocumentoCorreoDTO> EnviarMandato(string empresa, string cliente, string contacto, EnvioMandatoCorreoDTO envio, string usuario)
         {
-            DocumentoParaCorreo documento = await proveedor.PdfMandato(empresa, cliente, contacto, envio?.Ccc, envio?.Motor).ConfigureAwait(false);
+            DocumentoParaCorreo documento = await proveedor.PdfMandato(empresa, cliente, contacto, envio?.Ccc).ConfigureAwait(false);
             if (documento == null)
             {
                 throw new NestoBusinessException($"No existe el cliente {cliente}/{contacto} o no tiene esa cuenta bancaria.")

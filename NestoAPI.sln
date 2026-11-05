@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NestoAPI", "NestoAPI\NestoA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NestoAPI.Tests", "NestoAPI.Tests\NestoAPI.Tests.csproj", "{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibreriaInformes", "LibreriaInformes\LibreriaInformes.csproj", "{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ModeloLlamadaPedido.Nucleo", "ModeloLlamadaPedido.Nucleo\ModeloLlamadaPedido.Nucleo.csproj", "{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SugerenciasProductos.Nucleo", "SugerenciasProductos.Nucleo\SugerenciasProductos.Nucleo.csproj", "{1D2C70A0-AD1A-4100-A280-959FEC61ABC8}"
@@ -27,10 +25,6 @@ Global
 		{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Release|Any CPU.Build.0 = Release|Any CPU
 		{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}.Release|Any CPU.ActiveCfg = Release|Any CPU

@@ -12,7 +12,7 @@ namespace NestoAPI.Tests.Infrastructure
     /// Nesto#490 / Nesto#340 (RDLC → QuestPDF): mandato SEPA (orden de domiciliación CORE).
     /// Comprueban el mapeo de campos del RDLC MandatoCoreSEPA.rdlc (etiquetas, valores, la fecha-
     /// localidad «dd-MM-yyyy - Población», el IBAN formateado), que sale un PDF válido sin ir a
-    /// internet a por el logo y que el motor solo cambia con «QuestPDF».
+    /// internet a por el logo y que GestorClientes.MandatoEnPDF lo saca siempre de QuestPDF (NestoAPI#735).
     /// </summary>
     [TestClass]
     public class GeneradorPdfMandatoSepaTests
@@ -113,13 +113,19 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void EsMotorQuestPdf_SoloConQuestPdf()
+        public void MandatoEnPDF_SinMotor_DevuelveElPdfDeQuestPdf()
         {
-            Assert.IsTrue(GestorClientes.EsMotorQuestPdf("QuestPDF"));
-            Assert.IsTrue(GestorClientes.EsMotorQuestPdf(" questpdf "));
-            Assert.IsFalse(GestorClientes.EsMotorQuestPdf(null));
-            Assert.IsFalse(GestorClientes.EsMotorQuestPdf(""));
-            Assert.IsFalse(GestorClientes.EsMotorQuestPdf("RDLC"));
+            // NestoAPI#735: ya no hay RDLC ni parámetro MotorPdfMandatoSepa: GestorClientes.MandatoEnPDF
+            // devuelve siempre el PDF de QuestPDF (sin ir a internet a por el logo en el test).
+            var gestor = new GestorClientes(FakeItEasy.A.Fake<IServicioGestorClientes>(), null, null)
+            {
+                CrearGeneradorMandato = () => new GeneradorPdfMandatoSepa(() => null)
+            };
+
+            byte[] bytes = gestor.MandatoEnPDF(new List<Mandato> { CrearMandato() }).ReadAsByteArrayAsync().Result;
+
+            Assert.IsTrue(bytes.Length > 4);
+            Assert.AreEqual("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
         }
     }
 }

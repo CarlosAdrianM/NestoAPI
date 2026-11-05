@@ -74,7 +74,7 @@ El usuario Carlos tiene varios repositorios relacionados que forman el ecosistem
 
 - **NestoAPI**: Main Web API project
 - **NestoAPI.Tests**: Unit tests using MSTest and FakeItEasy for mocking
-- **LibreriaInformes**: Reports library project
+- (LibreriaInformes, el proyecto del RDLC del mandato, se quitó en NestoAPI#735)
 
 ## Building and Testing
 

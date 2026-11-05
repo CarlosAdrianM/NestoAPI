@@ -303,15 +303,6 @@
       <HintPath>..\packages\Hangfire.SqlServer.1.8.22\lib\net451\Hangfire.SqlServer.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Microsoft.ReportViewer.Common, Version=11.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
-      <HintPath>..\packages\Microsoft.Report.Viewer.11.0.0.0\lib\net\Microsoft.ReportViewer.Common.dll</HintPath>
-    </Reference>
-    <Reference Include="Microsoft.ReportViewer.ProcessingObjectModel, Version=11.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
-      <HintPath>..\packages\Microsoft.Report.Viewer.11.0.0.0\lib\net\Microsoft.ReportViewer.ProcessingObjectModel.DLL</HintPath>
-    </Reference>
-    <Reference Include="Microsoft.ReportViewer.WebForms, Version=11.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
-      <HintPath>..\packages\Microsoft.Report.Viewer.11.0.0.0\lib\net\Microsoft.ReportViewer.WebForms.DLL</HintPath>
-    </Reference>
     <Reference Include="Microsoft.SqlServer.Types, Version=16.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.SqlServer.Types.160.1000.6\lib\net462\Microsoft.SqlServer.Types.dll</HintPath>
     </Reference>
@@ -974,7 +965,6 @@
     <Compile Include="Infraestructure\Facturas\DiagnosticoGastoSinCentroCoste.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasQuestPdf.cs" />
-    <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasRdlc.cs" />
     <Compile Include="Infraestructure\Facturas\IGeneradorPdfFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\DocumentoFacturaDetalle.cs" />
     <Compile Include="Infraestructure\Facturas\ImpresionDocumentosServidor.cs" />
@@ -1369,7 +1359,6 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfPacking.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfUbicacionesInventario.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfMandatoSepa.cs" />
-    <Compile Include="Infraestructure\Informes\RutaInformeRdlc.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfManifiestoAgencia.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfBalance.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfRemesa.cs" />
@@ -2598,21 +2587,6 @@
     <EmbeddedResource Include="Resources\madrid-excelente-reducido.png">
       <LogicalName>NestoAPI.Resources.SelloMadridExcelenteReducido.png</LogicalName>
     </EmbeddedResource>
-    <Content Include="Models\Facturas\Factura.rdlc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Models\Facturas\FacturaGB.rdlc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Models\Facturas\FacturaVC.rdlc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Models\Facturas\FacturaUL.rdlc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Models\Clientes\MandatoCoreSEPA.rdlc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
   <ItemGroup>
     <WCFMetadata Include="Connected Services\" />

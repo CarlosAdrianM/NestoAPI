@@ -16,7 +16,6 @@ namespace NestoAPI.Models.Facturas
         public string Nif { get; set; }
         public string NumeroFactura { get; set; }
         public string Ruta { get; set; }
-        public string RutaInforme { get; set; }
         public string Serie { get; set; }
         public string UrlLogo { get; set; }
         /// <summary>
