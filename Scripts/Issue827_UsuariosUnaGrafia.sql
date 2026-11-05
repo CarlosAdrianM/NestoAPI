@@ -11,7 +11,7 @@
 -- así salen en ELMAH [User]) y CGarcia (solo en EnviosAgencia, antigua; ya estaba también así). No existe «LauraC»: Laura Camacho
 -- es «Reina».
 --
--- Filas que cambiaría (recuento del 05/11/26, todas las fechas): ver el bloque «Recuentos 05/11/26» al final. El script los
+-- Filas que cambiaría (recuento del 05/11/26; SeguimientoCliente solo desde 2025, lo histórico se deja): ver el bloque «Recuentos 05/11/26» al final. El script los
 -- vuelve a sacar antes y después. Idempotente: ninguna canónica es una grafía de origen, así que la segunda vez no toca nada.
 -- SeguimientoCliente, PedidosModoServicioOrigen, EnviosAgencia e Inventarios no tienen triggers (comprobado 05/11/26).
 --
@@ -64,31 +64,9 @@ INSERT INTO #Mapa (Actual, Canonica) VALUES
     ('NUEVAVISION\pedro',         'NUEVAVISION\Pedro'),
     ('NUEVAVISION\noelia',        'NUEVAVISION\Noelia'),
     ('NUEVAVISION\administrador', 'NUEVAVISION\Administrador'),
-    ('NUEVAVISION\cgarcia',       'NUEVAVISION\CGarcia'),     -- compuesto antiguo; ya había «CGarcia»
-    -- históricos (solo antes de 2025 en SeguimientoCliente): para que tampoco se partan los informes de años pasados.
-    -- Compuestos con la grafía mayoritaria de entonces: CGarcia, LAlonso, MariaJose, RosaMaria. Si no los quieres tocar, bórralos.
-    ('NUEVAVISION\CGARCIA',       'NUEVAVISION\CGarcia'),
-    ('NUEVAVISION\lalonso',       'NUEVAVISION\LAlonso'),
-    ('NUEVAVISION\Lalonso',       'NUEVAVISION\LAlonso'),
-    ('NUEVAVISION\mariajose',     'NUEVAVISION\MariaJose'),
-    ('NUEVAVISION\rosamaria',     'NUEVAVISION\RosaMaria'),
-    ('NUEVAVISION\alba',          'NUEVAVISION\Alba'),
-    ('NUEVAVISION\anaisdelhoyo',  'NUEVAVISION\Anaisdelhoyo'),
-    ('NUEVAVISION\angel',         'NUEVAVISION\Angel'),
-    ('NUEVAVISION\antonio',       'NUEVAVISION\Antonio'),
-    ('NUEVAVISION\carolina',      'NUEVAVISION\Carolina'),
-    ('NUEVAVISION\eloisa',        'NUEVAVISION\Eloisa'),
-    ('NUEVAVISION\gandullo',      'NUEVAVISION\Gandullo'),
-    ('NUEVAVISION\gema',          'NUEVAVISION\Gema'),
-    ('NUEVAVISION\javier',        'NUEVAVISION\Javier'),
-    ('NUEVAVISION\juanma',        'NUEVAVISION\Juanma'),
-    ('NUEVAVISION\maria',         'NUEVAVISION\Maria'),
-    ('NUEVAVISION\nereida',       'NUEVAVISION\Nereida'),
-    ('NUEVAVISION\nuria',         'NUEVAVISION\Nuria'),
-    ('NUEVAVISION\sandra',        'NUEVAVISION\Sandra'),
-    ('NUEVAVISION\silvia',        'NUEVAVISION\Silvia'),
-    ('NUEVAVISION\yolanda',       'NUEVAVISION\Yolanda'),
-    ('NUEVAVISION\ZAMORA',        'NUEVAVISION\Zamora');
+    ('NUEVAVISION\cgarcia',       'NUEVAVISION\CGarcia');     -- compuesto antiguo; ya había «CGarcia»
+    -- Carlos (05/11/26): los usuarios históricos (antes de 2025: lalonso, rosamaria, alba, gema…) NO se tocan; se dejan como están.
+
 
 -- Cordura del mapa: ninguna canónica puede ser a su vez una grafía de origen (idempotencia) y solo cambia la caja.
 IF EXISTS (SELECT 1 FROM #Mapa m JOIN #Mapa o ON o.Actual = m.Canonica)
@@ -100,7 +78,7 @@ END;
 
 -- Recuento ANTES
 SELECT 'ANTES' AS Momento, t.Tabla, t.Filas FROM (
-              SELECT 'SeguimientoCliente' AS Tabla, COUNT(*) AS Filas FROM dbo.SeguimientoCliente s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%'
+              SELECT 'SeguimientoCliente' AS Tabla, COUNT(*) AS Filas FROM dbo.SeguimientoCliente s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%' AND s.Fecha >= '20250101'
     UNION ALL SELECT 'PedidosModoServicioOrigen', COUNT(*) FROM dbo.PedidosModoServicioOrigen s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%'
     UNION ALL SELECT 'EnviosAgencia', COUNT(*) FROM dbo.EnviosAgencia s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%'
     UNION ALL SELECT 'Inventarios', COUNT(*) FROM dbo.Inventarios s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%'
@@ -110,7 +88,7 @@ BEGIN TRAN;
 
 UPDATE s SET Usuario = m.Canonica
 FROM dbo.SeguimientoCliente s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual
-WHERE s.Usuario LIKE 'NUEVAVISION\%';
+WHERE s.Usuario LIKE 'NUEVAVISION\%' AND s.Fecha >= '20250101'; -- Carlos: lo anterior a 2025 se deja como está
 PRINT CONCAT('SeguimientoCliente: ', @@ROWCOUNT, ' filas');
 
 UPDATE s SET Usuario = m.Canonica
@@ -130,7 +108,7 @@ PRINT CONCAT('Inventarios: ', @@ROWCOUNT, ' filas');
 
 -- Recuento DESPUÉS (todo a 0)
 DECLARE @Quedan int =
-      (SELECT COUNT(*) FROM dbo.SeguimientoCliente s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%')
+      (SELECT COUNT(*) FROM dbo.SeguimientoCliente s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%' AND s.Fecha >= '20250101')
     + (SELECT COUNT(*) FROM dbo.PedidosModoServicioOrigen s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%')
     + (SELECT COUNT(*) FROM dbo.EnviosAgencia s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%')
     + (SELECT COUNT(*) FROM dbo.Inventarios s JOIN #Mapa m ON RTRIM(s.Usuario) COLLATE Latin1_General_CS_AS = m.Actual WHERE s.Usuario LIKE 'NUEVAVISION\%');
@@ -158,7 +136,7 @@ DROP TABLE #Mapa;
 GO
 
 -- Recuentos 05/11/26 (todas las fechas, filas que cambiaría; sacados con el login de solo lectura):
---   SeguimientoCliente         142.910 (88.364 con el mapa de 2025 y 54.546 con los históricos)
+--   SeguimientoCliente          10.995 (solo filas desde 2025; Carlos 05/11: lo histórico se deja como está)
 --   PedidosModoServicioOrigen       70 (dlopez 11, Dlopez 2, jesus 34, MARTA 22, CARLOS 1)
 --   EnviosAgencia                  368 (aida 101, cgarcia 221, monica 46)
 --   Inventarios                 10.760 (administrador 605, aida 4.399, alfredo 402, noelia 239, paloma 582, PALOMA 237,
