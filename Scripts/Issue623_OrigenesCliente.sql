@@ -32,12 +32,16 @@ END
 GO
 -- 05/11/26: dbo.OrigenesCliente YA EXISTÍA en producción (creada el 27/10/26 por Issue716, con EtiquetaMailchimp y sin HorasParaLlamar):
 -- se añade la columna que usa la API si falta (idempotente).
+-- (en lotes separados y con EXEC: el lote entero se compila antes de ejecutarse y, si no, la CHECK y el INSERT de abajo fallan con
+-- «El nombre de columna 'HorasParaLlamar' no es válido» aunque la columna se acabe de añadir)
 IF COL_LENGTH(N'dbo.OrigenesCliente', N'HorasParaLlamar') IS NULL
 BEGIN
-    ALTER TABLE dbo.OrigenesCliente ADD HorasParaLlamar int NOT NULL CONSTRAINT DF_OrigenesCliente_HorasParaLlamar DEFAULT (24);
-    ALTER TABLE dbo.OrigenesCliente ADD CONSTRAINT CK_OrigenesCliente_HorasParaLlamar CHECK (HorasParaLlamar > 0);
+    EXEC(N'ALTER TABLE dbo.OrigenesCliente ADD HorasParaLlamar int NOT NULL CONSTRAINT DF_OrigenesCliente_HorasParaLlamar DEFAULT (24)');
     PRINT 'OrigenesCliente: añadida HorasParaLlamar (24).';
 END
+GO
+IF OBJECT_ID(N'dbo.CK_OrigenesCliente_HorasParaLlamar', N'C') IS NULL
+    EXEC(N'ALTER TABLE dbo.OrigenesCliente ADD CONSTRAINT CK_OrigenesCliente_HorasParaLlamar CHECK (HorasParaLlamar > 0)');
 GO
 IF OBJECT_ID(N'dbo.ClientesOrigen', N'U') IS NULL
 BEGIN
