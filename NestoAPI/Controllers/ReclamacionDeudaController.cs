@@ -22,7 +22,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ReclamacionDeuda))]
         public async Task<IHttpActionResult> Post([FromBody] ReclamacionDeuda reclamacion)
         {
-            string usuario = User?.Identity?.Name;
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
             ReclamacionDeuda respuesta = await _servicio.ProcesarReclamacionDeuda(reclamacion, usuario).ConfigureAwait(false);
             return Ok(respuesta);
         }

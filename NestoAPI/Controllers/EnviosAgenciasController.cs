@@ -963,7 +963,7 @@ namespace NestoAPI.Controllers
             EnvioHistoria historiaRetorno = null;
             if (QuitaElRetornoDelPendienteSinPedirlo(registrado, enviosAgencia, quitarRetorno))
             {
-                string usuarioRetorno = User?.Identity?.Name ?? "NestoAPI";
+                string usuarioRetorno = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
                 enviosAgencia.Retorno = registrado.Retorno;
                 historiaRetorno = HistoriaRetornoConservado(id, registrado.Retorno, usuarioRetorno, DateTime.Now);
                 RegistrarEnElmah(new Exception($"[Retorno pendiente 906] Envío {id} (pedido {registrado.Pedido}, agencia {registrado.Agencia}): " +
@@ -977,7 +977,7 @@ namespace NestoAPI.Controllers
             var avisos = new List<string>();
             if (registrado != null && registrado.Estado < Constantes.Agencias.ESTADO_EN_CURSO && registrado.Pedido.HasValue)
             {
-                string usuarioReembolso = User?.Identity?.Name ?? "NestoAPI";
+                string usuarioReembolso = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
                 if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
                 {
                     // Solo si la pantalla no trae otro importe (lo que teclee el usuario manda).
@@ -1027,7 +1027,7 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            enviosAgencia.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             // NestoAPI#778: pasa a reparto propio (o cambia su reembolso) → pagado; vuelve a una agencia de fuera → pendiente.
             NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(enviosAgencia, registrado?.Agencia);
 
@@ -1225,7 +1225,7 @@ namespace NestoAPI.Controllers
                 {
                     envio.Reembolso = 0;
                 }
-                envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
                 envio.FechaModificacion = DateTime.Now;
                 // CRÍTICO: persistir el registro (albarán/estado) ANTES de auditar; si no, un fallo de la
                 // auditoría dejaría un envío registrado en la agencia pero no en nuestra BD (envío fantasma).
@@ -1389,7 +1389,7 @@ namespace NestoAPI.Controllers
                     return GrabacionGls.Mal(HttpStatusCode.BadRequest, $"El envío {envio.Numero} no tiene código de barras y la agencia no tiene prefijo para calcularlo.");
                 }
                 envio.CodigoBarras = codigo;
-                envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
                 envio.FechaModificacion = DateTime.Now;
                 await db.SaveChangesAsync();
             }
@@ -1732,7 +1732,7 @@ namespace NestoAPI.Controllers
                 // sale igual.
                 try
                 {
-                    envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                    envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
                     envio.FechaModificacion = DateTime.Now;
                     await db.SaveChangesAsync();
                 }
@@ -1792,7 +1792,7 @@ namespace NestoAPI.Controllers
                     CuerpoLlamada = tramitacion.Peticion ?? string.Empty,
                     CuerpoRespuesta = tramitacion.Respuesta ?? string.Empty,
                     TextoRespuestaError = Limitar(exito ? "OK" : error, 255) ?? string.Empty,
-                    Usuario = Limitar(User?.Identity?.Name ?? "NestoAPI", 30)
+                    Usuario = Limitar(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), 30)
                 });
                 await db.SaveChangesAsync();
             }
@@ -1997,7 +1997,7 @@ namespace NestoAPI.Controllers
             string albaranAnulado = envio.CodigoBarras.Trim();
             envio.CodigoBarras = string.Empty;
             envio.Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE;
-            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             try
             {
                 await db.SaveChangesAsync();
@@ -2090,7 +2090,7 @@ namespace NestoAPI.Controllers
                 // NestoAPI#597: CTT no modifica, anula y registra un albarán NUEVO; sin esto la BD se
                 // quedaba con el anulado (en Innovatrans es el mismo y no cambia nada).
                 envio.CodigoBarras = resultado.Albaran;
-                envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
                 try
                 {
                     await db.SaveChangesAsync();
@@ -2172,7 +2172,7 @@ namespace NestoAPI.Controllers
             }
 
             envio.Reembolso -= datos.Importe;
-            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             _ = await db.SaveChangesAsync();
 
             return Ok(new RestarReembolsoResponseDTO { Numero = envio.Numero, Reembolso = envio.Reembolso });
@@ -2859,7 +2859,7 @@ namespace NestoAPI.Controllers
                 CuerpoLlamada = cabecera + "\n\n" + (Serializar(intercambios, i => i.Peticion) ?? string.Empty),
                 CuerpoRespuesta = Serializar(intercambios, i => i.Respuesta) ?? string.Empty,
                 TextoRespuestaError = Limitar(error, 255),
-                Usuario = Limitar(User?.Identity?.Name ?? "NestoAPI", 30)
+                Usuario = Limitar(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), 30)
             };
         }
 
@@ -3367,7 +3367,7 @@ namespace NestoAPI.Controllers
                 Observaciones = TruncarObservaciones(pedido.Comentarios),
                 FechaEntrega = pedido.Fecha,
                 Pais = defaultsAgencia.Pais,
-                Usuario = User?.Identity?.Name ?? "NestoAPI"
+                Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")
             };
 
             // NestoAPI#546: servicio y horario salen de los defaults de la agencia, pero el retorno viene del
@@ -3545,7 +3545,7 @@ namespace NestoAPI.Controllers
             envio.Movil = telefono.MovilUnico();
             envio.Email = correo.CorreoAgencia();
             envio.Atencion = direccion.Nombre?.Trim() ?? "";
-            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             envio.FechaModificacion = DateTime.Now;
 
             await db.SaveChangesAsync();

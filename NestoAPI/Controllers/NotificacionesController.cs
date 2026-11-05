@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Infrastructure;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
@@ -387,7 +388,8 @@ namespace NestoAPI.Controllers
         [Authorize]
         public async Task<IHttpActionResult> ObtenerBuzon(string aplicacion = null, bool soloNoLeidas = false, int pagina = 1, int tamanoPagina = 20)
         {
-            string usuario = User?.Identity?.Name;
+            // NestoAPI#823: la persona resuelta; el servicio busca por todos sus nombres (lo de antes de #823 sigue saliendo).
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
 
             if (string.IsNullOrWhiteSpace(usuario))
             {
@@ -419,7 +421,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         public async Task<IHttpActionResult> ObtenerUrgentes()
         {
-            string usuario = User?.Identity?.Name;
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
             if (string.IsNullOrWhiteSpace(usuario))
             {
                 return Unauthorized();
@@ -433,7 +435,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         public async Task<IHttpActionResult> ContarNoLeidas(string aplicacion = null)
         {
-            string usuario = User?.Identity?.Name;
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
 
             if (string.IsNullOrWhiteSpace(usuario))
             {
@@ -453,7 +455,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         public async Task<IHttpActionResult> MarcarLeida(int id)
         {
-            string usuario = User?.Identity?.Name;
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
 
             if (string.IsNullOrWhiteSpace(usuario))
             {
@@ -472,7 +474,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         public async Task<IHttpActionResult> MarcarTodasLeidas(string aplicacion = null)
         {
-            string usuario = User?.Identity?.Name;
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
 
             if (string.IsNullOrWhiteSpace(usuario))
             {
@@ -492,7 +494,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         public async Task<IHttpActionResult> EliminarDelBuzon(int id)
         {
-            string usuario = User?.Identity?.Name;
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
 
             if (string.IsNullOrWhiteSpace(usuario))
             {

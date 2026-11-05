@@ -48,7 +48,7 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                return Ok(await servicio.RegistrarNoCasadas(Empresa(empresa), lecturas, User?.Identity?.Name).ConfigureAwait(false));
+                return Ok(await servicio.RegistrarNoCasadas(Empresa(empresa), lecturas, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
             }
             catch (ArgumentException ex)
             {

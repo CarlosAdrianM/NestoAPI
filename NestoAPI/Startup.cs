@@ -63,6 +63,8 @@ namespace NestoAPI
                 Infraestructure.PedidosVenta.DiasRepartoClientes.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#779: los festivos salen de la tabla Festivos (si no existe o le falta el año, de la lista de GestorFestivos).
                 Models.RecursosHumanos.CalendarioFestivos.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // NestoAPI#823 (Carlos 05/11/26): una persona, una identidad: «Alfredo» (Ariadna/NestoApp) es «NUEVAVISION\Alfredo».
+                Infraestructure.UsuarioAuditoriaHelper.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
 
                 _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 

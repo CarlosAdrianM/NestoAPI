@@ -542,7 +542,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 Origen = corte.Origen,
                 Destino = corte.Destino,
                 Herramienta = HerramientasReposicion.AUTOMATICO,
-                UsuarioCreacion = quien?.Identity?.Name ?? USUARIO_AUTOMATICO,
+                UsuarioCreacion = UsuarioAuditoriaHelper.Persona(quien?.Identity?.Name) ?? USUARIO_AUTOMATICO, // NestoAPI#823
                 FechaCreacion = reloj(),
                 FechaCorte = corte.Corte
             }, motivo);

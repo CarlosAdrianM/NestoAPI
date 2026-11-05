@@ -744,7 +744,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         internal static bool EsDeAlmacenODireccion(IPrincipal usuario) => EscrituraSoloAlmacenAttribute.PuedeEscribir(usuario);
 
         /// <summary>El usuario del token para las columnas de auditoría.</summary>
-        internal static string NombreUsuario(IPrincipal usuario) => usuario?.Identity?.Name;
+        /// <summary>NestoAPI#823 (Carlos 05/11/26): una persona, una identidad: el de dominio si es un gemelo (va a los SPs y a las trazas).</summary>
+        internal static string NombreUsuario(IPrincipal usuario) => usuario?.Identity?.IsAuthenticated == true ? UsuarioAuditoriaHelper.Resolver(usuario, null) : usuario?.Identity?.Name;
 
         internal static string Unidades(int cantidad) => cantidad == 1 ? "1 unidad" : $"{cantidad} unidades";
 

@@ -410,7 +410,7 @@ ELSE
             out ClaveRecepcionEnCurso clave, out string nombre)
         {
             IOrigenRecepcion origen = Origen(tipo);
-            nombre = usuario?.Identity?.IsAuthenticated == true ? usuario.Identity.Name?.Trim() : null;
+            nombre = usuario?.Identity?.IsAuthenticated == true ? UsuarioAuditoriaHelper.Resolver(usuario, null)?.Trim() : null; // NestoAPI#823
             if (string.IsNullOrWhiteSpace(nombre))
             {
                 throw new UnauthorizedAccessException("Para recibir hay que estar identificado.");

@@ -758,7 +758,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostBultos(int numTraspaso, [FromBody] CrearBultosReposicionDTO peticion,
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return await ConErroresDeBultos(() => Bultos.Crear(EmpresaBultos(empresa), numTraspaso, peticion, User?.Identity?.Name)).ConfigureAwait(false);
+            return await ConErroresDeBultos(() => Bultos.Crear(EmpresaBultos(empresa), numTraspaso, peticion, UsuarioAuditoriaHelper.Resolver(User, null))).ConfigureAwait(false);
         }
 
         // POST api/Reposiciones/81010/Bultos/Reimprimir?empresa=1
@@ -768,7 +768,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResultadoBultosReposicionDTO))]
         public async Task<IHttpActionResult> PostReimprimirBultos(int numTraspaso, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return await ConErroresDeBultos(() => Bultos.Reimprimir(EmpresaBultos(empresa), numTraspaso, User?.Identity?.Name)).ConfigureAwait(false);
+            return await ConErroresDeBultos(() => Bultos.Reimprimir(EmpresaBultos(empresa), numTraspaso, UsuarioAuditoriaHelper.Resolver(User, null))).ConfigureAwait(false);
         }
 
         // GET api/Reposiciones/Bultos/R81010-2?empresa=1

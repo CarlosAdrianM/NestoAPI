@@ -4370,7 +4370,7 @@ namespace NestoAPI.Controllers
             try
             {
                 // Obtener usuario del contexto
-                string usuario = User.Identity.Name ?? "API";
+                string usuario = UsuarioAuditoriaHelper.Resolver(User, "API"); // NestoAPI#823: va al SP de facturar (FechasPermitidas)
 
                 // Crear el gestor con las dependencias
                 var servicioAlbaranes = new ServicioAlbaranesVenta(db);

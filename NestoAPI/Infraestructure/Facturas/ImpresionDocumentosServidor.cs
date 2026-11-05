@@ -77,9 +77,15 @@ namespace NestoAPI.Infraestructure.Facturas
         /// tiendas y Administración tienen su impresora en Nesto, no en el servidor. Hasta entonces el servidor imprime SOLO para los
         /// usuarios sin dominio (Ariadna, NestoApp: los que no tienen Nesto delante); para «NUEVAVISION\…» (Nesto) no imprime ni lee
         /// el parámetro, y Nesto sigue imprimiendo como siempre. Quitar esta regla cuando Nesto#620 esté publicada.
+        /// <para>NestoAPI#823: la regla es de APLICACIÓN, no de persona. Desde #823 el usuario que llega aquí ya está resuelto
+        /// («Alfredo» de Ariadna llega como «NUEVAVISION\Alfredo»), así que dentro de una petición se mira el nombre del token
+        /// sin resolver (<see cref="UsuarioAuditoriaHelper.NombreDelTokenO"/>); fuera de una petición, el que se pasa.</para>
         /// </summary>
         public static bool ImprimeParaEsteUsuario(string usuario)
-            => !string.IsNullOrWhiteSpace(usuario) && !usuario.Contains("\\");
+        {
+            string delToken = UsuarioAuditoriaHelper.NombreDelTokenO(usuario);
+            return !string.IsNullOrWhiteSpace(usuario) && !string.IsNullOrWhiteSpace(delToken) && !delToken.Contains("\\");
+        }
 
         /// <summary>¿El valor del parámetro pide la impresora predeterminada del servidor?</summary>
         public static bool EsPredeterminada(string impresora)
