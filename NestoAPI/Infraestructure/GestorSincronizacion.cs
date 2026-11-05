@@ -107,6 +107,13 @@ namespace NestoAPI.Infraestructure
                             _ = await MarcarGrupoSincronizado(tabla, registro);
                         }
                     }
+                    catch (ServicioExternoSinRespuestaException)
+                    {
+                        // NestoAPI#820 (incidente 04-05/11/26): si Pub/Sub no contesta a este registro, tampoco a los siguientes;
+                        // seguir sería esperar el plazo con cada uno (50 por lote). Se corta la pasada: el job falla, ELMAH y
+                        // Hangfire lo ven, y los pendientes (sin marcar) los coge la pasada siguiente.
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         todosOK = false;

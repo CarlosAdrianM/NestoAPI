@@ -1,3 +1,4 @@
+using Hangfire;
 using System;
 using System.Configuration;
 using System.Threading.Tasks;
@@ -14,6 +15,7 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
     /// </summary>
     public class AmazonCredencialRotacionJobsService
     {
+        [Queue(Infraestructure.SincronizacionJobsService.COLA)] // NestoAPI#820: llama fuera; en su cola para no parar «default»
         public static async Task ProcesarRotacionCredenciales()
         {
             try

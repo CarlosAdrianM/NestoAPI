@@ -16,6 +16,7 @@ namespace NestoAPI.Infraestructure.Cupones
 
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
+        [Queue(Infraestructure.SincronizacionJobsService.COLA)] // NestoAPI#820: llama fuera; en su cola para no parar «default»
         public static async Task Procesar()
         {
             if (!ReglasEspejoPrestashop.Encendido)

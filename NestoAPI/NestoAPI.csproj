@@ -1181,6 +1181,9 @@
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\SeguimientoEnviosJobsService.cs" />
     <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
+    <Compile Include="Infraestructure\EsperaConTimeout.cs" />
+    <Compile Include="Infraestructure\VigilanciaHangfire\VigilanteHangfire.cs" />
+    <Compile Include="Infraestructure\VigilanciaHangfire\VigilanteHangfireJobsService.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\Verifactu\IServicioVerifactu.cs" />
     <Compile Include="Infraestructure\Verifactu\ProveedorVerifactu.cs" />

@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.Kits;
+﻿using Hangfire;
+using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
@@ -21,31 +22,100 @@ namespace NestoAPI.Infraestructure
         // filas aún sin marcar y las publicaba otra vez: mensajes duplicados a Odoo y carga
         // multiplicada. Si la pasada anterior sigue viva, la nueva no hace nada; los pendientes los
         // recoge la que está en marcha o la siguiente.
-        private static readonly ConcurrentDictionary<string, bool> jobsEnMarcha = new ConcurrentDictionary<string, bool>();
+        //
+        // NestoAPI#820 (incidente 04-05/11/26): se guarda CUÁNDO empezó la pasada. El candado se suelta siempre en el finally,
+        // pero si la pasada se queda colgada sin terminar (una llamada externa que no vuelve, un hilo que Hangfire abandona al
+        // parar) el nombre se quedaría ocupado hasta reciclar el pool. Pasados MinutosCandadoCaducado se da por muerta, se deja
+        // entrar a la nueva y se avisa en ELMAH. Con el plazo de Pub/Sub (60 s) una pasada viva no se queda quieta tanto rato.
+        private static readonly ConcurrentDictionary<string, DateTime> jobsEnMarcha = new ConcurrentDictionary<string, DateTime>();
 
-        internal static bool IntentarEmpezar(string job) => jobsEnMarcha.TryAdd(job, true);
+        /// <summary>
+        /// NestoAPI#820: minutos tras los que una pasada que sigue «en marcha» se da por muerta. appSettings
+        /// <c>Sincronizacion:MinutosCandadoCaducado</c>; sin la clave, 30.
+        /// </summary>
+        internal const string CLAVE_MINUTOS_CANDADO = "Sincronizacion:MinutosCandadoCaducado";
+        internal const int MINUTOS_CANDADO_POR_DEFECTO = 30;
+
+        /// <summary>NestoAPI#820: cola de Hangfire de las sincronizaciones e integraciones externas (su propio servidor en Startup).</summary>
+        public const string COLA = "sincronizacion";
+
+        internal static bool IntentarEmpezar(string job) => IntentarEmpezar(job, DateTime.UtcNow, TimeSpan.FromMinutes(MinutosCandado()), out _);
+
+        /// <param name="caducado">True si había otra pasada marcada en marcha desde hace más de <paramref name="caducidad"/> y se ha
+        /// dado por muerta (la nueva entra).</param>
+        /// <returns>True si esta pasada puede trabajar.</returns>
+        internal static bool IntentarEmpezar(string job, DateTime ahora, TimeSpan caducidad, out TimeSpan? caducado)
+        {
+            caducado = null;
+            if (jobsEnMarcha.TryAdd(job, ahora))
+            {
+                return true;
+            }
+            if (!jobsEnMarcha.TryGetValue(job, out DateTime desde) || ahora - desde <= caducidad)
+            {
+                return false;
+            }
+            // Solo uno se queda el candado caducado: el que lo cambia sobre el valor que ha leído.
+            if (!jobsEnMarcha.TryUpdate(job, ahora, desde))
+            {
+                return false;
+            }
+            caducado = ahora - desde;
+            return true;
+        }
 
         internal static void Terminar(string job) => jobsEnMarcha.TryRemove(job, out _);
 
+        /// <summary>
+        /// NestoAPI#820: suelta el candado solo si sigue siendo el de esta pasada. Una pasada dada por muerta que al final vuelva
+        /// no debe soltar el de la nueva.
+        /// </summary>
+        internal static bool Terminar(string job, DateTime empezo) =>
+            ((System.Collections.Generic.ICollection<System.Collections.Generic.KeyValuePair<string, DateTime>>)jobsEnMarcha)
+                .Remove(new System.Collections.Generic.KeyValuePair<string, DateTime>(job, empezo));
+
+        private static int MinutosCandado()
+        {
+            return int.TryParse(System.Configuration.ConfigurationManager.AppSettings[CLAVE_MINUTOS_CANDADO], out int minutos) && minutos > 0
+                ? minutos
+                : MINUTOS_CANDADO_POR_DEFECTO;
+        }
+
         private static async Task EjecutarSinSolapar(string job, Func<Task> trabajo)
         {
-            if (!IntentarEmpezar(job))
+            DateTime empezo = DateTime.UtcNow;
+            if (!IntentarEmpezar(job, empezo, TimeSpan.FromMinutes(MinutosCandado()), out TimeSpan? caducado))
             {
                 Console.WriteLine($"⏭️ [Hangfire] {job}: sigue en marcha la pasada anterior; esta no hace nada.");
                 return;
+            }
+            if (caducado.HasValue)
+            {
+                ElmahHelper.Log(new Exception($"[Hangfire #820] {job}: la pasada anterior llevaba {Math.Round(caducado.Value.TotalMinutes)} minutos " +
+                    "marcada en marcha sin terminar; se da por muerta y empieza una nueva."), USUARIO_SISTEMA);
             }
             try
             {
                 await trabajo().ConfigureAwait(false);
             }
+            catch (ServicioExternoSinRespuestaException ex)
+            {
+                // NestoAPI#820: sin esto el fallo solo quedaba en Hangfire; el 04/11 no había nada en ELMAH.
+                ElmahHelper.Log(new Exception($"[Hangfire #820] {job}: {ex.Message}", ex), USUARIO_SISTEMA);
+                throw;
+            }
             finally
             {
-                Terminar(job);
+                _ = Terminar(job, empezo);
             }
         }
 
+        internal const string USUARIO_SISTEMA = "Sistema (sincronización)";
+
+        [Queue(COLA)]
         public static Task SincronizarProductos() => EjecutarSinSolapar("sincronizar-productos", SincronizarProductosSinCandado);
 
+        [Queue(COLA)]
         public static Task SincronizarClientes() => EjecutarSinSolapar("sincronizar-clientes", SincronizarClientesSinCandado);
 
         /// <summary>

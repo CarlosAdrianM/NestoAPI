@@ -430,9 +430,48 @@ namespace NestoAPI
                 });
 
                 // Iniciar el servidor de Hangfire
+                // NestoAPI#820 (incidente 04-05/11/26): este servidor solo atiende «default», que se queda para lo OPERATIVO
+                // (reposiciones automáticas cada 5 min, picking, furgoneta, avisos, seguimientos, Verifactu…). Las
+                // sincronizaciones e integraciones externas van en «sincronizacion» (servidor de abajo): el 04/11 a las 19:55 un
+                // SincronizarProductos colgado en Pub/Sub dejó este único worker ocupado 14 horas y se acumularon 635 jobs.
+                //
+                // Diagnóstico si vuelve a pasar (solo lectura, BD NV):
+                //   -- ¿Siguen vivos los servidores? (LastHeartbeat de hace más de un minuto = servidor muerto o pool parado)
+                //   SELECT Id, LastHeartbeat, Data FROM HangFire.Server;
+                //   -- ¿Qué está en marcha y desde cuándo? (State.CreatedAt del Processing = cuándo lo cogió el worker; en UTC)
+                //   SELECT j.Id, j.InvocationData, s.CreatedAt, q.Queue FROM HangFire.Job j
+                //     JOIN HangFire.State s ON s.Id = j.StateId LEFT JOIN HangFire.JobQueue q ON q.JobId = j.Id
+                //     WHERE j.StateName = 'Processing';
+                //   -- ¿Cuántos esperan por cola? (FetchedAt NULL = nadie los ha cogido)
+                //   SELECT Queue, COUNT(*) FROM HangFire.JobQueue WHERE FetchedAt IS NULL GROUP BY Queue;
+                // El 05/11 salía el job 146824 en Processing desde las 18:55 UTC del 04/11 y 635 filas en JobQueue «default»; se
+                // arregló reciclando el pool (el job volvió a la cola y terminó en 8 ms). El job «hangfire-vigilante» hace estas
+                // mismas consultas cada 10 minutos y avisa a Informática.
                 app.UseHangfireServer(new BackgroundJobServerOptions
                 {
                     WorkerCount = 1 // Solo un worker para evitar procesamiento duplicado
+                });
+
+                // NestoAPI#820: servidor de un hilo para las sincronizaciones e integraciones externas (Pub/Sub de productos y
+                // clientes, fechas de compras, Amazon, cupones de PrestaShop: lo que llama fuera). Si una se cuelga, para solo a
+                // las de su cola, no a las reposiciones. Un hilo, como antes: SincronizarProductos/Clientes no deben solaparse.
+                // La cola la pone el atributo [Queue] de cada método al ENCOLAR; Hangfire guarda la cola en el job encolado, no
+                // en el recurrente, así que tras desplegar los que ya estuvieran esperando en «default» los sigue haciendo el
+                // servidor de arriba y los siguientes salen ya en «sincronizacion». No hay que tocar nada en la BD.
+                app.UseHangfireServer(new BackgroundJobServerOptions
+                {
+                    ServerName = Environment.MachineName + ":" + SincronizacionJobsService.COLA,
+                    WorkerCount = 1,
+                    Queues = new[] { SincronizacionJobsService.COLA }
+                });
+
+                // NestoAPI#820: servidor de un hilo solo para el vigilante (cola «vigilante»): tiene que poder avisar justo
+                // cuando otra cola está parada, así que no puede esperar turno en ninguna de ellas (ver VigilanteHangfireJobsService).
+                app.UseHangfireServer(new BackgroundJobServerOptions
+                {
+                    ServerName = Environment.MachineName + ":" + Infraestructure.VigilanciaHangfire.VigilanteHangfireJobsService.COLA,
+                    WorkerCount = 1,
+                    Queues = new[] { Infraestructure.VigilanciaHangfire.VigilanteHangfireJobsService.COLA }
                 });
 
                 // NestoAPI#619: servidor aparte, de un hilo y solo para la cola «entrenamiento» (reentrenar el modelo de
@@ -531,7 +570,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'avisos-pedidos-cliente' configurado (cada 30 minutos)");
 
-            // Sincronización de Productos cada 5 minutos
+            // NestoAPI#820 (incidente 04-05/11/26): cada 10 minutos mira si hay un job de Hangfire en marcha más de 15 minutos
+            // (8 horas en las colas de entrenamiento/indicadores) o más de 100 esperando, y lo avisa una vez por episodio en ELMAH
+            // y en la campana de Nesto de Informática. Va en su propia cola «vigilante» (servidor de un hilo, arriba).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.VigilanciaHangfire.VigilanteHangfireJobsService.JOB_ID,
+                () => Infraestructure.VigilanciaHangfire.VigilanteHangfireJobsService.Vigilar(),
+                Infraestructure.VigilanciaHangfire.VigilanteHangfireJobsService.CRON, // Cron: cada 10 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'hangfire-vigilante' configurado (cada 10 minutos, cola «vigilante»)");
+
+            // Sincronización de Productos cada 5 minutos (NestoAPI#820: cola «sincronizacion», por el [Queue] del método)
             RecurringJob.AddOrUpdate(
                 "sincronizar-productos",
                 () => SincronizacionJobsService.SincronizarProductos(),

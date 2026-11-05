@@ -907,6 +907,8 @@
     <Compile Include="Controllers\PickingControllerRutasPropiasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PuertaPublicacionTiendaTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SincronizacionJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\EsperaConTimeoutTests.cs" />
+    <Compile Include="Infrastructure\VigilanciaHangfire\VigilanteHangfireTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\GestorSincronizacionTests.cs" />
     <Compile Include="Infrastructure\GestorProductosTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PublicacionTiendaTests.cs" />

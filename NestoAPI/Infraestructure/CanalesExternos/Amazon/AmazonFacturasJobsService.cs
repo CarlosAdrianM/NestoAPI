@@ -1,3 +1,4 @@
+using Hangfire;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
         }
 
         /// <summary>Punto de entrada del job recurrente (composición por defecto).</summary>
+        [Queue(Infraestructure.SincronizacionJobsService.COLA)] // NestoAPI#820: llama fuera; en su cola para no parar «default»
         public static async Task ComprobarResultadosFeeds()
         {
             using (var db = new NVEntities())
