@@ -1097,7 +1097,36 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
                 new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Híbrido" }, "x"));
-            Assert.AreEqual("El formato del evento tiene que ser Presencial u Online.", ex.Message);
+            Assert.AreEqual("El formato del evento tiene que ser Presencial, Online o Mixto.", ex.Message);
+        }
+
+        // ---------------- NestoAPI#829 (Reina, sugerencia 1064): eventos mixtos ----------------
+
+        [TestMethod]
+        public async Task Formato_Mixto_SeGuardaYSeLee()
+        {
+            EventoDTO creado = await ServicioEventos().CrearEvento(JsonConvert.DeserializeObject<EventoDTO>(
+                "{ \"Titulo\": \"Masterclass mixta\", \"Fecha\": \"2026-11-10\", \"Almacen\": \"REI\", \"Formato\": \"mixto\" }"), "NUEVAVISION\\Reina");
+
+            Assert.AreEqual("Mixto", creado.Formato);
+            eventos[0].Formato = "Mixto";
+            Assert.AreEqual("Mixto", (await ServicioEventos().LeerEventos("1", true)).Single(e => e.Id == EVENTO_PAGO).Formato);
+            Assert.IsFalse(FormatosEvento.EsOnline(eventos[0]), "Un mixto cuenta como presencial para recordatorios y anuncios");
+        }
+
+        [TestMethod]
+        public async Task Formato_MixtoSinElScript_400ConElNombreDelScript()
+        {
+            IRepositorioFormaAsistenciaEventos sinScript = A.Fake<IRepositorioFormaAsistenciaEventos>();
+            A.CallTo(() => sinScript.Disponible()).Returns(false);
+            ServicioEventos servicio = ServicioEventos();
+            servicio.FormasAsistencia = sinScript;
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.CrearEvento(
+                new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Mixto" }, "x"));
+            StringAssert.Contains(ex.Message, "Issue829_EventosInscripcionesModalidad.sql");
+
+            _ = await servicio.CrearEvento(new EventoDTO { Titulo = "Y", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Online" }, "x");
         }
 
         [TestMethod]
