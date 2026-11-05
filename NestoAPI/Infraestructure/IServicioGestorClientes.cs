@@ -44,6 +44,8 @@ namespace NestoAPI.Infraestructure
         Task<bool> CrearCCC(CCC nuevoCCC);
         Task<bool> RecuperarCCC(CCC cccEncontrado);
         Task<CodigoPostal> BuscarCodigoPostal(string empresa, string codigoPostal);
+        /// <summary>NestoAPI#821: la ruta más frecuente entre los CP españoles de la provincia del CP (sus dos primeras cifras); null si no hay.</summary>
+        Task<string> RutaMasFrecuenteProvincia(string empresa, string codigoPostal);
         Task<string> ObtenerEmailVendedor(string empresa, string vendedor);
         Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);
     }

@@ -1497,8 +1497,11 @@ namespace NestoAPI.Tests.Infrastructure
 
             Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
 
-            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            // NestoAPI#821: ahora se mira si el CP español existe (para darlo de alta con la dirección
+            // de Google), pero un CP existente no se crea, no se adjunta ni se cuelga del cliente.
             A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => db.CodigosPostales.Attach(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+            Assert.IsNull(clienteNuevo.CódigosPostales);
         }
 
         // ELMAH 03/08/26: ArgumentNullException "str" si la persona de contacto trae correo pero no

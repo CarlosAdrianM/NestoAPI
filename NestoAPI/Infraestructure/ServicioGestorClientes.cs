@@ -202,8 +202,8 @@ namespace NestoAPI.Infraestructure
                 CodigoPostal cp = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Número == codigoPostal);
                 if (cp == null)
                 {
-                    // TO DO: leerlo de algún webservice de correos y crearlo
-                    throw new ArgumentException("No existe el código postal " + codigoPostal + " en la base de datos");
+                    // NestoAPI#821: con la dirección de Google, GestorClientes no llega aquí (lo da de alta al guardar).
+                    throw new Clientes.CodigoPostalNoExisteException(GestorClientes.MensajeCodigoPostalNoExiste(codigoPostal));
                 }
 
                 RespuestaDatosGeneralesClientes respuesta = new RespuestaDatosGeneralesClientes
@@ -540,6 +540,31 @@ namespace NestoAPI.Infraestructure
             {
                 CodigoPostal cpDB = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == codigoPostal).ConfigureAwait(false);
                 return cpDB;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#821: la ruta más frecuente entre los CP españoles (5 cifras, país vacío o ES) que
+        /// empiezan por las mismas dos cifras (= misma provincia). null si no hay ninguno.
+        /// </summary>
+        public async Task<string> RutaMasFrecuenteProvincia(string empresa, string codigoPostal)
+        {
+            string cp = codigoPostal?.Trim();
+            if (string.IsNullOrEmpty(cp) || cp.Length < 2)
+            {
+                return null;
+            }
+            string prefijo = cp.Substring(0, 2);
+            using (NVEntities db = new NVEntities())
+            {
+                return await db.CodigosPostales
+                    .Where(c => c.Empresa == empresa && c.Número.StartsWith(prefijo) && c.Número.Length == 5
+                        && (c.Pais == null || c.Pais == "ES") && c.Ruta != null)
+                    .GroupBy(c => c.Ruta)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Key)
+                    .FirstOrDefaultAsync()
+                    .ConfigureAwait(false);
             }
         }
 

@@ -113,6 +113,33 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("El dato «Estado» no tiene un formato válido.", (resultado as BadRequestErrorMessageResult)?.Message);
         }
 
+        // NestoAPI#821: el CP español que no existe y no viene de Google → 400 con el motivo, no un 500.
+
+        [TestMethod]
+        public async Task PostCliente_CodigoPostalNoExiste_400ConElMensaje()
+        {
+            var controller = Controller();
+            _ = A.CallTo(() => _gestor.CrearCliente(A<ClienteCrear>._, A<NVEntities>._))
+                .Throws(new NestoAPI.Infraestructure.Clientes.CodigoPostalNoExisteException(GestorClientes.MensajeCodigoPostalNoExiste("48530")));
+
+            var resultado = await controller.PostCliente(Alta(Correo(30)));
+
+            Assert.AreEqual("No existe el código postal 48530. Elija la dirección en el buscador de Google para darlo de alta.",
+                (resultado as BadRequestErrorMessageResult)?.Message);
+        }
+
+        [TestMethod]
+        public async Task PutCliente_CodigoPostalNoExiste_400ConElMensaje()
+        {
+            var controller = Controller();
+            _ = A.CallTo(() => _gestor.ModificarCliente(A<ClienteCrear>._, A<NVEntities>._))
+                .Throws(new NestoAPI.Infraestructure.Clientes.CodigoPostalNoExisteException(GestorClientes.MensajeCodigoPostalNoExiste("48530")));
+
+            var resultado = await controller.PutCliente(Alta(Correo(30)));
+
+            StringAssert.Contains((resultado as BadRequestErrorMessageResult)?.Message, "Elija la dirección en el buscador de Google");
+        }
+
         [TestMethod]
         public async Task PostCliente_SinCuerpo_400ConMensaje()
         {

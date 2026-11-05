@@ -959,11 +959,13 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(RespuestaDatosGeneralesClientes))]
         // NestoAPI#306: direccionVerificada=true cuando dirección y CP vienen del combo de Places
         // (ya son consistentes) → se salta el geocoding y solo normaliza para la BD.
-        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null)
+        // NestoAPI#821: poblacion/provincia (opcionales) = las que dio Google; si el CP aún no está en la
+        // tabla, se devuelven tal cual (se dará de alta al guardar el cliente).
+        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null, string poblacion = null, string provincia = null)
         {
             try
             {
-                RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada, pais);
+                RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada, pais, poblacion, provincia);
 
                 return Ok(respuesta);
             }
@@ -1295,6 +1297,11 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ex.Message);
             }
+            // NestoAPI#821: «No existe el código postal X. Elija la dirección en el buscador de Google...».
+            catch (Infraestructure.Clientes.CodigoPostalNoExisteException ex)
+            {
+                return BadRequest(ex.Message);
+            }
             // NestoAPI#473: "Ya existe un cliente con ese CIF/NIF" lo dice un trigger; que llegue
             // a la pantalla como motivo, no como error del servidor.
             catch (DbUpdateException ex) when (ErroresTriggerSql.MensajeDeValidacion(ex) != null)
@@ -1347,6 +1354,11 @@ namespace NestoAPI.Controllers
                 return Conflict();
             }
             catch (ValidationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            // NestoAPI#821: «No existe el código postal X. Elija la dirección en el buscador de Google...».
+            catch (Infraestructure.Clientes.CodigoPostalNoExisteException ex)
             {
                 return BadRequest(ex.Message);
             }
