@@ -548,7 +548,9 @@ namespace NestoAPI
             // stock de los últimos 2 días, para que los stocks de Odoo y PrestaShop no se desvíen.
             // Solo encola: la publicación la hace 'sincronizar-productos' en sus pasadas.
             // Si se pasa a cadencia horaria, cambiar el cron Y la ventana a la vez (ver el
-            // comentario de HORAS_VENTANA_NOCTURNA).
+            // comentario de HORAS_VENTANA_NOCTURNA). NestoAPI#818 (Carlos 05/11/26): no hace falta para el
+            // stock: los apuntes de ExtractoProducto se encolan al momento por el disparador
+            // trgExtractoProducto_SyncTienda; esto queda de red para lo que no pasa por el extracto.
             RecurringJob.AddOrUpdate(
                 "sincronizar-stocks-nocturno",
                 () => Infraestructure.Sincronizacion.SincronizacionStocksJobsService.EncolarProductosConMovimientos(

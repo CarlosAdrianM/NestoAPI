@@ -20,6 +20,14 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     /// de 0: un +5 hoy y -5 mañana netean a 0, pero si entre medias hubo una publicación orgánica
     /// con el +5, el consumidor se quedaría con el stock inflado para siempre. Encolar de más es
     /// gratis; callar de más deja stocks mal.
+    ///
+    /// NestoAPI#818 (Carlos 05/11/26): los movimientos de ExtractoProducto ya se encolan AL MOMENTO con el disparador
+    /// trgExtractoProducto_SyncTienda (Scripts/Issue818_ExtractoProducto_EncolarSyncTienda.sql): todo apunte cuya
+    /// sentencia no sume cero por producto y almacén encola el producto y sus kits, y lo recibido se ve en la web en
+    /// la siguiente pasada de 5 minutos. Por eso NO se ha pasado este job a horario (la segunda parte de la issue): ya
+    /// no hace falta para el stock. Se queda de noche como red para lo que no pasa por el extracto (LinPedidoVta
+    /// grabada por fuera de la API, DescuentosProducto) y para el encolado que el disparador pierda (su CATCH no
+    /// relanza para no tumbar nunca el apunte).
     /// </summary>
     public class SincronizacionStocksJobsService
     {
