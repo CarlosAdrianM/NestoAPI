@@ -78,7 +78,7 @@ namespace NestoAPI.Infraestructure
                 {
                     CodigoPostal = codigoPostal.Trim(),
                     Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
-                    DireccionFormateada = ComaAntesDelNumero(PonerAbreviaturas(direccion.ToUpper().Trim()))
+                    DireccionFormateada = NormalizarDireccionExtranjera(direccion)
                 };
             }
             else
@@ -134,6 +134,16 @@ namespace NestoAPI.Infraestructure
 
             return respuesta;
         }
+
+        /// <summary>
+        /// NestoAPI#826 (sugerencia 1058, Enrique): la dirección de fuera de España NO se pasa al formato
+        /// español. En Francia (y en otros países) el número va DELANTE («12 Rue de la Paix»); la coma
+        /// antes del número (<see cref="ComaAntesDelNumero"/>) y las abreviaturas de vías españolas
+        /// (<see cref="PonerAbreviaturas"/>: C/, Av., Pl., Dr., Ctra.…) son solo para ES. Aquí solo se
+        /// recorta y se pasa a mayúsculas, como el resto de direcciones de la BD.
+        /// </summary>
+        internal static string NormalizarDireccionExtranjera(string direccion)
+            => direccion?.Trim().ToUpper();
 
         /// <summary>Nesto#436: ¿la dirección está fuera de España? (pais = ISO-2; vacío = España).</summary>
         internal static bool EsPaisExtranjero(string pais)

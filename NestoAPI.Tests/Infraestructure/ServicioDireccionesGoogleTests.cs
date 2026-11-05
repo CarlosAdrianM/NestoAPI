@@ -225,6 +225,7 @@ namespace NestoAPI.Tests.Infraestructure
             Assert.AreEqual("Madrid", detalle.Provincia);
             Assert.AreEqual("ES", detalle.PaisIso);
             Assert.AreEqual("Calle de la Industria, 12, 28110 Algete, Madrid, España", detalle.DireccionFormateada);
+            Assert.AreEqual("Calle de la Industria, 12", detalle.DireccionCalleNumero, "NestoAPI#826: España, formato de la BD");
         }
 
         [TestMethod]
@@ -296,6 +297,22 @@ namespace NestoAPI.Tests.Infraestructure
             var contenido = (NegotiatedContentResult<string>)resultado;
             Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, contenido.StatusCode);
             StringAssert.Contains(contenido.Content, "OVER_QUERY_LIMIT");
+        }
+
+        // NestoAPI#826 (sugerencia 1058, Enrique): calle y número en el formato del país; en Francia el
+        // número va delante y no se le pone coma.
+        [DataTestMethod]
+        [DataRow("Rue de la Paix", "12", "FR", "12 Rue de la Paix")]
+        [DataRow("Baker Street", "221B", "gb", "221B Baker Street")]
+        [DataRow("Via Roma", "1", "IT", "Via Roma 1")]
+        [DataRow("Rua do Carmo", "21", "PT", "Rua do Carmo 21")]
+        [DataRow("Calle Mayor", "12", "ES", "Calle Mayor, 12")]
+        [DataRow("Calle Mayor", "12", null, "Calle Mayor, 12")]
+        [DataRow("Rue de la Paix", null, "FR", "Rue de la Paix")]
+        [DataRow(null, "12", "FR", "12")]
+        public void DireccionCalleNumero_FormatoDelPais(string calle, string numero, string pais, string esperada)
+        {
+            Assert.AreEqual(esperada, ServicioDireccionesGoogle.DireccionCalleNumero(calle, numero, pais));
         }
     }
 }

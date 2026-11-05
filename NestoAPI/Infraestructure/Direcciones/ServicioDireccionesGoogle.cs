@@ -200,7 +200,40 @@ namespace NestoAPI.Infraestructure.Direcciones
                 }
             }
 
+            detalle.DireccionCalleNumero = DireccionCalleNumero(detalle.Calle, detalle.Numero, detalle.PaisIso);
             return detalle;
+        }
+
+        /// <summary>NestoAPI#826: países donde el número de la calle va delante («12 Rue de la Paix»).</summary>
+        internal static readonly HashSet<string> PAISES_NUMERO_DELANTE = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "FR", "LU", "MC", "GB", "IE", "US", "CA", "AU", "NZ"
+        };
+
+        /// <summary>
+        /// NestoAPI#826 (sugerencia 1058, Enrique): calle y número de Google en el formato del país.
+        /// España (o sin país): «Calle, Número», el formato de la BD. Francia y <see cref="PAISES_NUMERO_DELANTE"/>:
+        /// «Número Calle». El resto: «Calle Número».
+        /// </summary>
+        internal static string DireccionCalleNumero(string calle, string numero, string paisIso)
+        {
+            calle = calle?.Trim();
+            numero = numero?.Trim();
+            if (string.IsNullOrWhiteSpace(numero))
+            {
+                return calle;
+            }
+            if (string.IsNullOrWhiteSpace(calle))
+            {
+                return numero;
+            }
+            if (!GestorClientes.EsPaisExtranjero(paisIso))
+            {
+                return $"{calle}, {numero}";
+            }
+            return PAISES_NUMERO_DELANTE.Contains(paisIso.Trim())
+                ? $"{numero} {calle}"
+                : $"{calle} {numero}";
         }
     }
 }
