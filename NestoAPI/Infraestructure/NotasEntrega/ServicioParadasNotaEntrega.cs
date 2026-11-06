@@ -114,6 +114,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         private readonly Func<bool> repartoPropioActivo;
         private readonly Action<Exception> registrar;
         private readonly Func<DateTime> hoy;
+        /// <summary>NestoAPI#831: los festivos del día de reparto.</summary>
+        private readonly Func<DateTime, bool> esFestivo;
 
         public ServicioParadasNotaEntrega(NVEntities db)
             : this(new RepositorioParadasNotaEntrega(db), new RepositorioNotasEntregaCabecera(db))
@@ -121,13 +123,14 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         }
 
         public ServicioParadasNotaEntrega(IRepositorioParadasNotaEntrega repositorio, IRepositorioNotasEntregaCabecera cabeceras,
-            Func<bool> repartoPropioActivo = null, Action<Exception> registrar = null, Func<DateTime> hoy = null)
+            Func<bool> repartoPropioActivo = null, Action<Exception> registrar = null, Func<DateTime> hoy = null, Func<DateTime, bool> esFestivo = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.cabeceras = cabeceras ?? throw new ArgumentNullException(nameof(cabeceras));
             this.repartoPropioActivo = repartoPropioActivo ?? InterruptorRepartoPropio.EstaActivo;
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
             this.hoy = hoy ?? (() => DateTime.Today);
+            this.esFestivo = esFestivo ?? FechaRepartoPropio.EsFestivoAlgete;
         }
 
         public bool EsRepartoPropio(string ruta) => RutasRepartoPropio.EsRutaPropia(ruta) && repartoPropioActivo();
@@ -208,7 +211,12 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             }
             string empresaAgencia = await repositorio.LeerEmpresaAgencia(Constantes.Agencias.AGENCIA_REPARTO_PROPIO).ConfigureAwait(false);
             short bultos = resultado.EsRecogida ? bultosRecogida : TiposNotaEntrega.BULTOS_POR_DEFECTO;
-            EnviosAgencia envio = ConstruirEnvio(pedido, destino, empresaAgencia, bultos, usuario, hoy().Date);
+            // NestoAPI#831: la misma regla de día de reparto que el envío del packing (si el picking de la nota es de otro día)
+            DateTime? fechaPicking = (pedido.LinPedidoVtas ?? new List<LinPedidoVta>())
+                .Where(l => l != null && l.Picking > 0).Select(l => (DateTime?)l.Fecha_Entrega).Min();
+            DateTime fechaReparto = FechaRepartoPropio.Calcular(fechaPicking, hoy().Date, pedido.Ruta, destino.CodPostal, empresa,
+                pedido.Nº_Cliente, pedido.Contacto, esFestivo);
+            EnviosAgencia envio = ConstruirEnvio(pedido, destino, empresaAgencia, bultos, usuario, hoy().Date, fechaEntrega: fechaReparto);
             int creado = await repositorio.CrearEnvioTramitado(envio, resultado.EsRecogida ? HISTORIA_RECOGIDA : HISTORIA_ENTREGA_SIN_PACKING)
                 .ConfigureAwait(false);
             resultado.Accion = AccionParadaNotaEntrega.Creada;
@@ -258,7 +266,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// <param name="reembolso">NestoAPI#786: lo que hay que cobrar (notas de cobro); 0 en las demás.</param>
         /// <param name="sinBultos">NestoAPI#786: la parada no lleva bultos (nota de cobro): Bultos 0 en vez del mínimo de 1.</param>
         internal static EnviosAgencia ConstruirEnvio(CabPedidoVta pedido, DestinoNotaEntrega destino, string empresaAgencia, short bultos,
-            string usuario, DateTime fecha, decimal reembolso = 0m, bool sinBultos = false)
+            string usuario, DateTime fecha, decimal reembolso = 0m, bool sinBultos = false, DateTime? fechaEntrega = null)
         {
             var defectos = PropuestaEnvioService.DefaultsDe(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, destino.CodPostal);
             var telefono = new Telefono(destino.Telefonos);
@@ -272,7 +280,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Pedido = pedido.Número,
                 Estado = Constantes.Agencias.ESTADO_TRAMITADO,
                 Fecha = fecha,
-                FechaEntrega = fecha,
+                FechaEntrega = fechaEntrega ?? fecha, // NestoAPI#831: el día de reparto
                 Servicio = defectos.Servicio,
                 Horario = defectos.Horario,
                 Retorno = 0,

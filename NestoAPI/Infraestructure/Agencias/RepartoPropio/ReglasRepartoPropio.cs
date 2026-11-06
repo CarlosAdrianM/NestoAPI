@@ -78,7 +78,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>
         /// Deja FechaPagoReembolso como le toca al envío tras crearlo o cambiarlo:
         /// <list type="bullet">
-        /// <item>Reparto propio con reembolso (≠ 0) y sin fecha: FechaPagoReembolso = Fecha (sin hora).</item>
+        /// <item>Reparto propio con reembolso (≠ 0) y sin fecha: FechaPagoReembolso = el día de reparto (NestoAPI#831: FechaEntrega;
+        /// sin ella, Fecha), sin hora.</item>
         /// <item>Reparto propio sin reembolso: no se toca.</item>
         /// <item>Agencia de fuera que ANTES era de reparto propio (<paramref name="agenciaAnterior"/>): NULL, vuelve a estar
         /// pendiente de que la agencia lo pague.</item>
@@ -95,7 +96,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 if (envio.Reembolso != 0m && !envio.FechaPagoReembolso.HasValue)
                 {
-                    envio.FechaPagoReembolso = envio.Fecha.Date;
+                    envio.FechaPagoReembolso = (envio.FechaEntrega ?? envio.Fecha).Date;
                 }
                 return;
             }

@@ -217,7 +217,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 .Returns(Task.FromResult(new ResultadoTramitacionEnvio { Numero = 251300 }));
             var controller = new EnviosAgenciasController(db, fabrica)
             {
-                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null),
+                MotivoPedidoRetenido = (e, p, rp) => Task.FromResult<string>(null),
                 TramitacionEnvios = tramitacion,
                 Request = new HttpRequestMessage()
             };
@@ -399,6 +399,105 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         public void Controlador_LlevaAuthorize()
         {
             Assert.IsTrue(typeof(RepartoPropioController).GetCustomAttributes(typeof(AuthorizeAttribute), false).Any());
+        }
+
+        // ================================================================ NestoAPI#831: la fecha de reparto
+
+        [TestMethod]
+        public async Task Propuesta831_RepartoPropioConPickingFuturo_FechaEntregaEsElDiaDeReparto()
+        {
+            PropuestaEnvioService servicio = Propuesta("16 ", true, true);
+            servicio.Hoy = () => new DateTime(2026, 11, 6);
+            servicio.EsFestivoReparto = d => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday;
+            IDatosPropuestaEnvio datos = DatosDe(servicio);
+            A.CallTo(() => datos.FechaEntregaPicking("1", 928000)).Returns(Task.FromResult<DateTime?>(new DateTime(2026, 11, 8)));
+
+            PropuestaEnvioDTO p = await servicio.Calcular("1", 928000, null, null);
+
+            Assert.AreEqual(REPARTO, p.Agencia);
+            Assert.AreEqual(new DateTime(2026, 10, 29), p.Fecha, "Fecha sigue siendo la de siempre (la de la etiqueta)");
+            Assert.AreEqual(new DateTime(2026, 11, 9), p.FechaEntrega, "el domingo pasa al lunes");
+        }
+
+        [TestMethod]
+        public async Task Propuesta831_RepartoPropioConPickingDeHoy_Hoy_OtraAgenciaComoSiempre()
+        {
+            PropuestaEnvioService servicio = Propuesta("16 ", true, true);
+            servicio.Hoy = () => new DateTime(2026, 11, 6);
+            A.CallTo(() => DatosDe(servicio).FechaEntregaPicking("1", 928000)).Returns(Task.FromResult<DateTime?>(new DateTime(2026, 11, 6)));
+            Assert.AreEqual(new DateTime(2026, 11, 6), (await servicio.Calcular("1", 928000, null, null)).FechaEntrega);
+
+            PropuestaEnvioService agencia = Propuesta("10 ", true, true);
+            A.CallTo(() => DatosDe(agencia).FechaEntregaPicking("1", 928000)).Returns(Task.FromResult<DateTime?>(new DateTime(2026, 11, 20)));
+            PropuestaEnvioDTO p = await agencia.Calcular("1", 928000, null, null);
+            Assert.AreEqual(Constantes.Agencias.AGENCIA_GLS, p.Agencia);
+            Assert.AreEqual(new DateTime(2026, 10, 30), p.FechaEntrega, "las agencias: Fecha + 1, como siempre");
+        }
+
+        /// <summary>El IDatosPropuestaEnvio falso que lleva dentro la propuesta de <see cref="Propuesta"/>.</summary>
+        private static IDatosPropuestaEnvio DatosDe(PropuestaEnvioService servicio)
+            => (IDatosPropuestaEnvio)typeof(PropuestaEnvioService)
+                .GetField("datos", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(servicio);
+
+        private static (EnviosAgenciasController controller, EnviosAgencia envio, ITramitacionEnviosService tramitacion) TramitarRp(
+            Func<string, int, bool, Task<string>> guardia, DateTime diaReparto)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            var fakeEnvios = A.Fake<DbSet<EnviosAgencia>>(o => o.Implements<IQueryable<EnviosAgencia>>().Implements<IDbAsyncEnumerable<EnviosAgencia>>());
+            var fakeLlamadas = A.Fake<DbSet<AgenciaLlamadaWeb>>(o => o.Implements<IQueryable<AgenciaLlamadaWeb>>().Implements<IDbAsyncEnumerable<AgenciaLlamadaWeb>>());
+            A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
+            A.CallTo(() => db.AgenciasLlamadasWeb).Returns(fakeLlamadas);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+            var envio = new EnviosAgencia
+            {
+                Numero = 251300, Agencia = REPARTO, Pedido = 928000, Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO,
+                Fecha = DateTime.Today, FechaEntrega = DateTime.Today.AddDays(1),
+                Nombre = "CLIENTE", Direccion = "Calle Mayor 1", CodPostal = "28110", Poblacion = "ALGETE", Bultos = 2
+            };
+            A.CallTo(() => fakeEnvios.FindAsync(251300)).Returns(Task.FromResult(envio));
+            var fabrica = A.Fake<IFabricaAgenciasRemotas>();
+            A.CallTo(() => fabrica.Crear(REPARTO)).Returns(new AgenciaRemotaRepartoPropio(n => Task.FromResult(envio)));
+            var tramitacion = A.Fake<ITramitacionEnviosService>();
+            A.CallTo(() => tramitacion.TramitarAsync(251300, A<string>._)).Invokes(() => envio.Estado = Constantes.Agencias.ESTADO_TRAMITADO)
+                .Returns(Task.FromResult(new ResultadoTramitacionEnvio { Numero = 251300 }));
+            var controller = new EnviosAgenciasController(db, fabrica)
+            {
+                MotivoPedidoRetenido = guardia,
+                FechaRepartoPropioDe = e => Task.FromResult(diaReparto),
+                TramitacionEnvios = tramitacion,
+                Request = new HttpRequestMessage()
+            };
+            return (controller, envio, tramitacion);
+        }
+
+        [TestMethod]
+        public async Task Tramitar831_AplazadoPorRepartoPropio_SacaLaEtiquetaConSuDiaDeReparto()
+        {
+            DateTime dia = DateTime.Today.AddDays(4);
+            var llamadas = new List<bool>();
+            var (controller, envio, tramitacion) = TramitarRp((e, p, rp) => { llamadas.Add(rp); return Task.FromResult(rp ? null : "aplazado"); }, dia);
+
+            var resultado = await controller.TramitarEnvio(251300) as OkNegotiatedContentResult<TramitarEnvioResultadoDTO>;
+
+            Assert.IsNotNull(resultado, "la etiqueta del reparto propio de un aplazado sale");
+            CollectionAssert.AreEqual(new[] { true }, llamadas, "la guardia se pregunta como etiqueta del reparto propio");
+            Assert.AreEqual(dia, envio.FechaEntrega, "el día de reparto sale del pedido (no el «mañana» de Nesto)");
+            StringAssert.Contains(resultado.Content.EtiquetaContenido, "Fecha: " + dia.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture));
+            A.CallTo(() => tramitacion.TramitarAsync(251300, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Tramitar831_Retenido_NiElRepartoPropio_409()
+        {
+            var (controller, envio, tramitacion) = TramitarRp((e, p, rp) => Task.FromResult("retenido"), DateTime.Today);
+
+            IHttpActionResult resultado = await controller.TramitarEnvio(251300);
+
+            var conflicto = resultado as NegotiatedContentResult<string>;
+            Assert.AreEqual(HttpStatusCode.Conflict, conflicto?.StatusCode);
+            Assert.AreEqual("retenido", conflicto.Content);
+            Assert.IsTrue(string.IsNullOrEmpty(envio.CodigoBarras));
+            A.CallTo(() => tramitacion.TramitarAsync(A<int>._, A<string>._)).MustNotHaveHappened();
         }
     }
 }

@@ -1136,11 +1136,17 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            // NestoAPI#698: el envío de un pedido retenido no se registra en la agencia (ni se reimprime).
-            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido);
+            // NestoAPI#698: el envío de un pedido retenido no se registra en la agencia (ni se reimprime). NestoAPI#831: un aplazado
+            // sí saca la etiqueta del reparto propio (con su día de reparto); la de las demás agencias, no.
+            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido, EsEtiquetaRepartoPropio(envio));
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);
+            }
+            // NestoAPI#831: la primera vez, el día de reparto del envío del reparto propio sale del pedido (también si lo grabó Nesto)
+            if (EsEtiquetaRepartoPropio(envio) && string.IsNullOrWhiteSpace(envio.CodigoBarras) && envio.Estado <= Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                await FijarFechaRepartoPropio(envio);
             }
 
             // NestoAPI#552 (fase 2): con el interruptor encendido, la API graba el envío de GLS ella misma. Apagado (por
@@ -1273,6 +1279,36 @@ namespace NestoAPI.Controllers
         /// reembolso: eso es al entregar). Así el repartidor lo ve en Ariadna sin que nadie tenga que tramitarlo en Nesto.
         /// Null si no toca o ha ido bien; si falla, la respuesta de error (el envío ya tiene albarán: reintentar lo cierra).
         /// </summary>
+        /// <summary>
+        /// NestoAPI#831: el día de reparto de un envío del reparto propio (<see cref="NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio"/>), con lo que hay en la
+        /// BD. Sustituible en los tests.
+        /// </summary>
+        internal Func<EnviosAgencia, Task<DateTime>> FechaRepartoPropioDe { get; set; }
+
+        /// <summary>
+        /// NestoAPI#831: antes de registrar el envío del reparto propio, su FechaEntrega pasa a ser el día de reparto del pedido
+        /// (la misma regla que la propuesta; así también vale para el que grabó Agencias de Nesto con «mañana»). Si no se puede
+        /// calcular, se queda la que tenga (nunca impide la etiqueta).
+        /// </summary>
+        private async Task FijarFechaRepartoPropio(EnviosAgencia envio)
+        {
+            try
+            {
+                DateTime dia = FechaRepartoPropioDe != null
+                    ? await FechaRepartoPropioDe(envio)
+                    : await NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.DelEnvioAsync(db, envio, DateTime.Today,
+                        NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.EsFestivoAlgete);
+                if (envio.FechaEntrega?.Date != dia.Date)
+                {
+                    envio.FechaEntrega = dia.Date;
+                }
+            }
+            catch (Exception ex)
+            {
+                RegistrarEnElmah?.Invoke(new Exception($"[Reparto propio #831] No se ha podido calcular el día de reparto del envío {envio.Numero}: {ex.Message}", ex));
+            }
+        }
+
         private async Task<IHttpActionResult> CerrarRepartoPropioSiToca(EnviosAgencia envio)
         {
             if (envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO || envio.Estado != Constantes.Agencias.ESTADO_EN_CURSO)
@@ -1822,8 +1858,8 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            // NestoAPI#698: sin etiqueta para un pedido retenido.
-            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido);
+            // NestoAPI#698: sin etiqueta para un pedido retenido. NestoAPI#831: la del reparto propio de un aplazado, sí.
+            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido, EsEtiquetaRepartoPropio(envio));
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);
@@ -2955,16 +2991,27 @@ namespace NestoAPI.Controllers
         /// NestoAPI#698 (Carlos, 28/10/26): un pedido retenido no sale: ni envío nuevo, ni tramitar ni etiqueta. (empresa, pedido)
         /// → el motivo para el usuario o null. Sustituible en los tests; en producción, <see cref="GuardiaPedidoRetenido"/>.
         /// </summary>
-        internal Func<string, int, Task<string>> MotivoPedidoRetenido { get; set; } = GuardiaPedidoRetenido.Motivo;
+        /// <remarks>
+        /// NestoAPI#831: el tercer parámetro es «es la etiqueta de un envío del reparto propio»: entonces un aplazado (picking con
+        /// fecha futura) no bloquea (se etiqueta con su día de reparto); un retenido (modo 5), sí. Para lo demás, false.
+        /// </remarks>
+        internal Func<string, int, bool, Task<string>> MotivoPedidoRetenido { get; set; } = GuardiaPedidoRetenido.Motivo;
 
-        private async Task<string> MotivoRetenido(string empresa, int? pedido)
-            => pedido.HasValue && pedido.Value > 0 ? await MotivoPedidoRetenido(empresa, pedido.Value).ConfigureAwait(true) : null;
+        private async Task<string> MotivoRetenido(string empresa, int? pedido, bool etiquetaRepartoPropio = false)
+            => pedido.HasValue && pedido.Value > 0 ? await MotivoPedidoRetenido(empresa, pedido.Value, etiquetaRepartoPropio).ConfigureAwait(true) : null;
+
+        /// <summary>NestoAPI#831: ¿la etiqueta de este envío es del reparto propio (la que el aplazado deja sacar)?</summary>
+        private static bool EsEtiquetaRepartoPropio(EnviosAgencia envio) => envio?.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
 
         private IServicioEnvioDesdePedido envioDesdePedido;
         internal IServicioEnvioDesdePedido EnvioDesdePedido
         {
             get => envioDesdePedido ?? (envioDesdePedido = new ServicioEnvioDesdePedido(PropuestaEnvio, new DatosEnvioDesdePedidoEF(db),
-                PlazasAgencias, new NotificadorEntregaAgenciaCorreo(), ex => RegistrarEnElmah?.Invoke(ex)));
+                PlazasAgencias, new NotificadorEntregaAgenciaCorreo(), ex => RegistrarEnElmah?.Invoke(ex))
+            {
+                // NestoAPI#831: con la agencia ya decidida, un aplazado solo sale por el reparto propio
+                MotivoNoSale = (empresa, pedido, agencia) => MotivoPedidoRetenido(empresa, pedido, agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            });
             set => envioDesdePedido = value;
         }
 
@@ -2987,7 +3034,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EnvioDesdePedidoDTO))]
         public async Task<IHttpActionResult> PostEnvioDesdePedido(CrearEnvioDesdePedidoDTO peticion)
         {
-            string retenido = await MotivoRetenido(peticion?.Empresa, peticion?.Pedido);
+            // NestoAPI#831: aquí solo el retenido (modo 5), que no sale por nada. El aplazado depende de la agencia, que decide la
+            // propuesta: lo mira el servicio (MotivoNoSale) y solo deja pasar el reparto propio.
+            bool aplazadoLoMiraElServicio = EnvioDesdePedido is ServicioEnvioDesdePedido real && real.MotivoNoSale != null;
+            string retenido = await MotivoRetenido(peticion?.Empresa, peticion?.Pedido, etiquetaRepartoPropio: aplazadoLoMiraElServicio);
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);
@@ -3003,6 +3053,11 @@ namespace NestoAPI.Controllers
                 case TipoResultadoEnvioDesdePedido.NoEncontrado:
                     return NotFound();
                 default:
+                    // NestoAPI#831: el aplazado que no va por el reparto propio, como siempre: 409 con el texto
+                    if (resultado.Error?.Codigo == CodigosErrorEnvioDesdePedido.PEDIDO_RETENIDO)
+                    {
+                        return Content(HttpStatusCode.Conflict, resultado.Error.Message);
+                    }
                     return Content(HttpStatusCode.BadRequest, resultado.Error);
             }
         }

@@ -89,6 +89,24 @@ namespace NestoAPI.Infraestructure.Agencias
         /// Cierra el envío (Estado Tramitado, fecha de hoy, entrega prevista mañana) y, si lleva
         /// reembolso, lo contabiliza. Devuelve el asiento (0 si no había reembolso que contabilizar).
         /// </summary>
+        /// <summary>
+        /// Las fechas al tramitar: Fecha = hoy y FechaEntrega = mañana. NestoAPI#831: en el reparto propio FechaEntrega es el día
+        /// de reparto (lo pusieron la propuesta o /Tramitar) y no se pisa; solo si no tiene o es de un día pasado, hoy.
+        /// </summary>
+        internal static void FechasAlTramitar(EnviosAgencia envio, DateTime hoy)
+        {
+            envio.Fecha = hoy;
+            if (envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                if (!envio.FechaEntrega.HasValue || envio.FechaEntrega.Value.Date < hoy.Date)
+                {
+                    envio.FechaEntrega = hoy.Date;
+                }
+                return;
+            }
+            envio.FechaEntrega = hoy.AddDays(1);    // se entrega al día siguiente
+        }
+
         public async Task<ResultadoTramitacionEnvio> TramitarAsync(int numeroEnvio, string usuario)
         {
             // OJO con la forma de esta consulta. Con Include + SingleOrDefaultAsync(predicado),
@@ -124,8 +142,7 @@ namespace NestoAPI.Infraestructure.Agencias
             DateTime hoy = _hoy();
             short estadoAnterior = envio.Estado;
             envio.Estado = Constantes.Agencias.ESTADO_TRAMITADO;
-            envio.Fecha = hoy;
-            envio.FechaEntrega = hoy.AddDays(1);    // se entrega al día siguiente
+            FechasAlTramitar(envio, hoy);
 
             // El cambio de estado y la contabilización del reembolso van juntos o no van: si el
             // asiento falla, el envío NO puede quedar tramitado (el cliente lo resolvía con un

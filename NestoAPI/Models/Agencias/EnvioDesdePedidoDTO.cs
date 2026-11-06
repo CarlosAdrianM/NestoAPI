@@ -136,5 +136,11 @@ namespace NestoAPI.Models.Agencias
         /// <summary>El envío que se iba a reutilizar o ampliar ha cambiado o ya no está.</summary>
         public const string ENVIO_CAMBIADO = "EnvioCambiado";
         public const string PETICION_INVALIDA = "PeticionInvalida";
+        /// <summary>
+        /// NestoAPI#831: el pedido está aplazado (picking con fecha futura) y el envío no es del reparto propio: no sale hasta la
+        /// fecha. El mismo código que <see cref="CodigosEtiquetaPacking.PEDIDO_RETENIDO"/>. El endpoint lo contesta como siempre
+        /// (409 con el texto).
+        /// </summary>
+        public const string PEDIDO_RETENIDO = CodigosEtiquetaPacking.PEDIDO_RETENIDO;
     }
 }

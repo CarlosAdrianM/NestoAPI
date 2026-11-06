@@ -126,5 +126,89 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "t"))).MustHaveHappenedOnceExactly();
             A.CallTo(() => push.GuardarEnBuzonDeUsuario("Andre", Constantes.Aplicaciones.ARIADNA, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
         }
+
+        // ---- NestoAPI#831: la etiqueta del reparto propio sale aunque el reparto sea otro día ----
+
+        private const int REPARTO = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+
+        [TestMethod]
+        public void Evaluar831_RepartoPropioYaTramitado_NoEsLaAgenciaYaLoTiene_SeAplazaYNoSeAnula()
+        {
+            ResultadoAplazamiento r = AplazamientoPedidoConPicking.Evaluar(928083, new[] { Linea(99812, VIERNES) },
+                new[] { new EnvioDelPedido { Numero = 250300, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Agencia = REPARTO } }, HOY);
+
+            Assert.AreEqual(DecisionAplazamiento.Aplazar, r.Decision);
+            CollectionAssert.AreEqual(new int[0], r.Etiquetas, "la etiqueta RP no se anula");
+            CollectionAssert.AreEqual(new[] { 250300 }, r.EnviosRepartoPropio);
+            StringAssert.Contains(r.Mensaje, "La etiqueta del reparto propio (envío 250300) sigue valiendo: pasa al reparto del 30/10/2026");
+        }
+
+        [TestMethod]
+        public void Evaluar831_RepartoPropioEnCurso_NoSeAnula_LaDeOtraAgenciaSi()
+        {
+            ResultadoAplazamiento r = AplazamientoPedidoConPicking.Evaluar(928083, new[] { Linea(99812, VIERNES) },
+                new[]
+                {
+                    new EnvioDelPedido { Numero = 250300, Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO, Agencia = REPARTO },
+                    new EnvioDelPedido { Numero = 250301, Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO, Agencia = Constantes.Agencias.AGENCIA_CTT }
+                }, HOY);
+
+            CollectionAssert.AreEqual(new[] { 250301 }, r.Etiquetas);
+            CollectionAssert.AreEqual(new[] { 250300 }, r.EnviosRepartoPropio);
+        }
+
+        [TestMethod]
+        public void YaLoTieneLaAgencia831_RepartoPropioEntregadoSiCuenta_OtraAgenciaTramitadaTambien()
+        {
+            Assert.IsFalse(AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
+                new[] { new EnvioDelPedido { Numero = 1, Estado = Constantes.Agencias.ESTADO_INCIDENTADO, Agencia = REPARTO } }, out _));
+            Assert.IsTrue(AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
+                new[] { new EnvioDelPedido { Numero = 2, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Agencia = REPARTO } }, out _));
+            Assert.IsTrue(AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
+                new[] { new EnvioDelPedido { Numero = 3, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Agencia = Constantes.Agencias.AGENCIA_CTT } }, out _));
+        }
+
+        [TestMethod]
+        public void MoverFechaReparto831_SoloLosDelRepartoPropioPorEntregar_NuncaAntesDeHoy()
+        {
+            var rp = new EnviosAgencia { Numero = 250300, Agencia = REPARTO, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Fecha = HOY, FechaEntrega = HOY };
+            var entregado = new EnviosAgencia { Numero = 250301, Agencia = REPARTO, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Fecha = HOY, FechaEntrega = HOY };
+            var ctt = new EnviosAgencia { Numero = 250302, Agencia = Constantes.Agencias.AGENCIA_CTT, Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO, Fecha = HOY, FechaEntrega = HOY.AddDays(1) };
+
+            List<int> movidos = AplazamientoPedidoConPicking.MoverFechaReparto(new[] { rp, entregado, ctt }, VIERNES, HOY);
+
+            CollectionAssert.AreEqual(new[] { 250300 }, movidos);
+            Assert.AreEqual(VIERNES, rp.FechaEntrega);
+            Assert.AreEqual(HOY, entregado.FechaEntrega);
+            Assert.AreEqual(HOY.AddDays(1), ctt.FechaEntrega);
+
+            AplazamientoPedidoConPicking.MoverFechaReparto(new[] { rp }, HOY.AddDays(-3), HOY);
+            Assert.AreEqual(HOY, rp.FechaEntrega, "adelantar a un día pasado = hoy");
+        }
+
+        [TestMethod]
+        public async Task Guardia831_AplazadoDejaPasarLaEtiquetaDelRepartoPropio_ElRetenidoNo()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            CabeceraPedidoRetencion cabecera = repo.Cabecera(928083, modo: 2);
+            cabecera.LineasEnPicking = 2;
+            cabecera.PickingsEnCurso = "99812";
+            cabecera.FechaEntregaPicking = VIERNES;
+            Func<DateTime> antes = GuardiaPedidoRetenido.hoy;
+            try
+            {
+                GuardiaPedidoRetenido.hoy = () => HOY;
+                Assert.IsNull(await GuardiaPedidoRetenido.Motivo(repo, "1", 928083, etiquetaRepartoPropio: true), "la etiqueta RP sale");
+                StringAssert.Contains(await GuardiaPedidoRetenido.Motivo(repo, "1", 928083, etiquetaRepartoPropio: false), "aplazado hasta el 30/10/2026");
+                StringAssert.Contains(await GuardiaPedidoRetenido.Motivo(repo, "1", 928083), "aplazado", "sin decir nada (albarán, otra agencia), bloquea");
+
+                cabecera.ModoServicio = Constantes.Pedidos.ModosServicio.RETENIDO;
+                Assert.IsNotNull(await GuardiaPedidoRetenido.Motivo(repo, "1", 928083, etiquetaRepartoPropio: true), "un retenido (modo 5) no sale ni por el reparto propio");
+            }
+            finally
+            {
+                GuardiaPedidoRetenido.hoy = antes;
+            }
+        }
     }
 }

@@ -50,6 +50,8 @@ namespace NestoAPI.Infraestructure.Agencias
         public short Retorno { get; set; }
         /// <summary>NestoAPI#494: día pedido para la recogida (EnviosAgencia.Fecha). Si es pasado, hoy.</summary>
         public System.DateTime? FechaRecogida { get; set; }
+        /// <summary>NestoAPI#831: EnviosAgencia.FechaEntrega. En el reparto propio es el día de reparto (el que lleva su etiqueta).</summary>
+        public System.DateTime? FechaEntrega { get; set; }
 
         /// <summary>
         /// Los datos remotos de un envío de nuestra BD, tal cual están grabados. Un único mapeo para
@@ -73,7 +75,8 @@ namespace NestoAPI.Infraestructure.Agencias
             Observaciones = envio.Observaciones?.Trim(),
             Servicio = envio.Servicio,
             Retorno = envio.Retorno,
-            FechaRecogida = envio.Fecha
+            FechaRecogida = envio.Fecha,
+            FechaEntrega = envio.FechaEntrega
         };
     }
 

@@ -4,6 +4,7 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -23,7 +24,7 @@ namespace NestoAPI.Tests.Controllers
         {
             servicio = A.Fake<IServicioEnvioDesdePedido>();
             controller = new EnviosAgenciasController(A.Fake<NVEntities>()) { EnvioDesdePedido = servicio };
-            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
+            controller.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
         }
 
         private void Devuelve(ResultadoEnvioDesdePedido resultado)
@@ -44,13 +45,30 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task PedidoRetenido_409ConElMotivo_SinLlamarAlServicio_698()
         {
-            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult(p == 927700 ? "El pedido 927700 está retenido por Alfredo: no se puede enviar" : null);
+            controller.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult(p == 927700 ? "El pedido 927700 está retenido por Alfredo: no se puede enviar" : null);
 
             var respuesta = (NegotiatedContentResult<string>)await controller.PostEnvioDesdePedido(new CrearEnvioDesdePedidoDTO { Empresa = "1", Pedido = 927700, Peso = 2m });
 
             Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
             StringAssert.Contains(respuesta.Content, "retenido");
             A.CallTo(() => servicio.Crear(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Aplazado831_ElRealLlevaMotivoNoSale_ConUnoFalsoElEndpointMiraTodoComoAntes()
+        {
+            var llamadas = new List<bool>();
+            controller.MotivoPedidoRetenido = (e, p, rp) => { llamadas.Add(rp); return Task.FromResult(rp ? null : "El pedido 927700 está aplazado hasta el 10/11/2026"); };
+            controller.EnvioDesdePedido = null; // el real: lleva MotivoNoSale
+            Assert.IsNotNull(((ServicioEnvioDesdePedido)controller.EnvioDesdePedido).MotivoNoSale);
+            controller.EnvioDesdePedido = servicio;
+            Devuelve(ResultadoEnvioDesdePedido.Invalido(CodigosErrorEnvioDesdePedido.PEDIDO_RETENIDO, "El pedido 927700 está aplazado hasta el 10/11/2026"));
+
+            var respuesta = (NegotiatedContentResult<string>)await controller.PostEnvioDesdePedido(new CrearEnvioDesdePedidoDTO { Empresa = "1", Pedido = 927700, Peso = 2m });
+
+            Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
+            Assert.AreEqual("El pedido 927700 está aplazado hasta el 10/11/2026", respuesta.Content);
+            CollectionAssert.AreEqual(new[] { false }, llamadas, "con un servicio sin MotivoNoSale (el falso), el endpoint mira todo, como antes");
         }
 
         [TestMethod]

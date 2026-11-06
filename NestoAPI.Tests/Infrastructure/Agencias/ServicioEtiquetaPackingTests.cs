@@ -35,7 +35,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             usuario = new GenericPrincipal(new GenericIdentity("Andre", "Bearer"), new[] { "Almacén" });
             servicio = new ServicioEtiquetaPacking(_ => pasos, parametros, ex => registrados.Add(ex))
             {
-                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null)
+                MotivoPedidoRetenido = (e, p, rp) => Task.FromResult<string>(null)
             };
 
             A.CallTo(() => pasos.LeerEnvioEnCurso(A<string>._, A<int>._)).Returns(Task.FromResult<EnviosAgencia>(null));
@@ -724,7 +724,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         [TestMethod]
         public async Task Imprimir_PedidoRetenido_NoGrabaEnvioYDiceElMotivo()
         {
-            servicio.MotivoPedidoRetenido = (e, p) => Task.FromResult("El pedido está retenido: esperando a Administración.");
+            servicio.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult("El pedido está retenido: esperando a Administración.");
 
             ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, new PeticionEtiquetaPackingDTO(), usuario);
 
@@ -827,6 +827,97 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsTrue(etiqueta.Impresa);
             A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
             Assert.IsTrue(registrados.Any(e => e.Message.Contains("#765")));
+        }
+
+        // ------------------------------------------------------------ NestoAPI#831: la etiqueta RP de un aplazado sale
+
+        private const string APLAZADO = "El pedido 926940 está aplazado hasta el 10/11/2026 (tiene el picking 99812 en el almacén con esa fecha de entrega).";
+
+        /// <summary>Aplazado y no retenido: con «etiqueta del reparto propio» no bloquea; sin ella, sí.</summary>
+        private void Aplazado() => servicio.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult(rp ? null : APLAZADO);
+
+        private void RepartoPropioRegistrado(DateTime? fechaReparto)
+        {
+            int propio = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            EnviosAgencia envio = Envio(propio);
+            envio.FechaEntrega = fechaReparto;
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).Returns(ResultadoEnvioDesdePedido.Creado(
+                new EnvioDesdePedidoDTO { Envio = envio, Origen = PropuestaEnvioDTO.ORIGEN_NUEVO, Flujo = ServicioEnvioDesdePedido.FlujoDe(propio), Avisos = new List<string>() }));
+            A.CallTo(() => pasos.NombreAgencia(propio)).Returns("Reparto propio");
+            A.CallTo(() => pasos.Tramitar(5001)).Returns(PasoEtiquetaAgencia.Bien("RP5001", 2));
+            A.CallTo(() => pasos.Imprimir(5001, A<string>._)).Returns(PasoEtiquetaAgencia.Bien("RP5001", 2, "ZEBRA BOLSAS"));
+        }
+
+        [TestMethod]
+        public async Task Aplazado831_RepartoPropio_SacaLaEtiquetaYNoFactura()
+        {
+            Aplazado();
+            FacturarActivado();
+            servicio.Hoy = () => new DateTime(2026, 11, 6);
+            RepartoPropioRegistrado(new DateTime(2026, 11, 10));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Hecha, resultado.Tipo, resultado.Error?.Message);
+            Assert.IsTrue(resultado.Etiqueta.Impresa);
+            A.CallTo(() => pasos.Tramitar(5001)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            Assert.IsTrue(resultado.Etiqueta.Avisos.Any(a => a.Contains("se reparte el 10/11") && a.Contains("Facturar rutas")),
+                string.Join(" | ", resultado.Etiqueta.Avisos));
+        }
+
+        [TestMethod]
+        public async Task RepartoPropio831_ConFechaDeRepartoFutura_NoFacturaAlImprimir()
+        {
+            FacturarActivado();
+            servicio.Hoy = () => new DateTime(2026, 11, 6);
+            RepartoPropioRegistrado(new DateTime(2026, 11, 9));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Hecha, resultado.Tipo);
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Aplazado831_OtraAgenciaYaGrabada_SigueBloqueado()
+        {
+            Aplazado();
+            A.CallTo(() => pasos.LeerEnvioEnCurso("1", PEDIDO)).Returns(Envio(Constantes.Agencias.AGENCIA_CTT));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Invalida, resultado.Tipo);
+            Assert.AreEqual(CodigosEtiquetaPacking.PEDIDO_RETENIDO, resultado.Error.Codigo);
+            Assert.AreEqual(APLAZADO, resultado.Error.Message);
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Imprimir(A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Aplazado831_DesdePedidoLoParaPorNoSerRepartoPropio_PedidoRetenido()
+        {
+            Aplazado();
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._))
+                .Returns(ResultadoEnvioDesdePedido.Invalido(CodigosErrorEnvioDesdePedido.PEDIDO_RETENIDO, APLAZADO));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Invalida, resultado.Tipo);
+            Assert.AreEqual(CodigosEtiquetaPacking.PEDIDO_RETENIDO, resultado.Error.Codigo);
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Retenido831_NiSiquieraElRepartoPropio()
+        {
+            servicio.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult("El pedido 926940 está retenido hasta nuevo aviso.");
+            RepartoPropioRegistrado(new DateTime(2026, 11, 10));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(CodigosEtiquetaPacking.PEDIDO_RETENIDO, resultado.Error.Codigo);
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
         }
     }
 }

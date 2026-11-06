@@ -198,7 +198,14 @@ namespace NestoAPI.Infraestructure.Agencias
         /// Administración por un enlace de pago pendiente) no saca etiqueta desde el packing, igual que no sale por
         /// POST api/EnviosAgencias/DesdePedido. (empresa, pedido) → motivo o null. Sustituible en los tests.
         /// </summary>
-        internal Func<string, int, Task<string>> MotivoPedidoRetenido { get; set; } = PedidosVenta.Retencion.GuardiaPedidoRetenido.Motivo;
+        /// <remarks>
+        /// NestoAPI#831: (empresa, pedido, etiqueta del reparto propio) → motivo o null. Con true, un aplazado (picking con fecha
+        /// futura) no bloquea: la etiqueta del reparto propio sale con su día de reparto. Un retenido (modo 5) bloquea siempre.
+        /// </remarks>
+        internal Func<string, int, bool, Task<string>> MotivoPedidoRetenido { get; set; } = PedidosVenta.Retencion.GuardiaPedidoRetenido.Motivo;
+
+        /// <summary>NestoAPI#831: hoy, para saber si el reparto es de otro día. Sustituible en los tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
 
         public ServicioEtiquetaPacking(Func<IPrincipal, IPasosEtiquetaPacking> crearPasos, ILectorParametrosUsuario parametros,
             Action<Exception> registrar = null)
@@ -228,10 +235,16 @@ namespace NestoAPI.Infraestructure.Agencias
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(usuario, "NestoAPI");
 
-            string retenido = await MotivoPedidoRetenido(empresa, pedido);
-            if (retenido != null)
+            // NestoAPI#831: un retenido (modo 5) no saca etiqueta; un aplazado, solo la del reparto propio (que no se carga hasta
+            // su día). Como la agencia aún no se sabe, el aplazado se mira cuando se tiene el envío.
+            string aplazado = await MotivoPedidoRetenido(empresa, pedido, false);
+            if (aplazado != null)
             {
-                return ResultadoEtiquetaPacking.Invalida(CodigosEtiquetaPacking.PEDIDO_RETENIDO, retenido);
+                string retenido = await MotivoPedidoRetenido(empresa, pedido, true);
+                if (retenido != null)
+                {
+                    return ResultadoEtiquetaPacking.Invalida(CodigosEtiquetaPacking.PEDIDO_RETENIDO, retenido);
+                }
             }
 
             using (IPasosEtiquetaPacking pasos = crearPasos(usuario))
@@ -303,6 +316,12 @@ namespace NestoAPI.Infraestructure.Agencias
                     }
                 }
 
+                // NestoAPI#831: aplazado y no es del reparto propio: no sale (el envío nuevo ya lo para DesdePedido)
+                if (aplazado != null && envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+                {
+                    return ResultadoEtiquetaPacking.Invalida(CodigosEtiquetaPacking.PEDIDO_RETENIDO, aplazado);
+                }
+
                 etiqueta.Envio = envio.Numero;
                 etiqueta.Agencia = envio.Agencia;
                 etiqueta.Bultos = envio.Bultos;
@@ -366,7 +385,16 @@ namespace NestoAPI.Infraestructure.Agencias
                 // rutas ya no las vería y no saldría el documento NE: Ariadna no imprime documentos).
                 if (FacturarAlImprimir(usuarioAuditoria))
                 {
-                    if (await EsNotaDeRepartoPropioSeguro(pasos, empresa, pedido))
+                    // NestoAPI#831: el del reparto propio de otro día no se factura ahora (el albarán no se puede hasta esa fecha):
+                    // lo hace Facturar rutas el día del reparto.
+                    if (envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+                        && (aplazado != null || RepartoPropio.FechaRepartoPropio.EsDeOtroDia(envio, Hoy())))
+                    {
+                        string dia = RepartoPropio.FechaRepartoPropio.DeEnvio(envio) > Hoy().Date
+                            ? "el " + RepartoPropio.FechaRepartoPropio.DeEnvio(envio).ToString("dd/MM", System.Globalization.CultureInfo.InvariantCulture) : "otro día";
+                        etiqueta.Avisos.Add($"El pedido {pedido} se reparte {dia}: no se factura al imprimir la etiqueta, lo hará Facturar rutas ese día.");
+                    }
+                    else if (await EsNotaDeRepartoPropioSeguro(pasos, empresa, pedido))
                     {
                         etiqueta.Avisos.Add($"La nota de entrega {pedido} no se procesa al imprimir la etiqueta: la procesa Facturar rutas, que imprime su documento.");
                     }

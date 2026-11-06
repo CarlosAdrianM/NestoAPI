@@ -12,7 +12,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
     /// </summary>
     public static class GuardiaPedidoRetenido
     {
-        public static async Task<string> Motivo(IRepositorioPedidosRetenidos repositorio, string empresa, int pedido)
+        public static Task<string> Motivo(IRepositorioPedidosRetenidos repositorio, string empresa, int pedido)
+            => Motivo(repositorio, empresa, pedido, etiquetaRepartoPropio: false);
+
+        /// <param name="etiquetaRepartoPropio">
+        /// NestoAPI#831 (Carlos 06/11/26): es la ETIQUETA de un envío del reparto propio (agencia 14). Entonces el aplazado (picking
+        /// con fecha de entrega futura) no la bloquea: se etiqueta con su día de reparto y la furgoneta no la carga hasta ese día.
+        /// Un retenido (modo 5) la bloquea siempre. Para todo lo demás (otra agencia, el albarán), false.
+        /// </param>
+        public static async Task<string> Motivo(IRepositorioPedidosRetenidos repositorio, string empresa, int pedido, bool etiquetaRepartoPropio)
         {
             if (repositorio == null || pedido <= 0)
             {
@@ -30,7 +38,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 return TextosRetencion.BloqueoSalida(pedido, viva);
             }
             // NestoAPI#722: aplazado = picking con fecha de entrega futura (solo se llega ahí aplazando desde el pedido)
-            if (cabecera.FechaEntregaPicking.HasValue && cabecera.FechaEntregaPicking.Value.Date > hoy().Date)
+            if (!etiquetaRepartoPropio && cabecera.FechaEntregaPicking.HasValue && cabecera.FechaEntregaPicking.Value.Date > hoy().Date)
             {
                 return TextosRetencion.BloqueoAplazado(pedido, cabecera.FechaEntregaPicking.Value, cabecera.Pickings());
             }
@@ -42,5 +50,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
 
         /// <summary>El de producción: su propio contexto, como el resto de la retención.</summary>
         public static Task<string> Motivo(string empresa, int pedido) => Motivo(new RepositorioPedidosRetenidos(), empresa, pedido);
+
+        /// <summary>NestoAPI#831: el de producción, diciendo si es la etiqueta de un envío del reparto propio.</summary>
+        public static Task<string> Motivo(string empresa, int pedido, bool etiquetaRepartoPropio)
+            => Motivo(new RepositorioPedidosRetenidos(), empresa, pedido, etiquetaRepartoPropio);
     }
 }

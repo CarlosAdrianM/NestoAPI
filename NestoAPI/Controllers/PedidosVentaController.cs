@@ -1133,7 +1133,7 @@ namespace NestoAPI.Controllers
             else
             {
                 envio = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
-                    envios.Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado }), out int numeroEnvio)
+                    envios.Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado, Agencia = e.Agencia }), out int numeroEnvio)
                     ? envios.First(e => e.Numero == numeroEnvio)
                     : null;
             }
@@ -1742,7 +1742,7 @@ namespace NestoAPI.Controllers
                         {
                             enviosDelPedido = db.EnviosAgencias
                                 .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero)
-                                .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado })
+                                .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado, Agencia = e.Agencia })
                                 .ToList();
                         }
                         if (envioACambiarEnAgencia == 0 && Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(enviosDelPedido, out int envioEnAgencia))
@@ -2364,6 +2364,18 @@ namespace NestoAPI.Controllers
                         cambio ?? new ResultadoCambioFechaEnAgencia { Envio = envioACambiarEnAgencia, Fecha = fechaEnAgencia }, pedido.Usuario);
                 }
                 fechaCambiadaEnAgencia = cambio;
+            }
+
+            // NestoAPI#831: el envío del reparto propio ya etiquetado no se anula: pasa al día de reparto nuevo (se guarda con el pedido)
+            if (lineasAplazadas.Count > 0 && enviosDelPedido != null)
+            {
+                List<int> repartoPropio = enviosDelPedido.Where(e => e.EsRepartoPropioPorEntregar).Select(e => e.Numero).Distinct().ToList();
+                if (repartoPropio.Count > 0)
+                {
+                    List<EnviosAgencia> aMover = await db.EnviosAgencias.Where(e => repartoPropio.Contains(e.Numero)).ToListAsync().ConfigureAwait(true);
+                    _ = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.MoverFechaReparto(aMover,
+                        lineasAplazadas.Max(l => l.FechaNueva.Date), DateTime.Today);
+                }
             }
 
             try

@@ -75,8 +75,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             };
         }
 
-        // La fecha del envío (la del picking) o, si es de un día pasado o no la tiene, hoy.
+        // NestoAPI#831: el día de reparto (FechaEntrega) si es de hoy en adelante; si no, la fecha del envío (la del picking) o,
+        // si es de un día pasado o no la tiene, hoy.
         private DateTime FechaEtiqueta(DatosEnvioRemoto envio)
-            => envio.FechaRecogida.HasValue && envio.FechaRecogida.Value.Date >= hoy().Date ? envio.FechaRecogida.Value.Date : hoy().Date;
+        {
+            if (envio.FechaEntrega.HasValue && envio.FechaEntrega.Value.Date >= hoy().Date)
+            {
+                return envio.FechaEntrega.Value.Date;
+            }
+            return envio.FechaRecogida.HasValue && envio.FechaRecogida.Value.Date >= hoy().Date ? envio.FechaRecogida.Value.Date : hoy().Date;
+        }
     }
 }

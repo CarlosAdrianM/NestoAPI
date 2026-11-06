@@ -294,7 +294,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             EnviosAgencia envio = (await Crear(Peticion())).Envio.Envio;
 
             Assert.AreEqual(85.40m, envio.Reembolso, "es lo que cobra Ariadna al entregar");
-            Assert.AreEqual(propuesta.Fecha.Date, envio.FechaPagoReembolso);
+            // NestoAPI#831: con la fecha del día de reparto (FechaEntrega), no la de la etiqueta
+            Assert.AreEqual(propuesta.FechaEntrega.Value.Date, envio.FechaPagoReembolso);
         }
 
         [TestMethod]
@@ -920,6 +921,40 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             };
             datos.Envios[numero] = envio;
             return envio;
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#831: un aplazado solo sale por el reparto propio
+
+        [TestMethod]
+        public async Task MotivoNoSale831_OtraAgencia_NoSeGrabaYDiceElMotivo()
+        {
+            var llamadas = new List<int>();
+            servicio.MotivoNoSale = (e, p, agencia) => { llamadas.Add(agencia); return Task.FromResult(agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO ? null : "aplazado"); };
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Invalido, resultado.Tipo);
+            Assert.AreEqual(CodigosErrorEnvioDesdePedido.PEDIDO_RETENIDO, resultado.Error.Codigo);
+            Assert.AreEqual("aplazado", resultado.Error.Message);
+            CollectionAssert.AreEqual(new[] { GLS }, llamadas, "con la agencia ya decidida");
+            Assert.AreEqual(0, datos.Anadidos.Count);
+        }
+
+        [TestMethod]
+        public async Task MotivoNoSale831_RepartoPropio_SeGrabaConSuDiaDeReparto()
+        {
+            propuesta.Agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            propuesta.AgenciaNombre = "Reparto propio";
+            propuesta.Servicio = 0;
+            propuesta.Horario = 0;
+            propuesta.FechaEntrega = new DateTime(2026, 10, 23);
+            servicio.MotivoNoSale = (e, p, agencia) => Task.FromResult(agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO ? null : "aplazado");
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(new DateTime(2026, 10, 20), resultado.Envio.Envio.Fecha);
+            Assert.AreEqual(new DateTime(2026, 10, 23), resultado.Envio.Envio.FechaEntrega);
         }
 
         /// <summary>La BD en memoria: identity desde 250000, transacción con commit/rollback y el comparador como función.</summary>

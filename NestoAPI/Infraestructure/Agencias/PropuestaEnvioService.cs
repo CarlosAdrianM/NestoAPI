@@ -71,6 +71,11 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<int> BultosPacking(string empresa, int pedido);
         Task<List<AgenciaTransporte>> LeerAgencias();
         Task<DateTime?> FechaPicking(string empresa);
+        /// <summary>
+        /// NestoAPI#831: la MIN fecha de entrega de las líneas en picking (Estado 1, Picking &gt; 0) del pedido, o null. Con ella se
+        /// calcula el día de reparto del envío del reparto propio (<see cref="RepartoPropio.FechaRepartoPropio"/>).
+        /// </summary>
+        Task<DateTime?> FechaEntregaPicking(string empresa, int pedido);
         /// <summary>El comparador del servidor (GET Agencias/MasEconomica y /{numero}/Coste).</summary>
         ComparadorAgencias Comparador();
     }
@@ -170,9 +175,36 @@ namespace NestoAPI.Infraestructure.Agencias
                 DecidirReembolsoDelPendiente(propuesta, pendiente, empresa, pedido, reembolsoPedido);
             }
 
+            // NestoAPI#831: en el reparto propio, la fecha de entrega es el día de reparto (el del picking, si es futuro)
+            if (propuesta.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                propuesta.FechaEntrega = await DiaDeRepartoPropio(empresa, pedido, pedidoAgencia, propuesta).ConfigureAwait(false);
+            }
+
             propuesta.AgenciaNombre = agencias.FirstOrDefault(a => a.Numero == propuesta.Agencia)?.Nombre?.Trim();
             await AnadirAvisos(propuesta, empresa, pedido).ConfigureAwait(false);
             return propuesta;
+        }
+
+        /// <summary>NestoAPI#831: los festivos y el día de hoy del día de reparto. Sustituibles en los tests.</summary>
+        internal Func<DateTime, bool> EsFestivoReparto { get; set; } = RepartoPropio.FechaRepartoPropio.EsFestivoAlgete;
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>NestoAPI#831: <see cref="RepartoPropio.FechaRepartoPropio.Calcular(DateTime?, DateTime, string, string, string, string, string, Func{DateTime, bool})"/>. Si no se puede leer el picking, hoy.</summary>
+        private async Task<DateTime> DiaDeRepartoPropio(string empresa, int pedido, PedidoParaAgenciaDTO pedidoAgencia, PropuestaEnvioDTO propuesta)
+        {
+            DateTime hoy = Hoy().Date;
+            try
+            {
+                DateTime? picking = await datos.FechaEntregaPicking(empresa, pedido).ConfigureAwait(false);
+                return RepartoPropio.FechaRepartoPropio.Calcular(picking, hoy, pedidoAgencia.Ruta, propuesta.CodPostal, empresa,
+                    pedidoAgencia.Cliente, pedidoAgencia.Contacto, EsFestivoReparto);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudo calcular el día de reparto (#831). {ex.Message}", ex));
+                return hoy;
+            }
         }
 
         // ---------------------------------------------------------------- pendiente
@@ -732,7 +764,11 @@ namespace NestoAPI.Infraestructure.Agencias
             Comparar(diferencias, "peso", envio.Peso, propuesta.Peso);
             // NestoAPI#595 (slice 2, 20/10/26): también fechas (solo el día), observaciones (espacios normalizados) y empresa.
             CompararDia(diferencias, "fecha", envio.Fecha, propuesta.Fecha);
-            CompararDia(diferencias, "fecha de entrega", envio.FechaEntrega, propuesta.FechaEntrega);
+            // NestoAPI#831: en el reparto propio la fecha de entrega es el día de reparto, que se fija al tramitar: no se compara
+            if (envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                CompararDia(diferencias, "fecha de entrega", envio.FechaEntrega, propuesta.FechaEntrega);
+            }
             Comparar(diferencias, "observaciones", NormalizarEspacios(envio.Observaciones), NormalizarEspacios(propuesta.Observaciones));
             Comparar(diferencias, "empresa", envio.Empresa, propuesta.Empresa);
             if (Math.Abs(envio.ImporteGasto - propuesta.ImporteGasto) > TOLERANCIA_IMPORTE_GASTO)
@@ -883,6 +919,9 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public Task<DateTime?> FechaPicking(string empresa)
             => db.Empresas.AsNoTracking().Where(e => e.Número == empresa).Select(e => e.FechaPicking).FirstOrDefaultAsync();
+
+        public Task<DateTime?> FechaEntregaPicking(string empresa, int pedido)
+            => RepartoPropio.FechaRepartoPropio.FechaEntregaPickingAsync(db, empresa, pedido);
 
         public ComparadorAgencias Comparador()
             => comparador ?? (comparador = ComparadorAgenciasFactory.ParaSeleccion(db));

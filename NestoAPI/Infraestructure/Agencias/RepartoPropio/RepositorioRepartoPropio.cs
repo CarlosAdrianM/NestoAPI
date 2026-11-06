@@ -69,7 +69,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return db.EnviosAgencias.AsNoTracking()
                 .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
                     && (e.Estado == tramitado || e.Estado == incidentado)
-                    && e.Fecha >= desde && e.Fecha < hasta)
+                    // NestoAPI#831: por el día de reparto (FechaEntrega; sin ella, Fecha), como FechaRepartoPropio.DeEnvio
+                    && (e.FechaEntrega ?? e.Fecha) >= desde && (e.FechaEntrega ?? e.Fecha) < hasta)
                 .ToListAsync();
         }
 

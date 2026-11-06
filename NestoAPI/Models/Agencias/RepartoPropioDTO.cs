@@ -43,6 +43,11 @@ namespace NestoAPI.Models.Agencias
         public string Estado { get; set; }
         public string Observaciones { get; set; }
         /// <summary>
+        /// NestoAPI#831: el día de reparto del envío (EnviosAgencia.FechaEntrega; sin ella, Fecha), sin hora. Es el que filtra
+        /// Envios y SinCargar; un envío con día de reparto posterior a hoy no se carga (409). Null en las paradas de reposición.
+        /// </summary>
+        public DateTime? FechaReparto { get; set; }
+        /// <summary>
         /// Ariadna#63: quién lo lleva (el último que cargó un bulto suyo en la furgoneta), sin dominio. Null si nadie ha cargado
         /// nada (o sin Scripts/Issue739_CargaFurgoneta.sql). NestoAPI#786: en una nota de cobro (que no se carga), el repartidor al
         /// que se asignó al crearla: con soloMios solo le sale a él.

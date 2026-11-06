@@ -223,6 +223,13 @@ namespace NestoAPI.Infraestructure.Agencias
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
         }
 
+        /// <summary>
+        /// NestoAPI#831: (empresa, pedido, agencia del envío) → por qué no puede salir el pedido por esa agencia, o null. Se mira con
+        /// la agencia ya decidida (la propuesta y los cambios de la pantalla): un pedido aplazado solo sale por el reparto propio
+        /// (su etiqueta, con el día de reparto). Sin él, no se mira nada (lo mira quien llama, como antes).
+        /// </summary>
+        internal Func<string, int, int, Task<string>> MotivoNoSale { get; set; }
+
         // Sin ConfigureAwait(false): ELMAH toma el usuario de HttpContext.Current.
         public async Task<ResultadoEnvioDesdePedido> Crear(CrearEnvioDesdePedidoDTO peticion, string usuario)
         {
@@ -276,6 +283,16 @@ namespace NestoAPI.Infraestructure.Agencias
             if (invalido != null)
             {
                 return invalido;
+            }
+
+            // NestoAPI#831: con la agencia ya decidida, ¿puede salir? (un aplazado, solo por el reparto propio)
+            if (MotivoNoSale != null)
+            {
+                string noSale = await MotivoNoSale(empresa, peticion.Pedido, propuesta.Agencia);
+                if (noSale != null)
+                {
+                    return ResultadoEnvioDesdePedido.Invalido(CodigosErrorEnvioDesdePedido.PEDIDO_RETENIDO, noSale);
+                }
             }
 
             if (antes.CambiaElCoste(propuesta, reembolsoPedido))
@@ -608,6 +625,11 @@ namespace NestoAPI.Infraestructure.Agencias
                 envio.Servicio = propuesta.Servicio;
                 envio.Retorno = propuesta.Retorno;
                 envio.Peso = propuesta.Peso;
+                // NestoAPI#831: en el reparto propio, FechaEntrega es el día de reparto (lo calcula la propuesta)
+                if (envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && propuesta.FechaEntrega.HasValue)
+                {
+                    envio.FechaEntrega = propuesta.FechaEntrega;
+                }
                 if (propuesta.ImporteGasto > 0m)
                 {
                     envio.ImporteGasto = propuesta.ImporteGasto;

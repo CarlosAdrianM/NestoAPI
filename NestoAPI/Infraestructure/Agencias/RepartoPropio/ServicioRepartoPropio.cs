@@ -17,7 +17,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     {
         /// <summary>¿Se ha lanzado Scripts/Issue739_RepartoPropio.sql (tabla EnviosAgenciaPruebasEntrega)?</summary>
         bool ScriptAplicado();
-        /// <summary>Envíos de la agencia 14 en estado Tramitado o Incidentado con Fecha en [desde, hasta).</summary>
+        /// <summary>
+        /// Envíos de la agencia 14 en estado Tramitado o Incidentado con día de reparto en [desde, hasta). NestoAPI#831: el día de
+        /// reparto es FechaEntrega (sin ella, Fecha): <see cref="FechaRepartoPropio.DeEnvio"/>.
+        /// </summary>
         Task<List<EnviosAgencia>> LeerEnviosEnReparto(DateTime desde, DateTime hasta);
         /// <summary>El envío, con su agencia (cuenta de caja) y su empresa, para modificarlo. Null si no existe.</summary>
         Task<EnviosAgencia> LeerEnvio(int numero);
@@ -156,7 +159,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         // ---------------------------------------------------------------- lecturas
 
         /// <summary>
-        /// Los envíos en reparto (Tramitado o Incidentado) con fecha hasta <paramref name="fecha"/> (hoy por defecto) y desde
+        /// Los envíos en reparto (Tramitado o Incidentado) con día de reparto (NestoAPI#831: FechaEntrega) hasta <paramref name="fecha"/> (hoy por defecto) y desde
         /// 30 días antes: un incidentado de ayer sigue en la lista para reintentarlo. Ariadna#63: con quién lo lleva y cuántos
         /// bultos ha cargado; con <paramref name="soloMios"/>, solo los que lleva <paramref name="usuario"/> (sin el script de la
         /// carga no hay repartidores y se ignora: la lista de siempre).
@@ -171,7 +174,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             List<EnviosAgencia> envios = await repositorio.LeerEnviosEnReparto(dia.AddDays(-DIAS_ATRAS_LISTA), dia.AddDays(1)).ConfigureAwait(false)
                 ?? new List<EnviosAgencia>();
             List<EnvioRepartoDTO> lista = envios
-                .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && EstadoTexto(e.Estado) != null && e.Estado != Constantes.Agencias.ESTADO_ENTREGADO)
+                .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && EstadoTexto(e.Estado) != null && e.Estado != Constantes.Agencias.ESTADO_ENTREGADO
+                    && FechaRepartoPropio.DeEnvio(e) <= dia) // NestoAPI#831: lo de días siguientes no sale todavía
                 .OrderBy(e => e.Fecha).ThenBy(e => e.Numero)
                 .Select(e => ADto(e, new EnvioRepartoDTO()))
                 .ToList();
@@ -228,6 +232,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (EstadoTexto(envio.Estado) == null)
             {
                 return ResultadoReparto<EnvioRepartoBultoDTO>.Mal(TipoResultadoReparto.Conflicto, NoEstaEnReparto(envio));
+            }
+            // NestoAPI#831: el de un reparto de otro día (etiqueta sacada antes de tiempo) no se carga hoy
+            if (envio.Estado != Constantes.Agencias.ESTADO_ENTREGADO && FechaRepartoPropio.EsDeOtroDia(envio, ahora()))
+            {
+                return ResultadoReparto<EnvioRepartoBultoDTO>.Mal(TipoResultadoReparto.Conflicto, FechaRepartoPropio.MensajeNoSeCargaHoy(envio));
             }
             EnvioRepartoBultoDTO dto = ADto(envio, new EnvioRepartoBultoDTO());
             dto.Bulto = bulto;
@@ -863,6 +872,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             dto.Reembolso = e.Reembolso > 0 ? e.Reembolso : 0m;
             dto.Estado = EstadoTexto(e.Estado);
             dto.Observaciones = e.Observaciones?.Trim();
+            dto.FechaReparto = FechaRepartoPropio.DeEnvio(e); // NestoAPI#831
             return dto;
         }
 

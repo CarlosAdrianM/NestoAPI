@@ -199,6 +199,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return MalCarga(TipoResultadoReparto.Conflicto, NoEstaEnReparto(envio));
             }
+            // NestoAPI#831: la etiqueta se pudo sacar antes (aplazado), pero el bulto solo se carga el día de su reparto
+            if (FechaRepartoPropio.EsDeOtroDia(envio, ahora()))
+            {
+                return MalCarga(TipoResultadoReparto.Conflicto, FechaRepartoPropio.MensajeNoSeCargaHoy(envio));
+            }
 
             List<CargaBultoReparto> cargas = await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false) ?? new List<CargaBultoReparto>();
             string actual = Repartidor(cargas);
@@ -259,7 +264,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         // ---------------------------------------------------------------- sin cargar
 
         /// <summary>
-        /// GET api/RepartoPropio/SinCargar: los envíos del reparto propio Tramitados con fecha <paramref name="fecha"/> (hoy por
+        /// GET api/RepartoPropio/SinCargar: los envíos del reparto propio Tramitados con día de reparto (NestoAPI#831: FechaEntrega)
+        /// <paramref name="fecha"/> (hoy por
         /// defecto) a los que les falta algún bulto por cargar (por quien lo lleva; sin repartidor, todos).
         /// </summary>
         public async Task<ResultadoReparto<List<EnvioSinCargarDTO>>> SinCargar(DateTime? fecha)
@@ -272,7 +278,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             DateTime dia = (fecha ?? ahora()).Date;
             List<EnviosAgencia> envios = (await repositorio.LeerEnviosEnReparto(dia, dia.AddDays(1)).ConfigureAwait(false) ?? new List<EnviosAgencia>())
                 .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && e.Estado == Constantes.Agencias.ESTADO_TRAMITADO
-                    && e.Fecha >= dia && e.Fecha < dia.AddDays(1))
+                    && FechaRepartoPropio.DeEnvio(e) == dia) // NestoAPI#831: los del día de reparto pedido
                 .ToList();
             List<CargaBultoReparto> cargas = await carga.LeerCargas(envios.Select(e => e.Numero).ToList()).ConfigureAwait(false)
                 ?? new List<CargaBultoReparto>();

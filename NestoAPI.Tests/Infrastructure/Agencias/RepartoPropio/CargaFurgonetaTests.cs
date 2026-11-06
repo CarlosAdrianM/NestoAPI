@@ -334,6 +334,99 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             StringAssert.Contains(cuerpo, "\"Message\":\"Este bulto no es suyo: es de la parada de Andre.");
         }
 
+        // ================================================================ NestoAPI#831: la furgoneta solo carga el día que toca
+
+        private static EnviosAgencia EnvioDelDia(int numero, DateTime fechaEtiqueta, DateTime? fechaReparto, short bultos = 1)
+        {
+            EnviosAgencia envio = Envio(numero, bultos: bultos, fecha: fechaEtiqueta);
+            envio.FechaEntrega = fechaReparto;
+            return envio;
+        }
+
+        [TestMethod]
+        public async Task Cargar831_BultoDeUnRepartoPosterior_409DeUstedYNoSeApunta()
+        {
+            repositorio.Con(EnvioDelDia(251300, AHORA.Date, AHORA.Date.AddDays(4)));
+
+            var resultado = await servicio.Cargar(Carga("RP251300-1"), ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, resultado.Tipo);
+            Assert.AreEqual("Este bulto es del reparto del 02/11: no se carga hoy.", resultado.Mensaje);
+            Assert.AreEqual(0, cargas.Filas.Count);
+            Assert.AreEqual(0, cargas.Historias.Count);
+        }
+
+        [TestMethod]
+        public async Task Cargar831_EtiquetaDeAyerConRepartoDeHoy_SeCarga()
+        {
+            repositorio.Con(EnvioDelDia(251300, AHORA.Date.AddDays(-1), AHORA.Date));
+
+            var resultado = await servicio.Cargar(Carga("RP251300-1"), ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task Bulto831_DeUnRepartoPosterior_409()
+        {
+            repositorio.Con(EnvioDelDia(251300, AHORA.Date, AHORA.Date.AddDays(1)));
+
+            var resultado = await servicio.Bulto("RP251300-1");
+
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, resultado.Tipo);
+            Assert.AreEqual("Este bulto es del reparto del 30/10: no se carga hoy.", resultado.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task SinCargar831_PorElDiaDeReparto_NoPorElDeLaEtiqueta()
+        {
+            repositorio.Con(EnvioDelDia(251300, AHORA.Date.AddDays(-1), AHORA.Date));          // etiqueta de ayer, reparto hoy
+            repositorio.Con(EnvioDelDia(251301, AHORA.Date, AHORA.Date.AddDays(1)));           // etiqueta de hoy, reparto mañana
+            repositorio.Con(EnvioDelDia(251302, AHORA.Date, null));                            // sin FechaEntrega: su Fecha
+
+            var hoy = await servicio.SinCargar(AHORA.Date);
+            var manana = await servicio.SinCargar(AHORA.Date.AddDays(1));
+
+            CollectionAssert.AreEquivalent(new[] { 251300, 251302 }, hoy.Contenido.Select(e => e.EnvioId).ToList());
+            CollectionAssert.AreEquivalent(new[] { 251301 }, manana.Contenido.Select(e => e.EnvioId).ToList());
+        }
+
+        [TestMethod]
+        public async Task Envios831_LoDeOtroDiaNoSaleTodavia_LoAtrasadoSi_YLlevaSuFechaReparto()
+        {
+            repositorio.Con(EnvioDelDia(251300, AHORA.Date.AddDays(-3), AHORA.Date.AddDays(-2)));  // atrasado: sigue saliendo
+            repositorio.Con(EnvioDelDia(251301, AHORA.Date, AHORA.Date.AddDays(1)));               // de mañana
+
+            var hoy = await servicio.Envios(AHORA.Date);
+            var manana = await servicio.Envios(AHORA.Date.AddDays(1));
+
+            CollectionAssert.AreEquivalent(new[] { 251300 }, hoy.Contenido.Select(e => e.EnvioId).ToList());
+            Assert.AreEqual(AHORA.Date.AddDays(-2), hoy.Contenido.Single().FechaReparto);
+            CollectionAssert.AreEquivalent(new[] { 251300, 251301 }, manana.Contenido.Select(e => e.EnvioId).ToList());
+            Assert.AreEqual(AHORA.Date.AddDays(1), manana.Contenido.Single(e => e.EnvioId == 251301).FechaReparto);
+        }
+
+        [TestMethod]
+        public async Task Controlador831_CargarDeOtroDia_409ConElMensaje()
+        {
+            repositorio.Con(EnvioDelDia(251300, AHORA.Date, AHORA.Date.AddDays(4)));
+            var usuario = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "Andre"), new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN)
+            }, "prueba"));
+            var controlador = new RepartoPropioController(null, servicio)
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                User = usuario
+            };
+
+            HttpResponseMessage respuesta = await (await controlador.Cargar(Carga("RP251300-1"))).ExecuteAsync(CancellationToken.None);
+
+            Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
+            StringAssert.Contains(await respuesta.Content.ReadAsStringAsync(), "Este bulto es del reparto del 02/11: no se carga hoy.");
+        }
+
         // ================================================================ dobles
 
         internal class CargaFalsa : IRepositorioCargaFurgoneta

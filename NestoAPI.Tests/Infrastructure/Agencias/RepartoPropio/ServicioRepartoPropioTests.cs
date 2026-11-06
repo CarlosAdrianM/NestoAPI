@@ -864,7 +864,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 return Task.FromResult(Envios.Values
                     .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
                         && (e.Estado == Constantes.Agencias.ESTADO_TRAMITADO || e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO)
-                        && e.Fecha >= desde && e.Fecha < hasta)
+                        // NestoAPI#831: como el repositorio real, por el día de reparto (FechaEntrega; sin ella, Fecha)
+                        && (e.FechaEntrega ?? e.Fecha) >= desde && (e.FechaEntrega ?? e.Fecha) < hasta)
                     .ToList());
             }
 
