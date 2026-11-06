@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía de agencias: gestión en tránsito de CTT</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 22%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9.5pt; white-space: nowrap; }
+  .regla { background: #fdecea; border: 2px solid #c62828; padding: 9px 13px; margin: 12px 0; break-inside: avoid; }
+  .regla p { margin: 3px 0; }
+  .regla .titulo { color: #b71c1c; font-size: 13pt; font-weight: 700; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+  .botones { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+  .boton { border: 1px solid #777; border-radius: 4px; padding: 3px 10px; background: #f3f3f3; font-size: 10pt; white-space: nowrap; }
+  .boton.off { color: #999; border-color: #bbb; background: #fafafa; }
+  .leyenda { color: #666; font-size: 9.5pt; margin: 2px 0 10px; }
+</style>
+</head>
+<body>
+<h1>Agencias: qué se puede hacer con un envío de CTT que ya ha salido</h1>
+<p class="sub">Para Nesto 1.10.56 · 6 de noviembre de 2026 · Logística (Algete) y Administración</p>
+
+<div class="box">
+<p><b>En resumen.</b> Hasta ahora, un envío de CTT que ya había salido no se podía tocar: había que llamar a la agencia. Desde la 1.10.56, en la ventana <b>Agencias</b> hay cuatro botones para los envíos de CTT: <b>Parar en vuelo</b>, <b>Crear retorno</b>, <b>Cambiar fecha de entrega</b> y <b>Cambiar dirección de entrega</b>. Nesto se lo pide a CTT por su sistema, lo apunta en la historia del envío y manda un correo a logística con lo que se ha hecho.</p>
+<p>Para las demás agencias (GLS, Innovatrans, reparto propio…) los botones salen apagados y, al lado, el motivo.</p>
+</div>
+
+<h2>1. Dónde están</h2>
+<p>En <b>Almacén y envíos › Agencias</b>, en las pestañas <b>Tramitados</b>, <b>Incidentados</b> y <b>Retrasados</b>. Seleccione el envío y mire la fila de botones de abajo, junto a «Abrir seguimiento» y «Actualizar estado»:</p>
+<div class="botones">
+  <span class="boton">Parar en vuelo</span>
+  <span class="boton">Crear retorno</span>
+  <span class="boton">Cambiar fecha de entrega</span>
+  <span class="boton">Cambiar dirección de entrega</span>
+</div>
+<p class="leyenda">Cada botón se enciende solo cuando esa operación es posible para ese envío. Si ninguno se puede, el texto de al lado dice por qué («El envío ya está entregado: solo se puede pedir el retorno», «La agencia GLS no tiene gestión en tránsito»…).</p>
+
+<h2>2. Qué hace cada botón y cuándo usarlo</h2>
+<table>
+<tr><th style="width:22%">Botón</th><th style="width:30%">Cuándo</th><th>Qué pasa</th></tr>
+<tr><td class="tema">Parar en vuelo</td>
+    <td>El cliente ya no quiere el pedido (o se ha mandado por error) y el envío está en camino: tramitado, en reparto o con incidencia.</td>
+    <td>CTT deja de intentar la entrega y nos lo devuelve a Algete. <b>Tiene coste de ida y vuelta.</b> Nesto pide confirmación antes. El envío sigue viéndose con su estado de siempre hasta que CTT confirma la vuelta en el seguimiento.</td></tr>
+<tr><td class="tema">Crear retorno</td>
+    <td>El envío <b>ya está entregado</b> y hay que recogerlo en casa del cliente (devolución).</td>
+    <td>CTT abre un envío de recogida: el repartidor pasa por la dirección de entrega y lo trae a Algete. <b>No hace falta etiqueta:</b> la saca el conductor al recoger. El nuevo envío aparece en la pestaña <b>Retornos</b> con su propio número de CTT y se sigue como cualquier otro.</td></tr>
+<tr><td class="tema">Cambiar fecha de entrega</td>
+    <td>El cliente pide que se lo entreguen otro día (está cerrado, de viaje…). Envío tramitado, en reparto o con incidencia.</td>
+    <td>Nesto propone el siguiente día laborable; elija la fecha. Tiene que ser posterior a hoy y un día de reparto (ni sábado, ni domingo, ni festivo). CTT reprograma la entrega.</td></tr>
+<tr><td class="tema">Cambiar dirección de entrega</td>
+    <td>La dirección estaba mal o el cliente quiere recibirlo en otro sitio. Envío tramitado, en reparto o con incidencia.</td>
+    <td>Sale un cuadro con los datos del envío (nombre, dirección, código postal, población, país, teléfono y correo). <b>CTT exige el teléfono y el correo del destinatario:</b> sin ellos no deja cambiarla. Si CTT la acepta, el envío de Nesto queda con la dirección nueva.</td></tr>
+</table>
+
+<div class="regla">
+<p class="titulo">⛔ Parar en vuelo cuesta dinero: ida y vuelta</p>
+<p>Úselo solo cuando el pedido de verdad no deba entregarse. Si lo que quiere es que llegue otro día o a otro sitio, use «Cambiar fecha» o «Cambiar dirección», que no tienen coste.</p>
+</div>
+
+<h2>3. Qué queda registrado</h2>
+<ul>
+<li><b>Historia del envío</b> (botón «Abrir seguimiento» o el detalle del envío): cada operación queda apuntada con la hora, quién la hizo y lo que contestó CTT, también si CTT la rechazó.</li>
+<li><b>Correo a logística</b>: cuando la operación sale bien, se manda un correo automático a logistica@ con el envío, el pedido, el cliente y lo que se ha pedido a CTT. Así todo el equipo lo sabe sin tener que avisar a nadie.</li>
+<li><b>Retornos</b>: el retorno se ve en la pestaña Retornos y su seguimiento se actualiza solo, como el de cualquier envío.</li>
+</ul>
+
+<h2>4. Lo que CTT no permite (y qué hacer en su lugar)</h2>
+<table>
+<tr><th style="width:42%">Situación</th><th>Qué hacer</th></tr>
+<tr><td>El envío está <b>manifestado pero CTT aún no lo ha recogido</b> (Estado 0).</td><td>CTT no admite cambios en tránsito sobre él. Use <b>Modificar datos y reenviar a la agencia</b>, como siempre, o anúlelo y haga otro.</td></tr>
+<tr><td>El envío <b>ya está entregado</b>.</td><td>Solo «Crear retorno». Lo demás sale apagado.</td></tr>
+<tr><td>El envío <b>ya es un retorno</b> o ya está devuelto a origen.</td><td>No se puede pedir otro retorno.</td></tr>
+<tr><td>Quiere <b>añadir o cambiar el reembolso</b> de un envío que ya ha salido.</td><td>CTT no lo permite por sistema. Hay que anular el envío y hacer uno nuevo, si todavía no lo han recogido, o cobrarlo por otro medio (enlace de pago).</td></tr>
+<tr><td>La fecha que pide es <b>hoy, pasada o un día sin reparto</b>.</td><td>Nesto no la manda: elija otra. Los festivos que cuenta son los nacionales y los de Madrid.</td></tr>
+<tr><td>Falta el <b>teléfono o el correo</b> al cambiar la dirección.</td><td>Complételos en el cuadro (pueden ir los del cliente). Sin los dos, CTT rechaza el cambio.</td></tr>
+<tr><td>CTT <b>no responde</b>.</td><td>Nesto avisa «la agencia no responde». No se ha hecho nada: espere un momento y vuelva a intentarlo.</td></tr>
+</table>
+
+<div class="ojo">
+<p><b>Un pedido que el vendedor quiere aplazar y ya tiene picking.</b> En breve, al cambiar la fecha de entrega del pedido en Nesto, si el envío ya es de CTT se le pedirá a CTT la fecha nueva automáticamente; si ya lo tiene otra agencia, Nesto avisará de que no se llega a tiempo. Hasta entonces, cambie la fecha desde Agencias con «Cambiar fecha de entrega».</p>
+</div>
+
+<h2>5. Paso a paso</h2>
+<h3>Cambiar la fecha de entrega</h3>
+<ol>
+<li>Agencias › Tramitados, seleccione el envío de CTT.</li>
+<li>Pulse <b>Cambiar fecha de entrega</b>, elija el día y acepte.</li>
+<li>Nesto enseña la respuesta de CTT. La operación queda en la historia y logística recibe el correo.</li>
+</ol>
+<h3>Cambiar la dirección de entrega</h3>
+<ol>
+<li>Seleccione el envío y pulse <b>Cambiar dirección de entrega</b>.</li>
+<li>Corrija los datos. Compruebe que hay <b>teléfono y correo</b>.</li>
+<li>Acepte. Si CTT la admite, el envío queda con la dirección nueva.</li>
+</ol>
+<h3>Parar en vuelo</h3>
+<ol>
+<li>Seleccione el envío y pulse <b>Parar en vuelo</b>.</li>
+<li>Lea el aviso del coste y confirme.</li>
+<li>El envío volverá a Algete; el seguimiento lo irá reflejando.</li>
+</ol>
+<h3>Crear retorno de un envío entregado</h3>
+<ol>
+<li>Seleccione el envío entregado y pulse <b>Crear retorno</b>.</li>
+<li>Confirme. Nesto enseña el número del retorno.</li>
+<li>No imprima nada: el conductor lleva la etiqueta. Siga el retorno en la pestaña <b>Retornos</b>.</li>
+</ol>
+
+<p class="pie">Guía de agencias · gestión en tránsito de CTT · Nesto 1.10.56 (NestoAPI#726, Nesto#625) · Dudas o fallos: la campana de Nesto (Novedades › «Algo no funciona»), con una captura.</p>
+</body>
+</html>
