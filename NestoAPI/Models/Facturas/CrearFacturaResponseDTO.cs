@@ -38,5 +38,11 @@ namespace NestoAPI.Models.Facturas
         /// null = no lleva papel. Con el interruptor Facturacion:ImprimirDocumentosEnServidor ya va impresa (ImpresoEnServidor).
         /// </summary>
         public DocumentoParaImprimir DatosImpresion { get; set; }
+
+        /// <summary>
+        /// NestoAPI#838: las cartas en papel de los cheques regalo que ha generado esta factura (una por cheque; vacía si no
+        /// generó ninguno). Las imprime el servidor después de la factura, con el mismo interruptor y la misma impresora.
+        /// </summary>
+        public List<CartaChequeRegaloDTO> CartasChequeRegalo { get; set; } = new List<CartaChequeRegaloDTO>();
     }
 }

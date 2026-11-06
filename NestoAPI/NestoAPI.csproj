@@ -879,6 +879,7 @@
     <Compile Include="Infraestructure\ChequesRegalo\PushChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\ChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\AvisoChequesRegalo.cs" />
+    <Compile Include="Infraestructure\ChequesRegalo\GeneradorPdfCartaChequeRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\EstadisticaChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\SuPedidoObligatorio.cs" />
@@ -1854,6 +1855,7 @@
     </Compile>
     <Compile Include="Models\Facturas\ClienteCorreoFactura.cs" />
     <Compile Include="Models\Facturas\DireccionFactura.cs" />
+    <Compile Include="Models\Facturas\CartaChequeRegaloDTO.cs" />
     <Compile Include="Models\Facturas\CrearFacturaResponseDTO.cs" />
     <Compile Include="Models\Facturas\Factura.cs" />
     <Compile Include="Models\Facturas\AlbaranCreadoDTO.cs" />

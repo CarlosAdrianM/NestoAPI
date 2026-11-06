@@ -18,6 +18,7 @@ namespace NestoAPI.Models.Facturas
             FacturasPorPO = new List<string>();
             ErroresPorPO = new List<string>();
             ReembolsosDesfasados = new List<ReembolsoDesfasadoDTO>();
+            CartasChequeRegalo = new List<CartaChequeRegaloDTO>();
         }
 
         /// <summary>
@@ -72,6 +73,12 @@ namespace NestoAPI.Models.Facturas
         /// PUT api/EnviosAgencias/{Envio}/Reembolso con ReembolsoFacturado. Vacía si no hay ninguno.
         /// </summary>
         public List<ReembolsoDesfasadoDTO> ReembolsosDesfasados { get; set; }
+
+        /// <summary>
+        /// NestoAPI#838: las cartas en papel de los cheques regalo que han generado las facturas (una por cheque). Con el
+        /// interruptor de impresión en servidor salen detrás de su factura.
+        /// </summary>
+        public List<CartaChequeRegaloDTO> CartasChequeRegalo { get; set; }
 
         // Propiedades de conveniencia para contadores (compatibilidad con código existente)
 

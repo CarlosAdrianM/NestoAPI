@@ -40,10 +40,34 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="usuario">El usuario de la petición (el del PDF y el de la impresora de documentos).</param>
         public async Task Completar(CrearFacturaResponseDTO factura, string usuario)
         {
-            if (factura == null || string.IsNullOrWhiteSpace(factura.NumeroFactura) || factura.NumeroPedido <= 0)
+            if (factura == null || string.IsNullOrWhiteSpace(factura.NumeroFactura))
             {
                 return;
             }
+            var documentos = new List<DocumentoAImprimirEnServidor>();
+            if (factura.NumeroPedido > 0 && await PrepararFactura(factura, usuario).ConfigureAwait(false))
+            {
+                documentos.Add(new DocumentoAImprimirEnServidor { Descripcion = $"la factura {factura.NumeroFactura.Trim()}", Datos = factura.DatosImpresion });
+            }
+            // NestoAPI#838: detrás de la factura, la carta de cada cheque regalo que ha generado (lleve la factura papel o no: la
+            // carta va dentro del paquete). Con el interruptor apagado, como la factura: no se imprime y el PDF va en la respuesta.
+            documentos.AddRange((factura.CartasChequeRegalo ?? new List<CartaChequeRegaloDTO>())
+                .Where(c => c != null).Select(ImpresionDocumentosServidor.DocumentoCarta));
+            if (!documentos.Any())
+            {
+                return;
+            }
+
+            List<string> avisos = impresion.Imprimir(documentos, usuario);
+            foreach (string aviso in avisos)
+            {
+                AñadirAviso(factura, aviso);
+            }
+        }
+
+        /// <summary>El PDF de la factura en DatosImpresion si el pedido pide papel. False si no lleva papel o no se ha podido.</summary>
+        private async Task<bool> PrepararFactura(CrearFacturaResponseDTO factura, string usuario)
+        {
             string descripcion = $"la factura {factura.NumeroFactura.Trim()}";
             try
             {
@@ -53,12 +77,12 @@ namespace NestoAPI.Infraestructure.Facturas
                 // copias de la ruta propia sin la frase son cosa de Facturar rutas, no de aquí.
                 if (!ReglaImpresionDocumentos.DebeImprimir(pedido))
                 {
-                    return;
+                    return false;
                 }
                 int copias = ReglaImpresionDocumentos.NumeroCopias(pedido);
                 if (copias <= 0)
                 {
-                    return;
+                    return false;
                 }
 
                 Factura documento = gestor.LeerFactura(empresa, factura.NumeroFactura.Trim());
@@ -70,21 +94,13 @@ namespace NestoAPI.Infraestructure.Facturas
                     NumeroCopias = copias,
                     TipoBandeja = ReglaImpresionDocumentos.Bandeja(pedido, esFactura: true)
                 };
+                return true;
             }
             catch (Exception ex)
             {
                 registrar(new ImpresionDocumentoServidorInfo($"[NestoAPI#806] No se ha podido preparar el PDF de {descripcion} (pedido {factura.NumeroPedido}): {ex.Message}", ex));
                 AñadirAviso(factura, $"La factura {factura.NumeroFactura.Trim()} va en papel, pero no se ha podido generar el documento para imprimirla: {ex.Message?.Trim()}");
-                return;
-            }
-
-            List<string> avisos = impresion.Imprimir(new[]
-            {
-                new DocumentoAImprimirEnServidor { Descripcion = descripcion, Datos = factura.DatosImpresion }
-            }, usuario);
-            foreach (string aviso in avisos)
-            {
-                AñadirAviso(factura, aviso);
+                return false;
             }
         }
 

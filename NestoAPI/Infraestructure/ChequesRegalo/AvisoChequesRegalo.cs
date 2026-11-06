@@ -114,6 +114,14 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public ResultadoAvisoChequeRegalo Resultado { get; set; }
         public string Correos { get; set; }
 
+        /// <summary>NestoAPI#838: la factura que generó el cheque (para su carta en papel).</summary>
+        public string EmpresaFactura { get; set; }
+        public string FacturaOrigen { get; set; }
+        /// <summary>NestoAPI#838: la campaña del cheque, para componer la carta con lo mismo que el correo.</summary>
+        public CampanaCorreoChequeRegalo Campana { get; set; }
+        /// <summary>NestoAPI#838: el nombre de pila con el que se saluda (null = «Hola:»), el mismo del correo.</summary>
+        public string NombreDePila { get; set; }
+
         /// <summary>La línea para quien factura (CrearFacturaResponseDTO.Avisos); null si no hay nada que decir.</summary>
         public string TextoParaQuienFactura
         {
@@ -185,7 +193,11 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         internal static string Saludo(string nombreDePila)
             => string.IsNullOrWhiteSpace(nombreDePila) ? "Hola:" : $"Hola, {nombreDePila.Trim()}:";
 
-        private static List<string> Parrafos(CampanaCorreoChequeRegalo campana, string nombreDePila) => new List<string>
+        /// <summary>
+        /// Saludo y párrafos del cheque: los mismos en el correo (HTML y texto) y en la carta en papel (NestoAPI#838,
+        /// <see cref="GeneradorPdfCartaChequeRegalo"/>).
+        /// </summary>
+        internal static List<string> Parrafos(CampanaCorreoChequeRegalo campana, string nombreDePila) => new List<string>
         {
             Saludo(nombreDePila),
             "Gracias por confiar en Nueva Visión. Junto con su factura le damos una sorpresa: un cheque regalo de " +
@@ -194,7 +206,13 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             "¿Qué necesita para su centro? Contacte con su comercial o con nuestra tienda y le ayudaremos a aprovecharlo."
         };
 
-        private const string FIRMA = "El equipo de Nueva Visión.";
+        internal const string FIRMA = "El equipo de Nueva Visión.";
+
+        /// <summary>
+        /// NestoAPI#838: en papel no hay botón: la dirección de la tienda escrita, sin https ni UTM (nadie la teclea entera).
+        /// </summary>
+        internal static string TiendaEnPapel()
+            => $"{TEXTO_BOTON_TIENDA}: {EnlacesTienda.URL_TIENDA.Replace("https://", string.Empty).Replace("http://", string.Empty).TrimEnd('/')}";
 
         /// <summary>NestoAPI#706: UTM del botón a la tienda; la campaña es el código de la campaña del cheque.</summary>
         internal const string UTM_SOURCE = "correo_cheque_regalo";
@@ -427,9 +445,10 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 conDestinatario.Add((cheque, await LeerDestinatario(cheque).ConfigureAwait(false)));
             }
-            // En línea, durante la facturación: con tope corto
-            Dictionary<string, string> nombresDePila = await NombresDePila(conDestinatario.Select(c => c.Destinatario), topeSaludoEnLinea)
-                .ConfigureAwait(false);
+            // En línea, durante la facturación: con tope corto. NestoAPI#838: también a los que no tienen correo, porque la
+            // carta en papel del cheque (que sale con la factura) los saluda igual.
+            Dictionary<string, string> nombresDePila = await NombresDePila(conDestinatario.Select(c => c.Destinatario), topeSaludoEnLinea,
+                soloConCorreo: false).ConfigureAwait(false);
             foreach ((ChequeRegaloSinAviso cheque, DestinatarioChequeRegalo destinatario) in conDestinatario)
             {
                 avisos.Add(await Avisar(cheque, destinatario, nombresDePila).ConfigureAwait(false));
@@ -532,9 +551,10 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         /// Nombre → nombre de pila, con el modelo del correo post-compra (solo de los que tienen correo: a los demás no
         /// se les escribe). Nunca lanza: con fallo o tiempo agotado, vacío («Hola:») y ELMAH.
         /// </summary>
-        private Task<Dictionary<string, string>> NombresDePila(IEnumerable<DestinatarioChequeRegalo> destinatarios, TimeSpan? tope)
+        private Task<Dictionary<string, string>> NombresDePila(IEnumerable<DestinatarioChequeRegalo> destinatarios, TimeSpan? tope,
+            bool soloConCorreo = true)
             => SaludoPorNombreDePila.NombresDePila(
-                destinatarios.Where(d => d != null && CorreosValidos(d.Correos).Any()).Select(NombreParaSaludar),
+                destinatarios.Where(d => d != null && (!soloConCorreo || CorreosValidos(d.Correos).Any())).Select(NombreParaSaludar),
                 generarSaludos, tope, registrarError, CONTEXTO_ERROR_SALUDO);
 
         /// <summary>Para la previsualización y el correo de prueba: el mismo saludo que recibirá el cliente.</summary>
@@ -549,6 +569,18 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         }
 
         private async Task<AvisoChequeRegalo> Avisar(ChequeRegaloSinAviso cheque, DestinatarioChequeRegalo destinatario,
+            Dictionary<string, string> nombresDePila)
+        {
+            AvisoChequeRegalo aviso = await AvisarSinDatosCarta(cheque, destinatario, nombresDePila).ConfigureAwait(false);
+            // NestoAPI#838: lo que necesita la carta en papel, sea cual sea el resultado del correo
+            aviso.EmpresaFactura = cheque.EmpresaFactura?.Trim();
+            aviso.FacturaOrigen = cheque.FacturaOrigen?.Trim();
+            aviso.Campana = cheque.Campana();
+            aviso.NombreDePila = NombreDePila(destinatario, nombresDePila);
+            return aviso;
+        }
+
+        private async Task<AvisoChequeRegalo> AvisarSinDatosCarta(ChequeRegaloSinAviso cheque, DestinatarioChequeRegalo destinatario,
             Dictionary<string, string> nombresDePila)
         {
             List<string> correos = CorreosValidos(destinatario?.Correos);

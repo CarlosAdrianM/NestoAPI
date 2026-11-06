@@ -47,7 +47,8 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         /// <summary>
         /// Imprime las facturas, albaranes y notas de entrega de la respuesta que llevan DatosImpresion; los que no se han podido
-        /// imprimir van a PedidosConErrores como aviso (Warning). Con el interruptor apagado no hace nada. Nunca lanza.
+        /// imprimir van a PedidosConErrores como aviso (Warning). NestoAPI#838: detrás de cada factura, las cartas de los cheques
+        /// regalo que ha generado (CartasChequeRegalo). Con el interruptor apagado no hace nada. Nunca lanza.
         /// </summary>
         void Imprimir(FacturarRutasResponseDTO respuesta, string usuario);
 
@@ -136,12 +137,23 @@ namespace NestoAPI.Infraestructure.Facturas
             try
             {
                 var documentos = new List<DocumentoAImprimirEnServidor>();
-                documentos.AddRange((respuesta.Facturas ?? new List<FacturaCreadaDTO>()).Select(f => new DocumentoAImprimirEnServidor
+                // NestoAPI#838: cada carta del cheque regalo sale justo detrás de la factura que lo generó (va en el mismo paquete)
+                List<CartaChequeRegaloDTO> cartasPendientes = (respuesta.CartasChequeRegalo ?? new List<CartaChequeRegaloDTO>())
+                    .Where(c => c != null).ToList();
+                foreach (FacturaCreadaDTO f in respuesta.Facturas ?? new List<FacturaCreadaDTO>())
                 {
-                    Descripcion = $"la factura {f.NumeroFactura?.Trim()}",
-                    Datos = f.DatosImpresion,
-                    Documento = f
-                }));
+                    documentos.Add(new DocumentoAImprimirEnServidor
+                    {
+                        Descripcion = $"la factura {f.NumeroFactura?.Trim()}",
+                        Datos = f.DatosImpresion,
+                        Documento = f
+                    });
+                    List<CartaChequeRegaloDTO> suyas = cartasPendientes
+                        .Where(c => string.Equals(c.NumeroFactura?.Trim(), f.NumeroFactura?.Trim(), StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    documentos.AddRange(suyas.Select(DocumentoCarta));
+                    _ = cartasPendientes.RemoveAll(suyas.Contains);
+                }
                 documentos.AddRange((respuesta.Albaranes ?? new List<AlbaranCreadoDTO>()).Select(a => new DocumentoAImprimirEnServidor
                 {
                     Descripcion = $"el albarán {a.NumeroAlbaran}",
@@ -154,6 +166,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     Datos = n.DatosImpresion,
                     Documento = n
                 }));
+                // Las que no tienen su factura en la respuesta (no debería pasar), al final
+                documentos.AddRange(cartasPendientes.Select(DocumentoCarta));
 
                 _ = Imprimir(documentos, usuario);
 
@@ -244,6 +258,14 @@ namespace NestoAPI.Infraestructure.Facturas
             }
             return avisos;
         }
+
+        /// <summary>NestoAPI#838: la carta del cheque regalo como documento a imprimir.</summary>
+        public static DocumentoAImprimirEnServidor DocumentoCarta(CartaChequeRegaloDTO carta) => new DocumentoAImprimirEnServidor
+        {
+            Descripcion = string.IsNullOrWhiteSpace(carta.Descripcion) ? ChequesRegalo.CartasChequeRegalo.Descripcion(carta.NumeroFactura) : carta.Descripcion,
+            Datos = carta.DatosImpresion,
+            Documento = carta
+        };
 
         private bool EstaActivo()
         {

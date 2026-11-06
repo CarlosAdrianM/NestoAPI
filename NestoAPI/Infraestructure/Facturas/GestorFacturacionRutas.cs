@@ -523,6 +523,31 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Procesa facturación para pedidos NRM (Normal).
         /// </summary>
+        /// <summary>
+        /// NestoAPI#838: las cartas en papel de los cheques regalo que ha generado la factura van a la respuesta de Facturar rutas
+        /// (también la del packing, #592), con el cliente de la factura para los avisos; ImpresionDocumentos las imprime detrás
+        /// de su factura. Van aunque la factura no lleve papel: la carta va dentro del paquete.
+        /// </summary>
+        internal static void AnadirCartasChequeRegalo(CrearFacturaResponseDTO resultadoFactura, FacturaCreadaDTO facturaCreada,
+            FacturarRutasResponseDTO response)
+        {
+            if (resultadoFactura?.CartasChequeRegalo == null || !resultadoFactura.CartasChequeRegalo.Any())
+            {
+                return;
+            }
+            if (response.CartasChequeRegalo == null)
+            {
+                response.CartasChequeRegalo = new List<CartaChequeRegaloDTO>();
+            }
+            foreach (CartaChequeRegaloDTO carta in resultadoFactura.CartasChequeRegalo.Where(c => c != null))
+            {
+                carta.Cliente = facturaCreada?.Cliente ?? carta.Cliente;
+                carta.Contacto = facturaCreada?.Contacto ?? carta.Contacto;
+                carta.NombreCliente = facturaCreada?.NombreCliente ?? carta.NombreCliente;
+                response.CartasChequeRegalo.Add(carta);
+            }
+        }
+
         private async Task ProcesarFacturaNRM(
             CabPedidoVta pedido,
             int numeroAlbaran,
@@ -582,6 +607,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     facturaCreada.Avisos.AddRange(resultadoFactura.Avisos);
                 }
                 response.Facturas.Add(facturaCreada);
+                AnadirCartasChequeRegalo(resultadoFactura, facturaCreada, response);
 
                 // Insertar en ExtractoRuta desde factura SOLO si el tipo de ruta lo requiere (Ruta Propia SÍ, Agencia NO)
                 // Para NRM, el ExtractoRuta se inserta desde la factura (no desde el albarán)

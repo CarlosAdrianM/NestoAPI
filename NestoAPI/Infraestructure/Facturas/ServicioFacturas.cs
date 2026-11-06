@@ -990,7 +990,8 @@ namespace NestoAPI.Infraestructure.Facturas
         internal static async Task AnadirChequeRegalo(ChequesRegalo.IGeneradorChequesRegalo generador,
             CrearFacturaResponseDTO respuesta, string cliente, DateTime fechaFactura, string usuario,
             ChequesRegalo.IAvisadorChequesRegalo avisador = null,
-            Lazy<ChequesRegalo.IAvisadorPushChequesRegalo> avisadorPush = null)
+            Lazy<ChequesRegalo.IAvisadorPushChequesRegalo> avisadorPush = null,
+            ChequesRegalo.IGeneradorCartaChequeRegalo generadorCarta = null)
         {
             if (generador == null || respuesta == null)
             {
@@ -1013,7 +1014,9 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 return;
             }
-            await AvisarChequeRegaloPorCorreo(avisador, respuesta, cliente).ConfigureAwait(false);
+            List<ChequesRegalo.AvisoChequeRegalo> avisosCorreo = await AvisarChequeRegaloPorCorreo(avisador, respuesta, cliente).ConfigureAwait(false);
+            // NestoAPI#838: la carta en papel de cada cheque de esta factura (como el correo); la imprime quien imprime la factura
+            AnadirCartasChequeRegalo(respuesta, cliente, avisosCorreo, generadorCarta ?? new ChequesRegalo.GeneradorPdfCartaChequeRegalo());
             // NestoAPI#593 (TNV): justo después del correo, la push a la app de la clienta (si la tiene)
             await AvisarChequeRegaloPorPush(avisadorPush, respuesta, cliente).ConfigureAwait(false);
         }
@@ -1040,18 +1043,25 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
-        private static async Task AvisarChequeRegaloPorCorreo(ChequesRegalo.IAvisadorChequesRegalo avisador,
+        /// <summary>Los avisos del correo (con lo que necesita la carta, NestoAPI#838); vacía si no hay avisador o ha fallado.</summary>
+        private static async Task<List<ChequesRegalo.AvisoChequeRegalo>> AvisarChequeRegaloPorCorreo(ChequesRegalo.IAvisadorChequesRegalo avisador,
             CrearFacturaResponseDTO respuesta, string cliente)
         {
+            var avisos = new List<ChequesRegalo.AvisoChequeRegalo>();
             if (avisador == null)
             {
-                return;
+                return avisos;
             }
             try
             {
                 foreach (ChequesRegalo.AvisoChequeRegalo aviso in await avisador.AvisarCliente(cliente?.Trim()).ConfigureAwait(false)
                     ?? new List<ChequesRegalo.AvisoChequeRegalo>())
                 {
+                    if (aviso == null)
+                    {
+                        continue;
+                    }
+                    avisos.Add(aviso);
                     if (!string.IsNullOrEmpty(aviso.TextoParaQuienFactura))
                     {
                         respuesta.Avisos.Add(aviso.TextoParaQuienFactura);
@@ -1063,6 +1073,34 @@ namespace NestoAPI.Infraestructure.Facturas
                 respuesta.Avisos.Add("No se ha podido mandar el correo del cheque (se vuelve a intentar esta noche): si puedes, avísale tú.");
                 ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo mandar el correo del cheque de la factura " +
                     $"{respuesta.NumeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex));
+            }
+            return avisos;
+        }
+
+        /// <summary>
+        /// NestoAPI#838: las cartas en papel de los cheques de esta factura, en CartasChequeRegalo de la respuesta. Si una no se
+        /// puede generar, ELMAH y la factura sigue (sin carta).
+        /// </summary>
+        private static void AnadirCartasChequeRegalo(CrearFacturaResponseDTO respuesta, string cliente,
+            List<ChequesRegalo.AvisoChequeRegalo> avisos, ChequesRegalo.IGeneradorCartaChequeRegalo generadorCarta)
+        {
+            try
+            {
+                List<CartaChequeRegaloDTO> cartas = ChequesRegalo.CartasChequeRegalo.Crear(avisos, respuesta, cliente, generadorCarta, ElmahHelper.Log);
+                if (!cartas.Any())
+                {
+                    return;
+                }
+                if (respuesta.CartasChequeRegalo == null)
+                {
+                    respuesta.CartasChequeRegalo = new List<CartaChequeRegaloDTO>();
+                }
+                respuesta.CartasChequeRegalo.AddRange(cartas);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cheques regalo #838] No se han podido preparar las cartas del cheque de la factura " +
+                    $"{respuesta.NumeroFactura?.Trim()}: {ex.Message}", ex));
             }
         }
 

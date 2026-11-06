@@ -677,6 +677,7 @@
     <Compile Include="Infrastructure\SuPedidoTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\CanjeChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\AvisoChequesRegaloTests.cs" />
+    <Compile Include="Infrastructure\ChequesRegalo\CartaChequeRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\MiniaturasChequeRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\TiendaChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\PrestashopChequesRegaloTests.cs" />
