@@ -447,8 +447,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string ONLINE = "Online";
         /// <summary>
         /// NestoAPI#829 (Reina, sugerencia 1064): presencial y online a la vez. Cada inscripción dice cómo viene
-        /// (<see cref="ReglasFormaAsistenciaEvento"/>). Para todo lo demás (recordatorios, anuncios, enlace) cuenta como presencial:
-        /// <see cref="EsOnline"/> sigue siendo solo «Online».
+        /// (<see cref="ReglasFormaAsistenciaEvento"/>). <see cref="EsOnline"/> sigue siendo solo «Online»; quién recibe el enlace
+        /// de conexión lo decide <see cref="LlevaEnlace"/>, por inscripción (NestoAPI#832).
         /// </summary>
         public const string MIXTO = "Mixto";
 
@@ -480,16 +480,60 @@ namespace NestoAPI.Infraestructure.Eventos
         }
 
         /// <summary>
-        /// El enlace para conectarse a un evento online. TODO (Carlos): no hay un campo propio para el enlace del webinar; mientras
-        /// tanto, si el Lugar de un evento online es una dirección web, se usa como enlace.
+        /// NestoAPI#832 (Carlos 05/11/26): LA regla de quién recibe el enlace de conexión (y el texto «online» en vez de la
+        /// dirección). Online: todas. Mixto: solo las inscripciones con FormaAsistencia = Online (las presenciales y las «sin
+        /// indicar» reciben el texto presencial). Presencial: ninguna.
         /// </summary>
-        public static string EnlaceOnline(Evento evento)
+        public static bool LlevaEnlace(Evento evento, string formaAsistencia)
+        {
+            if (EsOnline(evento))
+            {
+                return true;
+            }
+            return EsMixto(evento) && string.Equals(formaAsistencia?.Trim(), ONLINE, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>NestoAPI#832: el enlace de conexión para esa inscripción (<see cref="LlevaEnlace"/>), o null.</summary>
+        public static string EnlaceConexion(Evento evento, string formaAsistencia) =>
+            LlevaEnlace(evento, formaAsistencia) ? EnlaceDelLugar(evento?.Lugar) : null;
+
+        /// <summary>
+        /// El enlace para conectarse a un evento online. TODO (Carlos): no hay un campo propio para el enlace del webinar; mientras
+        /// tanto, la dirección web que haya en el Lugar (todo el Lugar o, en un mixto, «C/ Mayor 1 https://…»).
+        /// </summary>
+        public static string EnlaceOnline(Evento evento) => EsOnline(evento) ? EnlaceDelLugar(evento?.Lugar) : null;
+
+        /// <summary>
+        /// NestoAPI#832: la dirección del evento para el texto presencial: el Lugar sin la dirección web (en un mixto el Lugar
+        /// puede llevar las dos). Null si no queda nada.
+        /// </summary>
+        public static string DireccionPresencial(Evento evento)
         {
             string lugar = evento?.Lugar?.Trim();
-            return EsOnline(evento) && lugar != null
-                && (lugar.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || lugar.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                ? lugar
-                : null;
+            if (string.IsNullOrEmpty(lugar))
+            {
+                return null;
+            }
+            string enlace = EnlaceDelLugar(lugar);
+            string direccion = enlace == null ? lugar : lugar.Replace(enlace, " ");
+            direccion = string.Join(" ", direccion.Split(SEPARADORES, StringSplitOptions.RemoveEmptyEntries))
+                .Trim(' ', ',', ';', ':', '-', '·', '|', '(', ')');
+            return direccion.Length == 0 ? null : direccion;
+        }
+
+        private static readonly char[] SEPARADORES = { ' ', '\t', '\r', '\n' };
+
+        /// <summary>La primera dirección web (http:// o https://) del texto, o null.</summary>
+        internal static string EnlaceDelLugar(string lugar)
+        {
+            if (string.IsNullOrWhiteSpace(lugar))
+            {
+                return null;
+            }
+            return lugar.Split(SEPARADORES, StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim('(', ')', ',', ';', '<', '>'))
+                .FirstOrDefault(t => t.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                    || t.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
         }
     }
 

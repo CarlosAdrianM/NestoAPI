@@ -39,6 +39,11 @@ namespace NestoAPI.Infraestructure.Eventos
         public Func<IEnumerable<EventoInscripcion>, Task> MarcarAvisosPago { get; set; }
         /// <summary>Libera (Caducada) las reservas avisadas con el plazo vencido. Devuelve las liberadas.</summary>
         public Func<Task<List<InscripcionEventoDTO>>> LiberarVencidas { get; set; }
+        /// <summary>
+        /// NestoAPI#832: (inscripciones de un mixto) → su forma de asistencia (solo las que la tienen). Null: ninguna la tiene
+        /// (todas sin indicar: texto presencial, sin enlace).
+        /// </summary>
+        public Func<IReadOnlyCollection<int>, Task<Dictionary<int, string>>> FormasAsistencia { get; set; }
     }
 
     /// <summary>NestoAPI#690: lo que ha hecho una pasada del recordatorio (para los tests y el diagnóstico).</summary>
@@ -106,7 +111,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         LiberarEncendido = () => InterruptoresEventos.LiberarReservasSinPagar,
                         PendientesAvisoPago = () => servicio.PendientesDeAvisoPago(),
                         MarcarAvisosPago = inscripciones => servicio.MarcarAvisoPagoEnviado(inscripciones),
-                        LiberarVencidas = () => servicio.LiberarReservasVencidas()
+                        LiberarVencidas = () => servicio.LiberarReservasVencidas(),
+                        FormasAsistencia = ids => RepositorioFormaAsistenciaEventos.LeerSinFallar(servicio.FormasAsistencia, ids)
                     }).ConfigureAwait(false);
                 }
             }
@@ -144,6 +150,29 @@ namespace NestoAPI.Infraestructure.Eventos
             return resultado;
         }
 
+        /// <summary>
+        /// NestoAPI#832: en los mixtos, si cada inscripción viene presencial u online (las demás no lo necesitan). Sin la
+        /// dependencia o si falla, ninguna lo tiene (sin indicar: texto presencial, sin enlace).
+        /// </summary>
+        private static async Task<Dictionary<int, string>> FormasDelEvento(DependenciasRecordatorioEventos deps, Evento evento,
+            List<EventoInscripcion> inscripciones)
+        {
+            if (!FormatosEvento.EsMixto(evento) || deps.FormasAsistencia == null || inscripciones == null || !inscripciones.Any())
+            {
+                return new Dictionary<int, string>();
+            }
+            try
+            {
+                return await deps.FormasAsistencia(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false)
+                    ?? new Dictionary<int, string>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recordatorio de eventos #832] No se ha podido leer quién viene online al evento {evento.Id}: {ex.Message}", ex));
+                return new Dictionary<int, string>();
+            }
+        }
+
         /// <summary>El recordatorio de asistencia (pagadas y gratuitas; nunca a las reservas sin pagar).</summary>
         private static async Task Recordar(DependenciasRecordatorioEventos deps, ResultadoRecordatorioEventos resultado)
         {
@@ -152,11 +181,13 @@ namespace NestoAPI.Infraestructure.Eventos
             foreach (KeyValuePair<Evento, List<EventoInscripcion>> evento in pendientes)
             {
                 var enviadas = new List<EventoInscripcion>();
+                Dictionary<int, string> formas = await FormasDelEvento(deps, evento.Key, evento.Value).ConfigureAwait(false);
                 foreach (EventoInscripcion inscripcion in evento.Value)
                 {
                     try
                     {
-                        (bool push, bool correo) = await Avisar(deps, evento.Key, inscripcion).ConfigureAwait(false);
+                        formas.TryGetValue(inscripcion.Id, out string forma);
+                        (bool push, bool correo) = await Avisar(deps, evento.Key, inscripcion, forma).ConfigureAwait(false);
                         resultado.Inscripciones++;
                         resultado.Push += push ? 1 : 0;
                         resultado.Correos += correo ? 1 : 0;
@@ -309,7 +340,8 @@ namespace NestoAPI.Infraestructure.Eventos
         internal static bool DentroDeHorario(DateTime ahora) =>
             ahora.TimeOfDay >= HORA_DESDE && ahora.TimeOfDay < HORA_HASTA;
 
-        private static async Task<(bool push, bool correo)> Avisar(DependenciasRecordatorioEventos deps, Evento evento, EventoInscripcion inscripcion)
+        private static async Task<(bool push, bool correo)> Avisar(DependenciasRecordatorioEventos deps, Evento evento, EventoInscripcion inscripcion,
+            string formaAsistencia)
         {
             string empresa = Limpiar(inscripcion.Empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             string cliente = Limpiar(inscripcion.Cliente);
@@ -318,7 +350,7 @@ namespace NestoAPI.Infraestructure.Eventos
             bool push = false;
             try
             {
-                push = await deps.Push.EnviarACliente(empresa, cliente, Notificacion(evento, inscripcion)).ConfigureAwait(false) > 0;
+                push = await deps.Push.EnviarACliente(empresa, cliente, Notificacion(evento, inscripcion, formaAsistencia)).ConfigureAwait(false) > 0;
             }
             catch (Exception ex)
             {
@@ -330,7 +362,7 @@ namespace NestoAPI.Infraestructure.Eventos
             if (destino != null && inscripcion.ClaveAsistencia.HasValue)
             {
                 string nombre = await deps.NombreCliente(empresa, cliente, contacto).ConfigureAwait(false);
-                using (MailMessage mail = Correo(evento, inscripcion, nombre, destino))
+                using (MailMessage mail = Correo(evento, inscripcion, nombre, destino, formaAsistencia))
                 {
                     correo = deps.Correo.EnviarCorreoSMTP(mail);
                 }
@@ -342,8 +374,12 @@ namespace NestoAPI.Infraestructure.Eventos
             return (push, correo);
         }
 
-        /// <summary>«el jueves 30 de octubre a las 10:00 en Reina»; si es online, «…a las 10:00, online» (Carlos, 22/10/26: nunca la tienda).</summary>
-        internal static string CuandoYDonde(Evento evento)
+        /// <summary>
+        /// «el jueves 30 de octubre a las 10:00 en Reina»; si es online, «…a las 10:00, online» (Carlos, 22/10/26: nunca la tienda).
+        /// NestoAPI#832: en un mixto, «online» solo para las inscripciones que vienen online (<see cref="FormatosEvento.LlevaEnlace"/>);
+        /// las demás (y sin inscripción: anuncios, avisos de pago), la dirección sin el enlace.
+        /// </summary>
+        internal static string CuandoYDonde(Evento evento, string formaAsistencia = null)
         {
             string cuando = "el " + evento.Fecha.ToString("dddd d 'de' MMMM", es);
             string hora = ReglasModalidadEvento.EscribirHora(evento.HoraInicio);
@@ -351,19 +387,19 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 cuando += " a las " + hora;
             }
-            if (FormatosEvento.EsOnline(evento))
+            if (FormatosEvento.LlevaEnlace(evento, formaAsistencia))
             {
                 return cuando + ", online";
             }
-            string donde = Limpiar(evento.Lugar) ?? PermisosEventos.NombreAlmacen(evento.Almacen);
+            string donde = FormatosEvento.DireccionPresencial(evento) ?? PermisosEventos.NombreAlmacen(evento.Almacen);
             return string.IsNullOrWhiteSpace(donde) ? cuando : cuando + " en " + donde;
         }
 
         /// <summary>La push (de usted). TNV pinta los dos botones con el tipo y la inscripción.</summary>
-        internal static NotificacionPushDTO Notificacion(Evento evento, EventoInscripcion inscripcion) => new NotificacionPushDTO
+        internal static NotificacionPushDTO Notificacion(Evento evento, EventoInscripcion inscripcion, string formaAsistencia = null) => new NotificacionPushDTO
         {
             Titulo = $"Recordatorio: «{evento.Titulo?.Trim()}»",
-            Cuerpo = $"Le esperamos {CuandoYDonde(evento)}. ¿Nos confirma su asistencia?",
+            Cuerpo = $"Le esperamos {CuandoYDonde(evento, formaAsistencia)}. ¿Nos confirma su asistencia?",
             Tipo = TIPO_NOTIFICACION,
             Datos = new Dictionary<string, string>
             {
@@ -376,7 +412,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 ["fecha"] = evento.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 ["horaInicio"] = ReglasModalidadEvento.EscribirHora(evento.HoraInicio) ?? string.Empty,
                 ["formato"] = FormatosEvento.De(evento),
-                ["enlace"] = FormatosEvento.EnlaceOnline(evento) ?? string.Empty
+                ["enlace"] = FormatosEvento.EnlaceConexion(evento, formaAsistencia) ?? string.Empty
             }
         };
 
@@ -386,7 +422,7 @@ namespace NestoAPI.Infraestructure.Eventos
             $"/api/Eventos/Asistencia/{clave:D}?respuesta={respuesta}";
 
         /// <summary>El correo (de usted) con los dos botones.</summary>
-        internal static MailMessage Correo(Evento evento, EventoInscripcion inscripcion, string nombre, string destino)
+        internal static MailMessage Correo(Evento evento, EventoInscripcion inscripcion, string nombre, string destino, string formaAsistencia = null)
         {
             string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
             Guid clave = inscripcion.ClaveAsistencia ?? Guid.Empty;
@@ -397,14 +433,15 @@ namespace NestoAPI.Infraestructure.Eventos
             var cuerpo = new StringBuilder();
             cuerpo.Append("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 14px; max-width: 600px;'>");
             cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre.Trim()))}:</p>");
-            cuerpo.Append($"<p>Le recordamos su inscripción en <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(CuandoYDonde(evento))}.</p>");
+            cuerpo.Append($"<p>Le recordamos su inscripción en <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(CuandoYDonde(evento, formaAsistencia))}.</p>");
             string ponente = Limpiar(evento.Ponente);
             if (ponente != null)
             {
                 cuerpo.Append($"<p>Lo imparte {Html(ponente)}.</p>");
             }
-            // Carlos (22/10/26): en los online, el enlace para conectarse (si el Lugar es una dirección web; ver FormatosEvento.EnlaceOnline)
-            string enlaceOnline = FormatosEvento.EnlaceOnline(evento);
+            // Carlos (22/10/26): en los online, el enlace para conectarse (la dirección web del Lugar). NestoAPI#832: en los mixtos,
+            // solo a las que vienen online (FormatosEvento.LlevaEnlace)
+            string enlaceOnline = FormatosEvento.EnlaceConexion(evento, formaAsistencia);
             if (enlaceOnline != null)
             {
                 cuerpo.Append($"<p>Puede conectarse desde este enlace: <a href='{Html(enlaceOnline)}'>{Html(enlaceOnline)}</a></p>");

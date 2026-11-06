@@ -1157,6 +1157,133 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.IsFalse(push.Cuerpo.Contains("Reina"));
         }
 
+        // ---------------- NestoAPI#832: el enlace de conexión, solo a las online de un mixto ----------------
+
+        private const string ENLACE_MEET = "https://meet.example.com/maystar";
+
+        /// <summary>
+        /// El recordatorio de un evento con 2 inscripciones online (7, 8), 1 presencial (9) y 1 sin indicar (10); devuelve el
+        /// cuerpo del correo y la push de cada cliente.
+        /// </summary>
+        private async Task<(Dictionary<string, string> correos, Dictionary<string, NotificacionPushDTO> pushes)> RecordatorioConFormas(string formato)
+        {
+            eventos[0].Formato = formato;
+            eventos[0].Lugar = "C/ Mayor 1, Madrid " + ENLACE_MEET;
+            _ = Inscripcion(7, EVENTO_PAGO, "70000", EstadoInscripcionEvento.Facturada);
+            _ = Inscripcion(8, EVENTO_PAGO, "80000", EstadoInscripcionEvento.Facturada);
+            _ = Inscripcion(9, EVENTO_PAGO, "90000", EstadoInscripcionEvento.Facturada);
+            _ = Inscripcion(10, EVENTO_PAGO, "10000", EstadoInscripcionEvento.Facturada);
+            var formas = new Dictionary<int, string> { [7] = "Online", [8] = "online", [9] = "Presencial" };
+
+            var pushes = new Dictionary<string, NotificacionPushDTO>();
+            IServicioNotificacionesPush push = A.Fake<IServicioNotificacionesPush>();
+            A.CallTo(() => push.EnviarACliente(A<string>._, A<string>._, A<NotificacionPushDTO>._))
+                .ReturnsLazily((string e, string c, NotificacionPushDTO n) => { pushes[c] = n; return Task.FromResult(1); });
+            var correos = new Dictionary<string, string>();
+            IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).ReturnsLazily((MailMessage m) =>
+            {
+                correos[m.To.Single().User] = m.Body;
+                return true;
+            });
+            DependenciasRecordatorioEventos deps = Dependencias(HOY, push, correo, new List<EventoInscripcion>());
+            deps.CorreoCliente = (e, c, k) => Task.FromResult(c.Trim() + "@example.com");
+            deps.FormasAsistencia = ids => Task.FromResult(formas.Where(f => ids.Contains(f.Key)).ToDictionary(f => f.Key, f => f.Value));
+
+            ResultadoRecordatorioEventos r = await RecordatorioEventosJobsService.Procesar(deps);
+
+            Assert.AreEqual(4, r.Inscripciones);
+            Assert.AreEqual(4, correos.Count);
+            return (correos, pushes);
+        }
+
+        private static void ConEnlace(string cuerpo, NotificacionPushDTO push)
+        {
+            StringAssert.Contains(cuerpo, ENLACE_MEET);
+            StringAssert.Contains(cuerpo, "a las 10:00, online");
+            Assert.IsFalse(cuerpo.Contains("C/ Mayor"), "La que viene online no necesita la dirección");
+            Assert.AreEqual(ENLACE_MEET, push.Datos["enlace"]);
+            StringAssert.Contains(push.Cuerpo, ", online");
+        }
+
+        private static void SinEnlace(string cuerpo, NotificacionPushDTO push)
+        {
+            Assert.IsFalse(cuerpo.Contains(ENLACE_MEET), "Sin enlace de conexión");
+            StringAssert.Contains(cuerpo, "a las 10:00 en C/ Mayor 1, Madrid.");
+            Assert.AreEqual(string.Empty, push.Datos["enlace"]);
+            StringAssert.Contains(push.Cuerpo, "en C/ Mayor 1, Madrid");
+            Assert.IsFalse(push.Cuerpo.Contains("online"));
+        }
+
+        [TestMethod]
+        public async Task EnlaceConexion_Mixto_SoloALasOnlineYElTextoPresencialALasDemas()
+        {
+            (Dictionary<string, string> correos, Dictionary<string, NotificacionPushDTO> pushes) = await RecordatorioConFormas("Mixto");
+
+            ConEnlace(correos["70000"], pushes["70000"]);
+            ConEnlace(correos["80000"], pushes["80000"]);
+            SinEnlace(correos["90000"], pushes["90000"]);
+            SinEnlace(correos["10000"], pushes["10000"]);
+        }
+
+        [TestMethod]
+        public async Task EnlaceConexion_Online_ATodas()
+        {
+            (Dictionary<string, string> correos, Dictionary<string, NotificacionPushDTO> pushes) = await RecordatorioConFormas("Online");
+
+            foreach (string cliente in new[] { "70000", "80000", "90000", "10000" })
+            {
+                ConEnlace(correos[cliente], pushes[cliente]);
+            }
+        }
+
+        [TestMethod]
+        public async Task EnlaceConexion_Presencial_ANinguna()
+        {
+            (Dictionary<string, string> correos, Dictionary<string, NotificacionPushDTO> pushes) = await RecordatorioConFormas("Presencial");
+
+            foreach (string cliente in new[] { "70000", "80000", "90000", "10000" })
+            {
+                SinEnlace(correos[cliente], pushes[cliente]);
+            }
+        }
+
+        [TestMethod]
+        public void EnlaceConexion_LaRegla()
+        {
+            var mixto = new Evento { Formato = "Mixto", Lugar = "Reina · " + ENLACE_MEET };
+            Assert.IsTrue(FormatosEvento.LlevaEnlace(mixto, "Online"));
+            Assert.IsFalse(FormatosEvento.LlevaEnlace(mixto, "Presencial"));
+            Assert.IsFalse(FormatosEvento.LlevaEnlace(mixto, null));
+            Assert.IsTrue(FormatosEvento.LlevaEnlace(new Evento { Formato = "Online" }, null));
+            Assert.IsFalse(FormatosEvento.LlevaEnlace(new Evento { Formato = "Presencial" }, "Online"));
+            Assert.IsFalse(FormatosEvento.LlevaEnlace(new Evento(), "Online"), "Los de antes (sin formato) son presenciales");
+            Assert.AreEqual(ENLACE_MEET, FormatosEvento.EnlaceConexion(mixto, "Online"));
+            Assert.IsNull(FormatosEvento.EnlaceConexion(mixto, null));
+            Assert.AreEqual("Reina", FormatosEvento.DireccionPresencial(mixto));
+            Assert.IsNull(FormatosEvento.DireccionPresencial(new Evento { Lugar = ENLACE_MEET }));
+            Assert.IsNull(FormatosEvento.EnlaceOnline(mixto), "EnlaceOnline sigue siendo solo de los online (lo que falta para anunciar)");
+        }
+
+        [TestMethod]
+        public async Task EnlaceConexion_MixtoSinPoderLeerLasFormas_NadieRecibeElEnlace()
+        {
+            eventos[0].Formato = "Mixto";
+            eventos[0].Lugar = ENLACE_MEET;
+            _ = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Facturada);
+            IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
+            MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).ReturnsLazily((MailMessage m) => { enviado = m; return true; });
+            DependenciasRecordatorioEventos deps = Dependencias(HOY, A.Fake<IServicioNotificacionesPush>(), correo, new List<EventoInscripcion>());
+            deps.FormasAsistencia = ids => throw new InvalidOperationException("sin BD");
+
+            ResultadoRecordatorioEventos r = await RecordatorioEventosJobsService.Procesar(deps);
+
+            Assert.AreEqual(1, r.Correos);
+            Assert.IsFalse(enviado.Body.Contains(ENLACE_MEET));
+            StringAssert.Contains(enviado.Body, "a las 10:00 en Reina.", "Sin dirección (solo el enlace en el Lugar): la tienda");
+        }
+
         [TestMethod]
         public void FacturaDelCurso_SiempreElAlmacenDelEvento_NuncaALG()
         {
