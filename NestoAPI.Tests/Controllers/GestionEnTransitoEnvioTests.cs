@@ -347,6 +347,37 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(1, correos.Count);
         }
 
+        [TestMethod]
+        public async Task FechaEntrega_Ok_GrabaLaFechaNuevaEnElEnvio()
+        {
+            EnviosAgencia envio = ConEnvio(Constantes.Agencias.ESTADO_TRAMITADO);
+            envio.FechaEntrega = new DateTime(2026, 11, 5);
+            A.CallTo(() => gestion.CambiarFechaEntregaAsync(ALBARAN, new DateTime(2026, 11, 9))).Returns(new ResultadoOperacionRemota { Exito = true });
+
+            var r = await controller.CambiarFechaEntrega(1, new CambiarFechaEntregaEnvioDTO { Fecha = new DateTime(2026, 11, 9, 10, 30, 0) }) as OkNegotiatedContentResult<ResultadoGestionEnvioDTO>;
+
+            Assert.IsNotNull(r);
+            Assert.AreEqual(new DateTime(2026, 11, 9), envio.FechaEntrega, "Sin la hora");
+            Assert.AreEqual("NUEVAVISION\\Laura", envio.Usuario);
+            Assert.AreNotEqual(default(DateTime), envio.FechaModificacion);
+            Assert.AreEqual("05/11/2026", historias.Single().ValorAnterior);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FechaEntrega_LaAgenciaRechaza_NoTocaLaFechaDelEnvio()
+        {
+            EnviosAgencia envio = ConEnvio(Constantes.Agencias.ESTADO_TRAMITADO);
+            envio.FechaEntrega = new DateTime(2026, 11, 5);
+            A.CallTo(() => gestion.CambiarFechaEntregaAsync(ALBARAN, A<DateTime>._)).ThrowsAsync(new AgenciaRemotaException("CTT respondió 403: Can not change delivery date"));
+
+            var r = await controller.CambiarFechaEntrega(1, new CambiarFechaEntregaEnvioDTO { Fecha = new DateTime(2026, 11, 9) }) as BadRequestErrorMessageResult;
+
+            Assert.IsNotNull(r);
+            Assert.AreEqual(new DateTime(2026, 11, 5), envio.FechaEntrega);
+            StringAssert.Contains(historias.Single().Observaciones, "rechazado");
+        }
+
         // ---------- POST DireccionEntrega ----------
 
         private static CambiarDireccionEntregaEnvioDTO DireccionNueva() => new CambiarDireccionEntregaEnvioDTO

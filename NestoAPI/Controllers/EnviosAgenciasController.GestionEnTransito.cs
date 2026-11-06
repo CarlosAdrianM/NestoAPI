@@ -125,6 +125,8 @@ namespace NestoAPI.Controllers
             if (fallo != null) return fallo;
 
             string anterior = g.Envio.FechaEntrega?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
+            // La agencia ya tiene la fecha nueva: se graba en el envío para que Nesto la vea (como la dirección).
+            g.Envio.FechaEntrega = fecha;
             await TerminarGestion(g, operacion, anterior, $"Nueva fecha de entrega: {fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}.");
             return Ok(new ResultadoGestionEnvioDTO { Mensaje = $"{g.NombreAgencia ?? "La agencia"} entregará el envío el {fecha:dd/MM/yyyy}." });
         }
@@ -258,6 +260,7 @@ namespace NestoAPI.Controllers
         {
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             g.Envio.Usuario = Limitar(usuario, 50);
+            g.Envio.FechaModificacion = DateTime.Now;
             db.EnviosHistorias.Add(FilaHistoria(g.Envio, operacion, valorAnterior, GestionEnTransitoEnvio.TextoHistoria(operacion, usuario, true, detalle), usuario));
             await GuardarSinRomper(g.Envio, operacion);
             AvisarLogistica(g, operacion, detalle, usuario);
