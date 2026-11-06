@@ -616,6 +616,121 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             A.CallTo(() => repositorio.ReservarAviso(A<int>._)).MustNotHaveHappened();
         }
 
+        // NestoAPI#837: copia oculta al vendedor del cliente
+        private void Destinatario15000ConVendedor(string vendedor, string correoVendedor)
+            => A.CallTo(() => repositorio.LeerDestinatario("15000", "1", "NV2600001"))
+                .Returns(Task.FromResult(new DestinatarioChequeRegalo
+                {
+                    Nombre = "CENTRO LOLA",
+                    Correos = "lola@centro.es",
+                    Vendedor = vendedor,
+                    CorreoVendedor = correoVendedor
+                }));
+
+        [TestMethod]
+        public async Task ConVendedorConCorreo_VaEnCopiaOcultaAdemasDeLaFija_YNoEnPara()
+        {
+            ChequesSinAviso("15000", Cheque());
+            Destinatario15000ConVendedor("JE ", " jefe@nuevavision.es ");
+            MailMessage capturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._))
+                .Invokes((MailMessage m) => capturado = m).Returns(true);
+
+            List<AvisoChequeRegalo> avisos = await Nuevo().AvisarCliente("15000");
+
+            Assert.AreEqual(ResultadoAvisoChequeRegalo.Enviado, avisos.Single().Resultado);
+            CollectionAssert.AreEqual(new[] { Constantes.Correos.INFORMATICA, "jefe@nuevavision.es" },
+                capturado.Bcc.Select(b => b.Address).ToArray());
+            Assert.AreEqual("lola@centro.es", capturado.To.Single().Address);
+            Assert.AreEqual(0, capturado.CC.Count, "El cliente no ve a quién se copia");
+            Assert.AreEqual("lola@centro.es", avisos[0].Correos, "Quien factura y la marca del cheque solo ven al cliente");
+            A.CallTo(() => repositorio.ConfirmarAviso(7, "lola@centro.es")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task LaReconciliacion_TambienCopiaAlVendedor()
+        {
+            ChequesSinAviso(null, Cheque());
+            Destinatario15000ConVendedor("JE", "jefe@nuevavision.es");
+
+            Assert.AreEqual(1, await Nuevo().AvisarPendientes());
+
+            Assert.AreEqual(Constantes.Correos.INFORMATICA + ",jefe@nuevavision.es", enviados.Single().Bcc);
+        }
+
+        [TestMethod]
+        public async Task VendedorGeneral_CopiaOcultaComoHoy()
+        {
+            ChequesSinAviso("15000", Cheque());
+            Destinatario15000ConVendedor("NV ", "nuevavision@nuevavision.es");
+
+            _ = await Nuevo().AvisarCliente("15000");
+
+            Assert.AreEqual(Constantes.Correos.INFORMATICA, enviados.Single().Bcc);
+        }
+
+        [TestMethod]
+        public async Task VendedorSinCorreo_CopiaOcultaComoHoy()
+        {
+            ChequesSinAviso("15000", Cheque());
+            Destinatario15000ConVendedor("JE", "  ");
+
+            _ = await Nuevo().AvisarCliente("15000");
+
+            Assert.AreEqual(Constantes.Correos.INFORMATICA, enviados.Single().Bcc);
+        }
+
+        [TestMethod]
+        public async Task VendedorConCorreoMalFormado_SeIgnoraYElCorreoSale()
+        {
+            ChequesSinAviso("15000", Cheque());
+            Destinatario15000ConVendedor("JE", "jefe arroba nuevavision");
+
+            List<AvisoChequeRegalo> avisos = await Nuevo().AvisarCliente("15000");
+
+            Assert.AreEqual(ResultadoAvisoChequeRegalo.Enviado, avisos.Single().Resultado);
+            Assert.AreEqual(Constantes.Correos.INFORMATICA, enviados.Single().Bcc);
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public void CopiaOcultaVendedor_SoloConVendedorNoGeneralYCorreoValido()
+        {
+            Assert.AreEqual("jefe@nuevavision.es", AvisadorChequesRegalo.CopiaOcultaVendedor(
+                new DestinatarioChequeRegalo { Vendedor = "JE", CorreoVendedor = "jefe@nuevavision.es" }));
+            Assert.IsNull(AvisadorChequesRegalo.CopiaOcultaVendedor(
+                new DestinatarioChequeRegalo { Vendedor = "nv", CorreoVendedor = "jefe@nuevavision.es" }));
+            Assert.IsNull(AvisadorChequesRegalo.CopiaOcultaVendedor(
+                new DestinatarioChequeRegalo { Vendedor = null, CorreoVendedor = "jefe@nuevavision.es" }));
+            Assert.IsNull(AvisadorChequesRegalo.CopiaOcultaVendedor(
+                new DestinatarioChequeRegalo { Vendedor = "JE", CorreoVendedor = "sin-arroba" }));
+            Assert.IsNull(AvisadorChequesRegalo.CopiaOcultaVendedor(null));
+        }
+
+        [TestMethod]
+        public void ElVendedorQueYaEsDestinatarioOLaCopiaFija_NoSeRepite()
+        {
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(PlantillaCorreoChequeRegaloTests.Campana(), "Lola", null, null);
+
+            using (MailMessage mail = AvisadorChequesRegalo.CrearMensaje(correo, new[] { "lola@centro.es" }, copiaOculta: true,
+                copiaOcultaVendedor: Constantes.Correos.INFORMATICA.ToUpperInvariant()))
+            {
+                Assert.AreEqual(1, mail.Bcc.Count);
+            }
+            using (MailMessage mail = AvisadorChequesRegalo.CrearMensaje(correo, new[] { "lola@centro.es" }, copiaOculta: false,
+                copiaOcultaVendedor: "lola@centro.es"))
+            {
+                Assert.AreEqual(0, mail.Bcc.Count, "Si el vendedor es el propio destinatario, ya lo recibe en Para");
+            }
+        }
+
+        [TestMethod]
+        public void LaConsultaDelDestinatarioTraeElVendedorYSuCorreo()
+        {
+            StringAssert.Contains(RepositorioAvisoChequesRegalo.SQL_DESTINATARIO, "vc.Vendedor, vc.CorreoVendedor");
+            StringAssert.Contains(RepositorioAvisoChequesRegalo.SQL_DESTINATARIO, "dbo.Vendedores v ON v.Empresa = cv.Empresa AND v.[Número] = cv.Vendedor");
+        }
+
         [TestMethod]
         public async Task CampanaQueNoExiste_Null()
         {

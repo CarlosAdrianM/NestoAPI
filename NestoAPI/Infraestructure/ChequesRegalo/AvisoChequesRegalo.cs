@@ -81,6 +81,12 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public string Nombre { get; set; }
         public string NombrePersonaContacto { get; set; }
         public string Correos { get; set; }
+        /// <summary>
+        /// NestoAPI#837: el vendedor (Clientes.Vendedor) del contacto de la factura o, sin factura o sin ese contacto, del
+        /// cliente principal; y su correo (Vendedores.Mail, empresa 1). Va en copia oculta salvo que sea el general (NV).
+        /// </summary>
+        public string Vendedor { get; set; }
+        public string CorreoVendedor { get; set; }
     }
 
     /// <summary>El correo compuesto, sin mandar: HTML, texto plano y la imagen que va en línea.</summary>
@@ -568,7 +574,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             try
             {
                 CorreoChequeRegalo compuesto = ComponerParaEnviar(cheque.Campana(), NombreDePila(destinatario, nombresDePila));
-                using (MailMessage mail = CrearMensaje(compuesto, correos, copiaOculta: true))
+                using (MailMessage mail = CrearMensaje(compuesto, correos, copiaOculta: true, CopiaOcultaVendedor(destinatario)))
                 {
                     enviado = servicioCorreo.EnviarCorreoSMTP(mail);
                 }
@@ -613,8 +619,27 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             return resultado;
         }
 
-        /// <summary>HTML con la imagen en línea (CID) y la versión en texto plano.</summary>
-        internal static MailMessage CrearMensaje(CorreoChequeRegalo correo, IEnumerable<string> destinatarios, bool copiaOculta)
+        /// <summary>
+        /// NestoAPI#837: el correo del vendedor del cliente para la copia oculta; null si es el vendedor general (NV), no
+        /// tiene vendedor o su correo no es válido.
+        /// </summary>
+        internal static string CopiaOcultaVendedor(DestinatarioChequeRegalo destinatario)
+        {
+            string vendedor = destinatario?.Vendedor?.Trim();
+            if (string.IsNullOrEmpty(vendedor) || string.Equals(vendedor, Constantes.Vendedores.VENDEDOR_GENERAL, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+            return CorreosValidos(destinatario.CorreoVendedor).FirstOrDefault();
+        }
+
+        /// <summary>
+        /// HTML con la imagen en línea (CID) y la versión en texto plano. <paramref name="copiaOculta"/>: la fija del
+        /// appSetting; <paramref name="copiaOcultaVendedor"/> (NestoAPI#837): el vendedor del cliente, también oculto
+        /// (el cliente no ve a quién se copia). Los correos no válidos se ignoran y ninguno se repite.
+        /// </summary>
+        internal static MailMessage CrearMensaje(CorreoChequeRegalo correo, IEnumerable<string> destinatarios, bool copiaOculta,
+            string copiaOcultaVendedor = null)
         {
             var mail = new MailMessage
             {
@@ -627,9 +652,15 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 mail.To.Add(destinatario);
             }
+            var ocultas = new List<string>();
             if (copiaOculta)
             {
-                foreach (string bcc in CorreosValidos(CopiaOculta))
+                ocultas.AddRange(CorreosValidos(CopiaOculta));
+            }
+            ocultas.AddRange(CorreosValidos(copiaOcultaVendedor));
+            foreach (string bcc in ocultas.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!mail.To.Any(t => string.Equals(t.Address, bcc, StringComparison.OrdinalIgnoreCase)))
                 {
                     mail.Bcc.Add(bcc);
                 }
@@ -689,8 +720,10 @@ WHERE Codigo = @p0";
         // contacto que los tenga, y de ellos el de la factura y luego el principal. Los clientes viven en la empresa 1
         // aunque la factura sea de la espejo. NombrePersonaContacto, para el saludo: la primera persona activa que
         // recibe las facturas con Saludo o Nombre (como SelectorAvisosFacturasVencidas.ResolverNombrePersonaContacto).
+        // NestoAPI#837: Vendedor y CorreoVendedor, del contacto de la factura o, si no, del principal (aunque los correos
+        // salgan de otro contacto); que sea el general (NV) lo decide AvisadorChequesRegalo.CopiaOcultaVendedor.
         internal const string SQL_DESTINATARIO = @"
-SELECT TOP 1 RTRIM(x.Nombre) AS Nombre, x.NombrePersonaContacto, x.Correos
+SELECT TOP 1 RTRIM(x.Nombre) AS Nombre, x.NombrePersonaContacto, x.Correos, vc.Vendedor, vc.CorreoVendedor
 FROM (
     SELECT cl.Nombre, cl.Contacto, cl.ClientePrincipal,
            (SELECT TOP 1 COALESCE(NULLIF(RTRIM(p.Saludo), ''), RTRIM(p.Nombre))
@@ -707,6 +740,15 @@ FROM (
     FROM dbo.Clientes cl
     WHERE cl.Empresa = @p0 AND cl.[Nº Cliente] = @p1
 ) x
+OUTER APPLY (
+    SELECT TOP 1 RTRIM(cv.Vendedor) AS Vendedor, RTRIM(v.Mail) AS CorreoVendedor
+    FROM dbo.Clientes cv
+         LEFT JOIN dbo.Vendedores v ON v.Empresa = cv.Empresa AND v.[Número] = cv.Vendedor
+    WHERE cv.Empresa = @p0 AND cv.[Nº Cliente] = @p1
+    ORDER BY CASE WHEN cv.Contacto = (SELECT f.Contacto FROM dbo.CabFacturaVta f WHERE f.Empresa = @p3 AND f.[Número] = @p4) THEN 0 ELSE 1 END,
+             CASE WHEN cv.ClientePrincipal = 1 THEN 0 ELSE 1 END,
+             cv.Contacto
+) vc
 ORDER BY CASE WHEN x.Correos IS NULL THEN 1 ELSE 0 END,
          CASE WHEN x.Contacto = (SELECT f.Contacto FROM dbo.CabFacturaVta f WHERE f.Empresa = @p3 AND f.[Número] = @p4) THEN 0 ELSE 1 END,
          CASE WHEN x.ClientePrincipal = 1 THEN 0 ELSE 1 END,
