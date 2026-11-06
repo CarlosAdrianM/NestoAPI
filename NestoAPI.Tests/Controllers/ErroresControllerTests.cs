@@ -17,7 +17,8 @@ namespace NestoAPI.Tests.Controllers
         public void Setup()
         {
             _logService = A.Fake<ILogService>();
-            _controller = new ErroresController(_logService);
+            // NestoAPI#230: cada test con su deduplicador (el compartido mezclaría los mensajes de unos tests con otros)
+            _controller = new ErroresController(_logService, new DeduplicadorErroresCliente());
         }
 
         [TestMethod]

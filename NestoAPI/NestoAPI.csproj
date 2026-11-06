@@ -1019,6 +1019,7 @@
     <Compile Include="Infraestructure\Facturas\IServicioFacturas.cs" />
     <Compile Include="Infraestructure\NotasEntrega\IServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\IServicioExtractoRuta.cs" />
+    <Compile Include="Infraestructure\DeduplicadorErroresCliente.cs" />
     <Compile Include="Infraestructure\ElmahLogService.cs" />
     <Compile Include="Infraestructure\LectorErroresElmah.cs" />
     <Compile Include="Infraestructure\ErrorClienteException.cs" />

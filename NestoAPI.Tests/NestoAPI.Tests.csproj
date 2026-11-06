@@ -377,6 +377,7 @@
     <Compile Include="Infraestructure\Videos\VideoFechaBajaTests.cs" />
     <Compile Include="Infraestructure\Videos\CoincidenciaProductoVideoTests.cs" />
     <Compile Include="Infraestructure\Videos\ListadoVideosBajasTests.cs" />
+    <Compile Include="Infrastructure\DeduplicadorErroresClienteTests.cs" />
     <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
     <Compile Include="Infraestructure\ErroresTriggerSqlTests.cs" />
     <Compile Include="Infraestructure\ResumidorPedidosClienteTests.cs" />

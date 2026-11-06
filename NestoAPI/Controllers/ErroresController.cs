@@ -14,11 +14,21 @@ namespace NestoAPI.Controllers
     [RoutePrefix("api/Errores")]
     public class ErroresController : ApiController
     {
-        private readonly ILogService _logService;
+        /// <summary>NestoAPI#230: uno para toda la API (el controlador se crea en cada petición).</summary>
+        private static readonly DeduplicadorErroresCliente DeduplicadorCompartido = new DeduplicadorErroresCliente();
 
-        public ErroresController(ILogService logService)
+        private readonly ILogService _logService;
+        private readonly DeduplicadorErroresCliente _deduplicador;
+
+        public ErroresController(ILogService logService) : this(logService, DeduplicadorCompartido)
+        {
+        }
+
+        /// <summary>Para los tests: con su propio deduplicador (y su reloj).</summary>
+        internal ErroresController(ILogService logService, DeduplicadorErroresCliente deduplicador)
         {
             _logService = logService;
+            _deduplicador = deduplicador ?? DeduplicadorCompartido;
         }
 
         [HttpPost]
@@ -42,7 +52,17 @@ namespace NestoAPI.Controllers
             // contexto para que ELMAH muestre quién sufrió el crash, sin dejar de ser anónimo.
             AsignarUsuarioElmahSiAnonimo(error);
 
-            string resumen = ConstruirResumen(error);
+            // NestoAPI#230 (06/11/26): misma app, usuario y mensaje en 24 h → se cuenta y no se loguea
+            string usuario = User?.Identity?.IsAuthenticated == true && !string.IsNullOrWhiteSpace(User.Identity.Name)
+                ? User.Identity.Name
+                : error.UsuarioCliente;
+            int? repetidosAntes = _deduplicador.Registrar(error.Aplicacion, usuario, error.Mensaje, error.StackTrace);
+            if (repetidosAntes == null)
+            {
+                return Ok();
+            }
+
+            string resumen = ConstruirResumen(error) + DeduplicadorErroresCliente.SufijoRepetidos(repetidosAntes.Value);
 
             var excepcionCliente = new ErrorClienteException(error.Mensaje.Trim(), error.StackTrace);
             _logService.LogError(resumen, excepcionCliente);
