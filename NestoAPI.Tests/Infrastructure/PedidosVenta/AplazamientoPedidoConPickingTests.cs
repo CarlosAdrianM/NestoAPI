@@ -60,7 +60,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             StringAssert.Contains(r.Mensaje, "ya lo tiene la agencia (envío 250300)");
             StringAssert.Contains(r.Mensaje, "no llegamos a tiempo");
             StringAssert.Contains(r.Mensaje, "que el cliente lo rechace");
-            StringAssert.Contains(r.Mensaje, Constantes.Correos.LOGISTICA);
+            StringAssert.Contains(r.Mensaje, "mandamos un correo a logística");
             Assert.IsFalse(r.Mensaje.Contains("llame a la agencia"), "Carlos: no se le dice al vendedor que llame a la agencia");
         }
 

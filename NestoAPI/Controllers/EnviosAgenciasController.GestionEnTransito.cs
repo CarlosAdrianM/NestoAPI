@@ -111,28 +111,53 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta la fecha de entrega nueva.");
             }
-            DateTime fecha = datos.Fecha.Value.Date;
+            return (await CambiarFechaEntregaEnAgencia(id, datos.Fecha.Value)).Respuesta;
+        }
+
+        /// <summary>
+        /// NestoAPI#726/#722: el núcleo de POST …/FechaEntrega, también para el PUT del pedido (aplazar un pedido que ya tiene la
+        /// agencia). Comprueba el envío y la fecha, llama a la agencia y, si la acepta, graba la fecha en el envío, deja historia
+        /// y avisa a logística. Devuelve el resultado para quien no es un endpoint y la respuesta HTTP del endpoint.
+        /// </summary>
+        internal async Task<(ResultadoCambioFechaEnAgencia Resultado, IHttpActionResult Respuesta)> CambiarFechaEntregaEnAgencia(int id, DateTime fechaPedida)
+        {
+            DateTime fecha = fechaPedida.Date;
+            GestionPreparada g = await PrepararGestion(id, gestiones => gestiones.CambiarFecha);
+            var resultado = new ResultadoCambioFechaEnAgencia { Envio = id, Fecha = fecha, NombreAgencia = g.NombreAgencia, Admitida = g.Error == null };
+            if (g.Error != null)
+            {
+                resultado.Mensaje = g.Envio == null ? $"El envío {id} no existe." : g.Gestiones?.Motivo ?? "El envío no admite esta gestión en la agencia.";
+                return (resultado, g.Error);
+            }
             if (fecha < HoyGestiones().Date)
             {
-                return BadRequest($"La fecha de entrega {fecha:dd/MM/yyyy} ya ha pasado.");
+                resultado.Mensaje = $"La fecha de entrega {fecha:dd/MM/yyyy} ya ha pasado.";
+                return (resultado, BadRequest(resultado.Mensaje));
             }
             if (EsDiaSinReparto(fecha))
             {
-                return BadRequest($"El {fecha:dd/MM/yyyy} no se reparte (festivo o fin de semana): elija otro día.");
+                resultado.Mensaje = $"El {fecha:dd/MM/yyyy} no se reparte (festivo o fin de semana): elija otro día.";
+                return (resultado, BadRequest(resultado.Mensaje));
             }
-
-            GestionPreparada g = await PrepararGestion(id, gestiones => gestiones.CambiarFecha);
-            if (g.Error != null) return g.Error;
 
             string operacion = GestionEnTransitoEnvio.OPERACION_FECHA;
             IHttpActionResult fallo = await LlamarAgencia(g, operacion, () => g.Agencia.CambiarFechaEntregaAsync(g.Envio.CodigoBarras.Trim(), fecha));
-            if (fallo != null) return fallo;
+            if (fallo != null)
+            {
+                resultado.AgenciaNoResponde = !(fallo is System.Web.Http.Results.BadRequestErrorMessageResult);
+                resultado.Mensaje = fallo is System.Web.Http.Results.BadRequestErrorMessageResult rechazo
+                    ? rechazo.Message
+                    : FallosAgenciaRemota.MensajeNoResponde(g.NombreAgencia);
+                return (resultado, fallo);
+            }
 
             string anterior = g.Envio.FechaEntrega?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
             // La agencia ya tiene la fecha nueva: se graba en el envío para que Nesto la vea (como la dirección).
             g.Envio.FechaEntrega = fecha;
             await TerminarGestion(g, operacion, anterior, $"Nueva fecha de entrega: {fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}.");
-            return Ok(new ResultadoGestionEnvioDTO { Mensaje = $"{g.NombreAgencia ?? "La agencia"} entregará el envío el {fecha:dd/MM/yyyy}." });
+            resultado.Hecho = true;
+            resultado.Mensaje = $"{g.NombreAgencia ?? "La agencia"} entregará el envío el {fecha:dd/MM/yyyy}.";
+            return (resultado, Ok(new ResultadoGestionEnvioDTO { Mensaje = resultado.Mensaje }));
         }
 
         [HttpPost]
@@ -184,6 +209,7 @@ namespace NestoAPI.Controllers
             public EnviosAgencia Envio;
             public IGestionEnTransitoAgenciaRemota Agencia;
             public string NombreAgencia;
+            public GestionesEnvioDTO Gestiones;
             public IHttpActionResult Error;
         }
 
@@ -202,6 +228,7 @@ namespace NestoAPI.Controllers
             g.Agencia = GestionEnTransitoDe(g.Envio);
             g.NombreAgencia = await NombreAgenciaParaUsuario(g.Envio);
             GestionesEnvioDTO gestiones = GestionEnTransitoEnvio.Calcular(g.Envio, g.Agencia, g.NombreAgencia);
+            g.Gestiones = gestiones;
             if (!admite(gestiones))
             {
                 g.Error = BadRequest(gestiones.Motivo ?? "El envío no admite esta gestión en la agencia.");

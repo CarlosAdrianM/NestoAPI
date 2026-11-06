@@ -1049,6 +1049,14 @@ namespace NestoAPI.Controllers
         }
         private Infraestructure.PedidosVenta.Retencion.AvisadorRetencionAlmacen avisadorAlmacen;
 
+        /// <summary>NestoAPI#722: el cambio de fecha en la agencia de un envío que ya la tiene (sustituible en los tests).</summary>
+        internal Infraestructure.PedidosVenta.Retencion.ICambioFechaEnvioAgencia CambioFechaEnvio
+        {
+            get => cambioFechaEnvio ?? (cambioFechaEnvio = new Infraestructure.PedidosVenta.Retencion.CambioFechaEnvioAgencia(User));
+            set => cambioFechaEnvio = value;
+        }
+        private Infraestructure.PedidosVenta.Retencion.ICambioFechaEnvioAgencia cambioFechaEnvio;
+
         /// <summary>NestoAPI#698: el servicio de Retener/Liberar (sustituible en los tests).</summary>
         internal Func<Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos> CrearServicioRetencion { get; set; } = () =>
             new Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos(
@@ -1071,6 +1079,115 @@ namespace NestoAPI.Controllers
             Infraestructure.PedidosVenta.Retencion.ResultadoRetencion resultado = await CrearServicioRetencion()
                 .Retener(empresa, numero, peticion, usuario).ConfigureAwait(false);
             return RespuestaRetencion(resultado);
+        }
+
+        /// <summary>NestoAPI#722: el correo a logística para aplazar un pedido que ya tiene la agencia (sustituible en los tests).</summary>
+        internal IServicioCorreoElectronico ServicioCorreoAplazamiento
+        {
+            get => servicioCorreoAplazamiento ?? (servicioCorreoAplazamiento = new ServicioCorreoElectronico());
+            set => servicioCorreoAplazamiento = value;
+        }
+        private IServicioCorreoElectronico servicioCorreoAplazamiento;
+
+        /// <summary>
+        /// NestoAPI#722 (06/11/26): el botón del rechazo PEDIDO_YA_EN_AGENCIA del PUT. Manda a logística, con copia al vendedor del
+        /// pedido, el pedido, el envío, la fecha pedida y quién lo pide, para que intenten hablar con la agencia (sin prometer nada).
+        /// 200 { Mensaje, Destinatarios }; 400 sin fecha; 404 si el pedido (o el envío indicado del pedido) no existe; 502 si el
+        /// correo no sale.
+        /// </summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/AvisarLogisticaAplazamiento")]
+        [ResponseType(typeof(Infraestructure.PedidosVenta.Retencion.AvisarLogisticaAplazamientoRespuesta))]
+        public async Task<IHttpActionResult> PostAvisarLogisticaAplazamiento(string empresa, int numero, [FromBody] Infraestructure.PedidosVenta.Retencion.AvisarLogisticaAplazamientoRequest peticion)
+        {
+            if (EsClienteDeTienda())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (peticion?.Fecha == null)
+            {
+                return BadRequest("Falta la fecha de entrega que quiere el cliente.");
+            }
+            string empresaPedido = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            var cabecera = await db.CabPedidoVtas
+                .Where(c => c.Empresa == empresaPedido && c.Número == numero)
+                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Vendedor })
+                .FirstOrDefaultAsync().ConfigureAwait(true);
+            if (cabecera == null)
+            {
+                return NotFound();
+            }
+
+            List<EnviosAgencia> envios = await db.EnviosAgencias
+                .Where(e => e.Empresa == empresaPedido && e.Pedido == numero)
+                .ToListAsync().ConfigureAwait(true);
+            EnviosAgencia envio;
+            if (peticion.Envio.HasValue)
+            {
+                envio = envios.FirstOrDefault(e => e.Numero == peticion.Envio.Value);
+                if (envio == null)
+                {
+                    return NotFound();
+                }
+            }
+            else
+            {
+                envio = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
+                    envios.Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado }), out int numeroEnvio)
+                    ? envios.First(e => e.Numero == numeroEnvio)
+                    : null;
+            }
+
+            string nombreAgencia = null;
+            string nombreCliente = null;
+            string correoVendedor = null;
+            try
+            {
+                if (envio != null)
+                {
+                    nombreAgencia = (await db.AgenciasTransportes.Where(a => a.Numero == envio.Agencia).Select(a => a.Nombre)
+                        .FirstOrDefaultAsync().ConfigureAwait(true))?.Trim();
+                }
+                nombreCliente = (await db.Clientes.Where(c => c.Empresa == empresaPedido && c.Nº_Cliente == cabecera.Nº_Cliente && c.Contacto == cabecera.Contacto)
+                    .Select(c => c.Nombre).FirstOrDefaultAsync().ConfigureAwait(true))?.Trim();
+                if (!string.IsNullOrWhiteSpace(cabecera.Vendedor))
+                {
+                    string vendedor = cabecera.Vendedor.Trim();
+                    correoVendedor = (await db.Vendedores.Where(v => v.Empresa == empresaPedido && v.Número == vendedor).Select(v => v.Mail)
+                        .FirstOrDefaultAsync().ConfigureAwait(true))?.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                // Lo que adorna el correo no lo para: sale con lo que haya.
+                ElmahHelper.Log(new Exception($"[Avisar a logística #722] Pedido {numero}: no se han podido leer la agencia, el cliente o el vendedor: {ex.Message}", ex));
+            }
+
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion.Usuario);
+            System.Net.Mail.MailMessage correo = Infraestructure.PedidosVenta.Retencion.AplazamientoEnvioEnAgencia.ComponerCorreoLogistica(
+                empresaPedido, numero, cabecera.Nº_Cliente, nombreCliente, envio?.Numero, envio?.CodigoBarras, nombreAgencia,
+                peticion.Fecha.Value.Date, usuario, peticion.Comentario, correoVendedor);
+            bool enviado;
+            try
+            {
+                enviado = ServicioCorreoAplazamiento.EnviarCorreoSMTP(correo);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Avisar a logística #722] Pedido {numero}: no se ha podido mandar el correo: {ex.Message}", ex));
+                enviado = false;
+            }
+            if (!enviado)
+            {
+                return Content(HttpStatusCode.BadGateway, new HttpError("No se ha podido mandar el correo a logística. Vuelva a intentarlo en unos minutos."));
+            }
+            var destinatarios = correo.To.Select(d => d.Address).Concat(correo.CC.Select(d => d.Address)).ToList();
+            return Ok(new Infraestructure.PedidosVenta.Retencion.AvisarLogisticaAplazamientoRespuesta
+            {
+                Mensaje = "Se ha mandado el correo a logística" + (correo.CC.Count > 0 ? " con copia al vendedor" : string.Empty) +
+                    ". Intentarán hablar con la agencia, pero no es seguro que lleguen a tiempo.",
+                Destinatarios = destinatarios
+            });
         }
 
         /// <summary>NestoAPI#698: liberar el pedido: vuelve a su modo de servicio anterior y entra en el picking.</summary>
@@ -1596,6 +1713,9 @@ namespace NestoAPI.Controllers
             // (se avisa al usuario y a Almacén y el pedido no sale hasta la fecha); si ya está tramitado, se rechaza.
             var lineasAplazadas = new List<Infraestructure.PedidosVenta.Retencion.LineaAplazable>();
             List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido> enviosDelPedido = null;
+            // NestoAPI#722 (06/11/26): el envío que ya tiene la agencia y admite cambiar la fecha en tránsito (CTT): se le cambia
+            // justo antes de guardar el pedido, y si la agencia no lo hace, no se guarda.
+            int envioACambiarEnAgencia = 0;
             foreach (LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.Lineas.SingleOrDefault(l => l.id == linea.Nº_Orden);
@@ -1625,9 +1745,11 @@ namespace NestoAPI.Controllers
                                 .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado })
                                 .ToList();
                         }
-                        if (Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(enviosDelPedido, out int envioEnAgencia))
+                        if (envioACambiarEnAgencia == 0 && Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(enviosDelPedido, out int envioEnAgencia))
                         {
-                            errorPersonalizado(Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.MensajeRechazo(pedido.numero, envioEnAgencia));
+                            // Si la agencia no admite cambiarle la fecha (no es CTT, o su estado no lo deja): 403 PEDIDO_YA_EN_AGENCIA
+                            envioACambiarEnAgencia = await Infraestructure.PedidosVenta.Retencion.AplazamientoEnvioEnAgencia.EnvioACambiarOExcepcion(
+                                CambioFechaEnvio, pedido.empresa, pedido.numero, envioEnAgencia, lineaEncontrada.fechaEntrega.Date, pedido.Usuario).ConfigureAwait(true);
                         }
                         DateTime fechaNueva = this.gestor.FechaEntregaAjustada(lineaEncontrada.fechaEntrega.Date, pedido.ruta, linea.Almacén, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto);
                         lineasAplazadas.Add(new Infraestructure.PedidosVenta.Retencion.LineaAplazable
@@ -2229,6 +2351,21 @@ namespace NestoAPI.Controllers
                     $"Líneas afectadas: {detalle}. Indica un error al crear/modificar las líneas (CK_LinPedidoVta_1).");
             }
 
+            // NestoAPI#722: la fecha nueva en la agencia (la misma lógica que POST api/EnviosAgencias/{id}/FechaEntrega), lo último
+            // antes de guardar: si la agencia la rechaza o no responde, el pedido no se guarda.
+            ResultadoCambioFechaEnAgencia fechaCambiadaEnAgencia = null;
+            if (envioACambiarEnAgencia > 0 && lineasAplazadas.Count > 0)
+            {
+                DateTime fechaEnAgencia = lineasAplazadas.Max(l => l.FechaNueva.Date);
+                ResultadoCambioFechaEnAgencia cambio = await CambioFechaEnvio.CambiarFecha(envioACambiarEnAgencia, fechaEnAgencia).ConfigureAwait(true);
+                if (cambio == null || !cambio.Hecho)
+                {
+                    throw Infraestructure.PedidosVenta.Retencion.AplazamientoEnvioEnAgencia.ExcepcionAgenciaNoLoHace(pedido.empresa, pedido.numero,
+                        cambio ?? new ResultadoCambioFechaEnAgencia { Envio = envioACambiarEnAgencia, Fecha = fechaEnAgencia }, pedido.Usuario);
+                }
+                fechaCambiadaEnAgencia = cambio;
+            }
+
             try
             {
                 await GuardarConChequeRegalo(planChequeRegalo, planCupon).ConfigureAwait(true);
@@ -2253,6 +2390,11 @@ namespace NestoAPI.Controllers
                 // 28/09/26: el HttpResponseException de abajo no pasa por el GlobalExceptionFilter, así que un
                 // fallo al guardar la modificación (p. ej. vendedor NULL de Alfredo) no llegaba a ELMAH.
                 LoguearPedidoEnElmah(pedido, e, "Exception al modificar pedido");
+                if (fechaCambiadaEnAgencia != null)
+                {
+                    ElmahHelper.Log(new Exception($"[Aplazar con envío en la agencia #722] Pedido {pedido.numero}: la agencia YA ha cambiado la fecha del envío " +
+                        $"{fechaCambiadaEnAgencia.Envio} al {fechaCambiadaEnAgencia.Fecha:dd/MM/yyyy}, pero el pedido no se ha guardado.", e));
+                }
                 string message = e.Message;
                 Exception recorremosExcepcion = e;
                 while (recorremosExcepcion.InnerException != null)
@@ -2291,6 +2433,21 @@ namespace NestoAPI.Controllers
                         ? $"Se ha anulado la inscripción de {inscripcionesAnuladas[0].Cliente} a «{inscripcionesAnuladas[0].Evento}» y se ha avisado a la tienda."
                         : $"Se han anulado {inscripcionesAnuladas.Count} inscripciones a eventos y se ha avisado a la tienda.",
                     Datos = new { Inscripciones = inscripcionesAnuladas }
+                });
+            }
+            // NestoAPI#722: la agencia ya tenía el envío y le ha cambiado la fecha: aviso al usuario (el almacén ya no lo tiene).
+            if (fechaCambiadaEnAgencia != null)
+            {
+                avisos.Add(new AvisoPedidoDTO
+                {
+                    Tipo = Infraestructure.PedidosVenta.Retencion.AplazamientoEnvioEnAgencia.TIPO_AVISO_CAMBIADA_EN_AGENCIA,
+                    Mensaje = Infraestructure.PedidosVenta.Retencion.AplazamientoEnvioEnAgencia.MensajeCambiadaEnAgencia(fechaCambiadaEnAgencia),
+                    Datos = new
+                    {
+                        fechaCambiadaEnAgencia.Envio,
+                        Agencia = fechaCambiadaEnAgencia.NombreAgencia,
+                        FechaNueva = fechaCambiadaEnAgencia.Fecha.ToString("yyyy-MM-dd")
+                    }
                 });
             }
             // NestoAPI#722: líneas con picking aplazadas: aviso al usuario y campana a Almacén (best-effort, ya está guardado).

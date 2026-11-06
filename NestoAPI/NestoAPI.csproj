@@ -1098,6 +1098,7 @@
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\TextosConsultaReembolso.cs" />
     <Compile Include="Models\PedidosVenta\ConsultaReembolsoPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AplazamientoPedidoConPicking.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Retencion\AplazamientoEnvioEnAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AvisadorRetencionAlmacen.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\GuardiaPedidoRetenido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\VendedorParaFacturar.cs" />

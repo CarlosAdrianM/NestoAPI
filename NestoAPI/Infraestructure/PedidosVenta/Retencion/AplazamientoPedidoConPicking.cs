@@ -92,10 +92,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
             return resultado;
         }
 
-        public static string MensajeRechazo(int pedido, int envio)
-            => $"El pedido {pedido} ya lo tiene la agencia (envío {envio}): no llegamos a tiempo para retrasar la entrega. " +
-               "La única opción es que el cliente lo rechace. Si quiere que logística intente hablar con la agencia, " +
-               $"escriba a {Constantes.Correos.LOGISTICA} con el número del pedido.";
+        /// <summary>NestoAPI#722 (06/11/26): el texto de la issue; el correo a logística lo manda el botón de Nesto (AvisarLogisticaAplazamiento).</summary>
+        public static string MensajeRechazo(int pedido, int envio) => AplazamientoEnvioEnAgencia.MensajeYaEnAgencia(pedido, envio);
 
         public static string AvisoUsuario(int pedido, ResultadoAplazamiento resultado, DateTime hoy)
         {

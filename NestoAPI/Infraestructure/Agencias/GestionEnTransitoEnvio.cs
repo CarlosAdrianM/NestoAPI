@@ -42,6 +42,22 @@ namespace NestoAPI.Infraestructure.Agencias
         public string Mensaje { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#722: el resultado de cambiar la fecha de entrega en la agencia para quien no es el endpoint (el PUT del pedido).
+    /// Admitida = el envío y la agencia admiten el cambio de fecha (si no, no se ha llamado); Hecho = la agencia lo ha aceptado.
+    /// </summary>
+    public class ResultadoCambioFechaEnAgencia
+    {
+        public int Envio { get; set; }
+        public DateTime Fecha { get; set; }
+        public string NombreAgencia { get; set; }
+        public bool Admitida { get; set; }
+        public bool Hecho { get; set; }
+        public bool AgenciaNoResponde { get; set; }
+        /// <summary>Lo hecho, o por qué no (el motivo de la agencia si la ha rechazado).</summary>
+        public string Mensaje { get; set; }
+    }
+
     /// <summary>NestoAPI#726: respuesta de POST api/EnviosAgencias/{id}/Retorno.</summary>
     public class ResultadoRetornoEnvioDTO
     {
