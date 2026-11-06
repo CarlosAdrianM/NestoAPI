@@ -184,9 +184,22 @@ namespace NestoAPI.Infraestructure.Agencias
         private async Task<StringBuilder> GenerarCorreoHTML(EnviosAgencia envio, bool esRecogida = false, bool llevaEtiqueta = false)
         {
             ServicioEnviosAgencia servicio = new ServicioEnviosAgencia();
-            string nombreAgencia = servicio.LeerAgencia(envio.Agencia).Nombre;
-            EnvioAgenciaDTO envioDTO = new EnvioAgenciaDTO(envio);
-            envioDTO.AgenciaNombre = nombreAgencia;
+            AgenciaTransporte agencia = servicio.LeerAgencia(envio.Agencia);
+            // Pie promocional de la app con videoprotocolo
+            string piePromoApp = await GenerarPiePromocionAppAsync(envio.Cliente);
+            return CuerpoCorreoEntrega(envio, agencia, esRecogida, llevaEtiqueta, piePromoApp);
+        }
+
+        /// <summary>
+        /// El cuerpo del correo «Pedido entregado a la agencia» (o de la recogida). Fix 06/11/26 (ObjectDisposedException del
+        /// 03/11 en CorreoEntregaAgenciaJobs): la agencia llega leída aparte y el envío no se navega (<c>envio.AgenciasTransporte</c>),
+        /// así que da igual que el envío venga de un contexto ya cerrado, de un proxy o del cuerpo de la petición.
+        /// </summary>
+        internal static StringBuilder CuerpoCorreoEntrega(EnviosAgencia envio, AgenciaTransporte agencia, bool esRecogida, bool llevaEtiqueta,
+            string piePromoApp)
+        {
+            string nombreAgencia = agencia?.Nombre;
+            EnvioAgenciaDTO envioDTO = new EnvioAgenciaDTO(envio, agencia);
             StringBuilder s = new StringBuilder();
 
             s.AppendLine("<h3>¡Hola!</h3>");
@@ -220,9 +233,6 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p></p>");
             s.AppendLine("<p></p>");
             s.AppendLine(FirmaCorreoEnvio());
-
-            // Pie promocional de la app con videoprotocolo
-            string piePromoApp = await GenerarPiePromocionAppAsync(envio.Cliente);
             s.AppendLine(piePromoApp);
 
             return s;

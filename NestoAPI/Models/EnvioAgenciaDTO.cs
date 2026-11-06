@@ -6,7 +6,13 @@ namespace NestoAPI.Models
     public class EnvioAgenciaDTO
     {
         public EnvioAgenciaDTO() { }
-        public EnvioAgenciaDTO(EnviosAgencia envio)
+        public EnvioAgenciaDTO(EnviosAgencia envio) : this(envio, envio?.AgenciasTransporte) { }
+
+        /// <summary>
+        /// Con la agencia dada aparte: no toca <c>envio.AgenciasTransporte</c>, así que vale para un envío de un contexto ya
+        /// cerrado (fix 06/11/26 del correo de entrega de la agencia, ObjectDisposedException del 03/11).
+        /// </summary>
+        public EnvioAgenciaDTO(EnviosAgencia envio, AgenciaTransporte agencia)
         {
             if (envio == null)
             {
@@ -14,8 +20,8 @@ namespace NestoAPI.Models
             }
             Numero = envio.Numero;
             AgenciaId = envio.Agencia;
-            AgenciaNombre = envio.AgenciasTransporte?.Nombre;
-            AgenciaIdentificador = envio.AgenciasTransporte?.Identificador;
+            AgenciaNombre = agencia?.Nombre;
+            AgenciaIdentificador = agencia?.Identificador;
             Cliente = envio.Cliente;
             Pedido = (int)envio.Pedido;
             Estado = envio.Estado;

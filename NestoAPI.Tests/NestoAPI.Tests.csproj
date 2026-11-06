@@ -511,6 +511,7 @@
     <Compile Include="Infrastructure\Agencias\ClienteSoapDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\OperacionesEnviosDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaCTTTests.cs" />
+    <Compile Include="Infrastructure\Agencias\CorreoEntregaAgenciaContextoCerradoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RecogidaCTTCorreoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RetornosGLSInnovatransTests.cs" />
     <Compile Include="Infrastructure\Agencias\ReglasEnRepartoTests.cs" />
