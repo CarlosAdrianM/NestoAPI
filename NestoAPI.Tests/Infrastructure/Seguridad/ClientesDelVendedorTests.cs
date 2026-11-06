@@ -32,48 +32,48 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
         [TestMethod]
         public void EsDelVendedor_SoloEnLaTablaDeGrupos_Suyo()
         {
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "PE", "15191"));
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "3", "PG ", "20000 "));
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(null, Grupos(), "1", "PE", "15191"), "sin Clientes, solo los grupos");
+            Assert.IsTrue(Regla("1", "PE", "15191"));
+            Assert.IsTrue(Regla("3", "PG ", "20000 "));
+            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor("1", "vendedor", "PE", "15191", null, Grupos(), v => new string[0], u => false), "sin Clientes, solo los grupos");
         }
 
         [TestMethod]
         public void EsDelVendedor_NiEnClientesNiEnGrupos_NoEsSuyo()
         {
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "XX", "15191"));
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "PE", "20000"), "PE no es del 20000");
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "3", "PE", "15191"), "otra empresa");
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), null, "1", "PE", "15191"), "sin la tabla de grupos, solo Clientes");
+            Assert.IsFalse(Regla("1", "XX", "15191"));
+            Assert.IsFalse(Regla("1", "PE", "20000"), "PE no es del 20000");
+            Assert.IsFalse(Regla("3", "PE", "15191"), "otra empresa");
+            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor("1", "vendedor", "PE", "15191", Clientes(), null, v => new string[0], u => false), "sin la tabla de grupos, solo Clientes");
         }
 
         [TestMethod]
         public void EsDelVendedor_CualquierContactoConEseVendedor_Suyo()
         {
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "NV", "15191"));
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", " JE", "15191 "));
+            Assert.IsTrue(Regla("1", "NV", "15191"));
+            Assert.IsTrue(Regla("1", " JE", "15191 "));
         }
 
         [TestMethod]
         public void EsDelVendedor_SinEmpresa_LaPorDefecto()
         {
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), null, "NV", "15191"));
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), " ", "NV", "20000"), "en la 1 el 20000 es de AL");
+            Assert.IsTrue(Regla(null, "NV", "15191"));
+            Assert.IsFalse(Regla(" ", "NV", "20000"), "en la 1 el 20000 es de AL");
         }
 
         [TestMethod]
         public void EsDelVendedor_OtraEmpresa_SeMiraEnEsa()
         {
-            Assert.IsTrue(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "3", "NV", "20000"));
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "3", "NV", "15191"));
+            Assert.IsTrue(Regla("3", "NV", "20000"));
+            Assert.IsFalse(Regla("3", "NV", "15191"));
         }
 
         [TestMethod]
         public void EsDelVendedor_DeOtroVendedorOSinDatos_NoEsSuyo()
         {
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "AL", "15191"));
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "NV", "99999"));
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "", "15191"));
-            Assert.IsFalse(ClientesDelVendedor.EsDelVendedor(Clientes(), Grupos(), "1", "NV", null));
+            Assert.IsFalse(Regla("1", "AL", "15191"));
+            Assert.IsFalse(Regla("1", "NV", "99999"));
+            Assert.IsFalse(Regla("1", "", "15191"));
+            Assert.IsFalse(Regla("1", "NV", null));
         }
 
         [TestMethod]
@@ -93,11 +93,59 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
             string visto = null;
             ClaimsIdentity vendedor = Identidad("IsVendedor", "true", "Vendedor", "NV ");
 
-            bool puede = ClientesDelVendedor.PuedeElVendedor(vendedor, "1", "15191 ", (e, v, c) => { visto = e + "|" + v + "|" + c; return true; });
+            bool puede = ClientesDelVendedor.PuedeElVendedor(vendedor, "1", "15191 ", (e, u, v, c) => { visto = e + "|" + v + "|" + c; return true; });
 
             Assert.IsTrue(puede);
             Assert.AreEqual("1|NV|15191", visto);
-            Assert.IsFalse(ClientesDelVendedor.PuedeElVendedor(Identidad("cliente", "15191"), "1", "15191", (e, v, c) => true), "un cliente de la tienda no");
+            Assert.IsFalse(ClientesDelVendedor.PuedeElVendedor(Identidad("cliente", "15191"), "1", "15191", (e, u, v, c) => true), "un cliente de la tienda no");
+        }
+
+        /// <summary>La regla con las listas de aquí, sin equipo (solo él) y sin «ver todos», salvo que se diga.</summary>
+        private static bool Regla(string empresa, string vendedor, string cliente,
+            IQueryable<Cliente> clientes = null, IQueryable<VendedorClienteGrupoProducto> grupos = null,
+            Dictionary<string, string[]> equipos = null, string usuario = "vendedor", string[] verTodos = null)
+            => ClientesDelVendedor.EsDelVendedor(empresa, usuario, vendedor, cliente,
+                clientes ?? Clientes(), grupos ?? Grupos(),
+                v => equipos != null && equipos.TryGetValue(v, out string[] suyos) ? suyos : new string[0],
+                u => verTodos != null && verTodos.Contains(u));
+
+        [TestMethod]
+        public void EsDelVendedor_UsuarioConPermitirVerTodosLosPedidos_CualquierCliente()
+        {
+            Assert.IsTrue(Regla("1", "CA", "99999", usuario: "Carlos", verTodos: new[] { "Carlos", "Alfredo", "Manuel" }));
+            Assert.IsTrue(Regla("1", "CA", "15191", usuario: "Alfredo", verTodos: new[] { "Carlos", "Alfredo", "Manuel" }));
+            Assert.IsFalse(Regla("1", "CA", "99999", usuario: "Pedro", verTodos: new[] { "Carlos", "Alfredo", "Manuel" }), "sin el parámetro, no");
+        }
+
+        [TestMethod]
+        public void EsDelVendedor_JefeDeEquipo_ClientesDeLosVendedoresDeSuEquipo()
+        {
+            var equipos = new Dictionary<string, string[]> { ["JF"] = new[] { "JF", "NV ", "PE" } };
+
+            Assert.IsTrue(Regla("1", "JF", "15191", equipos: equipos), "el 15191 es de NV (Clientes) y de PE (grupos)");
+            Assert.IsTrue(Regla("1", "JF", "15191", equipos: equipos, clientes: new List<Cliente>().AsQueryable()), "por el de peluquería");
+            Assert.IsFalse(Regla("1", "JF", "20000", equipos: equipos), "el 20000 es de AL, que no es de su equipo");
+        }
+
+        [TestMethod]
+        public void EsDelVendedor_VendedorRaso_ClienteDeOtro_Denegado()
+        {
+            var equipos = new Dictionary<string, string[]> { ["JF"] = new[] { "NV" }, ["AL"] = new[] { "AL" } };
+
+            Assert.IsFalse(Regla("1", "AL", "15191", equipos: equipos));
+            Assert.IsTrue(Regla("1", "AL", "20000", equipos: equipos), "el suyo, sí");
+            Assert.IsTrue(Regla("1", "AL", "20000"), "aunque el equipo venga vacío, él cuenta");
+        }
+
+        [TestMethod]
+        public void PuedeElVendedor_PasaElUsuarioDelToken()
+        {
+            string visto = null;
+            ClaimsIdentity vendedor = Identidad("IsVendedor", "true", "Vendedor", "NV", ClaimTypes.Name, "Manuel");
+
+            ClientesDelVendedor.PuedeElVendedor(vendedor, "1", "15191", (e, u, v, c) => { visto = u; return true; });
+
+            Assert.AreEqual("Manuel", visto);
         }
 
         private static ClaimsIdentity Identidad(params string[] tiposYValores)

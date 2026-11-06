@@ -56,7 +56,7 @@ namespace NestoAPI.Tests.Controllers
         private FacturasController ControladorVendedor(string vendedor = "NV")
         {
             FacturasController controlador = Controlador(new Claim("IsVendedor", "true"), new Claim("Vendedor", vendedor));
-            controlador.EsClienteDelVendedor = (empresa, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
+            controlador.EsClienteDelVendedor = (empresa, usuario, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
             return controlador;
         }
 

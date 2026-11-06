@@ -41,8 +41,8 @@ namespace NestoAPI.Controllers
         private bool EsEmpleado()
             => (User?.Identity as ClaimsIdentity)?.FindFirst("IsEmployee")?.Value == "true";
 
-        /// <summary>Vendedores de NestoApp (06/11/26): (empresa, vendedor, cliente) → si el cliente es suyo. Sustituible en los tests.</summary>
-        internal Func<string, string, string, bool> EsClienteDelVendedor { get; set; } = ClientesDelVendedor.EsDelVendedor;
+        /// <summary>Vendedores de NestoApp (06/11/26): (empresa, usuario, vendedor, cliente) → si el cliente es suyo. Sustituible en los tests.</summary>
+        internal Func<string, string, string, string, bool> EsClienteDelVendedor { get; set; } = ClientesDelVendedor.EsDelVendedor;
 
         /// <summary>
         /// Empleados, todo; vendedores de NestoApp (06/11/26), solo sus clientes; los demás, 403. Null si puede seguir. Con

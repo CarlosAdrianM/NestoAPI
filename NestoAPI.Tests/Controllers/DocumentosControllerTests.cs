@@ -63,7 +63,7 @@ namespace NestoAPI.Tests.Controllers
         private DocumentosController ControladorVendedor(string vendedor = "NV")
         {
             DocumentosController controlador = Controlador(new Claim("IsVendedor", "true"), new Claim("Vendedor", vendedor));
-            controlador.EsClienteDelVendedor = (empresa, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
+            controlador.EsClienteDelVendedor = (empresa, usuario, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
             return controlador;
         }
 
@@ -132,7 +132,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task CrearEnlace_UnEmpleado_NoPreguntaDeQuienEsElCliente()
         {
             DocumentosController controlador = Controlador(EMPLEADO);
-            controlador.EsClienteDelVendedor = (e, v, c) => throw new AssertFailedException("un empleado no pasa por la regla del vendedor");
+            controlador.EsClienteDelVendedor = (e, u, v, c) => throw new AssertFailedException("un empleado no pasa por la regla del vendedor");
 
             var resultado = await controlador.CrearEnlaceDescarga(Pedido()) as OkNegotiatedContentResult<EnlaceDescargaDTO>;
 
