@@ -27,7 +27,7 @@ namespace NestoAPI.Infraestructure.Picking
     /// con la forma del automático de las 11 (<see cref="PickingJobsService"/>): el horizonte de entrega es un dato (hoy), el
     /// almacén recibe el correo si no sale nada o falla, sin reintentos y sin solaparse (applock de <see cref="GestorPicking"/>).
     /// <para>De los pedidos con día de reparto por código postal solo salen los que tocan hoy (<see cref="GestorRutaInternaPicking"/>);
-    /// los de la 16 sin día, como siempre (#588: se preparan hoy y se entregan el laborable siguiente). El de las 11 sigue igual
+    /// los de la 16 sin día, como siempre (#588: se preparan y se entregan hoy, el mismo día del picking). El de las 11 sigue igual
     /// para todo lo demás y saca después lo que quede.</para>
     /// <para>Nace APAGADO: interruptor <see cref="Constantes.ParametrosUsuario.PICKING_AUTOMATICO_RUTAS_INTERNAS"/> = "1" bajo
     /// «(defecto)» en ParametrosUsuario (no en el Web.config, que vuelve a su valor al publicar). Solo laborables de Algete.</para>

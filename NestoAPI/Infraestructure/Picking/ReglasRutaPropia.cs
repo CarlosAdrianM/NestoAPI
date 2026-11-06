@@ -29,7 +29,7 @@ namespace NestoAPI.Infraestructure.Picking
         public List<string> Motivos { get; set; } = new List<string>();
         /// <summary>
         /// NestoAPI#764: el día en que saldría si se pasa a nuestra ruta, cuando su código postal tiene día de reparto
-        /// (CodigosPostalesDiaReparto). Null si no tiene (entonces, como siempre: se prepara hoy y se entrega el laborable siguiente).
+        /// (CodigosPostalesDiaReparto). Null si no tiene (entonces se entrega el mismo día del picking, NestoAPI#588).
         /// </summary>
         public DateTime? DiaRepartoRutaInterna { get; set; }
         /// <summary>NestoAPI#764: «Saldría el martes 03/11 por nuestra ruta» (y si el cliente cierra ese día, lo dice). Null sin día.</summary>

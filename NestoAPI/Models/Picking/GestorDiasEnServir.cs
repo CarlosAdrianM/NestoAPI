@@ -26,8 +26,8 @@ namespace NestoAPI.Models.Picking
     /// <para>Ante un dato raro (null, longitud distinta de 5, caracteres que no son 0/1) se
     /// considera ABIERTO: un dato defectuoso no debe dejar pedidos sin salir.</para>
     ///
-    /// <para>NestoAPI#588: lo anterior es el plazo de la AGENCIA. Por nuestra ruta lo que se prepara hoy se entrega
-    /// mañana. Si el pedido ya lleva ruta propia (16, AT) al sacar el picking, se mira ese día; si no, el de la
+    /// <para>NestoAPI#588: lo anterior es el plazo de la AGENCIA. Por nuestra ruta se entrega el MISMO día en que se saca
+    /// el picking (Carlos 06/11/26, sugerencia 1110 de Alfredo: el automático de las 9 h sale con la furgoneta ese día). Si el pedido ya lleva ruta propia (16, AT) al sacar el picking, se mira ese día; si no, el de la
     /// agencia, como siempre (almacén suele decidir ruta o agencia después del picking). Al retirado que por nuestra
     /// ruta llegaría con el cliente abierto, el aviso le dice que con una ruta propia sale.</para>
     /// </summary>
@@ -48,18 +48,22 @@ namespace NestoAPI.Models.Picking
         }
 
         /// <summary>
-        /// NestoAPI#588: el día de entrega si el pedido va por NUESTRA ruta. Lo que se prepara hoy se entrega mañana
-        /// (el laborable siguiente al día en que se prepara), sea antes o después del corte. Por agencia, en cambio,
-        /// lo que se prepara pasado el corte sale el día siguiente y se entrega el laborable de después
-        /// (<see cref="CalcularDiaEntrega"/> desde fechaPicking). Antes del corte los dos coinciden; pasado el corte,
-        /// el de nuestra ruta es un laborable antes (jueves por la tarde: viernes por ruta, lunes por agencia).
+        /// NestoAPI#588: el día de entrega si el pedido va por NUESTRA ruta: el MISMO día del picking (<paramref name="fechaPicking"/>,
+        /// el día en que sale la furgoneta), o el laborable siguiente si ese cae en festivo o fin de semana. Decisión de Carlos
+        /// 06/11/26 (sugerencia 1110 de Alfredo): lo que se saca en el picking de las 9 h se entrega ese día, así que un cliente
+        /// que cierra los lunes ya sale el viernes. Por agencia, en cambio, se entrega el laborable siguiente a la salida
+        /// (<see cref="CalcularDiaEntrega"/>): siempre un laborable después que por nuestra ruta (viernes por ruta, lunes por agencia).
+        /// Los pedidos con día de reparto por código postal o contacto (NestoAPI#764) van aparte (<see cref="GestorRutaInternaPicking"/>).
         /// </summary>
-        /// <param name="hoy">El día en que se saca el picking (se prepara).</param>
-        /// <param name="fechaPicking">El horizonte del picking (día de salida por agencia).</param>
-        internal static DateTime CalcularDiaEntregaRutaPropia(DateTime hoy, DateTime fechaPicking, Func<DateTime, bool> esFestivo)
+        /// <param name="fechaPicking">El horizonte del picking (el día en que sale; por agencia, el de salida).</param>
+        internal static DateTime CalcularDiaEntregaRutaPropia(DateTime fechaPicking, Func<DateTime, bool> esFestivo)
         {
-            DateTime diaPreparacion = hoy.Date < fechaPicking.Date ? hoy.Date : fechaPicking.Date;
-            return CalcularDiaEntrega(diaPreparacion, esFestivo);
+            DateTime entrega = fechaPicking.Date;
+            while (esFestivo(entrega))
+            {
+                entrega = entrega.AddDays(1);
+            }
+            return entrega;
         }
 
         /// <summary>

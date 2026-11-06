@@ -197,9 +197,9 @@ namespace NestoAPI.Models.Picking
             // el cliente cierra, el pedido no sale en esta pasada; se reevalúa en la siguiente.
             DateTime diaEntrega = GestorDiasEnServir.CalcularDiaEntrega(fechaPicking,
                 f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
-            // NestoAPI#588: si la ruta del pedido ya es propia, se entrega el laborable siguiente a hoy (no el siguiente
-            // a la salida de la agencia)
-            DateTime diaEntregaRutaPropia = GestorDiasEnServir.CalcularDiaEntregaRutaPropia(DateTime.Today, fechaPicking,
+            // NestoAPI#588: si la ruta del pedido ya es propia, se entrega el mismo día del picking (sugerencia 1110, Carlos
+            // 06/11/26), no el laborable siguiente a la salida de la agencia
+            DateTime diaEntregaRutaPropia = GestorDiasEnServir.CalcularDiaEntregaRutaPropia(fechaPicking,
                 f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
             // NestoAPI#764: los de ruta interna con día de reparto se entregan hoy, el día en que se preparan
             sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, diaEntregaRutaPropia,
