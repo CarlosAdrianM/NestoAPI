@@ -63,7 +63,11 @@ namespace NestoAPI.Controllers
             if (fallo != null) return fallo;
 
             string detalle = "El envío entra en incidencia y vuelve a origen (tiene coste: ida y vuelta).";
-            await TerminarGestion(g, operacion, g.Envio.Estado.ToString(), detalle);
+            // Rastro en el envío sin tocar el Estado: lo cambiará el seguimiento cuando la agencia lo devuelva (y entonces
+            // el poll pondrá en DetalleEstado el texto de su último evento, que es lo esperado).
+            string detalleAnterior = g.Envio.DetalleEstado;
+            g.Envio.DetalleEstado = GestionEnTransitoEnvio.DETALLE_PARADO_EN_VUELO;
+            await TerminarGestion(g, operacion, string.IsNullOrWhiteSpace(detalleAnterior) ? g.Envio.Estado.ToString() : $"{g.Envio.Estado} {detalleAnterior.Trim()}", detalle);
             return Ok(new ResultadoGestionEnvioDTO { Mensaje = $"{g.NombreAgencia ?? "La agencia"} ha parado el envío: vuelve a origen." });
         }
 

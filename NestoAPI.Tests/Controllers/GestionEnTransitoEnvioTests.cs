@@ -241,6 +241,34 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PararEnVuelo_Ok_DejaParadoEnVueloEnElDetalleSinCambiarElEstado()
+        {
+            EnviosAgencia envio = ConEnvio(Constantes.Agencias.ESTADO_TRAMITADO);
+            envio.DetalleEstado = "EN REPARTO";
+            A.CallTo(() => gestion.PararEnVueloAsync(ALBARAN)).Returns(new ResultadoOperacionRemota { Exito = true });
+
+            Assert.IsInstanceOfType(await controller.PararEnVuelo(1), typeof(OkNegotiatedContentResult<ResultadoGestionEnvioDTO>));
+
+            Assert.AreEqual("Parado en vuelo", envio.DetalleEstado);
+            Assert.IsTrue(GestionEnTransitoEnvio.DETALLE_PARADO_EN_VUELO.Length <= 100, "DetalleEstado es varchar(100)");
+            Assert.AreEqual(Constantes.Agencias.ESTADO_TRAMITADO, envio.Estado, "El Estado lo cambia el seguimiento");
+            StringAssert.Contains(historias.Single().ValorAnterior, "EN REPARTO");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PararEnVuelo_LaAgenciaRechaza_NoTocaElDetalle()
+        {
+            EnviosAgencia envio = ConEnvio(Constantes.Agencias.ESTADO_TRAMITADO);
+            envio.DetalleEstado = "EN REPARTO";
+            A.CallTo(() => gestion.PararEnVueloAsync(ALBARAN)).ThrowsAsync(new AgenciaRemotaException("CTT respondió 403: Can not perform action"));
+
+            Assert.IsInstanceOfType(await controller.PararEnVuelo(1), typeof(BadRequestErrorMessageResult));
+
+            Assert.AreEqual("EN REPARTO", envio.DetalleEstado);
+        }
+
+        [TestMethod]
         public async Task PararEnVuelo_FallaElCorreo_NoTumbaLaOperacion()
         {
             ConEnvio(Constantes.Agencias.ESTADO_TRAMITADO);

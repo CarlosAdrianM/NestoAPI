@@ -63,6 +63,8 @@ namespace NestoAPI.Infraestructure.Agencias
         public const string OPERACION_FECHA = "Cambiar fecha de entrega";
         public const string OPERACION_DIRECCION = "Cambiar dirección de entrega";
         private const string CORREO_REMITENTE = "nesto@nuevavision.es";
+        /// <summary>EnviosAgencia.DetalleEstado (varchar(100)) tras parar en vuelo; el Estado no cambia hasta que lo diga el seguimiento.</summary>
+        public const string DETALLE_PARADO_EN_VUELO = "Parado en vuelo";
 
         /// <summary>
         /// Lo que admite el envío: la agencia tiene que tener gestión en tránsito (<paramref name="agencia"/> no null) y el
