@@ -85,6 +85,29 @@ namespace NestoAPI.Controllers
         private bool EsEmpleado()
             => (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("IsEmployee")?.Value == "true";
 
+        /// <summary>Vendedores de NestoApp (06/11/26): (empresa, vendedor, cliente) → si el cliente es suyo. Sustituible en los tests.</summary>
+        internal Func<string, string, string, bool> EsClienteDelVendedor { get; set; } = Infraestructure.Seguridad.ClientesDelVendedor.EsDelVendedor;
+
+        /// <summary>Vendedor de NestoApp (IsVendedor con su código; ni empleado ni cliente de la tienda).</summary>
+        private bool EsVendedor()
+            => Infraestructure.Seguridad.ClientesDelVendedor.EsVendedorDeNestoApp(User?.Identity as System.Security.Claims.ClaimsIdentity);
+
+        /// <summary>
+        /// Vendedores de NestoApp (06/11/26): si la factura es de un cliente del vendedor (CabFacturaVta.Nº_Cliente, regla de
+        /// <see cref="Infraestructure.Seguridad.ClientesDelVendedor"/>). Inexistente = no es suya, para no desvelar qué facturas existen.
+        /// </summary>
+        private bool FacturaEsDeClienteDelVendedor(string empresa, string numeroFactura)
+        {
+            if (string.IsNullOrWhiteSpace(numeroFactura))
+            {
+                return false;
+            }
+            string empresaFactura = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            CabFacturaVta cab = servicio.CargarCabFactura(empresaFactura, numeroFactura.Trim());
+            return cab != null && Infraestructure.Seguridad.ClientesDelVendedor.PuedeElVendedor(
+                User?.Identity as System.Security.Claims.ClaimsIdentity, empresaFactura, cab.Nº_Cliente?.Trim(), EsClienteDelVendedor);
+        }
+
         // GET api/Facturas
         // NestoAPI#601: exige token y un cliente de la tienda solo ve las suyas (antes era anónimo)
         [HttpGet]
@@ -256,9 +279,11 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> EnviarPorCorreo([FromBody] EnvioFacturasCorreoDTO envio)
         {
             // TNV (07/10/26): el cliente de la tienda (token con claim "cliente") también se puede mandar sus facturas a
-            // donde quiera (su gestoría), pero SOLO las suyas. Empleados, como hasta ahora; vendedores y demás, no.
+            // donde quiera (su gestoría), pero SOLO las suyas. Empleados, como hasta ahora. Vendedores de NestoApp (06/11/26),
+            // solo las de sus clientes. Los demás, no.
             string clienteTienda = ClienteDelToken();
-            if (clienteTienda == null && !EsEmpleado())
+            bool vendedor = clienteTienda == null && !EsEmpleado() && EsVendedor();
+            if (clienteTienda == null && !EsEmpleado() && !vendedor)
             {
                 return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS_CORREO);
             }
@@ -269,6 +294,14 @@ namespace NestoAPI.Controllers
             if (clienteTienda != null)
             {
                 IHttpActionResult rechazo = ComprobarEnvioDelCliente(clienteTienda, envio);
+                if (rechazo != null)
+                {
+                    return rechazo;
+                }
+            }
+            if (vendedor)
+            {
+                IHttpActionResult rechazo = ComprobarEnvioDelVendedor(envio);
                 if (rechazo != null)
                 {
                     return rechazo;
@@ -330,6 +363,32 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Vendedores de NestoApp (06/11/26): todas las facturas tienen que ser de clientes suyos; si alguna no lo es (o no
+        /// existe), 403 sin mandar nada. Null si se puede seguir. Lo demás lo valida el gestor, como con TNV.
+        /// </summary>
+        private IHttpActionResult ComprobarEnvioDelVendedor(EnvioFacturasCorreoDTO envio)
+        {
+            List<string> numeros = (envio.Facturas ?? Enumerable.Empty<string>())
+                .Select(f => f?.Trim())
+                .Where(f => !string.IsNullOrEmpty(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (numeros.Count > GestorFacturas.MAXIMO_FACTURAS_POR_CORREO)
+            {
+                // El gestor lo rechaza (400) antes de leer nada
+                return null;
+            }
+            foreach (string numero in numeros)
+            {
+                if (!FacturaEsDeClienteDelVendedor(envio.Empresa, numero))
+                {
+                    return Content(HttpStatusCode.Forbidden, Infraestructure.Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES);
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
         /// TNV / NestoAPI#601: si la factura es de ese cliente (CabFacturaVta.Nº_Cliente). Inexistente = no es suya, para
         /// no desvelar qué facturas existen.
         /// </summary>
@@ -352,13 +411,19 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(CorreoFacturasDTO))]
         public IHttpActionResult GetCorreoFacturas(string empresa, string numeroFactura)
         {
-            if (!EsEmpleado())
+            // Vendedores de NestoApp (06/11/26): solo el de facturas de sus clientes
+            bool vendedor = !EsEmpleado() && ClienteDelToken() == null && EsVendedor();
+            if (!EsEmpleado() && !vendedor)
             {
                 return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS_CORREO);
             }
             if (string.IsNullOrWhiteSpace(numeroFactura))
             {
                 return BadRequest("Falta la factura.");
+            }
+            if (vendedor && !FacturaEsDeClienteDelVendedor(empresa, numeroFactura))
+            {
+                return Content(HttpStatusCode.Forbidden, Infraestructure.Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES);
             }
             string correo = servicio.LeerCorreoFacturas(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
                 numeroFactura.Trim());

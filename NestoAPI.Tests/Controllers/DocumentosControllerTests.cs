@@ -59,6 +59,14 @@ namespace NestoAPI.Tests.Controllers
             return new DocumentosController(gestor) { User = new ClaimsPrincipal(identity) };
         }
 
+        /// <summary>Un vendedor de NestoApp; el 15191 es de «NV» y de nadie más.</summary>
+        private DocumentosController ControladorVendedor(string vendedor = "NV")
+        {
+            DocumentosController controlador = Controlador(new Claim("IsVendedor", "true"), new Claim("Vendedor", vendedor));
+            controlador.EsClienteDelVendedor = (empresa, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
+            return controlador;
+        }
+
         private static PeticionEnlaceDescargaDTO Pedido() => new PeticionEnlaceDescargaDTO { Tipo = "pedido", Empresa = "1", Numero = "929498" };
 
         // ===================================================================== POST api/Documentos/EnlaceDescarga
@@ -77,6 +85,58 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
             A.CallTo(() => repositorio.Guardar(A<EnlaceDescargaDocumento>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_UnVendedorConUnClienteSuyo_LoCrea()
+        {
+            var resultado = await ControladorVendedor().CrearEnlaceDescarga(Pedido()) as OkNegotiatedContentResult<EnlaceDescargaDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("15191", resultado.Content.Cliente);
+            A.CallTo(() => repositorio.Guardar(A<EnlaceDescargaDocumento>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_UnVendedorConUnClienteAjeno_403ConMotivoYNoGuarda()
+        {
+            var resultado = await ControladorVendedor("JE").CrearEnlaceDescarga(Pedido()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual("Solo puede enviar documentos de sus clientes.", resultado.Content);
+            A.CallTo(() => repositorio.Guardar(A<EnlaceDescargaDocumento>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_UnVendedorSinCodigo_403ComoSiempre()
+        {
+            var resultado = await Controlador(new Claim("IsVendedor", "true")).CrearEnlaceDescarga(Pedido()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual(DocumentosController.MOTIVO_SOLO_EMPLEADOS, resultado.Content);
+            A.CallTo(() => proveedor.LeerDatos(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_UnClienteDeLaTienda_403AunqueSeaSuDocumento()
+        {
+            var resultado = await Controlador(new Claim("cliente", "15191")).CrearEnlaceDescarga(Pedido()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(DocumentosController.MOTIVO_SOLO_EMPLEADOS, resultado.Content);
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_UnEmpleado_NoPreguntaDeQuienEsElCliente()
+        {
+            DocumentosController controlador = Controlador(EMPLEADO);
+            controlador.EsClienteDelVendedor = (e, v, c) => throw new AssertFailedException("un empleado no pasa por la regla del vendedor");
+
+            var resultado = await controlador.CrearEnlaceDescarga(Pedido()) as OkNegotiatedContentResult<EnlaceDescargaDTO>;
+
+            Assert.IsNotNull(resultado);
         }
 
         [TestMethod]

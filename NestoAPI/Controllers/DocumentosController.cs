@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.EnlacesDescarga;
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
 using System;
 using System.Net;
@@ -17,7 +18,7 @@ namespace NestoAPI.Controllers
     /// <summary>
     /// NestoAPI#737 (sugerencias 866/867, Paloma; 831, María José): el enlace de descarga del pedido o de la factura para mandarlo por
     /// WhatsApp Web desde Nesto (Nesto#570). Crearlo es solo para los empleados (token de Windows de Nesto, claim IsEmployee), como
-    /// el envío por correo (#724); descargarlo (<see cref="DescargaDocumentoController"/>), para cualquiera que tenga el enlace.
+    /// el envío por correo (#724), y para los vendedores de NestoApp, solo de sus clientes (06/11/26); descargarlo (<see cref="DescargaDocumentoController"/>), para cualquiera que tenga el enlace.
     /// </summary>
     [Authorize]
     public class DocumentosController : ApiController
@@ -39,6 +40,9 @@ namespace NestoAPI.Controllers
         private bool EsEmpleado()
             => (User?.Identity as ClaimsIdentity)?.FindFirst("IsEmployee")?.Value == "true";
 
+        /// <summary>Vendedores de NestoApp (06/11/26): (empresa, vendedor, cliente) → si el cliente es suyo. Sustituible en los tests.</summary>
+        internal Func<string, string, string, bool> EsClienteDelVendedor { get; set; } = ClientesDelVendedor.EsDelVendedor;
+
         // POST api/Documentos/EnlaceDescarga   { "Tipo": "Pedido", "Empresa": "1", "Numero": "929498" }
         /// <summary>
         /// Da de alta un enlace público (<c>https://api.nuevavision.es/d/{token}</c>, 30 días) y devuelve la URL, la caducidad, el
@@ -50,13 +54,20 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EnlaceDescargaDTO))]
         public async Task<IHttpActionResult> CrearEnlaceDescarga([FromBody] PeticionEnlaceDescargaDTO peticion)
         {
+            // Empleados, todo; vendedores de NestoApp (06/11/26), solo los documentos de sus clientes; los demás, nada
+            Func<string, string, bool> clientePermitido = null;
             if (!EsEmpleado())
             {
-                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS);
+                var identity = User?.Identity as ClaimsIdentity;
+                if (!ClientesDelVendedor.EsVendedorDeNestoApp(identity))
+                {
+                    return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS);
+                }
+                clientePermitido = (empresa, cliente) => ClientesDelVendedor.PuedeElVendedor(identity, empresa, cliente, EsClienteDelVendedor);
             }
             try
             {
-                return Ok(await gestor.Crear(peticion ?? new PeticionEnlaceDescargaDTO(), User?.Identity?.Name).ConfigureAwait(false));
+                return Ok(await gestor.Crear(peticion ?? new PeticionEnlaceDescargaDTO(), User?.Identity?.Name, clientePermitido).ConfigureAwait(false));
             }
             catch (NestoBusinessException ex)
             {

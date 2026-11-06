@@ -228,7 +228,11 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
             this.nuevoToken = nuevoToken ?? TokenEnlaceDescarga.Nuevo;
         }
 
-        public async Task<EnlaceDescargaDTO> Crear(PeticionEnlaceDescargaDTO peticion, string usuario)
+        /// <param name="clientePermitido">
+        /// Para los vendedores de NestoApp: (empresa, cliente del documento) → si puede. Si no, 403 con
+        /// <see cref="Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES"/> y no se guarda nada. Null (empleados) = sin comprobar.
+        /// </param>
+        public async Task<EnlaceDescargaDTO> Crear(PeticionEnlaceDescargaDTO peticion, string usuario, Func<string, string, bool> clientePermitido = null)
         {
             string tipo = TiposDocumentoDescarga.Normalizar(peticion?.Tipo);
             if (tipo == null)
@@ -253,6 +257,10 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                 {
                     StatusCode = HttpStatusCode.NotFound
                 };
+            }
+            if (clientePermitido != null && !clientePermitido(empresa, datos.Cliente?.Trim()))
+            {
+                throw new NestoBusinessException(Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES) { StatusCode = HttpStatusCode.Forbidden };
             }
 
             DateTime creado = ahora();

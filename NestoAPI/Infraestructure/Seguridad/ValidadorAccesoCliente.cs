@@ -1,3 +1,4 @@
+using System;
 using System.Security.Claims;
 
 namespace NestoAPI.Infraestructure.Seguridad
@@ -28,14 +29,23 @@ namespace NestoAPI.Infraestructure.Seguridad
         /// Reglas de acceso:
         /// 1. Empleados (IsEmployee = "true"): acceso total
         /// 2. Clientes (claim "cliente"): solo a sus propios recursos
-        /// 3. Vendedores (IsVendedor = "true"): por ahora denegado
-        ///    FUTURO: verificar que el cliente tenga asignado ese vendedor
+        /// 3. Vendedores (IsVendedor = "true"): con esta sobrecarga (sin comprobador), denegado. Para dejarles sus
+        ///    clientes, la sobrecarga con <c>clienteDelVendedor</c>.
         /// 4. Otros: denegado
         /// </summary>
         /// <param name="identity">Identidad del usuario autenticado</param>
         /// <param name="clienteSolicitado">Código del cliente al que se quiere acceder</param>
         /// <returns>Resultado indicando si está autorizado y el motivo</returns>
         public static ResultadoValidacion ValidarAcceso(ClaimsIdentity identity, string clienteSolicitado)
+            => ValidarAcceso(identity, clienteSolicitado, null);
+
+        /// <summary>
+        /// Como <see cref="ValidarAcceso(ClaimsIdentity, string)"/>, pero un vendedor de NestoApp (IsVendedor = "true" y claim
+        /// "Vendedor" con su código) accede a un cliente si <paramref name="clienteDelVendedor"/>(vendedor, cliente) es true (la
+        /// regla está en <see cref="ClientesDelVendedor"/>). Sin comprobador (null), el vendedor queda denegado como siempre.
+        /// </summary>
+        public static ResultadoValidacion ValidarAcceso(ClaimsIdentity identity, string clienteSolicitado,
+            Func<string, string, bool> clienteDelVendedor)
         {
             if (identity == null)
             {
@@ -65,17 +75,24 @@ namespace NestoAPI.Infraestructure.Seguridad
                 return ResultadoValidacion.Denegado("Cliente no puede acceder a recursos de otro cliente");
             }
 
-            // 3. Vendedores (NestoApp): por ahora denegado
-            // FUTURO: Si tiene claim "IsVendedor" = "true", verificar que el cliente
-            // tenga asignado el vendedor del claim "Vendedor" en la tabla Clientes.
-            // Ejemplo: db.Clientes.Any(c => c.Cliente == clienteSolicitado && c.Vendedor == vendedorClaim)
+            // 3. Vendedores (NestoApp): solo sus clientes, si quien llama sabe comprobarlo
             var isVendedor = identity.FindFirst("IsVendedor")?.Value;
             if (isVendedor == "true")
             {
-                var vendedor = identity.FindFirst("Vendedor")?.Value;
-                return ResultadoValidacion.Denegado(
-                    $"Vendedor {vendedor}: acceso a clientes no implementado. " +
-                    "FUTURO: verificar que el cliente esté asignado al vendedor");
+                var vendedor = identity.FindFirst("Vendedor")?.Value?.Trim();
+                if (clienteDelVendedor == null)
+                {
+                    return ResultadoValidacion.Denegado(
+                        $"Vendedor {vendedor}: acceso a clientes no implementado. " +
+                        "FUTURO: verificar que el cliente esté asignado al vendedor");
+                }
+                if (string.IsNullOrEmpty(vendedor))
+                {
+                    return ResultadoValidacion.Denegado("Vendedor sin código de vendedor en el token");
+                }
+                return clienteDelVendedor(vendedor, clienteSolicitado.Trim())
+                    ? ResultadoValidacion.Permitido("Vendedor accediendo a un cliente suyo")
+                    : ResultadoValidacion.Denegado($"Vendedor {vendedor}: el cliente {clienteSolicitado.Trim()} no es suyo");
             }
 
             // 4. Cualquier otro caso: denegado

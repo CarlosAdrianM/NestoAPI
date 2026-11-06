@@ -1,7 +1,9 @@
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.EnvioDocumentosCorreo;
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Security.Claims;
@@ -13,8 +15,8 @@ namespace NestoAPI.Controllers
 {
     /// <summary>
     /// NestoAPI#724 (sugerencia 831, María José): mandar al cliente por correo el PDF del pedido o del mandato SEPA sin
-    /// descargarlo (Nesto corre en el escritorio remoto y Outlook web no adjunta ficheros de allí). Solo empleados,
-    /// como el envío de facturas (<see cref="FacturasController.MOTIVO_SOLO_EMPLEADOS_CORREO"/>).
+    /// descargarlo (Nesto corre en el escritorio remoto y Outlook web no adjunta ficheros de allí). Empleados, y los vendedores
+    /// de NestoApp solo para sus clientes (06/11/26, <see cref="ClientesDelVendedor"/>), como el envío de facturas (<see cref="FacturasController.MOTIVO_SOLO_EMPLEADOS_CORREO"/>).
     /// Aparte de PedidosVentaController y ClientesController a propósito, para no engordarlos más.
     /// </summary>
     [Authorize]
@@ -39,6 +41,43 @@ namespace NestoAPI.Controllers
         private bool EsEmpleado()
             => (User?.Identity as ClaimsIdentity)?.FindFirst("IsEmployee")?.Value == "true";
 
+        /// <summary>Vendedores de NestoApp (06/11/26): (empresa, vendedor, cliente) → si el cliente es suyo. Sustituible en los tests.</summary>
+        internal Func<string, string, string, bool> EsClienteDelVendedor { get; set; } = ClientesDelVendedor.EsDelVendedor;
+
+        /// <summary>
+        /// Empleados, todo; vendedores de NestoApp (06/11/26), solo sus clientes; los demás, 403. Null si puede seguir. Con
+        /// <paramref name="cliente"/> null (el pedido: el cliente sale del documento), el vendedor pasa y lo comprueba el gestor
+        /// con <see cref="ClientePermitido"/>.
+        /// </summary>
+        private IHttpActionResult Rechazo(string empresa, string cliente)
+        {
+            if (EsEmpleado())
+            {
+                return null;
+            }
+            var identity = User?.Identity as ClaimsIdentity;
+            if (!ClientesDelVendedor.EsVendedorDeNestoApp(identity))
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS);
+            }
+            if (cliente == null || ClientesDelVendedor.PuedeElVendedor(identity, empresa, cliente, EsClienteDelVendedor))
+            {
+                return null;
+            }
+            return Content(HttpStatusCode.Forbidden, ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES);
+        }
+
+        /// <summary>Para el gestor: null si es empleado (sin comprobar); si es vendedor, (empresa, cliente) → si es suyo.</summary>
+        private Func<string, string, bool> ClientePermitido()
+        {
+            if (EsEmpleado())
+            {
+                return null;
+            }
+            var identity = User?.Identity as ClaimsIdentity;
+            return (empresa, cliente) => ClientesDelVendedor.PuedeElVendedor(identity, empresa, cliente, EsClienteDelVendedor);
+        }
+
         private static string EmpresaOPorDefecto(string empresa)
             => string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
 
@@ -47,14 +86,15 @@ namespace NestoAPI.Controllers
         [Route("api/PedidosVenta/{empresa}/{numero:int}/EnviarPorCorreo")]
         [ResponseType(typeof(ResultadoEnvioDocumentoCorreoDTO))]
         public Task<IHttpActionResult> EnviarPedidoPorCorreo(string empresa, int numero, [FromBody] EnvioDocumentoCorreoDTO envio)
-            => Ejecutar(() => gestor.EnviarPedido(EmpresaOPorDefecto(empresa), numero, envio ?? new EnvioDocumentoCorreoDTO(), User?.Identity?.Name));
+            => Ejecutar(EmpresaOPorDefecto(empresa), null, () => gestor.EnviarPedido(EmpresaOPorDefecto(empresa), numero,
+                envio ?? new EnvioDocumentoCorreoDTO(), User?.Identity?.Name, ClientePermitido()));
 
         // POST api/Clientes/1/15191/0/Mandato/EnviarPorCorreo   { "Ccc": "1", "Motor": "QuestPDF", "Destinatarios": [...] }
         [HttpPost]
         [Route("api/Clientes/{empresa}/{cliente}/{contacto}/Mandato/EnviarPorCorreo")]
         [ResponseType(typeof(ResultadoEnvioDocumentoCorreoDTO))]
         public Task<IHttpActionResult> EnviarMandatoPorCorreo(string empresa, string cliente, string contacto, [FromBody] EnvioMandatoCorreoDTO envio)
-            => Ejecutar(() => gestor.EnviarMandato(EmpresaOPorDefecto(empresa), cliente?.Trim(), contacto?.Trim(),
+            => Ejecutar(EmpresaOPorDefecto(empresa), cliente?.Trim() ?? string.Empty, () => gestor.EnviarMandato(EmpresaOPorDefecto(empresa), cliente?.Trim(), contacto?.Trim(),
                 envio ?? new EnvioMandatoCorreoDTO(), User?.Identity?.Name));
 
         // GET api/Clientes/1/15191/0/CorreosContacto
@@ -64,19 +104,21 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<string>))]
         public async Task<IHttpActionResult> GetCorreosContacto(string empresa, string cliente, string contacto)
         {
-            if (!EsEmpleado())
+            IHttpActionResult rechazo = Rechazo(EmpresaOPorDefecto(empresa), cliente?.Trim() ?? string.Empty);
+            if (rechazo != null)
             {
-                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS);
+                return rechazo;
             }
             List<string> correos = await proveedor.CorreosContacto(EmpresaOPorDefecto(empresa), cliente?.Trim(), contacto?.Trim()).ConfigureAwait(false);
             return Ok(correos ?? new List<string>());
         }
 
-        private async Task<IHttpActionResult> Ejecutar(System.Func<Task<ResultadoEnvioDocumentoCorreoDTO>> envio)
+        private async Task<IHttpActionResult> Ejecutar(string empresa, string cliente, Func<Task<ResultadoEnvioDocumentoCorreoDTO>> envio)
         {
-            if (!EsEmpleado())
+            IHttpActionResult rechazo = Rechazo(empresa, cliente);
+            if (rechazo != null)
             {
-                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS);
+                return rechazo;
             }
             try
             {

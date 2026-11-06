@@ -104,6 +104,80 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
             Assert.IsTrue(resultado.Motivo.Contains("FUTURO"));
         }
 
+        [TestMethod]
+        public void ValidarAcceso_VendedorConComprobador_ClienteSuyo_Permitido()
+        {
+            var identity = CrearIdentidadVendedor("NV");
+            string vendedorVisto = null, clienteVisto = null;
+
+            var resultado = ValidadorAccesoCliente.ValidarAcceso(identity, " 15191 ", (v, c) => { vendedorVisto = v; clienteVisto = c; return true; });
+
+            Assert.IsTrue(resultado.Autorizado);
+            Assert.AreEqual("NV", vendedorVisto);
+            Assert.AreEqual("15191", clienteVisto, "llega sin espacios");
+        }
+
+        [TestMethod]
+        public void ValidarAcceso_VendedorConComprobador_ClienteAjeno_Denegado()
+        {
+            var identity = CrearIdentidadVendedor("NV");
+
+            var resultado = ValidadorAccesoCliente.ValidarAcceso(identity, CLIENTE_SOLICITADO, (v, c) => false);
+
+            Assert.IsFalse(resultado.Autorizado);
+            StringAssert.Contains(resultado.Motivo, "no es suyo");
+        }
+
+        [TestMethod]
+        public void ValidarAcceso_VendedorSinComprobador_DeniegaComoSiempre()
+        {
+            var identity = CrearIdentidadVendedor("NV");
+
+            var resultado = ValidadorAccesoCliente.ValidarAcceso(identity, CLIENTE_SOLICITADO, null);
+
+            Assert.IsFalse(resultado.Autorizado);
+            Assert.AreEqual(ValidadorAccesoCliente.ValidarAcceso(identity, CLIENTE_SOLICITADO).Motivo, resultado.Motivo);
+        }
+
+        [TestMethod]
+        public void ValidarAcceso_VendedorSinCodigo_DenegadoSinPreguntar()
+        {
+            var identity = new ClaimsIdentity("JWT");
+            identity.AddClaim(new Claim("IsVendedor", "true"));
+            bool preguntado = false;
+
+            var resultado = ValidadorAccesoCliente.ValidarAcceso(identity, CLIENTE_SOLICITADO, (v, c) => preguntado = true);
+
+            Assert.IsFalse(resultado.Autorizado);
+            Assert.IsFalse(preguntado);
+        }
+
+        [TestMethod]
+        public void ValidarAcceso_EmpleadoConComprobador_PermitidoSinPreguntar()
+        {
+            bool preguntado = false;
+
+            var resultado = ValidadorAccesoCliente.ValidarAcceso(CrearIdentidadEmpleado(), CLIENTE_SOLICITADO, (v, c) => preguntado = true);
+
+            Assert.IsTrue(resultado.Autorizado);
+            Assert.IsFalse(preguntado);
+        }
+
+        [TestMethod]
+        public void ValidarAcceso_ClienteTiendaConComprobador_ComoSiempre()
+        {
+            bool preguntado = false;
+            var identity = CrearIdentidadCliente("15191");
+
+            var suyo = ValidadorAccesoCliente.ValidarAcceso(identity, "15191", (v, c) => preguntado = true);
+            var otro = ValidadorAccesoCliente.ValidarAcceso(identity, "99999", (v, c) => preguntado = true);
+
+            Assert.IsTrue(suyo.Autorizado);
+            Assert.IsFalse(otro.Autorizado);
+            Assert.AreEqual("Cliente no puede acceder a recursos de otro cliente", otro.Motivo);
+            Assert.IsFalse(preguntado);
+        }
+
         #endregion
 
         #region Casos de error

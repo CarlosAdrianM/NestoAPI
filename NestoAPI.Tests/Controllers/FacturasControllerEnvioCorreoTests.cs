@@ -52,6 +52,14 @@ namespace NestoAPI.Tests.Controllers
             return new FacturasController(servicio, gestor) { User = new ClaimsPrincipal(identity) };
         }
 
+        /// <summary>Un vendedor de NestoApp; el 15191 es de «NV» y de nadie más.</summary>
+        private FacturasController ControladorVendedor(string vendedor = "NV")
+        {
+            FacturasController controlador = Controlador(new Claim("IsVendedor", "true"), new Claim("Vendedor", vendedor));
+            controlador.EsClienteDelVendedor = (empresa, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
+            return controlador;
+        }
+
         private static EnvioFacturasCorreoDTO Envio() => new EnvioFacturasCorreoDTO
         {
             Empresa = "1",
@@ -188,6 +196,83 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task EnviarPorCorreo_UnVendedor_MandaLasDeSusClientes()
+        {
+            FacturaDe("NV2616199", "15191  ");
+            GestorEnvia();
+
+            IHttpActionResult resultado = await ControladorVendedor().EnviarPorCorreo(Envio());
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ResultadoEnvioFacturasCorreoDTO>));
+            A.CallTo(() => gestor.EnviarFacturasACorreo("1", A<IEnumerable<string>>._, A<IEnumerable<string>>._, "Usuario")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarPorCorreo_UnVendedor_SiUnaFacturaEsDeOtroCliente_403SinMandarNada()
+        {
+            FacturaDe("NV2616199", "15191");
+            FacturaDe("NV2616200", "99999");
+            EnvioFacturasCorreoDTO envio = Envio();
+            envio.Facturas = new List<string> { "NV2616199", "NV2616200" };
+
+            var resultado = await ControladorVendedor().EnviarPorCorreo(envio) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual("Solo puede enviar documentos de sus clientes.", resultado.Content);
+            A.CallTo(() => gestor.EnviarFacturasACorreo(A<string>._, A<IEnumerable<string>>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarPorCorreo_UnVendedorConUnClienteAjeno_403()
+        {
+            FacturaDe("NV2616199", "15191");
+
+            var resultado = await ControladorVendedor("JE").EnviarPorCorreo(Envio()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            A.CallTo(() => gestor.EnviarFacturasACorreo(A<string>._, A<IEnumerable<string>>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarPorCorreo_UnVendedor_FacturaQueNoExiste_403()
+        {
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV2616199")).Returns(null);
+
+            var resultado = await ControladorVendedor().EnviarPorCorreo(Envio()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task EnviarPorCorreo_SinClaims_403()
+        {
+            var resultado = await Controlador().EnviarPorCorreo(Envio()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(FacturasController.MOTIVO_SOLO_EMPLEADOS_CORREO, resultado.Content);
+        }
+
+        [TestMethod]
+        public void CorreoFacturas_UnVendedor_SoloDeFacturasDeSusClientes()
+        {
+            FacturaDe("NV2616199", "15191");
+            FacturaDe("NV2616200", "99999");
+            A.CallTo(() => servicio.LeerCorreoFacturas("1", "NV2616199")).Returns("facturas@cliente.es ");
+
+            var suyo = ControladorVendedor().GetCorreoFacturas("1", "NV2616199") as OkNegotiatedContentResult<CorreoFacturasDTO>;
+            var ajeno = ControladorVendedor().GetCorreoFacturas("1", "NV2616200") as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(suyo);
+            Assert.AreEqual("facturas@cliente.es", suyo.Content.Correo);
+            Assert.IsNotNull(ajeno);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ajeno.StatusCode);
+            A.CallTo(() => servicio.LeerCorreoFacturas("1", "NV2616200")).MustNotHaveHappened();
         }
 
         [TestMethod]

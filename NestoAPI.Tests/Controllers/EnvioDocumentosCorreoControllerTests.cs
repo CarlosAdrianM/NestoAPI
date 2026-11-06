@@ -58,6 +58,14 @@ namespace NestoAPI.Tests.Controllers
 
         private static readonly Claim EMPLEADO = new Claim("IsEmployee", "true");
 
+        /// <summary>Un vendedor de NestoApp; el 15191 es de «NV» y de nadie más.</summary>
+        private EnvioDocumentosCorreoController ControladorVendedor(string vendedor = "NV")
+        {
+            EnvioDocumentosCorreoController controlador = Controlador(new Claim("IsVendedor", "true"), new Claim("Vendedor", vendedor));
+            controlador.EsClienteDelVendedor = (empresa, v, cliente) => empresa == "1" && v == "NV" && cliente == "15191";
+            return controlador;
+        }
+
         private static EnvioDocumentoCorreoDTO Envio() => new EnvioDocumentoCorreoDTO { Destinatarios = new List<string> { "cliente@correo.es" } };
 
         [TestMethod]
@@ -99,6 +107,67 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual(EnvioDocumentosCorreoController.MOTIVO_SOLO_EMPLEADOS, resultado.Content);
+        }
+
+        [TestMethod]
+        public async Task EnviarPedidoPorCorreo_UnVendedorConUnClienteSuyo_LoManda()
+        {
+            var resultado = await ControladorVendedor().EnviarPedidoPorCorreo("1", 929498, Envio())
+                as OkNegotiatedContentResult<ResultadoEnvioDocumentoCorreoDTO>;
+
+            Assert.IsNotNull(resultado);
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarPedidoPorCorreo_UnVendedorConUnClienteAjeno_403ConMotivoYNoManda()
+        {
+            var resultado = await ControladorVendedor("JE").EnviarPedidoPorCorreo("1", 929498, Envio()) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual("Solo puede enviar documentos de sus clientes.", resultado.Content);
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarMandatoPorCorreo_UnVendedor_SoloDeSusClientes()
+        {
+            var envio = new EnvioMandatoCorreoDTO { Ccc = "1", Destinatarios = new List<string> { "cliente@correo.es" } };
+
+            var suyo = await ControladorVendedor().EnviarMandatoPorCorreo("1", "15191 ", "0", envio)
+                as OkNegotiatedContentResult<ResultadoEnvioDocumentoCorreoDTO>;
+            var ajeno = await ControladorVendedor().EnviarMandatoPorCorreo("1", "99999", "0", envio) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(suyo);
+            Assert.IsNotNull(ajeno);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ajeno.StatusCode);
+            Assert.AreEqual("Solo puede enviar documentos de sus clientes.", ajeno.Content);
+            A.CallTo(() => proveedor.PdfMandato("1", "99999", A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorreosContacto_UnVendedor_SoloDeSusClientes()
+        {
+            A.CallTo(() => proveedor.CorreosContacto("1", "15191", "0")).Returns(Task.FromResult(new List<string> { "ana@cliente.es" }));
+
+            var suyo = await ControladorVendedor().GetCorreosContacto("1", "15191", "0") as OkNegotiatedContentResult<List<string>>;
+            var ajeno = await ControladorVendedor().GetCorreosContacto("1", "99999", "0") as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(suyo);
+            CollectionAssert.AreEqual(new[] { "ana@cliente.es" }, suyo.Content);
+            Assert.IsNotNull(ajeno);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ajeno.StatusCode);
+            A.CallTo(() => proveedor.CorreosContacto("1", "99999", A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorreosContacto_SinClaims_403()
+        {
+            var resultado = await Controlador().GetCorreosContacto("1", "15191", "0") as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
             Assert.AreEqual(EnvioDocumentosCorreoController.MOTIVO_SOLO_EMPLEADOS, resultado.Content);
         }
 

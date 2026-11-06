@@ -35,12 +35,21 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
 
         /// <exception cref="NestoBusinessException">404 si el pedido no existe; 400 si no hay a quién mandarlo o los correos
         /// están mal escritos; 502 si el servidor de correo no lo acepta.</exception>
-        public async Task<ResultadoEnvioDocumentoCorreoDTO> EnviarPedido(string empresa, int numero, EnvioDocumentoCorreoDTO envio, string usuario)
+        /// <param name="clientePermitido">
+        /// Para los vendedores de NestoApp: (empresa, cliente del pedido) → si puede. Si no, 403 con
+        /// <see cref="Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES"/> sin mandar nada. Null (empleados) = sin comprobar.
+        /// </param>
+        public async Task<ResultadoEnvioDocumentoCorreoDTO> EnviarPedido(string empresa, int numero, EnvioDocumentoCorreoDTO envio, string usuario,
+            System.Func<string, string, bool> clientePermitido = null)
         {
             DocumentoParaCorreo documento = await proveedor.PdfPedido(empresa, numero, usuario).ConfigureAwait(false);
             if (documento == null)
             {
                 throw new NestoBusinessException($"No existe el pedido {numero}.") { StatusCode = HttpStatusCode.NotFound };
+            }
+            if (clientePermitido != null && !clientePermitido(empresa, documento.Cliente?.Trim()))
+            {
+                throw new NestoBusinessException(Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES) { StatusCode = HttpStatusCode.Forbidden };
             }
             string asuntoDefecto = $"Pedido nº {numero}";
             string textoDefecto = $"Adjunto le enviamos el pedido nº {numero}.";

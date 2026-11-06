@@ -1176,6 +1176,7 @@
     <Compile Include="Infraestructure\Seguridad\ClaimsVendedorHelper.cs" />
     <Compile Include="Infraestructure\Seguridad\IServicioUsuarioVendedor.cs" />
     <Compile Include="Infraestructure\Seguridad\ServicioUsuarioVendedor.cs" />
+    <Compile Include="Infraestructure\Seguridad\ClientesDelVendedor.cs" />
     <Compile Include="Infraestructure\Seguridad\ValidadorAccesoCliente.cs" />
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
