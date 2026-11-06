@@ -48,6 +48,30 @@ namespace NestoAPI.Infraestructure.VigilanciaHangfire
             IndicadoresStock.IndicadoresStockJobsService.COLA
         };
 
+        /// <summary>
+        /// NestoAPI#835: los jobs que son largos por naturaleza, por su nombre («Clase.Método», el de <see cref="JobEnCurso.Nombre"/>).
+        /// Las dos primeras noches del vigilante avisaron de dos que terminaron bien: ClasificacionRapportsJobsService.Procesar
+        /// (05/11 22:15, 22 min) y SincronizarProductos (06/11 01:05, la pasada nocturna con todo el stock encolado, 15 min).
+        /// El resto, <see cref="MAXIMO_EN_MARCHA"/>.
+        /// </summary>
+        internal static readonly IReadOnlyDictionary<string, TimeSpan> MAXIMO_EN_MARCHA_POR_JOB =
+            new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase)
+            {
+                [nameof(Rapports.ClasificacionRapportsJobsService) + "." + nameof(Rapports.ClasificacionRapportsJobsService.Procesar)] = TimeSpan.FromMinutes(45),
+                [nameof(SincronizacionJobsService) + "." + nameof(SincronizacionJobsService.SincronizarProductos)] = TimeSpan.FromMinutes(45)
+            };
+
+        /// <summary>
+        /// NestoAPI#835: por cola, para los jobs sin umbral propio. La pasada nocturna de SincronizarProductos y la de cada 5 minutos
+        /// son el mismo job recurrente (mismo método), así que no se distinguen por el nombre: la cola «sincronizacion» (que tiene
+        /// su propio servidor) también tiene 45 minutos.
+        /// </summary>
+        internal static readonly IReadOnlyDictionary<string, TimeSpan> MAXIMO_EN_MARCHA_POR_COLA =
+            new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase)
+            {
+                [SincronizacionJobsService.COLA] = TimeSpan.FromMinutes(45)
+            };
+
         /// <summary>En un día normal la cola está a 0-10; el 05/11 llegó a 635.</summary>
         internal const int MAXIMO_ENCOLADOS = 100;
 
@@ -64,7 +88,7 @@ namespace NestoAPI.Infraestructure.VigilanciaHangfire
             foreach (JobEnCurso job in (enCurso ?? new List<JobEnCurso>()).Where(j => j != null).OrderBy(j => j.EmpezoUtc))
             {
                 TimeSpan enMarcha = ahoraUtc - job.EmpezoUtc;
-                if (enMarcha <= MaximoEnMarcha(job.Cola))
+                if (enMarcha <= MaximoEnMarcha(job.Nombre, job.Cola))
                 {
                     continue;
                 }
@@ -92,11 +116,30 @@ namespace NestoAPI.Infraestructure.VigilanciaHangfire
             return avisos;
         }
 
+        /// <summary>
+        /// NestoAPI#835: el umbral del job: el suyo si lo tiene (<see cref="MAXIMO_EN_MARCHA_POR_JOB"/>); si no, el de su cola
+        /// (las largas, 8 horas; <see cref="MAXIMO_EN_MARCHA_POR_COLA"/>); si no, <see cref="MAXIMO_EN_MARCHA"/> (15 minutos).
+        /// </summary>
+        internal static TimeSpan MaximoEnMarcha(string nombre, string cola)
+        {
+            if (!string.IsNullOrWhiteSpace(nombre) && MAXIMO_EN_MARCHA_POR_JOB.TryGetValue(nombre.Trim(), out TimeSpan delJob))
+            {
+                return delJob;
+            }
+            return MaximoEnMarcha(cola);
+        }
+
         internal static TimeSpan MaximoEnMarcha(string cola)
         {
-            return cola != null && COLAS_LARGAS.Contains(cola.Trim(), StringComparer.OrdinalIgnoreCase)
-                ? MAXIMO_EN_MARCHA_COLAS_LARGAS
-                : MAXIMO_EN_MARCHA;
+            if (cola == null)
+            {
+                return MAXIMO_EN_MARCHA;
+            }
+            if (COLAS_LARGAS.Contains(cola.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                return MAXIMO_EN_MARCHA_COLAS_LARGAS;
+            }
+            return MAXIMO_EN_MARCHA_POR_COLA.TryGetValue(cola.Trim(), out TimeSpan deLaCola) ? deLaCola : MAXIMO_EN_MARCHA;
         }
 
         internal static string TextoDuracion(TimeSpan duracion)

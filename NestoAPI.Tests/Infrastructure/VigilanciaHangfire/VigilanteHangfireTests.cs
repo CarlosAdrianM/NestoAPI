@@ -26,7 +26,10 @@ namespace NestoAPI.Tests.Infrastructure.VigilanciaHangfire
             DeduplicadorAvisosHangfire.Reset();
         }
 
-        private static JobEnCurso Job(long id, int minutos, string cola = "default", string nombre = "SincronizacionJobsService.SincronizarProductos")
+        private const string SINCRONIZAR_PRODUCTOS = "SincronizacionJobsService.SincronizarProductos";
+
+        /// <summary>Por defecto, un job sin umbral propio (NestoAPI#835): 15 minutos.</summary>
+        private static JobEnCurso Job(long id, int minutos, string cola = "default", string nombre = "PickingJobsService.SacarPicking")
         {
             return new JobEnCurso { Id = id, Nombre = nombre, Cola = cola, EmpezoUtc = AHORA.AddMinutes(-minutos) };
         }
@@ -51,7 +54,7 @@ namespace NestoAPI.Tests.Infrastructure.VigilanciaHangfire
         public void Evaluar_JobViejo_AvisaConNombreColaYTiempo()
         {
             // El caso del 04/11: 146824 en Processing desde las 18:55 UTC.
-            List<AvisoHangfire> avisos = VigilanteHangfire.Evaluar(new List<JobEnCurso> { Job(146824, 13 * 60 + 5) }, 3, AHORA);
+            List<AvisoHangfire> avisos = VigilanteHangfire.Evaluar(new List<JobEnCurso> { Job(146824, 13 * 60 + 5, nombre: SINCRONIZAR_PRODUCTOS) }, 3, AHORA);
 
             Assert.AreEqual(1, avisos.Count);
             Assert.AreEqual("colgado:146824", avisos[0].Clave);
@@ -74,6 +77,49 @@ namespace NestoAPI.Tests.Infrastructure.VigilanciaHangfire
 
             Assert.AreEqual(1, avisos.Count);
             Assert.AreEqual("colgado:3", avisos[0].Clave);
+        }
+
+        [TestMethod]
+        public void Evaluar_JobLargoDentroDeSuUmbral_SinAviso_835()
+        {
+            // Las dos falsas alarmas de las dos primeras noches: 22 y 15 minutos, terminaron bien
+            List<AvisoHangfire> avisos = VigilanteHangfire.Evaluar(new List<JobEnCurso>
+            {
+                Job(1, 22, "default", "ClasificacionRapportsJobsService.Procesar"),
+                Job(2, 40, "sincronizacion", SINCRONIZAR_PRODUCTOS),
+                Job(3, 30, "sincronizacion", "SincronizacionJobsService.SincronizarClientes")
+            }, 0, AHORA);
+
+            Assert.AreEqual(0, avisos.Count);
+        }
+
+        [TestMethod]
+        public void Evaluar_JobLargoFueraDeSuUmbral_Avisa_835()
+        {
+            List<AvisoHangfire> avisos = VigilanteHangfire.Evaluar(new List<JobEnCurso>
+            {
+                Job(1, 46, "default", "ClasificacionRapportsJobsService.Procesar"),
+                Job(2, 46, "sincronizacion", SINCRONIZAR_PRODUCTOS),
+                Job(3, 46, "sincronizacion", "SincronizacionJobsService.SincronizarClientes")
+            }, 0, AHORA);
+
+            CollectionAssert.AreEquivalent(new[] { "colgado:1", "colgado:2", "colgado:3" }, avisos.Select(a => a.Clave).ToList());
+        }
+
+        [TestMethod]
+        public void Evaluar_JobSinUmbralPropio_15Minutos_835()
+        {
+            List<AvisoHangfire> avisos = VigilanteHangfire.Evaluar(new List<JobEnCurso>
+            {
+                Job(1, 15),
+                Job(2, 16),
+                Job(3, 16, null, null)
+            }, 0, AHORA);
+
+            CollectionAssert.AreEquivalent(new[] { "colgado:2", "colgado:3" }, avisos.Select(a => a.Clave).ToList());
+            Assert.AreEqual(TimeSpan.FromMinutes(15), VigilanteHangfire.MaximoEnMarcha("PickingJobsService.SacarPicking", "default"));
+            Assert.AreEqual(TimeSpan.FromMinutes(45), VigilanteHangfire.MaximoEnMarcha(" " + SINCRONIZAR_PRODUCTOS + " ", "default"));
+            Assert.AreEqual(TimeSpan.FromHours(8), VigilanteHangfire.MaximoEnMarcha("ReentrenamientoModeloLlamadasJobsService.Reentrenar", "entrenamiento"));
         }
 
         [TestMethod]

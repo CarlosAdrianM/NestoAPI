@@ -108,7 +108,7 @@ WHERE j.StateName = 'Processing'";
 
     /// <summary>
     /// NestoAPI#820 (incidente 04-05/11/26): job <c>hangfire-vigilante</c>, cada 10 minutos. Mira si hay un job en marcha más de
-    /// 15 minutos o más de 100 esperando y lo avisa UNA vez por episodio en ELMAH y en la campana de Nesto del grupo Informática.
+    /// 15 minutos (NestoAPI#835: o de su umbral, <see cref="VigilanteHangfire.MaximoEnMarcha(string, string)"/>) o más de 100 esperando y lo avisa UNA vez por episodio en ELMAH y en la campana de Nesto del grupo Informática.
     ///
     /// Va en su PROPIA cola («vigilante», con su servidor de un hilo en Startup), no en «default»: si fuera en «default» se
     /// quedaría esperando detrás del job colgado que tiene que avisar, justo lo que pasó el 04/11. Tampoco en «entrenamiento»: ahí
