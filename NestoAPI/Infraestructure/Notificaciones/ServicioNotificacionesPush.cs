@@ -1,4 +1,4 @@
-using Elmah;
+﻿using Elmah;
 using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
@@ -358,17 +358,132 @@ namespace NestoAPI.Infraestructure.Notificaciones
             // NestoAPI#575: a Ariadna, además, una push de DATOS que despierta la PDA. El buzón sigue siendo la verdad.
             if (TokenCompartidoPorVariosUsuarios(aplicacion))
             {
-                await AvisarDispositivosDeAriadna(usuario.Trim(), notificacion).ConfigureAwait(false);
+                await AvisarDispositivosDeAriadna(usuario.Trim(), notificacion, null).ConfigureAwait(false);
+            }
+            // NestoAPI#833 (Carlos 05/11/26): de lo que nace para Nesto, a la PDA de la misma persona SOLO lo urgente y lo que va a
+            // Dirección o Informática (los mozos no reciben el ruido de Nesto). Sin segunda fila: el buzón ya es uno por persona.
+            else if (string.Equals(aplicacion.Trim(), Constantes.Aplicaciones.NESTO, StringComparison.OrdinalIgnoreCase))
+            {
+                await AvisarDispositivosDeAriadna(usuario.Trim(), notificacion, VaTambienALaPdaDesdeNesto).ConfigureAwait(false);
             }
         }
 
-        private async Task AvisarDispositivosDeAriadna(string usuario, NotificacionPushDTO notificacion)
+        /// <summary>
+        /// NestoAPI#833: si un aviso nacido para Nesto le llega también a la PDA (Ariadna) de la persona: los urgentes
+        /// (<see cref="NotificacionesUrgentes.EsUrgente(NotificacionPushDTO)"/>) y los de las personas de Dirección o Informática.
+        /// </summary>
+        internal bool VaTambienALaPdaDesdeNesto(string usuario, NotificacionPushDTO notificacion)
+            => NotificacionesUrgentes.EsUrgente(notificacion) || EsDeDireccionOInformatica(usuario);
+
+        /// <summary>
+        /// NestoAPI#833: si la persona es de Dirección o Informática (miembro directo del grupo del dominio, sin dominio, como
+        /// <see cref="Verifactu.MiembrosGrupoDominio"/>). Sustituible en tests (sin dominio).
+        /// </summary>
+        internal Func<string, bool> EsDeDireccionOInformatica { get; set; } = PersonaDeDireccionOInformatica;
+
+        /// <summary>NestoAPI#833: los grupos cuyos avisos de Nesto llegan también a la PDA.</summary>
+        internal static readonly string[] GRUPOS_CON_PUSH_DESDE_NESTO =
+        {
+            Constantes.GruposSeguridad.DIRECCION,
+            Constantes.GruposSeguridad.INFORMATICA
+        };
+
+        /// <summary>Los miembros se leen del dominio como mucho cada 10 minutos (cada aviso no puede ir al directorio).</summary>
+        private static readonly TimeSpan DURACION_CACHE_GRUPOS = TimeSpan.FromMinutes(10);
+        private static readonly object candadoGrupos = new object();
+        private static HashSet<string> miembrosConPushDesdeNesto;
+        private static DateTime miembrosLeidosEn = DateTime.MinValue;
+
+        /// <summary>Quién lee los miembros de un grupo del dominio (sustituible en tests).</summary>
+        internal static Func<string, List<string>> LectorMiembrosGrupo { get; set; } = Verifactu.MiembrosGrupoDominio.Leer;
+
+        internal static void InvalidarCacheGrupos()
+        {
+            lock (candadoGrupos)
+            {
+                miembrosConPushDesdeNesto = null;
+                miembrosLeidosEn = DateTime.MinValue;
+            }
+        }
+
+        internal static bool PersonaDeDireccionOInformatica(string usuario)
+        {
+            string sinDominio = UsuarioAuditoriaHelper.SinDominio(UsuarioAuditoriaHelper.Persona(usuario));
+            if (string.IsNullOrWhiteSpace(sinDominio))
+            {
+                return false;
+            }
+            HashSet<string> miembros;
+            lock (candadoGrupos)
+            {
+                if (miembrosConPushDesdeNesto == null || DateTime.Now - miembrosLeidosEn > DURACION_CACHE_GRUPOS)
+                {
+                    var leidos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (string grupo in GRUPOS_CON_PUSH_DESDE_NESTO)
+                    {
+                        foreach (string miembro in LectorMiembrosGrupo(grupo) ?? new List<string>())
+                        {
+                            if (!string.IsNullOrWhiteSpace(miembro))
+                            {
+                                _ = leidos.Add(UsuarioAuditoriaHelper.SinDominio(miembro));
+                            }
+                        }
+                    }
+                    miembrosConPushDesdeNesto = leidos;
+                    // Si el dominio no contestó (lista vacía), se vuelve a mirar en el siguiente aviso.
+                    miembrosLeidosEn = leidos.Count > 0 ? DateTime.Now : DateTime.MinValue;
+                }
+                miembros = miembrosConPushDesdeNesto;
+            }
+            return miembros.Contains(sinDominio);
+        }
+
+        /// <summary>
+        /// NestoAPI#833: lo último que se mandó a la PDA de cada persona. Muchos avisadores graban el mismo aviso para Nesto y para
+        /// Ariadna seguidos con el mismo servicio: si la persona es además de Dirección, la PDA no debe sonar dos veces.
+        /// </summary>
+        private readonly Dictionary<string, DateTime> pushesRecientesAriadna = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        private bool YaSeMandoALaPda(string usuario, NotificacionPushDTO notificacion)
+        {
+            string datos = notificacion.Datos != null && notificacion.Datos.Any()
+                ? Newtonsoft.Json.JsonConvert.SerializeObject(notificacion.Datos)
+                : string.Empty;
+            string clave = string.Join("\u0001", UsuarioAuditoriaHelper.SinDominio(UsuarioAuditoriaHelper.Persona(usuario)),
+                notificacion.Titulo ?? string.Empty, notificacion.Cuerpo ?? string.Empty, datos);
+            DateTime ahora = DateTime.Now;
+            lock (pushesRecientesAriadna)
+            {
+                foreach (string vieja in pushesRecientesAriadna.Where(p => ahora - p.Value > MARGEN_AVISO_REPETIDO).Select(p => p.Key).ToList())
+                {
+                    _ = pushesRecientesAriadna.Remove(vieja);
+                }
+                if (pushesRecientesAriadna.ContainsKey(clave))
+                {
+                    return true;
+                }
+                pushesRecientesAriadna[clave] = ahora;
+                return false;
+            }
+        }
+
+        /// <param name="condicion">Null = siempre; si no, solo si se cumple (se mira después de ver que tiene PDA, para no ir
+        /// al dominio por quien no la tiene).</param>
+        private async Task AvisarDispositivosDeAriadna(string usuario, NotificacionPushDTO notificacion, Func<string, NotificacionPushDTO, bool> condicion)
         {
             try
             {
                 List<DispositivoNotificacion> dispositivos = await ObtenerDispositivosUsuario(usuario, Constantes.Aplicaciones.ARIADNA).ConfigureAwait(false);
                 List<string> tokens = dispositivos.Select(d => d.Token).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct().ToList();
                 if (tokens.Count == 0)
+                {
+                    return;
+                }
+                if (condicion != null && !condicion(usuario, notificacion))
+                {
+                    return;
+                }
+                if (YaSeMandoALaPda(usuario, notificacion))
                 {
                     return;
                 }

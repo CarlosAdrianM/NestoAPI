@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -96,7 +96,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
     public interface IRepositorioUrgentesBuzon
     {
-        /// <summary>Las notificaciones de Nesto del usuario (sin borrar) desde esa fecha.</summary>
+        /// <summary>
+        /// Las notificaciones del buzón de la persona (sin borrar) desde esa fecha. NestoAPI#833: por todos sus nombres (con y sin
+        /// dominio, <see cref="UsuarioAuditoriaHelper.NombresDeLaPersona"/>) y en cualquiera de las aplicaciones de los empleados
+        /// (el buzón es uno solo desde #822).
+        /// </summary>
         Task<List<NotificacionBuzonDTO>> Leer(string usuario, DateTime desde);
     }
 
@@ -227,9 +231,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         public async Task<List<NotificacionBuzonDTO>> Leer(string usuario, DateTime desde)
         {
-            string aplicacion = Constantes.Aplicaciones.NESTO;
+            List<string> nombres = UsuarioAuditoriaHelper.NombresDeLaPersona(usuario);
+            List<string> aplicaciones = ServicioNotificacionesPush.APLICACIONES_DE_EMPLEADOS.ToList();
             List<NotificacionBuzon> filas = await db.NotificacionesBuzon
-                .Where(n => n.Usuario == usuario && n.Aplicacion == aplicacion && n.FechaEliminada == null && n.FechaCreacion >= desde && n.Datos != null)
+                .Where(n => nombres.Contains(n.Usuario) && aplicaciones.Contains(n.Aplicacion) && n.FechaEliminada == null
+                    && n.FechaCreacion >= desde && n.Datos != null)
                 .ToListAsync()
                 .ConfigureAwait(false);
             return filas.Select(f => new NotificacionBuzonDTO

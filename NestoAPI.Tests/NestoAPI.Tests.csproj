@@ -449,6 +449,7 @@
     <Compile Include="Infraestructure\BuzonPorPersonaTests.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelperUnaGrafiaTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\NotificacionesUrgentesTests.cs" />
+    <Compile Include="Infraestructure\Notificaciones\PushAriadnaDesdeNestoTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\RecibirConsejosTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
