@@ -252,6 +252,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return F("^FO{0},{1}^A0N,{2},{3}^FH^FD{4}^FS", x, y, medida[0], medida[1], Escapar(texto));
         }
 
+        /// <summary>NestoAPI#840: texto escalable (^A0) de la medida que se diga (alto × ancho en puntos), sin pasar por EPL.</summary>
+        public static string TextoEscalable(int x, int y, int alto, int ancho, string texto)
+            => F("^FO{0},{1}^A0N,{2},{3}^FH^FD{4}^FS", x, y, alto, ancho, Escapar(texto));
+
         /// <summary>Un rectángulo (o una raya si uno de los lados es el grosor).</summary>
         public static string Caja(int x, int y, int ancho, int alto, int grosor)
             => F("^FO{0},{1}^GB{2},{3},{4}^FS", x, y, ancho, alto, grosor);

@@ -72,7 +72,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             EtiquetaProducto etiqueta = GeneradorEtiquetasProducto.ComponerEan13(Ficha("17404", "ROLLO PAPEL CAMILLA"), "2900000174047");
 
-            CollectionAssert.AreEqual(new[] { "ROLLO PAPEL CAMILLA", "Ref. 17404 · 100 m" }, etiqueta.Lineas);
+            CollectionAssert.AreEqual(new[] { "ROLLO PAPEL CAMILLA · 100 m", "Ref. 17404" }, etiqueta.Lineas);
+            Assert.AreEqual("Ref. 17404", etiqueta.Referencia);
             Assert.AreEqual("2900000174047", etiqueta.CodigoBarras);
         }
 
@@ -100,9 +101,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(
                 "^XA^CI28^LH0,0\r\n" +
-                "^FO12,6^A0N,12,8^FH^FDROLLO PAPEL CAMILLA^FS\r\n" +
-                "^FO12,20^A0N,12,8^FH^FDRef. 17404 _C2_B7 100 m^FS\r\n" +
-                "^FO25,34^BY2^BEN,80,Y,N^FD290000017404^FS\r\n" +
+                "^FO12,6^A0N,12,8^FH^FDROLLO PAPEL CAMILLA _C2_B7 100 m^FS\r\n" +
+                "^FO12,20^A0N,26,26^FH^FDRef. 17404^FS\r\n" +
+                "^FO25,50^BY2^BEN,80,Y,N^FD290000017404^FS\r\n" +
                 "^PQ2^XZ\r\n",
                 zpl);
         }
@@ -113,9 +114,70 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             string epl = GeneradorEtiquetasProducto.EplEan13(GeneradorEtiquetasProducto.ComponerEan13(Ficha("17404", "ROLLO PAPEL CAMILLA"), "2900000174047"), 1);
 
             StringAssert.StartsWith(epl, "I8,A,034\r\nq240\r\nQ160,24\r\nN\r\n");
-            StringAssert.Contains(epl, "A12,6,0,1,1,1,N,\"ROLLO PAPEL CAMILLA\"\r\n");
-            StringAssert.Contains(epl, "B25,34,0,E30,2,2,80,B,\"290000017404\"\r\n");
+            StringAssert.Contains(epl, "A12,6,0,1,1,1,N,\"ROLLO PAPEL CAMILLA · 100 m\"\r\n");
+            StringAssert.Contains(epl, "A12,20,0,4,1,1,N,\"Ref. 17404\"\r\n");
+            StringAssert.Contains(epl, "B25,50,0,E30,2,2,80,B,\"290000017404\"\r\n");
             Assert.IsTrue(epl.EndsWith("P1\r\n"));
+        }
+
+        // ---- NestoAPI#840 (sugerencia 1115 de Reina): la referencia en grande ----
+
+        [TestMethod]
+        public void ZplEan13_840_LaReferenciaEnLetraGrandeYElEanPorDebajo()
+        {
+            string zpl = GeneradorEtiquetasProducto.ZplEan13(GeneradorEtiquetasProducto.ComponerEan13(Ficha("39189", "GEL CONDUCTOR"), "2900000391895"), 1);
+
+            StringAssert.Contains(zpl, "^FO12,20^A0N,26,26^FH^FDRef. 39189^FS");
+            int yReferencia = GeneradorEtiquetasProducto.REFERENCIA_Y;
+            Assert.IsTrue(yReferencia >= GeneradorEtiquetasProducto.TEXTO_Y + 12, "la referencia, por debajo del nombre (fuente de 12)");
+            Assert.IsTrue(GeneradorEtiquetasProducto.EAN_Y >= yReferencia + GeneradorEtiquetasProducto.REFERENCIA_ALTO, "el EAN, por debajo de la referencia");
+            Assert.IsTrue(GeneradorEtiquetasProducto.EAN_Y + GeneradorEtiquetasProducto.EAN_ALTO + GeneradorEtiquetasProducto.EAN_CIFRAS_ALTO <= GeneradorEtiquetasHueco.ALTO,
+                "las barras y las cifras, dentro de los 160 puntos");
+            Assert.IsTrue(GeneradorEtiquetasProducto.MARGEN_X + GeneradorEtiquetasProducto.CARACTERES_REFERENCIA * 14 <= GeneradorEtiquetasHueco.ANCHO - GeneradorEtiquetasProducto.MARGEN_X,
+                "la referencia más larga cabe a lo ancho (14 puntos por carácter en la fuente 4 de EPL)");
+        }
+
+        [TestMethod]
+        public void ComponerEan13_840_ReferenciaYTamanoQueCaben_JuntosEnGrande()
+        {
+            var ficha = new FichaProductoAlmacen { Producto = "1234", Nombre = "PINZA", Tamano = 5, UnidadMedida = "u" };
+
+            EtiquetaProducto etiqueta = GeneradorEtiquetasProducto.ComponerEan13(ficha, "2900000174047");
+
+            CollectionAssert.AreEqual(new[] { "PINZA", "Ref. 1234 · 5 u" }, etiqueta.Lineas);
+            Assert.AreEqual("Ref. 1234 · 5 u", etiqueta.Referencia);
+        }
+
+        [TestMethod]
+        public void ComponerEan13_840_NombreLargoConTamano_ElTamanoNoSePierde()
+        {
+            EtiquetaProducto etiqueta = GeneradorEtiquetasProducto.ComponerEan13(
+                Ficha("17404", "CREMA MASAJE NEUTRA CON ACEITE DE ALMENDRAS"), "2900000174047");
+
+            Assert.IsTrue(etiqueta.Lineas[0].EndsWith(" · 100 m"), etiqueta.Lineas[0]);
+            Assert.IsTrue(etiqueta.Lineas[0].Length <= GeneradorEtiquetasProducto.CARACTERES_PEQUENA);
+            Assert.AreEqual("Ref. 17404", etiqueta.Lineas[1]);
+        }
+
+        [TestMethod]
+        public void ComponerEan13_840_ReferenciaMuyLarga_SinRefYCortada()
+        {
+            var ficha = new FichaProductoAlmacen { Producto = "ABCDEFGHIJKLMNOPQ", Nombre = "X" };
+
+            EtiquetaProducto etiqueta = GeneradorEtiquetasProducto.ComponerEan13(ficha, "2900000174047");
+
+            Assert.AreEqual("ABCDEFGHIJKLMNO", etiqueta.Referencia);
+        }
+
+        [TestMethod]
+        public void EplEan13_840_SinReferencia_TodoEnPequenoComoAntes()
+        {
+            var etiqueta = new EtiquetaProducto { Producto = "1", Lineas = new List<string> { "UNO", "DOS" }, Fuente = 1, CodigoBarras = "2900000174047" };
+
+            string epl = GeneradorEtiquetasProducto.EplEan13(etiqueta, 1);
+
+            StringAssert.Contains(epl, "A12,6,0,1,1,1,N,\"UNO\"\r\n");
+            StringAssert.Contains(epl, "A12,20,0,1,1,1,N,\"DOS\"\r\n");
         }
 
         [TestMethod]
@@ -126,7 +188,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.IsTrue(x >= 11 * GeneradorEtiquetasProducto.EAN_MODULO, "zona de silencio izquierda");
             Assert.IsTrue(GeneradorEtiquetasHueco.ANCHO - x - ancho >= 7 * GeneradorEtiquetasProducto.EAN_MODULO, "zona de silencio derecha");
-            Assert.IsTrue(GeneradorEtiquetasProducto.EAN_Y + GeneradorEtiquetasProducto.EAN_ALTO + 22 <= GeneradorEtiquetasHueco.ALTO, "las cifras de debajo caben");
+            Assert.IsTrue(GeneradorEtiquetasProducto.EAN_Y + GeneradorEtiquetasProducto.EAN_ALTO + GeneradorEtiquetasProducto.EAN_CIFRAS_ALTO <= GeneradorEtiquetasHueco.ALTO, "las cifras de debajo caben");
         }
 
         // ---- Qué código lleva ----

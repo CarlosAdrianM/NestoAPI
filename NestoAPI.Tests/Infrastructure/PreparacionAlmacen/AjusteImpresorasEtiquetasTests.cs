@@ -118,9 +118,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             "q240\r\n" +
             "Q160,24\r\n" +
             "N\r\n" +
-            "A12,6,0,1,1,1,N,\"ROLLO PAPEL CAMILLA\"\r\n" +
-            "A12,20,0,1,1,1,N,\"Ref. 17404 · 100 m\"\r\n" +
-            "B25,34,0,E30,2,2,80,B,\"290000017404\"\r\n" +
+            "A12,6,0,1,1,1,N,\"ROLLO PAPEL CAMILLA · 100 m\"\r\n" +
+            "A12,20,0,4,1,1,N,\"Ref. 17404\"\r\n" +
+            "B25,50,0,E30,2,2,80,B,\"290000017404\"\r\n" +
             "P1\r\n";
 
         private static readonly string EplBulto =
@@ -225,8 +225,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => repositorio.Leer(REINA.ToUpperInvariant())).Returns(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 16, DesplazamientoY = 0 });
 
             _ = impresora.Imprimir(REINA, Trabajo(Producto(), "Etiqueta producto"));
-            StringAssert.Contains(impreso, "A28,6,0,1,1,1,N,\"ROLLO PAPEL CAMILLA\"\r\n");
-            StringAssert.Contains(impreso, "B41,34,0,E30,2,2,80,B,\"290000017404\"\r\n");
+            StringAssert.Contains(impreso, "A28,6,0,1,1,1,N,\"ROLLO PAPEL CAMILLA · 100 m\"\r\n");
+            StringAssert.Contains(impreso, "B41,50,0,E30,2,2,80,B,\"290000017404\"\r\n");
 
             _ = impresora.Imprimir(REINA, Trabajo(Bulto(), "Etiquetas de bulto"));
             StringAssert.Contains(impreso, "B73,8,0,1,1,1,64,N,\"R81010-1\"\r\n");

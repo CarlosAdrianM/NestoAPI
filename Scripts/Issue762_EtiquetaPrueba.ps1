@@ -22,6 +22,8 @@
       2. Las cifras de debajo se leen y no se montan con las barras; el nombre y «Ref. ...» caben arriba.
       3. Si no lee bien o no cabe, las medidas están en GeneradorEtiquetasProducto (EAN_MODULO, EAN_ALTO, EAN_Y) de
          NestoAPI/Infraestructure/PreparacionAlmacen/EtiquetasProductoAlmacen.cs.
+      4. NestoAPI#840: «Ref. 17404» sale en letra grande (REFERENCIA_Y 20, ^A0 26x26 / fuente 4 de EPL) y no pisa ni el
+         nombre ni las barras (EAN_Y 50); las cifras de debajo no se salen por abajo. Si se salen, EAN_ALTO 80 -> 64.
 
     Uso:
       .\Issue762_EtiquetaPrueba.ps1 -Producto 17404

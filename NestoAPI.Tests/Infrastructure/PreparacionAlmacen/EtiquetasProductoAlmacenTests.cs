@@ -98,13 +98,13 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 new EtiquetasProductoDTO { Producto = " 17404 ", Copias = 2 }, @"NUEVAVISION\Paloma", false);
 
             A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetasalcobendas",
-                A<TrabajoEtiquetas>.That.Matches(t => t.Epl.Contains("B25,34,0,E30,2,2,80,B,\"843701750637\"") && t.Epl.EndsWith("P2\r\n")
+                A<TrabajoEtiquetas>.That.Matches(t => t.Epl.Contains("B25,50,0,E30,2,2,80,B,\"843701750637\"") && t.Epl.EndsWith("P2\r\n")
                     && t.Zpl.Contains("^BEN,80,Y,N^FD843701750637^FS") && t.Zpl.EndsWith("^PQ2^XZ\r\n")
                     && t.Nombre == "Etiqueta EAN-13 producto 17404"))).MustHaveHappenedOnceExactly();
             Assert.AreEqual(2, resultado.Impresas);
             Assert.AreEqual(@"\\RDS2016\etiquetasalcobendas", resultado.Impresora);
             Assert.AreEqual("8437017506379", resultado.CodigoBarras);
-            CollectionAssert.AreEqual(new[] { "ROLLO PAPEL CAMILLA", "Ref. 17404 · 100 m" }, resultado.Lineas);
+            CollectionAssert.AreEqual(new[] { "ROLLO PAPEL CAMILLA · 100 m", "Ref. 17404" }, resultado.Lineas);
             Assert.AreEqual(@"2 etiquetas de 17404 (8437017506379) mandadas a \\RDS2016\etiquetasalcobendas.", resultado.Mensaje);
         }
 

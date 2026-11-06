@@ -14,6 +14,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Producto { get; set; }
         public List<string> Lineas { get; set; } = new List<string>();
         public int Fuente { get; set; }
+        /// <summary>
+        /// NestoAPI#840: la línea de la referencia (la última de <see cref="Lineas"/>), que se imprime en letra grande. Sin ella,
+        /// todas las líneas van en la pequeña.
+        /// </summary>
+        public string Referencia { get; set; }
         /// <summary>NestoAPI#762: el EAN-13 (13 cifras) de la etiqueta.</summary>
         public string CodigoBarras { get; set; }
     }
@@ -76,10 +81,27 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// </summary>
         public const int EAN_MODULO = 2;
         public const int EAN_MODULOS = 95;
-        public const int EAN_Y = 34;
-        /// <summary>Las barras: 80 puntos (10 mm). Debajo, las 13 cifras que pone la impresora (~20 puntos): acaba hacia el 136 de 160.</summary>
+
+        /// <summary>
+        /// NestoAPI#840 (sugerencia 1115 de Reina): la referencia va en grande debajo del nombre (en la tienda localizan el
+        /// producto por ella). En ZPL ^A0 de 26 × 26; en EPL la fuente 4 (24 de alto, 14 por carácter): caben 15 en 216 puntos.
+        /// </summary>
+        public const int REFERENCIA_Y = 20;
+        public const int REFERENCIA_ALTO = 26;
+        public const int REFERENCIA_ANCHO = 26;
+        public const int FUENTE_REFERENCIA_EPL = 4;
+        public const int CARACTERES_REFERENCIA = 15;
+
+        /// <summary>NestoAPI#840: 4 puntos por debajo de la referencia (20 + 26 = 46).</summary>
+        public const int EAN_Y = 50;
+        /// <summary>
+        /// Las barras: 80 puntos (10 mm). Debajo, las 13 cifras que pone la impresora (~22 puntos, <see cref="EAN_CIFRAS_ALTO"/>):
+        /// acaba hacia el 152 de 160. Si en la etiqueta de prueba las cifras se salen, bajar a 64 (la pistola lo lee igual).
+        /// </summary>
         public const int EAN_ALTO = 80;
-        /// <summary>Dos líneas de texto arriba en la fuente pequeña (8 × 12): el nombre y «Ref. 17404 · 100 m».</summary>
+        /// <summary>Lo que se reserva debajo de las barras para las cifras.</summary>
+        public const int EAN_CIFRAS_ALTO = 22;
+        /// <summary>Arriba el nombre en la fuente pequeña (8 × 12); la referencia, en grande en <see cref="REFERENCIA_Y"/>.</summary>
         public const int EAN_TEXTO_INTERLINEA = 14;
         public const int EAN_LINEAS = 2;
 
@@ -88,6 +110,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>
         /// NestoAPI#762: arriba el nombre (una línea, cortado si no cabe) y «Ref. 17404 · 100 m»; debajo, el EAN-13 con sus cifras.
+        /// NestoAPI#840: la referencia va en grande; si con el tamaño no cabe, el tamaño pasa al final del nombre
+        /// («ROLLO PAPEL CAMILLA · 100 m» y «Ref. 17404»), y si con «Ref. » tampoco cabe, va el número solo.
         /// </summary>
         public static EtiquetaProducto ComponerEan13(FichaProductoAlmacen ficha, string codigo)
         {
@@ -100,19 +124,51 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             string tamano = ficha?.Tamano > 0
                 ? (ficha.Tamano.Value.ToString(CultureInfo.InvariantCulture) + " " + (ficha.UnidadMedida ?? string.Empty).Trim()).Trim()
                 : null;
-            string nombre = Partir(ficha?.Nombre, CARACTERES_PEQUENA).FirstOrDefault() ?? string.Empty;
             string referencia = string.Join(" · ", new[] { "Ref. " + producto, tamano }.Where(t => !string.IsNullOrWhiteSpace(t)));
-            if (referencia.Length > CARACTERES_PEQUENA)
+            string tamanoEnElNombre = null;
+            if (referencia.Length > CARACTERES_REFERENCIA)
             {
-                referencia = referencia.Substring(0, CARACTERES_PEQUENA).TrimEnd();
+                tamanoEnElNombre = tamano;
+                referencia = ("Ref. " + producto).Length <= CARACTERES_REFERENCIA ? "Ref. " + producto : (producto ?? string.Empty);
+                if (referencia.Length > CARACTERES_REFERENCIA)
+                {
+                    referencia = referencia.Substring(0, CARACTERES_REFERENCIA).TrimEnd();
+                }
+            }
+            string nombre;
+            if (string.IsNullOrWhiteSpace(tamanoEnElNombre))
+            {
+                nombre = Partir(ficha?.Nombre, CARACTERES_PEQUENA).FirstOrDefault() ?? string.Empty;
+            }
+            else
+            {
+                string sufijo = " · " + tamanoEnElNombre;
+                string corto = Partir(ficha?.Nombre, Math.Max(1, CARACTERES_PEQUENA - sufijo.Length)).FirstOrDefault();
+                nombre = string.IsNullOrWhiteSpace(corto) ? tamanoEnElNombre : corto + sufijo;
+                if (nombre.Length > CARACTERES_PEQUENA)
+                {
+                    nombre = nombre.Substring(0, CARACTERES_PEQUENA).TrimEnd();
+                }
             }
             return new EtiquetaProducto
             {
                 Producto = producto,
                 Lineas = new[] { nombre, referencia }.Where(l => !string.IsNullOrWhiteSpace(l)).ToList(),
+                Referencia = string.IsNullOrWhiteSpace(referencia) ? null : referencia,
                 Fuente = FUENTE_PEQUENA,
                 CodigoBarras = limpio
             };
+        }
+
+        /// <summary>NestoAPI#840: las líneas en pequeño (todas menos la de la referencia, que va aparte y en grande).</summary>
+        private static List<string> LineasPequenas(EtiquetaProducto etiqueta)
+        {
+            List<string> lineas = (etiqueta.Lineas ?? new List<string>()).ToList();
+            if (etiqueta.Referencia != null && lineas.Count > 0 && lineas[lineas.Count - 1] == etiqueta.Referencia)
+            {
+                lineas.RemoveAt(lineas.Count - 1);
+            }
+            return lineas;
         }
 
         /// <summary>NestoAPI#762: en EPL2, EAN-13 (E30) con las cifras debajo (B). La impresora pone el dígito de control: van 12.</summary>
@@ -123,10 +179,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             epl.Append("q").Append(GeneradorEtiquetasHueco.ANCHO).Append("\r\n");
             epl.Append("Q").Append(GeneradorEtiquetasHueco.ALTO).Append(",").Append(GeneradorEtiquetasHueco.SEPARACION).Append("\r\n");
             epl.Append("N\r\n");
-            for (int i = 0; i < etiqueta.Lineas.Count; i++)
+            List<string> pequenas = LineasPequenas(etiqueta);
+            for (int i = 0; i < pequenas.Count; i++)
             {
                 epl.Append(string.Format(CultureInfo.InvariantCulture, "A{0},{1},0,{2},1,1,N,\"{3}\"\r\n",
-                    MARGEN_X, TEXTO_Y + i * EAN_TEXTO_INTERLINEA, FUENTE_PEQUENA, Texto(etiqueta.Lineas[i])));
+                    MARGEN_X, TEXTO_Y + i * EAN_TEXTO_INTERLINEA, FUENTE_PEQUENA, Texto(pequenas[i])));
+            }
+            if (etiqueta.Referencia != null)
+            {
+                epl.Append(string.Format(CultureInfo.InvariantCulture, "A{0},{1},0,{2},1,1,N,\"{3}\"\r\n",
+                    MARGEN_X, REFERENCIA_Y, FUENTE_REFERENCIA_EPL, Texto(etiqueta.Referencia)));
             }
             epl.Append(string.Format(CultureInfo.InvariantCulture, "B{0},{1},0,E30,{2},{2},{3},B,\"{4}\"\r\n",
                 EanX, EAN_Y, EAN_MODULO, EAN_ALTO, etiqueta.CodigoBarras.Substring(0, 12)));
@@ -139,9 +201,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             var zpl = new StringBuilder();
             zpl.Append(ComandosZpl.Inicio());
-            for (int i = 0; i < etiqueta.Lineas.Count; i++)
+            List<string> pequenas = LineasPequenas(etiqueta);
+            for (int i = 0; i < pequenas.Count; i++)
             {
-                zpl.Append(ComandosZpl.Texto(MARGEN_X, TEXTO_Y + i * EAN_TEXTO_INTERLINEA, FUENTE_PEQUENA, Limpio(etiqueta.Lineas[i])));
+                zpl.Append(ComandosZpl.Texto(MARGEN_X, TEXTO_Y + i * EAN_TEXTO_INTERLINEA, FUENTE_PEQUENA, Limpio(pequenas[i])));
+            }
+            if (etiqueta.Referencia != null)
+            {
+                zpl.Append(ComandosZpl.TextoEscalable(MARGEN_X, REFERENCIA_Y, REFERENCIA_ALTO, REFERENCIA_ANCHO, Limpio(etiqueta.Referencia)));
             }
             zpl.Append(ComandosZpl.Ean13(EanX, EAN_Y, EAN_MODULO, EAN_ALTO, etiqueta.CodigoBarras));
             zpl.Append(ComandosZpl.Fin(copias));
