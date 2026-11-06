@@ -192,11 +192,20 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
                 RetornosActivos = RetornosActivos(ParametrosUsuarioController.LeerParametro(
                     Constantes.Empresas.EMPRESA_POR_DEFECTO, "(defecto)", AgenciaRemotaCTT.CLAVE_RETORNOS_ACTIVOS))
             };
+            return Componer(configuracion, registro);
+        }
+
+        /// <summary>
+        /// La composición de producción de CTT (sin BD: la configuración ya leída). Transitorios (5xx, timeout, conexión)
+        /// reintentados en el punto único (#288). CTT sigue por lotes (listado por fechas): el poll hace una o pocas
+        /// llamadas en vez de una por envío. NestoAPI#726: el decorador conserva la gestión en tránsito y la etiqueta PDF.
+        /// </summary>
+        internal static IAgenciaRemota Componer(ConfiguracionCTT configuracion, RegistroIntercambiosRemotos registro = null)
+        {
+            registro = registro ?? new RegistroIntercambiosRemotos();
             var cliente = new ClienteRestCTT(configuracion, registro: registro);
-            // Transitorios (5xx, timeout, conexión) reintentados en el punto único (#288). CTT sigue por
-            // lotes (listado por fechas): el poll hace una o pocas llamadas en vez de una por envío.
             var agencia = new AgenciaRemotaCTT(cliente, configuracion, registro);
-            return new AgenciaRemotaPorLotesConReintentos(agencia, agencia);
+            return new AgenciaRemotaCTTConReintentos(agencia);
         }
 
         public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => CrearGestionRemota(db);

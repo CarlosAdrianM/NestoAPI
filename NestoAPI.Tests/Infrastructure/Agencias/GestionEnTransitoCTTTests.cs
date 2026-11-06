@@ -151,6 +151,68 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(ex.Message, "CTT respondió 400");
         }
 
+        // ---------- NestoAPI#726 (06/11/26): el camino de producción ----------
+        // En producción la fábrica no da AgenciaRemotaCTT sino su decorador de reintentos (PerfilAgenciaCTT.Componer). El
+        // decorador de antes solo exponía IAgenciaRemota e ISeguimientoPorLotes, el «as IGestionEnTransitoAgenciaRemota»
+        // daba null y Gestiones contestaba «La agencia CTT no tiene gestión en tránsito» con los envíos reales.
+
+        [TestMethod]
+        public void ComposicionDeProduccion_ConservaLaGestionEnTransitoYLaEtiquetaPdf()
+        {
+            IAgenciaRemota produccion = NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.Componer(
+                new ConfiguracionCTT(BASE, "gestion726-" + Guid.NewGuid().ToString("N"), "secreto", "8090300001", new RemitenteCTT()));
+
+            Assert.IsInstanceOfType(produccion, typeof(IGestionEnTransitoAgenciaRemota), "Gestiones lo comprueba con «as»");
+            Assert.IsInstanceOfType(produccion, typeof(IEtiquetaPdfRemota), "La etiqueta PDF de las recogidas (#494) también");
+            Assert.IsInstanceOfType(produccion, typeof(ISeguimientoPorLotes), "El poll sigue por lotes");
+        }
+
+        [TestMethod]
+        public void ComposicionDeProduccion_GestionesDeUnEnvioTramitadoDeCtt_AdmiteCambiarLaFecha()
+        {
+            IAgenciaRemota produccion = NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.Componer(
+                new ConfiguracionCTT(BASE, "gestion726-" + Guid.NewGuid().ToString("N"), "secreto", "8090300001", new RemitenteCTT()));
+            var envio = new NestoAPI.Models.EnviosAgencia
+            {
+                Numero = 250655,
+                Agencia = NestoAPI.Models.Constantes.Agencias.AGENCIA_CTT,
+                Estado = NestoAPI.Models.Constantes.Agencias.ESTADO_TRAMITADO,
+                CodigoBarras = ALBARAN
+            };
+
+            GestionesEnvioDTO gestiones = GestionEnTransitoEnvio.Calcular(envio, produccion as IGestionEnTransitoAgenciaRemota, "CTT");
+
+            Assert.IsTrue(gestiones.CambiarFecha);
+            Assert.IsTrue(gestiones.PararEnVuelo);
+            Assert.IsTrue(gestiones.CambiarDireccion);
+        }
+
+        [TestMethod]
+        public async Task Decorador_ReenviaLaGestionACtt()
+        {
+            handler.Responder("rpc-stop-on-the-fly", HttpStatusCode.NoContent, string.Empty);
+            handler.Responder("rpc-change-delivery-options", HttpStatusCode.Accepted, string.Empty);
+            IGestionEnTransitoAgenciaRemota decorada = new AgenciaRemotaCTTConReintentos(agencia);
+
+            Assert.IsTrue((await decorada.PararEnVueloAsync(ALBARAN)).Exito);
+            Assert.IsTrue((await decorada.CambiarFechaEntregaAsync(ALBARAN, new DateTime(2026, 11, 9))).Exito);
+
+            Assert.IsTrue(handler.Peticiones.Any(p => p.RequestUri.AbsolutePath == RUTA + "rpc-stop-on-the-fly"));
+            Assert.IsTrue(handler.Peticiones.Any(p => p.RequestUri.AbsolutePath == RUTA + "rpc-change-delivery-options"));
+        }
+
+        [TestMethod]
+        public async Task Decorador_ParadaEnVueloQueFallaPorTransitorio_NoSeReintenta()
+        {
+            handler.Responder("rpc-stop-on-the-fly", HttpStatusCode.ServiceUnavailable, "{}");
+            IGestionEnTransitoAgenciaRemota decorada = new AgenciaRemotaCTTConReintentos(agencia);
+
+            await Assert.ThrowsExceptionAsync<AgenciaRemotaException>(() => decorada.PararEnVueloAsync(ALBARAN));
+
+            Assert.AreEqual(1, handler.Peticiones.Count(p => p.RequestUri.AbsolutePath.EndsWith("rpc-stop-on-the-fly")),
+                "No idempotente: tras un fallo CTT puede haberlo hecho ya");
+        }
+
         private class HandlerFalso : HttpMessageHandler
         {
             private readonly Dictionary<string, (HttpStatusCode codigo, string cuerpo)> _respuestas = new Dictionary<string, (HttpStatusCode, string)>();

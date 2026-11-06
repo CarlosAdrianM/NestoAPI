@@ -106,6 +106,42 @@ namespace NestoAPI.Infraestructure.Agencias
     }
 
     /// <summary>
+    /// NestoAPI#726 (06/11/26): el decorador de CTT. <see cref="AgenciaRemotaPorLotesConReintentos"/> solo expone
+    /// <see cref="IAgenciaRemota"/> y <see cref="ISeguimientoPorLotes"/>, así que en producción (la fábrica devuelve el
+    /// decorador, no <see cref="CTT.AgenciaRemotaCTT"/>) se perdían por el camino las capacidades que comprueban los
+    /// llamantes con «is»/«as»: la gestión en tránsito (Gestiones decía «La agencia CTT no tiene gestión en tránsito»)
+    /// y la etiqueta en PDF de las recogidas (#494). Aquí se reenvían tal cual. La gestión en tránsito SIN reintentos:
+    /// parar en vuelo y el retorno no son idempotentes (tras un timeout CTT puede haberlo hecho ya; el retorno daría
+    /// un segundo envío) y la fecha y la dirección se dejan igual por prudencia (el usuario reintenta con el error claro).
+    /// La etiqueta en PDF es una lectura: con reintentos.
+    /// </summary>
+    public class AgenciaRemotaCTTConReintentos : AgenciaRemotaPorLotesConReintentos, IGestionEnTransitoAgenciaRemota, IEtiquetaPdfRemota
+    {
+        private readonly IGestionEnTransitoAgenciaRemota _gestion;
+        private readonly IEtiquetaPdfRemota _etiquetaPdf;
+        private readonly AsyncRetryPolicy _politicaPdf;
+
+        public AgenciaRemotaCTTConReintentos(CTT.AgenciaRemotaCTT interior, AsyncRetryPolicy politica = null)
+            : base(interior, interior, politica)
+        {
+            _gestion = interior;
+            _etiquetaPdf = interior;
+            _politicaPdf = politica ?? PoliticasAgenciasRemotas.CrearPoliticaTransitorios();
+        }
+
+        public Task<ResultadoOperacionRemota> PararEnVueloAsync(string albaran) => _gestion.PararEnVueloAsync(albaran);
+
+        public Task<string> CrearRetornoAsync(string albaran) => _gestion.CrearRetornoAsync(albaran);
+
+        public Task<ResultadoOperacionRemota> CambiarFechaEntregaAsync(string albaran, DateTime fecha) => _gestion.CambiarFechaEntregaAsync(albaran, fecha);
+
+        public Task<ResultadoOperacionRemota> CambiarDireccionEntregaAsync(string albaran, DireccionEntregaRemota direccion)
+            => _gestion.CambiarDireccionEntregaAsync(albaran, direccion);
+
+        public Task<byte[]> ObtenerEtiquetaPdfAsync(string albaran) => _politicaPdf.ExecuteAsync(() => _etiquetaPdf.ObtenerEtiquetaPdfAsync(albaran));
+    }
+
+    /// <summary>
     /// Decorador de <see cref="ISeguimientoAgenciaRemota"/> (agencias que solo siguen, hoy GLS) con
     /// la misma política de transitorios. Hoy GLS no deja escapar transitorios (los convierte en
     /// Desconocido), pero el decorador cubre cualquier excepción transitoria futura del cliente.
