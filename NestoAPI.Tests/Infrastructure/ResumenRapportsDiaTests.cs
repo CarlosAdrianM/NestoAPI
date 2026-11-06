@@ -392,6 +392,91 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
         }
 
+        // ===== NestoAPI#836 (sugerencia 752 de Sancho): el vendedor que tenía el cliente AL HACER el rapport =====
+
+        private static readonly DateTime HORA_RAPPORT = FECHA.AddHours(10);
+
+        private static ResumenRapportsDia.CambioVendedor Cambio(string cliente, DateTime fecha, string anterior)
+            => new ResumenRapportsDia.CambioVendedor { Cliente = cliente, Fecha = fecha, VendedorAnterior = anterior };
+
+        /// <summary>
+        /// «Quitar de mi listado» en el mismo rapport: Nesto guarda el rapport y llama a DejarDeVisitar, que pasa el cliente a un
+        /// telefónico (LogModificaciones: ValorAntiguo = el autor, minutos después). Al montar el resumen, la ficha ya es de LHY.
+        /// </summary>
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_QuitadoDeMiListadoEnElRapport_NoSale_836()
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport("JE ", "12345     ", "LHY");
+            rapport.Fecha = HORA_RAPPORT;
+            Assert.IsTrue(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()), "sin mirar el cambio salía (el fallo)");
+
+            ResumenRapportsDia.AplicarCambiosDeVendedor(new[] { rapport }, new[] { Cambio("12345", HORA_RAPPORT.AddMinutes(1), "JE ") });
+
+            Assert.AreEqual("JE", rapport.VendedorAlHacerElRapport);
+            Assert.IsFalse(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
+            string html = ResumenRapportsDia.CabeceraHtml(FECHA, new[] { rapport }, Fichas(), new[] { "JE" });
+            Assert.IsFalse(html.Contains("Rapports a clientes de otro vendedor"));
+        }
+
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_CambioPosteriorQueEraDelAutor_NoSale_836()
+        {
+            // Rapport sin vendedor (deducido del usuario) de un cliente que era suyo y pasa a otro presencial días después
+            ResumenRapportsDia.Rapport rapport = Rapport(null, "12345", "JE ");
+            rapport.Usuario = "DLopez";
+            rapport.Fecha = HORA_RAPPORT;
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+
+            ResumenRapportsDia.AplicarCambiosDeVendedor(new[] { rapport }, new[] { Cambio("12345", HORA_RAPPORT.AddDays(2), "DV") });
+
+            Assert.IsFalse(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
+        }
+
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_CambioAnteriorAlRapport_SigueSaliendo_836()
+        {
+            // El cliente dejó de ser de JE antes del rapport: cuando lo hizo ya era de LHY
+            ResumenRapportsDia.Rapport rapport = Rapport("JE ", "12345", "LHY");
+            rapport.Fecha = HORA_RAPPORT;
+
+            ResumenRapportsDia.AplicarCambiosDeVendedor(new[] { rapport }, new[] { Cambio("12345", HORA_RAPPORT.AddHours(-1), "JE ") });
+
+            Assert.IsNull(rapport.VendedorAlHacerElRapport);
+            Assert.IsTrue(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
+        }
+
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_CambioPosteriorPeroNoEraDelAutor_SigueSaliendo_836()
+        {
+            // Era de LHY al hacer el rapport (y luego pasó a otro telefónico y volvió): el primer cambio posterior dice LHY
+            ResumenRapportsDia.Rapport rapport = Rapport("JE ", "12345", "LHY");
+            rapport.Fecha = HORA_RAPPORT;
+
+            ResumenRapportsDia.AplicarCambiosDeVendedor(new[] { rapport }, new[]
+            {
+                Cambio("12345", HORA_RAPPORT.AddHours(3), "MPP"),
+                Cambio("12345", HORA_RAPPORT.AddHours(1), "LHY"),
+                Cambio("99999", HORA_RAPPORT.AddHours(1), "JE ")
+            });
+
+            Assert.AreEqual("LHY", rapport.VendedorAlHacerElRapport);
+            Assert.IsTrue(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
+        }
+
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_TelefonicoSinCambios_ReglaDeSiempre_836()
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport("JE ", "12345", "LHY");
+            rapport.Fecha = HORA_RAPPORT;
+
+            ResumenRapportsDia.AplicarCambiosDeVendedor(new[] { rapport }, null);
+
+            Assert.IsNull(rapport.VendedorAlHacerElRapport);
+            Assert.IsTrue(ResumenRapportsDia.EsDeClienteDeTelefonico(rapport, Fichas()));
+            Assert.IsTrue(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
+            Assert.IsFalse(ResumenRapportsDia.EsDeClienteDeOtroVendedor(Rapport("JE ", "12345", "JE "), Fichas()));
+        }
+
         [TestMethod]
         public void LimpiarHtmlDeIA_QuitaElBloqueDeCodigo()
         {

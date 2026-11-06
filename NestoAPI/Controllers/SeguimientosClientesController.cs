@@ -387,6 +387,17 @@ namespace NestoAPI.Controllers
             public string Vendedor { get; set; }
         }
 
+        /// <summary>
+        /// NestoAPI#836: los cambios de Clientes.Vendedor (los apunta trgClientesUpd en LogModificaciones: Numero = cliente,
+        /// ValorAntiguo = el vendedor de antes) desde el día del resumen, de los clientes con rapport ese día. Una sola consulta.
+        /// </summary>
+        internal const string SQL_CAMBIOS_VENDEDOR_DESDE = @"
+SELECT RTRIM(l.Numero) AS Cliente, l.Fecha, RTRIM(l.ValorAntiguo) AS VendedorAnterior
+FROM LogModificaciones l WITH (NOLOCK)
+WHERE l.Empresa = @empresa AND l.Tabla = 'Clientes' AND l.Columna = 'Vendedor' AND l.Fecha >= @desde
+  AND l.Numero IN (SELECT s.Número FROM SeguimientoCliente s WITH (NOLOCK)
+                   WHERE s.Empresa = @empresa AND s.Fecha >= @desde AND s.Fecha < @hasta AND s.Número IS NOT NULL)";
+
         internal class DatosResumenDia
         {
             public List<ResumenRapportsDia.Rapport> Rapports { get; set; } = new List<ResumenRapportsDia.Rapport>();
@@ -427,7 +438,8 @@ namespace NestoAPI.Controllers
                     Comentarios = s.Comentarios,
                     Pedido = s.Pedido,
                     Usuario = s.Usuario,
-                    Estado = s.Estado
+                    Estado = s.Estado,
+                    Fecha = s.Fecha
                 })
                 .ToList();
 
@@ -441,6 +453,26 @@ namespace NestoAPI.Controllers
                     .GroupBy(p => p.Usuario.Trim(), StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(g => g.Key, g => g.First().Valor.Trim(), StringComparer.OrdinalIgnoreCase);
                 ResumenRapportsDia.DeducirVendedores(delDia, vendedorPorUsuario);
+            }
+
+            // NestoAPI#836: el vendedor que tenía cada cliente al hacer el rapport, si ha cambiado después (una consulta)
+            if (delDia.Any())
+            {
+                try
+                {
+                    List<ResumenRapportsDia.CambioVendedor> cambios = db.Database
+                        .SqlQuery<ResumenRapportsDia.CambioVendedor>(SQL_CAMBIOS_VENDEDOR_DESDE,
+                            new System.Data.SqlClient.SqlParameter("@empresa", empresa),
+                            new System.Data.SqlClient.SqlParameter("@desde", fechaSinHora),
+                            new System.Data.SqlClient.SqlParameter("@hasta", fechaDiaSiguiente))
+                        .ToList();
+                    ResumenRapportsDia.AplicarCambiosDeVendedor(delDia, cambios);
+                }
+                catch (Exception ex)
+                {
+                    // Sin esto el resumen sale como antes (con el vendedor de ahora): no se pierde el correo
+                    ElmahHelper.Log(new Exception($"NestoAPI#836: no se han podido leer los cambios de vendedor para el resumen de rapports del {fechaSinHora:dd/MM/yyyy}: {ex.Message}", ex));
+                }
             }
 
             var delEquipo = new HashSet<string>(vendedores.Select(v => v.Trim()), StringComparer.OrdinalIgnoreCase);

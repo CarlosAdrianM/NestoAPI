@@ -46,6 +46,25 @@ namespace NestoAPI.Infraestructure.Rapports
             /// llamó y no lo cogió). Solo los vigentes cuentan como rapport (sugerencia 520).
             /// </summary>
             public short Estado { get; set; }
+            /// <summary>NestoAPI#836: cuándo se hizo el rapport (SeguimientoCliente.Fecha; Nesto le pone la hora al crearlo).</summary>
+            public DateTime Fecha { get; set; }
+            /// <summary>
+            /// NestoAPI#836: el vendedor que tenía la ficha al hacer el rapport, si ha cambiado DESPUÉS (el valor anterior del primer
+            /// cambio de Clientes.Vendedor en LogModificaciones posterior al rapport). Null = no ha cambiado desde entonces: el de
+            /// la ficha (<see cref="VendedorCliente"/>) es el de entonces. Lo pone <see cref="AplicarCambiosDeVendedor"/>.
+            /// </summary>
+            public string VendedorAlHacerElRapport { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#836: un cambio de Clientes.Vendedor tal como lo apunta trgClientesUpd en LogModificaciones: Numero = el
+        /// cliente (sin contacto), Fecha = cuándo, ValorAntiguo = el vendedor de antes.
+        /// </summary>
+        public class CambioVendedor
+        {
+            public string Cliente { get; set; }
+            public DateTime Fecha { get; set; }
+            public string VendedorAnterior { get; set; }
         }
 
         public class FichaVendedor
@@ -136,12 +155,55 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         /// <summary>
+        /// NestoAPI#836 (sugerencia 752 de Sancho): a cada rapport le pone el vendedor que tenía la ficha cuando se hizo, si
+        /// después ha cambiado: el valor anterior del PRIMER cambio de vendedor del cliente posterior al rapport (si solo hay
+        /// uno, que es lo normal, es también el último). Caso típico: «Quitar de mi listado» en el mismo rapport (Nesto guarda
+        /// el rapport y luego llama a PUT Clientes/DejarDeVisitar, que cambia el vendedor; la marca no se guarda en
+        /// SeguimientoCliente, el rastro es ese cambio). LogModificaciones apunta el cliente sin contacto: vale para todos.
+        /// </summary>
+        public static void AplicarCambiosDeVendedor(IEnumerable<Rapport> rapports, IEnumerable<CambioVendedor> cambios)
+        {
+            ILookup<string, CambioVendedor> porCliente = (cambios ?? Enumerable.Empty<CambioVendedor>())
+                .Where(c => !string.IsNullOrWhiteSpace(c?.Cliente))
+                .ToLookup(c => c.Cliente.Trim(), StringComparer.OrdinalIgnoreCase);
+            foreach (Rapport rapport in rapports ?? Enumerable.Empty<Rapport>())
+            {
+                string cliente = rapport?.Cliente?.Trim();
+                if (string.IsNullOrEmpty(cliente))
+                {
+                    continue;
+                }
+                CambioVendedor primero = porCliente[cliente]
+                    .Where(c => c.Fecha > rapport.Fecha)
+                    .OrderBy(c => c.Fecha)
+                    .FirstOrDefault();
+                rapport.VendedorAlHacerElRapport = primero == null ? null : primero.VendedorAnterior?.Trim() ?? string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#836: el cliente era del autor cuando hizo el rapport y el vendedor ha cambiado después (p. ej. lo quitó de su
+        /// listado en ese mismo rapport). Entonces no es «cliente de otro vendedor», por ninguna de las dos reglas.
+        /// </summary>
+        public static bool EraSuyoAlHacerElRapport(Rapport rapport)
+        {
+            string autor = rapport?.Vendedor?.Trim();
+            return !string.IsNullOrEmpty(autor) && rapport.VendedorAlHacerElRapport != null
+                && string.Equals(rapport.VendedorAlHacerElRapport.Trim(), autor, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// El rapport es de un cliente que lleva otro vendedor: o lo dice la regla de siempre
         /// (presencial en cliente de telefónico) o el rapport se guardó sin vendedor y el cliente
-        /// es de otro.
+        /// es de otro. NestoAPI#836: salvo que el cliente fuera del autor cuando hizo el rapport
+        /// (<see cref="EraSuyoAlHacerElRapport"/>).
         /// </summary>
         public static bool EsDeClienteDeOtroVendedor(Rapport rapport, IDictionary<string, FichaVendedor> fichas)
         {
+            if (EraSuyoAlHacerElRapport(rapport))
+            {
+                return false;
+            }
             if (EsDeClienteDeTelefonico(rapport, fichas))
             {
                 return true;
