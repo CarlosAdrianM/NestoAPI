@@ -90,7 +90,8 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         {
             new ProductoParaChequeRegalo { Numero = PRODUCTO_CHEQUE, Nombre = "CHEQUE REGALO 50 € (OCT 2026)", Grupo = "COS", Ficticio = true, IvaRepercutido = "G21" },
             new ProductoParaChequeRegalo { Numero = "COSM", Nombre = "CREMA FACIAL", Grupo = "COS", IvaRepercutido = "G21" },
-            new ProductoParaChequeRegalo { Numero = "CURSO", Nombre = "CURSO DE MAQUILLAJE", Grupo = "CUR", IvaRepercutido = "G21" },
+            // Como en la ficha real: todos los cursos son ficticios (y aun así cuentan para el cheque)
+            new ProductoParaChequeRegalo { Numero = "CURSO", Nombre = "CURSO DE MAQUILLAJE", Grupo = "CUR", Ficticio = true, IvaRepercutido = "G21" },
             new ProductoParaChequeRegalo { Numero = "PACK", Nombre = "PACK 26 NAVIDAD AINHOA", Grupo = "COS", IvaRepercutido = "G21" },
             new ProductoParaChequeRegalo { Numero = "PELU", Nombre = "TINTE", Grupo = "PEL", IvaRepercutido = "G21" },
             new ProductoParaChequeRegalo { Numero = "TiCKET", Nombre = "TICKET DESCUENTO", Grupo = "COS", Ficticio = true, IvaRepercutido = "G21" }
@@ -456,6 +457,29 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             PlanCanjeChequeRegalo plan = await Comprobar(lineas, pedidoNuevo: false);
 
             Assert.IsNotNull(plan.ChequeAReservar);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_UnCursoFicticioSolo_SuperaElMinimo()
+        {
+            // Sugerencia 1116 (Pilar, 06/11/26): el pedido 930188 era un curso de 450 € y contaba 0 € porque los cursos
+            // son ficticios en la ficha. La campaña decidió que los cursos cuentan (tablero «cursos», guía del cheque).
+            PlanCanjeChequeRegalo plan = await Comprobar(new List<LinPedidoVta> { Linea("CURSO", 450), LineaCheque() });
+
+            Assert.IsNotNull(plan.ChequeAReservar);
+        }
+
+        [TestMethod]
+        public void ComputaParaMinimo_FicticioSoloCuentaSiEsCurso()
+        {
+            Assert.IsTrue(ReglasCanjeChequeRegalo.ComputaParaMinimo(Constantes.TiposLineaVenta.PRODUCTO,
+                new ProductoParaChequeRegalo { Numero = "90037", Nombre = "BIOESTIMULACIÓN", Grupo = "CUR", Ficticio = true }, Campana()));
+            Assert.IsTrue(ReglasCanjeChequeRegalo.ComputaParaMinimo(Constantes.TiposLineaVenta.PRODUCTO,
+                new ProductoParaChequeRegalo { Numero = "90037", Nombre = "BIOESTIMULACIÓN", Grupo = "CUR ", Ficticio = true }, Campana()), "Grupo con relleno");
+            Assert.IsFalse(ReglasCanjeChequeRegalo.ComputaParaMinimo(Constantes.TiposLineaVenta.PRODUCTO,
+                new ProductoParaChequeRegalo { Numero = "TiCKET", Nombre = "TICKET DESCUENTO", Grupo = "COS", Ficticio = true }, Campana()));
+            Assert.IsFalse(ReglasCanjeChequeRegalo.ComputaParaMinimo(Constantes.TiposLineaVenta.PRODUCTO,
+                new ProductoParaChequeRegalo { Numero = PRODUCTO_CHEQUE, Nombre = "CHEQUE REGALO", Grupo = "COS", Ficticio = true }, Campana()), "El propio cheque");
         }
 
         [TestMethod]

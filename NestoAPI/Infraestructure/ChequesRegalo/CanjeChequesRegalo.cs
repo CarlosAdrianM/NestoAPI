@@ -217,11 +217,19 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         /// ¿Suma para el mínimo del pedido que canjea? Solo líneas de producto (no cuentas contables: portes, reembolso,
         /// cuotas, reparaciones; ni texto ni inmovilizado), que no sean ficticias (el propio cheque tampoco), cuyo nombre
         /// no empiece por uno de los prefijos de la campaña («PACK 26») y cuyo grupo no esté excluido («PEL»). Los
-        /// excluidos pueden ir en el pedido y llevarse el descuento: solo no suman. Los cursos no suman: son ficticios.
+        /// excluidos pueden ir en el pedido y llevarse el descuento: solo no suman.
+        /// Los cursos SÍ suman aunque su ficha sea ficticia (todos los del grupo CUR lo son): decisión «cursos» del
+        /// tablero de la campaña (Carlos, 07/10/26) y la guía del cheque. El 06/11/26 (sugerencia 1116 de Pilar) el
+        /// pedido 930188, un curso de 450 €, contaba 0 € porque la regla los excluía con los demás ficticios.
         /// </summary>
         public static bool ComputaParaMinimo(byte? tipoLinea, ProductoParaChequeRegalo producto, CampanaCanjeChequeRegalo campana)
         {
-            if (tipoLinea != Constantes.TiposLineaVenta.PRODUCTO || producto == null || producto.Ficticio)
+            if (tipoLinea != Constantes.TiposLineaVenta.PRODUCTO || producto == null)
+            {
+                return false;
+            }
+            string grupo = producto.Grupo?.Trim() ?? string.Empty;
+            if (producto.Ficticio && !EsCurso(grupo))
             {
                 return false;
             }
@@ -230,9 +238,12 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 return false;
             }
-            string grupo = producto.Grupo?.Trim() ?? string.Empty;
             return !campana.Grupos().Any(g => string.Equals(g, grupo, StringComparison.OrdinalIgnoreCase));
         }
+
+        /// <summary>Los cursos (grupo CUR) son ficticios en la ficha pero cuentan para el cheque como un producto más.</summary>
+        internal static bool EsCurso(string grupo)
+            => string.Equals(grupo?.Trim(), Constantes.Productos.GRUPO_CURSOS, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>Base imponible (después de descuentos) de las líneas que suman para el mínimo.</summary>
         public static decimal BaseComputable(IEnumerable<LinPedidoVta> lineas, IDictionary<string, ProductoParaChequeRegalo> productos,
@@ -290,7 +301,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
 
         internal static string TextoExclusiones(CampanaCanjeChequeRegalo campana)
         {
-            var partes = new List<string> { "portes y demás cuentas contables", "productos ficticios" };
+            var partes = new List<string> { "portes y demás cuentas contables", "productos ficticios (los cursos sí cuentan)" };
             partes.AddRange(campana.Prefijos().Select(p => $"«{p}»"));
             partes.AddRange(campana.Grupos().Select(g => $"grupo {g}"));
             return " (base imponible, sin " + string.Join(", ", partes.Take(partes.Count - 1)) + " ni " + partes.Last() + ")";

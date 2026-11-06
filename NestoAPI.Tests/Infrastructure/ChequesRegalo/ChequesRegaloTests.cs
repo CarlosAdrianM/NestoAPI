@@ -162,6 +162,28 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         }
 
         [TestMethod]
+        public void LosCursosSiCuentanParaGenerarAunqueSeanFicticios()
+        {
+            // Decisión «cursos» del tablero (07/10/26): generan cheque y cuentan para el mínimo. En la ficha son ficticios.
+            FacturaParaChequeRegalo f = Factura("CV2600641", 13);
+            f.LineasDeProducto = new List<LineaFacturaParaChequeRegalo> { Linea("CV2600641", "1", "CURSO MICRONEEDLING", "CUR", 90, ficticio: true) };
+            f.BaseProducto = 90;
+            f.BaseTotal = 90;
+
+            DecisionChequeRegalo d = Decidir(Campana(), f);
+
+            Assert.IsTrue(d.Genera, d.Motivo);
+        }
+
+        [TestMethod]
+        public void ElSqlDeFacturasCuentaLosCursosComoProducto()
+        {
+            string sql = RepositorioChequesRegalo.SQL_FACTURAS_DEL_CLIENTE;
+
+            StringAssert.Contains(sql, "ISNULL(p.Ficticio, 0) = 0 OR RTRIM(p.Grupo) = 'CUR'");
+        }
+
+        [TestMethod]
         public void SinLasColumnasDeExclusiones_LaPeluqueriaSiGenera()
         {
             // Script c4 sin lanzar: la campaña sale sin exclusiones, como en el canje

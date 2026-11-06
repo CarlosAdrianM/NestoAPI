@@ -377,11 +377,12 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         }
 
         // Empresa normal y espejo (la serie GB se factura en la espejo). Productos.Ficticio por empresa de la línea.
+        // Los cursos (grupo CUR) son ficticios en la ficha pero son producto para el cheque (ReglasCanjeChequeRegalo.EsCurso).
         internal const string SQL_FACTURAS_DEL_CLIENTE = @"
 SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Numero, f.Fecha, RTRIM(f.Serie) AS Serie, RTRIM(f.[Nº Cliente]) AS Cliente,
-       CAST(ISNULL(SUM(CASE WHEN l.TipoLinea = 1 AND ISNULL(p.Ficticio, 0) = 0 THEN l.[Base Imponible] ELSE 0 END), 0) AS decimal(18,4)) AS BaseProducto,
+       CAST(ISNULL(SUM(CASE WHEN l.TipoLinea = 1 AND (ISNULL(p.Ficticio, 0) = 0 OR RTRIM(p.Grupo) = 'CUR') THEN l.[Base Imponible] ELSE 0 END), 0) AS decimal(18,4)) AS BaseProducto,
        CAST(ISNULL(SUM(l.[Base Imponible]), 0) AS decimal(18,4)) AS BaseTotal,
-       CAST(MAX(CASE WHEN l.TipoLinea = 1 AND ISNULL(p.Ficticio, 0) = 0 AND l.Cantidad < 0 THEN 1 ELSE 0 END) AS bit) AS TieneDevolucion
+       CAST(MAX(CASE WHEN l.TipoLinea = 1 AND (ISNULL(p.Ficticio, 0) = 0 OR RTRIM(p.Grupo) = 'CUR') AND l.Cantidad < 0 THEN 1 ELSE 0 END) AS bit) AS TieneDevolucion
 FROM CabFacturaVta f
      LEFT JOIN LinPedidoVta l ON l.Empresa = f.Empresa AND l.[Nº Factura] = f.[Número]
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
