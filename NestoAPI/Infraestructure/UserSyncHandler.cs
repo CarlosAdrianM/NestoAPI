@@ -25,6 +25,11 @@ namespace NestoAPI.Infraestructure
                 HttpContext.Current.User = principal;
             }
 
+            // NestoAPI#823: el nombre del token SIN resolver, para las reglas que dependen de la aplicación y no de la persona
+            // (UsuarioAuditoriaHelper.Persona cambia «Alfredo» de Ariadna por «NUEVAVISION\Alfredo»). AsyncLocal: llega a todo
+            // lo que cuelga de esta petición, también tras los await.
+            UsuarioAuditoriaHelper.FijarNombreDelToken(principal?.Identity?.IsAuthenticated == true ? principal.Identity.Name : null);
+
             return await base.SendAsync(request, cancellationToken);
         }
     }

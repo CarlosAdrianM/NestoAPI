@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Security.Principal;
+using System.Threading;
 using System.Transactions;
 
 namespace NestoAPI.Infraestructure
@@ -99,6 +100,13 @@ namespace NestoAPI.Infraestructure
 
         /// <summary>NestoAPI#827: AspNetUsers.UserName es nvarchar(256); se compara sin caja (la intercalación de la BD).</summary>
         internal const string SQL_IDENTITY = "SELECT TOP 1 UserName FROM dbo.AspNetUsers WITH (NOLOCK) WHERE UserName = @nombre";
+
+        /// <summary>
+        /// NestoAPI#823: el nombre tal como viene en el token de la petición en curso (sin resolver); lo pone
+        /// <see cref="UserSyncHandler"/>. Para las pocas reglas que dependen de la APLICACIÓN y no de la persona (imprimir en
+        /// el servidor solo para quien no tiene Nesto delante): «NUEVAVISION\Alfredo» puede venir de Nesto o, resuelto, de Ariadna.
+        /// </summary>
+        private static readonly AsyncLocal<string> nombreDelToken = new AsyncLocal<string>();
 
         public static string Resolver(IPrincipal user, string usuarioFallback)
         {
@@ -345,6 +353,19 @@ namespace NestoAPI.Infraestructure
             }
             int barra = limpio.LastIndexOf('\\');
             return barra >= 0 ? limpio.Substring(barra + 1) : limpio;
+        }
+
+        /// <summary>NestoAPI#823: lo pone <see cref="UserSyncHandler"/> al empezar cada petición.</summary>
+        public static void FijarNombreDelToken(string nombre) => nombreDelToken.Value = nombre;
+
+        /// <summary>
+        /// NestoAPI#823: el nombre del token de la petición en curso, SIN resolver (para reglas por aplicación); fuera de una
+        /// petición (jobs, pruebas), <paramref name="siNoHay"/>.
+        /// </summary>
+        public static string NombreDelTokenO(string siNoHay)
+        {
+            string delToken = nombreDelToken.Value;
+            return string.IsNullOrWhiteSpace(delToken) ? siNoHay : delToken;
         }
 
         /// <summary>Vacía la caché: la próxima consulta de cada nombre vuelve a mirar la BD.</summary>

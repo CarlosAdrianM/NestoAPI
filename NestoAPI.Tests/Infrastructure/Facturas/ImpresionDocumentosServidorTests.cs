@@ -28,7 +28,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
     public class ImpresionDocumentosServidorTests
     {
         private const string USUARIO = "NUEVAVISION\\Alfredo";
-        /// <summary>El usuario de Ariadna (Identity, sin dominio).</summary>
+        /// <summary>El usuario de Ariadna (Identity, sin dominio): el único para el que el servidor imprime (Carlos 04/11/26 y 06/11/26, NestoAPI#834).</summary>
         private const string USUARIO_ARIADNA = "Alfredo";
         private const string IMPRESORA_ALFREDO = "HP Administración Alfredo";
         private const string IMPRESORA_DEFECTO = "HP Administración";
@@ -158,9 +158,9 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         [TestMethod]
-        public void Imprimir_EncendidoYUsuarioDeNestoConDominio_ImprimeEnSuImpresora_834()
+        public void Imprimir_EncendidoYUsuarioDeNestoConDominio_NiImprimeNiLeeElParametro_834()
         {
-            // NestoAPI#834: desde Nesto 1.10.56 (Nesto#620) Nesto respeta ImpresoEnServidor; el servidor imprime también para Nesto.
+            // Carlos 06/11/26 (NestoAPI#834, marcha atrás): Nesto imprime en local con su impresora por defecto; el servidor solo para Ariadna.
             ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
             ImpresoraDelUsuario(ImpresionDocumentosServidor.USUARIO_DEFECTO, IMPRESORA_DEFECTO);
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
@@ -168,13 +168,31 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Servicio(true).Imprimir(respuesta, USUARIO);
             List<string> avisos = Servicio(true).Imprimir(new[] { new DocumentoAImprimirEnServidor { Descripcion = "la factura NV1", Datos = Datos(1, TipoBandejaImpresion.Lower) } }, USUARIO);
 
-            A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 1, TipoBandejaImpresion.Lower)).MustHaveHappenedTwiceExactly();
-            A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 2, TipoBandejaImpresion.Middle)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => impresora.Imprimir(A<byte[]>._, IMPRESORA_DEFECTO, A<int>._, A<TipoBandejaImpresion>._)).MustNotHaveHappened();
-            Assert.AreEqual(IMPRESORA_ALFREDO, respuesta.Facturas[0].DatosImpresion.ImpresoEnServidor);
-            Assert.AreEqual(IMPRESORA_ALFREDO, respuesta.Albaranes[0].DatosImpresion.ImpresoEnServidor);
+            A.CallTo(impresora).MustNotHaveHappened();
+            A.CallTo(lector).MustNotHaveHappened();
+            Assert.IsNull(respuesta.Facturas[0].DatosImpresion.ImpresoEnServidor);
+            Assert.IsNull(respuesta.Albaranes[0].DatosImpresion.ImpresoEnServidor);
             Assert.AreEqual(0, respuesta.PedidosConErrores.Count);
             Assert.AreEqual(0, avisos.Count);
+            Assert.IsTrue(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(USUARIO_ARIADNA));
+            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(USUARIO));
+            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(null));
+        }
+
+        [TestMethod]
+        public void Imprimir_EncendidoYUsuarioDeAriadnaSinFilaPropia_ImprimeEnLaDeDefecto_834()
+        {
+            // El (defecto) es la impresora de Algete; Reina y Paloma (Ariadna de otras tiendas) tienen su fila.
+            ImpresoraDelUsuario("Andre", null);
+            ImpresoraDelUsuario("Reina", "HP LaserJet M602 REINA");
+            ImpresoraDelUsuario(ImpresionDocumentosServidor.USUARIO_DEFECTO, IMPRESORA_DEFECTO);
+
+            Servicio(true).Imprimir(RespuestaConPapel(), "Andre");
+            Servicio(true).Imprimir(RespuestaConPapel(), "Reina");
+
+            A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_DEFECTO, 1, TipoBandejaImpresion.Lower)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_DEFECTO, 2, TipoBandejaImpresion.Middle)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => impresora.Imprimir(PDF, "HP LaserJet M602 REINA", A<int>._, A<TipoBandejaImpresion>._)).MustHaveHappenedTwiceExactly();
         }
 
         [TestMethod]
