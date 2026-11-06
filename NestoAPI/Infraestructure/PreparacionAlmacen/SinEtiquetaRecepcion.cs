@@ -21,7 +21,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NoLleva | NoSeLee | Otro (este con <see cref="Comentario"/>).</summary>
         public string Motivo { get; set; }
         public string Comentario { get; set; }
-        /// <summary>Sin él (o 0), una. Se cuenta unidad a unidad: las apps mandan 1.</summary>
+        /// <summary>
+        /// Sin él (o 0), una. NestoAPI#839: varias de una vez, como mucho las que faltan de la línea (lo enviado menos lo leído en
+        /// curso), o una si ya no falta ninguna (se puede apuntar una de más, como antes). Un solo aviso con la cantidad.
+        /// </summary>
         public int Unidades { get; set; }
         public string Dispositivo { get; set; }
         /// <summary>
@@ -67,16 +70,61 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IAvisadorSinEtiqueta avisador;
         private readonly IRepositorioIdempotenciaSinEtiqueta idempotencia;
         private readonly Productos.IRepositorioCodigosBarras codigos;
+        private readonly IRepositorioLecturasRecepcion lecturas;
 
         /// <param name="idempotencia">Dónde se apuntan las claves ya procesadas. Sin él, la clave se ignora (se avisa siempre).</param>
         /// <param name="codigos">Ariadna#92: los códigos activos del producto (ProductosCodigosBarras). Sin él, solo el de la ficha.</param>
+        /// <param name="lecturas">NestoAPI#839: lo leído en curso (RecepcionesLecturasEnCurso), para el tope de unidades. Sin él (o
+        /// sin la tabla), lo que falta es todo lo enviado.</param>
         public ServicioSinEtiquetaRecepcion(IServicioRecepcionReposiciones reposiciones, IAvisadorSinEtiqueta avisador,
-            IRepositorioIdempotenciaSinEtiqueta idempotencia = null, Productos.IRepositorioCodigosBarras codigos = null)
+            IRepositorioIdempotenciaSinEtiqueta idempotencia = null, Productos.IRepositorioCodigosBarras codigos = null,
+            IRepositorioLecturasRecepcion lecturas = null)
         {
             this.reposiciones = reposiciones ?? throw new ArgumentNullException(nameof(reposiciones));
             this.avisador = avisador ?? throw new ArgumentNullException(nameof(avisador));
             this.idempotencia = idempotencia;
             this.codigos = codigos;
+            this.lecturas = lecturas;
+        }
+
+        /// <summary>
+        /// NestoAPI#839: cuántas se pueden apuntar de una vez: las que faltan (enviado − leído) o, si no falta ninguna, una (la
+        /// unidad de más que ya se admitía).
+        /// </summary>
+        public static int TopeUnidades(int enviado, int leido) => Math.Max(enviado - leido, 1);
+
+        /// <summary>Lo leído en curso del producto (la app lo anota al contar), o 0 si no se sabe.</summary>
+        private async Task<int> LeerLeido(string empresa, string almacen, int traspaso, string producto, string usuario)
+        {
+            if (lecturas == null)
+            {
+                return 0;
+            }
+            try
+            {
+                if (!lecturas.TablaExiste())
+                {
+                    return 0;
+                }
+                var clave = new ClaveRecepcionEnCurso
+                {
+                    Empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
+                    Tipo = OrigenRecepcionReposiciones.TIPO.Trim().ToUpperInvariant(),
+                    Documento = traspaso.ToString(CultureInfo.InvariantCulture),
+                    Almacen = string.IsNullOrWhiteSpace(almacen) ? Constantes.Almacenes.ALGETE : almacen.Trim().ToUpperInvariant()
+                };
+                List<FilaLecturaRecepcionEnCurso> filas = await lecturas.Abrir(clave, usuario, null).ConfigureAwait(false)
+                    ?? new List<FilaLecturaRecepcionEnCurso>();
+                return filas
+                    .Where(f => string.Equals(f.Producto?.Trim(), producto, StringComparison.OrdinalIgnoreCase))
+                    .Sum(f => f.Cantidad);
+            }
+            catch (Exception ex)
+            {
+                // Sin lo leído, el tope es lo enviado (no se impide apuntar)
+                ElmahHelper.Log(new Exception($"[Sin etiqueta 839] No se ha podido leer lo leído de la reposición {traspaso} ({producto}): {ex.Message}", ex));
+                return 0;
+            }
         }
 
         /// <summary>
@@ -200,13 +248,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new ArgumentException($"El {producto} no viene en la reposición {traspaso}: «Sin etiqueta» es para lo que viene en ella.");
             }
-            string ud = unidades == 1 ? "1 unidad" : $"{unidades} unidades";
+            int enviado = recepcion.Lineas
+                .Where(l => string.Equals(l.Producto?.Trim(), producto, StringComparison.OrdinalIgnoreCase))
+                .Sum(l => l.Cantidad);
+            int leido = unidades > 1 ? await LeerLeido(empresa, almacen, traspaso, producto, usuario).ConfigureAwait(false) : 0;
+            if (unidades > TopeUnidades(enviado, leido))
+            {
+                // NestoAPI#839 (Carlos 06/11/26): como mucho lo que falta de la línea; no se cuenta ni se avisa nada
+                int faltan = enviado - leido;
+                string cuantas = faltan <= 0 ? "ya no falta ninguna (solo se puede apuntar una de más)"
+                    : faltan == 1 ? "solo falta 1" : $"solo faltan {faltan}";
+                throw new ArgumentException($"No se pueden apuntar {unidades} unidades sin etiqueta del {producto}: {cuantas}.");
+            }
+            string ud = Unidades(unidades);
             if (linea.SinCodigoAdmitido)
             {
                 // NestoAPI#797: una muestra (MMP) sin código no se etiqueta: se cuenta y no se avisa ni al origen ni a Compras
                 return new ResultadoSinEtiquetaRecepcionDTO
                 {
-                    Mensaje = $"Apuntada {ud} sin etiqueta del {producto}: {TEXTO_MUESTRA_SIN_CODIGO}.",
+                    Mensaje = $"{Apuntadas(unidades)} {ud} sin etiqueta del {producto}: {TEXTO_MUESTRA_SIN_CODIGO}.",
                     Avisados = new List<string>()
                 };
             }
@@ -224,13 +284,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             string nombreProducto = string.IsNullOrWhiteSpace(linea.Descripcion) ? producto : $"{producto} {linea.Descripcion.Trim()}";
             if (codigoEnvase != null)
             {
-                return await AvisarACompras(traspaso, origen, almacen, producto, nombreProducto, codigoEnvase, quien, ud, motivo, comentario,
+                return await AvisarACompras(traspaso, origen, almacen, producto, nombreProducto, codigoEnvase, quien, unidades, motivo, comentario,
                     peticion.Dispositivo).ConfigureAwait(false);
             }
-            string titulo = $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): llega sin etiqueta el {producto}";
+            string titulo = unidades == 1
+                ? $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): llega sin etiqueta el {producto}"
+                : $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): llegan {ud} sin etiqueta del {producto}";
             var lineas = new List<string>
             {
-                $"{quien} ha recibido {ud} del {nombreProducto} sin poder escanearla: {TextoMotivo(motivo, comentario)}.",
+                $"{quien} ha recibido {ud} sin etiqueta del {nombreProducto} sin poder {Escanearla(unidades)}: {TextoMotivo(motivo, comentario)}.",
                 "El almacén de origen tiene que etiquetar lo que no lleve código de barras antes de enviarlo (etiqueta EAN-13 desde la reposición)."
             };
             if (motivo == MOTIVO_NO_SE_LEE)
@@ -246,7 +308,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 lineas.Add($"Desde {peticion.Dispositivo.Trim()}.");
             }
 
-            return await Resultado(traspaso, producto, ud,
+            return await Resultado(traspaso, producto, unidades,
                 () => avisador.Avisar(empresa, origen, nombreOrigen, pendiente?.Usuario, titulo, lineas)).ConfigureAwait(false);
         }
 
@@ -255,13 +317,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// etiquetarlo), sino de Compras, que tiene que dar de alta o cambiar el código.
         /// </summary>
         private Task<ResultadoSinEtiquetaRecepcionDTO> AvisarACompras(int traspaso, string origen, string almacen, string producto,
-            string nombreProducto, string codigoEnvase, string quien, string ud, string motivo, string comentario, string dispositivo)
+            string nombreProducto, string codigoEnvase, string quien, int unidades, string motivo, string comentario, string dispositivo)
         {
-            string titulo = $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): el código del {producto} no se lee o no coincide";
+            string titulo = unidades == 1
+                ? $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): el código del {producto} no se lee o no coincide"
+                : $"Reposición {traspaso} ({origen ?? "¿?"} → {almacen}): {Unidades(unidades)} del {producto}: el código no se lee o no coincide";
             string queLePasa = motivo == MOTIVO_NO_SE_LEE ? "el código no se lee" : TextoMotivo(motivo, comentario);
             var lineas = new List<string>
             {
-                $"{quien} ha recibido {ud} del {nombreProducto} sin poder escanearla: {queLePasa}.",
+                $"{quien} ha recibido {Unidades(unidades)} sin etiqueta del {nombreProducto} sin poder {Escanearla(unidades)}: {queLePasa}.",
                 $"El código de barras de la ficha es {codigoEnvase}.",
                 "Compras: compruebe el código del envase y, si es otro, dele de alta o cambie el de la ficha."
             };
@@ -269,10 +333,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 lineas.Add($"Desde {dispositivo.Trim()}.");
             }
-            return Resultado(traspaso, producto, ud, () => avisador.AvisarACompras(titulo, lineas));
+            return Resultado(traspaso, producto, unidades, () => avisador.AvisarACompras(titulo, lineas));
         }
 
-        private static async Task<ResultadoSinEtiquetaRecepcionDTO> Resultado(int traspaso, string producto, string ud, Func<Task<List<string>>> avisar)
+        private static async Task<ResultadoSinEtiquetaRecepcionDTO> Resultado(int traspaso, string producto, int unidades, Func<Task<List<string>>> avisar)
         {
             List<string> avisados;
             try
@@ -289,10 +353,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 : "se ha avisado a " + (avisados.Count == 1 ? avisados[0] : string.Join(", ", avisados.Take(avisados.Count - 1)) + " y a " + avisados.Last());
             return new ResultadoSinEtiquetaRecepcionDTO
             {
-                Mensaje = $"Apuntada {ud} sin etiqueta del {producto}: {aQuien}.",
+                Mensaje = $"{Apuntadas(unidades)} {Unidades(unidades)} sin etiqueta del {producto}: {aQuien}.",
                 Avisados = avisados
             };
         }
+
+        private static string Unidades(int unidades) => unidades == 1 ? "1 unidad" : $"{unidades} unidades";
+
+        private static string Apuntadas(int unidades) => unidades == 1 ? "Apuntada" : "Apuntadas";
+
+        private static string Escanearla(int unidades) => unidades == 1 ? "escanearla" : "escanearlas";
     }
 
     /// <summary>Revisión 30/10: las claves de «Sin etiqueta» ya procesadas, con la respuesta de la primera vez.</summary>

@@ -81,7 +81,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("Apuntada 1 unidad sin etiqueta del 17404: se ha avisado a Algete y a Compras.", resultado.Mensaje);
             CollectionAssert.AreEqual(new[] { "Algete", "Compras" }, resultado.Avisados);
             Assert.AreEqual("Reposición 81198 (ALG → REI): llega sin etiqueta el 17404", tituloAvisado);
-            StringAssert.Contains(lineasAvisadas[0], "Reina ha recibido 1 unidad del 17404 ROLLO PAPEL CAMILLA sin poder escanearla: no lleva etiqueta.");
+            StringAssert.Contains(lineasAvisadas[0], "Reina ha recibido 1 unidad sin etiqueta del 17404 ROLLO PAPEL CAMILLA sin poder escanearla: no lleva etiqueta.");
             Assert.AreEqual(@"NUEVAVISION\Andre", creadorAvisado);
             Assert.AreEqual("ALG", origenAvisado);
         }
@@ -471,6 +471,133 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(primera.Content.Mensaje, segunda.Content.Mensaje);
             A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        // ---- NestoAPI#839 (sugerencia 1113): varias unidades de una vez, como mucho las que faltan, y un solo aviso ----
+
+        private IRepositorioLecturasRecepcion ConLeido(int leidoDel17404)
+        {
+            IRepositorioLecturasRecepcion lecturas = A.Fake<IRepositorioLecturasRecepcion>();
+            A.CallTo(() => lecturas.TablaExiste()).Returns(true);
+            A.CallTo(() => lecturas.Abrir(A<ClaveRecepcionEnCurso>.That.Matches(c =>
+                    c.Empresa == "1" && c.Tipo == "REPO" && c.Documento == "81198" && c.Almacen == "REI"), A<string>._, A<string>._))
+                .Returns(new List<FilaLecturaRecepcionEnCurso>
+                {
+                    new FilaLecturaRecepcionEnCurso { Producto = null, Cantidad = 0 },
+                    new FilaLecturaRecepcionEnCurso { Producto = "17404", Cantidad = leidoDel17404 },
+                    new FilaLecturaRecepcionEnCurso { Producto = "OTRO", Cantidad = 5 }
+                });
+            servicio = new ServicioSinEtiquetaRecepcion(reposiciones, avisador, lecturas: lecturas);
+            return lecturas;
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_VariasDentroDeLoQueFalta_LasCuentaYUnSoloAvisoConLaCantidad()
+        {
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar(unidades: 3);
+
+            Assert.AreEqual("Apuntadas 3 unidades sin etiqueta del 17404: se ha avisado a Algete y a Compras.", resultado.Mensaje);
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual("Reposición 81198 (ALG → REI): llegan 3 unidades sin etiqueta del 17404", tituloAvisado);
+            StringAssert.Contains(lineasAvisadas[0], "Reina ha recibido 3 unidades sin etiqueta del 17404 ROLLO PAPEL CAMILLA sin poder escanearlas");
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_ConLoLeidoEnCurso_ElTopeEsLoQueFalta()
+        {
+            _ = ConLeido(1);
+
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar(unidades: 2);
+
+            StringAssert.StartsWith(resultado.Mensaje, "Apuntadas 2 unidades sin etiqueta del 17404");
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_MasDeLoQueFalta_ArgumentExceptionYNiSeCuentaNiSeAvisa()
+        {
+            _ = ConLeido(1);
+
+            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Apuntar(unidades: 3));
+
+            Assert.AreEqual("No se pueden apuntar 3 unidades sin etiqueta del 17404: solo faltan 2.", ex.Message);
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .MustNotHaveHappened();
+            A.CallTo(() => avisador.AvisarACompras(A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_SinLecturasEnCurso_MasDeLoEnviado_ArgumentException()
+        {
+            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Apuntar(unidades: 4));
+
+            StringAssert.Contains(ex.Message, "solo faltan 3");
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_NoFaltaNinguna_UnaDeMasSiVariasNo()
+        {
+            _ = ConLeido(3);
+
+            ResultadoSinEtiquetaRecepcionDTO una = await Apuntar(unidades: 1);
+            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Apuntar(unidades: 2));
+
+            StringAssert.StartsWith(una.Mensaje, "Apuntada 1 unidad sin etiqueta del 17404");
+            StringAssert.Contains(ex.Message, "ya no falta ninguna");
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_UnaSola_NoMiraLoLeido()
+        {
+            IRepositorioLecturasRecepcion lecturas = ConLeido(3);
+
+            _ = await Apuntar(unidades: 1);
+
+            A.CallTo(() => lecturas.Abrir(A<ClaveRecepcionEnCurso>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_SinUnidades_Una()
+        {
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar(unidades: 0);
+
+            Assert.AreEqual("Apuntada 1 unidad sin etiqueta del 17404: se ha avisado a Algete y a Compras.", resultado.Mensaje);
+            Assert.AreEqual("Reposición 81198 (ALG → REI): llega sin etiqueta el 17404", tituloAvisado);
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_SiFallaLeerLoLeido_ElTopeEsLoEnviado()
+        {
+            IRepositorioLecturasRecepcion lecturas = ConLeido(0);
+            A.CallTo(() => lecturas.Abrir(A<ClaveRecepcionEnCurso>._, A<string>._, A<string>._)).Throws(new InvalidOperationException("sin BD"));
+
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar(unidades: 3);
+
+            StringAssert.StartsWith(resultado.Mensaje, "Apuntadas 3 unidades");
+        }
+
+        [TestMethod]
+        public async Task Apuntar839_ConCodigoNoSeLee_UnAvisoACompras_ConLaCantidad()
+        {
+            ConCodigoEnLaFicha("8436042870615");
+            AvisoACompras();
+
+            ResultadoSinEtiquetaRecepcionDTO resultado = await Apuntar(motivo: "NoSeLee", unidades: 2);
+
+            Assert.AreEqual("Apuntadas 2 unidades sin etiqueta del 17404: se ha avisado a Compras.", resultado.Mensaje);
+            A.CallTo(() => avisador.AvisarACompras(A<string>._, A<IEnumerable<string>>._)).MustHaveHappenedOnceExactly();
+            StringAssert.Contains(tituloAvisado, "2 unidades del 17404");
+            StringAssert.Contains(lineasAvisadas[0], "ha recibido 2 unidades sin etiqueta del 17404");
+        }
+
+        [TestMethod]
+        public async Task PostSinEtiqueta839_MasDeLoQueFalta_400ConElTexto()
+        {
+            var resultado = await Controlador(servicio).PostSinEtiqueta("REPO", "81198",
+                new SinEtiquetaRecepcionDTO { Producto = "17404", Motivo = "NoLleva", Unidades = 4 }, "REI") as BadRequestErrorMessageResult;
+
+            Assert.IsNotNull(resultado);
+            StringAssert.StartsWith(resultado.Message, "No se pueden apuntar 4 unidades sin etiqueta del 17404");
         }
     }
 }
