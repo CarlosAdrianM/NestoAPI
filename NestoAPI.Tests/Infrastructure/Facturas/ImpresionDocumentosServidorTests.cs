@@ -28,7 +28,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
     public class ImpresionDocumentosServidorTests
     {
         private const string USUARIO = "NUEVAVISION\\Alfredo";
-        /// <summary>El usuario de Ariadna (Identity, sin dominio): el único para el que el servidor imprime (Carlos 04/11/26, Nesto#620).</summary>
+        /// <summary>El usuario de Ariadna (Identity, sin dominio).</summary>
         private const string USUARIO_ARIADNA = "Alfredo";
         private const string IMPRESORA_ALFREDO = "HP Administración Alfredo";
         private const string IMPRESORA_DEFECTO = "HP Administración";
@@ -49,8 +49,9 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         private ImpresionDocumentosServidor Servicio(bool activo)
             => new ImpresionDocumentosServidor(lector, impresora, () => activo, registrados.Add);
 
+        /// <summary>La fila de ParametrosUsuario, que Nesto guarda sin dominio («Alfredo», «Reina»).</summary>
         private void ImpresoraDelUsuario(string usuario, string valor)
-            => A.CallTo(() => lector.LeerParametro(Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, ImpresionDocumentosServidor.PARAMETRO_IMPRESORA)).Returns(valor);
+            => A.CallTo(() => lector.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, UsuarioAuditoriaHelper.SinDominio(usuario), ImpresionDocumentosServidor.PARAMETRO_IMPRESORA)).Returns(valor);
 
         private static DocumentoParaImprimir Datos(int copias, TipoBandejaImpresion bandeja)
             => new DocumentoParaImprimir { BytesPDF = PDF, NumeroCopias = copias, TipoBandeja = bandeja };
@@ -85,6 +86,27 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Assert.IsFalse(ImpresionDocumentosServidor.EsPredeterminada("HP Administracion"));
             Assert.IsFalse(ImpresionDocumentosServidor.EsPredeterminada(null));
             Assert.IsFalse(ImpresionDocumentosServidor.EsPredeterminada(""));
+        }
+
+        /// <summary>
+        /// NestoAPI#834: el usuario llega resuelto («NUEVAVISION\Reina», también desde Ariadna) y la fila de ParametrosUsuario
+        /// está sin dominio: se busca «Reina». Y sin copiar la de «(defecto)» (Algete) como fila propia (LeerParametro la copiaría).
+        /// </summary>
+        [TestMethod]
+        public void ElegirImpresora_UsuarioConDominio_BuscaLaFilaSinDominioYNoCopiaLaDeDefecto_834()
+        {
+            A.CallTo(() => lector.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, "Reina", ImpresionDocumentosServidor.PARAMETRO_IMPRESORA))
+                .Returns("HP Reina");
+            A.CallTo(() => lector.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, "Alfredo", ImpresionDocumentosServidor.PARAMETRO_IMPRESORA))
+                .Returns(IMPRESORA_ALFREDO);
+            ImpresoraDelUsuario(ImpresionDocumentosServidor.USUARIO_DEFECTO, IMPRESORA_DEFECTO);
+
+            Assert.AreEqual("HP Reina", Servicio(true).ElegirImpresora(@"NUEVAVISION\Reina"));
+            Assert.AreEqual(IMPRESORA_ALFREDO, Servicio(true).ElegirImpresora(@"NUEVAVISION\Alfredo"));
+            Assert.AreEqual(IMPRESORA_ALFREDO, Servicio(true).ElegirImpresora("Alfredo"));
+            Assert.AreEqual(IMPRESORA_DEFECTO, Servicio(true).ElegirImpresora(@"NUEVAVISION\Pepe"));
+            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => lector.LeerParametroSinDefecto(A<string>._, A<string>.That.Contains("\\"), A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -136,23 +158,23 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         [TestMethod]
-        public void Imprimir_UsuarioDeNestoConDominio_NiImprimeNiLeeElParametro_Nesto620()
+        public void Imprimir_EncendidoYUsuarioDeNestoConDominio_ImprimeEnSuImpresora_834()
         {
-            // Carlos 04/11/26: Nesto imprime en local y no respeta aún ImpresoEnServidor; el servidor solo imprime para Ariadna.
+            // NestoAPI#834: desde Nesto 1.10.56 (Nesto#620) Nesto respeta ImpresoEnServidor; el servidor imprime también para Nesto.
+            ImpresoraDelUsuario(USUARIO, IMPRESORA_ALFREDO);
             ImpresoraDelUsuario(ImpresionDocumentosServidor.USUARIO_DEFECTO, IMPRESORA_DEFECTO);
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
             Servicio(true).Imprimir(respuesta, USUARIO);
             List<string> avisos = Servicio(true).Imprimir(new[] { new DocumentoAImprimirEnServidor { Descripcion = "la factura NV1", Datos = Datos(1, TipoBandejaImpresion.Lower) } }, USUARIO);
 
-            A.CallTo(impresora).MustNotHaveHappened();
-            A.CallTo(lector).MustNotHaveHappened();
-            Assert.IsNull(respuesta.Facturas[0].DatosImpresion.ImpresoEnServidor);
+            A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 1, TipoBandejaImpresion.Lower)).MustHaveHappenedTwiceExactly();
+            A.CallTo(() => impresora.Imprimir(PDF, IMPRESORA_ALFREDO, 2, TipoBandejaImpresion.Middle)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => impresora.Imprimir(A<byte[]>._, IMPRESORA_DEFECTO, A<int>._, A<TipoBandejaImpresion>._)).MustNotHaveHappened();
+            Assert.AreEqual(IMPRESORA_ALFREDO, respuesta.Facturas[0].DatosImpresion.ImpresoEnServidor);
+            Assert.AreEqual(IMPRESORA_ALFREDO, respuesta.Albaranes[0].DatosImpresion.ImpresoEnServidor);
             Assert.AreEqual(0, respuesta.PedidosConErrores.Count);
             Assert.AreEqual(0, avisos.Count);
-            Assert.IsTrue(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(USUARIO_ARIADNA));
-            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(USUARIO));
-            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(null));
         }
 
         [TestMethod]
@@ -205,7 +227,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [TestMethod]
         public void Imprimir_FallaLaLecturaDelParametro_NoRompe()
         {
-            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._)).Throws(new Exception("sin conexión"));
+            A.CallTo(() => lector.LeerParametroSinDefecto(A<string>._, A<string>._, A<string>._)).Throws(new Exception("sin conexión"));
             FacturarRutasResponseDTO respuesta = RespuestaConPapel();
 
             Servicio(true).Imprimir(respuesta, USUARIO_ARIADNA);

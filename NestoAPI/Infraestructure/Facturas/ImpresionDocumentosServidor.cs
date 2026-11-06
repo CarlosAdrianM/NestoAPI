@@ -58,9 +58,18 @@ namespace NestoAPI.Infraestructure.Facturas
     /// <summary>
     /// NestoAPI#806 (sugerencia 973 de Alfredo): la API imprime EN EL SERVIDOR el documento en papel al facturar, por cualquier camino,
     /// en la impresora de documentos del usuario (parámetro de usuario <see cref="PARAMETRO_IMPRESORA"/>, o la de «(defecto)», la de
-    /// Administración), con las copias y la bandeja que ya decide la API (<see cref="ReglaImpresionDocumentos"/>). Apunta en ELMAH qué
+    /// Algete), con las copias y la bandeja que ya decide la API (<see cref="ReglaImpresionDocumentos"/>). Apunta en ELMAH qué
     /// se imprimió y dónde; si no hay impresora o falla, la facturación sigue: solo un aviso. Los DatosImpresion siguen en la
     /// respuesta (con ImpresoEnServidor), para que el cliente decida si deja de imprimir.
+    /// <para>NestoAPI#834 (paso 2): con el interruptor encendido el servidor imprime para TODOS los usuarios, también los de Nesto
+    /// (desde Nesto 1.10.56, Nesto#620, Nesto respeta ImpresoEnServidor y no vuelve a imprimir en local). Un Nesto anterior
+    /// (1.10.55 o menos) imprimiría dos veces: compruébese antes con GET api/Notificaciones/ConectadosNesto.</para>
+    /// <para><b>SEGURIDAD DEL DESPLIEGUE (NestoAPI#834)</b>: la fila «(defecto)» de <see cref="PARAMETRO_IMPRESORA"/> es la impresora
+    /// de ALGETE. Quien no tenga su propia fila imprime en Algete. ANTES de publicar este cambio, cada usuario de tienda (Reina,
+    /// Alcobendas) y de Administración tiene que tener su fila <see cref="PARAMETRO_IMPRESORA"/> en ParametrosUsuario (sin dominio:
+    /// «Alfredo», «Reina»), con el script Scripts/Issue834_ImpresoraDocumentosPorUsuario.sql. La fila del usuario se lee SIN
+    /// copiar la de «(defecto)» (<see cref="ILectorParametrosUsuario.LeerParametroSinDefecto"/>), para que quien no la tenga no se
+    /// quede con la de Algete grabada como suya.</para>
     /// </summary>
     public class ImpresionDocumentosServidor : IImpresionDocumentosServidor
     {
@@ -71,21 +80,6 @@ namespace NestoAPI.Infraestructure.Facturas
         /// servidor» (la de RDS2016), sin tener que escribir su nombre.
         /// </summary>
         public const string IMPRESORA_PREDETERMINADA = "(predeterminada)";
-
-        /// <summary>
-        /// Carlos 04/11/26 (al encender el interruptor): Nesto todavía no respeta ImpresoEnServidor (Nesto#620) e imprime en local, y las
-        /// tiendas y Administración tienen su impresora en Nesto, no en el servidor. Hasta entonces el servidor imprime SOLO para los
-        /// usuarios sin dominio (Ariadna, NestoApp: los que no tienen Nesto delante); para «NUEVAVISION\…» (Nesto) no imprime ni lee
-        /// el parámetro, y Nesto sigue imprimiendo como siempre. Quitar esta regla cuando Nesto#620 esté publicada.
-        /// <para>NestoAPI#823: la regla es de APLICACIÓN, no de persona. Desde #823 el usuario que llega aquí ya está resuelto
-        /// («Alfredo» de Ariadna llega como «NUEVAVISION\Alfredo»), así que dentro de una petición se mira el nombre del token
-        /// sin resolver (<see cref="UsuarioAuditoriaHelper.NombreDelTokenO"/>); fuera de una petición, el que se pasa.</para>
-        /// </summary>
-        public static bool ImprimeParaEsteUsuario(string usuario)
-        {
-            string delToken = UsuarioAuditoriaHelper.NombreDelTokenO(usuario);
-            return !string.IsNullOrWhiteSpace(usuario) && !string.IsNullOrWhiteSpace(delToken) && !delToken.Contains("\\");
-        }
 
         /// <summary>¿El valor del parámetro pide la impresora predeterminada del servidor?</summary>
         public static bool EsPredeterminada(string impresora)
@@ -112,26 +106,30 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
-        /// La impresora de documentos: la del usuario (con o sin dominio) si la tiene; si no, la de «(defecto)»; si tampoco, null.
+        /// La impresora de documentos: la del usuario si la tiene; si no, la de «(defecto)» (Algete); si tampoco, null.
+        /// <para>NestoAPI#834: el usuario llega resuelto («NUEVAVISION\Alfredo», también desde Ariadna) y Nesto guarda
+        /// ParametrosUsuario sin dominio («Alfredo», «Reina»): se busca sin dominio. Solo la fila propia (sin copiar la de
+        /// «(defecto)» como hace LeerParametro).</para>
         /// </summary>
         public string ElegirImpresora(string usuario)
         {
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
-            if (!string.IsNullOrWhiteSpace(usuario))
+            string sinDominio = UsuarioAuditoriaHelper.SinDominio(usuario);
+            if (!string.IsNullOrWhiteSpace(sinDominio))
             {
-                string propia = lector.LeerParametro(empresa, usuario, PARAMETRO_IMPRESORA);
+                string propia = lector.LeerParametroSinDefecto(empresa, sinDominio, PARAMETRO_IMPRESORA);
                 if (!string.IsNullOrWhiteSpace(propia))
                 {
                     return propia.Trim();
                 }
             }
-            string porDefecto = lector.LeerParametro(empresa, USUARIO_DEFECTO, PARAMETRO_IMPRESORA);
+            string porDefecto = lector.LeerParametroSinDefecto(empresa, USUARIO_DEFECTO, PARAMETRO_IMPRESORA);
             return string.IsNullOrWhiteSpace(porDefecto) ? null : porDefecto.Trim();
         }
 
         public void Imprimir(FacturarRutasResponseDTO respuesta, string usuario)
         {
-            if (respuesta == null || !EstaActivo() || !ImprimeParaEsteUsuario(usuario))
+            if (respuesta == null || !EstaActivo())
             {
                 return;
             }
@@ -189,7 +187,7 @@ namespace NestoAPI.Infraestructure.Facturas
         public List<string> Imprimir(IEnumerable<DocumentoAImprimirEnServidor> documentos, string usuario)
         {
             var avisos = new List<string>();
-            if (documentos == null || !EstaActivo() || !ImprimeParaEsteUsuario(usuario))
+            if (documentos == null || !EstaActivo())
             {
                 return avisos;
             }

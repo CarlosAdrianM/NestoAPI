@@ -72,6 +72,27 @@ namespace NestoAPI.Controllers
             return Ok(new { Version = version, Avisados = usuarios.Count, Usuarios = usuarios });
         }
 
+        /// <summary>Los Nesto conectados con su versión (sustituible en tests).</summary>
+        internal Func<List<ConexionNestoDTO>> ConexionesNesto { get; set; } = UsuariosConectadosNesto.Conexiones;
+
+        /// <summary>
+        /// NestoAPI#834: quién tiene Nesto abierto ahora, con su versión y desde cuándo (lo que hay en memoria: se vacía al reciclar la
+        /// API y se rellena cuando los Nesto se reconectan). Para comprobar antes de un cambio que no queda nadie con una versión vieja.
+        /// Version es null si Nesto no la manda al conectar al hub (hasta Nesto 1.10.56 no la manda). Solo Dirección e Informática.
+        /// GET api/Notificaciones/ConectadosNesto
+        /// </summary>
+        [HttpGet]
+        [Route("ConectadosNesto")]
+        [Authorize]
+        public IHttpActionResult ConectadosNesto()
+        {
+            if (User == null || !(User.IsInRoleSinDominio(GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            return Ok(ConexionesNesto() ?? new List<ConexionNestoDTO>());
+        }
+
         internal const string TIPO_NUEVA_VERSION_NESTO_APP = "NuevaVersionNestoApp";
 
         /// <summary>

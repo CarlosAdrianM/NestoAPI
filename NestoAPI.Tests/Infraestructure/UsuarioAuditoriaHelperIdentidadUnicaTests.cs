@@ -1,7 +1,6 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
-using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
@@ -49,7 +48,6 @@ namespace NestoAPI.Tests.Infraestructure
         public void Limpiar()
         {
             UsuarioAuditoriaHelper.Reiniciar();
-            UsuarioAuditoriaHelper.FijarNombreDelToken(null);
         }
 
         private string Buscar(string gemelo)
@@ -195,35 +193,6 @@ namespace NestoAPI.Tests.Infraestructure
             CollectionAssert.AreEqual(new[] { @"NUEVAVISION\Pepe" }, UsuarioAuditoriaHelper.NombresDeLaPersona(@"NUEVAVISION\Pepe"),
                 "Sin fila de NUEVAVISION\\Pepe, «Pepe» no se da por la misma persona");
             Assert.AreEqual(0, UsuarioAuditoriaHelper.NombresDeLaPersona(null).Count);
-        }
-
-        // ---- Imprimir en el servidor: regla de APLICACIÓN, no de persona ----
-
-        [TestMethod]
-        public void ImprimeEnServidor_AriadnaConGemelo_SigueImprimiendoAunqueLlegueResuelto()
-        {
-            UsuarioAuditoriaHelper.FijarNombreDelToken("Santiago");
-
-            Assert.IsTrue(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(UsuarioAuditoriaHelper.Persona("Santiago")),
-                "Desde Ariadna llega «NUEVAVISION\\santiago», pero el token no tiene dominio: no hay Nesto delante");
-        }
-
-        [TestMethod]
-        public void ImprimeEnServidor_DesdeNesto_NoImprime()
-        {
-            UsuarioAuditoriaHelper.FijarNombreDelToken(@"NUEVAVISION\Santiago");
-
-            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(@"NUEVAVISION\Santiago"));
-        }
-
-        [TestMethod]
-        public void ImprimeEnServidor_FueraDeUnaPeticion_MiraElUsuarioQueSePasa()
-        {
-            UsuarioAuditoriaHelper.FijarNombreDelToken(null);
-
-            Assert.IsTrue(ImpresionDocumentosServidor.ImprimeParaEsteUsuario("Andre"));
-            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(@"NUEVAVISION\Andre"));
-            Assert.IsFalse(ImpresionDocumentosServidor.ImprimeParaEsteUsuario(null));
         }
     }
 

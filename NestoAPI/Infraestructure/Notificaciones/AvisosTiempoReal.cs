@@ -26,7 +26,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 {
                     _ = Groups.Add(Context.ConnectionId, grupo);
                 }
-                UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario);
+                UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario, VersionNesto());
             }
             return base.OnConnected();
         }
@@ -40,9 +40,25 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 {
                     _ = Groups.Add(Context.ConnectionId, grupo);
                 }
-                UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario);
+                UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario, VersionNesto());
             }
             return base.OnReconnected();
+        }
+
+        /// <summary>
+        /// NestoAPI#834: la versión de Nesto, si la manda en la cadena de conexión («version»). Hoy (Nesto 1.10.56) no la manda:
+        /// solo pasa access_token, así que es null hasta que Nesto la añada.
+        /// </summary>
+        private string VersionNesto()
+        {
+            try
+            {
+                return Context.QueryString?[UsuariosConectadosNesto.PARAMETRO_VERSION];
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public override Task OnDisconnected(bool stopCalled)
@@ -78,16 +94,45 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// </summary>
     public static class UsuariosConectadosNesto
     {
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> conexiones =
-            new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+        /// <summary>NestoAPI#834: el parámetro de la cadena de conexión del hub con la versión de Nesto (si la manda).</summary>
+        public const string PARAMETRO_VERSION = "version";
 
-        public static void Registrar(string conexion, string usuario)
+        private class Conexion
+        {
+            public string Usuario;
+            public string Version;
+            public DateTime Desde;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Conexion> conexiones =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, Conexion>();
+
+        /// <summary>
+        /// Alta (o reconexión) de un Nesto. NestoAPI#834: con su versión si la manda y la hora del alta; en una reconexión de la misma
+        /// conexión se conserva la hora del alta.
+        /// </summary>
+        public static void Registrar(string conexion, string usuario, string version = null, DateTime? ahora = null)
         {
             if (!string.IsNullOrWhiteSpace(conexion) && !string.IsNullOrWhiteSpace(usuario))
             {
-                conexiones[conexion] = usuario.Trim();
+                DateTime momento = ahora ?? DateTime.Now;
+                string limpia = string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+                _ = conexiones.AddOrUpdate(conexion,
+                    _ => new Conexion { Usuario = usuario.Trim(), Version = limpia, Desde = momento },
+                    (_, anterior) => new Conexion { Usuario = usuario.Trim(), Version = limpia ?? anterior.Version, Desde = anterior.Desde });
             }
         }
+
+        /// <summary>
+        /// NestoAPI#834: cada Nesto conectado (una fila por conexión: quien tiene dos Nesto abiertos sale dos veces, quizá con versiones
+        /// distintas), con su versión (null si no la manda) y desde cuándo, por usuario y hora.
+        /// </summary>
+        public static List<ConexionNestoDTO> Conexiones()
+            => conexiones.Values
+                .Select(c => new ConexionNestoDTO { Usuario = c.Usuario, Version = c.Version, Desde = c.Desde })
+                .OrderBy(c => c.Usuario, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Desde)
+                .ToList();
 
         public static void Quitar(string conexion)
         {
@@ -103,7 +148,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// </summary>
         public static List<string> Conectados(IEnumerable<string> usuarios)
         {
-            var vivos = new HashSet<string>(conexiones.Values.Select(SinDominio), StringComparer.OrdinalIgnoreCase);
+            var vivos = new HashSet<string>(conexiones.Values.Select(c => SinDominio(c.Usuario)), StringComparer.OrdinalIgnoreCase);
             return (usuarios ?? Enumerable.Empty<string>())
                 .Select(SinDominio)
                 .Where(u => u.Length > 0 && vivos.Contains(u))
@@ -116,7 +161,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public static int ConexionesDe(string usuario)
         {
             string buscado = SinDominio(usuario);
-            return buscado.Length == 0 ? 0 : conexiones.Values.Count(u => string.Equals(SinDominio(u), buscado, StringComparison.OrdinalIgnoreCase));
+            return buscado.Length == 0 ? 0 : conexiones.Values.Count(c => string.Equals(SinDominio(c.Usuario), buscado, StringComparison.OrdinalIgnoreCase));
         }
 
         internal static string SinDominio(string usuario)
@@ -128,9 +173,18 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         /// <summary>Los usuarios distintos con al menos un Nesto conectado.</summary>
         public static List<string> Usuarios()
-            => conexiones.Values.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(u => u, StringComparer.OrdinalIgnoreCase).ToList();
+            => conexiones.Values.Select(c => c.Usuario).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(u => u, StringComparer.OrdinalIgnoreCase).ToList();
 
         internal static void Vaciar() => conexiones.Clear();
+    }
+
+    /// <summary>NestoAPI#834: un Nesto conectado (GET api/Notificaciones/ConectadosNesto).</summary>
+    public class ConexionNestoDTO
+    {
+        public string Usuario { get; set; }
+        /// <summary>Null si Nesto no la manda al conectar.</summary>
+        public string Version { get; set; }
+        public DateTime Desde { get; set; }
     }
 
     public interface IAvisosTiempoReal

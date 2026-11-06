@@ -696,5 +696,70 @@ namespace NestoAPI.Tests.Controllers
             CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Laura" }, UsuariosConectadosNesto.Usuarios());
             UsuariosConectadosNesto.Vaciar();
         }
+
+        // NestoAPI#834: quién tiene Nesto abierto y con qué versión
+
+        [TestMethod]
+        public void ConectadosNesto_SinSerDireccionNiInformatica_Forbidden()
+        {
+            _controller.ConexionesNesto = () => new System.Collections.Generic.List<ConexionNestoDTO> { new ConexionNestoDTO { Usuario = @"NUEVAVISION\Alfredo" } };
+
+            var resultado = _controller.ConectadosNesto();
+
+            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
+        }
+
+        [TestMethod]
+        public void ConectadosNesto_Informatica_DevuelveCadaConexionConSuVersion()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity(@"NUEVAVISION\Carlos"), new[] { @"NUEVAVISION\Informatica" });
+            var desde = new DateTime(2026, 11, 6, 9, 0, 0);
+            _controller.ConexionesNesto = () => new System.Collections.Generic.List<ConexionNestoDTO>
+            {
+                new ConexionNestoDTO { Usuario = @"NUEVAVISION\Alfredo", Version = "1.10.56.0", Desde = desde },
+                new ConexionNestoDTO { Usuario = @"NUEVAVISION\Reina", Version = null, Desde = desde }
+            };
+
+            var ok = (OkNegotiatedContentResult<System.Collections.Generic.List<ConexionNestoDTO>>)_controller.ConectadosNesto();
+
+            Assert.AreEqual(2, ok.Content.Count);
+            Assert.AreEqual("1.10.56.0", ok.Content[0].Version);
+            Assert.IsNull(ok.Content[1].Version, "Sin versión en la conexión: null, no inventada");
+        }
+
+        [TestMethod]
+        public void ConectadosNesto_Direccion_SinNadieConectado_ListaVacia()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity(@"NUEVAVISION\Carlos"), new[] { @"NUEVAVISION\Dirección" });
+            _controller.ConexionesNesto = () => null;
+
+            var ok = (OkNegotiatedContentResult<System.Collections.Generic.List<ConexionNestoDTO>>)_controller.ConectadosNesto();
+
+            Assert.AreEqual(0, ok.Content.Count);
+        }
+
+        [TestMethod]
+        public void UsuariosConectadosNesto_Conexiones_UnaPorNestoConVersionYDesde_LaReconexionConservaElAlta()
+        {
+            UsuariosConectadosNesto.Vaciar();
+            var nueve = new DateTime(2026, 11, 6, 9, 0, 0);
+            var diez = new DateTime(2026, 11, 6, 10, 0, 0);
+            UsuariosConectadosNesto.Registrar("c1", @"NUEVAVISION\Laura", " 1.10.56.0 ", nueve);
+            UsuariosConectadosNesto.Registrar("c2", @"NUEVAVISION\Laura", "1.10.55.0", diez);
+            UsuariosConectadosNesto.Registrar("c3", @"NUEVAVISION\Alfredo", null, diez);
+            UsuariosConectadosNesto.Registrar("c1", @"NUEVAVISION\Laura", null, diez); // reconexión sin versión
+
+            var conexiones = UsuariosConectadosNesto.Conexiones();
+
+            Assert.AreEqual(3, conexiones.Count);
+            Assert.AreEqual(@"NUEVAVISION\Alfredo", conexiones[0].Usuario);
+            Assert.IsNull(conexiones[0].Version);
+            Assert.AreEqual("1.10.56.0", conexiones[1].Version, "La reconexión sin versión conserva la que tenía");
+            Assert.AreEqual(nueve, conexiones[1].Desde, "La reconexión conserva la hora del alta");
+            Assert.AreEqual("1.10.55.0", conexiones[2].Version);
+            Assert.AreEqual(2, UsuariosConectadosNesto.Usuarios().Count, "Usuarios() sigue sin repetir");
+            UsuariosConectadosNesto.Vaciar();
+        }
     }
 }
