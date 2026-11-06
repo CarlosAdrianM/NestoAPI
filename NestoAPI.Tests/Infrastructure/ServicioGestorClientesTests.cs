@@ -214,8 +214,8 @@ namespace NestoAPI.Tests.Infrastructure
         {
             // Regresión #429 (punto 3): antes FirstOrDefault sin OrderBy — con varias fichas del
             // mismo email+NIF elegía SQL Server, de forma no determinista.
-            var secundaria = new Cliente { Nº_Cliente = "15191", Contacto = "1", ClientePrincipal = false, CIF_NIF = "B12345678" };
-            var principal = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678" };
+            var secundaria = new Cliente { Nº_Cliente = "15191", Contacto = "1", ClientePrincipal = false, CIF_NIF = "B12345678", Estado = 0 };
+            var principal = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678", Estado = 0 };
 
             var elegida = ServicioGestorClientes.ElegirFichaParaLogin(
                 new List<Cliente> { secundaria, principal }, "B12345678");
@@ -226,12 +226,90 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void ElegirFichaParaLogin_NifQueNoCoincide_DevuelveNull()
         {
-            var ficha = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678" };
+            var ficha = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678", Estado = 0 };
 
             var elegida = ServicioGestorClientes.ElegirFichaParaLogin(
                 new List<Cliente> { ficha }, "OTRO");
 
             Assert.IsNull(elegida);
+        }
+
+        // ----- NestoAPI#429 (punto 2): las fichas anuladas no inician sesión en la tienda -----
+
+        [TestMethod]
+        public void ElegirFichaParaLogin_FichaAnulada_NoEntra()
+        {
+            // Regresión #429: esta era la única búsqueda del servicio sin Estado >= 0, y respalda
+            // todo el login de la tienda: un cliente dado de baja se llevaba un JWT válido.
+            var anulada = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678", Estado = -1 };
+
+            var elegida = ServicioGestorClientes.ElegirFichaParaLogin(
+                new List<Cliente> { anulada }, "B12345678");
+
+            Assert.IsNull(elegida);
+        }
+
+        [TestMethod]
+        public void ElegirFichaParaLogin_PrincipalAnuladaYOtraViva_EntraPorLaViva()
+        {
+            var principalAnulada = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678", Estado = -1 };
+            var contactoVivo = new Cliente { Nº_Cliente = "15191", Contacto = "1", ClientePrincipal = false, CIF_NIF = "B12345678", Estado = 0 };
+
+            var elegida = ServicioGestorClientes.ElegirFichaParaLogin(
+                new List<Cliente> { principalAnulada, contactoVivo }, "B12345678");
+
+            Assert.AreSame(contactoVivo, elegida);
+        }
+
+        [TestMethod]
+        public void ElegirFichaParaLogin_EstadoNulo_NoEntra_IgualQueLasOtrasBusquedas()
+        {
+            var sinEstado = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678", Estado = null };
+
+            Assert.IsNull(ServicioGestorClientes.ElegirFichaParaLogin(new List<Cliente> { sinEstado }, "B12345678"));
+        }
+
+        [TestMethod]
+        public void ElegirFichaParaLogin_EstadosPositivos_Entran()
+        {
+            // Estado >= 0, no == 0: hay fichas vivas con estados positivos (p. ej. 9, 5...).
+            foreach (short estado in new short[] { 0, 1, 5, 9 })
+            {
+                var ficha = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = "B12345678", Estado = estado };
+                Assert.AreSame(ficha, ServicioGestorClientes.ElegirFichaParaLogin(new List<Cliente> { ficha }, "B12345678"),
+                    "Estado " + estado + " es una ficha viva");
+            }
+        }
+
+        [TestMethod]
+        public void FichaQuePuedeIniciarSesion_EsLaRegla_EstadoMayorOIgualQueCero()
+        {
+            // La expresión es la que traduce SQL en BuscarClientePorEmailNif: si alguien la cambia
+            // (por ejemplo a == 0), este test lo dice.
+            var regla = ServicioGestorClientes.FichaQuePuedeIniciarSesion.Compile();
+
+            Assert.IsTrue(regla(new Cliente { Estado = 0 }));
+            Assert.IsTrue(regla(new Cliente { Estado = 9 }));
+            Assert.IsFalse(regla(new Cliente { Estado = -1 }));
+            Assert.IsFalse(regla(new Cliente { Estado = null }));
+        }
+
+        [TestMethod]
+        public void ElegirFichaParaLogin_NifQueSeQuedaEnNada_NoCasaConFichasSinCif()
+        {
+            // «-» pasa el IsNullOrWhiteSpace de la entrada, pero normalizado es "" y casaba con
+            // cualquier ficha de ese correo con el CIF en blanco.
+            var sinCif = new Cliente { Nº_Cliente = "15191", Contacto = "0", ClientePrincipal = true, CIF_NIF = null, Estado = 0 };
+
+            Assert.IsNull(ServicioGestorClientes.ElegirFichaParaLogin(
+                new List<Cliente> { sinCif }, ServicioGestorClientes.NormalizarNif("-")));
+        }
+
+        [TestMethod]
+        public void ElegirFichaParaLogin_SinCandidatos_DevuelveNull()
+        {
+            Assert.IsNull(ServicioGestorClientes.ElegirFichaParaLogin(null, "B12345678"));
+            Assert.IsNull(ServicioGestorClientes.ElegirFichaParaLogin(new List<Cliente>(), "B12345678"));
         }
 
         // ----- NestoAPI#438: copiar personas de contacto y CCC del principal a otro contacto -----

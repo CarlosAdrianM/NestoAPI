@@ -666,10 +666,13 @@ namespace NestoAPI.Infraestructure
                 string emailNormalizado = email.Trim();
 
                 // El filtro por NIF va en memoria a la fuerza: NormalizarNif no se puede traducir
-                // a SQL. Por eso primero se acotan por email (eso sí lo hace SQL) y luego se elige.
+                // a SQL. Por eso primero se acotan por email y por estado (eso sí lo hace SQL:
+                // solo llegan a memoria las fichas vivas de ese correo, que son muy pocas) y luego
+                // se elige.
                 List<Cliente> candidatos = await db.Clientes
                     .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
                                 c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == emailNormalizado))
+                    .Where(FichaQuePuedeIniciarSesion)
                     .Include(c => c.PersonasContactoClientes)
                     .ToListAsync().ConfigureAwait(false);
 
@@ -680,12 +683,44 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
+        /// NestoAPI#429 (punto 2): solo las fichas vivas (Estado &gt;= 0) pueden iniciar sesión en
+        /// la tienda. Esta búsqueda era la única del servicio que no lo exigía (sí lo hacen
+        /// BuscarClientesPorTelefono y ConsultaClientesPorNif), y respalda TODO el login de la
+        /// tienda —GetClientePorEmailNif, request-code, validate-code, token, prestashop-login y,
+        /// desde #427, cada refrescoToken—: un cliente dado de baja podía entrar y llevarse un
+        /// JWT válido. Se aplica a todos los llamantes a la vez a propósito, para que la app no
+        /// vea un «cliente no encontrado» en una pantalla y un login correcto en la siguiente.
+        ///
+        /// <para>Estado null tampoco pasa, igual que en las otras búsquedas (null &gt;= 0 es falso
+        /// tanto en SQL como en C#). Si un cliente tiene una ficha anulada y otra viva con el
+        /// mismo email+NIF, entra por la viva.</para>
+        ///
+        /// <para>Es una expresión y no un Where suelto para que SQL y los tests usen la MISMA
+        /// regla: la consulta la traduce a SQL y <see cref="ElegirFichaParaLogin"/> la vuelve a
+        /// aplicar en memoria.</para>
+        /// </summary>
+        internal static readonly System.Linq.Expressions.Expression<Func<Cliente, bool>> FichaQuePuedeIniciarSesion =
+            c => c.Estado >= 0;
+
+        private static readonly Func<Cliente, bool> FichaQuePuedeIniciarSesionCompilada = FichaQuePuedeIniciarSesion.Compile();
+
+        /// <summary>
         /// NestoAPI#429 (punto 3): con varias fichas del mismo email+NIF, antes decidía SQL Server
         /// (FirstOrDefault sin OrderBy). Ahora gana la principal, y a igualdad, el contacto menor.
+        /// Las fichas anuladas no cuentan nunca (punto 2).
         /// </summary>
         internal static Cliente ElegirFichaParaLogin(IEnumerable<Cliente> candidatos, string nifNormalizado)
         {
-            return candidatos
+            // Un NIF que se queda en nada al normalizarlo («-», « . ») casaría con cualquier ficha
+            // de ese correo que tenga el CIF en blanco: no identifica a nadie.
+            if (string.IsNullOrEmpty(nifNormalizado))
+            {
+                return null;
+            }
+
+            return (candidatos ?? Enumerable.Empty<Cliente>())
+                .Where(c => c != null)
+                .Where(FichaQuePuedeIniciarSesionCompilada)
                 .Where(c => NormalizarNif(c.CIF_NIF) == nifNormalizado)
                 .OrderByDescending(c => c.ClientePrincipal)
                 .ThenBy(c => c.Contacto?.Trim())

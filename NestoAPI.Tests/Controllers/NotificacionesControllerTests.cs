@@ -319,6 +319,28 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
         }
 
+        // NestoAPI#429 (punto 1): sin la setting configurada falla en CERRADO, venga lo que venga.
+        // (NVIA sigue mandando la clave en Authorization como siempre: no cambia nada para él.)
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_SinSettingConfigurada_DevuelveUnauthorized()
+        {
+            string anterior = ConfigurationManager.AppSettings["NotificacionesApiKey"];
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = null;
+            try
+            {
+                var dto = new NuevoProtocoloDTO { Titulo = "Test" };
+
+                Assert.IsInstanceOfType(await CrearControllerConApiKey(null).NotificarNuevoProtocolo(dto),
+                    typeof(UnauthorizedResult), "Sin setting y sin cabecera");
+                Assert.IsInstanceOfType(await CrearControllerConApiKey("lo-que-sea").NotificarNuevoProtocolo(dto),
+                    typeof(UnauthorizedResult), "Sin setting y con cabecera");
+            }
+            finally
+            {
+                ConfigurationManager.AppSettings["NotificacionesApiKey"] = anterior;
+            }
+        }
+
         [TestMethod]
         public async Task NotificarNuevoProtocolo_ConApiKeyIncorrecta_DevuelveUnauthorized()
         {

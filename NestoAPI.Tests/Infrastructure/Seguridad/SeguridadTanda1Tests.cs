@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Owin.Security.DataHandler.Encoder;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -243,6 +243,79 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
         public void ConClaveConfiguradaPeroSinCabecera_NoPasa()
         {
             Assert.IsFalse(ValidadorApiKey.EsValida("la-clave", null));
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#429 (punto 1), a nivel de ATRIBUTO: con la setting ausente, [ApiKey] corta con
+    /// 401 a todo el mundo, traiga o no cabecera. Es el escenario real del agujero: un
+    /// secretos.config mal copiado en un despliegue.
+    /// </summary>
+    [TestClass]
+    public class ApiKeyAttributeSinSettingTests
+    {
+        private const string SETTING_AUSENTE = "Test_ApiKeyQueNoExiste_429";
+
+        // AppSettings no deja Remove en tests (configuración de solo lectura); asignar null sí.
+        [TestInitialize]
+        public void Inicializar()
+        {
+            ConfigurationManager.AppSettings[SETTING_AUSENTE] = null;
+        }
+
+        private static System.Web.Http.Controllers.HttpActionContext Contexto(string clave)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.nuevavision.es/api/auth/prestashop-login");
+            request.SetConfiguration(new System.Web.Http.HttpConfiguration());
+            if (clave != null)
+            {
+                request.Headers.Add("X-API-KEY", clave);
+            }
+            return new System.Web.Http.Controllers.HttpActionContext
+            {
+                ControllerContext = new System.Web.Http.Controllers.HttpControllerContext { Request = request }
+            };
+        }
+
+        [TestMethod]
+        public void SettingAusente_SinCabecera_401()
+        {
+            var contexto = Contexto(null);
+
+            new ApiKeyAttribute(SETTING_AUSENTE, "X-API-KEY").OnAuthorization(contexto);
+
+            Assert.IsNotNull(contexto.Response, "Con la setting ausente el endpoint NO puede quedar abierto");
+            Assert.AreEqual(System.Net.HttpStatusCode.Unauthorized, contexto.Response.StatusCode);
+        }
+
+        [TestMethod]
+        public void SettingAusente_ConCabeceraVacia_401()
+        {
+            var contexto = Contexto(string.Empty);
+
+            new ApiKeyAttribute(SETTING_AUSENTE, "X-API-KEY").OnAuthorization(contexto);
+
+            Assert.IsNotNull(contexto.Response);
+            Assert.AreEqual(System.Net.HttpStatusCode.Unauthorized, contexto.Response.StatusCode);
+        }
+
+        [TestMethod]
+        public void SettingEnBlanco_ConCabeceraEnBlanco_401()
+        {
+            ConfigurationManager.AppSettings[SETTING_AUSENTE] = "   ";
+            try
+            {
+                var contexto = Contexto("   ");
+
+                new ApiKeyAttribute(SETTING_AUSENTE, "X-API-KEY").OnAuthorization(contexto);
+
+                Assert.IsNotNull(contexto.Response);
+                Assert.AreEqual(System.Net.HttpStatusCode.Unauthorized, contexto.Response.StatusCode);
+            }
+            finally
+            {
+                ConfigurationManager.AppSettings[SETTING_AUSENTE] = null;
+            }
         }
     }
 
