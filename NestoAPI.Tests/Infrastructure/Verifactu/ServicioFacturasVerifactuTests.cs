@@ -67,6 +67,13 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             DeduplicadorErroresVerifactu.Reset();
         }
 
+        [TestCleanup]
+        public void Cleanup()
+        {
+            // NestoAPI#346: que el lector de ELMAH falso de un test no se quede para las demás clases
+            DeduplicadorErroresVerifactu.Reset();
+        }
+
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
@@ -1526,6 +1533,90 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
 
             Assert.IsTrue(respuesta.Exitoso);
             Assert.IsFalse(enviado.Incidencia);
+        }
+
+        #endregion
+
+        #region NestoAPI#346 (06/11/26): la deduplicación mira ELMAH de los últimos 7 días
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_MismoErrorYaEnElmahEstaSemana_NoLoVuelveALoguear()
+        {
+            // Tras el reciclaje del pool la memoria está vacía, pero ELMAH ya tiene el aviso de ayer (CV2600692: NIF no censado)
+            _ = ConfigurarFactura();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = false, MensajeError = "NIF no identificado en la AEAT", CodigoError = "1117" });
+            var elmah = A.Fake<ILectorErroresElmah>();
+            A.CallTo(() => elmah.HayErrorConMensajeDesde("Verifactu: error al enviar la factura NV2600123 (1117): NIF no identificado en la AEAT",
+                A<DateTime>.Ignored)).Returns(true);
+            DeduplicadorErroresVerifactu.UsarElmah(elmah);
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            _ = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => logService.LogError(A<string>.Ignored, A<Exception>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarRectificativaAVerifactu_SinVinculacionesYaEnElmah_NoLoVuelveALoguear()
+        {
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600129");
+            var elmah = A.Fake<ILectorErroresElmah>();
+            A.CallTo(() => elmah.HayErrorConMensajeDesde(A<string>.That.Contains("no tiene vinculaciones"), A<DateTime>.Ignored)).Returns(true);
+            DeduplicadorErroresVerifactu.UsarElmah(elmah);
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarRectificativaAVerifactu("1", "RV2600129");
+
+            A.CallTo(() => logService.LogError(A<string>.Ignored, A<Exception>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_SinOrigenSuficienteRepetido_SoloUnaVezEnElmah()
+        {
+            // «No se encontraron facturas suficientes para rectificar…»: antes se logueaba en cada llamada
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600154");
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "C1", Producto = "62400000", Cantidad = -1, Nº_Factura = "RV2600154" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600154", "RV", "C1");
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600154", "RV", "C1");
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("RV2600154"), A<Exception>.Ignored)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_SinOrigenSuficienteYaEnElmah_NoLoVuelveALoguear()
+        {
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600155");
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "C1", Producto = "62400000", Cantidad = -1, Nº_Factura = "RV2600155" });
+            var elmah = A.Fake<ILectorErroresElmah>();
+            A.CallTo(() => elmah.HayErrorConMensajeDesde(A<string>.That.Contains("No se encontraron facturas suficientes"), A<DateTime>.Ignored))
+                .Returns(true);
+            DeduplicadorErroresVerifactu.UsarElmah(elmah);
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600155", "RV", "C1");
+
+            A.CallTo(() => logService.LogError(A<string>.Ignored, A<Exception>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_SinOrigenSuficienteYElmahFalla_LogueaComoHoy()
+        {
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600155");
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "C1", Producto = "62400000", Cantidad = -1, Nº_Factura = "RV2600155" });
+            var elmah = A.Fake<ILectorErroresElmah>();
+            A.CallTo(() => elmah.HayErrorConMensajeDesde(A<string>.Ignored, A<DateTime>.Ignored)).Throws(new TimeoutException());
+            DeduplicadorErroresVerifactu.UsarElmah(elmah);
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600155", "RV", "C1");
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("RV2600155"), A<Exception>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
         #endregion

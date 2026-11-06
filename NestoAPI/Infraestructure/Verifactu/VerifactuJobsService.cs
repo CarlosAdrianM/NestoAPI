@@ -301,7 +301,7 @@ namespace NestoAPI.Infraestructure.Verifactu
                 {
                     string mensaje = $"[Verifactu job] No se ha podido mandar al cliente la factura definitiva {factura.Número?.Trim()} " +
                         $"(recibió el justificante provisional): se reintenta en la siguiente pasada (#522). {motivo}".Trim();
-                    if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, mensaje))
+                    if (DeduplicadorErroresVerifactu.EsNovedadEnElmah(claveRuido, mensaje))
                     {
                         ElmahHelper.Log(new Exception(mensaje));
                     }

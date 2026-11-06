@@ -1346,10 +1346,12 @@ namespace NestoAPI.Infraestructure.Facturas
                         {
                             // NestoAPI#570: el job reintenta cada hora; el mismo fallo, una sola ficha
                             // (RV2600067 dejó 34 en 17 horas)
-                            if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad($"lifo|{numeroFactura?.Trim()}", exLifo.Message))
+                            // (#346, 06/11/26: y tras un reciclaje del pool, tampoco si ELMAH ya lo tiene de esta semana)
+                            string mensajeLifo = $"Verifactu #38: auto-curado de vinculaciones fallido " +
+                                $"para la rectificativa {numeroFactura?.Trim()}: {exLifo.Message}";
+                            if (Verifactu.DeduplicadorErroresVerifactu.EsNovedadEnElmah($"lifo|{numeroFactura?.Trim()}", mensajeLifo))
                             {
-                                logService.LogError($"Verifactu #38: auto-curado de vinculaciones fallido " +
-                                    $"para la rectificativa {numeroFactura?.Trim()}: {exLifo.Message}", exLifo);
+                                logService.LogError(mensajeLifo, exLifo);
                             }
                         }
                         facturasRectificadas = await CargarFacturasRectificadas(empresa, numeroFactura);
@@ -1359,10 +1361,11 @@ namespace NestoAPI.Infraestructure.Facturas
                         // Sin vinculaciones no se puede identificar qué se rectifica: no se envía
                         // (queda con VerifactuUUID null, reintentable). El alta manual de
                         // vinculaciones para rectificativas creadas fuera de CopiarFactura es #38/#87.
-                        if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad($"sinvinculos|{numeroFactura?.Trim()}", "sin vinculaciones"))
+                        string mensajeSinVinculos = $"Verifactu: la rectificativa {numeroFactura} no tiene " +
+                            "vinculaciones en LinFacturaVtaRectificacion; no se envía (pendiente #38/#87)";
+                        if (Verifactu.DeduplicadorErroresVerifactu.EsNovedadEnElmah($"sinvinculos|{numeroFactura?.Trim()}", mensajeSinVinculos))
                         {
-                            logService.LogError($"Verifactu: la rectificativa {numeroFactura} no tiene " +
-                                "vinculaciones en LinFacturaVtaRectificacion; no se envía (pendiente #38/#87)");
+                            logService.LogError(mensajeSinVinculos);
                         }
                         return null;
                     }
@@ -1437,7 +1440,7 @@ namespace NestoAPI.Infraestructure.Facturas
                                 string mensajeNif = $"Verifactu: la factura {numeroFactura} está marcada como NO CENSADO (07) " +
                                     $"pero su NIF '{request.NifDestinatario?.Trim()}' no tiene formato de NIF válido: la AEAT " +
                                     "exige un NIF real (aunque no censado). Se excluye de los reintentos hasta corregir el NIF.";
-                                if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad(claveRuidoNif, mensajeNif))
+                                if (Verifactu.DeduplicadorErroresVerifactu.EsNovedadEnElmah(claveRuidoNif, mensajeNif))
                                 {
                                     logService.LogError(mensajeNif);
                                 }
@@ -1597,7 +1600,8 @@ namespace NestoAPI.Infraestructure.Facturas
                           "INCIDENCIA: se reenviará con incidencia=S el mismo día (#522)."
                         : $"Verifactu: error al enviar la factura {numeroFactura} " +
                           $"({respuesta?.CodigoError}): {respuesta?.MensajeError}";
-                    if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad(claveRuido, mensaje))
+                    // (06/11/26: y tras un reciclaje del pool, tampoco si ELMAH ya tiene ese mismo mensaje de esta semana)
+                    if (Verifactu.DeduplicadorErroresVerifactu.EsNovedadEnElmah(claveRuido, mensaje))
                     {
                         logService.LogError(mensaje);
                     }
@@ -1847,8 +1851,14 @@ namespace NestoAPI.Infraestructure.Facturas
             }
             catch (Exception ex)
             {
-                logService.LogError($"Verifactu #38: no se pudieron generar las vinculaciones LIFO " +
-                    $"de la rectificativa {numeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex);
+                // NestoAPI#346 (06/11/26): «No se encontraron facturas suficientes para rectificar…» se repetía cada día: deduplicado
+                // por rectificativa, en memoria y contra ELMAH de los últimos 7 días.
+                string mensaje = $"Verifactu #38: no se pudieron generar las vinculaciones LIFO " +
+                    $"de la rectificativa {numeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}";
+                if (Verifactu.DeduplicadorErroresVerifactu.EsNovedadEnElmah($"vinculacioneslifo|{numeroFactura?.Trim()}", mensaje))
+                {
+                    logService.LogError(mensaje, ex);
+                }
             }
         }
 
