@@ -31,6 +31,9 @@ public class AuthController : ApiController
     private readonly IGestorClientes _gestorClientes;
     private readonly IServicioCorreoElectronico _servicioCorreo;
     private const int ExpirationMinutes = 10;
+
+    /// <summary>NestoAPI#427 (punto 4): antes 2 años.</summary>
+    internal const int VENTANA_DIAS_REFRESCO_OAUTH = 30;
     private static readonly MemoryCache cache = MemoryCache.Default;
     private ApplicationUserManager _userManager = null;
 
@@ -47,6 +50,14 @@ public class AuthController : ApiController
         _gestorClientes = gestorClientes;
         _servicioCorreo = servicioCorreo;
     }
+
+    // Costuras para los tests (NestoAPI#427): CrearJWTAsync consulta la BD para dos claims
+    // (HasRecentPurchases y el nivel de precios). En producción son siempre ClienteHelper.
+    internal Func<string, Task<bool>> ComprasRecientesAsync = ClienteHelper.ClienteConComprasRecientesAsync;
+    internal Func<string, string, Task<PoliticaPreciosOcultos.NivelPrecios>> NivelPreciosAsync = ClienteHelper.NivelPreciosAsync;
+
+    /// <summary>Reloj inyectable para los tests de la caducidad absoluta (#427).</summary>
+    internal Func<DateTime> AhoraUtc = () => DateTime.UtcNow;
 
     [HttpPost]
     [Route("api/auth/request-code")]
@@ -160,8 +171,8 @@ public class AuthController : ApiController
             return Unauthorized();
         }
 
-        // Crear claims del usuario
-        string tokenJwt = await CrearJWTAsync(model.Email, nif, cliente);
+        // Crear claims del usuario (login nuevo: aquí empieza a contar la caducidad absoluta, #427)
+        string tokenJwt = await CrearJWTAsync(model.Email, nif, cliente, AhoraUtc());
 
         return Ok(new
         {
@@ -191,7 +202,7 @@ public class AuthController : ApiController
                 {
                     return Unauthorized();
                 }
-                string token = await CrearJWTAsync(request.Email, request.NIF, cliente);
+                string token = await CrearJWTAsync(request.Email, request.NIF, cliente, AhoraUtc());
                 return Ok(new { token });
             }
         }
@@ -200,6 +211,12 @@ public class AuthController : ApiController
     }
 
 
+    /// <summary>
+    /// Renueva el JWT de TiendasNuevaVision. La app lo llama con el token YA CADUCADO (es su
+    /// mecanismo de renovación), así que la caducidad del token no se valida aquí: se validan
+    /// la firma, una ventana de un mes desde que caducó y, desde NestoAPI#427, la caducidad
+    /// absoluta desde el login original y que la ficha del cliente siga viva en la BD.
+    /// </summary>
     [HttpPost]
     [Route("api/auth/refreshToken")]
     public async Task<IHttpActionResult> RefreshToken()
@@ -210,41 +227,58 @@ public class AuthController : ApiController
         }
 
         string accessToken = Request.Headers.Authorization.Parameter;
+        DateTime ahora = AhoraUtc();
 
-        try
-        {
-            // NestoAPI#427: antes esto era ReadJwtToken, que SOLO parsea. Cualquiera podia
-            // fabricarse un JWT con el cliente que quisiera y canjearlo aqui por uno autentico.
-            // ValidarFirmaSinCaducidad comprueba firma, issuer y audiencia — pero NO la caducidad,
-            // porque la app manda tokens caducados a proposito (ver el comentario del validador).
-            JwtSecurityToken token = ValidadorJwt.ValidarFirmaSinCaducidad(accessToken);
-            if (token == null)
-            {
-                return Unauthorized();
-            }
-
-            // Validar expiración manualmente (#430: la ventana NO se toca en esta tanda)
-            if (token.ValidTo < DateTime.UtcNow.AddMonths(-1))
-            {
-                return Unauthorized();
-            }
-
-            string email = token.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
-            string nif = token.Claims.FirstOrDefault(c => c.Type == "nif")?.Value;
-            string cliente = token.Claims.FirstOrDefault(c => c.Type == "cliente")?.Value;
-
-            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(nif) || string.IsNullOrEmpty(cliente))
-            {
-                return Unauthorized();
-            }
-
-            string newToken = await CrearJWTAsync(email, nif, cliente);
-            return Ok(new { token = newToken });
-        }
-        catch
+        // NestoAPI#427: antes esto era ReadJwtToken, que SOLO parsea. Cualquiera podia
+        // fabricarse un JWT con el cliente que quisiera y canjearlo aqui por uno autentico.
+        // ValidarFirmaSinCaducidad comprueba firma, issuer y audiencia — pero NO la caducidad,
+        // porque la app manda tokens caducados a proposito (ver el comentario del validador).
+        JwtSecurityToken token = ValidadorJwt.ValidarFirmaSinCaducidad(accessToken);
+        if (token == null)
         {
             return Unauthorized();
         }
+
+        // Ventana desde que caducó el token (sin cambios: un mes)
+        if (token.ValidTo < ahora.AddMonths(-1))
+        {
+            return Unauthorized();
+        }
+
+        string email = token.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
+        string nif = token.Claims.FirstOrDefault(c => c.Type == "nif")?.Value;
+        string clienteDelToken = token.Claims.FirstOrDefault(c => c.Type == "cliente")?.Value;
+
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(nif) || string.IsNullOrEmpty(clienteDelToken))
+        {
+            return Unauthorized();
+        }
+
+        // NestoAPI#427 (punto 3): caducidad absoluta desde el login original. Un token sin
+        // login_utc (emitido antes de este cambio) pasa UNA vez más y sale con login_utc = ahora,
+        // para no echar a nadie que tenga la app abierta: ver PoliticaRefrescoToken.
+        int diasMaximos = PoliticaRefrescoToken.DiasMaximos(
+            PoliticaRefrescoToken.SETTING_DIAS_TIENDA, PoliticaRefrescoToken.DIAS_TIENDA_POR_DEFECTO);
+        DateTime? login = PoliticaRefrescoToken.FechaLoginParaRefresco(token, ahora, diasMaximos);
+        if (login == null)
+        {
+            return Unauthorized();
+        }
+
+        // NestoAPI#427 (punto 2): el cliente se revalida contra la BD en cada refresco, como en
+        // validate-code y token. Una ficha que ya no existe o está anulada (#429) no renueva. Se
+        // usa el cliente que dice la BD, como en un login nuevo.
+        // Sin try/catch a propósito: si falla la BD es un 500 (y llega a ELMAH), no un 401 que
+        // se confunda con una sesión caducada. Para la app nunca es peor que el 401 de antes
+        // (cualquier fallo del refresco la lleva, como mucho, a identificarse), y así se ve.
+        string cliente = await BuscarCliente(email, nif);
+        if (string.IsNullOrEmpty(cliente))
+        {
+            return Unauthorized();
+        }
+
+        string newToken = await CrearJWTAsync(email, nif, cliente, login.Value);
+        return Ok(new { token = newToken });
     }
 
     /// <summary>
@@ -262,6 +296,7 @@ public class AuthController : ApiController
         }
 
         string accessToken = Request.Headers.Authorization.Parameter;
+        DateTime ahora = AhoraUtc();
 
         try
         {
@@ -273,9 +308,10 @@ public class AuthController : ApiController
                 return Unauthorized();
             }
 
-            // Validar que no esté expirado hace más de 2 años (temporal, ir bajando hasta 1 mes)
-            // (#430: la ventana NO se toca en esta tanda; va con #427 punto 4)
-            if (token.ValidTo < DateTime.UtcNow.AddYears(-2))
+            // NestoAPI#427 (punto 4): la ventana desde que caducó el token baja de 2 años
+            // ("temporal") a 30 días. La NestoApp de hoy ya no llama aquí: renueva por
+            // /oauth/token con refresh_token (#188); esto queda para versiones antiguas.
+            if (token.ValidTo < ahora.AddDays(-VENTANA_DIAS_REFRESCO_OAUTH))
             {
                 return Unauthorized();
             }
@@ -298,6 +334,17 @@ public class AuthController : ApiController
                 return Unauthorized();
             }
 
+            // NestoAPI#427 (punto 3): caducidad absoluta, con la misma transición que en
+            // RefreshToken. Los tokens de /oauth/token no llevan login_utc, así que en estos el
+            // reloj empieza en su primer paso por aquí (y como mucho dura los días de la setting).
+            int diasMaximos = PoliticaRefrescoToken.DiasMaximos(
+                PoliticaRefrescoToken.SETTING_DIAS_OAUTH, PoliticaRefrescoToken.DIAS_OAUTH_POR_DEFECTO);
+            DateTime? login = PoliticaRefrescoToken.FechaLoginParaRefresco(token, ahora, diasMaximos);
+            if (login == null)
+            {
+                return Unauthorized();
+            }
+
             // Buscar usuario en Identity
             ApplicationUser user = await UserManager.FindByNameAsync(userName);
             if (user == null)
@@ -306,7 +353,7 @@ public class AuthController : ApiController
             }
 
             // Regenerar el token con la misma lógica de CustomOAuthProvider
-            string newToken = await CrearJWTParaOAuthAsync(user);
+            string newToken = await CrearJWTParaOAuthAsync(user, login.Value);
             return Ok(new { token = newToken });
         }
         catch
@@ -406,7 +453,7 @@ public class AuthController : ApiController
         }
 
         // Generar el mismo token JWT que en los otros flujos
-        string token = await CrearJWTAsync(request.Email, request.Nif, cliente.cliente);
+        string token = await CrearJWTAsync(request.Email, request.Nif, cliente.cliente, AhoraUtc());
 
         JwtSecurityToken emitido = new JwtSecurityTokenHandler().ReadJwtToken(token);
         return Ok(new
@@ -478,7 +525,9 @@ public class AuthController : ApiController
     /// <param name="nif">NIF del usuario</param>
     /// <param name="cliente">Identificador o nombre del cliente</param>
     /// <returns>JWT string</returns>
-    private async Task<string> CrearJWTAsync(string email, string nif, string cliente)
+    /// <param name="loginUtc">NestoAPI#427: fecha del login ORIGINAL (ahora en un login nuevo;
+    /// la del token entrante en un refresco). Viaja en el claim login_utc.</param>
+    private async Task<string> CrearJWTAsync(string email, string nif, string cliente, DateTime loginUtc)
     {
         // Construir claims
         List<Claim> claims = new List<Claim>
@@ -487,11 +536,12 @@ public class AuthController : ApiController
         new Claim(ClaimTypes.Email, email),
         new Claim(ClaimTypes.Name, email),
         new Claim("nif", nif),
-        new Claim("cliente", cliente)
+        new Claim("cliente", cliente),
+        new Claim(PoliticaRefrescoToken.CLAIM_LOGIN_UTC, PoliticaRefrescoToken.Escribir(loginUtc))
     };
 
         // Verificar si tiene compras recientes y añadir el claim correspondiente
-        bool tieneComprasRecientes = await ClienteHelper.ClienteConComprasRecientesAsync(cliente);
+        bool tieneComprasRecientes = await ComprasRecientesAsync(cliente);
         if (tieneComprasRecientes)
         {
             claims.Add(new Claim("HasRecentPurchases", "true"));
@@ -501,7 +551,7 @@ public class AuthController : ApiController
         // ver descuentos" (31) lleva su nivel en el JWT; con él el servidor tapa lo que toque y
         // fuerza la forma de pago habitual. Con varios cargos para el mismo correo manda el más
         // restrictivo. Se recalcula en cada refresco: cambiar el cargo en Nesto surte efecto en una hora.
-        PoliticaPreciosOcultos.NivelPrecios nivelPrecios = await ClienteHelper.NivelPreciosAsync(cliente, email);
+        PoliticaPreciosOcultos.NivelPrecios nivelPrecios = await NivelPreciosAsync(cliente, email);
         if (nivelPrecios != PoliticaPreciosOcultos.NivelPrecios.Completo)
         {
             claims.Add(new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, nivelPrecios.ToString()));
@@ -586,10 +636,13 @@ public class AuthController : ApiController
     /// </summary>
     /// <param name="user">Usuario de Identity</param>
     /// <returns>JWT string</returns>
-    private async Task<string> CrearJWTParaOAuthAsync(ApplicationUser user)
+    private async Task<string> CrearJWTParaOAuthAsync(ApplicationUser user, DateTime loginUtc)
     {
         // Generar la identidad igual que en CustomOAuthProvider
         ClaimsIdentity oAuthIdentity = await user.GenerateUserIdentityAsync(UserManager, "JWT");
+
+        // NestoAPI#427: la fecha del login original, para la caducidad absoluta del refresco
+        oAuthIdentity.AddClaim(new Claim(PoliticaRefrescoToken.CLAIM_LOGIN_UTC, PoliticaRefrescoToken.Escribir(loginUtc)));
 
         // Añadir claims de vendedor si el usuario tiene uno asociado (Issue #70)
         try

@@ -1,4 +1,4 @@
-using Microsoft.IdentityModel.Tokens;
+﻿using Microsoft.IdentityModel.Tokens;
 using Microsoft.Owin.Security.DataHandler.Encoder;
 using System;
 using System.Configuration;
@@ -40,10 +40,9 @@ namespace NestoAPI.Infraestructure.Seguridad
         /// cuando el refresco falla (TiendasNuevaVision#50), así que verían "sesión iniciada"
         /// mientras nada funciona.
         ///
-        /// La ventana temporal se sigue comprobando A MANO en cada endpoint, como hasta ahora
-        /// (un mes en <c>RefreshToken</c>, dos años en <c>RefreshOAuthToken</c>). Que sean
-        /// ventanas enormes es un problema distinto (#427 puntos 2 y 3) y se aborda en la segunda
-        /// tanda, cuando la app sepa manejar el fin de sesión.
+        /// La ventana temporal se sigue comprobando A MANO en cada endpoint (un mes en
+        /// <c>RefreshToken</c>, 30 días en <c>RefreshOAuthToken</c> desde #427), y además hay
+        /// caducidad absoluta desde el login original (<see cref="PoliticaRefrescoToken"/>).
         ///
         /// Hay un test que fija esto: <c>TokenAutenticoPeroCaducado_SeRenueva_ProtegeALaAppMovil</c>.
         /// Si se pone en rojo, la respuesta NO es cambiarlo: es leer esto.

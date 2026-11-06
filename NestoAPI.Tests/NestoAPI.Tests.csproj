@@ -270,6 +270,7 @@
     <Compile Include="Infrastructure\PreciosMedios\PreciosMediosIncrementalTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\PreciosMediosJobsServiceTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\ServicioSombraPreciosMediosTests.cs" />
+    <Compile Include="Infrastructure\Seguridad\RefrescoTokenTests.cs" />
     <Compile Include="Infrastructure\Seguridad\SeguridadTanda1Tests.cs" />
     <Compile Include="Controllers\AutorizacionControllersTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />

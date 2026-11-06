@@ -110,8 +110,8 @@ namespace NestoAPI.Tests.Controllers
                 ["RequestCodeAsync"] = "Paso 1 del login por correo: se llama sin tener token.",
                 ["ValidateCodeAsync"] = "Paso 2: canjea el código recibido por correo.",
                 ["GetToken"] = "Canjea el tokenForValidation firmado con HMAC.",
-                ["RefreshToken"] = "La app llama con el token CADUCADO; desde #430 se valida su firma.",
-                ["RefreshOAuthToken"] = "Igual, para los tokens de NestoApp; desde #430 se valida su firma.",
+                ["RefreshToken"] = "La app llama con el token CADUCADO; se valida su firma (#430), se revalida al cliente y hay caducidad absoluta (#427).",
+                ["RefreshOAuthToken"] = "Igual, para los tokens de NestoApp antigua; firma (#430), ventana de 30 días y caducidad absoluta (#427).",
                 ["GetWindowsToken"] = "Nesto escritorio, autenticado por Windows contra el AD.",
                 ["PrestashopLogin"] = "El módulo de PrestaShop; protegido con [ApiKey], no con JWT."
             };
