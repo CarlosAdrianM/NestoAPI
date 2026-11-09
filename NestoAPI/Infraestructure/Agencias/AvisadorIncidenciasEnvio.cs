@@ -288,7 +288,9 @@ namespace NestoAPI.Infraestructure.Agencias
                     (string.IsNullOrEmpty(enlace) ? string.Empty
                         : $"<p><a href=\"{Html(enlace)}\">Ver el seguimiento en la web de la agencia</a>.</p>") +
                     "<p><b>¿Lo sigue queriendo el cliente?</b> Contéstelo en Nesto › Agencias › Devueltos: «volver a enviar» " +
-                    "(con la dirección corregida si hace falta) o «abonar». Así el almacén sabe qué hacer con la caja en cuanto llegue.</p>"
+                    "(con la dirección corregida si hace falta) o «abonar». Si no usa Nesto (por ejemplo, desde NestoApp), " +
+                    "conteste a este correo o avise a Logística (va en copia) diciendo qué hacer. Así el almacén sabe qué hacer " +
+                    "con la caja en cuanto llegue.</p>"
             };
             AnadirDestinatarios(mail, envio, comerciales);
             return mail;
@@ -365,7 +367,7 @@ namespace NestoAPI.Infraestructure.Agencias
                 ? $"Envío devuelto del pedido {envio.Pedido}: ¿lo sigue queriendo el cliente?"
                 : $"Envío {envio.Numero} devuelto: ¿lo sigue queriendo el cliente?";
             notificacion.Cuerpo = $"Cliente {TextoCliente(envio, comerciales)}. {agencia ?? "La agencia"} lo devuelve " +
-                $"({DescripcionIncidencia(envio)}). Contéstelo en Nesto › Agencias › Devueltos.";
+                $"({DescripcionIncidencia(envio)}). Contéstelo en Nesto › Agencias › Devueltos o, si no usa Nesto, avise a Logística.";
             return notificacion;
         }
 
