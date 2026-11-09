@@ -199,7 +199,8 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             return filas;
         }
 
-        private static List<LeadMeta> Leads(List<List<string>> filas)
+        /// <summary>La tabla (cabecera + filas) → leads. También la usa la fuente Graph (NestoAPI#623 corte 5c, <see cref="LectorGraphLeadsMeta"/>).</summary>
+        internal static List<LeadMeta> Leads(List<List<string>> filas)
         {
             List<string> cabecera = filas[0].Select(NormalizarCabecera).ToList();
             int id = Columna(cabecera, c => c == "id" || c == "lead_id");

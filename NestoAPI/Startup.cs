@@ -876,6 +876,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'leads-sin-llamar' configurado (L-V cada hora de 8 a 20)");
 
+            // NestoAPI#623 corte 5c (Carlos 09/11/26): cada 15 minutos, los leads de los formularios de Meta por la API Graph, con el
+            // mismo importador que el fichero. Solo con MetaLeads:Activo = true (Web.config) y MetaLeads:Token (secretos.config).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Clientes.Origenes.LeadsMetaJobsService.JOB_ID,
+                () => Infraestructure.Clientes.Origenes.LeadsMetaJobsService.Importar(),
+                Infraestructure.Clientes.Origenes.LeadsMetaJobsService.CRON, // Cron: cada 15 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'meta-leads' configurado (cada 15 minutos)");
+
             RecurringJob.AddOrUpdate(
                 "verifactu-aviso-pendientes",
                 () => Infraestructure.Verifactu.AvisoFacturasPendientesVerifactuJobsService.Avisar(),

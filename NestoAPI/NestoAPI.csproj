@@ -504,11 +504,14 @@
     <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
     <Compile Include="Controllers\ClientesController.Origen.cs" />
     <Compile Include="Controllers\ClientesController.ImportarLeads.cs" />
+    <Compile Include="Controllers\ClientesController.ImportarLeadsMeta.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\OrigenesCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\RepositorioOrigenesCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\LeadsSinLlamarJobsService.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\LectorLeadsMeta.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\ImportadorLeadsMeta.cs" />
+    <Compile Include="Infraestructure\Clientes\Origenes\ImportadorLeadsMetaGraph.cs" />
+    <Compile Include="Infraestructure\Clientes\Origenes\LectorGraphLeadsMeta.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\RepositorioLeadsMeta.cs" />
     <Compile Include="Infraestructure\Rapports\ImpulsoLeadsCampanaContacto.cs" />
     <Compile Include="Controllers\ClientesController.SinVendedor.cs" />
