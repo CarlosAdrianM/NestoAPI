@@ -389,8 +389,6 @@ namespace NestoAPI.Models
             public const string DIRECCION = "Dirección";
             public const string FACTURACION = "Facturación";
             public const string INFORMATICA = "Informática";
-            /// <summary>NestoAPI#841: el grupo del dominio de Logística (como Almacén, con tilde). Hoy solo da de alta los días sin reparto propio.</summary>
-            public const string LOGISTICA = "Logística";
             public const string TIENDA_ON_LINE = "TiendaOnline";
             public const string TIENDAS = "Tiendas";
             /// <summary>NestoAPI#623: el grupo de los vendedores (como en ReglasPerfilesNovedades.VENDEDORES).</summary>

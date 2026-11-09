@@ -300,7 +300,7 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`EsFestivo(fecha, ALG/REI/ALC)` lo ignora); `GestorFestivos.EsDiaSinRepartoPropio` y LA REGLA del reparto propio
   `GestorFestivos.EsFestivoRepartoPropio` (= `EsFestivo(fecha, GestorFestivos.REPARTO_PROPIO)`: festivo de Algete o sin reparto).
   Frena AT/16 (fecha de entrega, picking de rutas internas, RP, paradas), las llegadas de reposición (`CalculadoraFechaReposicion`) y el
-  aviso de las 22:00 de la furgoneta. Lo dan de alta también Almacén y Logística (`GruposSeguridad.LOGISTICA` = «Logística», solo ese tipo). Requiere `Scripts/Issue841_FestivosRepartoPropio.sql` (CHECK).
+  aviso de las 22:00 de la furgoneta. Lo dan de alta también Almacén (solo ese tipo; no hay grupo «Logística» en el dominio, Carlos 09/11/26). Requiere `Scripts/Issue841_FestivosRepartoPropio.sql` (CHECK).
 
 ### Nota de cobro: parada de solo cobro (NestoAPI#786, 04/11/26)
 - `NotasEntregaCabecera.Tipo` = «Cobro» (`TiposNotaEntrega.COBRO`; `Scripts/Issue786_NotasCobro.sql`: CHECK ampliada, columna

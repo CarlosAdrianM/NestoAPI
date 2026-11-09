@@ -198,8 +198,7 @@ namespace NestoAPI.Tests.Controllers
 
         [DataTestMethod]
         [DataRow("Almacén")]
-        [DataRow("Logística")]
-        public async Task Issue841_Post_RepartoPropio_AlmacenYLogisticaPueden_YSeGuardaConSuTipo(string rol)
+        public async Task Issue841_Post_RepartoPropio_AlmacenPuede_YSeGuardaConSuTipo(string rol)
         {
             A.CallTo(() => repositorio.Guardar(A<FilaTablaFestivo>._, A<string>._)).Returns(ResultadoEscrituraFestivo.Creado);
 
@@ -232,9 +231,7 @@ namespace NestoAPI.Tests.Controllers
         [DataTestMethod]
         [DataRow("Almacén", "Madrid")]
         [DataRow("Almacén", "Nacional")]
-        [DataRow("Logística", "Madrid")]
-        [DataRow("Logística", "Nacional")]
-        public async Task Issue841_Post_OtroTipo_AlmacenYLogisticaSiguenSinPoder(string rol, string tipo)
+        public async Task Issue841_Post_OtroTipo_AlmacenSigueSinPoder(string rol, string tipo)
         {
             var resultado = await Controller(rol).PostFestivo(new PeticionFestivoDTO
             {
@@ -258,8 +255,7 @@ namespace NestoAPI.Tests.Controllers
 
         [DataTestMethod]
         [DataRow("Almacén")]
-        [DataRow("Logística")]
-        public async Task Issue841_Delete_RepartoPropio_AlmacenYLogisticaPueden_YOtroTipoNo(string rol)
+        public async Task Issue841_Delete_RepartoPropio_AlmacenPuede_YOtroTipoNo(string rol)
         {
             A.CallTo(() => repositorio.Borrar(new DateTime(2026, 11, 9), "RepartoPropio", A<string>._)).Returns(ResultadoEscrituraFestivo.Borrado);
 
