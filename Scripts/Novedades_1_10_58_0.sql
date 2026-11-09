@@ -86,7 +86,10 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
      N'Administración,Dirección'),
     ('Mejorado', N'Novedades: las sugerencias contestadas pasan a «Cerrada»',
      N'Las sugerencias tienen un estado nuevo, «Cerrada»: ya está contestada y no queda nada por hacer. Quien la escribió la sigue viendo 14 días, con el aviso «Cerrada: si necesita algo más, escriba y se reabre»; en cuanto alguien escribe en ella, vuelve a estar abierta. Las que se quedan sin respuesta después de los recordatorios también se cierran así, y el aviso del cierre le llega también a quien la escribió.',
-     NULL);
+     NULL),
+    ('Corregido', N'Agencias: al teclear el peso de un pedido con etiqueta pendiente ya no cambia la agencia',
+     N'Si el pedido ya tenía su etiqueta pendiente (por ejemplo de CTT con «Recoger producto»), al teclear el peso la pantalla saltaba un momento a otra agencia y el retorno se veía como «sin retorno». Al imprimir se guardaba bien, pero la pantalla confundía. Ahora la agencia y el retorno son siempre los de la etiqueta pendiente; si quiere otra agencia, elíjala en la lista.',
+     N'Almacén,Administración,Dirección');
 
 INSERT INTO dbo.Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa', n.Perfiles
