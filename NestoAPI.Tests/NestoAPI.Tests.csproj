@@ -344,6 +344,7 @@
     <Compile Include="Controllers\PagarReembolsosControllerTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasCatalogoServiciosTests.cs" />
+    <Compile Include="Controllers\EnvioRepartoPropioRepetidoTests.cs" />
     <Compile Include="Controllers\PropuestaEnvioControllerTests.cs" />
     <Compile Include="Controllers\EnvioDesdePedidoControllerTests.cs" />
     <Compile Include="Controllers\SombraPlazaYCodigoBarrasTests.cs" />

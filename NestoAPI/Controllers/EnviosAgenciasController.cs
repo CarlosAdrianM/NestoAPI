@@ -3000,6 +3000,21 @@ namespace NestoAPI.Controllers
         private async Task<string> MotivoRetenido(string empresa, int? pedido, bool etiquetaRepartoPropio = false)
             => pedido.HasValue && pedido.Value > 0 ? await MotivoPedidoRetenido(empresa, pedido.Value, etiquetaRepartoPropio).ConfigureAwait(true) : null;
 
+        /// <summary>NestoAPI#847: hoy, para la regla del envío del reparto propio repetido (sustituible en los tests).</summary>
+        internal Func<DateTime> HoyRepartoPropio { get; set; } = () => DateTime.Today;
+
+        /// <summary>NestoAPI#847: el envío del reparto propio que ya tiene el pedido (<see cref="EnvioRepartoPropioRepetido"/>), o null.</summary>
+        private async Task<EnviosAgencia> EnvioRepartoPropioDelPedido(string empresa, int pedido)
+        {
+            DateTime hoy = HoyRepartoPropio().Date;
+            List<EnviosAgencia> candidatos = await db.EnviosAgencias.AsNoTracking()
+                .Where(e => e.Pedido == pedido && e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO &&
+                            (e.Estado == Constantes.Agencias.ESTADO_EN_CURSO || e.Estado == Constantes.Agencias.ESTADO_TRAMITADO) &&
+                            e.Fecha >= hoy)
+                .ToListAsync();
+            return EnvioRepartoPropioRepetido.Buscar(candidatos, empresa, pedido, hoy);
+        }
+
         /// <summary>NestoAPI#831: ¿la etiqueta de este envío es del reparto propio (la que el aplazado deja sacar)?</summary>
         private static bool EsEtiquetaRepartoPropio(EnviosAgencia envio) => envio?.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
 
@@ -3041,6 +3056,15 @@ namespace NestoAPI.Controllers
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);
+            }
+            // NestoAPI#847: lo mismo que el POST cuando la pantalla ya ha elegido el reparto propio.
+            if (peticion != null && peticion.Pedido > 0 && peticion.Cambios?.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                EnviosAgencia existente = await EnvioRepartoPropioDelPedido(peticion.Empresa, peticion.Pedido);
+                if (existente != null)
+                {
+                    return Content(HttpStatusCode.Conflict, EnvioRepartoPropioRepetido.Respuesta(existente));
+                }
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             ResultadoEnvioDesdePedido resultado = await EnvioDesdePedido.Crear(peticion, usuario);
@@ -3203,6 +3227,16 @@ namespace NestoAPI.Controllers
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);
+            }
+            // NestoAPI#847 (sugerencia 1103): «Insertar e Imprimir» otra vez porque no salió la etiqueta no crea otro envío del
+            // reparto propio: 409 con el que ya tiene el pedido, para reimprimirlo.
+            if (EnvioRepartoPropioRepetido.AplicaA(enviosAgencia))
+            {
+                EnviosAgencia existente = await EnvioRepartoPropioDelPedido(enviosAgencia.Empresa, enviosAgencia.Pedido.Value);
+                if (existente != null)
+                {
+                    return Content(HttpStatusCode.Conflict, EnvioRepartoPropioRepetido.Respuesta(existente));
+                }
             }
 
             enviosAgencia.Usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");

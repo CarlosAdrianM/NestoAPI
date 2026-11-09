@@ -774,6 +774,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AgenciaRemotaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EtiquetaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\LogoZplNuevaVision.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\EnvioRepartoPropioRepetido.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ReglasRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RepositorioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.cs" />
