@@ -84,6 +84,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public async Task<ResultadoReparto<ResultadoMovimientoBultoDTO>> Recoger(MovimientoBultoRepartoDTO peticion, string usuario,
             OrigenPeticionReparto origen = null, IPrincipal quien = null)
         {
+            // NestoAPI#844: con dinero de días anteriores en la caja, no se empieza a recoger
+            if (ControlCaja != null && peticion != null
+                && await ControlCaja.MotivoParaNoEmpezar(usuario, peticion.FechaHora).ConfigureAwait(false) is string motivo)
+            {
+                return ReglaCajaSinCerrar.Conflicto<ResultadoMovimientoBultoDTO>(motivo);
+            }
             ResultadoReparto<ResultadoMovimientoBultoDTO> resultado = await RecogerBulto(peticion, usuario, origen, quien).ConfigureAwait(false);
             if (resultado.Contenido?.YaEstaba != true)
             {
@@ -382,6 +388,16 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (previa != null)
             {
                 return ResultadoReparto<ResultadoJornadaRepartoDTO>.Bien(JornadaYaTerminada(previa));
+            }
+            // NestoAPI#844: con dinero en la caja no se termina (ni confirmando): primero, cerrar la caja. No se guarda nada.
+            if (ControlCaja != null && await ControlCaja.MotivoParaNoTerminar(usuario).ConfigureAwait(false) is string cajaSinCerrar)
+            {
+                return ResultadoReparto<ResultadoJornadaRepartoDTO>.Bien(new ResultadoJornadaRepartoDTO
+                {
+                    Terminada = false,
+                    CerrarCaja = true,
+                    Mensaje = cajaSinCerrar
+                });
             }
             List<MovimientoBultoReparto> pendientes = await EnFurgoneta(usuario).ConfigureAwait(false);
             List<BultoFurgonetaDTO> lista = pendientes.Select(NucleoFurgoneta.ADto).ToList();

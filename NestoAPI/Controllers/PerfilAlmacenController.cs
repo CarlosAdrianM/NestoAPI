@@ -53,6 +53,24 @@ namespace NestoAPI.Controllers
             return Ok(perfil);
         }
 
+        // GET api/Almacen/VersionesAriadna
+        /// <summary>
+        /// NestoAPI#844: la última versión de Ariadna con la que ha llamado cada usuario (X-Ariadna-Version, desde el último arranque
+        /// de la API), para distinguir «no ha actualizado» de «no lo ha hecho». Dirección, Informática, Administración y Almacén.
+        /// </summary>
+        [HttpGet]
+        [Route("VersionesAriadna")]
+        [ResponseType(typeof(System.Collections.Generic.List<Infraestructure.Ariadna.VersionAriadnaUsuarioDTO>))]
+        public IHttpActionResult GetVersionesAriadna()
+        {
+            if (User == null || !(User.IsInRole(Constantes.GruposSeguridad.DIRECCION) || User.IsInRole(Constantes.GruposSeguridad.INFORMATICA)
+                || User.IsInRole(Constantes.GruposSeguridad.ADMINISTRACION) || User.IsInRole(Constantes.GruposSeguridad.ALMACEN)))
+            {
+                return Content(System.Net.HttpStatusCode.Forbidden, new { Message = "Su usuario no puede ver las versiones de Ariadna." });
+            }
+            return Ok(Infraestructure.Ariadna.VersionesAriadna.Todas());
+        }
+
         private static async Task<string> LeerNombreAlmacen(string empresa, string almacen)
         {
             using (var db = new NVEntities())

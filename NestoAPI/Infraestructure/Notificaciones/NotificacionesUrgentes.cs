@@ -18,7 +18,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// <item>mientras siga pendiente vuelve a salir al abrir Nesto o al reconectar (sin sondeo): cada tipo dice qué referencias siguen
     /// pendientes (<see cref="IComprobadorUrgentesPendientes"/>).</item>
     /// </list>
-    /// Hoy solo <see cref="TextosAutorizacionReembolso.TIPO_NOTIFICACION"/>. «FurgonetaSinDescargar» (#772) sigue siendo normal: no tiene nada
+    /// Hoy <see cref="TextosAutorizacionReembolso.TIPO_NOTIFICACION"/> y, desde NestoAPI#844, <see cref="TextosCierreCajaDescuadrado.TIPO_NOTIFICACION"/>. «FurgonetaSinDescargar» (#772) sigue siendo normal: no tiene nada
     /// que contestar ni un estado «pendiente» que cerrar.
     /// </summary>
     public static class NotificacionesUrgentes
@@ -33,7 +33,9 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         private static readonly HashSet<string> TIPOS = new HashSet<string>(StringComparer.Ordinal)
         {
-            TextosAutorizacionReembolso.TIPO_NOTIFICACION
+            TextosAutorizacionReembolso.TIPO_NOTIFICACION,
+            // NestoAPI#844: un cierre de caja del repartidor que no cuadra (a Administración)
+            TextosCierreCajaDescuadrado.TIPO_NOTIFICACION
         };
 
         public static IReadOnlyCollection<string> Tipos => TIPOS;
@@ -125,7 +127,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
             using (var db = new NVEntities())
             {
                 var servicio = new ServicioNotificacionesUrgentes(new RepositorioUrgentesBuzon(db),
-                    new IComprobadorUrgentesPendientes[] { new ComprobadorAutorizacionesPendientes(new RepositorioAutorizacionesReembolso(db)) });
+                    new IComprobadorUrgentesPendientes[]
+                    {
+                        new ComprobadorAutorizacionesPendientes(new RepositorioAutorizacionesReembolso(db)),
+                        new ComprobadorCierresCajaDescuadrados(new EstadoCajaReparto(db)) // NestoAPI#844
+                    });
                 return await servicio.Pendientes(usuario).ConfigureAwait(false);
             }
         }

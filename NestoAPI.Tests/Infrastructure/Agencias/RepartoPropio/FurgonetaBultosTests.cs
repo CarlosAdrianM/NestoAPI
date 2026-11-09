@@ -871,6 +871,129 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             }
         }
 
+        // ================================================================ NestoAPI#844: la caja sin cerrar
+
+        /// <summary>Andre con caja 57000040: <paramref name="anterior"/> de días anteriores y <paramref name="hoy"/> cobrado hoy (empresa 1).</summary>
+        private IInformesService ConCaja(decimal anterior, decimal hoy = 0m)
+        {
+            var lector = A.Fake<NestoAPI.Infraestructure.ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametroSinDefecto("1", ANDRE, "CajaDefecto")).Returns("57000040");
+            var informes = A.Fake<IInformesService>();
+            A.CallTo(() => informes.LeerSaldoContableAnteriorAsync("1", "57000040", A<DateTime>._)).Returns(anterior);
+            A.CallTo(() => informes.LeerSaldoContableAnteriorAsync("3", "57000040", A<DateTime>._)).Returns(0m);
+            A.CallTo(() => informes.LeerExtractoContableAsync(A<string>._, A<string>._, A<DateTime>._, A<DateTime>._))
+                .ReturnsLazily((string empresa, string cuenta, DateTime desde, DateTime hasta) => Task.FromResult(empresa == "1" && hoy != 0m
+                    ? new List<NestoAPI.Models.Informes.ExtractoContableDTO> { new NestoAPI.Models.Informes.ExtractoContableDTO { Id = 1, Fecha = desde, Debe = hoy, Concepto = "Reembolso" } }
+                    : new List<NestoAPI.Models.Informes.ExtractoContableDTO>()));
+            servicio.ControlCaja = new ControlCajaReparto(lector, () => informes, () => ahora,
+                new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>(), _ => { });
+            return informes;
+        }
+
+        [TestMethod]
+        public async Task Issue844_Cargar_ConDineroDeAyer_409SinCargarNada()
+        {
+            Envio();
+            ConCaja(85.40m);
+
+            var r = await servicio.Cargar(Carga("RP251300-1"), ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, r.Tipo);
+            Assert.AreEqual(ReglaCajaSinCerrar.CODIGO, r.Codigo);
+            Assert.AreEqual("Tiene 85,40 € de días anteriores sin cerrar en su caja: ciérrela antes de empezar.", r.Mensaje);
+            Assert.AreEqual(0, furgoneta.Filas.Count, "Ni Cargado en la furgoneta");
+            Assert.AreEqual(0, (await LoQueLleva(ANDRE)).Count);
+        }
+
+        [TestMethod]
+        public async Task Issue844_Cargar_LoDeHoyNoBloquea_YUnaCargaDeAyerQueLlegaTardeTampoco()
+        {
+            Envio();
+            ConCaja(0m, hoy: 40m);
+            Assert.AreEqual(TipoResultadoReparto.Ok, (await servicio.Cargar(Carga("RP251300-1"), ANDRE)).Tipo);
+
+            ConCaja(85.40m);
+            CargaBultoRepartoDTO deAyer = Carga("RP251300-2");
+            deAyer.FechaHora = AHORA.AddDays(-1);
+            Assert.AreEqual(TipoResultadoReparto.Ok, (await servicio.Cargar(deAyer, ANDRE)).Tipo, "Se hizo ayer: es de aquel día");
+        }
+
+        [TestMethod]
+        public async Task Issue844_Recoger_ConDineroDeAyer_409()
+        {
+            ConCaja(85.40m);
+
+            var r = await servicio.Recoger(Lectura($"R{TRASPASO_TIENDA}-1"), ANDRE, null, Almacen());
+
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, r.Tipo);
+            Assert.AreEqual(ReglaCajaSinCerrar.CODIGO, r.Codigo);
+            Assert.AreEqual(0, furgoneta.Filas.Count);
+            Assert.AreEqual(0, marcador.Marcadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Issue844_TerminarJornada_ConDineroEnLaCaja_NoTermina_NiConfirmando()
+        {
+            ConCaja(0m, hoy: 85.40m);
+
+            var r = await servicio.TerminarJornada(new TerminarJornadaRepartoDTO { ClaveIdempotencia = Guid.NewGuid(), Confirmar = true }, ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo);
+            Assert.IsFalse(r.Contenido.Terminada);
+            Assert.IsTrue(r.Contenido.CerrarCaja, "Ariadna abre «Cerrar caja»");
+            Assert.AreEqual("Antes de terminar, cierre la caja: lleva 85,40 €.", r.Contenido.Mensaje);
+            Assert.AreEqual(0, r.Contenido.Pendientes.Count);
+            Assert.AreEqual(0, furgoneta.Jornadas.Count, "No se guarda nada");
+            Assert.AreEqual(0, avisosFurgoneta.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Issue844_TerminarJornada_ConLaCajaCerrada_ComoAntes()
+        {
+            ConCaja(0m);
+
+            var r = await servicio.TerminarJornada(new TerminarJornadaRepartoDTO { ClaveIdempotencia = Guid.NewGuid() }, ANDRE);
+
+            Assert.IsTrue(r.Contenido.Terminada);
+            Assert.IsFalse(r.Contenido.CerrarCaja);
+            Assert.AreEqual(1, furgoneta.Jornadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Issue844_TerminarJornada_YaTerminadaConEsaClave_DevuelveLaSuyaAunqueHayaDinero()
+        {
+            Guid clave = Guid.NewGuid();
+            _ = await servicio.TerminarJornada(new TerminarJornadaRepartoDTO { ClaveIdempotencia = clave }, ANDRE);
+            ConCaja(0m, hoy: 85.40m);
+
+            var r = await servicio.TerminarJornada(new TerminarJornadaRepartoDTO { ClaveIdempotencia = clave }, ANDRE);
+
+            Assert.IsTrue(r.Contenido.Terminada);
+        }
+
+        [TestMethod]
+        public async Task Issue844_Controlador_Cargar409ConMessageYCodigo()
+        {
+            Envio();
+            ConCaja(85.40m);
+            var controlador = new RepartoPropioController(null, servicio)
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.Name, ANDRE), new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN)
+                }, "prueba"))
+            };
+
+            HttpResponseMessage respuesta = await (await controlador.Cargar(Carga("RP251300-1"))).ExecuteAsync(CancellationToken.None);
+            string cuerpo = await respuesta.Content.ReadAsStringAsync();
+
+            Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
+            StringAssert.Contains(cuerpo, "\"code\":\"CAJA_SIN_CERRAR\"");
+            StringAssert.Contains(cuerpo, "\"Message\":\"Tiene 85,40 € de días anteriores sin cerrar en su caja: ciérrela antes de empezar.\"");
+        }
+
         internal class ParametrosFurgoneta : NestoAPI.Infraestructure.ILectorParametrosUsuario
         {
             public string Obligatorio;

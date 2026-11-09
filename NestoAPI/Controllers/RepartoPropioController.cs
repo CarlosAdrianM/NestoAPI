@@ -43,7 +43,12 @@ namespace NestoAPI.Controllers
             servicio.CobroEntrega = new ComprobadorCobroEntrega(new RepositorioCobrosTarjetaReparto(db), new RepositorioAutorizacionesReembolso(db));
             // NestoAPI#786: el efectivo de una nota de cobro liquida sus efectos como «Cobrar una deuda»
             servicio.CobrosDeuda = new ServicioCobrosReparto(new RepositorioCobrosReparto(db));
+            // NestoAPI#844: la caja sin cerrar bloquea terminar la jornada y empezar el día siguiente (cargar, recoger, cobrar)
+            servicio.ControlCaja = NuevoControlCaja(db);
         }
+
+        private static ControlCajaReparto NuevoControlCaja(NVEntities db)
+            => new ControlCajaReparto(informes: () => new Infraestructure.Informes.InformesService(db));
 
         // GET api/RepartoPropio/MisCobros?fecha=2026-10-29
         /// <summary>El extracto del día de la caja del usuario (su CajaDefecto). Sin caja, 400.</summary>
@@ -70,7 +75,7 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#766: el cobro de deudas en efectivo (sustituible en tests).</summary>
         internal ServicioCobrosReparto ServicioCobros
         {
-            get => servicioCobros ?? (servicioCobros = new ServicioCobrosReparto(new RepositorioCobrosReparto(db)));
+            get => servicioCobros ?? (servicioCobros = new ServicioCobrosReparto(new RepositorioCobrosReparto(db)) { ControlCaja = NuevoControlCaja(db) });
             set => servicioCobros = value;
         }
 
@@ -98,7 +103,8 @@ namespace NestoAPI.Controllers
         internal ServicioCierreCajaReparto ServicioCierreCaja
         {
             get => servicioCierreCaja ?? (servicioCierreCaja = new ServicioCierreCajaReparto(new RepositorioCierresCajaReparto(db),
-                informes: () => new Infraestructure.Informes.InformesService(db)));
+                informes: () => new Infraestructure.Informes.InformesService(db),
+                avisador: new AvisadorCierreCaja())); // NestoAPI#844: si no cuadra, aviso urgente a Administración
             set => servicioCierreCaja = value;
         }
 

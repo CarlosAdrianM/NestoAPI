@@ -791,6 +791,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Furgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CierreCajaReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ControlCajaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CobroDeudaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EmpresaDelCobroReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ReembolsoDesfasadoRepartoPropio.cs" />
@@ -1467,6 +1468,7 @@
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\Ariadna\PoliticaVersionMinimaAriadna.cs" />
     <Compile Include="Infraestructure\Ariadna\VersionMinimaAriadnaHandler.cs" />
+    <Compile Include="Infraestructure\Ariadna\VersionesAriadna.cs" />
     <Compile Include="Infraestructure\UsuarioContextInfoInterceptor.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConvertidorPedidoAPlantilla.cs" />
     <Compile Include="Controllers\DireccionesController.cs" />

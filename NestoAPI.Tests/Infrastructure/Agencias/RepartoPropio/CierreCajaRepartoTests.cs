@@ -135,8 +135,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
             Assert.AreEqual(TipoDecisionCierreCaja.NoCuadra, d.Tipo);
             Assert.AreEqual(TipoResultadoReparto.Conflicto, d.TipoResultado);
-            Assert.AreEqual("La caja no cuadra: lleva 1.200,00 € y la contabilidad dice 1.234,56 € (empresa 1: 1.234,56 €, empresa 3: 0,00 €). " +
-                "Véalo con Administración antes de cerrar.", d.Mensaje);
+            Assert.AreEqual("No cuadra: ha contado 1.200,00 € y su caja tiene 1.234,56 € (empresa 1: 1.234,56 €, empresa 3: 0,00 €).", d.Mensaje);
         }
 
         [TestMethod]
@@ -145,8 +144,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             DecisionCierreCaja d = ReglaCierreCaja.Decidir(Saldos(80m, 20.5m), 100m);
 
             Assert.AreEqual(TipoDecisionCierreCaja.NoCuadra, d.Tipo);
-            Assert.AreEqual("La caja no cuadra: lleva 100,00 € y la contabilidad dice 100,50 € (empresa 1: 80,00 €, empresa 3: 20,50 €). " +
-                "Véalo con Administración antes de cerrar.", d.Mensaje);
+            Assert.AreEqual("No cuadra: ha contado 100,00 € y su caja tiene 100,50 € (empresa 1: 80,00 €, empresa 3: 20,50 €).", d.Mensaje);
         }
 
         [TestMethod]
@@ -222,8 +220,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             ResultadoReparto<ResultadoCierreCajaDTO> r = await servicio.Cerrar(Peticion(180m), MIGUEL);
 
             Assert.AreEqual(TipoResultadoReparto.Conflicto, r.Tipo);
-            Assert.AreEqual("La caja no cuadra: lleva 180,00 € y la contabilidad dice 185,40 € (empresa 1: 185,40 €, empresa 3: 0,00 €). " +
-                "Véalo con Administración antes de cerrar.", r.Mensaje);
+            Assert.AreEqual("No cuadra: ha contado 180,00 € y su caja tiene 185,40 € (empresa 1: 185,40 €, empresa 3: 0,00 €). " +
+                "Véalo con Administración antes de cerrar.", r.Mensaje, "Sin avisador (como antes de #844): que lo vea con Administración");
             A.CallTo(() => repositorio.Registrar(A<Guid>._, A<string>._, A<List<PreContabilidad>>._, A<ResultadoCierreCajaDTO>._)).MustNotHaveHappened();
         }
 

@@ -344,6 +344,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         private readonly ILectorParametrosUsuario parametros;
         private readonly Func<DateTime> ahora;
 
+        /// <summary>
+        /// NestoAPI#844: con dinero de días anteriores en la caja, no se cobra (409 CAJA_SIN_CERRAR; Ariadna guarda el cobro y lo
+        /// sube al cerrar). Null: no se mira. Lo pone el controlador SOLO en POST Cobros: el cobro de una nota de cobro va dentro de
+        /// la entrega y rechazarlo perdería la entrega firmada.
+        /// </summary>
+        internal ControlCajaReparto ControlCaja { get; set; }
+
         public ServicioCobrosReparto(IRepositorioCobrosReparto repositorio, ILectorParametrosUsuario parametros = null, Func<DateTime> ahora = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
@@ -371,6 +378,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (yaCobrado != null)
             {
                 return ResultadoReparto<ResultadoCobroDeudaDTO>.Bien(yaCobrado);
+            }
+            if (ControlCaja != null && await ControlCaja.MotivoParaNoEmpezar(usuario, peticion.FechaHora).ConfigureAwait(false) is string cajaSinCerrar)
+            {
+                return ReglaCajaSinCerrar.Conflicto<ResultadoCobroDeudaDTO>(cajaSinCerrar);
             }
 
             string sinDominio = string.IsNullOrWhiteSpace(usuario) ? null : usuario.Substring(usuario.IndexOf('\\') + 1).Trim();

@@ -225,11 +225,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (lleva != total)
             {
                 string detalle = string.Join(", ", redondeados.Select(s => $"empresa {s.Empresa}: {Euros(s.Saldo)}"));
+                // NestoAPI#844: lo que ha contado frente a lo que tiene; el servicio añade si se ha avisado a Administración
                 return new DecisionCierreCaja
                 {
                     Tipo = TipoDecisionCierreCaja.NoCuadra,
-                    Mensaje = $"La caja no cuadra: lleva {Euros(lleva)} y la contabilidad dice {Euros(total)} ({detalle}). " +
-                        "Véalo con Administración antes de cerrar."
+                    Mensaje = $"No cuadra: ha contado {Euros(lleva)} y su caja tiene {Euros(total)} ({detalle})."
                 };
             }
             return new DecisionCierreCaja { Tipo = TipoDecisionCierreCaja.Cuadra };
@@ -299,18 +299,29 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         internal const string PARAMETRO_DELEGACION = "DelegaciónDefecto";
         internal const string PARAMETRO_FORMA_VENTA = "FormaVentaDefecto";
 
+        /// <summary>NestoAPI#844: lo que se dice al repartidor cuando no cuadra y se ha avisado a Administración.</summary>
+        public const string MENSAJE_AVISADA_ADMINISTRACION = " Ya hemos avisado a Administración.";
+        public const string MENSAJE_VEALO_CON_ADMINISTRACION = " Véalo con Administración antes de cerrar.";
+
         private readonly IRepositorioCierresCaja repositorio;
         private readonly ILectorParametrosUsuario parametros;
         private readonly Func<IInformesService> informes;
         private readonly Func<DateTime> ahora;
+        private readonly IAvisadorCierreCaja avisador;
+        private readonly Func<string, string> versionAriadna;
 
+        /// <param name="avisador">NestoAPI#844: el aviso urgente a Administración si no cuadra. Null: no se avisa (como antes).</param>
+        /// <param name="versionAriadna">NestoAPI#844: usuario → su versión de Ariadna (va en el aviso). Null: <see cref="Ariadna.VersionesAriadna.De"/>.</param>
         public ServicioCierreCajaReparto(IRepositorioCierresCaja repositorio, ILectorParametrosUsuario parametros = null,
-            Func<IInformesService> informes = null, Func<DateTime> ahora = null)
+            Func<IInformesService> informes = null, Func<DateTime> ahora = null, IAvisadorCierreCaja avisador = null,
+            Func<string, string> versionAriadna = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.parametros = parametros ?? new LectorParametrosUsuario();
             this.informes = informes ?? (() => new InformesService());
             this.ahora = ahora ?? (() => DateTime.Now);
+            this.avisador = avisador;
+            this.versionAriadna = versionAriadna ?? (u => Ariadna.VersionesAriadna.De(u)?.Version);
         }
 
         public async Task<ResultadoReparto<ResultadoCierreCajaDTO>> Cerrar(CierreCajaRepartoDTO peticion, string usuario)
@@ -347,6 +358,25 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
 
             DecisionCierreCaja decision = ReglaCierreCaja.Decidir(saldos, peticion.Importe);
+            if (decision.Tipo == TipoDecisionCierreCaja.NoCuadra)
+            {
+                // NestoAPI#844: antes era un 409 que no veía nadie más; ahora, aviso urgente a Administración (y ELMAH)
+                if (avisador == null)
+                {
+                    return ResultadoReparto<ResultadoCierreCajaDTO>.Mal(decision.TipoResultado, decision.Mensaje + MENSAJE_VEALO_CON_ADMINISTRACION);
+                }
+                await avisador.Descuadre(new DescuadreCierreCaja
+                {
+                    Usuario = usuario,
+                    Caja = caja,
+                    Fecha = fecha,
+                    Contado = Math.Round(peticion.Importe, 2, MidpointRounding.AwayFromZero),
+                    Saldo = Math.Round(saldos.Sum(s => s.Saldo), 2, MidpointRounding.AwayFromZero),
+                    Saldos = saldos,
+                    VersionAriadna = LeerVersion(usuario)
+                }).ConfigureAwait(false);
+                return ResultadoReparto<ResultadoCierreCajaDTO>.Mal(decision.TipoResultado, decision.Mensaje + MENSAJE_AVISADA_ADMINISTRACION);
+            }
             if (decision.Tipo != TipoDecisionCierreCaja.Cuadra)
             {
                 return ResultadoReparto<ResultadoCierreCajaDTO>.Mal(decision.TipoResultado, decision.Mensaje);
@@ -386,6 +416,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return Invalido(ex.Message);
             }
+            // NestoAPI#844: si había un aviso de descuadre abierto en Nesto, se cierra
+            avisador?.Cerrada(caja, fecha, usuario);
             return ResultadoReparto<ResultadoCierreCajaDTO>.Bien(new ResultadoCierreCajaDTO
             {
                 Fecha = auditoria.Fecha,
@@ -397,6 +429,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         private static ResultadoReparto<ResultadoCierreCajaDTO> Invalido(string mensaje)
             => ResultadoReparto<ResultadoCierreCajaDTO>.Mal(TipoResultadoReparto.Invalido, mensaje);
+
+        private string LeerVersion(string usuario)
+        {
+            try
+            {
+                return versionAriadna(usuario);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
     }
 
     /// <summary>

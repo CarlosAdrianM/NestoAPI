@@ -27,16 +27,25 @@ namespace NestoAPI.Infraestructure.Ariadna
         /// <summary>Dispositivo|versión → día en que ya se apuntó. Se vacía de días pasados al apuntar uno nuevo.</summary>
         private readonly ConcurrentDictionary<string, DateTime> apuntados = new ConcurrentDictionary<string, DateTime>();
 
-        public VersionMinimaAriadnaHandler(PoliticaVersionMinimaAriadna politica, Action<Exception> log = null, Func<DateTime> hoy = null)
+        private readonly Func<DateTime> ahora;
+
+        public VersionMinimaAriadnaHandler(PoliticaVersionMinimaAriadna politica, Action<Exception> log = null, Func<DateTime> hoy = null,
+            Func<DateTime> ahora = null)
         {
             this.politica = politica ?? throw new ArgumentNullException(nameof(politica));
             this.log = log ?? (ex => ElmahHelper.Log(ex, "Sistema (versión mínima de Ariadna)"));
             this.hoy = hoy ?? (() => DateTime.Today);
+            this.ahora = ahora ?? (() => DateTime.Now);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             string cabecera = Cabecera(request, PoliticaVersionMinimaAriadna.CABECERA_VERSION);
+            if (cabecera != null)
+            {
+                // NestoAPI#844: la versión de cada usuario, para saber si ha actualizado (GET api/Almacen/VersionesAriadna)
+                Recordar(request, cabecera);
+            }
             if (cabecera == null || !politica.EstaDesactualizada(cabecera, out Version version))
             {
                 return base.SendAsync(request, cancellationToken);
@@ -92,6 +101,18 @@ namespace NestoAPI.Infraestructure.Ariadna
             try
             {
                 log(new Exception(politica.MensajeElmah(version, dispositivo, usuario)));
+            }
+            catch
+            {
+                // Apuntarlo nunca debe romper la petición.
+            }
+        }
+
+        private void Recordar(HttpRequestMessage request, string version)
+        {
+            try
+            {
+                VersionesAriadna.Apuntar(Usuario(request), version, Cabecera(request, AvisosAlmacen.CABECERA_DISPOSITIVO), ahora());
             }
             catch
             {

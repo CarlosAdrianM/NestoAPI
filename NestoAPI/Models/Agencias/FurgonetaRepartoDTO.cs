@@ -88,5 +88,10 @@ namespace NestoAPI.Models.Agencias
         /// <summary>A quién se ha avisado («Almacén», «Dirección», «Andre»). Vacía si no hacía falta.</summary>
         public List<string> Avisados { get; set; } = new List<string>();
         public string Mensaje { get; set; }
+        /// <summary>
+        /// NestoAPI#844: no se ha terminado porque la caja tiene dinero (Mensaje dice cuánto): Ariadna abre «Cerrar caja». Con
+        /// Terminada = false y Pendientes vacía.
+        /// </summary>
+        public bool CerrarCaja { get; set; }
     }
 }

@@ -130,6 +130,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// </summary>
         public async Task<ResultadoReparto<ResultadoCargaBultoDTO>> Cargar(CargaBultoRepartoDTO peticion, string usuario, OrigenPeticionReparto origen = null)
         {
+            // NestoAPI#844: con dinero de días anteriores en la caja, no se empieza a cargar
+            if (ControlCaja != null && peticion != null
+                && await ControlCaja.MotivoParaNoEmpezar(usuario, peticion.FechaHora).ConfigureAwait(false) is string motivo)
+            {
+                return ReglaCajaSinCerrar.Conflicto<ResultadoCargaBultoDTO>(motivo);
+            }
             ResultadoReparto<ResultadoCargaBultoDTO> resultado = EsCodigoReposicion(peticion?.Codigo, out int traspaso, out int bultoReposicion)
                 && peticion.ClaveIdempotencia != Guid.Empty && !string.IsNullOrWhiteSpace(usuario)
                 ? await CargarReposicion(peticion, traspaso, bultoReposicion, usuario).ConfigureAwait(false)
