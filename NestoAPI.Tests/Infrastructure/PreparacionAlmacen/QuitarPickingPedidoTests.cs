@@ -176,9 +176,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task Quitar_SinPickingOSinPermiso()
         {
             A.CallTo(() => tx.LeerLineasConPicking(EMPRESA, PEDIDO)).Returns(new List<LineaPedidoConPicking>());
-            Assert.AreEqual(EstadoQuitarPicking.SinPicking, (await servicio.Quitar(EMPRESA, PEDIDO, false, Usuario("Administración"))).Estado);
+            Assert.AreEqual(EstadoQuitarPicking.SinPicking, (await servicio.Quitar(EMPRESA, PEDIDO, false, Usuario("Almacén"))).Estado);
 
             Assert.AreEqual(EstadoQuitarPicking.SinPermiso, (await servicio.Quitar(EMPRESA, PEDIDO, false, Usuario("Vendedores"))).Estado);
+            // Carlos 09/11/26: Administración no quita picking (solo Almacén y Dirección)
+            Assert.AreEqual(EstadoQuitarPicking.SinPermiso, (await servicio.Quitar(EMPRESA, PEDIDO, false, Usuario("Administración"))).Estado);
             A.CallTo(() => repositorio.EnTransaccion(A<Func<ITransaccionQuitarPicking, Task<ResultadoQuitarPicking>>>._)).MustHaveHappenedOnceExactly();
         }
 

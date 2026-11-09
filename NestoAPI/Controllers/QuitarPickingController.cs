@@ -34,7 +34,7 @@ namespace NestoAPI.Controllers
         /// Modificaciones. 200 con <see cref="ResultadoQuitarPickingDTO"/>. 409 con Lecturas si el mozo ya ha leído productos de
         /// este pedido en el picking y no viene Confirmado (no se toca nada); con Confirmado, esas lecturas se anulan y la PDA
         /// recibe «pedidoSacadoDelPicking» con lo que tiene que apartar. 409 sin Lecturas si no se puede (albarán, packing,
-        /// picking terminado o sin picking). 403 si no es de Almacén, Administración o Dirección.
+        /// picking terminado o sin picking). 403 si no es de Almacén o Dirección.
         /// </summary>
         [HttpPost]
         [Route("api/Picking/{empresa}/{pedido:int}/QuitarPicking")]

@@ -105,11 +105,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
         }
 
-        /// <summary>Quien hoy saca (y quitaba en Nesto viejo) el picking: Almacén, Dirección y Administración.</summary>
+        /// <summary>
+        /// Almacén y Dirección (los de <see cref="EscrituraSoloAlmacenAttribute"/>). Administración NO (Carlos, 09/11/26: «Administración
+        /// no tiene por qué poder quitar picking»).
+        /// </summary>
         public static bool PuedeQuitar(IPrincipal usuario)
         {
-            return usuario != null && (EscrituraSoloAlmacenAttribute.PuedeEscribir(usuario) ||
-                usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
+            return usuario != null && EscrituraSoloAlmacenAttribute.PuedeEscribir(usuario);
         }
 
         public async Task<ResultadoQuitarPicking> Quitar(string empresa, int pedido, bool confirmado, IPrincipal usuario)
@@ -117,7 +119,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (!PuedeQuitar(usuario))
             {
                 return Resultado(EstadoQuitarPicking.SinPermiso, empresa, pedido,
-                    "Para quitar el picking hay que ser de Almacén, Administración o Dirección.");
+                    "Para quitar el picking hay que ser de Almacén o de Dirección.");
             }
             string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario?.Identity?.Name);
             return await repositorio.EnTransaccion(tx => Quitar(tx, empresa, pedido, confirmado, quien)).ConfigureAwait(false);
