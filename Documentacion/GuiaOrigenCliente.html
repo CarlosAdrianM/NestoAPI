@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía del origen del cliente</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 22%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9.5pt; white-space: nowrap; }
+  .regla { background: #fdecea; border: 2px solid #c62828; padding: 9px 13px; margin: 12px 0; break-inside: avoid; }
+  .regla p { margin: 3px 0; }
+  .regla .titulo { color: #b71c1c; font-size: 13pt; font-weight: 700; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+  .botones { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+  .boton { border: 1px solid #777; border-radius: 4px; padding: 3px 10px; background: #f3f3f3; font-size: 10pt; white-space: nowrap; }
+  .boton.off { color: #999; border-color: #bbb; background: #fafafa; }
+  .leyenda { color: #666; font-size: 9.5pt; margin: 2px 0 10px; }
+</style>
+</head>
+<body>
+<h1>Origen del cliente: cómo nos conoció</h1>
+<p class="sub">Para Nesto 1.10.58 · 9 de noviembre de 2026 · Vendedores, tiendas, Administración y quien dé de alta clientes</p>
+
+<div class="regla">
+<p class="titulo">La regla</p>
+<p>El origen es <b>nuestro primer contacto con el cliente</b>: cómo llegó a nosotros la primera vez. <b>No es quién le abre la ficha</b>, ni por dónde nos compra ahora.</p>
+<p>Si no sabe cómo nos conoció, <b>déjelo en «(ninguno)»</b>. Es mejor vacío que un origen supuesto: con el origen medimos qué nos trae clientes, y un dato inventado lo estropea.</p>
+</div>
+
+<div class="box">
+<p><b>Dónde se pone.</b> Al dar de alta un cliente en <b>Clientes › Crear Cliente</b>, en el desplegable <b>Origen</b>. Al modificar una ficha, el origen también se ve en <b>Datos generales</b>.</p>
+<p><b>Lo que propone Nesto es solo una sugerencia.</b> Según quién crea la ficha, Nesto deja elegido el origen más probable (por ejemplo, la tienda de quien la crea, o Cursos). Compruébelo siempre: no todos los clientes que se dan de alta en una tienda nos conocieron en esa tienda, ni todos los que da de alta Cursos vienen de un curso.</p>
+<p><b>Si tiene dudas, pregúntele al cliente:</b> «¿Cómo nos ha conocido?».</p>
+</div>
+
+<h2>1. Los orígenes y cuándo usar cada uno</h2>
+<table>
+<tr><th style="width:24%">Origen</th><th>Úselo cuando la primera vez que el cliente supo de nosotros fue…</th></tr>
+<tr><td class="tema">Visita del vendedor</td><td>…porque un vendedor descubrió el centro en sus visitas por la zona y empezó a visitarlo. Es el caso más habitual.</td></tr>
+<tr><td class="tema">Recomendación</td><td>…porque se lo dijo otra persona: otro cliente, una compañera de profesión, una formadora.</td></tr>
+<tr><td class="tema">Página web</td><td>…por nuestra tienda online o nuestra web: nos encontró en Google o en internet y su primer pedido o su primera consulta fue por la web.</td></tr>
+<tr><td class="tema">Amazon</td><td>…por una compra en Amazon, y después pasó a ser cliente nuestro.</td></tr>
+<tr><td class="tema">Tienda de Reina</td><td>…al pasar por la tienda de Reina: entró, la conoció allí y se le abrió la ficha.</td></tr>
+<tr><td class="tema">Tienda de Alcobendas</td><td>…al pasar por la tienda de Alcobendas: entró, la conoció allí y se le abrió la ficha.</td></tr>
+<tr><td class="tema">Cursos</td><td>…por uno de nuestros cursos o eventos, sin conocernos antes.</td></tr>
+<tr><td class="tema">Campañas (por ejemplo, Meta Ads de Harmonia)</td><td>…por un anuncio de una campaña. <b>No se elige a mano:</b> lo pone solo el importador de leads (Clientes › Importar leads de Meta). Estos clientes son leads y el vendedor tiene que llamarles en 24 horas.</td></tr>
+</table>
+<p class="leyenda">Los demás orígenes no son leads: sirven para medir y no generan avisos de «lead sin llamar». No hay origen para «nos llamó» o «nos escribió»: eso no dice cómo nos conoció. Pregunte cómo supo de nosotros y ponga ese origen.</p>
+
+<h2>2. Casos que confunden</h2>
+<table>
+<tr><th style="width:44%">Qué pasa</th><th style="width:22%">Origen</th><th>Por qué</th></tr>
+<tr><td>Una clienta pasa por delante de la tienda, entra, compra y se le abre ficha.</td><td><b>Esa tienda</b></td><td>Nos conoció allí.</td></tr>
+<tr><td>Un cliente de siempre viene a la tienda y pide facturar a su CIF en vez de a su DNI, y hay que abrirle ficha nueva.</td><td><b>El de su ficha anterior</b> (o «(ninguno)» si no tenía)</td><td>Ya nos conocía: la tienda solo le ha cambiado los datos.</td></tr>
+<tr><td>Su primer pedido es en la tienda online: no nos conocía, nos encontró en Google.</td><td><b>Página web</b></td><td>Fue su primer contacto.</td></tr>
+<tr><td>El vendedor le abrió ficha hace meses al visitar su centro; ahora hace su primer pedido en la tienda online y hay que completar sus datos.</td><td><b>Visita del vendedor</b> (no se cambia)</td><td>Nos conoció por el vendedor; seguramente entró en la web porque se lo aconsejó él.</td></tr>
+<tr><td>Viene a un curso nuestro sin conocernos de nada.</td><td><b>Cursos</b></td><td>El curso fue el primer contacto.</td></tr>
+<tr><td>Una clienta de un vendedor se apunta a un curso y Cursos le completa la ficha.</td><td><b>Visita del vendedor</b> (no se cambia)</td><td>Ya nos conocía antes del curso.</td></tr>
+<tr><td>Llama una peluquera porque se lo recomendó otra clienta.</td><td><b>Recomendación</b></td><td>La llamada no es el origen: lo es la recomendación.</td></tr>
+<tr><td>Nos escribe alguien y no sabemos cómo nos conoció.</td><td><b>«(ninguno)»</b>, o pregúntele</td><td>Mejor vacío que inventado.</td></tr>
+</table>
+
+<h2>3. Al modificar una ficha</h2>
+<ul>
+<li><b>No cambie el origen</b> porque el cliente compre ahora por otro sitio: el origen es la primera vez, y no cambia con el tiempo.</li>
+<li>Si la ficha es antigua y no tiene origen, rellénelo <b>solo si lo sabe con seguridad</b> (por ejemplo, porque el vendedor recuerda cómo lo conoció). Si no, déjelo vacío.</li>
+<li>Si ve un origen que está mal (por ejemplo, «Tienda de Reina» en un cliente que ya era de un vendedor), corríjalo.</li>
+</ul>
+
+<p class="pie">Nueva Visión · Guía del origen del cliente · Nesto 1.10.58 · 09/11/2026. Dudas o casos que no salen aquí: cuéntelos en «Novedades».</p>
+</body>
+</html>
