@@ -31,6 +31,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public List<ConsultaReembolsoDTO> Filas { get; } = new List<ConsultaReembolsoDTO>();
         public Dictionary<int, DatosPagoPedidoConsulta> Pedidos { get; } = new Dictionary<int, DatosPagoPedidoConsulta>();
         public List<EnlacePagoPedido> Enlaces { get; } = new List<EnlacePagoPedido>();
+        /// <summary>09/11/26 (930167): los de los otros pedidos del cliente y contacto (LeerEnlacesDeOtrosPedidos).</summary>
+        public List<EnlacePagoPedido> EnlacesDeOtros { get; } = new List<EnlacePagoPedido>();
+        public List<(string cliente, string contacto, int pedido)> LecturasDeOtros { get; } = new List<(string, string, int)>();
         public List<EnviosAgencia> Envios { get; } = new List<EnviosAgencia>();
         public Dictionary<string, FormaPagoConsulta> Formas { get; } = new Dictionary<string, FormaPagoConsulta>
         {
@@ -110,6 +113,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             return Task.CompletedTask;
         }
         public Task<List<EnlacePagoPedido>> LeerEnlaces(string empresa, int pedido) => Task.FromResult(Enlaces.ToList());
+        public Task<List<EnlacePagoPedido>> LeerEnlacesDeOtrosPedidos(string empresa, string cliente, string contacto, int pedido)
+        {
+            LecturasDeOtros.Add((cliente, contacto, pedido));
+            return Task.FromResult(EnlacesDeOtros.Where(e => e.Estado == Constantes.EstadosPagoTPV.PENDIENTE || e.Estado == Constantes.EstadosPagoTPV.AUTORIZADO).ToList());
+        }
         public Task<DatosPagoPedidoConsulta> LeerDatosPago(string empresa, int pedido)
             => Task.FromResult(Pedidos.TryGetValue(pedido, out DatosPagoPedidoConsulta p) ? p : null);
         public Task<FormaPagoConsulta> LeerFormaPago(string empresa, string formaPago)
@@ -133,7 +141,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public Task<List<int>> AnularEnlaces(string empresa, IEnumerable<int> ids)
         {
             var anulados = new List<int>();
-            foreach (EnlacePagoPedido e in Enlaces.Where(x => ids.Contains(x.Id) && x.Estado == Constantes.EstadosPagoTPV.PENDIENTE))
+            foreach (EnlacePagoPedido e in Enlaces.Concat(EnlacesDeOtros).Where(x => ids.Contains(x.Id) && x.Estado == Constantes.EstadosPagoTPV.PENDIENTE))
             {
                 e.Estado = Constantes.EstadosPagoTPV.CANCELADO;
                 anulados.Add(e.Id);
@@ -365,6 +373,67 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             CollectionAssert.AreEqual(new[] { 902 }, r.Respuesta.EnlacesAnulados);
             Assert.AreEqual(Constantes.EstadosPagoTPV.PENDIENTE, repo.Enlaces.Single(e => e.Id == 900).Estado);
+        }
+
+        // ---------------------------------------------------------------- 09/11/26 (930167): enlaces de otros pedidos del cliente
+
+        private EnlacePagoPedido EnlaceDeOtroPedido(int id, int pedido, bool pagado)
+        {
+            var enlace = new EnlacePagoPedido
+            {
+                Id = id, Importe = 428.92m, Estado = Constantes.EstadosPagoTPV.PENDIENTE, FechaCreacion = Ahora.AddDays(-16),
+                Descripcion = $"Pago pedido {pedido} de Nueva Visión", Pedido = pedido, PedidoPagado = pagado
+            };
+            repo.EnlacesDeOtros.Add(enlace);
+            return enlace;
+        }
+
+        [TestMethod]
+        public async Task Consultar_SoloEnlaceDeOtroPedidoNoPagado_LoListaYAdministracionPuedeAnularlo()
+        {
+            // El 930167: su único enlace pendiente es el 867 del 928286. Antes: ERROR_SIN_ENLACES y callejón sin salida.
+            repo.Enlaces.Clear();
+            _ = EnlaceDeOtroPedido(867, 928286, pagado: false);
+
+            ResultadoConsultaReembolso consulta = await Consultar();
+
+            Assert.IsNull(consulta.Error, consulta.Error);
+            Assert.AreEqual(1, consulta.Respuesta.Consulta.NumeroEnlaces);
+            Assert.AreEqual(428.92m, consulta.Respuesta.Consulta.ImporteEnlaces);
+            Assert.AreEqual(("40026", "0", PEDIDO), repo.LecturasDeOtros.First(), "Con el cliente y contacto del pedido");
+            StringAssert.Contains(avisador.AAdministracion.Single().Cuerpo, "928286");
+
+            List<ConsultaReembolsoListadoDTO> listado = await servicio.Listado(EMPRESA, abiertas: true);
+            Assert.AreEqual(867, listado.Single().EnlacesPendientes.Single().Id);
+
+            ResultadoConsultaReembolso r = await Responder(new ResponderConsultaReembolsoRequest { ConReembolso = true, AnularEnlaces = true, EnlacesAAnular = new List<int> { 867 } });
+
+            Assert.IsNull(r.Error, r.Error);
+            CollectionAssert.AreEqual(new[] { 867 }, r.Respuesta.EnlacesAnulados);
+            Assert.AreEqual(Constantes.EstadosPagoTPV.CANCELADO, repo.EnlacesDeOtros.Single().Estado);
+        }
+
+        [TestMethod]
+        public async Task Consultar_EnlaceDeOtroPedidoYaPagado_NoCuenta()
+        {
+            // El 928286 se cobró por reembolso (factura NV2616687 a 0): su enlace 867 no es un pendiente de verdad.
+            repo.Enlaces.Clear();
+            _ = EnlaceDeOtroPedido(867, 928286, pagado: true);
+
+            ResultadoConsultaReembolso consulta = await Consultar();
+
+            Assert.AreEqual(TextosConsultaReembolso.ERROR_SIN_ENLACES, consulta.Error);
+        }
+
+        [TestMethod]
+        public async Task Consultar_EnlacesDelPedidoYDeOtro_CuentaLosDos()
+        {
+            _ = EnlaceDeOtroPedido(867, 928286, pagado: false);
+
+            ResultadoConsultaReembolso consulta = await Consultar();
+
+            Assert.AreEqual(2, consulta.Respuesta.Consulta.NumeroEnlaces);
+            Assert.AreEqual(252.94m + 428.92m, consulta.Respuesta.Consulta.ImporteEnlaces);
         }
 
         [TestMethod]

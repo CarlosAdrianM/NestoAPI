@@ -74,7 +74,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
             {
                 try
                 {
-                    fila.EnlacesPendientes = EnlacesPagoPedido.PendientesVivos(await repositorio.LeerEnlaces(empresa, fila.Pedido).ConfigureAwait(false), ahora);
+                    fila.EnlacesPendientes = await LeerPendientes(empresa, fila.Pedido, fila.Cliente, fila.Contacto, ahora).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -108,7 +108,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
             }
 
             DateTime ahora = reloj();
-            List<EnlacePagoPedido> pendientes = EnlacesPagoPedido.PendientesVivos(await repositorio.LeerEnlaces(empresa, numero).ConfigureAwait(false), ahora);
+            List<EnlacePagoPedido> pendientes = await LeerPendientes(empresa, numero, pedido.Cliente, pedido.Contacto, ahora).ConfigureAwait(false);
             if (pendientes.Count == 0)
             {
                 return ResultadoConsultaReembolso.Fallo(TextosConsultaReembolso.ERROR_SIN_ENLACES);
@@ -227,7 +227,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
             List<int> aAnular = new List<int>();
             if (consulta.AnularEnlaces == true)
             {
-                List<EnlacePagoPedido> pendientes = EnlacesPagoPedido.PendientesVivos(await repositorio.LeerEnlaces(empresa, numero).ConfigureAwait(false), ahora);
+                List<EnlacePagoPedido> pendientes = await LeerPendientes(empresa, numero, pedido.Cliente, pedido.Contacto, ahora).ConfigureAwait(false);
                 if (peticion.EnlacesAAnular != null && peticion.EnlacesAAnular.Count > 0)
                 {
                     List<int> ajenos = peticion.EnlacesAAnular.Where(id => pendientes.All(p => p.Id != id)).Distinct().ToList();
@@ -306,6 +306,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
                 registrar(new Exception($"[Consulta reembolso #734] Pedido {numero}: no se ha podido avisar a {consulta.Usuario}: {ex.Message}", ex));
             }
             return ResultadoConsultaReembolso.Exito(respuesta);
+        }
+
+        /// <summary>
+        /// 09/11/26 (930167): los mismos enlaces que avisa la propuesta de envío (#824): los del pedido y los de los otros pedidos del
+        /// cliente y contacto que no estén pagados (<see cref="EnlacesPagoPedido.PendientesDelPedidoYDelCliente"/>). Antes solo los del
+        /// pedido: el aviso salía por un enlace de otro pedido y la consulta contestaba que no había enlaces.
+        /// </summary>
+        private async Task<List<EnlacePagoPedido>> LeerPendientes(string empresa, int numero, string cliente, string contacto, DateTime ahora)
+        {
+            List<EnlacePagoPedido> propios = await repositorio.LeerEnlaces(empresa, numero).ConfigureAwait(false) ?? new List<EnlacePagoPedido>();
+            List<EnlacePagoPedido> otros = new List<EnlacePagoPedido>();
+            if (!string.IsNullOrWhiteSpace(cliente))
+            {
+                try
+                {
+                    otros = await repositorio.LeerEnlacesDeOtrosPedidos(empresa, cliente.Trim(), contacto?.Trim(), numero).ConfigureAwait(false) ?? new List<EnlacePagoPedido>();
+                }
+                catch (Exception ex)
+                {
+                    registrar(new Exception($"[Consulta reembolso #734] Pedido {numero}: no se han podido leer los enlaces de los otros pedidos del cliente {cliente.Trim()}: {ex.Message}", ex));
+                }
+            }
+            return EnlacesPagoPedido.PendientesDelPedidoYDelCliente(propios, otros, ahora);
         }
 
         /// <summary>La forma de pago y los plazos nuevos para «sin reembolso», con el CCC que corresponda.</summary>

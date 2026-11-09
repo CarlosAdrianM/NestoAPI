@@ -137,9 +137,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 PrepagosPendientes = prepagos,
                 EnlacesPagoAutorizados = EnlacesPagoPedido.ImporteAutorizado(enlaces),
                 // NestoAPI#824: y los de los otros pedidos del cliente y contacto (cada uno con su pedido, para decirlo en el aviso)
-                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivosPorPedido(
-                    EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now)
-                        .Concat(LeerEnlacesDeOtrosPedidos(empresa, pedidoAgencia.Cliente, pedidoAgencia.Contacto, pedido)), DateTime.Now),
+                // 09/11/26 (930167): salvo los de pedidos ya pagados; la misma regla que la consulta a Administración (#734)
+                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesDelPedidoYDelCliente(enlaces,
+                    LeerEnlacesDeOtrosPedidos(empresa, pedidoAgencia.Cliente, pedidoAgencia.Contacto, pedido), DateTime.Now),
                 // NestoAPI#734: si se ha consultado a Administración, qué dijo (best-effort: sin ella, como antes).
                 ConsultaReembolso = await LeerConsultaReembolso(empresa, pedido).ConfigureAwait(false),
                 CorreccionReembolso = correccion,

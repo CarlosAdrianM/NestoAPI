@@ -19,11 +19,14 @@ namespace NestoAPI.Controllers
     {
         private readonly IServicioPagos _servicioPagos;
         private readonly IRevisorConcepto _revisorConcepto;
+        private readonly IServicioAnulacionEnlacesPago _anulacionEnlaces;
 
-        public PagosController(IServicioPagos servicioPagos, IRevisorConcepto revisorConcepto = null)
+        public PagosController(IServicioPagos servicioPagos, IRevisorConcepto revisorConcepto = null,
+            IServicioAnulacionEnlacesPago anulacionEnlaces = null)
         {
             _servicioPagos = servicioPagos;
             _revisorConcepto = revisorConcepto ?? new RevisorConcepto();
+            _anulacionEnlaces = anulacionEnlaces ?? new ServicioAnulacionEnlacesPago();
         }
 
         /// <summary>
@@ -166,6 +169,46 @@ namespace NestoAPI.Controllers
                 && (usuario.IsInRoleSinDominio(GruposSeguridad.ADMINISTRACION)
                     || usuario.IsInRoleSinDominio(GruposSeguridad.DIRECCION));
         }
+
+        /// <summary>
+        /// POST api/Pagos/867/Anular  { "Motivo": "Pedido ya cobrado por reembolso" }
+        /// Carlos (09/11/26): Administración anula ella misma un enlace de pago (TPV virtual) que sigue Pendiente; la página de pago
+        /// ya no deja pagarlo. Mismo UPDATE que «Anular el enlace pendiente» de la consulta de reembolso (#734) y una fila en
+        /// Modificaciones con el usuario y el motivo. Administración, Dirección e Informática (403 al resto). 400 sin motivo, 404 si
+        /// no existe, 409 si ya está pagado, denegado o anulado, o no es un enlace de pago (Aplázame, cobros de la app, P2F).
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Anular")]
+        [Authorize]
+        public async Task<IHttpActionResult> AnularEnlace(int id, [FromBody] SolicitudAnularEnlacePago solicitud)
+        {
+            if (!PuedeAnularEnlaces(User))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            ResultadoAnulacionEnlace resultado = await _anulacionEnlaces.Anular(id, solicitud?.Motivo,
+                NestoAPI.Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+            if (resultado.NoEncontrado)
+            {
+                return NotFound();
+            }
+            if (resultado.Error != null)
+            {
+                return Error(resultado.Conflicto ? HttpStatusCode.Conflict : HttpStatusCode.BadRequest, resultado.Error);
+            }
+            return Ok(resultado.Respuesta);
+        }
+
+        /// <summary>Anular enlaces: los de la auditoría (Administración y Dirección) e Informática.</summary>
+        internal static bool PuedeAnularEnlaces(IPrincipal usuario)
+        {
+            return PuedeConsultarAuditoria(usuario)
+                || (usuario != null && usuario.IsInRoleSinDominio(GruposSeguridad.INFORMATICA));
+        }
+
+        /// <summary>Los errores con el mismo cuerpo que BadRequest(mensaje): { "Message": "..." }.</summary>
+        private IHttpActionResult Error(HttpStatusCode codigo, string mensaje)
+            => Request != null ? ResponseMessage(Request.CreateErrorResponse(codigo, mensaje)) : (IHttpActionResult)Content(codigo, mensaje);
 
         [HttpGet]
         [Route("Auditoria/{numeroOrden}")]

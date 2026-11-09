@@ -639,6 +639,75 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 N(EnlacesPagoPedido.TextoAvisoPendientes(new List<EnlacePagoPedido> { propio }, PEDIDO_929323)), "solo los suyos: como antes");
         }
 
+        // ================================================================ 09/11/26 (930167): el otro pedido ya está pagado
+        // Cliente 38515/2: el enlace 867 (428,92 €, «Pago pedido 928286») seguía Pendiente aunque el 928286 se cobró por reembolso
+        // con CTT (factura NV2616687, todo a 0). El aviso bloqueaba la etiqueta del 930167.
+
+        [TestMethod]
+        public async Task Pedido930167_Propuesta_EnlaceDeOtroPedidoYaPagado_SinAviso()
+        {
+            IDatosPropuestaEnvio datos = DatosPropuesta(258.56m, 0m, new List<EnlacePagoPedido>());
+            var enlace867 = Enlace(867, 428.92m, Constantes.EstadosPagoTPV.PENDIENTE, DateTime.Now.AddDays(-27));
+            enlace867.Pedido = 928286;
+            enlace867.PedidoPagado = true;
+            A.CallTo(() => datos.EnlacesDePagoDeOtrosPedidos(EMPRESA, A<string>._, A<string>._, PEDIDO)).Returns(new List<EnlacePagoPedido> { enlace867 });
+
+            PropuestaEnvioDTO p = await new PropuestaEnvioService(datos).Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            Assert.IsFalse(p.AvisosDetalle.Any(a => a.Codigo == CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE), string.Join(" | ", p.Avisos));
+            Assert.AreEqual(0, p.EnlacesPagoPendientes.Count);
+        }
+
+        [TestMethod]
+        public async Task Pedido930167_Propuesta_EnlaceDeOtroPedidoNoPagado_Avisa()
+        {
+            IDatosPropuestaEnvio datos = DatosPropuesta(258.56m, 0m, new List<EnlacePagoPedido>());
+            var enlace867 = Enlace(867, 428.92m, Constantes.EstadosPagoTPV.PENDIENTE, DateTime.Now.AddDays(-27));
+            enlace867.Pedido = 928286;
+            A.CallTo(() => datos.EnlacesDePagoDeOtrosPedidos(EMPRESA, A<string>._, A<string>._, PEDIDO)).Returns(new List<EnlacePagoPedido> { enlace867 });
+
+            PropuestaEnvioDTO p = await new PropuestaEnvioService(datos).Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            Assert.IsTrue(p.AvisosDetalle.Any(a => a.Codigo == CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE));
+            Assert.AreEqual(867, p.EnlacesPagoPendientes.Single().Id);
+        }
+
+        [TestMethod]
+        public void PendientesDelPedidoYDelCliente_JuntaLosDelPedidoYLosDeOtrosNoPagados()
+        {
+            DateTime ahora = new DateTime(2026, 11, 9, 12, 0, 0);
+            var propio = Enlace(900, 12m, Constantes.EstadosPagoTPV.PENDIENTE, ahora.AddDays(-1));
+            propio.Pedido = PEDIDO;
+            var otroPagado = Enlace(867, 428.92m, Constantes.EstadosPagoTPV.PENDIENTE, ahora.AddDays(-27));
+            otroPagado.Pedido = 928286;
+            otroPagado.PedidoPagado = true;
+            var otroSinPagar = Enlace(868, 40m, Constantes.EstadosPagoTPV.PENDIENTE, ahora.AddDays(-2));
+            otroSinPagar.Pedido = 928300;
+            var otroViejo = Enlace(700, 40m, Constantes.EstadosPagoTPV.PENDIENTE, ahora.AddDays(-31));
+            otroViejo.Pedido = 928301;
+
+            List<EnlacePagoPedido> r = EnlacesPagoPedido.PendientesDelPedidoYDelCliente(new[] { propio }, new[] { otroPagado, otroSinPagar, otroViejo }, ahora);
+
+            CollectionAssert.AreEqual(new[] { 900, 868 }, r.Select(e => e.Id).ToArray());
+            Assert.AreEqual(0, EnlacesPagoPedido.PendientesDelPedidoYDelCliente(null, null, ahora).Count);
+        }
+
+        [TestMethod]
+        public void EstaPagado_FacturadoEnteroYSinPendiente()
+        {
+            short factura = Constantes.EstadosLineaVenta.FACTURA;
+            short albaran = Constantes.EstadosLineaVenta.ALBARAN;
+            short pendiente = Constantes.EstadosLineaVenta.PENDIENTE;
+            // El 928286: todo facturado en NV2616687 y sus cuatro apuntes a 0.
+            Assert.IsTrue(EnlacesPagoPedido.EstaPagado(new[] { factura, factura }, new[] { 0m, 0m, 0m, 0m }));
+            Assert.IsFalse(EnlacesPagoPedido.EstaPagado(new[] { factura }, new[] { 0m, 428.92m }), "la factura debe algo");
+            Assert.IsFalse(EnlacesPagoPedido.EstaPagado(new[] { factura, albaran }, new[] { 0m }), "queda un albarán sin facturar");
+            Assert.IsFalse(EnlacesPagoPedido.EstaPagado(new[] { factura, pendiente }, new[] { 0m }), "queda una línea pendiente");
+            Assert.IsFalse(EnlacesPagoPedido.EstaPagado(new[] { factura }, new decimal[0]), "sin apuntes no se sabe: se avisa");
+            Assert.IsFalse(EnlacesPagoPedido.EstaPagado(new[] { pendiente }, new[] { 0m }), "sin facturar");
+            Assert.IsFalse(EnlacesPagoPedido.EstaPagado(null, null));
+        }
+
         // ---------------------------------------------------------------- punto 3: el céntimo
 
         [TestMethod]

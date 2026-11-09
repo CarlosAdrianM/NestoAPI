@@ -23,6 +23,12 @@ namespace NestoAPI.Models.Pagos
         /// los OTROS pedidos del mismo cliente y contacto (su mercancía puede ir «con este pedido»), y el aviso dice de cuál es cada uno.
         /// </summary>
         public int? Pedido { get; set; }
+        /// <summary>
+        /// 09/11/26 (930167): el pedido del enlace ya está facturado entero y sus facturas no deben nada (se cobró por reembolso u
+        /// otro lado). Lo pone <c>LectorEnlacesPagoPedido.LeerDeOtrosPedidosDelCliente</c>; un enlace así no cuenta como pendiente
+        /// (<c>EnlacesPagoPedido.PendientesDelPedidoYDelCliente</c>).
+        /// </summary>
+        public bool PedidoPagado { get; set; }
     }
 
     /// <summary>NestoAPI#679: un aviso al crear un enlace de pago (no bloquea: el enlace ya está creado).</summary>

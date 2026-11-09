@@ -959,6 +959,7 @@
     <Compile Include="Infrastructure\Pagos\AvisoCobroNestoPagoTests.cs" />
     <Compile Include="Infrastructure\Pagos\EnlacesPagoPedidoTests.cs" />
     <Compile Include="Infrastructure\Pagos\AuditoriaPagosTPVTests.cs" />
+    <Compile Include="Infrastructure\Pagos\AnulacionEnlacesPagoTests.cs" />
     <Compile Include="Infrastructure\Pagos\RevisorConceptoTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Infrastructure\Pagos\TarjetasClientesTests.cs" />

@@ -285,6 +285,27 @@ namespace NestoAPI.Infraestructure.Pagos
                 pago.CodigoAutorizacion = resultado.CodigoAutorizacion;
                 pago.FechaActualizacion = DateTime.Now;
 
+                // 09/11/26: un enlace anulado (consulta de reembolso #734 o «Anular enlace» de Administración) ya no se puede abrir,
+                // pero quien tenía la página de Redsys abierta antes de anularlo aún puede pagar. Ese dinero está cobrado: se apunta
+                // como cualquier cobro y se avisa (ELMAH y correo a Administración) para que mire si hay que devolverlo. Si se
+                // deniega, el enlace sigue anulado y no se regenera otro.
+                DecisionNotificacionAnulado decisionAnulado = AnulacionEnlacesPago.DecidirNotificacion(pago.Estado, pago.Tipo, resultado.PagoAutorizado);
+                if (decisionAnulado == DecisionNotificacionAnulado.DejarAnulado)
+                {
+                    await db.SaveChangesAsync().ConfigureAwait(false);
+                    _logService.LogError($"[ProcesarNotificacion] Notificación denegada de un enlace anulado (Id {pago.Id}, orden {pago.NumeroOrden}): " +
+                        "sigue anulado y no se regenera.");
+                    return true;
+                }
+                if (decisionAnulado == DecisionNotificacionAnulado.CobrarYAvisar)
+                {
+                    string mensajeAnulado = $"[ProcesarNotificacion] El cliente {pago.Cliente?.Trim()} ha PAGADO el enlace {pago.Id} " +
+                        $"({pago.Importe:0.00} EUR, «{pago.Descripcion?.Trim()}») que estaba ANULADO. Se apunta el cobro como cualquier otro; " +
+                        "revise si el pedido ya se cobró por otro lado (reembolso) y hay que devolver el dinero.";
+                    _logService.LogError(mensajeAnulado);
+                    EnviarCorreoAlertaPago("Se ha pagado un enlace de pago que estaba anulado", mensajeAnulado, resultado);
+                }
+
                 if (resultado.PagoAutorizado)
                 {
                     pago.Estado = Constantes.EstadosPagoTPV.AUTORIZADO;

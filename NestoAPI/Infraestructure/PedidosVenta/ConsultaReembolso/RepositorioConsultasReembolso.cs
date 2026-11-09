@@ -43,6 +43,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
         /// <summary>Los enlaces de pago (TPV virtual) pendientes o autorizados del pedido.</summary>
         Task<List<EnlacePagoPedido>> LeerEnlaces(string empresa, int pedido);
 
+        /// <summary>
+        /// 09/11/26 (930167): los de los OTROS pedidos del cliente y contacto, como el aviso de la propuesta de envío (#824):
+        /// <see cref="LectorEnlacesPagoPedido.LeerDeOtrosPedidosDelCliente"/>, con <see cref="EnlacePagoPedido.PedidoPagado"/>.
+        /// </summary>
+        Task<List<EnlacePagoPedido>> LeerEnlacesDeOtrosPedidos(string empresa, string cliente, string contacto, int pedido);
+
         /// <summary>Forma de pago, plazos, CCC… del pedido y la cuenta del cliente; null si el pedido no existe.</summary>
         Task<DatosPagoPedidoConsulta> LeerDatosPago(string empresa, int pedido);
 
@@ -132,12 +138,6 @@ WHERE c.Empresa = @empresa AND c.Número = @pedido";
             "Usuario = @usuario, [Fecha Modificación] = GETDATE() WHERE Empresa = @empresa AND Número = @pedido";
 
         internal const string SQL_MODIFICACION = "INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES ('CabPedidoVta', @anterior, @nuevo, @usuario)";
-
-        // Solo los enlaces de pago de verdad (TPV virtual) que siguen pendientes: uno cobrado entretanto no se toca. OUTPUT INTO
-        // una variable (y no OUTPUT a secas) para que no falle si algún día PagosTPV tiene triggers.
-        internal const string SQL_ANULAR_ENLACES = "DECLARE @anulados TABLE (Id int); " +
-            "UPDATE dbo.PagosTPV SET Estado = @cancelado, FechaActualizacion = GETDATE() OUTPUT inserted.Id INTO @anulados " +
-            "WHERE Empresa = @empresa AND Tipo = @tipo AND Estado = @pendiente AND Id IN ({0}); SELECT Id FROM @anulados ORDER BY Id";
 
         private static readonly object candado = new object();
         private static bool existe;
@@ -282,6 +282,14 @@ WHERE c.Empresa = @empresa AND c.Número = @pedido";
             }
         }
 
+        public Task<List<EnlacePagoPedido>> LeerEnlacesDeOtrosPedidos(string empresa, string cliente, string contacto, int pedido)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return Task.FromResult(LectorEnlacesPagoPedido.LeerDeOtrosPedidosDelCliente(db, empresa, cliente, contacto, pedido, DateTime.Now));
+            }
+        }
+
         public async Task<DatosPagoPedidoConsulta> LeerDatosPago(string empresa, int pedido)
         {
             using (NVEntities db = crearContexto())
@@ -337,22 +345,10 @@ WHERE c.Empresa = @empresa AND c.Número = @pedido";
 
         public async Task<List<int>> AnularEnlaces(string empresa, IEnumerable<int> ids)
         {
-            List<int> lista = (ids ?? Enumerable.Empty<int>()).Where(i => i > 0).Distinct().ToList();
-            if (!lista.Any())
-            {
-                return new List<int>();
-            }
+            // El mismo UPDATE que el botón «Anular enlace» de Administración (AnulacionEnlacesPago, 09/11/26).
             using (NVEntities db = crearContexto())
             {
-                // Enteros: van en el texto sin riesgo de inyección.
-                string sql = string.Format(CultureInfo.InvariantCulture, SQL_ANULAR_ENLACES, string.Join(", ", lista));
-                return await db.Database.SqlQuery<int>(sql,
-                    new SqlParameter("@cancelado", SqlDbType.NVarChar, 20) { Value = Constantes.EstadosPagoTPV.CANCELADO },
-                    // PagosTPV.Empresa es nvarchar(2), no char(3) como CabPedidoVta.
-                    new SqlParameter("@empresa", SqlDbType.NVarChar, 3) { Value = Empresa(empresa) },
-                    new SqlParameter("@tipo", SqlDbType.NVarChar, 20) { Value = Constantes.TiposPagoTPV.TPV_VIRTUAL },
-                    new SqlParameter("@pendiente", SqlDbType.NVarChar, 20) { Value = Constantes.EstadosPagoTPV.PENDIENTE })
-                    .ToListAsync().ConfigureAwait(false);
+                return await AnulacionEnlacesPago.Anular(db, Empresa(empresa), ids).ConfigureAwait(false);
             }
         }
 

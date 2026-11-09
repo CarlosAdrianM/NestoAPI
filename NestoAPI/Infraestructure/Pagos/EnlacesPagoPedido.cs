@@ -141,6 +141,35 @@ namespace NestoAPI.Infraestructure.Pagos
                 .ToList();
         }
 
+        /// <summary>
+        /// 09/11/26 (930167): LA REGLA de qué enlaces pendientes se miran antes de que un pedido salga contra reembolso, la misma
+        /// para el aviso de la propuesta de envío (#824) y para la consulta a Administración (#734, que si no se quedaba en
+        /// «no tiene enlaces» y no había forma de anular el del otro pedido): los del pedido y los de los otros pedidos del cliente
+        /// y contacto (<see cref="LectorEnlacesPagoPedido.LeerDeOtrosPedidosDelCliente"/>), salvo los de pedidos ya pagados
+        /// (<see cref="EnlacePagoPedido.PedidoPagado"/>), con <see cref="PendientesVivosPorPedido"/>.
+        /// </summary>
+        public static List<EnlacePagoPedido> PendientesDelPedidoYDelCliente(IEnumerable<EnlacePagoPedido> delPedido,
+            IEnumerable<EnlacePagoPedido> deOtrosPedidos, DateTime ahora)
+        {
+            IEnumerable<EnlacePagoPedido> otros = (deOtrosPedidos ?? Enumerable.Empty<EnlacePagoPedido>()).Where(e => e != null && !e.PedidoPagado);
+            return PendientesVivosPorPedido((delPedido ?? Enumerable.Empty<EnlacePagoPedido>()).Concat(otros), ahora);
+        }
+
+        /// <summary>
+        /// 09/11/26 (930167): ¿el pedido está pagado? Facturado entero (alguna línea facturada y ninguna pendiente, en curso o en
+        /// albarán) y sus facturas no deben nada en ExtractoCliente (todos sus apuntes con ImportePdte 0, y al menos uno). El 928286
+        /// se cobró por reembolso con CTT: factura NV2616687 con todo a 0.
+        /// </summary>
+        public static bool EstaPagado(IEnumerable<short> estadosLineas, IEnumerable<decimal> pendienteApuntesFacturas)
+        {
+            List<short> estados = (estadosLineas ?? Enumerable.Empty<short>()).ToList();
+            List<decimal> pendientes = (pendienteApuntesFacturas ?? Enumerable.Empty<decimal>()).ToList();
+            bool facturadoEntero = estados.Contains(Constantes.EstadosLineaVenta.FACTURA)
+                && !estados.Any(e => e == Constantes.EstadosLineaVenta.PENDIENTE || e == Constantes.EstadosLineaVenta.EN_CURSO
+                    || e == Constantes.EstadosLineaVenta.ALBARAN);
+            return facturadoEntero && pendientes.Count > 0 && pendientes.All(p => p == 0m);
+        }
+
         // ---------------------------------------------------------------- envíos (puntos 2 y 3)
 
         /// <summary>
@@ -287,10 +316,12 @@ namespace NestoAPI.Infraestructure.Pagos
                 .Where(c => c.Empresa == empresaPedido && pedidos.Contains(c.Número) && c.Nº_Cliente == clientePedido && c.Contacto == contactoPedido)
                 .Select(c => c.Número)
                 .ToList());
+            HashSet<int> pagados = PedidosPagados(db, empresaPedido, clientePedido, delContacto.ToList());
             return candidatos
                 .Where(c => delContacto.Contains(c.Pedido.Value))
                 .Select(c => new EnlacePagoPedido
                 {
+                    PedidoPagado = pagados.Contains(c.Pedido.Value),
                     Id = c.Pago.Id,
                     Importe = c.Pago.Importe,
                     Estado = c.Pago.Estado?.Trim(),
@@ -301,6 +332,50 @@ namespace NestoAPI.Infraestructure.Pagos
                     Pedido = c.Pedido
                 })
                 .ToList();
+        }
+
+        /// <summary>
+        /// 09/11/26 (930167): de esos pedidos del cliente, los que ya están pagados (<see cref="EnlacesPagoPedido.EstaPagado"/>):
+        /// las líneas del pedido y los apuntes de sus facturas en ExtractoCliente. Si falla, ninguno (se avisa como antes).
+        /// </summary>
+        internal static HashSet<int> PedidosPagados(NVEntities db, string empresa, string cliente, List<int> pedidos)
+        {
+            var pagados = new HashSet<int>();
+            if (pedidos == null || pedidos.Count == 0)
+            {
+                return pagados;
+            }
+            try
+            {
+                var lineas = db.LinPedidoVtas.AsNoTracking()
+                    .Where(l => l.Empresa == empresa && pedidos.Contains(l.Número))
+                    .Select(l => new { l.Número, l.Estado, l.Nº_Factura })
+                    .ToList();
+                List<string> facturas = lineas.Where(l => !string.IsNullOrWhiteSpace(l.Nº_Factura))
+                    .Select(l => l.Nº_Factura.Trim()).Distinct().ToList();
+                var apuntes = facturas.Count == 0
+                    ? new List<(string Documento, decimal Pendiente)>()
+                    : db.ExtractosCliente.AsNoTracking()
+                        .Where(e => e.Empresa == empresa && e.Número == cliente && facturas.Contains(e.Nº_Documento))
+                        .Select(e => new { e.Nº_Documento, e.ImportePdte })
+                        .ToList()
+                        .Select(e => (Documento: e.Nº_Documento?.Trim(), Pendiente: e.ImportePdte))
+                        .ToList();
+                foreach (var pedido in lineas.GroupBy(l => l.Número))
+                {
+                    HashSet<string> suyas = new HashSet<string>(pedido.Where(l => !string.IsNullOrWhiteSpace(l.Nº_Factura)).Select(l => l.Nº_Factura.Trim()));
+                    if (EnlacesPagoPedido.EstaPagado(pedido.Select(l => l.Estado), apuntes.Where(a => suyas.Contains(a.Documento)).Select(a => a.Pendiente)))
+                    {
+                        _ = pagados.Add(pedido.Key);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Enlaces de pago] No se ha podido mirar si están pagados los pedidos {string.Join(", ", pedidos)}: {ex.Message}", ex),
+                    "Sistema (enlaces de pago)");
+            }
+            return pagados;
         }
 
         /// <summary>NestoAPI#679, punto 2: el pedido (forma de pago y si le queda algo por servir) y sus envíos; null si no existe.</summary>

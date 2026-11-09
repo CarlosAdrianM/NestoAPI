@@ -19,13 +19,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
         public const string ACCION_RESPUESTA = "respuesta";
 
         public const string ERROR_SIN_TABLA = "Falta la tabla ConsultasReembolsoPedido (Scripts/Issue734_ConsultasReembolso.sql). Avise a Informática.";
-        public const string ERROR_SIN_ENLACES = "El pedido no tiene enlaces de pago pendientes: no hace falta consultar a Administración.";
+        public const string ERROR_SIN_ENLACES = "Ni el pedido ni los otros pedidos del cliente tienen enlaces de pago pendientes: no hace falta consultar a Administración.";
         public const string ERROR_SIN_DECISION = "Indique si el pedido sale con reembolso o sin reembolso (ConReembolso).";
         public const string ERROR_SIN_FORMA_PAGO = "Para que salga sin reembolso, indique la forma de pago pactada con el cliente (recibo bancario, transferencia…).";
         public const string ERROR_SIN_CONSULTA = "El pedido no tiene ninguna consulta de reembolso abierta.";
         public const string ERROR_SIN_PERMISO_PREGUNTAR = "Solo Almacén, Tiendas o Dirección pueden consultar a Administración si un pedido sale con reembolso.";
         public const string ERROR_SIN_PERMISO_RESPONDER = "Solo Administración o Dirección pueden contestar si un pedido sale con o sin reembolso.";
-        public const string ERROR_ENLACES_A_ANULAR = "Los enlaces que quiere anular no son enlaces pendientes de este pedido: {0}.";
+        public const string ERROR_ENLACES_A_ANULAR = "Los enlaces que quiere anular no son enlaces pendientes de este pedido ni de los otros pedidos del cliente: {0}.";
         public const string AVISO_SIN_ADMINISTRACION = "No se ha podido avisar a Administración por la campana: llámeles para que contesten la consulta.";
         public const string AVISO_SIN_RESPUESTA_AVISADA = "No se ha podido avisar a quien preguntó: dígaselo usted.";
 

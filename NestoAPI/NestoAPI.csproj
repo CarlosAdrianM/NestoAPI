@@ -1427,6 +1427,7 @@
     <Compile Include="Infraestructure\Pagos\AvisoCobroEnlaceConReembolso.cs" />
     <Compile Include="Infraestructure\Pagos\AvisoCobroNestoPago.cs" />
     <Compile Include="Infraestructure\Pagos\EnlacesPagoPedido.cs" />
+    <Compile Include="Infraestructure\Pagos\AnulacionEnlacesPago.cs" />
     <Compile Include="Infraestructure\Pagos\ToleranciaRedondeoCobro.cs" />
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
@@ -2206,6 +2207,7 @@
     <Compile Include="Models\Pagos\ParametrosRedsysFirmados.cs" />
     <Compile Include="Models\Pagos\PeticionRedsys.cs" />
     <Compile Include="Models\Pagos\EnlacePagoPedido.cs" />
+    <Compile Include="Models\Pagos\AnularEnlacePago.cs" />
     <Compile Include="Models\Pagos\RespuestaIniciarPago.cs" />
     <Compile Include="Models\Pagos\ReservaCobroCarrito.cs" />
     <Compile Include="Models\Pagos\RespuestaRedsys.cs" />
