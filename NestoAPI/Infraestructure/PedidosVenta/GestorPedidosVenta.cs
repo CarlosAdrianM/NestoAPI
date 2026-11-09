@@ -819,7 +819,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <param name="diaRutaInterna">NestoAPI#764: el día de reparto del pedido por nuestra ruta
         /// (<see cref="DiasRepartoCodigosPostales.DiaRutaInterna"/>); null = sin día, como siempre. Con día, desde Algete: el
         /// próximo día de su ruta (<see cref="CalendarioRutasDia"/>, corte a las 9:00, festivos de Algete); las fechas de
-        /// retención (2099...) no se mueven.</param>
+        /// retención (2099...) no se mueven. NestoAPI#841: las rutas propias (con día o sin él) tampoco salen un día sin reparto propio
+        /// (<see cref="GestorFestivos.EsFestivoRepartoPropio(DateTime, Func{DateTime, string, bool})"/>).</param>
         /// <param name="horaCorteRutaInterna">La hora de corte del día de la ruta interna: <see cref="CalendarioRutasDia.HORA_CORTE"/> (9:00) con el
         /// picking automático de rutas internas encendido; apagado, la del picking de siempre (11:00). Null = 9:00.</param>
         internal static DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, DateTime ahora, TimeSpan horaCorte,
@@ -836,7 +837,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             if (diaRutaInterna.HasValue && almacen == Constantes.Almacenes.ALGETE && fecha < FECHA_RETENCION)
             {
                 return CalendarioRutasDia.ProximoDiaReparto(diaRutaInterna.Value, fecha, ahora, horaCorteRutaInterna ?? CalendarioRutasDia.HORA_CORTE,
-                    d => esFestivo(d, Constantes.Almacenes.ALGETE));
+                    d => GestorFestivos.EsFestivoRepartoPropio(d, esFestivo));
             }
 
             if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta) && almacen == Constantes.Almacenes.ALGETE)
@@ -852,7 +853,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             var fechaDevolver = fechaMinima < fecha ? fecha : fechaMinima;
 
-            while (esFestivo(fechaDevolver, almacen))
+            // NestoAPI#841: por nuestra ruta (AT/16) desde Algete, tampoco un día sin reparto propio (el picking es el día del reparto)
+            bool porNuestraRuta = almacen == Constantes.Almacenes.ALGETE && fecha < FECHA_RETENCION
+                && NestoAPI.Models.Facturas.RutasPropiasConfiguradas.Contiene(ruta);
+            while (porNuestraRuta ? GestorFestivos.EsFestivoRepartoPropio(fechaDevolver, esFestivo) : esFestivo(fechaDevolver, almacen))
             {
                 fechaDevolver = fechaDevolver.AddDays(1);
             }

@@ -153,7 +153,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             using (var db = new NVEntities())
             {
                 _ = await new FurgonetaSinDescargarJobsService(new RepositorioFurgoneta(db), new AvisosFurgonetaSinDescargar(),
-                    esFestivo: JobsFestivos.EsFestivoAlgete).AvisarSinDescargar().ConfigureAwait(false);
+                    esFestivo: FechaRepartoPropio.EsDiaSinReparto).AvisarSinDescargar().ConfigureAwait(false);
             }
         }
 
@@ -161,7 +161,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public async Task<int> AvisarSinDescargar()
         {
             // NestoAPI#780: en festivo se salta (manda push a Almacén, Dirección y al repartidor, y nadie reparte); lo que siga
-            // en la furgoneta se avisa el siguiente laborable a las 22:00.
+            // en la furgoneta se avisa el siguiente laborable a las 22:00. NestoAPI#841: tampoco los días sin reparto propio.
             if (JobsFestivos.SaltarSiFestivo(MENSAJE_FESTIVO, USUARIO_SISTEMA, esFestivo, ahora, trazar))
             {
                 return 0;

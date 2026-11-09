@@ -14,7 +14,7 @@ namespace NestoAPI.Infraestructure.Picking
     {
         /// <summary>El interruptor está apagado: no se ha hecho nada.</summary>
         Apagado,
-        /// <summary>Hoy no es laborable en Algete: no se ha hecho nada.</summary>
+        /// <summary>Hoy no es laborable en Algete o no hay reparto propio (NestoAPI#841): no se ha hecho nada.</summary>
         NoLaborable,
         /// <summary>Se ha lanzado el picking (haya salido algo o no; el almacén recibe el correo de siempre si no).</summary>
         Lanzado
@@ -57,6 +57,7 @@ namespace NestoAPI.Infraestructure.Picking
 
         /// <summary>Punto de entrada para Hangfire. Void a propósito (NestoAPI#416) y sin reintentos (como el de las 11).</summary>
         // NestoAPI#780: se salta los festivos de Algete (actúa sobre el almacén): ya lo comprueba Ejecutar con esFestivo.
+        // NestoAPI#841: y los días sin reparto propio (sin furgoneta no hay nada que preparar para nuestra ruta).
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         public static void SacarPickingRutasInternasJob()
@@ -68,7 +69,7 @@ namespace NestoAPI.Infraestructure.Picking
         {
             return new PickingRutasInternasJobsService(
                 new LectorParametrosUsuario(),
-                f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE),
+                EsDiaSinPicking,
                 () => DateTime.Now,
                 LeerRutasEmpresaDeLaBaseDeDatos,
                 (rutas, fechaPicking) =>
@@ -79,6 +80,9 @@ namespace NestoAPI.Infraestructure.Picking
                 },
                 (ex, momento) => PickingJobsService.CrearAvisador().Avisar(ex, momento));
         }
+
+        /// <summary>NestoAPI#841: festivo de Algete o día sin reparto propio (<see cref="GestorFestivos.EsFestivoRepartoPropio(DateTime)"/>).</summary>
+        internal static bool EsDiaSinPicking(DateTime dia) => GestorFestivos.EsFestivoRepartoPropio(dia);
 
         private static List<Ruta> LeerRutasEmpresaDeLaBaseDeDatos()
         {

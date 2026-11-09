@@ -1297,7 +1297,7 @@ namespace NestoAPI.Controllers
                 DateTime dia = FechaRepartoPropioDe != null
                     ? await FechaRepartoPropioDe(envio)
                     : await NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.DelEnvioAsync(db, envio, DateTime.Today,
-                        NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.EsFestivoAlgete);
+                        NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.EsDiaSinReparto);
                 if (envio.FechaEntrega?.Date != dia.Date)
                 {
                     envio.FechaEntrega = dia.Date;

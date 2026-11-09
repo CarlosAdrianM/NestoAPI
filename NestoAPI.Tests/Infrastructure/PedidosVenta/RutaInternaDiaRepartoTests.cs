@@ -900,5 +900,141 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             controller.LeerDiasEnServirContacto = (e, c, k) => throw new InvalidOperationException("sin BD");
             Assert.IsNull(controller.AvisoCierreDiaReparto(pedido, CP_MIERCOLES));
         }
+
+
+        // ================================================================ NestoAPI#841: día sin reparto propio
+
+        /// <summary>Sábados y domingos (en cualquier almacén) y, solo para el reparto propio, los días que se digan.</summary>
+        private static Func<DateTime, string, bool> SinRepartoPropioEl(params string[] dias)
+        {
+            HashSet<DateTime> lista = new HashSet<DateTime>(dias.Select(D));
+            return (dia, almacen) => dia.DayOfWeek == DayOfWeek.Saturday || dia.DayOfWeek == DayOfWeek.Sunday
+                || (almacen == NestoAPI.Models.RecursosHumanos.GestorFestivos.REPARTO_PROPIO && lista.Contains(dia.Date));
+        }
+
+        /// <summary>Con la tabla Festivos de prueba: el miércoles 04/11/2026 no hay reparto propio.</summary>
+        private static void ConMiercolesSinRepartoPropio()
+        {
+            NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Configurar(() => new NestoAPI.Models.RecursosHumanos.CalendarioFestivos.LecturaFestivos
+            {
+                HayTabla = true,
+                Festivos =
+                {
+                    new NestoAPI.Models.RecursosHumanos.Festivo { Fecha = D("2026-11-04"), TipoFestivo = NestoAPI.Models.RecursosHumanos.TipoFestivo.RepartoPropio, Fiesta = "Andre y Miguel libran" }
+                }
+            });
+        }
+
+        [TestMethod]
+        public void Issue841_CalendarioRutasDia_UnDiaSinRepartoPropio_PasaAlSiguienteDiaDeReparto()
+        {
+            ConMiercolesSinRepartoPropio();
+            try
+            {
+                Func<DateTime, bool> sinReparto = NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.EsDiaSinReparto;
+                Assert.AreEqual(D("2026-11-05"), CalendarioRutasDia.ProximoDiaReparto(DayOfWeek.Wednesday, D("2026-11-02"), sinReparto),
+                    "el miércoles no sale la furgoneta: el jueves");
+                Assert.IsFalse(CalendarioRutasDia.EsDiaDeReparto(DayOfWeek.Wednesday, D("2026-11-04"), sinReparto));
+                Assert.IsTrue(CalendarioRutasDia.EsDiaDeReparto(DayOfWeek.Wednesday, D("2026-11-05"), sinReparto));
+                Assert.AreEqual(D("2026-11-11"), CalendarioRutasDia.ProximoDiaReparto(DayOfWeek.Wednesday, D("2026-11-06"), sinReparto));
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
+
+        [TestMethod]
+        public void Issue841_FechaEntregaAjustada_ConDiaDeRuta_UnDiaSinRepartoPropio_ElSiguiente()
+        {
+            DateTime fecha = GestorPedidosVenta.FechaEntregaAjustada(D("2026-11-02"), "AT", Constantes.Almacenes.ALGETE, Instante("2026-11-02 10:00"),
+                CORTE_AGENCIA, SinRepartoPropioEl("2026-11-04"), DayOfWeek.Wednesday);
+
+            Assert.AreEqual(D("2026-11-05"), fecha);
+        }
+
+        [DataTestMethod]
+        [DataRow("16", "2026-11-05")] // nuestra ruta sin día: tampoco sale el miércoles
+        [DataRow("AT", "2026-11-05")]
+        [DataRow("FW", "2026-11-04")] // agencia: sin cambios
+        [DataRow("00", "2026-11-04")]
+        public void Issue841_FechaEntregaAjustada_SinDiaDeRuta_SoloNuestraRutaSaltaElDiaSinRepartoPropio(string ruta, string esperado)
+        {
+            DateTime fecha = GestorPedidosVenta.FechaEntregaAjustada(D("2026-11-04"), ruta, Constantes.Almacenes.ALGETE, Instante("2026-11-04 08:00"),
+                CORTE_AGENCIA, SinRepartoPropioEl("2026-11-04"));
+
+            Assert.AreEqual(D(esperado), fecha);
+        }
+
+        [TestMethod]
+        public void Issue841_FechaEntregaAjustada_DesdeReina_NoMiraElRepartoPropio()
+        {
+            DateTime fecha = GestorPedidosVenta.FechaEntregaAjustada(D("2026-11-04"), "16", Constantes.Almacenes.REINA, Instante("2026-11-04 08:00"),
+                CORTE_AGENCIA, SinRepartoPropioEl("2026-11-04"));
+
+            Assert.AreEqual(D("2026-11-04"), fecha);
+        }
+
+        [TestMethod]
+        public void Issue841_Picking_UnDiaSinRepartoPropio_NoSaleYApuntaElSiguiente()
+        {
+            ConMiercolesSinRepartoPropio();
+            try
+            {
+                DateTime miercoles = D("2026-11-04");
+                PedidoPicking pedido = Pedido(1, "AT", CP_MIERCOLES, "11111", miercoles);
+
+                List<PedidoPicking> noLesToca = GestorRutaInternaPicking.Aplicar(new List<PedidoPicking> { pedido }, miercoles,
+                    NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio, true);
+
+                Assert.AreEqual(1, noLesToca.Count);
+                Assert.AreEqual(0, pedido.Lineas.Count);
+                Assert.AreEqual(D("2026-11-05"), pedido.PrimeraEntregaFuturaQuitada);
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
+
+        [TestMethod]
+        public void Issue841_Job_UnDiaSinRepartoPropio_NoSacaNada()
+        {
+            ConMiercolesSinRepartoPropio();
+            try
+            {
+                var job = new JobDePrueba { Festivos = PickingRutasInternasJobsService.EsDiaSinPicking, Ahora = new DateTime(2026, 11, 4, 9, 0, 5) };
+                Assert.AreEqual(ResultadoPickingRutasInternas.NoLaborable, job.Crear().Ejecutar());
+                Assert.AreEqual(0, job.Llamadas.Count);
+
+                job.Ahora = new DateTime(2026, 11, 5, 9, 0, 5);
+                Assert.AreEqual(ResultadoPickingRutasInternas.Lanzado, job.Crear().Ejecutar(), "al día siguiente, como siempre");
+                Assert.AreEqual(1, job.Llamadas.Count);
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
+
+        [TestMethod]
+        public void Issue841_CalculadoraFechaEntregaAgencia_ConDiaDeRuta_UnDiaSinRepartoPropio_ElSiguiente()
+        {
+            var calculadora = new CalculadoraFechaEntregaAgencia(SinRepartoPropioEl("2026-11-04"));
+            ResultadoFechaEntregaAgencia resultado = calculadora.Calcular(new EntradaFechaEntregaAgencia
+            {
+                Ahora = Instante("2026-11-02 10:00"),
+                HoraCorte = CORTE_AGENCIA,
+                Ruta = "AT",
+                DiaRutaInterna = DayOfWeek.Wednesday,
+                DiasEnServir = "11111",
+                Lineas = new List<LineaFechaEntregaAgencia>
+                {
+                    new LineaFechaEntregaAgencia { Producto = "17404", Cantidad = 1, BaseImponible = 10, FechaEntrega = D("2026-11-02"), EnAlgete = 1 }
+                }
+            });
+
+            Assert.AreEqual(D("2026-11-05"), resultado.PrimeraEntrega);
+        }
     }
 }

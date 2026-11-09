@@ -52,6 +52,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// HoraCierre (0 = el mismo día; 1 = el laborable anterior: la del lunes, el viernes). La próxima reposición es la
     /// primera llegada cuyo cierre sea posterior a <c>ahora</c>. El pedido sale el día de llegada si la mercancía llega
     /// ANTES del corte del picking; si no (o justo a la hora del corte), el siguiente día laborable del destino.</para>
+    /// <para>NestoAPI#841 (Carlos 09/11/26): las reposiciones las lleva la furgoneta, así que tampoco hay llegada un día sin reparto
+    /// propio (<see cref="TipoFestivo.RepartoPropio"/>, delegación <see cref="GestorFestivos.REPARTO_PROPIO"/>): ni la de ida
+    /// (ALG→tienda) ni la de vuelta (tienda→ALG); se va a la siguiente del calendario. Ese día sigue siendo laborable para los
+    /// almacenes y las tiendas (el cierre con antelación y el día en que sale el pedido no cambian).</para>
     /// </summary>
     public class CalculadoraFechaReposicion
     {
@@ -99,7 +103,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             for (int i = 0; i <= DIAS_MAXIMOS_BUSQUEDA; i++)
             {
                 DateTime dia = ahora.Date.AddDays(i);
-                if (!EsLaborable(dia, origenLimpio) || !EsLaborable(dia, destinoLimpio))
+                if (!EsLaborable(dia, origenLimpio) || !EsLaborable(dia, destinoLimpio) || SinFurgoneta(dia))
                 {
                     continue;
                 }
@@ -223,8 +227,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         {
             return fila.DiaSemana == DiaSemana(dia)
                 && EsLaborable(dia, Limpiar(fila.AlmacenOrigen))
-                && EsLaborable(dia, Limpiar(fila.AlmacenDestino));
+                && EsLaborable(dia, Limpiar(fila.AlmacenDestino))
+                && !SinFurgoneta(dia);
         }
+
+        /// <summary>NestoAPI#841: ¿ese día no hay reparto propio (no sale la furgoneta que lleva la reposición)?</summary>
+        private bool SinFurgoneta(DateTime dia) => esFestivo(dia, GestorFestivos.REPARTO_PROPIO);
 
         private CorteReposicion Corte(ReposicionCalendario fila, DateTime diaLlegada)
         {

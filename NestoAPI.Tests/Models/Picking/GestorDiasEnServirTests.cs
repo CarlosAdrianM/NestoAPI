@@ -508,5 +508,30 @@ namespace NestoAPI.Tests.Models.Picking
             StringAssert.Contains(cuerpo, "ruta propia (16 o AT)");
             StringAssert.Contains(cuerpo, "viernes 02/10/2026");
         }
+
+
+        // NestoAPI#841: por nuestra ruta, un día sin reparto propio se entrega el siguiente; por agencia, nada cambia
+        [TestMethod]
+        public void Issue841_CalcularDiaEntregaRutaPropia_UnDiaSinRepartoPropio_ElSiguiente_YLaAgenciaIgual()
+        {
+            DateTime miercoles = new DateTime(2026, 11, 4);
+            NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Configurar(() => new NestoAPI.Models.RecursosHumanos.CalendarioFestivos.LecturaFestivos
+            {
+                HayTabla = true,
+                Festivos = { new NestoAPI.Models.RecursosHumanos.Festivo { Fecha = miercoles, TipoFestivo = NestoAPI.Models.RecursosHumanos.TipoFestivo.RepartoPropio, Fiesta = "Sin furgoneta" } }
+            });
+            try
+            {
+                Assert.AreEqual(miercoles.AddDays(1), GestorDiasEnServir.CalcularDiaEntregaRutaPropia(miercoles,
+                    NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio));
+                Assert.AreEqual(miercoles, GestorDiasEnServir.CalcularDiaEntrega(miercoles.AddDays(-1),
+                    d => NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivo(d, NestoAPI.Models.Constantes.Almacenes.ALGETE)),
+                    "la agencia sí entrega el miércoles");
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
     }
 }

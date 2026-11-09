@@ -136,9 +136,48 @@ namespace NestoAPI.Models.RecursosHumanos
                     return fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Alcobendas || f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.REINA:
                     return fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Madrid || f.TipoFestivo == TipoFestivo.Empresa));
+                case REPARTO_PROPIO:
+                    // NestoAPI#841: la furgoneta sale de Algete: los festivos de Algete y, además, los días sin reparto propio
+                    return fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Empresa || f.TipoFestivo == TipoFestivo.RepartoPropio));
                 default:
                     return false;
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#841: la «delegación» del reparto propio (la furgoneta) para las funciones (día, almacén) → festivo:
+        /// <c>EsFestivo(día, REPARTO_PROPIO)</c> = festivo de Algete (de donde sale) o día sin reparto propio. No es un almacén:
+        /// los almacenes y las tiendas siguen con sus festivos (un día <see cref="TipoFestivo.RepartoPropio"/> no lo es de ninguno).
+        /// </summary>
+        public const string REPARTO_PROPIO = "RepartoPropio";
+
+        /// <summary>
+        /// NestoAPI#841: ¿ese día hay una fila <see cref="TipoFestivo.RepartoPropio"/> (no sale la furgoneta)? Solo eso: ni fines de
+        /// semana ni festivos (para «no se reparte por nuestra ruta», <see cref="EsFestivoRepartoPropio"/>).
+        /// </summary>
+        public static bool EsDiaSinRepartoPropio(DateTime fecha)
+        {
+            DateTime dia = fecha.Date;
+            return CalendarioFestivos.DelAnio(dia.Year).Any(f => f.Fecha.Date == dia && f.TipoFestivo == TipoFestivo.RepartoPropio);
+        }
+
+        /// <summary>
+        /// NestoAPI#841: ¿ese día NO se reparte por nuestra ruta (AT/16, agencia 14)? Sábado, domingo, festivo de Algete o día sin
+        /// reparto propio. LA REGLA de los días del reparto propio (fecha de entrega, picking de rutas internas, etiqueta RP, furgoneta).
+        /// </summary>
+        public static bool EsFestivoRepartoPropio(DateTime fecha) => EsFestivo(fecha, REPARTO_PROPIO);
+
+        /// <summary>
+        /// NestoAPI#841: lo mismo que <see cref="EsFestivoRepartoPropio"/> con una función (día, almacén) inyectada: festivo de Algete
+        /// o de <see cref="REPARTO_PROPIO"/>. Así las funciones de prueba que solo saben de almacenes siguen valiendo.
+        /// </summary>
+        public static bool EsFestivoRepartoPropio(DateTime fecha, Func<DateTime, string, bool> esFestivo)
+        {
+            if (esFestivo == null)
+            {
+                throw new ArgumentNullException(nameof(esFestivo));
+            }
+            return esFestivo(fecha, Constantes.Almacenes.ALGETE) || esFestivo(fecha, REPARTO_PROPIO);
         }
 
         /// <summary>

@@ -192,5 +192,95 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
             A.CallTo(() => repositorio.Borrar(A<DateTime>._, A<string>._, A<string>._)).MustNotHaveHappened();
         }
+
+
+        // ================================================================ NestoAPI#841: día sin reparto propio
+
+        [DataTestMethod]
+        [DataRow("Almacén")]
+        [DataRow("Logística")]
+        public async Task Issue841_Post_RepartoPropio_AlmacenYLogisticaPueden_YSeGuardaConSuTipo(string rol)
+        {
+            A.CallTo(() => repositorio.Guardar(A<FilaTablaFestivo>._, A<string>._)).Returns(ResultadoEscrituraFestivo.Creado);
+
+            var resultado = await Controller(rol).PostFestivo(new PeticionFestivoDTO
+            {
+                Fecha = new DateTime(2026, 11, 9), Tipo = "RepartoPropio", Descripcion = "Andre y Miguel libran (Almudena)"
+            }) as OkNegotiatedContentResult<FestivoDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("RepartoPropio", resultado.Content.Tipo);
+            A.CallTo(() => repositorio.Guardar(A<FilaTablaFestivo>.That.Matches(f =>
+                f.Fecha == new DateTime(2026, 11, 9) && f.Tipo == "RepartoPropio"), A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [DataTestMethod]
+        [DataRow("Dirección")]
+        [DataRow("Administración")]
+        public async Task Issue841_Post_RepartoPropio_LosDeSiemprePueden(string rol)
+        {
+            A.CallTo(() => repositorio.Guardar(A<FilaTablaFestivo>._, A<string>._)).Returns(ResultadoEscrituraFestivo.Creado);
+
+            var resultado = await Controller(rol).PostFestivo(new PeticionFestivoDTO
+            {
+                Fecha = new DateTime(2026, 11, 9), Tipo = "repartopropio", Descripcion = "Sin furgoneta"
+            });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<FestivoDTO>));
+        }
+
+        [DataTestMethod]
+        [DataRow("Almacén", "Madrid")]
+        [DataRow("Almacén", "Nacional")]
+        [DataRow("Logística", "Madrid")]
+        [DataRow("Logística", "Nacional")]
+        public async Task Issue841_Post_OtroTipo_AlmacenYLogisticaSiguenSinPoder(string rol, string tipo)
+        {
+            var resultado = await Controller(rol).PostFestivo(new PeticionFestivoDTO
+            {
+                Fecha = new DateTime(2026, 11, 9), Tipo = tipo, Descripcion = "Almudena"
+            }) as NegotiatedContentResult<string>;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            A.CallTo(() => repositorio.Guardar(A<FilaTablaFestivo>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Issue841_Post_RepartoPropio_SinGrupo_403()
+        {
+            var resultado = await Controller("Vendedores").PostFestivo(new PeticionFestivoDTO
+            {
+                Fecha = new DateTime(2026, 11, 9), Tipo = "RepartoPropio", Descripcion = "Sin furgoneta"
+            }) as NegotiatedContentResult<string>;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+        }
+
+        [DataTestMethod]
+        [DataRow("Almacén")]
+        [DataRow("Logística")]
+        public async Task Issue841_Delete_RepartoPropio_AlmacenYLogisticaPueden_YOtroTipoNo(string rol)
+        {
+            A.CallTo(() => repositorio.Borrar(new DateTime(2026, 11, 9), "RepartoPropio", A<string>._)).Returns(ResultadoEscrituraFestivo.Borrado);
+
+            Assert.IsInstanceOfType(await Controller(rol).DeleteFestivo(new DateTime(2026, 11, 9), "RepartoPropio"), typeof(OkResult));
+
+            var otro = await Controller(rol).DeleteFestivo(new DateTime(2026, 11, 9), "Nacional") as NegotiatedContentResult<string>;
+            Assert.AreEqual(HttpStatusCode.Forbidden, otro.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Issue841_Get_DevuelveLosDiasSinRepartoPropio()
+        {
+            A.CallTo(() => repositorio.Leer(2026)).Returns(new LecturaFestivosAnio
+            {
+                HayTabla = true,
+                Filas = { new FilaTablaFestivo { Fecha = new DateTime(2026, 11, 9), Tipo = "RepartoPropio", Descripcion = "Sin furgoneta" } }
+            });
+
+            var resultado = await Controller().GetFestivos(2026) as OkNegotiatedContentResult<List<FestivoDTO>>;
+
+            Assert.AreEqual("RepartoPropio", resultado.Content.Single().Tipo);
+        }
     }
 }

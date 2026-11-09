@@ -215,7 +215,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
 
                 // NestoAPI#764: por nuestra ruta con día de reparto, solo sale el día de su ruta y se entrega ese mismo día.
-                if (entrada.DiaRutaInterna.HasValue && !CalendarioRutasDia.EsDiaDeReparto(entrada.DiaRutaInterna.Value, dia, f => !EsLaborable(f)))
+                if (entrada.DiaRutaInterna.HasValue && !CalendarioRutasDia.EsDiaDeReparto(entrada.DiaRutaInterna.Value, dia, SinRepartoPropio))
                 {
                     continue;
                 }
@@ -541,7 +541,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             else if (primeraElegible.HasValue && primerPicking > hoy && entrada.DiaRutaInterna.HasValue)
             {
                 // NestoAPI#764: hoy le tocaba pero ya pasó el corte de nuestra ruta → su próximo día; otro día → su próximo día
-                bool hoyLeToca = CalendarioRutasDia.EsDiaDeReparto(entrada.DiaRutaInterna.Value, hoy, d => !EsLaborable(d));
+                bool hoyLeToca = CalendarioRutasDia.EsDiaDeReparto(entrada.DiaRutaInterna.Value, hoy, SinRepartoPropio);
                 frases.Add(hoyLeToca
                     ? $"Pasada la hora de corte de nuestra ruta ({CalendarioRutasDia.HORA_CORTE:hh\\:mm}), ya no sale hoy: el próximo reparto es el {Dia(primerPicking, hoy)}."
                     : $"El próximo reparto de nuestra ruta es el {Dia(primerPicking, hoy)}.");
@@ -661,6 +661,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal static string DiaCorto(DateTime dia, DateTime hoy) => dia.ToString(dia.Year == hoy.Year ? "dd/MM" : "dd/MM/yyyy", castellano);
 
         private bool EsLaborable(DateTime dia) => GestorFestivos.EsLaborable(dia, Constantes.Almacenes.ALGETE, esFestivo);
+
+        /// <summary>NestoAPI#841: ¿ese día no sale nuestra ruta? No laborable en Algete o día sin reparto propio.</summary>
+        private bool SinRepartoPropio(DateTime dia) => !EsLaborable(dia) || GestorFestivos.EsFestivoRepartoPropio(dia, esFestivo);
 
         /// <summary>El primer laborable de Algete POSTERIOR a <paramref name="dia"/>: lo que se recibe un día sale en el picking del siguiente.</summary>
         private DateTime SiguienteLaborable(DateTime dia) => GestorFestivos.PrimerLaborableDesde(dia.Date.AddDays(1), Constantes.Almacenes.ALGETE, esFestivo);

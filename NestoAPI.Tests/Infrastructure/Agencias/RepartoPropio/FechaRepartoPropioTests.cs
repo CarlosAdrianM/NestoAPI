@@ -99,5 +99,29 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             TramitacionEnviosService.FechasAlTramitar(ctt, VIERNES);
             Assert.AreEqual(VIERNES.AddDays(1), ctt.FechaEntrega);
         }
+
+
+        [TestMethod]
+        public void Issue841_Calcular_UnDiaSinRepartoPropio_PasaAlSiguienteDiaDeReparto()
+        {
+            NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Configurar(() => new NestoAPI.Models.RecursosHumanos.CalendarioFestivos.LecturaFestivos
+            {
+                HayTabla = true,
+                Festivos = { new NestoAPI.Models.RecursosHumanos.Festivo { Fecha = LUNES, TipoFestivo = NestoAPI.Models.RecursosHumanos.TipoFestivo.RepartoPropio, Fiesta = "Sin furgoneta" } }
+            });
+            try
+            {
+                Assert.AreEqual(MARTES, FechaRepartoPropio.Calcular(LUNES, VIERNES, (DayOfWeek?)null, FechaRepartoPropio.EsDiaSinReparto),
+                    "sin día de ruta: el siguiente día con furgoneta");
+                Assert.AreEqual(MARTES, FechaRepartoPropio.Calcular(LUNES, VIERNES, DayOfWeek.Monday, FechaRepartoPropio.EsDiaSinReparto),
+                    "con día de ruta el lunes: como en un festivo, el siguiente laborable");
+                Assert.AreEqual(MARTES, FechaRepartoPropio.Calcular(VIERNES.AddDays(1), VIERNES, (DayOfWeek?)null, FechaRepartoPropio.EsDiaSinReparto),
+                    "sábado, domingo y lunes sin reparto: el martes");
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
     }
 }

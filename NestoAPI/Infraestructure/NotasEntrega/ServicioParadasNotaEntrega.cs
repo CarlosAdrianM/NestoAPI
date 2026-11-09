@@ -130,7 +130,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             this.repartoPropioActivo = repartoPropioActivo ?? InterruptorRepartoPropio.EstaActivo;
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
             this.hoy = hoy ?? (() => DateTime.Today);
-            this.esFestivo = esFestivo ?? FechaRepartoPropio.EsFestivoAlgete;
+            this.esFestivo = esFestivo ?? FechaRepartoPropio.EsDiaSinReparto;
         }
 
         public bool EsRepartoPropio(string ruta) => RutasRepartoPropio.EsRutaPropia(ruta) && repartoPropioActivo();

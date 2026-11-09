@@ -183,6 +183,8 @@ namespace NestoAPI.Tests.Models.RecursosHumanos
         [DataRow(" nacional ", TipoFestivo.Nacional)]
         [DataRow("ALCOBENDAS", TipoFestivo.Alcobendas)]
         [DataRow("Empresa", TipoFestivo.Empresa)]
+        [DataRow("RepartoPropio", TipoFestivo.RepartoPropio)]
+        [DataRow("repartopropio", TipoFestivo.RepartoPropio)]
         public void TiposFestivo_TryParse_SinImportarTildesNiMayusculas(string texto, TipoFestivo esperado)
         {
             Assert.IsTrue(TiposFestivo.TryParse(texto, out TipoFestivo tipo));
@@ -234,6 +236,70 @@ namespace NestoAPI.Tests.Models.RecursosHumanos
             }
             Assert.Inconclusive("No se encuentra Scripts/Issue779_Festivos.sql");
             return null;
+        }
+
+
+        // ================================================================ NestoAPI#841: día sin reparto propio
+
+        private static readonly DateTime MIERCOLES_04_11_2026 = new DateTime(2026, 11, 4);
+        private static readonly DateTime NOCHEBUENA_2026 = new DateTime(2026, 12, 24);
+
+        [TestMethod]
+        public void Issue841_DiaSinRepartoPropio_NoEsFestivoDeNingunAlmacenNiTienda()
+        {
+            ConTabla(F(MIERCOLES_04_11_2026, TipoFestivo.RepartoPropio, "Andre y Miguel libran"), F(NOCHEBUENA_2026, TipoFestivo.Empresa));
+
+            foreach (string almacen in new[] { Constantes.Almacenes.ALGETE, Constantes.Almacenes.REINA, Constantes.Almacenes.ALCOBENDAS, "", null })
+            {
+                Assert.IsFalse(GestorFestivos.EsFestivo(MIERCOLES_04_11_2026, almacen), $"«{almacen}» trabaja ese día");
+            }
+            Assert.AreEqual(MIERCOLES_04_11_2026, GestorFestivos.PrimerLaborableDesde(MIERCOLES_04_11_2026, Constantes.Almacenes.ALGETE));
+        }
+
+        [TestMethod]
+        public void Issue841_DiaSinRepartoPropio_SiQueFrenaElRepartoPropio()
+        {
+            ConTabla(F(MIERCOLES_04_11_2026, TipoFestivo.RepartoPropio, "Andre y Miguel libran"), F(NOCHEBUENA_2026, TipoFestivo.Empresa));
+
+            Assert.IsTrue(GestorFestivos.EsDiaSinRepartoPropio(MIERCOLES_04_11_2026));
+            Assert.IsTrue(GestorFestivos.EsDiaSinRepartoPropio(MIERCOLES_04_11_2026.AddHours(15)), "la hora no cuenta");
+            Assert.IsTrue(GestorFestivos.EsFestivoRepartoPropio(MIERCOLES_04_11_2026));
+            Assert.IsTrue(GestorFestivos.EsFestivo(MIERCOLES_04_11_2026, GestorFestivos.REPARTO_PROPIO));
+            Assert.IsTrue(NestoAPI.Infraestructure.Agencias.RepartoPropio.FechaRepartoPropio.EsDiaSinReparto(MIERCOLES_04_11_2026));
+
+            Assert.IsFalse(GestorFestivos.EsDiaSinRepartoPropio(MARTES_03_11_2026));
+            Assert.IsFalse(GestorFestivos.EsFestivoRepartoPropio(MARTES_03_11_2026));
+            // Los festivos de Algete (de donde sale la furgoneta) también frenan el reparto, pero no son «días sin reparto propio»
+            Assert.IsTrue(GestorFestivos.EsFestivoRepartoPropio(NOCHEBUENA_2026));
+            Assert.IsFalse(GestorFestivos.EsDiaSinRepartoPropio(NOCHEBUENA_2026));
+            Assert.IsTrue(GestorFestivos.EsFestivoRepartoPropio(new DateTime(2026, 11, 7)), "sábado");
+        }
+
+        [TestMethod]
+        public void Issue841_DiaSinRepartoPropio_SeVeAlInvalidarLaCache()
+        {
+            var festivos = new List<Festivo> { F(new DateTime(2026, 1, 1), TipoFestivo.Nacional) };
+            CalendarioFestivos.Configurar(() => new CalendarioFestivos.LecturaFestivos { HayTabla = true, Festivos = festivos.ToList() },
+                errores.Add, () => ahora);
+            Assert.IsFalse(GestorFestivos.EsDiaSinRepartoPropio(MIERCOLES_04_11_2026));
+
+            festivos.Add(F(MIERCOLES_04_11_2026, TipoFestivo.RepartoPropio));
+            CalendarioFestivos.Invalidar();
+
+            Assert.IsTrue(GestorFestivos.EsDiaSinRepartoPropio(MIERCOLES_04_11_2026));
+        }
+
+        [TestMethod]
+        public void Issue841_EsFestivoRepartoPropio_ConFuncionInyectada_FestivoDeAlgeteODeRepartoPropio()
+        {
+            Func<DateTime, string, bool> esFestivo = (dia, almacen) =>
+                (almacen == Constantes.Almacenes.ALGETE && dia == NOCHEBUENA_2026)
+                || (almacen == GestorFestivos.REPARTO_PROPIO && dia == MIERCOLES_04_11_2026)
+                || (almacen == Constantes.Almacenes.REINA && dia == MARTES_03_11_2026);
+
+            Assert.IsTrue(GestorFestivos.EsFestivoRepartoPropio(NOCHEBUENA_2026, esFestivo));
+            Assert.IsTrue(GestorFestivos.EsFestivoRepartoPropio(MIERCOLES_04_11_2026, esFestivo));
+            Assert.IsFalse(GestorFestivos.EsFestivoRepartoPropio(MARTES_03_11_2026, esFestivo), "un festivo de Reina no frena la furgoneta");
         }
     }
 }

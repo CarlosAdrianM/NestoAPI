@@ -187,7 +187,7 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>NestoAPI#831: los festivos y el día de hoy del día de reparto. Sustituibles en los tests.</summary>
-        internal Func<DateTime, bool> EsFestivoReparto { get; set; } = RepartoPropio.FechaRepartoPropio.EsFestivoAlgete;
+        internal Func<DateTime, bool> EsFestivoReparto { get; set; } = RepartoPropio.FechaRepartoPropio.EsDiaSinReparto;
         internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
 
         /// <summary>NestoAPI#831: <see cref="RepartoPropio.FechaRepartoPropio.Calcular(DateTime?, DateTime, string, string, string, string, string, Func{DateTime, bool})"/>. Si no se puede leer el picking, hoy.</summary>

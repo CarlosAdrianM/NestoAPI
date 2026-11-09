@@ -73,9 +73,8 @@ namespace NestoAPI.Infraestructure.Picking
         /// <summary>NestoAPI#764: hoy, para el día en que saldría por nuestra ruta (sustituible en los tests).</summary>
         internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
 
-        /// <summary>NestoAPI#764: los festivos de Algete (sustituible en los tests).</summary>
-        internal Func<DateTime, bool> EsFestivo { get; set; } =
-            f => Models.RecursosHumanos.GestorFestivos.EsFestivo(f, Models.Constantes.Almacenes.ALGETE);
+        /// <summary>NestoAPI#764: los festivos de Algete y, NestoAPI#841, los días sin reparto propio (sustituible en los tests).</summary>
+        internal Func<DateTime, bool> EsFestivo { get; set; } = Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio;
 
         public async Task<List<SugerenciaRutaPedidoDTO>> LeerSugerencias(string empresa, int? pedido, string cliente, DateTime fechaPicking)
         {

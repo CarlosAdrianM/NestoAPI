@@ -425,5 +425,56 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.AreEqual("ALG", cortes[0].Origen);
             Assert.AreEqual(LUNES_SIGUIENTE.AddHours(10), cortes[1].Corte);
         }
+
+
+        // ================================================================ NestoAPI#841: día sin reparto propio (sin furgoneta)
+
+        private void SinRepartoPropio(DateTime dia) => Festivo(NestoAPI.Models.RecursosHumanos.GestorFestivos.REPARTO_PROPIO, dia);
+
+        [TestMethod]
+        public void Issue841_Calcular_TiendaAAlgete_UnDiaSinRepartoPropio_LaSiguienteDelCalendario()
+        {
+            SinRepartoPropio(LUNES);
+
+            ProximaReposicionDTO proxima = Rei(LUNES.AddHours(9));
+
+            Assert.AreEqual(MIERCOLES.AddHours(10), proxima.CierraEl, "REI va los lunes, miércoles y viernes: la del lunes no se hace");
+            Assert.AreEqual(MIERCOLES.AddHours(13).AddMinutes(30), proxima.LlegaEl);
+        }
+
+        [TestMethod]
+        public void Issue841_Calcular_AlgeteATienda_UnDiaSinRepartoPropio_LaSiguienteDelCalendario()
+        {
+            SinRepartoPropio(LUNES);
+            var calendario = new List<ReposicionCalendario> { Fila("ALG", 1, destino: "REI") };
+
+            ProximaReposicionDTO proxima = calculadora.Calcular(calendario, "ALG", "REI", CORTE_11, LUNES.AddHours(9));
+
+            Assert.AreEqual(LUNES_SIGUIENTE.AddHours(10), proxima.CierraEl);
+        }
+
+        [TestMethod]
+        public void Issue841_CortesDeHoy_UnDiaSinRepartoPropio_NoSeRellenaNingunaNiLaIdaNiLaVuelta()
+        {
+            SinRepartoPropio(LUNES);
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 1), Fila("ALG", 1, destino: "REI"), Fila("ALC", 2) };
+
+            Assert.AreEqual(0, calculadora.CortesDeHoy(calendario, LUNES).Count);
+            Assert.AreEqual(1, calculadora.CortesDeHoy(calendario, MARTES).Count, "la del martes, como siempre");
+        }
+
+        [TestMethod]
+        public void Issue841_UnDiaSinRepartoPropio_SigueSiendoLaborableParaLasTiendas()
+        {
+            // La del martes cierra el lunes (antelación 1): aunque el lunes no salga la furgoneta, la tienda trabaja y la prepara
+            SinRepartoPropio(LUNES);
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 2, antelacion: 1) };
+
+            ProximaReposicionDTO proxima = Rei(LUNES.AddHours(9), calendario);
+
+            Assert.AreEqual(LUNES.AddHours(10), proxima.CierraEl);
+            Assert.AreEqual(MARTES.AddHours(13).AddMinutes(30), proxima.LlegaEl);
+            Assert.AreEqual(1, calculadora.CortesDelDia(calendario, LUNES).Count);
+        }
     }
 }

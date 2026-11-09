@@ -75,5 +75,26 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(n.Cuerpo, "Cárguelos");
             Assert.AreEqual("2027", n.Datos["anio"]);
         }
+
+
+        [TestMethod]
+        public async Task Issue841_ConSoloDiasSinRepartoPropio_ElAnioSigueSinFestivos_YAvisa()
+        {
+            NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Configurar(() => new NestoAPI.Models.RecursosHumanos.CalendarioFestivos.LecturaFestivos
+            {
+                HayTabla = true,
+                Festivos = { new NestoAPI.Models.RecursosHumanos.Festivo { Fecha = new DateTime(2027, 1, 4), TipoFestivo = NestoAPI.Models.RecursosHumanos.TipoFestivo.RepartoPropio, Fiesta = "Sin furgoneta" } }
+            });
+            try
+            {
+                var servicio = new AvisoFestivosSinCargarJobsService(null, () => new List<string> { "Carlos" }, notificaciones, correo);
+
+                Assert.AreEqual(1, await servicio.ComprobarAsync(new DateTime(2026, 12, 1)));
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
     }
 }

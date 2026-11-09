@@ -296,6 +296,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   lista del código de ese año (o nada). La lista del código se quita cuando la tabla esté en producción.
 - `GET api/Festivos?anio=`, `POST api/Festivos`, `DELETE api/Festivos/{fecha}/{tipo}` (escribir: Administración/Dirección/Informática).
   Job `festivos-sin-cargar` (día 1 de cada mes; en diciembre mira el año siguiente) avisa a Dirección (campana + correo).
+- **Día sin reparto propio (NestoAPI#841, 09/11/26)**: tipo `RepartoPropio` (no sale la furgoneta). NO es festivo de ningún almacén
+  (`EsFestivo(fecha, ALG/REI/ALC)` lo ignora); `GestorFestivos.EsDiaSinRepartoPropio` y LA REGLA del reparto propio
+  `GestorFestivos.EsFestivoRepartoPropio` (= `EsFestivo(fecha, GestorFestivos.REPARTO_PROPIO)`: festivo de Algete o sin reparto).
+  Frena AT/16 (fecha de entrega, picking de rutas internas, RP, paradas), las llegadas de reposición (`CalculadoraFechaReposicion`) y el
+  aviso de las 22:00 de la furgoneta. Lo dan de alta también Almacén y Logística (`GruposSeguridad.LOGISTICA` = «Logística», solo ese tipo). Requiere `Scripts/Issue841_FestivosRepartoPropio.sql` (CHECK).
 
 ### Nota de cobro: parada de solo cobro (NestoAPI#786, 04/11/26)
 - `NotasEntregaCabecera.Tipo` = «Cobro» (`TiposNotaEntrega.COBRO`; `Scripts/Issue786_NotasCobro.sql`: CHECK ampliada, columna

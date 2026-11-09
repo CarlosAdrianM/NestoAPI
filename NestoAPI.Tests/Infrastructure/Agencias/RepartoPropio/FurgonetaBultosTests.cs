@@ -880,5 +880,38 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
             public string LeerParametroSinDefecto(string empresa, string usuario, string parametro) => null;
         }
+
+
+        [TestMethod]
+        public async Task Issue841_Job22_UnDiaSinRepartoPropio_NoAvisa()
+        {
+            DateTime miercoles = new DateTime(2026, 11, 4);
+            NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Configurar(() => new NestoAPI.Models.RecursosHumanos.CalendarioFestivos.LecturaFestivos
+            {
+                HayTabla = true,
+                Festivos = { new NestoAPI.Models.RecursosHumanos.Festivo { Fecha = miercoles, TipoFestivo = NestoAPI.Models.RecursosHumanos.TipoFestivo.RepartoPropio, Fiesta = "Sin furgoneta" } }
+            });
+            try
+            {
+                furgoneta.Filas.Add(Mov(1, "RP1-1", TiposMovimientoBulto.CARGADO, ANDRE, miercoles.AddDays(-1).AddHours(9)));
+                var trazas = new List<string>();
+
+                int elMiercoles = await new FurgonetaSinDescargarJobsService(furgoneta, avisosFurgoneta, () => miercoles.AddHours(22),
+                    esFestivo: FechaRepartoPropio.EsDiaSinReparto, trazar: (ex, usuario) => trazas.Add(ex.Message)).AvisarSinDescargar();
+
+                Assert.AreEqual(0, elMiercoles);
+                Assert.AreEqual(0, avisosFurgoneta.Llamadas.Count);
+                CollectionAssert.AreEqual(new[] { FurgonetaSinDescargarJobsService.MENSAJE_FESTIVO }, trazas);
+
+                int elJueves = await new FurgonetaSinDescargarJobsService(furgoneta, avisosFurgoneta, () => miercoles.AddDays(1).AddHours(22),
+                    esFestivo: FechaRepartoPropio.EsDiaSinReparto, trazar: (ex, usuario) => trazas.Add(ex.Message)).AvisarSinDescargar();
+
+                Assert.AreEqual(1, elJueves, "al día siguiente avisa como siempre");
+            }
+            finally
+            {
+                NestoAPI.Models.RecursosHumanos.CalendarioFestivos.Reiniciar();
+            }
+        }
     }
 }

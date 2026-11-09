@@ -38,7 +38,8 @@ namespace NestoAPI.Infraestructure.Festivos
         internal AvisoFestivosSinCargarJobsService(Func<int, bool> hayFestivos, Func<List<string>> usuariosDireccion = null,
             IServicioNotificacionesPush notificaciones = null, IServicioCorreoElectronico correo = null)
         {
-            this.hayFestivos = hayFestivos ?? (anio => CalendarioFestivos.DelAnio(anio).Any());
+            // NestoAPI#841: los días sin reparto propio no son el calendario de festivos (dar de alta uno no lo «carga»)
+            this.hayFestivos = hayFestivos ?? (anio => CalendarioFestivos.DelAnio(anio).Any(f => f.TipoFestivo != TipoFestivo.RepartoPropio));
             this.usuariosDireccion = usuariosDireccion ?? (() => MiembrosGrupoDominio.Leer(Constantes.GruposSeguridad.DIRECCION));
             this.notificaciones = notificaciones ?? new ServicioNotificacionesPush();
             this.correo = correo ?? new ServicioCorreoElectronico();

@@ -16,15 +16,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// y saca la etiqueta aunque el pedido se reparta otro día (un aplazamiento, #722), y la furgoneta solo lo carga ese día.
     /// <para>LA REGLA (<see cref="Calcular"/>): si el picking del pedido es de hoy o de antes (o no hay), hoy, como siempre; si es
     /// de un día futuro, ese día, pasado por el día de reparto de nuestra ruta (<see cref="DiasRepartoCodigosPostales.DiaRutaInterna(string, string, string, string, string)"/>)
-    /// y por los festivos de Algete (<see cref="GestorFestivos"/>).</para>
+    /// y por los días en que no se reparte por nuestra ruta (<see cref="EsDiaSinReparto"/>: festivos de Algete y, NestoAPI#841, días
+    /// sin reparto propio).</para>
     /// </summary>
     public static class FechaRepartoPropio
     {
         /// <summary>Como mucho se salta este número de días seguidos de festivos (nunca un bucle sin fin).</summary>
         internal const int MAXIMO_DIAS_SALTO = 30;
 
-        /// <summary>Los festivos de Algete, que es de donde sale la furgoneta.</summary>
-        public static bool EsFestivoAlgete(DateTime dia) => GestorFestivos.EsFestivo(dia, Constantes.Almacenes.ALGETE);
+        /// <summary>
+        /// ¿Ese día no sale la furgoneta? Los festivos de Algete (de donde sale) y, NestoAPI#841, los días sin reparto propio
+        /// (<see cref="TipoFestivo.RepartoPropio"/>): <see cref="GestorFestivos.EsFestivoRepartoPropio(DateTime)"/>.
+        /// </summary>
+        public static bool EsDiaSinReparto(DateTime dia) => GestorFestivos.EsFestivoRepartoPropio(dia);
 
         /// <summary>LA REGLA (ver la clase).</summary>
         /// <param name="fechaEntregaPicking">La MIN fecha de entrega de las líneas con picking del pedido (null si no hay).</param>

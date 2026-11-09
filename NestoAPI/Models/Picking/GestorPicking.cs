@@ -185,9 +185,10 @@ namespace NestoAPI.Models.Picking
             GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, fechaPicking);
 
             // NestoAPI#764: los pedidos de ruta interna con día de reparto por código postal se preparan el mismo día del reparto
-            // y solo el día que les toca (salvo en el picking de un solo pedido: lo decide almacén).
+            // y solo el día que les toca (salvo en el picking de un solo pedido: lo decide almacén). NestoAPI#841: un día sin
+            // reparto propio no le toca a ninguno (se van al siguiente día de su ruta).
             List<PedidoPicking> noLesTocaHoy = GestorRutaInternaPicking.Aplicar(candidatos, DateTime.Today,
-                f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE), mirarDiaDeReparto: !pedidoUnico.HasValue);
+                GestorFestivos.EsFestivoRepartoPropio, mirarDiaDeReparto: !pedidoUnico.HasValue);
             foreach (PedidoPicking pedido in noLesTocaHoy)
             {
                 System.Diagnostics.Trace.WriteLine($"[Picking#764] Pedido {pedido.Id} no sale: su día de reparto por nuestra ruta es el {pedido.PrimeraEntregaFuturaQuitada:dd/MM/yyyy}");
@@ -198,9 +199,10 @@ namespace NestoAPI.Models.Picking
             DateTime diaEntrega = GestorDiasEnServir.CalcularDiaEntrega(fechaPicking,
                 f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
             // NestoAPI#588: si la ruta del pedido ya es propia, se entrega el mismo día del picking (sugerencia 1110, Carlos
-            // 06/11/26), no el laborable siguiente a la salida de la agencia
+            // 06/11/26), no el laborable siguiente a la salida de la agencia. NestoAPI#841: si ese día no hay reparto propio, el
+            // siguiente en que sí.
             DateTime diaEntregaRutaPropia = GestorDiasEnServir.CalcularDiaEntregaRutaPropia(fechaPicking,
-                f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
+                GestorFestivos.EsFestivoRepartoPropio);
             // NestoAPI#764: los de ruta interna con día de reparto se entregan hoy, el día en que se preparan
             sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, diaEntregaRutaPropia,
                 DateTime.Today, ignorarCierreCliente);

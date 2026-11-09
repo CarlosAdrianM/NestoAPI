@@ -18,7 +18,7 @@ namespace NestoAPI.Controllers
     public class FestivoDTO
     {
         public DateTime Fecha { get; set; }
-        /// <summary>Nacional, Autonómica, Empresa, Algete, Alcobendas o Madrid.</summary>
+        /// <summary>Nacional, Autonómica, Empresa, Algete, Alcobendas, Madrid o RepartoPropio (NestoAPI#841: día sin reparto propio).</summary>
         public string Tipo { get; set; }
         public string Descripcion { get; set; }
         public string Usuario { get; set; }
@@ -38,14 +38,15 @@ namespace NestoAPI.Controllers
     /// <summary>
     /// NestoAPI#779: mantenimiento del calendario de festivos (tabla <c>dbo.Festivos</c>, <c>Scripts/Issue779_Festivos.sql</c>).
     /// Leer: cualquiera autenticado. Escribir: Administración, Dirección o Informática; cada escritura invalida la caché de
-    /// <see cref="CalendarioFestivos"/>.
+    /// <see cref="CalendarioFestivos"/>. NestoAPI#841: los días sin reparto propio (<see cref="TipoFestivo.RepartoPropio"/>) los
+    /// pueden dar de alta y de baja también Almacén y Logística (solo ese tipo; decisión de Carlos 09/11/26).
     /// </summary>
     public class FestivosController : ApiController
     {
         public const string ORIGEN_TABLA = "Tabla";
         public const string ORIGEN_CODIGO = "Código";
         public const int LONGITUD_DESCRIPCION = 100;
-        public const string MENSAJE_SIN_PERMISO = "Solo Administración, Dirección o Informática pueden cambiar los festivos.";
+        public const string MENSAJE_SIN_PERMISO = "Solo Administración, Dirección o Informática pueden cambiar los festivos (Almacén y Logística, solo los días sin reparto propio).";
         public const string MENSAJE_SIN_TABLA = "Todavía no existe la tabla Festivos: hay que lanzar Scripts/Issue779_Festivos.sql.";
 
         private readonly IRepositorioFestivos repositorio;
@@ -63,6 +64,15 @@ namespace NestoAPI.Controllers
             usuario != null && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION)
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
+
+        /// <summary>
+        /// NestoAPI#841: ¿puede dar de alta o de baja un festivo de ese tipo? Los de siempre, cualquiera; Almacén, además, los días sin
+        /// reparto propio, y también Logística (lo saben con antelación: quién libra de la furgoneta).
+        /// </summary>
+        internal static bool PuedeCambiarFestivo(IPrincipal usuario, string tipo) =>
+            PuedeCambiarFestivos(usuario)
+            || (usuario != null && TiposFestivo.TryParse(tipo, out TipoFestivo tipoFestivo) && tipoFestivo == TipoFestivo.RepartoPropio
+                && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.LOGISTICA)));
 
         private static bool AnioValido(int anio) => anio >= 2000 && anio <= 2100;
 
@@ -116,7 +126,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(FestivoDTO))]
         public async Task<IHttpActionResult> PostFestivo([FromBody] PeticionFestivoDTO peticion)
         {
-            if (!PuedeCambiarFestivos(User))
+            if (!PuedeCambiarFestivo(User, peticion?.Tipo))
             {
                 return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
             }
@@ -172,7 +182,7 @@ namespace NestoAPI.Controllers
         [Route("api/Festivos/{fecha:datetime}/{tipo}")]
         public async Task<IHttpActionResult> DeleteFestivo(DateTime fecha, string tipo)
         {
-            if (!PuedeCambiarFestivos(User))
+            if (!PuedeCambiarFestivo(User, tipo))
             {
                 return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
             }
