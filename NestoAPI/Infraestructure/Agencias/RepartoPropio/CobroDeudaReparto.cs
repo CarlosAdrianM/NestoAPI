@@ -174,7 +174,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
                     Nº_Cuenta = deuda.Cliente,
                     Contacto = deuda.Contacto,
-                    Concepto = $"{pagoODevolucion} {NombreTipo(deuda)} {deuda.Documento}/{deuda.Efecto}{aCuenta}{aQuien}",
+                    Concepto = ConAQuien($"{pagoODevolucion} {NombreTipo(deuda)} {deuda.Documento}/{deuda.Efecto}{aCuenta}", aQuien),
                     Debe = importeApunte < 0 ? -importeApunte : 0,
                     Haber = importeApunte > 0 ? importeApunte : 0,
                     Fecha = fecha,
@@ -212,7 +212,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
                     Nº_Cuenta = cliente,
                     Contacto = contacto,
-                    Concepto = $"S/Pago a cuenta{aQuien}",
+                    Concepto = ConAQuien("S/Pago a cuenta", aQuien),
                     Debe = restante < 0 ? -restante : 0,
                     Haber = restante > 0 ? restante : 0,
                     Fecha = fecha,
@@ -263,7 +263,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     {
                         coletilla = " a cta.";
                     }
-                    contrapartida.Concepto = $"{pagoODevolucion} c/{mayor.Cliente}/{mayor.Contacto} {NombreTipo(mayor)} {mayor.Documento}/{mayor.Efecto}{coletilla}";
+                    // Carlos 09/11/26: también aquí «a Miguel» (antes solo lo llevaban los apuntes del cliente)
+                    contrapartida.Concepto = ConAQuien($"{pagoODevolucion} c/{mayor.Cliente}/{mayor.Contacto} {NombreTipo(mayor)} {mayor.Documento}/{mayor.Efecto}{coletilla}", aQuien);
                     contrapartida.FechaVto = mayor.Vencimiento;
                     contrapartida.Nº_Documento = mayor.Documento;
                     contrapartida.Delegación = mayor.Delegacion;
@@ -271,7 +272,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 }
                 else
                 {
-                    contrapartida.Concepto = $"{pagoODevolucion} c/{cliente}/{contacto} a cuenta{aQuien}";
+                    contrapartida.Concepto = ConAQuien($"{pagoODevolucion} c/{cliente}/{contacto} a cuenta", aQuien);
                     contrapartida.FechaVto = fecha;
                     contrapartida.Nº_Documento = DOCUMENTO_A_CUENTA;
                     contrapartida.Delegación = caja.Delegacion;
@@ -285,6 +286,26 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 linea.Concepto = linea.Concepto.Substring(0, 50);
             }
             return resultado;
+        }
+
+        internal const int MAXIMO_CONCEPTO = 50;
+
+        /// <summary>
+        /// El concepto con «a Miguel» al final, en los 50 de la columna: si no cabe, se recorta lo de delante y el nombre del
+        /// repartidor se queda entero (lo que más importa al cuadrar su caja). Nunca pasa de 50.
+        /// </summary>
+        internal static string ConAQuien(string concepto, string aQuien)
+        {
+            string texto = (concepto ?? string.Empty) + (aQuien ?? string.Empty);
+            if (texto.Length <= MAXIMO_CONCEPTO)
+            {
+                return texto;
+            }
+            if (string.IsNullOrEmpty(aQuien) || aQuien.Length >= MAXIMO_CONCEPTO)
+            {
+                return texto.Substring(0, MAXIMO_CONCEPTO);
+            }
+            return concepto.Substring(0, MAXIMO_CONCEPTO - aQuien.Length).TrimEnd() + aQuien;
         }
 
         private static string NombreTipo(EfectoCobroReparto deuda)

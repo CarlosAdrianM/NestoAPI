@@ -152,6 +152,72 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.StartsWith(concepto, "S/Pago pedido 922175 a Agencia con un nombre");
         }
 
+        // ===== Carlos 09/11/26: en el reparto propio, el concepto lleva el nombre del repartidor que cobra =====
+
+        private static EnviosAgencia EnvioRepartoPropio()
+        {
+            EnviosAgencia envio = EnvioConReembolso();
+            envio.Agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = 14, Nombre = "Reparto propio", CuentaReembolsos = null };
+            return envio;
+        }
+
+        [TestMethod]
+        public void GenerarConcepto_RepartoPropio_LlevaElNombreDelRepartidorSinDominio()
+        {
+            string concepto = TramitacionEnviosService.GenerarConcepto(EnvioRepartoPropio(), @"NUEVAVISION\Miguel");
+
+            Assert.AreEqual("S/Pago pedido 922175 a Miguel c/15191", concepto);
+        }
+
+        [TestMethod]
+        public void GenerarConcepto_RepartoPropioSinRepartidor_ElNombreDeLaAgencia()
+        {
+            Assert.AreEqual("S/Pago pedido 922175 a Reparto propio c/15191", TramitacionEnviosService.GenerarConcepto(EnvioRepartoPropio(), null));
+            Assert.AreEqual("S/Pago pedido 922175 a Reparto propio c/15191", TramitacionEnviosService.GenerarConcepto(EnvioRepartoPropio(), "  "));
+        }
+
+        [TestMethod]
+        public void GenerarConcepto_RepartoPropioSinRepartidorNiNombreDeAgencia_RepartoPropio()
+        {
+            EnviosAgencia envio = EnvioRepartoPropio();
+            envio.AgenciasTransporte = null;
+
+            Assert.AreEqual("S/Pago pedido 922175 a Reparto propio c/15191", TramitacionEnviosService.GenerarConcepto(envio, null));
+        }
+
+        [TestMethod]
+        public void GenerarConcepto_OtraAgenciaConUsuario_SigueConElNombreDeLaAgencia()
+        {
+            Assert.AreEqual("S/Pago pedido 922175 a Innovatrans c/15191", TramitacionEnviosService.GenerarConcepto(EnvioConReembolso(), USUARIO));
+        }
+
+        [TestMethod]
+        public void GenerarConcepto_RepartoPropioConNombreLargo_SeRecortaA50()
+        {
+            string concepto = TramitacionEnviosService.GenerarConcepto(EnvioRepartoPropio(), @"NUEVAVISION\RepartidorConUnNombreLarguisimoDeVerdad");
+
+            Assert.AreEqual(50, concepto.Length);
+            StringAssert.StartsWith(concepto, "S/Pago pedido 922175 a RepartidorConUnNombre");
+        }
+
+        [TestMethod]
+        public async Task ContabilizarReembolsoAsync_RepartoPropio_ElConceptoLlevaElRepartidorQueCobra()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            IContabilidadService contabilidad = A.Fake<IContabilidadService>();
+            A.CallTo(() => contabilidad.ContabilizarDiario(db, "1", "_Reembolso", "Miguel")).Returns(1199549);
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, contabilidad, () => HOY);
+            EnviosAgencia envio = EnvioRepartoPropio();
+            envio.Cliente = Constantes.ClientesEspeciales.AMAZON;
+
+            _ = await servicio.ContabilizarReembolsoAsync(envio, "Miguel", 80M, "57000032");
+
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(
+                    lineas => lineas.Single().Concepto == "S/Pago pedido 922175 a Miguel c/" + Constantes.ClientesEspeciales.AMAZON)))
+                .MustHaveHappenedOnceExactly();
+        }
+
         /// <summary>
         /// NestoAPI#431: el apunte del reembolso entra por ContabilidadService.CrearLineas (la
         /// puerta canónica, que normaliza FechaVto, Fecha_Modificación y el largo del concepto),

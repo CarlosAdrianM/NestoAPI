@@ -358,6 +358,8 @@ namespace NestoAPI.Infraestructure.Agencias
             Empresa datosEmpresa = await DatosEmpresaAsync(envio, empresaCobro).ConfigureAwait(false);
             PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario, empresaCobro, datosEmpresa);
             linea.Contrapartida = cuentaContrapartida.Trim();
+            // Carlos 09/11/26: en el reparto propio, el nombre del repartidor que cobra (el que entrega, dueño de la caja)
+            linea.Concepto = GenerarConcepto(envio, usuario);
             if (importe.HasValue)
             {
                 linea.Haber = importe.Value;
@@ -1361,6 +1363,38 @@ namespace NestoAPI.Infraestructure.Agencias
             string concepto = $"S/Pago pedido {envio.Pedido} a {envio.AgenciasTransporte?.Nombre?.Trim()} c/{envio.Cliente?.Trim()}";
             return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
         }
+
+        /// <summary>
+        /// Carlos 09/11/26: en el reparto propio, «a Miguel» (el repartidor que cobra, sin dominio) en vez de «a Reparto propio»;
+        /// sin repartidor, el nombre de la agencia (y si tampoco, «Reparto propio»). Las demás agencias, como siempre.
+        /// <para>Solo para el apunte del cobro: la búsqueda del pago a desliquidar (<see cref="CalcularMovimientoDesliqAsync"/>)
+        /// sigue con <see cref="GenerarConcepto(EnviosAgencia)"/>, pero no llega al reparto propio (su agencia no tiene
+        /// CuentaReembolsos y la modificación del reembolso se corta antes).</para>
+        /// </summary>
+        internal static string GenerarConcepto(EnviosAgencia envio, string repartidor)
+        {
+            if (!EsRepartoPropio(envio))
+            {
+                return GenerarConcepto(envio);
+            }
+            string nombre = UsuarioAuditoriaHelper.SinDominio(repartidor);
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                nombre = envio.AgenciasTransporte?.Nombre?.Trim();
+            }
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                nombre = NOMBRE_REPARTO_PROPIO;
+            }
+            string concepto = $"S/Pago pedido {envio.Pedido} a {nombre} c/{envio.Cliente?.Trim()}";
+            return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
+        }
+
+        internal const string NOMBRE_REPARTO_PROPIO = "Reparto propio";
+
+        private static bool EsRepartoPropio(EnviosAgencia envio)
+            => envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+                || envio.AgenciasTransporte?.Numero == Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
 
         /// <summary>NestoAPI#801: la empresa explícita (recortada) o, sin ella, la del envío (sin recortar, como siempre).</summary>
         private static string EmpresaDelCobro(EnviosAgencia envio, string empresa)

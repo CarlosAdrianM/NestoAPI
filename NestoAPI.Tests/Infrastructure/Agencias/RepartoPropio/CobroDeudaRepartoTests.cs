@@ -100,8 +100,53 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             PreContabilidad caja = Caja(registradas);
             Assert.AreEqual(CAJA_MIGUEL, caja.Nº_Cuenta);
             Assert.AreEqual(80m, caja.Debe);
-            Assert.AreEqual("Pago c/15191/0 Factura NV26001/1 y otros", caja.Concepto);
+            Assert.AreEqual("Pago c/15191/0 Factura NV26001/1 y otros a Miguel", caja.Concepto);
             Assert.AreEqual(registradas.Sum(l => l.Debe), registradas.Sum(l => l.Haber), "El asiento cuadra");
+        }
+
+        // Carlos 09/11/26: «Pago c/12197/2 Factura NV2617853/1» no decía quién lo cobró: la caja lleva también «a Miguel»
+        [TestMethod]
+        public async Task Cobrar_UnEfectoEntero_LaCajaLlevaElNombreDelRepartidor()
+        {
+            Efecto(1, 116.47m, documento: "NV2617853", efecto: "1", cliente: "12197");
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await servicio.Cobrar(new CobroDeudaRepartoDTO
+            {
+                Cliente = "12197", Efectos = new List<int> { 1 }, Importe = 116.47m, ClaveIdempotencia = Guid.NewGuid()
+            }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual("Pago c/12197/0 Factura NV2617853/1 a Miguel", Caja(registradas).Concepto);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_UsuarioConDominio_LaCajaLlevaElNombreSinDominio()
+        {
+            Efecto(1, 50m);
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await servicio.Cobrar(Peticion(50m, 1), @"NUEVAVISION\Miguel");
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual("Pago c/15191/0 Factura NV26001/1 a Miguel", Caja(registradas).Concepto);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_ConceptoLargo_SeRecortaA50SinPerderElNombreDelRepartidor()
+        {
+            Efecto(1, 50m, documento: "NV2617853", efecto: "12", cliente: "1219700");
+            Efecto(2, 30m, documento: "NV2617854", efecto: "1", cliente: "1219700");
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await servicio.Cobrar(new CobroDeudaRepartoDTO
+            {
+                Cliente = "1219700", Efectos = new List<int> { 1, 2 }, Importe = 80m, ClaveIdempotencia = Guid.NewGuid()
+            }, MIGUEL);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.IsTrue(registradas.All(l => l.Concepto == null || l.Concepto.Length <= 50), "La columna Concepto admite 50");
+            string concepto = Caja(registradas).Concepto;
+            Assert.AreEqual(50, concepto.Length);
+            StringAssert.StartsWith(concepto, "Pago c/1219700/0 Factura NV2617853/12");
+            StringAssert.EndsWith(concepto, " a Miguel");
         }
 
         [TestMethod]
