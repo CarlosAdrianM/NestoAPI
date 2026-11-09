@@ -142,6 +142,39 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Terminar_LoLeidoDePedidosYaAlbaranadosDelMismoPicking_NoEsAjenoNiBloquea()
+        {
+            // NestoAPI#590 (picking 100033, 09/11/26): la oficina albaranó 27 pedidos del picking mientras Pedro ya los había
+            // leído; sus líneas (Estado 2/4) ya no salen en el recorrido, pero lo leído de ellas no es ajeno: ya está servido.
+            PickingConLecturas(99700,
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 3 },
+                new LecturaPickingAlmacen { Producto = "B", Unidades = 1 },
+                new LecturaPickingAlmacen { Producto = "SERVIDO", Unidades = 4 });
+            A.CallTo(() => repositorio.LeerProductosServidosDelPicking(EMPRESA, 99700)).Returns(new List<string> { "SERVIDO" });
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            Assert.AreEqual(EstadoTerminarSalida.Terminada, resultado.Estado, resultado.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConServidosYAjenosDeVerdad_SoloListaLosAjenos()
+        {
+            PickingConLecturas(99700,
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 3 },
+                new LecturaPickingAlmacen { Producto = "B", Unidades = 1 },
+                new LecturaPickingAlmacen { Producto = "SERVIDO", Unidades = 4 },
+                new LecturaPickingAlmacen { Producto = "12485", Unidades = 2 });
+            A.CallTo(() => repositorio.LeerProductosServidosDelPicking(EMPRESA, 99700)).Returns(new List<string> { "SERVIDO" });
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            Assert.AreEqual(EstadoTerminarSalida.SinTerminar, resultado.Estado);
+            StringAssert.Contains(resultado.Mensaje, "Ha leído 12485,");
+            Assert.IsFalse(resultado.Mensaje.Contains("SERVIDO"), resultado.Mensaje);
+        }
+
+        [TestMethod]
         public async Task Terminar_UnPickingCompleto_QuedaTerminadoYCompleto()
         {
             PickingConLecturas(99700,

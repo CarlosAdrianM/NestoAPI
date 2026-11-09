@@ -339,6 +339,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return new ResultadoTerminarSalida { Estado = EstadoTerminarSalida.NoExiste, Mensaje = $"No hay nada que sacar en {origen.Tipo} {numero}." };
             }
             EstadoPickingDTO estado = ServicioPreparacionAlmacen.MontarEstadoPicking(empresa, numero, recorrido.Lineas, recorrido.Lecturas);
+            if (!estado.Terminado && origen is OrigenSalidaPicking picking && estado.Productos.Any(p => p.Ajeno))
+            {
+                estado = SinAjenosServidos(estado, await picking.LeerProductosServidos(empresa, numero).ConfigureAwait(false));
+            }
             if (!estado.Terminado)
             {
                 int quedan = estado.Productos.Where(p => !p.Ajeno).Sum(p => Math.Max(0, p.Esperado - p.Leido - p.Faltas));
@@ -366,6 +370,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// ya no están en la salida (se sacó un pedido del picking mientras se recogía), se dice cuáles y qué hacer con ellos, no
         /// «Quedan 0 unidades».
         /// </summary>
+        /// <summary>
+        /// NestoAPI#590 (picking 100033, 09/11/26: la oficina albaranó 27 pedidos del picking que Pedro ya había leído): lo leído de un
+        /// producto que tiene líneas de ESTE picking ya en albarán o factura no es ajeno: ya está servido, ni bloquea ni cuenta. Ajeno
+        /// es solo lo de productos sin ninguna línea con este picking (p. ej. un pedido al que se le ha quitado el picking).
+        /// </summary>
+        internal static EstadoPickingDTO SinAjenosServidos(EstadoPickingDTO estado, IEnumerable<string> servidos)
+        {
+            var servido = new HashSet<string>((servidos ?? Enumerable.Empty<string>()).Where(p => p != null).Select(p => p.Trim()), StringComparer.OrdinalIgnoreCase);
+            if (estado == null || servido.Count == 0)
+            {
+                return estado;
+            }
+            List<DiferenciaPreparacionDTO> diferencias = estado.Productos.Where(d => !(d.Ajeno && servido.Contains(d.Producto?.Trim() ?? string.Empty))).ToList();
+            estado.Productos = diferencias;
+            estado.Terminado = diferencias.Any() && diferencias.All(d => !d.Ajeno && d.Leido + d.Faltas >= d.Esperado);
+            estado.Completo = CasadorEscaneos.EstaCompleto(diferencias) && diferencias.All(d => d.Faltas == 0);
+            return estado;
+        }
+
         internal static string MotivoSinTerminar(EstadoPickingDTO estado, int quedan)
         {
             List<string> ajenos = (estado?.Productos ?? new List<DiferenciaPreparacionDTO>())
@@ -796,6 +819,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Tipo => CasadorEscaneos.ORIGEN_PICKING;
 
         public TextosTipoSalida Textos { get; } = new TextosPicking();
+
+        /// <summary>NestoAPI#590: los productos con líneas de este picking ya en albarán o factura.</summary>
+        public async Task<List<string>> LeerProductosServidos(string empresa, int picking)
+        {
+            return await repositorio.LeerProductosServidosDelPicking(empresa, picking).ConfigureAwait(false) ?? new List<string>();
+        }
 
         /// <summary>NestoAPI#600: lo que se le dice al mozo de un picking (antes estaba en Ariadna). Se empaqueta después.</summary>
         internal class TextosPicking : TextosTipoSalida

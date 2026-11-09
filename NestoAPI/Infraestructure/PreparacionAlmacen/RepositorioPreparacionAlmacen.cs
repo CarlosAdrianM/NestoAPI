@@ -132,6 +132,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Los pickings del almacén con líneas todavía sin servir, el más reciente primero.</summary>
         Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
         Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking);
+        /// <summary>
+        /// NestoAPI#590 (picking 100033): los productos con alguna línea de ESE picking ya en albarán o factura (Estado &gt;= 2). Lo
+        /// leído de ellos no es ajeno: la oficina los ha servido después de leerlos.
+        /// </summary>
+        Task<List<string>> LeerProductosServidosDelPicking(string empresa, int picking);
         /// <summary>Lo leído y dado por falta al sacar un documento de cualquier tipo (PICK, REPO).</summary>
         Task<List<LecturaPickingAlmacen>> LeerLecturasDeSalida(string empresa, string tipoOrigen, int numero);
         /// <summary>Los traspasos de reposición con la salida del almacén aún sin contabilizar.</summary>
@@ -851,6 +856,15 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto, e.Solo";
         {
             return (await baseDeDatos.SqlQuery<string>(SQL_ALMACEN_PICKING, empresa, picking).ToListAsync().ConfigureAwait(false))
                 .FirstOrDefault();
+        }
+
+        internal const string SQL_PRODUCTOS_SERVIDOS_DEL_PICKING = @"
+SELECT DISTINCT RTRIM(l.Producto) FROM LinPedidoVta l
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado >= 2";
+
+        public Task<List<string>> LeerProductosServidosDelPicking(string empresa, int picking)
+        {
+            return baseDeDatos.SqlQuery<string>(SQL_PRODUCTOS_SERVIDOS_DEL_PICKING, empresa, picking).ToListAsync();
         }
 
         public async Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking)
