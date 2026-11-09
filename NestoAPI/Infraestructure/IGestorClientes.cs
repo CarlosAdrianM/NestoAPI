@@ -36,5 +36,7 @@ namespace NestoAPI.Infraestructure
         Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);
         Task PublicarClienteSincronizar(Cliente cliente, Sincronizacion.FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null);
         Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);
+        /// <summary>NestoAPI#623 corte 4: publica a Odoo el cliente con su origen y el consentimiento del lead.</summary>
+        Task PublicarClienteConOrigenSincronizar(string empresa, string cliente, string origen, System.DateTime fechaOrigen, bool aceptaComunicaciones, string usuario);
     }
 }

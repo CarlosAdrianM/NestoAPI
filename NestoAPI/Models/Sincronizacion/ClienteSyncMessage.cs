@@ -104,6 +104,21 @@ namespace NestoAPI.Models.Sincronizacion
         /// </summary>
         public DateTime? FechaUltimoPedido { get; set; }
 
+        // NestoAPI#623 corte 4 (odoo-custom-addons#43): origen del cliente (campaña) y consentimiento de comunicaciones
+        // comerciales del lead. Solo viajan cuando se conocen (hoy, al importar un lead de Meta): propiedad AUSENTE = no tocar.
+
+        /// <summary>Código del catálogo de orígenes (p. ej. META-HARMONIA-0926). Ausente = no tocar.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string Origen { get; set; }
+
+        /// <summary>Cuándo llegó el lead (hora de España). Ausente = no tocar.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DateTime? FechaOrigen { get; set; }
+
+        /// <summary>Acepta recibir correos comerciales (casilla del formulario). Ausente = no se sabe / no tocar.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? AceptaComunicaciones { get; set; }
+
         /// <summary>
         /// Lista de personas de contacto del cliente
         /// </summary>

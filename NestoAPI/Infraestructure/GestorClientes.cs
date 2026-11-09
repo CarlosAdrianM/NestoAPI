@@ -1997,7 +1997,11 @@ namespace NestoAPI.Infraestructure
             return servicio.LeerFechasCompras(clientes);
         }
 
-        public async Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null)
+        public Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null)
+            => PublicarClienteSincronizar(cliente, fechasCompras, source, usuario, null);
+
+        /// <summary>NestoAPI#623: con <paramref name="completar"/> se añaden campos opcionales al mensaje antes de publicarlo.</summary>
+        internal async Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source, string usuario, Action<ClienteSyncMessage> completar)
         {
             // NestoAPI#498: Odoo VACÍA el campo si llega null (odoo-custom-addons#3), así que no se
             // publica nunca sin las fechas calculadas: sin fechas, borraríamos las que ya tiene.
@@ -2070,8 +2074,42 @@ namespace NestoAPI.Infraestructure
                 PersonasContacto = personasContacto
             };
 
+            completar?.Invoke(message);
+
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
             await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", message);
+        }
+
+        /// <summary>
+        /// NestoAPI#623 corte 4: publica a Odoo (nesto_sync) el contacto principal del cliente con su origen y el consentimiento
+        /// de comunicaciones del lead (campos opcionales del mensaje, odoo-custom-addons#43). Lo usa la importación de leads de Meta,
+        /// tanto al crear el cliente como al ponerle el origen a uno que ya existía.
+        /// </summary>
+        public async Task PublicarClienteConOrigenSincronizar(string empresa, string cliente, string origen, DateTime fechaOrigen, bool aceptaComunicaciones, string usuario)
+        {
+            string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            string clienteLimpio = cliente?.Trim();
+            Cliente clienteDb;
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                db.Configuration.ProxyCreationEnabled = false;
+                clienteDb = await db.Clientes.Include(c => c.PersonasContactoClientes)
+                    .Where(c => c.Empresa == empresaLimpia && c.Nº_Cliente == clienteLimpio && c.Estado >= 0)
+                    .OrderByDescending(c => c.ClientePrincipal).ThenBy(c => c.Contacto)
+                    .FirstOrDefaultAsync().ConfigureAwait(false);
+            }
+            if (clienteDb == null)
+            {
+                return;
+            }
+            Dictionary<string, FechasComprasCliente> fechas = await LeerFechasCompras(new[] { clienteDb.Nº_Cliente }).ConfigureAwait(false);
+            await PublicarClienteSincronizar(clienteDb, CalculoFechasComprasCliente.Buscar(fechas, clienteDb.Nº_Cliente), "Nesto", usuario, m =>
+            {
+                m.Origen = origen?.Trim();
+                m.FechaOrigen = fechaOrigen;
+                m.AceptaComunicaciones = aceptaComunicaciones;
+            }).ConfigureAwait(false);
         }
 
         /// <summary>
