@@ -146,8 +146,9 @@ namespace NestoAPI.Infraestructure.Novedades
 
         /// <summary>
         /// Solo la persona a la que se espera (NestoAPI#783: la mencionada en la pregunta; sin mención, el AUTOR)
-        /// quita la espera. Si estaba Cerrada, la reabre ella o su autor. Cualquier otro comentario (el asistente,
-        /// otro compañero, el autor cuando se esperaba a otro) la deja como estaba.
+        /// quita la espera. Cualquier otro comentario (el asistente, otro compañero, el autor cuando se esperaba a
+        /// otro) la deja como estaba. Carlos 09/11/26: si estaba Cerrada, la reabre CUALQUIERA que comente (menos el
+        /// asistente, que es quien la cierra) y se quita la espera.
         /// </summary>
         public static DecisionAlComentar AlComentar(EsperaRespuestaNovedad espera, string usuario, string nombreUsuario = null)
         {
@@ -160,7 +161,8 @@ namespace NestoAPI.Infraestructure.Novedades
             bool cerrada = string.Equals(espera.Estado?.Trim(), ReglasSugerenciasNovedades.ESTADO_CERRADA, StringComparison.OrdinalIgnoreCase);
             if (cerrada)
             {
-                decision.Reabrir = esperado || EsDelAutor(espera, usuario);
+                decision.Reabrir = !string.IsNullOrWhiteSpace(usuario)
+                    && !Igual(usuario, ReglasFeedbackNovedades.USUARIO_ASISTENTE);
                 decision.BorrarEspera = decision.Reabrir;
                 return decision;
             }
@@ -184,7 +186,7 @@ namespace NestoAPI.Infraestructure.Novedades
         public static string TextoCierre(string nombre, bool esIncidencia) => TextoCierre(new[] { nombre }, esIncidencia);
 
         public static string TextoCierre(IEnumerable<string> nombres, bool esIncidencia) =>
-            $"{Saludo(nombres)} Como no hemos tenido respuesta, damos {Que(esIncidencia)} por cerrada. Si la sigue necesitando, escriba aquí y se volverá a abrir.";
+            $"{Saludo(nombres)} Damos {Que(esIncidencia)} por cerrada al no tener respuesta; si la necesita, escriba aquí y se reabre.";
 
         /// <summary>NestoAPI#783: los nombres a los que va el recordatorio (los esperados o, sin ellos, el autor).</summary>
         public static List<string> NombresDestinatarios(EsperaRespuestaNovedad espera)

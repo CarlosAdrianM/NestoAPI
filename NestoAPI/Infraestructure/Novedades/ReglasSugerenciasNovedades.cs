@@ -16,9 +16,10 @@ namespace NestoAPI.Infraestructure.Novedades
         public const string ESTADO_IMPLEMENTADA = "Implementada";
         public const string ESTADO_DESCARTADA = "Descartada";
         /// <summary>
-        /// Recordatorios de respuesta (Carlos, 16/10/26): cerrada porque su autor no contestó a lo que le preguntamos
-        /// (tras dos recordatorios). A diferencia de Descartada, su autor la sigue viendo siempre en su lista y, si
-        /// comenta, vuelve sola a Pendiente. Los clientes que no la conocen la enseñan como texto.
+        /// Contestada y sin nada más que hacer (Carlos, 09/11/26): la cierra el asistente o Dirección / Informática con
+        /// el PUT, o el job de recordatorios cuando el autor no contesta tras dos. A diferencia de Descartada, su autor
+        /// (y Dirección / Informática) la siguen viendo <see cref="DIAS_CERRADA_VISIBLE"/> días desde el cierre; los
+        /// demás dejan de verla en el acto. Si alguien comenta (menos el asistente), vuelve sola a Pendiente.
         /// </summary>
         public const string ESTADO_CERRADA = "Cerrada";
         public static readonly string[] ESTADOS = { ESTADO_PENDIENTE, ESTADO_ACEPTADA, ESTADO_IMPLEMENTADA, ESTADO_DESCARTADA, ESTADO_CERRADA };
@@ -69,6 +70,9 @@ namespace NestoAPI.Infraestructure.Novedades
             string.Equals(estado, ESTADO_PENDIENTE, StringComparison.OrdinalIgnoreCase)
             || string.Equals(estado, ESTADO_ACEPTADA, StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>Carlos 09/11/26: días que su autor (y Dirección / Informática) siguen viendo una Cerrada desde el cierre.</summary>
+        public const int DIAS_CERRADA_VISIBLE = 14;
+
         /// <summary>Días que el autor sigue viendo su sugerencia descartada desde la última actividad.</summary>
         public const int DIAS_DESCARTADA_VISIBLE_PARA_SU_AUTOR = 30;
 
@@ -79,7 +83,7 @@ namespace NestoAPI.Infraestructure.Novedades
         /// descartó si no se ha vuelto a tocar) o el último comentario, lo que sea más reciente. No hay una
         /// fecha de cambio de estado propiamente dicha; si faltaran las dos, la de la sugerencia.
         /// </summary>
-        public static bool SeVeEnLaLista(NovedadConSugerenciaFila sugerencia, string usuario, DateTime ahora)
+        public static bool SeVeEnLaLista(NovedadConSugerenciaFila sugerencia, string usuario, DateTime ahora, bool veCerradasDeTodos = false)
         {
             if (sugerencia == null)
             {
@@ -89,11 +93,17 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 return true;
             }
-            // Recordatorios de respuesta: la Cerrada (por falta de respuesta) la ve su autor siempre, para que pueda
-            // reabrirla escribiendo en ella.
+            // Carlos 09/11/26: la Cerrada la ven su autor (para leer la respuesta y reabrirla escribiendo) y Dirección /
+            // Informática durante DIAS_CERRADA_VISIBLE días desde el cierre (Fecha_Modificación: la pone el PUT o el job
+            // al cerrarla); los demás, ya no.
             if (string.Equals(sugerencia.Estado?.Trim(), ESTADO_CERRADA, StringComparison.OrdinalIgnoreCase))
             {
-                return EsSuAutor(sugerencia, usuario);
+                if (!veCerradasDeTodos && !EsSuAutor(sugerencia, usuario))
+                {
+                    return false;
+                }
+                DateTime? cierre = sugerencia.FechaModificacion ?? sugerencia.FechaUltimoComentario ?? sugerencia.SugeridaFecha;
+                return cierre.HasValue && cierre.Value >= ahora.AddDays(-DIAS_CERRADA_VISIBLE);
             }
             if (!string.Equals(sugerencia.Estado, ESTADO_DESCARTADA, StringComparison.OrdinalIgnoreCase)
                 || !EsSuAutor(sugerencia, usuario))

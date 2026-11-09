@@ -298,9 +298,11 @@ namespace NestoAPI.Controllers
             bool descartadasDelAutor = usuario != null;
             DateTime ahora = DateTime.Now;
             PrivacidadNovedades privacidad = Privacidad();
+            // Carlos 09/11/26: las Cerradas, su autor y Dirección / Informática las ven 14 días desde el cierre
+            bool veCerradasDeTodos = ReglasPerfilesNovedades.EsDireccionOInformatica(User);
             List<SugerenciaNovedadDTO> sugerencias = servicio.LeerSugerencias(incluirCerradas || descartadasDelAutor)
                 .Where(s => EsDelAmbito(s.Ambito, ambitoEfectivo))
-                .Where(s => incluirCerradas || ReglasSugerenciasNovedades.SeVeEnLaLista(s, usuario, ahora))
+                .Where(s => incluirCerradas || ReglasSugerenciasNovedades.SeVeEnLaLista(s, usuario, ahora, veCerradasDeTodos))
                 // NestoAPI#650: las privadas, solo para su autor y Dirección / Informática
                 .Where(s => privacidad.PuedeVerEnLista(s.Id, s.Version, s.SugeridaPor))
                 .Select(s => s.ADto())
@@ -1626,7 +1628,7 @@ namespace NestoAPI.Controllers
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
             List<CapturaNovedadDTO> capturasGrabadas = RegistrarCapturas(id, nuevoId, capturas, usuario);
-            // Recordatorios de respuesta: si es el autor, ya ha contestado (y, si estaba Cerrada, se reabre)
+            // Recordatorios de respuesta: si es el esperado, ya ha contestado; si estaba Cerrada, se reabre (Carlos 09/11/26: comente quien comente)
             bool reabierta = AlComentarQuitarEspera(id, usuario);
             // NestoAPI#537: a quien se mencione con @ le llega el aviso
             await AvisarMenciones(id, nuevoId, aGrabar.Texto, aGrabar.NombreVisible, User?.Identity?.Name, null).ConfigureAwait(false);
@@ -1770,8 +1772,8 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// NestoAPI#783: si comenta la persona a la que se espera (la @mencionada en la pregunta o, sin mención,
-        /// el autor de la sugerencia), deja de esperarse su respuesta y, si estaba Cerrada por falta de
-        /// respuesta, vuelve a Pendiente (devuelve true). Los comentarios de los demás no tocan nada. Nunca rompe el comentario.
+        /// el autor de la sugerencia), deja de esperarse su respuesta. Si estaba Cerrada, comente quien comente (menos el
+        /// asistente) vuelve a Pendiente (devuelve true; Carlos 09/11/26). Nunca rompe el comentario.
         /// </summary>
         internal bool AlComentarQuitarEspera(int novedadId, string usuario)
         {

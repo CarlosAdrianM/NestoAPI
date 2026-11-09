@@ -272,7 +272,7 @@ namespace NestoAPI.Tests.Controllers
             List<ResultadoRecordatorioRespuestaDTO> resultados = await Motor(martes).Ejecutar(ensayo: false);
 
             Assert.AreEqual("Cerrar", resultados.Single().Accion);
-            Assert.AreEqual("Hola, @MariaJose. Como no hemos tenido respuesta, damos esta incidencia por cerrada. Si la sigue necesitando, escriba aquí y se volverá a abrir.", grabado.Texto);
+            Assert.AreEqual("Hola, @MariaJose. Damos esta incidencia por cerrada al no tener respuesta; si la necesita, escriba aquí y se reabre.", grabado.Texto);
             A.CallTo(() => espera.Cerrar(584, martes)).MustHaveHappenedOnceExactly();
             A.CallTo(() => espera.GuardarRecordatorio(A<int>._, A<byte>._, A<DateTime>._)).MustNotHaveHappened();
         }
@@ -411,7 +411,7 @@ namespace NestoAPI.Tests.Controllers
 
             _ = await Motor(martes).Ejecutar(ensayo: false);
 
-            Assert.AreEqual("Hola, @Santiago y @Alfredo. Como no hemos tenido respuesta, damos esta sugerencia por cerrada. Si la sigue necesitando, escriba aquí y se volverá a abrir.", grabado.Texto);
+            Assert.AreEqual("Hola, @Santiago y @Alfredo. Damos esta sugerencia por cerrada al no tener respuesta; si la necesita, escriba aquí y se reabre.", grabado.Texto);
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
@@ -464,13 +464,27 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void AlComentar_CerradaEsperandoAOtro_LaReabrenElMencionadoYElAutor()
+        public void AlComentar_Cerrada_LaReabreCualquieraQueComenteMenosElAsistente()
         {
+            // Carlos 09/11/26: «Cerrada» = contestada, nada más que hacer; si alguien escribe, vuelve a Pendiente.
             EsperaRespuestaNovedad cerrada = Espera(estado: "Cerrada", esperandoDe: ESPERANDO_A_SANTIAGO);
 
             Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\Santiago").Reabrir);
             Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\MariaJose").Reabrir);
-            Assert.IsFalse(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\Alfredo").Reabrir);
+            Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\Alfredo").Reabrir);
+            Assert.IsTrue(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, "NUEVAVISION\\Alfredo").BorrarEspera);
+            Assert.IsFalse(ReglasEsperaRespuestaNovedades.AlComentar(cerrada, ReglasFeedbackNovedades.USUARIO_ASISTENTE).Reabrir, "el asistente no la reabre");
+        }
+
+        [TestMethod]
+        public async Task PostComentario_OtroCompaneroComentaEnUnaCerrada_SeReabre()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Alfredo");
+            A.CallTo(() => espera.Leer(584)).Returns(Espera(estado: "Cerrada"));
+
+            _ = await controller.PostComentario(584, new NuevoComentarioNovedadDTO { Texto = "A mí también me hace falta" });
+
+            A.CallTo(() => espera.BorrarEspera(584, true, "NUEVAVISION\\Alfredo")).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -493,22 +507,78 @@ namespace NestoAPI.Tests.Controllers
 
         // ---- Estado Cerrada ----
 
-        [TestMethod]
-        public void SeVeEnLaLista_Cerrada_LaVeSuAutorSiempreYLosDemasNo()
+        private static NovedadConSugerenciaFila CerradaEl(DateTime cierre) => new NovedadConSugerenciaFila
         {
-            var cerrada = new NovedadConSugerenciaFila
-            {
-                Id = 584,
-                Estado = "Cerrada",
-                SugeridaPor = "NUEVAVISION\\MariaJose",
-                SugeridaFecha = new DateTime(2026, 1, 1),
-                FechaModificacion = new DateTime(2026, 1, 10)
-            };
-            DateTime dentroDeUnAnio = new DateTime(2027, 6, 1);
+            Id = 584,
+            Ambito = "Nesto",
+            Titulo = "Avisar al comercial del pago",
+            Estado = "Cerrada",
+            SugeridaPor = "NUEVAVISION\\MariaJose",
+            SugeridaFecha = cierre.AddDays(-30),
+            FechaModificacion = cierre
+        };
 
-            Assert.IsTrue(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\MariaJose", dentroDeUnAnio));
-            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\Alfredo", dentroDeUnAnio));
-            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, null, dentroDeUnAnio));
+        [TestMethod]
+        public void SeVeEnLaLista_Cerrada_SuAutorLaVeCatorceDiasDesdeElCierre()
+        {
+            DateTime cierre = new DateTime(2026, 11, 9, 9, 0, 0);
+            NovedadConSugerenciaFila cerrada = CerradaEl(cierre);
+
+            Assert.IsTrue(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\MariaJose", cierre.AddDays(13)));
+            Assert.IsTrue(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\MariaJose", cierre.AddDays(14)));
+            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\MariaJose", cierre.AddDays(14).AddMinutes(1)));
+        }
+
+        [TestMethod]
+        public void SeVeEnLaLista_Cerrada_LosDemasDejanDeVerlaYaDireccionLaVeCatorceDias()
+        {
+            DateTime cierre = new DateTime(2026, 11, 9, 9, 0, 0);
+            NovedadConSugerenciaFila cerrada = CerradaEl(cierre);
+
+            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\Alfredo", cierre.AddMinutes(1)));
+            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, null, cierre.AddMinutes(1)));
+            Assert.IsTrue(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\Carlos", cierre.AddDays(10), veCerradasDeTodos: true));
+            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(cerrada, "NUEVAVISION\\Carlos", cierre.AddDays(15), veCerradasDeTodos: true));
+        }
+
+        [TestMethod]
+        public void EstaAbierta_LaCerradaNoEstaAbierta()
+        {
+            Assert.IsFalse(ReglasSugerenciasNovedades.EstaAbierta("Cerrada"));
+        }
+
+        [TestMethod]
+        public void GetSugerencias_Cerrada_LaVenSuAutorYDireccionPeroNoLosDemas()
+        {
+            NovedadConSugerenciaFila cerrada = CerradaEl(DateTime.Now.AddDays(-3));
+            NovedadConSugerenciaFila cerradaAntigua = CerradaEl(DateTime.Now.AddDays(-20));
+            cerradaAntigua.Id = 585;
+            A.CallTo(() => servicio.LeerSugerencias(true)).Returns(new List<NovedadConSugerenciaFila> { cerrada, cerradaAntigua });
+
+            ComoUsuarioDeNesto("NUEVAVISION\\MariaJose");
+            var delAutor = controller.GetSugerencias() as System.Web.Http.Results.OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Dirección");
+            var deDireccion = controller.GetSugerencias() as System.Web.Http.Results.OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
+            ComoUsuarioDeNesto("NUEVAVISION\\Alfredo");
+            var deOtro = controller.GetSugerencias() as System.Web.Http.Results.OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
+
+            CollectionAssert.AreEqual(new[] { 584 }, delAutor.Content.Select(s => s.Id).ToArray());
+            CollectionAssert.AreEqual(new[] { 584 }, deDireccion.Content.Select(s => s.Id).ToArray());
+            Assert.AreEqual(0, deOtro.Content.Count);
+        }
+
+        [TestMethod]
+        public void PutSugerencia_EstadoCerrada_SeGrabaComoCerrada()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            ActualizarSugerenciaNovedadDTO grabado = null;
+            A.CallTo(() => servicio.ActualizarSugerencia(584, A<ActualizarSugerenciaNovedadDTO>._, A<string>._))
+                .Invokes((int id, ActualizarSugerenciaNovedadDTO c, string u) => grabado = c).Returns(true);
+
+            var resultado = controller.PutSugerencia(584, new ActualizarSugerenciaNovedadDTO { Estado = "cerrada" });
+
+            Assert.AreEqual(System.Net.HttpStatusCode.NoContent, ((System.Web.Http.Results.StatusCodeResult)resultado).StatusCode);
+            Assert.AreEqual("Cerrada", grabado.Estado);
         }
 
         [TestMethod]
