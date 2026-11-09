@@ -833,6 +833,23 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         }
 
         [TestMethod]
+        public void Picking_LineaYaARecogerDeUnaPasadaAnterior_CuentaParaElMinimo()
+        {
+            // Incidencia 1129 (09/11/26), lo mismo que en el cheque regalo: lo que ya estaba «a recoger» se factura con este albarán
+            LineaPedidoPicking recogida = LineaPicking("CREMA", 0, 60, 0);
+            recogida.Id = 2;
+            recogida.CantidadRecogida = 1;
+            var pedido = new PedidoPicking { Empresa = "1", Id = 1, Lineas = new List<LineaPedidoPicking> { LineaPicking("CREMA", 1, 60, 1), recogida, LineaPicking(PRODUCTO, -1, -50, 0) } };
+
+            CuponesPicking.Rellenar(new List<PedidoPicking> { pedido }, PRODUCTO, ProductosPicking, p => new List<LineaEntregadaCupon>(), p => new CuponUsadoPicking { Importe = 50 });
+            GestorReservasStock.ReservarCupones(new List<PedidoPicking> { pedido });
+
+            Assert.AreEqual(120, pedido.Cupon.TotalComputableConEstaEntrega);
+            Assert.IsFalse(pedido.Cupon.Retenido);
+            Assert.AreEqual(-1, pedido.Lineas.Single(l => l.EsCupon).CantidadReservada);
+        }
+
+        [TestMethod]
         public void Picking_PedidosSinCupon_NoSeTocan()
         {
             var pedido = new PedidoPicking { Empresa = "1", Id = 1, Lineas = new List<LineaPedidoPicking> { LineaPicking("CREMA", 1, 60, 1) } };

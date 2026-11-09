@@ -129,11 +129,17 @@ namespace NestoAPI.Models.Picking
             }
         }
 
-        /// <summary>NestoAPI#613: la parte del total (IVA incluido) de la línea que sale en esta pasada.</summary>
+        /// <summary>
+        /// NestoAPI#613: la parte del total (IVA incluido) de la línea que sale (y se factura) en esta pasada. Lo que sale
+        /// es lo reservado más TODO lo recogido (<see cref="LineaPedidoPicking.CantidadRecogida"/>): lo que ya estaba «a
+        /// recoger» de una pasada anterior se factura con este albarán, y CantidadRecogida ya incluye lo que
+        /// <see cref="GestorFacturarTodoAhora"/> pasa a recoger en esta (por eso no se suma CantidadARecoger, que lo
+        /// contaría dos veces). Incidencia 1129, pedido 930110 (09/11/26). Igual que <see cref="BaseComputableQueSale"/>.
+        /// </summary>
         internal static decimal TotalQueSale(LineaPedidoPicking linea)
         {
             int unidadesLinea = linea.Cantidad + linea.CantidadRecogida;
-            int unidadesQueSalen = linea.CantidadReservada + linea.CantidadARecoger;
+            int unidadesQueSalen = linea.CantidadReservada + linea.CantidadRecogida;
             if (unidadesLinea == 0 || unidadesQueSalen == 0)
             {
                 return 0;
@@ -141,11 +147,18 @@ namespace NestoAPI.Models.Picking
             return linea.Total * unidadesQueSalen / unidadesLinea;
         }
 
-        /// <summary>NestoAPI#593: la parte de la base de la línea que sale (y se factura) en esta pasada.</summary>
+        /// <summary>
+        /// NestoAPI#593: la parte de la base de la línea que sale (y se factura) en esta pasada: lo reservado más TODO lo
+        /// recogido. Una línea que pasó a «a recoger» (producto en carpeta, #542) en una pasada anterior y ya no tiene
+        /// picking llega con Cantidad 0 y CantidadRecogida &gt; 0; Reservar no la toca, pero esas unidades se facturan con
+        /// este albarán, así que cuentan para el mínimo del cheque (incidencia 1129, pedido 930110, 09/11/26: se contaron
+        /// 267,78 − 122,10 y el cheque se retuvo). CantidadRecogida ya incluye lo que <see cref="GestorFacturarTodoAhora"/>
+        /// pasa a recoger en esta pasada, así que no se suma CantidadARecoger (lo contaría dos veces).
+        /// </summary>
         internal static decimal BaseComputableQueSale(LineaPedidoPicking linea)
         {
             int unidadesLinea = linea.Cantidad + linea.CantidadRecogida;
-            int unidadesQueSalen = linea.CantidadReservada + linea.CantidadARecoger;
+            int unidadesQueSalen = linea.CantidadReservada + linea.CantidadRecogida;
             if (unidadesLinea == 0 || unidadesQueSalen == 0)
             {
                 return 0;

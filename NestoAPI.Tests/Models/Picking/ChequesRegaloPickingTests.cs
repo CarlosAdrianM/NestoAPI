@@ -212,6 +212,76 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual(-1, pedido.Lineas.Single(l => l.EsChequeRegalo).CantidadReservada);
         }
 
+        /// <summary>Línea que pasó a «a recoger» (producto en carpeta) en una pasada ANTERIOR y ya no tiene picking: llega
+        /// con Cantidad = LinPedidoVta.Cantidad − Recoger y CantidadRecogida = Recoger (RellenadorPickingService).</summary>
+        private static LineaPedidoPicking Recogida(int id, string producto, int pendiente, int recogida, decimal baseImponible)
+        {
+            LineaPedidoPicking linea = Producto(id, producto, pendiente, baseImponible);
+            linea.CantidadRecogida = recogida;
+            return linea;
+        }
+
+        [TestMethod]
+        public void LineaYaARecogerDeUnaPasadaAnterior_SeFacturaConEsteAlbaranYCuenta()
+        {
+            // 150 € de A con stock + 120 € de B ya «a recoger» desde otra pasada: el albarán factura 270 €
+            PedidoPicking pedido = Pedido(Producto(1, "A", 1, 150), Recogida(2, "B", 0, 2, 120), Cheque());
+
+            SacarPicking(pedido, new Dictionary<string, int> { ["A"] = 1 });
+
+            Assert.AreEqual(120M, GestorReservasStock.BaseComputableQueSale(pedido.Lineas.Single(l => l.Id == 2)));
+            Assert.AreEqual(270M, pedido.ChequeRegalo.BaseComputableConEstaEntrega);
+            Assert.IsFalse(pedido.ChequeRegalo.Retenido);
+            Assert.AreEqual(-1, pedido.Lineas.Single(l => l.EsChequeRegalo).CantidadReservada);
+        }
+
+        [TestMethod]
+        public void Pedido930110_LasRecogidasDelViernesCuentan_ElChequeSale()
+        {
+            // Incidencia 1129 (09/11/26): 32565 (6 uds, Recoger 6, 23,70) y 45987 (2 uds, Recoger 2, 98,40) venían a recoger
+            // del viernes sin picking; el resto (145,68) salía con stock. Se contaron 267,78 − 122,10 y el cheque se retuvo.
+            PedidoPicking pedido = Pedido(Producto(1, "A", 1, 145.68M), Recogida(2, "B", 0, 6, 23.70M), Recogida(3, "B", 0, 2, 98.40M), Cheque());
+
+            SacarPicking(pedido, new Dictionary<string, int> { ["A"] = 1 });
+
+            Assert.AreEqual(267.78M, pedido.ChequeRegalo.BaseComputableConEstaEntrega);
+            Assert.IsFalse(pedido.ChequeRegalo.Retenido);
+            Assert.AreEqual(-1, pedido.Lineas.Single(l => l.EsChequeRegalo).CantidadReservada);
+        }
+
+        [TestMethod]
+        public void LineaParcialmenteRecogida_CuentaEnteraSiLoPendienteSale()
+        {
+            // 2 unidades por 100 €: una ya a recoger y la otra sale hoy con stock
+            PedidoPicking pedido = Pedido(Recogida(1, "A", 1, 1, 100), Producto(2, "B", 1, 160), Cheque());
+
+            SacarPicking(pedido, new Dictionary<string, int> { ["A"] = 1, ["B"] = 1 });
+
+            LineaPedidoPicking linea = pedido.Lineas.Single(l => l.Id == 1);
+            Assert.AreEqual(1, linea.CantidadReservada);
+            Assert.AreEqual(100M, GestorReservasStock.BaseComputableQueSale(linea));
+            Assert.AreEqual(260M, pedido.ChequeRegalo.BaseComputableConEstaEntrega);
+            Assert.AreEqual(-1, pedido.Lineas.Single(l => l.EsChequeRegalo).CantidadReservada);
+        }
+
+        [TestMethod]
+        public void FacturarTodoAhora_LoQuePasaARecogerEnEstaPasada_CuentaUnaSolaVez()
+        {
+            // B (2 uds, 100 €) sin stock pasa a recoger AHORA: CantidadARecoger y CantidadRecogida suben las dos
+            PedidoPicking pedido = Pedido(Producto(1, "A", 1, 100), Producto(2, "B", 2, 100), Cheque());
+            pedido.ModoFacturacion = Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+            pedido.PlazosPago = "CONTADO";
+
+            SacarPicking(pedido, new Dictionary<string, int> { ["A"] = 1 });
+
+            LineaPedidoPicking b = pedido.Lineas.Single(l => l.Id == 2);
+            Assert.AreEqual(2, b.CantidadARecoger);
+            Assert.AreEqual(2, b.CantidadRecogida);
+            Assert.AreEqual(100M, GestorReservasStock.BaseComputableQueSale(b), "no 200");
+            Assert.AreEqual(200M, pedido.ChequeRegalo.BaseComputableConEstaEntrega);
+            Assert.IsFalse(pedido.Lineas.Any(l => l.EsChequeRegalo), "200 € no llegan a 250");
+        }
+
         [TestMethod]
         public void SinPrepararElCheque_SeComportaComoAntes()
         {
