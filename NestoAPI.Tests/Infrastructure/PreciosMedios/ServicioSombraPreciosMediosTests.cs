@@ -290,6 +290,115 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
 
         #endregion
 
+        #region Editado a mano (Issue #547: 22007, sombra del 08/11/26)
+
+        private const string REINA = @"NUEVAVISION\Reina";
+        private static readonly DateTime FECHA_EDICION = new DateTime(2026, 11, 6, 10, 18, 59);
+
+        private static EdicionManualPrecioMedio EdicionDeReina()
+        {
+            return new EdicionManualPrecioMedio { Usuario = REINA, Fecha = FECHA_EDICION, ValorAntiguo = "1.74" };
+        }
+
+        [TestMethod]
+        public void Pasada_MediaDistintaYEditadaAMano_EditadoAMano()
+        {
+            ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+            A.CallTo(() => ediciones.UltimaEdicionAMano("1", "DISTINTO")).Returns(EdicionDeReina());
+            servicio = new ServicioSombraPreciosMedios(repositorio, ediciones);
+            List<FilaPreciosMediosSombra> filas = new List<FilaPreciosMediosSombra>();
+            A.CallTo(() => repositorio.GuardarFila(A<FilaPreciosMediosSombra>._)).Invokes((FilaPreciosMediosSombra f) => filas.Add(f));
+
+            ResumenPasadaSombraPrecioMedio resumen = servicio.EjecutarPasada(new[] { "1" }, FECHA_PASADA, CORTE, true, TimeSpan.FromHours(1));
+
+            ResumenEmpresaSombraPrecioMedio e = resumen.Empresas.Single();
+            Assert.AreEqual(0, e.Distintos, "editado a mano no cuenta como DISTINTO");
+            Assert.AreEqual(1, e.EditadosAMano);
+            Assert.AreEqual(1, resumen.NoEsperados, "solo queda el ERROR");
+            Assert.AreEqual(1, resumen.EditadosAMano);
+            Assert.AreEqual("DISTINTO", e.EditadosAManoDetalle.Single().Producto);
+            CollectionAssert.AreEquivalent(new[] { "ERROR" }, e.PrimerosNoEsperados.Select(p => p.Producto).ToList());
+            StringAssert.Contains(resumen.ToString(), "editados a mano 1");
+
+            FilaPreciosMediosSombra fila = filas.Single(f => f.Producto == "DISTINTO");
+            Assert.AreEqual("EditadoAMano", fila.Clasificacion);
+            StringAssert.Contains(fila.Detalle, "Reina");
+            StringAssert.Contains(fila.Detalle, "2026-11-06T10:18:59");
+            StringAssert.Contains(filas.Single(f => f.EsResumen).Detalle, "\"EditadosAMano\":1");
+            // Solo se pregunta por el que difiere: ni por los iguales ni por los pendientes.
+            A.CallTo(() => ediciones.UltimaEdicionAMano(A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void CompararProducto_MediaDistintaSinEdicionAMano_Distinto()
+        {
+            ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+            A.CallTo(() => ediciones.UltimaEdicionAMano(A<string>._, A<string>._)).Returns(null);
+            servicio = new ServicioSombraPreciosMedios(repositorio, ediciones);
+
+            ResultadoSombraPrecioMedio r = servicio.CompararProducto("1", "DISTINTO", CORTE, conVentas: false);
+
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto, r.Clasificacion);
+            Assert.IsNull(r.EdicionAMano);
+            Assert.IsTrue(r.EsNoEsperada);
+        }
+
+        [TestMethod]
+        public void CompararProducto_MediaDistintaYEditadaAMano_EditadoAMano()
+        {
+            ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+            A.CallTo(() => ediciones.UltimaEdicionAMano("1", "DISTINTO")).Returns(EdicionDeReina());
+            servicio = new ServicioSombraPreciosMedios(repositorio, ediciones);
+
+            ResultadoSombraPrecioMedio r = servicio.CompararProducto("1", "DISTINTO", CORTE, conVentas: false);
+
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.EditadoAMano, r.Clasificacion);
+            Assert.AreEqual(REINA, r.EdicionAMano.Usuario);
+            Assert.IsFalse(r.EsNoEsperada);
+            Assert.IsTrue(r.DebeRegistrarse);
+        }
+
+        [TestMethod]
+        public void CompararProducto_EdicionDeUnUsuarioDelSistema_SigueDistinto()
+        {
+            // Por si el lector no filtrara: el SP (Administrador) y la API (RDS2016$) no son «a mano».
+            foreach (string usuario in EdicionesPrecioMedio.USUARIOS_DEL_SISTEMA)
+            {
+                ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+                A.CallTo(() => ediciones.UltimaEdicionAMano("1", "DISTINTO"))
+                    .Returns(new EdicionManualPrecioMedio { Usuario = usuario, Fecha = FECHA_EDICION, ValorAntiguo = "1.74" });
+                servicio = new ServicioSombraPreciosMedios(repositorio, ediciones);
+
+                Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto, servicio.CompararProducto("1", "DISTINTO", CORTE, false).Clasificacion, usuario);
+            }
+        }
+
+        [TestMethod]
+        public void CompararProducto_LineasDistintasAunqueEditadaAMano_SigueDistinto()
+        {
+            // Editar Productos.PrecioMedio a mano no explica un LinPedidoCmp.Coste distinto.
+            DatosProductoPrecioMedio datos = ProductoIgual("DISTINTO", 9m);
+            datos.Compras.Single().Coste = 9.5m;
+            A.CallTo(() => repositorio.LeerDatos("1", "3", "DISTINTO", A<bool>._)).Returns(datos);
+            ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+            A.CallTo(() => ediciones.UltimaEdicionAMano("1", "DISTINTO")).Returns(EdicionDeReina());
+            servicio = new ServicioSombraPreciosMedios(repositorio, ediciones);
+
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto, servicio.CompararProducto("1", "DISTINTO", CORTE, false).Clasificacion);
+        }
+
+        [TestMethod]
+        public void CompararProducto_SiFallaElLectorDeEdiciones_SigueDistinto()
+        {
+            ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+            A.CallTo(() => ediciones.UltimaEdicionAMano(A<string>._, A<string>._)).Throws(new Exception("timeout"));
+            servicio = new ServicioSombraPreciosMedios(repositorio, ediciones);
+
+            Assert.AreEqual(ClasificacionSombraPrecioMedio.Distinto, servicio.CompararProducto("1", "DISTINTO", CORTE, false).Clasificacion);
+        }
+
+        #endregion
+
         #region Pasada
 
         private IRepositorioPreciosMedios repositorio;

@@ -45,7 +45,14 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         /// y el C# la calcula con 4 (p. ej. 4,87 frente a 4,865). Esperado; no manda correo (Issue #547).
         /// Va al final para no mover el valor numérico de los demás.
         /// </summary>
-        EmpateRedondeo
+        EmpateRedondeo,
+
+        /// <summary>
+        /// Solo difiere la media y alguien tecleó a mano <c>Productos.PrecioMedio</c> después de la última pasada del SP
+        /// (LogModificaciones, usuario que no es del sistema): la BD no la dejó el SP (Issue #547: 22007, 08/11/26).
+        /// No es un fallo de paridad; se lista aparte en el correo.
+        /// </summary>
+        EditadoAMano
     }
 
     /// <summary>Resultado de la sombra para un producto.</summary>
@@ -65,6 +72,9 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public DiferenciaPrecioMedio Diferencia { get; set; }
 
         public string Error { get; set; }
+
+        /// <summary>Con <see cref="ClasificacionSombraPrecioMedio.EditadoAMano"/>: quién tecleó la media, cuándo y qué había.</summary>
+        public EdicionManualPrecioMedio EdicionAMano { get; set; }
 
         /// <summary>Solo se registran los productos con alguna diferencia, aviso o error.</summary>
         [JsonIgnore]
@@ -90,6 +100,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public int Pendientes { get; set; }
         public int Empates { get; set; }
         public int EmpatesRedondeo { get; set; }
+        public int EditadosAMano { get; set; }
         public int Distintos { get; set; }
         public int NoProcesados { get; set; }
         public int SinFicha { get; set; }
@@ -102,6 +113,9 @@ namespace NestoAPI.Infraestructure.PreciosMedios
 
         /// <summary>Los primeros productos con diferencia no esperada (para el correo y el ELMAH).</summary>
         public List<ResultadoSombraPrecioMedio> PrimerosNoEsperados { get; } = new List<ResultadoSombraPrecioMedio>();
+
+        /// <summary>Los primeros productos editados a mano (para su línea del correo).</summary>
+        public List<ResultadoSombraPrecioMedio> EditadosAManoDetalle { get; } = new List<ResultadoSombraPrecioMedio>();
 
         public int NoEsperados => Distintos + Errores;
     }
@@ -120,6 +134,8 @@ namespace NestoAPI.Infraestructure.PreciosMedios
 
         public int NoEsperados => Empresas.Sum(e => e.NoEsperados);
 
+        public int EditadosAMano => Empresas.Sum(e => e.EditadosAMano);
+
         public override string ToString()
         {
             if (Error != null)
@@ -128,9 +144,9 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             }
             return string.Format(CultureInfo.InvariantCulture, "Sombra de precios medios {0:dd/MM/yyyy} (corte SP {1:dd/MM/yyyy HH:mm}): ", FechaPasada, CorteSP) +
                 string.Join(" | ", Empresas.Select(e => string.Format(CultureInfo.InvariantCulture,
-                    "empresa {0}: {1}/{2} productos en {3:0}s{4}; iguales {5}, con avisos {6}, pendientes {7}, empates {8}, empates por redondeo {9}, DISTINTOS {10}, errores {11}, no procesados {12}; ventas {13} comparadas, {14} distintas",
+                    "empresa {0}: {1}/{2} productos en {3:0}s{4}; iguales {5}, con avisos {6}, pendientes {7}, empates {8}, empates por redondeo {9}, editados a mano {10}, DISTINTOS {11}, errores {12}, no procesados {13}; ventas {14} comparadas, {15} distintas",
                     e.Empresa, e.Revisados, e.Productos, e.Segundos, e.Interrumpida ? " (INTERRUMPIDA por tiempo)" : "",
-                    e.Iguales, e.IgualesConAvisos, e.Pendientes, e.Empates, e.EmpatesRedondeo, e.Distintos, e.Errores, e.NoProcesados,
+                    e.Iguales, e.IgualesConAvisos, e.Pendientes, e.Empates, e.EmpatesRedondeo, e.EditadosAMano, e.Distintos, e.Errores, e.NoProcesados,
                     e.VentasComparadas, e.VentasDistintas)));
         }
     }
@@ -159,10 +175,13 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         };
 
         private readonly IRepositorioPreciosMedios repositorio;
+        private readonly ILectorEdicionesPrecioMedio lectorEdiciones;
 
-        public ServicioSombraPreciosMedios(IRepositorioPreciosMedios repositorio)
+        /// <param name="lectorEdiciones">Para reconocer las medias tecleadas a mano; sin él, nunca sale «EditadoAMano».</param>
+        public ServicioSombraPreciosMedios(IRepositorioPreciosMedios repositorio, ILectorEdicionesPrecioMedio lectorEdiciones = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.lectorEdiciones = lectorEdiciones;
         }
 
         /// <summary>
@@ -194,7 +213,40 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         {
             string espejo = repositorio.EmpresaEspejo(empresa) ?? empresa;
             DatosProductoPrecioMedio datos = repositorio.LeerDatos(empresa, espejo, producto, conVentas);
-            return Evaluar(datos, corteSP);
+            ResultadoSombraPrecioMedio resultado = Evaluar(datos, corteSP);
+            ComprobarEdicionAMano(resultado, lectorEdiciones);
+            return resultado;
+        }
+
+        /// <summary>
+        /// Un «Distinto» en el que SOLO difiere la media (compras y ventas iguales) pasa a «EditadoAMano» si alguien
+        /// tecleó <c>Productos.PrecioMedio</c> después de la última pasada del SP (Issue #547: 22007, 08/11/26). Si
+        /// también difieren líneas, la edición no lo explica y sigue «Distinto». Si falla la lectura, sigue «Distinto»
+        /// (mejor un aviso de más que esconder un fallo de paridad).
+        /// </summary>
+        internal static void ComprobarEdicionAMano(ResultadoSombraPrecioMedio resultado, ILectorEdicionesPrecioMedio lector)
+        {
+            DiferenciaPrecioMedio d = resultado?.Diferencia;
+            if (lector == null || resultado.Clasificacion != ClasificacionSombraPrecioMedio.Distinto || d == null ||
+                !d.MediaDistinta || d.LineasDistintas > 0 || (d.VentasDistintas ?? 0) > 0)
+            {
+                return;
+            }
+            EdicionManualPrecioMedio edicion;
+            try
+            {
+                edicion = lector.UltimaEdicionAMano(resultado.Empresa, resultado.Producto);
+            }
+            catch
+            {
+                return;
+            }
+            if (edicion == null || EdicionesPrecioMedio.EsUsuarioDelSistema(edicion.Usuario))
+            {
+                return;
+            }
+            resultado.Clasificacion = ClasificacionSombraPrecioMedio.EditadoAMano;
+            resultado.EdicionAMano = edicion;
         }
 
         /// <summary>
@@ -342,6 +394,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 {
                     DatosProductoPrecioMedio datos = repositorio.LeerDatos(empresa, espejo, producto, muestreado);
                     resultado = Evaluar(datos, resumen.CorteSP);
+                    ComprobarEdicionAMano(resultado, lectorEdiciones);
                 }
                 catch (Exception ex)
                 {
@@ -372,6 +425,10 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 {
                     r.PrimerosNoEsperados.Add(resultado);
                 }
+                if (resultado.Clasificacion == ClasificacionSombraPrecioMedio.EditadoAMano && r.EditadosAManoDetalle.Count < MAXIMO_NO_ESPERADOS_EN_RESUMEN)
+                {
+                    r.EditadosAManoDetalle.Add(resultado);
+                }
             }
             r.Segundos = relojEmpresa.Elapsed.TotalSeconds;
             return r;
@@ -386,6 +443,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 case ClasificacionSombraPrecioMedio.Pendiente: r.Pendientes++; break;
                 case ClasificacionSombraPrecioMedio.Empate: r.Empates++; break;
                 case ClasificacionSombraPrecioMedio.EmpateRedondeo: r.EmpatesRedondeo++; break;
+                case ClasificacionSombraPrecioMedio.EditadoAMano: r.EditadosAMano++; break;
                 case ClasificacionSombraPrecioMedio.Distinto: r.Distintos++; break;
                 case ClasificacionSombraPrecioMedio.NoProcesado: r.NoProcesados++; break;
                 case ClasificacionSombraPrecioMedio.SinFicha: r.SinFicha++; break;
@@ -444,6 +502,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                     MediaDistinta = d?.MediaDistinta,
                     d?.VentasConEmpateDeTramos,
                     d?.VentasPosterioresAlCorte,
+                    resultado.EdicionAMano,
                     Diferencias = d?.Detalles
                 })
             };
@@ -476,6 +535,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                         e.Pendientes,
                         e.Empates,
                         e.EmpatesRedondeo,
+                        e.EditadosAMano,
                         e.Distintos,
                         e.NoProcesados,
                         e.SinFicha,
@@ -485,7 +545,8 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                         e.VentasDistintas,
                         Segundos = Math.Round(e.Segundos, 1),
                         e.Interrumpida,
-                        PrimerosNoEsperados = e.PrimerosNoEsperados.Select(p => p.Producto).ToList()
+                        PrimerosNoEsperados = e.PrimerosNoEsperados.Select(p => p.Producto).ToList(),
+                        EditadosAManoDetalle = e.EditadosAManoDetalle.Select(p => p.Producto).ToList()
                     })
                 });
             }

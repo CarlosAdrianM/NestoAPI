@@ -140,6 +140,23 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         }
 
         [TestMethod]
+        public void Producto22007_DosLineasDeLaMismaFacturaConDistintaFechaDeAlbaran_DosTramos()
+        {
+            // Sombra del 08/11/26: la BD tenía 9,95 (tecleado a mano el 06/11/26) y el C# 1,7412. Carlos 09/11: el C# tiene razón.
+            ComprobarQueCuadraConElSP("22007");
+
+            ResultadoPrecioMedio resultado = CalculadoraPrecioMedio.Calcular(FixturePrecioMedio.Cargar("22007").CrearHistorial());
+            // Dos llamadas (00:00 y 12:43 de la factura 9520): primera compra a base 0 → 0; luego (12 × 0 + 41,79) / 24 = 1,7412.
+            Assert.AreEqual(2, resultado.Tramos.Count);
+            Assert.AreEqual(0m, resultado.Tramos[0].PrecioMedio);
+            Assert.AreEqual(1.7412m, resultado.Tramos[1].PrecioMedio);
+            Assert.AreEqual(new System.DateTime(2005, 10, 20, 12, 43, 10, 450), resultado.Tramos[1].FechaDesde);
+            Assert.AreEqual(1.7412m, resultado.PrecioMedioFinal);
+            Assert.AreEqual(0m, resultado.CostesPorLinea[19138951]);
+            Assert.AreEqual(1.7412m, resultado.CostesPorLinea[18368751]);
+        }
+
+        [TestMethod]
         public void Producto16137_PrimeraCompraEsUnAbonoYDenominadorCeroConservaLaMedia()
         {
             ComprobarQueCuadraConElSP("16137");

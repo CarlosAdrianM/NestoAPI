@@ -102,6 +102,12 @@ VALUES (@fechaPasada, @empresa, @producto, @esResumen, @clasificacion, @precioMe
         /// </summary>
         public static RepositorioPreciosMediosSql DesdeConfiguracion()
         {
+            return new RepositorioPreciosMediosSql(CadenaDesdeConfiguracion());
+        }
+
+        /// <summary>NestoConnection con <see cref="NOMBRE_APLICACION"/> (la usa también <see cref="LectorEdicionesPrecioMedioSql"/>).</summary>
+        internal static string CadenaDesdeConfiguracion()
+        {
             ConnectionStringSettings origen = ConfigurationManager.ConnectionStrings["NestoConnection"];
             if (origen == null)
             {
@@ -111,7 +117,7 @@ VALUES (@fechaPasada, @empresa, @producto, @esResumen, @clasificacion, @precioMe
             {
                 ApplicationName = NOMBRE_APLICACION
             };
-            return new RepositorioPreciosMediosSql(constructor.ConnectionString);
+            return constructor.ConnectionString;
         }
 
         public string EmpresaEspejo(string empresa)

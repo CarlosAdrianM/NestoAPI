@@ -809,8 +809,10 @@
     <Compile Include="Infraestructure\PreciosMedios\EjecutorComandosPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\EscritorPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\HistorialPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\ILectorEdicionesPrecioMedio.cs" />
     <Compile Include="Infraestructure\PreciosMedios\IRepositorioEscrituraPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\IRepositorioPreciosMedios.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\LectorEdicionesPrecioMedioSql.cs" />
     <Compile Include="Infraestructure\PreciosMedios\LineaCompraPrecioMedio.cs" />
     <Compile Include="Infraestructure\PreciosMedios\PlanEscrituraPrecioMedio.cs" />
     <Compile Include="Infraestructure\PreciosMedios\PreciosMediosIncrementalJobsService.cs" />

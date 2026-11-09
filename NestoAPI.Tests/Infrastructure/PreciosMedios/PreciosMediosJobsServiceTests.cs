@@ -175,6 +175,64 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
             A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
         }
 
+        private const string REINA = @"NUEVAVISION\Reina";
+
+        [TestMethod]
+        public void Procesar_SoloEditadosAMano_LosCuentaAparteYLosListaEnElCorreo()
+        {
+            // 22007 (sombra del 08/11/26): BD 9,95 tecleado a mano por Reina el 06/11/26; el C# da 1,7412.
+            Interruptor("1");
+            A.CallTo(() => repositorio.LeerDatos("1", "3", "IGUAL", A<bool>._)).Returns(ServicioSombraPreciosMediosTests.ProductoIgual("IGUAL", 9.95m));
+            ILectorEdicionesPrecioMedio ediciones = A.Fake<ILectorEdicionesPrecioMedio>();
+            A.CallTo(() => ediciones.UltimaEdicionAMano("1", "IGUAL")).Returns(new EdicionManualPrecioMedio
+            {
+                Usuario = REINA,
+                Fecha = new DateTime(2026, 11, 6, 10, 18, 59),
+                ValorAntiguo = "1.74"
+            });
+            MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Invokes((MailMessage m) => enviado = m).Returns(true);
+
+            ResumenPasadaSombraPrecioMedio resumen = PreciosMediosJobsService.Procesar(lector,
+                () => new ServicioSombraPreciosMedios(repositorio, ediciones), correo, DOMINGO_0630, forzar: false);
+
+            Assert.AreEqual(0, resumen.Empresas[0].Distintos);
+            Assert.AreEqual(1, resumen.Empresas[0].EditadosAMano);
+            Assert.AreEqual(0, resumen.NoEsperados);
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedOnceExactly();
+            StringAssert.Contains(enviado.Subject, "1 precios medios editados a mano");
+            StringAssert.Contains(enviado.Body, "Editados a mano: 1");
+            StringAssert.Contains(enviado.Body, "IGUAL");
+            StringAssert.Contains(enviado.Body, "Reina");
+            StringAssert.Contains(enviado.Body, "06/11/2026 10:18");
+            StringAssert.Contains(enviado.Body, "1.74 → 9,9500");
+        }
+
+        [TestMethod]
+        public void GenerarHtml_DistintosYEditados_CadaUnoEnSuSitio()
+        {
+            ResumenPasadaSombraPrecioMedio resumen = new ResumenPasadaSombraPrecioMedio { FechaPasada = new DateTime(2026, 11, 8) };
+            ResumenEmpresaSombraPrecioMedio empresa = new ResumenEmpresaSombraPrecioMedio { Empresa = "1", Distintos = 1, EditadosAMano = 1 };
+            empresa.PrimerosNoEsperados.Add(new ResultadoSombraPrecioMedio { Producto = "41281", Clasificacion = ClasificacionSombraPrecioMedio.Distinto });
+            empresa.EditadosAManoDetalle.Add(new ResultadoSombraPrecioMedio
+            {
+                Producto = "22007",
+                Clasificacion = ClasificacionSombraPrecioMedio.EditadoAMano,
+                Diferencia = new DiferenciaPrecioMedio { PrecioMedioBD = 9.95m, PrecioMedioCalculado = 1.7412m },
+                EdicionAMano = new EdicionManualPrecioMedio { Usuario = REINA, Fecha = new DateTime(2026, 11, 6, 10, 18, 59), ValorAntiguo = "1.74" }
+            });
+            resumen.Empresas.Add(empresa);
+
+            string html = PreciosMediosJobsService.GenerarHtml(resumen);
+            MailMessage mail = PreciosMediosJobsService.ConstruirCorreo(resumen);
+
+            StringAssert.Contains(html, "Editados a mano: 1");
+            StringAssert.Contains(html, "22007");
+            StringAssert.Contains(html, "1.74 → 9,9500");
+            StringAssert.Contains(html, "C# 1,7412");
+            StringAssert.Contains(mail.Subject, "1 productos con diferencias no esperadas", "con distintos manda el asunto de siempre");
+        }
+
         [TestMethod]
         public void GenerarHtml_HablaDeLoQueHayEnLaBDNoDelSP()
         {

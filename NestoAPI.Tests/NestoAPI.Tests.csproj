@@ -1045,6 +1045,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\16137.json" />
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\17877.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\22007.json" />
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\34248.json" />
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\34929.json" />
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\37688.json" />

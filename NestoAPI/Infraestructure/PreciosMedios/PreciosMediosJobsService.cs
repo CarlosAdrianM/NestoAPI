@@ -2,6 +2,7 @@ using Hangfire;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Mail;
@@ -86,7 +87,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
 
         internal static ServicioSombraPreciosMedios CrearServicio()
         {
-            return new ServicioSombraPreciosMedios(RepositorioPreciosMediosSql.DesdeConfiguracion());
+            return new ServicioSombraPreciosMedios(RepositorioPreciosMediosSql.DesdeConfiguracion(), LectorEdicionesPrecioMedioSql.DesdeConfiguracion());
         }
 
         /// <summary>
@@ -129,7 +130,8 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             }
 
             ElmahHelper.Log(new SombraPreciosMediosInfo("[Precios medios #547] " + resumen), USUARIO_ELMAH);
-            if (resumen.NoEsperados > 0 && correo != null)
+            // Los editados a mano no son un fallo de paridad, pero alguien ha puesto una media que no da el cálculo: se avisa.
+            if ((resumen.NoEsperados > 0 || resumen.EditadosAMano > 0) && correo != null)
             {
                 try
                 {
@@ -187,7 +189,9 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             MailMessage mail = new MailMessage
             {
                 From = new MailAddress("nesto@nuevavision.es", "Nesto - Nueva Visión"),
-                Subject = $"[Sombra precios medios] {resumen.NoEsperados} productos con diferencias no esperadas ({resumen.FechaPasada:dd/MM/yyyy})",
+                Subject = resumen.NoEsperados > 0
+                    ? $"[Sombra precios medios] {resumen.NoEsperados} productos con diferencias no esperadas ({resumen.FechaPasada:dd/MM/yyyy})"
+                    : $"[Sombra precios medios] {resumen.EditadosAMano} precios medios editados a mano ({resumen.FechaPasada:dd/MM/yyyy})",
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
                 SubjectEncoding = Encoding.UTF8
@@ -206,6 +210,18 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 "y la diferencia no se explica por facturas posteriores a la última pasada, por empates de fecha ni por el redondeo a 2 decimales de la media. <b>No se ha escrito nada</b>: " +
                 "es solo diagnóstico. Para cada uno, sacar su fixture con la consulta del §3 del plan, añadirla a los tests y corregir la calculadora.</p>");
             sb.AppendLine($"<p>{WebUtility.HtmlEncode(resumen.ToString())}</p>");
+            CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
+            foreach (ResumenEmpresaSombraPrecioMedio empresa in resumen.Empresas.Where(e => e.EditadosAMano > 0))
+            {
+                // Una línea: producto (usuario, fecha, valor antiguo → BD; C# calculado). No cuentan como DISTINTOS.
+                IEnumerable<string> productos = empresa.EditadosAManoDetalle.Select(p =>
+                    WebUtility.HtmlEncode(string.Format(es, "{0} ({1}, {2:dd/MM/yyyy HH:mm}, ", p.Producto, p.EdicionAMano?.Usuario, p.EdicionAMano?.Fecha)) +
+                    WebUtility.HtmlEncode(p.EdicionAMano?.ValorAntiguo ?? "") + " → " +
+                    WebUtility.HtmlEncode(string.Format(es, "{0:0.0000}; C# {1:0.0000})", p.Diferencia?.PrecioMedioBD, p.Diferencia?.PrecioMedioCalculado)));
+                sb.AppendLine($"<p><b>Editados a mano: {empresa.EditadosAMano}</b> (empresa {WebUtility.HtmlEncode(empresa.Empresa)}; " +
+                    "tecleados en Productos.PrecioMedio después de la última pasada del SP, según LogModificaciones): " +
+                    string.Join("; ", productos) + "</p>");
+            }
             foreach (ResumenEmpresaSombraPrecioMedio empresa in resumen.Empresas.Where(e => e.PrimerosNoEsperados.Any()))
             {
                 sb.AppendLine($"<h3>Empresa {WebUtility.HtmlEncode(empresa.Empresa)}: {empresa.NoEsperados} (los {empresa.PrimerosNoEsperados.Count} primeros)</h3>");

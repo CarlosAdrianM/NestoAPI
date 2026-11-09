@@ -1,0 +1,45 @@
+{
+  "producto": "22007",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Una sola compra (20/10/2005, pedido 28116 de la espejo 3, albarán 13305, factura 9520) en dos líneas de la MISMA factura con DISTINTA fecha de albarán: 12 uds a base 0 a las 00:00 (primera compra: 0) y 12 uds a 41,79 a las 12:43 ((12 × 0 + 41,79) / 24 = 1,7412). Es lo que escribió el SP en las líneas; el 9,95 de Productos.PrecioMedio lo tecleó a mano NUEVAVISION\\Reina el 06/11/26 (sombra del 08/11/26; Carlos 09/11: el C# tiene razón).",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2005-10-20T12:43:10.450",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 1.7412,
+  "compras": [
+    {
+      "empresa": "3",
+      "numeroFactura": 9520,
+      "fechaAlbaran": "2005-10-20T00:00:00",
+      "numeroAlbaran": 13305,
+      "numeroOrden": 19138951,
+      "cantidad": 12,
+      "baseImponible": 0,
+      "coste": 0,
+      "estado": 4
+    },
+    {
+      "empresa": "3",
+      "numeroFactura": 9520,
+      "fechaAlbaran": "2005-10-20T12:43:10.450",
+      "numeroAlbaran": 13305,
+      "numeroOrden": 18368751,
+      "cantidad": 12,
+      "baseImponible": 41.79,
+      "coste": 1.7412,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2005-10-20T00:00:00",
+      "stock": 0
+    },
+    {
+      "fecha": "2005-10-20T12:43:10.450",
+      "stock": 24
+    }
+  ]
+}
