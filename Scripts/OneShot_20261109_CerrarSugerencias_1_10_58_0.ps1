@@ -135,12 +135,12 @@ Contestar 1121 "@Alfredo, ya está en la versión de hoy (Nesto 1.10.58.0): «In
 # }
 # Contestar 1103 "@Alfredo, ya está en Nesto 1.10.58.0: si la etiqueta de nuestra ruta no sale y vuelve a pulsar «Insertar e Imprimir», se reimprime la del mismo envío, sin crear otro. Revise si le vuelve a pasar."
 #
-# Implementar 1128 @{
-#     Version = $VersionNesto; Categoria = "Nuevo"; Perfiles = @("Tiendas", "Administración", "Vendedores")
-#     Titulo = "Alta de cliente: más orígenes (Página web, Amazon, tiendas y Cursos)"
-#     Descripcion = "En el desplegable «Origen» del alta de cliente hay orígenes nuevos: Página web, Amazon, Tienda de Reina, Tienda de Alcobendas y Cursos. Son para medir de dónde vienen los clientes (no son campañas que haya que llamar). El origen se elige siempre a mano, pero Nesto propone el más probable según quién crea el cliente (por ejemplo, la tienda de quien lo da de alta). Lo pidió Laura."
-# }
-# Contestar 1128 "@Laura, ya está en Nesto 1.10.58.0: el desplegable «Origen» del alta de cliente tiene Página web, Amazon, Tienda de Reina, Tienda de Alcobendas y Cursos, y propone uno según quién crea el cliente. Revise si es lo que quería."
+Implementar 1128 @{
+    Version = $VersionNesto; Categoria = "Nuevo"; Perfiles = @("Tiendas", "Administración", "Vendedores")
+    Titulo = "Alta de cliente: más orígenes (Página web, Amazon, tiendas y Cursos)"
+    Descripcion = "En el desplegable «Origen» del alta de cliente hay orígenes nuevos: Página web, Amazon, Tienda de Reina, Tienda de Alcobendas y Cursos. Son para medir de dónde vienen los clientes (no son campañas que haya que llamar). El origen se elige siempre a mano, pero Nesto propone el más probable según quién crea el cliente (por ejemplo, la tienda de quien lo da de alta). Lo pidió Laura."
+}
+Contestar 1128 "@Laura, ya está en Nesto 1.10.58.0: el desplegable «Origen» del alta de cliente tiene Página web, Amazon, Tienda de Reina, Tienda de Alcobendas y Cursos, y propone uno según quién crea el cliente. Revise si es lo que quería."
 
 # ---------------- Ariadna 2.32 ----------------
 Implementar 1135 @{

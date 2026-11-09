@@ -11,8 +11,8 @@
       1) Scripts sa ANTES de publicar la API:
          a) Issue590_fnEsNestoViejo.sql (pieza común; no cambia datos ni permisos) y DESPUÉS Issue590_Inventario_BloqueoNestoViejo.sql
             (desde hoy Nesto viejo no cuenta, ni contabiliza, ni deshace inventario: lo dice la novedad de abajo).
-         b) Issue848_OrigenesCanal.sql SOLO si #848 entra en master antes de publicar (la API nueva lee OrigenesCliente.EsLead: sin la
-            columna, el catálogo de orígenes sale vacío). Si #848 no entra, no lanzarlo.
+         b) Issue848_OrigenesCanal.sql (#848 ENTRA: la API nueva lee OrigenesCliente.EsLead; sin la columna, el catálogo
+            de orígenes sale vacío).
          c) Cuando Carlos quiera (sombra, no bloquean nada): Issue590_SombraEscriturasNestoViejo_XE.sql,
             Issue590_SombraLecturasFacturasNestoViejo_XE.sql e Issue590_DireccionesClientes_BloqueoNestoViejo.sql (empieza en Sombra).
          Ya aplicados en producción (comprobado el 09/11 por lectura): Issue841_FestivosRepartoPropio.sql (CHECK con RepartoPropio),
@@ -35,7 +35,7 @@
       pedidos web), 1129 (Alfredo, lo «a recoger» cuenta para el cheque), 1116 (Pilar, cursos en el cheque), 1139 (Magan, «Anular
       enlace»), 1140 (Alfredo, enlaces de otros pedidos), 1131 (Alfredo, terminar el picking), 853 (Lidia, correo de fecha en riesgo),
       1144 (botonera nueva, con el vídeo) y 1132 (Paloma, importe mínimo de compra en eventos). Las de Ariadna (1135, 1133) van con la 2.32.
-      PENDIENTE si entra #847/#848: 1103 (Alfredo, reimprimir la etiqueta del reparto propio) y 1128 (Laura, orígenes de canal) están
+      1128 (Laura, orígenes de canal, #848) YA va descomentada en el OneShot. PENDIENTE si entra #847: 1103 (Alfredo) está
       comentadas en el OneShot; si entran, descomentarlas allí y añadir «los orígenes del cliente (Laura)» al agradecimiento de abajo.
       Las sugerencias del hilo del inventario (1057, 1136-1138, 1142…) se tratan aparte.
       Se omiten a propósito (nada perceptible en Nesto o va por otro lado): las sombras y bloqueos de Nesto viejo salvo el del inventario,
@@ -55,7 +55,7 @@ DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripc
 
 INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Nuevo', N'Gracias, Paloma, Alfredo, Pedro, Laura, Aida, Enrique y Lidia',
-     N'Esta versión sale en buena parte de lo que nos han contado por «Novedades»: el cursor que vuelve al buscador, las inscripciones anuladas fuera de la lista y el curso por compra con importe mínimo (Paloma), el picking que no se podía terminar y la etiqueta que no salía por un enlace de pago antiguo (Alfredo y Pedro), el cheque regalo de los pedidos de la web (Laura), ver más filas en Cobros (Aida), las direcciones de Francia (Enrique) y el correo de pedidos en riesgo (Lidia). Muchas gracias: sigan contándonos.',
+     N'Esta versión sale en buena parte de lo que nos han contado por «Novedades»: el cursor que vuelve al buscador, las inscripciones anuladas fuera de la lista y el curso por compra con importe mínimo (Paloma), el picking que no se podía terminar y la etiqueta que no salía por un enlace de pago antiguo (Alfredo y Pedro), el cheque regalo de los pedidos de la web y los orígenes del cliente (Laura), ver más filas en Cobros (Aida), las direcciones de Francia (Enrique) y el correo de pedidos en riesgo (Lidia). Muchas gracias: sigan contándonos.',
      NULL),
     ('Nuevo', N'Picking: «Quitar picking del pedido» en la ventana de Picking',
      N'En la ventana de Picking (la de «Sacar picking») hay un botón nuevo, «Quitar picking del pedido», para Almacén y Dirección: suelta lo reservado y quita el picking de todas las líneas pendientes del pedido. Si el mozo ya ha leído productos de ese pedido en la PDA, antes de tocar nada Nesto enseña la lista («20 Agujas Miliun (12485), leído por Pedro…») y pide confirmar; al confirmar, a la PDA le llega al momento el aviso de apartar esos productos y el pedido desaparece de su recogida. No se puede si alguna línea ya está en albarán, si el pedido ya se está empaquetando o si el picking ya está terminado. Desde ahora el picking se quita aquí, no en Nesto viejo.',
