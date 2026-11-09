@@ -35,7 +35,7 @@
       pedidos web), 1129 (Alfredo, lo «a recoger» cuenta para el cheque), 1116 (Pilar, cursos en el cheque), 1139 (Magan, «Anular
       enlace»), 1140 (Alfredo, enlaces de otros pedidos), 1131 (Alfredo, terminar el picking), 853 (Lidia, correo de fecha en riesgo),
       1144 (botonera nueva, con el vídeo) y 1132 (Paloma, importe mínimo de compra en eventos). Las de Ariadna (1135, 1133) van con la 2.32.
-      1128 (Laura, orígenes de canal, #848) YA va descomentada en el OneShot. PENDIENTE si entra #847: 1103 (Alfredo) está
+      1128 (Laura, #848) y 1103 (Alfredo, #847) YA van en el OneShot; ninguna queda
       comentadas en el OneShot; si entran, descomentarlas allí y añadir «los orígenes del cliente (Laura)» al agradecimiento de abajo.
       Las sugerencias del hilo del inventario (1057, 1136-1138, 1142…) se tratan aparte.
       Se omiten a propósito (nada perceptible en Nesto o va por otro lado): las sombras y bloqueos de Nesto viejo salvo el del inventario,
@@ -55,7 +55,7 @@ DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripc
 
 INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Nuevo', N'Gracias, Paloma, Alfredo, Pedro, Laura, Aida, Enrique y Lidia',
-     N'Esta versión sale en buena parte de lo que nos han contado por «Novedades»: el cursor que vuelve al buscador, las inscripciones anuladas fuera de la lista y el curso por compra con importe mínimo (Paloma), el picking que no se podía terminar y la etiqueta que no salía por un enlace de pago antiguo (Alfredo y Pedro), el cheque regalo de los pedidos de la web y los orígenes del cliente (Laura), ver más filas en Cobros (Aida), las direcciones de Francia (Enrique) y el correo de pedidos en riesgo (Lidia). Muchas gracias: sigan contándonos.',
+     N'Esta versión sale en buena parte de lo que nos han contado por «Novedades»: el cursor que vuelve al buscador, las inscripciones anuladas fuera de la lista y el curso por compra con importe mínimo (Paloma), el picking que no se podía terminar y la etiqueta que no salía por un enlace de pago antiguo y el envío que se duplicaba al reimprimir (Alfredo y Pedro), el cheque regalo de los pedidos de la web y los orígenes del cliente (Laura), ver más filas en Cobros (Aida), las direcciones de Francia (Enrique) y el correo de pedidos en riesgo (Lidia). Muchas gracias: sigan contándonos.',
      NULL),
     ('Nuevo', N'Picking: «Quitar picking del pedido» en la ventana de Picking',
      N'En la ventana de Picking (la de «Sacar picking») hay un botón nuevo, «Quitar picking del pedido», para Almacén y Dirección: suelta lo reservado y quita el picking de todas las líneas pendientes del pedido. Si el mozo ya ha leído productos de ese pedido en la PDA, antes de tocar nada Nesto enseña la lista («20 Agujas Miliun (12485), leído por Pedro…») y pide confirmar; al confirmar, a la PDA le llega al momento el aviso de apartar esos productos y el pedido desaparece de su recogida. No se puede si alguna línea ya está en albarán, si el pedido ya se está empaquetando o si el picking ya está terminado. Desde ahora el picking se quita aquí, no en Nesto viejo.',

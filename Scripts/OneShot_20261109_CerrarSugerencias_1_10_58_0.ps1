@@ -128,12 +128,12 @@ Contestar 1121 "@Alfredo, ya está en la versión de hoy (Nesto 1.10.58.0): «In
 
 # ---------------- PENDIENTE si entra #847/#848 ----------------
 # Descomentar SOLO si el commit está en master y entra en esta publicación (y ajustar el texto a lo que haga de verdad).
-# Implementar 1103 @{
-#     Version = $VersionNesto; Categoria = "Corregido"; Perfiles = @("Almacén")
-#     Titulo = "Reparto propio: volver a imprimir la etiqueta no crea otro envío"
-#     Descripcion = "Si la etiqueta de nuestra ruta no sale y se vuelve a pulsar «Insertar e Imprimir», se reimprime la del envío que ya tiene el pedido en vez de crear otro. Lo avisó Alfredo (envío triplicado del cliente 1179)."
-# }
-# Contestar 1103 "@Alfredo, ya está en Nesto 1.10.58.0: si la etiqueta de nuestra ruta no sale y vuelve a pulsar «Insertar e Imprimir», se reimprime la del mismo envío, sin crear otro. Revise si le vuelve a pasar."
+Implementar 1103 @{
+    Version = $VersionNesto; Categoria = "Corregido"; Perfiles = @("Almacén")
+    Titulo = "Reparto propio: volver a pulsar «Insertar e Imprimir» no crea otro envío"
+    Descripcion = "Si la etiqueta de nuestra ruta no sale y se vuelve a pulsar «Insertar e Imprimir», Nesto ya no crea otro envío: avisa de que el pedido ya tiene el suyo y pregunta si quiere volver a imprimir su etiqueta. Si hacen falta más bultos, se modifica ese envío. Lo avisó Alfredo."
+}
+Contestar 1103 "@Alfredo, ya está en Nesto 1.10.58.0: si la etiqueta del reparto propio no sale y vuelve a pulsar «Insertar e Imprimir», Nesto ya no crea otro envío; le avisa de que el pedido ya tiene el suyo y le pregunta si quiere volver a imprimir su etiqueta. Si necesita más bultos, modifique ese envío. Lo de la primera etiqueta del día lo seguimos estudiando: si vuelve a pasar, díganos aquí la hora para revisar la cola de la impresora."
 #
 Implementar 1128 @{
     Version = $VersionNesto; Categoria = "Nuevo"; Perfiles = @("Tiendas", "Administración", "Vendedores")
