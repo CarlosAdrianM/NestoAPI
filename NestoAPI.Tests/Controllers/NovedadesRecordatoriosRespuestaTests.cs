@@ -399,7 +399,7 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task Ejecutar_ConMencion_ElCierreTambienVaAlMencionado()
+        public async Task Ejecutar_ConMencion_ElCierreVaAlMencionadoYTambienAlAutor()
         {
             DateTime martes = new DateTime(2026, 10, 27, 9, 0, 0);
             A.CallTo(() => espera.LeerEsperando()).Returns(new List<EsperaRespuestaNovedad>
@@ -414,8 +414,24 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("Hola, @Santiago y @Alfredo. Damos esta sugerencia por cerrada al no tener respuesta; si la necesita, escriba aquí y se reabre.", grabado.Texto);
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly(); // Carlos 09/11/26: el cierre, también al autor
             A.CallTo(() => espera.Cerrar(584, martes)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Ejecutar_ConMencionDelPropioAutor_ElCierreLeLlegaUnaSolaVez()
+        {
+            DateTime martes = new DateTime(2026, 10, 27, 9, 0, 0);
+            A.CallTo(() => espera.LeerEsperando()).Returns(new List<EsperaRespuestaNovedad>
+            {
+                Espera(desde: LUNES, recordatorios: 2, ultimo: new DateTime(2026, 10, 23, 9, 0, 0), esperandoDe: ESPERANDO_A_SANTIAGO + ";Nesto|NUEVAVISION\\MariaJose|MariaJose")
+            });
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).Returns(83);
+
+            _ = await Motor(martes).Ejecutar(ensayo: false);
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\MariaJose", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

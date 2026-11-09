@@ -109,7 +109,7 @@ namespace NestoAPI.Infraestructure.Novedades
                     {
                         repositorio.Cerrar(espera.Id, ahora);
                     }
-                    await AvisarALosEsperados(espera, comentarioId, resultado.Texto).ConfigureAwait(false);
+                    await AvisarALosEsperados(espera, comentarioId, resultado.Texto, tambienAlAutor: accion == AccionEsperaRespuesta.Cerrar).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -124,9 +124,10 @@ namespace NestoAPI.Infraestructure.Novedades
         /// El aviso le llega a quien se espera. Si es el autor, por el programa de la sugerencia, como cuando el
         /// asistente le contesta: Nesto, a su campana; NestoApp, push; Ariadna, a su campana. NestoAPI#783: si son
         /// los @mencionados en la pregunta, a cada uno como en las menciones (Nesto, campana; NestoApp, push).
+        /// Carlos 09/11/26: el CIERRE le llega también al autor aunque la pregunta fuera a otros (es su sugerencia).
         /// Nunca rompe el recordatorio.
         /// </summary>
-        private async Task AvisarALosEsperados(EsperaRespuestaNovedad espera, int comentarioId, string texto)
+        private async Task AvisarALosEsperados(EsperaRespuestaNovedad espera, int comentarioId, string texto, bool tambienAlAutor = false)
         {
             if (notificaciones == null)
             {
@@ -149,6 +150,10 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 await AvisarAlAutor(espera, notificacion).ConfigureAwait(false);
                 return;
+            }
+            if (tambienAlAutor && !esperados.Any(e => ReglasEsperaRespuestaNovedades.EsDelAutor(espera, e.Clave) || string.Equals(e.Clave?.Trim(), espera.SugeridaNombre?.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                await AvisarAlAutor(espera, notificacion).ConfigureAwait(false);
             }
             foreach (MencionableDTO esperado in esperados)
             {
