@@ -641,6 +641,52 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual(1, enviados);
         }
 
+        /// <summary>Lo mismo que <see cref="RetrasoAlViernes"/>, pero las 3 que faltan esperan la reposición de <paramref name="tienda"/>.</summary>
+        private static FechaEntregaAgenciaDTO ViernesDesde(string tienda) => new FechaEntregaAgenciaDTO
+        {
+            FechaEntregaAgencia = VIERNES,
+            EntregaCompleta = VIERNES,
+            Aplica = FechaEntregaAgenciaDTO.APLICA_COMPLETA,
+            Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+            {
+                new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA, Producto = "42485", Unidades = 3, Tienda = tienda, PuedeSalirEl = VIERNES }
+            }
+        };
+
+        [TestMethod]
+        public async Task RevisarAntesDelCorreo_MismaFechaPeroLaReposicionYaVieneDeOtraTienda_ElCorreoDiceLaDeAhora()
+        {
+            // NestoAPI#846 (sugerencia 853, Lidia, pedido 929477 del 28/10/26): a las 9:46 la reposición se esperaba de
+            // Alcobendas; a las 15:00 el producto estaba en Reina y la fecha nueva era la MISMA. El correo decía «Alcobendas».
+            calculoActual = ViernesDesde("ALC");
+            _ = await Servicio().ProcesarEvento(Evento("movimiento de stock (diario General)", "42485"));
+            StringAssert.Contains(repositorio.Filas.Single().Motivo, "Alcobendas");
+            calculoActual = ViernesDesde("REI");
+
+            _ = await Servicio().RevisarAntesDelCorreo("1");
+            int enviados = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => AHORA, () => modo, "1");
+
+            RiesgoPromesa fila = repositorio.Filas.Single();
+            Assert.AreEqual(1, enviados, "sigue en riesgo: sale");
+            Assert.AreEqual(VIERNES, fila.FechaNueva);
+            StringAssert.Contains(fila.Motivo, "Reina");
+            Assert.IsFalse(fila.Motivo.Contains("Alcobendas"), "el porqué es el del momento del correo: " + fila.Motivo);
+            A.CallTo(() => avisador.AvisarCampana(A<AvisoPromesaRiesgo>._)).MustHaveHappenedOnceExactly(); // solo al detectarlo
+        }
+
+        [TestMethod]
+        public async Task ProcesarEvento_MismaFecha_ConservaElPorqueDelEventoQueLoDetecto()
+        {
+            // Fuera del correo, lo que sigue igual no se toca (#693): la causa del evento («Reina mandó 1 de 3») se conserva.
+            calculoActual = RetrasoAlViernes();
+            _ = await Servicio().ProcesarEvento(TerminarReposicion81094());
+            string motivoGuardado = repositorio.Filas.Single().Motivo;
+
+            _ = await Servicio().ProcesarEvento(Evento("movimiento de stock (diario General)", "42485"));
+
+            Assert.AreEqual(motivoGuardado, repositorio.Filas.Single().Motivo);
+        }
+
         [TestMethod]
         public async Task RevisarAntesDelCorreo_LosYaEnviadosYApagado_NoSeTocan()
         {

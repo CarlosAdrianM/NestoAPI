@@ -1,4 +1,4 @@
-using NestoAPI.Models.PedidosVenta;
+﻿using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -80,7 +80,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// salir en él (los que aún no han ido en ninguno), para no mandar lo guardado cuando ya no vale: el riesgo se detectó a
         /// las 9:35 («viene de Alcobendas») y a las 14:49 un inventario lo había dejado obsoleto. Con las mismas reglas que un
         /// evento: el que ya cumple se resuelve (y no sale), el que cambia de fecha se actualiza con su porqué nuevo y el que
-        /// empeora avisa por la campana. El que sigue igual no se toca (conserva la causa del evento que lo detectó).
+        /// empeora avisa por la campana. NestoAPI#846 (853): el que sigue con la MISMA fecha también rehace su porqué con el
+        /// stock y las reposiciones de ahora (pedido 929477, 28/10/26: detectado «viene de Alcobendas» y a las 15:00 estaba en
+        /// Reina, con la misma fecha nueva). Ese porqué ya no lleva la causa del evento que lo detectó (podría no valer ya).
         /// </summary>
         public async Task<ResultadoPromesaRiesgo> RevisarAntesDelCorreo(string empresa)
         {
@@ -102,7 +104,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     FechaEntregaAgenciaDTO calculo = quedaPendiente ? await fechas.CalcularPedido(empresa, registrado.Pedido).ConfigureAwait(false) : null;
                     resultado.Recalculados++;
                     await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, null, EVENTO_ANTES_DEL_CORREO, ahora,
-                        resultado, avisar).ConfigureAwait(false);
+                        resultado, avisar, rehacerMotivo: true).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -198,7 +200,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         private async Task Aplicar(string empresa, int pedido, DateTime? prometida, FechaEntregaAgenciaDTO calculo, bool quedaPendiente,
             RiesgoPromesa registrado, IDictionary<string, CausaPromesaRiesgo> causas, string descripcion, DateTime ahora,
-            ResultadoPromesaRiesgo resultado, List<(RiesgoPromesa, bool)> avisar)
+            ResultadoPromesaRiesgo resultado, List<(RiesgoPromesa, bool)> avisar, bool rehacerMotivo = false)
         {
             DecisionPromesaRiesgo decision = EvaluadorPromesaRiesgo.Decidir(prometida, calculo, quedaPendiente, registrado);
             switch (decision.Accion)
@@ -220,7 +222,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     break;
                 case AccionPromesaRiesgo.Actualizar:
                     // Igual que estaba: no se toca (se conserva el porqué con la causa del evento que lo detectó). Mejor sin
-                    // llegar a cumplir: se actualiza la fecha y el porqué, sin avisar.
+                    // llegar a cumplir: se actualiza la fecha y el porqué, sin avisar. Antes del correo (#846), el porqué se rehace
+                    // aunque la fecha siga igual: el correo cuenta lo de ahora.
                     DateTime? nueva = calculo.FechaEntregaAgencia?.Date;
                     if (nueva != registrado.FechaNueva?.Date)
                     {
@@ -228,6 +231,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         registrado.Motivo = await Motivo(empresa, pedido, registrado.FechaPrometida, calculo, causas).ConfigureAwait(false);
                         registrado.Actualizado = ahora;
                         await repositorio.Actualizar(registrado).ConfigureAwait(false);
+                    }
+                    else if (rehacerMotivo)
+                    {
+                        string motivoAhora = await Motivo(empresa, pedido, registrado.FechaPrometida, calculo, causas).ConfigureAwait(false);
+                        if (!string.Equals(motivoAhora, registrado.Motivo, StringComparison.Ordinal))
+                        {
+                            registrado.Motivo = motivoAhora;
+                            registrado.Actualizado = ahora;
+                            await repositorio.Actualizar(registrado).ConfigureAwait(false);
+                        }
                     }
                     break;
                 case AccionPromesaRiesgo.Resolver:
