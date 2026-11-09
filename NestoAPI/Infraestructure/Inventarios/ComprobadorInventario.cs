@@ -15,12 +15,21 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const string UBICACION_MAL_FORMADA = "UbicacionMalFormada";
         public const string SIN_UBICACION = "SinUbicacion";
         public const string UBICACION_INEXISTENTE = "UbicacionInexistente";
+        /// <summary>NestoAPI#784: más de una fila pendiente del mismo producto (y ubicación) ese día: el SP apuntaría la diferencia dos veces.</summary>
+        public const string FILAS_DUPLICADAS = "FilasDuplicadas";
+        /// <summary>
+        /// NestoAPI#784 (tiendas): producto ya contabilizado ese día que se ha vuelto a abrir («Contar otra vez») y sigue con contado 0
+        /// teniendo stock: contabilizarlo lo deja a cero. Se puede confirmar (<c>SeConfirma</c>, ConfirmarContadoCero).
+        /// </summary>
+        public const string RECONTADA_SIN_CONTAR = "RecontadaSinContar";
         // Avisos
         public const string ANULADO_CON_STOCK = "AnuladoConStock";
         public const string SIN_PRECIO_MEDIO = "SinPrecioMedio";
         public const string CALCULADO_NEGATIVO = "CalculadoNegativo";
         public const string UBICACION_SIN_RELLENAR = "UbicacionSinRellenar";
         public const string GRUPOS_MEZCLADOS = "GruposMezclados";
+        /// <summary>NestoAPI#784 (tiendas): filas con contado 0 de productos con stock: ¿de verdad no hay ninguno o no se ha contado?</summary>
+        public const string CONTADO_CERO_CON_STOCK = "ContadoCeroConStock";
     }
 
     /// <summary>
@@ -29,6 +38,8 @@ namespace NestoAPI.Infraestructure.Inventarios
     /// Bloqueantes (no se deja contabilizar): filas con otra fecha, cantidades disparatadas, ficticios con stock y, en almacenes con
     /// ubicaciones, ubicaciones mal escritas, sin ubicación o que no existen. Avisos: anulados con stock, sin precio medio, calculado
     /// negativo y, con ubicaciones, ubicaciones con stock sin inventariar y ubicaciones con grupos mezclados.
+    /// NestoAPI#784: bloquean también las filas duplicadas (mismo producto y ubicación ese día) y, en las tiendas, lo ya contabilizado
+    /// ese día que se ha vuelto a abrir y sigue con contado 0 (este se puede confirmar); y en las tiendas se avisa del contado 0 con stock.
     /// </summary>
     public static class ComprobadorInventario
     {
@@ -37,8 +48,10 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const int LONGITUD_UBICACION = 3;
         public const int ESTADO_PRODUCTO_ANULADO = -1;
 
+        /// <param name="contabilizadas">NestoAPI#784: las filas ya contabilizadas ese día en el almacén (solo hacen falta en las tiendas).</param>
         public static ComprobacionesInventarioDTO Comprobar(string almacen, DateTime fecha, bool controlUbicaciones,
-            IEnumerable<FilaInventarioPendiente> pendientes, IEnumerable<UbicacionAlmacenInventario> ubicaciones)
+            IEnumerable<FilaInventarioPendiente> pendientes, IEnumerable<UbicacionAlmacenInventario> ubicaciones,
+            IEnumerable<FilaInventarioContabilizada> contabilizadas = null)
         {
             DateTime dia = fecha.Date;
             List<FilaInventarioPendiente> todas = (pendientes ?? Enumerable.Empty<FilaInventarioPendiente>()).ToList();
@@ -60,6 +73,27 @@ namespace NestoAPI.Infraestructure.Inventarios
             Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.FICTICIO,
                 "Productos ficticios con stock contado",
                 delDia.Where(f => f.Ficticio && (f.StockReal ?? 0) != 0));
+            // NestoAPI#784 (09/11/26): el SP apunta la diferencia de cada fila; dos del mismo producto (y ubicación) la apuntan dos veces.
+            Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.FILAS_DUPLICADAS,
+                "Más de una fila sin contabilizar del mismo producto (y ubicación) este día: deje solo una (se apuntaría la diferencia de cada una)",
+                delDia.GroupBy(f => ClaveProducto(f.Producto) + "#" + Clave(f.Pasillo, f.Fila, f.Columna), StringComparer.OrdinalIgnoreCase)
+                    .Where(g => g.Count() > 1)
+                    .SelectMany(g => g));
+
+            // NestoAPI#784 (tiendas): lo ya contabilizado ese día que se ha vuelto a abrir («Contar otra vez») lleva como teórico lo que
+            // se contó; con contado 0 sin contar, contabilizarlo lo deja a cero (el 42341 de Paloma). Se confirma con ConfirmarContadoCero.
+            var yaContabilizados = new HashSet<string>(
+                (controlUbicaciones ? Enumerable.Empty<FilaInventarioContabilizada>() : contabilizadas ?? Enumerable.Empty<FilaInventarioContabilizada>())
+                    .Where(c => c != null && c.Fecha.Date == dia)
+                    .Select(c => ClaveProducto(c.Producto)),
+                StringComparer.OrdinalIgnoreCase);
+            List<FilaInventarioPendiente> recontadasSinContar = delDia
+                .Where(f => (f.StockReal ?? 0) == 0 && (f.StockCalculado ?? 0) != 0 && yaContabilizados.Contains(ClaveProducto(f.Producto)))
+                .ToList();
+            Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.RECONTADA_SIN_CONTAR,
+                "Productos ya contados y contabilizados este día que se han vuelto a abrir y siguen con contado 0: contabilizarlos los deja a cero. " +
+                "Cuéntelos o confirme que de verdad no hay ninguno",
+                recontadasSinContar, seConfirma: true);
 
             if (controlUbicaciones)
             {
@@ -87,6 +121,14 @@ namespace NestoAPI.Infraestructure.Inventarios
             Anadir(resultado.Avisos, CodigosComprobacionInventario.CALCULADO_NEGATIVO,
                 "Stock calculado negativo",
                 delDia.Where(f => (f.StockCalculado ?? 0) < 0));
+            if (!controlUbicaciones)
+            {
+                // NestoAPI#784: la trampa de abrir el evolutivo y no contar: contado 0 de un producto con stock (sin repetir las de arriba).
+                var recontadas = new HashSet<int>(recontadasSinContar.Select(f => f.NumeroOrden));
+                Anadir(resultado.Avisos, CodigosComprobacionInventario.CONTADO_CERO_CON_STOCK,
+                    "Filas con contado 0 de productos que tienen stock: compruebe que de verdad no hay ninguno y no que se han quedado sin contar",
+                    delDia.Where(f => (f.StockReal ?? 0) == 0 && (f.StockCalculado ?? 0) > 0 && !recontadas.Contains(f.NumeroOrden)));
+            }
 
             if (controlUbicaciones)
             {
@@ -149,7 +191,10 @@ namespace NestoAPI.Infraestructure.Inventarios
         private static string Clave(string pasillo, string fila, string columna) =>
             (pasillo?.Trim() ?? string.Empty) + "|" + (fila?.Trim() ?? string.Empty) + "|" + (columna?.Trim() ?? string.Empty);
 
-        private static void Anadir(List<ComprobacionInventarioDTO> lista, string codigo, string titulo, IEnumerable<FilaInventarioPendiente> filas)
+        private static string ClaveProducto(string producto) => producto?.Trim().ToUpperInvariant() ?? string.Empty;
+
+        private static void Anadir(List<ComprobacionInventarioDTO> lista, string codigo, string titulo, IEnumerable<FilaInventarioPendiente> filas,
+            bool seConfirma = false)
         {
             AnadirFilas(lista, codigo, titulo, filas
                 .OrderBy(f => f.Pasillo).ThenBy(f => f.Fila).ThenBy(f => f.Columna).ThenBy(f => f.Producto).ThenBy(f => f.NumeroOrden)
@@ -166,16 +211,17 @@ namespace NestoAPI.Infraestructure.Inventarios
                     Usuario = f.Usuario,
                     Fecha = f.Fecha
                 })
-                .ToList());
+                .ToList(), seConfirma);
         }
 
-        private static void AnadirFilas(List<ComprobacionInventarioDTO> lista, string codigo, string titulo, List<FilaComprobacionInventarioDTO> filas)
+        private static void AnadirFilas(List<ComprobacionInventarioDTO> lista, string codigo, string titulo, List<FilaComprobacionInventarioDTO> filas,
+            bool seConfirma = false)
         {
             if (filas.Count == 0)
             {
                 return;
             }
-            lista.Add(new ComprobacionInventarioDTO { Codigo = codigo, Titulo = titulo, Filas = filas });
+            lista.Add(new ComprobacionInventarioDTO { Codigo = codigo, Titulo = titulo, Filas = filas, SeConfirma = seConfirma });
         }
     }
 }

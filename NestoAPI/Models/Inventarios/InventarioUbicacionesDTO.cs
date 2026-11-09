@@ -40,6 +40,13 @@ namespace NestoAPI.Models.Inventarios
         public string Familia { get; set; }
         /// <summary>... o la referencia (o un código de barras: se lee como en la recepción). Solo uno de los dos.</summary>
         public string Producto { get; set; }
+        /// <summary>
+        /// NestoAPI#784 (09/11/26): «Contar otra vez». Sin él, si lo pedido ya se contó y contabilizó ese día en el almacén, 409
+        /// <c>YaContabilizado</c>. Con él se rellena de nuevo con el stock de ahora (lo ya contabilizado) como teórico; si luego se
+        /// contabiliza con contado 0 sin haberlo contado, Comprobaciones lo bloquea (<c>RecontadaSinContar</c>) hasta que se confirme.
+        /// Con filas pendientes sigue siendo 409 <c>YaRellenado</c>.
+        /// </summary>
+        public bool OtraVez { get; set; }
     }
 
     /// <summary>NestoAPI#795: lo que se ha rellenado (ubicación o parcial), con las filas tal como quedan en Inventarios.</summary>
@@ -76,6 +83,8 @@ namespace NestoAPI.Models.Inventarios
         public DateTime Fecha { get; set; }
         public DateTime FechaModificacion { get; set; }
         public bool? PorCodigoBarras { get; set; }
+        /// <summary>NestoAPI#784: el NºTraspaso de una fila ya contabilizada (en el 409 <c>YaContabilizado</c>); null en las pendientes.</summary>
+        public int? Traspaso { get; set; }
     }
 
     /// <summary>NestoAPI#795: lo contado de una ubicación (en las tiendas, una sola «ubicación» sin pasillo).</summary>
@@ -105,10 +114,18 @@ namespace NestoAPI.Models.Inventarios
         public List<ResumenUbicacionContadaDTO> Ubicaciones { get; set; } = new List<ResumenUbicacionContadaDTO>();
     }
 
-    /// <summary>NestoAPI#795: el cuerpo del 409 de RellenarUbicacion y RellenarParcial: lo que ya estaba pendiente.</summary>
+    /// <summary>
+    /// NestoAPI#795: el cuerpo del 409 de RellenarUbicacion y RellenarParcial: lo que ya estaba pendiente. NestoAPI#784: también el
+    /// de RellenarParcial cuando ya se contabilizó (Lineas = las contabilizadas, con Traspaso) y el de GET/POST api/Inventarios
+    /// cuando hay filas pendientes duplicadas o ya la hay. <see cref="Codigo"/> dice cuál es (<c>CodigosConflictoInventario</c>).
+    /// </summary>
     public class YaRellenadoInventarioDTO
     {
         public string Message { get; set; }
+        /// <summary>NestoAPI#784: YaRellenado, YaContabilizado, FilasDuplicadas o YaTieneFila.</summary>
+        public string Codigo { get; set; }
+        /// <summary>NestoAPI#784: true solo con YaContabilizado: se puede repetir la petición con OtraVez = true («Contar otra vez»).</summary>
+        public bool PuedeContarOtraVez { get; set; }
         public List<LineaInventarioContadaDTO> Lineas { get; set; } = new List<LineaInventarioContadaDTO>();
     }
 }

@@ -29,6 +29,7 @@ namespace NestoAPI.Tests.Controllers
         private List<Inventario> insertadas;
         private List<StockProductoInventario> stocks;
         private List<PendientesInventarioUsuario> pendientes;
+        private List<ContabilizadasInventarioUsuario> contabilizadas;
         private AlmacenInventario almacen;
 
         [TestInitialize]
@@ -44,6 +45,8 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => repositorio.LeerAlmacen(A<string>._, A<string>._)).ReturnsLazily(() => Task.FromResult(almacen));
             A.CallTo(() => repositorio.Empezar(A<string>._, A<string>._)).Returns(Task.FromResult(unidad));
             A.CallTo(() => unidad.Pendientes(A<string>._, A<string>._, A<DateTime>._)).ReturnsLazily(() => Task.FromResult(pendientes));
+            contabilizadas = new List<ContabilizadasInventarioUsuario>();
+            A.CallTo(() => unidad.Contabilizadas(A<string>._, A<string>._, A<DateTime>._)).ReturnsLazily(() => Task.FromResult(contabilizadas));
             A.CallTo(() => unidad.Stocks(A<string>._, A<string>._)).ReturnsLazily(() => Task.FromResult(stocks));
             A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).Invokes((IList<Inventario> filas) => insertadas.AddRange(filas)).Returns(Task.CompletedTask);
         }
@@ -119,6 +122,51 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Rellenar_YaHayFilasContabilizadasEseDia_YaContabilizadoSinInsertar_784()
+        {
+            // 09/11/26: Paloma contó y contabilizó el 42341 por la mañana; rellenar la tienda entera después lo pondría otra vez a contar.
+            stocks.Add(Stock("42341", 2));
+            contabilizadas.Add(new ContabilizadasInventarioUsuario { Usuario = USUARIO, Filas = 1, Traspaso = 81350 });
+
+            ResultadoRellenarInventario resultado = await Servicio().Rellenar(Peticion("ALC"), USUARIO);
+
+            Assert.AreEqual(EstadoRellenarInventario.YaContabilizado, resultado.Estado);
+            Assert.AreEqual(@"Ya hay 1 fila de ALC contada y contabilizada el 21/11/2026 (NUEVAVISION\Paloma: 1, traspaso 81350). Si de verdad hay que volver a contar, pulse «Contar otra vez».",
+                resultado.Mensaje);
+            Assert.AreEqual(81350, resultado.Contabilizadas.Single().Traspaso);
+            A.CallTo(() => unidad.Contabilizadas("1", "ALC", dia)).MustHaveHappened();
+            A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
+            A.CallTo(() => unidad.Confirmar()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Rellenar_ConOtraVez_AunqueHayaContabilizadas_Rellena_784()
+        {
+            stocks.Add(Stock("42341", 2));
+            contabilizadas.Add(new ContabilizadasInventarioUsuario { Usuario = USUARIO, Filas = 1, Traspaso = 81350 });
+            RellenarInventarioDTO peticion = Peticion("ALC");
+            peticion.OtraVez = true;
+
+            ResultadoRellenarInventario resultado = await Servicio().Rellenar(peticion, USUARIO);
+
+            Assert.AreEqual(EstadoRellenarInventario.Ok, resultado.Estado);
+            Assert.AreEqual(2, insertadas.Single().StockCalculado);
+        }
+
+        [TestMethod]
+        public async Task Rellenar_ConOtraVez_SiHayPendientes_SigueSiendoYaRellenado_784()
+        {
+            pendientes.Add(new PendientesInventarioUsuario { Usuario = USUARIO, Filas = 2 });
+            RellenarInventarioDTO peticion = Peticion("ALC");
+            peticion.OtraVez = true;
+
+            ResultadoRellenarInventario resultado = await Servicio().Rellenar(peticion, USUARIO);
+
+            Assert.AreEqual(EstadoRellenarInventario.YaRellenado, resultado.Estado);
+            A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Rellenar_AlmacenConUbicaciones_ConUbicaciones_SinTocarNada()
         {
             almacen = new AlmacenInventario { Nombre = "Algete", ControlUbicaciones = true };
@@ -189,6 +237,36 @@ namespace NestoAPI.Tests.Controllers
             var respuesta = await controller.PostRellenar(Peticion("REI"));
 
             Assert.AreEqual(HttpStatusCode.Conflict, Estado(respuesta));
+        }
+
+        [TestMethod]
+        public async Task PostRellenar_YaContabilizado_ConflictoConCodigoYContarOtraVez_784()
+        {
+            contabilizadas.Add(new ContabilizadasInventarioUsuario { Usuario = USUARIO, Filas = 1, Traspaso = 81350 });
+            InventariosController controller = Controlador(Constantes.GruposSeguridad.TIENDAS);
+
+            var respuesta = await controller.PostRellenar(Peticion("ALC"));
+
+            var conflicto = respuesta as System.Web.Http.Results.NegotiatedContentResult<YaRellenadoTiendaInventarioDTO>;
+            Assert.IsNotNull(conflicto);
+            Assert.AreEqual(HttpStatusCode.Conflict, conflicto.StatusCode);
+            Assert.AreEqual(CodigosConflictoInventario.YA_CONTABILIZADO, conflicto.Content.Codigo);
+            Assert.IsTrue(conflicto.Content.PuedeContarOtraVez);
+            Assert.AreEqual(81350, conflicto.Content.Contabilizadas.Single().Traspaso);
+        }
+
+        [TestMethod]
+        public async Task PostRellenar_YaRellenado_ConflictoSinContarOtraVez_784()
+        {
+            pendientes.Add(new PendientesInventarioUsuario { Usuario = USUARIO, Filas = 64 });
+            InventariosController controller = Controlador(Constantes.GruposSeguridad.ALMACEN);
+
+            var conflicto = await controller.PostRellenar(Peticion("REI")) as System.Web.Http.Results.NegotiatedContentResult<YaRellenadoTiendaInventarioDTO>;
+
+            Assert.IsNotNull(conflicto);
+            Assert.AreEqual(CodigosConflictoInventario.YA_RELLENADO, conflicto.Content.Codigo);
+            Assert.IsFalse(conflicto.Content.PuedeContarOtraVez);
+            Assert.AreEqual(64, conflicto.Content.Pendientes.Single().Filas);
         }
 
         [TestMethod]

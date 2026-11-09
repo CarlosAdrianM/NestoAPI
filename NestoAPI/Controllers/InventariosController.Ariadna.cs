@@ -98,7 +98,8 @@ namespace NestoAPI.Controllers
         /// NestoAPI#795: el evolutivo de una tienda: como Rellenar (#789) pero solo la familia (no ficticios con stock distinto de cero) o
         /// solo la referencia (su fila aunque el stock sea 0; Producto puede ser un código de barras, se lee como en la recepción: 404/409
         /// como el GET). 409 con Message y Lineas si ya hay filas pendientes de esa familia o referencia ese día. Solo almacenes sin
-        /// control de ubicaciones.
+        /// control de ubicaciones. NestoAPI#784: 409 Codigo «YaContabilizado» (PuedeContarOtraVez, Lineas = las contabilizadas con su
+        /// Traspaso) si ya se contó y contabilizó ese día; se repite con OtraVez = true.
         /// </summary>
         [HttpPost]
         [Authorize]
@@ -184,7 +185,21 @@ namespace NestoAPI.Controllers
                 case EstadoInventarioUbicaciones.Ok:
                     return Ok(resultado.Respuesta);
                 case EstadoInventarioUbicaciones.YaRellenado:
-                    return Content(HttpStatusCode.Conflict, new YaRellenadoInventarioDTO { Message = resultado.Mensaje, Lineas = resultado.Lineas });
+                    return Content(HttpStatusCode.Conflict, new YaRellenadoInventarioDTO
+                    {
+                        Message = resultado.Mensaje,
+                        Codigo = CodigosConflictoInventario.YA_RELLENADO,
+                        Lineas = resultado.Lineas
+                    });
+                case EstadoInventarioUbicaciones.YaContabilizado:
+                    // NestoAPI#784: se puede repetir con OtraVez = true («Contar otra vez»); Lineas son las ya contabilizadas.
+                    return Content(HttpStatusCode.Conflict, new YaRellenadoInventarioDTO
+                    {
+                        Message = resultado.Mensaje,
+                        Codigo = CodigosConflictoInventario.YA_CONTABILIZADO,
+                        PuedeContarOtraVez = true,
+                        Lineas = resultado.Lineas
+                    });
                 case EstadoInventarioUbicaciones.NoExisteAlmacen:
                     return Content(HttpStatusCode.NotFound, new HttpError(resultado.Mensaje));
                 default:

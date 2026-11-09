@@ -32,6 +32,21 @@ namespace NestoAPI.Infraestructure.Inventarios
         public bool StockRealEsReferencia { get; set; }
     }
 
+    /// <summary>NestoAPI#784: una fila ya contabilizada (Estado 2, con NºTraspaso) del inventario de un almacén y un día.</summary>
+    public class FilaInventarioContabilizada
+    {
+        public int NumeroOrden { get; set; }
+        public string Producto { get; set; }
+        public int? StockCalculado { get; set; }
+        public int? StockReal { get; set; }
+        public string Pasillo { get; set; }
+        public string Fila { get; set; }
+        public string Columna { get; set; }
+        public string Usuario { get; set; }
+        public DateTime Fecha { get; set; }
+        public int? Traspaso { get; set; }
+    }
+
     /// <summary>NestoAPI#790: una fila de Ubicaciones (estado ≥ 0) del almacén.</summary>
     public class UbicacionAlmacenInventario
     {
@@ -69,6 +84,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         Task<List<FilaInventarioPendiente>> LeerPendientes(string empresa, string almacen);
         /// <summary>Las filas de Ubicaciones del almacén con estado ≥ 0 (solo se pide en almacenes con control de ubicaciones).</summary>
         Task<List<UbicacionAlmacenInventario>> LeerUbicaciones(string almacen);
+        /// <summary>NestoAPI#784: las filas contabilizadas (Estado 2, con NºTraspaso) del almacén ese día (solo se pide en las tiendas).</summary>
+        Task<List<FilaInventarioContabilizada>> LeerContabilizadas(string empresa, string almacen, DateTime fecha);
         /// <summary>
         /// EXEC prdContabilizarInventario @Empresa, @Usuario, @Delegación = 'VAR', @FormaVenta = 'VAR', @AlmacenAContabilizar = <paramref name="almacen"/>. ÚNICO call
         /// site del SP. Devuelve su return (1 bien); si el SP hace RAISERROR, lanza la SqlException.
@@ -116,6 +133,12 @@ SELECT RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS C
 FROM dbo.Ubicaciones u
 LEFT JOIN dbo.Productos p ON p.Empresa = u.Empresa AND p.Número = u.Número
 WHERE u.Almacén = @p0 AND u.Estado >= 0 AND u.Pasillo IS NOT NULL";
+
+        internal const string SQL_CONTABILIZADAS = @"
+SELECT i.NºOrden AS NumeroOrden, RTRIM(i.Número) AS Producto, i.StockCalculado, i.StockReal, RTRIM(i.Pasillo) AS Pasillo,
+    RTRIM(i.Fila) AS Fila, RTRIM(i.Columna) AS Columna, RTRIM(i.Usuario) AS Usuario, i.Fecha, i.NºTraspaso AS Traspaso
+FROM dbo.Inventarios i
+WHERE i.Empresa = @p0 AND i.Almacén = @p1 AND i.Estado = 2 AND i.NºTraspaso IS NOT NULL AND i.Fecha >= @p2 AND i.Fecha < @p3";
 
         /// <summary>
         /// Carlos 03/11/26: la delegación del extracto NO es el almacén («no se puede convertir una delegación en almacén»); el
@@ -165,6 +188,14 @@ WHERE i.Empresa = @p0 AND i.Almacén = @p1 AND ISNULL(i.StockReal, 0) <> ISNULL(
         {
             db.Database.CommandTimeout = SEGUNDOS_CONSULTA;
             return await db.Database.SqlQuery<UbicacionAlmacenInventario>(SQL_UBICACIONES, almacen).ToListAsync().ConfigureAwait(false);
+        }
+
+        public async Task<List<FilaInventarioContabilizada>> LeerContabilizadas(string empresa, string almacen, DateTime fecha)
+        {
+            db.Database.CommandTimeout = SEGUNDOS_CONSULTA;
+            DateTime desde = fecha.Date;
+            return await db.Database.SqlQuery<FilaInventarioContabilizada>(SQL_CONTABILIZADAS, empresa, almacen, desde, desde.AddDays(1))
+                .ToListAsync().ConfigureAwait(false);
         }
 
         public async Task<int> Contabilizar(string empresa, string usuario, string almacen)

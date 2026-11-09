@@ -128,7 +128,7 @@ namespace NestoAPI.Tests.Controllers
                 Almacen = "ALG",
                 Bloqueantes = new List<ComprobacionInventarioDTO> { new ComprobacionInventarioDTO { Codigo = CodigosComprobacionInventario.OTRA_FECHA } }
             };
-            A.CallTo(() => servicio.Contabilizar("1", "ALG", DIA)).Returns(new ResultadoContabilizarInventario { Bloqueado = bloqueado });
+            A.CallTo(() => servicio.Contabilizar("1", "ALG", DIA, false)).Returns(new ResultadoContabilizarInventario { Bloqueado = bloqueado });
 
             IHttpActionResult r = await controller.PostContabilizar(Peticion("ALG"));
 
@@ -141,7 +141,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task Contabilizar_TiendaSuAlmacen_Ok()
         {
             controller.User = Usuario("Paloma", "Tiendas");
-            A.CallTo(() => servicio.Contabilizar("1", "REI", DIA)).Returns(new ResultadoContabilizarInventario
+            A.CallTo(() => servicio.Contabilizar("1", "REI", DIA, false)).Returns(new ResultadoContabilizarInventario
             {
                 Contabilizacion = new ContabilizacionInventarioDTO
                 {
@@ -160,7 +160,7 @@ namespace NestoAPI.Tests.Controllers
         {
             // Carlos (04/11/26): el inventario de Algete lo contabilizan Santiago, Andre o Alfredo desde Nesto.
             controller.User = Usuario("Andre", "Almacén");
-            A.CallTo(() => servicio.Contabilizar("1", "ALG", DIA)).Returns(new ResultadoContabilizarInventario
+            A.CallTo(() => servicio.Contabilizar("1", "ALG", DIA, false)).Returns(new ResultadoContabilizarInventario
             {
                 Contabilizacion = new ContabilizacionInventarioDTO
                 {
@@ -180,7 +180,7 @@ namespace NestoAPI.Tests.Controllers
             controller.User = Usuario("Andre", "Almacén");
 
             Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await controller.PostContabilizar(Peticion("REI"))));
-            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._, A<bool>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -189,7 +189,7 @@ namespace NestoAPI.Tests.Controllers
             controller.User = Usuario("Paloma", "Tiendas");
 
             Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await controller.PostContabilizar(Peticion("ALC"))));
-            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._, A<bool>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -199,13 +199,13 @@ namespace NestoAPI.Tests.Controllers
             controller.User = Usuario("Sancho", "Compras");
             Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await controller.PostContabilizar(Peticion("ALG"))));
 
-            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._, A<bool>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
         public async Task Contabilizar_AdministracionEInformatica_CualquierAlmacen()
         {
-            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._)).Returns(new ResultadoContabilizarInventario
+            A.CallTo(() => servicio.Contabilizar(A<string>._, A<string>._, A<DateTime>._, A<bool>._)).Returns(new ResultadoContabilizarInventario
             {
                 Contabilizacion = new ContabilizacionInventarioDTO
                 {
@@ -220,10 +220,29 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Contabilizar_ConfirmarContadoCero_SeLePasaAlServicio_784()
+        {
+            controller.User = Usuario("Paloma", "Tiendas");
+            A.CallTo(() => servicio.Contabilizar("1", "REI", DIA, true)).Returns(new ResultadoContabilizarInventario
+            {
+                Contabilizacion = new ContabilizacionInventarioDTO
+                {
+                    Contabilizados = new List<UsuarioContabilizadoInventarioDTO> { new UsuarioContabilizadoInventarioDTO { Usuario = "NUEVAVISION\\Paloma", Filas = 1, Traspaso = 81351 } }
+                }
+            });
+            ContabilizarInventarioParametrosDTO peticion = Peticion("REI");
+            peticion.ConfirmarContadoCero = true;
+
+            var ok = (OkNegotiatedContentResult<ContabilizacionInventarioDTO>)await controller.PostContabilizar(peticion);
+
+            Assert.AreEqual(81351, ok.Content.Contabilizados.Single().Traspaso);
+        }
+
+        [TestMethod]
         public async Task Contabilizar_NadaPendiente_400()
         {
             controller.User = Usuario("Carlos", "Dirección");
-            A.CallTo(() => servicio.Contabilizar("1", "REI", DIA)).Returns(new ResultadoContabilizarInventario { Contabilizacion = new ContabilizacionInventarioDTO() });
+            A.CallTo(() => servicio.Contabilizar("1", "REI", DIA, false)).Returns(new ResultadoContabilizarInventario { Contabilizacion = new ContabilizacionInventarioDTO() });
 
             Assert.AreEqual(HttpStatusCode.BadRequest, Estado(await controller.PostContabilizar(Peticion("REI"))));
         }

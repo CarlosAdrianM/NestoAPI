@@ -37,13 +37,18 @@ WHERE i.Empresa = @Empresa AND i.Almacén = @Almacen AND i.Fecha >= @Desde AND i
     AND i.Pasillo IS NOT NULL
 GROUP BY RTRIM(i.Pasillo), RTRIM(i.Fila), RTRIM(i.Columna)";
 
-        internal const string SQL_CONTADO = @"
+        internal const string SQL_CONTADO_DEL_DIA = @"
 SELECT i.NºOrden, RTRIM(i.Número), RTRIM(ISNULL(p.Nombre, i.Descripción)), RTRIM(ISNULL(i.Familia, p.Familia)),
     RTRIM(i.Pasillo), RTRIM(i.Fila), RTRIM(i.Columna), ISNULL(i.StockCalculado, 0), ISNULL(i.StockReal, 0), RTRIM(i.Usuario),
-    i.Fecha, i.[Fecha Modificación], i.PorCodigoBarras
+    i.Fecha, i.[Fecha Modificación], i.PorCodigoBarras, i.NºTraspaso
 FROM dbo.Inventarios i
 LEFT JOIN dbo.Productos p ON p.Empresa = i.Empresa AND p.Número = i.Número
-WHERE i.Empresa = @Empresa AND i.Almacén = @Almacen AND i.Fecha >= @Desde AND i.Fecha < @Hasta AND i.Estado = 1 AND i.NºTraspaso IS NULL";
+WHERE i.Empresa = @Empresa AND i.Almacén = @Almacen AND i.Fecha >= @Desde AND i.Fecha < @Hasta AND ";
+
+        internal const string SQL_CONTADO = SQL_CONTADO_DEL_DIA + "i.Estado = 1 AND i.NºTraspaso IS NULL";
+
+        /// <summary>NestoAPI#784: las filas ya contabilizadas ese día (lo que «Contar otra vez» volvería a abrir).</summary>
+        internal const string SQL_CONTABILIZADO = SQL_CONTADO_DEL_DIA + "i.Estado = 2 AND i.NºTraspaso IS NOT NULL";
 
         // El teórico de la ubicación: lo que dice Ubicaciones (estado ≥ 0, como el SP de contabilizar), sumado por producto.
         internal const string SQL_TEORICO_UBICACION = @"
@@ -162,9 +167,11 @@ WHERE p.Empresa = @Empresa AND ";
             }
         }
 
-        internal static SqlCommand ComandoContado(SqlConnection conexion, SqlTransaction transaccion, string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro)
+        /// <param name="contabilizadas">NestoAPI#784: las contabilizadas (Estado 2, con traspaso) en vez de las pendientes.</param>
+        internal static SqlCommand ComandoContado(SqlConnection conexion, SqlTransaction transaccion, string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro,
+            bool contabilizadas = false)
         {
-            var sql = new StringBuilder(SQL_CONTADO);
+            var sql = new StringBuilder(contabilizadas ? SQL_CONTABILIZADO : SQL_CONTADO);
             var comando = new SqlCommand { Connection = conexion, Transaction = transaccion, CommandTimeout = SEGUNDOS_CONSULTA };
             ParametrosDia(comando, empresa, almacen, fecha);
             filtro = filtro ?? new FiltroInventarioContado();
@@ -236,7 +243,8 @@ WHERE p.Empresa = @Empresa AND ";
                         Usuario = Texto(lector, 9),
                         Fecha = lector.GetDateTime(10),
                         FechaModificacion = lector.GetDateTime(11),
-                        PorCodigoBarras = lector.IsDBNull(12) ? (bool?)null : lector.GetBoolean(12)
+                        PorCodigoBarras = lector.IsDBNull(12) ? (bool?)null : lector.GetBoolean(12),
+                        Traspaso = lector.IsDBNull(13) ? (int?)null : lector.GetInt32(13)
                     });
                 }
             }
@@ -299,6 +307,14 @@ IF @r < 0 THROW 50001, 'Otro usuario está rellenando este inventario ahora mism
             public async Task<List<LineaInventarioContadaDTO>> Pendientes(string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro)
             {
                 using (SqlCommand comando = ComandoContado(conexion, transaccion, empresa, almacen, fecha, filtro))
+                {
+                    return await LeerLineas(comando).ConfigureAwait(false);
+                }
+            }
+
+            public async Task<List<LineaInventarioContadaDTO>> Contabilizadas(string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro)
+            {
+                using (SqlCommand comando = ComandoContado(conexion, transaccion, empresa, almacen, fecha, filtro, contabilizadas: true))
                 {
                     return await LeerLineas(comando).ConfigureAwait(false);
                 }

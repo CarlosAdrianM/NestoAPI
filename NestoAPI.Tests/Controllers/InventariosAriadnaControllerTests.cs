@@ -176,6 +176,40 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task RellenarUbicacion_YaRellenada_409ConCodigoYaRellenadoYSinContarOtraVez_784()
+        {
+            A.CallTo(() => servicio.RellenarUbicacion(A<RellenarUbicacionInventarioDTO>._, A<string>._))
+                .Returns(new ResultadoInventarioUbicaciones<RellenarInventarioFilasRespuestaDTO> { Estado = EstadoInventarioUbicaciones.YaRellenado, Mensaje = "ya" });
+
+            var resultado = (NegotiatedContentResult<YaRellenadoInventarioDTO>)await controller.PostRellenarUbicacion(
+                new RellenarUbicacionInventarioDTO { Almacen = "ALG", Pasillo = "003", Fila = "001", Columna = "002" });
+
+            Assert.AreEqual(CodigosConflictoInventario.YA_RELLENADO, resultado.Content.Codigo);
+            Assert.IsFalse(resultado.Content.PuedeContarOtraVez);
+        }
+
+        [TestMethod]
+        public async Task RellenarParcial_YaContabilizado_409ConCodigoYContarOtraVez_784()
+        {
+            controller.User = Usuario("Paloma", "Tiendas");
+            A.CallTo(() => servicio.RellenarParcial(A<RellenarParcialInventarioDTO>._, A<string>._, A<string>._))
+                .Returns(new ResultadoInventarioUbicaciones<RellenarInventarioFilasRespuestaDTO>
+                {
+                    Estado = EstadoInventarioUbicaciones.YaContabilizado,
+                    Mensaje = "ya se contó y contabilizó",
+                    Lineas = new List<LineaInventarioContadaDTO> { new LineaInventarioContadaDTO { NumeroOrden = 948780, Traspaso = 81350 } }
+                });
+
+            var resultado = (NegotiatedContentResult<YaRellenadoInventarioDTO>)await controller.PostRellenarParcial(
+                new RellenarParcialInventarioDTO { Almacen = "REI", Familia = "Lisap" });
+
+            Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
+            Assert.AreEqual(CodigosConflictoInventario.YA_CONTABILIZADO, resultado.Content.Codigo);
+            Assert.IsTrue(resultado.Content.PuedeContarOtraVez);
+            Assert.AreEqual(81350, resultado.Content.Lineas.Single().Traspaso);
+        }
+
+        [TestMethod]
         public async Task RellenarUbicacion_SinRol_403()
         {
             controller.User = Usuario("Pepe", "Comerciales");

@@ -95,7 +95,7 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, new HttpError(motivo));
             }
 
-            ResultadoContabilizarInventario resultado = await ServicioContabilizar.Contabilizar(empresa, almacen, fecha).ConfigureAwait(false);
+            ResultadoContabilizarInventario resultado = await ServicioContabilizar.Contabilizar(empresa, almacen, fecha, parametros.ConfirmarContadoCero).ConfigureAwait(false);
             if (resultado == null)
             {
                 return Content(HttpStatusCode.NotFound, new HttpError(AlmacenNoExiste(empresa, almacen)));

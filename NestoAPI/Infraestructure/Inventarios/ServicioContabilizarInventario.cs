@@ -20,7 +20,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// <summary>null si el almacén no existe en la empresa.</summary>
         Task<ComprobacionesInventarioDTO> Comprobar(string empresa, string almacen, DateTime fecha);
         /// <summary>null si el almacén no existe en la empresa.</summary>
-        Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha);
+        /// <param name="confirmarContadoCero">NestoAPI#784: deja pasar los bloqueantes que se confirman (RecontadaSinContar).</param>
+        Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero);
         /// <param name="valoracion"><see cref="PermisosInventario.VALORACION_PVP"/> o <see cref="PermisosInventario.VALORACION_COSTE"/>.</param>
         Task<DiferenciasInventarioDTO> Diferencias(string empresa, string almacen, DateTime? fecha, IList<int> traspasos, string valoracion);
     }
@@ -51,17 +52,22 @@ namespace NestoAPI.Infraestructure.Inventarios
             List<UbicacionAlmacenInventario> ubicaciones = controlUbicaciones.Value
                 ? await repositorio.LeerUbicaciones(almacen).ConfigureAwait(false)
                 : new List<UbicacionAlmacenInventario>();
-            return ComprobadorInventario.Comprobar(almacen, fecha, controlUbicaciones.Value, pendientes, ubicaciones);
+            // NestoAPI#784: lo ya contabilizado ese día solo cuenta en las tiendas (RecontadaSinContar); Algete se queda como estaba.
+            List<FilaInventarioContabilizada> contabilizadas = controlUbicaciones.Value
+                ? new List<FilaInventarioContabilizada>()
+                : await repositorio.LeerContabilizadas(empresa, almacen, fecha.Date).ConfigureAwait(false);
+            return ComprobadorInventario.Comprobar(almacen, fecha, controlUbicaciones.Value, pendientes, ubicaciones, contabilizadas);
         }
 
-        public async Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha)
+        public async Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero = false)
         {
             ComprobacionesInventarioDTO comprobaciones = await Comprobar(empresa, almacen, fecha).ConfigureAwait(false);
             if (comprobaciones == null)
             {
                 return null;
             }
-            if (comprobaciones.Bloqueantes.Any())
+            // NestoAPI#784: confirmando, se dejan pasar solo los bloqueantes que se confirman (RecontadaSinContar).
+            if (comprobaciones.Bloqueantes.Any(b => !(confirmarContadoCero && b.SeConfirma)))
             {
                 return new ResultadoContabilizarInventario { Bloqueado = comprobaciones };
             }

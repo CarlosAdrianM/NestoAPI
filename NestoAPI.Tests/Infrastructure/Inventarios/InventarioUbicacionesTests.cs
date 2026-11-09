@@ -255,6 +255,82 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
             A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
         }
 
+        // ---------- NestoAPI#784 (09/11/26): el 42341 de Paloma en ALC, contado, contabilizado y vuelto a abrir ----------
+
+        private void ContabilizadasHoy(params LineaInventarioContadaDTO[] lineas) =>
+            A.CallTo(() => unidad.Contabilizadas(A<string>._, A<string>._, A<DateTime>._, A<FiltroInventarioContado>._)).Returns(lineas.ToList());
+
+        [TestMethod]
+        public async Task RellenarParcial_ReferenciaYaContabilizadaHoy_YaContabilizadoConElMensajeYNoInserta_784()
+        {
+            A.CallTo(() => repositorio.LeerAlmacen("1", "ALC")).Returns(new AlmacenInventario { Nombre = "Alcobendas", ControlUbicaciones = false });
+            ContabilizadasHoy(new LineaInventarioContadaDTO { NumeroOrden = 948780, Producto = "42341", StockCalculado = 0, StockReal = 2, Traspaso = 81350,
+                Usuario = @"NUEVAVISION\Paloma", FechaModificacion = DateTime.Today.AddHours(10).AddMinutes(50) });
+            A.CallTo(() => unidad.Stocks("1", "ALC", null, "42341")).Returns(new List<StockProductoInventario> { Stock("42341", 2) });
+
+            var resultado = await servicio.RellenarParcial(new RellenarParcialInventarioDTO { Almacen = "ALC" }, "42341", USUARIO);
+
+            Assert.AreEqual(EstadoInventarioUbicaciones.YaContabilizado, resultado.Estado);
+            Assert.AreEqual("El 42341 ya se contó y contabilizó hoy en ALC (contado 2, traspaso 81350). Si de verdad hay que volver a contarlo, pulse «Contar otra vez».",
+                resultado.Mensaje);
+            Assert.AreEqual(81350, resultado.Lineas.Single().Traspaso);
+            A.CallTo(() => unidad.Contabilizadas("1", "ALC", DateTime.Today, A<FiltroInventarioContado>.That.Matches(f => f.Producto == "42341" && f.Familia == null)))
+                .MustHaveHappened();
+            A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
+            A.CallTo(() => unidad.Confirmar()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RellenarParcial_ReferenciaYaContabilizada_ConOtraVez_InsertaConElStockDeAhora_784()
+        {
+            ContabilizadasHoy(new LineaInventarioContadaDTO { NumeroOrden = 948780, Producto = "40245", StockReal = 2, Traspaso = 81350 });
+            A.CallTo(() => unidad.Stocks("1", "REI", null, "40245")).Returns(new List<StockProductoInventario> { Stock("40245", 2) });
+
+            var resultado = await servicio.RellenarParcial(new RellenarParcialInventarioDTO { Almacen = "REI", Fecha = DIA, OtraVez = true }, "40245", USUARIO);
+
+            Assert.AreEqual(EstadoInventarioUbicaciones.Ok, resultado.Estado);
+            Assert.AreEqual(2, insertadas.Single().StockCalculado);
+            Assert.AreEqual(0, insertadas.Single().StockReal);
+        }
+
+        [TestMethod]
+        public async Task RellenarParcial_ConOtraVez_SiHayPendientes_SigueSiendoYaRellenado_784()
+        {
+            pendientes.Add(new LineaInventarioContadaDTO { NumeroOrden = 1, Producto = "40245" });
+
+            var resultado = await servicio.RellenarParcial(new RellenarParcialInventarioDTO { Almacen = "REI", Fecha = DIA, OtraVez = true }, "40245", USUARIO);
+
+            Assert.AreEqual(EstadoInventarioUbicaciones.YaRellenado, resultado.Estado);
+            A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RellenarParcial_FamiliaConAlgunaContabilizadaEseDia_YaContabilizado_784()
+        {
+            ContabilizadasHoy(
+                new LineaInventarioContadaDTO { NumeroOrden = 5, Producto = "29608", StockReal = 3, Traspaso = 81350 },
+                new LineaInventarioContadaDTO { NumeroOrden = 6, Producto = "29613", StockReal = 1, Traspaso = 81351 });
+
+            var resultado = await servicio.RellenarParcial(new RellenarParcialInventarioDTO { Almacen = "REI", Fecha = DIA, Familia = "Lisap" }, null, USUARIO);
+
+            Assert.AreEqual(EstadoInventarioUbicaciones.YaContabilizado, resultado.Estado);
+            Assert.AreEqual("La familia Lisap ya se contó y contabilizó el 21/11/2026 en REI (2 filas, traspasos 81350 y 81351). Si de verdad hay que volver a contarla, pulse «Contar otra vez».",
+                resultado.Mensaje);
+            A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RellenarUbicacion_Algete_NoMiraLasContabilizadas_784()
+        {
+            ContabilizadasHoy(new LineaInventarioContadaDTO { NumeroOrden = 5, Producto = "40245", StockReal = 3, Traspaso = 81350 });
+            A.CallTo(() => unidad.TeoricoUbicacion("1", "ALG", "003", "001", "002")).Returns(new List<StockProductoInventario> { Stock("40245", 5) });
+
+            var resultado = await servicio.RellenarUbicacion(Ubicacion(), USUARIO);
+
+            Assert.AreEqual(EstadoInventarioUbicaciones.Ok, resultado.Estado);
+            A.CallTo(() => unidad.Contabilizadas(A<string>._, A<string>._, A<DateTime>._, A<FiltroInventarioContado>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task RellenarParcial_FamiliaYReferenciaONinguna_PeticionIncorrecta()
         {
@@ -330,6 +406,18 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
                 Assert.IsFalse(comando.CommandText.Contains("@Familia"));
                 StringAssert.Contains(comando.CommandText, "i.Estado = 1 AND i.NºTraspaso IS NULL");
                 Assert.AreEqual(DIA.AddDays(1), comando.Parameters["@Hasta"].Value);
+            }
+        }
+
+        [TestMethod]
+        public void RepositorioSql_ComandoContado_Contabilizadas_Estado2ConTraspaso_784()
+        {
+            using (var comando = RepositorioInventarioUbicacionesSql.ComandoContado(null, null, "1", "ALC", DIA,
+                new FiltroInventarioContado { Producto = "42341" }, contabilizadas: true))
+            {
+                StringAssert.Contains(comando.CommandText, "i.Estado = 2 AND i.NºTraspaso IS NOT NULL");
+                Assert.IsFalse(comando.CommandText.Contains("i.Estado = 1"));
+                StringAssert.Contains(comando.CommandText, "AND i.Número = @Producto");
             }
         }
     }

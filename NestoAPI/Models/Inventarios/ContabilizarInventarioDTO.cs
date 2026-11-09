@@ -22,9 +22,15 @@ namespace NestoAPI.Models.Inventarios
     public class ComprobacionInventarioDTO
     {
         /// <summary>OtraFecha, CantidadDisparatada, Ficticio, UbicacionMalFormada, SinUbicacion, UbicacionInexistente, AnuladoConStock,
-        /// SinPrecioMedio, CalculadoNegativo, UbicacionSinRellenar, GruposMezclados (<see cref="Infraestructure.Inventarios.CodigosComprobacionInventario"/>).</summary>
+        /// SinPrecioMedio, CalculadoNegativo, UbicacionSinRellenar, GruposMezclados; NestoAPI#784: FilasDuplicadas y RecontadaSinContar
+        /// (bloqueantes) y ContadoCeroConStock (aviso) (<see cref="Infraestructure.Inventarios.CodigosComprobacionInventario"/>).</summary>
         public string Codigo { get; set; }
         public string Titulo { get; set; }
+        /// <summary>
+        /// NestoAPI#784: un bloqueante que el usuario puede confirmar (hoy solo RecontadaSinContar): POST Contabilizar con
+        /// ConfirmarContadoCero = true lo deja pasar. Los demás bloqueantes no se saltan nunca.
+        /// </summary>
+        public bool SeConfirma { get; set; }
         public List<FilaComprobacionInventarioDTO> Filas { get; set; } = new List<FilaComprobacionInventarioDTO>();
     }
 
@@ -55,6 +61,11 @@ namespace NestoAPI.Models.Inventarios
         public string Empresa { get; set; }
         public string Almacen { get; set; }
         public DateTime Fecha { get; set; }
+        /// <summary>
+        /// NestoAPI#784: el usuario confirma que las filas de RecontadaSinContar (productos ya contabilizados ese día que se han vuelto
+        /// a abrir y siguen con contado 0) de verdad tienen 0. Sin él, ese bloqueante da 409 como los demás.
+        /// </summary>
+        public bool ConfirmarContadoCero { get; set; }
     }
 
     /// <summary>NestoAPI#790: lo contabilizado (un traspaso por usuario) y los usuarios en los que el procedimiento ha fallado.</summary>

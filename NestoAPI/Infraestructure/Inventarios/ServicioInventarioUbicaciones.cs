@@ -17,7 +17,9 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// <summary>El almacén no se inventaría así (con o sin ubicaciones): 400.</summary>
         AlmacenNoAdmite,
         /// <summary>Ya hay filas pendientes de eso ese día (409 con las Lineas).</summary>
-        YaRellenado
+        YaRellenado,
+        /// <summary>NestoAPI#784: eso ya se contó y contabilizó ese día y no se ha pedido OtraVez (409 con las contabilizadas en Lineas).</summary>
+        YaContabilizado
     }
 
     public class ResultadoInventarioUbicaciones<T>
@@ -90,6 +92,8 @@ namespace NestoAPI.Infraestructure.Inventarios
     public interface IUnidadInventarioUbicaciones : IDisposable
     {
         Task<List<LineaInventarioContadaDTO>> Pendientes(string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro);
+        /// <summary>NestoAPI#784: las filas contabilizadas (Estado 2, con NºTraspaso) del almacén ese día que cumplen el filtro, con su Traspaso.</summary>
+        Task<List<LineaInventarioContadaDTO>> Contabilizadas(string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro);
         /// <summary>El teórico de la ubicación: Ubicaciones (estado ≥ 0) de ese almacén y ubicación, sumado por producto.</summary>
         Task<List<StockProductoInventario>> TeoricoUbicacion(string empresa, string almacen, string pasillo, string fila, string columna);
         /// <summary>El stock en el almacén (ExtractoProducto de las empresas 1 y 3) de los productos de la familia o de la referencia.</summary>
@@ -259,6 +263,23 @@ namespace NestoAPI.Infraestructure.Inventarios
                         pendientes);
                 }
 
+                // NestoAPI#784 (09/11/26, el 42341 de Paloma en ALC): lo contado y contabilizado ese día no se vuelve a abrir sin querer,
+                // porque la fila nueva lleva como teórico el stock de ahora (lo contado) y, si no se cuenta, contabilizarla lo deja a cero.
+                if (!peticion.OtraVez)
+                {
+                    List<LineaInventarioContadaDTO> contabilizadas = await unidad.Contabilizadas(empresa, almacen, fecha, filtro).ConfigureAwait(false)
+                        ?? new List<LineaInventarioContadaDTO>();
+                    if (contabilizadas.Count > 0)
+                    {
+                        return new ResultadoInventarioUbicaciones<RellenarInventarioFilasRespuestaDTO>
+                        {
+                            Estado = EstadoInventarioUbicaciones.YaContabilizado,
+                            Mensaje = MensajeYaContabilizado(familia, producto, almacen, fecha, contabilizadas),
+                            Lineas = contabilizadas
+                        };
+                    }
+                }
+
                 List<StockProductoInventario> stocks = await unidad.Stocks(empresa, almacen, familia, producto).ConfigureAwait(false)
                     ?? new List<StockProductoInventario>();
                 List<Inventario> filas;
@@ -335,6 +356,40 @@ namespace NestoAPI.Infraestructure.Inventarios
                     .ToList();
             }
             return Ok(contado);
+        }
+
+        /// <summary>NestoAPI#784: «El 42341 ya se contó y contabilizó hoy en ALC (contado 2, traspaso 81350). Si de verdad...».</summary>
+        internal static string MensajeYaContabilizado(string familia, string producto, string almacen, DateTime fecha, List<LineaInventarioContadaDTO> contabilizadas)
+        {
+            string cuando = Cuando(fecha);
+            if (familia == null)
+            {
+                LineaInventarioContadaDTO ultima = contabilizadas.OrderBy(l => l.Traspaso ?? 0).ThenBy(l => l.NumeroOrden).Last();
+                string veces = contabilizadas.Count == 1 ? string.Empty : $"{contabilizadas.Count} veces; la última, ";
+                return $"El {producto} ya se contó y contabilizó {cuando} en {almacen} ({veces}contado {ultima.StockReal}, traspaso {ultima.Traspaso}). " +
+                    "Si de verdad hay que volver a contarlo, pulse «Contar otra vez».";
+            }
+            return $"La familia {familia} ya se contó y contabilizó {cuando} en {almacen} ({Filas(contabilizadas.Count)}, " +
+                $"{Traspasos(contabilizadas.Select(l => l.Traspaso))}). Si de verdad hay que volver a contarla, pulse «Contar otra vez».";
+        }
+
+        /// <summary>«hoy» o «el 21/11/2026».</summary>
+        internal static string Cuando(DateTime fecha) => fecha.Date == DateTime.Today ? "hoy" : $"el {Dia(fecha)}";
+
+        /// <summary>«traspaso 81350», «traspasos 81350 y 81351», «traspasos 1, 2 y 3».</summary>
+        internal static string Traspasos(IEnumerable<int?> traspasos)
+        {
+            List<string> distintos = traspasos.Where(t => t.HasValue).Select(t => t.Value).Distinct().OrderBy(t => t)
+                .Select(t => t.ToString(CultureInfo.InvariantCulture)).ToList();
+            if (distintos.Count == 0)
+            {
+                return "sin traspaso";
+            }
+            if (distintos.Count == 1)
+            {
+                return "traspaso " + distintos[0];
+            }
+            return "traspasos " + string.Join(", ", distintos.Take(distintos.Count - 1)) + " y " + distintos.Last();
         }
 
         internal static List<ResumenUbicacionContadaDTO> ResumenPorUbicacion(IEnumerable<LineaInventarioContadaDTO> lineas)

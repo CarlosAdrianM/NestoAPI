@@ -45,6 +45,8 @@ namespace NestoAPI.Controllers
         /// stock distinto de cero en el almacén (suma de ExtractoProducto de las empresas 1 y 3), StockReal 0, Estado 1,
         /// Aplicacion «NestoAPI» y Usuario el del token (el mismo que luego cuenta y contabiliza). 400 si el almacén tiene
         /// control de ubicaciones (Algete); 409 con Message y Pendientes si ya hay filas pendientes ese día; 403 sin rol.
+        /// NestoAPI#784: el 409 lleva Codigo («YaRellenado» o «YaContabilizado») y PuedeContarOtraVez; «YaContabilizado» (con
+        /// Contabilizadas por usuario y traspaso) si ese día ya hay filas contabilizadas en el almacén: se repite con OtraVez = true.
         /// </summary>
         [HttpPost]
         [Authorize]
@@ -64,7 +66,21 @@ namespace NestoAPI.Controllers
                 case EstadoRellenarInventario.Ok:
                     return Ok(resultado.Respuesta);
                 case EstadoRellenarInventario.YaRellenado:
-                    return Content(HttpStatusCode.Conflict, new { Message = resultado.Mensaje, resultado.Pendientes });
+                    return Content(HttpStatusCode.Conflict, new YaRellenadoTiendaInventarioDTO
+                    {
+                        Message = resultado.Mensaje,
+                        Codigo = CodigosConflictoInventario.YA_RELLENADO,
+                        Pendientes = resultado.Pendientes ?? new System.Collections.Generic.List<PendientesInventarioUsuario>()
+                    });
+                case EstadoRellenarInventario.YaContabilizado:
+                    // NestoAPI#784: se puede repetir con OtraVez = true («Contar otra vez»).
+                    return Content(HttpStatusCode.Conflict, new YaRellenadoTiendaInventarioDTO
+                    {
+                        Message = resultado.Mensaje,
+                        Codigo = CodigosConflictoInventario.YA_CONTABILIZADO,
+                        PuedeContarOtraVez = true,
+                        Contabilizadas = resultado.Contabilizadas ?? new System.Collections.Generic.List<ContabilizadasInventarioUsuario>()
+                    });
                 default:
                     return BadRequest(resultado.Mensaje);
             }

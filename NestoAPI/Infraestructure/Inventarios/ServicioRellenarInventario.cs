@@ -17,6 +17,46 @@ namespace NestoAPI.Infraestructure.Inventarios
         public string Almacen { get; set; }
         /// <summary>El día del inventario (se ignora la hora). Sin fecha, hoy.</summary>
         public DateTime? Fecha { get; set; }
+        /// <summary>
+        /// NestoAPI#784 (09/11/26): «Contar otra vez». Sin él, si ese día ya hay filas contabilizadas en el almacén, 409
+        /// <c>YaContabilizado</c>. Con filas pendientes sigue siendo 409 <c>YaRellenado</c>.
+        /// </summary>
+        public bool OtraVez { get; set; }
+    }
+
+    /// <summary>NestoAPI#784: los códigos del 409 de rellenar y de GET/POST api/Inventarios (el campo Codigo del cuerpo).</summary>
+    public static class CodigosConflictoInventario
+    {
+        /// <summary>Ya hay filas pendientes (Estado 1) de eso ese día: no se puede rellenar otra vez (ni con OtraVez).</summary>
+        public const string YA_RELLENADO = "YaRellenado";
+        /// <summary>Eso ya se contó y contabilizó ese día: se puede repetir con OtraVez = true («Contar otra vez»).</summary>
+        public const string YA_CONTABILIZADO = "YaContabilizado";
+        /// <summary>GET api/Inventarios: el producto tiene más de una fila pendiente ese día (Lineas): hay que dejar una.</summary>
+        public const string FILAS_DUPLICADAS = "FilasDuplicadas";
+        /// <summary>GET api/Inventarios sin ubicación: el producto tiene filas pendientes en varias ubicaciones (Algete): hay que decir cuál.</summary>
+        public const string VARIAS_UBICACIONES = "VariasUbicaciones";
+        /// <summary>POST api/Inventarios: el producto ya tiene fila pendiente ese día (Lineas): se suma a esa (PUT), no se crea otra.</summary>
+        public const string YA_TIENE_FILA = "YaTieneFila";
+    }
+
+    /// <summary>NestoAPI#784: lo ya contabilizado ese día en el almacén, por usuario y traspaso.</summary>
+    public class ContabilizadasInventarioUsuario
+    {
+        public string Usuario { get; set; }
+        public int Filas { get; set; }
+        public int? Traspaso { get; set; }
+    }
+
+    /// <summary>NestoAPI#784: el cuerpo del 409 de POST api/Inventarios/Rellenar.</summary>
+    public class YaRellenadoTiendaInventarioDTO
+    {
+        public string Message { get; set; }
+        /// <summary>YaRellenado o YaContabilizado (<see cref="CodigosConflictoInventario"/>).</summary>
+        public string Codigo { get; set; }
+        /// <summary>True solo con YaContabilizado: se puede repetir con OtraVez = true.</summary>
+        public bool PuedeContarOtraVez { get; set; }
+        public List<PendientesInventarioUsuario> Pendientes { get; set; } = new List<PendientesInventarioUsuario>();
+        public List<ContabilizadasInventarioUsuario> Contabilizadas { get; set; } = new List<ContabilizadasInventarioUsuario>();
     }
 
     /// <summary>NestoAPI#789: lo que se ha rellenado.</summary>
@@ -60,7 +100,9 @@ namespace NestoAPI.Infraestructure.Inventarios
         Ok,
         PeticionIncorrecta,
         ConUbicaciones,
-        YaRellenado
+        YaRellenado,
+        /// <summary>NestoAPI#784: ese día ya hay filas contabilizadas en el almacén y no se ha pedido OtraVez (409).</summary>
+        YaContabilizado
     }
 
     public class ResultadoRellenarInventario
@@ -70,6 +112,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         public RellenarInventarioRespuestaDTO Respuesta { get; set; }
         /// <summary>Con <see cref="EstadoRellenarInventario.YaRellenado"/>: las filas pendientes por usuario.</summary>
         public List<PendientesInventarioUsuario> Pendientes { get; set; }
+        /// <summary>NestoAPI#784: con <see cref="EstadoRellenarInventario.YaContabilizado"/>, lo contabilizado ese día.</summary>
+        public List<ContabilizadasInventarioUsuario> Contabilizadas { get; set; }
     }
 
     public interface IServicioRellenarInventario
@@ -89,6 +133,8 @@ namespace NestoAPI.Infraestructure.Inventarios
     public interface IUnidadRellenarInventario : IDisposable
     {
         Task<List<PendientesInventarioUsuario>> Pendientes(string empresa, string almacen, DateTime fecha);
+        /// <summary>NestoAPI#784: las filas contabilizadas (Estado 2, con NºTraspaso) del almacén ese día, por usuario y traspaso.</summary>
+        Task<List<ContabilizadasInventarioUsuario>> Contabilizadas(string empresa, string almacen, DateTime fecha);
         Task<List<StockProductoInventario>> Stocks(string empresa, string almacen);
         Task Insertar(IList<Inventario> filas);
         void Confirmar();
@@ -145,6 +191,23 @@ namespace NestoAPI.Infraestructure.Inventarios
                         Mensaje = MensajeYaRellenado(almacen, fecha, pendientes),
                         Pendientes = pendientes
                     };
+                }
+
+                // NestoAPI#784 (09/11/26): lo contado y contabilizado ese día no se vuelve a poner a contar sin querer (la fila nueva
+                // llevaría como teórico lo ya contado y, si nadie la cuenta, contabilizarla lo deja a cero). Con OtraVez, sí.
+                if (!peticion.OtraVez)
+                {
+                    List<ContabilizadasInventarioUsuario> contabilizadas = await unidad.Contabilizadas(empresa, almacen, fecha).ConfigureAwait(false)
+                        ?? new List<ContabilizadasInventarioUsuario>();
+                    if (contabilizadas.Sum(c => c.Filas) > 0)
+                    {
+                        return new ResultadoRellenarInventario
+                        {
+                            Estado = EstadoRellenarInventario.YaContabilizado,
+                            Mensaje = MensajeYaContabilizado(almacen, fecha, contabilizadas),
+                            Contabilizadas = contabilizadas
+                        };
+                    }
                 }
 
                 List<StockProductoInventario> stocks = await unidad.Stocks(empresa, almacen).ConfigureAwait(false);
@@ -209,6 +272,18 @@ namespace NestoAPI.Infraestructure.Inventarios
             string filas = total == 1 ? "1 fila pendiente" : $"{total} filas pendientes";
             return $"El inventario de {almacen} del {fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} ya está rellenado: " +
                 $"hay {filas} de contabilizar ({quienes}).";
+        }
+
+        /// <summary>NestoAPI#784: «Ya hay 1 fila de ALC contada y contabilizada hoy (NUEVAVISION\Paloma: 1, traspaso 81350). Si de verdad...».</summary>
+        internal static string MensajeYaContabilizado(string almacen, DateTime fecha, List<ContabilizadasInventarioUsuario> contabilizadas)
+        {
+            int total = contabilizadas.Sum(c => c.Filas);
+            string filas = total == 1 ? "1 fila de " + almacen + " contada y contabilizada" : $"{total} filas de {almacen} contadas y contabilizadas";
+            string quienes = string.Join(", ", contabilizadas
+                .Where(c => c.Filas > 0)
+                .OrderBy(c => c.Traspaso ?? 0)
+                .Select(c => $"{(string.IsNullOrWhiteSpace(c.Usuario) ? UsuarioAuditoriaHelper.DESCONOCIDO : c.Usuario.Trim())}: {c.Filas}, traspaso {c.Traspaso}"));
+            return $"Ya hay {filas} {ServicioInventarioUbicaciones.Cuando(fecha)} ({quienes}). Si de verdad hay que volver a contar, pulse «Contar otra vez».";
         }
 
         private static ResultadoRellenarInventario Error(EstadoRellenarInventario estado, string mensaje)
@@ -317,6 +392,36 @@ GROUP BY RTRIM(Usuario)";
                             {
                                 Usuario = lector.IsDBNull(0) ? null : lector.GetString(0),
                                 Filas = lector.GetInt32(1)
+                            });
+                        }
+                    }
+                }
+                return resultado;
+            }
+
+            public async Task<List<ContabilizadasInventarioUsuario>> Contabilizadas(string empresa, string almacen, DateTime fecha)
+            {
+                const string sql = @"SELECT RTRIM(Usuario) AS Usuario, COUNT(*) AS Filas, NºTraspaso
+FROM Inventarios
+WHERE Empresa = @Empresa AND Almacén = @Almacen AND Fecha >= @Desde AND Fecha < @Hasta AND Estado = 2 AND NºTraspaso IS NOT NULL
+GROUP BY RTRIM(Usuario), NºTraspaso
+ORDER BY NºTraspaso";
+                var resultado = new List<ContabilizadasInventarioUsuario>();
+                using (var comando = Comando(sql))
+                {
+                    comando.Parameters.Add("@Empresa", SqlDbType.Char, 3).Value = empresa;
+                    comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = almacen;
+                    comando.Parameters.Add("@Desde", SqlDbType.DateTime).Value = fecha.Date;
+                    comando.Parameters.Add("@Hasta", SqlDbType.DateTime).Value = fecha.Date.AddDays(1);
+                    using (var lector = await comando.ExecuteReaderAsync().ConfigureAwait(false))
+                    {
+                        while (await lector.ReadAsync().ConfigureAwait(false))
+                        {
+                            resultado.Add(new ContabilizadasInventarioUsuario
+                            {
+                                Usuario = lector.IsDBNull(0) ? null : lector.GetString(0),
+                                Filas = lector.GetInt32(1),
+                                Traspaso = lector.IsDBNull(2) ? (int?)null : lector.GetInt32(2)
                             });
                         }
                     }

@@ -288,6 +288,88 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
             Assert.IsFalse(Tiene(r.Avisos, CodigosComprobacionInventario.GRUPOS_MEZCLADOS));
         }
 
+        // ---------- NestoAPI#784 (09/11/26): dos filas del mismo producto y el «contado 0» de un evolutivo abierto sin contar ----------
+
+        private static FilaInventarioPendiente Tienda(string producto, int orden, int calculado, int real) =>
+            Fila(f => { f.Producto = producto; f.Pasillo = null; f.Fila = null; f.Columna = null; f.StockCalculado = calculado; f.StockReal = real; }, orden);
+
+        [TestMethod]
+        public void FilasDuplicadas_Tienda_MismoProductoDosFilasEseDia_Bloquea_784()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(false, Tienda("42341", 948780, 0, 2), Tienda("42341", 948790, 2, 0), Tienda("17404", 948791, 3, 3));
+
+            ComprobacionInventarioDTO duplicadas = r.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.FILAS_DUPLICADAS);
+            CollectionAssert.AreEqual(new int?[] { 948780, 948790 }, duplicadas.Filas.Select(f => f.NºOrden).ToArray());
+            Assert.IsFalse(duplicadas.SeConfirma);
+        }
+
+        [TestMethod]
+        public void FilasDuplicadas_Algete_MismaUbicacion_Bloquea_784()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(true, Fila(), Fila(orden: 2));
+
+            Assert.AreEqual(2, r.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.FILAS_DUPLICADAS).Filas.Count);
+        }
+
+        [TestMethod]
+        public void FilasDuplicadas_Algete_MismoProductoEnOtraUbicacion_NoBloquea_784()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(true, new[] { Ubicacion(), Ubicacion(columna: "002") },
+                Fila(), Fila(f => f.Columna = "002", 2));
+
+            Assert.IsFalse(Tiene(r.Bloqueantes, CodigosComprobacionInventario.FILAS_DUPLICADAS));
+        }
+
+        [TestMethod]
+        public void FilasDuplicadas_UnaDeOtroDia_NoEsDuplicada_784()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(false, Fila(), Fila(f => f.Fecha = DIA.AddDays(-1), 2));
+
+            Assert.IsFalse(Tiene(r.Bloqueantes, CodigosComprobacionInventario.FILAS_DUPLICADAS));
+        }
+
+        [TestMethod]
+        public void ContadoCeroConStock_Tienda_Avisa_784()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(false, Tienda("17404", 1, 2, 0), Tienda("29608", 2, 0, 0), Tienda("29613", 3, -1, 0));
+
+            ComprobacionInventarioDTO aviso = r.Avisos.Single(b => b.Codigo == CodigosComprobacionInventario.CONTADO_CERO_CON_STOCK);
+            Assert.AreEqual("17404", aviso.Filas.Single().Producto);
+            Assert.IsFalse(Tiene(r.Bloqueantes, CodigosComprobacionInventario.CONTADO_CERO_CON_STOCK));
+        }
+
+        [TestMethod]
+        public void ContadoCeroConStock_Algete_NoAvisa_784()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(true, Fila(f => { f.StockCalculado = 2; f.StockReal = 0; }));
+
+            Assert.IsFalse(Tiene(r.Avisos, CodigosComprobacionInventario.CONTADO_CERO_CON_STOCK));
+        }
+
+        [TestMethod]
+        public void RecontadaSinContar_Tienda_ProductoYaContabilizadoEseDiaConContadoCero_BloqueaYSeConfirma_784()
+        {
+            var contabilizadas = new[] { new FilaInventarioContabilizada { NumeroOrden = 948780, Producto = "42341", StockReal = 2, Traspaso = 81350, Fecha = DIA } };
+
+            ComprobacionesInventarioDTO r = ComprobadorInventario.Comprobar("ALC", DIA, false,
+                new[] { Tienda("42341", 948790, 2, 0), Tienda("17404", 948791, 2, 0) }, null, contabilizadas);
+
+            ComprobacionInventarioDTO recontada = r.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.RECONTADA_SIN_CONTAR);
+            Assert.AreEqual(948790, recontada.Filas.Single().NºOrden);
+            Assert.IsTrue(recontada.SeConfirma);
+        }
+
+        [TestMethod]
+        public void RecontadaSinContar_SiSeHaContadoAlgo_NoBloquea_784()
+        {
+            var contabilizadas = new[] { new FilaInventarioContabilizada { NumeroOrden = 948780, Producto = "42341", StockReal = 2, Traspaso = 81350, Fecha = DIA } };
+
+            ComprobacionesInventarioDTO r = ComprobadorInventario.Comprobar("ALC", DIA, false,
+                new[] { Tienda("42341", 948790, 2, 1) }, null, contabilizadas);
+
+            Assert.IsFalse(Tiene(r.Bloqueantes, CodigosComprobacionInventario.RECONTADA_SIN_CONTAR));
+        }
+
         [TestMethod]
         public void Recuento_FilasDelDiaPorUsuario()
         {
@@ -376,7 +458,7 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         [TestMethod]
         public async Task Contabilizar_SinBloqueantes_UnaVezPorUsuarioConSuAlmacen()
         {
-            Pendientes(Fila("NUEVAVISION\\Paloma", 1), Fila("NUEVAVISION\\Paloma", 2), Fila("NUEVAVISION\\Laura", 3));
+            Pendientes(Fila("NUEVAVISION\\Paloma", 1), Fila("NUEVAVISION\\Paloma", 2, f => f.Producto = "29608"), Fila("NUEVAVISION\\Laura", 3, f => f.Producto = "29613"));
             A.CallTo(() => repositorio.LeerTraspaso("1", "REI", "NUEVAVISION\\Paloma", DIA)).Returns(Task.FromResult<int?>(80001));
             A.CallTo(() => repositorio.LeerTraspaso("1", "REI", "NUEVAVISION\\Laura", DIA)).Returns(Task.FromResult<int?>(80002));
 
@@ -393,6 +475,57 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
             Assert.AreEqual("REI", r.Contabilizacion.Almacen);
         }
 
+        private void ContabilizadaHoy42341() =>
+            A.CallTo(() => repositorio.LeerContabilizadas("1", "REI", DIA)).Returns(Task.FromResult(new List<FilaInventarioContabilizada>
+            {
+                new FilaInventarioContabilizada { NumeroOrden = 948780, Producto = "42341", StockReal = 2, Traspaso = 81350, Fecha = DIA }
+            }));
+
+        [TestMethod]
+        public async Task Contabilizar_RecontadaSinContar_SinConfirmar_NoLlamaAlProcedimiento_784()
+        {
+            Pendientes(Fila("NUEVAVISION\\Paloma", 948790, f => { f.Producto = "42341"; f.StockCalculado = 2; f.StockReal = 0; }));
+            ContabilizadaHoy42341();
+
+            ResultadoContabilizarInventario r = await servicio.Contabilizar("1", "REI", DIA, false);
+
+            Assert.IsTrue(r.Bloqueado.Bloqueantes.Any(b => b.Codigo == CodigosComprobacionInventario.RECONTADA_SIN_CONTAR));
+            A.CallTo(() => repositorio.Contabilizar(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Contabilizar_RecontadaSinContar_Confirmando_Contabiliza_784()
+        {
+            Pendientes(Fila("NUEVAVISION\\Paloma", 948790, f => { f.Producto = "42341"; f.StockCalculado = 2; f.StockReal = 0; }));
+            ContabilizadaHoy42341();
+
+            ResultadoContabilizarInventario r = await servicio.Contabilizar("1", "REI", DIA, true);
+
+            Assert.IsNull(r.Bloqueado);
+            A.CallTo(() => repositorio.Contabilizar("1", "NUEVAVISION\\Paloma", "REI")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Contabilizar_FilasDuplicadas_NiConfirmando_784()
+        {
+            Pendientes(Fila("NUEVAVISION\\Paloma", 1), Fila("NUEVAVISION\\Paloma", 2));
+
+            ResultadoContabilizarInventario r = await servicio.Contabilizar("1", "REI", DIA, true);
+
+            Assert.IsTrue(r.Bloqueado.Bloqueantes.Any(b => b.Codigo == CodigosComprobacionInventario.FILAS_DUPLICADAS));
+            A.CallTo(() => repositorio.Contabilizar(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Comprobar_ConControlDeUbicaciones_NoLeeLasContabilizadas_784()
+        {
+            A.CallTo(() => repositorio.LeerControlUbicaciones("1", "ALG")).Returns(Task.FromResult<bool?>(true));
+
+            _ = await servicio.Comprobar("1", "ALG", DIA);
+
+            A.CallTo(() => repositorio.LeerContabilizadas(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task Contabilizar_ConSoloAvisos_Contabiliza()
         {
@@ -407,7 +540,7 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         [TestMethod]
         public async Task Contabilizar_UnUsuarioQueFalla_NoParaALosDemas()
         {
-            Pendientes(Fila("NUEVAVISION\\Laura", 1), Fila("NUEVAVISION\\Paloma", 2));
+            Pendientes(Fila("NUEVAVISION\\Laura", 1), Fila("NUEVAVISION\\Paloma", 2, f => f.Producto = "29608"));
             A.CallTo(() => repositorio.Contabilizar("1", "NUEVAVISION\\Laura", "REI"))
                 .Throws(new InvalidOperationException("El usuario NUEVAVISION\\Laura tiene 3 filas pendientes en ALC: contabilice cada almacén por separado"));
             A.CallTo(() => repositorio.LeerTraspaso("1", "REI", "NUEVAVISION\\Paloma", DIA)).Returns(Task.FromResult<int?>(80003));
