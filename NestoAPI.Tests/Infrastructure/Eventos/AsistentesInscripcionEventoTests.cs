@@ -556,6 +556,80 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             StringAssert.Contains(ex.Message, "Issue811_EventosInscripcionesAsistentes.sql");
         }
 
+        // ---------------- NestoAPI#843: importe mínimo por asistente (Carlos 09/11/26) ----------------
+
+        private void ConMinimo(decimal minimo, decimal lleva)
+        {
+            A.CallTo(() => requeridos.ImportesMinimos(A<IReadOnlyCollection<int>>._)).ReturnsLazily((IReadOnlyCollection<int> ids) =>
+                Task.FromResult(ids.Contains(EVENTO_KIT) ? new Dictionary<int, decimal> { [EVENTO_KIT] = minimo } : new Dictionary<int, decimal>()));
+            A.CallTo(() => requeridos.ImporteComprado("1", "41286", A<IReadOnlyCollection<string>>._, A<DateTime>._)).Returns(Task.FromResult(lleva));
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_Inscribir_DosAsistentes_HaceFaltaElDoble()
+        {
+            ConMinimo(400, 600);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Inscribir(EVENTO_KIT,
+                new InscribirEventoDTO { Cliente = "41286", Origen = "Nesto", Asistentes = 2 }, VENDEDOR));
+
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex.Context.ErrorCode);
+            StringAssert.StartsWith(ex.Message, "Para inscribir 2 asistentes tiene que haber comprado al menos 800,00 € de los productos requeridos " +
+                "(400,00 € por asistente); lleva 600,00 €.");
+            Assert.AreEqual(2, ex.Context.AdditionalData["asistentes"]);
+            Assert.AreEqual(0, inscripciones.Count);
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_Inscribir_DosAsistentesConElDoble_Inscrita()
+        {
+            ConMinimo(400, 800);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_KIT,
+                new InscribirEventoDTO { Cliente = "41286", Origen = "Nesto", Asistentes = 2 }, VENDEDOR);
+
+            Assert.AreEqual(2, dto.Asistentes);
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_CambiarAsistentes_SinElDoble_400YNoSeGuarda()
+        {
+            _ = Inscrita(1, "41286", EVENTO_KIT);
+            ConMinimo(400, 600);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().CambiarAsistentes(1, new CambiarAsistentesInscripcionDTO { Asistentes = 2 }, ADMINISTRACION));
+
+            StringAssert.Contains(ex.Message, "al menos 800,00 €");
+            A.CallTo(() => repositorio.Poner(A<int>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_CambiarAsistentes_ConElDoble_SeGuarda()
+        {
+            _ = Inscrita(1, "41286", EVENTO_KIT);
+            ConMinimo(400, 800);
+
+            InscripcionEventoDTO dto = await Servicio().CambiarAsistentes(1, new CambiarAsistentesInscripcionDTO { Asistentes = 2 }, ADMINISTRACION);
+
+            Assert.AreEqual(2, dto.Asistentes);
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_CambiarAsistentes_DireccionSinElDobleNiLasUnidades_UnAvisoConLasDosCosas()
+        {
+            _ = Inscrita(1, "41286", EVENTO_KIT);
+            unidades["45363"] = 1;
+            ConMinimo(400, 600);
+
+            InscripcionEventoDTO dto = await Servicio().CambiarAsistentes(1, new CambiarAsistentesInscripcionDTO { Asistentes = 2 }, DIRECCION);
+
+            Assert.AreEqual(2, dto.Asistentes);
+            Assert.AreEqual(1, dto.Avisos.Count);
+            StringAssert.Contains(dto.Avisos[0], "ha comprado 1 unidad");
+            StringAssert.Contains(dto.Avisos[0], "al menos 800,00 €");
+        }
+
         [TestMethod]
         public async Task Controlador_PutAsistentes_LlamaAlServicio()
         {

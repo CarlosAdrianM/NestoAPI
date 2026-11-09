@@ -75,6 +75,9 @@ namespace NestoAPI.Infraestructure.Eventos
     /// la compra hecha para el evento, aunque sea un poco antes de anunciarlo, y no vale una de hace años.</item>
     /// <item>Justificante: la mejor línea (factura antes que albarán, en curso o pendiente; y, a igualdad, el pedido más
     /// reciente), que es la que menos riesgo tiene de borrarse.</item>
+    /// <item>NestoAPI#843 (Carlos, 09/11/26): importe mínimo opcional (Eventos.ImporteMinimoProductosRequeridos): además, la suma
+    /// de la base imponible de esas mismas líneas (de todos los productos requeridos, en los dos modos) tiene que llegar al
+    /// mínimo por cada asistente de la inscripción. Null o 0 = sin mínimo.</item>
     /// </list>
     /// </summary>
     public static class ReglasProductosRequeridosEvento
@@ -198,6 +201,46 @@ namespace NestoAPI.Infraestructure.Eventos
         public static string MotivoAnulacion(int pedido, bool borrarPedido) => borrarPedido
             ? $"se ha borrado el pedido {pedido}, que justificaba la inscripción gratuita por compra"
             : $"se ha quitado del pedido {pedido} el producto que justificaba la inscripción gratuita por compra";
+
+        // ---------------- NestoAPI#843 (Carlos 09/11/26): importe mínimo de compra de los productos requeridos ----------------
+
+        /// <summary>
+        /// NestoAPI#843: lo que hay que haber comprado de los productos requeridos para inscribir a tantos asistentes: el mínimo del
+        /// evento por cada asistente (con uno, el mínimo). Null o 0 = sin mínimo (0).
+        /// </summary>
+        public static decimal ImporteMinimoExigido(decimal? minimo, int asistentes) =>
+            minimo.HasValue && minimo.Value > 0 ? minimo.Value * Math.Max(1, asistentes) : 0;
+
+        private static string Euros(decimal importe) => Math.Round(importe, 2, MidpointRounding.AwayFromZero).ToString("N2", es) + " €";
+
+        /// <summary>
+        /// «Para inscribirse tiene que haber comprado al menos 400,00 € de los productos requeridos; lleva 59,95 €. Cuentan los
+        /// pedidos del cliente desde el 21/08/2026.» Con varios asistentes dice el total y lo que va por asistente.
+        /// </summary>
+        public static string MensajeImporteMinimo(decimal minimo, int asistentes, decimal comprado, DateTime desde) =>
+            (asistentes > 1
+                ? $"Para inscribir {ReglasAsistentesEvento.Personas(asistentes)} tiene que haber comprado al menos " +
+                  $"{Euros(ImporteMinimoExigido(minimo, asistentes))} de los productos requeridos ({Euros(minimo)} por asistente)"
+                : $"Para inscribirse tiene que haber comprado al menos {Euros(minimo)} de los productos requeridos") +
+            $"; lleva {Euros(comprado)}. Cuentan los pedidos del cliente desde el {desde.ToString("dd/MM/yyyy", es)}.";
+
+        /// <summary>NestoAPI#843: el 400 EVENTO_REQUIERE_COMPRA cuando lo comprado no llega al importe mínimo.</summary>
+        public static NestoBusinessException ImporteInsuficiente(string mensaje, List<ProductoRequeridoLeido> requeridos, DateTime desde,
+            bool todos, decimal minimo, int asistentes, decimal comprado) =>
+            new NestoBusinessException(mensaje,
+                new ErrorContext { ErrorCode = ERROR_REQUIERE_COMPRA }
+                    .WithData("productos", requeridos.OrderBy(r => r.Producto).Select(r => new ProductoRequeridoEventoDTO { Producto = r.Producto, Nombre = r.Nombre }).ToList())
+                    .WithData("desde", desde.Date)
+                    .WithData("modo", Modo(todos))
+                    .WithData("importeMinimo", minimo)
+                    .WithData("importeExigido", ImporteMinimoExigido(minimo, asistentes))
+                    .WithData("importeComprado", comprado)
+                    .WithData("asistentes", asistentes))
+            { StatusCode = HttpStatusCode.BadRequest, IsWarning = true };
+
+        /// <summary>NestoAPI#843 + #745: Dirección inscribe aunque lo comprado no llegue al importe mínimo.</summary>
+        public static string AvisoImporteMinimoPorDireccion(string mensaje) =>
+            $"Inscrita por Dirección sin llegar al importe mínimo de compra. {mensaje}";
     }
 
     /// <summary>
@@ -228,6 +271,18 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<HashSet<int>> EventosQueExigenTodos(IReadOnlyCollection<int> eventos);
         /// <summary>Guarda el modo. False sin la columna.</summary>
         Task<bool> GuardarModo(int eventoId, bool todos);
+        /// <summary>
+        /// NestoAPI#843: el importe mínimo de compra de los productos requeridos de cada evento que lo tiene (mayor que 0;
+        /// Eventos.ImporteMinimoProductosRequeridos, Scripts/Issue843_EventosImporteMinimoRequeridos.sql). Sin la columna, ninguno.
+        /// </summary>
+        Task<Dictionary<int, decimal>> ImportesMinimos(IReadOnlyCollection<int> eventos);
+        /// <summary>NestoAPI#843: guarda el importe mínimo (null = sin mínimo). False sin la columna.</summary>
+        Task<bool> GuardarImporteMinimo(int eventoId, decimal? importe);
+        /// <summary>
+        /// NestoAPI#843: lo comprado o pedido de esos productos: la suma de la base imponible de las mismas líneas que valen de
+        /// justificante (cantidad positiva, estado -1/1/2/4, pedidos desde <paramref name="desde"/>).
+        /// </summary>
+        Task<decimal> ImporteComprado(string empresa, string cliente, IReadOnlyCollection<string> productos, DateTime desde);
     }
 
     public class RepositorioProductosRequeridosEventos : IRepositorioProductosRequeridosEventos
@@ -459,6 +514,86 @@ GROUP BY RTRIM(l.Producto)";
                 new SqlParameter("@todos", SqlDbType.Bit) { Value = todos },
                 new SqlParameter("@id", SqlDbType.Int) { Value = eventoId }).ConfigureAwait(false);
             return true;
+        }
+
+        internal const string SQL_EXISTE_COLUMNA_IMPORTE_MINIMO = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.Eventos', 'ImporteMinimoProductosRequeridos') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string SQL_LEER_IMPORTE_MINIMO = "SELECT Id AS EventoId, CAST(ImporteMinimoProductosRequeridos AS decimal(10, 2)) AS Importe " +
+            "FROM dbo.Eventos WITH (NOLOCK) WHERE ImporteMinimoProductosRequeridos > 0 AND Id IN ({0})";
+        internal const string SQL_GUARDAR_IMPORTE_MINIMO = "UPDATE dbo.Eventos SET ImporteMinimoProductosRequeridos = @importe WHERE Id = @id";
+
+        // Mismas líneas que SQL_JUSTIFICANTE y SQL_UNIDADES (NestoAPI#843)
+        internal const string SQL_IMPORTE_COMPRADO = @"
+SELECT CAST(ISNULL(SUM(l.[Base Imponible]), 0) AS decimal(18, 2))
+FROM dbo.CabPedidoVta c WITH (NOLOCK)
+JOIN dbo.LinPedidoVta l WITH (NOLOCK) ON l.Empresa = c.Empresa AND l.Número = c.Número
+WHERE c.Empresa = @empresa AND c.[Nº Cliente] = @cliente AND c.Fecha >= @desde
+  AND l.Producto IN ({0}) AND l.Estado IN (-1, 1, 2, 4) AND l.Cantidad > 0";
+
+        private static readonly ComprobadorEsquemaEventos columnaImporteMinimo = new ComprobadorEsquemaEventos(SQL_EXISTE_COLUMNA_IMPORTE_MINIMO);
+
+        public async Task<Dictionary<int, decimal>> ImportesMinimos(IReadOnlyCollection<int> eventos)
+        {
+            List<int> ids = (eventos ?? new List<int>()).Distinct().ToList();
+            var resultado = new Dictionary<int, decimal>();
+            if (!ids.Any() || !columnaImporteMinimo.Existe(db))
+            {
+                return resultado;
+            }
+            foreach (List<int> tanda in RepositorioPersonaAsistenteEventos.Tandas(ids, 500))
+            {
+                foreach (FilaImporteMinimo fila in await db.Database
+                    .SqlQuery<FilaImporteMinimo>(string.Format(SQL_LEER_IMPORTE_MINIMO, string.Join(",", tanda)))
+                    .ToListAsync().ConfigureAwait(false))
+                {
+                    if (fila.Importe > 0)
+                    {
+                        resultado[fila.EventoId] = fila.Importe.Value;
+                    }
+                }
+            }
+            return resultado;
+        }
+
+        public async Task<bool> GuardarImporteMinimo(int eventoId, decimal? importe)
+        {
+            if (!columnaImporteMinimo.Existe(db))
+            {
+                return false;
+            }
+            _ = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_IMPORTE_MINIMO,
+                new SqlParameter("@importe", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = importe.HasValue && importe.Value > 0 ? (object)importe.Value : DBNull.Value },
+                new SqlParameter("@id", SqlDbType.Int) { Value = eventoId }).ConfigureAwait(false);
+            return true;
+        }
+
+        public async Task<decimal> ImporteComprado(string empresa, string cliente, IReadOnlyCollection<string> productos, DateTime desde)
+        {
+            List<string> lista = (productos ?? new List<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToList();
+            if (!lista.Any())
+            {
+                return 0;
+            }
+            var parametros = new List<object>
+            {
+                new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO },
+                new SqlParameter("@cliente", SqlDbType.Char, 10) { Value = cliente?.Trim() ?? "" },
+                new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde.Date }
+            };
+            var nombres = new List<string>();
+            for (int i = 0; i < lista.Count; i++)
+            {
+                nombres.Add("@p" + i);
+                parametros.Add(new SqlParameter("@p" + i, SqlDbType.Char, 15) { Value = lista[i] });
+            }
+            return await db.Database
+                .SqlQuery<decimal>(string.Format(SQL_IMPORTE_COMPRADO, string.Join(", ", nombres)), parametros.ToArray())
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+        }
+
+        private class FilaImporteMinimo
+        {
+            public int EventoId { get; set; }
+            public decimal? Importe { get; set; }
         }
 
         private static string Recortar(string texto, int maximo)

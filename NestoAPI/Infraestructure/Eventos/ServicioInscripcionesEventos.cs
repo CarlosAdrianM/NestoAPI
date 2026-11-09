@@ -684,10 +684,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                         }
                         habiaCompra = justificante != null;
                     }
-                    // NestoAPI#811: con varios asistentes, una unidad comprada por asistente (con uno basta con que haya compra)
+                    // NestoAPI#811: con varios asistentes, una unidad comprada por asistente (con uno basta con que haya compra).
+                    // NestoAPI#843: y, si el evento tiene importe mínimo, lo comprado de los requeridos llega al mínimo por asistente.
                     if (habiaCompra)
                     {
-                        sinCompraPorDireccion = await ComprobarUnidadesCompradas(evento, empresa, cliente, contacto, requeridos, desde,
+                        sinCompraPorDireccion = await ComprobarCompraSuficiente(evento, empresa, cliente, contacto, requeridos, desde,
                             exigeTodos, asistentes, exigirCompra).ConfigureAwait(false);
                     }
                 }
@@ -1062,9 +1063,60 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             }
             bool exigeTodos = (await ProductosRequeridos.EventosQueExigenTodos(new List<int> { evento.Id }).ConfigureAwait(false))?
                 .Contains(evento.Id) == true;
-            return await ComprobarUnidadesCompradas(evento, EmpresaOPorDefecto(inscripcion.Empresa), Limpiar(inscripcion.Cliente),
+            return await ComprobarCompraSuficiente(evento, EmpresaOPorDefecto(inscripcion.Empresa), Limpiar(inscripcion.Cliente),
                 Limpiar(inscripcion.Contacto), requeridos, ReglasProductosRequeridosEvento.Desde(requeridos), exigeTodos, asistentes,
                 exigirCompra).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Con la compra ya encontrada: las unidades por asistente (NestoAPI#811) y el importe mínimo (NestoAPI#843). Si algo no
+        /// llega: 400 EVENTO_REQUIERE_COMPRA o, para Dirección (<paramref name="exigirCompra"/> false), un único aviso que lo
+        /// cuenta todo. Null si llega.
+        /// </summary>
+        private async Task<string> ComprobarCompraSuficiente(Evento evento, string empresa, string cliente, string contacto,
+            List<ProductoRequeridoLeido> requeridos, DateTime desde, bool exigeTodos, int asistentes, bool exigirCompra)
+        {
+            string avisoUnidades = await ComprobarUnidadesCompradas(evento, empresa, cliente, contacto, requeridos, desde, exigeTodos,
+                asistentes, exigirCompra).ConfigureAwait(false);
+            string faltaImporte = await ComprobarImporteMinimo(evento, empresa, cliente, requeridos, desde, exigeTodos, asistentes,
+                exigirCompra).ConfigureAwait(false);
+            return faltaImporte == null ? avisoUnidades
+                : avisoUnidades == null ? ReglasProductosRequeridosEvento.AvisoImporteMinimoPorDireccion(faltaImporte)
+                : $"{avisoUnidades} {faltaImporte}";
+        }
+
+        /// <summary>
+        /// NestoAPI#843 (Carlos, 09/11/26): si el evento tiene importe mínimo, la base imponible comprada o pedida de los productos
+        /// requeridos (mismas líneas y ventana que la compra; en el modo «Todos», la suma de todos) tiene que llegar al mínimo por
+        /// cada asistente. Si no llega: 400 o, para Dirección, el texto de lo que falta. Null si llega o si no hay mínimo.
+        /// </summary>
+        private async Task<string> ComprobarImporteMinimo(Evento evento, string empresa, string cliente, List<ProductoRequeridoLeido> requeridos,
+            DateTime desde, bool exigeTodos, int asistentes, bool exigirCompra)
+        {
+            if (ProductosRequeridos == null || requeridos == null || !requeridos.Any())
+            {
+                return null;
+            }
+            Dictionary<int, decimal> minimos = await ProductosRequeridos.ImportesMinimos(new List<int> { evento.Id }).ConfigureAwait(false)
+                ?? new Dictionary<int, decimal>();
+            decimal minimo = minimos.TryGetValue(evento.Id, out decimal suyo) ? suyo : 0;
+            decimal exigido = ReglasProductosRequeridosEvento.ImporteMinimoExigido(minimo, asistentes);
+            if (exigido <= 0)
+            {
+                return null;
+            }
+            decimal comprado = await ProductosRequeridos.ImporteComprado(empresa, cliente, requeridos.Select(r => r.Producto).ToList(), desde)
+                .ConfigureAwait(false);
+            if (Math.Round(comprado, 2, MidpointRounding.AwayFromZero) >= exigido)
+            {
+                return null;
+            }
+            string mensaje = ReglasProductosRequeridosEvento.MensajeImporteMinimo(minimo, asistentes, comprado, desde);
+            if (exigirCompra)
+            {
+                throw ReglasProductosRequeridosEvento.ImporteInsuficiente(mensaje, requeridos, desde, exigeTodos, minimo, asistentes, comprado);
+            }
+            return mensaje;
         }
 
         /// <summary>Las personas de contacto de unos clientes (cliente → persona), ya limpias.</summary>

@@ -800,6 +800,264 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(0, modificaciones.Count);
         }
 
+        // ---------------- NestoAPI#843: importe mínimo de compra de los productos requeridos (Carlos 09/11/26) ----------------
+        // Evento 6 «Rentabiliza cada ML de tus viales»: hay que gastar al menos 400 € (base imponible) en los viales requeridos.
+
+        private void ConMinimo(decimal minimo) =>
+            A.CallTo(() => repositorio.ImportesMinimos(A<IReadOnlyCollection<int>>._)).ReturnsLazily((IReadOnlyCollection<int> ids) =>
+                Task.FromResult(ids.Contains(EVENTO_POR_COMPRA) && minimo > 0
+                    ? new Dictionary<int, decimal> { [EVENTO_POR_COMPRA] = minimo }
+                    : new Dictionary<int, decimal>()));
+
+        private void Lleva(decimal importe) =>
+            A.CallTo(() => repositorio.ImporteComprado("1", "15191", A<IReadOnlyCollection<string>>._, A<DateTime>._)).Returns(Task.FromResult(importe));
+
+        private void ConUnVial() =>
+            A.CallTo(() => repositorio.BuscarJustificante("1", "15191", A<IReadOnlyCollection<string>>._, A<DateTime>._))
+                .Returns(Task.FromResult(new JustificanteCompraEvento { Pedido = PEDIDO, Producto = "45363", Estado = Constantes.EstadosLineaVenta.FACTURA }));
+
+        [TestMethod]
+        public async Task ImporteMinimo_PorDebajo_400ConLoQueLlevaYNoSeInscribe()
+        {
+            ConUnVial();
+            ConMinimo(400);
+            Lleva(59.95M);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, ex.StatusCode);
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex.GetErrorCode());
+            StringAssert.StartsWith(ex.Message, "Para inscribirse tiene que haber comprado al menos 400,00 € de los productos requeridos; lleva 59,95 €.");
+            StringAssert.Contains(ex.Message, "desde el 21/08/2026");
+            Assert.AreEqual(400M, ex.Context.AdditionalData["importeMinimo"]);
+            Assert.AreEqual(59.95M, ex.Context.AdditionalData["importeComprado"]);
+            Assert.AreEqual(0, inscripciones.Count);
+            // Las mismas líneas que la compra: los productos requeridos, desde 60 días antes del requisito
+            A.CallTo(() => repositorio.ImporteComprado("1", "15191",
+                A<IReadOnlyCollection<string>>.That.Matches(p => p.Count == 1 && p.Contains("45363")), new DateTime(2026, 8, 21)))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_Justo_Inscrita()
+        {
+            ConUnVial();
+            ConMinimo(400);
+            Lleva(400M);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            Assert.AreEqual(PEDIDO, dto.PedidoJustificante);
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_PorEncima_InscritaSinAviso()
+        {
+            ConUnVial();
+            ConMinimo(400);
+            Lleva(612.30M);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            Assert.IsFalse((dto.Avisos ?? new List<string>()).Any(a => a.Contains("importe")));
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public async Task SinImporteMinimo_ComoHoy_NoMiraElImporte()
+        {
+            ConUnVial();
+            ConMinimo(0);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            A.CallTo(() => repositorio.ImporteComprado(A<string>._, A<string>._, A<IReadOnlyCollection<string>>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_SinNingunaCompra_ElMensajeDeSiempre()
+        {
+            SinCompra();
+            ConMinimo(400);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR));
+
+            StringAssert.StartsWith(ex.Message, "Para apuntarse a «Formación por compra Lifting Coreano» hay que haber comprado o pedido 45363");
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_Todos_HacenFaltaTodosYElImporteSumaLosDeTodos()
+        {
+            DosProductos(todos: true);
+            Comprado("45363", PEDIDO);
+            Comprado("45364", PEDIDO + 5);
+            ConMinimo(400);
+            Lleva(150M);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR));
+
+            StringAssert.StartsWith(ex.Message, "Para inscribirse tiene que haber comprado al menos 400,00 € de los productos requeridos; lleva 150,00 €.");
+            Assert.AreEqual("Todos", ex.Context.AdditionalData["modo"]);
+            A.CallTo(() => repositorio.ImporteComprado("1", "15191",
+                A<IReadOnlyCollection<string>>.That.Matches(p => p.Count == 2 && p.Contains("45363") && p.Contains("45364")), A<DateTime>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_Todos_LeFaltaUnProducto_ElMensajeDeLosQueFaltan()
+        {
+            DosProductos(todos: true);
+            Comprado("45363", PEDIDO);
+            A.CallTo(() => repositorio.BuscarJustificante(A<string>._, A<string>._, A<IReadOnlyCollection<string>>.That.Matches(p => p.Contains("45364")), A<DateTime>._))
+                .Returns(Task.FromResult<JustificanteCompraEvento>(null));
+            ConMinimo(400);
+            Lleva(900M);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR));
+
+            StringAssert.Contains(ex.Message, "le faltan: 45364");
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_Direccion_InscritaConElJustificanteAvisoYConstancia()
+        {
+            ConUnVial();
+            ConMinimo(400);
+            Lleva(59.95M);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, DIRECCION);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            Assert.AreEqual(PEDIDO, dto.PedidoJustificante, "Compra hay, aunque no llegue: el pedido la justifica");
+            StringAssert.StartsWith(dto.Avisos.First(), "Inscrita por Dirección sin llegar al importe mínimo de compra. Para inscribirse tiene que haber " +
+                "comprado al menos 400,00 € de los productos requeridos; lleva 59,95 €.");
+            StringAssert.Contains(modificaciones.Single().Nuevo, "SIN COMPRA POR DIRECCIÓN");
+        }
+
+        [TestMethod]
+        public async Task ImporteMinimo_NoDireccionNiClienteDeLaTienda_Sigue400()
+        {
+            ConUnVial();
+            ConMinimo(400);
+            Lleva(59.95M);
+
+            var ex1 = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, ADMINISTRACION));
+            var ex2 = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191" }, CLIENTE_TIENDA));
+
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex1.GetErrorCode());
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex2.GetErrorCode());
+            Assert.AreEqual(0, inscripciones.Count);
+        }
+
+        [TestMethod]
+        public void ImporteMinimo_Reglas_PorAsistenteYMensajeConVarios()
+        {
+            Assert.AreEqual(400M, ReglasProductosRequeridosEvento.ImporteMinimoExigido(400M, 1));
+            Assert.AreEqual(800M, ReglasProductosRequeridosEvento.ImporteMinimoExigido(400M, 2));
+            Assert.AreEqual(0M, ReglasProductosRequeridosEvento.ImporteMinimoExigido(null, 3));
+            Assert.AreEqual("Para inscribir 2 asistentes tiene que haber comprado al menos 800,00 € de los productos requeridos " +
+                "(400,00 € por asistente); lleva 612,30 €. Cuentan los pedidos del cliente desde el 21/08/2026.",
+                ReglasProductosRequeridosEvento.MensajeImporteMinimo(400M, 2, 612.30M, new DateTime(2026, 8, 21)));
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ImporteMinimo_LoGuardaYLoDevuelve()
+        {
+            A.CallTo(() => repositorio.GuardarImporteMinimo(EVENTO_POR_COMPRA, 400M)).ReturnsLazily(() =>
+            {
+                ConMinimo(400);
+                return Task.FromResult(true);
+            });
+            var put = new EventoDTO { Titulo = "Rentabiliza cada ML de tus viales", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 400.004M };
+
+            EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA, put, "x");
+
+            A.CallTo(() => repositorio.GuardarImporteMinimo(EVENTO_POR_COMPRA, 400M)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(400M, dto.ImporteMinimoProductosRequeridos);
+        }
+
+        [TestMethod]
+        public async Task PutEvento_SinElCampoImporteMinimo_NoLoToca()
+        {
+            ConMinimo(400);
+
+            EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true }, "x");
+
+            A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).MustNotHaveHappened();
+            Assert.AreEqual(400M, dto.ImporteMinimoProductosRequeridos, "El que tenía");
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ImporteMinimoNullOCero_LoQuita()
+        {
+            A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).Returns(Task.FromResult(true));
+
+            _ = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = null }, "x");
+            _ = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 0 }, "x");
+
+            A.CallTo(() => repositorio.GuardarImporteMinimo(EVENTO_POR_COMPRA, null)).MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ImporteMinimoNegativo_400SinGuardar()
+        {
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = -5 }, "x"));
+
+            StringAssert.Contains(ex.Message, "no puede ser negativo");
+            A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ImporteMinimoSinLaColumna_400QueFaltaElScript_YQuitarloNoPasaNada()
+        {
+            A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).Returns(Task.FromResult(false));
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 400 }, "x"));
+            EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 0 }, "x");
+
+            StringAssert.Contains(ex.Message, "Issue843_EventosImporteMinimoRequeridos.sql");
+            Assert.IsNull(dto.ImporteMinimoProductosRequeridos);
+        }
+
+        [TestMethod]
+        public async Task LeerEventos_TraenSuImporteMinimo()
+        {
+            ConMinimo(400);
+
+            List<EventoDTO> lista = await ServicioEventos().LeerEventos("1", true);
+
+            Assert.AreEqual(400M, lista.Single(e => e.Id == EVENTO_POR_COMPRA).ImporteMinimoProductosRequeridos);
+            Assert.IsNull(lista.Single(e => e.Id == EVENTO_GRATUITO).ImporteMinimoProductosRequeridos);
+        }
+
+        [TestMethod]
+        public void ImporteMinimo_Json_NullExplicitoSeTraeYSinCampoNo()
+        {
+            EventoDTO conNull = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{\"Titulo\":\"x\",\"ImporteMinimoProductosRequeridos\":null}");
+            EventoDTO conValor = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{\"Titulo\":\"x\",\"ImporteMinimoProductosRequeridos\":400.5}");
+            EventoDTO sinCampo = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{\"Titulo\":\"x\"}");
+
+            Assert.IsTrue(conNull.Trae(nameof(EventoDTO.ImporteMinimoProductosRequeridos)));
+            Assert.AreEqual(400.5M, conValor.ImporteMinimoProductosRequeridos);
+            Assert.IsFalse(sinCampo.Trae(nameof(EventoDTO.ImporteMinimoProductosRequeridos)));
+            StringAssert.Contains(Newtonsoft.Json.JsonConvert.SerializeObject(conValor), "\"ImporteMinimoProductosRequeridos\":400.5");
+        }
+
         [TestMethod]
         public void ProductosQueJustifican_SoloLineasConCantidadYEstadoQueCuenta()
         {
