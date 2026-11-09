@@ -881,13 +881,13 @@ namespace NestoAPI
             RecurringJob.AddOrUpdate(
                 Infraestructure.Clientes.Origenes.LeadsMetaJobsService.JOB_ID,
                 () => Infraestructure.Clientes.Origenes.LeadsMetaJobsService.Importar(),
-                Infraestructure.Clientes.Origenes.LeadsMetaJobsService.CRON, // Cron: cada 15 minutos
+                Infraestructure.Clientes.Origenes.LeadsMetaJobsService.CRON, // Cron: cada 15 minutos de 8:00 a 22:45 (hora de España)
                 new RecurringJobOptions
                 {
                     TimeZone = TimeZoneInfo.Local
                 }
             );
-            Console.WriteLine("✅ Job recurrente 'meta-leads' configurado (cada 15 minutos)");
+            Console.WriteLine("✅ Job recurrente 'meta-leads' configurado (cada 15 minutos de 8:00 a 22:45)");
 
             RecurringJob.AddOrUpdate(
                 "verifactu-aviso-pendientes",

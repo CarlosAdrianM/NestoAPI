@@ -659,5 +659,12 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.IsNotNull(respuesta);
             StringAssert.Contains(respuesta.Message, "MetaFormId");
         }
+
+        [TestMethod]
+        public void Cron_CadaCuartoDeHoraDe8A2245_NuncaDeNoche()
+        {
+            // Carlos 09/11/26: que no lleguen avisos de leads por la noche; lo de la noche se recoge a las 8:00.
+            Assert.AreEqual("*/15 8-22 * * *", LeadsMetaJobsService.CRON);
+        }
     }
 }

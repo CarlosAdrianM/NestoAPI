@@ -599,13 +599,14 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
     }
 
     /// <summary>
-    /// NestoAPI#623 corte 5c: job <c>meta-leads</c>, cada 15 minutos. Solo hace algo con <c>MetaLeads:Activo</c> = true (Web.config del
+    /// NestoAPI#623 corte 5c: job <c>meta-leads</c>, cada 15 minutos de 8:00 a 22:45 (Carlos 09/11/26: nada de avisos por la noche;
+    /// lo que entre de noche se recoge a las 8:00 con el margen de lectura). Solo hace algo con <c>MetaLeads:Activo</c> = true (Web.config del
     /// repo) y el token en secretos.config. Sin reintentos (la siguiente pasada es en 15 min) y sin solaparse.
     /// </summary>
     public static class LeadsMetaJobsService
     {
         public const string JOB_ID = "meta-leads";
-        public const string CRON = "*/15 * * * *";
+        public const string CRON = "*/15 8-22 * * *";
 
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
         [AutomaticRetry(Attempts = 0)]
