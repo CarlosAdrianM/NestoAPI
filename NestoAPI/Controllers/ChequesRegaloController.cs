@@ -182,12 +182,15 @@ namespace NestoAPI.Controllers
         /// con claim «cliente») solo puede consultar el suyo.
         /// <para>NestoAPI#652: también con la X-API-KEY de PrestaShop (de servidor a servidor, sin claim «cliente»: se fía
         /// del parámetro). Sin ninguna de las dos credenciales, 401 siempre (ExigirSiempre, sin modo sombra).</para>
+        /// <para>Sugerencia 1130 (Laura, 09/11/26): <c>fecha</c> opcional = el momento del pedido de la tienda online que se está
+        /// importando; si es anterior a ahora, el plazo (CanjeHasta y activación) se mira con ella. Una fecha futura se ignora.</para>
         /// </summary>
         [HttpGet]
         [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY", ExigirSiempre = true)]
         [Route("Cliente")]
         [ResponseType(typeof(ChequeRegaloClienteDTO))]
-        public async Task<IHttpActionResult> GetChequeCliente(string cliente, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public async Task<IHttpActionResult> GetChequeCliente(string cliente, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            DateTime? fecha = null)
         {
             if (string.IsNullOrWhiteSpace(cliente))
             {
@@ -198,7 +201,8 @@ namespace NestoAPI.Controllers
                 return StatusCode(HttpStatusCode.Forbidden);
             }
             ChequeRegaloClienteDTO cheque = await ServicioCanje
-                .LeerChequeVigente(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(), cliente.Trim(), Ahora())
+                .LeerChequeVigente(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(), cliente.Trim(),
+                    ReglasCanjeChequeRegalo.MomentoDelCanje(Ahora(), fecha))
                 .ConfigureAwait(false);
             if (cheque == null)
             {

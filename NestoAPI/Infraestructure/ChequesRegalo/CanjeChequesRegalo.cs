@@ -255,6 +255,15 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
 
         public static bool SuperaElMinimo(decimal baseComputable, CampanaChequeRegalo campana) => baseComputable > campana.MinimoCanje;
 
+        /// <summary>
+        /// Sugerencia 1130 (Laura, 09/11/26): el momento con el que se mira el plazo del cheque (CanjeHasta y FechaActivacion).
+        /// Un pedido de la tienda online hecho con la campaña abierta que se importa en Nesto cuando ya ha cerrado (campaña que
+        /// acaba en fin de semana) se mira con la fecha del pedido de la tienda. Solo si es ANTERIOR a ahora: una fecha futura
+        /// no alarga el plazo.
+        /// </summary>
+        public static DateTime MomentoDelCanje(DateTime ahora, DateTime? momentoCanje)
+            => momentoCanje.HasValue && momentoCanje.Value < ahora ? momentoCanje.Value : ahora;
+
         /// <summary>Estado para el cliente (endpoint de consulta).</summary>
         public static string EstadoParaCliente(ChequeRegaloCliente cheque, CampanaChequeRegalo campana, DateTime ahora)
         {
@@ -356,7 +365,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         /// (400 con código propio) si no se cumplen. Devuelve lo que hay que hacer al guardar.
         /// </summary>
         Task<PlanCanjeChequeRegalo> Comprobar(string empresa, int pedido, string cliente, IList<LinPedidoVta> lineas,
-            string ivaCabecera, Action<LinPedidoVta> recalcularImportes, string usuario, bool pedidoNuevo);
+            string ivaCabecera, Action<LinPedidoVta> recalcularImportes, string usuario, bool pedidoNuevo, DateTime? momentoCanje = null);
         /// <summary>Antes de guardar, en la misma transacción: reserva el cheque (lanza CHEQUE_REGALO_YA_USADO si otro
         /// pedido lo ha cogido a la vez).</summary>
         Task Reservar(PlanCanjeChequeRegalo plan);
@@ -437,7 +446,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         }
 
         public async Task<PlanCanjeChequeRegalo> Comprobar(string empresa, int pedido, string cliente, IList<LinPedidoVta> lineas,
-            string ivaCabecera, Action<LinPedidoVta> recalcularImportes, string usuario, bool pedidoNuevo)
+            string ivaCabecera, Action<LinPedidoVta> recalcularImportes, string usuario, bool pedidoNuevo, DateTime? momentoCanje = null)
         {
             List<CampanaCanjeChequeRegalo> todas = await Campanas().ConfigureAwait(false);
             if (!todas.Any())
@@ -501,7 +510,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             bool yaEnEstePedido = cheque.Estado == ReglasCanjeChequeRegalo.ESTADO_CANJEADO && cheque.PedidoCanje == pedido;
             if (!yaEnEstePedido)
             {
-                ComprobarQueSePuedeUsar(cheque, campana, empresa, pedido, clienteTrim);
+                ComprobarQueSePuedeUsar(cheque, campana, empresa, pedido, clienteTrim, momentoCanje);
             }
 
             decimal baseComputable = ReglasCanjeChequeRegalo.BaseComputable(lineas, productos, campana);
@@ -524,9 +533,11 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             return plan;
         }
 
-        private void ComprobarQueSePuedeUsar(ChequeRegaloCliente cheque, CampanaCanjeChequeRegalo campana, string empresa, int pedido, string cliente)
+        private void ComprobarQueSePuedeUsar(ChequeRegaloCliente cheque, CampanaCanjeChequeRegalo campana, string empresa, int pedido, string cliente,
+            DateTime? momentoCanje)
         {
-            DateTime momento = ahora();
+            // Sugerencia 1130: el pedido de la tienda online se mira con su fecha (si es anterior a ahora); el resto, con ahora
+            DateTime momento = ReglasCanjeChequeRegalo.MomentoDelCanje(ahora(), momentoCanje);
             if (!campana.Activa)
             {
                 throw ReglasCanjeChequeRegalo.Error(ReglasCanjeChequeRegalo.ERROR_CAMPANA_INACTIVA,

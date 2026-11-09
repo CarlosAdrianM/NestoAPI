@@ -2310,7 +2310,8 @@ namespace NestoAPI.Controllers
             // de cliente). Se mira sobre las líneas que quedan de verdad en el pedido, también las ya servidas.
             Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
-                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false).ConfigureAwait(true);
+                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false,
+                momentoCanje: MomentoCanjeChequeRegalo(pedido)).ConfigureAwait(true);
             // NestoAPI#613: el cupón, igual: regla dura sobre las líneas que quedan (también al quitarlo o cambiar de cliente).
             Infraestructure.Cupones.PlanCanjeCupon planCupon = await ServicioCupones.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
@@ -3155,7 +3156,8 @@ namespace NestoAPI.Controllers
             // NestoAPI#593 (c4): el cheque regalo es regla dura, FUERA del pipeline de validación (que se puede saltar)
             Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasPedidoInsertar, pedido.iva,
-                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: true).ConfigureAwait(true);
+                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: true,
+                momentoCanje: MomentoCanjeChequeRegalo(pedido)).ConfigureAwait(true);
             // NestoAPI#613: el cupón de evento, también regla dura (si no se puede usar, el pedido no se crea y el número vuelve, #636)
             Infraestructure.Cupones.PlanCanjeCupon planCupon;
             try
@@ -3649,6 +3651,24 @@ namespace NestoAPI.Controllers
                 .Select(c => c.Número)
                 .FirstOrDefaultAsync().ConfigureAwait(false);
             return Ok(numero);
+        }
+
+        /// <summary>
+        /// Sugerencia 1130 (Laura, 09/11/26): el momento con el que se mira el plazo del cheque regalo. Un pedido de la tienda
+        /// online (todas las líneas con forma de venta WEB) se importa en Nesto con la fecha del pedido de PrestaShop (date_add),
+        /// y esa es la prueba de que el cliente lo hizo con la campaña abierta aunque se importe después (fin de semana): se
+        /// usa su fecha. El resto de canales externos (Amazon, Perfumes Club, Miravia) no llevan cheque, y un pedido tecleado
+        /// en Nesto (cualquier otra forma de venta, o mezcla) se mira con ahora para que nadie se salte el plazo poniéndole
+        /// una fecha atrasada. Null = ahora. El servicio, además, ignora una fecha que no sea anterior a ahora.
+        /// </summary>
+        internal static DateTime? MomentoCanjeChequeRegalo(PedidoVentaDTO pedido)
+        {
+            if (pedido?.fecha == null || pedido.Lineas == null)
+            {
+                return null;
+            }
+            List<string> formasVenta = pedido.Lineas.Select(l => l.formaVenta?.Trim()).Where(f => !string.IsNullOrEmpty(f)).ToList();
+            return formasVenta.Any() && formasVenta.All(f => f == Constantes.FormasVenta.TIENDA_ONLINE) ? pedido.fecha : null;
         }
 
         [HttpPost]

@@ -709,6 +709,109 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
         }
 
+        // ---------------------------------------------------------------- sugerencia 1130 (Laura): pedidos de la web que se importan
+        // después de cerrar la campaña. El momento del canje es el del pedido de la tienda (si es anterior a ahora).
+
+        private static readonly DateTime LUNES_TRAS_CIERRE = new DateTime(2026, 11, 9, 10, 0, 0);
+        private static readonly DateTime VIERNES_CAMPANA_ABIERTA = new DateTime(2026, 11, 6, 21, 30, 0);
+
+        [TestMethod]
+        public async Task ControllerChequesRegalo_ConFechaDelPedidoWebDentroDelPlazo_Disponible()
+        {
+            var controller = new ChequesRegaloController(A.Fake<NVEntities>()) { ServicioCanje = servicio, Ahora = () => LUNES_TRAS_CIERRE };
+
+            var sinFecha = await controller.GetChequeCliente(CLIENTE) as OkNegotiatedContentResult<ChequeRegaloClienteDTO>;
+            Assert.AreEqual("Caducado", sinFecha.Content.Estado, "sin fecha, se mira con ahora");
+            Assert.IsFalse(sinFecha.Content.SePuedeUsar);
+
+            var conFecha = await controller.GetChequeCliente(CLIENTE, fecha: VIERNES_CAMPANA_ABIERTA) as OkNegotiatedContentResult<ChequeRegaloClienteDTO>;
+            Assert.AreEqual("Disponible", conFecha.Content.Estado, "el pedido se hizo con la campaña abierta");
+            Assert.IsTrue(conFecha.Content.SePuedeUsar);
+        }
+
+        [TestMethod]
+        public async Task ControllerChequesRegalo_ConFechaFutura_SeIgnoraYSeMiraConAhora()
+        {
+            var controller = new ChequesRegaloController(A.Fake<NVEntities>()) { ServicioCanje = servicio, Ahora = () => LUNES_TRAS_CIERRE };
+
+            var futura = await controller.GetChequeCliente(CLIENTE, fecha: new DateTime(2026, 11, 12)) as OkNegotiatedContentResult<ChequeRegaloClienteDTO>;
+
+            Assert.AreEqual("Caducado", futura.Content.Estado);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_ConMomentoCanjeDentroDelPlazo_VaLeAunqueHoyEsteCaducado()
+        {
+            ahora = LUNES_TRAS_CIERRE;
+            var lineas = new List<LinPedidoVta> { Linea("COSM", 300), LineaCheque() };
+
+            PlanCanjeChequeRegalo plan = await servicio.Comprobar("1", PEDIDO, CLIENTE, lineas, "G21", null, "carlos", true,
+                momentoCanje: VIERNES_CAMPANA_ABIERTA);
+            Assert.AreEqual(7, plan.ChequeAReservar.Id);
+
+            _ = await ComprobarQueFalla(new List<LinPedidoVta> { Linea("COSM", 300), LineaCheque() }, ReglasCanjeChequeRegalo.ERROR_FUERA_DE_PLAZO);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_ConMomentoCanjeFuturo_SeIgnora()
+        {
+            ahora = LUNES_TRAS_CIERRE;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.Comprobar("1", PEDIDO, CLIENTE,
+                new List<LinPedidoVta> { Linea("COSM", 300), LineaCheque() }, "G21", null, "carlos", true, momentoCanje: new DateTime(2026, 11, 12)));
+            Assert.AreEqual(ReglasCanjeChequeRegalo.ERROR_FUERA_DE_PLAZO, ex.Context.ErrorCode);
+            StringAssert.Contains(ex.Message, "07/11/2026");
+        }
+
+        [TestMethod]
+        public void MomentoCanjeChequeRegalo_PedidoDeLaWeb_LaFechaDelPedido()
+        {
+            var pedido = new PedidoVentaDTO { fecha = VIERNES_CAMPANA_ABIERTA };
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "WEB" });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "WEB " });
+
+            Assert.AreEqual(VIERNES_CAMPANA_ABIERTA, PedidosVentaController.MomentoCanjeChequeRegalo(pedido));
+        }
+
+        [TestMethod]
+        public void MomentoCanjeChequeRegalo_PedidoTecleadoEnNesto_Ahora()
+        {
+            var pedido = new PedidoVentaDTO { fecha = VIERNES_CAMPANA_ABIERTA };
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "DIR" });
+            Assert.IsNull(PedidosVentaController.MomentoCanjeChequeRegalo(pedido), "forma de venta que no es la web: no se fía de la fecha");
+
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "WEB" });
+            Assert.IsNull(PedidosVentaController.MomentoCanjeChequeRegalo(pedido), "mezcla de WEB y otra: tampoco");
+
+            var amazon = new PedidoVentaDTO { fecha = VIERNES_CAMPANA_ABIERTA };
+            amazon.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = Constantes.FormasVenta.AMAZON });
+            Assert.IsNull(PedidosVentaController.MomentoCanjeChequeRegalo(amazon), "Amazon no lleva cheque");
+
+            var sinFecha = new PedidoVentaDTO();
+            sinFecha.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "WEB" });
+            Assert.IsNull(PedidosVentaController.MomentoCanjeChequeRegalo(sinFecha));
+        }
+
+        [TestMethod]
+        public async Task PedidoWebConFecha06_PasaYPedidoNoWebConFecha06_SeRechaza()
+        {
+            ahora = LUNES_TRAS_CIERRE;
+            var web = new PedidoVentaDTO { fecha = VIERNES_CAMPANA_ABIERTA };
+            web.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "WEB" });
+            var tecleado = new PedidoVentaDTO { fecha = VIERNES_CAMPANA_ABIERTA };
+            tecleado.Lineas.Add(new LineaPedidoVentaDTO { formaVenta = "DIR" });
+
+            PlanCanjeChequeRegalo plan = await servicio.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { Linea("COSM", 300), LineaCheque() },
+                "G21", null, "carlos", true, PedidosVentaController.MomentoCanjeChequeRegalo(web));
+            Assert.IsNotNull(plan.ChequeAReservar);
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.Comprobar("1", PEDIDO, CLIENTE,
+                new List<LinPedidoVta> { Linea("COSM", 300), LineaCheque() }, "G21", null, "carlos", true,
+                PedidosVentaController.MomentoCanjeChequeRegalo(tecleado)));
+            Assert.AreEqual(ReglasCanjeChequeRegalo.ERROR_FUERA_DE_PLAZO, ex.Context.ErrorCode);
+            StringAssert.Contains(ex.Message, "07/11/2026");
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
