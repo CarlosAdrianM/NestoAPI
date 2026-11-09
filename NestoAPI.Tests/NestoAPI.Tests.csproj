@@ -252,6 +252,7 @@
     <Compile Include="Controllers\ClientesControllerTests.cs" />
     <Compile Include="Controllers\ClientesControllerValidacionAltaTests.cs" />
     <Compile Include="Infraestructure\Clientes\MensajesValidacionClienteTests.cs" />
+    <Compile Include="Infraestructure\Clientes\SaludoPersonaContactoTests.cs" />
     <Compile Include="Controllers\RecepcionesControllerTests.cs" />
     <Compile Include="Controllers\DiariosProductosControllerTests.cs" />
     <Compile Include="Controllers\ClientesControllerBusquedaPorFacturaTests.cs" />

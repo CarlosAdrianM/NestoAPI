@@ -26,6 +26,29 @@ namespace NestoAPI.Infraestructure
 {
     public class GestorClientes : IGestorClientes
     {
+        /// <summary>PersonasContactoCliente.Saludo es char(15).</summary>
+        internal const int LONGITUD_SALUDO = 15;
+
+        /// <summary>
+        /// 09/11/26 (leads de Meta): el saludo de una persona de contacto nueva es su nombre con mayúscula inicial si cabe en 15 letras;
+        /// si no, solo el nombre de pila (recortado a 15). Antes iba el nombre entero y, con más de 15 letras, fallaba toda el alta.
+        /// </summary>
+        internal static string SaludoDesdeNombre(string nombre)
+        {
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                return null;
+            }
+            string[] palabras = nombre.Trim().ToLower().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            string entero = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(string.Join(" ", palabras));
+            if (entero.Length <= LONGITUD_SALUDO)
+            {
+                return entero;
+            }
+            string pila = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(palabras[0]);
+            return pila.Length <= LONGITUD_SALUDO ? pila : pila.Substring(0, LONGITUD_SALUDO);
+        }
+
         private readonly IServicioGestorClientes servicio;
         private readonly IServicioAgencias servicioAgencias;
         private readonly SincronizacionEventWrapper _sincronizacionEventWrapper;
@@ -1586,7 +1609,7 @@ namespace NestoAPI.Infraestructure
                     CorreoElectrónico = personaCrear.CorreoElectronico,
                     EnviarBoletin = true,
                     Estado = 0,
-                    Saludo = personaCrear.Nombre is null ? null : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(personaCrear.Nombre.ToLower()),
+                    Saludo = SaludoDesdeNombre(personaCrear.Nombre), // 09/11/26: char(15); con el nombre entero fallaba el alta
                     Usuario = clienteCrear.Usuario
                 };
                 cliente.PersonasContactoClientes.Add(persona);
