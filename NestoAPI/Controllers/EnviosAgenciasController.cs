@@ -3197,8 +3197,9 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(errorCatalogo);
             }
-            // NestoAPI#698: un pedido retenido no tiene envío.
-            string retenido = await MotivoRetenido(enviosAgencia.Empresa, enviosAgencia.Pedido);
+            // NestoAPI#698: un pedido retenido no tiene envío. NestoAPI#831 (Alfredo 09/11/26, «Insertar e Imprimir» de Agencias en
+            // Nesto): el del reparto propio de un aplazado, sí; el día de reparto se lo fija el Tramitar que Nesto llama justo después.
+            string retenido = await MotivoRetenido(enviosAgencia.Empresa, enviosAgencia.Pedido, EsEtiquetaRepartoPropio(enviosAgencia));
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);

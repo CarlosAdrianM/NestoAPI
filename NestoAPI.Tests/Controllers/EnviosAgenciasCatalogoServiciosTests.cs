@@ -163,6 +163,66 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNull(insertado.FechaPagoReembolso);
         }
 
+        // ---- NestoAPI#831 (Novedades 798/1121, Alfredo 09/11/26): «Insertar e Imprimir» de Agencias en Nesto ----
+        // Nesto graba el envío con POST api/EnviosAgencias y luego lo tramita (POST {id}/Tramitar, que fija el día de reparto).
+        // Un aplazado (picking con fecha futura) saca la etiqueta del reparto propio; la de las demás agencias, no; el retenido, nunca.
+
+        private const string APLAZADO = "El pedido 929793 está aplazado hasta el 10/11/2026 (tiene el picking 100033 en el almacén con esa fecha de entrega).";
+        private const string RETENIDO = "El pedido 929793 está retenido por Alfredo: no se puede enviar";
+
+        private void PedidoAplazado() => controller.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult(rp ? null : APLAZADO);
+        private void PedidoRetenido() => controller.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult(RETENIDO);
+
+        private static EnviosAgencia EnvioDelPedido(int agencia, short servicio, short horario)
+        {
+            EnviosAgencia envio = Envio(agencia, servicio, horario, 0);
+            envio.Pedido = 929793;
+            envio.Fecha = new System.DateTime(2026, 11, 9);
+            return envio;
+        }
+
+        [TestMethod]
+        public async Task Post_RepartoPropioDeUnPedidoAplazado_Inserta()
+        {
+            PedidoAplazado();
+
+            var resultado = await controller.PostEnviosAgencia(EnvioDelPedido(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, 96, 18));
+
+            Assert.IsNotInstanceOfType(resultado, typeof(NegotiatedContentResult<string>), "la etiqueta del reparto propio de un aplazado se saca");
+            Assert.IsNotNull(insertado);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Post_OtraAgenciaDeUnPedidoAplazado_Devuelve409YNoInserta()
+        {
+            PedidoAplazado();
+
+            var resultado = await controller.PostEnviosAgencia(EnvioDelPedido(Constantes.Agencias.AGENCIA_GLS, 96, 18));
+
+            Assert.IsInstanceOfType(resultado, typeof(NegotiatedContentResult<string>));
+            var conflicto = (NegotiatedContentResult<string>)resultado;
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, conflicto.StatusCode);
+            Assert.AreEqual(APLAZADO, conflicto.Content);
+            Assert.IsNull(insertado);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Post_RepartoPropioDeUnPedidoRetenido_Devuelve409YNoInserta()
+        {
+            PedidoRetenido();
+
+            var resultado = await controller.PostEnviosAgencia(EnvioDelPedido(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, 96, 18));
+
+            Assert.IsInstanceOfType(resultado, typeof(NegotiatedContentResult<string>));
+            var conflicto = (NegotiatedContentResult<string>)resultado;
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, conflicto.StatusCode);
+            Assert.AreEqual(RETENIDO, conflicto.Content);
+            Assert.IsNull(insertado);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
         // ---- PUT ----
 
         [TestMethod]
