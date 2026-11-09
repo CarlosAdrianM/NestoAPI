@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -24,6 +25,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
     //    Detrás del interruptor Reposiciones:AjustarStockDiferencias (apagado: solo constancia y aviso).
     //  - Comprobación física en el origen (Almacén en Algete; cada tienda en la suya), que la resuelve con motivo.
     //  - Aviso al grupo Almacén + a quien la preparó (AvisadorReposiciones).
+    //
+    // Slice del 09/11/26 (sugerencias 1133 y 1134 de Paloma, reposición 81296 ALC → ALG): cuando el ajuste DEVUELVE stock a una
+    // tienda de origen (falta: lo que no llegó vuelve a contar en ella), se avisa a la gente de esa tienda y a quien envió la
+    // reposición, una línea por producto (AvisadorDevolucionStockOrigen). Decisión de Carlos: «avisar al usuario a la vez que se
+    // hace la devolución del stock». El aviso va después de confirmar el apunte y un fallo al avisar nunca lo deshace (ELMAH).
     // ------------------------------------------------------------------------------------------------------------------
 
     public static class EstadosDiferenciaReposicion
@@ -181,6 +187,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         private readonly IRepositorioDiferenciasReposicion repositorio;
         private readonly Func<bool> ajusteActivo;
         private readonly Func<string, string, string> almacenDelUsuario;
+        private readonly Lazy<IAvisadorDevolucionStockOrigen> avisadorDevolucion;
 
         public ServicioDiferenciasReposicion() : this(RepositorioDiferenciasReposicionSql.ConContextoPropio())
         {
@@ -192,10 +199,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
         /// <param name="ajusteActivo">El interruptor (por defecto, <see cref="InterruptorAjusteDiferencias"/>).</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
+        /// <param name="avisadorDevolucion">Slice 09/11/26: el aviso a la tienda cuando le vuelve stock. Null: el de verdad (buzón de Nesto y Ariadna).</param>
         internal ServicioDiferenciasReposicion(IRepositorioDiferenciasReposicion repositorio, Func<bool> ajusteActivo,
-            Func<string, string, string> almacenDelUsuario)
+            Func<string, string, string> almacenDelUsuario, IAvisadorDevolucionStockOrigen avisadorDevolucion = null)
         {
             this.repositorio = repositorio;
+            this.avisadorDevolucion = new Lazy<IAvisadorDevolucionStockOrigen>(() => avisadorDevolucion
+                ?? new AvisadorDevolucionStockOrigen(new ServicioNotificacionesPush()));
             this.ajusteActivo = ajusteActivo ?? InterruptorAjusteDiferencias.EstaActivo;
             this.almacenDelUsuario = almacenDelUsuario
                 ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO));
@@ -211,14 +221,22 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public async Task<List<ResultadoAjusteDiferencia>> AjustarOrigenTrasRecibir(string empresa, IReadOnlyCollection<int> ids, string usuario)
         {
             var resultados = new List<ResultadoAjusteDiferencia>();
+            var devueltas = new List<StockDevueltoAlOrigen>();
             foreach (int id in (ids ?? new int[0]).Distinct())
             {
                 try
                 {
-                    ResultadoAjusteDiferencia resultado = await repositorio.EnTransaccion(t => AjustarUna(t, empresa, id, usuario)).ConfigureAwait(false);
+                    DiferenciaReposicionDTO devuelta = null;
+                    ResultadoAjusteDiferencia resultado = await repositorio.EnTransaccion(t => AjustarUna(t, empresa, id, usuario, f => devuelta = f))
+                        .ConfigureAwait(false);
                     if (resultado != null)
                     {
                         resultados.Add(resultado);
+                    }
+                    // Solo después de confirmar la transacción: si no se ha apuntado, no se avisa
+                    if (devuelta != null)
+                    {
+                        devueltas.Add(new StockDevueltoAlOrigen { Fila = devuelta, Unidades = -devuelta.Diferencia });
                     }
                 }
                 catch (Exception ex)
@@ -240,10 +258,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     resultados.Add(new ResultadoAjusteDiferencia { Id = id, Ajuste = AjustesDiferenciaReposicion.FALLIDO, Mensaje = mensaje });
                 }
             }
+            await AvisarDevolucion(empresa, devueltas).ConfigureAwait(false);
             return resultados;
         }
 
-        private async Task<ResultadoAjusteDiferencia> AjustarUna(ITransaccionDiferenciasReposicion t, string empresa, int id, string usuario)
+        private async Task<ResultadoAjusteDiferencia> AjustarUna(ITransaccionDiferenciasReposicion t, string empresa, int id, string usuario,
+            Action<DiferenciaReposicionDTO> alDevolverAlOrigen)
         {
             DiferenciaReposicionDTO fila = await t.Leer(empresa, id).ConfigureAwait(false);
             if (fila == null)
@@ -286,6 +306,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
             resultado.Ajuste = AjustesDiferenciaReposicion.HECHO;
             resultado.Mensaje = SinHueco(movimiento, fila.Origen);
             await t.GuardarAjuste(id, resultado.Ajuste, movimiento?.NumeroOrdenExtracto, resultado.Mensaje).ConfigureAwait(false);
+            if (fila.Diferencia < 0)
+            {
+                alDevolverAlOrigen?.Invoke(fila);
+            }
             return resultado;
         }
 
@@ -342,6 +366,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             bool activo = ajusteActivo();
 
             string mensaje = null;
+            StockDevueltoAlOrigen devuelto = null;
             DiferenciaReposicionDTO resuelta = await repositorio.EnTransaccion(async t =>
             {
                 DiferenciaReposicionDTO fila = await t.Leer(empresa, id).ConfigureAwait(false);
@@ -381,6 +406,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
                         ResultadoMovimientoStock movimiento = await t.Mover(Movimiento(empresa, fila, fila.Origen, plan.Origen, resolucion, quien)).ConfigureAwait(false);
                         numeroOrigen = movimiento?.NumeroOrdenExtracto;
                         avisos.Add(SinHueco(movimiento, fila.Origen));
+                        // «Confirmada» de una falta que no se ajustó al recibir: lo que no llegó vuelve ahora a contar en el origen
+                        if (plan.Origen > 0 && fila.Diferencia < 0)
+                        {
+                            devuelto = new StockDevueltoAlOrigen { Fila = fila, Unidades = plan.Origen };
+                        }
                     }
                     if (plan.Destino != 0)
                     {
@@ -394,8 +424,69 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 return await t.Leer(empresa, id).ConfigureAwait(false);
             }).ConfigureAwait(false);
 
+            if (devuelto != null)
+            {
+                await AvisarDevolucion(empresa, new List<StockDevueltoAlOrigen> { devuelto }).ConfigureAwait(false);
+            }
             Completar(resuelta);
             return new ResultadoResolverDiferenciaReposicionDTO { Diferencia = resuelta, Mensaje = mensaje };
+        }
+
+        // ---------------------------------------------------------------- aviso a la tienda (slice 09/11/26)
+
+        internal class StockDevueltoAlOrigen
+        {
+            public DiferenciaReposicionDTO Fila { get; set; }
+            public int Unidades { get; set; }
+        }
+
+        /// <summary>
+        /// Un aviso por reposición a la tienda de origen y a quien la envió, una línea por producto. En Algete no: allí las
+        /// diferencias las comprueba Almacén, al que ya le llega el aviso de la recepción. Nunca lanza.
+        /// </summary>
+        private async Task AvisarDevolucion(string empresa, List<StockDevueltoAlOrigen> devueltas)
+        {
+            foreach (var grupo in devueltas
+                .Where(d => d.Unidades > 0 && !string.IsNullOrWhiteSpace(d.Fila.Origen) &&
+                    !string.Equals(d.Fila.Origen.Trim(), Constantes.Almacenes.ALGETE, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(d => new { d.Fila.Traspaso, Origen = d.Fila.Origen.Trim().ToUpperInvariant() }))
+            {
+                try
+                {
+                    DiferenciaReposicionDTO primera = grupo.First().Fila;
+                    await avisadorDevolucion.Value.Avisar(empresa, grupo.Key.Origen, primera.Preparador,
+                        TituloDevolucion(grupo.Key.Traspaso, primera.Destino),
+                        grupo.Select(d => LineaDevolucion(d.Fila, d.Unidades)).ToList()).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Diferencias de reposición] No se pudo avisar a {grupo.Key.Origen} del stock devuelto por la " +
+                        $"reposición {grupo.Key.Traspaso} (el ajuste está hecho): {MensajeDe(ex)}", ex));
+                }
+            }
+        }
+
+        internal static string TituloDevolucion(int traspaso, string destino) =>
+            $"Reposición {traspaso} a {NombreAlmacen(destino)}: ha vuelto a contar en su tienda lo que no llegó";
+
+        /// <summary>«La reposición 81296 llegó a Algete con 1 contorno de ojos 18863 menos de los que mandó: …».</summary>
+        internal static string LineaDevolucion(DiferenciaReposicionDTO fila, int unidades)
+        {
+            string descripcion = string.IsNullOrWhiteSpace(fila.Descripcion) ? null : fila.Descripcion.Trim();
+            string producto = descripcion == null ? $"ud. del {fila.Producto?.Trim()}" : $"{descripcion} {fila.Producto?.Trim()}";
+            return $"La reposición {fila.Traspaso} llegó a {NombreAlmacen(fila.Destino)} con {unidades} {producto} menos de los que mandó: " +
+                "se ha vuelto a contar en su tienda. Si no lo tiene, márquelo «No está» en la próxima reposición o búsquelo en el bulto.";
+        }
+
+        internal static string NombreAlmacen(string almacen)
+        {
+            switch (almacen?.Trim().ToUpperInvariant())
+            {
+                case Constantes.Almacenes.ALGETE: return "Algete";
+                case Constantes.Almacenes.REINA: return "Reina";
+                case Constantes.Almacenes.ALCOBENDAS: return "Alcobendas";
+                default: return almacen?.Trim();
+            }
         }
 
         /// <summary>Cuánto hay que mover ahora en el origen y en el destino (positivo entra, negativo sale).</summary>
@@ -579,6 +670,96 @@ namespace NestoAPI.Infraestructure.Reposiciones
         private static string Recortar(string texto, int maximo)
         {
             return texto == null ? null : (texto.Length > maximo ? texto.Substring(0, maximo) : texto);
+        }
+    }
+}
+
+namespace NestoAPI.Infraestructure.Reposiciones
+{
+    /// <summary>Slice 09/11/26 de NestoAPI#634: avisar a una tienda de que una diferencia de reposición le ha devuelto stock.</summary>
+    public interface IAvisadorDevolucionStockOrigen
+    {
+        /// <param name="origen">La tienda a la que ha vuelto el stock.</param>
+        /// <param name="preparador">Quien envió la reposición (con o sin dominio), o null.</param>
+        /// <param name="lineas">Una por producto.</param>
+        Task Avisar(string empresa, string origen, string preparador, string titulo, IReadOnlyList<string> lineas);
+    }
+
+    /// <summary>
+    /// Al buzón de Nesto (la campana) y al de Ariadna de la gente de la tienda (quien la tiene como AlmacénPedidoVta, el mismo
+    /// criterio que <see cref="AvisadorReposicionAutomatica.UsuariosDelAlmacen"/>) y de quien envió la reposición. Abre la lista
+    /// de diferencias de reposición, donde la tienda puede contestar «No estaba».
+    /// </summary>
+    public class AvisadorDevolucionStockOrigen : IAvisadorDevolucionStockOrigen
+    {
+        public const string TIPO_NOTIFICACION = "DevolucionStockReposicion";
+        private const string DOMINIO = "NUEVAVISION\\";
+
+        private readonly IServicioNotificacionesPush notificaciones;
+        private readonly Func<string, string, Task<List<string>>> usuariosDeLaTienda;
+
+        public AvisadorDevolucionStockOrigen(IServicioNotificacionesPush notificaciones) : this(notificaciones, null)
+        {
+        }
+
+        internal AvisadorDevolucionStockOrigen(IServicioNotificacionesPush notificaciones, Func<string, string, Task<List<string>>> usuariosDeLaTienda)
+        {
+            this.notificaciones = notificaciones ?? throw new ArgumentNullException(nameof(notificaciones));
+            this.usuariosDeLaTienda = usuariosDeLaTienda ?? LeerUsuariosDeLaTienda;
+        }
+
+        private static async Task<List<string>> LeerUsuariosDeLaTienda(string empresa, string almacen)
+        {
+            using (var db = new NVEntities())
+            {
+                return await AvisadorReposicionAutomatica.UsuariosDelAlmacen(db, empresa, almacen).ConfigureAwait(false);
+            }
+        }
+
+        public async Task Avisar(string empresa, string origen, string preparador, string titulo, IReadOnlyList<string> lineas)
+        {
+            List<string> lista = (lineas ?? new List<string>()).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+            if (!lista.Any())
+            {
+                return;
+            }
+            string almacen = origen?.Trim().ToUpperInvariant();
+            var candidatos = new List<string>();
+            if (!string.IsNullOrWhiteSpace(preparador))
+            {
+                candidatos.Add(preparador);
+            }
+            candidatos.AddRange(await usuariosDeLaTienda(empresa?.Trim(), almacen).ConfigureAwait(false) ?? new List<string>());
+            List<string> usuarios = candidatos
+                .Select(u => u?.Trim())
+                .Where(u => !string.IsNullOrWhiteSpace(u) && !u.StartsWith("(", StringComparison.Ordinal))
+                .Select(u => u.Contains("\\") ? u : DOMINIO + u)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (!usuarios.Any())
+            {
+                ElmahHelper.Log(new Exception($"[Diferencias de reposición] No hay a quién avisar en {almacen}: {titulo}. {string.Join(" ", lista)}"));
+                return;
+            }
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = titulo,
+                Cuerpo = string.Join(Environment.NewLine, lista),
+                Tipo = TIPO_NOTIFICACION,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = TIPO_NOTIFICACION,
+                    ["vista"] = PreparacionAlmacen.AvisadorReposiciones.VISTA_DIFERENCIAS,
+                    ["origen"] = almacen
+                }
+            };
+            foreach (string usuario in usuarios)
+            {
+                await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                // Ariadna: al buzón de la PDA, donde el usuario va sin dominio
+                await notificaciones.GuardarEnBuzonDeUsuario(usuario.Substring(usuario.LastIndexOf('\\') + 1), Constantes.Aplicaciones.ARIADNA, notificacion)
+                    .ConfigureAwait(false);
+            }
         }
     }
 }

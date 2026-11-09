@@ -30,6 +30,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         private RepositorioFalso repositorio;
         private bool interruptor;
         private Dictionary<string, string> almacenes;
+        private IAvisadorDevolucionStockOrigen avisadorDevolucion;
 
         private class RepositorioFalso : IRepositorioDiferenciasReposicion
         {
@@ -69,11 +70,13 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             interruptor = true;
             almacenes = new Dictionary<string, string> { ["Paloma"] = "ALC", ["Reina"] = "REI" };
             A.CallTo(() => transaccion.Mover(A<MovimientoStockDiferencia>._)).Returns(new ResultadoMovimientoStock { NumeroOrdenExtracto = 4700001 });
+            avisadorDevolucion = A.Fake<IAvisadorDevolucionStockOrigen>();
         }
 
         private ServicioDiferenciasReposicion Servicio()
         {
-            return new ServicioDiferenciasReposicion(repositorio, () => interruptor, (e, u) => almacenes.TryGetValue(u, out string a) ? a : null);
+            return new ServicioDiferenciasReposicion(repositorio, () => interruptor, (e, u) => almacenes.TryGetValue(u, out string a) ? a : null,
+                avisadorDevolucion);
         }
 
         private static IPrincipal Usuario(string nombre, params string[] grupos)
@@ -563,6 +566,139 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             // NestoAPI#651: el hueco del que salió el traspaso, ya en -4 o (si aún no se ha contabilizado la salida) en 4
             StringAssert.Contains(sql, "s.[NºTraspasoRepo] = @p4 AND s.Estado IN (4, -4)");
             StringAssert.Contains(PuertaUbicacionesSql.SQL_ENTRADA_PENDIENTE_DE_UBICAR, "Cantidad, Estado, Usuario) VALUES (@p0, @p1, @p2, @p3, 2, @p4)");
+        }
+            // ---------------------------------------------------------------- aviso a la tienda cuando le vuelve stock (09/11/26)
+
+        /// <summary>
+        /// 81296 (ALC → ALG, 05/11): Alcobendas mandó 1 × 18863 y 2 × 25973; Algete recibió 0 y 1. El ajuste devolvió +1 de cada
+        /// uno a Alcobendas sin que Paloma se enterara (sugerencias 1133 y 1134).
+        /// </summary>
+        private static DiferenciaReposicionDTO Caso81296(int id, string producto, string descripcion, int enviado, int leido, string ajuste = null)
+        {
+            return new DiferenciaReposicionDTO
+            {
+                Id = id, Empresa = "1", Traspaso = 81296, Origen = "ALC", Destino = "ALG", Producto = producto, Descripcion = descripcion,
+                Enviado = enviado, Leido = leido, Diferencia = leido - enviado, Estado = EstadosDiferenciaReposicion.PENDIENTE, Ajuste = ajuste,
+                UsuarioRecepcion = "NUEVAVISION\\Pedro", Preparador = "NUEVAVISION\\Paloma"
+            };
+        }
+
+        [TestMethod]
+        public async Task Ajustar_Caso81296_FaltaDevueltaALaTienda_SeAvisaALaTiendaConProductoCantidadYTienda()
+        {
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0));
+            LaTransaccionLee(Caso81296(12, "25973", "crema de manos", 2, 1));
+
+            _ = await Servicio().AjustarOrigenTrasRecibir("1", new[] { 11, 12 }, "NUEVAVISION\\Pedro");
+
+            A.CallTo(() => avisadorDevolucion.Avisar("1", "ALC", "NUEVAVISION\\Paloma", A<string>.That.Contains("81296"),
+                A<IReadOnlyList<string>>.That.Matches(l => l.Count == 2 &&
+                    l[0] == "La reposición 81296 llegó a Algete con 1 contorno de ojos 18863 menos de los que mandó: se ha vuelto a contar en su tienda. " +
+                        "Si no lo tiene, márquelo «No está» en la próxima reposición o búsquelo en el bulto." &&
+                    l[1].StartsWith("La reposición 81296 llegó a Algete con 1 crema de manos 25973 menos de los que mandó"))))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Ajustar_SinDiferenciaQueDevuelvaStock_NoSeAvisaALaTienda()
+        {
+            // Sobra (ALC → ALG, recibido de más): al origen se le descuenta, no le vuelve nada
+            LaTransaccionLee(Caso80906());
+            // Y una diferencia ya ajustada: no se mueve nada
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0, AjustesDiferenciaReposicion.HECHO));
+
+            _ = await Servicio().AjustarOrigenTrasRecibir("1", new[] { 2, 11 }, "NUEVAVISION\\Pedro");
+
+            A.CallTo(() => avisadorDevolucion.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Ajustar_InterruptorApagado_NoSeAvisaALaTienda()
+        {
+            interruptor = false;
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0));
+
+            _ = await Servicio().AjustarOrigenTrasRecibir("1", new[] { 11 }, "NUEVAVISION\\Pedro");
+
+            A.CallTo(() => avisadorDevolucion.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Ajustar_FaltaDevueltaAAlgete_NoSeAvisaPorEsteCamino()
+        {
+            // En Algete la comprueba Almacén, que ya recibe el aviso de la recepción
+            LaTransaccionLee(Caso80915());
+
+            _ = await Servicio().AjustarOrigenTrasRecibir("1", new[] { 1 }, "NUEVAVISION\\Paloma");
+
+            A.CallTo(() => avisadorDevolucion.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Ajustar_SiFallaElAviso_ElAjusteSeQuedaHechoYNoLanza()
+        {
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0));
+            A.CallTo(() => avisadorDevolucion.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<string>>._))
+                .ThrowsAsync(new Exception("buzón caído"));
+
+            List<ResultadoAjusteDiferencia> resultado = await Servicio().AjustarOrigenTrasRecibir("1", new[] { 11 }, "NUEVAVISION\\Pedro");
+
+            Assert.AreEqual(AjustesDiferenciaReposicion.HECHO, resultado.Single().Ajuste);
+            A.CallTo(() => transaccion.GuardarAjuste(11, AjustesDiferenciaReposicion.HECHO, 4700001, null)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => transaccion.GuardarAjuste(11, AjustesDiferenciaReposicion.FALLIDO, A<int?>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Resolver_ConfirmadaDeUnaFaltaSinAjustar_DevuelveElStockYAvisaALaTienda()
+        {
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0, AjustesDiferenciaReposicion.APAGADO));
+
+            _ = await Servicio().Resolver("1", 11, new ResolverDiferenciaReposicionDTO { Resolucion = "Confirmada" }, Usuario("Carlos", "Dirección"));
+
+            A.CallTo(() => transaccion.Mover(A<MovimientoStockDiferencia>.That.Matches(m => m.Almacen == "ALC" && m.Cantidad == 1))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisadorDevolucion.Avisar("1", "ALC", "NUEVAVISION\\Paloma", A<string>._,
+                A<IReadOnlyList<string>>.That.Matches(l => l.Single().Contains("con 1 contorno de ojos 18863 menos")))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Resolver_NoEstaba_NoDevuelveStockYNoAvisa()
+        {
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0, AjustesDiferenciaReposicion.HECHO));
+
+            _ = await Servicio().Resolver("1", 11, new ResolverDiferenciaReposicionDTO { Resolucion = "NoEstaba" }, Usuario("Carlos", "Dirección"));
+
+            A.CallTo(() => avisadorDevolucion.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Resolver_SiFallaElAviso_LaResolucionSeQuedaYNoLanza()
+        {
+            LaTransaccionLee(Caso81296(11, "18863", "contorno de ojos", 1, 0, AjustesDiferenciaReposicion.APAGADO));
+            A.CallTo(() => avisadorDevolucion.Avisar(A<string>._, A<string>._, A<string>._, A<string>._, A<IReadOnlyList<string>>._))
+                .ThrowsAsync(new Exception("buzón caído"));
+
+            ResultadoResolverDiferenciaReposicionDTO resultado = await Servicio().Resolver("1", 11,
+                new ResolverDiferenciaReposicionDTO { Resolucion = "Confirmada" }, Usuario("Carlos", "Dirección"));
+
+            Assert.IsNotNull(resultado);
+            A.CallTo(() => transaccion.GuardarResolucion(11, "Confirmada", A<string>._, A<string>._, 4700001, null)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task AvisadorDevolucion_ALaTiendaYAQuienLaEnvio_EnNestoYEnAriadna()
+        {
+            var push = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            var avisador = new AvisadorDevolucionStockOrigen(push, (e, a) => Task.FromResult(new List<string> { "Paloma", "(defecto)" }));
+
+            await avisador.Avisar("1", "ALC", "NUEVAVISION\\Alfredo", "Reposición 81296", new List<string> { "línea" });
+
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Paloma", NestoAPI.Models.Constantes.Aplicaciones.NESTO,
+                A<NestoAPI.Models.NotificacionPushDTO>.That.Matches(n => n.Cuerpo == "línea" && n.Datos["origen"] == "ALC"))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("Paloma", NestoAPI.Models.Constantes.Aplicaciones.ARIADNA, A<NestoAPI.Models.NotificacionPushDTO>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", NestoAPI.Models.Constantes.Aplicaciones.NESTO, A<NestoAPI.Models.NotificacionPushDTO>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>.That.Contains("defecto"), A<string>._, A<NestoAPI.Models.NotificacionPushDTO>._)).MustNotHaveHappened();
         }
     }
 }
