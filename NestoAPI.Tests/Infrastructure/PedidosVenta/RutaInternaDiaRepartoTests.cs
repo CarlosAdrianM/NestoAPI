@@ -1036,5 +1036,105 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.AreEqual(D("2026-11-05"), resultado.PrimeraEntrega);
         }
+
+        // ================================================================ promesa #606 por nuestra ruta SIN día de reparto (09/11/26)
+        // NestoAPI#588: por nuestra ruta (AT/16) se entrega el MISMO día del picking. La promesa de la fecha de entrega tiene
+        // que decir lo mismo cuando el código postal no tiene día (la 16 de Algete, CP fuera de la tabla): antes el cierre
+        // del cliente se miraba el laborable siguiente, como por agencia, y un día sin reparto propio no se saltaba.
+
+        private static ResultadoFechaEntregaAgencia CalcularSinDia(string ruta, string ahora, string diasEnServir,
+            Func<DateTime, string, bool> esFestivo = null, DateTime? llegaProveedor = null)
+        {
+            var linea = new LineaFechaEntregaAgencia { Producto = "A", Cantidad = 1, BaseImponible = 10, EnAlgete = llegaProveedor.HasValue ? 0 : 1 };
+            if (llegaProveedor.HasValue)
+            {
+                linea.DelProveedor = 1;
+                linea.FechaProveedor = llegaProveedor;
+            }
+            return new CalculadoraFechaEntregaAgencia(esFestivo ?? FestivosAlmacen()).Calcular(new EntradaFechaEntregaAgencia
+            {
+                Ruta = ruta,
+                DiaRutaInterna = DiasRepartoCodigosPostales.DiaRutaInterna(ruta, CP_SIN_DIA),
+                DiasEnServir = diasEnServir,
+                Ahora = Instante(ahora),
+                HoraCorte = CORTE_AGENCIA,
+                Lineas = new List<LineaFechaEntregaAgencia> { linea }
+            });
+        }
+
+        [DataTestMethod]
+        [DataRow("16")]
+        [DataRow("AT")]
+        public void Promesa606_RutaPropiaSinDia_AntesDelCorte_HoyYPorNuestraRuta(string ruta)
+        {
+            ResultadoFechaEntregaAgencia r = CalcularSinDia(ruta, "2026-11-02 10:00", "11111");
+
+            Assert.AreEqual(D("2026-11-02"), r.PrimeraEntrega, r.Motivo);
+            StringAssert.Contains(r.Motivo, "Sale entero por nuestra ruta el lunes 02/11");
+            StringAssert.Contains(r.Motivo, "se entrega el mismo día en que sale el picking");
+            Assert.IsFalse(r.Motivo.Contains("a la agencia"), r.Motivo);
+        }
+
+        [TestMethod]
+        public void Promesa606_RutaPropiaSinDia_PasadoElCorte_ElSiguienteLaborable()
+        {
+            ResultadoFechaEntregaAgencia r = CalcularSinDia("16", "2026-11-02 12:00", "11111");
+
+            Assert.AreEqual(D("2026-11-03"), r.PrimeraEntrega, r.Motivo);
+            StringAssert.Contains(r.Motivo, "Pasada la hora de corte (11:00)");
+        }
+
+        [TestMethod]
+        public void Promesa606_RutaPropiaSinDia_ViernesPasadoElCorte_ElLunes()
+        {
+            Assert.AreEqual(D("2026-11-09"), CalcularSinDia("AT", "2026-11-06 12:00", "11111").PrimeraEntrega);
+        }
+
+        [TestMethod]
+        public void Promesa606_RutaPropiaSinDia_ClienteCierraLosLunes_SaleElViernes()
+        {
+            // Sugerencia 1110: por agencia el viernes se entregaría el lunes (cerrado); por nuestra ruta, el mismo viernes
+            ResultadoFechaEntregaAgencia r = CalcularSinDia("16", "2026-11-06 10:00", "01111");
+
+            Assert.AreEqual(D("2026-11-06"), r.PrimeraEntrega, r.Motivo);
+        }
+
+        [TestMethod]
+        public void Promesa606_RutaPropiaSinDia_ClienteCierraElDiaDelPicking_ElSiguienteQueAbre()
+        {
+            // Martes cerrado: por agencia el martes se entregaría el miércoles (abierto); por nuestra ruta se entrega el martes
+            ResultadoFechaEntregaAgencia r = CalcularSinDia("16", "2026-11-03 10:00", "10111");
+
+            Assert.AreEqual(D("2026-11-04"), r.PrimeraEntrega, r.Motivo);
+            StringAssert.Contains(r.Motivo, "El cliente cierra el martes 03/11");
+        }
+
+        [TestMethod]
+        public void Promesa606_RutaPropiaSinDia_UnDiaSinRepartoPropio_SaleElSiguiente()
+        {
+            // Lo del proveedor previsto el lunes saldría el martes, pero el martes no sale la furgoneta (NestoAPI#841)
+            ResultadoFechaEntregaAgencia r = CalcularSinDia("16", "2026-11-02 10:00", "11111", SinRepartoPropioEl("2026-11-03"), D("2026-11-02"));
+
+            Assert.AreEqual(D("2026-11-04"), r.PrimeraEntrega, r.Motivo);
+        }
+
+        [TestMethod]
+        public void Promesa606_RutaPropiaSinDia_HoyDiaSinRepartoPropio_Manana()
+        {
+            Assert.AreEqual(D("2026-11-03"), CalcularSinDia("AT", "2026-11-02 10:00", "11111", SinRepartoPropioEl("2026-11-02")).PrimeraEntrega);
+        }
+
+        [TestMethod]
+        public void Promesa606_Agencia_SinCambios_ElCierreSeMiraElLaborableSiguienteYElDiaSinRepartoPropioNoCuenta()
+        {
+            // FW: el viernes se entregaría el lunes (cerrado) → sale el lunes 09
+            ResultadoFechaEntregaAgencia cerrado = CalcularSinDia("FW", "2026-11-06 10:00", "01111");
+            Assert.AreEqual(D("2026-11-09"), cerrado.PrimeraEntrega, cerrado.Motivo);
+            StringAssert.Contains(cerrado.Motivo, "a la agencia");
+            // Martes cerrado: el martes se entrega el miércoles (abierto) → sale el martes
+            Assert.AreEqual(D("2026-11-03"), CalcularSinDia("FW", "2026-11-03 10:00", "10111").PrimeraEntrega);
+            // Un día sin reparto propio no afecta a la agencia
+            Assert.AreEqual(D("2026-11-03"), CalcularSinDia("FW", "2026-11-02 10:00", "11111", SinRepartoPropioEl("2026-11-03"), D("2026-11-02")).PrimeraEntrega);
+        }
     }
 }

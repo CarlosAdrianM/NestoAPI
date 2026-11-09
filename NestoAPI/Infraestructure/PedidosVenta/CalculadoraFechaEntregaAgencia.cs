@@ -127,7 +127,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// hoy y sale el laborable siguiente a ese (<see cref="ResultadoFechaEntregaAgencia.ProveedorVencido"/>); el resto, sin
     /// fecha.</item>
     /// <item>Cada día: si la entrega (el laborable siguiente) cae en un día que el cliente cierra, no sale
-    /// (<see cref="GestorDiasEnServir"/>). Modo 3: no sale mientras le quede algo por llegar de las tiendas
+    /// (<see cref="GestorDiasEnServir"/>). Por nuestra ruta (AT/16, con día de reparto o sin él) la entrega es el MISMO día del
+    /// picking (NestoAPI#588, <see cref="GestorDiasEnServir.CalcularDiaEntregaRutaPropia"/>) y un día sin reparto propio no
+    /// sale (NestoAPI#841). Modo 3: no sale mientras le quede algo por llegar de las tiendas
     /// (<see cref="GestorReposicionTiendas"/>). Exige tenerlo todo el modo 1, el 4 tras la primera entrega y cualquier
     /// modo si lo único que falta son regalos (<see cref="PedidoPicking.ExigeStockDeTodo"/>, #529). Si tiene productos de
     /// pago, tiene que salir alguno de pago (<see cref="GestorStocksPicking.HayStockDeAlgo"/>).</item>
@@ -200,6 +202,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool fueANota = false;
             bool todoANota = false;
             var diasCerrados = new List<DateTime>();
+            bool porNuestraRuta = PorNuestraRuta(entrada);
 
             for (DateTime dia = inicio; dia <= horizonte && lotes.Any(l => l.Pendiente); dia = dia.AddDays(1))
             {
@@ -220,8 +223,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     continue;
                 }
 
-                // #362: si la entrega (el laborable siguiente a la salida) cae en un día que el cliente cierra, no sale.
-                DateTime diaEntrega = entrada.DiaRutaInterna.HasValue ? dia : GestorDiasEnServir.CalcularDiaEntrega(dia, f => !EsLaborable(f));
+                // NestoAPI#588/#841 (09/11/26): por nuestra ruta sin día de reparto (la 16 de Algete, CP fuera de la tabla) sale
+                // cualquier día con reparto propio; un día sin él, como el picking (CalcularDiaEntregaRutaPropia), no.
+                if (porNuestraRuta && !entrada.DiaRutaInterna.HasValue && SinRepartoPropio(dia))
+                {
+                    continue;
+                }
+
+                // #362: si la entrega (el laborable siguiente a la salida) cae en un día que el cliente cierra, no sale. Por nuestra
+                // ruta (con día o sin él) se entrega el mismo día del picking (NestoAPI#588), como mira GestorPicking.
+                DateTime diaEntrega = porNuestraRuta ? dia : GestorDiasEnServir.CalcularDiaEntrega(dia, f => !EsLaborable(f));
                 if (!GestorDiasEnServir.EstaAbierto(entrada.DiasEnServir, diaEntrega))
                 {
                     diasCerrados.Add(diaEntrega);
@@ -324,6 +335,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ModoServicio = alternativo,
                 ModoFacturacion = entrada.ModoFacturacion,
                 Ruta = entrada.Ruta,
+                DiaRutaInterna = entrada.DiaRutaInterna,
                 DiasEnServir = entrada.DiasEnServir,
                 TieneLineasServidas = entrada.TieneLineasServidas,
                 Ahora = entrada.Ahora,
@@ -505,8 +517,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             var frases = new List<string>();
             DateTime hoy = entrada.Ahora.Date;
-            // NestoAPI#764: con día de reparto no va a la agencia: lo reparte nuestra ruta el mismo día en que se prepara
-            string destino = entrada.DiaRutaInterna.HasValue ? "por nuestra ruta" : "a la agencia";
+            // NestoAPI#764: con día de reparto no va a la agencia: lo reparte nuestra ruta el mismo día en que se prepara.
+            // NestoAPI#588: sin día de reparto, también (AT/16).
+            bool porNuestraRuta = PorNuestraRuta(entrada);
+            string destino = porNuestraRuta ? "por nuestra ruta" : "a la agencia";
             if (resultado.PrimeraEntrega.HasValue && resultado.EntregaCompleta == resultado.PrimeraEntrega)
             {
                 frases.Add($"Sale entero {destino} el {Dia(resultado.PrimeraEntrega.Value, hoy)}.");
@@ -520,12 +534,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             else
             {
-                frases.Add(entrada.DiaRutaInterna.HasValue ? "Sin fecha de reparto por nuestra ruta." : "Sin fecha de entrega a la agencia.");
+                frases.Add(porNuestraRuta ? "Sin fecha de reparto por nuestra ruta." : "Sin fecha de entrega a la agencia.");
             }
             if (entrada.DiaRutaInterna.HasValue)
             {
                 frases.Add($"Por nuestra ruta, su código postal se reparte {CalendarioRutasDia.NombrePlural(entrada.DiaRutaInterna.Value)} " +
                     "(si es festivo, el siguiente laborable) y se prepara ese mismo día.");
+            }
+            else if (porNuestraRuta)
+            {
+                frases.Add("Por nuestra ruta se entrega el mismo día en que sale el picking (si ese día no hay reparto propio, el siguiente que lo haya).");
             }
 
             frases.Add($"Modo «{Constantes.Pedidos.ModosServicio.Nombre(entrada.ModoServicio)}»: {ExplicacionModo(entrada.ModoServicio)}");
@@ -661,6 +679,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal static string DiaCorto(DateTime dia, DateTime hoy) => dia.ToString(dia.Year == hoy.Year ? "dd/MM" : "dd/MM/yyyy", castellano);
 
         private bool EsLaborable(DateTime dia) => GestorFestivos.EsLaborable(dia, Constantes.Almacenes.ALGETE, esFestivo);
+
+        /// <summary>
+        /// ¿Lo reparte nuestra ruta? Con día de reparto (NestoAPI#764) o con una ruta propia (AT/16, <see cref="Models.Facturas.RutasPropiasConfiguradas"/>),
+        /// el mismo criterio que el picking (<see cref="GestorDiasEnServir.RetirarPedidosDeClientesCerrados(List{PedidoPicking}, DateTime, DateTime, DateTime?, bool)"/>).
+        /// </summary>
+        private static bool PorNuestraRuta(EntradaFechaEntregaAgencia entrada) =>
+            entrada.DiaRutaInterna.HasValue || GestorDiasEnServir.EsRutaPropia(entrada.Ruta);
 
         /// <summary>NestoAPI#841: ¿ese día no sale nuestra ruta? No laborable en Algete o día sin reparto propio.</summary>
         private bool SinRepartoPropio(DateTime dia) => !EsLaborable(dia) || GestorFestivos.EsFestivoRepartoPropio(dia, esFestivo);
