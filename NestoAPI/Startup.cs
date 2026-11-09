@@ -294,6 +294,9 @@ namespace NestoAPI
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoPicking, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoPicking>();
+            // NestoAPI#590: quitar el picking de un pedido desde Nesto (soltar reservas, anular lo leído y avisar a la PDA)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioQuitarPicking>(_ => Infraestructure.PreparacionAlmacen.RepositorioQuitarPickingSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioQuitarPicking, Infraestructure.PreparacionAlmacen.ServicioQuitarPicking>();
             // … y en la salida de una reposición (la reserva en estado 4 pasa de hueco por la puerta única de Ubicaciones)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHuecoReposicion>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoReposicionSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoReposicion, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoReposicion>();

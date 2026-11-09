@@ -329,10 +329,10 @@ namespace NestoAPI.Tests.Controllers
         {
             TerminarDevuelve(EstadoTerminarSalida.SinPermiso, "sin permiso");
 
-            var resultado = (NegotiatedContentResult<string>)await controller.PostTerminarRecogida("PICK", 99700);
+            var resultado = (NegotiatedContentResult<MensajeAlmacenDTO>)await controller.PostTerminarRecogida("PICK", 99700);
 
             Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, resultado.StatusCode);
-            Assert.AreEqual("sin permiso", resultado.Content);
+            Assert.AreEqual("sin permiso", resultado.Content.Message);
         }
 
         [TestMethod]
@@ -340,9 +340,11 @@ namespace NestoAPI.Tests.Controllers
         {
             TerminarDevuelve(EstadoTerminarSalida.SinTerminar, "Quedan 2 unidades");
 
-            var resultado = (NegotiatedContentResult<string>)await controller.PostTerminarRecogida("PICK", 99700);
+            // NestoAPI#590: el motivo va como objeto { Message }, no como texto suelto
+            var resultado = (NegotiatedContentResult<MensajeAlmacenDTO>)await controller.PostTerminarRecogida("PICK", 99700);
 
             Assert.AreEqual(System.Net.HttpStatusCode.Conflict, resultado.StatusCode);
+            Assert.AreEqual("Quedan 2 unidades", resultado.Content.Message);
         }
 
         private void AnularDevuelve(EstadoAnularLecturas estado, string mensaje = "motivo")
@@ -369,12 +371,12 @@ namespace NestoAPI.Tests.Controllers
         public async Task PostAnularLecturas_SinPermiso403_YaTerminada409_NoValido400()
         {
             AnularDevuelve(EstadoAnularLecturas.SinPermiso, "solo Dirección");
-            var sinPermiso = (NegotiatedContentResult<string>)await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
+            var sinPermiso = (NegotiatedContentResult<MensajeAlmacenDTO>)await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
             Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, sinPermiso.StatusCode);
-            Assert.AreEqual("solo Dirección", sinPermiso.Content);
+            Assert.AreEqual("solo Dirección", sinPermiso.Content.Message);
 
             AnularDevuelve(EstadoAnularLecturas.YaTerminada, "ya terminada");
-            var terminada = (NegotiatedContentResult<string>)await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
+            var terminada = (NegotiatedContentResult<MensajeAlmacenDTO>)await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
             Assert.AreEqual(System.Net.HttpStatusCode.Conflict, terminada.StatusCode);
 
             AnularDevuelve(EstadoAnularLecturas.NoValido, "falta el mozo");

@@ -345,7 +345,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return new ResultadoTerminarSalida
                 {
                     Estado = EstadoTerminarSalida.SinTerminar,
-                    Mensaje = $"Quedan {quedan} unidades sin coger ni dar por falta."
+                    Mensaje = MotivoSinTerminar(estado, quedan)
                 };
             }
             if (escrituras == null)
@@ -359,6 +359,28 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     ? await Ensayar(origen, empresa, numero, estado, usuario).ConfigureAwait(false)
                     : await escrituras.EnTransaccion(tx => TerminarYApuntar(origen, empresa, numero, estado, usuario, tx, false), false).ConfigureAwait(false)
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#590 (picking 100033, 09/11/26): por qué no se puede terminar. Si lo que bloquea son lecturas de productos que
+        /// ya no están en la salida (se sacó un pedido del picking mientras se recogía), se dice cuáles y qué hacer con ellos, no
+        /// «Quedan 0 unidades».
+        /// </summary>
+        internal static string MotivoSinTerminar(EstadoPickingDTO estado, int quedan)
+        {
+            List<string> ajenos = (estado?.Productos ?? new List<DiferenciaPreparacionDTO>())
+                .Where(p => p.Ajeno)
+                .Select(p => p.Producto?.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+            string sinCoger = $"Quedan {quedan} unidades sin coger ni dar por falta.";
+            if (ajenos.Count == 0)
+            {
+                return sinCoger;
+            }
+            string mensaje = $"Ha leído {string.Join(", ", ajenos)}, que ya no {(ajenos.Count == 1 ? "está" : "están")} en este picking " +
+                "(seguramente se ha sacado su pedido del picking). Apártelos para ese pedido y avise a la oficina.";
+            return quedan > 0 ? mensaje + " Además, " + char.ToLowerInvariant(sinCoger[0]) + sinCoger.Substring(1) : mensaje;
         }
 
         /// <summary>

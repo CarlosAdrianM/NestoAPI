@@ -569,6 +569,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\EnlacePublicoFotoBultoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\PlanificadorFaltasSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SalidasAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\QuitarPickingPedidoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CorregirLecturaSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorteFaltasSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SalidasEscriturasTests.cs" />

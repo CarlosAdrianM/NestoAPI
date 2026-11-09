@@ -1,4 +1,4 @@
-using Microsoft.AspNet.SignalR;
+﻿using Microsoft.AspNet.SignalR;
 using System;
 using System.Collections.Concurrent;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -186,6 +186,12 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// <see cref="AvisosAlmacen.CLAVE_AVISOS_CON_DATOS"/>, el «haCambiado» de siempre. Nunca lanza.
         /// </summary>
         void Correccion(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, CorreccionAlmacenAvisoDTO correccion);
+
+        /// <summary>
+        /// NestoAPI#590: se ha quitado un pedido del picking desde Nesto: «pedidoSacadoDelPicking(grupo, dispositivo, aviso)» con lo
+        /// que hay que apartar y, detrás, SIEMPRE el «haCambiado» de siempre (la PDA relee la recogida). Nunca lanza.
+        /// </summary>
+        void PedidoSacadoDelPicking(string grupo, string usuario, PedidoSacadoDelPickingAvisoDTO aviso);
     }
 
     /// <summary>
@@ -315,6 +321,20 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public void HaCambiado(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor)
         {
             Mandar(grupo, usuario, conexionEmisora, dispositivoEmisor, (clientes, limpio, dispositivo) => clientes.haCambiado(limpio, dispositivo));
+        }
+
+        public void PedidoSacadoDelPicking(string grupo, string usuario, PedidoSacadoDelPickingAvisoDTO aviso)
+        {
+            if (aviso == null)
+            {
+                return;
+            }
+            // Lo manda Nesto (no una PDA del grupo): el dispositivo «Nesto» no excluye a ninguna PDA
+            Mandar(grupo, usuario, null, PreparacionAlmacen.ServicioQuitarPicking.DISPOSITIVO, (clientes, limpio, dispositivo) =>
+            {
+                clientes.pedidoSacadoDelPicking(limpio, dispositivo, aviso);
+                clientes.haCambiado(limpio, dispositivo);
+            });
         }
 
         /// <summary>

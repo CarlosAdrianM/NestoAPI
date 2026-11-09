@@ -204,9 +204,10 @@ namespace NestoAPI.Controllers
                     }
                     return Ok(resultado.Salida);
                 case EstadoTerminarSalida.SinPermiso:
-                    return Content(HttpStatusCode.Forbidden, resultado.Mensaje);
+                    return Content(HttpStatusCode.Forbidden, new MensajeAlmacenDTO { Message = resultado.Mensaje });
                 case EstadoTerminarSalida.SinTerminar:
-                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                    // NestoAPI#590: como objeto { Message }, para que cualquier cliente muestre el motivo
+                    return Content(HttpStatusCode.Conflict, new MensajeAlmacenDTO { Message = resultado.Mensaje });
                 case EstadoTerminarSalida.NoExiste:
                     return NotFound();
                 default:
@@ -358,9 +359,9 @@ namespace NestoAPI.Controllers
                     }
                     return Ok(new ResultadoAnularLecturasDTO { Filas = resultado.Filas, Mensaje = resultado.Mensaje });
                 case EstadoAnularLecturas.SinPermiso:
-                    return Content(HttpStatusCode.Forbidden, resultado.Mensaje);
+                    return Content(HttpStatusCode.Forbidden, new MensajeAlmacenDTO { Message = resultado.Mensaje });
                 case EstadoAnularLecturas.YaTerminada:
-                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                    return Content(HttpStatusCode.Conflict, new MensajeAlmacenDTO { Message = resultado.Mensaje });
                 default:
                     return BadRequest(resultado.Mensaje);
             }

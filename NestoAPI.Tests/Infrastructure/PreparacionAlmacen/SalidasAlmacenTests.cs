@@ -122,6 +122,26 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Terminar_ConLecturasDeProductosQueYaNoEstan_DiceCualesHayQueApartar()
+        {
+            // NestoAPI#590 (picking 100033, 09/11/26): se sacó un pedido del picking y el mozo siguió leyendo sus productos.
+            // Lo que bloquea no son «0 unidades sin coger», sino las lecturas de productos que ya no están en el picking.
+            PickingConLecturas(99700,
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 3 },
+                new LecturaPickingAlmacen { Producto = "B", Unidades = 1 },
+                new LecturaPickingAlmacen { Producto = "12485", Unidades = 2 },
+                new LecturaPickingAlmacen { Producto = "22530", Unidades = 1 });
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            Assert.AreEqual(EstadoTerminarSalida.SinTerminar, resultado.Estado);
+            StringAssert.Contains(resultado.Mensaje, "12485, 22530");
+            StringAssert.Contains(resultado.Mensaje, "ya no están en este picking");
+            StringAssert.Contains(resultado.Mensaje, "Apártelos");
+            Assert.IsFalse(resultado.Mensaje.Contains("Quedan 0"), resultado.Mensaje);
+        }
+
+        [TestMethod]
         public async Task Terminar_UnPickingCompleto_QuedaTerminadoYCompleto()
         {
             PickingConLecturas(99700,
