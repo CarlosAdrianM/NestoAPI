@@ -478,5 +478,157 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.AreEqual(0, await job.AvisarAsync(new DateTime(2026, 11, 7, 12, 0, 0)));
             A.CallTo(() => repositorio.LeerLeads(A<string>._)).MustNotHaveHappened();
         }
+
+        // ---------------- NestoAPI#848: orígenes de canal (no son leads) y origen propuesto por usuario ----------------
+
+        private const string TIENDA_ALCOBENDAS = "TIENDA-ALCOBENDAS";
+        private const string CLAVE_PROPUESTO = "OrigenClientePorDefecto";
+
+        private void CatalogoConCanales()
+        {
+            A.CallTo(() => repositorio.LeerCatalogo()).Returns(Task.FromResult(new List<OrigenCliente>
+            {
+                new OrigenCliente { Codigo = META, Descripcion = "Lead de Meta · campaña Harmonia", Campana = "Harmonia Meta Ads", Activo = true, HorasParaLlamar = 24, EsLead = true },
+                new OrigenCliente { Codigo = TIENDA_ALCOBENDAS, Descripcion = "Tienda de Alcobendas", Activo = true, HorasParaLlamar = 24, EsLead = false },
+                new OrigenCliente { Codigo = "WEB", Descripcion = "Página web", Activo = true, HorasParaLlamar = 24, EsLead = false },
+                new OrigenCliente { Codigo = "FERIA-2025", Descripcion = "Feria 2025", Activo = false, HorasParaLlamar = 48, EsLead = false }
+            }));
+        }
+
+        private ClientesController ControladorDe(string usuario, string propioDelUsuario, string deDefecto)
+        {
+            CatalogoConCanales();
+            ILectorParametrosUsuario lector = A.Fake<ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametroSinDefecto("1", "NUEVAVISION\\" + usuario, CLAVE_PROPUESTO)).Returns(propioDelUsuario);
+            A.CallTo(() => lector.LeerParametroSinDefecto("1", "(defecto)", CLAVE_PROPUESTO)).Returns(deDefecto);
+            ClientesController controlador = Controlador();
+            controlador.LectorParametrosOrigen = lector;
+            controlador.User = Usuario(usuario, Constantes.GruposSeguridad.TIENDAS);
+            return controlador;
+        }
+
+        private static List<OrigenClienteDTO> Contenido(System.Web.Http.IHttpActionResult r) => ((OkNegotiatedContentResult<List<OrigenClienteDTO>>)r).Content;
+
+        [TestMethod]
+        public void OrigenCliente_PorDefecto_EsLead()
+        {
+            // Las filas de campaña que ya existen siguen siendo leads (columna EsLead con DEFAULT 1).
+            Assert.IsTrue(new OrigenCliente().EsLead);
+            Assert.IsTrue(new LeadCampana().EsLead);
+        }
+
+        [TestMethod]
+        public async Task GetOrigenes_DiceCualesSonLeadsYCualesDeCanal()
+        {
+            List<OrigenClienteDTO> origenes = Contenido(await ControladorDe("Carlos", null, null).GetOrigenes());
+
+            Assert.IsTrue(origenes.Single(o => o.Codigo == META).EsLead);
+            Assert.IsFalse(origenes.Single(o => o.Codigo == TIENDA_ALCOBENDAS).EsLead);
+            Assert.IsFalse(origenes.Single(o => o.Codigo == "WEB").EsLead);
+        }
+
+        [TestMethod]
+        public async Task GetOrigenes_UsuarioConParametro_MarcaSuOrigenPropuesto()
+        {
+            List<OrigenClienteDTO> origenes = Contenido(await ControladorDe("Paloma", "tienda-alcobendas ", "").GetOrigenes());
+
+            CollectionAssert.AreEqual(new[] { TIENDA_ALCOBENDAS }, origenes.Where(o => o.PropuestoParaElUsuario).Select(o => o.Codigo).ToArray());
+        }
+
+        [TestMethod]
+        public async Task GetOrigenes_SinParametro_NingunoPropuesto()
+        {
+            // Sin fila propia y con la fila «(defecto)» vacía: como hasta ahora, sin propuesta.
+            List<OrigenClienteDTO> origenes = Contenido(await ControladorDe("Carlos", null, "").GetOrigenes());
+
+            Assert.IsFalse(origenes.Any(o => o.PropuestoParaElUsuario));
+        }
+
+        [TestMethod]
+        public async Task GetOrigenes_SinFilaPropia_UsaLaDeDefecto()
+        {
+            List<OrigenClienteDTO> origenes = Contenido(await ControladorDe("Carlos", null, "WEB").GetOrigenes());
+
+            CollectionAssert.AreEqual(new[] { "WEB" }, origenes.Where(o => o.PropuestoParaElUsuario).Select(o => o.Codigo).ToArray());
+        }
+
+        [TestMethod]
+        public async Task GetOrigenes_ParametroConOrigenInactivoOInexistente_NingunoPropuesto()
+        {
+            Assert.IsFalse(Contenido(await ControladorDe("Paloma", "FERIA-2025", null).GetOrigenes()).Any(o => o.PropuestoParaElUsuario));
+            Assert.IsFalse(Contenido(await ControladorDe("Paloma", "NO-EXISTE", null).GetOrigenes()).Any(o => o.PropuestoParaElUsuario));
+        }
+
+        [TestMethod]
+        public async Task GetOrigenes_FallaElParametro_DevuelveElCatalogoSinPropuesta()
+        {
+            CatalogoConCanales();
+            ILectorParametrosUsuario lector = A.Fake<ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametroSinDefecto(A<string>._, A<string>._, A<string>._)).Throws(new InvalidOperationException("sin BD"));
+            ClientesController controlador = Controlador();
+            controlador.LectorParametrosOrigen = lector;
+
+            List<OrigenClienteDTO> origenes = Contenido(await controlador.GetOrigenes());
+
+            Assert.AreEqual(3, origenes.Count);
+            Assert.IsFalse(origenes.Any(o => o.PropuestoParaElUsuario));
+        }
+
+        [TestMethod]
+        public void PendienteDeLlamar_OrigenDeCanal_Nunca()
+        {
+            LeadCampana tienda = Lead("42109", new DateTime(2026, 11, 5, 10, 0, 0));
+            tienda.Origen = TIENDA_ALCOBENDAS;
+            tienda.EsLead = false;
+
+            Assert.IsFalse(ReglasLeadsCampana.PendienteDeLlamar(tienda, AHORA));
+        }
+
+        [TestMethod]
+        public async Task Job_OrigenDeCanal_NoAvisa()
+        {
+            LeadCampana tienda = Lead("42109", new DateTime(2026, 11, 3, 9, 0, 0));
+            tienda.Origen = TIENDA_ALCOBENDAS;
+            tienda.EsLead = false;
+            LeadsSinLlamarJobsService job = Job(tienda);
+
+            Assert.AreEqual(0, await job.AvisarAsync(AHORA));
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.MarcarAvisoRetraso(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Ranking_OrigenDeCanal_NoSaleComoLead()
+        {
+            LeadCampana web = Lead("42109", new DateTime(2026, 11, 5, 10, 0, 0));
+            web.Origen = "WEB";
+            web.EsLead = false;
+
+            List<SugerenciaContactoDTO> resultado = ImpulsoLeadsCampanaContacto.Aplicar(Lista("1001"), new[] { web }, AHORA, SinFestivos);
+
+            CollectionAssert.AreEqual(new[] { "1001" }, resultado.Select(s => s.Cliente).ToArray());
+        }
+
+        [TestMethod]
+        public void SqlLeads_SoloOrigenesQueSonLeads()
+        {
+            // El job y las sugerencias leen los leads con este SQL: los orígenes de canal ni se leen.
+            StringAssert.Contains(RepositorioOrigenesClienteSql.SQL_LEADS, "o.EsLead = 1");
+            StringAssert.Contains(RepositorioOrigenesClienteSql.SQL_CATALOGO, "EsLead");
+        }
+
+        [TestMethod]
+        public async Task ImportarLeads_ConOrigenDeCanal_400()
+        {
+            // Los leads de Meta se importan con un origen de campaña; uno de canal no entraría en el aviso de leads
+            // y además viajaría a Odoo (nesto_sync) como si fuera una campaña.
+            CatalogoConCanales();
+            ClientesController controlador = Controlador();
+
+            var respuesta = await controlador.PostImportarLeads(TIENDA_ALCOBENDAS, ensayo: true) as BadRequestErrorMessageResult;
+
+            Assert.IsNotNull(respuesta);
+            StringAssert.Contains(respuesta.Message, "no es de campaña");
+        }
     }
 }

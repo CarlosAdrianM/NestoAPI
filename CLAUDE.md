@@ -328,6 +328,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - No hace falta encolar a mano al recibir, inventariar o regularizar, ni pasar `sincronizar-stocks-nocturno` a horario: queda
   de red (LinPedidoVta por fuera de la API, DescuentosProducto, encolados perdidos). Tras encolar, `@@IDENTITY` es el Id de Nesto_sync.
 
+### Origen del cliente: campaña (lead) o canal (NestoAPI#848, 09/11/26)
+- `dbo.OrigenesCliente.EsLead` (DEFAULT 1): 1 = campaña (META-HARMONIA-0926…: hay que llamarlo), 0 = canal (WEB, AMAZON, TIENDA-REINA,
+  TIENDA-ALCOBENDAS, CURSOS: solo un dato para medir). `Scripts/Issue848_OrigenesCanal.sql` ANTES de la API (la API lee la columna).
+- Los de canal NO son leads: `SQL_LEADS` filtra `o.EsLead = 1` y `ReglasLeadsCampana.PendienteDeLlamar` los descarta (job
+  `leads-sin-llamar`, sugerencias de contacto); `POST api/Clientes/Origenes/ImportarLeads` con uno de canal → 400. A Odoo
+  (`nesto_sync`) el origen solo viaja desde el importador de leads, así que los de canal no llegan.
+- Propuesto por usuario (dato, no código): ParametrosUsuario «OrigenClientePorDefecto» (empresa 1; fila del usuario o «(defecto)»,
+  vacía = sin propuesta; no se crea fila al leer). `GET api/Clientes/Origenes` marca `PropuestoParaElUsuario`; Nesto lo preselecciona en el alta.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

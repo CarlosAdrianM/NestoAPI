@@ -57,6 +57,14 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(errorOrigen);
             }
+            // NestoAPI#848: con un origen de canal (web, Amazon, tiendas, cursos) los leads no se avisarían si nadie los llama y
+            // viajarían a Odoo (nesto_sync) con un origen que no es una campaña.
+            OrigenCliente delCatalogo = (await RepositorioOrigenes.LeerCatalogo().ConfigureAwait(false))?
+                .FirstOrDefault(o => string.Equals(o.Codigo?.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
+            if (delCatalogo != null && !delCatalogo.EsLead)
+            {
+                return BadRequest($"El origen «{codigo}» es de canal, no es de campaña: los leads se importan con el origen de su campaña.");
+            }
 
             byte[] contenido = await LeerFicheroPeticion().ConfigureAwait(false);
             if (contenido == null || contenido.Length == 0)

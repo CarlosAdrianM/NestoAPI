@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.Clientes.Origenes
 {
@@ -15,6 +16,12 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         public bool Activo { get; set; }
         /// <summary>Plazo para la primera llamada, en horas de días laborables (<see cref="ReglasLeadsCampana.PlazoLlamadaLead"/>).</summary>
         public int HorasParaLlamar { get; set; }
+        /// <summary>
+        /// NestoAPI#848: true = origen de campaña (lead que hay que llamar: job <c>leads-sin-llamar</c>, sugerencias de contacto,
+        /// importador de leads); false = origen de canal (Página web, Amazon, tiendas, Cursos: solo un dato para medir).
+        /// Columna <c>EsLead</c> con DEFAULT 1: las campañas que ya había siguen siendo leads.
+        /// </summary>
+        public bool EsLead { get; set; } = true;
     }
 
     /// <summary>NestoAPI#623: el origen de un cliente (<c>dbo.ClientesOrigen</c> con la descripción del catálogo).</summary>
@@ -52,6 +59,8 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         public int HorasParaLlamar { get; set; }
         public DateTime? FechaAvisoRetraso { get; set; }
         public DateTime? UltimoRapport { get; set; }
+        /// <summary>NestoAPI#848: el origen es de campaña (ver <see cref="OrigenCliente.EsLead"/>). El SQL ya solo lee estos.</summary>
+        public bool EsLead { get; set; } = true;
     }
 
     /// <summary>
@@ -117,8 +126,9 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         /// </summary>
         public static bool PendienteDeLlamar(LeadCampana lead, DateTime ahora)
         {
-            if (lead == null)
+            if (lead == null || !lead.EsLead)
             {
+                // NestoAPI#848: un origen de canal (web, Amazon, tiendas, cursos) no es un lead: ni se llama ni se avisa.
                 return false;
             }
             if (lead.UltimoRapport.HasValue && lead.UltimoRapport.Value >= lead.FechaOrigen.Date)
@@ -160,5 +170,46 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
 
         public static bool EstaActivo(OrigenCliente origen, DateTime hoy) =>
             origen != null && origen.Activo && (!origen.FechaHasta.HasValue || origen.FechaHasta.Value.Date >= hoy.Date);
+    }
+
+    /// <summary>
+    /// NestoAPI#848 (Carlos 09/11/26): el origen que el desplegable del alta de clientes PROPONE según quién lo crea (Paloma → Tienda
+    /// de Alcobendas, Reina → Tienda de Reina, Pilar → Cursos). Siempre se elige a mano: solo es la propuesta. Es un dato, no código:
+    /// <c>ParametrosUsuario</c> «OrigenClientePorDefecto» de la empresa 1, la fila del usuario o, si no tiene, la de «(defecto)»
+    /// (vacía = sin propuesta). No se le crea fila al usuario (<see cref="ILectorParametrosUsuario.LeerParametroSinDefecto"/>).
+    /// </summary>
+    public static class OrigenPropuestoUsuario
+    {
+        public const string CLAVE = "OrigenClientePorDefecto";
+        public const string USUARIO_DEFECTO = "(defecto)";
+
+        /// <summary>El código propuesto, si está entre los <paramref name="disponibles"/> (activos); si no, null. Nunca lanza.</summary>
+        public static string Leer(ILectorParametrosUsuario lector, string usuario, IEnumerable<OrigenCliente> disponibles)
+        {
+            if (lector == null)
+            {
+                return null;
+            }
+            string codigo;
+            try
+            {
+                codigo = string.IsNullOrWhiteSpace(usuario) ? null
+                    : lector.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, CLAVE)?.Trim();
+                if (string.IsNullOrEmpty(codigo))
+                {
+                    codigo = lector.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, USUARIO_DEFECTO, CLAVE)?.Trim();
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            if (string.IsNullOrEmpty(codigo))
+            {
+                return null;
+            }
+            return (disponibles ?? Enumerable.Empty<OrigenCliente>())
+                .FirstOrDefault(o => string.Equals(o?.Codigo?.Trim(), codigo, StringComparison.OrdinalIgnoreCase))?.Codigo?.Trim();
+        }
     }
 }

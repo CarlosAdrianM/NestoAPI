@@ -21,6 +21,13 @@ namespace NestoAPI.Controllers
         public string Campana { get; set; }
         public bool Activo { get; set; }
         public int HorasParaLlamar { get; set; }
+        /// <summary>NestoAPI#848: true = campaña (lead que hay que llamar); false = canal (web, Amazon, tiendas, cursos).</summary>
+        public bool EsLead { get; set; }
+        /// <summary>
+        /// NestoAPI#848: el que el alta de clientes preselecciona para quien lo pide (ParametrosUsuario «OrigenClientePorDefecto»).
+        /// Como mucho uno; ninguno si el usuario no tiene propuesta.
+        /// </summary>
+        public bool PropuestoParaElUsuario { get; set; }
     }
 
     /// <summary>NestoAPI#623: el origen de un cliente (GET y respuesta del PUT de api/Clientes/{empresa}/{cliente}/Origen).</summary>
@@ -47,6 +54,8 @@ namespace NestoAPI.Controllers
         internal IRepositorioOrigenesCliente RepositorioOrigenes { get; set; } = new RepositorioOrigenesClienteSql();
         /// <summary>NestoAPI#623: dónde se traza un origen que no se ha podido guardar tras el alta (ELMAH; sustituible en los tests).</summary>
         internal Action<Exception> RegistrarErrorOrigen { get; set; } = ex => ElmahHelper.Log(ex);
+        /// <summary>NestoAPI#848: de dónde sale el origen propuesto al usuario (sustituible en los tests).</summary>
+        internal ILectorParametrosUsuario LectorParametrosOrigen { get; set; } = new LectorParametrosUsuario();
         /// <summary>NestoAPI#623: reloj (sustituible en los tests).</summary>
         internal Func<DateTime> RelojOrigenes { get; set; } = () => DateTime.Now;
 
@@ -58,7 +67,10 @@ namespace NestoAPI.Controllers
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
 
         // GET api/Clientes/Origenes?todos=false
-        /// <summary>NestoAPI#623: el catálogo de orígenes de cliente (solo los activos salvo todos=true), por descripción.</summary>
+        /// <summary>
+        /// NestoAPI#623: el catálogo de orígenes de cliente (solo los activos salvo todos=true), por descripción. NestoAPI#848: cada uno
+        /// dice si es lead (campaña) o de canal, y el propuesto para el usuario (si tiene y está activo) lleva PropuestoParaElUsuario.
+        /// </summary>
         [HttpGet]
         [Authorize]
         [Route("api/Clientes/Origenes")]
@@ -66,14 +78,19 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetOrigenes(bool todos = false)
         {
             List<OrigenCliente> catalogo = await RepositorioOrigenes.LeerCatalogo().ConfigureAwait(false);
-            return Ok(ReglasLeadsCampana.Filtrar(catalogo, todos, RelojOrigenes())
+            DateTime hoy = RelojOrigenes();
+            string propuesto = OrigenPropuestoUsuario.Leer(LectorParametrosOrigen, User?.Identity?.Name,
+                ReglasLeadsCampana.Filtrar(catalogo, false, hoy));
+            return Ok(ReglasLeadsCampana.Filtrar(catalogo, todos, hoy)
                 .Select(o => new OrigenClienteDTO
                 {
                     Codigo = o.Codigo?.Trim(),
                     Descripcion = o.Descripcion,
                     Campana = o.Campana,
                     Activo = o.Activo,
-                    HorasParaLlamar = o.HorasParaLlamar
+                    HorasParaLlamar = o.HorasParaLlamar,
+                    EsLead = o.EsLead,
+                    PropuestoParaElUsuario = propuesto != null && string.Equals(o.Codigo?.Trim(), propuesto, StringComparison.OrdinalIgnoreCase)
                 })
                 .ToList());
         }

@@ -25,7 +25,7 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         /// </summary>
         Task Guardar(string empresa, string cliente, string origen, string usuario);
         /// <summary>
-        /// Los clientes con origen de un catálogo activo de los últimos <see cref="ReglasLeadsCampana.DIAS_MAXIMOS_LEAD"/> días, con
+        /// Los clientes con origen de campaña (EsLead, NestoAPI#848) de un catálogo activo de los últimos <see cref="ReglasLeadsCampana.DIAS_MAXIMOS_LEAD"/> días, con
         /// su contacto principal (estado &gt;= 0) y su último rapport. Con <paramref name="vendedor"/>, solo los de su ficha.
         /// </summary>
         Task<List<LeadCampana>> LeerLeads(string vendedor);
@@ -42,7 +42,7 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         internal const string SQL_CATALOGO =
             "IF OBJECT_ID(N'dbo.OrigenesCliente', N'U') IS NOT NULL " +
             "SELECT RTRIM(Codigo) AS Codigo, Descripcion, Campana, CAST(FechaDesde AS datetime) AS FechaDesde, " +
-            "CAST(FechaHasta AS datetime) AS FechaHasta, Activo, HorasParaLlamar FROM dbo.OrigenesCliente WITH (NOLOCK)";
+            "CAST(FechaHasta AS datetime) AS FechaHasta, Activo, HorasParaLlamar, EsLead FROM dbo.OrigenesCliente WITH (NOLOCK)";
 
         internal const string SQL_DE_CLIENTE = HAY_TABLAS +
             "SELECT RTRIM(co.Empresa) AS Empresa, RTRIM(co.Cliente) AS Cliente, RTRIM(co.Origen) AS Origen, o.Descripcion, " +
@@ -73,7 +73,7 @@ COMMIT TRANSACTION;";
 SELECT RTRIM(co.Empresa) AS Empresa, RTRIM(co.Cliente) AS Cliente, RTRIM(c.Contacto) AS Contacto, c.Nombre,
     c.Dirección AS Direccion, c.CodPostal AS CodigoPostal, c.Teléfono AS Telefono, c.Población AS Poblacion, c.Provincia,
     RTRIM(c.Vendedor) AS Vendedor, RTRIM(co.Origen) AS Origen, o.Descripcion, co.FechaOrigen, o.HorasParaLlamar,
-    co.FechaAvisoRetraso,
+    co.FechaAvisoRetraso, o.EsLead,
     (SELECT MAX(s.Fecha) FROM SeguimientoCliente s WITH (NOLOCK)
      WHERE s.Empresa = co.Empresa AND s.Número = co.Cliente AND s.Estado IN (0, 1)) AS UltimoRapport
 FROM dbo.ClientesOrigen co WITH (NOLOCK)
@@ -82,7 +82,7 @@ CROSS APPLY (SELECT TOP 1 x.Contacto, x.Nombre, x.Dirección, x.CodPostal, x.Tel
              FROM Clientes x WITH (NOLOCK)
              WHERE x.Empresa = co.Empresa AND x.[Nº Cliente] = co.Cliente AND x.Estado >= 0
              ORDER BY x.ClientePrincipal DESC, x.Contacto) c
-WHERE o.Activo = 1 AND (o.FechaHasta IS NULL OR o.FechaHasta >= CAST(GETDATE() AS date))
+WHERE o.Activo = 1 AND o.EsLead = 1 AND (o.FechaHasta IS NULL OR o.FechaHasta >= CAST(GETDATE() AS date))
     AND co.FechaOrigen >= DATEADD(day, -@dias, GETDATE())
     AND (@vendedor IS NULL OR c.Vendedor = @vendedor);";
 
