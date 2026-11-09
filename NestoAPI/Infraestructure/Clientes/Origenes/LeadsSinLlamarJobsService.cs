@@ -73,7 +73,7 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
     /// cada lead de campaña con el plazo vencido (<see cref="ReglasLeadsCampana.PlazoLlamadaLead"/>), sin rapport desde su origen
     /// y sin aviso todavía (FechaAvisoRetraso null): aviso en la campana al vendedor del cliente y a su jefe de ventas
     /// (EquiposVentas; si no tiene, a Dirección) —buzón de Nesto de sus usuarios y push de NestoApp a los vendedores— y marca
-    /// FechaAvisoRetraso para no repetir.
+    /// FechaAvisoRetraso para no repetir. En Madrid, Toledo y Guadalajara, también Alberto Sancho y Dirección (<see cref="ReglasAvisosLeads"/>).
     /// </summary>
     public class LeadsSinLlamarJobsService
     {
@@ -81,7 +81,7 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         /// <summary>A en punto, de 8 a 20, de lunes a viernes.</summary>
         public const string CRON = "0 8-20 * * 1-5";
         public const string TIPO_NOTIFICACION = "LeadSinLlamar";
-        internal const string DOMINIO = "NUEVAVISION\\";
+        internal const string DOMINIO = ReglasAvisosLeads.DOMINIO;
 
         private readonly IRepositorioOrigenesCliente repositorio;
         private readonly IDestinatariosLeadsSinLlamar destinatarios;
@@ -149,34 +149,9 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         private async Task AvisarDe(LeadCampana lead)
         {
             string empresa = string.IsNullOrWhiteSpace(lead.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : lead.Empresa.Trim();
-            string vendedor = lead.Vendedor?.Trim();
-            var vendedores = new List<string>();
-            if (!string.IsNullOrWhiteSpace(vendedor))
-            {
-                vendedores.Add(vendedor);
-            }
-            List<string> jefes = string.IsNullOrWhiteSpace(vendedor) ? new List<string>() : destinatarios.JefesDe(empresa, vendedor) ?? new List<string>();
-            vendedores.AddRange(jefes.Where(j => !vendedores.Contains(j, StringComparer.OrdinalIgnoreCase)));
-
-            List<string> usuarios = destinatarios.UsuariosDeVendedores(vendedores) ?? new List<string>();
-            if (!jefes.Any())
-            {
-                // Sin jefe de ventas modelado: a Dirección.
-                usuarios.AddRange(destinatarios.UsuariosDireccion() ?? new List<string>());
-            }
-            NotificacionPushDTO notificacion = CrearNotificacion(lead);
-            foreach (string usuario in usuarios
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Select(u => u.Trim().Contains("\\") ? u.Trim() : DOMINIO + u.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
-            }
-            // Los vendedores casi no usan Nesto: la push les llega a NestoApp.
-            foreach (string codigo in vendedores)
-            {
-                _ = await notificaciones.EnviarAVendedor(empresa, codigo, notificacion).ConfigureAwait(false);
-            }
+            // Vendedor + jefe (o Dirección si no tiene); en Madrid, Toledo y Guadalajara, además Alberto y Dirección (Carlos 09/11/26).
+            DestinatariosAvisoLead a = ReglasAvisosLeads.Destinatarios(destinatarios, empresa, lead.Vendedor, lead.CodigoPostal, conJefes: true);
+            await ReglasAvisosLeads.Enviar(notificaciones, empresa, a, CrearNotificacion(lead)).ConfigureAwait(false);
         }
 
         internal static NotificacionPushDTO CrearNotificacion(LeadCampana lead) => new NotificacionPushDTO

@@ -23,6 +23,8 @@ namespace NestoAPI.Controllers
         internal IRepositorioLeadsMeta RepositorioLeads { get; set; } = new RepositorioLeadsMetaSql();
         /// <summary>NestoAPI#623 corte 4: el alta de clientes (sustituible en los tests); null = la de GestorClientes.</summary>
         internal IAltaClientesLeads AltaLeads { get; set; }
+        /// <summary>NestoAPI#623: el aviso de lead nuevo (sustituible en los tests); null = el de verdad.</summary>
+        internal IAvisadorLeadsNuevos AvisadorLeads { get; set; }
 
         internal static bool PuedeImportarLeads(IPrincipal usuario) =>
             usuario != null && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
@@ -87,7 +89,7 @@ namespace NestoAPI.Controllers
             }
 
             var importador = new ImportadorLeadsMeta(RepositorioLeads, AltaLeads ?? new AltaClientesLeadsGestor(_gestorClientes),
-                RegistrarErrorOrigen, RelojOrigenes);
+                RegistrarErrorOrigen, RelojOrigenes, AvisadorLeads ?? AvisadorLeadsNuevos.DeProduccion());
             ResultadoImportacionLeadsDTO resultado = await importador.Importar(leads, codigo, ensayo, User?.Identity?.Name).ConfigureAwait(false);
             return Ok(resultado);
         }

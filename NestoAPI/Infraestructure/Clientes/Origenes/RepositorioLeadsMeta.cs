@@ -36,11 +36,13 @@ ORDER BY c.ClientePrincipal DESC, c.[Nº Cliente], c.Contacto;";
 
         internal const string SQL_PARECIDO = @"
 IF OBJECT_ID(N'dbo.ClientesOrigen', N'U') IS NOT NULL
-    SELECT TOP 1 RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(co.Origen) AS Origen, RTRIM(c.Vendedor) AS Vendedor
+    SELECT TOP 1 RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(co.Origen) AS Origen, RTRIM(c.Vendedor) AS Vendedor,
+        RTRIM(c.Contacto) AS Contacto, RTRIM(c.Nombre) AS Nombre, RTRIM(c.Población) AS Poblacion, RTRIM(c.CodPostal) AS CodigoPostal
     FROM Clientes c WITH (NOLOCK)
     LEFT JOIN dbo.ClientesOrigen co WITH (NOLOCK) ON co.Empresa = c.Empresa AND co.Cliente = c.[Nº Cliente]" + CONDICION_PARECIDO + @"
 ELSE
-    SELECT TOP 1 RTRIM(c.[Nº Cliente]) AS Cliente, CAST(NULL AS varchar(30)) AS Origen, RTRIM(c.Vendedor) AS Vendedor
+    SELECT TOP 1 RTRIM(c.[Nº Cliente]) AS Cliente, CAST(NULL AS varchar(30)) AS Origen, RTRIM(c.Vendedor) AS Vendedor,
+        RTRIM(c.Contacto) AS Contacto, RTRIM(c.Nombre) AS Nombre, RTRIM(c.Población) AS Poblacion, RTRIM(c.CodPostal) AS CodigoPostal
     FROM Clientes c WITH (NOLOCK)" + CONDICION_PARECIDO;
 
         internal const string SQL_PONER_ORIGEN = @"

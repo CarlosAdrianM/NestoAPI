@@ -49,6 +49,11 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         public string Cliente { get; set; }
         public string Origen { get; set; }
         public string Vendedor { get; set; }
+        /// <summary>NestoAPI#623: para el aviso de lead nuevo (su contacto principal, nombre, población y código postal).</summary>
+        public string Contacto { get; set; }
+        public string Nombre { get; set; }
+        public string Poblacion { get; set; }
+        public string CodigoPostal { get; set; }
     }
 
     public enum ResultadoOrigenLead
@@ -105,13 +110,17 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         private readonly IAltaClientesLeads alta;
         private readonly Action<Exception> registrarError;
         private readonly Func<DateTime> reloj;
+        private readonly IAvisadorLeadsNuevos avisador;
 
-        public ImportadorLeadsMeta(IRepositorioLeadsMeta repositorio, IAltaClientesLeads alta, Action<Exception> registrarError = null, Func<DateTime> reloj = null)
+        /// <param name="avisador">NestoAPI#623: aviso de lead nuevo (<see cref="AvisadorLeadsNuevos"/>); sin él, no se avisa.</param>
+        public ImportadorLeadsMeta(IRepositorioLeadsMeta repositorio, IAltaClientesLeads alta, Action<Exception> registrarError = null, Func<DateTime> reloj = null,
+            IAvisadorLeadsNuevos avisador = null)
         {
             this.repositorio = repositorio;
             this.alta = alta;
             this.registrarError = registrarError ?? (ex => { });
             this.reloj = reloj ?? (() => DateTime.Now);
+            this.avisador = avisador ?? SinAvisosLeadsNuevos.Instancia;
         }
 
         public async Task<ResultadoImportacionLeadsDTO> Importar(IList<LeadMeta> leads, string origen, bool ensayo, string usuario)
@@ -204,6 +213,36 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
                 await repositorio.QuitarBoletin(empresa, fila.Cliente).ConfigureAwait(false);
             }
             await PublicarSinFallar(lead, fila, empresa, origen, fechaOrigen, usuario).ConfigureAwait(false);
+            await AvisarSinFallar(lead, new LeadNuevoAviso
+            {
+                Empresa = empresa,
+                Cliente = fila.Cliente,
+                Contacto = CONTACTO_ALTA,
+                Nombre = clienteCrear.Nombre,
+                Poblacion = clienteCrear.Poblacion,
+                CodigoPostal = clienteCrear.CodigoPostal,
+                Vendedor = clienteCrear.VendedorEstetica,
+                Origen = origen
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>El contacto que da el alta de clientes a un cliente nuevo.</summary>
+        internal const string CONTACTO_ALTA = "0";
+
+        /// <summary>
+        /// NestoAPI#623: el aviso de lead nuevo (núcleo común del fichero y de la API Graph) no deshace la importación: si falla, va a
+        /// ELMAH con el id del lead y el cliente (nada de datos personales).
+        /// </summary>
+        private async Task AvisarSinFallar(LeadMeta lead, LeadNuevoAviso aviso)
+        {
+            try
+            {
+                await avisador.Avisar(aviso).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrarError(new Exception($"NestoAPI#623: lead de Meta {lead.Id} (cliente {aviso.Cliente}) importado, pero no se ha podido avisar: {ex.GetType().Name}", ex));
+            }
         }
 
         private async Task YaExistente(LeadMeta lead, ResultadoLeadMetaDTO fila, ClienteParecidoLead parecido, string origen, DateTime fechaOrigen,
@@ -230,6 +269,21 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             if (puesto != ResultadoOrigenLead.OtroOrigen)
             {
                 await PublicarSinFallar(lead, fila, Constantes.Empresas.EMPRESA_POR_DEFECTO, origen, fechaOrigen, usuario).ConfigureAwait(false);
+            }
+            if (puesto == ResultadoOrigenLead.Puesto)
+            {
+                // Solo cuando se queda ahora con el origen de la campaña: si ya lo tenía, ya se avisó.
+                await AvisarSinFallar(lead, new LeadNuevoAviso
+                {
+                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Cliente = cliente,
+                    Contacto = parecido.Contacto?.Trim(),
+                    Nombre = parecido.Nombre?.Trim(),
+                    Poblacion = parecido.Poblacion?.Trim(),
+                    CodigoPostal = string.IsNullOrWhiteSpace(parecido.CodigoPostal) ? lead.CodigoPostal : parecido.CodigoPostal.Trim(),
+                    Vendedor = fila.Vendedor,
+                    Origen = origen
+                }).ConfigureAwait(false);
             }
         }
 

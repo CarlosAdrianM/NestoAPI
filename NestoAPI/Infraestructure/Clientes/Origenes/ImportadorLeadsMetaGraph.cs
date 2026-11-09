@@ -198,11 +198,12 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
         private readonly Func<string, List<string>> miembros;
         private readonly Action<Exception> elmah;
         private readonly Func<DateTime> ahoraUtc;
+        private readonly IAvisadorLeadsNuevos avisadorLeads;
 
         public ImportadorLeadsMetaGraph(IClienteGraphMeta http, IRepositorioFormulariosMeta formularios, IRepositorioLeadsMeta repositorio,
             IAltaClientesLeads alta, ConfiguracionMetaLeads configuracion, AvisosUnaVezAlDia avisos = null,
             Func<IServicioNotificacionesPush> notificaciones = null, Func<string, List<string>> miembros = null,
-            Action<Exception> elmah = null, Func<DateTime> ahoraUtc = null)
+            Action<Exception> elmah = null, Func<DateTime> ahoraUtc = null, IAvisadorLeadsNuevos avisadorLeads = null)
         {
             this.http = http;
             this.formularios = formularios;
@@ -214,6 +215,8 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
             this.miembros = miembros ?? MiembrosGrupoDominio.Leer;
             this.elmah = elmah ?? (ex => ElmahHelper.Log(ex, USUARIO_JOB));
             this.ahoraUtc = ahoraUtc ?? (() => DateTime.UtcNow);
+            // NestoAPI#623: sin avisador (los tests), no se avisa de los leads nuevos; DeProduccion pasa el de verdad.
+            this.avisadorLeads = avisadorLeads ?? SinAvisosLeadsNuevos.Instancia;
         }
 
         /// <summary>Con las piezas de producción (GestorClientes para el alta, como el job de sincronización).</summary>
@@ -226,7 +229,7 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
                 alta = new AltaClientesLeadsGestor(gestorClientes);
             }
             return new ImportadorLeadsMetaGraph(new ClienteGraphMeta(), new RepositorioFormulariosMetaSql(), new RepositorioLeadsMetaSql(), alta,
-                ConfiguracionMetaLeads.Leer());
+                ConfiguracionMetaLeads.Leer(), avisadorLeads: AvisadorLeadsNuevos.DeProduccion());
         }
 
         public ConfiguracionMetaLeads Configuracion => configuracion;
@@ -311,7 +314,7 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
                 }
 
                 var fallidos = new List<string>();
-                var importador = new ImportadorLeadsMeta(repositorio, alta, ex => RegistrarErrorLead(ex), () => HoraEspana(ahoraUtc()));
+                var importador = new ImportadorLeadsMeta(repositorio, alta, ex => RegistrarErrorLead(ex), () => HoraEspana(ahoraUtc()), avisadorLeads);
                 List<LeadMeta> leads = LectorGraphLeadsMeta.Leer(crudos);
                 ResultadoImportacionLeadsDTO parcial = await importador.Importar(leads, origen, ensayo, usuario).ConfigureAwait(false);
 

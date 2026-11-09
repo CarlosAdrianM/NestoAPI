@@ -510,6 +510,7 @@
     <Compile Include="Infraestructure\Clientes\Origenes\LeadsSinLlamarJobsService.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\LectorLeadsMeta.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\ImportadorLeadsMeta.cs" />
+    <Compile Include="Infraestructure\Clientes\Origenes\AvisadorLeadsNuevos.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\ImportadorLeadsMetaGraph.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\LectorGraphLeadsMeta.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\RepositorioLeadsMeta.cs" />

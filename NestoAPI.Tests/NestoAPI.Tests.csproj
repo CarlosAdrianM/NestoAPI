@@ -369,6 +369,7 @@
     <Compile Include="Infrastructure\Clientes\OrigenesClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\ImportadorLeadsMetaTests.cs" />
     <Compile Include="Infrastructure\Clientes\ImportadorLeadsMetaGraphTests.cs" />
+    <Compile Include="Infrastructure\Clientes\AvisosLeadsTests.cs" />
     <Compile Include="Infrastructure\Clientes\HorarioPreferibleTests.cs" />
     <Compile Include="Infrastructure\Clientes\ClienteTransferenciaCorreoCobrosTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SentinelPrecioPublicoJobsServiceTests.cs" />
