@@ -115,11 +115,12 @@ namespace NestoAPI.Infraestructure.Rapports
     }
 
     /// <summary>
-    /// NestoAPI#619: reentrenamiento mensual del modelo de llamadas de Rapports DENTRO de la API (decisión de Carlos, 09/10/26;
+    /// NestoAPI#619: reentrenamiento del modelo de llamadas de Rapports DENTRO de la API (decisión de Carlos, 09/10/26;
     /// sustituye a la tarea del Task Scheduler + consola + commit del zip).
-    /// <para>Job «reentrenar-modelo-llamadas»: el primer sábado de cada mes a las 02:30 (el domingo de madrugada corre el SP de
-    /// precios medios, que bloquea LinPedidoVta). El cron de Hangfire no tiene «primer sábado»: se programa todos los sábados y
-    /// el job sale si no toca (<see cref="TocaReentrenar"/>). Corre en su propia cola (<see cref="COLA"/>, servidor de Hangfire
+    /// <para>Job «reentrenar-modelo-llamadas»: TODOS los sábados a las 02:30 (el domingo de madrugada corre el SP de
+    /// precios medios, que bloquea LinPedidoVta). Era el primer sábado de cada mes; Carlos, 10/11/26: cada semana, para que
+    /// el modelo mejore de continuo con los rapports nuevos (unos 900 por semana). Solo de madrugada
+    /// (<see cref="TocaReentrenar"/>). Corre en su propia cola (<see cref="COLA"/>, servidor de Hangfire
     /// con un solo hilo en Startup) para no tener parados una hora los jobs de cada 5 minutos.</para>
     /// <para>Entrena con la ventana de 3 años y la misma puerta de calidad que la consola (núcleo ModeloLlamadaPedido.Nucleo):
     /// solo con los contactos que el modelo activo no vio; la P@20 no puede bajar más de 1 punto y el AUC no puede bajar
@@ -135,7 +136,7 @@ namespace NestoAPI.Infraestructure.Rapports
     public class ReentrenamientoModeloLlamadasJobsService
     {
         public const string ID_JOB = "reentrenar-modelo-llamadas";
-        /// <summary>Todos los sábados a las 02:30; el job sale si no es el primero del mes.</summary>
+        /// <summary>Todos los sábados a las 02:30.</summary>
         public const string CRON = "30 2 * * 6";
         /// <summary>Cola propia, con su servidor de un hilo (Startup).</summary>
         public const string COLA = "entrenamiento";
@@ -149,9 +150,9 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>NestoAPI#618: nombre del modelo por subgrupo en los avisos («Modelo de llamadas por subgrupo: promovido…»).</summary>
         internal const string NOMBRE_SUBGRUPO = "Modelo de llamadas por subgrupo";
         internal const string USO_GENERAL = "Ya lo usan las sugerencias de contacto.";
-        internal const string ORIGEN_PROGRAMADO = "job mensual";
+        internal const string ORIGEN_PROGRAMADO = "job semanal";
 
-        internal const string COMO_REENTRENAR = "Lo hace el job «reentrenar-modelo-llamadas» de NestoAPI el primer sábado de cada mes a las 02:30 " +
+        internal const string COMO_REENTRENAR = "Lo hace el job «reentrenar-modelo-llamadas» de NestoAPI todos los sábados a las 02:30 " +
             "(cola «entrenamiento» de Hangfire). A mano: `POST api/Rapports/ReentrenarModeloLlamadas?simular=true|false` (Dirección o " +
             "Informática); con simular=true entrena y evalúa pero no promueve. Umbrales: appSettings ModeloLlamadas:MaxBajadaPrecision " +
             "(puntos) y ModeloLlamadas:MaxBajadaAuc. Para volver al anterior: copiar modelo_llamadas_anterior.zip encima de modelo_llamadas.zip.";
@@ -192,7 +193,7 @@ namespace NestoAPI.Infraestructure.Rapports
             this.registrarError = registrarError ?? ElmahHelper.Log;
         }
 
-        /// <summary>Punto de entrada del job recurrente (todos los sábados; solo hace algo el primero del mes de madrugada).</summary>
+        /// <summary>Punto de entrada del job recurrente (todos los sábados; solo hace algo si arranca de madrugada).</summary>
         [Queue(COLA)]
         [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
         public static void ReentrenarProgramado()
@@ -213,9 +214,9 @@ namespace NestoAPI.Infraestructure.Rapports
             _ = new ReentrenamientoModeloLlamadasJobsService().Ejecutar(simular, string.IsNullOrWhiteSpace(usuario) ? "a mano" : $"a mano ({usuario})");
         }
 
-        /// <summary>Primer sábado del mes (día 1 a 7) y de madrugada (antes de las <see cref="HORA_LIMITE_PROGRAMADO"/>).</summary>
+        /// <summary>Cualquier sábado y de madrugada (antes de las <see cref="HORA_LIMITE_PROGRAMADO"/>). Hasta el 10/11/26, solo el primero del mes.</summary>
         internal static bool TocaReentrenar(DateTime ahora)
-            => ahora.DayOfWeek == DayOfWeek.Saturday && ahora.Day <= 7 && ahora.Hour < HORA_LIMITE_PROGRAMADO;
+            => ahora.DayOfWeek == DayOfWeek.Saturday && ahora.Hour < HORA_LIMITE_PROGRAMADO;
 
         /// <summary>
         /// Entrena, compara, promueve si pasa la puerta (y no es simulación) y avisa. Nunca lanza. Devuelve lo del modelo general.

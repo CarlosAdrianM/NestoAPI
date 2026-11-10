@@ -95,13 +95,14 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         // Cuándo toca
 
         [TestMethod]
-        public void TocaReentrenar_SoloElPrimerSabadoDelMesDeMadrugada()
+        public void TocaReentrenar_TodosLosSabadosDeMadrugada()
         {
+            // Carlos, 10/11/26: cada semana (era solo el primer sábado del mes), para que el modelo mejore de continuo
             Assert.AreEqual(DayOfWeek.Saturday, new DateTime(2026, 10, 3).DayOfWeek);
             Assert.IsTrue(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 3, 2, 30, 0)));
-            Assert.IsTrue(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 11, 7, 2, 30, 0)), "día 7: aún es el primero");
-            Assert.IsFalse(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 10, 2, 30, 0)), "segundo sábado");
-            Assert.IsFalse(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 31, 2, 30, 0)), "último sábado");
+            Assert.IsTrue(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 11, 7, 2, 30, 0)));
+            Assert.IsTrue(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 10, 2, 30, 0)), "segundo sábado");
+            Assert.IsTrue(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 31, 2, 30, 0)), "último sábado");
             Assert.IsFalse(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 4, 2, 30, 0)), "domingo: precios medios");
             Assert.IsFalse(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 2, 2, 30, 0)), "viernes");
             Assert.IsFalse(ReentrenamientoModeloLlamadasJobsService.TocaReentrenar(new DateTime(2026, 10, 3, 9, 0, 0)), "arrancado tarde: sería en horario");

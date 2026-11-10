@@ -1257,13 +1257,13 @@ namespace NestoAPI
             RecurringJob.AddOrUpdate(
                 Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.ID_JOB,
                 () => Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.ReentrenarProgramado(),
-                Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.CRON, // Cron: sábados a las 2:30 (solo el primero del mes)
+                Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.CRON, // Cron: todos los sábados a las 2:30
                 new RecurringJobOptions
                 {
                     TimeZone = TimeZoneInfo.Local
                 }
             );
-            Console.WriteLine("✅ Job recurrente 'reentrenar-modelo-llamadas' configurado (primer sábado de cada mes a las 2:30)");
+            Console.WriteLine("✅ Job recurrente 'reentrenar-modelo-llamadas' configurado (todos los sábados a las 2:30)");
 
             // NestoAPI#671 (corte 2d): entrenamiento mensual del modelo de sugerencias de productos. SEGUNDO sábado de cada mes a
             // las 02:30 (el primero es el de llamadas): corre todos los sábados y el job sale si no es del 8 al 14. Misma cola
