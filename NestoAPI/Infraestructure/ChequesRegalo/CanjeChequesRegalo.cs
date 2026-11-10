@@ -66,6 +66,8 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public string Numero { get; set; }
         public string Nombre { get; set; }
         public string Grupo { get; set; }
+        /// <summary>Para devolver la línea del cheque a su grupo de la ficha si deja de ser un pedido de cursos.</summary>
+        public string SubGrupo { get; set; }
         public bool Ficticio { get; set; }
         public string IvaRepercutido { get; set; }
     }
@@ -163,6 +165,28 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public static string TextoLinea(CampanaChequeRegalo campana)
             => $"Cheque regalo {campana.ImporteBase.ToString("0.##", es)} € (campaña {campana.Codigo})";
 
+        /// <summary>Texto de la línea del cheque en un pedido que solo lleva cursos (Texto es char(50)).</summary>
+        public static string TextoLineaFormacion(CampanaChequeRegalo campana)
+        {
+            string texto = $"Cheque regalo {campana.ImporteBase.ToString("0.##", es)} € (descuento sobre la formación)";
+            return texto.Length > 50 ? texto.Substring(0, 50) : texto;
+        }
+
+        /// <summary>
+        /// Novedades 1166 (Pilar, pedido 930188; decisión de Carlos 10/11/26): un cheque canjeado en un pedido que SOLO lleva
+        /// cursos es un descuento sobre la formación: va en el grupo de cursos (prdCrearFacturaVta no factura en CV nada que no
+        /// sea CUR) y exento como el curso (la serie CV es la base de formación exenta de la prorrata: nunca un 21 % dentro).
+        /// Devuelve una línea de curso del pedido si todas las demás líneas con grupo son cursos (la misma condición que
+        /// <see cref="PedidosVenta.SerieSegunLineas"/>); null si es un pedido de producto o mixto.
+        /// </summary>
+        public static LinPedidoVta CursoDelPedidoSoloDeCursos(IEnumerable<LinPedidoVta> lineas, LinPedidoVta lineaCheque)
+        {
+            List<LinPedidoVta> conGrupo = (lineas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => !ReferenceEquals(l, lineaCheque) && l.Grupo != null)
+                .ToList();
+            return conGrupo.Any() && conGrupo.All(l => EsCurso(l.Grupo)) ? conGrupo[0] : null;
+        }
+
         /// <summary>
         /// La línea del cheque la pone el servidor, venga como venga (NestoApp puede mandar cantidad +1 o +50): cantidad
         /// −1, precio = importe de la campaña, sin descuentos de línea, de producto ni de cliente (Aplicar_Dto falso), el
@@ -190,14 +214,34 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
 
         /// <summary>Lo mismo sobre la línea ya creada. Devuelve si ha cambiado algo (hay que recalcular importes).
         /// Solo se toca la línea mientras se puede modificar (sin picking ni albarán).</summary>
-        public static bool Normalizar(LinPedidoVta linea, CampanaChequeRegalo campana, string ivaProducto, bool pedidoConIva)
+        /// <param name="cursoDelPedido">Una línea de curso si el pedido solo lleva cursos (<see cref="CursoDelPedidoSoloDeCursos"/>):
+        /// la línea va en su grupo y subgrupo, con su IVA y el texto de la formación. Null = como un producto (grupo de la ficha).</param>
+        /// <param name="ficha">La ficha del producto del cheque, para devolverla a su grupo si deja de ser un pedido de cursos.</param>
+        public static bool Normalizar(LinPedidoVta linea, CampanaChequeRegalo campana, string ivaProducto, bool pedidoConIva,
+            LinPedidoVta cursoDelPedido = null, ProductoParaChequeRegalo ficha = null)
         {
             if ((linea.Picking ?? 0) != 0 || linea.Estado > Constantes.EstadosLineaVenta.EN_CURSO)
             {
                 return false;
             }
             bool cambia = false;
-            string texto = TextoLinea(campana);
+            if (cursoDelPedido != null)
+            {
+                if (linea.Grupo?.Trim() != Constantes.Productos.GRUPO_CURSOS) { linea.Grupo = Constantes.Productos.GRUPO_CURSOS; cambia = true; }
+                if (linea.SubGrupo?.Trim() != cursoDelPedido.SubGrupo?.Trim()) { linea.SubGrupo = cursoDelPedido.SubGrupo; cambia = true; }
+                if (!string.IsNullOrWhiteSpace(cursoDelPedido.IVA))
+                {
+                    ivaProducto = cursoDelPedido.IVA;
+                }
+            }
+            else if (EsCurso(linea.Grupo) && !string.IsNullOrWhiteSpace(ficha?.Grupo))
+            {
+                // Lo era y ya no (se le han añadido productos): vuelve al grupo de su ficha y a su IVA.
+                linea.Grupo = ficha.Grupo.Trim();
+                linea.SubGrupo = ficha.SubGrupo?.Trim();
+                cambia = true;
+            }
+            string texto = cursoDelPedido != null ? TextoLineaFormacion(campana) : TextoLinea(campana);
             if (linea.Cantidad != -1) { linea.Cantidad = -1; cambia = true; }
             if (linea.Precio != campana.ImporteBase) { linea.Precio = campana.ImporteBase; cambia = true; }
             if (linea.Descuento != 0) { linea.Descuento = 0; cambia = true; }
@@ -479,8 +523,9 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
                 lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !string.IsNullOrWhiteSpace(l.Producto))
                     .Select(l => l.Producto.Trim()).Concat(new[] { campana.Producto.Trim() }).Distinct()).ConfigureAwait(false);
 
-            if (ReglasCanjeChequeRegalo.Normalizar(lineaCheque, campana,
-                ReglasCanjeChequeRegalo.Buscar(productos, campana.Producto)?.IvaRepercutido, !string.IsNullOrWhiteSpace(ivaCabecera)))
+            ProductoParaChequeRegalo fichaCheque = ReglasCanjeChequeRegalo.Buscar(productos, campana.Producto);
+            if (ReglasCanjeChequeRegalo.Normalizar(lineaCheque, campana, fichaCheque?.IvaRepercutido, !string.IsNullOrWhiteSpace(ivaCabecera),
+                ReglasCanjeChequeRegalo.CursoDelPedidoSoloDeCursos(lineas, lineaCheque), fichaCheque))
             {
                 recalcularImportes?.Invoke(lineaCheque);
             }
@@ -773,13 +818,14 @@ IF OBJECT_ID('dbo.ChequesRegalo') IS NOT NULL
             // SQL compara char sin los espacios del final: Número = 'X' encuentra 'X              '
             var filas = await db.Productos
                 .Where(p => p.Empresa == empresa && codigos.Contains(p.Número))
-                .Select(p => new { p.Número, p.Nombre, p.Grupo, p.Ficticio, p.IVA_Repercutido })
+                .Select(p => new { p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Ficticio, p.IVA_Repercutido })
                 .ToListAsync().ConfigureAwait(false);
             return Diccionario(filas.Select(p => new ProductoParaChequeRegalo
             {
                 Numero = p.Número?.Trim(),
                 Nombre = p.Nombre?.Trim(),
                 Grupo = p.Grupo?.Trim(),
+                SubGrupo = p.SubGrupo?.Trim(),
                 Ficticio = p.Ficticio,
                 IvaRepercutido = p.IVA_Repercutido?.Trim()
             }));

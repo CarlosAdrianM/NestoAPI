@@ -88,7 +88,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
 
         private static Dictionary<string, ProductoParaChequeRegalo> Productos() => RepositorioCanjeChequesRegalo.Diccionario(new[]
         {
-            new ProductoParaChequeRegalo { Numero = PRODUCTO_CHEQUE, Nombre = "CHEQUE REGALO 50 € (OCT 2026)", Grupo = "COS", Ficticio = true, IvaRepercutido = "G21" },
+            new ProductoParaChequeRegalo { Numero = PRODUCTO_CHEQUE, Nombre = "CHEQUE REGALO 50 € (OCT 2026)", Grupo = "COS", SubGrupo = "COS", Ficticio = true, IvaRepercutido = "G21" },
             new ProductoParaChequeRegalo { Numero = "COSM", Nombre = "CREMA FACIAL", Grupo = "COS", IvaRepercutido = "G21" },
             // Como en la ficha real: todos los cursos son ficticios (y aun así cuentan para el cheque)
             new ProductoParaChequeRegalo { Numero = "CURSO", Nombre = "CURSO DE MAQUILLAJE", Grupo = "CUR", Ficticio = true, IvaRepercutido = "G21" },
@@ -467,6 +467,140 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             PlanCanjeChequeRegalo plan = await Comprobar(new List<LinPedidoVta> { Linea("CURSO", 450), LineaCheque() });
 
             Assert.IsNotNull(plan.ChequeAReservar);
+        }
+
+        // ---------------------------------------------------------------- cheque en un pedido de cursos (Novedades 1166)
+
+        private static LinPedidoVta LineaCurso(decimal baseImponible = 450)
+        {
+            LinPedidoVta curso = Linea("CURSO", baseImponible);
+            curso.Grupo = "CUR";
+            curso.SubGrupo = "FOR";
+            curso.IVA = "EX";
+            return curso;
+        }
+
+        private static LinPedidoVta LineaChequeDeLaFicha()
+        {
+            LinPedidoVta cheque = LineaCheque();
+            cheque.Grupo = "COS";
+            cheque.SubGrupo = "COS";
+            return cheque;
+        }
+
+        [TestMethod]
+        public async Task Comprobar_PedidoSoloDeCursos_ElChequeVaEnCursosExentoYConElTextoDeLaFormacion()
+        {
+            // Pedido 930188 (Pilar): curso de 450 € exento + el cheque. La factura fallaba con «No se puede facturar producto en
+            // la serie CV» porque la línea del cheque iba en el grupo de su ficha (COS).
+            LinPedidoVta curso = LineaCurso();
+            LinPedidoVta cheque = LineaChequeDeLaFicha();
+            var lineas = new List<LinPedidoVta> { curso, cheque };
+            int recalculos = 0;
+
+            PlanCanjeChequeRegalo plan = await servicio.Comprobar("1", PEDIDO, CLIENTE, lineas, "G21", l => recalculos++, "carlos", pedidoNuevo: true);
+
+            Assert.IsNotNull(plan.ChequeAReservar, "el mínimo y la reserva, como siempre (los cursos cuentan)");
+            Assert.AreEqual("CUR", cheque.Grupo);
+            Assert.AreEqual("FOR", cheque.SubGrupo, "el subgrupo del curso: CUR/COS no existe en SubGruposProducto");
+            Assert.AreEqual("EX", cheque.IVA, "exento como el curso, nunca un 21 % en CV");
+            Assert.AreEqual("Cheque regalo 50 € (descuento sobre la formación)", cheque.Texto);
+            Assert.IsTrue(cheque.Texto.Length <= 50, "Texto es char(50)");
+            Assert.AreEqual(1, recalculos);
+            Assert.AreEqual(Constantes.Series.SERIE_CURSOS,
+                NestoAPI.Infraestructure.PedidosVenta.SerieSegunLineas.Resolver(Constantes.Series.SERIE_POR_DEFECTO, "1", lineas));
+        }
+
+        [TestMethod]
+        public async Task Comprobar_PedidoSoloDeCursosConPortes_TambienVaEnCursos()
+        {
+            LinPedidoVta cheque = LineaChequeDeLaFicha();
+            LinPedidoVta portes = Linea("62400005", 5, tipo: Constantes.TiposLineaVenta.CUENTA_CONTABLE);
+            var lineas = new List<LinPedidoVta> { LineaCurso(), portes, cheque };
+
+            _ = await Comprobar(lineas);
+
+            Assert.AreEqual("CUR", cheque.Grupo);
+            Assert.AreEqual(Constantes.Series.SERIE_CURSOS,
+                NestoAPI.Infraestructure.PedidosVenta.SerieSegunLineas.Resolver(Constantes.Series.SERIE_POR_DEFECTO, "1", lineas));
+        }
+
+        [TestMethod]
+        public async Task Comprobar_PedidoDeProducto_ElChequeSigueConSuFichaYSuIva()
+        {
+            LinPedidoVta producto = Linea("COSM", 300);
+            producto.Grupo = "COS";
+            producto.SubGrupo = "CRE";
+            LinPedidoVta cheque = LineaChequeDeLaFicha();
+            var lineas = new List<LinPedidoVta> { producto, cheque };
+            int recalculos = 0;
+
+            _ = await servicio.Comprobar("1", PEDIDO, CLIENTE, lineas, "G21", l => recalculos++, "carlos", pedidoNuevo: true);
+
+            Assert.AreEqual("COS", cheque.Grupo);
+            Assert.AreEqual("COS", cheque.SubGrupo);
+            Assert.AreEqual("G21", cheque.IVA);
+            Assert.AreEqual("Cheque regalo 50 € (campaña CHEQUE50_OCT_2026)", cheque.Texto);
+            Assert.AreEqual(0, recalculos, "no cambia nada");
+            Assert.AreEqual(Constantes.Series.SERIE_POR_DEFECTO,
+                NestoAPI.Infraestructure.PedidosVenta.SerieSegunLineas.Resolver(Constantes.Series.SERIE_POR_DEFECTO, "1", lineas));
+        }
+
+        [TestMethod]
+        public async Task Comprobar_PedidoMixtoDeCursoYProducto_ElChequeSigueConSuFicha()
+        {
+            LinPedidoVta producto = Linea("COSM", 300);
+            producto.Grupo = "COS";
+            LinPedidoVta cheque = LineaChequeDeLaFicha();
+
+            _ = await Comprobar(new List<LinPedidoVta> { LineaCurso(), producto, cheque });
+
+            Assert.AreEqual("COS", cheque.Grupo);
+            Assert.AreEqual("G21", cheque.IVA);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_ChequeDeCursosAlQueSeLeAnadeProducto_VuelveASuFichaYSuIva()
+        {
+            // Orden inverso: el pedido era solo de cursos (cheque en CUR, exento) y ahora lleva producto.
+            LinPedidoVta cheque = LineaChequeDeLaFicha();
+            cheque.Grupo = "CUR";
+            cheque.SubGrupo = "FOR";
+            cheque.IVA = "EX";
+            cheque.Texto = "Cheque regalo 50 € (descuento sobre la formación)";
+            LinPedidoVta producto = Linea("COSM", 300);
+            producto.Grupo = "COS";
+            int recalculos = 0;
+
+            _ = await servicio.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { LineaCurso(), producto, cheque }, "G21",
+                l => recalculos++, "carlos", pedidoNuevo: false);
+
+            Assert.AreEqual("COS", cheque.Grupo);
+            Assert.AreEqual("COS", cheque.SubGrupo);
+            Assert.AreEqual("G21", cheque.IVA);
+            Assert.AreEqual("Cheque regalo 50 € (campaña CHEQUE50_OCT_2026)", cheque.Texto);
+            Assert.AreEqual(1, recalculos);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_PedidoDeProductoAlQueSeLeQuitanLosProductos_ElChequePasaACursos()
+        {
+            // Orden inverso: el cheque ya estaba en el pedido (grupo de la ficha) y se quitan los productos: queda solo el curso.
+            LinPedidoVta cheque = LineaChequeDeLaFicha();
+
+            _ = await Comprobar(new List<LinPedidoVta> { LineaCurso(), cheque }, pedidoNuevo: false);
+
+            Assert.AreEqual("CUR", cheque.Grupo);
+            Assert.AreEqual("EX", cheque.IVA);
+        }
+
+        [TestMethod]
+        public void TextoLineaFormacion_NoPasaDe50Caracteres()
+        {
+            CampanaCanjeChequeRegalo campana = Campana();
+            campana.ImporteBase = 137.55M;
+
+            Assert.IsTrue(ReglasCanjeChequeRegalo.TextoLineaFormacion(campana).Length <= 50);
         }
 
         [TestMethod]

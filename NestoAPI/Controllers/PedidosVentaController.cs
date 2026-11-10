@@ -2302,16 +2302,16 @@ namespace NestoAPI.Controllers
                 errorPersonalizado("No se pueden mezclar pedidos con presupuestos: el guardado dejaría líneas en presupuesto junto a líneas pendientes");
             }
 
-            // Sugerencia 462: un pedido que solo lleva cursos va en CV o no se puede facturar
-            cabPedidoVta.Serie = SerieSegunLineas.Resolver(cabPedidoVta.Serie, cabPedidoVta.Empresa, lineasVivasTrasElPut);
-            pedido.serie = cabPedidoVta.Serie;
-
             // NestoAPI#593 (c4): el cheque regalo es regla dura (no se la salta nadie, tampoco al borrar líneas o cambiar
             // de cliente). Se mira sobre las líneas que quedan de verdad en el pedido, también las ya servidas.
             Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
                 l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false,
                 momentoCanje: MomentoCanjeChequeRegalo(pedido)).ConfigureAwait(true);
+            // Sugerencia 462: un pedido que solo lleva cursos va en CV o no se puede facturar. Después del cheque, que en un
+            // pedido de solo cursos pasa a grupo CUR (Novedades 1166) y si no, lo dejaría en NV.
+            cabPedidoVta.Serie = SerieSegunLineas.Resolver(cabPedidoVta.Serie, cabPedidoVta.Empresa, lineasVivasTrasElPut);
+            pedido.serie = cabPedidoVta.Serie;
             // NestoAPI#613: el cupón, igual: regla dura sobre las líneas que quedan (también al quitarlo o cambiar de cliente).
             Infraestructure.Cupones.PlanCanjeCupon planCupon = await ServicioCupones.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
@@ -3108,10 +3108,6 @@ namespace NestoAPI.Controllers
 
             _ = db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
 
-            // Sugerencia 462: un pedido que solo lleva cursos va en CV o no se puede facturar
-            cabecera.Serie = SerieSegunLineas.Resolver(cabecera.Serie, cabecera.Empresa, lineasPedidoInsertar);
-            pedido.serie = cabecera.Serie;
-
             // Actualizamos el contador de ofertas
             if ((int)maxNumeroOferta != 0)
             {
@@ -3158,6 +3154,10 @@ namespace NestoAPI.Controllers
                 pedido.empresa, pedido.numero, pedido.cliente, lineasPedidoInsertar, pedido.iva,
                 l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: true,
                 momentoCanje: MomentoCanjeChequeRegalo(pedido)).ConfigureAwait(true);
+            // Sugerencia 462: un pedido que solo lleva cursos va en CV o no se puede facturar. Después del cheque, que en un
+            // pedido de solo cursos pasa a grupo CUR (Novedades 1166) y si no, lo dejaría en NV.
+            cabecera.Serie = SerieSegunLineas.Resolver(cabecera.Serie, cabecera.Empresa, lineasPedidoInsertar);
+            pedido.serie = cabecera.Serie;
             // NestoAPI#613: el cupón de evento, también regla dura (si no se puede usar, el pedido no se crea y el número vuelve, #636)
             Infraestructure.Cupones.PlanCanjeCupon planCupon;
             try
