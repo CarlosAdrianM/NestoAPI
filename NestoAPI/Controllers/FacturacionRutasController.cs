@@ -505,6 +505,83 @@ namespace NestoAPI.Controllers
             }
         }
 
+        /// <summary>NestoAPI#828: los pasos del papel del packing (usuario, saltar el packing). Se sustituyen en los tests.</summary>
+        internal Func<System.Security.Principal.IPrincipal, bool, IPasosDocumentosEnPapel> CrearPasosPapel { get; set; }
+            = (usuario, saltarPacking) => new PasosDocumentosEnPapelApi(usuario, saltarPacking);
+
+        /// <summary>
+        /// NestoAPI#828 (S5): «Facturar al imprimir etiqueta» de Agencias de Nesto, con EL MISMO núcleo que F8 en Ariadna
+        /// (<see cref="DocumentosEnPapelDelEnvio"/>, estrategia «Nesto imprime en local»): factura el pedido del envío como
+        /// FacturarPedido (la ruta propia no: lo hace Facturar rutas propia), deja cada documento en papel marcado «Pendiente» y lo
+        /// devuelve con su PDF para que Nesto lo imprima y lo confirme (POST DocumentosEnPapel/Impresion). Si ya estaba facturado y su
+        /// papel pendiente (Nesto no llegó a imprimirlo), lo devuelve otra vez sin volver a facturar.
+        /// </summary>
+        /// <remarks>Mismos permisos que FacturarPedido. 200 <see cref="FacturarEtiquetaResponseDTO"/> (la respuesta de FacturarPedido
+        /// con DocumentosEnPapel y AvisosPapel).</remarks>
+        [HttpPost]
+        [Route("FacturarEtiqueta")]
+        public async Task<IHttpActionResult> FacturarEtiqueta([FromBody] FacturarEtiquetaRequestDTO request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Empresa) || request.Pedido <= 0)
+                return BadRequest("Hay que indicar la empresa y el pedido");
+
+            if (!TienePermisosFacturarPedido())
+                return StatusCode(HttpStatusCode.Forbidden);
+
+            string usuario = ObtenerUsuarioActual();
+            if (string.IsNullOrEmpty(usuario))
+                return Unauthorized();
+
+            IPasosDocumentosEnPapel pasos = CrearPasosPapel(User, request.SaltarPacking);
+            try
+            {
+                ResultadoDocumentosEnPapel papel = await new DocumentosEnPapelDelEnvio(pasos, new ImpresoraPapelPackingLocal()).Procesar(new PeticionDocumentosEnPapel
+                {
+                    Empresa = request.Empresa.Trim(),
+                    Pedidos = new System.Collections.Generic.List<int> { request.Pedido },
+                    Envio = request.Envio,
+                    Usuario = usuario
+                });
+                return Ok(FacturarEtiquetaResponseDTO.De(papel));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+                return InternalServerError(ex);
+            }
+            finally
+            {
+                (pasos as IDisposable)?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#828 (S5): Nesto dice si ha impreso en local un documento en papel de la etiqueta (Impreso true) o no (false, con el
+        /// motivo): la marca queda «Impreso» (Facturar rutas lo cuenta) o «Pendiente» (repetir la etiqueta lo devuelve otra vez).
+        /// 204; 400 sin pedido o documento. Mismos permisos que FacturarPedido.
+        /// </summary>
+        [HttpPost]
+        [Route("DocumentosEnPapel/Impresion")]
+        public async Task<IHttpActionResult> ImpresionDocumentoEnPapel([FromBody] ImpresionDocumentoEnPapelDTO impresion)
+        {
+            if (impresion == null || impresion.Pedido <= 0 || string.IsNullOrWhiteSpace(impresion.Documento))
+                return BadRequest("Hay que indicar el pedido y el documento");
+
+            if (!TienePermisosFacturarPedido())
+                return StatusCode(HttpStatusCode.Forbidden);
+
+            IPasosDocumentosEnPapel pasos = CrearPasosPapel(User, false);
+            try
+            {
+                await new DocumentosEnPapelDelEnvio(pasos, new ImpresoraPapelPackingLocal()).MarcarImpresionLocal(impresion);
+                return StatusCode(HttpStatusCode.NoContent);
+            }
+            finally
+            {
+                (pasos as IDisposable)?.Dispose();
+            }
+        }
+
         /// <summary>
         /// NestoAPI#195 (Fase 3): agrupa y factura los pedidos que comparten P.O. (Purchase Order)
         /// con MantenerJunto cuyos grupos están completos (todas las líneas en albarán), para la

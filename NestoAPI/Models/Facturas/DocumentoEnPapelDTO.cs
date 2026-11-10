@@ -103,6 +103,35 @@ namespace NestoAPI.Models.Facturas
         public System.Collections.Generic.List<string> Avisos { get; set; } = new System.Collections.Generic.List<string>();
     }
 
+    /// <summary>
+    /// NestoAPI#828 (S5): la respuesta de POST api/FacturacionRutas/FacturarEtiqueta: la de FacturarPedido (facturas, albaranes, notas
+    /// y errores, con los PDF que imprime Nesto) más los documentos en papel del packing y los avisos del núcleo.
+    /// </summary>
+    public class FacturarEtiquetaResponseDTO : FacturarRutasResponseDTO
+    {
+        /// <summary>Los documentos en papel (con su marca): Nesto imprime los que no estén impresos y confirma cada uno.</summary>
+        public System.Collections.Generic.List<DocumentoEnPapelDTO> DocumentosEnPapel { get; set; } = new System.Collections.Generic.List<DocumentoEnPapelDTO>();
+        /// <summary>Lo que dice el núcleo: la ruta propia no se factura aquí, la nota de reparto propio, lo ya impreso, fallos.</summary>
+        public System.Collections.Generic.List<string> AvisosPapel { get; set; } = new System.Collections.Generic.List<string>();
+
+        internal static FacturarEtiquetaResponseDTO De(Infraestructure.Facturas.ResultadoDocumentosEnPapel papel)
+        {
+            var respuesta = new FacturarEtiquetaResponseDTO();
+            FacturarRutasResponseDTO junta = papel.Respuesta;
+            respuesta.PedidosProcesados = junta.PedidosProcesados;
+            respuesta.Facturas.AddRange(junta.Facturas);
+            respuesta.Albaranes.AddRange(junta.Albaranes);
+            respuesta.NotasEntrega.AddRange(junta.NotasEntrega);
+            respuesta.PedidosConErrores.AddRange(junta.PedidosConErrores);
+            respuesta.ReembolsosDesfasados.AddRange(junta.ReembolsosDesfasados);
+            respuesta.CartasChequeRegalo.AddRange(junta.CartasChequeRegalo);
+            respuesta.TiempoTotal = junta.TiempoTotal;
+            respuesta.DocumentosEnPapel.AddRange(papel.Documentos);
+            respuesta.AvisosPapel.AddRange(papel.Avisos);
+            return respuesta;
+        }
+    }
+
     /// <summary>NestoAPI#828: el cuerpo de POST api/FacturacionRutas/DocumentosEnPapel/Impresion (Nesto, tras imprimir en local).</summary>
     public class ImpresionDocumentoEnPapelDTO
     {

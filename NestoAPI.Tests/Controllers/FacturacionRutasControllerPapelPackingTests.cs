@@ -125,5 +125,89 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("2 documentos en papel ya impresos en el packing.", FacturacionRutasController.ResumenPapelPacking(mezcla));
             Assert.IsNull(FacturacionRutasController.ResumenPapelPacking(new FacturarRutasResponseDTO()));
         }
+
+        // ------------------------------------------------------------ NestoAPI#828 (S5): la etiqueta de Nesto, con el mismo núcleo
+
+        private IPasosDocumentosEnPapel PasosPapelFalsos(bool saltarPackingEsperado = false)
+        {
+            var pasos = A.Fake<IPasosDocumentosEnPapel>();
+            A.CallTo(() => pasos.RutaDelPedido(A<string>._, A<int>._)).Returns("FW");
+            A.CallTo(() => pasos.LeerMarcas(A<string>._, A<int>._)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>()));
+            controller.CrearPasosPapel = (usuario, saltar) =>
+            {
+                Assert.AreEqual(saltarPackingEsperado, saltar);
+                return pasos;
+            };
+            return pasos;
+        }
+
+        [TestMethod]
+        public async Task FacturarEtiqueta_FacturaConElNucleoYDevuelveElPapelParaImprimirEnNesto()
+        {
+            IPasosDocumentosEnPapel pasos = PasosPapelFalsos(saltarPackingEsperado: true);
+            var facturado = new FacturarRutasResponseDTO();
+            facturado.Facturas.Add(new FacturaCreadaDTO { Empresa = "1", NumeroPedido = 929914, NumeroFactura = "NV2617986",
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 1 }, NumeroCopias = 1 } });
+            A.CallTo(() => pasos.Facturar("1", 929914)).Returns(facturado);
+
+            var ok = (OkNegotiatedContentResult<FacturarEtiquetaResponseDTO>)await controller.FacturarEtiqueta(
+                new FacturarEtiquetaRequestDTO { Empresa = "1", Pedido = 929914, Envio = 251001, SaltarPacking = true });
+
+            Assert.AreEqual("NV2617986", ok.Content.Facturas.Single().NumeroFactura);
+            Assert.IsNotNull(ok.Content.Facturas.Single().DatosImpresion.BytesPDF);
+            DocumentoEnPapelDTO documento = ok.Content.DocumentosEnPapel.Single();
+            Assert.AreEqual(EstadosDocumentoEnPapel.PENDIENTE, documento.Estado);
+            Assert.AreEqual(251001, documento.Envio);
+            A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>._, AplicacionesDocumentoEnPapel.NESTO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task FacturarEtiqueta_RutaPropia_NoFacturaYLoDice()
+        {
+            IPasosDocumentosEnPapel pasos = PasosPapelFalsos();
+            A.CallTo(() => pasos.RutaDelPedido("1", 929914)).Returns("16");
+
+            var ok = (OkNegotiatedContentResult<FacturarEtiquetaResponseDTO>)await controller.FacturarEtiqueta(
+                new FacturarEtiquetaRequestDTO { Empresa = "1", Pedido = 929914 });
+
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            Assert.IsTrue(ok.Content.AvisosPapel.Single().Contains("no se factura al imprimir la etiqueta"));
+        }
+
+        [TestMethod]
+        public async Task FacturarEtiqueta_SinPermiso_403()
+        {
+            var identidad = new ClaimsIdentity("TestAuth");
+            identidad.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.TIENDAS + "x"));
+            identidad.AddClaim(new Claim(ClaimTypes.Name, "NUEVAVISION\\Otro"));
+            controller.User = new ClaimsPrincipal(identidad);
+
+            var resultado = await controller.FacturarEtiqueta(new FacturarEtiquetaRequestDTO { Empresa = "1", Pedido = 929914 });
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
+        }
+
+        [TestMethod]
+        public async Task ImpresionDocumentoEnPapel_MarcaLoQueHaImpresoNesto()
+        {
+            IPasosDocumentosEnPapel pasos = PasosPapelFalsos();
+
+            var resultado = await controller.ImpresionDocumentoEnPapel(new ImpresionDocumentoEnPapelDTO
+            {
+                Empresa = "1", Pedido = 929914, Envio = 251001, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617986", Impreso = true, Impresora = "HP Agencias"
+            });
+
+            Assert.AreEqual(System.Net.HttpStatusCode.NoContent, ((StatusCodeResult)resultado).StatusCode);
+            A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>.That.Matches(m => m.Documento == "NV2617986" && m.Estado == EstadosDocumentoEnPapel.IMPRESO
+                && m.Impresora == "HP Agencias"), AplicacionesDocumentoEnPapel.NESTO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ImpresionDocumentoEnPapel_SinDocumento_400()
+        {
+            var resultado = await controller.ImpresionDocumentoEnPapel(new ImpresionDocumentoEnPapelDTO { Pedido = 929914 });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
     }
 }
