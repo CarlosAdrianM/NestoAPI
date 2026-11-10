@@ -50,6 +50,22 @@ namespace NestoAPI.Tests.Models.Picking
                     new ErrorContext { ErrorCode = "PICKING_PEDIDO_NO_EXISTE" })));
         }
 
+        // Novedades 1164 (10/11/26): el resumen de los pedidos detenidos llevaba el código del primero (PICKING_ENTREGA_FUTURA)
+        // y el correo del automático decía «ha fallado»
+        [TestMethod]
+        public void NadaQueSacar_EsSinTrabajoYElCorreoLlevaElResumen()
+        {
+            var resumen = new NestoBusinessException(
+                "No hay ningún pedido que pueda salir ahora." + Environment.NewLine + "Esperan la reposición de las tiendas (1): 930101.",
+                new ErrorContext { ErrorCode = ExplicadorPedidoSinPicking.ERROR_NADA_QUE_SACAR });
+
+            Assert.IsTrue(AvisadorPickingAutomatico.EsPickingSinTrabajo(resumen));
+            Assert.AreEqual("Picking automático: no había nada que sacar", AvisadorPickingAutomatico.AsuntoPara(resumen));
+            string cuerpo = AvisadorPickingAutomatico.CuerpoPara(resumen, MOMENTO);
+            StringAssert.Contains(cuerpo, "No hay ningún pedido que pueda salir ahora.<br>Esperan la reposición de las tiendas (1): 930101.");
+            Assert.IsFalse(cuerpo.Contains("ha fallado"));
+        }
+
         // 23/10/26, picking de las 11:00: los únicos pedidos listos (925239, 927223, 927588, 929175) eran de clientes que cierran
         // el lunes de la entrega y el correo decía «ha fallado… avisad a Informática».
         private static NestoBusinessException SoloClientesCerrados()

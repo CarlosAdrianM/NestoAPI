@@ -234,5 +234,134 @@ namespace NestoAPI.Tests.Models.Picking
             StringAssert.Contains(error.Message, "929865");
             Assert.AreEqual(2, error.Message.Split(new[] { Environment.NewLine }, StringSplitOptions.None).Length);
         }
+
+        // ===== Novedades 1164 (Alfredo, 10/11/26): picking de rutas sin nada que sacar =====
+
+        private static PedidoPicking Descartado(int id, byte modo, Action<PedidoPicking> preparar, params LineaPedidoPicking[] lineas)
+        {
+            PedidoPicking pedido = Pedido(modo, lineas);
+            pedido.Id = id;
+            preparar?.Invoke(pedido);
+            Assert.IsFalse(GestorPicking.DecidirSiSale(pedido), $"el pedido {id} no debe salir");
+            // Lo que hace después GeneradorPendientes con los que no salen
+            pedido.Lineas.RemoveAll(l => l.CantidadReservada == 0);
+            return pedido;
+        }
+
+        private static PedidoPicking EntregaFutura(int id)
+        {
+            return Descartado(id, Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, p =>
+            {
+                p.Lineas[0].FechaEntrega = new DateTime(2026, 12, 4);
+                GestorReservasStock.BorrarLineasQueNoDebenSalir(new List<PedidoPicking> { p }, new DateTime(2026, 11, 10));
+            }, Linea(1, "A1", 1, 1, 10M));
+        }
+
+        private static List<PedidoPicking> DescartadosComoLosDel10Nov()
+        {
+            // Los más antiguos primero, como llegan: cinco de entrega futura (849141…), luego los que esperan a las tiendas
+            // y los de «Todo junto» sin stock
+            var descartados = new List<PedidoPicking>
+            {
+                EntregaFutura(849141), EntregaFutura(851002), EntregaFutura(860333), EntregaFutura(871204), EntregaFutura(880115)
+            };
+            foreach (int id in new[] { 930101, 930102, 930103, 930104, 930105, 930106, 930107 })
+            {
+                descartados.Add(Descartado(id, Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+                    p => p.EsperaReposicionDeTiendas = true, Linea(1, "17404", 2, 0, 10M), Linea(2, "38167", 1, 1, 20M)));
+            }
+            descartados.Add(Descartado(930200, Constantes.Pedidos.ModosServicio.TODO_JUNTO, null,
+                Linea(1, "A1", 2, 2, 10M), Linea(2, "44553", 3, 1, 20M)));
+            descartados.Add(Descartado(930201, Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO,
+                p => p.PlazosPago = Constantes.PlazosPago.PREPAGO, Linea(1, "A1", 1, 1, 100M)));
+            return descartados;
+        }
+
+        [TestMethod]
+        public void NadaQueSacar_CasoDel10Nov_NombraLosQueEsperanALasTiendasYNoListaLosDeEntregaFutura()
+        {
+            NestoBusinessException error = ExplicadorPedidoSinPicking.ErrorNadaQueSacar(DescartadosComoLosDel10Nov());
+
+            Assert.AreEqual(ExplicadorPedidoSinPicking.ERROR_NADA_QUE_SACAR, error.Context.ErrorCode);
+            Assert.IsTrue(error.IsWarning);
+            StringAssert.StartsWith(error.Message, "No hay ningún pedido que pueda salir ahora.");
+            StringAssert.Contains(error.Message, "Esperan la reposición de las tiendas («Tras reponer de tiendas») (7): 930101 (17404)");
+            StringAssert.Contains(error.Message, "930107 (17404)");
+            StringAssert.Contains(error.Message, "«Todo junto» y les falta stock (1): 930200 (44553)");
+            StringAssert.Contains(error.Message, "De prepago con el pago sin cubrir (1): 930201");
+            StringAssert.Contains(error.Message, "Además, 5 pedidos tienen la entrega para más adelante.");
+            foreach (string futuro in new[] { "849141", "851002", "860333", "871204", "880115" })
+            {
+                Assert.IsFalse(error.Message.Contains(futuro), $"el de entrega futura {futuro} no se lista");
+            }
+            Assert.IsFalse(error.Message.Contains("38167"), "lo que tiene stock no se nombra");
+            Assert.IsFalse(error.Message.Contains("No se ha podido"));
+            // La reposición, antes que «Todo junto»; y esta, antes que el prepago
+            Assert.IsTrue(error.Message.IndexOf("930101") < error.Message.IndexOf("930200"));
+            Assert.IsTrue(error.Message.IndexOf("930200") < error.Message.IndexOf("930201"));
+        }
+
+        [TestMethod]
+        public void NadaQueSacar_MuchosEnUnMotivo_NombraElTopeYDiceCuantosMas()
+        {
+            var descartados = Enumerable.Range(1, ExplicadorPedidoSinPicking.MAXIMO_PEDIDOS_POR_MOTIVO + 3)
+                .Select(i => Descartado(940000 + i, Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO,
+                    p => p.PlazosPago = Constantes.PlazosPago.PREPAGO, Linea(1, "A1", 1, 1, 100M)))
+                .ToList();
+
+            string mensaje = ExplicadorPedidoSinPicking.ErrorNadaQueSacar(descartados).Message;
+
+            StringAssert.Contains(mensaje, $"94000{ExplicadorPedidoSinPicking.MAXIMO_PEDIDOS_POR_MOTIVO} y 3 más.");
+            Assert.IsFalse(mensaje.Contains("940009"));
+        }
+
+        [TestMethod]
+        public void NadaQueSacar_SoloEntregaFuturaYSinStock_SoloLosCuentaSinAdemas()
+        {
+            var descartados = new List<PedidoPicking>
+            {
+                EntregaFutura(849141), EntregaFutura(851002),
+                Descartado(930300, Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, null, Linea(1, "A1", 2, 0, 10M))
+            };
+
+            string mensaje = ExplicadorPedidoSinPicking.ErrorNadaQueSacar(descartados).Message;
+
+            Assert.AreEqual("No hay ningún pedido que pueda salir ahora." + Environment.NewLine +
+                "2 pedidos tienen la entrega para más adelante y 1 no tiene stock de nada de lo que se cobra.", mensaje);
+        }
+
+        [TestMethod]
+        public void NadaQueSacar_UnoSolo_SuMotivoConcretoDetrasDeLaPrimeraFrase()
+        {
+            PedidoPicking pedido = Descartado(930101, Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+                p => p.EsperaReposicionDeTiendas = true, Linea(1, "17404", 2, 0, 10M));
+            NestoBusinessException concreto = ExplicadorPedidoSinPicking.Error(pedido, sinNombres, sinCompras);
+
+            NestoBusinessException error = ExplicadorPedidoSinPicking.ErrorNadaQueSacar(new List<PedidoPicking> { pedido }, concreto);
+
+            Assert.AreEqual(ExplicadorPedidoSinPicking.ERROR_NADA_QUE_SACAR, error.Context.ErrorCode);
+            Assert.AreEqual("No hay ningún pedido que pueda salir ahora. " + concreto.Message, error.Message);
+        }
+
+        [TestMethod]
+        public void NadaQueSacar_SinDescartados_Null()
+        {
+            Assert.IsNull(ExplicadorPedidoSinPicking.ErrorNadaQueSacar(null));
+            Assert.IsNull(ExplicadorPedidoSinPicking.ErrorNadaQueSacar(new List<PedidoPicking>()));
+        }
+
+        [TestMethod]
+        public void PickingDeUnPedido_ElMotivoConcretoNoCambia()
+        {
+            // El de UN pedido sigue siendo el de #608: «El pedido X no sale: …» con su código, sin la frase del resumen
+            PedidoPicking pedido = Descartado(930101, Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+                p => p.EsperaReposicionDeTiendas = true, Linea(1, "17404", 2, 0, 10M));
+
+            NestoBusinessException error = ExplicadorPedidoSinPicking.Error(pedido, sinNombres, sinCompras);
+
+            Assert.AreEqual(ExplicadorPedidoSinPicking.ERROR_ESPERA_REPOSICION_TIENDAS, error.Context.ErrorCode);
+            Assert.AreEqual("El pedido 930101 no sale: está en «Tras reponer de tiendas» y está esperando stock suyo que tiene que llegar " +
+                "de las tiendas (17404 (faltan 2; sin pedido a proveedor)). Saldrá cuando llegue la reposición.", error.Message);
+        }
     }
 }

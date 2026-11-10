@@ -43,8 +43,17 @@ namespace NestoAPI.Models.Picking
         /// </summary>
         internal static bool EsPickingSinTrabajo(Exception excepcion)
         {
+            // Novedades 1164 (10/11/26): también el resumen de los pedidos detenidos (antes llevaba el código del primero,
+            // p. ej. PICKING_ENTREGA_FUTURA, y el correo decía «ha fallado»)
             return excepcion is NestoBusinessException negocio
-                && negocio.Context?.ErrorCode == Constantes.Picking.ERROR_SIN_STOCK;
+                && (negocio.Context?.ErrorCode == Constantes.Picking.ERROR_SIN_STOCK
+                    || negocio.Context?.ErrorCode == ExplicadorPedidoSinPicking.ERROR_NADA_QUE_SACAR);
+        }
+
+        private static bool EsResumenDeDetenidos(Exception excepcion)
+        {
+            return excepcion is NestoBusinessException negocio
+                && negocio.Context?.ErrorCode == ExplicadorPedidoSinPicking.ERROR_NADA_QUE_SACAR;
         }
 
         /// <summary>
@@ -77,6 +86,9 @@ namespace NestoAPI.Models.Picking
                 return "<p>El picking automático se ha ejecutado correctamente a las " + hora + ", " +
                        "pero <b>no había ningún pedido al que asignar picking</b> " +
                        "(sin stock suficiente o nada pendiente).</p>" +
+                       (EsResumenDeDetenidos(excepcion)
+                           ? "<blockquote>" + Escapar(excepcion.Message).Replace(Environment.NewLine, "<br>") + "</blockquote>"
+                           : "") +
                        "<p>No hay que hacer nada: es un resultado normal. " +
                        "Este correo se manda para que sepáis que la tarea SÍ se ha ejecutado.</p>";
             }

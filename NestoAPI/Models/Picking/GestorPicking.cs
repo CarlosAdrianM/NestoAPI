@@ -352,29 +352,23 @@ namespace NestoAPI.Models.Picking
         {
             if (sinSalirPorCierreCliente.Count == 0 && descartados != null)
             {
-                // Carlos 03/11/26 (pedido 929864, cliente 15191): también en el picking de UN CLIENTE, que decía «no hay stock»
-                // cuando el pedido estaba en «Tras reponer de tiendas». Se explican sus pedidos (hasta MAXIMO_PEDIDOS_EXPLICADOS).
+                // Novedades 1164 (10/11/26): en el de VARIOS pedidos, el resumen por motivo; con uno solo descartado, su motivo
+                // concreto detrás de «No hay ningún pedido que pueda salir ahora.»
+                if (!pedidoUnico.HasValue && descartados.Count > 0)
+                {
+                    var explicacionUnico = descartados.Count == 1 ? Explicar(descartados[0], descartados[0].Empresa?.Trim()) : null;
+                    return ExplicadorPedidoSinPicking.ErrorNadaQueSacar(descartados, explicacionUnico);
+                }
                 List<PedidoPicking> aExplicar = pedidoUnico.HasValue
                     ? descartados.Where(p => p.Id == pedidoUnico.Value).ToList()
-                    : descartados.Take(ExplicadorPedidoSinPicking.MAXIMO_PEDIDOS_EXPLICADOS).ToList();
+                    : new List<PedidoPicking>();
                 var errores = new List<Infraestructure.Exceptions.NestoBusinessException>();
                 foreach (PedidoPicking pedido in aExplicar)
                 {
-                    try
+                    var error = Explicar(pedido, empresaPedidoUnico);
+                    if (error != null)
                     {
-                        string empresa = pedidoUnico.HasValue ? empresaPedidoUnico : pedido.Empresa?.Trim();
-                        List<string> productos = ExplicadorPedidoSinPicking.ProductosANombrar(pedido);
-                        var error = ExplicadorPedidoSinPicking.Error(pedido,
-                            NombresProductos(empresa, productos), ComprasPendientes(empresa, productos));
-                        if (error != null)
-                        {
-                            errores.Add(error);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // Explicar es cortesía: si falla la consulta, el mensaje de siempre
-                        System.Diagnostics.Trace.WriteLine($"[Picking#608] No se pudo explicar el pedido {pedido.Id}: {ex.Message}");
+                        errores.Add(error);
                     }
                 }
                 var combinado = ExplicadorPedidoSinPicking.ErrorVarios(errores);
@@ -384,6 +378,23 @@ namespace NestoAPI.Models.Picking
                 }
             }
             return GestorDiasEnServir.ErrorSinPicking(sinSalirPorCierreCliente, diaEntregaPicking);
+        }
+
+        /// <summary>El motivo concreto de un pedido (NestoAPI#608), o null si no hay nada concreto que decir o falla la consulta.</summary>
+        private Infraestructure.Exceptions.NestoBusinessException Explicar(PedidoPicking pedido, string empresa)
+        {
+            try
+            {
+                List<string> productos = ExplicadorPedidoSinPicking.ProductosANombrar(pedido);
+                return ExplicadorPedidoSinPicking.Error(pedido,
+                    NombresProductos(empresa, productos), ComprasPendientes(empresa, productos));
+            }
+            catch (Exception ex)
+            {
+                // Explicar es cortesía: si falla la consulta, el mensaje de siempre
+                System.Diagnostics.Trace.WriteLine($"[Picking#608] No se pudo explicar el pedido {pedido.Id}: {ex.Message}");
+                return null;
+            }
         }
 
         private Dictionary<string, string> NombresProductos(string empresa, List<string> productos)

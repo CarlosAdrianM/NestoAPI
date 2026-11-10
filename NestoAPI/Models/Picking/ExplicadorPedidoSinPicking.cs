@@ -185,6 +185,118 @@ namespace NestoAPI.Models.Picking
             };
         }
 
+        /// <summary>
+        /// Novedades 1164 (Alfredo, 10/11/26): el picking de VARIOS pedidos (rutas, nuestra ruta, automático, cliente) cuando no sale
+        /// ninguno. Antes se explicaban los 5 primeros descartados, que eran los más antiguos y todos de entrega futura, y parecía un
+        /// fallo; lo importante (7 pedidos esperando la reposición de las tiendas) no salía. Ahora la verdad útil: qué hay detenido
+        /// y por qué, por motivo, de más a menos relevante. Los de entrega futura y los que no tienen stock de nada, solo contados.
+        /// </summary>
+        public const string ERROR_NADA_QUE_SACAR = "PICKING_NADA_QUE_SACAR";
+
+        /// <summary>Pedidos que se nombran en cada motivo del resumen; el resto, «y N más».</summary>
+        public const int MAXIMO_PEDIDOS_POR_MOTIVO = 8;
+        private const int MAXIMO_PRODUCTOS_POR_PEDIDO = 3;
+
+        public const string NADA_QUE_SACAR = "No hay ningún pedido que pueda salir ahora.";
+
+        /// <summary>
+        /// El resumen por motivo de los descartados, o null si no hay ninguno (el llamante da el genérico). Con un solo descartado,
+        /// su explicación concreta (<paramref name="explicacionUnico"/>, la de <see cref="Error"/>) detrás de la primera frase.
+        /// Mismo código siempre, para que el picking automático y Nesto lo traten como «no había nada», no como un fallo.
+        /// </summary>
+        public static NestoBusinessException ErrorNadaQueSacar(IList<PedidoPicking> descartados, NestoBusinessException explicacionUnico = null)
+        {
+            if (descartados == null || descartados.Count == 0)
+            {
+                return null;
+            }
+            if (descartados.Count == 1 && explicacionUnico != null)
+            {
+                return CrearNadaQueSacar(NADA_QUE_SACAR + " " + explicacionUnico.Message);
+            }
+
+            var lineas = new List<string> { NADA_QUE_SACAR };
+            void Motivo(MotivoNoSalePicking motivo, string texto, bool conProductos)
+            {
+                List<PedidoPicking> pedidos = descartados.Where(p => p != null && p.MotivoNoSale == motivo).ToList();
+                if (pedidos.Count > 0)
+                {
+                    lineas.Add($"{texto} ({pedidos.Count}): {ListaPedidos(pedidos, conProductos)}.");
+                }
+            }
+            string Modo(byte modo) => Constantes.Pedidos.ModosServicio.Nombre(modo);
+
+            // De más a menos relevante: lo que tiene mercancía lista o el almacén esperaría ver salir
+            Motivo(MotivoNoSalePicking.EsperaReposicionDeTiendas,
+                $"Esperan la reposición de las tiendas («{Modo(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS)}»)", true);
+            Motivo(MotivoNoSalePicking.TodoJuntoSinStock,
+                $"En «{Modo(Constantes.Pedidos.ModosServicio.TODO_JUNTO)}» y les falta stock", true);
+            Motivo(MotivoNoSalePicking.RestoDeUnaVezSinStock,
+                $"En «{Modo(Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ)}» y les falta stock para el resto", true);
+            Motivo(MotivoNoSalePicking.EsperaSoloRegalos,
+                "Lo que se cobra tiene stock, pero esperan regalos", true);
+            Motivo(MotivoNoSalePicking.RetenidoPorPrepago,
+                "De prepago con el pago sin cubrir", false);
+            Motivo(MotivoNoSalePicking.Retenido,
+                "Retenidos hasta nuevo aviso", false);
+
+            // Lo que no se espera ver salir hoy: solo contado
+            int futuros = descartados.Count(p => p != null && p.MotivoNoSale == MotivoNoSalePicking.SinLineas && p.PrimeraEntregaFuturaQuitada.HasValue);
+            int sinStock = descartados.Count(p => p != null && p.MotivoNoSale == MotivoNoSalePicking.SinStockDePago);
+            var ademas = new List<string>();
+            if (futuros > 0)
+            {
+                ademas.Add(futuros == 1 ? "1 pedido tiene la entrega para más adelante" : $"{futuros} pedidos tienen la entrega para más adelante");
+            }
+            if (sinStock > 0)
+            {
+                ademas.Add(sinStock == 1 ? "1 no tiene stock de nada de lo que se cobra" : $"{sinStock} no tienen stock de nada de lo que se cobra");
+            }
+            if (ademas.Count > 0)
+            {
+                // Si solo hay de estos, sin «Además»
+                string frase = string.Join(" y ", ademas) + ".";
+                lineas.Add(lineas.Count > 1 ? "Además, " + frase : char.ToUpper(frase[0], castellano) + frase.Substring(1));
+            }
+            return CrearNadaQueSacar(string.Join(Environment.NewLine, lineas));
+        }
+
+        private static string ListaPedidos(List<PedidoPicking> pedidos, bool conProductos)
+        {
+            List<string> partes = pedidos.Take(MAXIMO_PEDIDOS_POR_MOTIVO).Select(p =>
+            {
+                if (!conProductos)
+                {
+                    return p.Id.ToString();
+                }
+                List<string> productos = Faltan(p).Select(l => l.Producto?.Trim()).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+                if (productos.Count == 0)
+                {
+                    return p.Id.ToString();
+                }
+                string lista = string.Join(", ", productos.Take(MAXIMO_PRODUCTOS_POR_PEDIDO));
+                if (productos.Count > MAXIMO_PRODUCTOS_POR_PEDIDO)
+                {
+                    lista += $" y {productos.Count - MAXIMO_PRODUCTOS_POR_PEDIDO} más";
+                }
+                return $"{p.Id} ({lista})";
+            }).ToList();
+            string texto = string.Join(", ", partes);
+            if (pedidos.Count > MAXIMO_PEDIDOS_POR_MOTIVO)
+            {
+                texto += $" y {pedidos.Count - MAXIMO_PEDIDOS_POR_MOTIVO} más";
+            }
+            return texto;
+        }
+
+        private static NestoBusinessException CrearNadaQueSacar(string mensaje)
+        {
+            return new NestoBusinessException(mensaje, new ErrorContext { ErrorCode = ERROR_NADA_QUE_SACAR })
+            {
+                IsWarning = true
+            };
+        }
+
         private static NestoBusinessException Crear(string mensaje, string codigo, PedidoPicking pedido)
         {
             return new NestoBusinessException(mensaje, new ErrorContext
