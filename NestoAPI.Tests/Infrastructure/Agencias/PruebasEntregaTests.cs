@@ -309,14 +309,14 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         <codtipo>1</codtipo>
         <tipo>ALBARAN</tipo>
         <fecha>09/11/2026 18:00:00</fecha>
-        <imagen>https://gls.invalid/albaran.aspx?x=1</imagen>
+        <imagen>https://pods.gls-spain.es/albaran.aspx?x=1</imagen>
         <observaciones></observaciones>
       </digitalizacion>
       <digitalizacion>
         <codtipo>9</codtipo>
         <tipo>POD (APP)</tipo>
         <fecha>10/11/2026 9:28:00</fecha>
-        <imagen>https://gls.invalid/AlbaranDesdeFirma.aspx?codexp=1</imagen>
+        <imagen>https://pods.gls-spain.es/AlbaranDesdeFirma.aspx?codexp=1</imagen>
         <observaciones>Prueba</observaciones>
       </digitalizacion>
     </digitalizaciones>
@@ -332,7 +332,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(new DateTime(2026, 11, 10, 9, 27, 35), datos.FechaHora);
             Assert.AreEqual("Receptor Inventado", datos.Receptor);
             Assert.AreEqual("00000000T", datos.Dni);
-            Assert.AreEqual("https://gls.invalid/AlbaranDesdeFirma.aspx?codexp=1", datos.UrlImagen, "La del POD, no la del albarán");
+            Assert.AreEqual("https://pods.gls-spain.es/AlbaranDesdeFirma.aspx?codexp=1", datos.UrlImagen, "La del POD, no la del albarán");
         }
 
         [TestMethod]
@@ -345,7 +345,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         public async Task Gls_ImagenJpeg_SeTraeDesdeElServidor()
         {
             var descargador = A.Fake<IDescargadorDocumentosPruebaEntrega>();
-            A.CallTo(() => descargador.DescargarAsync("https://gls.invalid/AlbaranDesdeFirma.aspx?codexp=1"))
+            A.CallTo(() => descargador.DescargarAsync("https://pods.gls-spain.es/AlbaranDesdeFirma.aspx?codexp=1"))
                 .Returns(new DocumentoDescargado { Contenido = new byte[] { 0xFF, 0xD8 }, Tipo = "image/jpeg" });
 
             PruebaEntregaAgencia prueba = await new PruebaEntregaGls(ClienteGls(XML_GLS_ENTREGADO), descargador).ObtenerAsync(Envio(Constantes.Agencias.AGENCIA_GLS));
@@ -367,7 +367,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.IsTrue(prueba.Disponible);
             Assert.IsNull(prueba.Documento);
-            Assert.AreEqual("https://gls.invalid/AlbaranDesdeFirma.aspx?codexp=1", prueba.UrlDocumento);
+            Assert.AreEqual("https://pods.gls-spain.es/AlbaranDesdeFirma.aspx?codexp=1", prueba.UrlDocumento);
         }
 
         [TestMethod]
@@ -394,6 +394,68 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.IsFalse(prueba.Disponible);
             StringAssert.Contains(prueba.Mensaje, "ASM");
+        }
+
+        // Revisión 10/11/26: la URL viene del XML de GLS; solo https de gls-spain.es (o subdominio) se baja o se da al cliente.
+        [TestMethod]
+        public void Descargador_EsUrlDeGls_SoloHttpsDeGlsSpain()
+        {
+            Assert.IsTrue(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://pods.gls-spain.es/Extranet/public/AlbaranDesdeFirma.aspx?codexp=1"));
+            Assert.IsTrue(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://gls-spain.es/x"));
+            Assert.IsTrue(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://PODS.GLS-SPAIN.ES/x"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("http://pods.gls-spain.es/x"), "Sin https no");
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://gls-spain.es.malo.com/x"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://falsogls-spain.es/x"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://pods.gls-spain.es@192.168.1.1/x"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("https://192.168.1.1/x"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("file:///C:/Windows/win.ini"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls("/relativa"));
+            Assert.IsFalse(DescargadorDocumentosPruebaEntrega.EsUrlDeGls(null));
+        }
+
+        [TestMethod]
+        public async Task Descargador_UrlQueNoEsDeGls_NiSiquieraPide()
+        {
+            var manejador = new ManejadorQueCuenta();
+            var descargador = new DescargadorDocumentosPruebaEntrega(new HttpClient(manejador));
+
+            Assert.IsNull(await descargador.DescargarAsync("http://intranet.local/secreto"));
+            Assert.AreEqual(0, manejador.Llamadas);
+        }
+
+        [TestMethod]
+        public async Task Descargador_CuerpoMayorQueElMaximoSinContentLength_EsNull()
+        {
+            var cuerpo = new System.IO.MemoryStream(new byte[DescargadorDocumentosPruebaEntrega.MAXIMO_BYTES + 1]);
+            Assert.IsNull(await DescargadorDocumentosPruebaEntrega.LeerHasta(cuerpo, DescargadorDocumentosPruebaEntrega.MAXIMO_BYTES));
+            var justo = new System.IO.MemoryStream(new byte[] { 1, 2, 3 });
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, await DescargadorDocumentosPruebaEntrega.LeerHasta(justo, 3));
+        }
+
+        [TestMethod]
+        public async Task Gls_UrlQueNoEsDeGls_NiSeBajaNiSeDaAlCliente()
+        {
+            string xml = XML_GLS_ENTREGADO.Replace("https://pods.gls-spain.es/AlbaranDesdeFirma.aspx?codexp=1", "http://10.0.0.1/interno");
+            var descargador = A.Fake<IDescargadorDocumentosPruebaEntrega>();
+
+            PruebaEntregaAgencia prueba = await new PruebaEntregaGls(ClienteGls(xml), descargador).ObtenerAsync(Envio(Constantes.Agencias.AGENCIA_GLS));
+
+            Assert.IsTrue(prueba.Disponible);
+            Assert.IsNull(prueba.UrlDocumento);
+            Assert.IsNull(prueba.Documento);
+            Assert.AreEqual(PruebaEntregaGls.MENSAJE_SIN_IMAGEN, prueba.Mensaje);
+            A.CallTo(() => descargador.DescargarAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        private class ManejadorQueCuenta : HttpMessageHandler
+        {
+            public int Llamadas { get; private set; }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+            {
+                Llamadas++;
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+            }
         }
 
         [TestMethod]

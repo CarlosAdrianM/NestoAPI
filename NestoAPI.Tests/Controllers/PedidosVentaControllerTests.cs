@@ -47,6 +47,23 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
 
+        // Feria online 11/26 (revisión 10/11/26): el PUT pisaba cabPedidoVta.Fecha con la del cliente ANTES de validar, así que
+        // EsPedidoValidoConFechaDelPedido recibía la fecha del cliente y no la del pedido guardado. El PUT entero no se puede
+        // montar con fakes; se guarda la regla en el código: se valida con la fecha guardada antes de asignarla.
+        [TestMethod]
+        public void PutPedidoVenta_ValidaConLaFechaDelPedidoGuardado_NoConLaDelCliente()
+        {
+            string ruta = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                @"..\..\..\NestoAPI\Controllers\PedidosVentaController.cs"));
+            string codigo = System.IO.File.ReadAllText(ruta);
+
+            int guardada = codigo.IndexOf("DateTime? fechaGuardada = cabPedidoVta.Fecha;", StringComparison.Ordinal);
+            int asignacion = codigo.IndexOf("cabPedidoVta.Fecha = pedido.fecha;", StringComparison.Ordinal);
+            Assert.IsTrue(guardada >= 0 && asignacion > guardada, "La fecha guardada se lee antes de pisarla con la del cliente");
+            Assert.IsFalse(codigo.Contains("EsPedidoValidoConFechaDelPedido(pedido, cabPedidoVta.Fecha)"));
+            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(codigo, @"EsPedidoValidoConFechaDelPedido\(pedido, fechaGuardada\)").Count);
+        }
+
         // Nesto#340: GET api/PedidosVenta/PorReferenciaCanal — el nº de pedido Nesto por la
         // referencia del canal externo (antes PrestashopService lo consultaba con EF)
 

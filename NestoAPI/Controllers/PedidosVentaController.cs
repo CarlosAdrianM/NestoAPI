@@ -1608,6 +1608,9 @@ namespace NestoAPI.Controllers
             // nuevas (ampliar un presupuesto no puede meter líneas en -1 junto a las de -3).
             bool pedidoEsPresupuestoVivoEnBD = TransicionPresupuesto.EsPresupuestoVivo(cabPedidoVta.LinPedidoVtas);
 
+            // Feria online 11/26: la fecha del pedido GUARDADO, antes de pisarla con la que manda el cliente; con ella se
+            // validan las ofertas más abajo (VigenciaPedidoTienda).
+            DateTime? fechaGuardada = cabPedidoVta.Fecha;
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
             // hay que modificar el importe del reembolso
@@ -1974,7 +1977,7 @@ namespace NestoAPI.Controllers
             {
                 // Feria online 11/26: con la fecha del pedido GUARDADO (un pedido de la tienda se valida con
                 // las ofertas vigentes ese día, VigenciaPedidoTienda).
-                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, cabPedidoVta.Fecha);
+                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, fechaGuardada);
 
                 // Carlos 28/11/25: Permitir omitir validación si (igual que en POST):
                 // - Tiene rol Dirección o Almacén (sin importar almacenes), O
@@ -1998,7 +2001,7 @@ namespace NestoAPI.Controllers
             // calculamos la respuesta de validación para incluirla en el correo (Issue #48)
             else if (pedido.CreadoSinPasarValidacion)
             {
-                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, cabPedidoVta.Fecha);
+                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, fechaGuardada);
             }
 
             bool pedidoTeniaPrepago = cabPedidoVta.Prepagos.Any(p => p.Factura == null);

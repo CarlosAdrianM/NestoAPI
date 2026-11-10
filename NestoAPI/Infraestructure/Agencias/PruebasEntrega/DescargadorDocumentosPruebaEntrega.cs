@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -35,7 +36,12 @@ namespace NestoAPI.Infraestructure.Agencias.PruebasEntrega
 
         public async Task<DocumentoDescargado> DescargarAsync(string url)
         {
-            using (HttpResponseMessage respuesta = await http.GetAsync(url).ConfigureAwait(false))
+            // La URL viene en la respuesta de la agencia: solo se sigue si es de GLS por https (nada de pedir a la red interna).
+            if (!EsUrlDeGls(url))
+            {
+                return null;
+            }
+            using (HttpResponseMessage respuesta = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
             {
                 if (!respuesta.IsSuccessStatusCode)
                 {
@@ -47,12 +53,55 @@ namespace NestoAPI.Infraestructure.Agencias.PruebasEntrega
                 {
                     return null;
                 }
-                byte[] contenido = await respuesta.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-                return contenido == null || contenido.Length == 0 || contenido.Length > MAXIMO_BYTES
+                byte[] contenido;
+                using (Stream cuerpo = await respuesta.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                {
+                    contenido = await LeerHasta(cuerpo, MAXIMO_BYTES).ConfigureAwait(false);
+                }
+                return contenido == null || contenido.Length == 0
                     ? null
                     : new DocumentoDescargado { Contenido = contenido, Tipo = tipo };
             }
         }
+
+        /// <summary>Lee el cuerpo sin pasar de <paramref name="maximo"/> bytes; null si es más largo (no se carga entero).</summary>
+        internal static async Task<byte[]> LeerHasta(Stream cuerpo, int maximo)
+        {
+            using (var memoria = new MemoryStream())
+            {
+                byte[] bufer = new byte[81920];
+                int leidos;
+                while ((leidos = await cuerpo.ReadAsync(bufer, 0, bufer.Length).ConfigureAwait(false)) > 0)
+                {
+                    if (memoria.Length + leidos > maximo)
+                    {
+                        return null;
+                    }
+                    memoria.Write(bufer, 0, leidos);
+                }
+                return memoria.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// La URL del justificante que da GLS solo vale si es https y de gls-spain.es o un subdominio suyo (la real es
+        /// pods.gls-spain.es). Ni se descarga ni se da al cliente otra cosa.
+        /// </summary>
+        internal static bool EsUrlDeGls(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri uri))
+            {
+                return false;
+            }
+            if (uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo))
+            {
+                return false;
+            }
+            string host = uri.IdnHost?.ToLowerInvariant();
+            return host == DOMINIO_GLS || (host != null && host.EndsWith("." + DOMINIO_GLS, StringComparison.Ordinal));
+        }
+
+        private const string DOMINIO_GLS = "gls-spain.es";
 
         /// <summary>PDF o imagen: lo que Nesto sabe enseñar.</summary>
         internal static bool EsDocumentoAdmitido(string tipo)

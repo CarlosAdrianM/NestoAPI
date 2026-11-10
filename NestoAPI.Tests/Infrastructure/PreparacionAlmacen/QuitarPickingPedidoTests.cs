@@ -161,7 +161,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task Quitar_PickingTerminadoOEmpaquetando_NoSePuede()
         {
             A.CallTo(() => tx.BloquearYMirarSiTerminado(EMPRESA, PICKING)).Returns(true);
-            Assert.AreEqual(EstadoQuitarPicking.NoSePuede, (await servicio.Quitar(EMPRESA, PEDIDO, true, Usuario("Almacén"))).Estado);
+            ResultadoQuitarPicking terminado = await servicio.Quitar(EMPRESA, PEDIDO, true, Usuario("Almacén"));
+            Assert.AreEqual(EstadoQuitarPicking.NoSePuede, terminado.Estado);
+            // Novedad 1146 (revisión): quien pulsa el botón ES el almacén; no se le manda a «hablar con el almacén».
+            StringAssert.Contains(terminado.Respuesta.Message, "Desde Nesto todavía no se puede quitar el picking de lo ya cogido.");
+            Assert.IsFalse(terminado.Respuesta.Message.Contains("hable con el almacén"));
 
             A.CallTo(() => tx.BloquearYMirarSiTerminado(EMPRESA, PICKING)).Returns(false);
             A.CallTo(() => tx.HayPacking(EMPRESA, PICKING, PEDIDO)).Returns(true);

@@ -264,7 +264,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 if (await tx.BloquearYMirarSiTerminado(empresa, picking).ConfigureAwait(false))
                 {
                     return Resultado(EstadoQuitarPicking.NoSePuede, empresa, pedido,
-                        $"El picking {picking} ya está terminado en la PDA: lo del pedido {pedido} ya está cogido. No se puede quitar el picking; hable con el almacén.", pickings);
+                        $"El picking {picking} ya está terminado en la PDA: lo del pedido {pedido} ya está cogido. Desde Nesto todavía no se puede quitar el picking de lo ya cogido.", pickings);
                 }
                 if (await tx.HayPacking(empresa, picking, pedido).ConfigureAwait(false))
                 {

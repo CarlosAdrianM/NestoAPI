@@ -57,7 +57,8 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 DniReceptor = datos.Dni
             };
             string url = datos.UrlImagen;
-            if (string.IsNullOrWhiteSpace(url))
+            // Revisión 10/11/26: la URL viene del XML de GLS; si no es https de gls-spain.es no se baja ni se da al cliente.
+            if (string.IsNullOrWhiteSpace(url) || !DescargadorDocumentosPruebaEntrega.EsUrlDeGls(url))
             {
                 prueba.Mensaje = MENSAJE_SIN_IMAGEN;
                 return prueba;
