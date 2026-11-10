@@ -548,6 +548,7 @@
     <Compile Include="Infrastructure\Clientes\ContactoTelefonicoPrimeroTests.cs" />
     <Compile Include="Infrastructure\Clientes\CambioDiasEnServirConPickingTests.cs" />
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
+    <Compile Include="Infrastructure\Facturas\DocumentosEnPapelDelEnvioTests.cs" />
     <Compile Include="Infrastructure\Facturas\ImpresionDocumentosServidorTests.cs" />
     <Compile Include="Infrastructure\GestorFacturacionRutasTests.cs" />
     <Compile Include="Infrastructure\ServicioGestorClientesTests.cs" />

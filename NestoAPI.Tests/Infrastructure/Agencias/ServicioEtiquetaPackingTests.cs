@@ -919,5 +919,70 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(CodigosEtiquetaPacking.PEDIDO_RETENIDO, resultado.Error.Codigo);
             A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
         }
+        // ------------------------------------------------------------ NestoAPI#828 (S1): la factura física, en el packing
+
+        private static FacturarRutasResponseDTO ConFacturaFisica(int pedido, string numero, string impresoEn)
+        {
+            var respuesta = new FacturarRutasResponseDTO();
+            respuesta.Facturas.Add(new FacturaCreadaDTO
+            {
+                Empresa = "1", NumeroPedido = pedido, NumeroFactura = numero,
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 1 }, NumeroCopias = 1, TipoBandeja = TipoBandejaImpresion.Lower, ImpresoEnServidor = impresoEn }
+            });
+            return respuesta;
+        }
+
+        [TestMethod]
+        public async Task Papel828_FacturaFisicaImpresa_DiceQueLaMetaEnLaCajaYLaMarca()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(ConFacturaFisica(PEDIDO, "NV2617986", "HP LaserJet Algete"));
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsTrue(etiqueta.Facturado);
+            CollectionAssert.AreEqual(new List<int> { PEDIDO }, etiqueta.PedidosFacturados);
+            Assert.AreEqual("Meta en la caja la factura NV2617986 (en «HP LaserJet Algete»).", etiqueta.MeterEnLaCaja);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, etiqueta.DocumentosEnPapel.Single().Estado);
+            Assert.AreEqual(5001, etiqueta.DocumentosEnPapel.Single().Envio);
+            Assert.IsFalse(etiqueta.DocumentosPendientes);
+            A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>.That.Matches(m => m.Documento == "NV2617986" && m.Estado == EstadosDocumentoEnPapel.IMPRESO),
+                AplicacionesDocumentoEnPapel.ARIADNA)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Papel828_LaImpresoraFalla_LaEtiquetaSaleIgualYQuedaPendiente()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            FacturarRutasResponseDTO respuesta = ConFacturaFisica(PEDIDO, "NV2617986", null);
+            respuesta.PedidosConErrores.Add(new PedidoConErrorDTO { NumeroPedido = PEDIDO, TipoError = NestoAPI.Infraestructure.Facturas.ImpresionDocumentosServidor.TIPO_ERROR,
+                MensajeError = "No se ha podido imprimir la factura NV2617986 en «HP»: atasco. Imprímalo desde Nesto.", Severidad = NivelSeveridad.Warning });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Hecha, resultado.Tipo);
+            Assert.IsTrue(resultado.Etiqueta.Impresa);
+            Assert.IsTrue(resultado.Etiqueta.DocumentosPendientes);
+            Assert.IsNull(resultado.Etiqueta.MeterEnLaCaja);
+            Assert.IsTrue(resultado.Etiqueta.Avisos.Any(a => a.StartsWith("La factura NV2617986 del pedido 926940 no ha salido por la impresora") && a.Contains("Reintentar impresión")));
+        }
+
+        [TestMethod]
+        public async Task Papel828_RutaPropia_NoSeFacturaAlHacerLaEtiqueta()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.RutaDelPedido("1", PEDIDO)).Returns("AT");
+            servicio.TipoDeRuta = r => r == "AT" ? (ITipoRuta)new RutaPropia() : new RutaAgencia();
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsFalse(etiqueta.Facturado);
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("no se factura al imprimir la etiqueta") && a.Contains("Facturar rutas")));
+        }
     }
 }

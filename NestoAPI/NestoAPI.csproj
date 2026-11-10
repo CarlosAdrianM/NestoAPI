@@ -1003,6 +1003,10 @@
     <Compile Include="Infraestructure\Facturas\ImpresionDocumentosServidor.cs" />
     <Compile Include="Infraestructure\Facturas\ImpresoraDocumentosPdfium.cs" />
     <Compile Include="Infraestructure\Facturas\ReglaImpresionDocumentos.cs" />
+    <Compile Include="Infraestructure\Facturas\DocumentosEnPapelDelEnvio.cs" />
+    <Compile Include="Infraestructure\Facturas\PasosDocumentosEnPapelApi.cs" />
+    <Compile Include="Infraestructure\Facturas\RepositorioDocumentosPapelPacking.cs" />
+    <Compile Include="Models\Facturas\DocumentoEnPapelDTO.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturacionRutas.cs" />
     <Compile Include="Infraestructure\Facturas\IGestorFacturacionRutas.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\GrupoPedidosPO.cs" />

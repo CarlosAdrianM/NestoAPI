@@ -112,5 +112,8 @@ namespace NestoAPI.Models.Facturas
         {
             return false;
         }
+
+        /// <summary>NestoAPI#828: sí. La factura física sale al hacer la etiqueta, para meterla en la última caja.</summary>
+        public bool ImprimeAlCerrarEnvio => true;
     }
 }

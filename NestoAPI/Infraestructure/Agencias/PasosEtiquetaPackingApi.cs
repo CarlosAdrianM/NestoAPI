@@ -14,6 +14,7 @@ using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
 using NestoAPI.Models.Facturas;
+using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.PreparacionAlmacen;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -158,7 +159,24 @@ namespace NestoAPI.Infraestructure.Agencias
         public Task<bool> EsNotaDeRepartoPropio(string empresa, int pedido)
             => new NotasEntrega.GuardiaNotaSinPacking(new NotasEntrega.RepositorioEstadoNotaPacking(Db)).EsNotaDeRepartoPropio(empresa, pedido);
 
-        public void Dispose() => envios.Dispose();
+        // NestoAPI#828: el papel del packing, con los pasos comunes (los mismos que la etiqueta de Nesto).
+        private Facturas.PasosDocumentosEnPapelApi papel;
+        private Facturas.PasosDocumentosEnPapelApi Papel => papel ?? (papel = new Facturas.PasosDocumentosEnPapelApi(usuario));
+
+        public Task<string> RutaDelPedido(string empresa, int pedido) => Papel.RutaDelPedido(empresa, pedido);
+
+        public Task<List<DocumentoEnPapelDTO>> LeerMarcas(string empresa, int pedido) => Papel.LeerMarcas(empresa, pedido);
+
+        public Task Marcar(DocumentoEnPapelDTO marca, string aplicacion) => Papel.Marcar(marca, aplicacion);
+
+        public Task<DocumentosImpresionPedidoDTO> Regenerar(string empresa, int pedido, string tipo, string documento)
+            => Papel.Regenerar(empresa, pedido, tipo, documento);
+
+        public void Dispose()
+        {
+            envios.Dispose();
+            papel?.Dispose();
+        }
 
         // ---------------------------------------------------------------- piezas
 

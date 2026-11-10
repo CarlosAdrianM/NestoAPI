@@ -58,6 +58,17 @@ namespace NestoAPI.Models.Agencias
         public bool EtiquetaEnNesto { get; set; }
         /// <summary>Se ha facturado el pedido al imprimir (ParámetrosUsuario FacturarAlImprimirEtiqueta, #592).</summary>
         public bool Facturado { get; set; }
+        /// <summary>NestoAPI#828: los pedidos de la entrega facturados al imprimir (el del envío y los demás de la entrega).</summary>
+        public List<int> PedidosFacturados { get; set; } = new List<int>();
+        /// <summary>
+        /// NestoAPI#828: los documentos en papel de la entrega (la factura física…): impresos en el servidor, pendientes (la impresora
+        /// ha fallado: «Reintentar impresión» o repetir la etiqueta) o ya impresos de antes. Vacía si no lleva papel.
+        /// </summary>
+        public List<NestoAPI.Models.Facturas.DocumentoEnPapelDTO> DocumentosEnPapel { get; set; } = new List<NestoAPI.Models.Facturas.DocumentoEnPapelDTO>();
+        /// <summary>NestoAPI#828: algún documento en papel no ha salido: se ofrece «Reintentar impresión».</summary>
+        public bool DocumentosPendientes { get; set; }
+        /// <summary>NestoAPI#828: «Meta en la caja la factura NV2617986 (en «HP LaserJet Algete»).»; null si no ha salido papel.</summary>
+        public string MeterEnLaCaja { get; set; }
         /// <summary>Lo que se enseña al usuario: el resultado o, en la 502, qué ha fallado.</summary>
         public string Message { get; set; }
         /// <summary>En la 502, uno de <see cref="CodigosEtiquetaPacking"/>.</summary>

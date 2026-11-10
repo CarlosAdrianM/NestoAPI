@@ -154,7 +154,8 @@ namespace NestoAPI.Infraestructure.Agencias
     /// Los pasos de la etiqueta del packing, detrás de una interfaz para probar el orden y los fallos sin BD ni agencias. La
     /// implementación real (<see cref="PasosEtiquetaPackingApi"/>) llama a los mismos endpoints que Agencias de Nesto.
     /// </summary>
-    public interface IPasosEtiquetaPacking : IDisposable
+    /// <remarks>NestoAPI#828: extiende los pasos del papel del packing (facturar, la ruta, las marcas, regenerar).</remarks>
+    public interface IPasosEtiquetaPacking : IPasosDocumentosEnPapel, IDisposable
     {
         /// <summary>
         /// El último envío EN CURSO (Estado 0) del pedido, como el «envío actual» de Agencias; null si no hay. NestoAPI#803: o
@@ -168,14 +169,7 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<PasoEtiquetaAgencia> Tramitar(int envio);
         /// <summary>POST api/EnviosAgencias/{id}/ImprimirEtiqueta (impresora null = la del usuario).</summary>
         Task<PasoEtiquetaAgencia> Imprimir(int envio, string impresora);
-        /// <summary>POST api/FacturacionRutas/FacturarPedido. Lanza con el motivo si no se ha podido.</summary>
-        Task<FacturarRutasResponseDTO> Facturar(string empresa, int pedido);
         Task<string> NombreAgencia(int agencia);
-        /// <summary>
-        /// NestoAPI#765: ¿es una nota (de entrega o recogida) de una ruta de reparto propio? Esas no se procesan al imprimir la etiqueta:
-        /// las procesa Facturar rutas, que crea la parada e imprime el documento NE (#758).
-        /// </summary>
-        Task<bool> EsNotaDeRepartoPropio(string empresa, int pedido);
     }
 
     public class ServicioEtiquetaPacking : IServicioEtiquetaPacking
@@ -206,6 +200,12 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>NestoAPI#831: hoy, para saber si el reparto es de otro día. Sustituible en los tests.</summary>
         internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>NestoAPI#828: quién imprime el papel del packing (Ariadna: el servidor). Sustituible en los tests.</summary>
+        internal IImpresoraPapelPacking ImpresoraPapel { get; set; } = new ImpresoraPapelPackingServidor();
+
+        /// <summary>NestoAPI#828: la ruta → su tipo (null = TipoRutaFactory). Sustituible en los tests.</summary>
+        internal Func<string, ITipoRuta> TipoDeRuta { get; set; }
 
         public ServicioEtiquetaPacking(Func<IPrincipal, IPasosEtiquetaPacking> crearPasos, ILectorParametrosUsuario parametros,
             Action<Exception> registrar = null)
@@ -253,9 +253,10 @@ namespace NestoAPI.Infraestructure.Agencias
 
                 // 1. El envío: el de un intento anterior o uno nuevo con las cajas de la entrega.
                 EnviosAgencia envio = await pasos.LeerEnvioEnCurso(empresa, pedido);
+                EntregaParaEtiqueta entrega = null;
                 if (envio == null)
                 {
-                    EntregaParaEtiqueta entrega = await pasos.LeerEntrega(empresa, pedido);
+                    entrega = await pasos.LeerEntrega(empresa, pedido);
                     // NestoAPI#740: los bultos tecleados al imprimir mandan sobre las cajas cerradas (y no exigen ninguna)
                     bool bultosTecleados = peticion.Bultos.HasValue && peticion.Bultos.Value > 0;
                     int bultos = bultosTecleados ? peticion.Bultos.Value : entrega?.Bultos ?? 0;
@@ -386,6 +387,8 @@ namespace NestoAPI.Infraestructure.Agencias
                 // 5. Facturar al imprimir (#592), si el usuario lo tiene: lo que diga no deshace la etiqueta.
                 // NestoAPI#765: menos las notas de reparto propio, que las procesa Facturar rutas (si se procesaran aquí, Facturar
                 // rutas ya no las vería y no saldría el documento NE: Ariadna no imprime documentos).
+                // NestoAPI#828: con el núcleo del papel del packing (DocumentosEnPapelDelEnvio): todos los pedidos de la entrega, la
+                // factura física impresa (para meterla en la última caja) y, si la impresora falla, pendiente para reimprimir.
                 if (FacturarAlImprimir(usuarioAuditoria))
                 {
                     // NestoAPI#831: el del reparto propio de otro día no se factura ahora (el albarán no se puede hasta esa fecha):
@@ -397,13 +400,9 @@ namespace NestoAPI.Infraestructure.Agencias
                             ? "el " + RepartoPropio.FechaRepartoPropio.DeEnvio(envio).ToString("dd/MM", System.Globalization.CultureInfo.InvariantCulture) : "otro día";
                         etiqueta.Avisos.Add($"El pedido {pedido} se reparte {dia}: no se factura al imprimir la etiqueta, lo hará Facturar rutas ese día.");
                     }
-                    else if (await EsNotaDeRepartoPropioSeguro(pasos, empresa, pedido))
-                    {
-                        etiqueta.Avisos.Add($"La nota de entrega {pedido} no se procesa al imprimir la etiqueta: la procesa Facturar rutas, que imprime su documento.");
-                    }
                     else
                     {
-                        await Facturar(pasos, envio, pedido, etiqueta);
+                        await PapelDelEnvio(pasos, envio, pedido, entrega, etiqueta, usuarioAuditoria);
                     }
                 }
 
@@ -436,23 +435,72 @@ namespace NestoAPI.Infraestructure.Agencias
             }
         }
 
-        private async Task Facturar(IPasosEtiquetaPacking pasos, EnviosAgencia envio, int pedido, EtiquetaPackingDTO etiqueta)
+        /// <summary>
+        /// NestoAPI#828: el papel del pedido del envío con el núcleo común (<see cref="DocumentosEnPapelDelEnvio"/>): la factura física
+        /// impresa en el servidor y, si no ha salido, pendiente para repetir F8 (sin volver a facturar).
+        /// </summary>
+        private async Task PapelDelEnvio(IPasosEtiquetaPacking pasos, EnviosAgencia envio, int pedido, EntregaParaEtiqueta entrega,
+            EtiquetaPackingDTO etiqueta, string usuarioAuditoria)
         {
             string empresa = string.IsNullOrWhiteSpace(envio.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : envio.Empresa.Trim();
-            FacturarRutasResponseDTO respuesta;
-            try
+            var pedidos = new List<int> { pedido };
+
+            ResultadoDocumentosEnPapel papel = await Nucleo(pasos).Procesar(new PeticionDocumentosEnPapel
             {
-                respuesta = await pasos.Facturar(empresa, pedido);
-            }
-            catch (Exception ex)
+                Empresa = empresa,
+                Pedidos = pedidos,
+                Envio = envio.Numero,
+                Reimpresion = etiqueta.Reimpresion,
+                Usuario = usuarioAuditoria
+            });
+            Volcar(papel, etiqueta);
+        }
+
+        /// <summary>NestoAPI#828: el núcleo del papel con la impresora del servidor (Ariadna).</summary>
+        private DocumentosEnPapelDelEnvio Nucleo(IPasosDocumentosEnPapel pasos)
+        {
+            var nucleo = new DocumentosEnPapelDelEnvio(pasos, ImpresoraPapel, Registrar);
+            if (TipoDeRuta != null)
             {
-                Registrar(new Exception($"[Etiqueta del packing #595] Etiqueta del envío {envio.Numero} impresa, pero no se pudo facturar el pedido {pedido}: {ex.Message}", ex));
-                etiqueta.Avisos.Add($"No se ha podido facturar el pedido {pedido}: {ex.Message.Trim()} Facture desde Nesto.");
-                return;
+                nucleo.TipoDeRuta = TipoDeRuta;
             }
-            List<string> avisos = ResumenFacturacion(respuesta, pedido, etiqueta.Reimpresion, out bool facturado);
-            etiqueta.Facturado = facturado;
-            etiqueta.Avisos.AddRange(avisos);
+            return nucleo;
+        }
+
+        /// <summary>NestoAPI#828: lo que ha pasado con el papel, en la etiqueta (avisos, facturado, documentos, «meta en la caja»).</summary>
+        internal static void Volcar(ResultadoDocumentosEnPapel papel, EtiquetaPackingDTO etiqueta)
+        {
+            foreach (KeyValuePair<int, FacturarRutasResponseDTO> respuesta in papel.Respuestas)
+            {
+                etiqueta.Avisos.AddRange(ResumenFacturacion(respuesta.Value, respuesta.Key, etiqueta.Reimpresion, out bool facturado));
+                if (facturado)
+                {
+                    etiqueta.Facturado = true;
+                    etiqueta.PedidosFacturados.Add(respuesta.Key);
+                }
+            }
+            etiqueta.Avisos.AddRange(papel.Avisos);
+            etiqueta.DocumentosEnPapel.AddRange(papel.Documentos);
+            etiqueta.DocumentosPendientes = papel.HayPendientes;
+            foreach (DocumentoEnPapelDTO pendiente in papel.Documentos.Where(d => d.Estado == EstadosDocumentoEnPapel.PENDIENTE))
+            {
+                etiqueta.Avisos.Add($"{DocumentosEnPapelDelEnvio.Mayuscula(pendiente.Descripcion)} del pedido {pendiente.Pedido} no ha salido por la impresora: " +
+                    "pulse «Reintentar impresión» o vuelva a pedir la etiqueta (F8). No se vuelve a facturar.");
+            }
+            etiqueta.MeterEnLaCaja = TextoMeterEnLaCaja(papel.Documentos
+                .Where(d => d.Estado == EstadosDocumentoEnPapel.IMPRESO && !d.YaEstabaImpreso).ToList());
+        }
+
+        /// <summary>«Meta en la caja la factura NV2617986 (en «HP LaserJet Algete»).», o null si no ha salido nada.</summary>
+        internal static string TextoMeterEnLaCaja(List<DocumentoEnPapelDTO> impresos)
+        {
+            if (impresos == null || !impresos.Any())
+            {
+                return null;
+            }
+            string documentos = string.Join(" y ", impresos.Select(d => d.Descripcion));
+            List<string> impresoras = impresos.Select(d => d.Impresora?.Trim()).Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
+            return $"Meta en la caja {documentos}" + (impresoras.Any() ? $" (en «{string.Join("», «", impresoras)}»)." : ".");
         }
 
         /// <summary>
@@ -520,20 +568,6 @@ namespace NestoAPI.Infraestructure.Agencias
                 avisos.Add($"El pedido {pedido} lleva el documento en papel: imprímalo desde Nesto.");
             }
             return avisos.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
-        }
-
-        /// <summary>Si no se puede saber, se trata como nota de reparto propio: mejor que la procese Facturar rutas que perder el NE.</summary>
-        private async Task<bool> EsNotaDeRepartoPropioSeguro(IPasosEtiquetaPacking pasos, string empresa, int pedido)
-        {
-            try
-            {
-                return await pasos.EsNotaDeRepartoPropio(empresa, pedido);
-            }
-            catch (Exception ex)
-            {
-                Registrar(new Exception($"[Etiqueta del packing #765] No se ha podido saber si el pedido {pedido} es una nota de reparto propio: no se factura al imprimir. {ex.Message}", ex));
-                return true;
-            }
         }
 
         private async Task<string> NombreSeguro(IPasosEtiquetaPacking pasos, int agencia)
