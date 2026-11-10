@@ -69,6 +69,55 @@ namespace NestoAPI.Tests.Infrastructure
             ComprobarCabeceraPdf(bytes);
         }
 
+        // Regresión (Carlos 10/11/26): el PDF que sustituyó al RDLC era una tabla corrida con pasillo/fila/columna en columnas
+        // y no valía para contar. Tiene que ser una hoja por ubicación, con la ubicación en el rótulo, en el orden del RDLC
+        // (pasillo, columna, fila; dentro, producto) y sin que el relleno de los char parta una ubicación en dos.
+        [TestMethod]
+        public void Agrupar_UnaHojaPorUbicacion_EnElOrdenDelRdlc()
+        {
+            var lineas = new List<UbicacionesInventarioDTO>
+            {
+                new UbicacionesInventarioDTO { Pasillo = "02", Fila = "1", Columna = "01", Producto = "30000" },
+                new UbicacionesInventarioDTO { Pasillo = "01", Fila = "2", Columna = "01", Producto = "20000" },
+                new UbicacionesInventarioDTO { Pasillo = "01", Fila = "1", Columna = "02", Producto = "10000" },
+                new UbicacionesInventarioDTO { Pasillo = "01 ", Fila = "1 ", Columna = "01 ", Producto = "40000  " },
+                new UbicacionesInventarioDTO { Pasillo = "01", Fila = "1", Columna = "01", Producto = "12345" }
+            };
+
+            List<HojaUbicacionInventario> hojas = GeneradorPdfUbicacionesInventario.Agrupar(lineas);
+
+            Assert.AreEqual(4, hojas.Count, "Una hoja por pasillo, fila y columna (el relleno no cuenta)");
+            Assert.AreEqual("Pasillo 01. Fila 1. Columna 01", hojas[0].Titulo);
+            Assert.AreEqual("Pasillo 01. Fila 2. Columna 01", hojas[1].Titulo, "Dentro del pasillo, primero la columna y luego la fila");
+            Assert.AreEqual("Pasillo 01. Fila 1. Columna 02", hojas[2].Titulo);
+            Assert.AreEqual("Pasillo 02. Fila 1. Columna 01", hojas[3].Titulo);
+            Assert.AreEqual(2, hojas[0].Lineas.Count);
+            Assert.AreEqual("12345", hojas[0].Lineas[0].Producto.Trim(), "Dentro de la hoja, por producto");
+            Assert.AreEqual("40000", hojas[0].Lineas[1].Producto.Trim());
+        }
+
+        // Una hoja por ubicación pasa de las 250 páginas con las que QuestPDF corta por defecto (Algete: unas 700).
+        [TestMethod]
+        public void GenerarPdf_MasDe250Ubicaciones_NoCorta()
+        {
+            var lineas = new List<UbicacionesInventarioDTO>();
+            for (int i = 0; i < 300; i++)
+            {
+                lineas.Add(new UbicacionesInventarioDTO { Pasillo = "01", Fila = "1", Columna = i.ToString("000"), Producto = "12345", Nombre = "Producto" });
+            }
+
+            byte[] bytes = _generador.GenerarPdf(lineas).ReadAsByteArrayAsync().Result;
+
+            ComprobarCabeceraPdf(bytes);
+        }
+
+        [TestMethod]
+        public void Agrupar_NullOVacia_SinHojas()
+        {
+            Assert.AreEqual(0, GeneradorPdfUbicacionesInventario.Agrupar(null).Count);
+            Assert.AreEqual(0, GeneradorPdfUbicacionesInventario.Agrupar(new List<UbicacionesInventarioDTO>()).Count);
+        }
+
         // Los PDF empiezan por la firma "%PDF" (0x25 0x50 0x44 0x46).
         private static void ComprobarCabeceraPdf(byte[] bytes)
         {
