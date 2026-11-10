@@ -35,7 +35,9 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>400.</summary>
         Invalido,
         /// <summary>404: el pedido no existe.</summary>
-        NoEncontrado
+        NoEncontrado,
+        /// <summary>409 <see cref="EnvioRepartoPropioRepetidoDTO"/> (NestoAPI#847): el pedido ya tiene su envío del reparto propio.</summary>
+        RepartoPropioRepetido
     }
 
     public class ResultadoEnvioDesdePedido
@@ -60,6 +62,15 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public static ResultadoEnvioDesdePedido NoEncontrado()
             => new ResultadoEnvioDesdePedido { Tipo = TipoResultadoEnvioDesdePedido.NoEncontrado };
+
+        public EnvioRepartoPropioRepetidoDTO Repetido { get; private set; }
+
+        public static ResultadoEnvioDesdePedido ConRepartoPropioRepetido(EnviosAgencia existente)
+            => new ResultadoEnvioDesdePedido
+            {
+                Tipo = TipoResultadoEnvioDesdePedido.RepartoPropioRepetido,
+                Repetido = EnvioRepartoPropioRepetido.Respuesta(existente)
+            };
     }
 
     /// <summary>NestoAPI#595 (slice 2): lo que el alta desde el pedido lee y escribe en la BD, detrás de una interfaz para probarlo sin BD.</summary>
@@ -230,6 +241,13 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         internal Func<string, int, int, Task<string>> MotivoNoSale { get; set; }
 
+        /// <summary>
+        /// NestoAPI#847 / Novedades 1162: (empresa, pedido, envío que se reutiliza) → el envío del reparto propio que ya tiene el pedido
+        /// (<see cref="EnvioRepartoPropioRepetido"/>), o null. Se mira con la agencia ya decidida: el controller solo lo miraba si la
+        /// pantalla mandaba la 14, y la propuesta también la elige sola (rutas propias) o reutiliza un pendiente suyo. Sin él, no se mira.
+        /// </summary>
+        internal Func<string, int, int?, Task<EnviosAgencia>> EnvioRepartoPropioDelPedido { get; set; }
+
         // Sin ConfigureAwait(false): ELMAH toma el usuario de HttpContext.Current.
         public async Task<ResultadoEnvioDesdePedido> Crear(CrearEnvioDesdePedidoDTO peticion, string usuario)
         {
@@ -292,6 +310,18 @@ namespace NestoAPI.Infraestructure.Agencias
                 if (noSale != null)
                 {
                     return ResultadoEnvioDesdePedido.Invalido(CodigosErrorEnvioDesdePedido.PEDIDO_RETENIDO, noSale);
+                }
+            }
+
+            // NestoAPI#847: un envío nuevo (o un pendiente que pasa a En curso) del reparto propio no se crea si el pedido ya tiene
+            // otro de hoy. La ampliación no crea parada: amplía la que hay.
+            if (EnvioRepartoPropioDelPedido != null && propuesta.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+                && propuesta.Origen != PropuestaEnvioDTO.ORIGEN_AMPLIACION)
+            {
+                EnviosAgencia yaTiene = await EnvioRepartoPropioDelPedido(empresa, peticion.Pedido, existente?.Numero);
+                if (yaTiene != null && yaTiene.Numero != existente?.Numero)
+                {
+                    return ResultadoEnvioDesdePedido.ConRepartoPropioRepetido(yaTiene);
                 }
             }
 

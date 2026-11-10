@@ -957,6 +957,77 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(new DateTime(2026, 10, 23), resultado.Envio.Envio.FechaEntrega);
         }
 
+        // ---------------------------------------------------------------- NestoAPI#847 / Novedades 1162: sin Cambios.Agencia = 14
+        // (la propuesta elige el reparto propio sola o reutiliza un pendiente suyo), el controller no lo miraba.
+
+        private List<(string Empresa, int Pedido, int? Excluir)> ConEnvioRepartoPropioDelPedido(EnviosAgencia yaTiene)
+        {
+            var llamadas = new List<(string, int, int?)>();
+            servicio.EnvioRepartoPropioDelPedido = (e, p, excluir) => { llamadas.Add((e, p, excluir)); return Task.FromResult(yaTiene); };
+            return llamadas;
+        }
+
+        private static EnviosAgencia TramitadoDeHoy() => new EnviosAgencia
+        {
+            Numero = 250772, Empresa = "1  ", Agencia = REPARTO_PROPIO, Estado = Constantes.Agencias.ESTADO_TRAMITADO, Pedido = PEDIDO,
+            CodigoBarras = "RP250772", Bultos = 1
+        };
+
+        [TestMethod]
+        public async Task RepartoPropioRepetido847_NuevoSinAgenciaEnLaPantalla_409ConElQueYaTieneYNoGraba()
+        {
+            PropuestaDeRepartoPropio();
+            var llamadas = ConEnvioRepartoPropioDelPedido(TramitadoDeHoy());
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.RepartoPropioRepetido, resultado.Tipo);
+            Assert.AreEqual(250772, resultado.Repetido.Envio);
+            Assert.AreEqual(EnvioRepartoPropioRepetido.CODIGO, resultado.Repetido.Codigo);
+            Assert.AreEqual(0, datos.Anadidos.Count);
+            Assert.AreEqual(0, datos.Guardados);
+            Assert.AreEqual((EMPRESA, PEDIDO, (int?)null), llamadas.Single());
+        }
+
+        [TestMethod]
+        public async Task RepartoPropioRepetido847_PendienteReutilizado_409YElPendienteSeQuedaComoEstaba()
+        {
+            PropuestaDeRepartoPropio();
+            EnviosAgencia pendiente = EnvioExistente(250782, Constantes.Agencias.ESTADO_PENDIENTE, REPARTO_PROPIO, PEDIDO);
+            propuesta.Origen = PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO;
+            propuesta.EnvioOrigen = 250782;
+            var llamadas = ConEnvioRepartoPropioDelPedido(TramitadoDeHoy());
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.RepartoPropioRepetido, resultado.Tipo);
+            Assert.AreEqual((short)Constantes.Agencias.ESTADO_PENDIENTE, pendiente.Estado);
+            Assert.AreEqual(0, datos.Guardados);
+            Assert.AreEqual(250782, llamadas.Single().Excluir, "el pendiente que se reutiliza no es «otro»");
+        }
+
+        [TestMethod]
+        public async Task RepartoPropioRepetido847_SinOtroEnvio_SeGraba()
+        {
+            PropuestaDeRepartoPropio();
+            _ = ConEnvioRepartoPropioDelPedido(null);
+
+            ResultadoEnvioDesdePedido resultado = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+        }
+
+        [TestMethod]
+        public async Task RepartoPropioRepetido847_OtraAgencia_NoSeMira()
+        {
+            var llamadas = ConEnvioRepartoPropioDelPedido(TramitadoDeHoy());
+
+            ResultadoEnvioDesdePedido gls = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, gls.Tipo, gls.Error?.Message);
+            Assert.AreEqual(0, llamadas.Count, "la regla es solo del reparto propio");
+        }
+
         /// <summary>La BD en memoria: identity desde 250000, transacción con commit/rollback y el comparador como función.</summary>
         private class DatosFalsos : IDatosEnvioDesdePedido
         {

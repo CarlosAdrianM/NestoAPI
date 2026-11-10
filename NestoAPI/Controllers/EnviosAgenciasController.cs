@@ -925,6 +925,18 @@ namespace NestoAPI.Controllers
                 .ToListAsync())
                 .FirstOrDefault();
 
+            // NestoAPI#847 / Novedades 1162 (pedido 930294, envíos 250772 y 250782): registrar («Insertar e Imprimir») una etiqueta
+            // pendiente del reparto propio cuando el pedido ya tiene otro envío suyo de hoy creaba la segunda parada. Lo mismo
+            // que el POST: 409 con el que ya tiene, para reimprimirlo (el propio pendiente no cuenta).
+            if (registrado != null && registrado.Estado < Constantes.Agencias.ESTADO_EN_CURSO && EnvioRepartoPropioRepetido.AplicaA(enviosAgencia))
+            {
+                EnviosAgencia existente = await EnvioRepartoPropioDelPedido(enviosAgencia.Empresa, enviosAgencia.Pedido.Value, excluirEnvio: id);
+                if (existente != null)
+                {
+                    return Content(HttpStatusCode.Conflict, EnvioRepartoPropioRepetido.Respuesta(existente));
+                }
+            }
+
             // NestoAPI#725 (Carlos, 28/10/26; sustituye los bloqueos de #512, reembolso, y del envío 249990, retorno): nunca
             // una cosa en nuestra BD y otra en la de la agencia. Con CTT/Innovatrans los datos del envío viajaron al registrarlo
             // (imprimir la etiqueta): si este PUT cambia alguno, solo se guarda si el usuario confirma que la agencia se lo ha
@@ -1993,10 +2005,26 @@ namespace NestoAPI.Controllers
                 return BadRequest($"La agencia {envio.Agencia} no tiene gestión remota en el servidor.");
             }
 
-            if (string.IsNullOrWhiteSpace(envio.CodigoBarras) || envio.Estado != Constantes.Agencias.ESTADO_EN_CURSO)
+            // Novedades 1162: en el reparto propio también el Tramitado (imprimir la etiqueta ya lo tramita), si no ha empezado a
+            // repartirse. 409 con el motivo si no se puede.
+            bool repartoPropio = Infraestructure.Agencias.RepartoPropio.AnulacionEnvioRepartoPropio.Aplica(envio);
+            if (repartoPropio && envio.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
             {
-                return BadRequest("Solo se puede anular un envío En curso ya registrado en la agencia. " +
-                    "Las etiquetas pendientes se borran directamente, sin anular.");
+                string motivo = Infraestructure.Agencias.RepartoPropio.AnulacionEnvioRepartoPropio.Validar(envio, await DatosAnulacionRepartoPropio.Leer(envio));
+                if (motivo != null)
+                {
+                    return Content(HttpStatusCode.Conflict, motivo);
+                }
+            }
+            bool estadoAnulable = envio.Estado == Constantes.Agencias.ESTADO_EN_CURSO
+                || (repartoPropio && envio.Estado == Constantes.Agencias.ESTADO_TRAMITADO);
+            if (string.IsNullOrWhiteSpace(envio.CodigoBarras) || !estadoAnulable)
+            {
+                return BadRequest(repartoPropio
+                    ? "Solo se puede anular un envío del reparto propio En curso o Tramitado con su etiqueta. " +
+                      "Las etiquetas pendientes se borran directamente, sin anular."
+                    : "Solo se puede anular un envío En curso ya registrado en la agencia. " +
+                      "Las etiquetas pendientes se borran directamente, sin anular.");
             }
 
             // El reembolso ya cobrado/pagado implica que el envío llegó a destino: anularlo en la
@@ -2031,9 +2059,19 @@ namespace NestoAPI.Controllers
 
             // Anulado en la agencia: devolver el envío a etiqueta pendiente en nuestra BD.
             string albaranAnulado = envio.CodigoBarras.Trim();
-            envio.CodigoBarras = string.Empty;
-            envio.Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE;
+            short estadoAnterior = envio.Estado;
             envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            if (repartoPropio)
+            {
+                // Novedades 1162: con su fila en la historia y sin la FechaPagoReembolso de antes (se recalcula al registrarlo).
+                _ = db.EnviosHistorias.Add(Infraestructure.Agencias.RepartoPropio.AnulacionEnvioRepartoPropio.Aplicar(envio,
+                    UsuarioAuditoriaHelper.ParaAuditoria(envio.Usuario), DateTime.Now));
+            }
+            else
+            {
+                envio.CodigoBarras = string.Empty;
+                envio.Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE;
+            }
             try
             {
                 await db.SaveChangesAsync();
@@ -2048,8 +2086,33 @@ namespace NestoAPI.Controllers
             }
 
             await AuditarOperacion(envio, agencia, true, null, "Anular");
+            // Novedades 1162: la parada de un tramitado desaparece del reparto; las PDA lo releen.
+            if (repartoPropio && estadoAnterior == Constantes.Agencias.ESTADO_TRAMITADO)
+            {
+                try
+                {
+                    AvisarRepartoCambiado?.Invoke(envio.Usuario);
+                }
+                catch (Exception ex)
+                {
+                    // Ya está anulado: un aviso que no sale no puede tumbar la respuesta (las PDA releen al volver)
+                    RegistrarEnElmah?.Invoke(new Exception($"[Reparto propio] Anulado el envío {envio.Numero}, pero no se ha podido avisar a las PDA: {ex.Message}", ex));
+                }
+            }
             return Ok(new EnvioAgenciaDTO(envio));
         }
+
+        private Infraestructure.Agencias.RepartoPropio.IDatosAnulacionEnvioRepartoPropio datosAnulacionRepartoPropio;
+        /// <summary>Novedades 1162: lo que lee Anular de un envío del reparto propio. Sustituible en los tests.</summary>
+        internal Infraestructure.Agencias.RepartoPropio.IDatosAnulacionEnvioRepartoPropio DatosAnulacionRepartoPropio
+        {
+            get => datosAnulacionRepartoPropio ?? (datosAnulacionRepartoPropio = new Infraestructure.Agencias.RepartoPropio.DatosAnulacionEnvioRepartoPropioEF(db));
+            set => datosAnulacionRepartoPropio = value;
+        }
+
+        /// <summary>Novedades 1162: «repartoCambiado» a las PDA del reparto (como NotasEntregaController). Sustituible en los tests. Nunca lanza.</summary>
+        internal Action<string> AvisarRepartoCambiado { get; set; } = usuario =>
+            new Infraestructure.Notificaciones.AvisosAlmacenSignalR().RepartoCambiado(usuario, Models.Agencias.RepartoCambiadoDTO.MOTIVO_PARADA, DateTime.Now, null);
 
         // POST: api/EnviosAgencias/5/Modificar
         // Modifica en la agencia un envío YA registrado (con albarán, Estado En curso) con la
@@ -3004,7 +3067,8 @@ namespace NestoAPI.Controllers
         internal Func<DateTime> HoyRepartoPropio { get; set; } = () => DateTime.Today;
 
         /// <summary>NestoAPI#847: el envío del reparto propio que ya tiene el pedido (<see cref="EnvioRepartoPropioRepetido"/>), o null.</summary>
-        private async Task<EnviosAgencia> EnvioRepartoPropioDelPedido(string empresa, int pedido)
+        /// <param name="excluirEnvio">El envío que se está registrando o reutilizando (no es «otro»).</param>
+        private async Task<EnviosAgencia> EnvioRepartoPropioDelPedido(string empresa, int pedido, int? excluirEnvio = null)
         {
             DateTime hoy = HoyRepartoPropio().Date;
             List<EnviosAgencia> candidatos = await db.EnviosAgencias.AsNoTracking()
@@ -3012,7 +3076,7 @@ namespace NestoAPI.Controllers
                             (e.Estado == Constantes.Agencias.ESTADO_EN_CURSO || e.Estado == Constantes.Agencias.ESTADO_TRAMITADO) &&
                             e.Fecha >= hoy)
                 .ToListAsync();
-            return EnvioRepartoPropioRepetido.Buscar(candidatos, empresa, pedido, hoy);
+            return EnvioRepartoPropioRepetido.Buscar(candidatos.Where(e => e.Numero != excluirEnvio), empresa, pedido, hoy);
         }
 
         /// <summary>NestoAPI#831: ¿la etiqueta de este envío es del reparto propio (la que el aplazado deja sacar)?</summary>
@@ -3025,7 +3089,9 @@ namespace NestoAPI.Controllers
                 PlazasAgencias, new NotificadorEntregaAgenciaCorreo(), ex => RegistrarEnElmah?.Invoke(ex))
             {
                 // NestoAPI#831: con la agencia ya decidida, un aplazado solo sale por el reparto propio
-                MotivoNoSale = (empresa, pedido, agencia) => MotivoPedidoRetenido(empresa, pedido, agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+                MotivoNoSale = (empresa, pedido, agencia) => MotivoPedidoRetenido(empresa, pedido, agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO),
+                // NestoAPI#847 / Novedades 1162: también cuando la 14 la elige la propuesta (sin Cambios.Agencia) o se reutiliza un pendiente
+                EnvioRepartoPropioDelPedido = (empresa, pedido, excluir) => EnvioRepartoPropioDelPedido(empresa, pedido, excluir)
             });
             set => envioDesdePedido = value;
         }
@@ -3074,6 +3140,8 @@ namespace NestoAPI.Controllers
                     return Ok(resultado.Envio);
                 case TipoResultadoEnvioDesdePedido.Conflicto:
                     return Content(HttpStatusCode.Conflict, resultado.Conflicto);
+                case TipoResultadoEnvioDesdePedido.RepartoPropioRepetido:
+                    return Content(HttpStatusCode.Conflict, resultado.Repetido);
                 case TipoResultadoEnvioDesdePedido.NoEncontrado:
                     return NotFound();
                 default:

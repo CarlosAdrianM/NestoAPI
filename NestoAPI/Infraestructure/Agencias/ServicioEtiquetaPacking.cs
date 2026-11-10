@@ -297,6 +297,9 @@ namespace NestoAPI.Infraestructure.Agencias
                             return ResultadoEtiquetaPacking.NoEncontrado();
                         case TipoResultadoEnvioDesdePedido.Invalido:
                             return ResultadoEtiquetaPacking.Invalida(creado.Error);
+                        case TipoResultadoEnvioDesdePedido.RepartoPropioRepetido:
+                            // NestoAPI#847: LeerEnvioEnCurso ya lo reimprime (#803); solo llega aquí si lo han creado entretanto.
+                            return ResultadoEtiquetaPacking.Invalida(creado.Repetido.Codigo, creado.Repetido.Message);
                     }
 
                     envio = creado.Envio.Envio;
