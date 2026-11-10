@@ -71,8 +71,42 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.IsFalse(lead.AceptaComunicaciones);
             Assert.AreEqual("tengo un centro de estética", lead.SituacionProfesional);
             Assert.AreEqual("una demostración de harmonia", lead.Solicita);
-            // 20:48 UTC del 05/11 = 21:48 en Madrid (horario de invierno).
-            Assert.AreEqual(new DateTime(2026, 11, 5, 21, 48, 42), lead.FechaCreacion);
+            // El Excel XML de Meta trae la hora SIN zona y ya es la de España: no se convierte (antes sumaba una hora).
+            Assert.AreEqual(new DateTime(2026, 11, 5, 20, 48, 42), lead.FechaCreacion);
+        }
+
+        // ---------- Hora del lead (regresión: los leads del XML del 09/11/26 quedaron con +1 h) ----------
+
+        [TestMethod]
+        public void FechaEspana_SinZonaComoElXmlDeMeta_SeQuedaTalCual()
+        {
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-11-05T13:49:14.000"));
+            Assert.AreEqual(new DateTime(2026, 7, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-07-05T13:49:14.000"));
+        }
+
+        [TestMethod]
+        public void FechaEspana_Invierno_ConZonaSeConvierteAEspana()
+        {
+            // 05/11 = horario de invierno (UTC+1).
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-11-05T12:49:14+0000"));
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-11-05T13:49:14+0100"));
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-11-05T13:49:14+01:00"));
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-11-05T12:49:14Z"));
+        }
+
+        [TestMethod]
+        public void FechaEspana_Verano_ConZonaSeConvierteAEspana()
+        {
+            // 05/07 = horario de verano (UTC+2).
+            Assert.AreEqual(new DateTime(2026, 7, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-07-05T11:49:14+0000"));
+            Assert.AreEqual(new DateTime(2026, 7, 5, 13, 49, 14), LectorLeadsMeta.FechaEspana("2026-07-05T13:49:14+02:00"));
+        }
+
+        [TestMethod]
+        public void FechaEspana_TextoQueNoEsFecha_Null()
+        {
+            Assert.IsNull(LectorLeadsMeta.FechaEspana("ayer"));
+            Assert.IsNull(LectorLeadsMeta.FechaEspana(" "));
         }
 
         [TestMethod]

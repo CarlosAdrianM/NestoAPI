@@ -129,6 +129,16 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         // ---------- Lector de la respuesta de Graph (mapeo de campos) ----------
 
         [TestMethod]
+        public void LectorGraph_HoraDelLead_InviernoYVerano()
+        {
+            // Como lo da Graph (UTC, «+0000») y con el desfase de España escrito: siempre la hora peninsular.
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorGraphLeadsMeta.Leer(new[] { JObject.Parse(Lead("1", "2026-11-05T12:49:14+0000")) }).Single().FechaCreacion);
+            Assert.AreEqual(new DateTime(2026, 11, 5, 13, 49, 14), LectorGraphLeadsMeta.Leer(new[] { JObject.Parse(Lead("2", "2026-11-05T13:49:14+0100")) }).Single().FechaCreacion);
+            Assert.AreEqual(new DateTime(2026, 7, 5, 13, 49, 14), LectorGraphLeadsMeta.Leer(new[] { JObject.Parse(Lead("3", "2026-07-05T11:49:14+0000")) }).Single().FechaCreacion);
+            Assert.AreEqual(new DateTime(2026, 7, 5, 13, 49, 14), LectorGraphLeadsMeta.Leer(new[] { JObject.Parse(Lead("4", "2026-07-05T13:49:14+02:00")) }).Single().FechaCreacion);
+        }
+
+        [TestMethod]
         public void LectorGraph_MapeaLosCamposDelLead()
         {
             List<LeadMeta> leads = LectorGraphLeadsMeta.Leer(new[] { JObject.Parse(Lead("1000000000000001", consentimiento: true)) });

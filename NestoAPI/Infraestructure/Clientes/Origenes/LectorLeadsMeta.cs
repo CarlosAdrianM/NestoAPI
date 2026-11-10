@@ -14,7 +14,7 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         public int Fila { get; set; }
         /// <summary>El «id» del lead en Meta: lo único que va a ELMAH (nunca nombre, teléfono ni correo).</summary>
         public string Id { get; set; }
-        /// <summary>created_time pasado a la hora de España (Meta lo da en UTC).</summary>
+        /// <summary>created_time en hora de España (ver <see cref="LectorLeadsMeta.FechaEspana"/>).</summary>
         public DateTime? FechaCreacion { get; set; }
         /// <summary>fb o ig.</summary>
         public string Plataforma { get; set; }
@@ -358,14 +358,28 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             return v == "true" || v == "yes" || v == "si" || v == "sí" || v == "1" || v == "verdadero";
         }
 
-        /// <summary>created_time (UTC si no lleva zona) → hora de España.</summary>
+        private static readonly System.Text.RegularExpressions.Regex CON_ZONA =
+            new System.Text.RegularExpressions.Regex(@"(Z|[+-]\d{2}:?\d{2})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// created_time → hora de España. Con zona (la API Graph, «+0000», o el CSV) se convierte. SIN zona (el Excel XML que se
+        /// descarga de Meta, «2026-11-05T13:49:14.000») ya es la hora de la cuenta, la de España: tomarla por UTC le sumaba una
+        /// hora (los cuatro leads de Harmonia importados por fichero el 09/11/26 quedaron con +1 h).
+        /// </summary>
         public static DateTime? FechaEspana(string valor)
         {
             if (string.IsNullOrWhiteSpace(valor))
             {
                 return null;
             }
-            if (!DateTimeOffset.TryParse(valor.Trim(), CultureInfo.InvariantCulture,
+            string texto = valor.Trim();
+            if (!CON_ZONA.IsMatch(texto))
+            {
+                return DateTime.TryParse(texto, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out DateTime local)
+                    ? DateTime.SpecifyKind(local, DateTimeKind.Unspecified)
+                    : (DateTime?)null;
+            }
+            if (!DateTimeOffset.TryParse(LectorGraphLeadsMeta.NormalizarFecha(texto), CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AllowWhiteSpaces, out DateTimeOffset fecha))
             {
                 return null;
