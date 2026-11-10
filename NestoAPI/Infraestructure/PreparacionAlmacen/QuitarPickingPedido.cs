@@ -23,6 +23,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     //    Nesto lo pregunte; con Confirmado se anulan (lecturas en negativo, con el motivo) y la API avisa a la PDA por SignalR.
     //  - No se puede si alguna línea del pedido en ese picking ya está en albarán, si el pedido ya se está empaquetando o si el
     //    picking ya se ha terminado en Ariadna.
+    //  - Novedad 1146 (Alfredo, 10/11/26): con Lineas, solo esas líneas (lo más común, los portes), con el MISMO núcleo. De la línea:
+    //    que sea del pedido, tenga picking, esté pendiente y no en albarán (si no, 400/409 sin tocar nada). Del pedido en el picking
+    //    de esas líneas (igual que el pedido entero): nada del pedido en albarán en ese picking, ni terminado, ni empaquetándose.
+    //    Lo leído se aparta solo si sobra quitando esas líneas (las demás del pedido siguen pidiendo su producto).
 
     public enum EstadoQuitarPicking
     {
@@ -33,13 +37,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         NoSePuede,
         /// <summary>El mozo ya ha leído productos de este pedido: hay que confirmar (no se ha tocado nada).</summary>
         HayLecturas,
-        SinPermiso
+        SinPermiso,
+        /// <summary>Novedad 1146: alguna de las líneas pedidas no es del pedido o no tiene picking (no se ha tocado nada).</summary>
+        LineasNoValidas
     }
 
     public class ResultadoQuitarPicking
     {
         public EstadoQuitarPicking Estado { get; set; }
         public ResultadoQuitarPickingDTO Respuesta { get; set; } = new ResultadoQuitarPickingDTO();
+    }
+
+    /// <summary>Novedad 1146: las líneas con picking del pedido, para elegir. Sin permiso, Lineas vacía.</summary>
+    public class ResultadoLineasConPicking
+    {
+        public bool SinPermiso { get; set; }
+        public List<LineaConPickingDTO> Lineas { get; set; } = new List<LineaConPickingDTO>();
     }
 
     /// <summary>Una línea del pedido con picking (cualquier estado).</summary>
@@ -92,6 +105,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IServicioQuitarPicking
     {
         Task<ResultadoQuitarPicking> Quitar(string empresa, int pedido, bool confirmado, IPrincipal usuario);
+        /// <summary>Novedad 1146: solo esas líneas (Nº Orden). Null o vacía = todo el pedido, como el de arriba.</summary>
+        Task<ResultadoQuitarPicking> Quitar(string empresa, int pedido, bool confirmado, IPrincipal usuario, IReadOnlyCollection<int> lineas);
+        /// <summary>Novedad 1146: las líneas del pedido con picking y si se puede quitar (con las mismas reglas que Quitar).</summary>
+        Task<ResultadoLineasConPicking> LeerLineas(string empresa, int pedido, IPrincipal usuario);
     }
 
     public class ServicioQuitarPicking : IServicioQuitarPicking
@@ -114,7 +131,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return usuario != null && EscrituraSoloAlmacenAttribute.PuedeEscribir(usuario);
         }
 
-        public async Task<ResultadoQuitarPicking> Quitar(string empresa, int pedido, bool confirmado, IPrincipal usuario)
+        public Task<ResultadoQuitarPicking> Quitar(string empresa, int pedido, bool confirmado, IPrincipal usuario)
+        {
+            return Quitar(empresa, pedido, confirmado, usuario, null);
+        }
+
+        public async Task<ResultadoQuitarPicking> Quitar(string empresa, int pedido, bool confirmado, IPrincipal usuario, IReadOnlyCollection<int> lineas)
         {
             if (!PuedeQuitar(usuario))
             {
@@ -122,20 +144,112 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     "Para quitar el picking hay que ser de Almacén o de Dirección.");
             }
             string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario?.Identity?.Name);
-            return await repositorio.EnTransaccion(tx => Quitar(tx, empresa, pedido, confirmado, quien)).ConfigureAwait(false);
+            return await repositorio.EnTransaccion(tx => Quitar(tx, empresa, pedido, confirmado, quien, lineas)).ConfigureAwait(false);
         }
 
-        internal static async Task<ResultadoQuitarPicking> Quitar(ITransaccionQuitarPicking tx, string empresa, int pedido, bool confirmado, string quien)
+        public async Task<ResultadoLineasConPicking> LeerLineas(string empresa, int pedido, IPrincipal usuario)
+        {
+            if (!PuedeQuitar(usuario))
+            {
+                return new ResultadoLineasConPicking { SinPermiso = true };
+            }
+            return await repositorio.EnTransaccion(tx => LeerLineas(tx, empresa, pedido)).ConfigureAwait(false);
+        }
+
+        private static bool EsPendiente(LineaPedidoConPicking l)
+        {
+            return l.Picking > 0 && (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO);
+        }
+
+        /// <summary>
+        /// Novedad 1146: cada línea con picking y si se le puede quitar, con las MISMAS reglas que <see cref="Quitar(ITransaccionQuitarPicking, string, int, bool, string, IReadOnlyCollection{int})"/>:
+        /// la de la línea (en albarán o no pendiente) y las de su picking (algo del pedido en albarán en ese picking, picking terminado
+        /// en la PDA o el pedido empaquetándose). No toca nada.
+        /// </summary>
+        internal static async Task<ResultadoLineasConPicking> LeerLineas(ITransaccionQuitarPicking tx, string empresa, int pedido)
         {
             List<LineaPedidoConPicking> lineas = await tx.LeerLineasConPicking(empresa, pedido).ConfigureAwait(false) ?? new List<LineaPedidoConPicking>();
-            List<LineaPedidoConPicking> pendientes = lineas.Where(l => l.Picking > 0 && (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE ||
-                l.Estado == Constantes.EstadosLineaVenta.EN_CURSO)).ToList();
+            var motivoPicking = new Dictionary<int, string>();
+            foreach (int picking in lineas.Where(EsPendiente).Select(l => l.Picking).Distinct().OrderBy(p => p))
+            {
+                if (lineas.Any(l => l.Picking == picking && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN))
+                {
+                    motivoPicking[picking] = $"Parte del pedido del picking {picking} ya está en albarán.";
+                }
+                else if (await tx.BloquearYMirarSiTerminado(empresa, picking).ConfigureAwait(false))
+                {
+                    motivoPicking[picking] = $"El picking {picking} ya está terminado en la PDA.";
+                }
+                else if (await tx.HayPacking(empresa, picking, pedido).ConfigureAwait(false))
+                {
+                    motivoPicking[picking] = $"El pedido ya se está empaquetando (picking {picking}).";
+                }
+            }
+            var resultado = new ResultadoLineasConPicking();
+            foreach (LineaPedidoConPicking l in lineas.OrderBy(l => l.Linea))
+            {
+                string motivo = l.Estado >= Constantes.EstadosLineaVenta.ALBARAN ? "Ya está en albarán."
+                    : !EsPendiente(l) ? "No está pendiente."
+                    : motivoPicking.TryGetValue(l.Picking, out string delPicking) ? delPicking
+                    : null;
+                resultado.Lineas.Add(new LineaConPickingDTO
+                {
+                    Linea = l.Linea,
+                    Picking = l.Picking,
+                    Estado = l.Estado,
+                    TipoLinea = l.TipoLinea,
+                    Producto = l.Producto?.Trim(),
+                    Texto = l.Nombre?.Trim(),
+                    Cantidad = l.Cantidad,
+                    SePuedeQuitar = motivo == null,
+                    Motivo = motivo
+                });
+            }
+            return resultado;
+        }
+
+        private static string ListaLineas(IEnumerable<int> lineas) => Unir(lineas.Select(l => l.ToString()).ToList());
+
+        internal static async Task<ResultadoQuitarPicking> Quitar(ITransaccionQuitarPicking tx, string empresa, int pedido, bool confirmado, string quien,
+            IReadOnlyCollection<int> lineasPedidas = null)
+        {
+            List<LineaPedidoConPicking> lineas = await tx.LeerLineasConPicking(empresa, pedido).ConfigureAwait(false) ?? new List<LineaPedidoConPicking>();
+            List<LineaPedidoConPicking> pendientesDelPedido = lineas.Where(EsPendiente).ToList();
+            List<int> pedidas = (lineasPedidas ?? new List<int>()).Distinct().OrderBy(l => l).ToList();
+            bool parcial = pedidas.Count > 0;
+            List<LineaPedidoConPicking> pendientes = pendientesDelPedido;
+            if (parcial)
+            {
+                // Novedad 1146: solo las líneas pedidas. Cualquiera que no valga para lo pedido → no se toca nada
+                List<int> noEstan = pedidas.Where(n => !lineas.Any(l => l.Linea == n)).ToList();
+                if (noEstan.Count > 0)
+                {
+                    return Resultado(EstadoQuitarPicking.LineasNoValidas, empresa, pedido,
+                        $"{(noEstan.Count == 1 ? "La línea " : "Las líneas ")}{ListaLineas(noEstan)} no {(noEstan.Count == 1 ? "es" : "son")} del pedido {pedido} " +
+                        $"o no {(noEstan.Count == 1 ? "tiene" : "tienen")} picking. No se ha quitado nada.");
+                }
+                LineaPedidoConPicking enAlbaran = lineas.FirstOrDefault(l => pedidas.Contains(l.Linea) && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
+                if (enAlbaran != null)
+                {
+                    return Resultado(EstadoQuitarPicking.NoSePuede, empresa, pedido,
+                        $"La línea {enAlbaran.Linea} del pedido {pedido} ya está en albarán: no se puede quitar el picking. No se ha quitado nada.");
+                }
+                List<int> noPendientes = pedidas.Where(n => !pendientesDelPedido.Any(l => l.Linea == n)).ToList();
+                if (noPendientes.Count > 0)
+                {
+                    return Resultado(EstadoQuitarPicking.LineasNoValidas, empresa, pedido,
+                        $"{(noPendientes.Count == 1 ? "La línea " : "Las líneas ")}{ListaLineas(noPendientes)} del pedido {pedido} no {(noPendientes.Count == 1 ? "está" : "están")} " +
+                        $"{(noPendientes.Count == 1 ? "pendiente" : "pendientes")}: no se puede quitar el picking. No se ha quitado nada.");
+                }
+                pendientes = pendientesDelPedido.Where(l => pedidas.Contains(l.Linea)).ToList();
+            }
             if (pendientes.Count == 0)
             {
                 return Resultado(EstadoQuitarPicking.SinPicking, empresa, pedido, $"El pedido {pedido} no tiene ninguna línea con picking.");
             }
             List<int> pickings = pendientes.Select(l => l.Picking).Distinct().OrderBy(p => p).ToList();
 
+            // Del pedido en ese picking (no de la línea): si parte ya está en albarán, el picking del pedido ya está cerrado
             LineaPedidoConPicking albaranada = lineas.FirstOrDefault(l => pickings.Contains(l.Picking) && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
             if (albaranada != null)
             {
@@ -159,6 +273,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
                 List<LineaPedidoConPicking> delPedido = pendientes.Where(l => l.Picking == picking).ToList();
                 List<LineaPedidoConPicking> otros = await tx.LeerLineasDeOtrosPedidos(empresa, picking, pedido).ConfigureAwait(false) ?? new List<LineaPedidoConPicking>();
+                if (parcial)
+                {
+                    // Novedad 1146: las líneas de este pedido que se quedan en el picking siguen pidiendo su producto: lo leído para
+                    // ellas no se aparta (solo lo que sobra al quitar las pedidas)
+                    otros = otros.Concat(pendientesDelPedido.Where(l => l.Picking == picking && !pedidas.Contains(l.Linea))).ToList();
+                }
                 List<LecturaNetaPicking> leidas = await tx.LeerLecturas(empresa, picking).ConfigureAwait(false) ?? new List<LecturaNetaPicking>();
                 foreach ((LecturaNetaPicking lectura, int unidades) in QueHayQueApartar(delPedido, otros, leidas))
                 {
@@ -188,7 +308,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 await tx.QuitarPickingDeLaLinea(linea.Linea, empresa, quien).ConfigureAwait(false);
             }
-            string motivo = $"Pedido {pedido} sacado del picking por {UsuarioAuditoriaHelper.ParaMostrar(quien)}";
+            string motivo = parcial
+                ? $"Líneas del pedido {pedido} sacadas del picking por {UsuarioAuditoriaHelper.ParaMostrar(quien)}"
+                : $"Pedido {pedido} sacado del picking por {UsuarioAuditoriaHelper.ParaMostrar(quien)}";
             if (motivo.Length > 100)
             {
                 motivo = motivo.Substring(0, 100);
@@ -215,12 +337,26 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
             string listaPickings = string.Join(", ", pickings);
             string apartar = lecturas.Count > 0 ? "; apartar: " + ListaProductos(lecturas) : string.Empty;
-            await tx.Auditar(
-                $"Pedido {pedido}: picking {listaPickings} ({pendientes.Count} líneas)",
-                $"Pedido {pedido}: sin picking (quitado por {quien} con «Quitar picking» de Nesto){apartar}",
-                quien).ConfigureAwait(false);
+            string numeros = ListaLineas(pendientes.Select(l => l.Linea));
+            if (parcial)
+            {
+                await tx.Auditar(
+                    $"Pedido {pedido}: picking {listaPickings} en las líneas {numeros}",
+                    $"Pedido {pedido}, líneas {numeros}: sin picking (quitado por {quien} con «Quitar picking» de Nesto){apartar}",
+                    quien).ConfigureAwait(false);
+            }
+            else
+            {
+                await tx.Auditar(
+                    $"Pedido {pedido}: picking {listaPickings} ({pendientes.Count} líneas)",
+                    $"Pedido {pedido}: sin picking (quitado por {quien} con «Quitar picking» de Nesto){apartar}",
+                    quien).ConfigureAwait(false);
+            }
 
-            string mensaje = $"Quitado el picking {listaPickings} del pedido {pedido} ({pendientes.Count} {(pendientes.Count == 1 ? "línea" : "líneas")}).";
+            string mensaje = parcial
+                ? $"Quitado el picking {listaPickings} de {(pendientes.Count == 1 ? "1 línea" : pendientes.Count + " líneas")} del pedido {pedido} " +
+                  $"({Unir(pendientes.Select(DescripcionLinea).ToList())}); el resto del pedido sigue en el picking."
+                : $"Quitado el picking {listaPickings} del pedido {pedido} ({pendientes.Count} {(pendientes.Count == 1 ? "línea" : "líneas")}).";
             if (lecturas.Count > 0)
             {
                 mensaje += $" Se ha avisado a {Personas(lecturas)} en la PDA para que aparte {ListaProductos(lecturas)} para el pedido {pedido}.";
@@ -228,7 +364,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             ResultadoQuitarPicking hecho = Resultado(EstadoQuitarPicking.Quitado, empresa, pedido, mensaje, pickings);
             hecho.Respuesta.Lineas = pendientes.Count;
             hecho.Respuesta.Lecturas = lecturas;
+            hecho.Respuesta.Parcial = parcial;
+            hecho.Respuesta.LineasQuitadas = pendientes.Select(l => new LineaQuitadaPickingDTO
+            {
+                Linea = l.Linea,
+                Picking = l.Picking,
+                Producto = l.Producto?.Trim(),
+                Nombre = l.Nombre?.Trim(),
+                SeRecoge = SeRecoge(l)
+            }).ToList();
             return hecho;
+        }
+
+        /// <summary>«Portes», o «2 Crema (22530)» para un producto.</summary>
+        internal static string DescripcionLinea(LineaPedidoConPicking l)
+        {
+            string nombre = string.IsNullOrWhiteSpace(l.Nombre) ? l.Producto?.Trim() : l.Nombre.Trim();
+            return SeRecoge(l) ? $"{l.Cantidad} {nombre} ({l.Producto?.Trim()})" : (nombre ?? $"línea {l.Linea}");
         }
 
         /// <summary>

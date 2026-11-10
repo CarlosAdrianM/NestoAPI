@@ -45,7 +45,10 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta la empresa o el pedido.");
             }
-            ResultadoQuitarPicking resultado = await servicio.Quitar(empresa.Trim(), pedido, peticion?.Confirmado == true, User).ConfigureAwait(false);
+            bool todoElPedido = peticion?.Lineas == null || peticion.Lineas.Count == 0;
+            ResultadoQuitarPicking resultado = todoElPedido
+                ? await servicio.Quitar(empresa.Trim(), pedido, peticion?.Confirmado == true, User).ConfigureAwait(false)
+                : await servicio.Quitar(empresa.Trim(), pedido, peticion.Confirmado, User, peticion.Lineas).ConfigureAwait(false);
             switch (resultado.Estado)
             {
                 case EstadoQuitarPicking.Quitado:
@@ -53,9 +56,33 @@ namespace NestoAPI.Controllers
                     return Ok(resultado.Respuesta);
                 case EstadoQuitarPicking.SinPermiso:
                     return Content(HttpStatusCode.Forbidden, resultado.Respuesta);
+                case EstadoQuitarPicking.LineasNoValidas:
+                    return Content(HttpStatusCode.BadRequest, resultado.Respuesta);
                 default:
                     return Content(HttpStatusCode.Conflict, resultado.Respuesta);
             }
+        }
+
+        // GET api/Picking/1/930110/LineasConPicking
+        /// <summary>
+        /// Novedad 1146: las líneas del pedido con picking (Nº Orden, producto, texto, cantidad, picking) y si se les puede quitar (y
+        /// por qué no), con las mismas reglas que QuitarPicking. No toca nada. 403 si no es de Almacén o Dirección.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Picking/{empresa}/{pedido:int}/LineasConPicking")]
+        [ResponseType(typeof(System.Collections.Generic.List<LineaConPickingDTO>))]
+        public async Task<IHttpActionResult> GetLineasConPicking(string empresa, int pedido)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || pedido <= 0)
+            {
+                return BadRequest("Falta la empresa o el pedido.");
+            }
+            ResultadoLineasConPicking resultado = await servicio.LeerLineas(empresa.Trim(), pedido, User).ConfigureAwait(false);
+            if (resultado.SinPermiso)
+            {
+                return Content(HttpStatusCode.Forbidden, new MensajeAlmacenDTO { Message = "Para quitar el picking hay que ser de Almacén o de Dirección." });
+            }
+            return Ok(resultado.Lineas);
         }
 
         /// <summary>A las PDA de cada picking del que ha salido el pedido: qué apartar y que relean. Nunca rompe la petición.</summary>
@@ -70,14 +97,22 @@ namespace NestoAPI.Controllers
                 string usuario = UsuarioAuditoriaHelper.ParaAuditoria(User?.Identity?.Name);
                 foreach (int picking in respuesta.Pickings)
                 {
+                    var quitadas = (respuesta.LineasQuitadas ?? new System.Collections.Generic.List<LineaQuitadaPickingDTO>()).Where(l => l.Picking == picking).ToList();
+                    var apartar = respuesta.Lecturas.Where(l => l.Picking == picking).ToList();
+                    if (respuesta.Parcial && !quitadas.Any(l => l.SeRecoge) && apartar.Count == 0)
+                    {
+                        // Novedad 1146: solo portes, textos o cuentas: en la PDA no cambia nada que ver; que relea sin el aviso fijo
+                        avisosAlmacen.HaCambiado(AvisosAlmacen.GrupoRecogida(CasadorEscaneos.ORIGEN_PICKING, picking), usuario, null, ServicioQuitarPicking.DISPOSITIVO);
+                        continue;
+                    }
                     var aviso = new PedidoSacadoDelPickingAvisoDTO
                     {
                         NumeroOrigen = picking,
                         Pedido = respuesta.Pedido,
                         Usuario = usuario,
-                        Apartar = respuesta.Lecturas.Where(l => l.Picking == picking).ToList()
+                        Apartar = apartar
                     };
-                    aviso.Mensaje = MensajeParaLaPda(aviso);
+                    aviso.Mensaje = MensajeParaLaPda(aviso, respuesta.Parcial ? quitadas : null);
                     avisosAlmacen.PedidoSacadoDelPicking(AvisosAlmacen.GrupoRecogida(CasadorEscaneos.ORIGEN_PICKING, picking), usuario, aviso);
                 }
             }
@@ -87,10 +122,23 @@ namespace NestoAPI.Controllers
             }
         }
 
-        internal static string MensajeParaLaPda(PedidoSacadoDelPickingAvisoDTO aviso)
+        internal static string MensajeParaLaPda(PedidoSacadoDelPickingAvisoDTO aviso, System.Collections.Generic.List<LineaQuitadaPickingDTO> lineasQuitadas = null)
         {
             string quien = UsuarioAuditoriaHelper.ParaMostrar(aviso.Usuario);
-            string inicio = $"El pedido {aviso.Pedido} se ha sacado de este picking{(string.IsNullOrEmpty(quien) ? string.Empty : " (" + quien + ")")}";
+            string por = string.IsNullOrEmpty(quien) ? string.Empty : " (" + quien + ")";
+            string inicio;
+            if (lineasQuitadas != null && lineasQuitadas.Count > 0)
+            {
+                // Novedad 1146: solo unas líneas; el resto del pedido sigue en el picking
+                string productos = string.Join(", ", lineasQuitadas.Where(l => l.SeRecoge)
+                    .Select(l => string.IsNullOrWhiteSpace(l.Nombre) ? l.Producto : $"{l.Nombre} ({l.Producto})").Distinct());
+                inicio = $"Del pedido {aviso.Pedido} se ha sacado de este picking {(string.IsNullOrEmpty(productos) ? "alguna línea" : productos)}{por}; " +
+                    "el resto del pedido sigue";
+            }
+            else
+            {
+                inicio = $"El pedido {aviso.Pedido} se ha sacado de este picking{por}";
+            }
             return aviso.Apartar.Count == 0
                 ? inicio + "."
                 : $"{inicio}: aparte {ServicioQuitarPicking.ListaProductos(aviso.Apartar)} para ese pedido.";

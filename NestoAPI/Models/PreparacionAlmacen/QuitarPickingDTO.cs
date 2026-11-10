@@ -16,6 +16,40 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// (el mozo las aparta para el pedido). Sin él, si hay lecturas, 409 con ellas y no se toca nada.
         /// </summary>
         public bool Confirmado { get; set; }
+
+        /// <summary>
+        /// Novedad 1146 (Alfredo, 10/11/26: «lo más común es quitar alguna línea, por ejemplo, los portes»): los Nº Orden de las
+        /// líneas de LinPedidoVta a las que quitar el picking. Sin ellas (o vacía), todas las pendientes del pedido, como siempre.
+        /// </summary>
+        public List<int> Lineas { get; set; }
+    }
+
+    /// <summary>Novedad 1146: una línea del pedido a la que se ha quitado el picking.</summary>
+    public class LineaQuitadaPickingDTO
+    {
+        public int Linea { get; set; }
+        public int Picking { get; set; }
+        public string Producto { get; set; }
+        public string Nombre { get; set; }
+        /// <summary>Es un producto que el mozo recoge en la PDA (TipoLinea 1, no ficticio). Los portes, textos o cuentas, no.</summary>
+        public bool SeRecoge { get; set; }
+    }
+
+    /// <summary>Novedad 1146: GET api/Picking/{empresa}/{pedido}/LineasConPicking (para elegir a qué líneas quitar el picking).</summary>
+    public class LineaConPickingDTO
+    {
+        /// <summary>Nº Orden de LinPedidoVta.</summary>
+        public int Linea { get; set; }
+        public int Picking { get; set; }
+        public short Estado { get; set; }
+        public short TipoLinea { get; set; }
+        public string Producto { get; set; }
+        public string Texto { get; set; }
+        /// <summary>Lo que se recoge: Cantidad - Recoger.</summary>
+        public int Cantidad { get; set; }
+        public bool SePuedeQuitar { get; set; }
+        /// <summary>Por qué no se puede quitar (vacío si se puede).</summary>
+        public string Motivo { get; set; }
     }
 
     /// <summary>NestoAPI#590: lo que un mozo ya ha leído en el picking de los productos del pedido que se quita (lo que hay que apartar).</summary>
@@ -44,6 +78,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Lineas { get; set; }
         /// <summary>Lo leído de este pedido en el picking: en el 409, lo que habría que apartar; en el 200, lo que se ha anulado.</summary>
         public List<LecturaQuitarPickingDTO> Lecturas { get; set; } = new List<LecturaQuitarPickingDTO>();
+        /// <summary>Novedad 1146: se han pedido líneas concretas (no todo el pedido).</summary>
+        public bool Parcial { get; set; }
+        /// <summary>Novedad 1146: las líneas a las que se ha quitado el picking (en el 200).</summary>
+        public List<LineaQuitadaPickingDTO> LineasQuitadas { get; set; } = new List<LineaQuitadaPickingDTO>();
     }
 
     /// <summary>
