@@ -290,5 +290,140 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             CollectionAssert.AreEqual(new[] { "NV1", "NV2" }, resultado.Respuesta.Facturas.Select(f => f.NumeroFactura).ToArray());
             CollectionAssert.AreEqual(new[] { PEDIDO, OTRO }, resultado.Documentos.Select(d => d.Pedido).ToArray());
         }
+
+        // ------------------------------------------------------------ S3: reintento sin volver a facturar
+
+        private void Pendiente(int pedido, string numero)
+            => A.CallTo(() => pasos.LeerMarcas("1", pedido)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>
+            {
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = pedido, Envio = ENVIO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = numero,
+                    Estado = EstadosDocumentoEnPapel.PENDIENTE, Mensaje = "atasco" }
+            }));
+
+        private void Regenera(int pedido, string numero, int copias = 1)
+        {
+            var documentos = new DocumentosImpresionPedidoDTO();
+            documentos.Facturas.Add(new FacturaCreadaDTO
+            {
+                Empresa = "1", NumeroPedido = pedido, NumeroFactura = numero,
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 1 }, NumeroCopias = copias, TipoBandeja = TipoBandejaImpresion.Lower }
+            });
+            A.CallTo(() => pasos.Regenerar("1", pedido, TiposDocumentoEnPapel.FACTURA, numero)).Returns(documentos);
+        }
+
+        private void LaImpresoraImprimeEn(string nombre)
+            => A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>._, A<string>._))
+                .Invokes((List<DocumentoAImprimirEnServidor> docs, string _) => docs.ForEach(d =>
+                {
+                    if (nombre == null)
+                    {
+                        d.Aviso = $"No se ha podido imprimir {d.Descripcion} en «HP»: sigue el atasco. Imprímalo desde Nesto.";
+                    }
+                    else
+                    {
+                        d.Datos.ImpresoEnServidor = nombre;
+                    }
+                }));
+
+        [TestMethod]
+        public async Task Pendiente_RepetirLaEtiqueta_ReimprimeSinVolverAFacturar()
+        {
+            Pendiente(PEDIDO, "NV2617986");
+            Regenera(PEDIDO, "NV2617986");
+            LaImpresoraImprimeEn("HP LaserJet Algete");
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion(reimpresion: true));
+
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>.That.Matches(l => l.Count == 1), "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
+            DocumentoEnPapelDTO documento = resultado.Documentos.Single();
+            Assert.IsTrue(documento.Reimpreso);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, documento.Estado);
+            Assert.AreEqual("HP LaserJet Algete", documento.Impresora);
+            Assert.IsNull(documento.Mensaje);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, marcadas.Single().Estado);
+            Assert.IsTrue(resultado.Avisos.Single().Contains("sin volver a facturar"));
+        }
+
+        [TestMethod]
+        public async Task Pendiente_LaImpresoraSigueFallando_SigueEnPendienteConElMotivo()
+        {
+            Pendiente(PEDIDO, "NV2617986");
+            Regenera(PEDIDO, "NV2617986");
+            LaImpresoraImprimeEn(null);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().ReimprimirPendientes(Peticion(reimpresion: true));
+
+            Assert.IsTrue(resultado.HayPendientes);
+            StringAssert.Contains(marcadas.Single().Mensaje, "sigue el atasco");
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Pendiente_QueYaNoLlevaPapel_SeDaPorImpresoYNoSeQuedaPendiente()
+        {
+            Pendiente(PEDIDO, "NV2617986");
+            Regenera(PEDIDO, "NV2617986", copias: 0);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().ReimprimirPendientes(Peticion(reimpresion: true));
+
+            A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, marcadas.Single().Estado);
+            Assert.IsTrue(resultado.Avisos.Single().Contains("ya no lleva documento en papel"));
+        }
+
+        [TestMethod]
+        public async Task Pendiente_EnNesto_DevuelveElPdfParaImprimirEnLocal()
+        {
+            A.CallTo(() => impresora.Aplicacion).Returns(AplicacionesDocumentoEnPapel.NESTO);
+            Pendiente(PEDIDO, "NV2617986");
+            Regenera(PEDIDO, "NV2617986");
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion(reimpresion: true));
+
+            Assert.AreEqual("NV2617986", resultado.Respuesta.Facturas.Single().NumeroFactura);
+            Assert.IsNotNull(resultado.Respuesta.Facturas.Single().DatosImpresion.BytesPDF);
+            Assert.AreEqual(EstadosDocumentoEnPapel.PENDIENTE, resultado.Documentos.Single().Estado);
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task YaImpresoEnElPacking_RepetirLaEtiqueta_NoLoVuelveAImprimirYLoDice()
+        {
+            A.CallTo(() => pasos.LeerMarcas("1", PEDIDO)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>
+            {
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = PEDIDO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617986",
+                    Estado = EstadosDocumentoEnPapel.IMPRESO, Impresora = "HP" }
+            }));
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion(reimpresion: true));
+
+            Assert.IsTrue(resultado.Documentos.Single().YaEstabaImpreso);
+            Assert.AreEqual("La factura NV2617986 ya salió en el packing (en «HP»): no se vuelve a imprimir.", resultado.Avisos.Single());
+            A.CallTo(() => pasos.Regenerar(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ReimprimirPendientes_SinNadaPendiente_LoDiceYNoFactura()
+        {
+            ResultadoDocumentosEnPapel resultado = await Nucleo().ReimprimirPendientes(Peticion(true, PEDIDO, OTRO));
+
+            Assert.AreEqual($"Los pedidos {PEDIDO}, {OTRO} no tienen ningún documento en papel pendiente de imprimir.", resultado.Avisos.Single());
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ReimprimirPendientes_SiNoSePuedeRegenerar_SeAvisa()
+        {
+            Pendiente(PEDIDO, "NV2617986");
+            A.CallTo(() => pasos.Regenerar(A<string>._, A<int>._, A<string>._, A<string>._)).ThrowsAsync(new InvalidOperationException("No se encontró la factura"));
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().ReimprimirPendientes(Peticion(true));
+
+            Assert.IsTrue(resultado.HayPendientes);
+            Assert.IsTrue(resultado.Avisos.Single().Contains("No se encontró la factura"));
+            Assert.AreEqual(1, registrados.Count);
+        }
     }
 }

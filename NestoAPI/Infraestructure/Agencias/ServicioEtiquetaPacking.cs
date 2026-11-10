@@ -31,6 +31,9 @@ namespace NestoAPI.Infraestructure.Agencias
     public interface IServicioEtiquetaPacking
     {
         Task<ResultadoEtiquetaPacking> Imprimir(int pedido, PeticionEtiquetaPackingDTO peticion, IPrincipal usuario);
+
+        /// <summary>NestoAPI#828 (S3/S6): vuelve a imprimir el papel pendiente del packing del pedido y de su entrega, sin facturar.</summary>
+        Task<ResultadoDocumentosEnPapel> ReintentarDocumentosEnPapel(int pedido, string empresa, IPrincipal usuario);
     }
 
     public enum TipoResultadoEtiquetaPacking
@@ -513,6 +516,39 @@ namespace NestoAPI.Infraestructure.Agencias
             string documentos = string.Join(" y ", impresos.Select(d => d.Descripcion));
             List<string> impresoras = impresos.Select(d => d.Impresora?.Trim()).Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
             return $"Meta en la caja {documentos}" + (impresoras.Any() ? $" (en «{string.Join("», «", impresoras)}»)." : ".");
+        }
+
+        /// <summary>
+        /// NestoAPI#828 (S3/S6): «Reintentar impresión» desde el packing: vuelve a imprimir el papel pendiente del pedido y de los demás
+        /// de su entrega, sin facturar ni tocar la etiqueta.
+        /// </summary>
+        public async Task<ResultadoDocumentosEnPapel> ReintentarDocumentosEnPapel(int pedido, string empresa, IPrincipal usuario)
+        {
+            empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(usuario, "NestoAPI");
+            using (IPasosEtiquetaPacking pasos = crearPasos(usuario))
+            {
+                EntregaParaEtiqueta entrega = await LeerEntregaSegura(pasos, empresa, pedido);
+                EnviosAgencia envio = null;
+                try
+                {
+                    envio = await pasos.LeerEnvioEnCurso(empresa, pedido);
+                }
+                catch (Exception ex)
+                {
+                    Registrar(ex);
+                }
+                var pedidos = new List<int> { pedido };
+                pedidos.AddRange(entrega?.OtrosPedidos ?? new List<int>());
+                return await Nucleo(pasos).ReimprimirPendientes(new PeticionDocumentosEnPapel
+                {
+                    Empresa = empresa,
+                    Pedidos = pedidos,
+                    Envio = envio?.Numero,
+                    Reimpresion = true,
+                    Usuario = usuarioAuditoria
+                });
+            }
         }
 
         private async Task<EntregaParaEtiqueta> LeerEntregaSegura(IPasosEtiquetaPacking pasos, string empresa, int pedido)

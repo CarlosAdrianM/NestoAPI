@@ -832,6 +832,39 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // POST api/Almacen/Pedidos/926940/DocumentosEnPapel/Reintentar?empresa=1
+        /// <summary>
+        /// NestoAPI#828 (S3/S6): «Reintentar impresión» del packing de Ariadna. Vuelve a imprimir en el servidor la factura física (o el
+        /// albarán o la nota en papel) que no salió al hacer la etiqueta, del pedido y de los demás de su entrega, SIN volver a facturar
+        /// ni tocar la etiqueta. 200 <see cref="Models.Facturas.ReintentoDocumentosEnPapelDTO"/> (con lo que sigue pendiente, si la
+        /// impresora sigue fallando); sin nada pendiente, 200 con el aviso.
+        /// </summary>
+        [HttpPost]
+        [Route("Pedidos/{pedido:int}/DocumentosEnPapel/Reintentar")]
+        [ResponseType(typeof(Models.Facturas.ReintentoDocumentosEnPapelDTO))]
+        public async Task<IHttpActionResult> PostReintentarDocumentosEnPapel(int pedido, string empresa = null)
+        {
+            if (etiquetaPacking == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, "La etiqueta de agencia desde el packing no está configurada en el servidor.");
+            }
+            if (pedido <= 0)
+            {
+                return BadRequest("Hay que indicar el pedido.");
+            }
+            Infraestructure.Facturas.ResultadoDocumentosEnPapel resultado = await etiquetaPacking.ReintentarDocumentosEnPapel(pedido, empresa, User);
+            var respuesta = new Models.Facturas.ReintentoDocumentosEnPapelDTO
+            {
+                Pedido = pedido,
+                DocumentosEnPapel = resultado.Documentos,
+                DocumentosPendientes = resultado.HayPendientes,
+                MeterEnLaCaja = Infraestructure.Agencias.ServicioEtiquetaPacking.TextoMeterEnLaCaja(resultado.Documentos
+                    .Where(d => d.Estado == Models.Facturas.EstadosDocumentoEnPapel.IMPRESO).ToList()),
+                Avisos = resultado.Avisos
+            };
+            return Ok(respuesta);
+        }
+
         // GET api/Almacen/Bultos/17/Foto
         /// <summary>
         /// Un enlace temporal para ver la foto. Se devuelve la dirección en vez de redirigir porque una

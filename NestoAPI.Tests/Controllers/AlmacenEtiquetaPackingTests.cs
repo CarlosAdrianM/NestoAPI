@@ -114,5 +114,32 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(HttpStatusCode.ServiceUnavailable, resultado.StatusCode);
         }
+
+        // ------------------------------------------------------------ NestoAPI#828 (S3): «Reintentar impresión»
+
+        [TestMethod]
+        public async Task ReintentarDocumentosEnPapel_200ConLoReimpresoYLoPendiente()
+        {
+            var resultado = new NestoAPI.Infraestructure.Facturas.ResultadoDocumentosEnPapel();
+            resultado.Documentos.Add(new NestoAPI.Models.Facturas.DocumentoEnPapelDTO { Pedido = 926940, Tipo = "Factura", Documento = "NV1", Estado = "Impreso", Impresora = "HP" });
+            resultado.Documentos.Add(new NestoAPI.Models.Facturas.DocumentoEnPapelDTO { Pedido = 926941, Tipo = "Factura", Documento = "NV2", Estado = "Pendiente" });
+            A.CallTo(() => etiquetas.ReintentarDocumentosEnPapel(926940, "1", usuario)).Returns(resultado);
+
+            IHttpActionResult respuesta = await controller.PostReintentarDocumentosEnPapel(926940, "1");
+
+            var ok = (OkNegotiatedContentResult<NestoAPI.Models.Facturas.ReintentoDocumentosEnPapelDTO>)respuesta;
+            Assert.AreEqual(2, ok.Content.DocumentosEnPapel.Count);
+            Assert.IsTrue(ok.Content.DocumentosPendientes);
+            Assert.AreEqual("Meta en la caja la factura NV1 (en «HP»).", ok.Content.MeterEnLaCaja);
+        }
+
+        [TestMethod]
+        public void ReintentarDocumentosEnPapel_RutaYPost()
+        {
+            System.Reflection.MethodInfo metodo = typeof(AlmacenController).GetMethod(nameof(AlmacenController.PostReintentarDocumentosEnPapel));
+            var ruta = (RouteAttribute)metodo.GetCustomAttributes(typeof(RouteAttribute), false)[0];
+            Assert.AreEqual("Pedidos/{pedido:int}/DocumentosEnPapel/Reintentar", ruta.Template);
+            Assert.AreEqual(1, metodo.GetCustomAttributes(typeof(HttpPostAttribute), false).Length);
+        }
     }
 }

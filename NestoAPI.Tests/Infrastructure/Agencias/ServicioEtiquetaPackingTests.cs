@@ -1052,5 +1052,40 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
             A.CallTo(() => pasos.Facturar("1", OTRO)).MustHaveHappenedOnceExactly();
         }
+
+        // ------------------------------------------------------------ NestoAPI#828 (S3): «Reintentar impresión»
+
+        [TestMethod]
+        public async Task Papel828_Reintentar_ReimprimeLoPendienteDeLaEntregaSinFacturarNiImprimirLaEtiqueta()
+        {
+            const int otro = 926941;
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, OtrosPedidos = new List<int> { otro } });
+            A.CallTo(() => pasos.LeerEnvioEnCurso("1", PEDIDO)).Returns(Envio(Constantes.Agencias.AGENCIA_CTT, "CTT123"));
+            A.CallTo(() => pasos.LeerMarcas("1", otro)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>
+            {
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = otro, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617987", Estado = EstadosDocumentoEnPapel.PENDIENTE }
+            }));
+            var documentos = new NestoAPI.Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            documentos.Facturas.Add(new FacturaCreadaDTO
+            {
+                Empresa = "1", NumeroPedido = otro, NumeroFactura = "NV2617987",
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 1 }, NumeroCopias = 1 }
+            });
+            A.CallTo(() => pasos.Regenerar("1", otro, TiposDocumentoEnPapel.FACTURA, "NV2617987")).Returns(documentos);
+            var impresoraPapel = A.Fake<NestoAPI.Infraestructure.Facturas.IImpresoraPapelPacking>();
+            A.CallTo(() => impresoraPapel.Aplicacion).Returns(AplicacionesDocumentoEnPapel.ARIADNA);
+            A.CallTo(() => impresoraPapel.Imprimir(A<List<NestoAPI.Infraestructure.Facturas.DocumentoAImprimirEnServidor>>._, A<string>._))
+                .Invokes((List<NestoAPI.Infraestructure.Facturas.DocumentoAImprimirEnServidor> docs, string _) => docs.ForEach(d => d.Datos.ImpresoEnServidor = "HP"));
+            servicio.ImpresoraPapel = impresoraPapel;
+
+            NestoAPI.Infraestructure.Facturas.ResultadoDocumentosEnPapel resultado = await servicio.ReintentarDocumentosEnPapel(PEDIDO, "1", usuario);
+
+            Assert.AreEqual("NV2617987", resultado.Documentos.Single().Documento);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, resultado.Documentos.Single().Estado);
+            Assert.AreEqual(5001, resultado.Documentos.Single().Envio);
+            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Imprimir(A<int>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Dispose()).MustHaveHappenedOnceExactly();
+        }
     }
 }
