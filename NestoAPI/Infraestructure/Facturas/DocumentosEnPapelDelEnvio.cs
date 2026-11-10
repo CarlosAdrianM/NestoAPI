@@ -36,6 +36,12 @@ namespace NestoAPI.Infraestructure.Facturas
 
         /// <summary>NestoAPI#828: el documento ya creado, otra vez en PDF con sus copias y su bandeja (sin volver a facturar).</summary>
         Task<DocumentosImpresionPedidoDTO> Regenerar(string empresa, int pedido, string tipo, string documento);
+
+        /// <summary>
+        /// NestoAPI#828: las cartas de los cheques regalo (#838) que generó la factura, otra vez en PDF (sin facturar ni mandar correo).
+        /// Vacía si la factura ya no tiene ningún cheque en vigor.
+        /// </summary>
+        Task<List<CartaChequeRegaloDTO>> RegenerarCartas(string empresa, int pedido, string factura);
     }
 
     /// <summary>
@@ -126,10 +132,12 @@ namespace NestoAPI.Infraestructure.Facturas
     /// <list type="number">
     /// <item>Si su ruta no saca el papel al cerrar el envío (<see cref="ITipoRuta.ImprimeAlCerrarEnvio"/>: la ruta propia) o es una nota
     /// de reparto propio, no se toca: lo hace Facturar rutas.</item>
-    /// <item>Si tiene un documento pendiente de imprimir del packing (la impresora falló), se vuelve a imprimir SIN volver a facturar.</item>
-    /// <item>Si no, se factura con el núcleo de siempre (FacturarPedido → GestorFacturacionRutas, con la regla del papel de
+    /// <item>Si tiene un documento pendiente de imprimir del packing de ESTE envío (o, sin envío, de hoy), se vuelve a imprimir SIN volver
+    /// a facturarlo. Lo pendiente de otro envío o de otro día no se imprime aquí (no va en esta caja): solo se dice.</item>
+    /// <item>Y se factura lo que haya nuevo con el núcleo de siempre (FacturarPedido → GestorFacturacionRutas, con la regla del papel de
     /// <see cref="ReglaImpresionDocumentos"/>: solo con la frase de papel, también en las simplificadas).</item>
-    /// <item>Cada documento en papel queda marcado «Impreso» o «Pendiente» (dbo.DocumentosPapelPacking); Facturar rutas lo cuenta.</item>
+    /// <item>Cada documento en papel queda marcado «Impreso» o «Pendiente» (dbo.DocumentosPapelPacking); Facturar rutas lo cuenta. En
+    /// Ariadna, también la carta del cheque regalo de cada factura (<see cref="TiposDocumentoEnPapel.CARTA_CHEQUE"/>).</item>
     /// </list>
     /// Nada de esto deshace la etiqueta: lo que falle es un aviso.
     /// </summary>
@@ -149,7 +157,17 @@ namespace NestoAPI.Infraestructure.Facturas
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
         }
 
-        /// <summary>Factura (o reimprime lo pendiente de) cada pedido y marca su papel.</summary>
+        /// <summary>El tipo de error de FacturarPedido cuando no queda nada que facturar.</summary>
+        internal const string TIPO_ERROR_SIN_LINEAS = "Sin líneas para facturar";
+
+        /// <summary>Hoy (para saber si una marca sin envío es de este packing). Sustituible en los tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>
+        /// Factura cada pedido y marca su papel. Antes, si tiene papel PENDIENTE de este envío (o, si no se sabe el envío, de hoy), lo
+        /// vuelve a imprimir sin volver a facturar eso; y después factura lo nuevo del pedido, como siempre (NestoAPI#828: antes
+        /// cualquier pendiente, aunque fuera de otro día, impedía facturar lo de hoy).
+        /// </summary>
         public async Task<ResultadoDocumentosEnPapel> Procesar(PeticionDocumentosEnPapel peticion)
         {
             var resultado = new ResultadoDocumentosEnPapel();
@@ -161,13 +179,16 @@ namespace NestoAPI.Infraestructure.Facturas
                     continue;
                 }
 
-                List<DocumentoEnPapelDTO> marcas = await LeerMarcasSeguro(empresa, pedido);
-                List<DocumentoEnPapelDTO> pendientes = marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE).ToList();
+                List<DocumentoEnPapelDTO> marcas = (await LeerMarcasSeguro(empresa, pedido)).Where(SeImprimeEnEstaAplicacion).ToList();
+                List<DocumentoEnPapelDTO> deEsteEnvio = marcas.Where(m => EsDeEsteEnvio(m, peticion?.Envio)).ToList();
+                AvisarPendientesDeOtroEnvio(marcas.Except(deEsteEnvio), pedido, resultado);
+                List<DocumentoEnPapelDTO> pendientes = deEsteEnvio.Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE).ToList();
+                bool reimpreso = false;
                 if (pendientes.Any())
                 {
                     // S3: ya se facturó y el papel no salió: se vuelve a imprimir, sin facturar otra vez
                     await ReimprimirPendientes(empresa, pedido, pendientes, peticion, resultado);
-                    continue;
+                    reimpreso = true;
                 }
 
                 FacturarRutasResponseDTO respuesta;
@@ -186,16 +207,21 @@ namespace NestoAPI.Infraestructure.Facturas
                     resultado.Respuestas.Add(new KeyValuePair<int, FacturarRutasResponseDTO>(pedido, null));
                     continue;
                 }
+                if (reimpreso)
+                {
+                    // Se ha reimprimido lo pendiente: que no quede nada nuevo que facturar no es un error
+                    _ = respuesta.PedidosConErrores?.RemoveAll(e => string.Equals(e?.TipoError?.Trim(), TIPO_ERROR_SIN_LINEAS, StringComparison.OrdinalIgnoreCase));
+                }
                 resultado.Respuestas.Add(new KeyValuePair<int, FacturarRutasResponseDTO>(pedido, respuesta));
                 Juntar(resultado.Respuesta, respuesta);
 
                 List<DocumentoEnPapelDTO> nuevos = await MarcarLosDeLaRespuesta(empresa, pedido, respuesta, peticion);
                 resultado.Documentos.AddRange(nuevos);
 
-                // Al repetir la etiqueta, lo que ya salió en el packing se dice (no se vuelve a imprimir)
+                // Al repetir la etiqueta, lo que ya salió en el packing de este envío se dice (no se vuelve a imprimir)
                 if (peticion?.Reimpresion == true && !nuevos.Any())
                 {
-                    foreach (DocumentoEnPapelDTO impreso in marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.IMPRESO))
+                    foreach (DocumentoEnPapelDTO impreso in deEsteEnvio.Where(m => m.Estado == EstadosDocumentoEnPapel.IMPRESO && !m.Reimpreso))
                     {
                         impreso.YaEstabaImpreso = true;
                         resultado.Documentos.Add(impreso);
@@ -209,7 +235,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         /// <summary>
         /// S3/S6 («Reintentar impresión»): vuelve a imprimir lo pendiente de los pedidos, sin facturar nada. Lo que no está pendiente no
-        /// se toca.
+        /// se toca. Como al repetir la etiqueta, solo lo de este envío (o, si no se sabe, lo de hoy): lo de otro envío no va en esta caja.
         /// </summary>
         public async Task<ResultadoDocumentosEnPapel> ReimprimirPendientes(PeticionDocumentosEnPapel peticion)
         {
@@ -218,8 +244,10 @@ namespace NestoAPI.Infraestructure.Facturas
             bool habiaPendientes = false;
             foreach (int pedido in PedidosDe(peticion))
             {
-                List<DocumentoEnPapelDTO> pendientes = (await LeerMarcasSeguro(empresa, pedido))
-                    .Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE).ToList();
+                List<DocumentoEnPapelDTO> marcas = (await LeerMarcasSeguro(empresa, pedido)).Where(SeImprimeEnEstaAplicacion).ToList();
+                List<DocumentoEnPapelDTO> deEsteEnvio = marcas.Where(m => EsDeEsteEnvio(m, peticion?.Envio)).ToList();
+                AvisarPendientesDeOtroEnvio(marcas.Except(deEsteEnvio), pedido, resultado);
+                List<DocumentoEnPapelDTO> pendientes = deEsteEnvio.Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE).ToList();
                 if (pendientes.Any())
                 {
                     habiaPendientes = true;
@@ -235,27 +263,74 @@ namespace NestoAPI.Infraestructure.Facturas
             return resultado;
         }
 
-        /// <summary>NestoAPI#828: lo que confirma Nesto tras imprimir en local (o no) un documento del packing.</summary>
-        public Task MarcarImpresionLocal(ImpresionDocumentoEnPapelDTO impresion)
+        /// <summary>
+        /// NestoAPI#828: lo que confirma Nesto tras imprimir en local (o no) un documento del packing. Solo se marca un documento que el
+        /// packing le dio a ese pedido (tiene ya su marca): false si no lo es (o no hay marcas que mirar), y no se marca nada.
+        /// </summary>
+        public async Task<bool> MarcarImpresionLocal(ImpresionDocumentoEnPapelDTO impresion)
         {
             if (impresion == null || impresion.Pedido <= 0 || string.IsNullOrWhiteSpace(impresion.Documento))
             {
-                return Task.CompletedTask;
+                return false;
             }
-            return MarcarSeguro(new DocumentoEnPapelDTO
+            string empresa = EmpresaDe(impresion.Empresa);
+            string tipo = string.IsNullOrWhiteSpace(impresion.Tipo) ? TiposDocumentoEnPapel.FACTURA : impresion.Tipo.Trim();
+            string documento = impresion.Documento.Trim();
+            bool esDelPedido = (await LeerMarcasSeguro(empresa, impresion.Pedido)).Any(m =>
+                string.Equals(m.Tipo?.Trim(), tipo, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(m.Documento?.Trim(), documento, StringComparison.OrdinalIgnoreCase));
+            if (!esDelPedido)
             {
-                Empresa = EmpresaDe(impresion.Empresa),
+                return false;
+            }
+            await MarcarSeguro(new DocumentoEnPapelDTO
+            {
+                Empresa = empresa,
                 Pedido = impresion.Pedido,
                 Envio = impresion.Envio,
-                Tipo = string.IsNullOrWhiteSpace(impresion.Tipo) ? TiposDocumentoEnPapel.FACTURA : impresion.Tipo.Trim(),
-                Documento = impresion.Documento.Trim(),
+                Tipo = tipo,
+                Documento = documento,
                 Estado = impresion.Impreso ? EstadosDocumentoEnPapel.IMPRESO : EstadosDocumentoEnPapel.PENDIENTE,
                 Impresora = impresion.Impresora,
                 Mensaje = impresion.Impreso ? null : (string.IsNullOrWhiteSpace(impresion.Mensaje) ? "Nesto no lo ha podido imprimir." : impresion.Mensaje.Trim())
             });
+            return true;
         }
 
         // ---------------------------------------------------------------- piezas
+
+        /// <summary>
+        /// ¿La marca es del packing de esta caja? Si se sabe el envío de la marca y el de ahora, el mismo envío; si no, que sea de hoy
+        /// (o sin fecha). Lo pendiente de otro envío o de otro día no se reimprime aquí: no va en esta caja.
+        /// </summary>
+        internal bool EsDeEsteEnvio(DocumentoEnPapelDTO marca, int? envio)
+        {
+            if (marca?.Envio != null && envio.HasValue)
+            {
+                return marca.Envio.Value == envio.Value;
+            }
+            return marca?.Fecha == null || marca.Fecha.Value.Date == Hoy().Date;
+        }
+
+        /// <summary>Nesto no imprime las cartas del cheque regalo: sus marcas no se tocan desde la etiqueta de Nesto.</summary>
+        private bool SeImprimeEnEstaAplicacion(DocumentoEnPapelDTO marca)
+            => marca != null && (impresora.Aplicacion != AplicacionesDocumentoEnPapel.NESTO || marca.Tipo != TiposDocumentoEnPapel.CARTA_CHEQUE);
+
+        /// <summary>Lo que quedó sin imprimir en el packing de otro envío (o de otro día) se dice, pero no se imprime aquí.</summary>
+        private static void AvisarPendientesDeOtroEnvio(IEnumerable<DocumentoEnPapelDTO> deOtroEnvio, int pedido, ResultadoDocumentosEnPapel resultado)
+        {
+            foreach (DocumentoEnPapelDTO marca in deOtroEnvio.Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE))
+            {
+                string donde = string.Join(", ", new[]
+                {
+                    marca.Envio.HasValue ? $"envío {marca.Envio.Value}" : null,
+                    marca.Fecha.HasValue ? marca.Fecha.Value.ToString("dd/MM", System.Globalization.CultureInfo.InvariantCulture) : null
+                }.Where(t => t != null));
+                resultado.Avisos.Add($"{Mayuscula(marca.Descripcion)} del pedido {pedido} quedó sin imprimir en el packing de otro envío" +
+                    $"{(donde.Length == 0 ? string.Empty : $" ({donde})")}: no se imprime con esta etiqueta" +
+                    (marca.Tipo == TiposDocumentoEnPapel.CARTA_CHEQUE ? "." : ". Si aún hace falta, imprima el documento desde Nesto."));
+            }
+        }
 
         /// <summary>¿El papel de este pedido sale en el packing? Si no, lo dice en los avisos.</summary>
         private async Task<bool> SeSacaEnElPacking(string empresa, int pedido, ResultadoDocumentosEnPapel resultado)
@@ -304,7 +379,9 @@ namespace NestoAPI.Infraestructure.Facturas
             var documentos = new List<DocumentoEnPapelDTO>();
             List<PedidoConErrorDTO> fallosImpresion = (respuesta.PedidosConErrores ?? new List<PedidoConErrorDTO>())
                 .Where(e => e?.TipoError == ImpresionDocumentosServidor.TIPO_ERROR).ToList();
-            foreach (KeyValuePair<DocumentoImprimibleDTO, DocumentoEnPapelDTO> par in EnPapel(respuesta, empresa, pedido, peticion?.Envio))
+            // Las cartas del cheque regalo solo las imprime el servidor (Ariadna): en Nesto, como antes, sin marca
+            bool conCartas = impresora.Aplicacion != AplicacionesDocumentoEnPapel.NESTO;
+            foreach (KeyValuePair<DocumentoImprimibleDTO, DocumentoEnPapelDTO> par in EnPapel(respuesta, empresa, pedido, peticion?.Envio, conCartas))
             {
                 DocumentoParaImprimir datos = par.Key.DatosImpresion;
                 DocumentoEnPapelDTO documento = par.Value;
@@ -316,9 +393,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 else
                 {
                     documento.Estado = EstadosDocumentoEnPapel.PENDIENTE;
+                    // El aviso de la impresión dice «No se ha podido imprimir <descripción>…»: así no se confunde la factura con su carta
                     documento.Mensaje = impresora.Aplicacion == AplicacionesDocumentoEnPapel.NESTO
                         ? "Lo imprime Nesto."
-                        : fallosImpresion.FirstOrDefault(e => e.MensajeError != null && e.MensajeError.Contains(documento.Documento))?.MensajeError
+                        : fallosImpresion.FirstOrDefault(e => e.MensajeError != null && e.MensajeError.Contains("imprimir " + documento.Descripcion))?.MensajeError
+                            ?? fallosImpresion.FirstOrDefault(e => e.MensajeError != null && e.MensajeError.Contains(documento.Documento))?.MensajeError
                             ?? fallosImpresion.FirstOrDefault()?.MensajeError
                             ?? "No ha salido por la impresora del servidor.";
                 }
@@ -334,10 +413,14 @@ namespace NestoAPI.Infraestructure.Facturas
             foreach (DocumentoEnPapelDTO marca in pendientes)
             {
                 marca.Envio = marca.Envio ?? peticion?.Envio;
-                DocumentosImpresionPedidoDTO regenerados;
+                bool esCarta = marca.Tipo == TiposDocumentoEnPapel.CARTA_CHEQUE;
+                List<DocumentoImprimibleDTO> regenerados;
                 try
                 {
-                    regenerados = await pasos.Regenerar(EmpresaDe(marca.Empresa ?? empresa), pedido, marca.Tipo, marca.Documento);
+                    regenerados = esCarta
+                        ? (await pasos.RegenerarCartas(EmpresaDe(marca.Empresa ?? empresa), pedido, marca.Documento) ?? new List<CartaChequeRegaloDTO>())
+                            .Where(c => c != null).Cast<DocumentoImprimibleDTO>().ToList()
+                        : Documentos(await pasos.Regenerar(EmpresaDe(marca.Empresa ?? empresa), pedido, marca.Tipo, marca.Documento)).ToList();
                 }
                 catch (Exception ex)
                 {
@@ -349,17 +432,19 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
 
                 var paraImprimir = new List<DocumentoAImprimirEnServidor>();
-                foreach (DocumentoImprimibleDTO documento in Documentos(regenerados).Where(d => d.DatosImpresion != null && d.DatosImpresion.NumeroCopias > 0))
+                foreach (DocumentoImprimibleDTO documento in regenerados.Where(d => d.DatosImpresion != null && d.DatosImpresion.NumeroCopias > 0))
                 {
                     paraImprimir.Add(new DocumentoAImprimirEnServidor { Descripcion = marca.Descripcion, Datos = documento.DatosImpresion, Documento = documento });
                 }
                 if (!paraImprimir.Any())
                 {
-                    // Ya no lleva papel (le han quitado la frase): no se queda pendiente para siempre
+                    // Ya no lleva papel (le han quitado la frase, o el cheque ya no está en vigor): no se queda pendiente para siempre
                     marca.Estado = EstadosDocumentoEnPapel.IMPRESO;
-                    marca.Mensaje = "Ya no lleva documento en papel.";
+                    marca.Mensaje = esCarta ? "Ya no tiene cheque regalo en vigor." : "Ya no lleva documento en papel.";
                     await MarcarSeguro(marca);
-                    resultado.Avisos.Add($"{Mayuscula(marca.Descripcion)} del pedido {pedido} ya no lleva documento en papel: no se imprime.");
+                    resultado.Avisos.Add(esCarta
+                        ? $"{Mayuscula(marca.Descripcion)} del pedido {pedido} ya no tiene cheque regalo en vigor: no se imprime."
+                        : $"{Mayuscula(marca.Descripcion)} del pedido {pedido} ya no lleva documento en papel: no se imprime.");
                     continue;
                 }
 
@@ -371,7 +456,8 @@ namespace NestoAPI.Infraestructure.Facturas
                         Juntar(resultado.Respuesta, imprimible);
                     }
                 }
-                DocumentoAImprimirEnServidor primero = paraImprimir[0];
+                // Si alguno no ha salido (varias cartas de una factura), sigue pendiente
+                DocumentoAImprimirEnServidor primero = paraImprimir.FirstOrDefault(d => string.IsNullOrWhiteSpace(d.Datos.ImpresoEnServidor)) ?? paraImprimir[0];
                 bool impreso = !string.IsNullOrWhiteSpace(primero.Datos.ImpresoEnServidor);
                 marca.Reimpreso = true;
                 marca.Estado = impreso ? EstadosDocumentoEnPapel.IMPRESO : EstadosDocumentoEnPapel.PENDIENTE;
@@ -391,16 +477,38 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>Los documentos de la respuesta que llevan papel (DatosImpresion con copias), con su marca sin estado.</summary>
-        internal static List<KeyValuePair<DocumentoImprimibleDTO, DocumentoEnPapelDTO>> EnPapel(FacturarRutasResponseDTO respuesta, string empresa, int pedido, int? envio)
+        /// <param name="conCartas">NestoAPI#828: también las cartas del cheque regalo (una marca por factura; pendiente si alguna de sus
+        /// cartas no ha salido). Van detrás de su factura.</param>
+        internal static List<KeyValuePair<DocumentoImprimibleDTO, DocumentoEnPapelDTO>> EnPapel(FacturarRutasResponseDTO respuesta, string empresa, int pedido, int? envio,
+            bool conCartas = false)
         {
             var lista = new List<KeyValuePair<DocumentoImprimibleDTO, DocumentoEnPapelDTO>>();
             if (respuesta == null)
             {
                 return lista;
             }
+            List<CartaChequeRegaloDTO> cartas = conCartas
+                ? (respuesta.CartasChequeRegalo ?? new List<CartaChequeRegaloDTO>())
+                    .Where(c => c?.DatosImpresion != null && c.DatosImpresion.NumeroCopias > 0 && !string.IsNullOrWhiteSpace(c.NumeroFactura)).ToList()
+                : new List<CartaChequeRegaloDTO>();
             foreach (FacturaCreadaDTO f in respuesta.Facturas ?? new List<FacturaCreadaDTO>())
             {
                 Anadir(lista, f, TiposDocumentoEnPapel.FACTURA, f?.NumeroFactura, empresa, pedido, envio);
+            }
+            foreach (IGrouping<string, CartaChequeRegaloDTO> deUnaFactura in cartas.GroupBy(c => c.NumeroFactura.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                // La que no ha salido, si hay alguna: así la marca queda pendiente
+                CartaChequeRegaloDTO carta = deUnaFactura.FirstOrDefault(c => string.IsNullOrWhiteSpace(c.DatosImpresion.ImpresoEnServidor)) ?? deUnaFactura.First();
+                lista.Add(new KeyValuePair<DocumentoImprimibleDTO, DocumentoEnPapelDTO>(carta, new DocumentoEnPapelDTO
+                {
+                    // La empresa y el pedido de la marca son los del pedido (la carta lleva los de la factura, que puede ser de la espejo)
+                    Empresa = empresa,
+                    Pedido = carta.NumeroPedido > 0 ? carta.NumeroPedido : pedido,
+                    Envio = envio,
+                    Tipo = TiposDocumentoEnPapel.CARTA_CHEQUE,
+                    Documento = deUnaFactura.Key,
+                    Fecha = DateTime.Now
+                }));
             }
             foreach (AlbaranCreadoDTO a in respuesta.Albaranes ?? new List<AlbaranCreadoDTO>())
             {
@@ -463,6 +571,9 @@ namespace NestoAPI.Infraestructure.Facturas
                     break;
                 case NotaEntregaCreadaDTO n:
                     total.NotasEntrega.Add(n);
+                    break;
+                case CartaChequeRegaloDTO c:
+                    total.CartasChequeRegalo.Add(c);
                     break;
             }
         }

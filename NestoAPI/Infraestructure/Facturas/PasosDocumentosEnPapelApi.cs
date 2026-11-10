@@ -111,6 +111,27 @@ namespace NestoAPI.Infraestructure.Facturas
             return gestor.ObtenerDocumentosImpresion(empresa, pedido, factura, albaran, UsuarioAuditoria);
         }
 
+        public async Task<List<CartaChequeRegaloDTO>> RegenerarCartas(string empresa, int pedido, string factura)
+        {
+            var repositorio = new ChequesRegalo.RepositorioAvisoChequesRegalo(Db);
+            List<ChequesRegalo.ChequeRegaloSinAviso> cheques = await repositorio.LeerChequesDeFactura(factura);
+            if (!cheques.Any())
+            {
+                return new List<CartaChequeRegaloDTO>();
+            }
+            ChequesRegalo.ChequeRegaloSinAviso primero = cheques.FirstOrDefault(c => string.Equals(c.EmpresaFactura?.Trim(), empresa?.Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? cheques[0];
+            string nombreDePila = await ChequesRegalo.AvisadorChequesRegalo.Crear(Db)
+                .NombreDePilaDeLaCarta(primero.Cliente, primero.EmpresaFactura, factura);
+            List<ChequesRegalo.AvisoChequeRegalo> avisos = ChequesRegalo.CartasChequeRegalo.AvisosParaReimprimir(cheques, primero.EmpresaFactura, nombreDePila);
+            return ChequesRegalo.CartasChequeRegalo.Crear(avisos, new CrearFacturaResponseDTO
+            {
+                Empresa = primero.EmpresaFactura?.Trim(),
+                NumeroFactura = factura?.Trim(),
+                NumeroPedido = pedido
+            }, primero.Cliente, new ChequesRegalo.GeneradorPdfCartaChequeRegalo(), ElmahHelper.Log);
+        }
+
         public void Dispose() => db?.Dispose();
 
         /// <summary>El «Message» de un HttpError, el texto de un Content(estado, "texto") o el cuerpo tal cual.</summary>

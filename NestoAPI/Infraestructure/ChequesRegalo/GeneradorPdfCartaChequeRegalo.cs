@@ -136,6 +136,33 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public static string Descripcion(string numeroFactura) => $"la carta del cheque regalo de la factura {numeroFactura?.Trim()}";
 
         /// <summary>
+        /// NestoAPI#828: para volver a sacar la carta de una factura (reintento del papel del packing), los avisos de sus cheques con
+        /// lo que necesita <see cref="Crear"/>. Si el número de factura sale en dos empresas, los de <paramref name="empresaPreferida"/>
+        /// (si no hay de esa, los de la primera que salga).
+        /// </summary>
+        internal static List<AvisoChequeRegalo> AvisosParaReimprimir(IEnumerable<ChequeRegaloSinAviso> cheques, string empresaPreferida, string nombreDePila)
+        {
+            List<ChequeRegaloSinAviso> todos = (cheques ?? Enumerable.Empty<ChequeRegaloSinAviso>()).Where(c => c != null).ToList();
+            if (!todos.Any())
+            {
+                return new List<AvisoChequeRegalo>();
+            }
+            string empresa = todos.Any(c => string.Equals(c.EmpresaFactura?.Trim(), empresaPreferida?.Trim(), StringComparison.OrdinalIgnoreCase))
+                ? empresaPreferida?.Trim()
+                : todos[0].EmpresaFactura?.Trim();
+            return todos.Where(c => string.Equals(c.EmpresaFactura?.Trim(), empresa, StringComparison.OrdinalIgnoreCase))
+                .Select(c => new AvisoChequeRegalo
+                {
+                    IdCheque = c.Id,
+                    Resultado = ResultadoAvisoChequeRegalo.YaAvisado,
+                    EmpresaFactura = c.EmpresaFactura?.Trim(),
+                    FacturaOrigen = c.FacturaOrigen?.Trim(),
+                    Campana = c.Campana(),
+                    NombreDePila = nombreDePila
+                }).ToList();
+        }
+
+        /// <summary>
         /// Una carta por cada cheque de <paramref name="avisos"/> que haya generado ESTA factura (los avisos son de todos los
         /// cheques del cliente sin avisar: uno viejo sin correo no vuelve a sacar carta en cada factura).
         /// </summary>

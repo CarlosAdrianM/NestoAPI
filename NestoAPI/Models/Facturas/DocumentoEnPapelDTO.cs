@@ -39,6 +39,13 @@ namespace NestoAPI.Models.Facturas
         public const string FACTURA = "Factura";
         public const string ALBARAN = "Albaran";
         public const string NOTA_ENTREGA = "NotaEntrega";
+        /// <summary>
+        /// NestoAPI#828 (Carlos 10/11/26): la carta del cheque regalo (#838) que sale con la factura que lo generó. Documento = el
+        /// número de esa factura (todas las cartas de una factura son una sola marca). Lleva su propia marca para que el reintento y
+        /// F8 repetido impriman solo lo que falte (la factura, la carta o las dos). Solo en Ariadna: Nesto no imprime las cartas. Sin
+        /// Scripts/Issue828b_DocumentosPapelPacking_CartaCheque.sql la marca no se guarda (la carta, como antes).
+        /// </summary>
+        public const string CARTA_CHEQUE = "CartaCheque";
 
         public static string Descripcion(string tipo, string documento)
         {
@@ -49,6 +56,8 @@ namespace NestoAPI.Models.Facturas
                     return $"el albarán {numero}";
                 case NOTA_ENTREGA:
                     return $"la nota de entrega del pedido {numero}";
+                case CARTA_CHEQUE:
+                    return $"la carta del cheque regalo de la factura {numero}";
                 default:
                     return $"la factura {numero}";
             }

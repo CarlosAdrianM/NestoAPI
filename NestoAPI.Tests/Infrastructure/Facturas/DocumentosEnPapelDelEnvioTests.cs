@@ -59,7 +59,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         private static DocumentoEnPapelDTO Copia(DocumentoEnPapelDTO m) => new DocumentoEnPapelDTO
         {
             Empresa = m.Empresa, Pedido = m.Pedido, Envio = m.Envio, Tipo = m.Tipo, Documento = m.Documento, Estado = m.Estado,
-            Impresora = m.Impresora, Mensaje = m.Mensaje
+            Impresora = m.Impresora, Mensaje = m.Mensaje, Fecha = m.Fecha
         };
 
         private static FacturarRutasResponseDTO ConFactura(int pedido, string numero, string impresoEn = null, int copias = 1)
@@ -236,6 +236,11 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         [TestMethod]
         public async Task Nesto_ConfirmaLaImpresionEnLocal()
         {
+            A.CallTo(() => pasos.LeerMarcas("1", PEDIDO)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>
+            {
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = PEDIDO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617986", Estado = EstadosDocumentoEnPapel.PENDIENTE },
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = PEDIDO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617987", Estado = EstadosDocumentoEnPapel.PENDIENTE }
+            }));
             await Nucleo().MarcarImpresionLocal(new ImpresionDocumentoEnPapelDTO
             {
                 Empresa = "1", Pedido = PEDIDO, Envio = ENVIO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = " NV2617986 ", Impreso = true, Impresora = "HP Nesto"
@@ -326,7 +331,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
                 }));
 
         [TestMethod]
-        public async Task Pendiente_RepetirLaEtiqueta_ReimprimeSinVolverAFacturar()
+        public async Task Pendiente_RepetirLaEtiqueta_ReimprimeSinVolverAFacturarlo()
         {
             Pendiente(PEDIDO, "NV2617986");
             Regenera(PEDIDO, "NV2617986");
@@ -334,7 +339,9 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
 
             ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion(reimpresion: true));
 
-            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            // Lo pendiente se reimprime con su PDF regenerado; FacturarPedido se llama igual por si hay algo nuevo (aquí, nada)
+            A.CallTo(() => pasos.Regenerar("1", PEDIDO, TiposDocumentoEnPapel.FACTURA, "NV2617986")).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly());
             A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>.That.Matches(l => l.Count == 1), "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
             DocumentoEnPapelDTO documento = resultado.Documentos.Single();
             Assert.IsTrue(documento.Reimpreso);
@@ -384,7 +391,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Assert.AreEqual("NV2617986", resultado.Respuesta.Facturas.Single().NumeroFactura);
             Assert.IsNotNull(resultado.Respuesta.Facturas.Single().DatosImpresion.BytesPDF);
             Assert.AreEqual(EstadosDocumentoEnPapel.PENDIENTE, resultado.Documentos.Single().Estado);
-            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -424,6 +431,322 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Assert.IsTrue(resultado.HayPendientes);
             Assert.IsTrue(resultado.Avisos.Single().Contains("No se encontró la factura"));
             Assert.AreEqual(1, registrados.Count);
+        }
+
+        // ------------------------------------------------------------ Revisión del 10/11/26: lo pendiente ya no impide facturar lo nuevo
+
+        private static readonly DateTime HOY = new DateTime(2026, 11, 10);
+
+        private DocumentosEnPapelDelEnvio NucleoDeHoy()
+        {
+            DocumentosEnPapelDelEnvio nucleo = Nucleo();
+            nucleo.Hoy = () => HOY;
+            return nucleo;
+        }
+
+        private void Marcas(int pedido, params DocumentoEnPapelDTO[] marcas)
+            => A.CallTo(() => pasos.LeerMarcas("1", pedido)).ReturnsLazily(() => Task.FromResult(marcas.Select(Copia).ToList()));
+
+        private static DocumentoEnPapelDTO MarcaDe(string tipo, string numero, string estado, int? envio, DateTime? fecha, int pedido = PEDIDO)
+            => new DocumentoEnPapelDTO { Empresa = "1", Pedido = pedido, Envio = envio, Tipo = tipo, Documento = numero, Estado = estado, Fecha = fecha, Impresora = "HP" };
+
+        [TestMethod]
+        public async Task Regresion_PendienteDeOtroEnvioDeDiasAtras_NoSeReimprimeYSeFacturaLoDeHoy()
+        {
+            // El fallo: una marca pendiente vieja (Nesto sin «imprimir documento», confirmación caída…) hacía `continue` y no se facturaba
+            Marcas(PEDIDO, MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2600001", EstadosDocumentoEnPapel.PENDIENTE, 4000, HOY.AddDays(-3)));
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(ConFactura(PEDIDO, "NV2617986", "HP LaserJet Algete"));
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().Procesar(Peticion());
+
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => pasos.Regenerar(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>._, A<string>._)).MustNotHaveHappened();
+            DocumentoEnPapelDTO documento = resultado.Documentos.Single();
+            Assert.AreEqual("NV2617986", documento.Documento, "Solo lo de hoy va en esta caja");
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, documento.Estado);
+            Assert.AreEqual("La factura NV2600001 del pedido 929914 quedó sin imprimir en el packing de otro envío (envío 4000, 07/11): " +
+                "no se imprime con esta etiqueta. Si aún hace falta, imprima el documento desde Nesto.", resultado.Avisos.Single());
+            Assert.IsFalse(marcadas.Any(m => m.Documento == "NV2600001"), "La marca vieja no se toca");
+        }
+
+        [TestMethod]
+        public async Task PendienteSinEnvioDeOtroDia_NoSeReimprime_PendienteSinEnvioDeHoy_Si()
+        {
+            Marcas(PEDIDO,
+                MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2600001", EstadosDocumentoEnPapel.PENDIENTE, null, HOY.AddDays(-1).AddHours(18)),
+                MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2600002", EstadosDocumentoEnPapel.PENDIENTE, null, HOY.AddHours(9)));
+            Regenera(PEDIDO, "NV2600002");
+            LaImpresoraImprimeEn("HP");
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().Procesar(Peticion());
+
+            A.CallTo(() => pasos.Regenerar("1", PEDIDO, TiposDocumentoEnPapel.FACTURA, "NV2600002")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => pasos.Regenerar("1", PEDIDO, TiposDocumentoEnPapel.FACTURA, "NV2600001")).MustNotHaveHappened();
+            Assert.AreEqual("NV2600002", resultado.Documentos.Single().Documento);
+        }
+
+        [TestMethod]
+        public async Task PendienteDelMismoEnvio_SeReimprimeYAdemasSeFacturaLoNuevo()
+        {
+            Marcas(PEDIDO, MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY.AddDays(-2)));
+            Regenera(PEDIDO, "NV2617986");
+            LaImpresoraImprimeEn("HP");
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(ConFactura(PEDIDO, "NV2617999", "HP"));
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().Procesar(Peticion(reimpresion: true));
+
+            CollectionAssert.AreEqual(new[] { "NV2617986", "NV2617999" }, resultado.Documentos.Select(d => d.Documento).ToArray());
+            Assert.IsTrue(resultado.Documentos[0].Reimpreso);
+            Assert.IsTrue(resultado.Documentos.All(d => d.Estado == EstadosDocumentoEnPapel.IMPRESO));
+            CollectionAssert.AreEqual(new[] { "NV2617986", "NV2617999" }, resultado.Respuesta.Facturas.Select(f => f.NumeroFactura).ToArray());
+            Assert.AreEqual(PEDIDO, resultado.Respuestas.Single().Key);
+        }
+
+        [TestMethod]
+        public async Task SoloReimpresion_SinNadaNuevo_NoDiceSinLineasParaFacturar()
+        {
+            A.CallTo(() => impresora.Aplicacion).Returns(AplicacionesDocumentoEnPapel.NESTO);
+            Pendiente(PEDIDO, "NV2617986");
+            Regenera(PEDIDO, "NV2617986");
+            var sinNada = new FacturarRutasResponseDTO();
+            sinNada.PedidosConErrores.Add(new PedidoConErrorDTO
+            {
+                NumeroPedido = PEDIDO, TipoError = "Sin líneas para facturar", MensajeError = "El pedido 929914 no tiene líneas para facturar…"
+            });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(sinNada);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion());
+
+            Assert.IsFalse(resultado.Respuesta.PedidosConErrores.Any(), "Nesto lo enseñaba como error grave");
+            Assert.IsFalse(resultado.Respuestas.Single().Value.PedidosConErrores.Any());
+            Assert.AreEqual("NV2617986", resultado.Respuesta.Facturas.Single().NumeroFactura);
+        }
+
+        [TestMethod]
+        public async Task SinReimpresion_SinLineasParaFacturar_SeSigueDiciendo()
+        {
+            var sinNada = new FacturarRutasResponseDTO();
+            sinNada.PedidosConErrores.Add(new PedidoConErrorDTO { NumeroPedido = PEDIDO, TipoError = "Sin líneas para facturar", MensajeError = "…" });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(sinNada);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion());
+
+            Assert.AreEqual(1, resultado.Respuesta.PedidosConErrores.Count);
+        }
+
+        [TestMethod]
+        public async Task ReimprimirPendientes_LoDeOtroEnvioNoSeImprime()
+        {
+            Marcas(PEDIDO, MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2600001", EstadosDocumentoEnPapel.PENDIENTE, 4000, HOY.AddDays(-3)));
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().ReimprimirPendientes(Peticion(true));
+
+            A.CallTo(() => pasos.Regenerar(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual(2, resultado.Avisos.Count);
+            StringAssert.Contains(resultado.Avisos[0], "de otro envío");
+            Assert.AreEqual($"El pedido {PEDIDO} no tiene ningún documento en papel pendiente de imprimir.", resultado.Avisos[1]);
+        }
+
+        [TestMethod]
+        public async Task Nesto_SoloConfirmaDocumentosDelPedido()
+        {
+            Marcas(PEDIDO, MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY));
+
+            bool ajeno = await Nucleo().MarcarImpresionLocal(new ImpresionDocumentoEnPapelDTO
+            {
+                Empresa = "1", Pedido = PEDIDO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2699999", Impreso = true
+            });
+            bool otroTipo = await Nucleo().MarcarImpresionLocal(new ImpresionDocumentoEnPapelDTO
+            {
+                Empresa = "1", Pedido = PEDIDO, Tipo = TiposDocumentoEnPapel.ALBARAN, Documento = "NV2617986", Impreso = true
+            });
+            bool suyo = await Nucleo().MarcarImpresionLocal(new ImpresionDocumentoEnPapelDTO
+            {
+                Empresa = "1", Pedido = PEDIDO, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "nv2617986", Impreso = true
+            });
+
+            Assert.IsFalse(ajeno);
+            Assert.IsFalse(otroTipo);
+            Assert.IsTrue(suyo);
+            Assert.AreEqual("nv2617986", marcadas.Single().Documento);
+        }
+
+        // ------------------------------------------------------------ La carta del cheque regalo (Carlos 10/11/26)
+
+        private static CartaChequeRegaloDTO Carta(string factura, string impresoEn)
+            => new CartaChequeRegaloDTO
+            {
+                Empresa = "3", NumeroPedido = PEDIDO, NumeroFactura = factura,
+                Descripcion = NestoAPI.Infraestructure.ChequesRegalo.CartasChequeRegalo.Descripcion(factura),
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 2 }, NumeroCopias = 1, ImpresoEnServidor = impresoEn }
+            };
+
+        [TestMethod]
+        public async Task Carta_FacturaImpresaYCartaNo_CadaUnaConSuMarcaYSuMotivo()
+        {
+            FacturarRutasResponseDTO respuesta = ConFactura(PEDIDO, "NV2617986", "HP");
+            respuesta.CartasChequeRegalo.Add(Carta("NV2617986", null));
+            respuesta.PedidosConErrores.Add(new PedidoConErrorDTO
+            {
+                NumeroPedido = PEDIDO, TipoError = ImpresionDocumentosServidor.TIPO_ERROR, Severidad = NivelSeveridad.Warning,
+                MensajeError = "No se ha podido imprimir la carta del cheque regalo de la factura NV2617986 en «HP»: sin papel. Imprímalo desde Nesto."
+            });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion());
+
+            Assert.AreEqual(2, marcadas.Count);
+            Assert.AreEqual(TiposDocumentoEnPapel.FACTURA, marcadas[0].Tipo);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, marcadas[0].Estado);
+            Assert.AreEqual(TiposDocumentoEnPapel.CARTA_CHEQUE, marcadas[1].Tipo);
+            Assert.AreEqual("NV2617986", marcadas[1].Documento);
+            Assert.AreEqual("1", marcadas[1].Empresa, "La marca va con la empresa del pedido, no con la de la factura");
+            Assert.AreEqual(EstadosDocumentoEnPapel.PENDIENTE, marcadas[1].Estado);
+            StringAssert.Contains(marcadas[1].Mensaje, "carta del cheque");
+            Assert.AreEqual("la carta del cheque regalo de la factura NV2617986", resultado.Documentos[1].Descripcion);
+        }
+
+        [TestMethod]
+        public async Task Carta_LaFacturaFallaYLaCartaSale_LaFacturaNoSeQuedaConElMotivoDeLaCarta()
+        {
+            FacturarRutasResponseDTO respuesta = ConFactura(PEDIDO, "NV2617986");
+            respuesta.CartasChequeRegalo.Add(Carta("NV2617986", "HP"));
+            respuesta.PedidosConErrores.Add(new PedidoConErrorDTO
+            {
+                NumeroPedido = PEDIDO, TipoError = ImpresionDocumentosServidor.TIPO_ERROR, Severidad = NivelSeveridad.Warning,
+                MensajeError = "No se ha podido imprimir la factura NV2617986 en «HP»: atasco. Imprímalo desde Nesto."
+            });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
+
+            await Nucleo().Procesar(Peticion());
+
+            Assert.AreEqual(EstadosDocumentoEnPapel.PENDIENTE, marcadas[0].Estado);
+            StringAssert.Contains(marcadas[0].Mensaje, "atasco");
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, marcadas[1].Estado);
+        }
+
+        [TestMethod]
+        public async Task Carta_EnNesto_NoSeMarca_ComoAntes()
+        {
+            A.CallTo(() => impresora.Aplicacion).Returns(AplicacionesDocumentoEnPapel.NESTO);
+            FacturarRutasResponseDTO respuesta = ConFactura(PEDIDO, "NV2617986");
+            respuesta.CartasChequeRegalo.Add(Carta("NV2617986", null));
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion());
+
+            Assert.AreEqual(TiposDocumentoEnPapel.FACTURA, resultado.Documentos.Single().Tipo);
+            Assert.AreEqual(TiposDocumentoEnPapel.FACTURA, marcadas.Single().Tipo);
+        }
+
+        [TestMethod]
+        public async Task Carta_SoloLaCartaPendiente_RepetirF8ReimprimeSoloLaCarta()
+        {
+            Marcas(PEDIDO,
+                MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2617986", EstadosDocumentoEnPapel.IMPRESO, ENVIO, HOY),
+                MarcaDe(TiposDocumentoEnPapel.CARTA_CHEQUE, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY));
+            A.CallTo(() => pasos.RegenerarCartas("1", PEDIDO, "NV2617986")).Returns(new List<CartaChequeRegaloDTO> { Carta("NV2617986", null) });
+            LaImpresoraImprimeEn("HP LaserJet Algete");
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().Procesar(Peticion(reimpresion: true));
+
+            A.CallTo(() => pasos.Regenerar(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>.That.Matches(l => l.Count == 1
+                && l[0].Descripcion == "la carta del cheque regalo de la factura NV2617986"), A<string>._)).MustHaveHappenedOnceExactly();
+            DocumentoEnPapelDTO carta = resultado.Documentos.Single(d => d.Tipo == TiposDocumentoEnPapel.CARTA_CHEQUE);
+            Assert.IsTrue(carta.Reimpreso);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, carta.Estado);
+            Assert.IsTrue(resultado.Documentos.Single(d => d.Tipo == TiposDocumentoEnPapel.FACTURA).YaEstabaImpreso, "La factura ya había salido: no se vuelve a imprimir");
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, marcadas.Single().Estado);
+            Assert.AreEqual(TiposDocumentoEnPapel.CARTA_CHEQUE, marcadas.Single().Tipo);
+            Assert.AreEqual(1, resultado.Respuesta.CartasChequeRegalo.Count);
+        }
+
+        [TestMethod]
+        public async Task Carta_NingunaSalio_ElReintentoImprimeLasDosEnOrden()
+        {
+            Marcas(PEDIDO,
+                MarcaDe(TiposDocumentoEnPapel.FACTURA, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY),
+                MarcaDe(TiposDocumentoEnPapel.CARTA_CHEQUE, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY));
+            Regenera(PEDIDO, "NV2617986");
+            A.CallTo(() => pasos.RegenerarCartas("1", PEDIDO, "NV2617986")).Returns(new List<CartaChequeRegaloDTO> { Carta("NV2617986", null) });
+            LaImpresoraImprimeEn("HP");
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().ReimprimirPendientes(Peticion(true));
+
+            A.CallTo(() => pasos.Regenerar("1", PEDIDO, TiposDocumentoEnPapel.FACTURA, "NV2617986")).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => pasos.RegenerarCartas("1", PEDIDO, "NV2617986")).MustHaveHappenedOnceExactly());
+            CollectionAssert.AreEqual(new[] { TiposDocumentoEnPapel.FACTURA, TiposDocumentoEnPapel.CARTA_CHEQUE }, resultado.Documentos.Select(d => d.Tipo).ToArray());
+            Assert.IsTrue(resultado.Documentos.All(d => d.Estado == EstadosDocumentoEnPapel.IMPRESO && d.Reimpreso));
+        }
+
+        [TestMethod]
+        public async Task Carta_PendienteSinChequeEnVigor_DejaDeEstarPendiente()
+        {
+            Marcas(PEDIDO, MarcaDe(TiposDocumentoEnPapel.CARTA_CHEQUE, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY));
+            A.CallTo(() => pasos.RegenerarCartas("1", PEDIDO, "NV2617986")).Returns(new List<CartaChequeRegaloDTO>());
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().ReimprimirPendientes(Peticion(true));
+
+            A.CallTo(() => impresora.Imprimir(A<List<DocumentoAImprimirEnServidor>>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, marcadas.Single().Estado);
+            StringAssert.Contains(resultado.Avisos.Single(), "ya no tiene cheque regalo en vigor");
+        }
+
+        [TestMethod]
+        public async Task Carta_PendienteEnNesto_NoSeToca()
+        {
+            A.CallTo(() => impresora.Aplicacion).Returns(AplicacionesDocumentoEnPapel.NESTO);
+            Marcas(PEDIDO, MarcaDe(TiposDocumentoEnPapel.CARTA_CHEQUE, "NV2617986", EstadosDocumentoEnPapel.PENDIENTE, ENVIO, HOY));
+
+            ResultadoDocumentosEnPapel resultado = await NucleoDeHoy().Procesar(Peticion(reimpresion: true));
+
+            A.CallTo(() => pasos.RegenerarCartas(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+            Assert.IsFalse(resultado.Documentos.Any());
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Carta_VariasCartasDeUnaFactura_UnaMarca_PendienteSiAlgunaNoSale()
+        {
+            var respuesta = new FacturarRutasResponseDTO();
+            respuesta.CartasChequeRegalo.Add(Carta("NV1", "HP"));
+            respuesta.CartasChequeRegalo.Add(Carta("NV1", null));
+
+            var enPapel = DocumentosEnPapelDelEnvio.EnPapel(respuesta, "1", PEDIDO, ENVIO, conCartas: true);
+            var sinCartas = DocumentosEnPapelDelEnvio.EnPapel(respuesta, "1", PEDIDO, ENVIO);
+
+            Assert.AreEqual(1, enPapel.Count);
+            Assert.IsNull(enPapel.Single().Key.DatosImpresion.ImpresoEnServidor);
+            Assert.AreEqual(0, sinCartas.Count);
+        }
+
+        [TestMethod]
+        public void Repositorio_LaMarcaDeLaCartaSoloSeGuardaSiLaCheckLaAdmite()
+        {
+            StringAssert.Contains(RepositorioDocumentosPapelPacking.SQL_GUARDAR, "@tipo <> 'CartaCheque'");
+            StringAssert.Contains(RepositorioDocumentosPapelPacking.SQL_GUARDAR, "name = N'CK_DocumentosPapelPacking_Tipo'");
+            StringAssert.Contains(RepositorioDocumentosPapelPacking.SQL_GUARDAR, "definition LIKE N'%''CartaCheque''%'");
+            Assert.IsTrue(TiposDocumentoEnPapel.CARTA_CHEQUE.Length <= 12, "Tipo es varchar(12)");
+        }
+
+        [TestMethod]
+        public void Carta_AvisosParaReimprimir_LosDeLaEmpresaDelPedidoSiElNumeroSaleEnDos()
+        {
+            var cheques = new List<NestoAPI.Infraestructure.ChequesRegalo.ChequeRegaloSinAviso>
+            {
+                new NestoAPI.Infraestructure.ChequesRegalo.ChequeRegaloSinAviso { Id = 1, EmpresaFactura = "3", FacturaOrigen = "NV1", Codigo = "C3", ImporteBase = 50 },
+                new NestoAPI.Infraestructure.ChequesRegalo.ChequeRegaloSinAviso { Id = 2, EmpresaFactura = "1", FacturaOrigen = "NV1", Codigo = "C1", ImporteBase = 50 }
+            };
+
+            var deLa1 = NestoAPI.Infraestructure.ChequesRegalo.CartasChequeRegalo.AvisosParaReimprimir(cheques, "1", "Pepita");
+            var deLa5 = NestoAPI.Infraestructure.ChequesRegalo.CartasChequeRegalo.AvisosParaReimprimir(cheques, "5", null);
+
+            Assert.AreEqual(2, deLa1.Single().IdCheque);
+            Assert.AreEqual("Pepita", deLa1.Single().NombreDePila);
+            Assert.AreEqual("C1", deLa1.Single().Campana.Codigo);
+            Assert.AreEqual(1, deLa5.Single().IdCheque);
         }
     }
 }

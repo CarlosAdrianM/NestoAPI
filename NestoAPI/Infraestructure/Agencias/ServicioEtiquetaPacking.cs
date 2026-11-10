@@ -405,8 +405,18 @@ namespace NestoAPI.Infraestructure.Agencias
                     }
                     else
                     {
-                        entrega = entrega ?? await LeerEntregaSegura(pasos, empresa, pedido);
-                        await PapelDelEnvio(pasos, envio, pedido, entrega, etiqueta, usuarioAuditoria);
+                        // NestoAPI#828: la etiqueta ya está impresa; nada del papel (factura, impresión, marcas) la puede tumbar
+                        try
+                        {
+                            entrega = entrega ?? await LeerEntregaSegura(pasos, empresa, pedido);
+                            await PapelDelEnvio(pasos, envio, pedido, entrega, etiqueta, usuarioAuditoria);
+                        }
+                        catch (Exception ex)
+                        {
+                            Registrar(new Exception($"[NestoAPI#828] Etiqueta del envío {envio.Numero} hecha, pero ha fallado la facturación o el papel del pedido {pedido}: {ex.Message}", ex));
+                            etiqueta.Avisos.Add($"La etiqueta está hecha, pero no se ha podido terminar la factura o el papel del pedido {pedido}: {ex.Message?.Trim()} " +
+                                "Mire en Nesto si está facturado antes de repetir la etiqueta.");
+                        }
                     }
                 }
 
@@ -474,7 +484,7 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>NestoAPI#828: el núcleo del papel con la impresora del servidor (Ariadna).</summary>
         private DocumentosEnPapelDelEnvio Nucleo(IPasosDocumentosEnPapel pasos)
         {
-            var nucleo = new DocumentosEnPapelDelEnvio(pasos, ImpresoraPapel, Registrar);
+            var nucleo = new DocumentosEnPapelDelEnvio(pasos, ImpresoraPapel, Registrar) { Hoy = () => Hoy() };
             if (TipoDeRuta != null)
             {
                 nucleo.TipoDeRuta = TipoDeRuta;

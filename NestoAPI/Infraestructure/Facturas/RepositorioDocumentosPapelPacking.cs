@@ -17,7 +17,7 @@ namespace NestoAPI.Infraestructure.Facturas
     /// </summary>
     public interface IRepositorioDocumentosPapelPacking
     {
-        /// <summary>Las marcas de los documentos del pedido; vacía si no hay (o no hay tabla).</summary>
+        /// <summary>Las marcas de los documentos del pedido; vacía si no hay (o no hay tabla). La Fecha es la de la última modificación.</summary>
         Task<List<DocumentoEnPapelDTO>> Leer(string empresa, int pedido);
 
         /// <summary>Pone (o cambia) la marca del documento. Nunca lanza.</summary>
@@ -43,8 +43,16 @@ namespace NestoAPI.Infraestructure.Facturas
             "IF OBJECT_ID(N'" + TABLA + "', N'U') IS NOT NULL " +
             "SELECT " + COLUMNAS + " FROM " + TABLA + " WITH (NOLOCK) WHERE FechaModificacion >= @desde ORDER BY Id";
 
+        /// <summary>
+        /// NestoAPI#828 (carta del cheque): la marca de la carta solo se guarda si la CHECK de Tipo ya la admite
+        /// (Scripts/Issue828b_DocumentosPapelPacking_CartaCheque.sql). Sin el script, ni se intenta: la carta sigue como antes, sin
+        /// marca y sin un error en ELMAH por cada carta.
+        /// </summary>
         internal const string SQL_GUARDAR = @"
 IF OBJECT_ID(N'dbo.DocumentosPapelPacking', N'U') IS NOT NULL
+   AND (@tipo <> 'CartaCheque' OR EXISTS (SELECT 1 FROM sys.check_constraints
+            WHERE parent_object_id = OBJECT_ID(N'dbo.DocumentosPapelPacking') AND name = N'CK_DocumentosPapelPacking_Tipo'
+              AND definition LIKE N'%''CartaCheque''%'))
 BEGIN
     SET XACT_ABORT ON;
     BEGIN TRANSACTION;

@@ -1053,6 +1053,44 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => pasos.Facturar("1", OTRO)).MustHaveHappenedOnceExactly();
         }
 
+        [TestMethod]
+        public async Task Papel828_UnFalloInesperadoDelPapel_NoTumbaLaEtiqueta()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(ConFacturaFisica(PEDIDO, "NV2617986", "HP"));
+            var rota = A.Fake<NestoAPI.Infraestructure.Facturas.IImpresoraPapelPacking>();
+            A.CallTo(() => rota.Aplicacion).Throws(new InvalidOperationException("se ha roto"));
+            servicio.ImpresoraPapel = rota;
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Hecha, resultado.Tipo);
+            Assert.IsTrue(resultado.Etiqueta.Impresa);
+            Assert.IsTrue(resultado.Etiqueta.Avisos.Any(a => a.StartsWith($"La etiqueta está hecha, pero no se ha podido terminar la factura o el papel del pedido {PEDIDO}: se ha roto")));
+            Assert.IsTrue(registrados.Any(r => r.Message.Contains("#828") && r.Message.Contains("se ha roto")));
+        }
+
+        [TestMethod]
+        public async Task Papel828_FacturaYCartaDelCheque_LasDosEnLaCaja()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            FacturarRutasResponseDTO respuesta = ConFacturaFisica(PEDIDO, "NV2617986", "HP");
+            respuesta.CartasChequeRegalo.Add(new CartaChequeRegaloDTO
+            {
+                Empresa = "1", NumeroPedido = PEDIDO, NumeroFactura = "NV2617986",
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 2 }, NumeroCopias = 1, ImpresoEnServidor = "HP" }
+            });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.AreEqual("Meta en la caja la factura NV2617986 y la carta del cheque regalo de la factura NV2617986 (en «HP»).", etiqueta.MeterEnLaCaja);
+            A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>.That.Matches(m => m.Tipo == TiposDocumentoEnPapel.CARTA_CHEQUE && m.Estado == EstadosDocumentoEnPapel.IMPRESO),
+                AplicacionesDocumentoEnPapel.ARIADNA)).MustHaveHappenedOnceExactly();
+        }
+
         // ------------------------------------------------------------ NestoAPI#828 (S3): «Reintentar impresión»
 
         [TestMethod]

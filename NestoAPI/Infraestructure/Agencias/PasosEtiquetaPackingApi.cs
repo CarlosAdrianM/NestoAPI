@@ -172,6 +172,9 @@ namespace NestoAPI.Infraestructure.Agencias
         public Task<DocumentosImpresionPedidoDTO> Regenerar(string empresa, int pedido, string tipo, string documento)
             => Papel.Regenerar(empresa, pedido, tipo, documento);
 
+        public Task<List<CartaChequeRegaloDTO>> RegenerarCartas(string empresa, int pedido, string factura)
+            => Papel.RegenerarCartas(empresa, pedido, factura);
+
         public void Dispose()
         {
             envios.Dispose();

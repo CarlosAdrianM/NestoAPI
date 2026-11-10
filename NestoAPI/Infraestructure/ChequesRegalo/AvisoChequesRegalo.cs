@@ -530,6 +530,26 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             }
         }
 
+        /// <summary>
+        /// NestoAPI#828: el nombre de pila con el que se saluda en la carta al volver a imprimirla (el mismo cálculo que al facturar:
+        /// la persona que recibe las facturas o el cliente, con el tope en línea). Null = «Hola:». Nunca lanza.
+        /// </summary>
+        public async Task<string> NombreDePilaDeLaCarta(string cliente, string empresaFactura, string factura)
+        {
+            try
+            {
+                DestinatarioChequeRegalo destinatario = string.IsNullOrWhiteSpace(cliente)
+                    ? null
+                    : await repositorio.LeerDestinatario(cliente.Trim(), empresaFactura?.Trim(), factura?.Trim()).ConfigureAwait(false);
+                return await NombreDePilaEnLinea(destinatario).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrarError(new Exception($"{CONTEXTO_ERROR_SALUDO} (carta de la factura {factura?.Trim()}): {ex.Message}", ex));
+                return null;
+            }
+        }
+
         private CorreoChequeRegalo ComponerParaEnviar(CampanaCorreoChequeRegalo campana, string nombreDePila)
             => PlantillaCorreoChequeRegalo.Componer(campana, nombreDePila, leerImagen(campana.ImagenCorreo), "cid:" + PlantillaCorreoChequeRegalo.ID_IMAGEN);
 
@@ -810,6 +830,27 @@ ELSE
         WHERE c.EmpresaFactura = @empresa AND c.FacturaOrigen = @factura AND c.Estado = ''Generado''
               AND k.CanjeHasta >= CAST(GETDATE() AS date)',
         N'@empresa char(3), @factura char(10)', @empresa = @p0, @factura = @p1";
+
+        /// <summary>
+        /// NestoAPI#828: los cheques que generó una factura (para volver a imprimir su carta), con las mismas condiciones que al
+        /// facturar salvo el aviso (ya puede estar mandado): Generado, campaña activa y en plazo de canje.
+        /// </summary>
+        internal const string SQL_CHEQUES_DE_FACTURA = @"
+SELECT c.Id, RTRIM(c.Cliente) AS Cliente, RTRIM(c.EmpresaFactura) AS EmpresaFactura, RTRIM(c.FacturaOrigen) AS FacturaOrigen,
+       c.CorreoAviso, RTRIM(k.Codigo) AS Codigo, k.ImporteBase, k.MinimoCanje, CAST(k.CanjeHasta AS datetime) AS CanjeHasta,
+       k.DiasEsperaTrasEntrega, RTRIM(k.ImagenCorreo) AS ImagenCorreo, k.Activa
+FROM dbo.ChequesRegalo c
+     INNER JOIN dbo.ChequesRegaloCampanas k ON k.Codigo = c.Campana
+WHERE c.FacturaOrigen = @p0 AND c.Estado = 'Generado' AND k.Activa = 1
+      AND k.CanjeHasta >= CAST(GETDATE() AS date)
+ORDER BY c.Id";
+
+        /// <summary>NestoAPI#828: los cheques en vigor que generó la factura (de cualquier empresa; quien llama elige).</summary>
+        public async Task<List<ChequeRegaloSinAviso>> LeerChequesDeFactura(string factura)
+            => string.IsNullOrWhiteSpace(factura)
+                ? new List<ChequeRegaloSinAviso>()
+                : await db.Database.SqlQuery<ChequeRegaloSinAviso>(SQL_CHEQUES_DE_FACTURA,
+                    new SqlParameter("@p0", factura.Trim())).ToListAsync().ConfigureAwait(false);
 
         public async Task<bool> ColumnasDisponibles()
             => await db.Database.SqlQuery<bool>(SQL_COLUMNAS_DISPONIBLES).FirstAsync().ConfigureAwait(false);

@@ -191,6 +191,10 @@ namespace NestoAPI.Tests.Controllers
         public async Task ImpresionDocumentoEnPapel_MarcaLoQueHaImpresoNesto()
         {
             IPasosDocumentosEnPapel pasos = PasosPapelFalsos();
+            A.CallTo(() => pasos.LeerMarcas("1", 929914)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>
+            {
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = 929914, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617986", Estado = EstadosDocumentoEnPapel.PENDIENTE }
+            }));
 
             var resultado = await controller.ImpresionDocumentoEnPapel(new ImpresionDocumentoEnPapelDTO
             {
@@ -200,6 +204,39 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(System.Net.HttpStatusCode.NoContent, ((StatusCodeResult)resultado).StatusCode);
             A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>.That.Matches(m => m.Documento == "NV2617986" && m.Estado == EstadosDocumentoEnPapel.IMPRESO
                 && m.Impresora == "HP Agencias"), AplicacionesDocumentoEnPapel.NESTO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ImpresionDocumentoEnPapel_DocumentoQueNoEsDelPedido_400YNoMarca()
+        {
+            IPasosDocumentosEnPapel pasos = PasosPapelFalsos();
+            A.CallTo(() => pasos.LeerMarcas("1", 929914)).ReturnsLazily(() => Task.FromResult(new List<DocumentoEnPapelDTO>
+            {
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = 929914, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2617986", Estado = EstadosDocumentoEnPapel.PENDIENTE }
+            }));
+
+            var resultado = await controller.ImpresionDocumentoEnPapel(new ImpresionDocumentoEnPapelDTO
+            {
+                Empresa = "1", Pedido = 929914, Tipo = TiposDocumentoEnPapel.FACTURA, Documento = "NV2600001", Impreso = true
+            });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "no es del papel del packing del pedido 929914");
+            A.CallTo(() => pasos.Marcar(A<DocumentoEnPapelDTO>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Agencias_LasCartasImpresasNoCuentanComoFacturas_LasPendientesSeDicen()
+        {
+            Marcas(Marca(1, "NV1", EstadosDocumentoEnPapel.IMPRESO),
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = 1, Envio = 7, Tipo = TiposDocumentoEnPapel.CARTA_CHEQUE, Documento = "NV1", Estado = EstadosDocumentoEnPapel.IMPRESO },
+                new DocumentoEnPapelDTO { Empresa = "1", Pedido = 2, Envio = 8, Tipo = TiposDocumentoEnPapel.CARTA_CHEQUE, Documento = "NV2", Estado = EstadosDocumentoEnPapel.PENDIENTE });
+            var response = new FacturarRutasResponseDTO();
+
+            await controller.AnotarPapelDelPacking(response, "AGENCIA");
+
+            StringAssert.StartsWith(response.ResumenPapelPacking, "1 factura en papel ya impresa en el packing.");
+            StringAssert.Contains(response.ResumenPapelPacking, "la carta del cheque regalo de la factura NV2 (pedido 2, envío 8)");
         }
 
         [TestMethod]

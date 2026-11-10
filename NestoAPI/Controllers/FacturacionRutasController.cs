@@ -150,7 +150,8 @@ namespace NestoAPI.Controllers
                 if (tipo?.ImprimeAlCerrarEnvio == true && MarcasPapel != null)
                 {
                     System.Collections.Generic.List<DocumentoEnPapelDTO> marcas = await MarcasPapel.LeerDesde(Hoy().Date).ConfigureAwait(true);
-                    response.ImpresosEnPacking.AddRange(marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.IMPRESO));
+                    // Las cartas del cheque no son documentos de la facturación: no cuentan en «N facturas ya impresas»
+                    response.ImpresosEnPacking.AddRange(marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.IMPRESO && m.Tipo != TiposDocumentoEnPapel.CARTA_CHEQUE));
                     response.PendientesEnPacking.AddRange(marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE));
                 }
                 System.Collections.Generic.List<DocumentoImprimibleDTO> enPapel = DocumentosEnPapelDeLaTanda(response);
@@ -558,7 +559,8 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// NestoAPI#828 (S5): Nesto dice si ha impreso en local un documento en papel de la etiqueta (Impreso true) o no (false, con el
         /// motivo): la marca queda «Impreso» (Facturar rutas lo cuenta) o «Pendiente» (repetir la etiqueta lo devuelve otra vez).
-        /// 204; 400 sin pedido o documento. Mismos permisos que FacturarPedido.
+        /// 204; 400 sin pedido o documento, o si el documento no es del papel del packing de ese pedido (no tiene su marca). Mismos
+        /// permisos que FacturarPedido.
         /// </summary>
         [HttpPost]
         [Route("DocumentosEnPapel/Impresion")]
@@ -573,7 +575,10 @@ namespace NestoAPI.Controllers
             IPasosDocumentosEnPapel pasos = CrearPasosPapel(User, false);
             try
             {
-                await new DocumentosEnPapelDelEnvio(pasos, new ImpresoraPapelPackingLocal()).MarcarImpresionLocal(impresion);
+                if (!await new DocumentosEnPapelDelEnvio(pasos, new ImpresoraPapelPackingLocal()).MarcarImpresionLocal(impresion))
+                {
+                    return BadRequest($"El documento {impresion.Documento.Trim()} no es del papel del packing del pedido {impresion.Pedido}.");
+                }
                 return StatusCode(HttpStatusCode.NoContent);
             }
             finally
