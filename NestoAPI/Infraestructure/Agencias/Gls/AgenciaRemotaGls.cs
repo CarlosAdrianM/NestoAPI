@@ -122,11 +122,11 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             return new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Tramitado, Detalle = Valor(exp, "estado") };
         }
 
-        private static string Valor(XElement elemento, string nombreLocal)
+        internal static string Valor(XElement elemento, string nombreLocal)
             => elemento.Elements().FirstOrDefault(e => e.Name.LocalName == nombreLocal)?.Value?.Trim();
 
         // Fechas de GLS: "dd/MM/yyyy H:mm:ss" (hora sin cero a la izquierda). es-ES lo parsea flexible.
-        private static DateTime? ParsearFecha(string texto)
+        internal static DateTime? ParsearFecha(string texto)
         {
             if (string.IsNullOrWhiteSpace(texto)) return null;
             return DateTime.TryParse(texto, new CultureInfo("es-ES"), DateTimeStyles.None, out DateTime fecha)

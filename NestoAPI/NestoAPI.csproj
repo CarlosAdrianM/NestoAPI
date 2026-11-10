@@ -718,6 +718,10 @@
     <Compile Include="Infraestructure\Agencias\CierreManualEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\AgenciaRemotaCTT.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\ClienteRestCTT.cs" />
+    <Compile Include="Infraestructure\Agencias\CTT\PruebaEntregaCTT.cs" />
+    <Compile Include="Infraestructure\Agencias\PruebasEntrega\DescargadorDocumentosPruebaEntrega.cs" />
+    <Compile Include="Infraestructure\Agencias\PruebasEntrega\ProveedorPruebaEntrega.cs" />
+    <Compile Include="Infraestructure\Agencias\PruebasEntrega\ServicioPruebasEntrega.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\ConfiguracionCTT.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\MapeadorTipoServicioCTT.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\NormalizadorZplCTT.cs" />
@@ -733,6 +737,7 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorTipoServicioDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\AgenciaRemotaInnovatrans.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\AgenciaRemotaGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\PruebaEntregaGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\ComparadorPeticionesGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\PeticionGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\SombraPeticionesGls.cs" />
@@ -792,6 +797,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.OrdenSugerido.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.HorarioPreferible.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Firmas.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\PruebaEntregaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\TextoConformidadEntrega.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SelloFirmaEntrega.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\GeocodificacionInversa.cs" />
@@ -930,6 +936,7 @@
     <Compile Include="Models\Agencias\PropuestaEnvioDTO.cs" />
     <Compile Include="Models\Agencias\EnvioDesdePedidoDTO.cs" />
     <Compile Include="Models\Agencias\EtiquetaPackingDTO.cs" />
+    <Compile Include="Models\Agencias\PruebaEntregaEnvioDTO.cs" />
     <Compile Include="Models\Agencias\RepartoPropioDTO.cs" />
     <Compile Include="Models\Agencias\FurgonetaRepartoDTO.cs" />
     <Compile Include="Models\Agencias\EnlaceSeguimientoRepartoPropio.cs" />
@@ -1373,6 +1380,7 @@
     <Compile Include="Infraestructure\Ubicaciones\RegistroMovimientosUbicacionSql.cs" />
     <Compile Include="Infraestructure\Ubicaciones\RepositorioCuadreUbicaciones.cs" />
     <Compile Include="Controllers\EventosController.cs" />
+    <Compile Include="Controllers\PruebasEntregaController.cs" />
     <Compile Include="Controllers\RepartoPropioController.cs" />
     <Compile Include="Controllers\RepartoPropioCobrosController.cs" />
     <Compile Include="Controllers\HorarioPreferibleController.cs" />

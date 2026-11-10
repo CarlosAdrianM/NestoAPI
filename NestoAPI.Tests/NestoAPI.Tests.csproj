@@ -532,6 +532,7 @@
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaInnovatransTests.cs" />
     <Compile Include="Infrastructure\Agencias\CanalizadorPoblacionDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaGlsTests.cs" />
+    <Compile Include="Infrastructure\Agencias\PruebasEntregaTests.cs" />
     <Compile Include="Infrastructure\Agencias\PeticionGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\SombraPeticionesGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\TramitadorGlsTests.cs" />

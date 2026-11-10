@@ -337,6 +337,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Propuesto por usuario (dato, no código): ParametrosUsuario «OrigenClientePorDefecto» (empresa 1; fila del usuario o «(defecto)»,
   vacía = sin propuesta; no se crea fila al leer). `GET api/Clientes/Origenes` marca `PropuestoParaElUsuario`; Nesto lo preselecciona en el alta.
 
+### Prueba de entrega de cualquier agencia (10/11/26)
+- `GET api/EnviosAgencias/{id}/PruebaEntrega` (`PruebasEntregaController`, permisos de `PermisosRepartoPropio.PuedeVerDatosPersonales`):
+  siempre 200 con `PruebaEntregaEnvioDTO` (Disponible false + Mensaje si no hay: agencia sin prueba, sin entregar, la agencia
+  falla); 403 sin permiso, 404 si no existe. Documento en base64 + TipoDocumento, o UrlDocumento. Nunca se guarda copia: se pide
+  a la agencia en cada consulta. `GET api/RepartoPropio/Envios/{id}/PruebaEntrega` y `…/Firma` siguen igual.
+- `ServicioPruebasEntrega` resuelve el proveedor por la agencia en el registro de perfiles SIN puerta y convierte cualquier fallo
+  en mensaje (ELMAH). Proveedores: `PruebaEntregaRepartoPropio` (la de Ariadna + firma PNG), `PruebaEntregaCTT` (`cls/pods/{código}`
+  con hash MD5 de código + centro + CP destino; receptor del evento 2100 del seguimiento), `PruebaEntregaGls` (GetExpCli: pod,
+  NombreEntrega, DniEntrega y la imagen de la digitalización «POD», que hoy es un JPEG y se trae desde el servidor).
+- **Agencia nueva** = una clase `IProveedorPruebaEntrega` + `IPerfilConPruebaEntrega` en su perfil (`PerfilesAgencias.cs`). Ni el
+  endpoint ni Nesto cambian (Nesto: `MostradorPruebaEntrega` en ControlesUsuario, en Agencias › Tramitados y en el detalle del pedido).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

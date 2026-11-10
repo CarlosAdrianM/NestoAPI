@@ -74,9 +74,14 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// Agencias:GlsTramitarPorApi, a medias en la API); desde NestoAPI#552 (fase 3) sí ANULA por la API, detrás de
     /// Agencias:GlsAnularPorApi (apagado).
     /// </summary>
-    public class PerfilAgenciaGls : IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios, IPerfilConAnulacionRemota
+    public class PerfilAgenciaGls : IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios, IPerfilConAnulacionRemota, IPerfilConPruebaEntrega
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_GLS;
+
+        /// <summary>Prueba de entrega por agencia (10/11/26): de la misma consulta GetExpCli que el seguimiento.</summary>
+        public PruebasEntrega.IProveedorPruebaEntrega CrearPruebaEntrega(NVEntities db)
+            => new PruebaEntregaGls(new ClienteTrackingGls(ConfigurationManager.AppSettings["GLS:UidSeguimiento"]),
+                new PruebasEntrega.DescargadorDocumentosPruebaEntrega());
 
         /// <summary>NestoAPI#552 (fase 3): el interruptor (Web.config, apagado por defecto). Sustituible en los tests.</summary>
         internal Func<bool> AnularPorApi { get; set; } = InterruptorAnulacionGls.EstaActivo;
@@ -160,9 +165,13 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// = 1): la puerta de activas la deja fuera, así que este perfil no se usa hasta que salga a
     /// producción (checklist en la issue). Config: Web.config CTT:* y secretos.config CTTClientId/Secret.
     /// </summary>
-    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConReglasDestino, IPerfilConCatalogoServicios
+    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConReglasDestino, IPerfilConCatalogoServicios,
+        IPerfilConPruebaEntrega
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CTT;
+
+        /// <summary>Prueba de entrega por agencia (10/11/26): el justificante de la API de POD de CTT (cls/pods), con el mismo token.</summary>
+        public PruebasEntrega.IProveedorPruebaEntrega CrearPruebaEntrega(NVEntities db) => PruebaEntregaCTT.DeProduccion();
 
         // NestoAPI#546: AgenciaCTT.vb. El servicio 0 («sin elegir») es el de los envíos de antes de #505
         // y MapeadorTipoServicioCTT lo trata como 48 h al registrar: se sigue admitiendo.
@@ -250,9 +259,17 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// repartidor desde Ariadna (api/RepartoPropio). Con el interruptor Agencias:RepartoPropio apagado, no hay gestión remota
     /// (Tramitar da el 400 de siempre).
     /// </summary>
-    public class PerfilAgenciaRepartoPropio : IPerfilConGestionRemota, IPerfilSinCanalesExternos
+    public class PerfilAgenciaRepartoPropio : IPerfilConGestionRemota, IPerfilSinCanalesExternos, IPerfilConPruebaEntrega
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+
+        /// <summary>
+        /// Prueba de entrega por agencia (10/11/26): la que registró Ariadna (la misma de api/RepartoPropio/Envios/{id}/PruebaEntrega).
+        /// Sin interruptor: las pruebas ya registradas se ven siempre.
+        /// </summary>
+        public PruebasEntrega.IProveedorPruebaEntrega CrearPruebaEntrega(NVEntities db)
+            => new RepartoPropio.PruebaEntregaRepartoPropio(new RepartoPropio.ServicioRepartoPropio(new RepartoPropio.RepositorioRepartoPropio(db),
+                firmas: RepartoPropio.DependenciasFirmasReparto.DeProduccion()));
 
         /// <summary>El interruptor (Web.config). Sustituible en los tests.</summary>
         internal Func<bool> Activo { get; set; } = RepartoPropio.InterruptorRepartoPropio.EstaActivo;

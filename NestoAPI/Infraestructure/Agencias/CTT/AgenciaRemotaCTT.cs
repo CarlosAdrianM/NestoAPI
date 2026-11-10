@@ -970,7 +970,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             return sb.ToString();
         }
 
-        private static DateTime? LeerFecha(string iso)
+        internal static DateTime? LeerFecha(string iso)
         {
             return DateTime.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime f)
                 ? f.ToLocalTime()

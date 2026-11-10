@@ -72,6 +72,17 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>
+    /// Prueba de entrega por agencia (10/11/26): la agencia da la prueba de entrega de sus envíos (fecha, quién recibe, DNI y el
+    /// justificante o la firma), pedida en el momento. Hoy el reparto propio, CTT y GLS. Para otra agencia: su clase
+    /// <see cref="PruebasEntrega.IProveedorPruebaEntrega"/> y esta capacidad en su perfil; ni el endpoint ni Nesto cambian.
+    /// Se consulta en el registro SIN puerta: la prueba de un envío ya entregado se ve aunque la agencia esté en cuarentena.
+    /// </summary>
+    public interface IPerfilConPruebaEntrega : IPerfilAgencia
+    {
+        PruebasEntrega.IProveedorPruebaEntrega CrearPruebaEntrega(NVEntities db);
+    }
+
+    /// <summary>
     /// NestoAPI#739: la agencia no sirve pedidos de Amazon: no tiene código en Amazon (su enlace de seguimiento es nuestra
     /// propia página, NestoAPI#744). Hoy, el reparto propio (rutas AT y 16). La guardia de cobertura de seguimiento
     /// (CoberturaSeguimientoAgenciasTests) no le exige los datos de Amazon. NestoAPI#804: la tienda online SÍ (un cliente

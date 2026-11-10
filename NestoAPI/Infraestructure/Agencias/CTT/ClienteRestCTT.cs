@@ -119,6 +119,37 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
     }
 
     /// <summary>
+    /// Prueba de entrega por agencia (10/11/26): una respuesta de CTT que NO es JSON (hoy el justificante de entrega en PDF de cls/pods), leída en bytes.
+    /// Como <see cref="RespuestaCTT"/>: los 4xx no lanzan (vienen aquí con <see cref="Exito"/> a false y el texto del
+    /// cuerpo en <see cref="Error"/>); los 5xx y los fallos de transporte lanzan <see cref="AgenciaRemotaException"/>.
+    /// </summary>
+    public class RespuestaBinariaCTT
+    {
+        public int Codigo { get; set; }
+        /// <summary>El Content-Type sin parámetros (p. ej. «application/pdf»), en minúsculas; null si no viene.</summary>
+        public string TipoContenido { get; set; }
+        public byte[] Contenido { get; set; }
+        public bool Exito => Codigo >= 200 && Codigo <= 299;
+
+        /// <summary>El motivo de CTT (el cuerpo como texto, como en <see cref="RespuestaCTT.Error"/>); null si hay éxito.</summary>
+        public string Error
+        {
+            get
+            {
+                if (Exito) return null;
+                string texto = Contenido == null || Contenido.Length == 0 ? string.Empty : Encoding.UTF8.GetString(Contenido);
+                return new RespuestaCTT { Codigo = Codigo, Cuerpo = texto }.Error;
+            }
+        }
+    }
+
+    /// <summary>Prueba de entrega por agencia (10/11/26): un GET autenticado contra CTT que devuelve bytes (PDF), no JSON.</summary>
+    public interface IDescargaBinariaCTT
+    {
+        Task<RespuestaBinariaCTT> DescargarAsync(string rutaRelativa, string operacion);
+    }
+
+    /// <summary>
     /// Token OAuth2 (client_credentials) de CTT, compartido por proceso y por credencial. CTT pide
     /// expresamente UN token al día: dura 24 h y con él se hacen todas las llamadas. Se renueva
     /// solo cuando quedan menos de <see cref="MARGEN_RENOVACION"/> para caducar, o cuando la API
@@ -218,7 +249,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
     /// transporte a <see cref="AgenciaRemotaException"/>. Un 401 invalida el token cacheado y
     /// reintenta UNA vez con token nuevo.
     /// </summary>
-    public class ClienteRestCTT : IClienteRestCTT
+    public class ClienteRestCTT : IClienteRestCTT, IDescargaBinariaCTT
     {
         private static readonly HttpClient HttpCompartido = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
 
@@ -289,6 +320,61 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
 
             return new RespuestaCTT { Codigo = codigo, Cuerpo = cuerpoRespuesta, ReintentarTras = LeerRetryAfter(http) };
+        }
+
+        /// <summary>
+        /// Prueba de entrega por agencia (10/11/26): GET con Bearer que devuelve bytes (el justificante de entrega en PDF). Mismo trato que
+        /// <see cref="EnviarAsync"/>: un 401 renueva el token y repite una vez; 5xx y transporte lanzan. En la auditoría queda el
+        /// tamaño y el tipo, nunca el documento (lleva la firma y el DNI de quien recibe).
+        /// </summary>
+        public async Task<RespuestaBinariaCTT> DescargarAsync(string rutaRelativa, string operacion)
+        {
+            string token = await ProveedorTokenCTT.ObtenerAsync(_config, _http, _registro).ConfigureAwait(false);
+            RespuestaBinariaCTT respuesta = await DescargarConTokenAsync(rutaRelativa, operacion, token).ConfigureAwait(false);
+            if (respuesta.Codigo == (int)HttpStatusCode.Unauthorized)
+            {
+                ProveedorTokenCTT.Invalidar(_config);
+                token = await ProveedorTokenCTT.ObtenerAsync(_config, _http, _registro).ConfigureAwait(false);
+                respuesta = await DescargarConTokenAsync(rutaRelativa, operacion, token).ConfigureAwait(false);
+            }
+            return respuesta;
+        }
+
+        private async Task<RespuestaBinariaCTT> DescargarConTokenAsync(string rutaRelativa, string operacion, string token)
+        {
+            string url = _config.UrlBase + rutaRelativa.TrimStart('/');
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            HttpResponseMessage http;
+            byte[] contenido;
+            try
+            {
+                http = await _http.SendAsync(request).ConfigureAwait(false);
+                contenido = http.Content == null ? new byte[0] : await http.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex)
+            {
+                _registro?.Registrar(operacion, url, string.Empty, "ERROR: " + ex.Message);
+                throw new AgenciaRemotaException($"CTT ({operacion}): no se pudo conectar: {ex.Message}", ex) { EsTransitoria = true };
+            }
+            catch (TaskCanceledException ex)
+            {
+                _registro?.Registrar(operacion, url, string.Empty, "ERROR: timeout");
+                throw new AgenciaRemotaException($"CTT ({operacion}): la petición agotó el tiempo de espera.", ex) { EsTransitoria = true };
+            }
+
+            int codigo = (int)http.StatusCode;
+            string tipo = http.Content?.Headers?.ContentType?.MediaType?.Trim().ToLowerInvariant();
+            var respuesta = new RespuestaBinariaCTT { Codigo = codigo, TipoContenido = tipo, Contenido = contenido };
+            _registro?.Registrar(operacion, url, string.Empty, respuesta.Exito
+                ? $"HTTP {codigo}: {tipo} de {contenido.Length} bytes"
+                : $"HTTP {codigo}: {respuesta.Error}");
+            if (codigo >= 500)
+            {
+                throw new AgenciaRemotaException($"CTT ({operacion}) respondió HTTP {codigo}: {respuesta.Error}") { EsTransitoria = true };
+            }
+            return respuesta;
         }
 
         /// <summary>
