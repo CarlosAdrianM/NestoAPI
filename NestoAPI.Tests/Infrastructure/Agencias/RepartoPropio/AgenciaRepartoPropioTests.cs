@@ -82,7 +82,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 StringAssert.Contains(zpl, "^BCN,200,Y,N,N^FDRP251300-" + i + "^FS", "Code128 del bulto " + i);
                 StringAssert.Contains(zpl, "^FDBulto " + i + "/3^FS");
             }
-            Assert.AreEqual(3, Regex.Matches(zpl, @"\^GFA,04448,04448,00032,").Count, "El logo en cada etiqueta");
+            Assert.AreEqual(3, Regex.Matches(zpl, Regex.Escape("^FO20,15" + LogoZplNuevaVision.CABECERA)).Count, "El logo en cada etiqueta");
             StringAssert.Contains(zpl, "^CI27");
             StringAssert.Contains(zpl, "Pedido: 928000");
             StringAssert.Contains(zpl, "Fecha: 29/10/2026");
@@ -91,6 +91,23 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             StringAssert.Contains(zpl, "Tel.: 916281914 / 600123456");
             StringAssert.Contains(zpl, "PELUQUERÍA  LA  BONITA", "^ y ~ fuera: romperían la ZPL");
             Assert.IsFalse(zpl.Contains("REEMBOLSO"), "Sin reembolso no sale");
+        }
+
+        // Regresión (Carlos 10/11/26): la etiqueta salía con el logo de SENDING, copiado de su etiqueta de Nesto como si fuera
+        // el nuestro. El gráfico tiene que ser el de Nueva Visión, estar bien formado y caber en su hueco (a la izquierda del
+        // título, que empieza en x = 300, y por encima de la raya de y = 165).
+        [TestMethod]
+        public void Logo_EsElDeNuevaVisionBienFormadoYCabeEnSuHueco()
+        {
+            Assert.IsFalse(LogoZplNuevaVision.GRAFICO.Contains("^GFA,04448,04448,00032,"), "Ese era el logo de Sending");
+            int bytes = LogoZplNuevaVision.BYTES_POR_FILA * LogoZplNuevaVision.ALTO;
+            Assert.AreEqual("^GFA," + bytes + "," + bytes + "," + LogoZplNuevaVision.BYTES_POR_FILA + ",", LogoZplNuevaVision.CABECERA);
+            Assert.AreEqual(bytes * 2, LogoZplNuevaVision.DATOS.Length, "Dos cifras hexadecimales por byte, sin comprimir");
+            Assert.IsTrue(Regex.IsMatch(LogoZplNuevaVision.DATOS, "^[0-9A-F]+$"), "Solo hexadecimal: ni ^ ni ~ ni comas");
+            Assert.AreEqual(LogoZplNuevaVision.BYTES_POR_FILA * 8, LogoZplNuevaVision.ANCHO);
+            Assert.IsTrue(20 + LogoZplNuevaVision.ANCHO < 300, "No pisa el título");
+            Assert.IsTrue(15 + LogoZplNuevaVision.ALTO < 165, "No pisa la raya");
+            Assert.IsTrue(LogoZplNuevaVision.DATOS.Trim('0').Length > 0, "No está en blanco");
         }
 
         [TestMethod]
