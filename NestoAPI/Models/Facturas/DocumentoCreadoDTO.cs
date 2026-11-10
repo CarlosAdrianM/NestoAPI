@@ -30,5 +30,11 @@ namespace NestoAPI.Models.Facturas
         /// Nombre del cliente
         /// </summary>
         public string NombreCliente { get; set; }
+
+        /// <summary>
+        /// NestoAPI#828 (S4): en Facturar rutas, el envío del pedido (el último) de los documentos que salen en papel, para localizar
+        /// la caja. Null si no tiene envío o no se ha mirado.
+        /// </summary>
+        public int? Envio { get; set; }
     }
 }

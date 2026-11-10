@@ -275,6 +275,7 @@
     <Compile Include="Infrastructure\Seguridad\SeguridadTanda1Tests.cs" />
     <Compile Include="Controllers\AutorizacionControllersTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />
+    <Compile Include="Controllers\FacturacionRutasControllerPapelPackingTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerTests.cs" />
     <Compile Include="Controllers\ErroresControllerTests.cs" />
     <Compile Include="Controllers\EmpresaJsonContratoTests.cs" />

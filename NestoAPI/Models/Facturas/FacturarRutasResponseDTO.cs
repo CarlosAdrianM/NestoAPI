@@ -19,6 +19,8 @@ namespace NestoAPI.Models.Facturas
             ErroresPorPO = new List<string>();
             ReembolsosDesfasados = new List<ReembolsoDesfasadoDTO>();
             CartasChequeRegalo = new List<CartaChequeRegaloDTO>();
+            ImpresosEnPacking = new List<DocumentoEnPapelDTO>();
+            PendientesEnPacking = new List<DocumentoEnPapelDTO>();
         }
 
         /// <summary>
@@ -79,6 +81,24 @@ namespace NestoAPI.Models.Facturas
         /// interruptor de impresión en servidor salen detrás de su factura.
         /// </summary>
         public List<CartaChequeRegaloDTO> CartasChequeRegalo { get; set; }
+
+        /// <summary>
+        /// NestoAPI#828 (S4): en Facturar rutas de agencias, los documentos en papel que ya salieron hoy en el packing (al hacer la
+        /// etiqueta): no entran en esta tanda. Vacía en la ruta propia o sin la tabla dbo.DocumentosPapelPacking.
+        /// </summary>
+        public List<DocumentoEnPapelDTO> ImpresosEnPacking { get; set; }
+
+        /// <summary>
+        /// NestoAPI#828 (S4): los documentos en papel de hoy que NO salieron en el packing (la impresora falló): con su pedido y su
+        /// envío, para reimprimirlos (repetir la etiqueta, «Reintentar impresión» en Ariadna) o meterlos en la caja.
+        /// </summary>
+        public List<DocumentoEnPapelDTO> PendientesEnPacking { get; set; }
+
+        /// <summary>
+        /// NestoAPI#828 (S4): el resumen para el usuario: «3 facturas en papel ya impresas en el packing.», lo pendiente del packing
+        /// y lo que sale en esta tanda con su envío para localizar la caja. Null si no hay nada que decir.
+        /// </summary>
+        public string ResumenPapelPacking { get; set; }
 
         // Propiedades de conveniencia para contadores (compatibilidad con código existente)
 

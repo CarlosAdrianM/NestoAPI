@@ -42,6 +42,9 @@ namespace NestoAPI.Controllers
             servicioPedidos = new ServicioPedidosParaFacturacion(db);
             servicioAgruparPorPO = CrearServicioAgruparPorPO(db);
             servicioFinDeMes = CrearServicioFinDeMes(db);
+            // NestoAPI#828: solo en producción (en los tests no se toca la BD si no se ponen)
+            MarcasPapel = new RepositorioDocumentosPapelPacking();
+            EnviosDePedidos = LeerEnviosDePedidos;
         }
 
         /// <summary>
@@ -113,6 +116,115 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(new Exception($"NestoAPI#810: no se han podido comprobar los reembolsos del reparto propio de los pedidos " +
                     $"{string.Join(", ", response.Facturas.Select(f => f.NumeroPedido).Distinct())}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>NestoAPI#828: las marcas del papel del packing (null = no se miran; en los tests, si no se ponen).</summary>
+        internal IRepositorioDocumentosPapelPacking MarcasPapel { get; set; }
+
+        /// <summary>NestoAPI#828: pedidos → su último envío (null = no se miran; en los tests, si no se pone).</summary>
+        internal Func<System.Collections.Generic.List<int>, Task<System.Collections.Generic.Dictionary<int, int>>> EnviosDePedidos { get; set; }
+
+        private async Task<System.Collections.Generic.Dictionary<int, int>> LeerEnviosDePedidos(System.Collections.Generic.List<int> pedidos)
+        {
+            var envios = await System.Data.Entity.QueryableExtensions.ToListAsync(db.EnviosAgencias
+                .Where(e => e.Pedido.HasValue && pedidos.Contains(e.Pedido.Value))
+                .Select(e => new { Pedido = e.Pedido.Value, e.Numero })).ConfigureAwait(true);
+            return envios.GroupBy(e => e.Pedido).ToDictionary(g => g.Key, g => g.Max(e => e.Numero));
+        }
+
+        /// <summary>
+        /// NestoAPI#828 (S4): en Facturar rutas de agencias, lo del packing de hoy (lo ya impreso y lo pendiente) y el envío de cada
+        /// documento que sale en papel en esta tanda (para localizar la caja), con su resumen. Nunca hace fallar la facturación.
+        /// </summary>
+        internal async Task AnotarPapelDelPacking(FacturarRutasResponseDTO response, string tipoRuta)
+        {
+            if (response == null)
+            {
+                return;
+            }
+            try
+            {
+                ITipoRuta tipo = TipoRutaFactory.ObtenerTodosLosTipos()
+                    .FirstOrDefault(t => string.Equals(t.Id, tipoRuta?.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (tipo?.ImprimeAlCerrarEnvio == true && MarcasPapel != null)
+                {
+                    System.Collections.Generic.List<DocumentoEnPapelDTO> marcas = await MarcasPapel.LeerDesde(Hoy().Date).ConfigureAwait(true);
+                    response.ImpresosEnPacking.AddRange(marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.IMPRESO));
+                    response.PendientesEnPacking.AddRange(marcas.Where(m => m.Estado == EstadosDocumentoEnPapel.PENDIENTE));
+                }
+                System.Collections.Generic.List<DocumentoImprimibleDTO> enPapel = DocumentosEnPapelDeLaTanda(response);
+                if (enPapel.Any() && EnviosDePedidos != null)
+                {
+                    System.Collections.Generic.Dictionary<int, int> envios = await EnviosDePedidos(enPapel.Select(d => d.NumeroPedido).Distinct().ToList()).ConfigureAwait(true);
+                    foreach (DocumentoImprimibleDTO documento in enPapel)
+                    {
+                        if (envios != null && envios.TryGetValue(documento.NumeroPedido, out int envio))
+                        {
+                            documento.Envio = envio;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#828: no se ha podido anotar el papel del packing en Facturar rutas: {ex.Message}", ex));
+            }
+            response.ResumenPapelPacking = ResumenPapelPacking(response);
+        }
+
+        /// <summary>Los documentos de la tanda que salen en papel (con copias).</summary>
+        internal static System.Collections.Generic.List<DocumentoImprimibleDTO> DocumentosEnPapelDeLaTanda(FacturarRutasResponseDTO response)
+            => (response.Facturas ?? new System.Collections.Generic.List<FacturaCreadaDTO>()).Cast<DocumentoImprimibleDTO>()
+                .Concat(response.Albaranes ?? new System.Collections.Generic.List<AlbaranCreadoDTO>())
+                .Concat(response.NotasEntrega ?? new System.Collections.Generic.List<NotaEntregaCreadaDTO>())
+                .Where(d => d?.DatosImpresion != null && d.DatosImpresion.NumeroCopias > 0)
+                .ToList();
+
+        /// <summary>
+        /// NestoAPI#828 (decisión 3): «3 facturas en papel ya impresas en el packing.», lo pendiente del packing y lo que sale en esta
+        /// tanda, cada uno con su pedido y su envío. Null si no hay nada que decir.
+        /// </summary>
+        internal static string ResumenPapelPacking(FacturarRutasResponseDTO response)
+        {
+            var lineas = new System.Collections.Generic.List<string>();
+            System.Collections.Generic.List<DocumentoEnPapelDTO> impresos = response.ImpresosEnPacking ?? new System.Collections.Generic.List<DocumentoEnPapelDTO>();
+            if (impresos.Any())
+            {
+                bool facturas = impresos.All(d => d.Tipo == TiposDocumentoEnPapel.FACTURA);
+                lineas.Add(impresos.Count == 1
+                    ? (facturas ? "1 factura en papel ya impresa en el packing." : "1 documento en papel ya impreso en el packing.")
+                    : (facturas ? $"{impresos.Count} facturas en papel ya impresas en el packing." : $"{impresos.Count} documentos en papel ya impresos en el packing."));
+            }
+            System.Collections.Generic.List<DocumentoEnPapelDTO> pendientes = response.PendientesEnPacking ?? new System.Collections.Generic.List<DocumentoEnPapelDTO>();
+            if (pendientes.Any())
+            {
+                lineas.Add($"Sin imprimir en el packing ({pendientes.Count}): " +
+                    string.Join("; ", pendientes.Select(d => $"{d.Descripcion} ({DondeEsta(d.Pedido, d.Envio)})")) +
+                    ". Repita la etiqueta del envío o «Reintentar impresión» en Ariadna, o imprímalas desde Nesto.");
+            }
+            System.Collections.Generic.List<DocumentoImprimibleDTO> tanda = DocumentosEnPapelDeLaTanda(response);
+            if (tanda.Any())
+            {
+                lineas.Add($"En papel en esta facturación ({tanda.Count}): " + string.Join("; ", tanda.Select(d =>
+                    $"{DescripcionDe(d)} ({DondeEsta(d.NumeroPedido, d.Envio)})")) + ".");
+            }
+            return lineas.Any() ? string.Join(Environment.NewLine, lineas) : null;
+        }
+
+        private static string DondeEsta(int pedido, int? envio)
+            => envio.HasValue && envio.Value > 0 ? $"pedido {pedido}, envío {envio.Value}" : $"pedido {pedido}, sin envío";
+
+        private static string DescripcionDe(DocumentoImprimibleDTO documento)
+        {
+            switch (documento)
+            {
+                case FacturaCreadaDTO f:
+                    return TiposDocumentoEnPapel.Descripcion(TiposDocumentoEnPapel.FACTURA, f.NumeroFactura);
+                case AlbaranCreadoDTO a:
+                    return TiposDocumentoEnPapel.Descripcion(TiposDocumentoEnPapel.ALBARAN, a.NumeroAlbaran.ToString(CultureInfo.InvariantCulture));
+                default:
+                    return TiposDocumentoEnPapel.Descripcion(TiposDocumentoEnPapel.NOTA_ENTREGA, documento.NumeroPedido.ToString(CultureInfo.InvariantCulture));
             }
         }
 
@@ -289,6 +401,7 @@ namespace NestoAPI.Controllers
                 {
                     var responseVacio = new FacturarRutasResponseDTO();
                     VolcarResultadoPO(resultadoPO, responseVacio);
+                    await AnotarPapelDelPacking(responseVacio, request.TipoRuta);
                     return Ok(responseVacio);
                 }
 
@@ -296,6 +409,7 @@ namespace NestoAPI.Controllers
                 var response = await CrearGestor().FacturarRutas(pedidos, usuario, fechaDesde);
                 VolcarResultadoPO(resultadoPO, response);
                 await AnotarReembolsosDesfasados(response);
+                await AnotarPapelDelPacking(response, request.TipoRuta);
 
                 return Ok(response);
             }
