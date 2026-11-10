@@ -402,6 +402,7 @@ namespace NestoAPI.Infraestructure.Agencias
                     }
                     else
                     {
+                        entrega = entrega ?? await LeerEntregaSegura(pasos, empresa, pedido);
                         await PapelDelEnvio(pasos, envio, pedido, entrega, etiqueta, usuarioAuditoria);
                     }
                 }
@@ -436,14 +437,25 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
-        /// NestoAPI#828: el papel del pedido del envío con el núcleo común (<see cref="DocumentosEnPapelDelEnvio"/>): la factura física
-        /// impresa en el servidor y, si no ha salido, pendiente para repetir F8 (sin volver a facturar).
+        /// NestoAPI#828: el papel de la entrega con el núcleo común (<see cref="DocumentosEnPapelDelEnvio"/>): el pedido del envío y los
+        /// demás de la misma entrega (servir junto, una factura por pedido; los retenidos no), la factura física impresa en el servidor
+        /// y, si no ha salido, pendiente para «Reintentar impresión» o repetir F8 (sin volver a facturar).
         /// </summary>
         private async Task PapelDelEnvio(IPasosEtiquetaPacking pasos, EnviosAgencia envio, int pedido, EntregaParaEtiqueta entrega,
             EtiquetaPackingDTO etiqueta, string usuarioAuditoria)
         {
             string empresa = string.IsNullOrWhiteSpace(envio.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : envio.Empresa.Trim();
             var pedidos = new List<int> { pedido };
+            foreach (int otro in (entrega?.OtrosPedidos ?? new List<int>()).Where(p => p > 0 && p != pedido).Distinct())
+            {
+                string motivo = await MotivoRetenidoSeguro(empresa, otro);
+                if (motivo != null)
+                {
+                    etiqueta.Avisos.Add($"El pedido {otro} de la misma entrega no se factura al imprimir la etiqueta: {motivo.Trim()}");
+                    continue;
+                }
+                pedidos.Add(otro);
+            }
 
             ResultadoDocumentosEnPapel papel = await Nucleo(pasos).Procesar(new PeticionDocumentosEnPapel
             {
@@ -501,6 +513,33 @@ namespace NestoAPI.Infraestructure.Agencias
             string documentos = string.Join(" y ", impresos.Select(d => d.Descripcion));
             List<string> impresoras = impresos.Select(d => d.Impresora?.Trim()).Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
             return $"Meta en la caja {documentos}" + (impresoras.Any() ? $" (en «{string.Join("», «", impresoras)}»)." : ".");
+        }
+
+        private async Task<EntregaParaEtiqueta> LeerEntregaSegura(IPasosEtiquetaPacking pasos, string empresa, int pedido)
+        {
+            try
+            {
+                return await pasos.LeerEntrega(empresa, pedido);
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[NestoAPI#828] No se ha podido leer la entrega del pedido {pedido} en el packing: solo se factura ese pedido. {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>Si no se puede saber si el otro pedido de la entrega está retenido, no se factura (lo prudente).</summary>
+        private async Task<string> MotivoRetenidoSeguro(string empresa, int pedido)
+        {
+            try
+            {
+                return await MotivoPedidoRetenido(empresa, pedido, false);
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[NestoAPI#828] No se ha podido saber si el pedido {pedido} está retenido: no se factura al imprimir. {ex.Message}", ex));
+                return "no se ha podido comprobar si está retenido. Factúrelo desde Nesto.";
+            }
         }
 
         /// <summary>

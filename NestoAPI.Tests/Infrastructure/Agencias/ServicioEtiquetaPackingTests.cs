@@ -984,5 +984,73 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
             Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("no se factura al imprimir la etiqueta") && a.Contains("Facturar rutas")));
         }
+        // ------------------------------------------------------------ NestoAPI#828 (S2): toda la entrega (servir junto)
+
+        private const int OTRO = 926941;
+        private const int TERCERO = 926942;
+
+        [TestMethod]
+        public async Task Papel828_Entrega_FacturaTodosLosPedidos_UnaFacturaPorPedido()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, OtrosPedidos = new List<int> { OTRO } });
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(ConFacturaFisica(PEDIDO, "NV2617986", "HP"));
+            A.CallTo(() => pasos.Facturar("1", OTRO)).Returns(ConFacturaFisica(OTRO, "NV2617987", "HP"));
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => pasos.Facturar("1", OTRO)).MustHaveHappenedOnceExactly());
+            CollectionAssert.AreEqual(new List<int> { PEDIDO, OTRO }, etiqueta.PedidosFacturados);
+            Assert.AreEqual(2, etiqueta.DocumentosEnPapel.Count);
+            Assert.AreEqual("Meta en la caja la factura NV2617986 y la factura NV2617987 (en «HP»).", etiqueta.MeterEnLaCaja);
+            CollectionAssert.Contains(etiqueta.Avisos, $"Pedido {OTRO} facturado en la factura NV2617987.");
+        }
+
+        [TestMethod]
+        public async Task Papel828_Entrega_ElOtroPedidoRetenido_NoSeFacturaYSeDice()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, OtrosPedidos = new List<int> { OTRO, TERCERO } });
+            servicio.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult(p == OTRO ? "El pedido 926941 está retenido." : null);
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            A.CallTo(() => pasos.Facturar("1", OTRO)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => pasos.Facturar("1", TERCERO)).MustHaveHappenedOnceExactly();
+            Assert.IsTrue(etiqueta.Avisos.Any(a => a.StartsWith($"El pedido {OTRO} de la misma entrega no se factura") && a.Contains("retenido")));
+        }
+
+        [TestMethod]
+        public async Task Papel828_Entrega_SiNoSeSabeSiElOtroEstaRetenido_NoSeFactura()
+        {
+            FacturarActivado();
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, OtrosPedidos = new List<int> { OTRO } });
+            servicio.MotivoPedidoRetenido = (e, p, rp) => p == OTRO ? throw new InvalidOperationException("sin BD") : Task.FromResult<string>(null);
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            A.CallTo(() => pasos.Facturar("1", OTRO)).MustNotHaveHappened();
+            Assert.IsTrue(registrados.Any(r => r.Message.Contains("#828")));
+        }
+
+        [TestMethod]
+        public async Task Papel828_Reimpresion_LeeLaEntregaParaFacturarLosDemas()
+        {
+            // El envío ya existía (repetir F8): la entrega no se leyó para grabarlo y hay que leerla para los demás pedidos
+            FacturarActivado();
+            A.CallTo(() => pasos.LeerEnvioEnCurso("1", PEDIDO)).Returns(Envio(Constantes.Agencias.AGENCIA_CTT, "CTT123"));
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, OtrosPedidos = new List<int> { OTRO } });
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
+            Assert.IsTrue(etiqueta.Reimpresion);
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Facturar("1", OTRO)).MustHaveHappenedOnceExactly();
+        }
     }
 }

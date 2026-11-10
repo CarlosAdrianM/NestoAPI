@@ -273,5 +273,22 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Assert.AreEqual(0, desde.Count);
             Assert.AreEqual(3, registrosRepo.Count);
         }
+
+        // ------------------------------------------------------------ S2: varios pedidos de la entrega
+
+        [TestMethod]
+        public async Task VariosPedidos_UnaFacturaPorPedido_YTodoJuntoParaNesto()
+        {
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(ConFactura(PEDIDO, "NV1", "HP"));
+            A.CallTo(() => pasos.Facturar("1", OTRO)).Returns(ConFactura(OTRO, "NV2", "HP"));
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion(false, PEDIDO, OTRO, PEDIDO));
+
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => pasos.Facturar("1", OTRO)).MustHaveHappenedOnceExactly();
+            CollectionAssert.AreEqual(new[] { PEDIDO, OTRO }, resultado.Respuestas.Select(r => r.Key).ToArray());
+            CollectionAssert.AreEqual(new[] { "NV1", "NV2" }, resultado.Respuesta.Facturas.Select(f => f.NumeroFactura).ToArray());
+            CollectionAssert.AreEqual(new[] { PEDIDO, OTRO }, resultado.Documentos.Select(d => d.Pedido).ToArray());
+        }
     }
 }
