@@ -442,6 +442,60 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
         // ----- helpers -----
 
+        // Novedad 1170 (10/11/26, Sancho, P/929555): ampliar un presupuesto con unas 30 líneas no dejaba guardar porque
+        // alguna línea NUEVA llegaba «en curso» (Nesto solo la pone en presupuesto al cargar un producto).
+        [TestMethod]
+        public void HayMezclaEnLineasExistentesDelDto_PresupuestoAmpliadoConLineaNuevaEnCurso_NoEsMezcla()
+        {
+            var dto = DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.PRESUPUESTO),
+                LineaDto(2, Constantes.EstadosLineaVenta.PRESUPUESTO),
+                LineaDto(0, Constantes.EstadosLineaVenta.EN_CURSO),
+                LineaDto(0, Constantes.EstadosLineaVenta.PRESUPUESTO));
+
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(dto.Lineas));
+            // ...y la línea nueva nace en presupuesto, porque el pedido en BD es un presupuesto vivo
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO,
+                TransicionPresupuesto.EstadoLineaNueva(new TransicionPresupuesto.Decision(), true, Constantes.EstadosLineaVenta.EN_CURSO));
+        }
+
+        [TestMethod]
+        public void HayMezclaEnLineasExistentesDelDto_LineasQueYaExistenMezcladas_SigueSiendoMezcla()
+        {
+            var dto = DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.PRESUPUESTO),
+                LineaDto(2, Constantes.EstadosLineaVenta.EN_CURSO),
+                LineaDto(0, Constantes.EstadosLineaVenta.PRESUPUESTO));
+
+            Assert.IsTrue(TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(dto.Lineas));
+        }
+
+        [TestMethod]
+        public void HayMezclaEnLineasExistentesDelDto_SinPresupuestoOTodoPresupuestoOSinLineas_NoEsMezcla()
+        {
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.EN_CURSO), LineaDto(2, Constantes.EstadosLineaVenta.PENDIENTE)).Lineas));
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.PRESUPUESTO), LineaDto(2, Constantes.EstadosLineaVenta.PRESUPUESTO)).Lineas));
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(DtoConLineas().Lineas));
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(null));
+        }
+
+        [TestMethod]
+        public void HayMezclaPresupuesto_PedidoNormalAlQueSeLeAnadeUnaLineaEnPresupuesto_LaGuardiaFinalLoPara()
+        {
+            // La entrada ya no mira las líneas nuevas: si a un pedido normal le llega una nueva en presupuesto, nace como
+            // pide el DTO y es la guardia final la que impide la mezcla.
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO,
+                TransicionPresupuesto.EstadoLineaNueva(new TransicionPresupuesto.Decision(), false, Constantes.EstadosLineaVenta.PRESUPUESTO));
+            var trasElPut = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.EN_CURSO, picking: 0),
+                LineaBD(0, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0)
+            };
+            Assert.IsTrue(TransicionPresupuesto.HayMezclaPresupuesto(trasElPut));
+        }
+
         private static LinPedidoVta LineaBD(int numeroOrden, short estado, int picking)
         {
             return new LinPedidoVta

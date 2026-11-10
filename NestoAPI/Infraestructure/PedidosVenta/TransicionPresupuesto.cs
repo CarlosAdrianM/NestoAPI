@@ -177,6 +177,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 && editables.Any(l => l.Estado != Constantes.EstadosLineaVenta.PRESUPUESTO);
         }
 
+        /// <summary>
+        /// Novedad 1170 (10/11/26): la comprobación de entrada del PUT («no se pueden mezclar pedidos con presupuestos»)
+        /// mira solo las líneas que YA existen (id distinto de 0), con la misma regla de siempre: si alguna viene en
+        /// PRESUPUESTO, tienen que venir todas. Las líneas nuevas (id 0) no cuentan: su estado no lo decide el DTO sino
+        /// <see cref="EstadoLineaNueva"/>, y <see cref="HayMezclaPresupuesto"/> vuelve a comprobar el resultado final.
+        /// </summary>
+        public static bool HayMezclaEnLineasExistentesDelDto(IEnumerable<LineaPedidoVentaDTO> lineasDto)
+        {
+            var existentes = (lineasDto ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Where(l => l != null && l.id != 0).ToList();
+            return existentes.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO)
+                && !existentes.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+        }
+
         private static bool EsLineaEditable(LinPedidoVta l)
         {
             return EsLineaActiva(l) && (l.Picking ?? 0) == 0;

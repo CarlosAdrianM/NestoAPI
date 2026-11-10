@@ -1592,7 +1592,11 @@ namespace NestoAPI.Controllers
 
 
             // Carlos 17/06/22: no se pueden mezclar pedidos con presupuestos
-            if (pedido.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.Lineas.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
+            // Novedad 1170 (10/11/26): las líneas NUEVAS no cuentan aquí. Su estado lo decide el servidor más abajo
+            // (TransicionPresupuesto.EstadoLineaNueva, NestoAPI#503) y la guardia final vuelve a mirar la mezcla sobre lo
+            // que de verdad se va a guardar. Sin esto, ampliar un presupuesto con una línea que Nesto manda «en curso»
+            // (un texto, unos portes) se rechazaba entero y se perdía el trabajo.
+            if (TransicionPresupuesto.HayMezclaEnLineasExistentesDelDto(pedido.Lineas))
             {
                 errorPersonalizado("No se pueden mezclar pedidos con presupuestos");
             }
