@@ -25,7 +25,10 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         Task<bool> EsNotaDeRepartoPropio(string empresa, int pedido);
 
-        /// <summary>NestoAPI#828: la ruta del pedido (para <see cref="ITipoRuta.ImprimeAlCerrarEnvio"/>); null si no existe.</summary>
+        /// <summary>
+        /// NestoAPI#828: la ruta del pedido; null si no existe. Desde el 10/11/26 el núcleo ya no la mira (la ruta propia vuelve a
+        /// facturarse e imprimirse en el packing, como antes del #828).
+        /// </summary>
         Task<string> RutaDelPedido(string empresa, int pedido);
 
         /// <summary>NestoAPI#828: las marcas del papel del packing del pedido (vacía sin tabla).</summary>
@@ -130,8 +133,8 @@ namespace NestoAPI.Infraestructure.Facturas
     /// etiqueta de Ariadna (F8, <see cref="Agencias.ServicioEtiquetaPacking"/>) y la de Nesto (POST api/FacturacionRutas/FacturarEtiqueta).
     /// Por cada pedido del envío (todos los de la entrega, una factura por pedido):
     /// <list type="number">
-    /// <item>Si su ruta no saca el papel al cerrar el envío (<see cref="ITipoRuta.ImprimeAlCerrarEnvio"/>: la ruta propia) o es una nota
-    /// de reparto propio, no se toca: lo hace Facturar rutas.</item>
+    /// <item>Si es una nota de reparto propio, no se toca: lo hace Facturar rutas. La ruta propia SÍ se factura y se imprime aquí, como
+    /// antes del #828 (Carlos 10/11/26; el reparto propio de otro día o aplazado lo para antes la etiqueta, #831).</item>
     /// <item>Si tiene un documento pendiente de imprimir del packing de ESTE envío (o, sin envío, de hoy), se vuelve a imprimir SIN volver
     /// a facturarlo. Lo pendiente de otro envío o de otro día no se imprime aquí (no va en esta caja): solo se dice.</item>
     /// <item>Y se factura lo que haya nuevo con el núcleo de siempre (FacturarPedido → GestorFacturacionRutas, con la regla del papel de
@@ -146,9 +149,6 @@ namespace NestoAPI.Infraestructure.Facturas
         private readonly IPasosDocumentosEnPapel pasos;
         private readonly IImpresoraPapelPacking impresora;
         private readonly Action<Exception> registrar;
-
-        /// <summary>La ruta → su tipo (TipoRutaFactory). Sustituible en los tests.</summary>
-        internal Func<string, ITipoRuta> TipoDeRuta { get; set; } = TipoRutaFactory.ObtenerPorNumeroRuta;
 
         public DocumentosEnPapelDelEnvio(IPasosDocumentosEnPapel pasos, IImpresoraPapelPacking impresora, Action<Exception> registrar = null)
         {
@@ -332,27 +332,13 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
-        /// <summary>¿El papel de este pedido sale en el packing? Si no, lo dice en los avisos.</summary>
+        /// <summary>
+        /// ¿El papel de este pedido sale en el packing? Si no, lo dice en los avisos. Carlos 10/11/26: la ruta propia sí (como antes
+        /// del #828): si no se facturaba aquí y nadie pasaba Facturar rutas propia antes de cargar, el cobro en efectivo al entregar
+        /// liquidaba otra deuda o quedaba a cuenta. Solo las notas de reparto propio se dejan para Facturar rutas (#765).
+        /// </summary>
         private async Task<bool> SeSacaEnElPacking(string empresa, int pedido, ResultadoDocumentosEnPapel resultado)
         {
-            string ruta;
-            try
-            {
-                ruta = await pasos.RutaDelPedido(empresa, pedido);
-            }
-            catch (Exception ex)
-            {
-                // Sin saber la ruta se sigue como hasta ahora (FacturarPedido mira lo suyo)
-                Registrar(new Exception($"[NestoAPI#828] No se ha podido leer la ruta del pedido {pedido}: {ex.Message}", ex));
-                ruta = null;
-            }
-            ITipoRuta tipo = string.IsNullOrWhiteSpace(ruta) ? null : TipoDeRuta(ruta.Trim());
-            if (tipo != null && !tipo.ImprimeAlCerrarEnvio)
-            {
-                resultado.Avisos.Add($"El pedido {pedido} es de {tipo.NombreParaMostrar?.Trim().ToLowerInvariant() ?? "una ruta"} ({ruta.Trim()}): " +
-                    "no se factura al imprimir la etiqueta. Lo factura Facturar rutas, que imprime sus copias antes de cargar.");
-                return false;
-            }
             bool esNota;
             try
             {

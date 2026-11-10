@@ -75,7 +75,7 @@ namespace NestoAPI.Models.Facturas
             return true;
         }
 
-        /// <summary>NestoAPI#828: sí, como hasta ahora (no imprime nada: 0 copias).</summary>
-        public bool ImprimeAlCerrarEnvio => true;
+        /// <summary>NestoAPI#828: sí (no imprime nada: 0 copias).</summary>
+        public bool CuentaPapelDelPackingEnFacturarRutas => true;
     }
 }

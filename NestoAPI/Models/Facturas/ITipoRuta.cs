@@ -69,11 +69,13 @@ namespace NestoAPI.Models.Facturas
         bool DebeInsertarEnExtractoRuta();
 
         /// <summary>
-        /// NestoAPI#828: ¿el documento en papel de esta ruta sale en el packing, al hacer la etiqueta del envío (F8 en Ariadna, la
-        /// etiqueta en Agencias de Nesto, con «Facturar al imprimir etiqueta»)? Agencias: sí (la factura física va dentro de la última
-        /// caja). Ruta propia: no (decisión 7 de Carlos, 09/11/26): no se factura al hacer la etiqueta, porque sus dos copias van con
-        /// el repartidor y salen en Facturar rutas propia antes de cargar.
+        /// NestoAPI#828 (S4): ¿Facturar rutas de esta ruta cuenta el papel del packing de hoy (lo ya impreso y lo pendiente)? Agencias:
+        /// sí. Ruta propia: no, como antes del #828.
+        /// <para>Carlos 10/11/26: la etiqueta del packing (F8 de Ariadna, la de Nesto) vuelve a facturar e imprimir el pedido de ruta
+        /// propia como antes del #828 (con las excepciones de #831 y de las notas de reparto propio): si no se facturaba ahí y nadie
+        /// pasaba Facturar rutas propia antes de cargar, el cobro en efectivo al entregar liquidaba otra deuda o quedaba a cuenta.
+        /// Esto ya no decide si se factura en el packing.</para>
         /// </summary>
-        bool ImprimeAlCerrarEnvio { get; }
+        bool CuentaPapelDelPackingEnFacturarRutas { get; }
     }
 }

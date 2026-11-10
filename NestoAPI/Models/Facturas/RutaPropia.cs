@@ -75,7 +75,7 @@ namespace NestoAPI.Models.Facturas
             return true;
         }
 
-        /// <summary>NestoAPI#828 (decisión 7): no. Sus dos copias salen en Facturar rutas propia, antes de cargar la furgoneta.</summary>
-        public bool ImprimeAlCerrarEnvio => false;
+        /// <summary>NestoAPI#828: no, como antes del #828 (Carlos 10/11/26: su factura y sus dos copias vuelven a salir en el packing).</summary>
+        public bool CuentaPapelDelPackingEnFacturarRutas => false;
     }
 }

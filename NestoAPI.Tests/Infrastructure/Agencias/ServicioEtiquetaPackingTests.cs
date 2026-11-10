@@ -971,18 +971,37 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public async Task Papel828_RutaPropia_NoSeFacturaAlHacerLaEtiqueta()
+        public async Task Papel828_RutaPropiaDeHoy_SeFacturaEImprimeEnElPacking_ComoAntesDel828()
         {
+            // Carlos 10/11/26: F8 vuelve a facturar el pedido de ruta propia del día y el servidor imprime sus copias en el packing
             FacturarActivado();
-            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            servicio.Hoy = () => new DateTime(2026, 11, 10);
+            RepartoPropioRegistrado(new DateTime(2026, 11, 10));
             A.CallTo(() => pasos.RutaDelPedido("1", PEDIDO)).Returns("AT");
-            servicio.TipoDeRuta = r => r == "AT" ? (ITipoRuta)new RutaPropia() : new RutaAgencia();
+            FacturarRutasResponseDTO respuesta = ConFacturaFisica(PEDIDO, "NV2617986", "HP");
+            respuesta.Facturas.Single().DatosImpresion.NumeroCopias = 2;
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
 
             EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
 
-            Assert.IsFalse(etiqueta.Facturado);
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+            Assert.IsTrue(etiqueta.Facturado);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, etiqueta.DocumentosEnPapel.Single().Estado);
+            Assert.IsFalse(etiqueta.Avisos.Any(a => a.Contains("no se factura al imprimir la etiqueta")), string.Join(" | ", etiqueta.Avisos));
+        }
+
+        [TestMethod]
+        public async Task Papel828_RutaPropia_RepartoDeOtroDia_SigueSinFacturar831()
+        {
+            FacturarActivado();
+            servicio.Hoy = () => new DateTime(2026, 11, 6);
+            RepartoPropioRegistrado(new DateTime(2026, 11, 9));
+            A.CallTo(() => pasos.RutaDelPedido("1", PEDIDO)).Returns("AT");
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, Peticion(), usuario)).Etiqueta;
+
             A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
-            Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("no se factura al imprimir la etiqueta") && a.Contains("Facturar rutas")));
+            Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("se reparte el 09/11")), string.Join(" | ", etiqueta.Avisos));
         }
         // ------------------------------------------------------------ NestoAPI#828 (S2): toda la entrega (servir junto)
 

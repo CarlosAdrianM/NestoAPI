@@ -162,16 +162,21 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task FacturarEtiqueta_RutaPropia_NoFacturaYLoDice()
+        public async Task FacturarEtiqueta_RutaPropia_FacturaYDevuelveSusCopiasParaNesto_ComoAntesDel828()
         {
             IPasosDocumentosEnPapel pasos = PasosPapelFalsos();
             A.CallTo(() => pasos.RutaDelPedido("1", 929914)).Returns("16");
+            var facturado = new FacturarRutasResponseDTO();
+            facturado.Facturas.Add(new FacturaCreadaDTO { Empresa = "1", NumeroPedido = 929914, NumeroFactura = "NV2617986",
+                DatosImpresion = new DocumentoParaImprimir { BytesPDF = new byte[] { 1 }, NumeroCopias = 2 } });
+            A.CallTo(() => pasos.Facturar("1", 929914)).Returns(facturado);
 
             var ok = (OkNegotiatedContentResult<FacturarEtiquetaResponseDTO>)await controller.FacturarEtiqueta(
                 new FacturarEtiquetaRequestDTO { Empresa = "1", Pedido = 929914 });
 
-            A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
-            Assert.IsTrue(ok.Content.AvisosPapel.Single().Contains("no se factura al imprimir la etiqueta"));
+            A.CallTo(() => pasos.Facturar("1", 929914)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(2, ok.Content.Facturas.Single().DatosImpresion.NumeroCopias);
+            Assert.IsFalse((ok.Content.AvisosPapel ?? new List<string>()).Any(a => a.Contains("no se factura al imprimir la etiqueta")));
         }
 
         [TestMethod]

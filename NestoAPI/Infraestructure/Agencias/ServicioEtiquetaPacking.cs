@@ -207,9 +207,6 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>NestoAPI#828: quién imprime el papel del packing (Ariadna: el servidor). Sustituible en los tests.</summary>
         internal IImpresoraPapelPacking ImpresoraPapel { get; set; } = new ImpresoraPapelPackingServidor();
 
-        /// <summary>NestoAPI#828: la ruta → su tipo (null = TipoRutaFactory). Sustituible en los tests.</summary>
-        internal Func<string, ITipoRuta> TipoDeRuta { get; set; }
-
         public ServicioEtiquetaPacking(Func<IPrincipal, IPasosEtiquetaPacking> crearPasos, ILectorParametrosUsuario parametros,
             Action<Exception> registrar = null)
         {
@@ -484,12 +481,7 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>NestoAPI#828: el núcleo del papel con la impresora del servidor (Ariadna).</summary>
         private DocumentosEnPapelDelEnvio Nucleo(IPasosDocumentosEnPapel pasos)
         {
-            var nucleo = new DocumentosEnPapelDelEnvio(pasos, ImpresoraPapel, Registrar) { Hoy = () => Hoy() };
-            if (TipoDeRuta != null)
-            {
-                nucleo.TipoDeRuta = TipoDeRuta;
-            }
-            return nucleo;
+            return new DocumentosEnPapelDelEnvio(pasos, ImpresoraPapel, Registrar) { Hoy = () => Hoy() };
         }
 
         /// <summary>NestoAPI#828: lo que ha pasado con el papel, en la etiqueta (avisos, facturado, documentos, «meta en la caja»).</summary>

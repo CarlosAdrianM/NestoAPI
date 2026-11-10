@@ -147,7 +147,7 @@ namespace NestoAPI.Controllers
             {
                 ITipoRuta tipo = TipoRutaFactory.ObtenerTodosLosTipos()
                     .FirstOrDefault(t => string.Equals(t.Id, tipoRuta?.Trim(), StringComparison.OrdinalIgnoreCase));
-                if (tipo?.ImprimeAlCerrarEnvio == true && MarcasPapel != null)
+                if (tipo?.CuentaPapelDelPackingEnFacturarRutas == true && MarcasPapel != null)
                 {
                     System.Collections.Generic.List<DocumentoEnPapelDTO> marcas = await MarcasPapel.LeerDesde(Hoy().Date).ConfigureAwait(true);
                     // Las cartas del cheque no son documentos de la facturación: no cuentan en «N facturas ya impresas»
@@ -513,7 +513,7 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// NestoAPI#828 (S5): «Facturar al imprimir etiqueta» de Agencias de Nesto, con EL MISMO núcleo que F8 en Ariadna
         /// (<see cref="DocumentosEnPapelDelEnvio"/>, estrategia «Nesto imprime en local»): factura el pedido del envío como
-        /// FacturarPedido (la ruta propia no: lo hace Facturar rutas propia), deja cada documento en papel marcado «Pendiente» y lo
+        /// FacturarPedido (también la ruta propia, como antes del #828: Carlos 10/11/26), deja cada documento en papel marcado «Pendiente» y lo
         /// devuelve con su PDF para que Nesto lo imprima y lo confirme (POST DocumentosEnPapel/Impresion). Si ya estaba facturado y su
         /// papel pendiente (Nesto no llegó a imprimirlo), lo devuelve otra vez sin volver a facturar.
         /// </summary>

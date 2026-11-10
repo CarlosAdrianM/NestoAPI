@@ -41,10 +41,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).ReturnsLazily(() => Task.FromResult(new FacturarRutasResponseDTO()));
         }
 
-        private DocumentosEnPapelDelEnvio Nucleo() => new DocumentosEnPapelDelEnvio(pasos, impresora, ex => registrados.Add(ex))
-        {
-            TipoDeRuta = ruta => ruta == "AT" ? (ITipoRuta)new RutaPropia() : new RutaAgencia()
-        };
+        private DocumentosEnPapelDelEnvio Nucleo() => new DocumentosEnPapelDelEnvio(pasos, impresora, ex => registrados.Add(ex));
 
         private static PeticionDocumentosEnPapel Peticion(bool reimpresion = false, params int[] pedidos)
             => new PeticionDocumentosEnPapel
@@ -154,24 +151,42 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         [TestMethod]
-        public async Task RutaPropia_NoSeFacturaAlHacerLaEtiqueta_LaFacturaFacturarRutasConSusDosCopias()
+        public async Task RutaPropia_SeFacturaEImprimeEnElPacking_ComoAntesDel828()
+        {
+            // Carlos 10/11/26: si no se factura aquí y nadie pasa Facturar rutas propia antes de cargar, el cobro en efectivo al
+            // entregar liquida otra deuda o queda a cuenta. Las dos copias salen en el packing, como antes del #828.
+            A.CallTo(() => pasos.RutaDelPedido("1", PEDIDO)).Returns("AT");
+            var respuesta = ConFactura(PEDIDO, "NV2617986", "HP");
+            respuesta.Facturas.Single().DatosImpresion.NumeroCopias = 2;
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).Returns(respuesta);
+
+            ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion());
+
+            A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(PEDIDO, resultado.Respuestas.Single().Key);
+            Assert.AreEqual(2, resultado.Respuesta.Facturas.Single().DatosImpresion.NumeroCopias);
+            Assert.AreEqual(EstadosDocumentoEnPapel.IMPRESO, resultado.Documentos.Single().Estado);
+            Assert.IsFalse(resultado.Avisos.Any(a => a.Contains("no se factura al imprimir la etiqueta")), string.Join(" | ", resultado.Avisos));
+        }
+
+        [TestMethod]
+        public async Task RutaPropia_NotaDeRepartoPropio_SigueSinProcesarse()
         {
             A.CallTo(() => pasos.RutaDelPedido("1", PEDIDO)).Returns("AT");
+            A.CallTo(() => pasos.EsNotaDeRepartoPropio("1", PEDIDO)).Returns(true);
 
             ResultadoDocumentosEnPapel resultado = await Nucleo().Procesar(Peticion());
 
             A.CallTo(() => pasos.Facturar(A<string>._, A<int>._)).MustNotHaveHappened();
-            Assert.IsTrue(resultado.Avisos.Single().Contains("no se factura al imprimir la etiqueta"));
-            Assert.IsTrue(resultado.Avisos.Single().Contains("(AT)"));
-            Assert.IsFalse(resultado.Respuestas.Any());
+            Assert.IsTrue(resultado.Avisos.Single().Contains("la procesa Facturar rutas"));
         }
 
         [TestMethod]
-        public void TiposDeRuta_SoloLaPropiaNoImprimeAlCerrarElEnvio()
+        public void TiposDeRuta_SoloLaPropiaNoCuentaElPapelDelPackingEnFacturarRutas()
         {
-            Assert.IsTrue(new RutaAgencia().ImprimeAlCerrarEnvio);
-            Assert.IsFalse(new RutaPropia().ImprimeAlCerrarEnvio);
-            Assert.IsTrue(new RutaAlmacen().ImprimeAlCerrarEnvio);
+            Assert.IsTrue(new RutaAgencia().CuentaPapelDelPackingEnFacturarRutas);
+            Assert.IsFalse(new RutaPropia().CuentaPapelDelPackingEnFacturarRutas);
+            Assert.IsTrue(new RutaAlmacen().CuentaPapelDelPackingEnFacturarRutas);
         }
 
         [TestMethod]
@@ -186,14 +201,15 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         [TestMethod]
-        public async Task SiNoSeSabeLaRuta_SeFacturaComoHastaAhora()
+        public async Task NoMiraLaRuta_SeFacturaAunqueNoSePuedaLeer()
         {
             A.CallTo(() => pasos.RutaDelPedido("1", PEDIDO)).Throws(new InvalidOperationException("sin BD"));
 
             await Nucleo().Procesar(Peticion());
 
             A.CallTo(() => pasos.Facturar("1", PEDIDO)).MustHaveHappenedOnceExactly();
-            Assert.AreEqual(1, registrados.Count);
+            A.CallTo(() => pasos.RutaDelPedido(A<string>._, A<int>._)).MustNotHaveHappened();
+            Assert.AreEqual(0, registrados.Count);
         }
 
         [TestMethod]
