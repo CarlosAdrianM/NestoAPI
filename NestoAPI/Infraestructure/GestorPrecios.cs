@@ -408,9 +408,21 @@ namespace NestoAPI.Infraestructure
         // NestoAPI#517: cada validación usa su propia caché de lecturas (ServicioPreciosCacheado): los
         // validadores preguntan por los mismos productos una y otra vez (ProductosMismoPrecio recorre el
         // pedido entero por cada producto), y sin caché un pedido de 30 líneas eran cientos de consultas.
+        // Feria online 11/26: los pedidos de la tienda online se validan con las ofertas vigentes el día del
+        // pedido (VigenciaPedidoTienda); los demás, con hoy, como siempre.
         public static RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido)
         {
-            return EsPedidoValido(pedido, ServicioPreciosCacheado.Envolver(servicio));
+            return EsPedidoValidoConFechaDelPedido(pedido, pedido?.fecha);
+        }
+
+        /// <summary>
+        /// Como <see cref="EsPedidoValido(PedidoVentaDTO)"/>, pero con la fecha del pedido que se le da (en la
+        /// modificación, la del pedido guardado, no la que mande el cliente).
+        /// </summary>
+        public static RespuestaValidacion EsPedidoValidoConFechaDelPedido(PedidoVentaDTO pedido, DateTime? fechaPedido)
+        {
+            IServicioPrecios servicioValidacion = VigenciaPedidoTienda.ServicioParaValidar(servicio, pedido, fechaPedido, DateTime.Today);
+            return EsPedidoValido(pedido, ServicioPreciosCacheado.Envolver(servicioValidacion));
         }
 
         /// <summary>

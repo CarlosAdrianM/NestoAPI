@@ -1972,7 +1972,9 @@ namespace NestoAPI.Controllers
             RespuestaValidacion respuestaValidacion = null;
             if (hayAlgunaLineaModificada || hayLineasNuevas || aceptarPresupuesto)
             {
-                respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
+                // Feria online 11/26: con la fecha del pedido GUARDADO (un pedido de la tienda se valida con
+                // las ofertas vigentes ese día, VigenciaPedidoTienda).
+                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, cabPedidoVta.Fecha);
 
                 // Carlos 28/11/25: Permitir omitir validación si (igual que en POST):
                 // - Tiene rol Dirección o Almacén (sin importar almacenes), O
@@ -1996,7 +1998,7 @@ namespace NestoAPI.Controllers
             // calculamos la respuesta de validación para incluirla en el correo (Issue #48)
             else if (pedido.CreadoSinPasarValidacion)
             {
-                respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
+                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, cabPedidoVta.Fecha);
             }
 
             bool pedidoTeniaPrepago = cabPedidoVta.Prepagos.Any(p => p.Factura == null);

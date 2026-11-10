@@ -16,15 +16,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 ProductoId = numeroProducto
             };
 
-            if (pedido.comentarios == null || !pedido.comentarios.Contains("TOTAL PEDIDO:"))
-            {
-                return respuesta;
-            }
-
             // NestoAPI#435: solo WEB. La app (APP) NO entra: sus pedidos no llevan los regalos por
             // importe de Prestashop ni el comentario "TOTAL PEDIDO:" que los acompana. Si algun dia
-            // la app tiene regalos por importe, se replantea.
-            if (!pedido.Lineas.All(l => l.formaVenta == Constantes.FormasVenta.TIENDA_ONLINE))
+            // la app tiene regalos por importe, se replantea. La regla vive en VigenciaPedidoTienda
+            // (la usa también la vigencia de las ofertas en la fecha del pedido).
+            if (!VigenciaPedidoTienda.EsPedidoTiendaOnline(pedido))
             {
                 return respuesta;
             }

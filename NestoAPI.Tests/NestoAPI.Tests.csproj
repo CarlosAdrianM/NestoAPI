@@ -731,6 +731,7 @@
     <Compile Include="Controllers\NovedadesCapturasTests.cs" />
     <Compile Include="Infrastructure\RangoBytesHttpTests.cs" />
     <Compile Include="Infrastructure\VigenciaDescuentosTests.cs" />
+    <Compile Include="Infrastructure\VigenciaPedidoTiendaTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCategoriaTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />

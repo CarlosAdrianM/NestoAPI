@@ -349,6 +349,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - **Agencia nueva** = una clase `IProveedorPruebaEntrega` + `IPerfilConPruebaEntrega` en su perfil (`PerfilesAgencias.cs`). Ni el
   endpoint ni Nesto cambian (Nesto: `MostradorPruebaEntrega` en ControlesUsuario, en Agencias › Tramitados y en el detalle del pedido).
 
+### Pedidos de la tienda: ofertas vigentes el día del pedido (feria online 12-16/11/26)
+- `GestorPrecios.EsPedidoValido` valida un pedido de la tienda online (`VigenciaPedidoTienda.EsPedidoTiendaOnline`: «TOTAL PEDIDO:»
+  en comentarios + todas las líneas WEB; la misma regla usa `ValidadorRegalosTiendaOnline`) con la vigencia de DescuentosProducto,
+  OfertasPermitidas, combinadas, escalonadas y regalos por importe del día `pedido.fecha` (en el PUT, `cabPedidoVta.Fecha`), si es
+  anterior a hoy y de hace como mucho `DIAS_MAXIMOS_ATRAS` (15). Cómo: `ServicioPrecios.ParaDia(dia)` (instancia, sin estáticos);
+  el motor de precios y las sugerencias siguen con hoy. Regalos por importe con día: por día inclusive.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
