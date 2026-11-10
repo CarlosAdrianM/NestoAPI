@@ -35,6 +35,9 @@ namespace NestoAPI.Infraestructure
         Task<List<ClienteDTO>> BuscarClientesPorDniTiendaOnline(string dni);
         Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);
         Task PublicarClienteSincronizar(Cliente cliente, Sincronizacion.FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null);
+        /// <summary>Lo mismo, con campos opcionales añadidos al mensaje antes de publicarlo (NestoAPI#623, embudo de Odoo).</summary>
+        Task PublicarClienteSincronizar(Cliente cliente, Sincronizacion.FechasComprasCliente fechasCompras, string source, string usuario,
+            System.Action<Models.Sincronizacion.ClienteSyncMessage> completar);
         Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);
         /// <summary>NestoAPI#623 corte 4: publica a Odoo el cliente con su origen y el consentimiento del lead.</summary>
         Task PublicarClienteConOrigenSincronizar(string empresa, string cliente, string origen, System.DateTime fechaOrigen, bool aceptaComunicaciones, string usuario);

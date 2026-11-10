@@ -369,6 +369,7 @@
     <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
     <Compile Include="Infrastructure\Clientes\SuPedidoObligatorioTests.cs" />
     <Compile Include="Infrastructure\Clientes\OrigenesClienteTests.cs" />
+    <Compile Include="Infrastructure\Clientes\EmbudoOdooTests.cs" />
     <Compile Include="Infrastructure\Clientes\ImportadorLeadsMetaTests.cs" />
     <Compile Include="Infrastructure\Clientes\ImportadorLeadsMetaGraphTests.cs" />
     <Compile Include="Infrastructure\Clientes\AvisosLeadsTests.cs" />

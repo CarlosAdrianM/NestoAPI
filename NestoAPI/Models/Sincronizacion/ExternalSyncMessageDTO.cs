@@ -193,5 +193,12 @@ namespace NestoAPI.Models.Sincronizacion
         /// Cargo de la persona (código numérico)
         /// </summary>
         public int? Cargo { get; set; }
+
+        /// <summary>
+        /// Embudo de Odoo (odoo-custom-addons#45): PersonasContactoCliente.EnviarBoletin; false = baja expresa de los correos.
+        /// Ausente = no se sabe / no tocar (lo que llega de Odoo no lo trae y Nesto no lo lee al recibir).
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public bool? EnviarBoletin { get; set; }
     }
 }

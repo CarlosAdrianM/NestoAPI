@@ -2023,8 +2023,9 @@ namespace NestoAPI.Infraestructure
         public Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null)
             => PublicarClienteSincronizar(cliente, fechasCompras, source, usuario, null);
 
-        /// <summary>NestoAPI#623: con <paramref name="completar"/> se añaden campos opcionales al mensaje antes de publicarlo.</summary>
-        internal async Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source, string usuario, Action<ClienteSyncMessage> completar)
+        /// <summary>NestoAPI#623: con <paramref name="completar"/> se añaden campos opcionales al mensaje antes de publicarlo
+        /// (el embudo de Odoo, odoo-custom-addons#45, añade así los del bloque).</summary>
+        public async Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source, string usuario, Action<ClienteSyncMessage> completar)
         {
             // NestoAPI#498: Odoo VACÍA el campo si llega null (odoo-custom-addons#3), así que no se
             // publica nunca sin las fechas calculadas: sin fechas, borraríamos las que ya tiene.
@@ -2042,9 +2043,13 @@ namespace NestoAPI.Infraestructure
                     Nombre = p.Nombre?.Trim(),
                     CorreoElectronico = p.CorreoElectrónico?.Trim(),
                     Telefonos = p.Teléfono?.Trim(),
-                    Cargo = p.Cargo
+                    Cargo = p.Cargo,
+                    // odoo-custom-addons#45: false = baja expresa (el embudo no le escribe)
+                    EnviarBoletin = p.EnviarBoletin
                 })
                 .ToList();
+
+            string vendedorPeluqueria = await VendedorPeluqueriaParaPublicar(cliente).ConfigureAwait(false);
 
             // Obtener email del vendedor. Si Vendedore está cargado (por Include) usamos su Mail;
             // si no, consulta al servicio. NestoAPI#504: un Mail en blanco NO es "resuelto" (antes el
@@ -2090,6 +2095,7 @@ namespace NestoAPI.Infraestructure
                 Comentarios = cliente.Comentarios?.Trim(),
                 Vendedor = cliente.Vendedor?.Trim(),
                 VendedorEmail = vendedorEmail,
+                VendedorPeluqueria = vendedorPeluqueria,
                 Estado = cliente.Estado,
                 FechaPrimerPresupuesto = fechasCompras.FechaPrimerPresupuesto,
                 FechaPrimerPedido = fechasCompras.FechaPrimerPedido,
@@ -2101,6 +2107,37 @@ namespace NestoAPI.Infraestructure
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
             await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", message);
+        }
+
+        /// <summary>
+        /// odoo-custom-addons#45: el vendedor de peluquería del contacto (VendedoresClienteGrupoProducto, grupo PEL), o null si no
+        /// tiene fila (la propiedad no viaja: Odoo no lo toca). Si la navegación viene cargada (Include del job de Nesto_sync), de
+        /// ahí; si no, una consulta. Un fallo al leerlo no para la publicación: viaja sin él.
+        /// </summary>
+        private async Task<string> VendedorPeluqueriaParaPublicar(Cliente cliente)
+        {
+            string cargado = cliente.VendedoresClienteGrupoProductoes?
+                .FirstOrDefault(v => v?.GrupoProducto?.Trim() == Constantes.Productos.GRUPO_PELUQUERIA)?.Vendedor;
+            if (!string.IsNullOrWhiteSpace(cargado))
+            {
+                return cargado.Trim();
+            }
+            if (string.IsNullOrWhiteSpace(cliente.Nº_Cliente) || string.IsNullOrWhiteSpace(cliente.Contacto))
+            {
+                return null;
+            }
+            try
+            {
+                VendedorClienteGrupoProducto fila = await servicio.BuscarVendedorGrupo(
+                    cliente.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO, cliente.Nº_Cliente.Trim(), cliente.Contacto.Trim(),
+                    Constantes.Productos.GRUPO_PELUQUERIA).ConfigureAwait(false);
+                return string.IsNullOrWhiteSpace(fila?.Vendedor) ? null : fila.Vendedor.Trim();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"   ⚠️ odoo-custom-addons#45: no se ha podido leer el vendedor de peluquería de {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>

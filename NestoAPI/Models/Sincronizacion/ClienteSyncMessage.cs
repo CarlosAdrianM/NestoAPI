@@ -119,6 +119,26 @@ namespace NestoAPI.Models.Sincronizacion
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? AceptaComunicaciones { get; set; }
 
+        // Embudo de Odoo con clientes del vendedor general (odoo-custom-addons#45): propiedad AUSENTE = no tocar.
+
+        /// <summary>Vendedor de peluquería del contacto (VendedoresClienteGrupoProducto, grupo PEL; "NV" si es el general).
+        /// Ausente si el contacto no tiene fila.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string VendedorPeluqueria { get; set; }
+
+        /// <summary>Bloque del embudo (p. ej. NV-2026-11-01). SOLO en la publicación que sale de la republicación del embudo
+        /// (POST api/Clientes/Sync/Republicar); una modificación posterior de la ficha viaja sin él.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string BloqueEmbudo { get; set; }
+
+        /// <summary>Correo del responsable del embudo para este contacto (por su código postal). Solo junto a <see cref="BloqueEmbudo"/>.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string ResponsableEmbudoEmail { get; set; }
+
+        /// <summary>"EquipoAlberto" | "Vendedor" | "TiendaOnline". Solo junto a <see cref="BloqueEmbudo"/>.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string ResponsableEmbudoTipo { get; set; }
+
         /// <summary>
         /// Lista de personas de contacto del cliente
         /// </summary>

@@ -1500,7 +1500,10 @@ namespace NestoAPI.Controllers
                 .OrderBy(c => c.Nº_Cliente)
                 .ThenByDescending(c => c.ClientePrincipal)
                 .ThenBy(c => c.Contacto)
-                .Include(c => c.PersonasContactoClientes1)
+                // El publicador lee PersonasContactoClientes, no la «1» (las dos cuelgan de la misma FK duplicada; con el lazy
+                // loading apagado, solo el arreglo de relaciones de EF podía rellenarla). Mismo Include que el job (NestoAPI#504).
+                .Include(c => c.PersonasContactoClientes)
+                .Include(c => c.VendedoresClienteGrupoProductoes)
                 .ToListAsync();
 
             // NestoAPI#498: esta es la carga inicial de las fechas de compras en Odoo. Se calculan
@@ -1547,31 +1550,15 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(bool))]
         public async Task<IHttpActionResult> GetClientesSync()
         {
-            // NestoAPI#498: fechas de compras una vez por cliente, no por contacto (mismo patrón
-            // que SincronizacionJobsService.SincronizarClientes)
-            FechasComprasCliente fechasCompras = null;
+            // Lo mismo que SincronizacionJobsService.SincronizarClientes (fechas de compras una vez por cliente, NestoAPI#498, y
+            // los campos del embudo de Odoo si el cliente tiene un bloque pendiente). Antes incluía PersonasContactoClientes1 y el
+            // publicador lee PersonasContactoClientes (NestoAPI#504).
+            var pasada = Infraestructure.Clientes.Embudo.PasadaSincronizacionClientes.DeProduccion(db, _gestorClientes);
 
-            bool resultado = await _gestorSincronizacion.ProcesarTabla(
+            bool resultado = await _gestorSincronizacion.ProcesarTabla<Cliente>(
                 tabla: "Clientes",
-                obtenerEntidades: async (registro) =>
-                {
-                    fechasCompras = CalculoFechasComprasCliente.Buscar(
-                        await _gestorClientes.LeerFechasCompras(new[] { registro.ModificadoId }),
-                        registro.ModificadoId);
-
-                    // Buscar todos los contactos del cliente en la base de datos
-                    return await db.Clientes
-                        .Where(c => c.Nº_Cliente == registro.ModificadoId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
-                        .OrderBy(c => c.Nº_Cliente)
-                        .ThenByDescending(c => c.ClientePrincipal)
-                        .ThenBy(c => c.Contacto)
-                        .Include(c => c.PersonasContactoClientes1)
-                        .ToListAsync();
-                },
-                publicarEntidad: async (cliente, usuario) =>
-                {
-                    await _gestorClientes.PublicarClienteSincronizar(cliente, fechasCompras, "Nesto viejo", usuario);
-                }
+                obtenerEntidades: pasada.ObtenerEntidades,
+                publicarEntidad: pasada.Publicar
             );
 
             return Ok(resultado);

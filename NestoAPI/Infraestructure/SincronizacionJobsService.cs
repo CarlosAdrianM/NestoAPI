@@ -224,36 +224,14 @@ namespace NestoAPI.Infraestructure
                         sincronizacionEventWrapper
                     );
 
-                    // NestoAPI#498: las fechas de compras son del cliente, no del contacto: se
-                    // calculan una vez por registro y valen para todos sus contactos
-                    // (ProcesarTabla recorre los registros de uno en uno).
-                    FechasComprasCliente fechasCompras = null;
+                    // NestoAPI#498: fechas de compras una vez por cliente; odoo-custom-addons#45: los campos del embudo si el
+                    // cliente tiene un bloque pendiente (ProcesarTabla recorre los registros de uno en uno).
+                    var pasada = Clientes.Embudo.PasadaSincronizacionClientes.DeProduccion(db, gestorClientes);
 
-                    bool resultado = await gestorSincronizacion.ProcesarTabla(
+                    bool resultado = await gestorSincronizacion.ProcesarTabla<Cliente>(
                         tabla: "Clientes",
-                        obtenerEntidades: async (registro) =>
-                        {
-                            fechasCompras = CalculoFechasComprasCliente.Buscar(
-                                await gestorClientes.LeerFechasCompras(new[] { registro.ModificadoId }),
-                                registro.ModificadoId);
-
-                            // Buscar todos los contactos del cliente en la base de datos
-                            return await db.Clientes
-                                .Where(c => c.Nº_Cliente == registro.ModificadoId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
-                                .OrderBy(c => c.Nº_Cliente)
-                                .ThenByDescending(c => c.ClientePrincipal)
-                                .ThenBy(c => c.Contacto)
-                                // NestoAPI#504: PublicarClienteSincronizar lee PersonasContactoClientes (sin el 1;
-                                // las dos navegaciones cuelgan de la misma FK duplicada) y el Mail del vendedor:
-                                // con el lazy loading apagado, lo que no se incluye aquí viaja vacío.
-                                .Include(c => c.PersonasContactoClientes)
-                                .Include(c => c.Vendedore)
-                                .ToListAsync();
-                        },
-                        publicarEntidad: async (cliente, usuario) =>
-                        {
-                            await gestorClientes.PublicarClienteSincronizar(cliente, fechasCompras, "Nesto viejo", usuario);
-                        }
+                        obtenerEntidades: pasada.ObtenerEntidades,
+                        publicarEntidad: pasada.Publicar
                     );
 
                     if (resultado)
