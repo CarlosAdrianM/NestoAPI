@@ -193,6 +193,65 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.EncolarProductoSync(PRODUCTO, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
+        // ---------------------------------------------------------------- Sugerencia 780 (Laura): Pack Regalo
+
+        private void ProductoPackRegalo()
+            => ConfigurarFakeDbSet(fakeProductos, new List<Producto>
+            {
+                new Producto { Empresa = "1", Número = PRODUCTO, Grupo = "COS", SubGrupo = "PRG" }
+            }.AsQueryable());
+
+        private static string Motivo(object resultado)
+        {
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            return ((BadRequestErrorMessageResult)resultado).Message;
+        }
+
+        [TestMethod]
+        public async Task Put_Sugerencia780_PackRegaloConSecundarias_400SinTocarNada()
+        {
+            ProductoPackRegalo();
+
+            var resultado = await controller.PutCategoriasSecundarias(PRODUCTO,
+                new List<CategoriaSecundariaPutDTO> { new CategoriaSecundariaPutDTO { Grupo = "PEL", Subgrupo = "OFE" } });
+
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PRINCIPAL_PACK_REGALO, Motivo(resultado));
+            A.CallTo(() => fakeCategorias.RemoveRange(A<IEnumerable<ProductoCategoriaSecundaria>>._)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductoSync(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Put_Sugerencia780_PackRegaloSinSecundarias_SePuedeGuardar()
+        {
+            ProductoPackRegalo();
+
+            var resultado = await controller.PutCategoriasSecundarias(PRODUCTO, new List<CategoriaSecundariaPutDTO>());
+
+            Assert.IsInstanceOfType(resultado, typeof(OkResult), "Quitar las que tenga sí se puede");
+        }
+
+        [TestMethod]
+        public async Task Put_Sugerencia780_PackRegaloComoSecundaria_400()
+        {
+            var resultado = await controller.PutCategoriasSecundarias(PRODUCTO,
+                new List<CategoriaSecundariaPutDTO>
+                {
+                    new CategoriaSecundariaPutDTO { Grupo = "PEL", Subgrupo = "OFE" },
+                    new CategoriaSecundariaPutDTO { Grupo = " cos ", Subgrupo = "prg" }
+                });
+
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PACK_REGALO_COMO_SECUNDARIA, Motivo(resultado));
+            Assert.AreEqual(0, annadidas.Count);
+        }
+
+        [TestMethod]
+        public void Sugerencia780_Motivo_PrincipalConRelleno()
+        {
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PRINCIPAL_PACK_REGALO,
+                ReglaPackRegalo.Motivo("COS", "PRG ", new[] { ("COS", "OUT") }));
+            Assert.IsNull(ReglaPackRegalo.Motivo("PEL", "OFE", new[] { ("COS", "OUT") }));
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

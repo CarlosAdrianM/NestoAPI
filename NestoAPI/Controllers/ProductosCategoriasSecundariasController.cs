@@ -57,10 +57,11 @@ namespace NestoAPI.Controllers
             }
             categorias = categorias ?? new List<CategoriaSecundariaPutDTO>();
 
-            bool existeProducto = await db.Productos
-                .AnyAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto)
-                .ConfigureAwait(false);
-            if (!existeProducto)
+            var ficha = (await db.Productos
+                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto)
+                .Select(p => new { p.Grupo, p.SubGrupo })
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            if (ficha == null)
             {
                 return NotFound();
             }
@@ -76,6 +77,12 @@ namespace NestoAPI.Controllers
             if (limpias.GroupBy(c => c.Grupo + "|" + c.Subgrupo).Any(g => g.Count() > 1))
             {
                 return BadRequest("Hay categorías repetidas en la lista");
+            }
+            // Sugerencia 780: Pack Regalo solo como principal y sin otras (la misma regla que la ficha de Nesto)
+            string motivoPackRegalo = ReglaPackRegalo.Motivo(ficha.Grupo, ficha.SubGrupo, limpias.Select(c => (c.Grupo, c.Subgrupo)));
+            if (motivoPackRegalo != null)
+            {
+                return BadRequest(motivoPackRegalo);
             }
             foreach (var categoria in limpias)
             {
@@ -130,6 +137,39 @@ namespace NestoAPI.Controllers
                 db.Dispose();
             }
             base.Dispose(disposing);
+        }
+    }
+
+    /// <summary>
+    /// Sugerencia 780 (Laura, aprobada por Carlos 11/11/26): los productos de «Pack Regalo» (COS/PRG) no pueden estar en ninguna
+    /// otra categoría web, y Pack Regalo tiene que ser la categoría PRINCIPAL (el subgrupo de la ficha), nunca una secundaria.
+    /// Los textos son los de la ficha de Nesto (Producto/Models/ReglaPackRegalo.cs). Solo el PUT: el cuadre del Outlet escribe por
+    /// SQL (RepositorioOutletSql) y no pasa por aquí.
+    /// </summary>
+    public static class ReglaPackRegalo
+    {
+        public const string GRUPO = "COS";
+        public const string SUBGRUPO = "PRG";
+
+        internal const string MOTIVO_PRINCIPAL_PACK_REGALO =
+            "Este producto es un Pack Regalo (COS/PRG): los packs regalo no pueden estar en ninguna otra categoría web.";
+        internal const string MOTIVO_PACK_REGALO_COMO_SECUNDARIA =
+            "Pack Regalo (COS/PRG) no se puede poner como categoría secundaria: tiene que ser la categoría principal " +
+            "del producto (el subgrupo de la ficha).";
+
+        public static bool EsPackRegalo(string grupo, string subgrupo)
+            => string.Equals(grupo?.Trim(), GRUPO, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(subgrupo?.Trim(), SUBGRUPO, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Por qué no vale esa lista de secundarias para un producto con esa principal; null si vale.</summary>
+        public static string Motivo(string grupoPrincipal, string subgrupoPrincipal, IEnumerable<(string Grupo, string Subgrupo)> secundarias)
+        {
+            List<(string Grupo, string Subgrupo)> lista = (secundarias ?? Enumerable.Empty<(string, string)>()).ToList();
+            if (EsPackRegalo(grupoPrincipal, subgrupoPrincipal) && lista.Any())
+            {
+                return MOTIVO_PRINCIPAL_PACK_REGALO;
+            }
+            return lista.Any(c => EsPackRegalo(c.Grupo, c.Subgrupo)) ? MOTIVO_PACK_REGALO_COMO_SECUNDARIA : null;
         }
     }
 
