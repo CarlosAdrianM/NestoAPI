@@ -2535,6 +2535,59 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task EnviarFacturasACorreo_Sugerencia1167_ConLosDatosDelUsuario_ASuNombreConRespuestaCopiaYSuFirma()
+        {
+            await SinEsperas(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");
+                MailMessage enviado = null;
+                List<string> copias = null;
+                List<string> responderA = null;
+                string nombre = null;
+                _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._))
+                    .Invokes((MailMessage m) =>
+                    {
+                        enviado = m;
+                        copias = m.CC.Select(c => c.Address).ToList();
+                        responderA = m.ReplyToList.Select(r => r.Address).ToList();
+                        nombre = m.From.DisplayName;
+                    })
+                    .Returns(true);
+                var gestor = new GestorFacturasPdfControlado(servicio)
+                {
+                    RemitenteDelUsuario = u => new NestoAPI.Infraestructure.EnvioDocumentosCorreo.RemitenteUsuario { Nombre = "Paloma", Correo = "paloma@nuevavision.es" }
+                };
+
+                _ = await gestor.EnviarFacturasACorreo("1", new[] { "NV11111" }, new[] { "cliente@correo.es" }, "NUEVAVISION\\Paloma");
+
+                Assert.AreEqual("administracion@nuevavision.es", enviado.From.Address, "La misma dirección técnica");
+                Assert.AreEqual("Paloma - Nueva Visión", nombre);
+                CollectionAssert.AreEqual(new[] { "paloma@nuevavision.es" }, copias, "Hoy no se ponía en copia al usuario");
+                CollectionAssert.AreEqual(new[] { "paloma@nuevavision.es" }, responderA);
+                StringAssert.Contains(enviado.Body, "<p>Paloma<br/>Tel. 916281914<br/>paloma@nuevavision.es</p>");
+                Assert.IsFalse(enviado.Body.Contains("Departamento de Administración"));
+            });
+        }
+
+        [TestMethod]
+        public async Task ConstruirCorreosFacturasDia_Sugerencia1167_ElEnvioDiarioNoCambiaAunqueSePasenDatos()
+        {
+            await SinEsperas(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");
+                var gestor = new GestorFacturasPdfControlado(servicio);
+                var remitente = new NestoAPI.Infraestructure.EnvioDocumentosCorreo.RemitenteUsuario { Nombre = "Paloma", Correo = "paloma@nuevavision.es" };
+
+                List<MailMessage> correos = await gestor.ConstruirCorreosFacturasDia(
+                    new[] { new FacturaCorreo { Empresa = "1", Factura = "NV11111", Correo = "cliente@correo.es" } }, null, envioAMano: false, remitenteAMano: remitente);
+
+                Assert.IsTrue(string.IsNullOrEmpty(correos.Single().From.DisplayName));
+                Assert.AreEqual(0, correos.Single().CC.Count);
+                StringAssert.Contains(correos.Single().Body, "Departamento de Administración");
+            });
+        }
+
+        [TestMethod]
         public async Task EnviarFacturasACorreo_FacturaDeOtroCliente_SeRechazaSinEnviarNada()
         {
             IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");

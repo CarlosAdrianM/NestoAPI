@@ -39,8 +39,9 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
         /// Para los vendedores de NestoApp: (empresa, cliente del pedido) → si puede. Si no, 403 con
         /// <see cref="Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES"/> sin mandar nada. Null (empleados) = sin comprobar.
         /// </param>
+        /// <param name="vendedorDelToken">Sugerencia 1167: el vendedor del token de NestoApp (null en Nesto: se lee de sus parámetros).</param>
         public async Task<ResultadoEnvioDocumentoCorreoDTO> EnviarPedido(string empresa, int numero, EnvioDocumentoCorreoDTO envio, string usuario,
-            System.Func<string, string, bool> clientePermitido = null)
+            System.Func<string, string, bool> clientePermitido = null, string vendedorDelToken = null)
         {
             DocumentoParaCorreo documento = await proveedor.PdfPedido(empresa, numero, usuario).ConfigureAwait(false);
             if (documento == null)
@@ -54,10 +55,10 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             string asuntoDefecto = $"Pedido nº {numero}";
             string textoDefecto = $"Adjunto le enviamos el pedido nº {numero}.";
             return await Enviar(empresa, documento, envio, usuario, asuntoDefecto, textoDefecto, "Pedidos",
-                $"Pedido {numero}", $"Pedido {numero} enviado por correo a").ConfigureAwait(false);
+                $"Pedido {numero}", $"Pedido {numero} enviado por correo a", vendedorDelToken).ConfigureAwait(false);
         }
 
-        public async Task<ResultadoEnvioDocumentoCorreoDTO> EnviarMandato(string empresa, string cliente, string contacto, EnvioMandatoCorreoDTO envio, string usuario)
+        public async Task<ResultadoEnvioDocumentoCorreoDTO> EnviarMandato(string empresa, string cliente, string contacto, EnvioMandatoCorreoDTO envio, string usuario, string vendedorDelToken = null)
         {
             DocumentoParaCorreo documento = await proveedor.PdfMandato(empresa, cliente, contacto, envio?.Ccc).ConfigureAwait(false);
             if (documento == null)
@@ -71,19 +72,22 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             const string textoDefecto = "Adjunto le enviamos la orden de domiciliación de adeudo directo SEPA. " +
                 "Le rogamos que nos la devuelva firmada.";
             return await Enviar(empresa, documento, envio, usuario, asuntoDefecto, textoDefecto, "Clientes",
-                $"Cliente {cliente}/{contacto}", $"Mandato SEPA del cliente {cliente}/{contacto} enviado por correo a").ConfigureAwait(false);
+                $"Cliente {cliente}/{contacto}", $"Mandato SEPA del cliente {cliente}/{contacto} enviado por correo a", vendedorDelToken).ConfigureAwait(false);
         }
 
         private async Task<ResultadoEnvioDocumentoCorreoDTO> Enviar(string empresa, DocumentoParaCorreo documento, EnvioDocumentoCorreoDTO envio,
-            string usuario, string asuntoDefecto, string textoDefecto, string tabla, string referencia, string descripcion)
+            string usuario, string asuntoDefecto, string textoDefecto, string tabla, string referencia, string descripcion,
+            string vendedorDelToken = null)
         {
             List<string> destinatarios = await ResolverDestinatarios(empresa, documento, envio?.Destinatarios).ConfigureAwait(false);
-            string correoUsuario = proveedor.CorreoUsuario(usuario);
+            // Sugerencia 1167: a nombre de quien lo manda (sin sus datos, como antes)
+            RemitenteUsuario remitente = proveedor.DatosRemitenteUsuario(usuario, vendedorDelToken);
+            string correoUsuario = !string.IsNullOrWhiteSpace(remitente?.Correo) ? remitente.Correo.Trim() : proveedor.CorreoUsuario(usuario);
 
             bool enviado;
             using (MailMessage correo = ConstruirCorreo(documento, destinatarios, correoUsuario,
                 string.IsNullOrWhiteSpace(envio?.Asunto) ? asuntoDefecto : envio.Asunto.Trim(),
-                string.IsNullOrWhiteSpace(envio?.Texto) ? textoDefecto : envio.Texto))
+                string.IsNullOrWhiteSpace(envio?.Texto) ? textoDefecto : envio.Texto, remitente?.Nombre))
             {
                 enviado = servicioCorreo.EnviarCorreoSMTP(correo);
             }
@@ -152,16 +156,23 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             return resultado;
         }
 
+        /// <param name="nombreUsuario">Sugerencia 1167: el nombre de quien lo manda (null: como antes, a nombre de la empresa).</param>
         internal static MailMessage ConstruirCorreo(DocumentoParaCorreo documento, List<string> destinatarios, string correoUsuario,
-            string asunto, string texto)
+            string asunto, string texto, string nombreUsuario = null)
         {
+            MailAddress empresa = documento.Remitente ?? new MailAddress(Constantes.Correos.CORREO_ADMON);
+            bool aSuNombre = !string.IsNullOrWhiteSpace(nombreUsuario);
             var correo = new MailMessage
             {
-                From = documento.Remitente ?? new MailAddress(Constantes.Correos.CORREO_ADMON),
+                From = aSuNombre ? DeParteDe(empresa, nombreUsuario) : empresa,
                 Subject = asunto,
                 IsBodyHtml = true,
-                Body = CuerpoHtml(texto, documento.Firma)
+                Body = CuerpoHtml(texto, aSuNombre ? FirmaPersonal(nombreUsuario, correoUsuario, documento.Firma) : documento.Firma)
             };
+            if (aSuNombre)
+            {
+                ResponderA(correo, correoUsuario);
+            }
             foreach (string destinatario in destinatarios)
             {
                 correo.To.Add(new MailAddress(destinatario));
@@ -180,6 +191,55 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             correo.Attachments.Add(new Attachment(new MemoryStream(documento.Pdf ?? new byte[0]), documento.NombreFichero, "application/pdf"));
             return correo;
         }
+
+        /// <summary>Sugerencia 1167: lo que se ve como remitente de un correo mandado a mano por esta persona.</summary>
+        internal const string SUFIJO_NOMBRE_REMITENTE = " - Nueva Visión";
+
+        /// <summary>
+        /// Sugerencia 1167: la MISMA dirección técnica (el SMTP de Office 365 autenticado rechazaría otra) con el nombre visible
+        /// «{Nombre} - Nueva Visión».
+        /// </summary>
+        internal static MailAddress DeParteDe(MailAddress empresa, string nombre)
+            => new MailAddress((empresa ?? new MailAddress(Constantes.Correos.CORREO_ADMON)).Address, nombre.Trim() + SUFIJO_NOMBRE_REMITENTE);
+
+        /// <summary>Sugerencia 1167: las respuestas van al correo de quien lo manda (si está bien escrito).</summary>
+        internal static void ResponderA(MailMessage correo, string correoUsuario)
+        {
+            if (correo == null || string.IsNullOrWhiteSpace(correoUsuario))
+            {
+                return;
+            }
+            try
+            {
+                correo.ReplyToList.Add(new MailAddress(correoUsuario.Trim()));
+            }
+            catch (FormatException)
+            {
+                // Mal escrito: las respuestas van al buzón de la empresa, como antes
+            }
+        }
+
+        /// <summary>
+        /// Sugerencia 1167: la firma de quien lo manda (su nombre y su correo) con el teléfono general de la firma de la serie,
+        /// sin el departamento.
+        /// </summary>
+        internal static string FirmaPersonal(string nombre, string correoUsuario, string firmaSerie)
+        {
+            var lineas = new List<string> { Seguro(nombre?.Trim()) };
+            System.Text.RegularExpressions.Match telefono = System.Text.RegularExpressions.Regex.Match(firmaSerie ?? string.Empty, @"Tel\.\s*[0-9 ]+[0-9]");
+            if (telefono.Success)
+            {
+                lineas.Add(telefono.Value.Trim());
+            }
+            if (!string.IsNullOrWhiteSpace(correoUsuario))
+            {
+                lineas.Add(Seguro(correoUsuario.Trim()));
+            }
+            return $"<p>{string.Join("<br/>", lineas)}</p>";
+        }
+
+        private static string Seguro(string texto)
+            => (texto ?? string.Empty).Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
 
         /// <summary>El texto del usuario, a salvo (sin HTML suyo) y con sus saltos de línea; debajo, la firma del departamento.</summary>
         internal static string CuerpoHtml(string texto, string firma)

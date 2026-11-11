@@ -78,6 +78,9 @@ namespace NestoAPI.Controllers
             return (empresa, cliente) => ClientesDelVendedor.PuedeElVendedor(identity, empresa, cliente, EsClienteDelVendedor);
         }
 
+        /// <summary>Sugerencia 1167: el vendedor del token de NestoApp (claim «Vendedor»); null en Nesto.</summary>
+        private string VendedorDelToken() => (User?.Identity as ClaimsIdentity)?.FindFirst("Vendedor")?.Value?.Trim();
+
         private static string EmpresaOPorDefecto(string empresa)
             => string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
 
@@ -87,7 +90,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResultadoEnvioDocumentoCorreoDTO))]
         public Task<IHttpActionResult> EnviarPedidoPorCorreo(string empresa, int numero, [FromBody] EnvioDocumentoCorreoDTO envio)
             => Ejecutar(EmpresaOPorDefecto(empresa), null, () => gestor.EnviarPedido(EmpresaOPorDefecto(empresa), numero,
-                envio ?? new EnvioDocumentoCorreoDTO(), User?.Identity?.Name, ClientePermitido()));
+                envio ?? new EnvioDocumentoCorreoDTO(), User?.Identity?.Name, ClientePermitido(), VendedorDelToken()));
 
         // POST api/Clientes/1/15191/0/Mandato/EnviarPorCorreo   { "Ccc": "1", "Motor": "QuestPDF", "Destinatarios": [...] }
         [HttpPost]
@@ -95,7 +98,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResultadoEnvioDocumentoCorreoDTO))]
         public Task<IHttpActionResult> EnviarMandatoPorCorreo(string empresa, string cliente, string contacto, [FromBody] EnvioMandatoCorreoDTO envio)
             => Ejecutar(EmpresaOPorDefecto(empresa), cliente?.Trim() ?? string.Empty, () => gestor.EnviarMandato(EmpresaOPorDefecto(empresa), cliente?.Trim(), contacto?.Trim(),
-                envio ?? new EnvioMandatoCorreoDTO(), User?.Identity?.Name));
+                envio ?? new EnvioMandatoCorreoDTO(), User?.Identity?.Name, VendedorDelToken()));
 
         // GET api/Clientes/1/15191/0/CorreosContacto
         /// <summary>NestoAPI#724: los correos de las personas de contacto, para proponerlos en el diálogo de envío de Nesto.</summary>

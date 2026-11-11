@@ -123,6 +123,50 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
             }
         }
 
+        /// <summary>Sugerencia 1167: el parámetro de usuario con su vendedor (el mismo que usa Nesto).</summary>
+        internal const string PARAMETRO_VENDEDOR = "Vendedor";
+
+        public RemitenteUsuario DatosRemitenteUsuario(string usuario, string vendedorDelToken)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            string sinDominio = usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+            string nombre = null;
+            try
+            {
+                using (var db = new NVEntities())
+                {
+                    string vendedor = vendedorDelToken?.Trim();
+                    if (string.IsNullOrEmpty(vendedor))
+                    {
+                        vendedor = db.ParametrosUsuario
+                            .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Usuario == sinDominio && p.Clave == PARAMETRO_VENDEDOR)
+                            .Select(p => p.Valor)
+                            .FirstOrDefault()?.Trim();
+                    }
+                    if (!string.IsNullOrEmpty(vendedor))
+                    {
+                        nombre = db.Vendedores
+                            .Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número == vendedor)
+                            .Select(v => v.Descripción)
+                            .FirstOrDefault()?.Trim();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Sin el nombre, el correo sale igual (con el usuario)
+                ElmahHelper.Log(new Exception($"[Sugerencia 1167] No se ha podido leer el vendedor de {sinDominio}: {ex.Message}", ex));
+            }
+            return new RemitenteUsuario
+            {
+                Nombre = string.IsNullOrWhiteSpace(nombre) ? sinDominio : nombre,
+                Correo = CorreoUsuario(usuario)
+            };
+        }
+
         public async Task RegistrarEnvio(string tabla, string documento, string descripcion, string usuario)
         {
             using (var db = new NVEntities())

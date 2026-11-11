@@ -17,6 +17,13 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
         public string Firma { get; set; }
     }
 
+    /// <summary>Sugerencia 1167: quien manda a mano un correo (nombre visible y su correo para la respuesta y la copia).</summary>
+    public class RemitenteUsuario
+    {
+        public string Nombre { get; set; }
+        public string Correo { get; set; }
+    }
+
     /// <summary>
     /// NestoAPI#724: lo que el envío de documentos necesita de la BD y de los generadores de PDF. Aparte del
     /// gestor para que los tests no toquen ni la BD ni QuestPDF (SkiaSharp).
@@ -31,6 +38,12 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
         Task<List<string>> CorreosContacto(string empresa, string cliente, string contacto);
         /// <summary>El correo del usuario (CorreoDefecto de ParametrosUsuario, sin dominio). Null si no tiene.</summary>
         string CorreoUsuario(string usuario);
+        /// <summary>
+        /// Sugerencia 1167 (Paloma, 11/11/26): a nombre de quién sale un correo mandado a mano. Nombre = Vendedores.Descripción
+        /// (empresa 1) del vendedor del usuario (el del token en NestoApp; si no, ParametrosUsuario «Vendedor»); sin vendedor, el
+        /// usuario sin dominio. Correo = <see cref="CorreoUsuario"/>.
+        /// </summary>
+        RemitenteUsuario DatosRemitenteUsuario(string usuario, string vendedorDelToken);
         /// <summary>Constancia en Modificaciones.</summary>
         Task RegistrarEnvio(string tabla, string documento, string descripcion, string usuario);
     }

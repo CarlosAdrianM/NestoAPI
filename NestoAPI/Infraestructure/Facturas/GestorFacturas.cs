@@ -141,6 +141,12 @@ namespace NestoAPI.Infraestructure.Facturas
             this.lectorParametros = lectorParametros;
         }
 
+        /// <summary>
+        /// Sugerencia 1167 (Paloma, 11/11/26): (usuario) → a nombre de quién sale una factura mandada A MANO (EnviarFacturasACorreo).
+        /// Null (por defecto, y en el envío diario o la factura de Verifactu, que no lo usan): a nombre de la empresa, como antes.
+        /// </summary>
+        internal Func<string, EnvioDocumentosCorreo.RemitenteUsuario> RemitenteDelUsuario { get; set; }
+
         // virtual: costura para que los tests del envío diario (#261) puedan forzar el fallo de
         // una factura concreta sin tocar el stack real de PDF (QuestPDF/RDLC -> SkiaSharp nativo).
         public virtual ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
@@ -1334,7 +1340,8 @@ namespace NestoAPI.Infraestructure.Facturas
             string paraCorreo = string.Join(",", destinatarios);
             List<FacturaCorreo> lista = numeros.Select(n => new FacturaCorreo { Empresa = empresaLimpia, Factura = n, Correo = paraCorreo }).ToList();
             var provisionalesPorCorreo = new Dictionary<MailMessage, List<FacturaCorreo>>();
-            List<MailMessage> mensajes = await ConstruirCorreosFacturasDia(lista, provisionalesPorCorreo, envioAMano: true);
+            List<MailMessage> mensajes = await ConstruirCorreosFacturasDia(lista, provisionalesPorCorreo, envioAMano: true,
+                remitenteAMano: LeerRemitenteAMano(usuario));
             MailMessage correo = mensajes.SingleOrDefault();
             List<string> adjuntas = correo == null
                 ? new List<string>()
@@ -1482,9 +1489,13 @@ namespace NestoAPI.Infraestructure.Facturas
         /// que cada correo lleva como justificante provisional (para marcarlas cuando el correo salga bien).</param>
         /// <param name="envioAMano">Nesto#259: lo manda una persona desde la ficha del cliente (no es la facturación del
         /// día): cambia el texto del correo.</param>
+        /// <param name="remitenteAMano">Sugerencia 1167: solo con <paramref name="envioAMano"/>: a nombre de quien lo manda, con
+        /// respuesta y copia a su correo y su firma.</param>
         internal async Task<List<MailMessage>> ConstruirCorreosFacturasDia(IEnumerable<FacturaCorreo> facturasCorreo,
-            IDictionary<MailMessage, List<FacturaCorreo>> provisionalesPorCorreo = null, bool envioAMano = false)
+            IDictionary<MailMessage, List<FacturaCorreo>> provisionalesPorCorreo = null, bool envioAMano = false,
+            EnvioDocumentosCorreo.RemitenteUsuario remitenteAMano = null)
         {
+            bool aSuNombre = envioAMano && !string.IsNullOrWhiteSpace(remitenteAMano?.Nombre);
             List<MailMessage> listaCorreos = new List<MailMessage>();
             string mailAnterior = string.Empty;
             MailMessage mail = new MailMessage();
@@ -1541,7 +1552,28 @@ namespace NestoAPI.Infraestructure.Facturas
                     mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
                     mail.Bcc.Add(new MailAddress("lauramagan@nuevavision.es"));
 
-                    mail.Body = (await GenerarCorreoHTML(fra, envioAMano)).ToString();
+                    string firmaPersonal = null;
+                    if (aSuNombre)
+                    {
+                        // Sugerencia 1167: misma dirección técnica, con su nombre; respuesta y copia a su correo
+                        string correoUsuario = remitenteAMano.Correo?.Trim();
+                        mail.From = EnvioDocumentosCorreo.GestorEnvioDocumentosCorreo.DeParteDe(mail.From, remitenteAMano.Nombre);
+                        EnvioDocumentosCorreo.GestorEnvioDocumentosCorreo.ResponderA(mail, correoUsuario);
+                        if (!string.IsNullOrWhiteSpace(correoUsuario))
+                        {
+                            try
+                            {
+                                mail.CC.Add(new MailAddress(correoUsuario));
+                            }
+                            catch (FormatException)
+                            {
+                                // Mal escrito: sale sin copia
+                            }
+                        }
+                        firmaPersonal = EnvioDocumentosCorreo.GestorEnvioDocumentosCorreo.FirmaPersonal(remitenteAMano.Nombre, correoUsuario, serieFactura.FirmaCorreo);
+                    }
+
+                    mail.Body = (await GenerarCorreoHTML(fra, envioAMano, firmaPersonal)).ToString();
                     mail.IsBodyHtml = true;
                 }
                 try
@@ -1735,7 +1767,26 @@ namespace NestoAPI.Infraestructure.Facturas
             return clientesCorreo;
         }
 
-        private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra, bool envioAMano = false)
+        private EnvioDocumentosCorreo.RemitenteUsuario LeerRemitenteAMano(string usuario)
+        {
+            if (RemitenteDelUsuario == null || string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            try
+            {
+                return RemitenteDelUsuario(usuario);
+            }
+            catch (Exception ex)
+            {
+                // Sin sus datos, la factura sale a nombre de la empresa, como antes
+                ElmahHelper.Log(new Exception($"[Sugerencia 1167] No se han podido leer los datos de {usuario} para el correo de facturas: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <param name="firma">Sugerencia 1167: la firma de quien lo manda a mano (null: la de la serie).</param>
+        private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra, bool envioAMano = false, string firma = null)
         {
             ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
             StringBuilder s = new StringBuilder();
@@ -1765,7 +1816,7 @@ namespace NestoAPI.Infraestructure.Facturas
             _ = s.AppendLine(GenerarSeccionDescargaApp());
             _ = s.AppendLine(GenerarMensajeModelo347());
             _ = s.AppendLine("<br/>");
-            _ = s.AppendLine(serieFactura.FirmaCorreo);
+            _ = s.AppendLine(firma ?? serieFactura.FirmaCorreo);
 
             return s;
         }

@@ -23,7 +23,11 @@ namespace NestoAPI.Controllers
         public FacturasController()
         {
             servicio = new ServicioFacturas();
-            gestor = new GestorFacturas(servicio);
+            // Sugerencia 1167: las facturas mandadas a mano salen a nombre de quien las manda
+            gestor = new GestorFacturas(servicio)
+            {
+                RemitenteDelUsuario = usuario => new Infraestructure.EnvioDocumentosCorreo.ProveedorDocumentosCorreo().DatosRemitenteUsuario(usuario, null)
+            };
         }
 
         internal FacturasController(IServicioFacturas servicio, IGestorFacturas gestor)

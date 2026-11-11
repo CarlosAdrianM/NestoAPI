@@ -43,6 +43,8 @@ namespace NestoAPI.Tests.Infraestructure
                 Destinatarios = m.To.Select(t => t.Address).ToList();
                 Copias = m.CC.Select(t => t.Address).ToList();
                 Remitente = m.From.Address;
+                NombreRemitente = m.From.DisplayName;
+                ResponderA = m.ReplyToList.Select(r => r.Address).ToList();
                 Asunto = m.Subject;
                 Cuerpo = m.Body;
                 NombreAdjunto = m.Attachments.Single().Name;
@@ -55,7 +57,7 @@ namespace NestoAPI.Tests.Infraestructure
                 Cliente = "15191",
                 Contacto = "0",
                 Remitente = new MailAddress("administracion@nuevavision.es"),
-                Firma = "<p>Departamento de Administración</p>"
+                Firma = "<p>Departamento de Administración<br/>Tel. 916281914<br/>administracion@nuevavision.es</p>"
             }));
             A.CallTo(() => proveedor.PdfMandato("1", "15191", "0", A<string>._)).Returns(Task.FromResult(new DocumentoParaCorreo
             {
@@ -66,12 +68,16 @@ namespace NestoAPI.Tests.Infraestructure
                 Remitente = new MailAddress("administracion@nuevavision.es")
             }));
             A.CallTo(() => proveedor.CorreoUsuario("NUEVAVISION\\MariaJose")).Returns("mariajose@nuevavision.es");
+            // Sugerencia 1167: sin datos del usuario, como antes (los tests de siempre)
+            A.CallTo(() => proveedor.DatosRemitenteUsuario(A<string>._, A<string>._)).Returns(null);
             gestor = new GestorEnvioDocumentosCorreo(proveedor, servicioCorreo);
         }
 
         private List<string> Destinatarios;
         private List<string> Copias;
         private string Remitente;
+        private string NombreRemitente;
+        private List<string> ResponderA;
         private string Asunto;
         private string Cuerpo;
         private string NombreAdjunto;
@@ -226,6 +232,82 @@ namespace NestoAPI.Tests.Infraestructure
                 () => gestor.EnviarMandato("1", "99999", "0", new EnvioMandatoCorreoDTO { Ccc = "1" }, "NUEVAVISION\\MariaJose"));
 
             Assert.AreEqual(HttpStatusCode.NotFound, ex.StatusCode);
+        }
+
+        // ---------------------------------------------------------------- Sugerencia 1167 (Paloma)
+
+        private void ConDatosDeMariaJose()
+            => A.CallTo(() => proveedor.DatosRemitenteUsuario("NUEVAVISION\\MariaJose", A<string>._))
+                .Returns(new RemitenteUsuario { Nombre = "María José", Correo = "mariajose@nuevavision.es" });
+
+        [TestMethod]
+        public async Task Sugerencia1167_ConLosDatosDelUsuario_SaleASuNombreConLaMismaDireccionTecnica()
+        {
+            ConDatosDeMariaJose();
+
+            _ = await gestor.EnviarPedido("1", 929498, Para("cliente@correo.es"), "NUEVAVISION\\MariaJose");
+
+            Assert.AreEqual("administracion@nuevavision.es", Remitente, "La dirección no cambia: el SMTP rechazaría otra");
+            Assert.AreEqual("María José - Nueva Visión", NombreRemitente);
+        }
+
+        [TestMethod]
+        public async Task Sugerencia1167_ConLosDatosDelUsuario_LasRespuestasVanASuCorreoYSigueLaCopia()
+        {
+            ConDatosDeMariaJose();
+
+            _ = await gestor.EnviarPedido("1", 929498, Para("cliente@correo.es"), "NUEVAVISION\\MariaJose");
+
+            CollectionAssert.AreEqual(new[] { "mariajose@nuevavision.es" }, ResponderA);
+            CollectionAssert.AreEqual(new[] { "mariajose@nuevavision.es" }, Copias);
+        }
+
+        [TestMethod]
+        public async Task Sugerencia1167_ConLosDatosDelUsuario_SuFirmaConElTelefonoGeneralYSinElDepartamento()
+        {
+            ConDatosDeMariaJose();
+
+            _ = await gestor.EnviarPedido("1", 929498, Para("cliente@correo.es"), "NUEVAVISION\\MariaJose");
+
+            StringAssert.Contains(Cuerpo, "<p>María José<br/>Tel. 916281914<br/>mariajose@nuevavision.es</p>");
+            Assert.IsFalse(Cuerpo.Contains("Departamento de Administración"));
+        }
+
+        [TestMethod]
+        public async Task Sugerencia1167_SinDatosDelUsuario_ComoAntes()
+        {
+            _ = await gestor.EnviarPedido("1", 929498, Para("cliente@correo.es"), "NUEVAVISION\\MariaJose");
+
+            Assert.AreEqual("administracion@nuevavision.es", Remitente);
+            Assert.IsTrue(string.IsNullOrEmpty(NombreRemitente));
+            Assert.AreEqual(0, ResponderA.Count);
+            StringAssert.Contains(Cuerpo, "Departamento de Administración");
+            CollectionAssert.AreEqual(new[] { "mariajose@nuevavision.es" }, Copias);
+        }
+
+        [TestMethod]
+        public async Task Sugerencia1167_ElVendedorDelTokenDeNestoAppLlegaAlProveedor()
+        {
+            _ = await gestor.EnviarPedido("1", 929498, Para("cliente@correo.es"), "pepa@vendedores.es", null, "PA");
+
+            A.CallTo(() => proveedor.DatosRemitenteUsuario("pepa@vendedores.es", "PA")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Sugerencia1167_ElMandatoTambienSaleASuNombre()
+        {
+            ConDatosDeMariaJose();
+
+            _ = await gestor.EnviarMandato("1", "15191", "0", new EnvioMandatoCorreoDTO { Ccc = "1", Destinatarios = new List<string> { "cliente@correo.es" } }, "NUEVAVISION\\MariaJose");
+
+            Assert.AreEqual("María José - Nueva Visión", NombreRemitente);
+            Assert.AreEqual("administracion@nuevavision.es", Remitente);
+        }
+
+        [TestMethod]
+        public void Sugerencia1167_FirmaPersonal_SinTelefonoNiCorreo_SoloElNombre()
+        {
+            Assert.AreEqual("<p>Ana &amp; Luis</p>", GestorEnvioDocumentosCorreo.FirmaPersonal("Ana & Luis", null, null));
         }
 
         [TestMethod]
