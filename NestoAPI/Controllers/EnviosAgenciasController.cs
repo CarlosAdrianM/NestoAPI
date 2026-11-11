@@ -1177,6 +1177,11 @@ namespace NestoAPI.Controllers
             // Idempotencia: si ya hay albarán, "tramitar" = reimprimir (no reinsertar).
             if (!string.IsNullOrWhiteSpace(envio.CodigoBarras))
             {
+                string sinEtiqueta = await MotivoSinEtiquetaRepartoPropio(envio); // NestoAPI#847: recogida o cobro
+                if (sinEtiqueta != null)
+                {
+                    return Content(HttpStatusCode.Conflict, sinEtiqueta);
+                }
                 (EtiquetaDataTrans reimpresion, AgenciaRemotaException errorReimpresion) = await ReimprimirSeguro(agencia, envio.CodigoBarras.Trim());
                 bool reimpresionOk = reimpresion != null && reimpresion.Exito && reimpresion.EsZpl;
                 if (FallosAgenciaRemota.NoResponde(errorReimpresion))
@@ -1895,6 +1900,11 @@ namespace NestoAPI.Controllers
             {
                 return Content(HttpStatusCode.Conflict, "Primero hay que tramitar el envío.");
             }
+            string sinEtiquetaRp = await MotivoSinEtiquetaRepartoPropio(envio); // NestoAPI#847: recogida o cobro
+            if (sinEtiquetaRp != null)
+            {
+                return Content(HttpStatusCode.Conflict, sinEtiquetaRp);
+            }
 
             string impresora = peticion?.Impresora?.Trim();
             if (string.IsNullOrEmpty(impresora))
@@ -2108,6 +2118,34 @@ namespace NestoAPI.Controllers
         {
             get => datosAnulacionRepartoPropio ?? (datosAnulacionRepartoPropio = new Infraestructure.Agencias.RepartoPropio.DatosAnulacionEnvioRepartoPropioEF(db));
             set => datosAnulacionRepartoPropio = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#847: el tipo de nota (Entrega, Recogida, Cobro) del pedido, o null si no es una nota. Sustituible en los tests.
+        /// </summary>
+        internal Func<int, Task<string>> TipoNotaDelPedido { get; set; }
+
+        /// <summary>
+        /// NestoAPI#847 (11/11/26): la parada de una nota de recogida o de cobro no tiene etiqueta RP que reimprimir (se vio un bulto
+        /// fantasma en la furgoneta tras reimprimirla). Motivo de usted o null. Si no se puede saber, se deja imprimir (como antes).
+        /// </summary>
+        private async Task<string> MotivoSinEtiquetaRepartoPropio(EnviosAgencia envio)
+        {
+            if (envio == null || envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO || !envio.Pedido.HasValue || envio.Pedido.Value <= 0)
+            {
+                return null;
+            }
+            try
+            {
+                Func<int, Task<string>> leer = TipoNotaDelPedido
+                    ?? (p => new Infraestructure.Agencias.RepartoPropio.DatosAnulacionEnvioRepartoPropioEF(db).TipoNota(p));
+                return Infraestructure.Agencias.RepartoPropio.EtiquetaRepartoPropioDeNota.MotivoSinEtiqueta(envio, await leer(envio.Pedido.Value));
+            }
+            catch (Exception ex)
+            {
+                RegistrarEnElmah(new Exception($"[NestoAPI#847] No se ha podido saber si el envío {envio.Numero} es de una nota de recogida: se imprime. {ex.Message}", ex));
+                return null;
+            }
         }
 
         /// <summary>Novedades 1162: «repartoCambiado» a las PDA del reparto (como NotasEntregaController). Sustituible en los tests. Nunca lanza.</summary>

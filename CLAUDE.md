@@ -264,6 +264,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `Reposiciones:{tienda}` del AlmacenHub (Nesto, Enviar reposición). `GET Reposiciones/Puntual/Estado` trae BultosRecogidos/BultosTotal/RepartidorRecogida.
 - Red de seguridad (`RedSeguridadFurgoneta`): recibir una REPO y el abono de una NR cierran lo que siga en una furgoneta. Job
   `furgoneta-sin-descargar` L-V 22:00 (campana a Almacén, Dirección y el repartidor). `GET api/Reposiciones/{traspaso}/Seguimiento`.
+- **Sin etiqueta RP para recogidas y cobros (NestoAPI#847, 11/11/26)**: `ImprimirEtiqueta` y la reimpresión de `Tramitar` (la de Nesto)
+  dan 409 con el motivo si el envío de la 14 es la parada de una nota de Recogida o de Cobro (`EtiquetaRepartoPropioDeNota`); sus
+  bultos son NR{pedido}-{N}. Reimprimir la RP de una recogida dejó un bulto fantasma en la furgoneta. Si no se sabe el tipo, se imprime.
+- **Packing entre dos PDA (incidencia 1169, Ariadna)**: F8 en la lista no vale para una entrega que ha terminado OTRA PDA y solo está
+  resaltada (se reimprimía el envío del compañero y la propia no salía); vale al entrar en ella o elegirla con las flechas.
 - **Incidencias 1189/1190 (11/11/26)**: cargar la parada de una RECOGIDA (o de una NC) ya no apunta Cargado RP (no hay bulto; la carga en
   `EnviosAgenciaCargaBultos` sigue: repartidor, soloMios, SinCargar igual). Una incidencia de un envío sin bultos en ninguna furgoneta
   apunta su Cargado (salió sin leer). Descargar admite el papel `NE{pedido}` (todos los RP de su envío en furgoneta) y con una NR cierra

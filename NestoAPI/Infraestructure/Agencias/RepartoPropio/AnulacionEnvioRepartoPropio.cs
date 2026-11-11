@@ -169,6 +169,32 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     }
 
     /// <summary>
+    /// NestoAPI#847 (11/11/26): la parada de una nota de RECOGIDA o de COBRO no lleva etiqueta RP: no sale ningún bulto (los de una
+    /// recogida son NR{pedido}-{N} y los da la nota). Reimprimirla acabó en un bulto RP fantasma en la furgoneta.
+    /// </summary>
+    public static class EtiquetaRepartoPropioDeNota
+    {
+        /// <summary>El motivo (de usted) por el que el envío no lleva etiqueta RP, o null si la lleva.</summary>
+        public static string MotivoSinEtiqueta(EnviosAgencia envio, string tipoNota)
+        {
+            if (envio == null || envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                return null;
+            }
+            switch (TiposNotaEntrega.Normalizar(tipoNota))
+            {
+                case TiposNotaEntrega.RECOGIDA:
+                    return $"El envío {envio.Numero} es la parada de la nota de recogida {envio.Pedido}: no lleva etiqueta RP, porque no sale " +
+                        $"ningún bulto. Las etiquetas de lo que se recoge (NR{envio.Pedido}-1, NR{envio.Pedido}-2…) se imprimen desde la nota de recogida.";
+                case TiposNotaEntrega.COBRO:
+                    return $"El envío {envio.Numero} es la parada de la nota de cobro {envio.Pedido}: no lleva bultos ni etiqueta.";
+                default:
+                    return null;
+            }
+        }
+    }
+
+    /// <summary>
     /// Las tablas del reparto van por SQL, fuera del EDMX (como sus repositorios): cada una se mira solo si existe. La nota, por EF
     /// (CabPedidoVta.NotaEntrega) y su tipo de NotasEntregaCabecera si está la tabla (sin ella, «Entrega»).
     /// </summary>
@@ -217,7 +243,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         // Como LeerEnviosDelPedido de las paradas: el envío se busca por el número de pedido.
-        private async Task<string> TipoNota(int pedido)
+        /// <summary>NestoAPI#847: también para no imprimir la etiqueta RP de una recogida o un cobro.</summary>
+        public async Task<string> TipoNota(int pedido)
         {
             List<string> empresas = await db.CabPedidoVtas.AsNoTracking()
                 .Where(c => c.Número == pedido && c.NotaEntrega)
