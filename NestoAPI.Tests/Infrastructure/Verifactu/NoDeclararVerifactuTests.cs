@@ -102,8 +102,7 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.IsTrue(resultado.Exitoso, resultado.Mensaje);
             Assert.AreEqual(VerifactuJobsService.ESTADO_DESCARTADA, factura.VerifactuEstado);
             Assert.AreEqual(ERROR_AEAT, factura.VerifactuUltimoError, "el error se conserva");
-            Assert.IsTrue(resultado.Factura.NoDeclarada);
-            Assert.IsFalse(resultado.Factura.PuedeNoDeclararse);
+            Assert.IsNull(resultado.Factura, "sale de la lista");
             Modificacion rastro = modificaciones.Single();
             StringAssert.Contains(rastro.Nuevo, MOTIVO);
             StringAssert.Contains(rastro.Nuevo, "NUEVAVISION\\Laura");
@@ -204,6 +203,23 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             var resultado = await controller.NoDeclarar(new NoDeclararVerifactuDTO { Empresa = "1", Numero = "CV2600692", Motivo = MOTIVO }) as BadRequestErrorMessageResult;
 
             Assert.AreEqual("Desde el 01/01/2027 todas las facturas tienen que declararse.", resultado?.Message);
+        }
+
+        [TestMethod]
+        public async Task Controlador_NoExiste_404ConMessage()
+        {
+            var fake = A.Fake<IServicioFacturasPendientesVerifactu>();
+            A.CallTo(() => fake.NoDeclarar(A<string>._, A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult<ResultadoReintentoVerifactuDTO>(null));
+            var controller = new VerifactuController(fake)
+            {
+                User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" })
+            };
+
+            var resultado = await controller.NoDeclarar(new NoDeclararVerifactuDTO { Empresa = "1", Numero = "CV2699999", Motivo = MOTIVO })
+                as NegotiatedContentResult<System.Web.Http.HttpError>;
+
+            Assert.AreEqual(HttpStatusCode.NotFound, resultado?.StatusCode);
+            StringAssert.Contains(resultado.Content.Message, "CV2699999");
         }
 
         [TestMethod]

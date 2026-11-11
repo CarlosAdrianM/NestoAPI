@@ -422,7 +422,7 @@ namespace NestoAPI.Infraestructure.Verifactu
                 Exitoso = true,
                 Mensaje = $"La factura {numero} no se declarará a Verifactu: ya no se reintenta ni sale en la lista. " +
                     "Si se corrige el dato, se puede volver a declarar con Reintentar (lista con las no declaradas).",
-                Factura = Mapear(factura, null)
+                Factura = null // ya no está pendiente: sale de la lista
             };
         }
 

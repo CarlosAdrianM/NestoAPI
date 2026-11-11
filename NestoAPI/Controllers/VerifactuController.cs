@@ -63,7 +63,8 @@ namespace NestoAPI.Controllers
             ResultadoReintentoVerifactuDTO resultado = await servicio.NoDeclarar(dto.Empresa, dto.Numero, dto.Motivo, usuario).ConfigureAwait(false);
             if (resultado == null)
             {
-                return NotFound();
+                // Con cuerpo: Nesto distingue así «la factura no existe» de «servidor antiguo» (404 de ruta sin Message).
+                return Content(HttpStatusCode.NotFound, new HttpError($"No existe la factura {dto.Numero.Trim()} en la empresa {dto.Empresa.Trim()}."));
             }
             if (!resultado.Exitoso)
             {
