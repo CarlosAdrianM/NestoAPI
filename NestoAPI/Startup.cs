@@ -906,6 +906,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'eventos-candidatos-sombra' configurado (todos los días a las 3:15)");
 
+            // Fechas de entrega fiables (corte 1, EN SOMBRA, 11/11/26): foto de la fecha prometida de lo que no sale del stock de Algete
+            // (y de qué depende) cuando cambia, para medir el error al albaranear. Sin Scripts/FechasEntregaFotos.sql no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.FotosFechaEntrega.FotosFechaEntregaJobsService.JOB_ID,
+                () => Infraestructure.PedidosVenta.FotosFechaEntrega.FotosFechaEntregaJobsService.Pasada(),
+                Infraestructure.PedidosVenta.FotosFechaEntrega.FotosFechaEntregaJobsService.CRON, // Cron: de lunes a sábado a las 4:50
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'fechas-entrega-fotos-sombra' configurado (L-S 4:50)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(
