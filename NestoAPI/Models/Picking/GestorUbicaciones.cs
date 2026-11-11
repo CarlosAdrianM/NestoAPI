@@ -7,6 +7,9 @@ namespace NestoAPI.Models.Picking
 {
     public class GestorUbicaciones
     {
+        /// <summary>El principio del error cuando no quedan ubicaciones libres del producto (lo traduce <see cref="StockLibreAgotadoPicking"/>).</summary>
+        public const string MENSAJE_DESCUADRADA = "La ubicación está descuadrada o el stock está en otra empresa";
+
         private LineaPedidoPicking linea;
         private List<UbicacionPicking> ubicaciones;
 
@@ -98,7 +101,7 @@ namespace NestoAPI.Models.Picking
 
                     continuar = false;
                     */
-                    throw new Exception("La ubicación está descuadrada o el stock está en otra empresa" +
+                    throw new Exception(MENSAJE_DESCUADRADA +
                         ". Producto: " + linea.Producto.Trim() +
                         ". Pedido: " + linea.NumeroPedido.ToString() +
                         ". Nº Orden Línea: " + linea.Id.ToString());

@@ -2154,6 +2154,7 @@
     <Compile Include="Models\Picking\GestorReposicionTiendas.cs" />
     <Compile Include="Models\Picking\GestorStocksPicking.cs" />
     <Compile Include="Models\Picking\GestorUbicaciones.cs" />
+    <Compile Include="Models\Picking\StockLibreAgotadoPicking.cs" />
     <Compile Include="Models\Picking\IFinalizadorPicking.cs" />
     <Compile Include="Models\Picking\IRellenadorPickingService.cs" />
     <Compile Include="Models\Picking\IRellenadorPrepagosService.cs" />

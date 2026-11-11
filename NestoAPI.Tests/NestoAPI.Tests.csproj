@@ -427,6 +427,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\ReposicionSalidaSqlTests.cs" />
     <Compile Include="Infrastructure\ServicioTraspasoEmpresaTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
+    <Compile Include="Models\Picking\StockLibreAgotadoPickingTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />
     <Compile Include="Infraestructure\ApplicationDbContextInitializerTests.cs" />

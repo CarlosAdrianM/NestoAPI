@@ -74,13 +74,62 @@ namespace NestoAPI.Models.Picking
                     if (NecesitaUbicacion(pedido, linea))
                     {
                         gestor = new GestorUbicaciones(linea, ubicaciones);
-                        gestor.Ejecutar();
+                        try
+                        {
+                            gestor.Ejecutar();
+                        }
+                        catch (Exception ex) when (StockLibreAgotadoPicking.EsDescuadrada(ex))
+                        {
+                            // 11/11/26: si lo ubicado está reservado para otros pedidos, el mensaje claro; si no, el de siempre.
+                            string claro = StockLibreAgotadoPicking.Mensaje(linea.Producto, linea.Almacen, linea.NumeroPedido,
+                                ReservasDeOtros(linea, ubicaciones));
+                            if (claro == null)
+                            {
+                                throw;
+                            }
+                            throw new Exception(claro, ex);
+                        }
                     }
                 }
             }
 
             GestorUbicaciones.Persistir(db, ubicaciones);
 
+        }
+
+        /// <summary>
+        /// Lo reservado del producto para otros pedidos: lo que ya estaba en Ubicaciones con Estado 3 en el almacén de la línea (de
+        /// otros pickings) y lo que esta misma pasada acaba de reservar para otras líneas. Solo se lee si ha saltado el error.
+        /// </summary>
+        private List<ReservaUbicacionPicking> ReservasDeOtros(LineaPedidoPicking linea, List<UbicacionPicking> ubicaciones)
+        {
+            var reservas = new List<ReservaUbicacionPicking>();
+            try
+            {
+                string producto = linea.Producto;
+                string almacen = string.IsNullOrWhiteSpace(linea.Almacen) ? Constantes.Almacenes.ALGETE : linea.Almacen.Trim();
+                int estado = Constantes.Ubicaciones.RESERVADO_PICKING;
+                reservas.AddRange(db.Ubicaciones
+                    .Where(u => u.Número == producto && u.Almacén == almacen && u.Estado == estado && u.PedidoVta != null && u.Cantidad > 0)
+                    .GroupBy(u => u.PedidoVta.Value)
+                    .Select(g => new ReservaUbicacionPicking { Pedido = g.Key, Cantidad = g.Sum(u => u.Cantidad) })
+                    .ToList());
+            }
+            catch (Exception ex)
+            {
+                Infraestructure.ElmahHelper.Log(new Exception($"Picking: no se han podido leer las reservas del producto {linea.Producto?.Trim()}: {ex.Message}", ex),
+                    "Sistema (picking)");
+            }
+            Dictionary<int, int> pedidoDeLinea = pedidos.SelectMany(p => p.Lineas.Select(l => new { l.Id, Pedido = p.Id }))
+                .Where(x => x.Id != 0)
+                .GroupBy(x => x.Id)
+                .ToDictionary(g => g.Key, g => g.First().Pedido);
+            reservas.AddRange((ubicaciones ?? new List<UbicacionPicking>())
+                .Where(u => u.Producto == linea.Producto && u.EstadoNuevo == Constantes.Ubicaciones.RESERVADO_PICKING
+                    && u.Estado != Constantes.Ubicaciones.RESERVADO_PICKING && u.LineaPedidoVentaId != linea.Id
+                    && pedidoDeLinea.ContainsKey(u.LineaPedidoVentaId))
+                .Select(u => new ReservaUbicacionPicking { Pedido = pedidoDeLinea[u.LineaPedidoVentaId], Cantidad = u.CantidadNueva }));
+            return reservas;
         }
 
         /// <summary>
