@@ -298,6 +298,48 @@ namespace NestoAPI.Tests.Controllers
             {
                 return Task.FromResult(0);
             }
+            public string Papel { get; set; }
+            internal override Task<string> LeerPapelEnReenvio(int id)
+            {
+                return Task.FromResult(Papel);
+            }
+        }
+
+        // Incidencia 1191: un envío de EnviosAgenciaReenvios no se puede borrar (FK); 409 con un mensaje claro en vez del genérico de EF.
+        [TestMethod]
+        public async Task DeleteEnviosAgencia_EnvioNuevoDeUnReenvio_409ConLaClaveQueReconoceNesto()
+        {
+            var envio = new EnviosAgencia { Numero = 1, Estado = -1, Empresa = "1  " };
+            A.CallTo(() => fakeEnvios.FindAsync(1)).Returns(Task.FromResult(envio));
+            var sut = new ControllerSinHistoria(db) { Papel = EnviosAgenciasController.PAPEL_REENVIO_NUEVO };
+
+            var resultado = await sut.DeleteEnviosAgencia(1, permitirEnCurso: true);
+
+            var estado = (System.Net.HttpStatusCode)resultado.GetType().GetProperty("StatusCode").GetValue(resultado);
+            object contenido = resultado.GetType().GetProperty("Content").GetValue(resultado);
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, estado);
+            string cuerpo = (string)contenido.GetType().GetProperty("Message").GetValue(contenido);
+            StringAssert.Contains(cuerpo, "nació de la decisión de volver a enviar un envío devuelto");
+            StringAssert.Contains(cuerpo, "FK_EnviosAgenciaReenvios");
+            A.CallTo(() => fakeEnvios.Remove(A<EnviosAgencia>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DeleteEnviosAgencia_EnvioOrigenDeUnReenvio_409SinLaClaveDelOtroCaso()
+        {
+            var envio = new EnviosAgencia { Numero = 1, Estado = 2, Empresa = "1  " };
+            A.CallTo(() => fakeEnvios.FindAsync(1)).Returns(Task.FromResult(envio));
+            var sut = new ControllerSinHistoria(db) { Papel = EnviosAgenciasController.PAPEL_REENVIO_ORIGEN };
+
+            var resultado = await sut.DeleteEnviosAgencia(1, permitirEnCurso: true);
+
+            var estado = (System.Net.HttpStatusCode)resultado.GetType().GetProperty("StatusCode").GetValue(resultado);
+            object contenido = resultado.GetType().GetProperty("Content").GetValue(resultado);
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, estado);
+            string cuerpo = (string)contenido.GetType().GetProperty("Message").GetValue(contenido);
+            StringAssert.Contains(cuerpo, "es un envío devuelto sobre el que ya se ha decidido qué hacer");
+            Assert.IsFalse(cuerpo.Contains("FK_EnviosAgenciaReenvios"));
+            A.CallTo(() => fakeEnvios.Remove(A<EnviosAgencia>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

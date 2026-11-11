@@ -610,6 +610,10 @@ namespace NestoAPI.Tests.Controllers
                 HistoriaBorradaDelEnvio = id;
                 return Task.FromResult(1);
             }
+            internal override Task<string> LeerPapelEnReenvio(int id)
+            {
+                return Task.FromResult<string>(null);
+            }
         }
 
         private ControllerConHistoriaInterceptada CrearControllerDelete()

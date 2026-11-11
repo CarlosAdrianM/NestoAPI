@@ -3414,11 +3414,58 @@ namespace NestoAPI.Controllers
                 return BadRequest("Solo se pueden eliminar etiquetas pendientes (Estado < 0)");
             }
 
+            // Incidencia 1191: la BD lo impide con FK_EnviosAgenciaReenvios y al usuario le llegaba el genérico de EF en inglés.
+            string mensajeReenvio = MensajeBorradoConReenvio(await LeerPapelEnReenvio(id));
+            if (mensajeReenvio != null)
+            {
+                return Content(HttpStatusCode.Conflict, new { Message = mensajeReenvio });
+            }
+
             _ = await BorrarHistoriaEnvio(id);
             db.EnviosAgencias.Remove(enviosAgencia);
             await db.SaveChangesAsync();
 
             return Ok(enviosAgencia);
+        }
+
+        public const string PAPEL_REENVIO_NUEVO = "EnvioNuevo";
+        public const string PAPEL_REENVIO_ORIGEN = "EnvioOrigen";
+
+        // Incidencia 1191. El de EnvioNuevo lleva FK_EnviosAgenciaReenvios para que el Nesto de hoy (ErroresBorradoEnvio.vb) lo
+        // reconozca y enseñe su MENSAJE_REENVIO, que es este mismo texto. El de EnvioOrigen NO la lleva: Nesto enseñaría el de
+        // EnvioNuevo, que no es la causa.
+        internal const string MENSAJE_BORRAR_REENVIO_NUEVO = "Este envío no se puede borrar porque nació de la decisión de volver a enviar un envío devuelto. " +
+            "Si no se va a reenviar, avise a Informática. (FK_EnviosAgenciaReenvios)";
+        internal const string MENSAJE_BORRAR_REENVIO_ORIGEN = "Este envío no se puede borrar porque es un envío devuelto sobre el que ya se ha decidido qué hacer. " +
+            "Avise a Informática.";
+
+        internal static string MensajeBorradoConReenvio(string papel)
+        {
+            switch (papel)
+            {
+                case PAPEL_REENVIO_NUEVO:
+                    return MENSAJE_BORRAR_REENVIO_NUEVO;
+                case PAPEL_REENVIO_ORIGEN:
+                    return MENSAJE_BORRAR_REENVIO_ORIGEN;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Incidencia 1191: si el envío está en EnviosAgenciaReenvios (NestoAPI#699, fuera del EDMX), como EnvioNuevo o como EnvioOrigen.
+        /// Null si no está o si la tabla no existe. internal virtual para interceptarlo en los tests (db.Database no es fakeable).
+        /// </summary>
+        internal virtual async Task<string> LeerPapelEnReenvio(int id)
+        {
+            if (!ColumnasOpcionales.ExisteTabla(db, RepositorioReenviosEnvio.TABLA))
+            {
+                return null;
+            }
+            List<string> papeles = await db.Database.SqlQuery<string>(
+                $"SELECT CASE WHEN EnvioNuevo = @p0 THEN '{PAPEL_REENVIO_NUEVO}' ELSE '{PAPEL_REENVIO_ORIGEN}' END " +
+                $"FROM dbo.{RepositorioReenviosEnvio.TABLA} WHERE EnvioNuevo = @p0 OR EnvioOrigen = @p0", id).ToListAsync();
+            return papeles.Contains(PAPEL_REENVIO_NUEVO) ? PAPEL_REENVIO_NUEVO : papeles.FirstOrDefault();
         }
 
         // internal virtual para interceptarlo en los tests (db.Database no es fakeable).
