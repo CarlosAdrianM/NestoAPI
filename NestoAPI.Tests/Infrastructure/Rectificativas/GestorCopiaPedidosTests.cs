@@ -1579,6 +1579,45 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
         }
 
         [TestMethod]
+        public void SerieParaPedidoNuevo_InvertirUnaRectificativaRV_RehaceEnLaSerieDeLaRectificada_RV2600154()
+        {
+            // RV2600154: copia invertida de la RV2600152 (abono de la NV2617228): la factura rehecha es positiva y va en NV.
+            var request = new CopiarFacturaRequest { InvertirCantidades = true };
+            var original = new CabPedidoVta { Serie = "RV " };
+
+            Assert.AreEqual("NV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, original, "NV "));
+            Assert.AreEqual("EV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, original, "EV"));
+        }
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_InvertirRectificativaSinSaberLaRectificada_SuSerieNormal()
+        {
+            var request = new CopiarFacturaRequest { InvertirCantidades = true };
+
+            Assert.AreEqual("NV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, new CabPedidoVta { Serie = "RV" }));
+            Assert.AreEqual("CV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, new CabPedidoVta { Serie = "RC" }));
+            Assert.AreEqual("NV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, new CabPedidoVta { Serie = "RV" }, "RV"), "nunca otra rectificativa");
+        }
+
+        [TestMethod]
+        public void EsDeshacerAbono_SoloAlInvertirUnaRectificativaHaciaSuSerieNormal()
+        {
+            var invertir = new CopiarFacturaRequest { InvertirCantidades = true };
+
+            Assert.IsTrue(GestorCopiaPedidos.EsDeshacerAbono(invertir, "RV", "NV"), "RV2600154: es la factura rehecha");
+            Assert.IsFalse(GestorCopiaPedidos.EsDeshacerAbono(invertir, "NV", "RV"), "el abono de siempre");
+            Assert.IsFalse(GestorCopiaPedidos.EsDeshacerAbono(invertir, "NV", "NV"), "abono añadido al pedido original NV");
+            Assert.IsFalse(GestorCopiaPedidos.EsDeshacerAbono(invertir, "GB", "GB"));
+            Assert.IsFalse(GestorCopiaPedidos.EsDeshacerAbono(new CopiarFacturaRequest { InvertirCantidades = false }, "RV", "RV"));
+        }
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_CopiaSinInvertirDeUnaRectificativa_SigueEnRV()
+        {
+            Assert.AreEqual("RV", GestorCopiaPedidos.SerieParaPedidoNuevo(new CopiarFacturaRequest { InvertirCantidades = false }, new CabPedidoVta { Serie = "RV" }, "NV"));
+        }
+
+        [TestMethod]
         public void SerieParaPedidoNuevo_CopiaNormal_MantieneLaSerie()
         {
             var request = new CopiarFacturaRequest { InvertirCantidades = false };

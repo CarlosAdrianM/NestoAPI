@@ -171,13 +171,14 @@ namespace NestoAPI.Infraestructure.Rectificativas
             await _db.SaveChangesAsync();
 
             // Crear albarán y factura si se solicitó
+            bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, await SerieDelPedido(request.Empresa, todasLasLineas.First().Número), pedidoDestino.Serie);
             if (request.CrearAlbaranYFactura)
             {
-                await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas);
+                await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas, deshaceAbono);
             }
 
             // Issues #36/#87: enviar a Verifactu (si se facturó) o guardar pendientes (si no)
-            await RematarRectificativa(request, response, pedidoDestino.Número, lineasCopiadas);
+            await RematarRectificativa(request, response, pedidoDestino.Número, lineasCopiadas, deshaceAbono);
 
             response.Exitoso = true;
             response.Mensaje = $"{(request.InvertirCantidades ? "Rectificativa" : "Copia")} creada: Pedido {response.NumeroPedido}" +
@@ -194,12 +195,30 @@ namespace NestoAPI.Infraestructure.Rectificativas
         // antes. La copia normal (y las series sin rectificativa asociada, p. ej. GB) mantienen
         // la serie original. OJO: requiere las filas RV/RC en la tabla Series (contador de
         // numeración) — Scripts/Issue39_AltaSeriesRectificativas.sql antes de desplegar.
-        internal static string SerieParaPedidoNuevo(CopiarFacturaRequest request, CabPedidoVta pedidoOriginal)
+        /// <param name="serieFacturaRectificada">
+        /// 11/11/26 (RV2600154/155): si lo que se copia es una rectificativa, la serie de la factura que rectificaba (de
+        /// LinFacturaVtaRectificacion). Invertir una rectificativa es REHACER la factura: sale en positivo y va en esa serie (o en la
+        /// normal de la rectificativa: RV→NV, RC→CV), nunca en RV/RC, que Verifactu no envía si no rectifica nada.
+        /// </param>
+        internal static string SerieParaPedidoNuevo(CopiarFacturaRequest request, CabPedidoVta pedidoOriginal, string serieFacturaRectificada = null)
         {
             string serieOriginal = pedidoOriginal?.Serie?.Trim();
             if (string.IsNullOrEmpty(serieOriginal))
             {
                 serieOriginal = "NV";
+            }
+            if (Models.Facturas.RegistroSeriesVerifactu.EsSerieRectificativa(serieOriginal))
+            {
+                if (!request.InvertirCantidades)
+                {
+                    return serieOriginal; // la copia de un abono sigue siendo un abono (en negativo)
+                }
+                string rectificada = serieFacturaRectificada?.Trim();
+                if (!string.IsNullOrEmpty(rectificada) && !Models.Facturas.RegistroSeriesVerifactu.EsSerieRectificativa(rectificada))
+                {
+                    return rectificada;
+                }
+                return SerieNormalDeRectificativa(serieOriginal);
             }
             if (!request.InvertirCantidades)
             {
@@ -207,6 +226,40 @@ namespace NestoAPI.Infraestructure.Rectificativas
             }
             string rectificativa = Models.Facturas.RegistroSeriesVerifactu.ObtenerSerieRectificativa(serieOriginal);
             return string.IsNullOrEmpty(rectificativa) ? serieOriginal : rectificativa;
+        }
+
+        /// <summary>11/11/26: la serie normal de una rectificativa (la primera serie que la tiene como rectificativa: RV→NV, RC→CV).</summary>
+        internal static string SerieNormalDeRectificativa(string serieRectificativa)
+        {
+            string rectificativa = serieRectificativa?.Trim().ToUpperInvariant();
+            foreach (string normal in new[] { "NV", "CV", "EV", "UL" })
+            {
+                if (string.Equals(Models.Facturas.RegistroSeriesVerifactu.ObtenerSerieRectificativa(normal)?.Trim(), rectificativa, StringComparison.OrdinalIgnoreCase))
+                {
+                    return normal;
+                }
+            }
+            return "NV";
+        }
+
+        /// <summary>11/11/26: la serie de la factura que rectifica <paramref name="factura"/> (null si no es rectificativa o no se sabe).</summary>
+        private async Task<string> SerieFacturaRectificada(string empresa, string factura)
+        {
+            string numero = factura?.Trim();
+            if (string.IsNullOrEmpty(numero))
+            {
+                return null;
+            }
+            string original = await _db.LinFacturaVtaRectificaciones
+                .Where(r => r.Empresa == empresa && r.NumeroFactura == numero)
+                .Select(r => r.FacturaOriginalNumero)
+                .FirstOrDefaultAsync();
+            if (string.IsNullOrWhiteSpace(original))
+            {
+                return null;
+            }
+            string numeroOriginal = original.Trim();
+            return (await _db.CabsFacturasVtas.Where(c => c.Empresa == empresa && c.Número == numeroOriginal).Select(c => c.Serie).FirstOrDefaultAsync())?.Trim();
         }
 
         /// <summary>
@@ -520,6 +573,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
             var pedidoOriginal = await _db.CabPedidoVtas
                 .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == lineaReferencia.Número);
 
+            // 11/11/26 (RV2600154/155): si se invierte una rectificativa, la factura nueva va en la serie de la factura que rectificaba.
+            string serieFacturaRectificada = request.InvertirCantidades
+                && Models.Facturas.RegistroSeriesVerifactu.EsSerieRectificativa(pedidoOriginal?.Serie)
+                ? await SerieFacturaRectificada(request.Empresa, lineaReferencia.Nº_Factura)
+                : null;
+
             // Obtener siguiente número de pedido (Issue #275: reserva atómica, mismo punto único
             // que PostPedidoVenta, para que dos peticiones concurrentes no cojan el mismo número)
             int numeroPedido = _db.TomarSiguienteNumeroPedido();
@@ -568,7 +627,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     : clienteDb.Vendedor,
                 Periodo_Facturacion = clienteDb.PeriodoFacturación,
                 Ruta = clienteDb.Ruta,
-                Serie = SerieParaPedidoNuevo(request, pedidoOriginal),
+                Serie = SerieParaPedidoNuevo(request, pedidoOriginal, serieFacturaRectificada),
                 CCC = clienteDb.CCC,
                 Origen = request.Empresa,
                 ContactoCobro = clienteDb.ContactoCobro,
@@ -757,7 +816,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             CopiarFacturaResponse response,
             int numeroPedido,
             string usuario,
-            List<LineaCopiadaDTO> lineasCopiadas)
+            List<LineaCopiadaDTO> lineasCopiadas,
+            bool deshaceAbono = false)
         {
             bool esMismoCliente = !request.EsCambioCliente;
             bool esRectificativa = request.InvertirCantidades;
@@ -798,7 +858,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
             response.NumeroFactura = resultadoFactura.NumeroFactura;
 
             // Issue #38: Guardar vinculaciones en LinFacturaVtaRectificacion
-            if (esRectificativa && !string.IsNullOrEmpty(response.NumeroFactura))
+            if (esRectificativa && !deshaceAbono && !string.IsNullOrEmpty(response.NumeroFactura))
             {
                 await GuardarVinculacionesRectificativa(
                     request.Empresa,
@@ -817,9 +877,36 @@ namespace NestoAPI.Infraestructure.Rectificativas
         /// dejó el pedido sin facturar), la metadata de rectificación se guarda en
         /// RectificativaPendiente para que ServicioFacturas.CrearFactura la vincule al facturar.
         /// </summary>
-        private async Task RematarRectificativa(CopiarFacturaRequest request, CopiarFacturaResponse response, int numeroPedido, List<LineaCopiadaDTO> lineasCopiadas)
+        /// <summary>
+        /// 11/11/26 (RV2600154/155): se invierte una rectificativa y el pedido nuevo ha quedado en una serie normal que tiene
+        /// rectificativa propia (NV, CV…): es la factura rehecha, en positivo. No es una rectificativa: ni vinculaciones, ni datos
+        /// fiscales de la original, ni envío como R; se declara como una factura normal (el job o la propia facturación).
+        /// </summary>
+        internal static bool EsDeshacerAbono(CopiarFacturaRequest request, string serieOrigen, string serieDestino)
         {
-            if (!request.InvertirCantidades)
+            return request != null && request.InvertirCantidades
+                && Models.Facturas.RegistroSeriesVerifactu.EsSerieRectificativa(serieOrigen)
+                && !Models.Facturas.RegistroSeriesVerifactu.EsSerieRectificativa(serieDestino)
+                && !string.IsNullOrEmpty(Models.Facturas.RegistroSeriesVerifactu.ObtenerSerieRectificativa(serieDestino));
+        }
+
+        private async Task<string> SerieDelPedido(string empresa, int pedido)
+        {
+            try
+            {
+                return (await _db.CabPedidoVtas.Where(p => p.Empresa == empresa && p.Número == pedido).Select(p => p.Serie).FirstOrDefaultAsync())?.Trim();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Copiar factura] No se ha podido leer la serie del pedido {pedido}: {ex.Message}", ex), "Sistema (copiar factura)");
+                return null;
+            }
+        }
+
+        private async Task RematarRectificativa(CopiarFacturaRequest request, CopiarFacturaResponse response, int numeroPedido, List<LineaCopiadaDTO> lineasCopiadas,
+            bool deshaceAbono = false)
+        {
+            if (!request.InvertirCantidades || deshaceAbono)
             {
                 return;
             }
@@ -1323,10 +1410,13 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             await _db.SaveChangesAsync();
 
+            // 11/11/26 (RV2600154/155): invertir una rectificativa es rehacer la factura: no es otra rectificativa.
+            bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, await SerieDelPedido(request.Empresa, lineasOrigen.First().Número), pedidoDestino.Serie);
+
             // Crear albarán y factura si se solicitó
             if (request.CrearAlbaranYFactura)
             {
-                await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas);
+                await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas, deshaceAbono);
 
                 // NestoAPI#268: una rectificativa/abono es el espejo documental de la factura que anula,
                 // por lo que debe mostrar los datos fiscales que constaban en la factura original
@@ -1334,7 +1424,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 // persistido los de la ficha actual al crear la factura; aquí los sobrescribimos con los
                 // de la CabFacturaVta rectificada. El CARGO (InvertirCantidades = false) NO se toca:
                 // debe llevar los datos actuales correctos.
-                if (request.InvertirCantidades && !string.IsNullOrEmpty(response.NumeroFactura))
+                if (request.InvertirCantidades && !deshaceAbono && !string.IsNullOrEmpty(response.NumeroFactura))
                 {
                     await CopiarDatosFiscalesDesdeFacturaOriginal(
                         request.Empresa, request.NumeroFactura, response.NumeroFactura);
@@ -1343,7 +1433,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             // Issues #36/#87: enviar a Verifactu (si se facturó, con los datos fiscales ya
             // definitivos) o guardar pendientes para la facturación manual (si no)
-            await RematarRectificativa(request, response, numeroPedido, lineasCopiadas);
+            await RematarRectificativa(request, response, numeroPedido, lineasCopiadas, deshaceAbono);
 
             response.Exitoso = true;
             response.Mensaje = GenerarMensajeExito(response, request);
