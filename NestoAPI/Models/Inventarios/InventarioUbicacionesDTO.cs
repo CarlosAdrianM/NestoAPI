@@ -64,6 +64,11 @@ namespace NestoAPI.Models.Inventarios
         public int Unidades { get; set; }
         public string Usuario { get; set; }
         public List<LineaInventarioContadaDTO> Lineas { get; set; } = new List<LineaInventarioContadaDTO>();
+        /// <summary>
+        /// Épica #784 (11/11/26): lo que hay que decirle al que cuenta además (en una ubicación: las unidades reservadas para pedidos,
+        /// que no van en el teórico y no se cuentan). Null si nada.
+        /// </summary>
+        public string Aviso { get; set; }
     }
 
     /// <summary>NestoAPI#795: una fila pendiente (Estado 1, sin traspaso) del inventario.</summary>

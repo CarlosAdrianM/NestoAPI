@@ -22,11 +22,12 @@ SELECT RTRIM(p.Número), RTRIM(p.Nombre), RTRIM(p.Grupo), RTRIM(p.SubGrupo), RTR
 FROM dbo.Productos p
 WHERE p.Empresa = @Empresa AND p.Número = @Producto";
 
-        // Como el SP de contabilizar y el teórico de RellenarUbicacion: Ubicaciones con estado ≥ 0, sin filtrar por empresa.
+        // Como el teórico de RellenarUbicacion: lo LIBRE (Estado 0), sin filtrar por empresa. Épica #784 (11/11/26, 37215): las
+        // reservas de picking/reposición no se dejan a cero (prdContabilizarInventario solo regulariza las filas de Estado 0).
         internal const string SQL_UBICACIONES = @"
 SELECT RTRIM(u.Pasillo), RTRIM(u.Fila), RTRIM(u.Columna), SUM(u.Cantidad)
 FROM dbo.Ubicaciones u
-WHERE u.Almacén = @Almacen AND u.Número = @Producto AND u.Estado >= 0 AND u.Pasillo IS NOT NULL
+WHERE u.Almacén = @Almacen AND u.Número = @Producto AND u.Estado = 0 AND u.Pasillo IS NOT NULL
 GROUP BY RTRIM(u.Pasillo), RTRIM(u.Fila), RTRIM(u.Columna)";
 
         internal const string SQL_SIN_UBICAR = @"

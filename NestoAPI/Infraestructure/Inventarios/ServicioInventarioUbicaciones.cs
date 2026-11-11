@@ -63,6 +63,14 @@ namespace NestoAPI.Infraestructure.Inventarios
         public int Productos { get; set; }
     }
 
+    /// <summary>Épica #784: unidades de un producto reservadas en un hueco (para un pedido, o sin pedido si es de reposición).</summary>
+    public class ReservaUbicacionInventario
+    {
+        public string Producto { get; set; }
+        public int? Pedido { get; set; }
+        public int Cantidad { get; set; }
+    }
+
     public interface IServicioInventarioUbicaciones
     {
         Task<ResultadoInventarioUbicaciones<List<UbicacionParaInventarioDTO>>> Siguientes(string empresa, string almacen, int numero, DateTime hoy);
@@ -96,6 +104,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         Task<List<LineaInventarioContadaDTO>> Contabilizadas(string empresa, string almacen, DateTime fecha, FiltroInventarioContado filtro);
         /// <summary>El teórico de la ubicación: Ubicaciones (estado ≥ 0) de ese almacén y ubicación, sumado por producto.</summary>
         Task<List<StockProductoInventario>> TeoricoUbicacion(string empresa, string almacen, string pasillo, string fila, string columna);
+        /// <summary>Épica #784: lo reservado en el hueco (Ubicaciones Estado &gt; 0: picking, reposición), por producto y pedido.</summary>
+        Task<List<ReservaUbicacionInventario>> ReservasUbicacion(string almacen, string pasillo, string fila, string columna);
         /// <summary>El stock en el almacén (ExtractoProducto de las empresas 1 y 3) de los productos de la familia o de la referencia.</summary>
         Task<List<StockProductoInventario>> Stocks(string empresa, string almacen, string familia, string producto);
         Task Insertar(IList<Inventario> filas);
@@ -199,8 +209,10 @@ namespace NestoAPI.Infraestructure.Inventarios
                 // Épica #784 (11/11/26): «ya rellenada» es que TODOS los productos de la ubicación tienen ya su fila pendiente de ese día.
                 // Antes bastaba una: tras «Dejar a cero» una referencia (que crea solo su fila), los demás productos de la ubicación se
                 // quedaban sin la suya. Ahora se crean solo las que faltan, sin duplicar las que ya hay.
+                // Épica #784 (11/11/26, 37215): el teórico es solo lo LIBRE del hueco; lo reservado para pedidos se dice aparte y no se cuenta.
                 List<StockProductoInventario> teorico = await unidad.TeoricoUbicacion(empresa, almacen, pasillo, fila, columna).ConfigureAwait(false);
                 List<Inventario> filas = FilasQueFaltan(FilasDeUbicacion(teorico, empresa, almacen, fecha, usuarioAuditoria, pasillo, fila, columna), pendientes);
+                string avisoReservas = AvisoReservas(await unidad.ReservasUbicacion(almacen, pasillo, fila, columna).ConfigureAwait(false));
                 if (pendientes.Count > 0 && filas.Count == 0)
                 {
                     return YaRellenado<RellenarInventarioFilasRespuestaDTO>(
@@ -226,9 +238,38 @@ namespace NestoAPI.Infraestructure.Inventarios
                     Filas = filas.Count,
                     Unidades = filas.Sum(f => f.StockCalculado ?? 0),
                     Usuario = usuarioAuditoria,
-                    Lineas = lineas
+                    Lineas = lineas,
+                    Aviso = avisoReservas
                 });
             }
+        }
+
+        /// <summary>
+        /// Épica #784: «Además hay 1 unidad del 37215 reservada para el pedido 930324: no la cuente (si ya está recogida, no está en el
+        /// hueco; si sigue en él, tampoco se cuenta).». Null si no hay reservas.
+        /// </summary>
+        internal static string AvisoReservas(IEnumerable<ReservaUbicacionInventario> reservas)
+        {
+            List<string> partes = (reservas ?? Enumerable.Empty<ReservaUbicacionInventario>())
+                .Where(r => r != null && r.Cantidad > 0 && !string.IsNullOrWhiteSpace(r.Producto))
+                .GroupBy(r => r.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    int unidades = g.Sum(r => r.Cantidad);
+                    List<string> pedidos = g.Where(r => r.Pedido.HasValue).Select(r => r.Pedido.Value).Distinct().OrderBy(p => p)
+                        .Select(p => p.ToString(CultureInfo.InvariantCulture)).ToList();
+                    string para = pedidos.Count == 0 ? "reservadas para reposición"
+                        : pedidos.Count == 1 ? $"para el pedido {pedidos[0]}" : $"para los pedidos {string.Join(", ", pedidos)}";
+                    return $"{unidades} {(unidades == 1 ? "unidad" : "unidades")} del {g.Key} {(pedidos.Count == 0 ? para : (unidades == 1 ? "reservada " : "reservadas ") + para)}";
+                })
+                .ToList();
+            if (partes.Count == 0)
+            {
+                return null;
+            }
+            return $"Además hay {string.Join("; ", partes)}. Las reservadas NO se cuentan: si ya están recogidas, no están en el hueco; " +
+                "si siguen en él, tampoco las cuente.";
         }
 
         public async Task<ResultadoInventarioUbicaciones<RellenarInventarioFilasRespuestaDTO>> RellenarParcial(RellenarParcialInventarioDTO peticion, string producto, string usuario)

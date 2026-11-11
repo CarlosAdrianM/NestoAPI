@@ -56,6 +56,18 @@ namespace NestoAPI.Infraestructure.Inventarios
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public int Cantidad { get; set; }
+        /// <summary>Épica #784: 0 = libre en el hueco; > 0 = reservado (3 picking, 4 reposición).</summary>
+        public int Estado { get; set; }
+        /// <summary>El pedido de la reserva (Estado 3).</summary>
+        public int? PedidoVta { get; set; }
+    }
+
+    /// <summary>Épica #784 (tiendas): unidades de un producto con picking en un pedido sin albaranar, en el almacén.</summary>
+    public class PickingSinAlbaranarInventario
+    {
+        public string Producto { get; set; }
+        public int Pedido { get; set; }
+        public int Cantidad { get; set; }
     }
 
     /// <summary>NestoAPI#790: una fila del inventario con diferencia y los dos valores unitarios (el servicio elige uno).</summary>
@@ -86,6 +98,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         Task<List<UbicacionAlmacenInventario>> LeerUbicaciones(string almacen);
         /// <summary>NestoAPI#784: las filas contabilizadas (Estado 2, con NºTraspaso) del almacén ese día (solo se pide en las tiendas).</summary>
         Task<List<FilaInventarioContabilizada>> LeerContabilizadas(string empresa, string almacen, DateTime fecha);
+        /// <summary>Épica #784 (tiendas): las líneas de producto en curso con picking (sin albaranar) del almacén.</summary>
+        Task<List<PickingSinAlbaranarInventario>> LeerPickingSinAlbaranar(string empresa, string almacen);
         /// <summary>
         /// EXEC prdContabilizarInventario @Empresa, @Usuario, @Delegación = 'VAR', @FormaVenta = 'VAR', @AlmacenAContabilizar = <paramref name="almacen"/>. ÚNICO call
         /// site del SP. Devuelve su return (1 bien); si el SP hace RAISERROR, lanza la SqlException.
@@ -129,7 +143,7 @@ WHERE i.Empresa = @p0 AND i.Almacén = @p1 AND i.Estado = 1 AND i.NºTraspaso IS
         // Como el SP: Ubicaciones sin filtrar por empresa (en ALG hay alguna de la empresa 3).
         internal const string SQL_UBICACIONES = @"
 SELECT RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna, RTRIM(u.Número) AS Producto,
-    RTRIM(p.Nombre) AS Descripcion, u.Cantidad
+    RTRIM(p.Nombre) AS Descripcion, u.Cantidad, ISNULL(u.Estado, 0) AS Estado, u.PedidoVta
 FROM dbo.Ubicaciones u
 LEFT JOIN dbo.Productos p ON p.Empresa = u.Empresa AND p.Número = u.Número
 WHERE u.Almacén = @p0 AND u.Estado >= 0 AND u.Pasillo IS NOT NULL";
@@ -188,6 +202,18 @@ WHERE i.Empresa = @p0 AND i.Almacén = @p1 AND ISNULL(i.StockReal, 0) <> ISNULL(
         {
             db.Database.CommandTimeout = SEGUNDOS_CONSULTA;
             return await db.Database.SqlQuery<UbicacionAlmacenInventario>(SQL_UBICACIONES, almacen).ToListAsync().ConfigureAwait(false);
+        }
+
+        internal const string SQL_PICKING_SIN_ALBARANAR = @"
+SELECT RTRIM(l.Producto) AS Producto, l.Número AS Pedido, CAST(SUM(l.Cantidad) AS int) AS Cantidad
+FROM dbo.LinPedidoVta l
+WHERE l.Empresa = @p0 AND l.Almacén = @p1 AND l.Estado = 1 AND l.Picking > 0 AND l.TipoLinea = 1 AND l.Cantidad > 0
+GROUP BY RTRIM(l.Producto), l.Número";
+
+        public async Task<List<PickingSinAlbaranarInventario>> LeerPickingSinAlbaranar(string empresa, string almacen)
+        {
+            db.Database.CommandTimeout = SEGUNDOS_CONSULTA;
+            return await db.Database.SqlQuery<PickingSinAlbaranarInventario>(SQL_PICKING_SIN_ALBARANAR, empresa, almacen).ToListAsync().ConfigureAwait(false);
         }
 
         public async Task<List<FilaInventarioContabilizada>> LeerContabilizadas(string empresa, string almacen, DateTime fecha)

@@ -56,7 +56,11 @@ namespace NestoAPI.Infraestructure.Inventarios
             List<FilaInventarioContabilizada> contabilizadas = controlUbicaciones.Value
                 ? new List<FilaInventarioContabilizada>()
                 : await repositorio.LeerContabilizadas(empresa, almacen, fecha.Date).ConfigureAwait(false);
-            return ComprobadorInventario.Comprobar(almacen, fecha, controlUbicaciones.Value, pendientes, ubicaciones, contabilizadas);
+            // Épica #784 (11/11/26): en las tiendas, lo que tiene picking sin albaranar (puede estar apartado y no faltar).
+            List<PickingSinAlbaranarInventario> picking = controlUbicaciones.Value
+                ? new List<PickingSinAlbaranarInventario>()
+                : await repositorio.LeerPickingSinAlbaranar(empresa, almacen).ConfigureAwait(false);
+            return ComprobadorInventario.Comprobar(almacen, fecha, controlUbicaciones.Value, pendientes, ubicaciones, contabilizadas, picking);
         }
 
         public async Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero = false)

@@ -363,6 +363,7 @@
     <Compile Include="Infrastructure\Inventarios\InventarioUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioACeroTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioBorrarFilaTests.cs" />
+    <Compile Include="Infrastructure\Inventarios\InventarioReservasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\BarreraClientesExternosTests.cs" />
     <Compile Include="Controllers\InventariosAriadnaControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />

@@ -90,7 +90,9 @@ namespace NestoAPI.Infraestructure.Inventarios
     public static class ReglaBorrarFilaInventario
     {
         public const string PARAMETRO_USUARIO = "InventarioBorrarFilas";
-        public static readonly string[] CODIGOS_BORRABLES = { CodigosComprobacionInventario.SIN_UBICACION, CodigosComprobacionInventario.FILAS_DUPLICADAS };
+        /// <summary>Épica #784: también TeoricoConReservas (11/11/26): la fila lleva en el teórico unidades reservadas; se borra y se vuelve a rellenar.</summary>
+        public static readonly string[] CODIGOS_BORRABLES = { CodigosComprobacionInventario.SIN_UBICACION, CodigosComprobacionInventario.FILAS_DUPLICADAS,
+            CodigosComprobacionInventario.TEORICO_CON_RESERVAS };
 
         public const string MENSAJE_NO_SOBRA = "Esta fila no se puede borrar: no es una fila que sobre. Si quiere decir que no hay ninguna unidad, " +
             "cuéntela a 0; si está mal contada, vuelva a contarla.";

@@ -27,7 +27,7 @@ namespace NestoAPI.Infraestructure.Inventarios
         internal const string SQL_PRODUCTOS_POR_UBICACION = @"
 SELECT RTRIM(u.Pasillo), RTRIM(u.Fila), RTRIM(u.Columna), COUNT(DISTINCT u.Número)
 FROM dbo.Ubicaciones u
-WHERE u.Almacén = @Almacen AND u.Estado >= 0 AND u.Pasillo IS NOT NULL
+WHERE u.Almacén = @Almacen AND u.Estado = 0 AND u.Pasillo IS NOT NULL
 GROUP BY RTRIM(u.Pasillo), RTRIM(u.Fila), RTRIM(u.Columna)";
 
         internal const string SQL_UBICACIONES_RELLENADAS = @"
@@ -50,13 +50,22 @@ WHERE i.Empresa = @Empresa AND i.Almacén = @Almacen AND i.Fecha >= @Desde AND i
         /// <summary>NestoAPI#784: las filas ya contabilizadas ese día (lo que «Contar otra vez» volvería a abrir).</summary>
         internal const string SQL_CONTABILIZADO = SQL_CONTADO_DEL_DIA + "i.Estado = 2 AND i.NºTraspaso IS NOT NULL";
 
-        // El teórico de la ubicación: lo que dice Ubicaciones (estado ≥ 0, como el SP de contabilizar), sumado por producto.
+        // El teórico de la ubicación: lo LIBRE del hueco (Ubicaciones Estado 0), sumado por producto. Épica #784 (11/11/26, 37215):
+        // las reservas (Estado 3 de picking, 4 de reposición) NO cuentan: pueden estar ya recogidas y prdContabilizarInventario solo
+        // regulariza las filas de Estado 0, así que contarlas en el teórico bajaba el stock de una unidad que sigue existiendo.
         internal const string SQL_TEORICO_UBICACION = @"
 SELECT RTRIM(p.Número), RTRIM(p.Nombre), RTRIM(p.Grupo), RTRIM(p.SubGrupo), RTRIM(p.Familia), CAST(ISNULL(p.Ficticio, 0) AS bit), SUM(u.Cantidad)
 FROM dbo.Ubicaciones u
 INNER JOIN dbo.Productos p ON p.Empresa = @Empresa AND p.Número = u.Número
-WHERE u.Almacén = @Almacen AND u.Estado >= 0 AND u.Pasillo = @Pasillo AND u.Fila = @Fila AND u.Columna = @Columna
+WHERE u.Almacén = @Almacen AND u.Estado = 0 AND u.Pasillo = @Pasillo AND u.Fila = @Fila AND u.Columna = @Columna
 GROUP BY p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, p.Ficticio";
+
+        // Épica #784 (11/11/26): lo reservado en el hueco (Estado > 0 con pasillo: 3 picking, 4 reposición), por producto y pedido.
+        internal const string SQL_RESERVAS_UBICACION = @"
+SELECT RTRIM(u.Número), u.PedidoVta, SUM(u.Cantidad)
+FROM dbo.Ubicaciones u
+WHERE u.Almacén = @Almacen AND u.Estado > 0 AND u.Pasillo = @Pasillo AND u.Fila = @Fila AND u.Columna = @Columna
+GROUP BY RTRIM(u.Número), u.PedidoVta";
 
         // Como #789 (la suma del extracto de las empresas 1 y 3), pero de los productos de la familia o de la referencia, aunque no
         // tengan movimientos (la referencia se rellena con stock 0; la familia se queda con los de stock distinto de cero en el servicio).
@@ -372,6 +381,31 @@ IF @r < 0 THROW 50001, 'Otro usuario está rellenando este inventario ahora mism
                     comando.Parameters.Add("@Columna", SqlDbType.Char, 3).Value = columna;
                     return await LeerStocks(comando).ConfigureAwait(false);
                 }
+            }
+
+            public async Task<List<ReservaUbicacionInventario>> ReservasUbicacion(string almacen, string pasillo, string fila, string columna)
+            {
+                var resultado = new List<ReservaUbicacionInventario>();
+                using (var comando = Comando(SQL_RESERVAS_UBICACION))
+                {
+                    comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = almacen;
+                    comando.Parameters.Add("@Pasillo", SqlDbType.Char, 3).Value = pasillo;
+                    comando.Parameters.Add("@Fila", SqlDbType.Char, 3).Value = fila;
+                    comando.Parameters.Add("@Columna", SqlDbType.Char, 3).Value = columna;
+                    using (var lector = await comando.ExecuteReaderAsync().ConfigureAwait(false))
+                    {
+                        while (await lector.ReadAsync().ConfigureAwait(false))
+                        {
+                            resultado.Add(new ReservaUbicacionInventario
+                            {
+                                Producto = lector.IsDBNull(0) ? null : lector.GetString(0).Trim(),
+                                Pedido = lector.IsDBNull(1) ? (int?)null : Convert.ToInt32(lector.GetValue(1)),
+                                Cantidad = lector.IsDBNull(2) ? 0 : Convert.ToInt32(lector.GetValue(2))
+                            });
+                        }
+                    }
+                }
+                return resultado;
             }
 
             public async Task<List<StockProductoInventario>> Stocks(string empresa, string almacen, string familia, string producto)

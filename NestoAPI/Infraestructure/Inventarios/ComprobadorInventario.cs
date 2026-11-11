@@ -32,6 +32,16 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const string CONTADO_CERO_CON_STOCK = "ContadoCeroConStock";
         /// <summary>Épica #784: las filas borradas ese día del recuento del almacén (DELETE api/Inventarios/Filas), para que se vean antes de contabilizar.</summary>
         public const string FILAS_BORRADAS = "FilasBorradas";
+        /// <summary>
+        /// Épica #784 (11/11/26, 37215): bloqueante. Fila de un hueco cuyo teórico pasa de lo LIBRE del hueco (Estado 0) teniendo el
+        /// producto reservas en ese hueco: el teórico lleva unidades reservadas (rellenada antes del arreglo, o reservadas después de
+        /// rellenar). Contabilizarla bajaría el stock de unidades que existen. Se borra (SePuedeBorrar) y se vuelve a rellenar.
+        /// </summary>
+        public const string TEORICO_CON_RESERVAS = "TeoricoConReservas";
+        /// <summary>Épica #784: aviso. Contado mayor que lo libre en un hueco con reservas: ¿se han contado las reservadas?</summary>
+        public const string CONTADO_CON_RESERVAS = "ContadoConReservas";
+        /// <summary>Épica #784 (tiendas): aviso. Contado menor que el teórico de un producto con picking sin albaranar.</summary>
+        public const string PICKING_SIN_ALBARANAR = "PickingSinAlbaranar";
     }
 
     /// <summary>
@@ -53,7 +63,7 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// <param name="contabilizadas">NestoAPI#784: las filas ya contabilizadas ese día en el almacén (solo hacen falta en las tiendas).</param>
         public static ComprobacionesInventarioDTO Comprobar(string almacen, DateTime fecha, bool controlUbicaciones,
             IEnumerable<FilaInventarioPendiente> pendientes, IEnumerable<UbicacionAlmacenInventario> ubicaciones,
-            IEnumerable<FilaInventarioContabilizada> contabilizadas = null)
+            IEnumerable<FilaInventarioContabilizada> contabilizadas = null, IEnumerable<PickingSinAlbaranarInventario> picking = null)
         {
             DateTime dia = fecha.Date;
             List<FilaInventarioPendiente> todas = (pendientes ?? Enumerable.Empty<FilaInventarioPendiente>()).ToList();
@@ -111,6 +121,25 @@ namespace NestoAPI.Infraestructure.Inventarios
                 Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.UBICACION_INEXISTENTE,
                     "Ubicaciones que no existen en el almacén",
                     delDia.Where(f => f.Pasillo != null && EstaBienFormada(f) && !existentes.Contains(Clave(f.Pasillo, f.Fila, f.Columna))));
+
+                // Épica #784 (11/11/26, 37215): el teórico de un hueco es solo lo libre; si una fila lleva más, lleva reservas.
+                Dictionary<string, int> libre = huecos.Where(u => u.Estado == 0)
+                    .GroupBy(u => ClaveProducto(u.Producto) + "#" + Clave(u.Pasillo, u.Fila, u.Columna), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Sum(u => u.Cantidad), StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, List<UbicacionAlmacenInventario>> reservas = huecos.Where(u => u.Estado > 0)
+                    .GroupBy(u => ClaveProducto(u.Producto) + "#" + Clave(u.Pasillo, u.Fila, u.Columna), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+                string ClaveFila(FilaInventarioPendiente f) => ClaveProducto(f.Producto) + "#" + Clave(f.Pasillo, f.Fila, f.Columna);
+                int Libre(FilaInventarioPendiente f) => libre.TryGetValue(ClaveFila(f), out int n) ? n : 0;
+                bool ConReservas(FilaInventarioPendiente f) => f.Pasillo != null && reservas.ContainsKey(ClaveFila(f));
+                Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.TEORICO_CON_RESERVAS,
+                    "Filas cuyo teórico incluye unidades reservadas para pedidos (pueden estar ya recogidas): contabilizarlas bajaría el stock " +
+                    "de unidades que existen. Borre la fila y vuelva a rellenar la ubicación (el teórico será solo lo libre)",
+                    delDia.Where(f => ConReservas(f) && (f.StockCalculado ?? 0) > Libre(f)));
+                Anadir(resultado.Avisos, CodigosComprobacionInventario.CONTADO_CON_RESERVAS,
+                    "Contado mayor que lo libre en huecos con unidades reservadas para pedidos: las reservadas no se cuentan " +
+                    "(si siguen en el hueco, réstelas)",
+                    delDia.Where(f => ConReservas(f) && (f.StockCalculado ?? 0) <= Libre(f) && (f.StockReal ?? 0) > (f.StockCalculado ?? 0)));
             }
 
             // ---- Avisos ----
@@ -130,6 +159,14 @@ namespace NestoAPI.Infraestructure.Inventarios
                 Anadir(resultado.Avisos, CodigosComprobacionInventario.CONTADO_CERO_CON_STOCK,
                     "Filas con contado 0 de productos que tienen stock: compruebe que de verdad no hay ninguno y no que se han quedado sin contar",
                     delDia.Where(f => (f.StockReal ?? 0) == 0 && (f.StockCalculado ?? 0) > 0 && !recontadas.Contains(f.NumeroOrden)));
+
+                // Épica #784 (11/11/26): en las tiendas el teórico es el stock, que incluye lo que tiene picking sin albaranar.
+                var conPicking = new HashSet<string>((picking ?? Enumerable.Empty<PickingSinAlbaranarInventario>())
+                    .Where(p => p != null && p.Cantidad > 0).Select(p => ClaveProducto(p.Producto)), StringComparer.OrdinalIgnoreCase);
+                Anadir(resultado.Avisos, CodigosComprobacionInventario.PICKING_SIN_ALBARANAR,
+                    "Contado menor que el teórico de productos con picking de pedidos sin albaranar: si esas unidades están apartadas para el " +
+                    "pedido, no faltan (súmelas a lo contado)",
+                    delDia.Where(f => (f.StockReal ?? 0) < (f.StockCalculado ?? 0) && conPicking.Contains(ClaveProducto(f.Producto))));
             }
 
             if (controlUbicaciones)
@@ -138,7 +175,7 @@ namespace NestoAPI.Infraestructure.Inventarios
                 var inventariadas = new HashSet<string>(delDia.Where(f => f.Pasillo != null).Select(f => Clave(f.Pasillo, f.Fila, f.Columna)),
                     StringComparer.OrdinalIgnoreCase);
                 List<FilaComprobacionInventarioDTO> sinRellenar = huecos
-                    .Where(u => u.Cantidad != 0 && !inventariadas.Contains(Clave(u.Pasillo, u.Fila, u.Columna)))
+                    .Where(u => u.Estado == 0 && u.Cantidad != 0 && !inventariadas.Contains(Clave(u.Pasillo, u.Fila, u.Columna)))
                     .OrderBy(u => u.Pasillo).ThenBy(u => u.Fila).ThenBy(u => u.Columna).ThenBy(u => u.Producto)
                     .Select(u => new FilaComprobacionInventarioDTO
                     {
