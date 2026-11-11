@@ -159,6 +159,78 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             }
         }
 
+        // Carlos 11/11/26: el pronto pago también es contado.
+        private static List<PlazoProntoPago> PlazosConPP() => new List<PlazoProntoPago>
+        {
+            new PlazoProntoPago { Empresa = "1  ", Plazos = "PP  ", DtoProntoPago = 0.03M },
+            new PlazoProntoPago { Empresa = "1", Plazos = "PP2", DtoProntoPago = 0.02M },
+            new PlazoProntoPago { Empresa = "3", Plazos = "PP9", DtoProntoPago = 0.05M }
+        };
+
+        [TestMethod]
+        public void Decidir_PlazosConProntoPago_NoAvisa()
+        {
+            Assert.IsFalse(AvisoCondicionesCampana.Decidir(Feria(), DIA_FERIA, Pedido("RCB", "PP", "45383"), PlazosConPP()).Avisar);
+            Assert.IsFalse(AvisoCondicionesCampana.Decidir(Feria(), DIA_FERIA, Pedido("EFC", "pp2 ", "45383"), PlazosConPP()).Avisar);
+        }
+
+        [TestMethod]
+        public void Decidir_PlazosConProntoPagoDeOtraEmpresa_Avisa()
+        {
+            Assert.IsTrue(AvisoCondicionesCampana.Decidir(Feria(), DIA_FERIA, Pedido("RCB", "PP9", "45383"), PlazosConPP()).Avisar);
+        }
+
+        [TestMethod]
+        public void Decidir_DescuentoPPPuestoEnElPedido_NoAvisa()
+        {
+            AvisoCondicionesCampanaPeticion pedido = Pedido("RCB", "1/30", "45383");
+            pedido.DescuentoPP = 0.03M;
+            Assert.IsFalse(AvisoCondicionesCampana.Decidir(Feria(), DIA_FERIA, pedido).Avisar);
+        }
+
+        [TestMethod]
+        public void Decidir_SinProntoPagoYA30Dias_AvisaComoHoy()
+        {
+            AvisoCondicionesCampanaPeticion pedido = Pedido("RCB", "1/30", "45383");
+            pedido.DescuentoPP = 0;
+            Assert.IsTrue(AvisoCondicionesCampana.Decidir(Feria(), DIA_FERIA, pedido, PlazosConPP()).Avisar);
+        }
+
+        [TestMethod]
+        public void PlazosProntoPago_SiFallaLaLectura_NoLanzaYQuedaVacio()
+        {
+            try
+            {
+                PlazosProntoPago.Configurar(() => throw new InvalidOperationException("sin BD"));
+                Assert.AreEqual(0, PlazosProntoPago.Actuales.Count);
+            }
+            finally
+            {
+                PlazosProntoPago.Reiniciar();
+            }
+        }
+
+        [TestMethod]
+        public void Controlador_PlazosConProntoPagoEnLaTabla_NoAvisa()
+        {
+            try
+            {
+                CampanasCondicionContado.ConfigurarPara(Feria().ToArray());
+                PlazosProntoPago.ConfigurarPara(PlazosConPP().ToArray());
+                var controlador = new PedidosVentaCondicionesCampanaController(() => DIA_FERIA);
+
+                var resultado = controlador.PostAvisoCondicionesCampana(Pedido("RCB", "PP", "45383")) as OkNegotiatedContentResult<AvisoCondicionesCampanaRespuesta>;
+
+                Assert.IsNotNull(resultado);
+                Assert.IsFalse(resultado.Content.Avisar);
+            }
+            finally
+            {
+                CampanasCondicionContado.Reiniciar();
+                PlazosProntoPago.Reiniciar();
+            }
+        }
+
         [TestMethod]
         public void Controlador_SinTabla_NoAvisa()
         {

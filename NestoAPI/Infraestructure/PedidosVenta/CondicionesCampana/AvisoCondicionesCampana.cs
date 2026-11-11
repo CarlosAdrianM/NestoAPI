@@ -15,6 +15,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
         public string PlazosPago { get; set; }
         /// <summary>Opcional: el pedido ya lleva un prepago (tarjeta, Aplázame, transferencia previa…).</summary>
         public bool TienePrepago { get; set; }
+        /// <summary>
+        /// Opcional (Carlos 11/11/26): el descuento por pronto pago que lleva el pedido (0,03 = 3 %). Mayor que 0 = pronto pago =
+        /// ya es contado. Sin el campo vale 0 y decide solo con los plazos (que con PP en la tabla PlazosPago también cuentan).
+        /// </summary>
+        public decimal DescuentoPP { get; set; }
     }
 
     /// <summary>Respuesta de <c>POST api/PedidosVenta/AvisoCondicionesCampana</c>.</summary>
@@ -35,7 +40,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
     /// se informa al CREAR el pedido (también si es un presupuesto). Núcleo puro: decide con las filas de
     /// <see cref="CampanasCondicionContado"/> y el día que se le pase.
     /// <para>«Ya está al contado» (no se avisa): plazos CONTADO, CR (contado riguroso) o PRE (prepago: así entran Aplázame y los
-    /// pagos con tarjeta de la tienda y la app), forma de pago TAR (tarjeta) o <see cref="AvisoCondicionesCampanaPeticion.TienePrepago"/>.</para>
+    /// pagos con tarjeta de la tienda y la app), forma de pago TAR (tarjeta), <see cref="AvisoCondicionesCampanaPeticion.TienePrepago"/>
+    /// o pronto pago (Carlos 11/11/26: «al fin y al cabo son al contado»): <see cref="AvisoCondicionesCampanaPeticion.DescuentoPP"/>
+    /// mayor que 0, o unos plazos con descuento por pronto pago en la tabla PlazosPago (<see cref="PlazosProntoPago"/>: PP, PP2, PP5…).</para>
     /// </summary>
     public static class AvisoCondicionesCampana
     {
@@ -67,15 +74,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
         internal static bool EsVigente(ProductoCampanaContado fila, DateTime hoy) =>
             fila.FechaDesde.Date <= hoy.Date && hoy.Date <= fila.FechaHasta.Date;
 
+        /// <summary>Pronto pago: descuento PP puesto en el pedido o plazos que lo llevan en la tabla PlazosPago.</summary>
+        public static bool EsProntoPago(AvisoCondicionesCampanaPeticion peticion, IEnumerable<PlazoProntoPago> plazosConProntoPago)
+        {
+            return peticion != null && (peticion.DescuentoPP > 0 ||
+                PlazosProntoPago.LlevanProntoPago(plazosConProntoPago, peticion.Empresa, peticion.PlazosPago));
+        }
+
         public static AvisoCondicionesCampanaRespuesta Decidir(IEnumerable<ProductoCampanaContado> filas, DateTime hoy,
-            AvisoCondicionesCampanaPeticion peticion)
+            AvisoCondicionesCampanaPeticion peticion, IEnumerable<PlazoProntoPago> plazosConProntoPago = null)
         {
             var noAvisar = new AvisoCondicionesCampanaRespuesta { Avisar = false };
             if (peticion?.Productos == null || peticion.Productos.Count == 0)
             {
                 return noAvisar;
             }
-            if (YaEsContado(peticion.FormaPago, peticion.PlazosPago, peticion.TienePrepago))
+            if (YaEsContado(peticion.FormaPago, peticion.PlazosPago, peticion.TienePrepago) || EsProntoPago(peticion, plazosConProntoPago))
             {
                 return noAvisar;
             }

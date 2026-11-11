@@ -1118,6 +1118,7 @@
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\AvisoCondicionesCampana.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasAplicarDto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\PlazosProntoPago.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioDiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FechasFuturasPedido.cs" />
