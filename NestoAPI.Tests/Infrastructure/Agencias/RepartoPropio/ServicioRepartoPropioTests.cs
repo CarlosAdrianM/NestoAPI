@@ -115,6 +115,39 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
+        public async Task Entregar_EnvioQueVieneDeUnaIncidenciaConDetalleLargo_LaHistoriaCabeEnLaColumna()
+        {
+            // 11/11/26, envío 250766 (Miguel): el envío estaba incidentado con un detalle de 68 caracteres y al entregarlo la
+            // historia guardaba ese detalle recortado a 100; EnviosHistoria.ValorAnterior es nvarchar(50) → no se podía entregar.
+            EnviosAgencia envio = Envio(estado: Constantes.Agencias.ESTADO_INCIDENTADO);
+            envio.DetalleEstado = "Reparto propio: Ausente. Local cerrado y no responde a las llamadas.";
+            _ = repositorio.Con(envio);
+
+            var resultado = await servicio.Entregar(251300, Entrega(), USUARIO);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Registro r = repositorio.Registros.Single();
+            Assert.IsTrue(r.Historia.All(h => (h.ValorAnterior ?? string.Empty).Length <= NVEntities.LONGITUD_HISTORIA_ENVIO),
+                "El valor anterior tiene que caber en EnviosHistoria.ValorAnterior");
+            Assert.AreEqual("Reparto propio: Ausente. Local cerrado y no respon", r.Historia.Single(h => h.Campo == "DetalleEstado").ValorAnterior);
+        }
+
+        [TestMethod]
+        public void AcotarHistoriaEnvio_RecortaCampoYValorAnteriorALoQueAdmiteLaTabla()
+        {
+            // Red para todos los caminos que graban EnviosHistoria: la historia nunca impide la operación.
+            var fila = new EnvioHistoria { Campo = new string('c', 80), ValorAnterior = new string('v', 68), Observaciones = new string('o', 500) };
+
+            NVEntities.AcotarHistoriaEnvio(fila);
+
+            Assert.AreEqual(50, fila.Campo.Length);
+            Assert.AreEqual(50, fila.ValorAnterior.Length);
+            Assert.AreEqual(500, fila.Observaciones.Length, "Observaciones no tiene límite");
+            NVEntities.AcotarHistoriaEnvio(null);
+            NVEntities.AcotarHistoriaEnvio(new EnvioHistoria());
+        }
+
+        [TestMethod]
         public async Task Entregar_SoloConLaClave_Entregado()
         {
             // Carlos 29/10/26: registrar la entrega es opcional; ni receptor ni firma ni DNI son obligatorios por ahora.

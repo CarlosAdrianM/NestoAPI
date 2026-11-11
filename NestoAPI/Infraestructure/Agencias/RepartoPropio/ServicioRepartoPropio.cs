@@ -823,7 +823,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return new List<EnvioHistoria>
             {
                 new EnvioHistoria { NumeroEnvio = envio.Numero, Campo = "Estado", ValorAnterior = envio.Estado.ToString(), Observaciones = observaciones, Usuario = usuario, FechaModificacion = momento },
-                new EnvioHistoria { NumeroEnvio = envio.Numero, Campo = "DetalleEstado", ValorAnterior = Recortar(envio.DetalleEstado?.Trim() ?? string.Empty, 100), Observaciones = observaciones, Usuario = usuario, FechaModificacion = momento }
+                new EnvioHistoria { NumeroEnvio = envio.Numero, Campo = "DetalleEstado", ValorAnterior = Recortar(envio.DetalleEstado?.Trim() ?? string.Empty, NVEntities.LONGITUD_HISTORIA_ENVIO), Observaciones = observaciones, Usuario = usuario, FechaModificacion = momento }
             };
         }
 

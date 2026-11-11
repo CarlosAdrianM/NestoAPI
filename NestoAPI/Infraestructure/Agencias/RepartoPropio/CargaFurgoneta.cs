@@ -242,7 +242,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     NumeroEnvio = envio.Numero,
                     Campo = CAMPO_HISTORIA_REPARTIDOR,
-                    ValorAnterior = actual == null ? string.Empty : Recortar(NombreRepartidor(actual), 100),
+                    ValorAnterior = actual == null ? string.Empty : Recortar(NombreRepartidor(actual), NVEntities.LONGITUD_HISTORIA_ENVIO),
                     Observaciones = actual == null
                         ? $"En reparto ({nombre})"
                         : $"En reparto ({nombre}): reasignado, antes lo llevaba {NombreRepartidor(actual)}",

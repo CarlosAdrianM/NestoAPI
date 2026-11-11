@@ -79,6 +79,7 @@ namespace NestoAPI.Models
         // punto pasan todas las grabaciones de líneas de la API (POST, PUT, presupuestos, canales externos, tienda...).
         public override int SaveChanges()
         {
+            AcotarHistoriaEnvios();
             ComprobarFechasEntregaLineasVenta();
             List<string> productosAEncolar = ProductosLineasVentaAEncolar();
             int resultado = base.SaveChanges();
@@ -88,11 +89,55 @@ namespace NestoAPI.Models
 
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
+            AcotarHistoriaEnvios();
             ComprobarFechasEntregaLineasVenta();
             List<string> productosAEncolar = ProductosLineasVentaAEncolar();
             int resultado = await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await EncolarProductosLineasVentaSinRomperAsync(productosAEncolar).ConfigureAwait(false);
             return resultado;
+        }
+
+        /// <summary>Longitud de EnviosHistoria.Campo y EnviosHistoria.ValorAnterior en la BD (nvarchar(50)).</summary>
+        internal const int LONGITUD_HISTORIA_ENVIO = 50;
+
+        /// <summary>
+        /// 11/11/26 (envío 250766, Miguel): la historia de un envío es rastro, nunca puede impedir la operación. El reparto
+        /// propio guardaba el DetalleEstado anterior recortado a 100 y la columna admite 50: un envío que venía de una
+        /// incidencia con el detalle largo («Reparto propio: Ausente. Local cerrado y no responde a las llamadas.», 68) no se
+        /// podía entregar (DbEntityValidationException). Red para TODOS los caminos: lo que no cabe se recorta al grabar.
+        /// </summary>
+        internal static void AcotarHistoriaEnvio(EnvioHistoria fila)
+        {
+            if (fila == null)
+            {
+                return;
+            }
+            if (fila.Campo != null && fila.Campo.Length > LONGITUD_HISTORIA_ENVIO)
+            {
+                fila.Campo = fila.Campo.Substring(0, LONGITUD_HISTORIA_ENVIO);
+            }
+            if (fila.ValorAnterior != null && fila.ValorAnterior.Length > LONGITUD_HISTORIA_ENVIO)
+            {
+                fila.ValorAnterior = fila.ValorAnterior.Substring(0, LONGITUD_HISTORIA_ENVIO);
+            }
+        }
+
+        private void AcotarHistoriaEnvios()
+        {
+            try
+            {
+                foreach (DbEntityEntry<EnvioHistoria> entrada in ChangeTracker.Entries<EnvioHistoria>())
+                {
+                    if (entrada.State == EntityState.Added || entrada.State == EntityState.Modified)
+                    {
+                        AcotarHistoriaEnvio(entrada.Entity);
+                    }
+                }
+            }
+            catch
+            {
+                // Nunca rompe el guardado: si no se puede mirar, se graba como venga.
+            }
         }
 
         /// <summary>
