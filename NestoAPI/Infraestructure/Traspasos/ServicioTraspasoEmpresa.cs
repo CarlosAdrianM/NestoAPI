@@ -54,6 +54,38 @@ namespace NestoAPI.Infraestructure.Traspasos
         /// y se traspasa cuando se sirva. Antes se movían TODAS las líneas y la segunda entrega quedaba en la 3, donde no se
         /// puede albaranear (928217: «sin ubicacion reservada» y luego «Fecha no permitida»).
         /// </summary>
+        /// <summary>
+        /// 11/11/26 (albaranes 732939 y 732940): la facturación de rutas albaranea en la empresa 1 y prdCrearAlbaránVta deja en
+        /// Ubicaciones.EmpresaAlbaranVta = 1. El traspaso movía las líneas y CabAlbaránVta (9-bis) a la espejo, pero no esas
+        /// filas: al deshacer el albarán en la 3, prdDeshacerExtractoProducto las busca con EmpresaAlbaranVta = 3, no las
+        /// encuentra y deja la reserva (-3) sin devolver → hueco descuadrado en 1 unidad (1.093 filas así desde mayo).
+        /// Va DESPUÉS de mover las cabeceras y en la misma transacción: solo toca las filas cuyo albarán ya tiene su cabecera
+        /// en la empresa destino y ninguna en la de origen (un número repetido entre empresas no se toca). Ubicaciones.Empresa
+        /// no cambia: el stock y los huecos siguen en la empresa 1.
+        /// Entra por la línea del pedido (Ubicaciones.NºOrdenVta, que tiene índice): Ubicaciones no tiene índice por albarán y
+        /// buscar por AlbaránVta recorrería la tabla entera en cada factura de ruta.
+        /// </summary>
+        internal const string SQL_MOVER_UBICACIONES_ALBARANES =
+            @"UPDATE u
+              SET EmpresaAlbaranVta = @EmpresaDestino
+              FROM Ubicaciones u
+              INNER JOIN LinPedidoVta l ON l.[Nº Orden] = u.NºOrdenVta
+              WHERE l.Empresa = @EmpresaDestino
+                AND l.Número = @NumeroPedido
+                AND l.[Nº Albarán] IS NOT NULL
+                AND u.AlbaránVta = l.[Nº Albarán]
+                AND u.EmpresaAlbaranVta = @EmpresaOrigen
+                AND EXISTS (SELECT 1 FROM CabAlbaránVta c
+                            WHERE c.Empresa = @EmpresaDestino AND c.Número = u.AlbaránVta)
+                AND NOT EXISTS (SELECT 1 FROM CabAlbaránVta o
+                                WHERE o.Empresa = @EmpresaOrigen AND o.Número = u.AlbaránVta)";
+
+        /// <summary>
+        /// El orden de las sentencias del traspaso que tocan el albarán: primero las líneas, después las cabeceras (9-bis) y al
+        /// final las ubicaciones, que dependen de que la cabecera ya esté en la empresa destino. Lo fija un test.
+        /// </summary>
+        internal static readonly string[] ORDEN_TRASPASO_ALBARAN = { "LinPedidoVta", "CabAlbaránVta", "Ubicaciones" };
+
         internal const string SQL_MOVER_LINEAS_ALBARANEADAS =
             @"UPDATE LinPedidoVta
               SET Empresa = @EmpresaDestino
@@ -528,6 +560,19 @@ namespace NestoAPI.Infraestructure.Traspasos
                         );
 
                         System.Diagnostics.Debug.WriteLine($"  ✓ {albaranesMovidos} cabecera(s) de albarán movida(s) a empresa destino");
+
+                        // 9-ter (11/11/26): las ubicaciones consumidas por esos albaranes pasan a apuntar a la empresa
+                        // destino, igual que su cabecera. Ver SQL_MOVER_UBICACIONES_ALBARANES.
+                        int ubicacionesMovidas = await ExecuteSqlCommandAsync(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            SQL_MOVER_UBICACIONES_ALBARANES,
+                            new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                            new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
+                            new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                        );
+
+                        System.Diagnostics.Debug.WriteLine($"  ✓ {ubicacionesMovidas} ubicación(es) de albarán pasadas a empresa destino");
 
                         // 10. Verificar si quedan líneas en empresa origen y eliminar cabecera huérfana si no quedan
                         if (lineasMovidas > 0)

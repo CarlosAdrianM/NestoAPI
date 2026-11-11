@@ -289,6 +289,65 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("UPDATE LinPedidoVta SET Empresa = @EmpresaDestino WHERE Empresa = @EmpresaOrigen AND Número = @NumeroPedido AND Estado >= 2", sql);
         }
 
+        /// <summary>
+        /// 11/11/26 (albaranes 732939 y 732940, pedidos 928723 y 921251): el traspaso a la espejo movía líneas y cabecera del
+        /// albarán, pero dejaba Ubicaciones.EmpresaAlbaranVta en la empresa 1. Al deshacer el albarán en la 3, la reserva de
+        /// picking no se devolvía y el hueco quedaba descuadrado. Rojo antes del arreglo: la sentencia no existía.
+        /// </summary>
+        [TestMethod]
+        public void SqlMoverUbicaciones_PasaEmpresaAlbaranVtaALaEmpresaDestino()
+        {
+            string sql = System.Text.RegularExpressions.Regex.Replace(ServicioTraspasoEmpresa.SQL_MOVER_UBICACIONES_ALBARANES, @"\s+", " ").Trim();
+
+            Assert.AreEqual(
+                "UPDATE u SET EmpresaAlbaranVta = @EmpresaDestino FROM Ubicaciones u " +
+                "INNER JOIN LinPedidoVta l ON l.[Nº Orden] = u.NºOrdenVta " +
+                "WHERE l.Empresa = @EmpresaDestino AND l.Número = @NumeroPedido AND l.[Nº Albarán] IS NOT NULL " +
+                "AND u.AlbaránVta = l.[Nº Albarán] AND u.EmpresaAlbaranVta = @EmpresaOrigen " +
+                "AND EXISTS (SELECT 1 FROM CabAlbaránVta c WHERE c.Empresa = @EmpresaDestino AND c.Número = u.AlbaránVta) " +
+                "AND NOT EXISTS (SELECT 1 FROM CabAlbaránVta o WHERE o.Empresa = @EmpresaOrigen AND o.Número = u.AlbaránVta)",
+                sql);
+        }
+
+        [TestMethod]
+        public void SqlMoverUbicaciones_NoTocaLaEmpresaDeLaUbicacion_SoloLaDelAlbaran()
+        {
+            // El stock y los huecos viven en la empresa 1: Ubicaciones.Empresa no se mueve nunca.
+            string sql = ServicioTraspasoEmpresa.SQL_MOVER_UBICACIONES_ALBARANES;
+
+            StringAssert.Contains(sql, "SET EmpresaAlbaranVta = @EmpresaDestino");
+            Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(sql, @"SET\s+Empresa\s*="), "No debe cambiar Ubicaciones.Empresa");
+        }
+
+        [TestMethod]
+        public void OrdenDelTraspasoDelAlbaran_LasUbicacionesVanDespuesDeLaCabecera()
+        {
+            // La sentencia de Ubicaciones exige que la cabecera YA esté en la empresa destino.
+            CollectionAssert.AreEqual(new[] { "LinPedidoVta", "CabAlbaránVta", "Ubicaciones" }, ServicioTraspasoEmpresa.ORDEN_TRASPASO_ALBARAN);
+
+            string fuente = System.IO.File.ReadAllText(RutaDelServicio());
+            int cabeceras = fuente.IndexOf("@\"UPDATE CabAlbaránVta", System.StringComparison.Ordinal);
+            int ubicaciones = fuente.LastIndexOf("SQL_MOVER_UBICACIONES_ALBARANES,", System.StringComparison.Ordinal);
+            Assert.IsTrue(cabeceras > 0 && ubicaciones > cabeceras, "El UPDATE de Ubicaciones tiene que ejecutarse después del de CabAlbaránVta");
+        }
+
+        private static string RutaDelServicio()
+        {
+            // De NestoAPI.Tests\bin\Debug hasta la raíz de la solución.
+            string carpeta = System.AppDomain.CurrentDomain.BaseDirectory;
+            for (int i = 0; i < 6 && carpeta != null; i++)
+            {
+                string candidato = System.IO.Path.Combine(carpeta, "NestoAPI", "Infraestructure", "Traspasos", "ServicioTraspasoEmpresa.cs");
+                if (System.IO.File.Exists(candidato))
+                {
+                    return candidato;
+                }
+                carpeta = System.IO.Path.GetDirectoryName(carpeta);
+            }
+            Assert.Inconclusive("No se encuentra ServicioTraspasoEmpresa.cs desde la carpeta de los tests");
+            return null;
+        }
+
         #region Recálculo de importes tras el traspaso
 
         // NestoAPI#313 (23/09/26): los tests «funcionales» de TraspasarPedidoAEmpresa (pedido válido, sin
