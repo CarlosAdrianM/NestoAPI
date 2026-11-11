@@ -61,7 +61,11 @@ namespace NestoAPI.Tests.Controllers
             int asignacion = codigo.IndexOf("cabPedidoVta.Fecha = pedido.fecha;", StringComparison.Ordinal);
             Assert.IsTrue(guardada >= 0 && asignacion > guardada, "La fecha guardada se lee antes de pisarla con la del cliente");
             Assert.IsFalse(codigo.Contains("EsPedidoValidoConFechaDelPedido(pedido, cabPedidoVta.Fecha)"));
-            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(codigo, @"EsPedidoValidoConFechaDelPedido\(pedido, fechaGuardada\)").Count);
+            // Carlos 11/11/26: y con el día del pedido solo si lo pasa la tienda online o Dirección (el principal del controlador)
+            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(codigo,
+                @"EsPedidoValidoConFechaDelPedido\(pedido, fechaGuardada,\s*VigenciaPedidoTienda\.PuedeValidarConDiaDelPedido\(usuarioValidacion\)\)").Count);
+            Assert.AreEqual(1, System.Text.RegularExpressions.Regex.Matches(codigo,
+                @"GestorPrecios\.EsPedidoValido\(pedido,\s*VigenciaPedidoTienda\.PuedeValidarConDiaDelPedido\(usuarioValidacion\)\)").Count);
         }
 
         // Nesto#340: GET api/PedidosVenta/PorReferenciaCanal — el nº de pedido Nesto por la

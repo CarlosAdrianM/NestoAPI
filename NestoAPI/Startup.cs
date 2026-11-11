@@ -61,6 +61,8 @@ namespace NestoAPI
                 Infraestructure.PedidosVenta.DiasRepartoCodigosPostales.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#799: y la excepción por cliente y contacto, que manda sobre el código postal (tabla ClientesDiaReparto).
                 Infraestructure.PedidosVenta.DiasRepartoClientes.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // Feria online 12-16/11/26: productos de campaña con condición de contado (tabla CampanasCondicionContado).
+                Infraestructure.PedidosVenta.CondicionesCampana.CampanasCondicionContado.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#779: los festivos salen de la tabla Festivos (si no existe o le falta el año, de la lista de GestorFestivos).
                 Models.RecursosHumanos.CalendarioFestivos.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#823 (Carlos 05/11/26): una persona, una identidad: «Alfredo» (Ariadna/NestoApp) es «NUEVAVISION\Alfredo».
@@ -862,6 +864,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'festivos-sin-cargar' configurado (día 1 de cada mes a las 9:00)");
+
+            // Feria online 11/26: cada hora en punto (y una vez al arrancar, por si la API estuvo parada a las 00:00), pone «Aplicar Dto» = 1
+            // a las fichas de dbo.CampanasAplicarDto el primer día de su campaña y se lo devuelve al acabar. Sin tabla, no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.CondicionesCampana.CampanasAplicarDtoJobsService.JOB_ID,
+                () => Infraestructure.PedidosVenta.CondicionesCampana.CampanasAplicarDtoJobsService.Ejecutar(),
+                Infraestructure.PedidosVenta.CondicionesCampana.CampanasAplicarDtoJobsService.CRON, // Cron: cada hora en punto
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            _ = BackgroundJob.Enqueue(() => Infraestructure.PedidosVenta.CondicionesCampana.CampanasAplicarDtoJobsService.Ejecutar());
+            Console.WriteLine("✅ Job recurrente 'campanas-aplicar-dto' configurado (cada hora en punto y al arrancar)");
 
             // NestoAPI#623: cada hora de 8 a 20 (L-V), los leads de campaña con el plazo de llamada vencido y sin rapport: aviso en
             // la campana al vendedor y a su jefe de ventas (o a Dirección), una sola vez por lead.

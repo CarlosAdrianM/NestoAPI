@@ -655,6 +655,7 @@
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PedidosVentaTransferenciaController.cs" />
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
+    <Compile Include="Controllers\PedidosVentaCondicionesCampanaController.cs" />
     <Compile Include="Controllers\EnvioDocumentosCorreoController.cs" />
     <Compile Include="Controllers\DocumentosController.cs" />
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
@@ -1114,6 +1115,9 @@
     <Compile Include="Infraestructure\PedidosVenta\CalculadoraFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalendarioRutasDia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\AvisoCondicionesCampana.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasAplicarDto.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioDiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FechasFuturasPedido.cs" />

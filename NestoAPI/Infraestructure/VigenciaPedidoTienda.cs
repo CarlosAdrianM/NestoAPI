@@ -1,7 +1,9 @@
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Linq;
+using System.Security.Principal;
 
 namespace NestoAPI.Infraestructure
 {
@@ -24,6 +26,8 @@ namespace NestoAPI.Infraestructure
     /// anterior a hoy y como mucho <see cref="DIAS_MAXIMOS_ATRAS"/> días atrás. En cualquier otro caso, hoy
     /// (lo de siempre). Solo afecta a la VALIDACIÓN (GestorPrecios.EsPedidoValido); el cálculo de precios de la
     /// plantilla sigue con hoy.</para>
+    /// <para>Y solo si quien pasa el pedido es de la tienda online o de Dirección (<see cref="PuedeValidarConDiaDelPedido"/>,
+    /// Carlos 11/11/26): para cualquier otro usuario, con hoy. El controlador lo decide con su principal y se lo pasa al gestor.</para>
     /// </summary>
     public static class VigenciaPedidoTienda
     {
@@ -43,6 +47,27 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             return pedido.Lineas == null || pedido.Lineas.All(l => l.formaVenta == Constantes.FormasVenta.TIENDA_ONLINE);
+        }
+
+        /// <summary>
+        /// ¿Puede este usuario pasar pedidos de la tienda validados con las ofertas del día del pedido? Solo los grupos de la
+        /// tienda online y Dirección (sin dominio, como el resto de la API). Sin usuario, no.
+        /// </summary>
+        public static bool PuedeValidarConDiaDelPedido(IPrincipal usuario)
+        {
+            if (usuario == null)
+            {
+                return false;
+            }
+            try
+            {
+                return usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE) ||
+                       usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -68,8 +93,13 @@ namespace NestoAPI.Infraestructure
         /// el servicio lo sabe hacer (un fake que no implemente <see cref="IServicioPreciosConDiaVigencia"/> se
         /// queda como está).
         /// </summary>
-        public static IServicioPrecios ServicioParaValidar(IServicioPrecios servicio, PedidoVentaDTO pedido, DateTime? fechaPedido, DateTime hoy)
+        public static IServicioPrecios ServicioParaValidar(IServicioPrecios servicio, PedidoVentaDTO pedido, DateTime? fechaPedido, DateTime hoy,
+            bool usuarioPuedeValidarConDiaDelPedido)
         {
+            if (!usuarioPuedeValidarConDiaDelPedido)
+            {
+                return servicio;
+            }
             DateTime? dia = DiaVigencia(pedido, fechaPedido, hoy);
             return dia.HasValue && servicio is IServicioPreciosConDiaVigencia conDia
                 ? conDia.ParaDia(dia.Value)

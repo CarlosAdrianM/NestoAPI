@@ -1993,7 +1993,8 @@ namespace NestoAPI.Controllers
             {
                 // Feria online 11/26: con la fecha del pedido GUARDADO (un pedido de la tienda se valida con
                 // las ofertas vigentes ese día, VigenciaPedidoTienda).
-                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, fechaGuardada);
+                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, fechaGuardada,
+                    VigenciaPedidoTienda.PuedeValidarConDiaDelPedido(usuarioValidacion));
 
                 // Carlos 28/11/25: Permitir omitir validación si (igual que en POST):
                 // - Tiene rol Dirección o Almacén (sin importar almacenes), O
@@ -2017,7 +2018,8 @@ namespace NestoAPI.Controllers
             // calculamos la respuesta de validación para incluirla en el correo (Issue #48)
             else if (pedido.CreadoSinPasarValidacion)
             {
-                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, fechaGuardada);
+                respuestaValidacion = GestorPrecios.EsPedidoValidoConFechaDelPedido(pedido, fechaGuardada,
+                    VigenciaPedidoTienda.PuedeValidarConDiaDelPedido(usuarioValidacion));
             }
 
             bool pedidoTeniaPrepago = cabPedidoVta.Prepagos.Any(p => p.Factura == null);
@@ -3195,7 +3197,9 @@ namespace NestoAPI.Controllers
 
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
             // Siempre calculamos la validación para incluirla en el correo, aunque no la bloqueemos
-            RespuestaValidacion respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
+            // Feria online 11/26: con el día del pedido solo si lo pasa la tienda online o Dirección (VigenciaPedidoTienda).
+            RespuestaValidacion respuestaValidacion = GestorPrecios.EsPedidoValido(pedido,
+                VigenciaPedidoTienda.PuedeValidarConDiaDelPedido(usuarioValidacion));
 
             // Carlos 12/01/25: Permitir omitir validación si:
             // - Tiene rol Dirección o Almacén (sin importar almacenes), O
