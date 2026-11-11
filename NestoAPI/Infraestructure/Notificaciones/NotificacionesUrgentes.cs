@@ -4,6 +4,7 @@ using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
+using NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso;
 using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.Notificaciones
@@ -18,13 +19,16 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// <item>mientras siga pendiente vuelve a salir al abrir Nesto o al reconectar (sin sondeo): cada tipo dice qué referencias siguen
     /// pendientes (<see cref="IComprobadorUrgentesPendientes"/>).</item>
     /// </list>
-    /// Hoy <see cref="TextosAutorizacionReembolso.TIPO_NOTIFICACION"/> y, desde NestoAPI#844, <see cref="TextosCierreCajaDescuadrado.TIPO_NOTIFICACION"/>. «FurgonetaSinDescargar» (#772) sigue siendo normal: no tiene nada
+    /// Hoy <see cref="TextosAutorizacionReembolso.TIPO_NOTIFICACION"/>, desde NestoAPI#844, <see cref="TextosCierreCajaDescuadrado.TIPO_NOTIFICACION"/> y,
+    /// desde NestoAPI#734 (11/11/26), <see cref="TextosConsultaReembolso.TIPO_NOTIFICACION"/> solo con la acción «consulta» (la respuesta a quien
+    /// preguntó comparte tipo y es normal: <see cref="ACCIONES_URGENTES"/>). «FurgonetaSinDescargar» (#772) sigue siendo normal: no tiene nada
     /// que contestar ni un estado «pendiente» que cerrar.
     /// </summary>
     public static class NotificacionesUrgentes
     {
         public const string DATO_TIPO = "tipo";
         public const string DATO_REFERENCIA = "referencia";
+        public const string DATO_ACCION = "accion";
         /// <summary>«1» en el aviso del escalado a Dirección (nadie de Administración contestó a tiempo).</summary>
         public const string DATO_ESCALADA = "escalada";
 
@@ -35,16 +39,40 @@ namespace NestoAPI.Infraestructure.Notificaciones
         {
             TextosAutorizacionReembolso.TIPO_NOTIFICACION,
             // NestoAPI#844: un cierre de caja del repartidor que no cuadra (a Administración)
-            TextosCierreCajaDescuadrado.TIPO_NOTIFICACION
+            TextosCierreCajaDescuadrado.TIPO_NOTIFICACION,
+            // NestoAPI#734: el almacén pregunta a Administración si un pedido retenido sale con o sin reembolso (solo la pregunta)
+            TextosConsultaReembolso.TIPO_NOTIFICACION
+        };
+
+        /// <summary>
+        /// Los tipos que comparten Tipo entre un aviso urgente y otros que no lo son: solo es urgente el de esta Datos["accion"].
+        /// NestoAPI#734: la consulta de reembolso («consulta», a Administración) sí; la «respuesta» a quien preguntó, no.
+        /// </summary>
+        internal static readonly IReadOnlyDictionary<string, string> ACCIONES_URGENTES = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TextosConsultaReembolso.TIPO_NOTIFICACION] = TextosConsultaReembolso.ACCION_CONSULTA
         };
 
         public static IReadOnlyCollection<string> Tipos => TIPOS;
 
+        /// <summary>Si el tipo está en la lista blanca (con algún aviso urgente; mire también la acción con <see cref="EsUrgente(string, string)"/>).</summary>
         public static bool EsUrgente(string tipo) => !string.IsNullOrWhiteSpace(tipo) && TIPOS.Contains(tipo.Trim());
 
-        /// <summary>Por su Tipo o por Datos["tipo"] (las del buzón solo guardan los Datos).</summary>
+        /// <summary>El tipo está en la lista blanca y, si ese tipo solo es urgente con una acción, es esa.</summary>
+        public static bool EsUrgente(string tipo, string accion)
+            => EsUrgente(tipo) && (!ACCIONES_URGENTES.TryGetValue(tipo.Trim(), out string urgente)
+                || string.Equals(urgente, accion?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Por su Tipo o por Datos["tipo"] (las del buzón solo guardan los Datos), y Datos["accion"].</summary>
         public static bool EsUrgente(NotificacionPushDTO notificacion)
-            => notificacion != null && (EsUrgente(notificacion.Tipo) || EsUrgente(Dato(notificacion.Datos, DATO_TIPO)));
+        {
+            if (notificacion == null)
+            {
+                return false;
+            }
+            string tipo = EsUrgente(notificacion.Tipo) ? notificacion.Tipo : Dato(notificacion.Datos, DATO_TIPO);
+            return EsUrgente(tipo, Dato(notificacion.Datos, DATO_ACCION));
+        }
 
         public static string Dato(IDictionary<string, string> datos, string clave)
         {
@@ -130,7 +158,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     new IComprobadorUrgentesPendientes[]
                     {
                         new ComprobadorAutorizacionesPendientes(new RepositorioAutorizacionesReembolso(db)),
-                        new ComprobadorCierresCajaDescuadrados(new EstadoCajaReparto(db)) // NestoAPI#844
+                        new ComprobadorCierresCajaDescuadrados(new EstadoCajaReparto(db)), // NestoAPI#844
+                        new ComprobadorConsultasReembolsoAbiertas(new RepositorioConsultasReembolso()) // NestoAPI#734
                     });
                 return await servicio.Pendientes(usuario).ConfigureAwait(false);
             }
@@ -155,9 +184,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 {
                     Fila = f,
                     Tipo = NotificacionesUrgentes.Dato(f.Datos, NotificacionesUrgentes.DATO_TIPO),
-                    Referencia = NotificacionesUrgentes.Dato(f.Datos, NotificacionesUrgentes.DATO_REFERENCIA)
+                    Referencia = NotificacionesUrgentes.Dato(f.Datos, NotificacionesUrgentes.DATO_REFERENCIA),
+                    Accion = NotificacionesUrgentes.Dato(f.Datos, NotificacionesUrgentes.DATO_ACCION)
                 })
-                .Where(x => NotificacionesUrgentes.EsUrgente(x.Tipo) && x.Referencia != null)
+                .Where(x => NotificacionesUrgentes.EsUrgente(x.Tipo, x.Accion) && x.Referencia != null)
                 .GroupBy(x => new { x.Tipo, x.Referencia })
                 .Select(g =>
                 {

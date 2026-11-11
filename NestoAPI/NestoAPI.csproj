@@ -1129,9 +1129,12 @@
     <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioServirPendienteAlHaberStock.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\AvisadorConsultaReembolso.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\LiberacionConConsultaAbierta.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\RecordatoriosConsultasReembolsoJobsService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\RepositorioConsultasReembolso.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\ServicioConsultasReembolso.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\TextosConsultaReembolso.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\UrgenteConsultaReembolso.cs" />
     <Compile Include="Models\PedidosVenta\ConsultaReembolsoPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AplazamientoPedidoConPicking.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\AplazamientoEnvioEnAgencia.cs" />

@@ -288,6 +288,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
                 }
             }
 
+            // NestoAPI#734: la pregunta era urgente: se cierra la ventana roja en todos los Nesto (nunca lanza).
+            avisador.Resuelta(UrgenteConsultaReembolso.Resuelta(consulta));
+
             respuesta.Liberado = await LiberarSiLoRetuvoLaConsulta(empresa, numero, consulta, usuario, respuesta).ConfigureAwait(false);
 
             if (!conReembolso)

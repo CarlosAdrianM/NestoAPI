@@ -1418,6 +1418,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'pedidos-retenidos-nocturna' configurado (L-S a las 5:35)");
 
+            // NestoAPI#734 (pedido 929559: siete días sin respuesta y sin un segundo aviso): de lunes a viernes a las 10:30 y a las
+            // 15:30 (no en festivos de Algete) vuelve a avisar a Administración de las consultas de reembolso abiertas desde hace 4 h
+            // o más y, si llevan más de un día laborable, también a Dirección. Sin la tabla no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.ConsultaReembolso.RecordatoriosConsultasReembolsoJobsService.ID_JOB,
+                () => Infraestructure.PedidosVenta.ConsultaReembolso.RecordatoriosConsultasReembolsoJobsService.Avisar(),
+                Infraestructure.PedidosVenta.ConsultaReembolso.RecordatoriosConsultasReembolsoJobsService.CRON, // Cron: de lunes a viernes a las 10:30 y a las 15:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'consultas-reembolso-sin-contestar' configurado (L-V 10:30 y 15:30)");
+
             RecurringJob.AddOrUpdate(
                 Infraestructure.PedidosVenta.PromesaRiesgoJobsService.ID_JOB_NOCTURNO,
                 () => Infraestructure.PedidosVenta.PromesaRiesgoJobsService.PasadaNocturna(),

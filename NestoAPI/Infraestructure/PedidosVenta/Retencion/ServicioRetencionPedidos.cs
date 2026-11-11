@@ -10,10 +10,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
     public class ResultadoRetencion
     {
         public bool NoEncontrado { get; set; }
+        /// <summary>La liberación a mano no se permite ahora (consulta de reembolso abierta, #734): 409.</summary>
+        public bool Conflicto { get; set; }
         public string Error { get; set; }
         public RetencionPedidoDTO Retencion { get; set; }
 
         public static ResultadoRetencion Fallo(string error) => new ResultadoRetencion { Error = error };
+        public static ResultadoRetencion EnConflicto(string error) => new ResultadoRetencion { Conflicto = true, Error = error };
         public static ResultadoRetencion SinPedido() => new ResultadoRetencion { NoEncontrado = true };
         public static ResultadoRetencion Exito(RetencionPedidoDTO retencion) => new ResultadoRetencion { Retencion = retencion };
     }
@@ -41,13 +44,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         private readonly Func<DateTime> reloj;
         private readonly Action<Exception> registrar;
         private readonly Func<RetencionPedidoDTO, CabeceraPedidoRetencion, List<int>, Task> avisarAlmacen;
+        private readonly Func<string, int, Task<string>> bloqueoLiberacionAMano;
 
         /// <param name="avisarAlmacen">Qué hacer cuando el pedido retenido YA tiene picking en el almacén (retención, cabecera, pickings).
         /// Null = campana de Nesto y buzón de Ariadna al grupo Almacén (<see cref="AvisadorRetencionAlmacen"/>).</param>
+        /// <param name="bloqueoLiberacionAMano">(empresa, pedido) → el motivo por el que no se puede liberar a mano, o null si se puede
+        /// (NestoAPI#734: consulta de reembolso abierta). Null = sin comprobación.</param>
         public ServicioRetencionPedidos(IRepositorioPedidosRetenidos repositorio, IRepositorioPromesaRiesgo promesas = null,
             Func<DateTime> reloj = null, Action<Exception> registrar = null,
-            Func<RetencionPedidoDTO, CabeceraPedidoRetencion, List<int>, Task> avisarAlmacen = null)
+            Func<RetencionPedidoDTO, CabeceraPedidoRetencion, List<int>, Task> avisarAlmacen = null,
+            Func<string, int, Task<string>> bloqueoLiberacionAMano = null)
         {
+            this.bloqueoLiberacionAMano = bloqueoLiberacionAMano;
             this.avisarAlmacen = avisarAlmacen ?? ((r, c, p) => new AvisadorRetencionAlmacen().Avisar(r, c, p));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.promesas = promesas;
@@ -131,6 +139,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
             await ResolverPromesaRiesgo(empresa, numero, ahora).ConfigureAwait(false);
             await AvisarSiYaTienePicking(retencion, cabecera).ConfigureAwait(false);
             return ResultadoRetencion.Exito(retencion);
+        }
+
+        /// <summary>
+        /// El botón «Liberar» (POST api/PedidosVenta/{empresa}/{numero}/Liberar). NestoAPI#734 (pedido 929559, 04/11/26): con una
+        /// consulta de reembolso abierta no se libera a mano (409): la consulta seguiría bloqueando la etiqueta y el pedido quedaba
+        /// «liberado» sin poder salir. La retención la levanta la respuesta de Administración (<see cref="Liberar"/> directamente).
+        /// </summary>
+        public async Task<ResultadoRetencion> LiberarAMano(string empresa, int numero, string usuario)
+        {
+            empresa = Empresa(empresa);
+            if (bloqueoLiberacionAMano != null)
+            {
+                string motivo = await bloqueoLiberacionAMano(empresa, numero).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(motivo))
+                {
+                    return ResultadoRetencion.EnConflicto(motivo);
+                }
+            }
+            return await Liberar(empresa, numero, usuario).ConfigureAwait(false);
         }
 
         public async Task<ResultadoRetencion> Liberar(string empresa, int numero, string usuario, string motivoLiberacion = TextosRetencion.LIBERADO_A_MANO)

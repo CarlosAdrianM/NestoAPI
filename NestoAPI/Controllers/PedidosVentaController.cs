@@ -1060,7 +1060,9 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#698: el servicio de Retener/Liberar (sustituible en los tests).</summary>
         internal Func<Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos> CrearServicioRetencion { get; set; } = () =>
             new Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos(
-                new Infraestructure.PedidosVenta.Retencion.RepositorioPedidosRetenidos(), new RepositorioPromesaRiesgo());
+                new Infraestructure.PedidosVenta.Retencion.RepositorioPedidosRetenidos(), new RepositorioPromesaRiesgo(),
+                bloqueoLiberacionAMano: Infraestructure.PedidosVenta.ConsultaReembolso.LiberacionConConsultaAbierta.Comprobador(
+                    new Infraestructure.PedidosVenta.ConsultaReembolso.RepositorioConsultasReembolso()));
 
         /// <summary>
         /// NestoAPI#698: retener el pedido «hasta nuevo aviso» (o hasta una fecha de revisión). Pasa al modo de servicio 5, que no
@@ -1190,7 +1192,10 @@ namespace NestoAPI.Controllers
             });
         }
 
-        /// <summary>NestoAPI#698: liberar el pedido: vuelve a su modo de servicio anterior y entra en el picking.</summary>
+        /// <summary>
+        /// NestoAPI#698: liberar el pedido: vuelve a su modo de servicio anterior y entra en el picking. NestoAPI#734: 409 si tiene una
+        /// consulta de reembolso abierta (la retención la levanta la respuesta de Administración).
+        /// </summary>
         [HttpPost]
         [Route("api/PedidosVenta/{empresa}/{numero:int}/Liberar")]
         [ResponseType(typeof(Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO))]
@@ -1202,7 +1207,7 @@ namespace NestoAPI.Controllers
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
             Infraestructure.PedidosVenta.Retencion.ResultadoRetencion resultado = await CrearServicioRetencion()
-                .Liberar(empresa, numero, usuario).ConfigureAwait(false);
+                .LiberarAMano(empresa, numero, usuario).ConfigureAwait(false);
             return RespuestaRetencion(resultado);
         }
 
@@ -1238,6 +1243,13 @@ namespace NestoAPI.Controllers
             if (resultado.NoEncontrado)
             {
                 return NotFound();
+            }
+            if (resultado.Conflicto)
+            {
+                // Mismo cuerpo que BadRequest(mensaje): { "Message": "..." }.
+                return Request != null
+                    ? ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Conflict, resultado.Error))
+                    : (IHttpActionResult)Content(HttpStatusCode.Conflict, resultado.Error);
             }
             return resultado.Error != null ? BadRequest(resultado.Error) : (IHttpActionResult)Ok(resultado.Retencion);
         }

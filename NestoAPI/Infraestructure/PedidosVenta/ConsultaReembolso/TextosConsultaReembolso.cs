@@ -101,6 +101,66 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
             };
         }
 
+        /// <summary>«04/11/2026 a las 08:38».</summary>
+        public static string FechaYHora(System.DateTime fecha) => fecha.ToString("dd/MM/yyyy 'a las' HH:mm", Espanol);
+
+        /// <summary>«5 horas» / «1 día» / «7 días» desde <paramref name="desde"/> hasta <paramref name="ahora"/>.</summary>
+        public static string TiempoEsperando(System.DateTime desde, System.DateTime ahora)
+        {
+            System.TimeSpan espera = ahora - desde;
+            if (espera.TotalDays >= 1)
+            {
+                int dias = (int)espera.TotalDays;
+                return dias == 1 ? "1 día" : $"{dias} días";
+            }
+            int horas = System.Math.Max(0, (int)espera.TotalHours);
+            return horas == 1 ? "1 hora" : $"{horas} horas";
+        }
+
+        /// <summary>
+        /// 409 del botón «Liberar» (#698) con una consulta abierta (pedido 929559): quién preguntó y cuándo, que se libera solo al
+        /// contestar Administración y que mientras tanto no hay etiqueta.
+        /// </summary>
+        public static string ErrorLiberarConConsultaAbierta(ConsultaReembolsoDTO consulta)
+            => $"No se puede liberar el pedido {consulta.Pedido} a mano: {RetencionNombre(consulta.Usuario)} consultó a Administración el " +
+               $"{FechaYHora(consulta.Fecha)} si sale con o sin reembolso y todavía no han contestado. La retención se levanta sola cuando " +
+               "Administración conteste; mientras tanto no se puede sacar la etiqueta. Si corre prisa, pida a Administración que conteste la consulta.";
+
+        /// <summary>
+        /// El recordatorio de una consulta sin contestar (job consultas-reembolso-sin-contestar): el mismo Tipo y la misma acción
+        /// «consulta» que el aviso original, para que al pulsarlo se abra el diálogo de respuesta. Con <paramref name="escalado"/>, el
+        /// texto dice que también se ha avisado a Dirección.
+        /// </summary>
+        public static NotificacionPushDTO NotificacionRecordatorio(ConsultaReembolsoListadoDTO consulta, System.DateTime ahora, bool escalado)
+        {
+            var pedido = new DatosPagoPedidoConsulta
+            {
+                Empresa = consulta.Empresa,
+                Pedido = consulta.Pedido,
+                Cliente = consulta.Cliente,
+                Contacto = consulta.Contacto,
+                NombreCliente = consulta.NombreCliente
+            };
+            string enlaces = consulta.NumeroEnlaces == 1
+                ? $"un enlace de pago pendiente de {Importe(consulta.ImporteEnlaces)}"
+                : $"{consulta.NumeroEnlaces} enlaces de pago pendientes ({Importe(consulta.ImporteEnlaces)} en total)";
+            string direccion = escalado ? " Como lleva más de un día laborable sin respuesta, también se ha avisado a Dirección." : string.Empty;
+            Dictionary<string, string> datos = Datos(consulta, pedido, ACCION_CONSULTA);
+            if (escalado)
+            {
+                datos[Notificaciones.NotificacionesUrgentes.DATO_ESCALADA] = "1";
+            }
+            return new NotificacionPushDTO
+            {
+                Titulo = $"Sin contestar: pedido {consulta.Pedido}, ¿sale con o sin reembolso?",
+                Cuerpo = $"{RetencionNombre(consulta.Usuario)} consultó el {FechaYHora(consulta.Fecha)} (hace {TiempoEsperando(consulta.Fecha, ahora)}) si el pedido " +
+                    $"{consulta.Pedido}{TextoCliente(pedido)} sale con o sin reembolso: va contra reembolso y tenía {enlaces}. Nadie ha contestado todavía: " +
+                    $"el pedido sigue retenido y el almacén no puede sacar la etiqueta. Conteste desde este aviso.{direccion}",
+                Tipo = TIPO_NOTIFICACION,
+                Datos = datos
+            };
+        }
+
         /// <summary>Campana de Nesto y Avisos de Ariadna a quien preguntó: «Administración (Fulano) dice: sale con/sin reembolso».</summary>
         public static NotificacionPushDTO NotificacionRespuesta(ConsultaReembolsoDTO consulta, DatosPagoPedidoConsulta pedido, IReadOnlyCollection<int> anulados, bool liberado)
         {
@@ -141,7 +201,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
 
         private static Dictionary<string, string> Datos(ConsultaReembolsoDTO consulta, DatosPagoPedidoConsulta pedido, string accion)
         {
-            return new Dictionary<string, string>
+            var datos = new Dictionary<string, string>
             {
                 ["tipo"] = TIPO_NOTIFICACION,
                 ["accion"] = accion,
@@ -150,6 +210,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta.ConsultaReembolso
                 ["pedido"] = consulta.Pedido.ToString(CultureInfo.InvariantCulture),
                 ["cliente"] = pedido?.Cliente?.Trim()
             };
+            if (accion == ACCION_CONSULTA)
+            {
+                // NestoAPI#734: la pregunta es urgente (#775): su referencia, para GET Urgentes y «notificacionResuelta».
+                datos[Notificaciones.NotificacionesUrgentes.DATO_REFERENCIA] = UrgenteConsultaReembolso.Referencia(consulta.Empresa, consulta.Pedido);
+            }
+            return datos;
         }
     }
 }

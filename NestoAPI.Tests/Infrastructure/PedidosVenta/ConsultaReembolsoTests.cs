@@ -79,7 +79,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             => Task.FromResult(Existe ? Copia(Filas.Where(f => f.Pedido == pedido).OrderByDescending(f => f.Id).FirstOrDefault()) : null);
         public Task<List<ConsultaReembolsoListadoDTO>> LeerListado(string empresa, bool soloAbiertas)
             => Task.FromResult(Filas.Where(f => !soloAbiertas || f.Respondida == null)
-                .Select(f => new ConsultaReembolsoListadoDTO { Id = f.Id, Pedido = f.Pedido, Respondida = f.Respondida, Cliente = "40026" }).ToList());
+                .Select(f => new ConsultaReembolsoListadoDTO
+                {
+                    Id = f.Id, Empresa = f.Empresa, Pedido = f.Pedido, Usuario = f.Usuario, Fecha = f.Fecha, Respondida = f.Respondida,
+                    ImporteEnlaces = f.ImporteEnlaces, NumeroEnlaces = f.NumeroEnlaces, Cliente = "40026", NombreCliente = "CLIENTA"
+                }).ToList());
         public Task<int> Insertar(ConsultaReembolsoDTO consulta)
         {
             var fila = Copia(consulta);
@@ -155,13 +159,24 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
     internal class AvisadorConsultaReembolsoEnMemoria : IAvisadorConsultaReembolso
     {
         public int MiembrosAdministracion { get; set; } = 2;
+        public int MiembrosDireccion { get; set; } = 1;
         public List<NotificacionPushDTO> AAdministracion { get; } = new List<NotificacionPushDTO>();
+        public List<NotificacionPushDTO> ADireccion { get; } = new List<NotificacionPushDTO>();
+        public List<NotificacionResueltaDTO> Resueltas { get; } = new List<NotificacionResueltaDTO>();
+
+        public void Resuelta(NotificacionResueltaDTO resuelta) => Resueltas.Add(resuelta);
         public List<(string usuario, NotificacionPushDTO notificacion)> AUsuarios { get; } = new List<(string, NotificacionPushDTO)>();
 
         public Task<int> AvisarAdministracion(NotificacionPushDTO notificacion)
         {
             AAdministracion.Add(notificacion);
             return Task.FromResult(MiembrosAdministracion);
+        }
+
+        public Task<int> AvisarDireccion(NotificacionPushDTO notificacion)
+        {
+            ADireccion.Add(notificacion);
+            return Task.FromResult(MiembrosDireccion);
         }
 
         public Task AvisarA(string usuario, NotificacionPushDTO notificacion)
