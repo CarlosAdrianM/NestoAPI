@@ -16,12 +16,39 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     public class ClientesSyncHandler : ISyncTableHandler<ClienteSyncMessage>
     {
         private readonly ClienteChangeDetector _changeDetector;
+        private readonly Action<Exception> _trazarDescartado;
+
+        /// <summary>11/11/26: usuario con el que queda en ELMAH lo que descarta la barrera (el handler corre sin petición HTTP).</summary>
+        public const string USUARIO_TRAZA = "Sistema (sincronización de clientes)";
 
         public string TableName => "Clientes";
 
-        public ClientesSyncHandler()
+        public ClientesSyncHandler() : this(ex => ElmahHelper.Log(ex, USUARIO_TRAZA))
+        {
+        }
+
+        /// <summary>Con la traza de lo que descarta <see cref="BarreraClientesExternos"/> inyectable (tests).</summary>
+        internal ClientesSyncHandler(Action<Exception> trazarDescartado)
         {
             _changeDetector = new ClienteChangeDetector();
+            _trazarDescartado = trazarDescartado ?? (_ => { });
+        }
+
+        /// <summary>Una traza informativa por cada campo descartado (sin datos personales: cliente, campo y motivo).</summary>
+        internal void TrazarDescartados(IEnumerable<CampoDescartadoSincronizacion> descartados)
+        {
+            foreach (CampoDescartadoSincronizacion descartado in descartados ?? Enumerable.Empty<CampoDescartadoSincronizacion>())
+            {
+                Console.WriteLine($"   🛡️ {descartado}");
+                try
+                {
+                    _trazarDescartado(new CampoDescartadoSincronizacionException(descartado));
+                }
+                catch
+                {
+                    // La traza nunca tumba la sincronización.
+                }
+            }
         }
 
         // Implementación base polimórfica
@@ -121,6 +148,20 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     // Detectar cambios
                     var cambios = _changeDetector.DetectarCambios(clienteNesto, message);
 
+                    // 11/11/26 (eco de Odoo): de lo distinto, solo lo que pasa la barrera; si no queda nada, es como si no hubiera cambios.
+                    HashSet<string> campos = new HashSet<string>();
+                    bool cambiaVendedor = cambios.Any(c => c.StartsWith("Vendedor:", StringComparison.Ordinal));
+                    if (cambios.Any() && clienteNesto != null)
+                    {
+                        var descartados = new List<CampoDescartadoSincronizacion>();
+                        campos = BarreraClientesExternos.CamposAAplicar(clienteNesto, message, descartados);
+                        TrazarDescartados(descartados);
+                        if (campos.Count == 0 && !cambiaVendedor)
+                        {
+                            cambios = new List<string>();
+                        }
+                    }
+
                     if (!cambios.Any())
                     {
                         Console.WriteLine($"⚪ Cliente {clienteExterno}-{contactoExterno}: Sin cambios en datos principales");
@@ -137,7 +178,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                         if (message.PersonasContacto != null && message.PersonasContacto.Any())
                         {
                             Console.WriteLine($"   ℹ️ Procesando {message.PersonasContacto.Count} PersonasContacto...");
-                            await ProcesarPersonasContacto(clienteExterno, contactoExterno, message.PersonasContacto);
+                            await ProcesarPersonasContacto(clienteExterno, contactoExterno, message.PersonasContacto, message.Source);
                         }
 
                         return true;
@@ -155,8 +196,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                         return false;
                     }
 
-                    // Actualizar el cliente (campos básicos)
-                    ActualizarClienteDesdeExterno(clienteNesto, message);
+                    // Actualizar el cliente: solo los campos distintos que pasan la barrera
+                    if (!BarreraClientesExternos.Aplicar(clienteNesto, message, campos))
+                    {
+                        clienteNesto.Fecha_Modificación = DateTime.Now;
+                        clienteNesto.Usuario = "EXTERNAL_SYNC";
+                    }
 
                     // Actualizar vendedor si viene en el mensaje y es válido
                     await ActualizarVendedorSiValido(db, clienteNesto, message, clienteExterno, contactoExterno);
@@ -169,7 +214,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     if (message.PersonasContacto != null && message.PersonasContacto.Any())
                     {
                         Console.WriteLine($"   ℹ️ Procesando {message.PersonasContacto.Count} PersonasContacto...");
-                        await ProcesarPersonasContacto(clienteExterno, contactoExterno, message.PersonasContacto);
+                        await ProcesarPersonasContacto(clienteExterno, contactoExterno, message.PersonasContacto, message.Source);
                     }
 
                     return true;
@@ -293,56 +338,11 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             Console.WriteLine($"   ✅ Vendedor actualizado a '{vendedorCodigo}'");
         }
 
-        private void ActualizarClienteDesdeExterno(Cliente clienteNesto, ClienteSyncMessage clienteExterno)
-        {
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Nombre))
-            {
-                clienteNesto.Nombre = clienteExterno.Nombre;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Telefono))
-            {
-                clienteNesto.Teléfono = clienteExterno.Telefono;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Direccion))
-            {
-                clienteNesto.Dirección = clienteExterno.Direccion;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Poblacion))
-            {
-                clienteNesto.Población = clienteExterno.Poblacion;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.CodigoPostal))
-            {
-                clienteNesto.CodPostal = clienteExterno.CodigoPostal;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Provincia))
-            {
-                clienteNesto.Provincia = clienteExterno.Provincia;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Nif))
-            {
-                clienteNesto.CIF_NIF = clienteExterno.Nif;
-            }
-
-            if (!string.IsNullOrWhiteSpace(clienteExterno.Comentarios))
-            {
-                clienteNesto.Comentarios = clienteExterno.Comentarios;
-            }
-
-            clienteNesto.Fecha_Modificación = DateTime.Now;
-            clienteNesto.Usuario = "EXTERNAL_SYNC";
-        }
-
         private async Task ProcesarPersonasContacto(
             string clienteExterno,
             string contactoExterno,
-            List<PersonaContactoSyncDTO> personasExternas)
+            List<PersonaContactoSyncDTO> personasExternas,
+            string source)
         {
             using (var db = new NVEntities())
             {
@@ -385,35 +385,20 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                         continue;
                     }
 
-                    ActualizarPersonaContactoDesdeExterno(personaNesto, personaExterna);
+                    var descartados = new List<CampoDescartadoSincronizacion>();
+                    HashSet<string> campos = BarreraClientesExternos.CamposAAplicarPersona(personaNesto, personaExterna, source,
+                        clienteExterno, contactoExterno, descartados);
+                    TrazarDescartados(descartados);
+                    if (!BarreraClientesExternos.AplicarPersona(personaNesto, personaExterna, campos))
+                    {
+                        Console.WriteLine($"      ⚪ {clienteExterno}-{contactoExterno}-{personaContactoExterna}: lo distinto no pasa la barrera, NO SE ACTUALIZA");
+                        continue;
+                    }
                     _ = await db.SaveChangesAsync();
 
                     Console.WriteLine($"      ✅ {clienteExterno}-{contactoExterno}-{personaContactoExterna}: Actualizada exitosamente");
                 }
             }
-        }
-
-        private void ActualizarPersonaContactoDesdeExterno(
-            PersonaContactoCliente personaNesto,
-            PersonaContactoSyncDTO personaExterna)
-        {
-            if (!string.IsNullOrWhiteSpace(personaExterna.Nombre))
-            {
-                personaNesto.Nombre = personaExterna.Nombre;
-            }
-
-            if (!string.IsNullOrWhiteSpace(personaExterna.Telefonos))
-            {
-                personaNesto.Teléfono = personaExterna.Telefonos;
-            }
-
-            if (!string.IsNullOrWhiteSpace(personaExterna.CorreoElectronico))
-            {
-                personaNesto.CorreoElectrónico = personaExterna.CorreoElectronico;
-            }
-
-            personaNesto.Fecha_Modificación = DateTime.Now;
-            personaNesto.Usuario = "EXTERNAL_SYNC";
         }
     }
 }

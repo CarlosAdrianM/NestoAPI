@@ -80,6 +80,42 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         }
 
         /// <summary>
+        /// Los campos del cliente que son distintos (sin el vendedor), con los nombres de <see cref="BarreraClientesExternos"/>.
+        /// Misma comparación que <see cref="DetectarCambios"/>.
+        /// </summary>
+        public HashSet<string> CamposDistintos(Cliente clienteNesto, ClienteSyncMessage clienteExterno)
+        {
+            var campos = new HashSet<string>();
+            if (clienteNesto == null || clienteExterno == null)
+            {
+                return campos;
+            }
+            if (!SonIguales(clienteNesto.Nombre, clienteExterno.Nombre)) campos.Add(BarreraClientesExternos.CAMPO_NOMBRE);
+            if (!SonIguales(clienteNesto.Teléfono, clienteExterno.Telefono)) campos.Add(BarreraClientesExternos.CAMPO_TELEFONO);
+            if (!SonIguales(clienteNesto.Dirección, clienteExterno.Direccion)) campos.Add(BarreraClientesExternos.CAMPO_DIRECCION);
+            if (!SonIguales(clienteNesto.Población, clienteExterno.Poblacion)) campos.Add(BarreraClientesExternos.CAMPO_POBLACION);
+            if (!SonIguales(clienteNesto.CodPostal, clienteExterno.CodigoPostal)) campos.Add(BarreraClientesExternos.CAMPO_CODIGO_POSTAL);
+            if (!SonIguales(clienteNesto.Provincia, clienteExterno.Provincia)) campos.Add(BarreraClientesExternos.CAMPO_PROVINCIA);
+            if (!SonIguales(clienteNesto.CIF_NIF, clienteExterno.Nif)) campos.Add(BarreraClientesExternos.CAMPO_NIF);
+            if (!SonIgualesComentarios(clienteNesto.Comentarios, clienteExterno.Comentarios)) campos.Add(BarreraClientesExternos.CAMPO_COMENTARIOS);
+            return campos;
+        }
+
+        /// <summary>Los campos distintos de una persona de contacto (Nombre, Teléfono, Email).</summary>
+        public HashSet<string> CamposDistintosPersonaContacto(PersonaContactoCliente personaNesto, PersonaContactoSyncDTO personaExterna)
+        {
+            var campos = new HashSet<string>();
+            if (personaNesto == null || personaExterna == null)
+            {
+                return campos;
+            }
+            if (!SonIguales(personaNesto.Nombre, personaExterna.Nombre)) campos.Add(BarreraClientesExternos.CAMPO_NOMBRE);
+            if (!SonIguales(personaNesto.Teléfono, personaExterna.Telefonos)) campos.Add(BarreraClientesExternos.CAMPO_TELEFONO);
+            if (!SonIguales(personaNesto.CorreoElectrónico, personaExterna.CorreoElectronico)) campos.Add(BarreraClientesExternos.CAMPO_EMAIL);
+            return campos;
+        }
+
+        /// <summary>
         /// Detecta cambios en una persona de contacto
         /// </summary>
         public List<string> DetectarCambiosPersonaContacto(
