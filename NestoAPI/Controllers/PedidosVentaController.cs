@@ -427,7 +427,7 @@ namespace NestoAPI.Controllers
             // internas, del código postal de entrega (su día de reparto). Nesto#588: la regla, la de FechasFuturasPedido.
             Dictionary<string, DateTime> fechaAjustadaPorRuta = new Dictionary<string, DateTime>();
 
-            return lista.Select(g =>
+            List<ResumenPedidoVentaDTO> resumenes = lista.Select(g =>
             {
                 string ruta = g.Ruta?.Trim() ?? string.Empty;
                 string claveFecha = FechasFuturasPedido.Clave(ruta, g.CodPostal, g.Empresa, g.Nº_Cliente, g.Contacto); // NestoAPI#799
@@ -458,6 +458,10 @@ namespace NestoAPI.Controllers
                     ultimoSeguimiento = seguimientos.TryGetValue(g.Número, out string codigoBarras) ? codigoBarras : null
                 };
             }).ToList();
+
+            // Sugerencia 1184: «Retenido» (etiqueta y casilla de la lista de Nesto), con una consulta de las retenciones vivas.
+            Infraestructure.PedidosVenta.Retencion.RetenidosListaPedidos.Marcar(resumenes, GestorPedidosVenta.RepositorioRetenciones);
+            return resumenes;
         }
 
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, int estado)

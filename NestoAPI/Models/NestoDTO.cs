@@ -537,6 +537,8 @@ namespace NestoAPI.Models
         public string vendedor { get; set; }
         public string ruta { get; set; }
         public string ultimoSeguimiento { get; set; }
+        /// <summary>Sugerencia 1184: el pedido tiene una retención viva en dbo.PedidosRetenidos (NestoAPI#698).</summary>
+        public bool estaRetenido { get; set; }
     }
     public class StockProductoPlantillaDTO
     {

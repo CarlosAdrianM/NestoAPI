@@ -872,6 +872,7 @@
     <Compile Include="Infrastructure\PedidosVenta\AplazamientoPedidoConPickingTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AplazamientoEnvioEnAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RetencionPedidosTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\RetenidosListaPedidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ConsultaReembolsoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RecordatoriosConsultasReembolsoTests.cs" />
     <Compile Include="Infrastructure\Abandono\CalculadoraAbandonoTests.cs" />

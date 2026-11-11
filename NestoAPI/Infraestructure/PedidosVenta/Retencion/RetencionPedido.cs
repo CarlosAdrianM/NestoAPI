@@ -45,6 +45,46 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         public string Vendedor { get; set; }
     }
 
+    /// <summary>
+    /// Sugerencia 1184: marca <c>estaRetenido</c> en la lista de pedidos de Nesto (etiqueta «Retenido» y casilla «Mostrar Sólo
+    /// Retenidos»). Una consulta de las retenciones vivas por empresa de la lista (normalmente una sola), sin N+1. Si falla
+    /// la consulta, la lista sale igual (sin marcar): es un adorno, no puede tumbar la lista de pedidos.
+    /// </summary>
+    public static class RetenidosListaPedidos
+    {
+        public static void Marcar(IList<ResumenPedidoVentaDTO> pedidos, IRepositorioPedidosRetenidos repositorio)
+        {
+            if (pedidos == null || pedidos.Count == 0 || repositorio == null)
+            {
+                return;
+            }
+            try
+            {
+                foreach (IGrouping<string, ResumenPedidoVentaDTO> porEmpresa in pedidos.GroupBy(p => p.empresa?.Trim() ?? string.Empty))
+                {
+                    HashSet<int> retenidos = new HashSet<int>(repositorio
+                        .LeerActivasSincrono(porEmpresa.Key, porEmpresa.Select(p => p.numero))
+                        .Select(r => r.Pedido));
+                    foreach (ResumenPedidoVentaDTO pedido in porEmpresa)
+                    {
+                        pedido.estaRetenido = retenidos.Contains(pedido.numero);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    _ = Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception("No se han podido marcar los pedidos retenidos de la lista", ex)));
+                }
+                catch
+                {
+                    // Sin contexto HTTP (tests): nada que registrar.
+                }
+            }
+        }
+    }
+
     /// <summary>NestoAPI#698: cuerpo de POST api/PedidosVenta/{empresa}/{numero}/Retener.</summary>
     public class RetenerPedidoRequest
     {
