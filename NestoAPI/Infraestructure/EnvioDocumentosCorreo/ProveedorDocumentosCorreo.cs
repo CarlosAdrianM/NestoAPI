@@ -133,6 +133,26 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
                 return null;
             }
             string sinDominio = usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+            string nombre = NombreVendedorDelUsuario(usuario, vendedorDelToken);
+            return new RemitenteUsuario
+            {
+                Nombre = string.IsNullOrWhiteSpace(nombre) ? sinDominio : nombre,
+                Correo = CorreoUsuario(usuario)
+            };
+        }
+
+        /// <summary>
+        /// La regla de la sugerencia 1167 para el NOMBRE de quien manda algo: <c>Vendedores.Descripción</c> del vendedor del
+        /// token (claim «Vendedor») o, si no lo trae, del parámetro de usuario «Vendedor». Null si no se conoce (aquí NO se
+        /// cae al nombre de usuario: lo usa la firma del WhatsApp, NestoApp#272, que sin nombre firma solo «Nueva Visión»).
+        /// </summary>
+        public static string NombreVendedorDelUsuario(string usuario, string vendedorDelToken)
+        {
+            if (string.IsNullOrWhiteSpace(usuario) && string.IsNullOrWhiteSpace(vendedorDelToken))
+            {
+                return null;
+            }
+            string sinDominio = (usuario ?? string.Empty).Substring((usuario ?? string.Empty).IndexOf('\\') + 1).Trim();
             string nombre = null;
             try
             {
@@ -141,7 +161,7 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
                     string vendedor = vendedorDelToken?.Trim();
                     if (string.IsNullOrEmpty(vendedor))
                     {
-                        vendedor = db.ParametrosUsuario
+                        vendedor = sinDominio.Length == 0 ? null : db.ParametrosUsuario
                             .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Usuario == sinDominio && p.Clave == PARAMETRO_VENDEDOR)
                             .Select(p => p.Valor)
                             .FirstOrDefault()?.Trim();
@@ -160,11 +180,7 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
                 // Sin el nombre, el correo sale igual (con el usuario)
                 ElmahHelper.Log(new Exception($"[Sugerencia 1167] No se ha podido leer el vendedor de {sinDominio}: {ex.Message}", ex));
             }
-            return new RemitenteUsuario
-            {
-                Nombre = string.IsNullOrWhiteSpace(nombre) ? sinDominio : nombre,
-                Correo = CorreoUsuario(usuario)
-            };
+            return string.IsNullOrWhiteSpace(nombre) ? null : nombre;
         }
 
         public async Task RegistrarEnvio(string tabla, string documento, string descripcion, string usuario)

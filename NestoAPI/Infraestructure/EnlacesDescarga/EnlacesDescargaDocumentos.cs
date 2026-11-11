@@ -232,7 +232,9 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
         /// Para los vendedores de NestoApp: (empresa, cliente del documento) → si puede. Si no, 403 con
         /// <see cref="Seguridad.ClientesDelVendedor.MOTIVO_SOLO_SUS_CLIENTES"/> y no se guarda nada. Null (empleados) = sin comprobar.
         /// </param>
-        public async Task<EnlaceDescargaDTO> Crear(PeticionEnlaceDescargaDTO peticion, string usuario, Func<string, string, bool> clientePermitido = null)
+        /// <param name="remitente">NestoApp#272: el nombre de quien lo pide, para la firma del mensaje (null o vacío = sin nombre).</param>
+        public async Task<EnlaceDescargaDTO> Crear(PeticionEnlaceDescargaDTO peticion, string usuario, Func<string, string, bool> clientePermitido = null,
+            string remitente = null)
         {
             string tipo = TiposDocumentoDescarga.Normalizar(peticion?.Tipo);
             if (tipo == null)
@@ -288,7 +290,8 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                 Nombre = datos.Nombre?.Trim(),
                 Importe = Math.Round(datos.Importe, 2, MidpointRounding.AwayFromZero),
                 Moviles = MovilesWhatsApp.Internacionales(datos.Telefonos, datos.Pais),
-                Texto = TextoWhatsApp(tipo, numero, datos.Nombre, datos.Importe, url, enlace.Caduca, creado)
+                Texto = TextoWhatsApp(tipo, numero, datos.Nombre, datos.Importe, url, enlace.Caduca, creado, remitente),
+                Remitente = string.IsNullOrWhiteSpace(remitente) ? null : remitente.Trim()
             };
         }
 
@@ -298,7 +301,9 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
         /// «Buenos días, Peluquería Ana: le enviamos su pedido 929498, de 1.234,56 €. Puede descargarlo en PDF desde este enlace:
         /// https://…/d/… (disponible hasta el 29/11/2026). Un saludo, Nueva Visión.» De usted y con tildes.
         /// </summary>
-        public static string TextoWhatsApp(string tipo, string numero, string nombre, decimal importe, string url, DateTime caduca, DateTime ahora)
+        /// <param name="remitente">NestoApp#272: quien lo manda; con él, la firma lleva su nombre (<see cref="Firma"/>).</param>
+        public static string TextoWhatsApp(string tipo, string numero, string nombre, decimal importe, string url, DateTime caduca, DateTime ahora,
+            string remitente = null)
         {
             bool esPedido = tipo == TiposDocumentoDescarga.PEDIDO;
             string saludo = Saludo(ahora);
@@ -310,8 +315,15 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                    $"{url}\n\n" +
                    $"El enlace estará disponible hasta el {caduca.ToString("dd/MM/yyyy", Espanol)}.\n\n" +
                    $"Puede descargar nuestra app para Android, con sus pedidos y facturas:\n{EnlaceApp(esPedido)}\n\n" +
-                   "Un saludo,\nNueva Visión";
+                   Firma(remitente);
         }
+
+        /// <summary>
+        /// NestoApp#272 (Carlos 11/11/26): «Un saludo,\n{Nombre del vendedor}\nNueva Visión»; sin nombre, «Un saludo,\nNueva Visión».
+        /// La app firma igual los mensajes que compone ella (varias facturas) con <see cref="EnlaceDescargaDTO.Remitente"/>.
+        /// </summary>
+        public static string Firma(string remitente)
+            => string.IsNullOrWhiteSpace(remitente) ? "Un saludo,\nNueva Visión" : $"Un saludo,\n{remitente.Trim()}\nNueva Visión";
 
         /// <summary>La ficha de TNV en Google Play con el referrer de la campaña (Play Console y Firebase la atribuyen).</summary>
         internal static string EnlaceApp(bool esPedido)

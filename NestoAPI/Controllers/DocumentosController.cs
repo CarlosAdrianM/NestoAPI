@@ -43,6 +43,13 @@ namespace NestoAPI.Controllers
         /// <summary>Vendedores de NestoApp (06/11/26): (empresa, usuario, vendedor, cliente) → si el cliente es suyo. Sustituible en los tests.</summary>
         internal Func<string, string, string, string, bool> EsClienteDelVendedor { get; set; } = ClientesDelVendedor.EsDelVendedor;
 
+        /// <summary>
+        /// NestoApp#272: (usuario, vendedor del token) → el nombre con el que se firma el mensaje (la regla de la sugerencia
+        /// 1167: Vendedores.Descripción), o null si no se conoce. Sustituible en los tests.
+        /// </summary>
+        internal Func<string, string, string> NombreRemitente { get; set; } =
+            Infraestructure.EnvioDocumentosCorreo.ProveedorDocumentosCorreo.NombreVendedorDelUsuario;
+
         // POST api/Documentos/EnlaceDescarga   { "Tipo": "Pedido", "Empresa": "1", "Numero": "929498" }
         /// <summary>
         /// Da de alta un enlace público (<c>https://api.nuevavision.es/d/{token}</c>, 30 días) y devuelve la URL, la caducidad, el
@@ -67,7 +74,10 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                return Ok(await gestor.Crear(peticion ?? new PeticionEnlaceDescargaDTO(), User?.Identity?.Name, clientePermitido).ConfigureAwait(false));
+                string usuario = User?.Identity?.Name;
+                string vendedorDelToken = (User?.Identity as ClaimsIdentity)?.FindFirst("Vendedor")?.Value?.Trim();
+                return Ok(await gestor.Crear(peticion ?? new PeticionEnlaceDescargaDTO(), usuario, clientePermitido,
+                    NombreRemitente?.Invoke(usuario, vendedorDelToken)).ConfigureAwait(false));
             }
             catch (NestoBusinessException ex)
             {

@@ -33,5 +33,11 @@ namespace NestoAPI.Models
         public List<string> Moviles { get; set; } = new List<string>();
         /// <summary>El mensaje para el cliente, de usted y con el enlace: el usuario solo pulsa «Enviar».</summary>
         public string Texto { get; set; }
+        /// <summary>
+        /// NestoApp#272: el nombre con el que se firma el mensaje (<c>Vendedores.Descripción</c> de quien lo pide, la regla de
+        /// la sugerencia 1167), o null si no se conoce. <see cref="Texto"/> ya viene firmado así; este campo es para que el
+        /// cliente de la API firme igual los mensajes que compone él (varias facturas): «Un saludo,\n{Remitente}\nNueva Visión».
+        /// </summary>
+        public string Remitente { get; set; }
     }
 }

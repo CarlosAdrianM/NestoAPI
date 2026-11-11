@@ -56,7 +56,8 @@ namespace NestoAPI.Tests.Controllers
             var identity = new ClaimsIdentity("TestAuth");
             identity.AddClaim(new Claim(ClaimTypes.Name, "NUEVAVISION\\Paloma"));
             identity.AddClaims(claims);
-            return new DocumentosController(gestor) { User = new ClaimsPrincipal(identity) };
+            // NombreRemitente: sin él, el de verdad iría a la base de datos a por el vendedor
+            return new DocumentosController(gestor) { User = new ClaimsPrincipal(identity), NombreRemitente = (usuario, vendedor) => null };
         }
 
         /// <summary>Un vendedor de NestoApp; el 15191 es de «NV» y de nadie más.</summary>
@@ -239,6 +240,77 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.StartsWith(texto, "Buenas tardes:");
             StringAssert.Contains(texto, "Le enviamos su factura NV2616199, de 50,00 €. Puede descargarla en PDF");
             StringAssert.Contains(texto, "utm_campaign%3Denvio_factura");
+        }
+
+        // ===================================================================== firma con el nombre de quien lo manda (NestoApp#272)
+
+        [TestMethod]
+        public void TextoWhatsApp_ConRemitente_FirmaConSuNombreYNuevaVision()
+        {
+            string texto = GestorEnlacesDescarga.TextoWhatsApp(TiposDocumentoDescarga.FACTURA, "NV2616199", "Peluquería Ana", 50M,
+                "https://api.nuevavision.es/d/x", AHORA.AddDays(30), AHORA, " Jesús Pérez ");
+
+            StringAssert.EndsWith(texto, "Un saludo,\nJesús Pérez\nNueva Visión");
+        }
+
+        [TestMethod]
+        public void Firma_SinNombre_ComoSiempre()
+        {
+            Assert.AreEqual("Un saludo,\nNueva Visión", GestorEnlacesDescarga.Firma(null));
+            Assert.AreEqual("Un saludo,\nNueva Visión", GestorEnlacesDescarga.Firma("  "));
+            Assert.AreEqual("Un saludo,\nJesús Pérez\nNueva Visión", GestorEnlacesDescarga.Firma("Jesús Pérez"));
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_UnVendedor_ElTextoVaFirmadoConSuNombreYElDtoTraeElRemitente()
+        {
+            DocumentosController controlador = ControladorVendedor();
+            string usuarioPedido = null, vendedorPedido = null;
+            controlador.NombreRemitente = (usuario, vendedor) =>
+            {
+                usuarioPedido = usuario;
+                vendedorPedido = vendedor;
+                return "Jesús Pérez";
+            };
+
+            var resultado = await controlador.CrearEnlaceDescarga(Pedido()) as OkNegotiatedContentResult<EnlaceDescargaDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("Jesús Pérez", resultado.Content.Remitente);
+            StringAssert.EndsWith(resultado.Content.Texto, "Un saludo,\nJesús Pérez\nNueva Visión");
+            Assert.AreEqual("NUEVAVISION\\Paloma", usuarioPedido);
+            Assert.AreEqual("NV", vendedorPedido, "el vendedor sale del claim «Vendedor» del token");
+        }
+
+        [TestMethod]
+        public async Task CrearEnlace_SinNombreConocido_RemitenteNullYFirmaDeSiempre()
+        {
+            var resultado = await Controlador(EMPLEADO).CrearEnlaceDescarga(Pedido()) as OkNegotiatedContentResult<EnlaceDescargaDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.IsNull(resultado.Content.Remitente);
+            StringAssert.EndsWith(resultado.Content.Texto, "Un saludo,\nNueva Visión");
+        }
+
+        // ===================================================================== NestoAPI#854: el fallo del SMTP, a ELMAH con su motivo
+
+        [TestMethod]
+        public void TextoFalloCorreo_LlevaAsuntoRemitenteDestinatariosYElMotivoReal()
+        {
+            using (var correo = new System.Net.Mail.MailMessage("administracion@nuevavision.es", "cliente@correo.es") { Subject = "Factura NV2616199" })
+            {
+                correo.ReplyToList.Add("vendedor@nuevavision.es");
+                var primero = new System.Net.Mail.SmtpException("Failure sending mail.", new Exception("Unable to connect"));
+                var segundo = new System.Net.Mail.SmtpException("Mailbox unavailable. SendAsDenied");
+
+                string texto = NestoAPI.Infraestructure.ServicioCorreoElectronico.TextoFallo(correo, primero, segundo);
+
+                StringAssert.Contains(texto, "«Factura NV2616199»");
+                StringAssert.Contains(texto, "de administracion@nuevavision.es para cliente@correo.es");
+                StringAssert.Contains(texto, "vendedor@nuevavision.es");
+                StringAssert.Contains(texto, "SendAsDenied");
+                StringAssert.Contains(texto, "primer intento: Failure sending mail. → Unable to connect");
+            }
         }
 
         // ===================================================================== móviles y token

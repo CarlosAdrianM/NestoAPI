@@ -26,8 +26,17 @@ namespace NestoAPI.Controllers
             // Sugerencia 1167: las facturas mandadas a mano salen a nombre de quien las manda
             gestor = new GestorFacturas(servicio)
             {
-                RemitenteDelUsuario = usuario => new Infraestructure.EnvioDocumentosCorreo.ProveedorDocumentosCorreo().DatosRemitenteUsuario(usuario, null)
+                // NestoAPI#854: con el vendedor del token (NestoApp), como EnvioDocumentosCorreoController. Se lee al enviar
+                // (dentro de la petición), no al construir el controlador.
+                RemitenteDelUsuario = usuario => new Infraestructure.EnvioDocumentosCorreo.ProveedorDocumentosCorreo().DatosRemitenteUsuario(usuario, VendedorDelToken())
             };
+        }
+
+        /// <summary>El claim «Vendedor» de quien llama (NestoApp), o null.</summary>
+        internal string VendedorDelToken()
+        {
+            string vendedor = (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("Vendedor")?.Value?.Trim();
+            return string.IsNullOrEmpty(vendedor) ? null : vendedor;
         }
 
         internal FacturasController(IServicioFacturas servicio, IGestorFacturas gestor)
