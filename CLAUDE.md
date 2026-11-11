@@ -264,6 +264,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `Reposiciones:{tienda}` del AlmacenHub (Nesto, Enviar reposición). `GET Reposiciones/Puntual/Estado` trae BultosRecogidos/BultosTotal/RepartidorRecogida.
 - Red de seguridad (`RedSeguridadFurgoneta`): recibir una REPO y el abono de una NR cierran lo que siga en una furgoneta. Job
   `furgoneta-sin-descargar` L-V 22:00 (campana a Almacén, Dirección y el repartidor). `GET api/Reposiciones/{traspaso}/Seguimiento`.
+- **Incidencias 1189/1190 (11/11/26)**: cargar la parada de una RECOGIDA (o de una NC) ya no apunta Cargado RP (no hay bulto; la carga en
+  `EnviosAgenciaCargaBultos` sigue: repartidor, soloMios, SinCargar igual). Una incidencia de un envío sin bultos en ninguna furgoneta
+  apunta su Cargado (salió sin leer). Descargar admite el papel `NE{pedido}` (todos los RP de su envío en furgoneta) y con una NR cierra
+  el RP sin bulto de su recogida. `SinLeer` = true en Descargar: quita de SU furgoneta un bulto de GET Furgoneta (409 `EN_OTRA_FURGONETA`
+  si es de otro), rastro en Modificaciones (`FurgonetaDescargaSinLeer`) y campana a Almacén. La respuesta trae `Descargados`.
 
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).
