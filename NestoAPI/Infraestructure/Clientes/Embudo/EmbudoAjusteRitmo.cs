@@ -197,9 +197,69 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         }
     }
 
+    /// <summary>
+    /// Embudo ritmo (Carlos 11/11/26): antes de SUBIR de escalón, el dominio de envío tiene que tener publicado el DKIM de Office 365
+    /// (selector1._domainkey.{dominio}). True si el nombre existe (CNAME o TXT); false si «no existe el nombre» o no tiene registros;
+    /// lanza si la consulta DNS falla.
+    /// </summary>
+    public interface IComprobadorDkim
+    {
+        Task<bool> TienePublicadoDkim(string dominio);
+    }
+
+    /// <summary>La consulta DNS de Windows (dnsapi DnsQuery_W): CNAME y, si no, TXT. Si falla, el job no sube.</summary>
+    public class ComprobadorDkimDns : IComprobadorDkim
+    {
+        public const string SELECTOR = "selector1";
+        private const short DNS_TYPE_CNAME = 5;
+        private const short DNS_TYPE_TEXT = 16;
+        private const int DNS_QUERY_STANDARD = 0;
+        private const int DNS_ERROR_RCODE_NAME_ERROR = 9003;
+        private const int DNS_INFO_NO_RECORDS = 9501;
+        private const int DNS_FREE_RECORD_LIST = 1;
+
+        [System.Runtime.InteropServices.DllImport("dnsapi.dll", EntryPoint = "DnsQuery_W", CharSet = System.Runtime.InteropServices.CharSet.Unicode, ExactSpelling = true)]
+        private static extern int DnsQuery(string nombre, short tipo, int opciones, IntPtr servidores, out IntPtr resultados, IntPtr reservado);
+
+        [System.Runtime.InteropServices.DllImport("dnsapi.dll", ExactSpelling = true)]
+        private static extern void DnsRecordListFree(IntPtr lista, int tipoLiberacion);
+
+        public static string Nombre(string dominio) => $"{SELECTOR}._domainkey.{dominio?.Trim().TrimEnd('.')}";
+
+        public Task<bool> TienePublicadoDkim(string dominio) => Task.Run(() =>
+        {
+            string nombre = Nombre(dominio);
+            foreach (short tipo in new[] { DNS_TYPE_CNAME, DNS_TYPE_TEXT })
+            {
+                int codigo = DnsQuery(nombre, tipo, DNS_QUERY_STANDARD, IntPtr.Zero, out IntPtr resultados, IntPtr.Zero);
+                if (resultados != IntPtr.Zero)
+                {
+                    DnsRecordListFree(resultados, DNS_FREE_RECORD_LIST);
+                }
+                if (codigo == 0)
+                {
+                    return true;
+                }
+                if (codigo == DNS_ERROR_RCODE_NAME_ERROR)
+                {
+                    return false; // «no existe el nombre»
+                }
+                if (codigo != DNS_INFO_NO_RECORDS)
+                {
+                    throw new InvalidOperationException($"La consulta DNS de {nombre} ha fallado (código {codigo}).");
+                }
+            }
+            return false;
+        });
+    }
+
     public enum ResultadoAjusteRitmoEmbudo
     {
+        /// <summary>Odoo recomienda subir, pero el dominio no tiene el DKIM de Office 365 (o no se ha podido comprobar): no sube.</summary>
+        PendienteDkim,
         SinConfiguracion,
+        /// <summary>404 de Odoo ({"recomendacion": null}): aún no tiene ningún cálculo. No es un error: ni se toca ni se avisa.</summary>
+        SinDatos,
         Fallo,
         DatoNoValido,
         SinCambios,
@@ -207,7 +267,7 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
     }
 
     /// <summary>
-    /// Job «embudo-ajuste-ritmo» (Carlos 11/11/26): todos los días a las 6:30 de Madrid (antes del bloque de las 7:00) lee la
+    /// Job «embudo-ajuste-ritmo» (Carlos 11/11/26): todos los días a las 6:45 de Madrid (antes del bloque de las 7:00) lee la
     /// recomendación de Odoo y ajusta SOLO el tamaño del bloque (o apaga el interruptor si Odoo dice «parar»). URL y clave en
     /// secretos.config (<see cref="CLAVE_URL"/>, <see cref="CLAVE_SECRETO"/>): sin ellas no hace nada ni avisa (Odoo aún no lo tiene).
     /// Cada cambio deja rastro (Modificaciones, con el motivo y las cifras de Odoo) y avisa a Dirección en la campana; un fallo o un
@@ -216,8 +276,8 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
     public class EmbudoAjusteRitmoJobsService
     {
         public const string JOB_ID = "embudo-ajuste-ritmo";
-        /// <summary>Todos los días a las 6:30 (hora de Madrid).</summary>
-        public const string CRON = "30 6 * * *";
+        /// <summary>Todos los días a las 6:45 (hora de Madrid): Odoo calcula a las 4:30 UTC (las 6:30 de Madrid en verano).</summary>
+        public const string CRON = "45 6 * * *";
         /// <summary>secretos.config: la URL base de Odoo (sin la ruta).</summary>
         public const string CLAVE_URL = "OdooEmbudoRitmoUrl";
         /// <summary>secretos.config: la clave que va en la cabecera «X-NV-Clave».</summary>
@@ -232,6 +292,11 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public const string PARAMETRO_RECOMENDACION = "EmbudoRecomendacion";
         public const string PARAMETRO_RECOMENDACION_MOTIVO = "EmbudoRecomendacionMotivo";
         public const string PARAMETRO_ULTIMO_AVISO_FALLO = "EmbudoRitmoUltimoAvisoFallo";
+        /// <summary>Cuándo se avisó por última vez de que no se sube por el DKIM (como mucho una vez por semana).</summary>
+        public const string PARAMETRO_ULTIMO_AVISO_DKIM = "EmbudoRitmoUltimoAvisoDkim";
+        /// <summary>El dominio desde el que salen los correos del embudo (Office 365): su DKIM tiene que estar publicado para subir.</summary>
+        public const string DOMINIO_ENVIO = "nuevavision.es";
+        public const int DIAS_ENTRE_AVISOS_DKIM = 7;
 
         internal const string USUARIO = "NestoAPI (ritmo del embudo)";
         internal const string DOMINIO = "NUEVAVISION\\";
@@ -245,6 +310,7 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         private readonly Func<List<string>> usuariosDireccion;
         private readonly IServicioNotificacionesPush notificaciones;
         private readonly Action<Exception> registrar;
+        private readonly IComprobadorDkim dkim;
 
         public EmbudoAjusteRitmoJobsService() : this(null)
         {
@@ -252,8 +318,9 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
 
         internal EmbudoAjusteRitmoJobsService(IParametrosEmbudoDiario parametros, Func<string, string> configuracion = null,
             Func<string, string, Task<(HttpStatusCode Estado, string Cuerpo)>> pedir = null, Func<List<string>> usuariosDireccion = null,
-            IServicioNotificacionesPush notificaciones = null, Action<Exception> registrar = null)
+            IServicioNotificacionesPush notificaciones = null, Action<Exception> registrar = null, IComprobadorDkim dkim = null)
         {
+            this.dkim = dkim ?? new ComprobadorDkimDns();
             this.parametros = parametros ?? new ParametrosEmbudoDiarioEF();
             this.configuracion = configuracion ?? (clave => ConfigurationManager.AppSettings[clave]);
             this.pedir = pedir ?? Pedir;
@@ -300,6 +367,11 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             try
             {
                 (HttpStatusCode estado, string cuerpo) = await pedir(url.TrimEnd('/') + RUTA, clave).ConfigureAwait(false);
+                if (estado == HttpStatusCode.NotFound)
+                {
+                    // Contrato con Odoo: 404 {"recomendacion": null} = aún no ha calculado nada. Ni se toca ni se avisa.
+                    return ResultadoAjusteRitmoEmbudo.SinDatos;
+                }
                 if (estado != HttpStatusCode.OK)
                 {
                     await Fallo(ahoraUtc, estado == HttpStatusCode.Forbidden
@@ -332,6 +404,10 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 DecisionRitmoEmbudo decision = ReglasRitmoEmbudo.Decidir(recomendacion, tamano, encendido, ultimoCambio, ahoraUtc);
 
                 string detalle = $"Motivo de Odoo: {recomendacion.Motivo ?? "(sin motivo)"}. Cifras: {recomendacion.TextoCifras()}. Calculado el {recomendacion.CalculadoEl:o}.";
+                if (decision.Accion == AccionRitmoEmbudo.Subir && !await DkimPublicado(decision, ahoraUtc).ConfigureAwait(false))
+                {
+                    return ResultadoAjusteRitmoEmbudo.PendienteDkim;
+                }
                 switch (decision.Accion)
                 {
                     case AccionRitmoEmbudo.Subir:
@@ -360,6 +436,43 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 await Fallo(ahoraUtc, $"No se ha podido aplicar la recomendación: {ex.Message}", ex).ConfigureAwait(false);
                 return ResultadoAjusteRitmoEmbudo.Fallo;
             }
+        }
+
+        /// <summary>
+        /// Carlos (11/11/26): no se sube sin el DKIM de Office 365 publicado (selector1._domainkey del dominio de envío). Si no está o
+        /// no se puede comprobar, no sube y lo dice a Dirección como mucho una vez por semana. «bajar» y «parar» no dependen de esto.
+        /// </summary>
+        private async Task<bool> DkimPublicado(DecisionRitmoEmbudo decision, DateTime ahoraUtc)
+        {
+            string motivo;
+            try
+            {
+                if (await dkim.TienePublicadoDkim(DOMINIO_ENVIO).ConfigureAwait(false))
+                {
+                    return true;
+                }
+                motivo = $"{ComprobadorDkimDns.Nombre(DOMINIO_ENVIO)} no existe";
+            }
+            catch (Exception ex)
+            {
+                motivo = $"no se ha podido comprobar {ComprobadorDkimDns.Nombre(DOMINIO_ENVIO)}: {ex.Message}";
+            }
+            string texto = $"Odoo recomienda subir a {decision.TamanoNuevo}, pero no se sube hasta activar el DKIM de Office 365 del dominio {DOMINIO_ENVIO}.";
+            Registrar(new Exception($"[Embudo ritmo] {texto} ({motivo})"));
+            try
+            {
+                DateTime? ultimoAviso = LeerFecha(parametros.Leer(PARAMETRO_ULTIMO_AVISO_DKIM));
+                if (!ultimoAviso.HasValue || ahoraUtc - ultimoAviso.Value >= TimeSpan.FromDays(DIAS_ENTRE_AVISOS_DKIM))
+                {
+                    await parametros.Escribir(PARAMETRO_ULTIMO_AVISO_DKIM, ahoraUtc.ToString("o", CultureInfo.InvariantCulture), USUARIO, dejarRastro: false).ConfigureAwait(false);
+                    await Avisar("El embudo no sube de ritmo", $"{texto} El bloque diario sigue en {decision.TamanoAnterior} clientes.").ConfigureAwait(false);
+                }
+            }
+            catch (Exception exAviso)
+            {
+                Registrar(new Exception($"[Embudo ritmo] No se ha podido avisar del DKIM: {exAviso.Message}", exAviso));
+            }
+            return false;
         }
 
         internal static DateTime? LeerFecha(string valor)

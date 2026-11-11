@@ -130,6 +130,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         private (HttpStatusCode, string) respuesta;
         private int peticiones;
         private string claveEnviada;
+        private IComprobadorDkim dkim;
 
         [TestInitialize]
         public void Setup()
@@ -145,6 +146,8 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             };
             peticiones = 0;
             Responder("subir", AHORA.AddDays(-1));
+            dkim = A.Fake<IComprobadorDkim>();
+            A.CallTo(() => dkim.TienePublicadoDkim(A<string>._)).Returns(true);
         }
 
         private void Responder(string que, DateTime calculado)
@@ -153,7 +156,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         private EmbudoAjusteRitmoJobsService Job()
             => new EmbudoAjusteRitmoJobsService(parametros, c => config.TryGetValue(c, out string v) ? v : null,
                 (url, clave) => { peticiones++; claveEnviada = clave; StringAssert.EndsWith(url, EmbudoAjusteRitmoJobsService.RUTA); return Task.FromResult(respuesta); },
-                () => new List<string> { "Carlos" }, notificaciones, ex => { });
+                () => new List<string> { "Carlos" }, notificaciones, ex => { }, dkim);
 
         private int Avisos() => Fake.GetCalls(notificaciones).Count();
 
@@ -185,6 +188,49 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
+        public async Task Job_SubirSinDkimPublicado_NoSubeYAvisaComoMuchoUnaVezPorSemana()
+        {
+            A.CallTo(() => dkim.TienePublicadoDkim(EmbudoAjusteRitmoJobsService.DOMINIO_ENVIO)).Returns(false); // hoy no existe
+
+            Assert.AreEqual(ResultadoAjusteRitmoEmbudo.PendienteDkim, await Job().AjustarAsync(AHORA));
+            Assert.AreEqual(ResultadoAjusteRitmoEmbudo.PendienteDkim, await Job().AjustarAsync(AHORA.AddDays(3)));
+            Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._,
+                A<NotificacionPushDTO>.That.Matches(n => n.Cuerpo.Contains("Odoo recomienda subir a 75, pero no se sube hasta activar el DKIM de Office 365 del dominio"))))
+                .MustHaveHappenedOnceExactly();
+
+            _ = await Job().AjustarAsync(AHORA.AddDays(7));
+            Assert.AreEqual(2, Avisos(), "Pasada una semana, otra vez");
+        }
+
+        [TestMethod]
+        public async Task Job_SiFallaElDns_NoSube()
+        {
+            A.CallTo(() => dkim.TienePublicadoDkim(A<string>._)).Throws(new InvalidOperationException("sin DNS"));
+
+            Assert.AreEqual(ResultadoAjusteRitmoEmbudo.PendienteDkim, await Job().AjustarAsync(AHORA));
+            Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
+        }
+
+        [TestMethod]
+        public async Task Job_BajarYPararNoDependenDelDkim()
+        {
+            A.CallTo(() => dkim.TienePublicadoDkim(A<string>._)).Returns(false);
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO] = "75";
+            Responder("bajar", AHORA.AddDays(-1));
+
+            Assert.AreEqual(ResultadoAjusteRitmoEmbudo.Cambiado, await Job().AjustarAsync(AHORA));
+            Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
+            A.CallTo(() => dkim.TienePublicadoDkim(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Dkim_ElNombreQueSeConsulta()
+        {
+            Assert.AreEqual("selector1._domainkey.nuevavision.es", ComprobadorDkimDns.Nombre(EmbudoAjusteRitmoJobsService.DOMINIO_ENVIO));
+        }
+
+        [TestMethod]
         public async Task Job_Parar_ApagaElInterruptor()
         {
             Responder("parar", AHORA.AddDays(-1));
@@ -205,6 +251,39 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
             Assert.AreEqual(1, Avisos(), "Una vez al día mientras dure");
             Assert.AreEqual(0, parametros.ConRastro.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_404SinCalculoAun_NoTocaNadaNiAvisa()
+        {
+            respuesta = (HttpStatusCode.NotFound, "{\"recomendacion\": null}");
+
+            Assert.AreEqual(ResultadoAjusteRitmoEmbudo.SinDatos, await Job().AjustarAsync(AHORA));
+            Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
+            Assert.AreEqual(0, Avisos());
+            Assert.IsNull(parametros.Leer(EmbudoAjusteRitmoJobsService.PARAMETRO_RECOMENDACION));
+        }
+
+        [TestMethod]
+        public async Task Job_EnElEscalon50OdooDiceMantener_Nada()
+        {
+            Responder("mantener", AHORA.AddDays(-1));
+
+            Assert.AreEqual(ResultadoAjusteRitmoEmbudo.SinCambios, await Job().AjustarAsync(AHORA));
+            Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
+            Assert.AreEqual(0, Avisos());
+        }
+
+        [TestMethod]
+        public void Leer_FechaUtcConZ_SeComparaEnUtc()
+        {
+            RecomendacionRitmoOdoo r = RecomendacionRitmoOdoo.Leer("{\"calculadoEl\":\"2026-11-12T04:30:00Z\",\"recomendacion\":\"subir\"}");
+
+            Assert.AreEqual(new DateTime(2026, 11, 12, 4, 30, 0, DateTimeKind.Utc), r.CalculadoEl);
+            Assert.AreEqual(DateTimeKind.Utc, r.CalculadoEl.Value.Kind);
+            // 7 días y 23 h después: aún vale; 8 días justos: viejo
+            Assert.AreNotEqual(AccionRitmoEmbudo.DatoNoValido, ReglasRitmoEmbudo.Decidir(r, 50, true, null, r.CalculadoEl.Value.AddDays(8).AddHours(-1)).Accion);
+            Assert.AreEqual(AccionRitmoEmbudo.DatoNoValido, ReglasRitmoEmbudo.Decidir(r, 50, true, null, r.CalculadoEl.Value.AddDays(8)).Accion);
         }
 
         [TestMethod]
