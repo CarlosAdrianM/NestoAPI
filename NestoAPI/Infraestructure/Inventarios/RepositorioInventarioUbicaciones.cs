@@ -273,6 +273,48 @@ WHERE p.Empresa = @Empresa AND ";
             return resultado;
         }
 
+        private const int FILAS_POR_LOTE_INSERTAR = 200;
+
+        /// <summary>El INSERT de las filas (con su ubicación), por lotes, dentro de la transacción. Lo usan el rellenado y el «a cero» (Sugerencia 1185).</summary>
+        internal static async Task InsertarFilas(SqlConnection conexion, SqlTransaction transaccion, IList<Inventario> filas)
+        {
+            for (int inicio = 0; inicio < filas.Count; inicio += FILAS_POR_LOTE_INSERTAR)
+            {
+                List<Inventario> lote = filas.Skip(inicio).Take(FILAS_POR_LOTE_INSERTAR).ToList();
+                var sql = new StringBuilder("INSERT INTO Inventarios (Empresa, Almacén, Fecha, Número, Descripción, Grupo, Subgrupo, Familia, StockCalculado, StockReal, Estado, Aplicacion, Usuario, Pasillo, Fila, Columna) VALUES ");
+                using (var comando = new SqlCommand(string.Empty, conexion, transaccion))
+                {
+                    Inventario primera = lote[0];
+                    comando.Parameters.Add("@Empresa", SqlDbType.Char, 3).Value = primera.Empresa;
+                    comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = primera.Almacén;
+                    comando.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = primera.Fecha;
+                    comando.Parameters.Add("@Estado", SqlDbType.TinyInt).Value = primera.Estado;
+                    comando.Parameters.Add("@Aplicacion", SqlDbType.Char, 10).Value = primera.Aplicacion;
+                    comando.Parameters.Add("@Usuario", SqlDbType.VarChar, 30).Value = primera.Usuario;
+                    for (int i = 0; i < lote.Count; i++)
+                    {
+                        Inventario fila = lote[i];
+                        if (i > 0)
+                        {
+                            sql.Append(", ");
+                        }
+                        sql.Append($"(@Empresa, @Almacen, @Fecha, @n{i}, @d{i}, @g{i}, @s{i}, @f{i}, @c{i}, 0, @Estado, @Aplicacion, @Usuario, @pa{i}, @fi{i}, @co{i})");
+                        comando.Parameters.Add($"@n{i}", SqlDbType.Char, 15).Value = fila.Número;
+                        comando.Parameters.Add($"@d{i}", SqlDbType.Char, 50).Value = (object)fila.Descripción ?? DBNull.Value;
+                        comando.Parameters.Add($"@g{i}", SqlDbType.Char, 3).Value = (object)fila.Grupo ?? DBNull.Value;
+                        comando.Parameters.Add($"@s{i}", SqlDbType.Char, 3).Value = (object)fila.Subgrupo ?? DBNull.Value;
+                        comando.Parameters.Add($"@f{i}", SqlDbType.Char, 10).Value = (object)fila.Familia ?? DBNull.Value;
+                        comando.Parameters.Add($"@c{i}", SqlDbType.Int).Value = (object)fila.StockCalculado ?? DBNull.Value;
+                        comando.Parameters.Add($"@pa{i}", SqlDbType.Char, 3).Value = (object)fila.Pasillo ?? DBNull.Value;
+                        comando.Parameters.Add($"@fi{i}", SqlDbType.Char, 3).Value = (object)fila.Fila ?? DBNull.Value;
+                        comando.Parameters.Add($"@co{i}", SqlDbType.Char, 3).Value = (object)fila.Columna ?? DBNull.Value;
+                    }
+                    comando.CommandText = sql.ToString();
+                    await comando.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
         private static string Texto(SqlDataReader lector, int columna)
         {
             return lector.IsDBNull(columna) ? null : lector.GetString(columna).Trim();
@@ -280,7 +322,6 @@ WHERE p.Empresa = @Empresa AND ";
 
         private class UnidadInventarioUbicacionesSql : IUnidadInventarioUbicaciones
         {
-            private const int FILAS_POR_LOTE = 200;
             private readonly SqlConnection conexion;
             private readonly SqlTransaction transaccion;
             private bool confirmada;
@@ -353,44 +394,7 @@ IF @r < 0 THROW 50001, 'Otro usuario está rellenando este inventario ahora mism
                 }
             }
 
-            public async Task Insertar(IList<Inventario> filas)
-            {
-                for (int inicio = 0; inicio < filas.Count; inicio += FILAS_POR_LOTE)
-                {
-                    List<Inventario> lote = filas.Skip(inicio).Take(FILAS_POR_LOTE).ToList();
-                    var sql = new StringBuilder("INSERT INTO Inventarios (Empresa, Almacén, Fecha, Número, Descripción, Grupo, Subgrupo, Familia, StockCalculado, StockReal, Estado, Aplicacion, Usuario, Pasillo, Fila, Columna) VALUES ");
-                    using (var comando = Comando(string.Empty))
-                    {
-                        Inventario primera = lote[0];
-                        comando.Parameters.Add("@Empresa", SqlDbType.Char, 3).Value = primera.Empresa;
-                        comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = primera.Almacén;
-                        comando.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = primera.Fecha;
-                        comando.Parameters.Add("@Estado", SqlDbType.TinyInt).Value = primera.Estado;
-                        comando.Parameters.Add("@Aplicacion", SqlDbType.Char, 10).Value = primera.Aplicacion;
-                        comando.Parameters.Add("@Usuario", SqlDbType.VarChar, 30).Value = primera.Usuario;
-                        for (int i = 0; i < lote.Count; i++)
-                        {
-                            Inventario fila = lote[i];
-                            if (i > 0)
-                            {
-                                sql.Append(", ");
-                            }
-                            sql.Append($"(@Empresa, @Almacen, @Fecha, @n{i}, @d{i}, @g{i}, @s{i}, @f{i}, @c{i}, 0, @Estado, @Aplicacion, @Usuario, @pa{i}, @fi{i}, @co{i})");
-                            comando.Parameters.Add($"@n{i}", SqlDbType.Char, 15).Value = fila.Número;
-                            comando.Parameters.Add($"@d{i}", SqlDbType.Char, 50).Value = (object)fila.Descripción ?? DBNull.Value;
-                            comando.Parameters.Add($"@g{i}", SqlDbType.Char, 3).Value = (object)fila.Grupo ?? DBNull.Value;
-                            comando.Parameters.Add($"@s{i}", SqlDbType.Char, 3).Value = (object)fila.Subgrupo ?? DBNull.Value;
-                            comando.Parameters.Add($"@f{i}", SqlDbType.Char, 10).Value = (object)fila.Familia ?? DBNull.Value;
-                            comando.Parameters.Add($"@c{i}", SqlDbType.Int).Value = (object)fila.StockCalculado ?? DBNull.Value;
-                            comando.Parameters.Add($"@pa{i}", SqlDbType.Char, 3).Value = (object)fila.Pasillo ?? DBNull.Value;
-                            comando.Parameters.Add($"@fi{i}", SqlDbType.Char, 3).Value = (object)fila.Fila ?? DBNull.Value;
-                            comando.Parameters.Add($"@co{i}", SqlDbType.Char, 3).Value = (object)fila.Columna ?? DBNull.Value;
-                        }
-                        comando.CommandText = sql.ToString();
-                        await comando.ExecuteNonQueryAsync().ConfigureAwait(false);
-                    }
-                }
-            }
+            public Task Insertar(IList<Inventario> filas) => InsertarFilas(conexion, transaccion, filas);
 
             public void Confirmar()
             {

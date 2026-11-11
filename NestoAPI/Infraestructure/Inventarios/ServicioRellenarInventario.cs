@@ -37,6 +37,11 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const string VARIAS_UBICACIONES = "VariasUbicaciones";
         /// <summary>POST api/Inventarios: el producto ya tiene fila pendiente ese día (Lineas): se suma a esa (PUT), no se crea otra.</summary>
         public const string YA_TIENE_FILA = "YaTieneFila";
+        /// <summary>
+        /// Sugerencia 1185: POST api/Inventarios/DejarACero en un almacén con ubicaciones: el producto tiene filas pendientes sin
+        /// ubicación (Lineas); se borran repitiendo con QuitarFilasSinUbicacion = true.
+        /// </summary>
+        public const string FILAS_SIN_UBICACION = "FilasSinUbicacion";
     }
 
     /// <summary>NestoAPI#784: lo ya contabilizado ese día en el almacén, por usuario y traspaso.</summary>
