@@ -49,6 +49,12 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal Func<string, int, Task<DatosPedidoEnlacePago>> LeerDatosPedidoEnlace { get; set; } = LectorEnlacesPagoPedido.LeerDatosPedido;
 
+        /// <summary>NestoAPI#849: (empresa, cliente, pedido) → el pedido existe y es de ese cliente. Sustituible en tests.</summary>
+        internal Func<string, string, int, Task<bool>> PedidoEsDelCliente { get; set; } = PedidoExisteYEsDelCliente;
+
+        /// <summary>NestoAPI#849: (id del PagoTPV, empresa, pedido) → lo guarda en el enlace (sin la columna, nada). Sustituible en tests.</summary>
+        internal Func<int, string, int, Task<bool>> GuardarPedidoEnlace { get; set; } = GuardarPedidoEnlaceEnBD;
+
         /// <summary>
         /// NestoAPI#679 (punto 3): encola el aviso a logística y administración del enlace cobrado (id del PagoTPV). El job
         /// comprueba si el envío del pedido va en reparto con reembolso. Sustituible en tests.
@@ -179,6 +185,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 db.PagosTPV.Add(pago);
                 await db.SaveChangesAsync().ConfigureAwait(false);
+
+                // NestoAPI#849: el pedido del enlace, guardado (si es seguro) para no tener que adivinarlo del concepto.
+                _ = await GuardarPedidoDelEnlace(pago, solicitud).ConfigureAwait(false);
 
                 foreach (var efecto in efectos)
                 {
@@ -2118,6 +2127,58 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 _logService.LogError($"[CobroNestoPago #565] Error al componer el aviso del cobro {pago?.NumeroOrden}: {ex.Message}", ex);
                 return Task.CompletedTask;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#849 (corte 1): al crear un enlace de pago (TPV virtual) o el cobro de un pedido de la app, guarda en el enlace el
+        /// pedido de la solicitud o el que identifica el concepto, solo si existe y es del mismo cliente. Devuelve el guardado (o null).
+        /// Nunca lanza: si algo falla, el enlace sale igual (y el pedido se seguirá sacando del concepto).
+        /// </summary>
+        internal async Task<int?> GuardarPedidoDelEnlace(PagoTPV pago, SolicitudPagoTPV solicitud)
+        {
+            try
+            {
+                if (pago == null || solicitud == null || string.IsNullOrWhiteSpace(pago.Cliente))
+                {
+                    return null;
+                }
+                bool esEnlace = string.Equals(pago.Tipo?.Trim(), TiposPagoTPV.TPV_VIRTUAL, StringComparison.OrdinalIgnoreCase);
+                if (!esEnlace && !solicitud.Pedido.HasValue)
+                {
+                    return null;
+                }
+                string empresa = (pago.Empresa ?? Empresas.EMPRESA_POR_DEFECTO).Trim();
+                string cliente = pago.Cliente.Trim();
+                int? pedido = await EnlacesPagoPedido.PedidoAGuardar(solicitud.Pedido, esEnlace ? solicitud.Descripcion : null,
+                    p => PedidoEsDelCliente(empresa, cliente, p)).ConfigureAwait(false);
+                if (!pedido.HasValue)
+                {
+                    return null;
+                }
+                return await GuardarPedidoEnlace(pago.Id, empresa, pedido.Value).ConfigureAwait(false) ? pedido : null;
+            }
+            catch (Exception ex)
+            {
+                _logService?.LogError($"[Enlaces de pago #849] No se ha podido guardar el pedido del enlace {pago?.Id}: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        private static async Task<bool> PedidoExisteYEsDelCliente(string empresa, string cliente, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return await db.CabPedidoVtas.AsNoTracking()
+                    .AnyAsync(c => c.Empresa == empresa && c.Número == pedido && c.Nº_Cliente == cliente).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task<bool> GuardarPedidoEnlaceEnBD(int idPago, string empresa, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return await ColumnaPedidoPagosTPV.Guardar(db, idPago, empresa, pedido).ConfigureAwait(false);
             }
         }
 

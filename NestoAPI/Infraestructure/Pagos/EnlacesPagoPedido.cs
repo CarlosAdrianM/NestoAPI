@@ -59,8 +59,35 @@ namespace NestoAPI.Infraestructure.Pagos
         /// <summary>¿Es un enlace de pago (TPV virtual) de ese pedido? Los cobros de la app ya entran como Prepago (#436).</summary>
         public static bool EsEnlaceDelPedido(string tipo, string concepto, int pedido)
         {
+            return EsEnlaceDelPedido(tipo, concepto, pedido, null);
+        }
+
+        /// <summary>
+        /// NestoAPI#849: con el pedido guardado en el enlace (PagosTPV.Pedido), manda ese; el concepto solo vale para los enlaces sin
+        /// él (los de antes de la columna, o sin la columna en la BD).
+        /// </summary>
+        public static bool EsEnlaceDelPedido(string tipo, string concepto, int pedido, int? pedidoGuardado)
+        {
             return string.Equals(tipo?.Trim(), Constantes.TiposPagoTPV.TPV_VIRTUAL, StringComparison.OrdinalIgnoreCase)
-                && PedidoDelConcepto(concepto) == pedido;
+                && PedidoDelEnlace(pedidoGuardado, concepto) == pedido;
+        }
+
+        /// <summary>NestoAPI#849: el pedido del enlace: el guardado y, si no lo tiene, el del concepto.</summary>
+        public static int? PedidoDelEnlace(int? pedidoGuardado, string concepto)
+            => pedidoGuardado.HasValue && pedidoGuardado.Value > 0 ? pedidoGuardado : PedidoDelConcepto(concepto);
+
+        /// <summary>
+        /// NestoAPI#849: el pedido que se guarda al crear el enlace: el de la solicitud o, si no lo trae, el que identifica el concepto,
+        /// y en los dos casos solo si existe y es del mismo cliente (<paramref name="esDelCliente"/>). Null si no hay ninguno seguro.
+        /// </summary>
+        public static async Task<int?> PedidoAGuardar(int? pedidoSolicitud, string concepto, Func<int, Task<bool>> esDelCliente)
+        {
+            int? candidato = pedidoSolicitud.HasValue && pedidoSolicitud.Value > 0 ? pedidoSolicitud : PedidoDelConcepto(concepto);
+            if (!candidato.HasValue || esDelCliente == null)
+            {
+                return null;
+            }
+            return await esDelCliente(candidato.Value).ConfigureAwait(false) ? candidato : null;
         }
 
         public static bool EstaAutorizado(EnlacePagoPedido enlace)
@@ -262,23 +289,108 @@ namespace NestoAPI.Infraestructure.Pagos
         public List<EnviosAgencia> Envios { get; set; } = new List<EnviosAgencia>();
     }
 
+    /// <summary>
+    /// NestoAPI#849 (corte 1): el pedido guardado en el enlace de pago, en PagosTPV.EmpresaPedido y PagosTPV.Pedido
+    /// (Scripts/Issue849_PagosTPV_Pedido.sql). Fuera del EDMX a propósito: se lee y escribe con SQL plano y, sin las columnas
+    /// (script sin lanzar), todo sigue como antes (el pedido sale del concepto). Nunca lanza.
+    /// </summary>
+    public static class ColumnaPedidoPagosTPV
+    {
+        public const string TABLA = "PagosTPV";
+        internal static readonly string[] COLUMNAS = { "EmpresaPedido", "Pedido" };
+
+        public static bool Existe(NVEntities db) => ColumnasOpcionales.Existen(db, TABLA, COLUMNAS);
+
+        /// <summary>Los Id de los enlaces con ese pedido guardado (vacío sin la columna).</summary>
+        public static List<int> IdsDelPedido(NVEntities db, string empresa, int pedido)
+        {
+            if (!Existe(db))
+            {
+                return new List<int>();
+            }
+            try
+            {
+                return db.Database.SqlQuery<int>("SELECT Id FROM dbo.PagosTPV WHERE EmpresaPedido = @p0 AND Pedido = @p1", empresa?.Trim(), pedido).ToList();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Enlaces de pago #849] No se han podido leer los enlaces guardados del pedido {pedido}: {ex.Message}", ex),
+                    "Sistema (enlaces de pago)");
+                return new List<int>();
+            }
+        }
+
+        /// <summary>Id → pedido guardado, de los enlaces que lo tienen (y de esa empresa). Vacío sin la columna.</summary>
+        public static Dictionary<int, int> PedidosDe(NVEntities db, string empresa, IEnumerable<int> ids)
+        {
+            List<int> lista = (ids ?? Enumerable.Empty<int>()).Distinct().ToList();
+            var resultado = new Dictionary<int, int>();
+            if (lista.Count == 0 || !Existe(db))
+            {
+                return resultado;
+            }
+            try
+            {
+                foreach (List<int> lote in lista.Select((id, i) => new { id, i }).GroupBy(x => x.i / 500).Select(g => g.Select(x => x.id).ToList()))
+                {
+                    string enLista = string.Join(",", lote.Select(i => i.ToString(CultureInfo.InvariantCulture)));
+                    foreach (FilaPedidoGuardado fila in db.Database.SqlQuery<FilaPedidoGuardado>(
+                        $"SELECT Id, Pedido FROM dbo.PagosTPV WHERE Id IN ({enLista}) AND Pedido IS NOT NULL AND EmpresaPedido = @p0", empresa?.Trim()))
+                    {
+                        resultado[fila.Id] = fila.Pedido;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Enlaces de pago #849] No se han podido leer los pedidos guardados: {ex.Message}", ex),
+                    "Sistema (enlaces de pago)");
+                resultado.Clear();
+            }
+            return resultado;
+        }
+
+        /// <summary>Guarda el pedido en el enlace (sin la columna, no hace nada). Devuelve si lo ha guardado.</summary>
+        public static async Task<bool> Guardar(NVEntities db, int idPago, string empresa, int pedido)
+        {
+            if (!Existe(db))
+            {
+                return false;
+            }
+            return await db.Database.ExecuteSqlCommandAsync("UPDATE dbo.PagosTPV SET EmpresaPedido = @p0, Pedido = @p1 WHERE Id = @p2",
+                empresa?.Trim(), pedido, idPago).ConfigureAwait(false) == 1;
+        }
+
+        /// <summary>Para el SqlQuery (propiedades con setter público).</summary>
+        public class FilaPedidoGuardado
+        {
+            public int Id { get; set; }
+            public int Pedido { get; set; }
+        }
+    }
+
     /// <summary>NestoAPI#679: las lecturas de BD de los enlaces de pago de un pedido.</summary>
     public static class LectorEnlacesPagoPedido
     {
+        private static int? Guardado(Dictionary<int, int> guardados, int id) => guardados.TryGetValue(id, out int pedido) ? pedido : (int?)null;
+
         /// <summary>Los enlaces de pago (TPV virtual) pendientes o autorizados del pedido.</summary>
         public static List<EnlacePagoPedido> Leer(NVEntities db, string empresa, int pedido)
         {
             string numero = pedido.ToString(CultureInfo.InvariantCulture);
             string empresaPedido = empresa?.Trim();
+            // NestoAPI#849: los que tienen el pedido guardado, aunque el concepto no lo diga.
+            List<int> guardados = ColumnaPedidoPagosTPV.IdsDelPedido(db, empresaPedido, pedido);
             // Primero lo que se puede filtrar en SQL (LIKE '%928521%'); el concepto exacto, en memoria.
             var candidatos = db.PagosTPV.AsNoTracking()
                 .Where(p => p.Empresa == empresaPedido && p.Tipo == Constantes.TiposPagoTPV.TPV_VIRTUAL &&
                             (p.Estado == Constantes.EstadosPagoTPV.PENDIENTE || p.Estado == Constantes.EstadosPagoTPV.AUTORIZADO) &&
-                            p.Descripcion.Contains(numero))
+                            (p.Descripcion.Contains(numero) || guardados.Contains(p.Id)))
                 .Select(p => new { p.Id, p.Tipo, p.Descripcion, p.Importe, p.Estado, p.FechaCreacion, p.FechaActualizacion, p.Usuario })
                 .ToList();
+            Dictionary<int, int> pedidosGuardados = ColumnaPedidoPagosTPV.PedidosDe(db, empresaPedido, candidatos.Select(c => c.Id));
             return candidatos
-                .Where(p => EnlacesPagoPedido.EsEnlaceDelPedido(p.Tipo, p.Descripcion, pedido))
+                .Where(p => EnlacesPagoPedido.EsEnlaceDelPedido(p.Tipo, p.Descripcion, pedido, Guardado(pedidosGuardados, p.Id)))
                 .Select(p => new EnlacePagoPedido
                 {
                     Id = p.Id,
@@ -309,14 +421,17 @@ namespace NestoAPI.Infraestructure.Pagos
                 return new List<EnlacePagoPedido>();
             }
             DateTime desde = ahora.AddDays(-EnlacesPagoPedido.DIAS_ENLACE_PENDIENTE_VIVO);
-            var candidatos = db.PagosTPV.AsNoTracking()
+            var leidos = db.PagosTPV.AsNoTracking()
                 .Where(p => p.Empresa == empresaPedido && p.Cliente == clientePedido && p.Tipo == Constantes.TiposPagoTPV.TPV_VIRTUAL &&
                             (p.Estado == Constantes.EstadosPagoTPV.PENDIENTE || p.Estado == Constantes.EstadosPagoTPV.AUTORIZADO) &&
                             p.FechaCreacion >= desde)
                 .Select(p => new { p.Id, p.Tipo, p.Descripcion, p.Importe, p.Estado, p.FechaCreacion, p.FechaActualizacion, p.Usuario })
-                .ToList()
-                .Select(p => new { Pago = p, Pedido = EnlacesPagoPedido.PedidoDelConcepto(p.Descripcion) })
-                .Where(p => p.Pedido.HasValue && p.Pedido.Value != excluirPedido && EnlacesPagoPedido.EsEnlaceDelPedido(p.Pago.Tipo, p.Pago.Descripcion, p.Pedido.Value))
+                .ToList();
+            // NestoAPI#849: el pedido guardado en el enlace manda; el concepto, de respaldo.
+            Dictionary<int, int> pedidosGuardados = ColumnaPedidoPagosTPV.PedidosDe(db, empresaPedido, leidos.Select(p => p.Id));
+            var candidatos = leidos
+                .Select(p => new { Pago = p, Guardado = Guardado(pedidosGuardados, p.Id), Pedido = EnlacesPagoPedido.PedidoDelEnlace(Guardado(pedidosGuardados, p.Id), p.Descripcion) })
+                .Where(p => p.Pedido.HasValue && p.Pedido.Value != excluirPedido && EnlacesPagoPedido.EsEnlaceDelPedido(p.Pago.Tipo, p.Pago.Descripcion, p.Pedido.Value, p.Guardado))
                 .ToList();
             if (candidatos.Count == 0)
             {
