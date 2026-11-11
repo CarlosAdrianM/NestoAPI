@@ -1825,6 +1825,9 @@ namespace NestoAPI.Controllers
 
         internal const string TIPO_NOTIFICACION_RESPUESTA = "NovedadComentario";
 
+        /// <summary>Sugerencia 1183: Datos["mencion"] = "1" en el aviso al @mencionado (la campana de Nesto lo distingue).</summary>
+        internal const string DATO_MENCION = "mencion";
+
         internal const string SUPERVISOR_ACTIVIDAD_POR_DEFECTO = "Carlos";
         private const string DOMINIO = "NUEVAVISION\\";
 
@@ -2065,7 +2068,10 @@ namespace NestoAPI.Controllers
                     Datos = new Dictionary<string, string>
                     {
                         ["tipo"] = TIPO_NOTIFICACION_RESPUESTA,
-                        ["novedadId"] = novedadId.ToString()
+                        ["novedadId"] = novedadId.ToString(),
+                        // Sugerencia 1183 (Laura Magán, 11/11/26): Nesto distingue la mención en la campana (color y
+                        // halo) y, si el usuario lo pide, la avisa con una ventanita. Las de antes, sin el dato, se ven como siempre.
+                        [DATO_MENCION] = "1"
                     }
                 };
                 if (comentarioId > 0)

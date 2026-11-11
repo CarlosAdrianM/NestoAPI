@@ -158,6 +158,41 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PostComentario_ConMencion_ElAvisoLlevaElDatoMencion()
+        {
+            // Sugerencia 1183: con Datos["mencion"] = "1" la campana de Nesto lo distingue (color, halo y ventanita)
+            ComoUsuarioDeNesto("NUEVAVISION\\Alfredo");
+
+            _ = await controller.PostComentario(350, new NuevoComentarioNovedadDTO { Texto = "@Carlos, el asistente no me entiende" });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto",
+                A<NotificacionPushDTO>.That.Matches(n => n.Datos.ContainsKey("mencion") && n.Datos["mencion"] == "1")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_ElAutorContestadoNoRecibeElDatoMencion_ElMencionadoSi()
+        {
+            // Sugerencia 1183: la respuesta al autor no es una mención (aunque se le nombre con @): sin el dato
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            A.CallTo(() => feedback.LeerAutores(A<IEnumerable<int>>._)).Returns(new List<AutorComentarioNovedad>
+            {
+                new AutorComentarioNovedad { Id = 1, NovedadId = 350, Usuario = "NUEVAVISION\\Alfredo", NombreVisible = "Alfredo", Cliente = "Nesto" }
+            });
+
+            _ = await controller.PostComentarioAsistente(350, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "@Alfredo, ya está. @Carlos, échale un ojo.",
+                ComentariosContestados = new List<int> { 1 }
+            });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", "Nesto",
+                A<NotificacionPushDTO>.That.Matches(n => !n.Datos.ContainsKey("mencion")))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto",
+                A<NotificacionPushDTO>.That.Matches(n => n.Datos["mencion"] == "1"))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task PostSugerencia_ConMencion_AvisaYLlevaALaSugerencia()
         {
             ComoUsuarioDeNesto(@"NUEVAVISION\Alfredo");
