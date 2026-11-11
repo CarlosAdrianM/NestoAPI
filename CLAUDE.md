@@ -398,6 +398,24 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   serie y su correo. Nombre = `Vendedores.Descripción` del vendedor (claim «Vendedor» o ParametrosUsuario «Vendedor»), si no, el usuario.
   El envío diario y la factura de Verifactu no cambian.
 
+### Recoge en tienda (NestoAPI#571, cortes 1 y 2, 11/11/26)
+- Sin columna: la ruta es la verdad. `TiendasRecogida.EsRutaDeRecogida` (AM, ALC, REI). `PedidoVentaDTO.RecogeEnTienda` (bool?): al leer,
+  siempre calculado de la ruta; al escribir, null = no tocar (Nesto y apps viejas), y el POST/PUT lo traducen a ruta con las reglas puras
+  de `Infraestructure/PedidosVenta/RecogeEnTienda.cs` (ALG→AM, ALC→ALC, REI→REI; false en ALC/REI → 400; el PUT compara con la ruta
+  GUARDADA; bloqueo = `CambioAlmacenPedido.Motivo`; al desmarcar vuelve la ruta de la ficha, `RutaQueVale.Leer`).
+- `GestorPortes.CalcularPortes`: ruta de recogida (o `PedidoPortesInput.RecogeEnTienda` = true, la plantilla de NestoApp) → ni portes NI
+  comisión contra reembolso. Las demás rutas sin portes siguen llevando comisión. Pendientes: picking de recogidas de ALG e impresión en AM.
+
+### Novedades por Id (NestoAPI#495, 11/11/26)
+- `GET api/Novedades?ambitos=NestoApp,NestoAPI&desdeId=n` (`ambitos` manda sobre `ambito`; sigue el filtro por perfiles). Parámetros
+  `UltimaNovedadVistaApp`/`UltimaNovedadVista` por ParametrosUsuario (`Scripts/Issue495_UltimaNovedadVista.sql`). Una sugerencia implementada
+  conserva su Id antiguo: con `desdeId` no sale. NestoApp ya lo usa (2.28.0); el lado Nesto, pendiente.
+
+### Correos y WhatsApp a nombre de quien los manda: flecos (NestoAPI#854, NestoApp#272, 11/11/26)
+- `ServicioCorreoElectronico.EnviarCorreoSMTP` apunta en ELMAH el correo que el SMTP rechaza tras el reintento (asunto, From, To, motivo).
+- `ProveedorDocumentosCorreo.NombreVendedorDelUsuario` (claim «Vendedor» o parámetro «Vendedor»; null si no se conoce, SIN caer al usuario):
+  firma del WhatsApp (`GestorEnlacesDescarga.Firma`, `EnlaceDescargaDTO.Remitente`). `FacturasController` pasa ya el claim al remitente.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
