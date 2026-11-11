@@ -31,10 +31,13 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             public Dictionary<string, string> Valores { get; } = new Dictionary<string, string>();
             public List<string> Escritos { get; } = new List<string>();
             public string Leer(string clave) => Valores.TryGetValue(clave, out string v) ? v : null;
-            public Task Escribir(string clave, string valor, string usuario)
+            public Task Escribir(string clave, string valor, string usuario, string detalle = null, bool dejarRastro = true)
             {
                 Valores[clave] = valor;
-                Escritos.Add($"{clave}={valor} por {usuario}");
+                if (dejarRastro)
+                {
+                    Escritos.Add($"{clave}={valor} por {usuario}");
+                }
                 return Task.CompletedTask;
             }
         }

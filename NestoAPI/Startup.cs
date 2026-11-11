@@ -880,6 +880,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'embudo-bloque-diario' configurado (todos los días a las 7:00)");
 
+            // Embudo de Odoo (Carlos 11/11/26): a las 6:30 de Madrid, antes del bloque, lee la recomendación de Odoo y ajusta SOLO el
+            // tamaño (50 → 75 → 100) o apaga el interruptor si dice «parar». Sin OdooEmbudoRitmoUrl/Clave en secretos.config no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Clientes.Embudo.EmbudoAjusteRitmoJobsService.JOB_ID,
+                () => Infraestructure.Clientes.Embudo.EmbudoAjusteRitmoJobsService.Ajustar(),
+                Infraestructure.Clientes.Embudo.EmbudoAjusteRitmoJobsService.CRON, // Cron: todos los días a las 6:30
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'embudo-ajuste-ritmo' configurado (todos los días a las 6:30)");
+
             // Eventos: candidatos a invitar, en MODO SOMBRA (Carlos 11/11/26): de madrugada, foto de los candidatos de cada evento futuro
             // activo en dbo.EventosCandidatos (sin el script, no hace nada). No se enseña a nadie.
             RecurringJob.AddOrUpdate(

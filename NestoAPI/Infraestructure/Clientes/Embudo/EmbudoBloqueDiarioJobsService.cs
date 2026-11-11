@@ -252,8 +252,11 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
     {
         /// <summary>El valor (sin el relleno del char) o null si no hay fila.</summary>
         string Leer(string clave);
-        /// <summary>Crea la fila si no existe o la cambia; deja quién y cuándo (Usuario2, Fecha Modificación) y una fila en Modificaciones.</summary>
-        Task Escribir(string clave, string valor, string usuario);
+        /// <summary>
+        /// Crea la fila si no existe o la cambia; deja quién y cuándo (Usuario2, Fecha Modificación) y, con <paramref name="dejarRastro"/>,
+        /// una fila en Modificaciones (antes → después y <paramref name="detalle"/>: el motivo y las cifras de Odoo, p. ej.).
+        /// </summary>
+        Task Escribir(string clave, string valor, string usuario, string detalle = null, bool dejarRastro = true);
     }
 
     public class ParametrosEmbudoDiarioEF : IParametrosEmbudoDiario
@@ -272,7 +275,7 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             }
         }
 
-        public async Task Escribir(string clave, string valor, string usuario)
+        public async Task Escribir(string clave, string valor, string usuario, string detalle = null, bool dejarRastro = true)
         {
             string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario) ?? "NestoAPI";
             using (var db = new NVEntities())
@@ -298,13 +301,16 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                     fila.Usuario2 = Recortar(quien, 30);
                     fila.Fecha_Modificación = DateTime.Now;
                 }
-                _ = db.Modificaciones.Add(new Modificacion
+                if (dejarRastro)
                 {
-                    Tabla = "ParametrosUsuario",
-                    Anterior = $"{clave} (defecto) = {anterior ?? "(sin fila)"}",
-                    Nuevo = $"{clave} (defecto) = {valor}",
-                    Usuario = Recortar(quien, 50)
-                });
+                    _ = db.Modificaciones.Add(new Modificacion
+                    {
+                        Tabla = "ParametrosUsuario",
+                        Anterior = $"{clave} (defecto) = {anterior ?? "(sin fila)"}",
+                        Nuevo = $"{clave} (defecto) = {valor}" + (string.IsNullOrWhiteSpace(detalle) ? string.Empty : ". " + detalle.Trim()),
+                        Usuario = Recortar(quien, 50)
+                    });
+                }
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
             }
         }
@@ -319,6 +325,12 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public int TamanoBloque { get; set; }
         public string UltimoBloque { get; set; }
         public DateTime? FechaUltimoBloque { get; set; }
+        /// <summary>Embudo ritmo: cuándo cambió el tamaño por última vez (UTC; job o PUT).</summary>
+        public DateTime? FechaUltimoCambioTamano { get; set; }
+        /// <summary>Embudo ritmo: la última recomendación de Odoo leída (cuándo, en UTC; qué y por qué).</summary>
+        public DateTime? UltimaRecomendacionFecha { get; set; }
+        public string UltimaRecomendacion { get; set; }
+        public string UltimaRecomendacionMotivo { get; set; }
     }
 
     public class CambioConfiguracionEmbudoDiarioDTO
@@ -347,7 +359,11 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             var configuracion = new ConfiguracionEmbudoDiarioDTO
             {
                 Encendido = EmbudoBloqueDiarioJobsService.EstaEncendido(parametros.Leer(EmbudoBloqueDiarioJobsService.PARAMETRO_INTERRUPTOR)),
-                TamanoBloque = EmbudoBloqueDiarioJobsService.TamanoBloque(parametros.Leer(EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO))
+                TamanoBloque = EmbudoBloqueDiarioJobsService.TamanoBloque(parametros.Leer(EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO)),
+                FechaUltimoCambioTamano = EmbudoAjusteRitmoJobsService.LeerFecha(parametros.Leer(EmbudoAjusteRitmoJobsService.PARAMETRO_FECHA_CAMBIO_TAMANO)),
+                UltimaRecomendacionFecha = EmbudoAjusteRitmoJobsService.LeerFecha(parametros.Leer(EmbudoAjusteRitmoJobsService.PARAMETRO_RECOMENDACION_FECHA)),
+                UltimaRecomendacion = parametros.Leer(EmbudoAjusteRitmoJobsService.PARAMETRO_RECOMENDACION),
+                UltimaRecomendacionMotivo = parametros.Leer(EmbudoAjusteRitmoJobsService.PARAMETRO_RECOMENDACION_MOTIVO)
             };
             if (await repositorio.HayTabla().ConfigureAwait(false))
             {
@@ -380,6 +396,9 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             {
                 await parametros.Escribir(EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO,
                     cambio.TamanoBloque.Value.ToString(CultureInfo.InvariantCulture), usuario).ConfigureAwait(false);
+                // Embudo ritmo: un cambio a mano también cuenta para los 7 días entre subidas
+                await parametros.Escribir(EmbudoAjusteRitmoJobsService.PARAMETRO_FECHA_CAMBIO_TAMANO,
+                    DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), usuario, dejarRastro: false).ConfigureAwait(false);
             }
             return await Leer().ConfigureAwait(false);
         }

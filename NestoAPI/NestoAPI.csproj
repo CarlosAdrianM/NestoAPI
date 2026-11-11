@@ -509,6 +509,7 @@
     <Compile Include="Infraestructure\Clientes\Embudo\ReglasResponsableEmbudo.cs" />
     <Compile Include="Infraestructure\Clientes\Embudo\RepositorioClientesEmbudo.cs" />
     <Compile Include="Infraestructure\Clientes\Embudo\EmbudoBloqueDiarioJobsService.cs" />
+    <Compile Include="Infraestructure\Clientes\Embudo\EmbudoAjusteRitmo.cs" />
     <Compile Include="Infraestructure\Clientes\Embudo\ServicioEmbudoClientes.cs" />
     <Compile Include="Infraestructure\Clientes\Embudo\PasadaSincronizacionClientes.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\OrigenesCliente.cs" />

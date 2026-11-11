@@ -376,6 +376,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   registra); los crea `Scripts/EmbudoBloqueDiario_Interruptor.sql` (encendido, 50). Se ven y cambian con GET/PUT
   `api/Clientes/Embudo/Configuracion` (Dirección/Informática; Usuario2 + fila en Modificaciones). El lanzamiento a mano sigue topado en 50. Orden (manual y job, el mismo `SqlCandidatos`, 11/11/26): los más
   recientes primero (último pedido DESC; luego los que nunca compraron por FechaAlta DESC), los antiguos al final (rebotan más).
+- Job `embudo-ajuste-ritmo` 6:30 Madrid (`EmbudoAjusteRitmoJobsService`): GET {OdooEmbudoRitmoUrl}/nv/embudo/recomendacion con cabecera
+  `X-NV-Clave` = OdooEmbudoRitmoClave (las dos en secretos.config; sin ellas, nada ni aviso). Reglas puras `ReglasRitmoEmbudo`: escalones
+  50 → 75 → 100 (tope 100); «subir» un escalón si hace 7 días del último cambio (`EmbudoTamanoBloqueFecha`, también el PUT) y el dato
+  (calculadoEl) tiene menos de 8, sin pasar de escalonRecomendado; «bajar» un escalón en el acto; «parar» apaga el interruptor;
+  dato viejo/ilegible/403/red → nada y aviso a Dirección una vez al día (`EmbudoRitmoUltimoAvisoFallo`). Cada cambio: Modificaciones
+  con motivo y cifras de Odoo + campana. La última recomendación (`EmbudoRecomendacion*`) sale en GET Configuracion.
 
 ### Eventos: candidatos a invitar, en MODO SOMBRA (NestoAPI#850, 11/11/26)
 - Solo se recogen datos (nada visible; cortes 2-4 en la issue). `dbo.EventosCandidatos` (fuera del EDMX, `Scripts/EventosCandidatosSombra.sql`):
