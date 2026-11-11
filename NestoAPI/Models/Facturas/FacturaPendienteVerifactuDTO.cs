@@ -34,6 +34,22 @@ namespace NestoAPI.Models.Facturas
         /// destinatario y no es rectificativa ni está ya registrada o marcada. El límite de importe lo valida el endpoint.
         /// </summary>
         public bool PuedeDeclararSimplificada { get; set; }
+        /// <summary>11/11/26: apartada con «No declarar» (solo sale con incluirNoDeclaradas=true). «Reintentar» la vuelve a abrir.</summary>
+        public bool NoDeclarada { get; set; }
+        /// <summary>
+        /// 11/11/26: se puede apartar con POST api/Verifactu/NoDeclarar: sin registro, con error de envío, de fecha anterior a la
+        /// entrada en vigor de Verifactu (01/01/2027) y antes de ese día. Desde entonces, siempre false.
+        /// </summary>
+        public bool PuedeNoDeclararse { get; set; }
+    }
+
+    /// <summary>11/11/26: cuerpo de POST api/Verifactu/NoDeclarar.</summary>
+    public class NoDeclararVerifactuDTO
+    {
+        public string Empresa { get; set; }
+        public string Numero { get; set; }
+        /// <summary>Obligatorio (al menos 10 caracteres): por qué no se declara (queda en Modificaciones).</summary>
+        public string Motivo { get; set; }
     }
 
     /// <summary>NestoAPI#392: cuerpo de POST api/Verifactu/DeclararSimplificada.</summary>

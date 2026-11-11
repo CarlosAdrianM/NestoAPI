@@ -31,13 +31,45 @@ namespace NestoAPI.Controllers
         [Route("FacturasPendientes")]
         [Authorize]
         [ResponseType(typeof(List<FacturaPendienteVerifactuDTO>))]
-        public async Task<IHttpActionResult> GetFacturasPendientes()
+        public async Task<IHttpActionResult> GetFacturasPendientes(bool incluirNoDeclaradas = false)
         {
             if (!PuedeGestionar(User))
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
-            return Ok(await servicio.Listar().ConfigureAwait(false));
+            return Ok(await servicio.Listar(incluirNoDeclaradas).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// 11/11/26: POST api/Verifactu/NoDeclarar  { "Empresa": "1", "Numero": "CV2600692", "Motivo": "..." }
+        /// Aparta una factura sin registro, con error de envío y anterior a la entrada en vigor de Verifactu (01/01/2027): no se
+        /// reintenta ni sale en la lista ni en el aviso. Solo Administración y Dirección, con motivo. 400 si no se puede.
+        /// </summary>
+        [HttpPost]
+        [Route("NoDeclarar")]
+        [Authorize]
+        [ResponseType(typeof(ResultadoReintentoVerifactuDTO))]
+        public async Task<IHttpActionResult> NoDeclarar([FromBody] NoDeclararVerifactuDTO dto)
+        {
+            if (!PuedeDeclararSimplificada(User))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (string.IsNullOrWhiteSpace(dto?.Empresa) || string.IsNullOrWhiteSpace(dto.Numero))
+            {
+                return BadRequest("Faltan la empresa y el número de la factura");
+            }
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
+            ResultadoReintentoVerifactuDTO resultado = await servicio.NoDeclarar(dto.Empresa, dto.Numero, dto.Motivo, usuario).ConfigureAwait(false);
+            if (resultado == null)
+            {
+                return NotFound();
+            }
+            if (!resultado.Exitoso)
+            {
+                return BadRequest(resultado.Mensaje);
+            }
+            return Ok(resultado);
         }
 
         /// <summary>POST api/Verifactu/ReintentarFactura  { "Empresa": "1", "Numero": "NV2615864" }</summary>

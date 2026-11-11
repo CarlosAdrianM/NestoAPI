@@ -13,6 +13,15 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// <summary>Las facturas que Verifactu todavía no da por buenas, de la más antigua a la más reciente.</summary>
         Task<List<FacturaPendienteVerifactuDTO>> Listar();
 
+        /// <summary>Como <see cref="Listar()"/>; con <paramref name="incluirNoDeclaradas"/>, también las apartadas con «No declarar».</summary>
+        Task<List<FacturaPendienteVerifactuDTO>> Listar(bool incluirNoDeclaradas);
+
+        /// <summary>
+        /// 11/11/26 (CV2600692/693): aparta una factura sin registro, con error de envío y anterior a la entrada en vigor de
+        /// Verifactu, para que no se reintente ni salga en la lista ni en el aviso. Null si no existe.
+        /// </summary>
+        Task<ResultadoReintentoVerifactuDTO> NoDeclarar(string empresa, string numeroFactura, string motivo, string usuario);
+
         /// <summary>Vuelve a enviar la factura a Verifactu (alta o subsanación, según esté). Null si no existe.</summary>
         Task<ResultadoReintentoVerifactuDTO> Reintentar(string empresa, string numeroFactura);
 
@@ -43,6 +52,14 @@ namespace NestoAPI.Infraestructure.Verifactu
         internal const string SITUACION_INCIDENCIA_ANTIGUA = "Incidencia técnica de hace más de un día";
         internal const string SITUACION_SIN_DATOS_FISCALES = "Sin datos fiscales";
         internal const string SITUACION_INCORRECTA_AEAT = "Incorrecta en la AEAT";
+        internal const string SITUACION_NO_DECLARADA = "No declarada (apartada)";
+
+        /// <summary>
+        /// Entrada en vigor de Verifactu para las sociedades (RDL 15/2025). Antes, una factura que no se puede declarar se puede
+        /// apartar con «No declarar»; desde ese día todas tienen que declararse.
+        /// </summary>
+        public static readonly DateTime FECHA_ENTRADA_EN_VIGOR_VERIFACTU = new DateTime(2027, 1, 1);
+        internal const int LONGITUD_MINIMA_MOTIVO_NO_DECLARAR = 10;
 
         private const int MAXIMO_FACTURAS = 500;
 
@@ -66,13 +83,15 @@ namespace NestoAPI.Infraestructure.Verifactu
             this.hoy = hoy ?? (() => DateTime.Today);
         }
 
-        public async Task<List<FacturaPendienteVerifactuDTO>> Listar()
+        public Task<List<FacturaPendienteVerifactuDTO>> Listar() => Listar(false);
+
+        public async Task<List<FacturaPendienteVerifactuDTO>> Listar(bool incluirNoDeclaradas)
         {
             List<string> series = RegistroSeriesVerifactu.CodigosQueTramitan;
             DateTime fechaInicio = VerifactuJobsService.FechaInicioDeclaracion;
             List<CabFacturaVta> facturas = await db.CabsFacturasVtas
                 .Where(f => f.Fecha >= fechaInicio && series.Contains(f.Serie)
-                    && (f.VerifactuEstado == null || f.VerifactuEstado != VerifactuJobsService.ESTADO_DESCARTADA)
+                    && (incluirNoDeclaradas || f.VerifactuEstado == null || f.VerifactuEstado != VerifactuJobsService.ESTADO_DESCARTADA)
                     && (f.VerifactuUUID == null || f.VerifactuUUID == ""
                         || (f.VerifactuEstado != null
                             && (f.VerifactuEstado.Contains("Incorrecto") || f.VerifactuEstado.Contains("Rechaz")))))
@@ -127,6 +146,20 @@ namespace NestoAPI.Infraestructure.Verifactu
             if (!antes.PuedeReintentar)
             {
                 return new ResultadoReintentoVerifactuDTO { Exitoso = false, Mensaje = antes.QueHacer, Factura = antes };
+            }
+
+            // 11/11/26: reintentar una apartada con «No declarar» la vuelve a abrir (alguien ha corregido el dato).
+            if (EstaNoDeclarada(factura))
+            {
+                factura.VerifactuEstado = null;
+                _ = db.Modificaciones.Add(new Modificacion
+                {
+                    Tabla = "CabFacturaVta",
+                    Anterior = $"Factura {numero} VerifactuEstado={VerifactuJobsService.ESTADO_DESCARTADA} VerifactuUltimoError={factura.VerifactuUltimoError?.Trim()}",
+                    Nuevo = "Se vuelve a abrir para declararla a Verifactu (Reintentar sobre una factura apartada con «No declarar»).",
+                    Usuario = "NestoAPI"
+                });
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
             }
 
             bool esIncorrectaEnLaAeat = TieneRegistro(factura);
@@ -202,6 +235,8 @@ namespace NestoAPI.Infraestructure.Verifactu
                 QueHacer = QueHacer(situacion),
                 UltimoIntento = factura.VerifactuUltimoIntento,
                 PuedeReintentar = situacion != SITUACION_SIN_DATOS_FISCALES && situacion != SITUACION_INCIDENCIA_ANTIGUA,
+                NoDeclarada = EstaNoDeclarada(factura),
+                PuedeNoDeclararse = MotivoParaNoPoderApartar(factura, new string('x', LONGITUD_MINIMA_MOTIVO_NO_DECLARAR), hoy()) == null,
                 // NestoAPI#392
                 DeclararSimplificada = factura.VerifactuDeclararSimplificada == true,
                 PuedeDeclararSimplificada = TieneProblemaDeNif(factura) && MotivoParaNoDeclararSimplificada(factura, "-") == null
@@ -217,6 +252,10 @@ namespace NestoAPI.Infraestructure.Verifactu
             if (TieneRegistro(factura))
             {
                 return SITUACION_INCORRECTA_AEAT;
+            }
+            if (EstaNoDeclarada(factura))
+            {
+                return SITUACION_NO_DECLARADA;
             }
             if (factura.VerifactuEstado?.Trim() == VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES)
             {
@@ -242,6 +281,8 @@ namespace NestoAPI.Infraestructure.Verifactu
                     return "Verifactu no respondía cuando se emitió. Se reenvía sola cada hora con la marca de incidencia; podéis pulsar Reintentar para no esperar.";
                 case SITUACION_INCIDENCIA_ANTIGUA:
                     return "Verifactu no respondía y ya ha pasado más de un día: Verifacti no admite reenviarla. Avisad a Carlos para revisarla a mano.";
+                case SITUACION_NO_DECLARADA:
+                    return "Apartada con «No declarar»: ni se reintenta ni avisa. Si se corrige el dato, pulsad Reintentar y se volverá a declarar.";
                 case SITUACION_SIN_DATOS_FISCALES:
                     return "Se creó fuera de Nesto/API sin datos fiscales y no se puede declarar. Avisad a Carlos para revisarla a mano.";
                 default:
@@ -337,6 +378,92 @@ namespace NestoAPI.Infraestructure.Verifactu
                     ". Se envía sola en menos de una hora; podéis pulsar Reintentar para no esperar.",
                 Factura = Mapear(factura, null)
             };
+        }
+
+        /// <summary>
+        /// 11/11/26 (CV2600692/693, cursos de 500 € que la AEAT rechaza por NIF/nombre y no caben en una simplificada): aparta la
+        /// factura con el estado <see cref="VerifactuJobsService.ESTADO_DESCARTADA"/> (el de #551: el job, la lista y el aviso ya no
+        /// la miran). Sin cambiar el esquema. Rastro en Modificaciones y ELMAH. Se deshace con «Reintentar».
+        /// </summary>
+        public async Task<ResultadoReintentoVerifactuDTO> NoDeclarar(string empresa, string numeroFactura, string motivo, string usuario)
+        {
+            string numero = numeroFactura?.Trim();
+            string codigoEmpresa = empresa?.Trim();
+            string motivoLimpio = motivo?.Trim();
+            CabFacturaVta factura = await db.CabsFacturasVtas
+                .FirstOrDefaultAsync(f => f.Empresa == codigoEmpresa && f.Número == numero).ConfigureAwait(false);
+            if (factura == null)
+            {
+                return null;
+            }
+            string noSePuede = MotivoParaNoPoderApartar(factura, motivoLimpio, hoy());
+            if (noSePuede != null)
+            {
+                return new ResultadoReintentoVerifactuDTO { Exitoso = false, Mensaje = noSePuede, Factura = Mapear(factura, null) };
+            }
+
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string antes = $"Factura {numero} VerifactuEstado={factura.VerifactuEstado?.Trim()} VerifactuUltimoError={factura.VerifactuUltimoError?.Trim()}";
+            factura.VerifactuEstado = VerifactuJobsService.ESTADO_DESCARTADA;
+            _ = db.Modificaciones.Add(new Modificacion
+            {
+                Tabla = "CabFacturaVta",
+                Anterior = antes,
+                Nuevo = $"No se declara a Verifactu (periodo previo a la entrada en vigor, {FECHA_ENTRADA_EN_VIGOR_VERIFACTU:dd/MM/yyyy}). " +
+                    $"Usuario: {usuarioAuditoria}. Motivo: {motivoLimpio}",
+                Usuario = usuarioAuditoria
+            });
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            ElmahHelper.Log(new Exception($"[Verifactu] Factura {numero} apartada con «No declarar» por {usuarioAuditoria}: {motivoLimpio}"),
+                "Sistema (Verifactu)");
+
+            return new ResultadoReintentoVerifactuDTO
+            {
+                Exitoso = true,
+                Mensaje = $"La factura {numero} no se declarará a Verifactu: ya no se reintenta ni sale en la lista. " +
+                    "Si se corrige el dato, se puede volver a declarar con Reintentar (lista con las no declaradas).",
+                Factura = Mapear(factura, null)
+            };
+        }
+
+        /// <summary>Apartada con «No declarar» (o descartada a mano, #551).</summary>
+        internal static bool EstaNoDeclarada(CabFacturaVta factura) =>
+            factura?.VerifactuEstado?.Trim() == VerifactuJobsService.ESTADO_DESCARTADA;
+
+        /// <summary>Por qué no se puede apartar con «No declarar» (null si se puede).</summary>
+        internal static string MotivoParaNoPoderApartar(CabFacturaVta factura, string motivo, DateTime hoy)
+        {
+            string numero = factura.Número?.Trim();
+            string fechaVigor = FECHA_ENTRADA_EN_VIGOR_VERIFACTU.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
+            if (hoy.Date >= FECHA_ENTRADA_EN_VIGOR_VERIFACTU)
+            {
+                return $"Desde el {fechaVigor} todas las facturas tienen que declararse.";
+            }
+            if (factura.Fecha.Date >= FECHA_ENTRADA_EN_VIGOR_VERIFACTU)
+            {
+                return $"La factura {numero} es del {factura.Fecha.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture)}: desde el {fechaVigor} todas las facturas tienen que declararse.";
+            }
+            if (string.IsNullOrWhiteSpace(motivo) || motivo.Trim().Length < LONGITUD_MINIMA_MOTIVO_NO_DECLARAR)
+            {
+                return $"Hay que indicar el motivo por el que no se declara (al menos {LONGITUD_MINIMA_MOTIVO_NO_DECLARAR} caracteres; queda registrado).";
+            }
+            if (!RegistroSeriesVerifactu.TramitaVerifactu(factura.Serie))
+            {
+                return $"La factura {numero} es de la serie {factura.Serie?.Trim()}, que no se declara a Verifactu.";
+            }
+            if (EstaNoDeclarada(factura))
+            {
+                return $"La factura {numero} ya está apartada: no se declara.";
+            }
+            if (TieneRegistro(factura))
+            {
+                return $"La factura {numero} ya tiene registro en Verifactu (estado {factura.VerifactuEstado?.Trim()}): no se puede dejar sin declarar.";
+            }
+            if (string.IsNullOrWhiteSpace(factura.VerifactuUltimoError))
+            {
+                return $"La factura {numero} no tiene ningún error de envío: se declara sola.";
+            }
+            return null;
         }
 
         /// <summary>NestoAPI#392: por qué no se puede declarar como simplificada (null si se puede).</summary>

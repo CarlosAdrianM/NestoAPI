@@ -329,7 +329,7 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         public async Task Controlador_Administracion_VeLaListaYReintenta()
         {
             var fake = A.Fake<IServicioFacturasPendientesVerifactu>();
-            A.CallTo(() => fake.Listar()).Returns(new List<FacturaPendienteVerifactuDTO> { new FacturaPendienteVerifactuDTO { Numero = "NV2615001" } });
+            A.CallTo(() => fake.Listar(false)).Returns(new List<FacturaPendienteVerifactuDTO> { new FacturaPendienteVerifactuDTO { Numero = "NV2615001" } });
             A.CallTo(() => fake.Reintentar("1", "NV2615001")).Returns(new ResultadoReintentoVerifactuDTO { Exitoso = true });
             var controller = new VerifactuController(fake)
             {
