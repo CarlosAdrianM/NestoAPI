@@ -1,5 +1,9 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Eventos;
 using NestoAPI.Infraestructure.Inventarios;
+using NestoAPI.Models;
+using NestoAPI.Models.Inventarios;
+using System;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -21,23 +25,89 @@ namespace NestoAPI.Controllers
             set => servicioBorrarFila = value;
         }
 
+        private Func<string, string> parametroBorrarFilas;
+
+        /// <summary>(usuario sin dominio) → su ParametrosUsuario «InventarioBorrarFilas» (solo su fila, sin crearla). Para los tests.</summary>
+        internal Func<string, string> ParametroBorrarFilas
+        {
+            get => parametroBorrarFilas ?? (parametroBorrarFilas = usuario =>
+                ParametrosUsuarioController.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, ReglaBorrarFilaInventario.PARAMETRO_USUARIO));
+            set => parametroBorrarFilas = value;
+        }
+
+        /// <summary>Épica #784: Administración, Dirección e Informática, o el parámetro «InventarioBorrarFilas» = "1".</summary>
+        private bool PuedeBorrarFilas()
+        {
+            if (PermisosInventario.EsGlobal(User))
+            {
+                return true;
+            }
+            string usuario = PermisosEventos.SinDominio(User?.Identity?.Name);
+            if (string.IsNullOrEmpty(usuario))
+            {
+                return false;
+            }
+            try
+            {
+                return ReglaBorrarFilaInventario.PuedeBorrar(false, ParametroBorrarFilas(usuario));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Inventario #784] No se ha podido leer el permiso de borrar filas: {ex.Message}", ex), "Sistema (inventario)");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Épica #784: SePuedeBorrar en cada fila (si quien pregunta puede contar en el almacén y borrar) y el aviso «Filas borradas hoy
+        /// del recuento».
+        /// </summary>
+        private async Task CompletarComprobaciones(ComprobacionesInventarioDTO comprobaciones, string empresa, string almacen)
+        {
+            if (comprobaciones == null)
+            {
+                return;
+            }
+            DateTime hoy = Hoy();
+            bool puede = PermisosInventario.MotivoNoPuedeContar(User, AlmacenDeQuienPide(empresa), almacen) == null && PuedeBorrarFilas();
+            ReglaBorrarFilaInventario.Marcar(comprobaciones, puede, hoy);
+            try
+            {
+                ComprobacionInventarioDTO borradas = ReglaBorrarFilaInventario.AvisoBorradas(
+                    await ServicioBorrarFila.Borradas(comprobaciones.Fecha).ConfigureAwait(false), empresa, almacen, comprobaciones.Fecha);
+                if (borradas != null)
+                {
+                    comprobaciones.Avisos.Add(borradas);
+                }
+            }
+            catch (Exception ex)
+            {
+                // El aviso de lo borrado nunca impide ver las comprobaciones.
+                ElmahHelper.Log(new Exception($"[Inventario #784] No se han podido añadir las filas borradas: {ex.Message}", ex), "Sistema (inventario)");
+            }
+        }
+
         // DELETE: api/Inventarios/Filas/948787
         /// <summary>
-        /// Épica #784: borra una fila pendiente (Estado 1) del inventario. 204 si la borra; 404 si no existe; 409 {Message} si ya está
-        /// contabilizada (nunca se borran); 403 {Message} sin permiso de contar en el almacén de la fila, o si es de otro día y quien
-        /// pide no es de Administración, Dirección o Informática. Deja rastro en Modificaciones.
+        /// Épica #784: borra una fila pendiente de HOY que sobra (<see cref="ReglaBorrarFilaInventario"/>: está ahora en el bloqueante
+        /// SinUbicacion o FilasDuplicadas). 204 si la borra; 404 {Message} si no existe; 409 {Message} si está contabilizada, es de otro
+        /// día o no es una fila que sobre; 403 {Message} sin permiso de contar en el almacén o sin permiso de borrar (Administración,
+        /// Dirección, Informática o ParametrosUsuario «InventarioBorrarFilas» = "1"). Deja rastro en Modificaciones.
         /// </summary>
         [HttpDelete]
         [Authorize]
         [Route("api/Inventarios/Filas/{numeroOrden:int}")]
         public async Task<IHttpActionResult> DeleteFila(int numeroOrden)
         {
+            DateTime hoy = Hoy();
             ResultadoBorrarFilaInventario resultado = await ServicioBorrarFila.Borrar(
                 numeroOrden,
                 (empresa, almacen) => PermisosInventario.MotivoNoPuedeContar(User, AlmacenDeQuienPide(EmpresaONula(empresa)), almacen),
-                PermisosInventario.EsGlobal(User),
+                PuedeBorrarFilas(),
+                async fila => ReglaBorrarFilaInventario.EsBorrable(
+                    await ServicioContabilizar.Comprobar(EmpresaONula(fila.Empresa), fila.Almacen?.Trim(), hoy.Date).ConfigureAwait(false), fila.NumeroOrden),
                 UsuarioAuditoriaHelper.Resolver(User, null),
-                Hoy()).ConfigureAwait(false);
+                hoy).ConfigureAwait(false);
             switch (resultado.Estado)
             {
                 case EstadoBorrarFilaInventario.Borrada:

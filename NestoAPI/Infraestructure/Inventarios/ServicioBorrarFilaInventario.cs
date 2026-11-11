@@ -1,8 +1,12 @@
 using NestoAPI.Models;
+using NestoAPI.Models.Inventarios;
+using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Inventarios
@@ -15,6 +19,7 @@ namespace NestoAPI.Infraestructure.Inventarios
         public string Almacen { get; set; }
         public DateTime Fecha { get; set; }
         public string Producto { get; set; }
+        public string Descripcion { get; set; }
         public string Pasillo { get; set; }
         public string Fila { get; set; }
         public string Columna { get; set; }
@@ -25,7 +30,16 @@ namespace NestoAPI.Infraestructure.Inventarios
         public int? Traspaso { get; set; }
         public string Usuario { get; set; }
 
+        [JsonIgnore]
         public bool EstaPendiente => Estado == ServicioRellenarInventario.ESTADO_SIN_CONTABILIZAR && !Traspaso.HasValue;
+    }
+
+    /// <summary>Épica #784: una fila borrada del recuento, como quedó en el rastro (quién y cuándo la borró).</summary>
+    public class FilaInventarioBorrada
+    {
+        public FilaInventarioBorrar Fila { get; set; }
+        public string BorradaPor { get; set; }
+        public DateTime BorradaEl { get; set; }
     }
 
     public interface IRepositorioBorrarFilaInventario
@@ -34,6 +48,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         Task<FilaInventarioBorrar> Leer(int numeroOrden);
         /// <summary>Abre la transacción con <paramref name="recurso"/> bloqueado (sp_getapplock).</summary>
         Task<IUnidadBorrarFilaInventario> Empezar(string recurso);
+        /// <summary>Las filas borradas ese día (del rastro de Modificaciones), de todos los almacenes.</summary>
+        Task<List<FilaInventarioBorrada>> Borradas(DateTime dia);
     }
 
     /// <summary>Sin <see cref="Confirmar"/>, el Dispose lo deshace.</summary>
@@ -52,7 +68,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         Borrada,
         NoExiste,
         SinPermiso,
-        NoPendiente
+        /// <summary>409: contabilizada, de otro día o no es una fila que sobre.</summary>
+        NoBorrable
     }
 
     public class ResultadoBorrarFilaInventario
@@ -63,17 +80,133 @@ namespace NestoAPI.Infraestructure.Inventarios
     }
 
     /// <summary>
-    /// Épica #784 (incidencia 1186, 11/11/26): borrar una fila pendiente del inventario (la fila sin ubicación que bloqueaba
-    /// «Contabilizar inventario» y que hubo que quitar por SQL). Las contabilizadas no se borran nunca. Permisos: los de contar en el
-    /// almacén de la fila (los decide el controlador); quien no es de Administración, Dirección o Informática, solo las de hoy.
-    /// Bloquea el almacén y la ubicación como el rellenado y el «a cero»; frente a prdContabilizarInventario (que no usa applock) lo
-    /// protege el propio DELETE, que solo borra si la fila sigue pendiente. Rastro en Modificaciones.
+    /// Épica #784 (Carlos 11/11/26): qué filas se pueden borrar. Borrar una fila NO la pone a 0: deja el producto sin contar (el SP de
+    /// contabilizar solo toca las filas pendientes), así que borrar «lo que no hay» dejaría el stock del sistema. Solo se borran las
+    /// filas pendientes de hoy que SOBRAN: las de los bloqueantes <see cref="CodigosComprobacionInventario.SIN_UBICACION"/> (producto que
+    /// se ubica contado sin ubicación) y <see cref="CodigosComprobacionInventario.FILAS_DUPLICADAS"/> (en un grupo de dos o más siempre
+    /// queda otra). Nunca una fila normal, ni la de un aviso, ni RecontadaSinContar. Quién: Administración, Dirección e Informática, o
+    /// con el parámetro de usuario <see cref="PARAMETRO_USUARIO"/> = "1".
+    /// </summary>
+    public static class ReglaBorrarFilaInventario
+    {
+        public const string PARAMETRO_USUARIO = "InventarioBorrarFilas";
+        public static readonly string[] CODIGOS_BORRABLES = { CodigosComprobacionInventario.SIN_UBICACION, CodigosComprobacionInventario.FILAS_DUPLICADAS };
+
+        public const string MENSAJE_NO_SOBRA = "Esta fila no se puede borrar: no es una fila que sobre. Si quiere decir que no hay ninguna unidad, " +
+            "cuéntela a 0; si está mal contada, vuelva a contarla.";
+        public const string MENSAJE_SIN_PERMISO = "No tiene permiso para borrar filas del inventario: avise a su encargado o a Dirección.";
+        public const string MENSAJE_SOLO_HOY = "Solo se pueden borrar filas del inventario de hoy.";
+
+        /// <summary>Administración, Dirección e Informática siempre; el resto, con el parámetro a "1".</summary>
+        public static bool PuedeBorrar(bool esGlobal, string valorParametro) =>
+            esGlobal || string.Equals(valorParametro?.Trim(), "1", StringComparison.Ordinal);
+
+        /// <summary>La fila está ahora mismo en un bloqueante de los que se pueden borrar (y, si es duplicada, su grupo tiene otra).</summary>
+        public static bool EsBorrable(ComprobacionesInventarioDTO comprobaciones, int numeroOrden)
+        {
+            if (comprobaciones?.Bloqueantes == null)
+            {
+                return false;
+            }
+            foreach (ComprobacionInventarioDTO bloqueante in comprobaciones.Bloqueantes.Where(b => b?.Filas != null && CODIGOS_BORRABLES.Contains(b.Codigo)))
+            {
+                FilaComprobacionInventarioDTO fila = bloqueante.Filas.FirstOrDefault(f => f != null && f.NºOrden == numeroOrden);
+                if (fila == null)
+                {
+                    continue;
+                }
+                if (bloqueante.Codigo != CodigosComprobacionInventario.FILAS_DUPLICADAS)
+                {
+                    return true;
+                }
+                string clave = ClaveDuplicada(fila);
+                if (bloqueante.Filas.Count(f => f != null && f.NºOrden.HasValue && ClaveDuplicada(f) == clave) > 1)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Marca <see cref="FilaComprobacionInventarioDTO.SePuedeBorrar"/> en las filas de hoy de los bloqueantes borrables, si quien
+        /// pregunta puede borrar. Las demás, false.
+        /// </summary>
+        public static void Marcar(ComprobacionesInventarioDTO comprobaciones, bool puedeBorrar, DateTime hoy)
+        {
+            if (comprobaciones == null)
+            {
+                return;
+            }
+            List<ComprobacionInventarioDTO> bloqueantes = comprobaciones.Bloqueantes ?? new List<ComprobacionInventarioDTO>();
+            foreach (FilaComprobacionInventarioDTO fila in bloqueantes.Concat(comprobaciones.Avisos ?? new List<ComprobacionInventarioDTO>())
+                .Where(c => c?.Filas != null)
+                .SelectMany(c => c.Filas)
+                .Where(f => f != null))
+            {
+                fila.SePuedeBorrar = false;
+            }
+            if (!puedeBorrar)
+            {
+                return;
+            }
+            foreach (FilaComprobacionInventarioDTO fila in bloqueantes
+                .Where(c => c?.Filas != null && CODIGOS_BORRABLES.Contains(c.Codigo))
+                .SelectMany(c => c.Filas)
+                .Where(f => f != null && f.NºOrden.HasValue && f.Fecha.HasValue && f.Fecha.Value.Date == hoy.Date))
+            {
+                fila.SePuedeBorrar = EsBorrable(comprobaciones, fila.NºOrden.Value);
+            }
+        }
+
+        /// <summary>El aviso «Filas borradas hoy del recuento (N)» con las borradas ese día en ese almacén (null si no hay).</summary>
+        public static ComprobacionInventarioDTO AvisoBorradas(IEnumerable<FilaInventarioBorrada> borradas, string empresa, string almacen, DateTime dia)
+        {
+            List<FilaComprobacionInventarioDTO> filas = (borradas ?? Enumerable.Empty<FilaInventarioBorrada>())
+                .Where(b => b?.Fila != null
+                    && string.Equals(b.Fila.Empresa?.Trim(), empresa?.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(b.Fila.Almacen?.Trim(), almacen?.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && b.Fila.Fecha.Date == dia.Date)
+                .OrderBy(b => b.BorradaEl)
+                .Select(b => new FilaComprobacionInventarioDTO
+                {
+                    NºOrden = null,
+                    Producto = b.Fila.Producto?.Trim(),
+                    Descripcion = b.Fila.Descripcion?.Trim(),
+                    StockCalculado = b.Fila.StockCalculado,
+                    StockReal = b.Fila.StockReal,
+                    Pasillo = b.Fila.Pasillo?.Trim(),
+                    Fila = b.Fila.Fila?.Trim(),
+                    Columna = b.Fila.Columna?.Trim(),
+                    Usuario = b.BorradaPor?.Trim(),
+                    Fecha = b.BorradaEl,
+                    SePuedeBorrar = false
+                })
+                .ToList();
+            return filas.Count == 0
+                ? null
+                : new ComprobacionInventarioDTO
+                {
+                    Codigo = CodigosComprobacionInventario.FILAS_BORRADAS,
+                    Titulo = $"Filas borradas hoy del recuento ({filas.Count}): esos productos no se contabilizan (se quedan como estaban)",
+                    Filas = filas
+                };
+        }
+
+        private static string ClaveDuplicada(FilaComprobacionInventarioDTO f) =>
+            $"{f.Producto?.Trim().ToUpperInvariant()}#{f.Pasillo?.Trim().ToUpperInvariant()}|{f.Fila?.Trim().ToUpperInvariant()}|{f.Columna?.Trim().ToUpperInvariant()}";
+    }
+
+    /// <summary>
+    /// Épica #784 (incidencia 1186, 11/11/26): borrar una fila pendiente del inventario que sobra (<see cref="ReglaBorrarFilaInventario"/>).
+    /// Las contabilizadas no se borran nunca. Bloquea el almacén y la ubicación como el rellenado y el «a cero» y, ya con el bloqueo,
+    /// comprueba que la fila sigue sobrando; frente a prdContabilizarInventario (que no usa applock) lo protege el propio DELETE, que
+    /// solo borra si la fila sigue pendiente. Rastro en Modificaciones (Tabla <see cref="TABLA_MODIFICACIONES"/>, Anterior = la fila en
+    /// JSON), del que sale el aviso «Filas borradas hoy del recuento».
     /// </summary>
     public class ServicioBorrarFilaInventario
     {
-        public const string TABLA_MODIFICACIONES = "Inventarios";
-        public const string MENSAJE_SOLO_HOY =
-            "Solo puede borrar filas del inventario de hoy. Las de otros días las borran Administración, Dirección o Informática.";
+        public const string TABLA_MODIFICACIONES = "InventarioFilaBorrada";
 
         private readonly IRepositorioBorrarFilaInventario repositorio;
 
@@ -82,29 +215,35 @@ namespace NestoAPI.Infraestructure.Inventarios
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
         }
 
-        /// <param name="motivoNoPuede">(empresa, almacén) → null si puede contar en ese almacén; si no, el motivo (403).</param>
-        /// <param name="esGlobal">Administración, Dirección o Informática: también las de otros días.</param>
-        public async Task<ResultadoBorrarFilaInventario> Borrar(int numeroOrden, Func<string, string, string> motivoNoPuede, bool esGlobal,
-            string usuario, DateTime hoy)
+        /// <param name="motivoNoPuedeContar">(empresa, almacén) → null si puede contar en ese almacén; si no, el motivo (403).</param>
+        /// <param name="puedeBorrar">Regla de quién (<see cref="ReglaBorrarFilaInventario.PuedeBorrar"/>).</param>
+        /// <param name="sobra">La fila sobra ahora mismo (<see cref="ReglaBorrarFilaInventario.EsBorrable"/> sobre las comprobaciones de
+        /// su almacén y día). Se llama ya con el bloqueo puesto.</param>
+        public async Task<ResultadoBorrarFilaInventario> Borrar(int numeroOrden, Func<string, string, string> motivoNoPuedeContar, bool puedeBorrar,
+            Func<FilaInventarioBorrar, Task<bool>> sobra, string usuario, DateTime hoy)
         {
             FilaInventarioBorrar fila = await repositorio.Leer(numeroOrden).ConfigureAwait(false);
             if (fila == null)
             {
                 return Resultado(EstadoBorrarFilaInventario.NoExiste, $"No existe la fila {numeroOrden} del inventario.", null);
             }
-            string motivo = motivoNoPuede?.Invoke(fila.Empresa, fila.Almacen);
+            string motivo = motivoNoPuedeContar?.Invoke(fila.Empresa, fila.Almacen);
             if (motivo != null)
             {
                 return Resultado(EstadoBorrarFilaInventario.SinPermiso, motivo, fila);
             }
+            if (!puedeBorrar)
+            {
+                return Resultado(EstadoBorrarFilaInventario.SinPermiso, ReglaBorrarFilaInventario.MENSAJE_SIN_PERMISO, fila);
+            }
             if (!fila.EstaPendiente)
             {
-                return Resultado(EstadoBorrarFilaInventario.NoPendiente, MensajeNoPendiente(fila), fila);
+                return Resultado(EstadoBorrarFilaInventario.NoBorrable, MensajeNoPendiente(fila), fila);
             }
-            if (!esGlobal && fila.Fecha.Date != hoy.Date)
+            if (fila.Fecha.Date != hoy.Date)
             {
-                return Resultado(EstadoBorrarFilaInventario.SinPermiso,
-                    $"La fila {numeroOrden} es del inventario del {Dia(fila.Fecha)}. " + MENSAJE_SOLO_HOY, fila);
+                return Resultado(EstadoBorrarFilaInventario.NoBorrable,
+                    $"La fila {numeroOrden} es del inventario del {Dia(fila.Fecha)}. " + ReglaBorrarFilaInventario.MENSAJE_SOLO_HOY, fila);
             }
 
             string empresa = fila.Empresa?.Trim();
@@ -117,20 +256,39 @@ namespace NestoAPI.Infraestructure.Inventarios
                     await unidad.Bloquear($"InventarioRellenar:{empresa}:{almacen}:{fila.Pasillo.Trim().ToUpperInvariant()}:" +
                         $"{fila.Fila?.Trim().ToUpperInvariant()}:{fila.Columna?.Trim().ToUpperInvariant()}").ConfigureAwait(false);
                 }
+                // Con el bloqueo puesto: nadie puede estar borrando a la vez la otra fila del mismo duplicado.
+                if (sobra == null || !await sobra(fila).ConfigureAwait(false))
+                {
+                    return Resultado(EstadoBorrarFilaInventario.NoBorrable, ReglaBorrarFilaInventario.MENSAJE_NO_SOBRA, fila);
+                }
                 int borradas = await unidad.BorrarSiPendiente(numeroOrden).ConfigureAwait(false);
                 if (borradas == 0)
                 {
                     FilaInventarioBorrar ahora = await repositorio.Leer(numeroOrden).ConfigureAwait(false);
                     return ahora == null
                         ? Resultado(EstadoBorrarFilaInventario.NoExiste, $"La fila {numeroOrden} del inventario ya no existe: la ha borrado otro usuario.", null)
-                        : Resultado(EstadoBorrarFilaInventario.NoPendiente, MensajeNoPendiente(ahora), ahora);
+                        : Resultado(EstadoBorrarFilaInventario.NoBorrable, MensajeNoPendiente(ahora), ahora);
                 }
                 string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
-                await unidad.Anotar(TABLA_MODIFICACIONES, Descripcion(fila), $"Fila {numeroOrden} borrada por {usuarioAuditoria}", usuarioAuditoria)
-                    .ConfigureAwait(false);
+                await unidad.Anotar(TABLA_MODIFICACIONES, JsonConvert.SerializeObject(fila),
+                    $"{Descripcion(fila)}. Borrada por {usuarioAuditoria}", usuarioAuditoria).ConfigureAwait(false);
                 unidad.Confirmar();
             }
             return Resultado(EstadoBorrarFilaInventario.Borrada, null, fila);
+        }
+
+        /// <summary>Las filas borradas ese día (para el aviso de las comprobaciones). Nunca lanza: si falla, ninguna.</summary>
+        public async Task<List<FilaInventarioBorrada>> Borradas(DateTime dia)
+        {
+            try
+            {
+                return await repositorio.Borradas(dia.Date).ConfigureAwait(false) ?? new List<FilaInventarioBorrada>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Inventario #784] No se han podido leer las filas borradas: {ex.Message}", ex), "Sistema (inventario)");
+                return new List<FilaInventarioBorrada>();
+            }
         }
 
         internal static string MensajeNoPendiente(FilaInventarioBorrar fila) =>
@@ -159,12 +317,17 @@ namespace NestoAPI.Infraestructure.Inventarios
     {
         internal const string SQL_LEER = @"
 SELECT i.NºOrden, RTRIM(i.Empresa), RTRIM(i.Almacén), i.Fecha, RTRIM(i.Número), RTRIM(i.Pasillo), RTRIM(i.Fila), RTRIM(i.Columna),
-    ISNULL(i.StockCalculado, 0), ISNULL(i.StockReal, 0), i.Estado, i.NºTraspaso, RTRIM(i.Usuario)
-FROM dbo.Inventarios i WHERE i.NºOrden = @NumeroOrden";
+    ISNULL(i.StockCalculado, 0), ISNULL(i.StockReal, 0), i.Estado, i.NºTraspaso, RTRIM(i.Usuario), RTRIM(ISNULL(p.Nombre, i.Descripción))
+FROM dbo.Inventarios i
+LEFT JOIN dbo.Productos p ON p.Empresa = i.Empresa AND p.Número = i.Número
+WHERE i.NºOrden = @NumeroOrden";
 
         internal const string SQL_BORRAR = "DELETE FROM dbo.Inventarios WHERE NºOrden = @NumeroOrden AND Estado = 1 AND NºTraspaso IS NULL";
 
         internal const string SQL_ANOTAR = "INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@Tabla, @Anterior, @Nuevo, @Usuario)";
+
+        // Modificaciones (unas 66.000 filas, agrupada por id): lo del día, con la fila borrada en JSON en Anterior.
+        internal const string SQL_BORRADAS = "SELECT Anterior, RTRIM(Usuario), Fecha FROM dbo.Modificaciones WHERE Tabla = @Tabla AND Fecha >= @Desde AND Fecha < @Hasta";
 
         private readonly string cadenaConexion;
 
@@ -201,7 +364,8 @@ FROM dbo.Inventarios i WHERE i.NºOrden = @NumeroOrden";
                             StockReal = Convert.ToInt32(lector.GetValue(9)),
                             Estado = lector.IsDBNull(10) ? 0 : Convert.ToInt32(lector.GetValue(10)),
                             Traspaso = lector.IsDBNull(11) ? (int?)null : Convert.ToInt32(lector.GetValue(11)),
-                            Usuario = Texto(lector, 12)
+                            Usuario = Texto(lector, 12),
+                            Descripcion = Texto(lector, 13)
                         };
                     }
                 }
@@ -223,6 +387,46 @@ FROM dbo.Inventarios i WHERE i.NºOrden = @NumeroOrden";
                 conexion.Dispose();
                 throw;
             }
+        }
+
+        public async Task<List<FilaInventarioBorrada>> Borradas(DateTime dia)
+        {
+            var resultado = new List<FilaInventarioBorrada>();
+            using (var conexion = new SqlConnection(cadenaConexion))
+            {
+                await conexion.OpenAsync().ConfigureAwait(false);
+                using (var comando = new SqlCommand(SQL_BORRADAS, conexion))
+                {
+                    comando.Parameters.Add("@Tabla", SqlDbType.NVarChar, 50).Value = ServicioBorrarFilaInventario.TABLA_MODIFICACIONES;
+                    comando.Parameters.Add("@Desde", SqlDbType.DateTime).Value = dia.Date;
+                    comando.Parameters.Add("@Hasta", SqlDbType.DateTime).Value = dia.Date.AddDays(1);
+                    using (var lector = await comando.ExecuteReaderAsync().ConfigureAwait(false))
+                    {
+                        while (await lector.ReadAsync().ConfigureAwait(false))
+                        {
+                            FilaInventarioBorrar fila = null;
+                            try
+                            {
+                                fila = lector.IsDBNull(0) ? null : JsonConvert.DeserializeObject<FilaInventarioBorrar>(lector.GetString(0));
+                            }
+                            catch (JsonException)
+                            {
+                                // Un rastro que no es JSON: no sale en el aviso.
+                            }
+                            if (fila != null)
+                            {
+                                resultado.Add(new FilaInventarioBorrada
+                                {
+                                    Fila = fila,
+                                    BorradaPor = Texto(lector, 1),
+                                    BorradaEl = lector.GetDateTime(2)
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            return resultado;
         }
 
         private static string Texto(SqlDataReader lector, int columna) =>

@@ -30,6 +30,8 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const string GRUPOS_MEZCLADOS = "GruposMezclados";
         /// <summary>NestoAPI#784 (tiendas): filas con contado 0 de productos con stock: ¿de verdad no hay ninguno o no se ha contado?</summary>
         public const string CONTADO_CERO_CON_STOCK = "ContadoCeroConStock";
+        /// <summary>Épica #784: las filas borradas ese día del recuento del almacén (DELETE api/Inventarios/Filas), para que se vean antes de contabilizar.</summary>
+        public const string FILAS_BORRADAS = "FilasBorradas";
     }
 
     /// <summary>

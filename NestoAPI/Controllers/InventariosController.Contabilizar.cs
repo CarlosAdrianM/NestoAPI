@@ -63,6 +63,7 @@ namespace NestoAPI.Controllers
             {
                 return Content(HttpStatusCode.NotFound, new HttpError(AlmacenNoExiste(empresa, almacen)));
             }
+            await CompletarComprobaciones(comprobaciones, empresa, almacen).ConfigureAwait(false);
             return Ok(comprobaciones);
         }
 
@@ -102,6 +103,7 @@ namespace NestoAPI.Controllers
             }
             if (resultado.Bloqueado != null)
             {
+                await CompletarComprobaciones(resultado.Bloqueado, empresa, almacen).ConfigureAwait(false);
                 return Content(HttpStatusCode.Conflict, resultado.Bloqueado);
             }
             if (!resultado.Contabilizacion.Contabilizados.Any() && !resultado.Contabilizacion.Errores.Any())

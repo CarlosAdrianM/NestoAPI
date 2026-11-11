@@ -40,6 +40,12 @@ namespace NestoAPI.Models.Inventarios
         public int? NºOrden { get; set; }
         /// <summary>Épica #784: el mismo NºOrden, con nombre sin «º», para DELETE api/Inventarios/Filas/{numeroOrden} (null en UbicacionSinRellenar).</summary>
         public int? NumeroOrden => NºOrden;
+        /// <summary>
+        /// Épica #784 (Carlos 11/11/26): quien pregunta puede borrar esta fila con DELETE api/Inventarios/Filas/{NumeroOrden}: es una
+        /// fila pendiente de hoy que sobra (bloqueantes SinUbicacion o FilasDuplicadas) y tiene permiso. Los clientes solo ofrecen
+        /// borrar donde venga a true.
+        /// </summary>
+        public bool SePuedeBorrar { get; set; }
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public int? StockCalculado { get; set; }

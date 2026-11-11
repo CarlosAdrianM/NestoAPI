@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.Inventarios;
 using NestoAPI.Infraestructure.Productos;
 using NestoAPI.Models;
 using NestoAPI.Models.Inventarios;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,8 +20,9 @@ using System.Web.Http.Results;
 namespace NestoAPI.Tests.Infrastructure.Inventarios
 {
     /// <summary>
-    /// Épica #784 (incidencia 1186): DELETE api/Inventarios/Filas/{numeroOrden} borra una fila pendiente; y RellenarUbicacion ya no da
-    /// por rellenada una ubicación que solo tiene la fila de un «Dejar a cero».
+    /// Épica #784 (incidencia 1186; Carlos 11/11/26): DELETE api/Inventarios/Filas/{numeroOrden} solo borra filas de hoy que SOBRAN (sin
+    /// ubicación de un producto que se ubica, o duplicadas), y solo quien tiene permiso; borrar no es «no hay». Y RellenarUbicacion ya
+    /// no da por rellenada una ubicación que solo tiene la fila de un «Dejar a cero».
     /// </summary>
     [TestClass]
     public class InventarioBorrarFilaTests
@@ -30,6 +32,10 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         private IRepositorioBorrarFilaInventario repositorio;
         private IUnidadBorrarFilaInventario unidad;
         private ServicioBorrarFilaInventario servicio;
+        private IServicioContabilizarInventario contabilizar;
+        private List<FilaInventarioPendiente> pendientes;
+        private List<FilaInventarioBorrada> borradas;
+        private Dictionary<string, string> parametros;
 
         [TestInitialize]
         public void Inicializar()
@@ -38,26 +44,67 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
             unidad = A.Fake<IUnidadBorrarFilaInventario>();
             A.CallTo(() => repositorio.Empezar(A<string>._)).Returns(unidad);
             A.CallTo(() => unidad.BorrarSiPendiente(A<int>._)).Returns(1);
+            borradas = new List<FilaInventarioBorrada>();
+            A.CallTo(() => repositorio.Borradas(A<DateTime>._)).ReturnsLazily(() => borradas);
             servicio = new ServicioBorrarFilaInventario(repositorio);
+
+            // Las filas pendientes de hoy en ALG: la de la incidencia 1186 (sin ubicación), una normal y dos duplicadas.
+            pendientes = new List<FilaInventarioPendiente>
+            {
+                Pendiente(948787, null, 3, 1),
+                Pendiente(948790, "001", 3, 0, producto: "27534"),
+                Pendiente(948791, "002", 2, 2, producto: "40245"),
+                Pendiente(948792, "002", 2, 2, producto: "40245")
+            };
+            contabilizar = A.Fake<IServicioContabilizarInventario>();
+            A.CallTo(() => contabilizar.Comprobar(A<string>._, A<string>._, A<DateTime>._))
+                .ReturnsLazily((string e, string a, DateTime f) => ComprobadorInventario.Comprobar(a, f, true, pendientes, Huecos()));
+            parametros = new Dictionary<string, string> { ["Alfredo"] = "1" };
         }
 
-        private static FilaInventarioBorrar Fila(int numero = 948787, string almacen = "ALG", DateTime? fecha = null, int estado = 1, int? traspaso = null,
-            string pasillo = null) => new FilaInventarioBorrar
+        private static FilaInventarioPendiente Pendiente(int numero, string pasillo, int calculado, int real, string producto = "44901") => new FilaInventarioPendiente
+        {
+            NumeroOrden = numero,
+            Producto = producto,
+            Descripcion = "Producto " + producto,
+            Pasillo = pasillo,
+            Fila = pasillo == null ? null : "002",
+            Columna = pasillo == null ? null : "005",
+            StockCalculado = calculado,
+            StockReal = real,
+            Fecha = HOY,
+            Ubicar = true,
+            Usuario = "NUEVAVISION\\Andre",
+            PrecioMedio = 1
+        };
+
+        private static List<UbicacionAlmacenInventario> Huecos() => new List<UbicacionAlmacenInventario>
+        {
+            new UbicacionAlmacenInventario { Pasillo = "001", Fila = "002", Columna = "005", Producto = "27534", Cantidad = 3 },
+            new UbicacionAlmacenInventario { Pasillo = "002", Fila = "002", Columna = "005", Producto = "40245", Cantidad = 2 }
+        };
+
+        private FilaInventarioBorrar Fila(int numero = 948787, string almacen = "ALG", DateTime? fecha = null, int estado = 1, int? traspaso = null)
+        {
+            FilaInventarioPendiente p = pendientes.FirstOrDefault(x => x.NumeroOrden == numero);
+            return new FilaInventarioBorrar
             {
                 NumeroOrden = numero,
                 Empresa = "1",
                 Almacen = almacen,
                 Fecha = fecha ?? HOY.AddHours(10),
-                Producto = "44901",
-                Pasillo = pasillo,
-                Fila = pasillo == null ? null : "002",
-                Columna = pasillo == null ? null : "005",
-                StockCalculado = 3,
-                StockReal = 1,
+                Producto = p?.Producto ?? "44901",
+                Descripcion = p?.Descripcion,
+                Pasillo = p?.Pasillo,
+                Fila = p?.Fila,
+                Columna = p?.Columna,
+                StockCalculado = p?.StockCalculado ?? 3,
+                StockReal = p?.StockReal ?? 1,
                 Estado = estado,
                 Traspaso = traspaso,
-                Usuario = "NUEVAVISION\\Alfredo"
+                Usuario = "NUEVAVISION\\Andre"
             };
+        }
 
         private static IPrincipal Usuario(string nombre, params string[] grupos)
         {
@@ -73,6 +120,8 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
                 Request = new HttpRequestMessage(),
                 Configuration = new HttpConfiguration(),
                 ServicioBorrarFila = servicio,
+                ServicioContabilizar = contabilizar,
+                ParametroBorrarFilas = usuario => parametros.TryGetValue(usuario, out string v) ? v : null,
                 AlmacenDelUsuario = (empresa, usuario) => usuario == "Paloma" ? "REI" : null,
                 Hoy = () => HOY,
                 User = Usuario(nombre, grupos)
@@ -89,50 +138,102 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
             }
         }
 
+        private async Task<NegotiatedContentResult<HttpError>> BorrarConError(int numero, string nombre, params string[] grupos) =>
+            (NegotiatedContentResult<HttpError>)await Controlador(nombre, grupos).DeleteFila(numero);
+
+        // ---------- Qué filas ----------
+
         [TestMethod]
-        public async Task Pendiente_DeHoy_Almacen_204YRastroEnModificaciones()
+        public async Task SinUbicacion_DeHoy_ConPermiso_204YRastroEnJson()
         {
             A.CallTo(() => repositorio.Leer(948787)).Returns(Fila());
 
-            IHttpActionResult resultado = await Controlador("Alfredo", "Almacén").DeleteFila(948787);
+            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(948787)));
 
-            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(resultado));
             A.CallTo(() => unidad.BorrarSiPendiente(948787)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => unidad.Anotar("Inventarios",
-                A<string>.That.Matches(s => s.Contains("948787") && s.Contains("44901") && s.Contains("ALG") && s.Contains("sin ubicación")
-                    && s.Contains("teórico 3") && s.Contains("contado 1")),
-                A<string>.That.Contains("borrada"),
+            A.CallTo(() => unidad.Anotar(ServicioBorrarFilaInventario.TABLA_MODIFICACIONES,
+                A<string>.That.Matches(j => JsonConvert.DeserializeObject<FilaInventarioBorrar>(j).NumeroOrden == 948787
+                    && JsonConvert.DeserializeObject<FilaInventarioBorrar>(j).Almacen == "ALG"),
+                A<string>.That.Matches(s => s.Contains("44901") && s.Contains("sin ubicación") && s.Contains("teórico 3") && s.Contains("contado 1") && s.Contains("Borrada por")),
                 "NUEVAVISION\\Alfredo")).MustHaveHappenedOnceExactly();
             A.CallTo(() => unidad.Confirmar()).MustHaveHappenedOnceExactly();
             A.CallTo(() => repositorio.Empezar("InventarioRellenar:1:ALG")).MustHaveHappenedOnceExactly();
         }
 
-        [TestMethod]
-        public async Task ConUbicacion_BloqueaTambienLaUbicacionYElRastroLaLleva()
+        [DataTestMethod]
+        [DataRow(948790, DisplayName = "El caso de Carlos: fila normal calculado 3, contado 0")]
+        public async Task FilaNormal_409NoSobra_YNoBorra(int numero)
         {
-            A.CallTo(() => repositorio.Leer(948796)).Returns(Fila(948796, pasillo: "001"));
+            A.CallTo(() => repositorio.Leer(numero)).Returns(Fila(numero));
 
-            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(948796)));
+            var resultado = await BorrarConError(numero, "Alfredo", "Almacén");
 
-            A.CallTo(() => unidad.Bloquear("InventarioRellenar:1:ALG:001:002:005")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => unidad.Anotar(A<string>._, A<string>.That.Contains("001-002-005"), A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
+            Assert.AreEqual(ReglaBorrarFilaInventario.MENSAJE_NO_SOBRA, resultado.Content.Message);
+            A.CallTo(() => unidad.BorrarSiPendiente(A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => unidad.Confirmar()).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task NoExiste_404()
+        public async Task FilaNormalContada3De5_409_InclusoParaDireccion()
         {
-            A.CallTo(() => repositorio.Leer(1)).Returns(Task.FromResult<FilaInventarioBorrar>(null));
+            pendientes.Add(Pendiente(948795, "001", 5, 3, producto: "27534b"));
+            A.CallTo(() => repositorio.Leer(948795)).Returns(Fila(948795));
 
-            Assert.AreEqual(HttpStatusCode.NotFound, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(1)));
+            var resultado = await BorrarConError(948795, "Carlos", "Dirección");
+
+            Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
+            Assert.AreEqual(ReglaBorrarFilaInventario.MENSAJE_NO_SOBRA, resultado.Content.Message);
+        }
+
+        [TestMethod]
+        public async Task Duplicada_SeBorraUna_PeroNuncaLaUltima()
+        {
+            A.CallTo(() => repositorio.Leer(948791)).Returns(Fila(948791));
+            A.CallTo(() => repositorio.Leer(948792)).Returns(Fila(948792));
+            A.CallTo(() => unidad.BorrarSiPendiente(948791)).Invokes(() => pendientes.RemoveAll(p => p.NumeroOrden == 948791)).Returns(1);
+
+            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(948791)));
+            var segunda = await BorrarConError(948792, "Alfredo", "Almacén");
+
+            Assert.AreEqual(HttpStatusCode.Conflict, segunda.StatusCode, "la que queda ya no está duplicada");
+            A.CallTo(() => unidad.BorrarSiPendiente(948792)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void RecontadaSinContarYAvisos_NoSonBorrables()
+        {
+            var comprobaciones = new ComprobacionesInventarioDTO
+            {
+                Bloqueantes = { new ComprobacionInventarioDTO { Codigo = CodigosComprobacionInventario.RECONTADA_SIN_CONTAR, Filas = { new FilaComprobacionInventarioDTO { NºOrden = 1, Fecha = HOY } } } },
+                Avisos = { new ComprobacionInventarioDTO { Codigo = CodigosComprobacionInventario.CONTADO_CERO_CON_STOCK, Filas = { new FilaComprobacionInventarioDTO { NºOrden = 2, Fecha = HOY } } } }
+            };
+
+            Assert.IsFalse(ReglaBorrarFilaInventario.EsBorrable(comprobaciones, 1));
+            Assert.IsFalse(ReglaBorrarFilaInventario.EsBorrable(comprobaciones, 2));
+            ReglaBorrarFilaInventario.Marcar(comprobaciones, true, HOY);
+            Assert.IsFalse(comprobaciones.Bloqueantes[0].Filas[0].SePuedeBorrar);
+            Assert.IsFalse(comprobaciones.Avisos[0].Filas[0].SePuedeBorrar);
+        }
+
+        [TestMethod]
+        public async Task DeOtroDia_409_InclusoParaDireccion()
+        {
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(-1)));
+
+            var resultado = await BorrarConError(948787, "Carlos", "Dirección");
+
+            Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
+            StringAssert.Contains(resultado.Content.Message, ReglaBorrarFilaInventario.MENSAJE_SOLO_HOY);
             A.CallTo(() => repositorio.Empezar(A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task Contabilizada_409YNoBorraNiParaDireccion()
+        public async Task Contabilizada_409()
         {
             A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(estado: 2, traspaso: 81350));
 
-            var resultado = (NegotiatedContentResult<HttpError>)await Controlador("Carlos", "Dirección").DeleteFila(948787);
+            var resultado = await BorrarConError(948787, "Carlos", "Dirección");
 
             Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
             StringAssert.Contains(resultado.Content.Message, "contabilizada (traspaso 81350)");
@@ -140,52 +241,15 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         }
 
         [TestMethod]
-        public async Task DeOtroDia_Almacen_403ConMotivoClaro()
+        public async Task NoExiste_404ConMessageSimple()
         {
-            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(-1)));
+            A.CallTo(() => repositorio.Leer(1)).Returns(Task.FromResult<FilaInventarioBorrar>(null));
 
-            var resultado = (NegotiatedContentResult<HttpError>)await Controlador("Alfredo", "Almacén").DeleteFila(948787);
+            var resultado = await BorrarConError(1, "Alfredo", "Almacén");
 
-            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
-            StringAssert.Contains(resultado.Content.Message, "10/11/2026");
-            StringAssert.Contains(resultado.Content.Message, ServicioBorrarFilaInventario.MENSAJE_SOLO_HOY);
+            Assert.AreEqual(HttpStatusCode.NotFound, resultado.StatusCode);
+            Assert.IsFalse(resultado.Content.ContainsKey("MessageDetail"));
             A.CallTo(() => repositorio.Empezar(A<string>._)).MustNotHaveHappened();
-        }
-
-        [TestMethod]
-        public async Task DeOtroDia_Direccion_204()
-        {
-            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(-3)));
-
-            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Carlos", "Dirección").DeleteFila(948787)));
-        }
-
-        [TestMethod]
-        public async Task TiendaDeOtroAlmacen_403()
-        {
-            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(almacen: "ALG"));
-
-            var resultado = (NegotiatedContentResult<HttpError>)await Controlador("Paloma", "Tiendas").DeleteFila(948787);
-
-            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
-            StringAssert.Contains(resultado.Content.Message, "REI");
-            A.CallTo(() => unidad.BorrarSiPendiente(A<int>._)).MustNotHaveHappened();
-        }
-
-        [TestMethod]
-        public async Task TiendaDeSuAlmacen_204()
-        {
-            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(almacen: "REI"));
-
-            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Paloma", "Tiendas").DeleteFila(948787)));
-        }
-
-        [TestMethod]
-        public async Task Compras_NoCuenta_403()
-        {
-            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila());
-
-            Assert.AreEqual(HttpStatusCode.Forbidden, Codigo(await Controlador("Maria", "Compras").DeleteFila(948787)));
         }
 
         [TestMethod]
@@ -196,21 +260,93 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
 
             Assert.AreEqual(HttpStatusCode.Conflict, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(948787)));
             A.CallTo(() => unidad.Confirmar()).MustNotHaveHappened();
-            A.CallTo(() => unidad.Anotar(A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
-        // ---------- Comprobaciones: cada fila lleva su NumeroOrden ----------
+        // ---------- Quién ----------
 
         [TestMethod]
-        public void Comprobaciones_SinUbicacion_LaFilaLlevaNumeroOrden()
+        public async Task AlmacenSinElParametro_403()
         {
-            ComprobacionesInventarioDTO comprobaciones = ComprobadorInventario.Comprobar("ALG", HOY, true,
-                new[] { new FilaInventarioPendiente { NumeroOrden = 948787, Producto = "44901", Fecha = HOY, Ubicar = true, StockReal = 1, StockCalculado = 3 } },
-                new List<UbicacionAlmacenInventario>());
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila());
 
-            ComprobacionInventarioDTO sinUbicacion = comprobaciones.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.SIN_UBICACION);
-            Assert.AreEqual(948787, sinUbicacion.Filas.Single().NumeroOrden);
-            Assert.AreEqual(948787, sinUbicacion.Filas.Single().NºOrden);
+            var resultado = await BorrarConError(948787, "Andre", "Almacén");
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual(ReglaBorrarFilaInventario.MENSAJE_SIN_PERMISO, resultado.Content.Message);
+            A.CallTo(() => repositorio.Empezar(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ParametroACero_403()
+        {
+            parametros["Andre"] = "0";
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila());
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, Codigo(await Controlador("Andre", "Almacén").DeleteFila(948787)));
+        }
+
+        [TestMethod]
+        public async Task Administracion_SinParametro_204()
+        {
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila());
+
+            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Pilar", "Administración").DeleteFila(948787)));
+        }
+
+        [TestMethod]
+        public async Task TiendaDeOtroAlmacen_403AunqueTengaElParametro()
+        {
+            parametros["Paloma"] = "1";
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(almacen: "ALG"));
+
+            var resultado = await BorrarConError(948787, "Paloma", "Tiendas");
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            StringAssert.Contains(resultado.Content.Message, "REI");
+        }
+
+        // ---------- Comprobaciones: NumeroOrden, SePuedeBorrar y filas borradas ----------
+
+        private async Task<ComprobacionesInventarioDTO> Comprobaciones(string nombre, params string[] grupos) =>
+            ((OkNegotiatedContentResult<ComprobacionesInventarioDTO>)await Controlador(nombre, grupos).GetComprobaciones("ALG", HOY)).Content;
+
+        [TestMethod]
+        public async Task Comprobaciones_ConPermiso_SePuedeBorrarSoloEnSinUbicacionYDuplicadas()
+        {
+            ComprobacionesInventarioDTO c = await Comprobaciones("Alfredo", "Almacén");
+
+            FilaComprobacionInventarioDTO sinUbicacion = c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.SIN_UBICACION).Filas.Single();
+            Assert.AreEqual(948787, sinUbicacion.NumeroOrden);
+            Assert.IsTrue(sinUbicacion.SePuedeBorrar);
+            Assert.IsTrue(c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.FILAS_DUPLICADAS).Filas.All(f => f.SePuedeBorrar));
+            Assert.IsTrue(c.Bloqueantes.Where(b => !ReglaBorrarFilaInventario.CODIGOS_BORRABLES.Contains(b.Codigo)).SelectMany(b => b.Filas).All(f => !f.SePuedeBorrar));
+            Assert.IsTrue(c.Avisos.SelectMany(a => a.Filas).All(f => !f.SePuedeBorrar));
+        }
+
+        [TestMethod]
+        public async Task Comprobaciones_SinPermiso_NingunaSePuedeBorrar()
+        {
+            ComprobacionesInventarioDTO c = await Comprobaciones("Andre", "Almacén");
+
+            Assert.IsTrue(c.Bloqueantes.Concat(c.Avisos).SelectMany(b => b.Filas).All(f => !f.SePuedeBorrar));
+        }
+
+        [TestMethod]
+        public async Task Comprobaciones_FilasBorradasHoy_AvisoConQuienYCuando()
+        {
+            borradas.Add(new FilaInventarioBorrada { Fila = Fila(948700), BorradaPor = "NUEVAVISION\\Alfredo", BorradaEl = HOY.AddHours(12) });
+            borradas.Add(new FilaInventarioBorrada { Fila = Fila(948701, almacen: "REI"), BorradaPor = "NUEVAVISION\\Paloma", BorradaEl = HOY.AddHours(12) });
+
+            ComprobacionesInventarioDTO c = await Comprobaciones("Alfredo", "Almacén");
+
+            ComprobacionInventarioDTO aviso = c.Avisos.Single(a => a.Codigo == CodigosComprobacionInventario.FILAS_BORRADAS);
+            StringAssert.StartsWith(aviso.Titulo, "Filas borradas hoy del recuento (1)");
+            FilaComprobacionInventarioDTO linea = aviso.Filas.Single();
+            Assert.IsNull(linea.NºOrden);
+            Assert.IsFalse(linea.SePuedeBorrar);
+            Assert.AreEqual("NUEVAVISION\\Alfredo", linea.Usuario);
+            Assert.AreEqual(HOY.AddHours(12), linea.Fecha);
+            Assert.AreEqual(3, linea.StockCalculado);
         }
 
         // ---------- RellenarUbicacion tras un «Dejar a cero» ----------
