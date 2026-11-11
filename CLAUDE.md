@@ -366,6 +366,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   anterior a hoy y de hace como mucho `DIAS_MAXIMOS_ATRAS` (15). Cómo: `ServicioPrecios.ParaDia(dia)` (instancia, sin estáticos);
   el motor de precios y las sugerencias siguen con hoy. Regalos por importe con día: por día inclusive.
 
+### Embudo de Odoo: bloque diario (11/11/26)
+- Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid
+  (`EmbudoBloqueDiarioJobsService`): el siguiente bloque NV-AAAA-MM-NN (NN vuelve a 01 cada mes) de 50 por `ServicioEmbudoClientes.Republicar`
+  (el mismo camino que `POST api/Clientes/Sync/Republicar`: ensayo y, si llena el bloque, de verdad). Si hoy ya hay un bloque, no lanza.
+  Menos de 50, ninguno, sin tabla o fallo → no lanza, ELMAH y campana a Dirección. Interruptor: ParametrosUsuario «(defecto)»
+  `EmbudoBloqueDiario` = 1 (sin la fila, apagado; `Scripts/EmbudoBloqueDiario_Interruptor.sql`).
+
 ### Correos mandados a mano a nombre de quien los manda (sugerencia 1167, 11/11/26)
 - Pedido, presupuesto y mandato (`GestorEnvioDocumentosCorreo`) y facturas A MANO (`GestorFacturas.EnviarFacturasACorreo`, vía
   `RemitenteDelUsuario`, que solo pone `FacturasController`): From con la MISMA dirección de la serie (Office 365 autenticado rechaza

@@ -867,6 +867,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'festivos-sin-cargar' configurado (día 1 de cada mes a las 9:00)");
 
+            // Embudo de Odoo (Carlos 11/11/26): TODOS los días a las 7:00 de Madrid, el siguiente bloque de 50 (NV-AAAA-MM-NN), por el
+            // mismo camino que el lanzamiento a mano. Solo con ParametrosUsuario «(defecto)» EmbudoBloqueDiario = 1.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.JOB_ID,
+                () => Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.Lanzar(),
+                Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.CRON, // Cron: todos los días a las 7:00
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'embudo-bloque-diario' configurado (todos los días a las 7:00)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

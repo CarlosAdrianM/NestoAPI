@@ -59,6 +59,15 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         Task<List<EstadoSiembraEmbudo>> EstadoSiembra(IList<string> clientes);
         /// <summary>Mete las filas que no estuvieran ya (de clientes que existen), como ya enviadas. Devuelve cuántas entraron.</summary>
         Task<int> Sembrar(IList<FilaSiembraEmbudo> filas, string usuario);
+        /// <summary>Embudo diario: los bloques con alguna fila desde ese día (nombre y cuándo se lanzaron). Sin tabla, vacío.</summary>
+        Task<List<BloqueEmbudo>> LeerBloquesDesde(DateTime desde);
+    }
+
+    /// <summary>Embudo diario: un bloque del registro y su primera fila.</summary>
+    public class BloqueEmbudo
+    {
+        public string Bloque { get; set; }
+        public DateTime Fecha { get; set; }
     }
 
     public class RepositorioClientesEmbudoSql : IRepositorioClientesEmbudo
@@ -212,6 +221,21 @@ SELECT COUNT(*) FROM @nuevos;";
                 List<int> resultado = await db.Database.SqlQuery<int>(SqlRegistrar(clientes.Count), parametros.ToArray())
                     .ToListAsync().ConfigureAwait(false);
                 return resultado.FirstOrDefault();
+            }
+        }
+
+        internal const string SQL_BLOQUES_DESDE = HAY_TABLA +
+            "SELECT RTRIM(Bloque) AS Bloque, MIN(Fecha) AS Fecha FROM dbo.ClientesEmbudo WITH (NOLOCK) " +
+            "WHERE Empresa = @empresa AND Fecha >= @desde GROUP BY Bloque";
+
+        public async Task<List<BloqueEmbudo>> LeerBloquesDesde(DateTime desde)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return await db.Database.SqlQuery<BloqueEmbudo>(SQL_BLOQUES_DESDE,
+                    new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = EMPRESA },
+                    new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde })
+                    .ToListAsync().ConfigureAwait(false);
             }
         }
 
