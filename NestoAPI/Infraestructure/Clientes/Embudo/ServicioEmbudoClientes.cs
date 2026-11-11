@@ -90,7 +90,9 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             this.repositorio = repositorio;
         }
 
-        public async Task<ResultadoRepublicarEmbudo> Republicar(PeticionRepublicarEmbudo peticion, string usuario)
+        /// <param name="maximoPermitido">El tope del bloque: <see cref="MAXIMO_POR_BLOQUE"/> a mano; el job diario (Carlos 11/11/26)
+        /// admite hasta su <see cref="EmbudoBloqueDiarioJobsService.TAMANO_MAXIMO"/>.</param>
+        public async Task<ResultadoRepublicarEmbudo> Republicar(PeticionRepublicarEmbudo peticion, string usuario, int maximoPermitido = MAXIMO_POR_BLOQUE)
         {
             if (peticion == null)
             {
@@ -110,9 +112,9 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 throw new PeticionEmbudoNoValidaException($"«{RepositorioClientesEmbudoSql.BLOQUE_SIEMBRA}» está reservado para la siembra del registro.");
             }
             int maximo = peticion.Maximo ?? MAXIMO_POR_BLOQUE;
-            if (maximo < 1 || maximo > MAXIMO_POR_BLOQUE)
+            if (maximo < 1 || maximo > maximoPermitido)
             {
-                throw new PeticionEmbudoNoValidaException($"El máximo tiene que estar entre 1 y {MAXIMO_POR_BLOQUE}: el embudo se llena poco a poco.");
+                throw new PeticionEmbudoNoValidaException($"El máximo tiene que estar entre 1 y {maximoPermitido}: el embudo se llena poco a poco.");
             }
             List<short> estados = peticion.Estados == null ? ESTADOS_POR_DEFECTO.ToList() : peticion.Estados.Distinct().ToList();
             if (estados.Count == 0)

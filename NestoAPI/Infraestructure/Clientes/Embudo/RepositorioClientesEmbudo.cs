@@ -21,6 +21,8 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         /// <summary>Tiene una fila de Nesto_sync sin sincronizar.</summary>
         public bool PendienteSincronizar { get; set; }
         public DateTime? UltimoPedido { get; set; }
+        /// <summary>El alta más antigua de sus contactos (para ordenar a los que nunca han comprado).</summary>
+        public DateTime? FechaAlta { get; set; }
     }
 
     /// <summary>Una fila para sembrar el registro con clientes que ya pasaron por el embudo de Odoo por otra puerta.</summary>
@@ -47,8 +49,9 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
     public interface IRepositorioClientesEmbudo
     {
         Task<bool> HayTabla();
-        /// <summary>Los clientes que cumplen las reglas 1-4, en el orden de la republicación (sin pedidos primero, luego el último
-        /// pedido más antiguo, luego Nº de cliente), marcando los ya enviados y los pendientes de sincronizar.</summary>
+        /// <summary>Los clientes que cumplen las reglas 1-4, en el orden de la republicación (Carlos 11/11/26: los más recientes
+        /// primero, que rebotan menos: el último pedido más reciente; después los que nunca han comprado, el alta más reciente; al final
+        /// los más antiguos), marcando los ya enviados y los pendientes de sincronizar.</summary>
         Task<List<CandidatoEmbudo>> LeerCandidatos(string vendedor, IList<short> estados, bool soloConCorreo);
         /// <summary>En una transacción: los mete en el registro con su bloque (los que no estuvieran) y encola esos en Nesto_sync.
         /// Devuelve cuántos entraron.</summary>
@@ -114,7 +117,7 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             return $@"
 SET NOCOUNT ON;
 IF OBJECT_ID(N'tempdb..#AptosEmbudo') IS NOT NULL DROP TABLE #AptosEmbudo;
-SELECT c.[Nº Cliente] AS Cliente, COUNT(*) AS ContactosActivos
+SELECT c.[Nº Cliente] AS Cliente, COUNT(*) AS ContactosActivos, MIN(c.FechaAlta) AS FechaAlta
 INTO #AptosEmbudo
 FROM Clientes c WITH (NOLOCK)
 WHERE c.Empresa = @empresa AND c.Estado >= 0
@@ -127,9 +130,10 @@ WHERE EXISTS (SELECT 1 FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)
               INNER JOIN Clientes c WITH (NOLOCK) ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto
               WHERE v.Empresa = @empresa AND v.Cliente = a.Cliente AND c.Estado >= 0 AND v.Vendedor <> @vendedorGeneral);
 
-SELECT RTRIM(t.Cliente) AS Cliente, t.Contactos, t.ContactosActivos, t.PersonasConCorreo, t.YaEnviado, t.PendienteSincronizar, t.UltimoPedido
+SELECT RTRIM(t.Cliente) AS Cliente, t.Contactos, t.ContactosActivos, t.PersonasConCorreo, t.YaEnviado, t.PendienteSincronizar, t.UltimoPedido,
+       t.FechaAlta
 FROM (
-    SELECT a.Cliente, a.ContactosActivos,
+    SELECT a.Cliente, a.ContactosActivos, a.FechaAlta,
         (SELECT COUNT(*) FROM Clientes c WITH (NOLOCK) WHERE c.Empresa = @empresa AND c.[Nº Cliente] = a.Cliente) AS Contactos,
         (SELECT COUNT(*) FROM PersonasContactoCliente p WITH (NOLOCK)
          INNER JOIN Clientes c WITH (NOLOCK) ON c.Empresa = p.Empresa AND c.[Nº Cliente] = p.[NºCliente] AND c.Contacto = p.Contacto
@@ -147,7 +151,7 @@ FROM (
     FROM #AptosEmbudo a
 ) t
 WHERE @soloConCorreo = 0 OR t.PersonasConCorreo > 0
-ORDER BY CASE WHEN t.UltimoPedido IS NULL THEN 0 ELSE 1 END, t.UltimoPedido, LEN(t.Cliente), t.Cliente;
+ORDER BY CASE WHEN t.UltimoPedido IS NULL THEN 1 ELSE 0 END, t.UltimoPedido DESC, t.FechaAlta DESC, LEN(t.Cliente) DESC, t.Cliente DESC;
 
 DROP TABLE #AptosEmbudo;";
         }

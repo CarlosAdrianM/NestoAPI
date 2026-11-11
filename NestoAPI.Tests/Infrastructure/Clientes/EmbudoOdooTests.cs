@@ -343,13 +343,15 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
-        public void SqlCandidatos_ParametrosDeLosEstadosYOrdenSinPedidosPrimero()
+        public void SqlCandidatos_ParametrosDeLosEstadosYOrdenLosMasRecientesPrimero()
         {
             string sql = RepositorioClientesEmbudoSql.SqlCandidatos(3);
 
             StringAssert.Contains(sql, "c.Estado IN (@e0, @e1, @e2)");
-            // Desempate por Nº de cliente en orden numérico (LEN ignora los espacios del char(10))
-            StringAssert.Contains(sql, "ORDER BY CASE WHEN t.UltimoPedido IS NULL THEN 0 ELSE 1 END, t.UltimoPedido, LEN(t.Cliente), t.Cliente");
+            // Carlos (11/11/26): los más recientes primero (rebotan menos): último pedido más reciente; después los que nunca han
+            // comprado, el alta más reciente; desempate por Nº de cliente numérico descendente (LEN ignora los espacios del char(10))
+            StringAssert.Contains(sql, "ORDER BY CASE WHEN t.UltimoPedido IS NULL THEN 1 ELSE 0 END, t.UltimoPedido DESC, t.FechaAlta DESC, LEN(t.Cliente) DESC, t.Cliente DESC");
+            StringAssert.Contains(sql, "MIN(c.FechaAlta) AS FechaAlta");
             StringAssert.Contains(sql, "l.Estado >= @pendiente");
             StringAssert.Contains(sql, "v.Vendedor <> @vendedorGeneral");
             StringAssert.Contains(sql, "p.EnviarBoletin = 1");

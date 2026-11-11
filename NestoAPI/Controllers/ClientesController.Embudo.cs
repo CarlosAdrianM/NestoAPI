@@ -73,5 +73,52 @@ namespace NestoAPI.Controllers
                 return BadRequest(ex.Message);
             }
         }
+
+        /// <summary>Embudo diario: los parámetros del job (sustituibles en los tests).</summary>
+        internal IParametrosEmbudoDiario ParametrosEmbudoDiario { get; set; } = new ParametrosEmbudoDiarioEF();
+
+        // GET api/Clientes/Embudo/Configuracion
+        /// <summary>
+        /// Embudo diario (job «embudo-bloque-diario», 7:00): { Encendido, TamanoBloque, UltimoBloque, FechaUltimoBloque }. Solo
+        /// Dirección o Informática.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Clientes/Embudo/Configuracion")]
+        [ResponseType(typeof(ConfiguracionEmbudoDiarioDTO))]
+        public async Task<IHttpActionResult> GetConfiguracionEmbudo()
+        {
+            if (!PuedeUsarEmbudo(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_EMBUDO_SIN_PERMISO);
+            }
+            return Ok(await new ServicioConfiguracionEmbudoDiario(ParametrosEmbudoDiario, RepositorioEmbudo).Leer().ConfigureAwait(false));
+        }
+
+        // PUT api/Clientes/Embudo/Configuracion   { "Encendido": true, "TamanoBloque": 80 }
+        /// <summary>
+        /// Embudo diario: enciende/apaga el job y cambia el tamaño del bloque (1-100) sin publicar ni tocar SQL. Lo que no venga no se
+        /// toca; crea la fila del parámetro si no existe y deja quién y cuándo. Solo Dirección o Informática. Devuelve la configuración.
+        /// </summary>
+        [HttpPut]
+        [Authorize]
+        [Route("api/Clientes/Embudo/Configuracion")]
+        [ResponseType(typeof(ConfiguracionEmbudoDiarioDTO))]
+        public async Task<IHttpActionResult> PutConfiguracionEmbudo([FromBody] CambioConfiguracionEmbudoDiarioDTO cambio)
+        {
+            if (!PuedeUsarEmbudo(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_EMBUDO_SIN_PERMISO);
+            }
+            try
+            {
+                return Ok(await new ServicioConfiguracionEmbudoDiario(ParametrosEmbudoDiario, RepositorioEmbudo)
+                    .Cambiar(cambio, User?.Identity?.Name).ConfigureAwait(false));
+            }
+            catch (PeticionEmbudoNoValidaException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
     }
 }

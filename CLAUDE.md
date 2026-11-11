@@ -372,7 +372,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (el mismo camino que `POST api/Clientes/Sync/Republicar`: ensayo y, si llena el bloque, de verdad). Si hoy ya hay un bloque, no lanza.
   Sin tabla o si falla la consulta o el lanzamiento → no lanza, ELMAH y campana a Dirección. Menos de 50 pero alguno → lanza con
   los que haya, sin aviso (agotada la cola entran unos 45 al mes); ninguno → no lanza, solo ELMAH. Interruptor: ParametrosUsuario «(defecto)»
-  `EmbudoBloqueDiario` = 1 (sin la fila, apagado; `Scripts/EmbudoBloqueDiario_Interruptor.sql`).
+  `EmbudoBloqueDiario` = 1 (sin la fila, apagado) y tamaño `EmbudoTamanoBloque` (sin fila o no válido, 50; tope 100 por Office 365, se recorta y se
+  registra); los crea `Scripts/EmbudoBloqueDiario_Interruptor.sql` (encendido, 50). Se ven y cambian con GET/PUT
+  `api/Clientes/Embudo/Configuracion` (Dirección/Informática; Usuario2 + fila en Modificaciones). El lanzamiento a mano sigue topado en 50. Orden (manual y job, el mismo `SqlCandidatos`, 11/11/26): los más
+  recientes primero (último pedido DESC; luego los que nunca compraron por FechaAlta DESC), los antiguos al final (rebotan más).
 
 ### Eventos: candidatos a invitar, en MODO SOMBRA (NestoAPI#850, 11/11/26)
 - Solo se recogen datos (nada visible; cortes 2-4 en la issue). `dbo.EventosCandidatos` (fuera del EDMX, `Scripts/EventosCandidatosSombra.sql`):

@@ -24,12 +24,26 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         private IServicioNotificacionesPush notificaciones;
         private List<Exception> registrados;
         private List<BloqueEmbudo> bloques;
-        private bool encendido;
+        private ParametrosFalsos parametros;
+
+        private class ParametrosFalsos : IParametrosEmbudoDiario
+        {
+            public Dictionary<string, string> Valores { get; } = new Dictionary<string, string>();
+            public List<string> Escritos { get; } = new List<string>();
+            public string Leer(string clave) => Valores.TryGetValue(clave, out string v) ? v : null;
+            public Task Escribir(string clave, string valor, string usuario)
+            {
+                Valores[clave] = valor;
+                Escritos.Add($"{clave}={valor} por {usuario}");
+                return Task.CompletedTask;
+            }
+        }
 
         [TestInitialize]
         public void Setup()
         {
-            encendido = true;
+            parametros = new ParametrosFalsos();
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_INTERRUPTOR] = "1";
             registrados = new List<Exception>();
             bloques = new List<BloqueEmbudo>
             {
@@ -50,7 +64,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                 .Returns(Enumerable.Range(1, cuantos).Select(i => new CandidatoEmbudo { Cliente = (40000 + i).ToString() }).ToList());
 
         private EmbudoBloqueDiarioJobsService Servicio()
-            => new EmbudoBloqueDiarioJobsService(repo, () => encendido, () => new List<string> { "Carlos", "NUEVAVISION\\Laura" }, notificaciones,
+            => new EmbudoBloqueDiarioJobsService(repo, parametros, () => new List<string> { "Carlos", "NUEVAVISION\\Laura" }, notificaciones,
                 ex => registrados.Add(ex));
 
         private void NoSeHaLanzado()
@@ -116,7 +130,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         [TestMethod]
         public async Task Lanzar_ConElInterruptorApagado_NoHaceNada()
         {
-            encendido = false;
+            parametros.Valores.Remove(EmbudoBloqueDiarioJobsService.PARAMETRO_INTERRUPTOR); // sin fila: apagado
 
             ResultadoBloqueDiarioEmbudo r = await Servicio().LanzarAsync(HOY);
 
@@ -179,6 +193,93 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Fallo, await Servicio().LanzarAsync(HOY));
             NoSeHaLanzado();
             SeHaAvisadoADireccion();
+        }
+
+        [TestMethod]
+        public async Task Lanzar_ElInterruptorACeroTambienEsApagado()
+        {
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_INTERRUPTOR] = "0";
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Apagado, await Servicio().LanzarAsync(HOY));
+            NoSeHaLanzado();
+        }
+
+        [TestMethod]
+        public async Task Lanzar_ConElTamanoDeLaBD_LanzaEseTamano()
+        {
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO] = "80";
+            Candidatos(200);
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, await Servicio().LanzarAsync(HOY));
+            A.CallTo(() => repo.Registrar("NV-2026-11-03", A<IList<string>>.That.Matches(c => c.Count == 80), A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Lanzar_TamanoPorEncimaDelMaximo_SeRecortaYSeRegistra()
+        {
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO] = "9000";
+            Candidatos(600);
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, await Servicio().LanzarAsync(HOY));
+            A.CallTo(() => repo.Registrar(A<string>._, A<IList<string>>.That.Matches(c => c.Count == EmbudoBloqueDiarioJobsService.TAMANO_MAXIMO), A<string>._))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, registrados.Count);
+        }
+
+        [TestMethod]
+        public void TamanoBloque_SinFilaONoValido_Cincuenta()
+        {
+            Assert.AreEqual(50, EmbudoBloqueDiarioJobsService.TamanoBloque(null));
+            Assert.AreEqual(50, EmbudoBloqueDiarioJobsService.TamanoBloque("abc"));
+            Assert.AreEqual(50, EmbudoBloqueDiarioJobsService.TamanoBloque("0"));
+            Assert.AreEqual(1, EmbudoBloqueDiarioJobsService.TamanoBloque(" 1 "));
+            Assert.AreEqual(100, EmbudoBloqueDiarioJobsService.TamanoBloque("101"));
+            Assert.AreEqual(100, EmbudoBloqueDiarioJobsService.TamanoBloque("500"));
+        }
+
+        [TestMethod]
+        public async Task Lanzar_ElLanzamientoAManoSigueTopadoEnCincuenta()
+        {
+            await Assert.ThrowsExceptionAsync<PeticionEmbudoNoValidaException>(() => new ServicioEmbudoClientes(repo)
+                .Republicar(new PeticionRepublicarEmbudo { Bloque = "B", Maximo = 51 }, "Carlos"));
+        }
+
+        // ---------------------------------------------------------------- Configuración (GET/PUT api/Clientes/Embudo/Configuracion)
+
+        [TestMethod]
+        public async Task Configuracion_Leer_EncendidoTamanoYUltimoBloque()
+        {
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO] = "70";
+            bloques.Add(new BloqueEmbudo { Bloque = RepositorioClientesEmbudoSql.BLOQUE_SIEMBRA, Fecha = HOY.AddHours(9) });
+
+            ConfiguracionEmbudoDiarioDTO c = await new ServicioConfiguracionEmbudoDiario(parametros, repo).Leer();
+
+            Assert.IsTrue(c.Encendido);
+            Assert.AreEqual(70, c.TamanoBloque);
+            Assert.AreEqual("NV-2026-11-02", c.UltimoBloque, "La siembra no es un bloque");
+            Assert.AreEqual(new DateTime(2026, 11, 11, 12, 35, 0), c.FechaUltimoBloque);
+        }
+
+        [TestMethod]
+        public async Task Configuracion_Cambiar_EscribeLoQueVieneConQuienLoCambia()
+        {
+            ConfiguracionEmbudoDiarioDTO c = await new ServicioConfiguracionEmbudoDiario(parametros, repo)
+                .Cambiar(new CambioConfiguracionEmbudoDiarioDTO { Encendido = false, TamanoBloque = 80 }, "NUEVAVISION\\Carlos");
+
+            Assert.IsFalse(c.Encendido);
+            Assert.AreEqual(80, c.TamanoBloque);
+            CollectionAssert.AreEqual(new[] { "EmbudoBloqueDiario=0 por NUEVAVISION\\Carlos", "EmbudoTamanoBloque=80 por NUEVAVISION\\Carlos" }, parametros.Escritos);
+        }
+
+        [TestMethod]
+        public async Task Configuracion_Cambiar_TamanoFueraDeLimitesOVacio_400SinEscribir()
+        {
+            var servicio = new ServicioConfiguracionEmbudoDiario(parametros, repo);
+
+            await Assert.ThrowsExceptionAsync<PeticionEmbudoNoValidaException>(() => servicio.Cambiar(new CambioConfiguracionEmbudoDiarioDTO { TamanoBloque = 101 }, "Carlos"));
+            await Assert.ThrowsExceptionAsync<PeticionEmbudoNoValidaException>(() => servicio.Cambiar(new CambioConfiguracionEmbudoDiarioDTO { TamanoBloque = 0 }, "Carlos"));
+            await Assert.ThrowsExceptionAsync<PeticionEmbudoNoValidaException>(() => servicio.Cambiar(new CambioConfiguracionEmbudoDiarioDTO(), "Carlos"));
+            Assert.AreEqual(0, parametros.Escritos.Count);
         }
     }
 }
