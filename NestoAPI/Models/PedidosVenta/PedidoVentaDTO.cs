@@ -55,6 +55,26 @@ namespace NestoAPI.Models.PedidosVenta
         public string plazosPago { get; set; }
         public Nullable<System.DateTime> primerVencimiento { get; set; }
         public string ruta { get; set; }
+
+        private bool? recogeEnTiendaRecibido;
+        /// <summary>
+        /// NestoAPI#571: «Recoge en tienda». No hay columna: la ruta es la verdad (AM, ALC o REI, <see
+        /// cref="Infraestructure.PedidosVenta.TiendasRecogida.EsRutaDeRecogida"/>).
+        /// <para>Al LEER siempre trae valor, calculado de <see cref="ruta"/> (GET, respuesta del POST y del PUT y cualquier
+        /// otro sitio que devuelva el DTO). Al ESCRIBIR, lo que manda el cliente se guarda aparte (<see
+        /// cref="RecogeEnTiendaRecibido"/>): null = el cliente no sabe nada del dato y no se toca nada (Nesto y la NestoApp
+        /// publicadas). Con valor, el POST y el PUT lo traducen a ruta (<see cref="Infraestructure.PedidosVenta.RecogeEnTienda"/>).</para>
+        /// </summary>
+        public bool? RecogeEnTienda
+        {
+            get => Infraestructure.PedidosVenta.TiendasRecogida.EsRutaDeRecogida(ruta);
+            set => recogeEnTiendaRecibido = value;
+        }
+
+        /// <summary>NestoAPI#571: lo que mandó el cliente en <see cref="RecogeEnTienda"/> (null si no lo mandó).</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool? RecogeEnTiendaRecibido => recogeEnTiendaRecibido;
+
         public string serie { get; set; }
         public bool servirJunto { get; set; }
         /// <summary>NestoAPI#482: modo de servicio (1..4, ver Constantes.Pedidos.ModosServicio; 5 = retenido, #698). Null = el

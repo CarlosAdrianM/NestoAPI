@@ -127,5 +127,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return TIENDAS.FirstOrDefault(t =>
                 string.Equals(t.Almacen, almacen.Trim(), StringComparison.OrdinalIgnoreCase));
         }
+
+        /// <summary>
+        /// NestoAPI#571: si la ruta es de recogida en tienda (AM, ALC o REI). Es LA regla de «Recoge en tienda»: no hay
+        /// columna aparte, la ruta es la verdad. Tolera el relleno de los char y las minúsculas.
+        /// </summary>
+        public static bool EsRutaDeRecogida(string ruta)
+        {
+            if (string.IsNullOrWhiteSpace(ruta))
+            {
+                return false;
+            }
+            string limpia = ruta.Trim();
+            return TIENDAS.Any(t => string.Equals(t.Ruta, limpia, StringComparison.OrdinalIgnoreCase));
+        }
     }
 }

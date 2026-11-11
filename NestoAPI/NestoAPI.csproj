@@ -1116,6 +1116,7 @@
     <Compile Include="Infraestructure\PedidosVenta\GeneradorExcelPendientesEntregar.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPortes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TiendasRecogida.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\RecogeEnTienda.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TransicionPresupuesto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AvisoFechaEntregaLejana.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorFechaEntrega.cs" />

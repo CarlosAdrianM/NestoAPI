@@ -1318,6 +1318,13 @@ namespace NestoAPI.Controllers
             }
             // NestoAPI#830: fuera de la empresa 1, la ruta que vale es la de la ficha de la empresa 1 (antes de las fechas de entrega)
             _ = RutaQueVale.AjustarPedido(db, pedido);
+            // NestoAPI#571: «Recoge en tienda» contra la ruta GUARDADA; si cambia, la ruta nueva va ANTES de la fecha de entrega
+            // y del recálculo de portes y comisión contra reembolso (que la quitan al marcar y la ponen al desmarcar).
+            string errorRecogeEnTienda = await AplicarRecogeEnTiendaAlModificar(pedido, cabPedidoVta).ConfigureAwait(true);
+            if (errorRecogeEnTienda != null)
+            {
+                return BadRequest(errorRecogeEnTienda);
+            }
             // NestoAPI#764: el código postal de entrega, solo si el pedido va por ruta interna (para su día de reparto)
             string codigoPostalRutaInterna = this.gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta);
             // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae
@@ -2784,6 +2791,17 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(motivoNota);
             }
+            // NestoAPI#571: «Recoge en tienda» se traduce a ruta (ALG → AM, ALC → ALC, REI → REI) ANTES de los portes, la
+            // comisión contra reembolso y la fecha de entrega, que salen de la ruta. Sin la marca (null), nada.
+            RecogeEnTienda.Resultado recogeEnTienda = RecogeEnTienda.AlCrear(pedido.RecogeEnTiendaRecibido, pedido.notaEntrega, pedido.Lineas);
+            if (recogeEnTienda.Error != null)
+            {
+                return BadRequest(recogeEnTienda.Error);
+            }
+            if (recogeEnTienda.Ruta != null)
+            {
+                pedido.ruta = recogeEnTienda.Ruta;
+            }
             // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae (los presupuestos no lo exigen)
             string sinSuPedido = await MotivoSuPedidoObligatorio(pedido);
             if (sinSuPedido != null)
@@ -3777,6 +3795,36 @@ namespace NestoAPI.Controllers
 
             var resultado = GestorPortes.CalcularPortes(input);
             return Ok(resultado);
+        }
+
+        /// <summary>
+        /// NestoAPI#571: en el PUT, si «Recoge en tienda» cambia respecto a la ruta guardada, pone en el DTO la ruta nueva
+        /// (las reglas, en <see cref="RecogeEnTienda"/>). Devuelve el texto del 400, o null. Solo lee el pedido (líneas,
+        /// envíos, picking en curso) cuando hay cambio: sin la marca o con la misma, no cuesta nada.
+        /// </summary>
+        private async Task<string> AplicarRecogeEnTiendaAlModificar(PedidoVentaDTO pedido, CabPedidoVta cabPedidoVta)
+        {
+            bool? marcar = RecogeEnTienda.CambioAlModificar(pedido.RecogeEnTiendaRecibido,
+                cabPedidoVta.NotaEntrega || pedido.notaEntrega, cabPedidoVta.Ruta);
+            if (marcar == null)
+            {
+                return null;
+            }
+            List<LinPedidoVta> lineasGuardadas = db.LinPedidoVtas
+                .Where(l => l.Empresa == pedido.empresa && l.Número == pedido.numero).ToList();
+            List<EnviosAgencia> enviosPedido = db.EnviosAgencias
+                .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero).ToList();
+            int? pickingEnCurso = await (LeerPickingEnCurso ?? LeerPickingEnCursoDeBD)(pedido.empresa, pedido.numero).ConfigureAwait(true);
+            string motivoBloqueo = CambioAlmacenPedido.Motivo(lineasGuardadas, cabPedidoVta.NotaEntrega, enviosPedido, pickingEnCurso,
+                RecogeEnTienda.PREFIJO_BLOQUEO);
+            RecogeEnTienda.Resultado resultado = RecogeEnTienda.AlModificar(marcar.Value, pedido.Lineas, motivoBloqueo,
+                () => RutaQueVale.Leer(db, pedido.empresa, pedido.cliente, pedido.contacto));
+            if (resultado.Error != null)
+            {
+                return resultado.Error;
+            }
+            pedido.ruta = resultado.Ruta;
+            return null;
         }
 
         /// <summary>

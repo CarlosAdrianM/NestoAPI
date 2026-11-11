@@ -865,6 +865,7 @@
     <Compile Include="Infrastructure\Traspasos\ServicioTraspasosTests.cs" />
     <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\RecogeEnTiendaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SerieSegunLineasTests.cs" />

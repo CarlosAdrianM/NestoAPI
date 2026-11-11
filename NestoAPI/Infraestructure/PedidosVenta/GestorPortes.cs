@@ -54,6 +54,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// cálculo respeta <see cref="GestorPortes.FechaActualParaPruebas"/>.
         /// </summary>
         public bool NoCobrarComisionReembolso { get; set; }
+
+        /// <summary>
+        /// NestoAPI#571: la casilla «Recoge en tienda» de la plantilla (simulación de un pedido que aún no existe). Con
+        /// <c>true</c> el resultado no lleva ni portes ni comisión contra reembolso, igual que una ruta de recogida (AM, ALC,
+        /// REI). Null o <c>false</c>: manda la ruta, como siempre.
+        /// </summary>
+        public bool? RecogeEnTienda { get; set; }
     }
 
     public class GestorPortes
@@ -185,6 +192,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return resultado;
             }
 
+            // NestoAPI#571: lo recoge el cliente en la tienda (ruta AM, ALC o REI, o la casilla de la plantilla): ni portes
+            // ni comisión contra reembolso, porque no hay agencia que cobre (paga al recoger). EsContraReembolso sí se informa.
+            if (input.RecogeEnTienda == true || TiendasRecogida.EsRutaDeRecogida(input.Ruta))
+            {
+                resultado.PortesGratis = true;
+                resultado.ImporteFaltaParaPortesGratis = 0;
+                return resultado;
+            }
+
             // Sin productos no tiene sentido cobrar portes ni reembolso,
             // pero calculamos umbral e importe para que los clientes puedan
             // usarlos en comparaciones locales cuando se añadan productos.
@@ -211,7 +227,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 resultado.CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL;
             }
 
-            // Rutas sin portes: no llevan portes pero sí pueden llevar reembolso
+            // Rutas sin portes: no llevan portes pero sí pueden llevar reembolso (salvo las de recogida en tienda, arriba)
             if (!GestorImportesMinimos.esRutaConPortes(input.Ruta))
             {
                 resultado.PortesGratis = true;

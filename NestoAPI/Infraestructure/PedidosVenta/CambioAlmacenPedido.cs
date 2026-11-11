@@ -43,9 +43,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>Por qué no se puede cambiar el almacén, o null si se puede. Pura para testear sin BD.</summary>
-        internal static string Motivo(IEnumerable<LinPedidoVta> lineas, bool notaEntrega, IEnumerable<EnviosAgencia> envios, int? pickingEnCurso)
+        /// <param name="prefijo">NestoAPI#571: el principio del mensaje, para reutilizar la regla con «Recoge en tienda». Null = el del almacén.</param>
+        internal static string Motivo(IEnumerable<LinPedidoVta> lineas, bool notaEntrega, IEnumerable<EnviosAgencia> envios, int? pickingEnCurso,
+            string prefijo = null)
         {
-            const string NO_SE_PUEDE = "No se puede cambiar el almacén del pedido: ";
+            string NO_SE_PUEDE = prefijo ?? "No se puede cambiar el almacén del pedido: ";
             List<LinPedidoVta> producto = (lineas ?? Enumerable.Empty<LinPedidoVta>())
                 .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO).ToList();
 
