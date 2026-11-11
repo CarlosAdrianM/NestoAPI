@@ -231,6 +231,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         Task<MovimientoBultoReparto> LeerPorClave(Guid clave);
         /// <summary>En una transacción, los que no estén ya (por ClaveIdempotencia). Devuelve cuántos ha insertado.</summary>
         Task<int> Registrar(IReadOnlyList<MovimientoBultoReparto> movimientos);
+        /// <summary>
+        /// En UNA transacción: el movimiento (si su clave no está ya) y, solo si se ha insertado, su rastro en Modificaciones
+        /// (Tabla = <paramref name="tabla"/>). Devuelve 1 si se ha insertado, 0 si ya estaba (y entonces no deja otro rastro).
+        /// </summary>
+        Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario);
         Task<JornadaReparto> LeerJornadaPorClave(Guid clave);
         /// <summary>Las jornadas terminadas ese día (Fecha).</summary>
         Task<List<JornadaReparto>> LeerJornadas(DateTime dia);
@@ -334,23 +339,7 @@ SELECT {COLUMNAS} FROM (
                     {
                         try
                         {
-                            insertados += await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR,
-                                new SqlParameter("@Codigo", SqlDbType.VarChar, 30) { Value = Recortar(m.Codigo, 30) },
-                                new SqlParameter("@TipoCodigo", SqlDbType.VarChar, 2) { Value = m.TipoCodigo ?? string.Empty },
-                                Entero("@EnvioId", m.EnvioId),
-                                Entero("@Traspaso", m.NumTraspaso),
-                                Entero("@Pedido", m.Pedido),
-                                new SqlParameter("@Bulto", SqlDbType.SmallInt) { Value = (short)Math.Max(1, Math.Min(m.Bulto, short.MaxValue)) },
-                                new SqlParameter("@Total", SqlDbType.SmallInt) { Value = m.Total.HasValue ? (object)(short)Math.Min(m.Total.Value, short.MaxValue) : DBNull.Value },
-                                new SqlParameter("@Tipo", SqlDbType.VarChar, 12) { Value = m.Tipo },
-                                new SqlParameter("@Usuario", SqlDbType.VarChar, 50) { Value = Recortar(m.Usuario, 50) ?? string.Empty },
-                                new SqlParameter("@FechaHora", SqlDbType.DateTime) { Value = m.FechaHora },
-                                new SqlParameter("@FechaRegistro", SqlDbType.DateTime) { Value = m.FechaRegistro },
-                                Decimal("@Latitud", m.Latitud),
-                                Decimal("@Longitud", m.Longitud),
-                                new SqlParameter("@Origen", SqlDbType.VarChar, 10) { Value = m.Origen ?? OrigenesMovimientoBulto.REPARTIDOR },
-                                new SqlParameter("@Descripcion", SqlDbType.NVarChar, 150) { Value = (object)Recortar(m.Descripcion, 150) ?? DBNull.Value },
-                                new SqlParameter("@Clave", SqlDbType.UniqueIdentifier) { Value = m.ClaveIdempotencia }).ConfigureAwait(false);
+                            insertados += await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR, Parametros(m)).ConfigureAwait(false);
                         }
                         catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
                         {
@@ -366,6 +355,46 @@ SELECT {COLUMNAS} FROM (
                 }
             }
             return insertados;
+        }
+
+        private const string SQL_RASTRO = "INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@Tabla, @Anterior, @Nuevo, @UsuarioRastro)";
+
+        public async Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario)
+        {
+            if (movimiento == null)
+            {
+                return 0;
+            }
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    int insertado;
+                    try
+                    {
+                        insertado = await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR, Parametros(movimiento)).ConfigureAwait(false);
+                    }
+                    catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+                    {
+                        insertado = 0; // otra petición con la misma clave a la vez: ya está (y ya dejó su rastro)
+                    }
+                    if (insertado > 0)
+                    {
+                        _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                            new SqlParameter("@Tabla", SqlDbType.NVarChar, 50) { Value = Recortar(tabla, 50) ?? string.Empty },
+                            new SqlParameter("@Anterior", SqlDbType.NVarChar, -1) { Value = (object)anterior ?? DBNull.Value },
+                            new SqlParameter("@Nuevo", SqlDbType.NVarChar, -1) { Value = (object)nuevo ?? DBNull.Value },
+                            new SqlParameter("@UsuarioRastro", SqlDbType.NVarChar, 50) { Value = Recortar(usuario, 50) ?? string.Empty }).ConfigureAwait(false);
+                    }
+                    transaccion.Commit();
+                    return insertado;
+                }
+                catch (Exception)
+                {
+                    transaccion.RollbackSeguro();
+                    throw;
+                }
+            }
         }
 
         public async Task<JornadaReparto> LeerJornadaPorClave(Guid clave)
@@ -396,6 +425,27 @@ SELECT {COLUMNAS} FROM (
                 throw new ClaveIdempotenciaRepetidaException(ex);
             }
         }
+
+        private static object[] Parametros(MovimientoBultoReparto m)
+            => new object[]
+            {
+                new SqlParameter("@Codigo", SqlDbType.VarChar, 30) { Value = Recortar(m.Codigo, 30) },
+                new SqlParameter("@TipoCodigo", SqlDbType.VarChar, 2) { Value = m.TipoCodigo ?? string.Empty },
+                Entero("@EnvioId", m.EnvioId),
+                Entero("@Traspaso", m.NumTraspaso),
+                Entero("@Pedido", m.Pedido),
+                new SqlParameter("@Bulto", SqlDbType.SmallInt) { Value = (short)Math.Max(1, Math.Min(m.Bulto, short.MaxValue)) },
+                new SqlParameter("@Total", SqlDbType.SmallInt) { Value = m.Total.HasValue ? (object)(short)Math.Min(m.Total.Value, short.MaxValue) : DBNull.Value },
+                new SqlParameter("@Tipo", SqlDbType.VarChar, 12) { Value = m.Tipo },
+                new SqlParameter("@Usuario", SqlDbType.VarChar, 50) { Value = Recortar(m.Usuario, 50) ?? string.Empty },
+                new SqlParameter("@FechaHora", SqlDbType.DateTime) { Value = m.FechaHora },
+                new SqlParameter("@FechaRegistro", SqlDbType.DateTime) { Value = m.FechaRegistro },
+                Decimal("@Latitud", m.Latitud),
+                Decimal("@Longitud", m.Longitud),
+                new SqlParameter("@Origen", SqlDbType.VarChar, 10) { Value = m.Origen ?? OrigenesMovimientoBulto.REPARTIDOR },
+                new SqlParameter("@Descripcion", SqlDbType.NVarChar, 150) { Value = (object)Recortar(m.Descripcion, 150) ?? DBNull.Value },
+                new SqlParameter("@Clave", SqlDbType.UniqueIdentifier) { Value = m.ClaveIdempotencia }
+            };
 
         private static SqlParameter Entero(string nombre, int? valor) => new SqlParameter(nombre, SqlDbType.Int) { Value = (object)valor ?? DBNull.Value };
 

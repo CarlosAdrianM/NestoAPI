@@ -227,8 +227,14 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.Recoger(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen(), User));
         }
 
-        // POST api/RepartoPropio/Descargar { Codigo, ClaveIdempotencia, FechaHora }
-        /// <summary>NestoAPI#772: por la tarde, cada bulto que sale de la furgoneta. 409 NO_EN_FURGONETA si no está en ninguna.</summary>
+        // POST api/RepartoPropio/Descargar { Codigo, ClaveIdempotencia, FechaHora, SinLeer? }
+        /// <summary>
+        /// NestoAPI#772: por la tarde, cada bulto que sale de la furgoneta. 409 NO_EN_FURGONETA si no está en ninguna. Desde el
+        /// 11/11/26 (incidencias 1189/1190): también el papel NE{pedido} (todos los bultos de su envío que estén en una furgoneta) y,
+        /// con una NR, el RP sin bulto de la parada de esa recogida. Con SinLeer = true, Codigo es el de un bulto de GET Furgoneta y
+        /// se quita sin leerlo solo de la furgoneta del que lo pide (409 EN_OTRA_FURGONETA si lo lleva otro), con rastro y aviso a
+        /// Almacén. La respuesta trae Descargados (todo lo que ha salido con esta lectura) y SinLeer.
+        /// </summary>
         [HttpPost]
         [Route("Descargar")]
         [ResponseType(typeof(ResultadoMovimientoBultoDTO))]

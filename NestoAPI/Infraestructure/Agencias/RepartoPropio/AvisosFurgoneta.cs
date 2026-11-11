@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -16,6 +16,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <param name="alTerminar">True: lo ha confirmado él al terminar la jornada. False: lo ve el job de las 22:00.</param>
         /// <returns>A quién se ha avisado («Almacén», «Dirección», «Andre»); vacía si a nadie.</returns>
         Task<List<string>> FurgonetaSinDescargar(string repartidor, IReadOnlyList<MovimientoBultoReparto> pendientes, bool alTerminar);
+
+        /// <summary>
+        /// Incidencias 1189/1190 (11/11/26): el repartidor ha quitado de su furgoneta un bulto sin leerlo (Descargar con SinLeer).
+        /// Aviso en la campana a Almacén, para que compruebe que el bulto está.
+        /// </summary>
+        /// <returns>A quién se ha avisado («Almacén»); vacía si a nadie.</returns>
+        Task<List<string>> BultoQuitadoSinLeer(string repartidor, MovimientoBultoReparto bulto);
     }
 
     /// <summary>
@@ -88,6 +95,64 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 }
             }
             return avisados;
+        }
+
+        public const string TIPO_NOTIFICACION_SIN_LEER = "FurgonetaDescargaSinLeer";
+
+        public async Task<List<string>> BultoQuitadoSinLeer(string repartidor, MovimientoBultoReparto bulto)
+        {
+            var avisados = new List<string>();
+            if (string.IsNullOrWhiteSpace(repartidor) || bulto == null)
+            {
+                return avisados;
+            }
+            NotificacionPushDTO notificacion = ComponerSinLeer(ServicioRepartoPropio.NombreRepartidor(repartidor), bulto);
+            List<string> deAlmacen;
+            try
+            {
+                deAlmacen = miembros(Constantes.GruposSeguridad.ALMACEN) ?? new List<string>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Furgoneta] No se pudieron leer los miembros de {Constantes.GruposSeguridad.ALMACEN}: {ex.Message}", ex));
+                deAlmacen = new List<string>();
+            }
+            if (deAlmacen.Count == 0)
+            {
+                return avisados;
+            }
+            avisados.Add(Constantes.GruposSeguridad.ALMACEN);
+            IServicioNotificacionesPush servicio = notificaciones();
+            foreach (string usuario in new HashSet<string>(deAlmacen.Select(ConDominio), StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await servicio.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Furgoneta] No se pudo avisar a {usuario} del bulto {bulto.Codigo} quitado sin leer: {ex.Message}", ex));
+                }
+            }
+            return avisados;
+        }
+
+        /// <summary>«Miguel ha quitado de su furgoneta sin leerlo el bulto RP250806-1 (GUARDIA ROSAS (MADRID)). Compruebe que está en el almacén.»</summary>
+        internal static NotificacionPushDTO ComponerSinLeer(string repartidor, MovimientoBultoReparto bulto)
+        {
+            string descripcion = string.IsNullOrWhiteSpace(bulto.Descripcion) ? string.Empty : $" ({bulto.Descripcion.Trim()})";
+            return new NotificacionPushDTO
+            {
+                Titulo = $"Bulto quitado sin leer: {repartidor}",
+                Cuerpo = $"{repartidor} ha quitado de su furgoneta sin leerlo el bulto {bulto.Codigo}{descripcion}. Compruebe que está en el almacén.",
+                Tipo = TIPO_NOTIFICACION_SIN_LEER,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = TIPO_NOTIFICACION_SIN_LEER,
+                    ["repartidor"] = repartidor,
+                    ["codigo"] = bulto.Codigo
+                }
+            };
         }
 
         internal static string ConDominio(string usuario)

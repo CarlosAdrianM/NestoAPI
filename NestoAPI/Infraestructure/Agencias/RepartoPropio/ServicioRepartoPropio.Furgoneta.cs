@@ -7,6 +7,7 @@ using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
+using Newtonsoft.Json;
 
 namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 {
@@ -30,6 +31,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public const string MENSAJE_FALTA_SCRIPT_FURGONETA = "Falta lanzar el script Scripts/Issue772_FurgonetaBultos.sql (lo que lleva cada furgoneta): " +
             "hasta entonces no se puede recoger, descargar ni terminar la jornada. Avise a Informática.";
         public const string CODIGO_NO_EN_FURGONETA = "NO_EN_FURGONETA";
+        /// <summary>Descargar con SinLeer de un bulto que va en la furgoneta de otro repartidor (409).</summary>
+        public const string CODIGO_EN_OTRA_FURGONETA = "EN_OTRA_FURGONETA";
+        /// <summary>El rastro en Modificaciones (Tabla) de cada bulto quitado sin leer: Anterior = su último movimiento, Nuevo = el Descargado.</summary>
+        public const string TABLA_MODIFICACIONES_SIN_LEER = "FurgonetaDescargaSinLeer";
         /// <summary>Bajo «(defecto)»: "1" = hay que leer los bultos al entregar. Apagado (Carlos 31/10/26: «hasta que nos acostumbremos»).</summary>
         public const string PARAMETRO_ESCANEO_ENTREGA_OBLIGATORIO = "RepartoEscaneoEntregaObligatorio";
         public const string MENSAJE_ESCANEO_OBLIGATORIO = "Lea los bultos que entrega antes de confirmar la entrega.";
@@ -292,10 +297,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return invalida;
             }
+            if (peticion.SinLeer)
+            {
+                return await DescargarSinLeer(peticion, usuario).ConfigureAwait(false);
+            }
             CodigoBultoFurgoneta codigo = CodigoBultoFurgoneta.Leer(peticion.Codigo);
             if (codigo == null)
             {
-                return MalMovimiento(TipoResultadoReparto.Invalido, $"El código «{peticion.Codigo?.Trim()}» no es de un bulto del reparto (RP…, NR… o R…).");
+                // Incidencia 1190 (11/11/26): lo que vale para cargar vale para descargar. El papel NE{pedido}, a los bultos de su envío.
+                if (CodigoNotaEntrega.TryLeer(peticion.Codigo, out string prefijo, out _, out _) && prefijo == CodigoNotaEntrega.PREFIJO_ENTREGA)
+                {
+                    return await DescargarNotaEntrega(peticion, usuario).ConfigureAwait(false);
+                }
+                return MalMovimiento(TipoResultadoReparto.Invalido, $"El código «{peticion.Codigo?.Trim()}» no es de un bulto del reparto (RP…, NE…, NR… o R…).");
             }
             MovimientoBultoReparto previa = await paradas.Furgoneta.LeerPorClave(peticion.ClaveIdempotencia).ConfigureAwait(false);
             if (previa != null)
@@ -307,40 +321,270 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             List<MovimientoBultoReparto> historia = await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto { Codigos = new[] { codigo.Codigo } })
                 .ConfigureAwait(false) ?? new List<MovimientoBultoReparto>();
             MovimientoBultoReparto ultimo = NucleoFurgoneta.Ultimo(historia, codigo.Codigo);
-            if (ultimo != null && ultimo.Tipo == TiposMovimientoBulto.DESCARGADO)
+            bool enFurgoneta = ultimo != null && TiposMovimientoBulto.DejaEnFurgoneta(ultimo.Tipo);
+            // Incidencia 1189 (11/11/26): la parada de una recogida no lleva bulto propio; un RP suyo que siga en una furgoneta (de
+            // antes de no apuntarlo al cargar) sale con su NR, aunque la NR ya estuviera descargada.
+            List<MovimientoBultoReparto> fantasmas = codigo.TipoCodigo == CodigoBultoFurgoneta.NR
+                ? await RpSinBultoDeLaRecogida(ultimo?.EnvioId, codigo.Pedido.Value).ConfigureAwait(false)
+                : new List<MovimientoBultoReparto>();
+            if (!enFurgoneta && fantasmas.Count == 0)
             {
-                return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaDescarga(ultimo, usuario, null, true).ConfigureAwait(false));
+                if (ultimo != null && ultimo.Tipo == TiposMovimientoBulto.DESCARGADO)
+                {
+                    return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaDescarga(ultimo, usuario, null, true).ConfigureAwait(false));
+                }
+                return NoEnFurgoneta(codigo.Codigo, ultimo);
             }
-            if (ultimo == null || !TiposMovimientoBulto.DejaEnFurgoneta(ultimo.Tipo))
+            DateTime momento = ahora();
+            var nuevos = new List<MovimientoBultoReparto>();
+            MovimientoBultoReparto principal = null;
+            if (enFurgoneta)
             {
-                string motivo = ultimo == null
-                    ? $"El bulto {codigo.Codigo} no está en ninguna furgoneta: no se ha cargado ni recogido."
-                    : $"El bulto {codigo.Codigo} no está en ninguna furgoneta: se entregó el {ultimo.FechaHora:dd/MM} a las {ultimo.FechaHora:H:mm} ({NombreRepartidor(ultimo.Usuario)}).";
+                principal = Descargado(ultimo, peticion, usuario, momento, peticion.ClaveIdempotencia);
+                nuevos.Add(principal);
+            }
+            // Los RP sin bulto, siempre con clave derivada: un reintento no los apunta dos veces
+            nuevos.AddRange(fantasmas.Select(f => Descargado(f, peticion, usuario, momento,
+                NucleoFurgoneta.ClaveDerivada(peticion.ClaveIdempotencia, f.Codigo, TiposMovimientoBulto.DESCARGADO))));
+            _ = await paradas.Furgoneta.Registrar(nuevos).ConfigureAwait(false);
+            if (principal != null && principal.TipoCodigo == CodigoBultoFurgoneta.R && principal.NumTraspaso.HasValue && paradas.BultosReposicion != null)
+            {
+                OrigenDestinoReposicion od = await paradas.BultosReposicion.LeerOrigenDestino(Constantes.Empresas.EMPRESA_POR_DEFECTO, principal.NumTraspaso.Value).ConfigureAwait(false);
+                AvisarReposiciones(od?.Origen, usuario, origen);
+            }
+            ResultadoMovimientoBultoDTO dto;
+            if (principal != null)
+            {
+                dto = await RespuestaDescarga(principal, usuario, ultimo.Usuario, false).ConfigureAwait(false);
+            }
+            else
+            {
+                dto = await Respuesta(nuevos[0], usuario, false).ConfigureAwait(false);
+                dto.Mensaje = ultimo?.Tipo == TiposMovimientoBulto.DESCARGADO
+                    ? $"El bulto {codigo.Codigo} ya estaba descargado."
+                    : $"El bulto {codigo.Codigo} no está en ninguna furgoneta.";
+            }
+            dto.Descargados = nuevos.Select(n => n.Codigo).ToList();
+            if (fantasmas.Count > 0)
+            {
+                string lista = NucleoFurgoneta.ListaCorta(fantasmas.Select(f => f.Codigo));
+                dto.Mensaje += principal != null
+                    ? $" También sale {lista}: la parada de una recogida no lleva bulto propio."
+                    : $" Sale de la furgoneta {lista}: la parada de una recogida no lleva bulto propio.";
+            }
+            return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(dto);
+        }
+
+        private static MovimientoBultoReparto Descargado(MovimientoBultoReparto ultimo, MovimientoBultoRepartoDTO peticion, string usuario, DateTime momento, Guid clave)
+        {
+            MovimientoBultoReparto nuevo = Copia(ultimo, TiposMovimientoBulto.DESCARGADO, usuario.Trim(), peticion.FechaHora ?? momento, momento,
+                OrigenesMovimientoBulto.REPARTIDOR, clave);
+            nuevo.Latitud = peticion.Latitud;
+            nuevo.Longitud = peticion.Longitud;
+            return nuevo;
+        }
+
+        private static ResultadoReparto<ResultadoMovimientoBultoDTO> NoEnFurgoneta(string codigo, MovimientoBultoReparto ultimo)
+            => new ResultadoReparto<ResultadoMovimientoBultoDTO>
+            {
+                Tipo = TipoResultadoReparto.Conflicto,
+                Mensaje = ultimo == null
+                    ? $"El bulto {codigo} no está en ninguna furgoneta: no se ha cargado ni recogido."
+                    : $"El bulto {codigo} no está en ninguna furgoneta: se entregó el {ultimo.FechaHora:dd/MM} a las {ultimo.FechaHora:H:mm} ({NombreRepartidor(ultimo.Usuario)}).",
+                Codigo = CODIGO_NO_EN_FURGONETA,
+                Detalles = new { codigo, ultimo = ultimo?.Tipo }
+            };
+
+        /// <summary>
+        /// Los RP de la parada de esa nota de recogida que siguen en alguna furgoneta. Una recogida no tiene bulto propio (no existe
+        /// hasta recogerlo, con su NR): esos RP son de cuando «Cargar» los apuntaba. Solo si la parada es de verdad una recogida.
+        /// </summary>
+        private async Task<List<MovimientoBultoReparto>> RpSinBultoDeLaRecogida(int? envioId, int pedido)
+        {
+            if (!envioId.HasValue && paradas.Notas != null)
+            {
+                ResolucionCodigoNota nota = await paradas.Notas.Resolver(CodigoNotaEntrega.Documento(true, pedido)).ConfigureAwait(false);
+                envioId = nota?.EsNota == true ? nota.EnvioId ?? nota.EnvioEntregado : null;
+            }
+            if (!(envioId > 0) || (await NotaDeEnvio(envioId.Value).ConfigureAwait(false))?.EsRecogida != true)
+            {
+                return new List<MovimientoBultoReparto>();
+            }
+            return NucleoFurgoneta.Ultimos(await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto { Envios = new[] { envioId.Value } }).ConfigureAwait(false))
+                .Where(m => m.TipoCodigo == CodigoBultoFurgoneta.RP && TiposMovimientoBulto.DejaEnFurgoneta(m.Tipo))
+                .OrderBy(m => m.Bulto)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Incidencia 1190 (11/11/26): Descargar con el papel NE{pedido} (una entrega sin etiqueta RP), como en Cargar: los bultos RP
+        /// de su envío que sigan en una furgoneta, TODOS (el papel es del envío entero). El primero lleva la clave de la petición y
+        /// los demás una derivada: un reintento no apunta nada dos veces.
+        /// </summary>
+        private async Task<ResultadoReparto<ResultadoMovimientoBultoDTO>> DescargarNotaEntrega(MovimientoBultoRepartoDTO peticion, string usuario)
+        {
+            string documento = peticion.Codigo.Trim().ToUpperInvariant();
+            ResolucionCodigoNota nota = paradas.Notas == null ? null : await paradas.Notas.Resolver(documento).ConfigureAwait(false);
+            if (nota == null || !nota.EsNota)
+            {
+                return MalMovimiento(TipoResultadoReparto.NoEncontrado, $"El código «{documento}» no es de ninguna nota de entrega.");
+            }
+            int? envioId = nota.EnvioId ?? nota.EnvioEntregado;
+            if (!envioId.HasValue)
+            {
                 return new ResultadoReparto<ResultadoMovimientoBultoDTO>
                 {
                     Tipo = TipoResultadoReparto.Conflicto,
-                    Mensaje = motivo,
+                    Mensaje = $"La nota {documento} no está en el reparto, así que no figura en ninguna furgoneta: no tiene que descargarla. Deje el paquete en el almacén.",
                     Codigo = CODIGO_NO_EN_FURGONETA,
-                    Detalles = new { codigo = codigo.Codigo, ultimo = ultimo?.Tipo }
+                    Detalles = new { codigo = documento }
+                };
+            }
+            List<MovimientoBultoReparto> bultos = NucleoFurgoneta.Ultimos(await paradas.Furgoneta.LeerHistoria(
+                    new ConsultaMovimientosBulto { Envios = new[] { envioId.Value } }).ConfigureAwait(false))
+                .Where(m => m.TipoCodigo == CodigoBultoFurgoneta.RP)
+                .OrderBy(m => m.Bulto)
+                .ToList();
+            Guid clave = peticion.ClaveIdempotencia;
+            MovimientoBultoReparto previa = await paradas.Furgoneta.LeerPorClave(clave).ConfigureAwait(false);
+            if (previa != null)
+            {
+                if (previa.Tipo != TiposMovimientoBulto.DESCARGADO || previa.EnvioId != envioId)
+                {
+                    return MalMovimiento(TipoResultadoReparto.Conflicto, $"Esa ClaveIdempotencia ya se usó para el bulto {previa.Codigo}. Cada lectura lleva su propia clave.");
+                }
+                // El reintento: la misma respuesta, con los que salieron con esta lectura
+                List<string> salieron = bultos.Where(b => b.Tipo == TiposMovimientoBulto.DESCARGADO
+                        && (b.ClaveIdempotencia == clave || b.ClaveIdempotencia == NucleoFurgoneta.ClaveDerivada(clave, b.Codigo, TiposMovimientoBulto.DESCARGADO)))
+                    .Select(b => b.Codigo).ToList();
+                return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaNotaEntrega(previa, documento, nota.Pedido, salieron.Count == 0 ? new List<string> { previa.Codigo } : salieron, usuario, null)
+                    .ConfigureAwait(false));
+            }
+            List<MovimientoBultoReparto> enFurgoneta = bultos.Where(b => TiposMovimientoBulto.DejaEnFurgoneta(b.Tipo)).ToList();
+            if (enFurgoneta.Count == 0)
+            {
+                MovimientoBultoReparto descargado = bultos.LastOrDefault(b => b.Tipo == TiposMovimientoBulto.DESCARGADO);
+                if (descargado != null && bultos.All(b => b.Tipo != TiposMovimientoBulto.ENTREGADO))
+                {
+                    ResultadoMovimientoBultoDTO ya = await Respuesta(descargado, usuario, true).ConfigureAwait(false);
+                    ya.Pedido = nota.Pedido;
+                    ya.Mensaje = $"La nota {documento} ya estaba descargada.";
+                    return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(ya);
+                }
+                EnviosAgencia envio = await repositorio.LeerEnvio(envioId.Value).ConfigureAwait(false);
+                string quien = string.IsNullOrWhiteSpace(envio?.Nombre) ? string.Empty : $" ({envio.Nombre.Trim()})";
+                return new ResultadoReparto<ResultadoMovimientoBultoDTO>
+                {
+                    Tipo = TipoResultadoReparto.Conflicto,
+                    Mensaje = bultos.Any(b => b.Tipo == TiposMovimientoBulto.ENTREGADO) || envio?.Estado == Constantes.Agencias.ESTADO_ENTREGADO
+                        ? $"La nota {documento}{quien} ya está entregada: no figura en ninguna furgoneta y no tiene que descargarla."
+                        : $"La nota {documento}{quien} no figura en ninguna furgoneta (no se leyó al cargar): no tiene que descargarla. Deje el paquete en su sitio del almacén.",
+                    Codigo = CODIGO_NO_EN_FURGONETA,
+                    Detalles = new { codigo = documento, envio = envioId }
                 };
             }
             DateTime momento = ahora();
-            MovimientoBultoReparto nuevo = Copia(ultimo, TiposMovimientoBulto.DESCARGADO, usuario.Trim(), peticion.FechaHora ?? momento, momento,
-                OrigenesMovimientoBulto.REPARTIDOR, peticion.ClaveIdempotencia);
-            nuevo.Latitud = peticion.Latitud;
-            nuevo.Longitud = peticion.Longitud;
-            _ = await paradas.Furgoneta.Registrar(new[] { nuevo }).ConfigureAwait(false);
-            if (nuevo.TipoCodigo == CodigoBultoFurgoneta.R && nuevo.NumTraspaso.HasValue && paradas.BultosReposicion != null)
+            List<MovimientoBultoReparto> nuevos = enFurgoneta
+                .Select((b, i) => Descargado(b, peticion, usuario, momento, i == 0 ? clave : NucleoFurgoneta.ClaveDerivada(clave, b.Codigo, TiposMovimientoBulto.DESCARGADO)))
+                .ToList();
+            _ = await paradas.Furgoneta.Registrar(nuevos).ConfigureAwait(false);
+            string otro = enFurgoneta.Select(b => b.Usuario).FirstOrDefault(u => !MismoUsuario(u, usuario));
+            return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaNotaEntrega(nuevos[0], documento, nota.Pedido, nuevos.Select(n => n.Codigo).ToList(), usuario, otro)
+                .ConfigureAwait(false));
+        }
+
+        private async Task<ResultadoMovimientoBultoDTO> RespuestaNotaEntrega(MovimientoBultoReparto primero, string documento, int pedido, List<string> descargados,
+            string usuario, string loLlevabaOtro)
+        {
+            ResultadoMovimientoBultoDTO dto = await Respuesta(primero, usuario, false).ConfigureAwait(false);
+            dto.Pedido = pedido;
+            dto.Descargados = descargados;
+            string llevaba = loLlevabaOtro == null ? string.Empty : $" (lo llevaba {NombreRepartidor(loLlevabaOtro)})";
+            dto.Mensaje = descargados.Count == 1
+                ? $"Nota {documento}: bulto {descargados[0]} descargado{llevaba}."
+                : $"Nota {documento}: {TextoBultos(descargados.Count)} descargados ({NucleoFurgoneta.ListaCorta(descargados)}){llevaba}.";
+            return dto;
+        }
+
+        /// <summary>
+        /// Incidencias 1189/1190 (11/11/26): Descargar con SinLeer. El repartidor quita de SU furgoneta un bulto de la lista que no
+        /// puede leer (sin etiqueta, o un RP que no existe). Solo de la suya (si lo lleva otro, 409 <see cref="CODIGO_EN_OTRA_FURGONETA"/>).
+        /// Queda el rastro en Modificaciones (<see cref="TABLA_MODIFICACIONES_SIN_LEER"/>, en la misma transacción) y el aviso en la
+        /// campana a Almacén. Idempotente por la clave: un reintento ni deja otro rastro ni vuelve a avisar.
+        /// </summary>
+        private async Task<ResultadoReparto<ResultadoMovimientoBultoDTO>> DescargarSinLeer(MovimientoBultoRepartoDTO peticion, string usuario)
+        {
+            CodigoBultoFurgoneta codigo = CodigoBultoFurgoneta.Leer(peticion.Codigo);
+            if (codigo == null)
             {
-                OrigenDestinoReposicion od = await paradas.BultosReposicion.LeerOrigenDestino(Constantes.Empresas.EMPRESA_POR_DEFECTO, nuevo.NumTraspaso.Value).ConfigureAwait(false);
-                AvisarReposiciones(od?.Origen, usuario, origen);
+                return MalMovimiento(TipoResultadoReparto.Invalido,
+                    $"«{peticion.Codigo?.Trim()}» no es un bulto de la furgoneta: para quitarlo sin leer, elija un bulto de la lista de su furgoneta (GET api/RepartoPropio/Furgoneta).");
             }
-            return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaDescarga(nuevo, usuario, ultimo.Usuario, false).ConfigureAwait(false));
+            MovimientoBultoReparto previa = await paradas.Furgoneta.LeerPorClave(peticion.ClaveIdempotencia).ConfigureAwait(false);
+            if (previa != null)
+            {
+                if (previa.Codigo != codigo.Codigo || previa.Tipo != TiposMovimientoBulto.DESCARGADO)
+                {
+                    return MalMovimiento(TipoResultadoReparto.Conflicto, $"Esa ClaveIdempotencia ya se usó para el bulto {previa.Codigo}. Cada lectura lleva su propia clave.");
+                }
+                return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaSinLeer(previa, usuario, null).ConfigureAwait(false));
+            }
+            List<MovimientoBultoReparto> historia = await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto { Codigos = new[] { codigo.Codigo } })
+                .ConfigureAwait(false) ?? new List<MovimientoBultoReparto>();
+            MovimientoBultoReparto ultimo = NucleoFurgoneta.Ultimo(historia, codigo.Codigo);
+            if (ultimo != null && ultimo.Tipo == TiposMovimientoBulto.DESCARGADO)
+            {
+                ResultadoMovimientoBultoDTO ya = await RespuestaDescarga(ultimo, usuario, null, true).ConfigureAwait(false);
+                ya.SinLeer = true;
+                return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(ya);
+            }
+            if (ultimo == null || !TiposMovimientoBulto.DejaEnFurgoneta(ultimo.Tipo))
+            {
+                return NoEnFurgoneta(codigo.Codigo, ultimo);
+            }
+            if (!MismoUsuario(ultimo.Usuario, usuario))
+            {
+                return new ResultadoReparto<ResultadoMovimientoBultoDTO>
+                {
+                    Tipo = TipoResultadoReparto.Conflicto,
+                    Mensaje = $"El bulto {codigo.Codigo} va en la furgoneta de {NombreRepartidor(ultimo.Usuario)}: sin leerlo solo puede quitar los de la suya. " +
+                        "Si lo tiene usted, léalo con «Descargar».",
+                    Codigo = CODIGO_EN_OTRA_FURGONETA,
+                    Detalles = new { codigo = codigo.Codigo, repartidor = NombreRepartidor(ultimo.Usuario) }
+                };
+            }
+            MovimientoBultoReparto nuevo = Descargado(ultimo, peticion, usuario, ahora(), peticion.ClaveIdempotencia);
+            int insertado = await paradas.Furgoneta.RegistrarConRastro(nuevo, TABLA_MODIFICACIONES_SIN_LEER,
+                JsonConvert.SerializeObject(ultimo), JsonConvert.SerializeObject(new { SinLeer = true, Movimiento = nuevo }), usuario.Trim()).ConfigureAwait(false);
+            List<string> avisados = null;
+            if (insertado > 0 && paradas.AvisosFurgoneta != null)
+            {
+                try
+                {
+                    avisados = await paradas.AvisosFurgoneta.BultoQuitadoSinLeer(usuario, nuevo).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Furgoneta] No se pudo avisar a Almacén del bulto {nuevo.Codigo} quitado sin leer por {NombreRepartidor(usuario)}: {ex.Message}", ex));
+                }
+            }
+            return ResultadoReparto<ResultadoMovimientoBultoDTO>.Bien(await RespuestaSinLeer(nuevo, usuario, avisados).ConfigureAwait(false));
+        }
+
+        private async Task<ResultadoMovimientoBultoDTO> RespuestaSinLeer(MovimientoBultoReparto m, string usuario, List<string> avisados)
+        {
+            ResultadoMovimientoBultoDTO dto = await Respuesta(m, usuario, false).ConfigureAwait(false);
+            dto.SinLeer = true;
+            dto.Descargados = new List<string> { m.Codigo };
+            dto.Mensaje = $"Bulto {m.Codigo} quitado de su furgoneta sin leerlo." +
+                (avisados != null && avisados.Count > 0 ? $" Se ha avisado a {string.Join(", ", avisados)}." : string.Empty);
+            return dto;
         }
 
         private async Task<ResultadoMovimientoBultoDTO> RespuestaDescarga(MovimientoBultoReparto m, string usuario, string loLlevaba, bool yaEstaba)
         {
             ResultadoMovimientoBultoDTO dto = await Respuesta(m, usuario, yaEstaba).ConfigureAwait(false);
+            dto.Descargados = yaEstaba ? new List<string>() : new List<string> { m.Codigo };
             dto.Mensaje = yaEstaba
                 ? $"El bulto {m.Codigo} ya estaba descargado."
                 : $"Bulto {m.Codigo} descargado" + (loLlevaba != null && !MismoUsuario(loLlevaba, usuario) ? $" (lo llevaba {NombreRepartidor(loLlevaba)})." : ".");
@@ -474,7 +718,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         /// <summary>
         /// Después de un «Cargar» que ha ido bien: el movimiento Cargado del bulto (con la misma clave), salvo que ya lo lleve él. Las
-        /// NR no: al cargarlas por la mañana todavía no hay bulto (la etiqueta se pega al recoger). Nunca rompe la carga.
+        /// NR no: al cargarlas por la mañana todavía no hay bulto (la etiqueta se pega al recoger). Incidencia 1189 (11/11/26): nada
+        /// que cargue la parada de una RECOGIDA (ni su RP ni su NE: lo que se lea) ni, NestoAPI#786, de una nota de COBRO: no hay
+        /// bulto. La carga de la parada (quién la lleva, BultosCargados, soloMios) sigue en EnviosAgenciaCargaBultos. Nunca rompe.
         /// </summary>
         private async Task AnotarCarga(CargaBultoRepartoDTO peticion, ResultadoCargaBultoDTO cargado, string usuario)
         {
@@ -504,6 +750,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     CodigoBultoFurgoneta codigo = CodigoBultoFurgoneta.Leer(peticion.Codigo);
                     if (codigo?.TipoCodigo == CodigoBultoFurgoneta.NR)
+                    {
+                        return;
+                    }
+                    NotaParadaReparto nota = cargado.EnvioId > 0 ? await NotaDeEnvio(cargado.EnvioId).ConfigureAwait(false) : null;
+                    if (nota?.EsRecogida == true || nota?.EsCobro == true)
                     {
                         return;
                     }
@@ -705,6 +956,69 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Furgoneta #772] La entrega de la parada {envioId} está hecha, pero no se pudo apuntar en la furgoneta: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// Incidencia 1190 (11/11/26): una incidencia de un envío cuyos bultos no están en NINGUNA furgoneta (salió sin leerlo al
+        /// cargar, o se descargó y volvió a salir) deja apuntado el Cargado de sus bultos a nombre del que la pone, con la hora de la
+        /// incidencia: el paquete sigue con él, y así sale en GET Furgoneta y se puede descargar (con su RP, con el papel NE o sin
+        /// leer). Si algún bulto va en alguna furgoneta, no se toca nada (ya se sabe quién lo lleva). Ni las recogidas ni las notas
+        /// de cobro (no tienen bulto). Claves derivadas de la de la incidencia: un reintento no duplica. Nunca rompe la incidencia.
+        /// </summary>
+        private async Task AnotarSalidaSinCargar(int envioId, IncidenciaRepartoDTO peticion, string usuario)
+        {
+            if (peticion == null || envioId <= 0 || string.IsNullOrWhiteSpace(usuario) || !FurgonetaDisponible())
+            {
+                return;
+            }
+            try
+            {
+                EnviosAgencia envio = await repositorio.LeerEnvio(envioId).ConfigureAwait(false);
+                if (envio == null || envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+                {
+                    return;
+                }
+                NotaParadaReparto nota = await NotaDe(envio.Pedido).ConfigureAwait(false);
+                if (nota?.EsRecogida == true || nota?.EsCobro == true)
+                {
+                    return;
+                }
+                List<MovimientoBultoReparto> ultimos = NucleoFurgoneta.Ultimos(await paradas.Furgoneta.LeerHistoria(
+                    new ConsultaMovimientosBulto { Envios = new[] { envioId } }).ConfigureAwait(false))
+                    .Where(m => m.TipoCodigo == CodigoBultoFurgoneta.RP).ToList();
+                if (ultimos.Any(m => TiposMovimientoBulto.DejaEnFurgoneta(m.Tipo)))
+                {
+                    return;
+                }
+                int bultos = Math.Max((int)envio.Bultos, 1);
+                DateTime momento = ahora();
+                List<MovimientoBultoReparto> nuevos = Enumerable.Range(1, Math.Min(bultos, Models.PedidosVenta.TiposNotaEntrega.BULTOS_MAXIMO))
+                    .Select(n => CodigoBultoFurgoneta.CodigoRp(envioId, n))
+                    .Where(c => ultimos.All(u => !string.Equals(u.Codigo, c, StringComparison.OrdinalIgnoreCase) || u.Tipo != TiposMovimientoBulto.ENTREGADO))
+                    .Select(c => new MovimientoBultoReparto
+                    {
+                        Codigo = c,
+                        TipoCodigo = CodigoBultoFurgoneta.RP,
+                        EnvioId = envioId,
+                        Bulto = CodigoBultoFurgoneta.Leer(c).Bulto,
+                        Total = bultos,
+                        Descripcion = Descripcion(envio.Nombre, envio.Poblacion),
+                        Tipo = TiposMovimientoBulto.CARGADO,
+                        Usuario = usuario.Trim(),
+                        FechaHora = peticion.FechaHora ?? momento,
+                        FechaRegistro = momento,
+                        Latitud = peticion.Latitud,
+                        Longitud = peticion.Longitud,
+                        Origen = OrigenesMovimientoBulto.REPARTIDOR,
+                        ClaveIdempotencia = NucleoFurgoneta.ClaveDerivada(peticion.ClaveIdempotencia, c, TiposMovimientoBulto.CARGADO)
+                    })
+                    .ToList();
+                _ = await paradas.Furgoneta.Registrar(nuevos).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Furgoneta] La incidencia del envío {envioId} está hecha, pero no se pudo apuntar en la furgoneta: {ex.Message}", ex));
             }
         }
 

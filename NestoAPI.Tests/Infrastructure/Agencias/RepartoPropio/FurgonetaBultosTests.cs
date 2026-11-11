@@ -29,7 +29,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
     /// de la parada; descargar; la red de seguridad del almacén; terminar la jornada con y sin bultos; el job de las 22:00.
     /// </summary>
     [TestClass]
-    public class FurgonetaBultosTests
+    public partial class FurgonetaBultosTests
     {
         private static readonly DateTime AHORA = new DateTime(2026, 10, 31, 9, 0, 0);
         private const string ANDRE = "Andre";
@@ -106,10 +106,18 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 return null;
             }
             var r = new ResolucionCodigoNota { Pedido = pedido, Bulto = bulto ?? 1, EsRecogida = prefijo == "NR" };
-            if (pedido == NOTA_RECOGIDA)
+            if (pedido == NOTA_RECOGIDA || pedido == NOTA_ENTREGA)
             {
                 r.EsNota = true;
-                r.EnvioId = repositorio.Envios.Values.FirstOrDefault(e => e.Pedido == pedido)?.Numero;
+                EnviosAgencia envio = repositorio.Envios.Values.FirstOrDefault(e => e.Pedido == pedido);
+                if (envio?.Estado == Constantes.Agencias.ESTADO_ENTREGADO)
+                {
+                    r.EnvioEntregado = envio.Numero;
+                }
+                else
+                {
+                    r.EnvioId = envio?.Numero;
+                }
             }
             return r;
         }
@@ -818,6 +826,18 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                 return Task.FromResult(n);
             }
 
+            public readonly List<(string Tabla, string Anterior, string Nuevo, string Usuario)> Rastros = new List<(string, string, string, string)>();
+
+            public async Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario)
+            {
+                int n = await Registrar(new[] { movimiento });
+                if (n > 0)
+                {
+                    Rastros.Add((tabla, anterior, nuevo, usuario));
+                }
+                return n;
+            }
+
             public Task<JornadaReparto> LeerJornadaPorClave(Guid clave) => Task.FromResult(Jornadas.FirstOrDefault(j => j.ClaveIdempotencia == clave));
 
             public Task<List<JornadaReparto>> LeerJornadas(DateTime dia) => Task.FromResult(Jornadas.Where(j => j.Fecha == dia.Date).ToList());
@@ -868,6 +888,14 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             {
                 Llamadas.Add((repartidor, pendientes, alTerminar));
                 return Task.FromResult(new List<string> { "Almacén", "Dirección", ServicioRepartoPropio.NombreRepartidor(repartidor) });
+            }
+
+            public readonly List<(string Repartidor, MovimientoBultoReparto Bulto)> SinLeer = new List<(string, MovimientoBultoReparto)>();
+
+            public Task<List<string>> BultoQuitadoSinLeer(string repartidor, MovimientoBultoReparto bulto)
+            {
+                SinLeer.Add((repartidor, bulto));
+                return Task.FromResult(new List<string> { "Almacén" });
             }
         }
 

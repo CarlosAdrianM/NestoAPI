@@ -486,6 +486,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CargaFurgonetaTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FechaRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaBultosTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaDescargaTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\SeguimientoReposicionesTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenSugeridoRepartoTests.cs" />

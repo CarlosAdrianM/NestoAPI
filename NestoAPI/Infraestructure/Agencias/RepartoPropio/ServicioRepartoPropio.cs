@@ -579,6 +579,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             OrigenPeticionReparto origen = null)
         {
             ResultadoReparto<EstadoEnvioRepartoDTO> resultado = await IncidenciaEnvio(envioId, peticion, usuario).ConfigureAwait(false);
+            if (resultado.Tipo == TipoResultadoReparto.Ok)
+            {
+                // Incidencia 1190: el envío que salió sin cargar queda en su furgoneta (para poder descargarlo). Nunca rompe.
+                await AnotarSalidaSinCargar(envioId, peticion, usuario).ConfigureAwait(false);
+            }
             Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_INCIDENCIA, origen);
             return resultado;
         }

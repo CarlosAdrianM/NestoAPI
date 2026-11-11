@@ -45,6 +45,12 @@ namespace NestoAPI.Models.Agencias
         public DateTime? FechaHora { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
+        /// <summary>
+        /// Solo en Descargar (incidencias 1189/1190, 11/11/26): true = el repartidor quita de SU furgoneta un bulto que no puede
+        /// leer. <see cref="Codigo"/> es el código exacto de un bulto de GET api/RepartoPropio/Furgoneta. Queda rastro en
+        /// Modificaciones y aviso en la campana a Almacén. Sin el campo (clientes viejos), false: como siempre.
+        /// </summary>
+        public bool SinLeer { get; set; }
     }
 
     /// <summary>NestoAPI#772: la respuesta de Recoger y Descargar.</summary>
@@ -68,6 +74,13 @@ namespace NestoAPI.Models.Agencias
         public bool YaEstaba { get; set; }
         /// <summary>Cuántos bultos lleva ahora el que lo ha leído.</summary>
         public int EnFurgoneta { get; set; }
+        /// <summary>
+        /// Solo en Descargar (11/11/26): todos los bultos que han salido de una furgoneta con esta lectura. Más de uno con el papel
+        /// NE{pedido} (todos los de su envío) o con una NR cuya parada tenía además un RP sin bulto real. Vacía si no ha salido nada.
+        /// </summary>
+        public List<string> Descargados { get; set; } = new List<string>();
+        /// <summary>Solo en Descargar: true si se ha quitado sin leerlo (<see cref="MovimientoBultoRepartoDTO.SinLeer"/>).</summary>
+        public bool SinLeer { get; set; }
         /// <summary>Para enseñar tal cual, de usted.</summary>
         public string Mensaje { get; set; }
     }
