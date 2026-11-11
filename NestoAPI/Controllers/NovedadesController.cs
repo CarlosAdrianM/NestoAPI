@@ -107,7 +107,10 @@ namespace NestoAPI.Controllers
         // GET api/Novedades?todas=true (sugerencia 551: sin él, solo las de los perfiles de quien pregunta;
         //     ver ReglasPerfilesNovedades. Dirección, Informática y quien no tiene perfil conocido ven todas)
         [ResponseType(typeof(List<NovedadDTO>))]
-        public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null, bool todas = false)
+        // GET api/Novedades?ambitos=NestoApp,NestoAPI&desdeId=123 (NestoAPI#495: varios ámbitos y corte por Id: las
+        //     novedades con Id MAYOR que la última vista. Así una novedad de NestoAPI se anuncia sin publicar los clientes)
+        public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null, bool todas = false,
+            string ambitos = null, int? desdeId = null)
         {
             List<NovedadDTO> novedades = servicio.LeerNovedadesPublicadas();
             // NestoAPI#650: una privada implementada sigue siendo solo de su autor y de Dirección / Informática
@@ -120,8 +123,23 @@ namespace NestoAPI.Controllers
             // NestoAPI#489: el ámbito se filtra ANTES que la versión. Nesto (1.10.x) y NestoApp (2.x)
             // tienen espacios de versiones distintos: comparar desdeVersion sin acotar el producto
             // descartaría o colaría entradas del otro.
-            string ambitoEfectivo = AmbitoEfectivo(ambito);
-            novedades = novedades.Where(n => EsVisibleEnElAmbito(n.Ambito, n.Version, ambitoEfectivo)).ToList();
+            List<string> variosAmbitos = SepararAmbitos(ambitos);
+            if (variosAmbitos.Count > 0)
+            {
+                // NestoAPI#495: «ambitos» manda sobre «ambito». Con ámbitos explícitos no se mira la numeración de la versión.
+                novedades = novedades.Where(n => variosAmbitos.Any(a => EsDelAmbito(n.Ambito, a))).ToList();
+            }
+            else
+            {
+                string ambitoEfectivo = AmbitoEfectivo(ambito);
+                novedades = novedades.Where(n => EsVisibleEnElAmbito(n.Ambito, n.Version, ambitoEfectivo)).ToList();
+            }
+
+            // NestoAPI#495: solo las posteriores a la última que vio (por Id, que no depende de la versión de cada producto)
+            if (desdeId.HasValue)
+            {
+                novedades = novedades.Where(n => n.Id > desdeId.Value).ToList();
+            }
 
             // Sugerencia 551: a quién afecta cada una y, salvo que pida todas, solo las suyas. El popup de
             // arranque (desdeVersion) y la campana cuentan así solo las de su perfil.
@@ -149,6 +167,17 @@ namespace NestoAPI.Controllers
             RellenarAdjuntos(resultado);
             RellenarVideos(resultado); // NestoAPI#711
             return Ok(resultado);
+        }
+
+        /// <summary>NestoAPI#495: «NestoApp, NestoAPI» → los ámbitos pedidos, sin vacíos ni repetidos.</summary>
+        internal static List<string> SepararAmbitos(string ambitos)
+        {
+            return (ambitos ?? string.Empty)
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(a => a.Trim())
+                .Where(a => a.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         /// <summary>

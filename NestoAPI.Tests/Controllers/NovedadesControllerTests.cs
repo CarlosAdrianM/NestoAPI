@@ -214,5 +214,81 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(resultado);
             Assert.AreEqual(2, resultado.Content.Count);
         }
+
+        // NestoAPI#495: varios ámbitos y corte por Id (la última novedad vista), no por versión.
+
+        private static NovedadDTO NovedadDe(int id, string version, string ambito)
+        {
+            NovedadDTO novedad = Novedad(id, version, ambito + " " + id);
+            novedad.Ambito = ambito;
+            return novedad;
+        }
+
+        [TestMethod]
+        public void GetNovedades_VariosAmbitos_DevuelveLasDeTodosEllosYNingunaMas()
+        {
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            {
+                NovedadDe(1, "1.10.60.0", "Nesto"),
+                NovedadDe(2, "2.30.0", "NestoApp"),
+                NovedadDe(3, "1.10.60.0", "NestoAPI"),
+                NovedadDe(4, "2.34", "Ariadna")
+            });
+
+            var resultado = controller.GetNovedades(ambitos: "nestoapp, NestoAPI") as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            CollectionAssert.AreEquivalent(new[] { 2, 3 }, resultado.Content.Select(n => n.Id).ToList());
+        }
+
+        [TestMethod]
+        public void GetNovedades_DesdeId_SoloLasPosterioresALaUltimaVista()
+        {
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            {
+                NovedadDe(10, "2.30.0", "NestoApp"),
+                NovedadDe(11, "1.10.60.0", "NestoAPI"),
+                NovedadDe(12, "2.31.0", "NestoApp"),
+                NovedadDe(13, "1.10.60.0", "Nesto")
+            });
+
+            var resultado = controller.GetNovedades(ambitos: "NestoApp,NestoAPI", desdeId: 10) as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            CollectionAssert.AreEquivalent(new[] { 11, 12 }, resultado.Content.Select(n => n.Id).ToList(),
+                "la de NestoAPI se anuncia en la app aunque la app no haya cambiado de versión; la 10 ya la vio; la de Nesto no es suya");
+        }
+
+        [TestMethod]
+        public void GetNovedades_DesdeIdSinNadaNuevo_ListaVacia()
+        {
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO> { NovedadDe(10, "2.30.0", "NestoApp") });
+
+            var resultado = controller.GetNovedades(ambitos: "NestoApp,NestoAPI", desdeId: 10) as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public void GetNovedades_AmbitosMandaSobreAmbito_YDesdeIdValeConUnSoloAmbito()
+        {
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            {
+                NovedadDe(1, "2.30.0", "NestoApp"),
+                NovedadDe(2, "1.10.60.0", "NestoAPI"),
+                NovedadDe(3, "2.31.0", "NestoApp")
+            });
+
+            var conAmbitos = controller.GetNovedades(ambito: "Nesto", ambitos: "NestoAPI") as OkNegotiatedContentResult<List<NovedadDTO>>;
+            Assert.AreEqual(2, conAmbitos.Content.Single().Id);
+
+            var unAmbito = controller.GetNovedades(ambito: "NestoApp", desdeId: 1) as OkNegotiatedContentResult<List<NovedadDTO>>;
+            Assert.AreEqual(3, unAmbito.Content.Single().Id);
+        }
+
+        [TestMethod]
+        public void SepararAmbitos_SinVaciosNiRepetidos()
+        {
+            CollectionAssert.AreEqual(new[] { "NestoApp", "NestoAPI" }, NovedadesController.SepararAmbitos(" NestoApp ,, NestoAPI;nestoapp"));
+            Assert.AreEqual(0, NovedadesController.SepararAmbitos(null).Count);
+        }
     }
 }
