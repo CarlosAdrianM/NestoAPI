@@ -1035,6 +1035,7 @@
     <Compile Include="Models\RecursosHumanos\CalendarioFestivosTests.cs" />
     <Compile Include="Controllers\FestivosControllerTests.cs" />
     <Compile Include="Infrastructure\AvisoFestivosSinCargarJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\UbicacionesHuerfanasJobsServiceTests.cs" />
     <Compile Include="Models\RecursosHumanos\GestorFestivosPrimerLaborableTests.cs" />
     <Compile Include="Models\RecursosHumanos\EmpleadoTest.cs" />
     <Compile Include="Models\RecursosHumanos\AccionTest.cs" />

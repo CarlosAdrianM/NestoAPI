@@ -867,6 +867,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'festivos-sin-cargar' configurado (día 1 de cada mes a las 9:00)");
 
+            // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
+            // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Ubicaciones.UbicacionesHuerfanasJobsService.JOB_ID,
+                () => Infraestructure.Ubicaciones.UbicacionesHuerfanasJobsService.Comprobar(),
+                Infraestructure.Ubicaciones.UbicacionesHuerfanasJobsService.CRON, // Cron: todos los días a las 4:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'ubicaciones-huerfanas' configurado (todos los días a las 4:30)");
+
             // Feria online 11/26: cada hora en punto (y una vez al arrancar, por si la API estuvo parada a las 00:00), pone «Aplicar Dto» = 1
             // a las fichas de dbo.CampanasAplicarDto el primer día de su campaña y se lo devuelve al acabar. Sin tabla, no hace nada.
             RecurringJob.AddOrUpdate(

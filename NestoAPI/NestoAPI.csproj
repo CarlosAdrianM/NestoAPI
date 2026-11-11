@@ -1388,6 +1388,7 @@
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicionSql.cs" />
     <Compile Include="Infraestructure\Ubicaciones\CuadreUbicaciones.cs" />
+    <Compile Include="Infraestructure\Ubicaciones\UbicacionesHuerfanasJobsService.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicacionesSql.cs" />
