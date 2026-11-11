@@ -237,5 +237,70 @@ namespace NestoAPI.Tests.Infrastructure
 
             StringAssert.Contains(ex.Message, "Faltan 3");
         }
+
+        // ---- 11/11/26 (RV2600129): portes abonados en otra cuenta de portes ----
+
+        private static LinPedidoVta Portes(string factura, int orden, string cuenta, decimal baseImponible, DateTime fecha, string cliente = "15191")
+        {
+            LinPedidoVta linea = LineaFacturada(factura, orden, 1, fecha, producto: cuenta);
+            linea.Base_Imponible = baseImponible;
+            linea.Nº_Cliente = cliente;
+            return linea;
+        }
+
+        [TestMethod]
+        public async Task Portes_AbonoEnLaGenericaContraFacturaConLaDeLaAgencia_LaEncuentra_RV2600129()
+        {
+            // La NV2617524 llevaba los portes en 62400002 (Ontime); la RV2600129 los abona (−5 €) en 62400000.
+            var gestor = new GestorFacturasRectificativas(DbCon(new List<LinPedidoVta>
+            {
+                Portes("NV2617524", 300, Constantes.Cuentas.CUENTA_PORTES_ONTIME, 5M, new DateTime(2026, 10, 29)),
+                Portes("NV2617000", 200, Constantes.Cuentas.CUENTA_PORTES_ONTIME, 5M, new DateTime(2026, 10, 29), cliente: "99999")
+            }));
+
+            List<VinculacionRectificativa> v = await gestor.BuscarFacturasOriginales("1", "15191", Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL, 1,
+                importeARectificar: 5M);
+
+            Assert.AreEqual("NV2617524", v.Single().FacturaOriginalNumero);
+            Assert.AreEqual(300, v.Single().FacturaOriginalLinea);
+            Assert.AreEqual(1, v.Single().CantidadRectificada);
+        }
+
+        [TestMethod]
+        public void Portes_PrimeroLaMismaCuentaLuegoLasDemas_MasRecientePrimero_YSoloSiLlegaAlImporte()
+        {
+            var candidatas = new List<GestorFacturasRectificativas.PortesOriginales>
+            {
+                new GestorFacturasRectificativas.PortesOriginales { Factura = "A", Linea = 1, Cantidad = 1, Cuenta = "62400002", BaseImponible = 5, FechaFactura = new DateTime(2026, 10, 30) },
+                new GestorFacturasRectificativas.PortesOriginales { Factura = "B", Linea = 2, Cantidad = 1, Cuenta = "62400000", BaseImponible = 5, FechaFactura = new DateTime(2026, 10, 1) },
+                new GestorFacturasRectificativas.PortesOriginales { Factura = "C", Linea = 3, Cantidad = 1, Cuenta = "62400005", BaseImponible = 5, FechaFactura = new DateTime(2026, 10, 29) },
+                new GestorFacturasRectificativas.PortesOriginales { Factura = "D", Linea = 4, Cantidad = 1, Cuenta = "62400002", BaseImponible = 3, FechaFactura = new DateTime(2026, 11, 1) }
+            };
+
+            List<CompraOriginal> orden = GestorFacturasRectificativas.OrdenarPortes(candidatas, "62400000", 5M);
+
+            CollectionAssert.AreEqual(new[] { "B", "A", "C" }, orden.Select(c => c.Factura).ToArray());
+        }
+
+        [TestMethod]
+        public void EsCuentaPortes_Solo624DeOchoCifras()
+        {
+            Assert.IsTrue(GestorFacturasRectificativas.EsCuentaPortes("62400000  "));
+            Assert.IsTrue(GestorFacturasRectificativas.EsCuentaPortes("62400017"));
+            Assert.IsFalse(GestorFacturasRectificativas.EsCuentaPortes("62412"));
+            Assert.IsFalse(GestorFacturasRectificativas.EsCuentaPortes("70500000"));
+            Assert.IsFalse(GestorFacturasRectificativas.EsCuentaPortes(null));
+        }
+
+        [TestMethod]
+        public async Task Producto_NoCambia_SoloElMismoProducto()
+        {
+            var gestor = new GestorFacturasRectificativas(DbCon(new List<LinPedidoVta>
+            {
+                LineaFacturada("NV1", 1, 2, new DateTime(2026, 10, 1), producto: "12346")
+            }));
+
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => gestor.BuscarFacturasOriginales("1", "15191", "12345", 1, importeARectificar: 5M));
+        }
     }
 }

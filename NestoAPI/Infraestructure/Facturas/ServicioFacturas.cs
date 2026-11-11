@@ -1960,7 +1960,7 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 List<Models.Rectificativas.VinculacionRectificativa> vinculaciones =
                     await gestor.BuscarFacturasOriginales(empresaLimpia, cliente?.Trim(), linea.Producto,
-                        -(linea.Cantidad ?? 0), facturaPreferida);
+                        -(linea.Cantidad ?? 0), facturaPreferida, Math.Abs(linea.Base_Imponible));
                 nuevas.AddRange(vinculaciones.Select(v => new LinFacturaVtaRectificacion
                 {
                     Empresa = empresaLimpia,

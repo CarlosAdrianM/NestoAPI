@@ -28,9 +28,20 @@ namespace NestoAPI.Infraestructure.Rectificativas
         /// NestoAPI#760: la factura que el cliente dice devolver (FacturaOriginal de la nota de recogida). Sus líneas van PRIMERO y
         /// lo que no quepa en ellas sigue por el LIFO de siempre. Null = solo LIFO.
         /// </param>
+        /// <param name="importeARectificar">
+        /// 11/11/26 (RV2600129): el importe (base, en positivo) de la línea rectificativa. Solo se usa en las cuentas de portes: la
+        /// línea original tiene que llegar a ese importe. Null = sin mirar el importe.
+        /// </param>
         public async Task<List<VinculacionRectificativa>> BuscarFacturasOriginales(
-            string empresa, string cliente, string producto, decimal cantidadARectificar, string facturaPreferida = null)
+            string empresa, string cliente, string producto, decimal cantidadARectificar, string facturaPreferida = null,
+            decimal? importeARectificar = null)
         {
+            if (EsCuentaPortes(producto))
+            {
+                return await BuscarPortesOriginales(empresa, cliente, producto, cantidadARectificar, facturaPreferida, importeARectificar)
+                    .ConfigureAwait(false);
+            }
+
             // Solo líneas FACTURADAS y positivas (una negativa sería otra rectificativa)
             var lineasFacturadas = await db.LinPedidoVtas
                 .Where(l => l.Empresa == empresa
@@ -85,6 +96,85 @@ namespace NestoAPI.Infraestructure.Rectificativas
             }
             bool EsPreferida(CompraOriginal c) => string.Equals(c.Factura?.Trim(), preferida, StringComparison.OrdinalIgnoreCase);
             return compras.Where(EsPreferida).Concat(compras.Where(c => !EsPreferida(c))).ToList();
+        }
+
+        /// <summary>
+        /// 11/11/26 (RV2600129, −5 € en 62400000 contra la NV2617524, que los llevaba en 62400002): las cuentas de portes (624xxxxx). El
+        /// abono de unos portes puede ir a la cuenta genérica aunque la factura los llevara en la de la agencia.
+        /// </summary>
+        internal static bool EsCuentaPortes(string producto)
+        {
+            string cuenta = producto?.Trim();
+            return cuenta != null && cuenta.Length == 8 && cuenta.StartsWith(PREFIJO_CUENTAS_PORTES, StringComparison.Ordinal) && cuenta.All(char.IsDigit);
+        }
+
+        internal const string PREFIJO_CUENTAS_PORTES = "624";
+
+        /// <summary>Línea de portes facturada candidata (con su cuenta, su importe y su fecha).</summary>
+        internal class PortesOriginales : CompraOriginal
+        {
+            public string Cuenta { get; set; }
+            public decimal BaseImponible { get; set; }
+            public DateTime? FechaFactura { get; set; }
+        }
+
+        /// <summary>
+        /// 11/11/26: los portes del mismo cliente en CUALQUIER cuenta de portes: primero la misma cuenta, luego las demás 624, cada
+        /// grupo de la más reciente a la más antigua; solo las que llegan al importe (si se sabe). La factura preferida, delante.
+        /// </summary>
+        private async Task<List<VinculacionRectificativa>> BuscarPortesOriginales(string empresa, string cliente, string producto,
+            decimal cantidadARectificar, string facturaPreferida, decimal? importeARectificar)
+        {
+            var lineas = await db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa
+                    && l.Nº_Cliente == cliente
+                    && l.Producto.StartsWith(PREFIJO_CUENTAS_PORTES)
+                    && l.Estado == Constantes.EstadosLineaVenta.FACTURA
+                    && l.Cantidad > 0
+                    && l.Nº_Factura != null)
+                .Select(l => new { l.Nº_Factura, l.Nº_Orden, l.Cantidad, l.Producto, l.Base_Imponible, l.Fecha_Factura })
+                .ToListAsync().ConfigureAwait(false);
+            List<PortesOriginales> candidatas = lineas
+                .Where(l => EsCuentaPortes(l.Producto))
+                .Select(l => new PortesOriginales
+                {
+                    Factura = l.Nº_Factura.Trim(),
+                    Linea = l.Nº_Orden,
+                    Cantidad = l.Cantidad ?? 0,
+                    Cuenta = l.Producto.Trim(),
+                    BaseImponible = l.Base_Imponible,
+                    FechaFactura = l.Fecha_Factura
+                })
+                .ToList();
+            if (candidatas.Count > 0)
+            {
+                List<string> numerosFactura = candidatas.Select(c => c.Factura).Distinct().ToList();
+                Dictionary<string, decimal> yaRectificado = (await db.LinFacturaVtaRectificaciones
+                    .Where(r => r.Empresa == empresa && numerosFactura.Contains(r.FacturaOriginalNumero.Trim()))
+                    .ToListAsync().ConfigureAwait(false))
+                    .GroupBy(r => ClaveLinea(r.FacturaOriginalNumero, r.FacturaOriginalLinea))
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.CantidadRectificada));
+                foreach (PortesOriginales c in candidatas)
+                {
+                    c.YaRectificada = yaRectificado.TryGetValue(ClaveLinea(c.Factura, c.Linea), out decimal r) ? r : 0;
+                }
+            }
+            return RepartirEntreCompras(producto, cantidadARectificar,
+                PreferidaPrimero(OrdenarPortes(candidatas, producto, importeARectificar), facturaPreferida));
+        }
+
+        /// <summary>11/11/26 (puro): misma cuenta primero, luego las demás 624; más reciente primero; solo las que llegan al importe.</summary>
+        internal static List<CompraOriginal> OrdenarPortes(IEnumerable<PortesOriginales> candidatas, string cuenta, decimal? importeARectificar)
+        {
+            string misma = cuenta?.Trim();
+            decimal? importe = importeARectificar.HasValue ? Math.Abs(importeARectificar.Value) : (decimal?)null;
+            return (candidatas ?? Enumerable.Empty<PortesOriginales>())
+                .Where(c => c != null && (!importe.HasValue || Math.Abs(c.BaseImponible) >= importe.Value))
+                .OrderBy(c => string.Equals(c.Cuenta?.Trim(), misma, StringComparison.Ordinal) ? 0 : 1)
+                .ThenByDescending(c => c.FechaFactura ?? DateTime.MinValue)
+                .ThenByDescending(c => c.Linea)
+                .Cast<CompraOriginal>()
+                .ToList();
         }
 
         private static string ClaveLinea(string factura, int linea) => $"{factura?.Trim()}|{linea}";
