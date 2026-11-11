@@ -127,25 +127,35 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
-        public async Task Lanzar_BloqueIncompleto_NoLanzaNadaYAvisaADireccion()
+        public async Task Lanzar_MenosDeCincuenta_LanzaConLosQueHayYSinAviso()
         {
-            Candidatos(49);
+            Candidatos(45); // agotada la cola, unos 45 al mes
 
             ResultadoBloqueDiarioEmbudo r = await Servicio().LanzarAsync(HOY);
 
-            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Incompleto, r);
-            NoSeHaLanzado();
-            SeHaAvisadoADireccion();
-            StringAssert.Contains(registrados.Single().Message, "solo quedan 49");
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.LanzadoIncompleto, r);
+            A.CallTo(() => repo.Registrar("NV-2026-11-03", A<IList<string>>.That.Matches(c => c.Count == 45), A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            Assert.AreEqual(0, registrados.Count);
         }
 
         [TestMethod]
-        public async Task Lanzar_SinCandidatos_NoLanzaNadaYAvisa()
+        public async Task Lanzar_SinCandidatos_NoLanzaNadaNiAvisa_SoloElRegistro()
         {
             Candidatos(0);
 
-            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Incompleto, await Servicio().LanzarAsync(HOY));
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.SinCandidatos, await Servicio().LanzarAsync(HOY));
             NoSeHaLanzado();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            Assert.AreEqual(1, registrados.Count, "Solo queda en ELMAH");
+        }
+
+        [TestMethod]
+        public async Task Lanzar_SiFallaElLanzamiento_AvisaADireccion()
+        {
+            A.CallTo(() => repo.Registrar(A<string>._, A<IList<string>>._, A<string>._)).Throws(new TimeoutException("tiempo agotado"));
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Fallo, await Servicio().LanzarAsync(HOY));
             SeHaAvisadoADireccion();
         }
 

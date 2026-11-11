@@ -16,8 +16,10 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         /// <summary>Hoy ya hay un bloque (a mano o de otra pasada): no se lanza otro.</summary>
         YaLanzadoHoy,
         Lanzado,
-        /// <summary>Menos candidatos que el tamaño del bloque (o ninguno): no se lanza y se avisa.</summary>
-        Incompleto,
+        /// <summary>Menos candidatos que el tamaño del bloque (pero alguno): se lanza con los que hay, sin aviso.</summary>
+        LanzadoIncompleto,
+        /// <summary>Ningún candidato: no se lanza nada; solo queda en ELMAH, sin aviso.</summary>
+        SinCandidatos,
         /// <summary>Sin la tabla o ha fallado algo: no se lanza y se avisa.</summary>
         Fallo
     }
@@ -31,8 +33,10 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
     /// <item>Interruptor en BD (los flags de Web.config se pierden al publicar): ParametrosUsuario empresa 1, usuario «(defecto)»,
     /// clave <see cref="PARAMETRO_INTERRUPTOR"/>. Solo con la fila y valor «1» (Scripts/EmbudoBloqueDiario_Interruptor.sql).</item>
     /// <item>Si hoy ya hay un bloque (p. ej. lanzado a mano), no lanza otro.</item>
-    /// <item>Con menos de <see cref="TAMANO_BLOQUE"/> candidatos, ninguno, sin tabla o si falla: no lanza nada, lo deja en ELMAH y
-    /// avisa a Dirección en la campana de Nesto (una vez: el job corre una vez al día y nunca lanza excepción, así que Hangfire no reintenta).</item>
+    /// <item>Sin tabla o si falla la consulta o el lanzamiento: no lanza nada, lo deja en ELMAH y avisa a Dirección en la campana de
+    /// Nesto (una vez: el job corre una vez al día y nunca lanza excepción, así que Hangfire no reintenta).</item>
+    /// <item>Carlos (11/11/26): con menos de <see cref="TAMANO_BLOQUE"/> candidatos pero alguno, lanza el bloque con los que haya, sin
+    /// aviso (agotada la cola entran unos 45 al mes); con ninguno, no lanza y solo lo deja en ELMAH, sin aviso.</item>
     /// </list>
     /// </summary>
     public class EmbudoBloqueDiarioJobsService
@@ -149,21 +153,16 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 var servicio = new ServicioEmbudoClientes(repositorio);
                 ResultadoRepublicarEmbudo ensayo = await servicio.Republicar(
                     new PeticionRepublicarEmbudo { Bloque = bloque, Maximo = TAMANO_BLOQUE, Ensayo = true }, USUARIO).ConfigureAwait(false);
-                if (ensayo.ClientesEncolados < TAMANO_BLOQUE)
+                if (ensayo.ClientesEncolados == 0)
                 {
-                    await NoLanzado(hoy, bloque, ensayo.ClientesEncolados == 0
-                        ? "no queda ningún cliente que cumpla las reglas del embudo"
-                        : $"solo quedan {ensayo.ClientesEncolados} clientes que cumplen las reglas del embudo (el bloque es de {TAMANO_BLOQUE})").ConfigureAwait(false);
-                    return ResultadoBloqueDiarioEmbudo.Incompleto;
+                    // Carlos (11/11/26): cola agotada un día cualquiera: solo el registro, sin aviso
+                    Registrar(new Exception($"[Embudo diario] Hoy ({hoy:dd/MM/yyyy}) no hay ningún cliente nuevo para el embudo: no se lanza el bloque {bloque}."));
+                    return ResultadoBloqueDiarioEmbudo.SinCandidatos;
                 }
+                // Con menos de TAMANO_BLOQUE (cuando se agote la cola entran unos 45 al mes), se lanza con los que haya, sin aviso
                 ResultadoRepublicarEmbudo lanzado = await servicio.Republicar(
                     new PeticionRepublicarEmbudo { Bloque = bloque, Maximo = TAMANO_BLOQUE, Ensayo = false }, USUARIO).ConfigureAwait(false);
-                if (lanzado.ClientesEncolados < TAMANO_BLOQUE)
-                {
-                    // Otro los ha metido entre el ensayo y el lanzamiento: el bloque sale con los que han entrado
-                    Registrar(new Exception($"[Embudo diario] El bloque {bloque} ha salido con {lanzado.ClientesEncolados} clientes en vez de {TAMANO_BLOQUE}."));
-                }
-                return ResultadoBloqueDiarioEmbudo.Lanzado;
+                return lanzado.ClientesEncolados >= TAMANO_BLOQUE ? ResultadoBloqueDiarioEmbudo.Lanzado : ResultadoBloqueDiarioEmbudo.LanzadoIncompleto;
             }
             catch (Exception ex)
             {
