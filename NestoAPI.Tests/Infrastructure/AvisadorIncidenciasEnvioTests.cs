@@ -39,6 +39,7 @@ namespace NestoAPI.Tests.Infrastructure
             Empresa = "1",
             Pedido = 925137,
             Cliente = "15191",
+            Contacto = "0  ",
             NombreCliente = "Peluquería Ejemplo",
             UsuarioPedido = "MariaJose",
             CorreoUsuarioPedido = "mariajose@nuevavision.es",
@@ -66,9 +67,9 @@ namespace NestoAPI.Tests.Infrastructure
 
             CollectionAssert.AreEquivalent(new[] { "santiago@nuevavision.es", "peluqueria@nuevavision.es" }, mail.To.Select(t => t.Address).ToList());
             Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
-            Assert.AreEqual("Incidencia de la agencia en el pedido 925137 - c/ 15191 - Peluquería Ejemplo", mail.Subject);
+            Assert.AreEqual("Incidencia de la agencia en el pedido 925137 - c/ 15191/0 - Peluquería Ejemplo", mail.Subject);
             StringAssert.Contains(mail.Body, "925137");
-            StringAssert.Contains(mail.Body, System.Net.WebUtility.HtmlEncode("15191 - Peluquería Ejemplo"));
+            StringAssert.Contains(mail.Body, System.Net.WebUtility.HtmlEncode("15191/0 - Peluquería Ejemplo"));
             StringAssert.Contains(mail.Body, "CTT");
             StringAssert.Contains(mail.Body, "ALB123");
             StringAssert.Contains(mail.Body, System.Net.WebUtility.HtmlEncode("DIRECCIÓN INCORRECTA"));

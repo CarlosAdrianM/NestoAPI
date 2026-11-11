@@ -710,6 +710,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                 ["2100"] = (EstadoEnvioSeguimiento.Entregado, "ENTREGADO"),
                 ["2110"] = (EstadoEnvioSeguimiento.Entregado, "ENTREGADO ADMINISTRATIVO"),
                 ["2200"] = (EstadoEnvioSeguimiento.Incidentado, "ENTREGA PARCIAL"),
+                // 11/11/26: NO está en la tabla oficial y llega sin descripción. Visto dos veces (envíos 250413 el
+                // 02/11 y 250187 el 10/11): es el paso previo a «DISPONIBLE EN PUNTO CTT» (2310) o a la entrega del
+                // mismo día. No es final ni pide que nadie mire el envío. Descripción nuestra, no de CTT.
+                ["2300"] = (EstadoEnvioSeguimiento.Tramitado, "DE CAMINO A PUNTO CTT"),
                 ["2310"] = (EstadoEnvioSeguimiento.Tramitado, "DISPONIBLE EN PUNTO CTT PARA ENTREGA"),
                 // 24/09/26 (CTT): el cliente estaba ausente y sale de nuevo a reparto
                 ["2400"] = (EstadoEnvioSeguimiento.Tramitado, "NUEVO REPARTO"),

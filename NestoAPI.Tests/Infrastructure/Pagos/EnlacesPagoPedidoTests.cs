@@ -66,6 +66,19 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
+        public void PedidoDelConcepto_SoloElNumeroDelPedido_TambienCuenta()
+        {
+            // 11/11/26, pedido 929559: tres enlaces de 73,02 €; el de Nesto («Pago pedido 929559 de Nueva Visión») se vio y
+            // los dos tecleados a mano con el concepto «929559» no: la consulta de reembolso anuló solo uno.
+            Assert.AreEqual(929559, EnlacesPagoPedido.PedidoDelConcepto("929559"));
+            Assert.AreEqual(929559, EnlacesPagoPedido.PedidoDelConcepto(" 929559  "));
+            Assert.IsTrue(EnlacesPagoPedido.EsEnlaceDelPedido("TPVVirtual", "929559", 929559));
+            Assert.IsNull(EnlacesPagoPedido.PedidoDelConcepto("32804"), "cinco cifras sueltas: puede ser un cliente");
+            Assert.IsNull(EnlacesPagoPedido.PedidoDelConcepto("929559 y 929560"), "no es solo un número");
+            Assert.IsNull(EnlacesPagoPedido.PedidoDelConcepto("Factura 929559"));
+        }
+
+        [TestMethod]
         public void EsEnlaceDelPedido_SoloTpvVirtualYElMismoPedido()
         {
             Assert.IsTrue(EnlacesPagoPedido.EsEnlaceDelPedido("TPVVirtual", "Pedido 928521", PEDIDO));

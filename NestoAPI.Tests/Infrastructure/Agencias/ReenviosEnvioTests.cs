@@ -480,7 +480,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreoDevolucion(Devuelto(), Comerciales(), "CTT");
 
-            Assert.AreEqual("Envío devuelto del pedido 925137 - c/ 15191 - Peluquería Ejemplo: ¿lo sigue queriendo el cliente?", mail.Subject);
+            Assert.AreEqual("Envío devuelto del pedido 925137 - c/ 15191/0 - Peluquería Ejemplo: ¿lo sigue queriendo el cliente?", mail.Subject);
             Assert.AreEqual("santiago@nuevavision.es", mail.To.Single().Address);
             Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
             StringAssert.Contains(mail.Body, "251300");
@@ -691,7 +691,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreoReenvioEntregado(Devuelto(estado: Constantes.Agencias.ESTADO_ENTREGADO), fila,
                 new EnviosAgencia { Numero = 300000 }, true, Comerciales(), "CTT");
 
-            Assert.AreEqual("La agencia entregó el envío 251300 del pedido 925137 - c/ 15191 - Peluquería Ejemplo: se anula el reenvío 300000", mail.Subject);
+            Assert.AreEqual("La agencia entregó el envío 251300 del pedido 925137 - c/ 15191/0 - Peluquería Ejemplo: se anula el reenvío 300000", mail.Subject);
             Assert.AreEqual("santiago@nuevavision.es", mail.To.Single().Address);
             Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
             StringAssert.Contains(mail.Body, "se ha anulado");

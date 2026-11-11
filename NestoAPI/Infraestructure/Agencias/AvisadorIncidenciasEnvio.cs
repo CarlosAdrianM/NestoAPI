@@ -385,6 +385,13 @@ namespace NestoAPI.Infraestructure.Agencias
         private static string TextoCliente(EnviosAgencia envio, ComercialesPedido comerciales)
         {
             string numero = (comerciales?.Cliente ?? envio.Cliente)?.Trim();
+            // Carlos 11/11/26: cliente/contacto (27593/0), no solo el cliente: un cliente con varios contactos no se
+            // distingue por el número. El contacto es el del pedido o, si no se ha leído, el del envío.
+            string contacto = (string.IsNullOrWhiteSpace(comerciales?.Contacto) ? envio.Contacto : comerciales.Contacto)?.Trim();
+            if (!string.IsNullOrWhiteSpace(numero) && !string.IsNullOrWhiteSpace(contacto))
+            {
+                numero = $"{numero}/{contacto}";
+            }
             string nombre = (comerciales?.NombreCliente ?? envio.Nombre)?.Trim();
             return string.IsNullOrWhiteSpace(nombre) ? numero : $"{numero} - {nombre}";
         }

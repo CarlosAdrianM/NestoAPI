@@ -30,6 +30,10 @@ namespace NestoAPI.Infraestructure.Pagos
         private static readonly Regex PedidoEnConcepto = new Regex(@"pedido\s*n?º?\s*(\d{5,9})\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+        // El concepto ENTERO es un número de pedido: «929559», « 929559 ». Seis cifras como mínimo (los pedidos de hoy): un
+        // concepto de cinco cifras sueltas puede ser un cliente o un importe.
+        private static readonly Regex SoloNumeroDePedido = new Regex(@"^\s*(\d{6,9})\s*$", RegexOptions.CultureInvariant);
+
         private static readonly CultureInfo Espanol = new CultureInfo("es-ES");
 
         /// <summary>El número de pedido del concepto del enlace, o null si no lleva ninguno.</summary>
@@ -38,6 +42,13 @@ namespace NestoAPI.Infraestructure.Pagos
             if (string.IsNullOrWhiteSpace(concepto))
             {
                 return null;
+            }
+            // 11/11/26 (929559): el concepto puede ser solo el número del pedido («929559», tecleado a mano en el enlace). Sin
+            // esto, la consulta de reembolso solo vio uno de los tres enlaces del pedido y los otros dos quedaron sin anular.
+            Match soloNumero = SoloNumeroDePedido.Match(concepto);
+            if (soloNumero.Success && int.TryParse(soloNumero.Groups[1].Value, out int pedidoSolo) && pedidoSolo > 0)
+            {
+                return pedidoSolo;
             }
             Match encontrado = PedidoEnConcepto.Match(concepto);
             return encontrado.Success && int.TryParse(encontrado.Groups[1].Value, out int numero) && numero > 0

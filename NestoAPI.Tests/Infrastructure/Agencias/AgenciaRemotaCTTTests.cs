@@ -706,6 +706,18 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public void Traducir_2300SinDescripcion_SigueTramitadoYNoAvisaEnElmah()
+        {
+            // 02/11 y 10/11/26: envíos 250413 y 250187. No está en la tabla oficial de CTT y llega sin
+            // descripción; después vino la entrega o el 2310 (disponible en punto).
+            var resultado = AgenciaRemotaCTT.Traducir("2300", "", null, null, "0082800082809773500534");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, resultado.Estado);
+            Assert.AreEqual("DE CAMINO A PUNTO CTT", resultado.Detalle);
+            CollectionAssert.Contains(AgenciaRemotaCTT.CODIGOS_CONOCIDOS, "2300");
+        }
+
+        [TestMethod]
         public void Traducir_FinalesDeLaTablaOficial()
         {
             Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, AgenciaRemotaCTT.Traducir("2110", "", null, null, "A").Estado);
