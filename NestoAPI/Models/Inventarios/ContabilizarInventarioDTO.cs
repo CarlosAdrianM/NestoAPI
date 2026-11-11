@@ -38,6 +38,8 @@ namespace NestoAPI.Models.Inventarios
     {
         /// <summary>La fila de Inventarios; null en UbicacionSinRellenar (es una fila de Ubicaciones, no del inventario).</summary>
         public int? NºOrden { get; set; }
+        /// <summary>Épica #784: el mismo NºOrden, con nombre sin «º», para DELETE api/Inventarios/Filas/{numeroOrden} (null en UbicacionSinRellenar).</summary>
+        public int? NumeroOrden => NºOrden;
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public int? StockCalculado { get; set; }

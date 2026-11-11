@@ -638,10 +638,12 @@
     <Compile Include="Infraestructure\Inventarios\RepositorioContabilizarInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioContabilizarInventario.cs" />
     <Compile Include="Controllers\InventariosController.ACero.cs" />
+    <Compile Include="Controllers\InventariosController.BorrarFila.cs" />
     <Compile Include="Controllers\InventariosController.Ariadna.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioInventarioUbicaciones.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioInventarioUbicaciones.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioInventarioACero.cs" />
+    <Compile Include="Infraestructure\Inventarios\ServicioBorrarFilaInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioInventarioACero.cs" />
     <Compile Include="Models\Inventarios\InventarioUbicacionesDTO.cs" />
     <Compile Include="Controllers\ParametrosIvaController.cs" />

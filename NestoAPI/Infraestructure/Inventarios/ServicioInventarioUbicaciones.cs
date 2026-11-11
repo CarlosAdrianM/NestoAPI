@@ -140,8 +140,11 @@ namespace NestoAPI.Infraestructure.Inventarios
             Dictionary<string, int> productos = (await repositorio.ProductosPorUbicacion(almacen).ConfigureAwait(false) ?? new List<UbicacionConProductos>())
                 .GroupBy(u => Clave(u.Pasillo, u.Fila, u.Columna))
                 .ToDictionary(g => g.Key, g => g.Sum(u => u.Productos));
-            var rellenadas = new HashSet<string>((await repositorio.UbicacionesRellenadas(empresa, almacen, hoy.Date).ConfigureAwait(false)
-                ?? new List<UbicacionConProductos>()).Select(u => Clave(u.Pasillo, u.Fila, u.Columna)));
+            // Épica #784: rellenada = con al menos tantas filas pendientes como productos tiene (no basta la fila de un «Dejar a cero»).
+            Dictionary<string, int> rellenadas = (await repositorio.UbicacionesRellenadas(empresa, almacen, hoy.Date).ConfigureAwait(false)
+                ?? new List<UbicacionConProductos>())
+                .GroupBy(u => Clave(u.Pasillo, u.Fila, u.Columna))
+                .ToDictionary(g => g.Key, g => g.Sum(u => u.Productos));
 
             List<UbicacionParaInventarioDTO> siguientes = prioridad
                 .Where(u => u != null)
@@ -155,7 +158,7 @@ namespace NestoAPI.Infraestructure.Inventarios
                         Columna = u.Columna?.Trim(),
                         DiasUltInventario = u.DiasUltInventario ?? 0,
                         Productos = productos.TryGetValue(clave, out int n) ? n : 0,
-                        YaRellenadaHoy = rellenadas.Contains(clave)
+                        YaRellenadaHoy = rellenadas.TryGetValue(clave, out int filasHoy) && filasHoy >= (productos.TryGetValue(clave, out int p) ? p : 0)
                     };
                 })
                 .ToList();
@@ -192,16 +195,20 @@ namespace NestoAPI.Infraestructure.Inventarios
             {
                 List<LineaInventarioContadaDTO> pendientes = await unidad.Pendientes(empresa, almacen, fecha, filtro).ConfigureAwait(false)
                     ?? new List<LineaInventarioContadaDTO>();
-                if (pendientes.Count > 0)
+
+                // Épica #784 (11/11/26): «ya rellenada» es que TODOS los productos de la ubicación tienen ya su fila pendiente de ese día.
+                // Antes bastaba una: tras «Dejar a cero» una referencia (que crea solo su fila), los demás productos de la ubicación se
+                // quedaban sin la suya. Ahora se crean solo las que faltan, sin duplicar las que ya hay.
+                List<StockProductoInventario> teorico = await unidad.TeoricoUbicacion(empresa, almacen, pasillo, fila, columna).ConfigureAwait(false);
+                List<Inventario> filas = FilasQueFaltan(FilasDeUbicacion(teorico, empresa, almacen, fecha, usuarioAuditoria, pasillo, fila, columna), pendientes);
+                if (pendientes.Count > 0 && filas.Count == 0)
                 {
                     return YaRellenado<RellenarInventarioFilasRespuestaDTO>(
                         $"La ubicación {Ubicacion(pasillo, fila, columna)} ya está rellenada el {Dia(fecha)}: tiene {Filas(pendientes.Count)} sin contabilizar.",
                         pendientes);
                 }
 
-                List<StockProductoInventario> teorico = await unidad.TeoricoUbicacion(empresa, almacen, pasillo, fila, columna).ConfigureAwait(false);
-                List<Inventario> filas = FilasDeUbicacion(teorico, empresa, almacen, fecha, usuarioAuditoria, pasillo, fila, columna);
-                var lineas = new List<LineaInventarioContadaDTO>();
+                var lineas = pendientes;
                 if (filas.Count > 0)
                 {
                     await unidad.Insertar(filas).ConfigureAwait(false);
@@ -431,6 +438,15 @@ namespace NestoAPI.Infraestructure.Inventarios
                     return linea;
                 })
                 .ToList();
+        }
+
+        /// <summary>Épica #784: de las filas del teórico, solo las de productos que aún no tienen fila pendiente en la ubicación ese día.</summary>
+        internal static List<Inventario> FilasQueFaltan(IEnumerable<Inventario> filas, IEnumerable<LineaInventarioContadaDTO> pendientes)
+        {
+            var yaTienen = new HashSet<string>((pendientes ?? Enumerable.Empty<LineaInventarioContadaDTO>())
+                .Where(p => p != null && !string.IsNullOrWhiteSpace(p.Producto))
+                .Select(p => p.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
+            return (filas ?? Enumerable.Empty<Inventario>()).Where(f => !yaTienen.Contains(f.Número?.Trim() ?? string.Empty)).ToList();
         }
 
         private static Inventario Fila(StockProductoInventario producto, string empresa, string almacen, DateTime fecha, string usuario, int stock)
