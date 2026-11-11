@@ -90,6 +90,26 @@ namespace NestoAPI.Controllers
             return Ok(cabeceras);
         }
 
+        // GET: api/Alquileres/Cabeceras/PorCliente?empresa=1&cliente=15191
+        // Novedad 1181: todos los alquileres de un cliente, de cualquier producto. Solo consulta:
+        // el guardado sigue siendo por producto (Cabeceras/Guardar reconcilia el producto entero).
+        [HttpGet]
+        [Route("api/Alquileres/Cabeceras/PorCliente")]
+        [ResponseType(typeof(List<AlquilerCabeceraDTO>))]
+        public async Task<IHttpActionResult> GetCabecerasAlquilerPorCliente(string empresa, string cliente)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(cliente))
+            {
+                return BadRequest("Empresa y Cliente son obligatorios.");
+            }
+
+            List<AlquilerCabeceraDTO> cabeceras = await _productosAlquiler
+                .LeerCabecerasAlquilerPorClienteAsync(empresa.Trim(), cliente.Trim())
+                .ConfigureAwait(false);
+
+            return Ok(cabeceras);
+        }
+
         // POST: api/Alquileres/Cabeceras/Guardar
         // Nesto#340 Fase 1C.3: reconcilia (altas/ediciones/bajas) las cabeceras del producto.
         // El usuario de auditoría se toma del Identity, no de lo que mande el cliente.

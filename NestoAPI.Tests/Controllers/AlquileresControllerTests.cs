@@ -171,6 +171,58 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => servicio.LeerCabecerasAlquilerAsync("1", "26780")).MustHaveHappenedOnceExactly();
         }
 
+        // Novedad 1181: alquileres de un cliente, de cualquier producto.
+
+        [TestMethod]
+        public async Task GetCabecerasAlquilerPorCliente_DevuelveLosAlquileresDelClienteDeVariosProductos()
+        {
+            var lista = new List<AlquilerCabeceraDTO>
+            {
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 100, Producto = "26780", NumeroSerie = "ABC123", Cliente = "15191" },
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 205, Producto = "31002", NumeroSerie = "XYZ900", Cliente = "15191" }
+            };
+            A.CallTo(() => servicio.LeerCabecerasAlquilerPorClienteAsync("1", "15191")).Returns(Task.FromResult(lista));
+
+            var resultado = await controller.GetCabecerasAlquilerPorCliente("1", "15191");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>));
+            var ok = (OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>)resultado;
+            Assert.AreEqual(2, ok.Content.Count);
+            CollectionAssert.AreEquivalent(new[] { "26780", "31002" }, ok.Content.Select(c => c.Producto).ToArray());
+        }
+
+        [TestMethod]
+        public async Task GetCabecerasAlquilerPorCliente_RecortaLosEspaciosDelCliente()
+        {
+            A.CallTo(() => servicio.LeerCabecerasAlquilerPorClienteAsync("1", "15191"))
+                .Returns(Task.FromResult(new List<AlquilerCabeceraDTO>()));
+
+            await controller.GetCabecerasAlquilerPorCliente("1", " 15191   ");
+
+            A.CallTo(() => servicio.LeerCabecerasAlquilerPorClienteAsync("1", "15191")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetCabecerasAlquilerPorCliente_SinAlquileres_DevuelveListaVacia()
+        {
+            A.CallTo(() => servicio.LeerCabecerasAlquilerPorClienteAsync(A<string>._, A<string>._))
+                .Returns(Task.FromResult(new List<AlquilerCabeceraDTO>()));
+
+            var resultado = await controller.GetCabecerasAlquilerPorCliente("1", "99999");
+
+            var ok = (OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>)resultado;
+            Assert.AreEqual(0, ok.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task GetCabecerasAlquilerPorCliente_SinCliente_DevuelveBadRequest()
+        {
+            var resultado = await controller.GetCabecerasAlquilerPorCliente("1", "  ");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => servicio.LeerCabecerasAlquilerPorClienteAsync(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task GuardarCabecerasAlquiler_LlamaAlServicioConUsuarioDeAuditoriaYDevuelveResultado()
         {

@@ -146,6 +146,27 @@ namespace NestoAPI.Infraestructure.Alquileres
             return await ProyectarConClientesAsync(empresa, cabeceras).ConfigureAwait(false);
         }
 
+        // Novedad 1181: todos los alquileres de un cliente, de cualquier producto. La comparación
+        // de cadenas de SQL Server ignora los espacios finales, así que basta con recortar el
+        // cliente que llega para que case con el char relleno de la BD.
+        public async Task<List<AlquilerCabeceraDTO>> LeerCabecerasAlquilerPorClienteAsync(string empresa, string cliente)
+        {
+            string clienteBuscado = cliente?.Trim();
+            if (string.IsNullOrEmpty(clienteBuscado))
+            {
+                return new List<AlquilerCabeceraDTO>();
+            }
+
+            List<CabAlquiler> cabeceras = await db.CabAlquileres
+                .Where(c => c.Empresa == empresa && c.Cliente == clienteBuscado)
+                .OrderBy(c => c.Producto)
+                .ThenBy(c => c.NumeroSerie)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return await ProyectarConClientesAsync(empresa, cabeceras).ConfigureAwait(false);
+        }
+
         // Nesto#340 Fase 1C.3: guardado del grid (reconcile). Sustituye DbContext.SaveChanges del
         // cliente Nesto, que persistía altas/ediciones/bajas del ChangeTracker. Aquí se reciben las
         // cabeceras actuales del producto y se reconcilian con las que hay en la BD:
