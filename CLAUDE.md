@@ -374,6 +374,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   los que haya, sin aviso (agotada la cola entran unos 45 al mes); ninguno → no lanza, solo ELMAH. Interruptor: ParametrosUsuario «(defecto)»
   `EmbudoBloqueDiario` = 1 (sin la fila, apagado; `Scripts/EmbudoBloqueDiario_Interruptor.sql`).
 
+### Eventos: candidatos a invitar, en MODO SOMBRA (NestoAPI#850, 11/11/26)
+- Solo se recogen datos (nada visible; cortes 2-4 en la issue). `dbo.EventosCandidatos` (fuera del EDMX, `Scripts/EventosCandidatosSombra.sql`):
+  foto por evento + cliente NV + día con características y puntuación `ReglaCandidatosEventos` (`reglas-1`, umbral 0,30, máx. 500) más
+  300 de control al azar (semilla por evento y día). El resultado NO se copia: `dbo.vEventosCandidatosResultado`. Distancia: dirección de
+  `DireccionesCoordenadas` o centro del CP (`dbo.CentrosCodigosPostales`, `Scripts/CentrosCodigosPostales_GeoNames.ps1`, GeoNames CC-BY)
+  a `SedesReparto`. Al crear/anunciar (Hangfire) y job `eventos-candidatos-sombra` 3:15. `GET api/Eventos/CandidatosSombra` (Dirección/Informática).
+
 ### Correos mandados a mano a nombre de quien los manda (sugerencia 1167, 11/11/26)
 - Pedido, presupuesto y mandato (`GestorEnvioDocumentosCorreo`) y facturas A MANO (`GestorFacturas.EnviarFacturasACorreo`, vía
   `RemitenteDelUsuario`, que solo pone `FacturasController`): From con la MISMA dirección de la serie (Office 365 autenticado rechaza

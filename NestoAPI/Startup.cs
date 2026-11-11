@@ -880,6 +880,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'embudo-bloque-diario' configurado (todos los días a las 7:00)");
 
+            // Eventos: candidatos a invitar, en MODO SOMBRA (Carlos 11/11/26): de madrugada, foto de los candidatos de cada evento futuro
+            // activo en dbo.EventosCandidatos (sin el script, no hace nada). No se enseña a nadie.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Eventos.CandidatosEventosJobsService.JOB_ID,
+                () => Infraestructure.Eventos.CandidatosEventosJobsService.CalcularTodos(),
+                Infraestructure.Eventos.CandidatosEventosJobsService.CRON, // Cron: todos los días a las 3:15
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'eventos-candidatos-sombra' configurado (todos los días a las 3:15)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

@@ -94,7 +94,9 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
-            return Ok(await servicio.CrearEvento(evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            EventoDTO creado = await servicio.CrearEvento(evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+            EncolarCandidatosSombra(creado?.Id ?? 0, ServicioCandidatosEventos.MOTIVO_ALTA);
+            return Ok(creado);
         }
 
         // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo, y solo los campos nuevos que vengan: Almacen, ProductoCurso, Plazas, Lugar, DescripcionLarga }
@@ -176,8 +178,58 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_ANUNCIAR);
             }
-            return Ok(await Anuncios.Anunciar(id, otraVez, peticion?.Reclamo, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            ResultadoAnuncioEventoDTO anunciado = await Anuncios.Anunciar(id, otraVez, peticion?.Reclamo, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+            EncolarCandidatosSombra(id, ServicioCandidatosEventos.MOTIVO_ANUNCIO);
+            return Ok(anunciado);
         }
+
+        // ---------------- Eventos: candidatos a invitar, en MODO SOMBRA (corte 1, Carlos 11/11/26) ----------------
+
+        /// <summary>
+        /// (evento, motivo) → calcula en segundo plano la foto de sus candidatos (Hangfire). Nunca lanza ni retrasa la respuesta.
+        /// Sustituible en los tests.
+        /// </summary>
+        internal Action<int, string> EncolarCandidatos { get; set; } = (evento, motivo) =>
+            Hangfire.BackgroundJob.Enqueue(() => CandidatosEventosJobsService.CalcularEvento(evento, motivo));
+
+        private void EncolarCandidatosSombra(int evento, string motivo)
+        {
+            if (evento <= 0)
+            {
+                return;
+            }
+            try
+            {
+                EncolarCandidatos(evento, motivo);
+            }
+            catch (Exception ex)
+            {
+                // La sombra nunca tumba crear ni anunciar el evento
+                ElmahHelper.Log(new Exception($"[Eventos candidatos (sombra)] No se ha podido encolar el cálculo del evento {evento}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>Los candidatos en sombra (sustituible en los tests).</summary>
+        internal IRepositorioCandidatosEventos RepositorioCandidatos { get; set; } = new RepositorioCandidatosEventosSql();
+
+        // GET api/Eventos/CandidatosSombra
+        /// <summary>
+        /// Eventos en modo sombra: el resumen del último cálculo de candidatos de cada evento (cuántos, control, puntuaciones). Solo
+        /// Dirección e Informática; no se enseña a nadie más. Lista vacía sin el script de la tabla.
+        /// </summary>
+        [HttpGet]
+        [Route("CandidatosSombra")]
+        [ResponseType(typeof(List<ResumenCandidatosEventoDTO>))]
+        public async Task<IHttpActionResult> GetCandidatosSombra()
+        {
+            if (!(NestoAPI.Infrastructure.PrincipalExtensions.IsInRoleSinDominio(User, Constantes.GruposSeguridad.DIRECCION) || NestoAPI.Infrastructure.PrincipalExtensions.IsInRoleSinDominio(User, Constantes.GruposSeguridad.INFORMATICA)))
+            {
+                return Prohibido(MENSAJE_SOLO_DIRECCION_CANDIDATOS);
+            }
+            return Ok(await RepositorioCandidatos.Resumen().ConfigureAwait(false));
+        }
+
+        internal const string MENSAJE_SOLO_DIRECCION_CANDIDATOS = "Solo Dirección o Informática pueden ver los candidatos de los eventos.";
 
         // GET api/Eventos/5/Reclamos
         /// <summary>NestoAPI#692: los reclamos que se proponen para volver a anunciar el evento («¡Últimas plazas disponibles!»…).</summary>

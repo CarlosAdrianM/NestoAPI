@@ -1331,6 +1331,7 @@
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\AnunciosEventos.cs" />
+    <Compile Include="Infraestructure\Eventos\CandidatosEventos.cs" />
     <Compile Include="Infraestructure\Notificaciones\PreferenciasNotificacionesCliente.cs" />
     <Compile Include="Controllers\PreferenciasNotificacionesController.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
