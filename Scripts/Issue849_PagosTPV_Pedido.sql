@@ -42,8 +42,10 @@ WITH Base AS (
     SELECT p3.*, LEFT(p3.R1, PATINDEX(N'%[^0-9]%', p3.R1 + N'x') - 1) AS Digitos FROM Paso3 p3
 ), Candidato AS (
     SELECT p4.Id, p4.Empresa, p4.Cliente,
-        CASE WHEN LEN(p4.D) BETWEEN 6 AND 9 AND p4.D NOT LIKE N'%[^0-9]%' THEN CAST(p4.D AS int)
-             WHEN LEN(p4.Digitos) BETWEEN 5 AND 9 AND SUBSTRING(p4.R1, LEN(p4.Digitos) + 1, 1) NOT LIKE N'[A-Za-z0-9_]' THEN CAST(p4.Digitos AS int)
+        -- TRY_CAST y no CAST: con la intercalación de la BD, [0-9] casa también con cifras «raras» (el 11/11/26 falló con un
+        -- concepto que llevaba un cero en superíndice, «⁰915489»). Lo que no sea un entero de verdad se queda sin rellenar.
+        CASE WHEN LEN(p4.D) BETWEEN 6 AND 9 AND p4.D NOT LIKE N'%[^0-9]%' THEN TRY_CAST(p4.D AS int)
+             WHEN LEN(p4.Digitos) BETWEEN 5 AND 9 AND SUBSTRING(p4.R1, LEN(p4.Digitos) + 1, 1) NOT LIKE N'[A-Za-z0-9_]' THEN TRY_CAST(p4.Digitos AS int)
         END AS Pedido
     FROM Paso4 p4
 )
