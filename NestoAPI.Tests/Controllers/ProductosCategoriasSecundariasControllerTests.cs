@@ -61,7 +61,8 @@ namespace NestoAPI.Tests.Controllers
             ConfigurarFakeDbSet(fakeSubgrupos, new List<SubGruposProducto>
             {
                 new SubGruposProducto { Empresa = "1", Grupo = "PEL", Número = "OFE", Descripción = "Ofertas del mes" },
-                new SubGruposProducto { Empresa = "1", Grupo = "APA", Número = "EXP", Descripción = "Exclusivo Profesional" }
+                new SubGruposProducto { Empresa = "1", Grupo = "APA", Número = "EXP", Descripción = "Exclusivo Profesional" },
+                new SubGruposProducto { Empresa = "1", Grupo = "COS", Número = "OUT", Descripción = "Outlet Estética" }
             }.AsQueryable());
             ConfigurarFakeDbSet(fakeGrupos, new List<GruposProducto>
             {
@@ -248,8 +249,49 @@ namespace NestoAPI.Tests.Controllers
         public void Sugerencia780_Motivo_PrincipalConRelleno()
         {
             Assert.AreEqual(ReglaPackRegalo.MOTIVO_PRINCIPAL_PACK_REGALO,
-                ReglaPackRegalo.Motivo("COS", "PRG ", new[] { ("COS", "OUT") }));
+                ReglaPackRegalo.Motivo("COS", "PRG ", new[] { ("PEL", "OFE") }));
             Assert.IsNull(ReglaPackRegalo.Motivo("PEL", "OFE", new[] { ("COS", "OUT") }));
+        }
+
+        // En Pack Regalo manda el Outlet (Carlos 11/11/26): las tres categorías de Outlet sí, cualquier otra no.
+        [TestMethod]
+        public void Sugerencia780_Motivo_PackRegaloSoloConOutlet_Vale()
+        {
+            Assert.IsNull(ReglaPackRegalo.Motivo("COS", "PRG", new[] { ("COS", "OUT") }));
+            Assert.IsNull(ReglaPackRegalo.Motivo("COS", "PRG", new[] { (" pel ", "out"), ("COS", "OUM") }));
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PRINCIPAL_PACK_REGALO,
+                ReglaPackRegalo.Motivo("COS", "PRG", new[] { ("COS", "OUT"), ("PEL", "OFE") }));
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PACK_REGALO_COMO_SECUNDARIA,
+                ReglaPackRegalo.Motivo("PEL", "OFE", new[] { ("COS", "OUT"), ("COS", "PRG") }));
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PACK_REGALO_COMO_SECUNDARIA,
+                ReglaPackRegalo.Motivo("COS", "PRG", new[] { ("PEL", "OFE"), ("COS", "PRG") }), "La de secundaria va primero, como en Nesto");
+        }
+
+        [TestMethod]
+        public async Task Put_Sugerencia780_PackRegaloConOutlet_SeGuarda()
+        {
+            ProductoPackRegalo();
+
+            var resultado = await controller.PutCategoriasSecundarias(PRODUCTO,
+                new List<CategoriaSecundariaPutDTO> { new CategoriaSecundariaPutDTO { Grupo = "COS", Subgrupo = "OUT" } });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkResult));
+            Assert.AreEqual(1, annadidas.Count);
+        }
+
+        [TestMethod]
+        public async Task Put_Sugerencia780_PackRegaloConOutletYOtra_400()
+        {
+            ProductoPackRegalo();
+
+            var resultado = await controller.PutCategoriasSecundarias(PRODUCTO, new List<CategoriaSecundariaPutDTO>
+            {
+                new CategoriaSecundariaPutDTO { Grupo = "COS", Subgrupo = "OUT" },
+                new CategoriaSecundariaPutDTO { Grupo = "PEL", Subgrupo = "OFE" }
+            });
+
+            Assert.AreEqual(ReglaPackRegalo.MOTIVO_PRINCIPAL_PACK_REGALO, Motivo(resultado));
+            Assert.AreEqual(0, annadidas.Count);
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class

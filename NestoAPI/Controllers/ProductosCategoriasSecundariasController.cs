@@ -145,6 +145,9 @@ namespace NestoAPI.Controllers
     /// otra categoría web, y Pack Regalo tiene que ser la categoría PRINCIPAL (el subgrupo de la ficha), nunca una secundaria.
     /// Los textos son los de la ficha de Nesto (Producto/Models/ReglaPackRegalo.cs). Solo el PUT: el cuadre del Outlet escribe por
     /// SQL (RepositorioOutletSql) y no pasa por aquí.
+    /// <para>EN PACK REGALO MANDA EL OUTLET (Carlos 11/11/26): un Pack Regalo sí puede tener secundarias, pero SOLO de Outlet
+    /// (<see cref="Infraestructure.Outlet.ReglasOutlet.EsCategoriaOutlet"/>; el cuadre nocturno pone COS/OUT a los de estado 4). Sin
+    /// esa excepción, guardar la pestaña Web de uno de esos packs daría 400.</para>
     /// </summary>
     public static class ReglaPackRegalo
     {
@@ -152,7 +155,8 @@ namespace NestoAPI.Controllers
         public const string SUBGRUPO = "PRG";
 
         internal const string MOTIVO_PRINCIPAL_PACK_REGALO =
-            "Este producto es un Pack Regalo (COS/PRG): los packs regalo no pueden estar en ninguna otra categoría web.";
+            "Este producto es un Pack Regalo (COS/PRG): los packs regalo no pueden estar en ninguna otra categoría web, " +
+            "salvo en las de Outlet.";
         internal const string MOTIVO_PACK_REGALO_COMO_SECUNDARIA =
             "Pack Regalo (COS/PRG) no se puede poner como categoría secundaria: tiene que ser la categoría principal " +
             "del producto (el subgrupo de la ficha).";
@@ -165,11 +169,15 @@ namespace NestoAPI.Controllers
         public static string Motivo(string grupoPrincipal, string subgrupoPrincipal, IEnumerable<(string Grupo, string Subgrupo)> secundarias)
         {
             List<(string Grupo, string Subgrupo)> lista = (secundarias ?? Enumerable.Empty<(string, string)>()).ToList();
-            if (EsPackRegalo(grupoPrincipal, subgrupoPrincipal) && lista.Any())
+            // Primero COS/PRG como secundaria, como en Nesto (ReglaPackRegalo, 5495b2b6).
+            if (lista.Any(c => EsPackRegalo(c.Grupo, c.Subgrupo)))
             {
-                return MOTIVO_PRINCIPAL_PACK_REGALO;
+                return MOTIVO_PACK_REGALO_COMO_SECUNDARIA;
             }
-            return lista.Any(c => EsPackRegalo(c.Grupo, c.Subgrupo)) ? MOTIVO_PACK_REGALO_COMO_SECUNDARIA : null;
+            return EsPackRegalo(grupoPrincipal, subgrupoPrincipal)
+                && lista.Any(c => !Infraestructure.Outlet.ReglasOutlet.EsCategoriaOutlet(c.Grupo, c.Subgrupo))
+                ? MOTIVO_PRINCIPAL_PACK_REGALO
+                : null;
         }
     }
 
