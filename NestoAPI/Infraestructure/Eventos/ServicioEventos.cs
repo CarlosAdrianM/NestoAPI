@@ -181,6 +181,20 @@ namespace NestoAPI.Infraestructure.Eventos
         /// 400; mayor que 0 sin el script Issue613_CuponPedidoMinimoPorEvento.sql, 400.
         /// </summary>
         public decimal? PedidoMinimoCupon { get; set; }
+
+        /// <summary>
+        /// Novedades 1233: solo lectura y solo en la respuesta del PUT que pasa el evento de pago a gratuito. Reservas sin pagar que
+        /// han pasado a Inscrita / Gratuita (0 en cualquier otro caso).
+        /// </summary>
+        public int InscripcionesConvertidasAGratuitas { get; set; }
+        /// <summary>Novedades 1233: solo lectura. Caducadas recuperadas como Inscrita / Gratuita (solo si cabían todas).</summary>
+        public int InscripcionesRecuperadas { get; set; }
+        /// <summary>Novedades 1233: solo lectura. Caducadas que no cabían en las plazas libres (no se ha recuperado ninguna).</summary>
+        public int CaducadasSinRecuperar { get; set; }
+        /// <summary>Novedades 1233: solo lectura. Enlaces de pago pendientes anulados por el paso a gratuito.</summary>
+        public int EnlacesPagoAnulados { get; set; }
+        /// <summary>Novedades 1233: solo lectura. Qué ha pasado con las inscripciones al pasar a gratuito (null si nada), de usted.</summary>
+        public string MensajePasoAGratuito { get; set; }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -345,6 +359,7 @@ namespace NestoAPI.Infraestructure.Eventos
             this.facturacionCursos = facturacionCursos ?? new RepositorioFacturacionCursos(db);
             this.cupones = cupones ?? new RepositorioCupones(db);
             this.enTransaccion = enTransaccion ?? EnTransaccionBd;
+            AnularEnlacesPago = (empresa, ids) => Pagos.AnulacionEnlacesPago.Anular(this.db, empresa, ids);
         }
 
         private async Task EnTransaccionBd(Func<Task> trabajo)
@@ -820,13 +835,16 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             // NestoAPI#690 (Carlos, 22/10/26): sin importes en el cuerpo, 100 € reembolsable y 60 € no reembolsable. Un 0
             // explícito se respeta: con los dos a 0, el evento es gratuito.
+            // Novedades 1233 (Carlos, 12/11/26): un curso por compra de producto (trae productos requeridos) sin importes nace
+            // SIN señal (0 y 0): la señal de 100/60 por defecto dejaba reservas «de pago» que había que caducar para quitarla.
+            bool porCompra = evento != null && evento.TraeProductosRequeridos() && evento.ProductosRequeridos.Any();
             if (evento != null && !evento.Trae(nameof(EventoDTO.ImporteSenal)))
             {
-                evento.ImporteSenal = ReglasModalidadEvento.SENAL_REEMBOLSABLE_POR_DEFECTO;
+                evento.ImporteSenal = porCompra ? 0 : ReglasModalidadEvento.SENAL_REEMBOLSABLE_POR_DEFECTO;
             }
             if (evento != null && !evento.Trae(nameof(EventoDTO.ImporteSenalNoReembolsable)))
             {
-                evento.ImporteSenalNoReembolsable = ReglasModalidadEvento.SENAL_NO_REEMBOLSABLE_POR_DEFECTO;
+                evento.ImporteSenalNoReembolsable = porCompra ? 0 : ReglasModalidadEvento.SENAL_NO_REEMBOLSABLE_POR_DEFECTO;
             }
             await Validar(evento, null).ConfigureAwait(false);
             List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(evento.Empresa)).ConfigureAwait(false);
@@ -866,20 +884,174 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             bool eraGratuito = ReglasModalidadEvento.EsGratuito(entidad);
             Copiar(evento, entidad, usuario);
-            // NestoAPI#690: las inscripciones gratuitas no tienen pago y las de pago no son gratuitas: con inscripciones vivas,
-            // el evento no cambia de gratuito a de pago ni al revés.
-            if (eraGratuito != ReglasModalidadEvento.EsGratuito(entidad) && ocupadasEvento > 0)
+            // NestoAPI#690: las inscripciones gratuitas no tienen pago: con inscripciones vivas, el evento no pasa de gratuito a de pago.
+            if (eraGratuito && !ReglasModalidadEvento.EsGratuito(entidad) && ocupadasEvento > 0)
             {
-                throw new NestoBusinessException(eraGratuito
-                    ? $"Ya hay {ocupadasEvento} inscripciones gratuitas: el evento no puede pasar a ser de pago. Anúlelas antes o cree otro evento."
-                    : $"Ya hay {ocupadasEvento} inscripciones de pago: el evento no puede pasar a ser gratuito. Anúlelas antes o cree otro evento.");
+                throw new NestoBusinessException(
+                    $"Ya hay {ocupadasEvento} inscripciones gratuitas: el evento no puede pasar a ser de pago. Anúlelas antes o cree otro evento.");
             }
-            await db.SaveChangesAsync().ConfigureAwait(false);
+            // Novedades 1233: de pago a gratuito, las reservas sin dinero ni documentos pasan a Inscrita / Gratuita en la misma
+            // transacción; con alguna con dinero o documentos, se rechaza como antes (todo o nada).
+            PlanPasoAGratuito plan = null;
+            int enlacesAnulados = 0;
+            if (!eraGratuito && ReglasModalidadEvento.EsGratuito(entidad))
+            {
+                plan = await PlanificarPasoAGratuito(entidad, ocupadasEvento).ConfigureAwait(false);
+                if (plan.HayBloqueo)
+                {
+                    throw new NestoBusinessException(ReglasPasoAGratuitoEvento.MensajeRechazo(plan));
+                }
+            }
+            if (plan != null && (plan.QueCambian.Any() || plan.EnlacesAAnular.Any()))
+            {
+                await enTransaccion(async () =>
+                {
+                    enlacesAnulados = await AplicarPasoAGratuito(plan, usuario).ConfigureAwait(false);
+                    await db.SaveChangesAsync().ConfigureAwait(false);
+                }).ConfigureAwait(false);
+            }
+            else
+            {
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
             await GuardarProductosRequeridos(id, requeridos, usuario).ConfigureAwait(false);
             await GuardarModoProductosRequeridos(id, modoRequeridos).ConfigureAwait(false);
             await GuardarImporteMinimoRequeridos(id, importeMinimoRequeridos).ConfigureAwait(false);
             await GuardarPedidoMinimoCupon(id, pedidoMinimoCupon).ConfigureAwait(false);
-            return await ConProductosRequeridos(await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false)).ConfigureAwait(false);
+            int ocupadasDespues = ocupadasEvento;
+            if (plan != null && plan.ARecuperar.Any())
+            {
+                Dictionary<int, int> ahora = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
+                ocupadasDespues = ahora.TryGetValue(id, out int m) ? m : 0;
+            }
+            EventoDTO resultado = await ConProductosRequeridos(await ConImagen(ADTO(entidad, ocupadasDespues)).ConfigureAwait(false)).ConfigureAwait(false);
+            if (plan != null)
+            {
+                resultado.InscripcionesConvertidasAGratuitas = plan.AConvertir.Count;
+                resultado.InscripcionesRecuperadas = plan.ARecuperar.Count;
+                resultado.CaducadasSinRecuperar = plan.CaducadasSinRecuperar;
+                resultado.EnlacesPagoAnulados = enlacesAnulados;
+                resultado.MensajePasoAGratuito = ReglasPasoAGratuitoEvento.MensajeResultado(plan, enlacesAnulados);
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// Novedades 1233: anula los enlaces de pago pendientes de las que cambian por el seam <see cref="AnularEnlacesPago"/>
+        /// (mismo UPDATE que «Anular enlace» de Administración: solo TPV virtual y pendiente) y si alguno ya no estaba pendiente
+        /// (lo acaban de pagar) lanza para que la transacción se deshaga. Luego pasa cada una a Inscrita / Gratuita con su rastro.
+        /// </summary>
+        private async Task<int> AplicarPasoAGratuito(PlanPasoAGratuito plan, string usuario)
+        {
+            var anulados = new HashSet<int>();
+            foreach (KeyValuePair<string, List<int>> grupo in plan.EnlacesAAnular)
+            {
+                List<int> hechos = await AnularEnlacesPago(grupo.Key, grupo.Value).ConfigureAwait(false) ?? new List<int>();
+                List<int> faltan = grupo.Value.Except(hechos).ToList();
+                if (faltan.Any())
+                {
+                    throw new NestoBusinessException($"El enlace de pago {string.Join(", ", faltan)} acaba de cambiar (puede que lo hayan pagado): " +
+                        "no se ha cambiado nada. Vuelva a cargar el evento y a guardarlo.") { StatusCode = HttpStatusCode.Conflict };
+                }
+                foreach (int h in hechos)
+                {
+                    _ = anulados.Add(h);
+                }
+            }
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            DateTime ahora = reloj();
+            foreach (EventoInscripcion inscripcion in plan.QueCambian)
+            {
+                EstadoInscripcionEvento antes = ReglasInscripcionEvento.Estado(inscripcion.Estado) ?? EstadoInscripcionEvento.Anulada;
+                if (!ReglasInscripcionEvento.PuedePasarPorPasoAGratuito(antes))
+                {
+                    throw new NestoBusinessException($"La inscripción {inscripcion.Id} no puede pasar de {ReglasInscripcionEvento.Texto(antes)} a Inscrita.");
+                }
+                List<int> suyos = inscripcion.PagoTPVId.HasValue && plan.EnlacesAAnular.Values.Any()
+                    ? EnlacesDeLaCadena(plan, inscripcion.PagoTPVId.Value).Where(anulados.Contains).ToList()
+                    : new List<int>();
+                db.Modificaciones.Add(ReglasPasoAGratuitoEvento.Rastro(inscripcion, antes, inscripcion.Modalidad, inscripcion.FormaPago,
+                    inscripcion.FechaLimitePago, suyos, usuarioAuditoria));
+                inscripcion.Estado = EstadoInscripcionEvento.Inscrita.ToString();
+                inscripcion.Modalidad = ModalidadInscripcionEvento.Gratuita.ToString();
+                inscripcion.FechaLimitePago = null;
+                inscripcion.FormaPago = null;
+                inscripcion.Usuario = usuarioAuditoria;
+                inscripcion.FechaModificacion = ahora;
+            }
+            return anulados.Count;
+        }
+
+        private List<int> EnlacesDeLaCadena(PlanPasoAGratuito plan, int raiz) =>
+            cadenasEnlaces != null && cadenasEnlaces.TryGetValue(raiz, out List<EnlacePagoInscripcionLeido> cadena)
+                ? cadena.Select(c => c.Id).ToList()
+                : new List<int>();
+
+        // La última lectura de las cadenas de enlaces (para el rastro de cada inscripción).
+        private Dictionary<int, List<EnlacePagoInscripcionLeido>> cadenasEnlaces;
+
+        /// <summary>
+        /// Novedades 1233: (empresa del enlace, ids) → los que ha anulado. Por defecto el UPDATE de <see cref="AnulacionEnlacesPago"/>
+        /// sobre el MISMO contexto (y la misma transacción) del evento; los tests lo sustituyen.
+        /// </summary>
+        internal Func<string, List<int>, Task<List<int>>> AnularEnlacesPago { get; set; }
+
+        /// <summary>Novedades 1233: lee todo lo que decide el paso a gratuito (inscripciones, facturación, cupones, enlaces, plazas).</summary>
+        private async Task<PlanPasoAGratuito> PlanificarPasoAGratuito(Evento evento, int ocupadas)
+        {
+            int id = evento.Id;
+            List<EventoInscripcion> todas = await db.EventosInscripciones.Where(i => i.EventoId == id).ToListAsync().ConfigureAwait(false);
+            List<EventoInscripcion> candidatas = todas.Where(i =>
+                ReglasInscripcionEvento.PuedePasarPorPasoAGratuito(ReglasInscripcionEvento.Estado(i.Estado) ?? EstadoInscripcionEvento.Anulada)).ToList();
+
+            var conDocumentos = new HashSet<int>();
+            if (candidatas.Any())
+            {
+                Dictionary<int, FacturacionCursoInscripcion> facturadas = await facturacionCursos.Leer(candidatas.Select(i => i.Id)).ConfigureAwait(false)
+                    ?? new Dictionary<int, FacturacionCursoInscripcion>();
+                foreach (int f in facturadas.Keys)
+                {
+                    _ = conDocumentos.Add(f);
+                }
+                foreach (EventoInscripcion i in candidatas.Where(c => !conDocumentos.Contains(c.Id)))
+                {
+                    CuponLeido cupon = await cupones.LeerDeInscripcion(i.Id).ConfigureAwait(false);
+                    if (cupon != null && cupon.Id > 0)
+                    {
+                        _ = conDocumentos.Add(i.Id);
+                    }
+                }
+            }
+
+            List<int> raices = candidatas.Where(i => i.PagoTPVId.HasValue).Select(i => i.PagoTPVId.Value).Distinct().ToList();
+            cadenasEnlaces = new Dictionary<int, List<EnlacePagoInscripcionLeido>>();
+            var compartidos = new HashSet<int>();
+            if (raices.Any())
+            {
+                List<EnlacePagoInscripcionLeido> pagos = (await db.PagosTPV
+                    .Where(p => raices.Contains(p.Id) || (p.PagoOriginalId.HasValue && raices.Contains(p.PagoOriginalId.Value)))
+                    .Select(p => new { p.Id, p.PagoOriginalId, p.Empresa, p.Tipo, p.Estado })
+                    .ToListAsync().ConfigureAwait(false))
+                    .Select(p => new EnlacePagoInscripcionLeido
+                    {
+                        Id = p.Id,
+                        Raiz = raices.Contains(p.Id) ? p.Id : p.PagoOriginalId ?? p.Id,
+                        Empresa = p.Empresa,
+                        Tipo = p.Tipo,
+                        Estado = p.Estado
+                    }).ToList();
+                cadenasEnlaces = pagos.GroupBy(p => p.Raiz).ToDictionary(g => g.Key, g => g.ToList());
+                List<int> deOtros = await db.EventosInscripciones
+                    .Where(i => i.PagoTPVId.HasValue && raices.Contains(i.PagoTPVId.Value) && i.EventoId != id)
+                    .Select(i => i.PagoTPVId.Value).ToListAsync().ConfigureAwait(false);
+                foreach (int c in deOtros)
+                {
+                    _ = compartidos.Add(c);
+                }
+            }
+            Dictionary<int, int> asistentes = await RepositorioAsistentesEventos.LeerSinFallar(AsistentesInscripciones,
+                todas.Select(i => i.Id)).ConfigureAwait(false);
+            return ReglasPasoAGratuitoEvento.Planificar(evento, todas, conDocumentos, cadenasEnlaces, compartidos, asistentes, ocupadas);
         }
 
         /// <param name="almacenGuardado">Al modificar, la tienda que ya tiene el evento (si el cuerpo no trae Almacen, se queda esa).</param>

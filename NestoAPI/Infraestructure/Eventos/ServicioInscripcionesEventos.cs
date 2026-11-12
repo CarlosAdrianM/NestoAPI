@@ -1472,12 +1472,30 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 await AvisarFueraDePlazo(inscripcion, evento, estado).ConfigureAwait(false);
                 return Componer(inscripcion, evento, null);
             }
+            if (estado == EstadoInscripcionEvento.Inscrita)
+            {
+                await AvisarCobroDeGratuita(pagoRaizId, inscripcion, evento).ConfigureAwait(false);
+                return Componer(inscripcion, evento, null);
+            }
             if (!ReglasInscripcionEvento.PuedePasar(estado, EstadoInscripcionEvento.Pagada) || estado == EstadoInscripcionEvento.Pagada)
             {
                 return Componer(inscripcion, evento, null);
             }
             await Pagar(inscripcion, evento, FormaPagoInscripcionEvento.Tarjeta, importe, reloj(), USUARIO_AUTOMATICO, null).ConfigureAwait(false);
             return Componer(inscripcion, evento, null);
+        }
+
+        /// <summary>
+        /// Novedades 1233: llega el cobro de un enlace de una inscripción que ya es gratuita (el evento pasó a gratuito y el enlace
+        /// no se pudo anular o el cliente tenía la página de Redsys abierta). NO se pasa a Pagada ni se factura ni da cupón: sigue
+        /// inscrita; el cobro está en su extracto y Administración decide si lo devuelve. Nunca lanza.
+        /// </summary>
+        private async Task AvisarCobroDeGratuita(int pagoRaizId, EventoInscripcion inscripcion, Evento evento)
+        {
+            ElmahHelper.Log(new Exception($"[Eventos, Novedades 1233] Se ha cobrado el enlace {pagoRaizId} de la inscripción {inscripcion.Id} " +
+                $"(cliente {Limpiar(inscripcion.Cliente)}, evento «{evento?.Titulo?.Trim()}»), que es gratuita: sigue inscrita, no se factura " +
+                "ni da cupón; el cobro está en su extracto: decidan si se devuelve."));
+            await AvisarFueraDePlazo(inscripcion, evento, EstadoInscripcionEvento.Inscrita).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -1500,6 +1518,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                         $"{inscripcion.Id} (cliente {Limpiar(inscripcion.Cliente)}, evento «{evento.Titulo?.Trim()}») estaba anulada: su parte del " +
                         "cobro está en el extracto; decidan si se reactiva (marcándola pagada) o se devuelve."));
                     await AvisarFueraDePlazo(inscripcion, evento, estado).ConfigureAwait(false);
+                    continue;
+                }
+                if (estado == EstadoInscripcionEvento.Inscrita)
+                {
+                    await AvisarCobroDeGratuita(pagoRaizId, inscripcion, evento).ConfigureAwait(false);
                     continue;
                 }
                 if (!ReglasInscripcionEvento.PuedePasar(estado, EstadoInscripcionEvento.Pagada) || estado == EstadoInscripcionEvento.Pagada)
@@ -2263,7 +2286,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         /// <summary>Las reservas sin pagar (que no dijeron «No podré ir») de los eventos activos de hoy en adelante.</summary>
         private async Task<List<KeyValuePair<Evento, EventoInscripcion>>> ReservasVivas(DateTime hoy)
         {
-            List<Evento> eventos = await db.Eventos.Where(e => e.Activo && e.Fecha >= hoy).ToListAsync().ConfigureAwait(false);
+            // Novedades 1233: red de seguridad. Las reservas de un evento que HOY es gratuito no se avisan ni se liberan (al pasar a
+            // gratuito ya se convierten en Inscrita; si quedara alguna, no se le pide pagar lo que ya no se cobra).
+            List<Evento> eventos = (await db.Eventos.Where(e => e.Activo && e.Fecha >= hoy).ToListAsync().ConfigureAwait(false))
+                .Where(e => !ReglasModalidadEvento.EsGratuito(e)).ToList();
             if (!eventos.Any())
             {
                 return new List<KeyValuePair<Evento, EventoInscripcion>>();
@@ -2354,6 +2380,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 .Where(i => i.Estado == reservada && i.FechaLimitePago < hoy).ToListAsync().ConfigureAwait(false))
                 .Where(i => ReglasInscripcionEvento.EstaCaducada(i.FechaLimitePago, hoy))
                 .ToList();
+            if (vencidas.Any())
+            {
+                // Novedades 1233: red de seguridad. No se caduca una reserva de un evento que HOY es gratuito.
+                List<int> idsEventos = vencidas.Select(i => i.EventoId).Distinct().ToList();
+                HashSet<int> gratuitos = new HashSet<int>((await db.Eventos.Where(e => idsEventos.Contains(e.Id)).ToListAsync().ConfigureAwait(false))
+                    .Where(ReglasModalidadEvento.EsGratuito).Select(e => e.Id));
+                vencidas = vencidas.Where(i => !gratuitos.Contains(i.EventoId)).ToList();
+            }
             if (!vencidas.Any())
             {
                 return new List<InscripcionEventoDTO>();

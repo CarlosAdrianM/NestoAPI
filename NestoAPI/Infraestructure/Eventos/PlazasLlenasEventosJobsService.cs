@@ -320,7 +320,10 @@ namespace NestoAPI.Infraestructure.Eventos
             string sobrepasado = evento.Plazas.HasValue && ocupadas > evento.Plazas.Value ? " El evento está por encima de sus plazas." : "";
             string queda = estadoAnterior == EstadoInscripcionEvento.Anulada
                 ? "La inscripción sigue anulada y el cobro está en su extracto: decidan si se reactiva (marcándola pagada) o se devuelve el dinero."
-                : "El dinero manda: la inscripción ha quedado pagada y ocupa plaza. Decidan si se mantiene o se devuelve el dinero.";
+                : estadoAnterior == EstadoInscripcionEvento.Inscrita
+                    // Novedades 1233: el evento pasó a gratuito y el cliente pagó el enlace igualmente
+                    ? "El evento es gratuito: la inscripción sigue inscrita, no se factura ni da cupón, y el cobro está en su extracto: devuelvan el dinero (o decidan qué hacer con él)."
+                    : "El dinero manda: la inscripción ha quedado pagada y ocupa plaza. Decidan si se mantiene o se devuelve el dinero.";
             return $"El cliente {ClienteYNombre(inscripcion)} ha pagado su inscripción en «{Titulo(evento)}» ({evento.Fecha:dd/MM/yyyy}), " +
                 $"que estaba {ReglasInscripcionEvento.Texto(estadoAnterior).ToLowerInvariant()}. {queda} Ahora hay {plazas}.{sobrepasado}";
         }

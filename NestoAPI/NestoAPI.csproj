@@ -1364,6 +1364,7 @@
     <Compile Include="Infraestructure\Eventos\AvisosFichaInscripcion.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioInscripcionesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioInscripcionesEventosPlazasLlenas.cs" />
+    <Compile Include="Infraestructure\Eventos\PasoAGratuitoEventos.cs" />
     <Compile Include="Infraestructure\Eventos\PlazasLlenasEventos.cs" />
     <Compile Include="Infraestructure\Eventos\PlazasLlenasEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\InscripcionesEventosJobsService.cs" />

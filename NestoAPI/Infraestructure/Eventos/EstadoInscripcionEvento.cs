@@ -139,6 +139,14 @@ namespace NestoAPI.Infraestructure.Eventos
         public static bool PuedePasar(EstadoInscripcionEvento desde, EstadoInscripcionEvento hasta) =>
             desde == hasta || (transiciones.TryGetValue(desde, out EstadoInscripcionEvento[] destinos) && destinos.Contains(hasta));
 
+        /// <summary>
+        /// Novedades 1233 (Carlos, 12/11/26): la ÚNICA transición a Inscrita desde una inscripción de pago, y solo cuando el evento
+        /// pasa de pago a gratuito (<see cref="ReglasPasoAGratuitoEvento"/>): una Reservada (o una Caducada, si cabe) sin dinero ni
+        /// documentos de por medio. No está en <see cref="PuedePasar"/> a propósito: ningún otro camino puede hacerla.
+        /// </summary>
+        public static bool PuedePasarPorPasoAGratuito(EstadoInscripcionEvento desde) =>
+            desde == EstadoInscripcionEvento.Reservada || desde == EstadoInscripcionEvento.Caducada;
+
         /// <summary>La fecha límite de pago: 7 días desde la inscripción, pero nunca después del día del evento.</summary>
         public static DateTime FechaLimitePago(DateTime inscripcion, DateTime fechaEvento)
         {

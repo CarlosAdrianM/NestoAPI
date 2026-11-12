@@ -777,6 +777,7 @@
     <Compile Include="Infrastructure\Eventos\CursosPlantillaTests.cs" />
     <Compile Include="Infrastructure\Cupones\CarritoCuponesTests.cs" />
     <Compile Include="Infrastructure\Eventos\PropuestasSenalesEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\PasoAGratuitoEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\PersonaAsistenteEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\ProductosRequeridosEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\FormaPagoSenalEventoTests.cs" />

@@ -514,6 +514,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   la siguiente lectura del NR). Con abono nuevo, `RecogidaSolicitadaRecibida` (push + campana, Datos + `estado` «Recogida») a quien la
   pidió. Las notas de recogida sin solicitud y `ProcesarNotaEntrega` (Facturar rutas) no cambian.
 
+### Evento de pago que pasa a gratuito (Novedades 1233, 12/11/26)
+- `PUT api/Eventos/{id}` que deja las dos señales a 0: las Reservadas sin dinero ni documentos pasan a Inscrita / Gratuita (FechaLimitePago
+  y FormaPago a NULL, rastro en Modificaciones) y sus enlaces de pago pendientes (cadena de reintentos incluida) se anulan con el UPDATE de
+  `AnulacionEnlacesPago`, todo en la transacción del evento (si un enlace ya no está pendiente: 409 y nada cambia). Las Caducadas igual solo si
+  caben TODAS en las plazas libres (no las «No podré ir» ni las de un cliente con otra viva). Reglas puras: `ReglasPasoAGratuitoEvento`;
+  transición exclusiva `ReglasInscripcionEvento.PuedePasarPorPasoAGratuito` (no está en `PuedePasar`).
+- Con alguna pagada, facturada, con lista pasada, cobro, señal, factura del curso, cupón o enlace cobrado/compartido con otro evento: 400 como
+  antes (todo o nada). Nunca se deshacen facturas ni cupones. La respuesta trae `InscripcionesConvertidasAGratuitas`, `InscripcionesRecuperadas`,
+  `CaducadasSinRecuperar`, `EnlacesPagoAnulados` y `MensajePasoAGratuito`.
+- Un cobro tardío del enlace de una Inscrita no la paga ni factura: ELMAH + aviso de pago fuera de plazo a Administración. Los jobs de aviso,
+  liberación y caducidad se saltan los eventos que hoy son gratuitos. `CrearEvento` con productos requeridos y sin importes nace 0/0.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
