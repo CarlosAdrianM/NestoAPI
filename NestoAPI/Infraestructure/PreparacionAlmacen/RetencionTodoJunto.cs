@@ -245,6 +245,42 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
     }
 
+    /// <summary>
+    /// NestoAPI#858: cuando una retención nace (Terminar o «No está»), se decide o se aplica por plazo, «haCambiado» al grupo del
+    /// packing de su picking en el AlmacenHub (<see cref="AvisosAlmacen.GrupoPacking"/>, el mismo que usa el packing para refrescar
+    /// las PDA). No hay grupo de «pendiente de ubicar» ni uno por pedido en Nesto: no se inventan. Después de guardar y nunca lanza.
+    /// </summary>
+    public static class AvisosRetencionPorFalta
+    {
+        /// <summary>El emisor: no es ninguna PDA, así que no se excluye a nadie del grupo.</summary>
+        public const string DISPOSITIVO = "NestoAPI";
+
+        public static bool HayRetenidos(IEnumerable<FaltaPickingPedido> faltas) => faltas?.Any(f => f != null && f.Retenido) == true;
+
+        public static void Packing(IAvisosAlmacen avisos, int picking)
+        {
+            if (avisos == null || picking <= 0)
+            {
+                return;
+            }
+            try
+            {
+                avisos.HaCambiado(AvisosAlmacen.GrupoPacking(picking), null, null, DISPOSITIVO);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    ElmahHelper.Log(new Exception($"[Todo junto #858] No se ha podido avisar al packing del picking {picking}: {ex.Message}", ex));
+                }
+                catch
+                {
+                    // nada: el aviso es un extra
+                }
+            }
+        }
+    }
+
     // ---------------- Decisión del vendedor, plazo y bloqueos ----------------
 
     public class RetencionPorFaltaDTO
@@ -327,13 +363,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IRepositorioRetencionesPorFalta repositorio;
         private readonly Func<string, int, ComercialesPedido> leerComerciales;
         private readonly Func<DateTime> ahora;
+        /// <summary>«haCambiado» al packing del picking al decidir o aplicar por plazo. Null: no se avisa.</summary>
+        private readonly IAvisosAlmacen avisos;
 
         public ServicioRetencionesPorFalta(IRepositorioRetencionesPorFalta repositorio, Func<string, int, ComercialesPedido> leerComerciales,
-            Func<DateTime> ahora = null)
+            Func<DateTime> ahora = null, IAvisosAlmacen avisos = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.leerComerciales = leerComerciales;
             this.ahora = ahora ?? (() => DateTime.Now);
+            this.avisos = avisos;
         }
 
         public static bool EsDeLosGrupos(IPrincipal usuario) => usuario != null && GRUPOS.Any(g => usuario.IsInRoleSinDominio(g));
@@ -427,6 +466,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     return YaDecidida(pedido);
                 }
+                AvisosRetencionPorFalta.Packing(avisos, retencion.Picking);
                 return Hecha(retencion, decision, quien, $"El pedido {pedido} sigue al packing sin lo que falta (queda pendiente para otra entrega).");
             }
             ResultadoEsperar esperar = await repositorio.Esperar(retencion, quien, false).ConfigureAwait(false);
@@ -439,6 +479,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return ResultadoRetencionPorFalta<RetencionPorFaltaDTO>.Mal(HttpStatusCode.Conflict,
                     $"El picking {retencion.Picking} todavía se está recogiendo: decida «Esperar» cuando el almacén lo termine (o «ServirLoQueHay» ya).");
             }
+            AvisosRetencionPorFalta.Packing(avisos, retencion.Picking);
             return Hecha(retencion, decision, quien, MensajeEsperar(pedido, esperar));
         }
 
@@ -483,6 +524,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         r.PorPlazo = true;
                         r.Mensaje = MensajeEsperar(r.Pedido, esperar);
                         aplicadas.Add(r);
+                        AvisosRetencionPorFalta.Packing(avisos, r.Picking);
                     }
                 }
                 catch (Exception ex)
@@ -522,7 +564,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 using (var repositorio = new RepositorioRetencionesPorFaltaSql())
                 {
-                    var servicio = new ServicioRetencionesPorFalta(repositorio, (e, p) => LeerComerciales(e, p));
+                    var servicio = new ServicioRetencionesPorFalta(repositorio, (e, p) => LeerComerciales(e, p), avisos: new AvisosAlmacenSignalR());
                     List<RetencionPorFaltaDTO> aplicadas = await servicio.AplicarVencidas().ConfigureAwait(false);
                     if (!aplicadas.Any())
                     {

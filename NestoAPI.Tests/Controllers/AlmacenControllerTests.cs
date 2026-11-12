@@ -324,6 +324,76 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, controller.User, true)).MustHaveHappened();
         }
 
+        // ---- NestoAPI#858: la retención «todo junto» que nace en el Terminar o en el «No está» refresca el packing del picking ----
+
+        private AlmacenController ControladorConAvisos(NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen avisos, IServicioNoEstaSalida noEsta = null) =>
+            new AlmacenController(servicio, ubicaciones, compras, reposiciones, avisosAlmacen: avisos, noEsta: noEsta)
+            {
+                User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
+                Request = new HttpRequestMessage()
+            };
+
+        private void TerminarConFaltas(params FaltaPickingPedido[] faltas)
+        {
+            var salida = new ResultadoTerminarSalidaDTO { Tipo = "PICK", Numero = 99700, Terminada = true };
+            salida.FaltasPorAvisar.AddRange(faltas);
+            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, A<IPrincipal>._, A<bool>._))
+                .Returns(new ResultadoTerminarSalida { Estado = EstadoTerminarSalida.Terminada, Salida = salida });
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_ConPedidoRetenido_AvisaAlPackingDelPicking()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            TerminarConFaltas(new FaltaPickingPedido { Pedido = 930500, Unidades = 1, Retenido = true });
+
+            Assert.IsInstanceOfType(await ControladorConAvisos(avisos).PostTerminarRecogida("PICK", 99700), typeof(OkNegotiatedContentResult<ResultadoTerminarSalidaDTO>));
+
+            A.CallTo(() => avisos.HaCambiado("Packing:99700", null, null, AvisosRetencionPorFalta.DISPOSITIVO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_SinRetenidosOEnsayo_NoAvisaAlPacking()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            TerminarConFaltas(new FaltaPickingPedido { Pedido = 930500, Unidades = 1 });
+            _ = await ControladorConAvisos(avisos).PostTerminarRecogida("PICK", 99700);
+
+            TerminarConFaltas(new FaltaPickingPedido { Pedido = 930500, Unidades = 1, Retenido = true });
+            _ = await ControladorConAvisos(avisos).PostTerminarRecogida("PICK", 99700, ensayo: true);
+
+            A.CallTo(() => avisos.HaCambiado(A<string>.That.StartsWith("Packing:"), A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_SiElAvisoDelPackingFalla_LaRespuestaEsLaDeSiempre()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            A.CallTo(() => avisos.HaCambiado(A<string>._, A<string>._, A<string>._, A<string>._)).Throws(new InvalidOperationException("SignalR caído"));
+            TerminarConFaltas(new FaltaPickingPedido { Pedido = 930500, Unidades = 1, Retenido = true });
+
+            Assert.IsTrue(((OkNegotiatedContentResult<ResultadoTerminarSalidaDTO>)await ControladorConAvisos(avisos).PostTerminarRecogida("PICK", 99700)).Content.Terminada);
+        }
+
+        [TestMethod]
+        public async Task PostNoEsta_FaltaDefinitivaQueRetiene_AvisaAlPackingDelPicking()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            var noEsta = A.Fake<IServicioNoEstaSalida>();
+            var resultado = new ResultadoNoEsta
+            {
+                Estado = EstadoNoEsta.Hecho,
+                Resultado = new ResultadoNoEstaDTO { Tipo = "PICK", Numero = 100070, Regularizado = true, SinMasHuecos = true }
+            };
+            resultado.FaltasPorAvisar.Add(new FaltaPickingPedido { Pedido = 930500, Unidades = 1, Retenido = true });
+            A.CallTo(() => noEsta.MarcarNoEsta("1", "PICK", 100070, A<NoEstaSalidaDTO>._, A<IPrincipal>._, false)).Returns(resultado);
+
+            Assert.IsInstanceOfType(await ControladorConAvisos(avisos, noEsta).PostNoEsta("PICK", 100070, new NoEstaSalidaDTO()),
+                typeof(OkNegotiatedContentResult<ResultadoNoEstaDTO>));
+
+            A.CallTo(() => avisos.HaCambiado("Packing:100070", null, null, AvisosRetencionPorFalta.DISPOSITIVO)).MustHaveHappenedOnceExactly();
+        }
+
         [TestMethod]
         public async Task PostTerminarRecogida_SinPermiso_403ConElMotivo()
         {

@@ -17,7 +17,8 @@ namespace NestoAPI.Controllers
     {
         /// <summary>El servicio (sustituible en los tests).</summary>
         internal Func<ServicioRetencionesPorFalta> CrearServicio { get; set; } = () =>
-            new ServicioRetencionesPorFalta(new RepositorioRetencionesPorFaltaSql(), RetencionesPorFaltaJobsService.LeerComerciales);
+            new ServicioRetencionesPorFalta(new RepositorioRetencionesPorFaltaSql(), RetencionesPorFaltaJobsService.LeerComerciales,
+                avisos: new Infraestructure.Notificaciones.AvisosAlmacenSignalR()); // NestoAPI#858: refresca el packing de las PDA
 
         // GET api/PedidosVenta/RetenidosPorFalta
         /// <summary>

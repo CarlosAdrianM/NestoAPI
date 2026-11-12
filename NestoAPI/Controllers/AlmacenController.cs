@@ -209,6 +209,7 @@ namespace NestoAPI.Controllers
                     if (!ensayo)
                     {
                         Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(tipo, numero)); // NestoAPI#646
+                        AvisarPackingSiHayRetenidos(tipo, numero, resultado.Salida?.FaltasPorAvisar); // NestoAPI#858
                     }
                     return Ok(resultado.Salida);
                 case EstadoTerminarSalida.SinPermiso:
@@ -354,6 +355,7 @@ namespace NestoAPI.Controllers
                     if (!ensayo && resultado.Resultado?.Regularizado == true)
                     {
                         Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.NormalizarTipoOrigen(tipo), numero)); // las demás PDA
+                        AvisarPackingSiHayRetenidos(tipo, numero, resultado.FaltasPorAvisar); // NestoAPI#858
                     }
                     return Ok(resultado.Resultado);
                 case EstadoNoEsta.SinPermiso:
@@ -572,6 +574,25 @@ namespace NestoAPI.Controllers
         private void Avisar(string grupo, string dispositivoDeLaPeticion = null)
         {
             AvisarCon(grupo, dispositivoDeLaPeticion, (avisos, usuario, conexion, dispositivo) => avisos.HaCambiado(grupo, usuario, conexion, dispositivo));
+        }
+
+        /// <summary>
+        /// NestoAPI#858: si el Terminar o el «No está» de un picking ha retenido algún pedido «todo junto», «haCambiado» al packing de
+        /// ese picking (sin excluir a nadie: quien lo ha hecho está en la recogida, no en el packing). Ya guardado; nunca lanza.
+        /// </summary>
+        private void AvisarPackingSiHayRetenidos(string tipo, int numero, IEnumerable<FaltaPickingPedido> faltas)
+        {
+            try
+            {
+                if (CasadorEscaneos.NormalizarTipoOrigen(tipo) == CasadorEscaneos.ORIGEN_PICKING && AvisosRetencionPorFalta.HayRetenidos(faltas))
+                {
+                    AvisosRetencionPorFalta.Packing(avisosAlmacen, numero);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+            }
         }
 
         /// <summary>NestoAPI#710: como <see cref="Avisar"/>, con las lecturas grabadas (sus datos).</summary>

@@ -400,6 +400,76 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(aviso.Cuerpo, "se espera a tenerlo completo");
         }
 
+        // ---------------- Refrescar el packing de las PDA (haCambiado al grupo Packing:{picking}) ----------------
+
+        private static ServicioRetencionesPorFalta ServicioConAvisos(RepositorioFalso repositorio, NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen avisos,
+            DateTime? ahora = null) =>
+            new ServicioRetencionesPorFalta(repositorio, (e, p) => Comerciales(), () => ahora ?? AHORA, avisos);
+
+        [TestMethod]
+        public async Task AvisoPacking_ServirLoQueHay_AvisaAlPackingDeSuPicking()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            var repo = new RepositorioFalso();
+
+            ResultadoRetencionPorFalta<RetencionPorFaltaDTO> r = await ServicioConAvisos(repo, avisos).Decidir("1", 930500, Decision("ServirLoQueHay"), Usuario("NUEVAVISION\\Ana"));
+
+            Assert.AreEqual(HttpStatusCode.OK, r.Codigo);
+            A.CallTo(() => avisos.HaCambiado("Packing:100070", null, null, AvisosRetencionPorFalta.DISPOSITIVO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task AvisoPacking_Esperar_AvisaAlPackingDeSuPicking_YSinTerminarNo()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            var repo = new RepositorioFalso();
+
+            Assert.AreEqual(HttpStatusCode.OK, (await ServicioConAvisos(repo, avisos).Decidir("1", 930500, Decision("Esperar"), Usuario("NUEVAVISION\\Ana"))).Codigo);
+            A.CallTo(() => avisos.HaCambiado("Packing:100070", null, null, AvisosRetencionPorFalta.DISPOSITIVO)).MustHaveHappenedOnceExactly();
+
+            Fake.ClearRecordedCalls(avisos);
+            repo.AlEsperar = new ResultadoEsperar { PickingSinTerminar = true };
+            Assert.AreEqual(HttpStatusCode.Conflict, (await ServicioConAvisos(repo, avisos).Decidir("1", 930500, Decision("Esperar"), Usuario("NUEVAVISION\\Ana"))).Codigo);
+            A.CallTo(avisos).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AvisoPacking_PlazoVencido_AvisaAlPackingDeSuPicking()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            var repo = new RepositorioFalso();
+
+            Assert.AreEqual(1, (await ServicioConAvisos(repo, avisos, AHORA.AddHours(3)).AplicarVencidas()).Count);
+
+            A.CallTo(() => avisos.HaCambiado("Packing:100070", null, null, AvisosRetencionPorFalta.DISPOSITIVO)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task AvisoPacking_SiFalla_NoRompeLaDecisionNiElJob()
+        {
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            A.CallTo(() => avisos.HaCambiado(A<string>._, A<string>._, A<string>._, A<string>._)).Throws(new InvalidOperationException("SignalR caído"));
+
+            var repo = new RepositorioFalso();
+            ResultadoRetencionPorFalta<RetencionPorFaltaDTO> servir = await ServicioConAvisos(repo, avisos).Decidir("1", 930500, Decision("ServirLoQueHay"), Usuario("NUEVAVISION\\Ana"));
+            Assert.AreEqual(HttpStatusCode.OK, servir.Codigo);
+            Assert.AreEqual(EstadosRetencionPorFalta.SERVIR_LO_QUE_HAY, servir.Contenido.Estado);
+
+            ResultadoRetencionPorFalta<RetencionPorFaltaDTO> esperar = await ServicioConAvisos(repo, avisos).Decidir("1", 930500, Decision("Esperar"), Usuario("NUEVAVISION\\Ana"));
+            Assert.AreEqual(HttpStatusCode.OK, esperar.Codigo);
+
+            List<RetencionPorFaltaDTO> aplicadas = await ServicioConAvisos(new RepositorioFalso(), avisos, AHORA.AddHours(3)).AplicarVencidas();
+            Assert.AreEqual(930500, aplicadas.Single().Pedido);
+        }
+
+        [TestMethod]
+        public void AvisoPacking_HayRetenidos()
+        {
+            Assert.IsFalse(AvisosRetencionPorFalta.HayRetenidos(null));
+            Assert.IsFalse(AvisosRetencionPorFalta.HayRetenidos(new[] { new FaltaPickingPedido { Pedido = 1 } }));
+            Assert.IsTrue(AvisosRetencionPorFalta.HayRetenidos(new[] { new FaltaPickingPedido { Pedido = 1 }, new FaltaPickingPedido { Pedido = 2, Retenido = true } }));
+        }
+
         [TestMethod]
         public async Task Plazo_PickingSinTerminar_SeDejaParaLaSiguientePasada()
         {
