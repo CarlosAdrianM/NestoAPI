@@ -445,8 +445,51 @@ SELECT @filas;";
         }
     }
 
-    public class TransaccionSalidaSql : ITransaccionSalida
+    public class TransaccionSalidaSql : ITransaccionSalida, IRetencionTodoJuntoSalida
     {
+        // NestoAPI#858 punto 4: lo que decide si una falta retiene su pedido «todo junto»
+        internal const string SQL_LINEAS_TODO_JUNTO = @"
+SELECT l.[Nº Orden] AS Linea, l.[Número] AS Pedido, CAST(ISNULL(l.[Base Imponible], 0) AS decimal(19, 4)) AS BaseImponible,
+       CAST(ISNULL(p.Ficticio, 0) AS bit) AS Ficticio, CAST(ISNULL(c.ServirJunto, 0) AS bit) AS ServirJunto, c.ModoServicio
+FROM LinPedidoVta l
+     INNER JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
+     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+WHERE l.Empresa = @p0 AND l.[Nº Orden] IN ({0})";
+
+        internal const string SQL_RETENCION_PENDIENTE = @"
+SELECT TOP 1 Plazo FROM dbo.PedidosRetenidosPorFalta WITH (UPDLOCK, HOLDLOCK) WHERE Empresa = @p0 AND Pedido = @p1 AND Estado = 'Pendiente' ORDER BY Id";
+
+        internal const string SQL_RETENER = @"
+INSERT INTO dbo.PedidosRetenidosPorFalta (Empresa, Pedido, Picking, Productos, Plazo, Estado) VALUES (@p0, @p1, @p2, @p3, @p4, 'Pendiente')";
+
+        public Task<List<LineaTodoJuntoSalida>> LeerLineasTodoJunto(string empresa, IReadOnlyCollection<int> lineas)
+        {
+            if (lineas == null || lineas.Count == 0)
+            {
+                return Task.FromResult(new List<LineaTodoJuntoSalida>());
+            }
+            var parametros = new List<object> { empresa };
+            string lista = Lista(parametros, lineas.Cast<object>(), 0);
+            return db.Database.SqlQuery<LineaTodoJuntoSalida>(string.Format(SQL_LINEAS_TODO_JUNTO, lista), parametros.ToArray()).ToListAsync();
+        }
+
+        public async Task<DateTime?> RetenerPorFalta(RetencionPorFaltaNueva retencion)
+        {
+            if (!await db.Database.SqlQuery<bool>(RepositorioRetencionesPorFaltaSql.SQL_TABLA).FirstAsync().ConfigureAwait(false))
+            {
+                return null;
+            }
+            DateTime? existente = (await db.Database.SqlQuery<DateTime>(SQL_RETENCION_PENDIENTE, retencion.Empresa, retencion.Pedido)
+                .ToListAsync().ConfigureAwait(false)).Cast<DateTime?>().FirstOrDefault();
+            if (existente.HasValue)
+            {
+                return existente;
+            }
+            _ = await db.Database.ExecuteSqlCommandAsync(SQL_RETENER, retencion.Empresa, retencion.Pedido, retencion.Picking,
+                retencion.Productos ?? string.Empty, retencion.Plazo).ConfigureAwait(false);
+            return retencion.Plazo;
+        }
+
         // Las faltas netas (los «deshacer» van en negativo) por producto y por lo que la app manda en Motivo (el hueco)
         internal const string SQL_FALTAS = @"
 SELECT RTRIM(e.Producto) AS Producto, RTRIM(e.Motivo) AS Hueco, CAST(SUM(e.Cantidad) AS int) AS Cantidad

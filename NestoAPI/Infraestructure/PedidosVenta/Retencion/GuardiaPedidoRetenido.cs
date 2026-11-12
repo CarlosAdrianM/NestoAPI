@@ -48,11 +48,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         /// <summary>Para los tests: el día de hoy.</summary>
         internal static Func<DateTime> hoy = () => DateTime.Today;
 
-        /// <summary>El de producción: su propio contexto, como el resto de la retención.</summary>
-        public static Task<string> Motivo(string empresa, int pedido) => Motivo(new RepositorioPedidosRetenidos(), empresa, pedido);
+        /// <summary>
+        /// El de producción: su propio contexto, como el resto de la retención. NestoAPI#858 punto 4: además, un pedido «todo junto»
+        /// retenido por falta (Pendiente) no se albaranea, ni se factura en rutas, ni se etiqueta.
+        /// </summary>
+        public static async Task<string> Motivo(string empresa, int pedido) =>
+            await Motivo(new RepositorioPedidosRetenidos(), empresa, pedido).ConfigureAwait(false)
+            ?? await PreparacionAlmacen.GuardiaRetencionPorFalta.Motivo(empresa, pedido).ConfigureAwait(false);
 
-        /// <summary>NestoAPI#831: el de producción, diciendo si es la etiqueta de un envío del reparto propio.</summary>
-        public static Task<string> Motivo(string empresa, int pedido, bool etiquetaRepartoPropio)
-            => Motivo(new RepositorioPedidosRetenidos(), empresa, pedido, etiquetaRepartoPropio);
+        /// <summary>NestoAPI#831: el de producción, diciendo si es la etiqueta de un envío del reparto propio (y #858: retenido por falta).</summary>
+        public static async Task<string> Motivo(string empresa, int pedido, bool etiquetaRepartoPropio) =>
+            await Motivo(new RepositorioPedidosRetenidos(), empresa, pedido, etiquetaRepartoPropio).ConfigureAwait(false)
+            ?? await PreparacionAlmacen.GuardiaRetencionPorFalta.Motivo(empresa, pedido).ConfigureAwait(false);
     }
 }

@@ -1046,6 +1046,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<int> sinProducto = new List<int>();
             cambios.AddRange(await SacarLoQueSeQuedaSinProducto(empresa, numero, pedidosConFaltas, tx, sinProducto).ConfigureAwait(false));
             avisar.ForEach(f => f.NoSaleNadaDelPedido = sinProducto.Contains(f.Pedido));
+            // NestoAPI#858 punto 4: un pedido «todo junto» al que le falta algo de pago queda retenido (en esta misma transacción)
+            await ReglasRetencionTodoJunto.RetenerSiHaceFalta(empresa, numero, tx, avisar).ConfigureAwait(false);
+            cambios.AddRange(avisar.Where(f => f.Retenido).Select(f => f.Pedido).Distinct()
+                .Select(p => $"Pedido {p}: es «todo junto» y le falta algo de pago: queda retenido hasta que decida el vendedor (no se empaqueta)."));
             return cambios;
         }
 

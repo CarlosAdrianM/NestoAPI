@@ -601,6 +601,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionComprasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionReposicionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecorteParadasRecogida.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\RetencionTodoJunto.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SasBlobAzure.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\TraductorCodigosRecepcion.cs" />
@@ -685,6 +686,7 @@
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />
+    <Compile Include="Controllers\PedidosVentaRetencionPorFaltaController.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
     <Compile Include="Controllers\PedidosVentaAnomaliasController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />

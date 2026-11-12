@@ -599,6 +599,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\CorregirLecturaSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorteFaltasSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SalidasEscriturasTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\RetencionTodoJuntoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\FaltasPickingAvisoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\NoEstaSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AnularLecturasSalidaTests.cs" />

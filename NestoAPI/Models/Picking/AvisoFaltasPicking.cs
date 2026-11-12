@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -36,6 +37,10 @@ namespace NestoAPI.Models.Picking
         public bool MantenerJunto { get; set; }
         /// <summary>Después de quitar las faltas no le queda ningún producto en el picking (sus portes esperan también).</summary>
         public bool NoSaleNada { get; set; }
+        /// <summary>NestoAPI#858 punto 4: «todo junto» con falta de pago: retenido hasta que decida el vendedor.</summary>
+        public bool Retenido { get; set; }
+        /// <summary>NestoAPI#858 punto 4: hasta cuándo puede decidir (después, se espera a tenerlo completo).</summary>
+        public DateTime? PlazoRetencion { get; set; }
         public List<FaltaAvisoPicking> Faltas { get; set; } = new List<FaltaAvisoPicking>();
     }
 
@@ -110,7 +115,7 @@ namespace NestoAPI.Models.Picking
             {
                 return null;
             }
-            return new NotificacionPushDTO
+            var notificacion = new NotificacionPushDTO
             {
                 Titulo = faltas.Count == 1
                     ? $"Pedido {pedido.Pedido}: no se ha encontrado {faltas[0].Producto?.Trim()} en el almacén"
@@ -125,6 +130,14 @@ namespace NestoAPI.Models.Picking
                     ["picking"] = pedido.Picking.ToString(CultureInfo.InvariantCulture)
                 }
             };
+            // NestoAPI#858 punto 4: para que Nesto y NestoApp ofrezcan «Servir lo que hay» / «Esperar»
+            if (pedido.Retenido && pedido.PlazoRetencion.HasValue)
+            {
+                notificacion.Titulo = $"Pedido {pedido.Pedido} retenido: falta {(faltas.Count == 1 ? faltas[0].Producto?.Trim() : faltas.Count + " productos")}; decida";
+                notificacion.Datos["retenido"] = "true";
+                notificacion.Datos["plazo"] = pedido.PlazoRetencion.Value.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
+            }
+            return notificacion;
         }
 
         internal static string Cuerpo(PedidoConFaltasPicking pedido, List<FaltaAvisoPicking> faltas)
@@ -132,7 +145,9 @@ namespace NestoAPI.Models.Picking
             string cabecera = $"Pedido {pedido.Pedido} (cliente {pedido.Cliente?.Trim()}): no se ha encontrado en {Almacen(pedido)}";
             string resto = pedido.NoSaleNada
                 ? "No sale nada más de este pedido en este picking: espera con lo pendiente."
-                : "El resto del pedido sigue su curso.";
+                : pedido.Retenido && pedido.PlazoRetencion.HasValue
+                    ? ReglasRetencionTodoJunto.TextoAviso(pedido.PlazoRetencion.Value).Trim()
+                    : "El resto del pedido sigue su curso.";
             string texto;
             if (faltas.Count == 1)
             {

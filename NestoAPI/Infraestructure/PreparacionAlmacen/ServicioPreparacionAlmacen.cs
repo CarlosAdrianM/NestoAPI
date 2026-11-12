@@ -750,6 +750,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             PackingAlmacenDTO packing = MontarPacking(empresa, picking, filas, lecturas);
             await CompletarBultosYActividad(empresa, picking, packing).ConfigureAwait(false);
             await CompletarAvisosDelPicking(empresa, picking, null, packing).ConfigureAwait(false);
+            await GuardiaRetencionPorFalta.MarcarPacking(packing).ConfigureAwait(false);
             return packing;
         }
 
@@ -765,6 +766,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             PackingAlmacenDTO packing = MontarPacking(empresa, picking.Value, filas, lecturas);
             await CompletarBultosYActividad(empresa, picking.Value, packing).ConfigureAwait(false);
             await CompletarAvisosDelPicking(empresa, picking.Value, pedido, packing).ConfigureAwait(false);
+            await GuardiaRetencionPorFalta.MarcarPacking(packing).ConfigureAwait(false);
             return packing;
         }
 
@@ -999,6 +1001,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // Todos los pedidos de la caja se comprueban ANTES de subir nada
                 foreach (int pedido in new[] { foto.Pedido }.Concat(otrosPedidos))
                 {
+                    // NestoAPI#858 punto 4: «todo junto» retenido por falta: no se empaqueta (la Ariadna de antes no lo sabe pintar)
+                    string retenido = await GuardiaRetencionPorFalta.Motivo(foto.Empresa, pedido).ConfigureAwait(false);
+                    if (retenido != null)
+                    {
+                        throw new NestoBusinessException(retenido) { StatusCode = System.Net.HttpStatusCode.Conflict };
+                    }
                     if (!await repositorio.ExistePedidoEnPicking(foto.Empresa, pedido, foto.Picking).ConfigureAwait(false))
                     {
                         throw new NestoBusinessException($"El pedido {pedido} no está en el picking {foto.Picking}.");

@@ -877,6 +877,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'recogidas-solicitadas-sin-respuesta' configurado (L-V cada hora de 8:00 a 20:00)");
 
+            // NestoAPI#858 punto 4: los pedidos «todo junto» retenidos por falta cuyo plazo ha vencido sin decisión → «Esperar» (sale del
+            // picking y espera completo) y aviso a quien pasó el pedido y a Almacén. Sin el script (Issue858_PedidosRetenidosPorFalta.sql), nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PreparacionAlmacen.RetencionesPorFaltaJobsService.ID_JOB,
+                () => Infraestructure.PreparacionAlmacen.RetencionesPorFaltaJobsService.AplicarVencidas(),
+                Infraestructure.PreparacionAlmacen.RetencionesPorFaltaJobsService.CRON, // L-V cada 15 min de 8:00 a 18:45
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'pedidos-retenidos-por-falta' configurado (L-V cada 15 min de 8:00 a 18:45)");
+
             // NestoAPI#779: el día 1 de cada mes, si el calendario no tiene festivos del año que toca (en diciembre, el siguiente),
             // aviso a Dirección en la campana de Nesto y por correo.
             RecurringJob.AddOrUpdate(

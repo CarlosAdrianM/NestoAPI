@@ -23,6 +23,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public bool QuitadaDelPedido { get; set; }
         /// <summary>Al pedido no le queda ningún producto en el picking.</summary>
         public bool NoSaleNadaDelPedido { get; set; }
+        /// <summary>NestoAPI#858 punto 4: el pedido («todo junto») ha quedado retenido por esta falta.</summary>
+        public bool Retenido { get; set; }
+        /// <summary>NestoAPI#858 punto 4: hasta cuándo puede decidir el vendedor.</summary>
+        public DateTime? PlazoRetencion { get; set; }
     }
 
     /// <summary>Novedades 1228: avisa de las faltas de un picking terminado. Nunca lanza ni hace esperar al Terminar.</summary>
@@ -203,6 +207,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         Almacen = string.IsNullOrWhiteSpace(almacen) ? Constantes.Almacenes.ALGETE : almacen.Trim(),
                         MantenerJunto = cabeceras.FirstOrDefault(c => c.Número == pedido.Key)?.MantenerJunto ?? false,
                         NoSaleNada = pedido.Any(f => f.NoSaleNadaDelPedido),
+                        Retenido = pedido.Any(f => f.Retenido),
+                        PlazoRetencion = pedido.Where(f => f.Retenido).Select(f => f.PlazoRetencion).FirstOrDefault(p => p.HasValue),
                         Faltas = pedido.GroupBy(f => new { Producto = f.Producto?.Trim(), f.QuitadaDelPedido }).Select(g => new FaltaAvisoPicking
                         {
                             Producto = g.Key.Producto,

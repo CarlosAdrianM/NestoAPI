@@ -344,6 +344,15 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Pedido { get; set; }
         public string ComentarioPicking { get; set; }
         public List<LineaPackingAlmacenDTO> Lineas { get; set; } = new List<LineaPackingAlmacenDTO>();
+        /// <summary>
+        /// NestoAPI#858 punto 4: «todo junto» con falta de pago: espera a que el vendedor decida. No se empaqueta (cerrar caja o
+        /// etiqueta → 409 con <see cref="AvisoRetencion"/>).
+        /// </summary>
+        public bool RetenidoPorFalta { get; set; }
+        /// <summary>NestoAPI#858: «Esperando al vendedor: no empaquetar» si está retenido; null si no.</summary>
+        public string AvisoRetencion { get; set; }
+        /// <summary>NestoAPI#858: hasta cuándo puede decidir el vendedor (después, se espera a tenerlo completo).</summary>
+        public System.DateTime? PlazoRetencion { get; set; }
     }
 
     /// <summary>

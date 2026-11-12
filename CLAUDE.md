@@ -514,6 +514,19 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   la siguiente lectura del NR). Con abono nuevo, `RecogidaSolicitadaRecibida` (push + campana, Datos + `estado` «Recogida») a quien la
   pidió. Las notas de recogida sin solicitud y `ProcesarNotaEntrega` (Facturar rutas) no cambian.
 
+### «Todo junto» con falta de pago: pedido retenido por falta (NestoAPI#858 punto 4, 12/11/26)
+- En `OrigenSalidaPicking.QuitarFaltasDeLosPedidos` (Terminar y falta definitiva del «No está»), dentro de su transacción
+  (`ReglasRetencionTodoJunto.RetenerSiHaceFalta`, solo si la tx implementa `IRetencionTodoJuntoSalida`, como `TransaccionSalidaSql`): una falta
+  que queda pendiente (no muestra ni quitada) de una línea con base > 0 y no ficticia, de un pedido en modo efectivo 1 del que sale algo más →
+  fila «Pendiente» en `dbo.PedidosRetenidosPorFalta` (`Scripts/Issue858_PedidosRetenidosPorFalta.sql`; sin él, nada y ELMAH una vez).
+  Plazo: `Picking.TodoJuntoPlazoHoras` (2) horas laborables L-V 8-18 sin festivos de Algete. Interruptor `Picking.TodoJuntoRetener` (apagado con «0»).
+- Bloqueo con «Esperando al vendedor: no empaquetar…»: `GuardiaPedidoRetenido.Motivo` de producción (albarán, Facturar rutas, etiqueta del
+  packing → 409) y cerrar caja/foto de bulto (`GuardarBulto`, 409). El packing marca `RetenidoPorFalta`, `AvisoRetencion`, `PlazoRetencion`.
+- `GET api/PedidosVenta/RetenidosPorFalta`, `POST api/PedidosVenta/{empresa}/{pedido}/RetencionPorFalta/Decidir` {Decision ServirLoQueHay|Esperar}
+  (quien hizo el pedido, su vendedor o Almacén/Administración/Dirección/Informática). «Esperar» solo con el picking terminado: las reservas del
+  pedido pasan a «pendiente de ubicar» (el mozo las ubica con la PDA) y Picking = 0. Job `pedidos-retenidos-por-falta` (L-V cada 15 min 8-18):
+  vencidas → Esperar + aviso `PedidoRetenidoPorFaltaEsperar`. El aviso `PickingConFaltas` lleva Datos `retenido`="true" y `plazo`.
+
 ### Evento de pago que pasa a gratuito (Novedades 1233, 12/11/26)
 - `PUT api/Eventos/{id}` que deja las dos señales a 0: las Reservadas sin dinero ni documentos pasan a Inscrita / Gratuita (FechaLimitePago
   y FormaPago a NULL, rastro en Modificaciones) y sus enlaces de pago pendientes (cadena de reintentos incluida) se anulan con el UPDATE de
