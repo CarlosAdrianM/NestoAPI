@@ -437,6 +437,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`AgenciasEntradaRemitentes`): agencia, primer código/URL (JSON con todos), extracto de 500, nada de cuerpo ni adjuntos. Agencias:
   `IAgenciaEntrada` (núcleo `AgenciaEntradaPorPatrones` + una clase de datos por agencia en `AgenciasEntradaRegistradas`, `HorasHastaEntrega`
   24/48) + `AgenciaEntradaGenerica` (descubre: agencia NULL). Enlaces desenvueltos sin peticiones (safelinks, Proofpoint v2, google.com/url, redirect=…).
+  Lo que capta el genérico (sin remitente marcado) lleva la agencia que el texto NOMBRE tras una etiqueta («Transportista:», «Enviado por:», «Agencia:»,
+  «Carrier:», «Shipped via»…; `AgenciaPorNombreEnTexto`, `NombresEnTexto` de cada agencia, 40 caracteres de esa línea, gana el nombre más largo); el nombre
+  suelto no cuenta. `AnalisisCorreoSeguimiento.AgenciaPorNombreEnTexto` no se guarda (sin columna). MBE (Mail Boxes Etc) es agencia registrada.
 - Asignación en sombra (`AsignadorPedidosCompra`, pura): número de pedido nuestro > dirección de un contacto > dominio (web/contactos; nunca
   gratuito, nuestro o de agencia) > nombre del proveedor; con proveedor, TODOS sus pedidos en el aire (-1/1 Enviado) son candidatos. El job
   rellena PedidoReal/FechaAlbaranReal con el primer candidato albaraneado desde el día del correo (para medir). No toca compras (fase 3).

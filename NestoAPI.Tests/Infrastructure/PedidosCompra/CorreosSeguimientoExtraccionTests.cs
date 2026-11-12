@@ -120,6 +120,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         [DataRow("https://www.dbschenker.com/app/tracking-public/?refNumber=ESMAD1234567&refType=WaybillNo", "DB Schenker", "ESMAD1234567")]
         [DataRow("https://tracking.dpd.de/status/es_ES/parcel/01234567890123", "DPD", "01234567890123")]
         [DataRow("https://www.palletways.com/es/tracking?ref=PW123456", "Palletways", "PW123456")]
+        [DataRow("https://tracking.mbe.es/?c=ABC12345", "MBE", "ABC12345")]
         public void CadaAgencia_SeReconoceYSacaElCodigo(string url, string agencia, string codigo)
         {
             AnalisisCorreoSeguimiento analisis = Analizar(Html($"<p>Su pedido va de camino: <a href=\"{url.Replace("&", "&amp;")}\">seguir envío</a></p>"));
@@ -270,6 +271,136 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.IsTrue(marcado.Casa("a@inventados.es"));
             Assert.IsTrue(marcado.Casa("a@avisos.inventados.es"));
             Assert.IsFalse(marcado.Casa("a@transportes-inventados.es"));
+        }
+
+        #endregion
+
+        #region Agencia por su nombre tras una etiqueta
+
+        private const string TEXTO_WEELKO =
+            "¡Su pedido está preparado y ha salido de nuestro almacén! Podrá seguir el estado de la entrega a través del siguiente enlace: " +
+            "Tracking Número de pedido WK/OUT/77626 Referencia cliente 29636 El pedido será enviado por: MAILBOXES Gracias por su compra.";
+
+        [TestMethod]
+        public void PorNombre_Weelko_EnlaceDeDominioDesconocidoYEnviadoPorMailboxes_EsMbe()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Html(
+                $"<p>{TEXTO_WEELKO.Replace("Tracking", "<a href=\"https://www.weelko.com/tracking/WK-OUT-77626\">Tracking</a>")}</p>",
+                asunto: "Su Traslado WK-OUT-77626", remitente: "noreply@weelko.com"));
+
+            Assert.IsTrue(analisis.Guardar);
+            Assert.AreEqual("MBE", analisis.Agencia);
+            Assert.AreEqual(24, analisis.HorasHastaEntrega);
+            Assert.IsTrue(analisis.AgenciaPorNombreEnTexto);
+            Assert.AreEqual("WK-OUT-77626", analisis.Seguimientos.Single().Codigo);
+            Assert.AreEqual("https://www.weelko.com/tracking/WK-OUT-77626", analisis.Seguimientos.Single().Url);
+        }
+
+        [TestMethod]
+        public void PorNombre_Weelko_EnlaceDeMbe_EsMbePorElDominio()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Html(
+                $"<p>{TEXTO_WEELKO.Replace("Tracking", "<a href=\"https://tracking.mbe.es/?c=ABC12345\">Tracking</a>")}</p>",
+                asunto: "Su Traslado WK-OUT-77626", remitente: "noreply@weelko.com"));
+
+            Assert.AreEqual("MBE", analisis.Agencia);
+            Assert.IsFalse(analisis.AgenciaPorNombreEnTexto, "El dominio de MBE la reconoce antes que el nombre");
+            Assert.AreEqual("ABC12345", analisis.Seguimientos.Single().Codigo);
+        }
+
+        [TestMethod]
+        public void PorNombre_Dduueett_TransportistaSchenkerSinEnlaces_EsDbSchenker()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto(
+                "Te informamos que tu pedido ha salido de nuestro almacén y está en camino.\n" +
+                "Transportista: SCHENKER STANDARD\nNúmero de seguimiento: ESMNR264647742\n" +
+                "Para una entrega exitosa, por favor consulta el archivo adjunto.",
+                asunto: "Tu pedido ha sido enviado", remitente: "logistics@dduueett.com"));
+
+            Assert.AreEqual("DB Schenker", analisis.Agencia);
+            Assert.AreEqual(48, analisis.HorasHastaEntrega);
+            Assert.IsTrue(analisis.AgenciaPorNombreEnTexto);
+            Assert.AreEqual("ESMNR264647742", analisis.Seguimientos.Single().Codigo);
+            Assert.IsNull(analisis.Seguimientos.Single().Url);
+        }
+
+        [DataTestMethod]
+        [DataRow("Agencia: SEUR", "SEUR")]
+        [DataRow("Enviado con mrw desde Barcelona", "MRW")]
+        [DataRow("Carrier: DHL Express", "DHL")]
+        [DataRow("Shipped via FedEx Ground", "TNT/FedEx")]
+        [DataRow("Transporte: Tipsa (24 h)", "TIPSA")]
+        [DataRow("Agencia de transporte: Correos Express", "Correos Express")]
+        [DataRow("Transportista: CORREOS", "Correos")]
+        [DataRow("Expedido por: Mail Boxes Etc", "MBE")]
+        [DataRow("Transportista: CTT", "CTT Express")]
+        public void PorNombre_ConEtiqueta_PoneLaAgencia(string linea, string agencia)
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto($"Su pedido ha salido.\n{linea}\nNº de seguimiento: XY12345678"));
+
+            Assert.AreEqual(agencia, analisis.Agencia, linea);
+            Assert.IsTrue(analisis.AgenciaPorNombreEnTexto, linea);
+        }
+
+        [TestMethod]
+        public void PorNombre_SinEtiqueta_SigueSinAgencia()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto(
+                "Su pedido ha salido. Nº de seguimiento: XY12345678. Gracias por confiar en Correos y en Envialia."));
+
+            Assert.IsTrue(analisis.Guardar);
+            Assert.IsNull(analisis.Agencia);
+            Assert.IsFalse(analisis.AgenciaPorNombreEnTexto);
+        }
+
+        [TestMethod]
+        public void PorNombre_EtiquetaConUnaAgenciaDesconocida_SigueSinAgencia()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto("Transportista: Transportes Pepe\nNº de seguimiento: XY12345678"));
+
+            Assert.IsTrue(analisis.Guardar);
+            Assert.IsNull(analisis.Agencia);
+        }
+
+        [TestMethod]
+        public void PorNombre_ElNombreLejosDeLaEtiqueta_NoCuenta()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto(
+                "Transportista: el que tenemos contratado para su zona, que suele llegar en dos días, como siempre con Correos\n" +
+                "Nº de seguimiento: XY12345678"));
+
+            Assert.IsNull(analisis.Agencia);
+        }
+
+        [TestMethod]
+        public void PorNombre_SinSeguimiento_NoSeGuardaNiPoneAgencia()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto("Transportista: SEUR. Mañana sale su pedido."));
+
+            Assert.IsFalse(analisis.Guardar);
+            Assert.IsNull(analisis.Agencia);
+        }
+
+        [TestMethod]
+        public void PorNombre_CorreoYaReconocidoPorDominio_NoCambia()
+        {
+            AnalisisCorreoSeguimiento analisis = Analizar(Html(
+                "<p>Transportista: SCHENKER</p><a href=\"https://www.gls-spain.es/es/recibir-paquetes/seguimiento-envio/?match=61771234567\">seguir</a>"));
+
+            Assert.AreEqual("GLS", analisis.Agencia);
+            Assert.IsFalse(analisis.AgenciaPorNombreEnTexto);
+        }
+
+        [TestMethod]
+        public void PorNombre_RemitenteMarcadoConAgencia_Manda()
+        {
+            var marcado = new RemitenteMarcado { Agencia = "Transportes Inventados", Remitente = "transportes-inventados.es", Activo = true };
+
+            AnalisisCorreoSeguimiento analisis = Analizar(Texto("Transportista: SEUR\nNº de seguimiento: XY12345678",
+                remitente: "trafico@transportes-inventados.es"), marcado);
+
+            Assert.AreEqual("Transportes Inventados", analisis.Agencia);
+            Assert.IsFalse(analisis.AgenciaPorNombreEnTexto);
         }
 
         #endregion

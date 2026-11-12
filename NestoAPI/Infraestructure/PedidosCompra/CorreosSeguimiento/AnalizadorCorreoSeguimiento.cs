@@ -34,9 +34,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     {
         /// <summary>Solo se guardan los que traen algún seguimiento o vienen de un remitente marcado.</summary>
         public bool Guardar { get; set; }
-        /// <summary>La agencia reconocida (o la del remitente marcado); null si solo lo ha captado el genérico.</summary>
+        /// <summary>La agencia reconocida (o la del remitente marcado); null si solo lo ha captado el genérico y el texto no la nombra tras una etiqueta.</summary>
         public string Agencia { get; set; }
         public int? HorasHastaEntrega { get; set; }
+        /// <summary>
+        /// La agencia se ha sabido por su nombre tras una etiqueta del texto («Transportista: …»), no por un enlace, el remitente o
+        /// un código suyo (los enlaces y códigos los ha sacado el genérico). No se guarda: la tabla no tiene columna para ello.
+        /// </summary>
+        public bool AgenciaPorNombreEnTexto { get; set; }
         public List<SeguimientoCorreo> Seguimientos { get; set; } = new List<SeguimientoCorreo>();
         public RemitenteMarcado RemitenteMarcado { get; set; }
         /// <summary>Como mucho <see cref="AnalizadorCorreoSeguimiento.LONGITUD_EXTRACTO"/> caracteres alrededor del seguimiento.</summary>
@@ -47,8 +52,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
     /// <summary>
     /// NestoAPI#857: clasificación PURA de un correo del buzón de Compras. Orden: las agencias conocidas (la primera que saca un
-    /// seguimiento gana); si ninguna, el remitente marcado (con su agencia) y lo que capte el genérico; si tampoco, el genérico solo
-    /// (agencia null). Mira el remitente directo y, en un reenvío, los originales.
+    /// seguimiento gana); si ninguna, el remitente marcado (con su agencia) y lo que capte el genérico; si tampoco, el genérico solo,
+    /// con la agencia que el texto nombre tras una etiqueta (<see cref="AgenciaPorNombreEnTexto"/>) o null. Mira el remitente directo y, en un reenvío, los originales.
     /// </summary>
     public static class AnalizadorCorreoSeguimiento
     {
@@ -92,6 +97,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 {
                     analisis.Agencia = analisis.RemitenteMarcado.Agencia?.Trim();
                     analisis.HorasHastaEntrega = AgenciasEntradaRegistradas.PorNombre(analisis.Agencia)?.HorasHastaEntrega;
+                }
+                if (string.IsNullOrWhiteSpace(analisis.Agencia) && analisis.Seguimientos.Any())
+                {
+                    // Correo de un proveedor que nombra la agencia tras una etiqueta («Transportista: SCHENKER STANDARD»)
+                    IAgenciaEntrada porNombre = AgenciaPorNombreEnTexto.Buscar(correo, agencias);
+                    if (porNombre != null)
+                    {
+                        analisis.Agencia = porNombre.Nombre;
+                        analisis.HorasHastaEntrega = porNombre.HorasHastaEntrega;
+                        analisis.AgenciaPorNombreEnTexto = true;
+                    }
                 }
             }
             analisis.Guardar = analisis.Seguimientos.Any() || analisis.RemitenteMarcado != null;

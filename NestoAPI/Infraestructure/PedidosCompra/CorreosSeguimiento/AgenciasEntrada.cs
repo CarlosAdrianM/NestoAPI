@@ -77,8 +77,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected virtual Regex[] PatronesRuta => new Regex[0];
         /// <summary>Un formato de código tan propio que basta para reconocer la agencia aunque no haya enlace (p. ej. el 1Z de UPS).</summary>
         protected virtual Regex PatronInconfundible => null;
-        /// <summary>Nombres con los que sale en el texto; solo sirven para leer un código con etiqueta en un correo suyo.</summary>
-        protected virtual string[] NombresEnTexto => new[] { Nombre };
+        /// <summary>
+        /// Nombres con los que sale en el texto. Sirven para poner la agencia a un correo de un proveedor que solo la nombra tras una
+        /// etiqueta («Transportista: …», «Enviado por: …»): <see cref="AgenciaPorNombreEnTexto"/>.
+        /// </summary>
+        public virtual string[] NombresEnTexto => new[] { Nombre };
 
         public bool EsDominio(string host) => !string.IsNullOrEmpty(host) && Dominios.Any(d => TextoCorreo.HostDe(host, d));
 
@@ -214,7 +217,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// <summary>
     /// NestoAPI#857: el genérico, para DESCUBRIR agencias nuevas. Capta cualquier enlace que hable de seguimiento (tracking,
     /// seguimiento, localizador…) de un dominio que no sea de una agencia conocida ni nuestro, y los códigos con etiqueta del
-    /// texto. Lo que capta se guarda sin agencia: sus remitentes salen en GET api/Compras/AgenciasEntrada/Candidatos.
+    /// texto. Lo que capta se guarda sin agencia (salvo que el texto la nombre tras una etiqueta: <see cref="AgenciaPorNombreEnTexto"/>): sus remitentes salen en GET api/Compras/AgenciasEntrada/Candidatos.
     /// </summary>
     public class AgenciaEntradaGenerica : AgenciaEntradaPorPatrones
     {
@@ -273,7 +276,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             new AgenciaEntradaTntFedex(), new AgenciaEntradaDachser(), new AgenciaEntradaDsv(), new AgenciaEntradaTipsa(),
             new AgenciaEntradaEnvialia(), new AgenciaEntradaZeleris(), new AgenciaEntradaRedurRhenus(), new AgenciaEntradaXpoGxo(),
             new AgenciaEntradaSchenker(), new AgenciaEntradaDpd(), new AgenciaEntradaSending(), new AgenciaEntradaPaack(),
-            new AgenciaEntradaPalletways()
+            new AgenciaEntradaPalletways(), new AgenciaEntradaMbe()
         }.AsReadOnly();
 
         public static readonly IAgenciaEntrada Generica = new AgenciaEntradaGenerica();
@@ -284,6 +287,91 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>¿El host es de alguna agencia conocida?</summary>
         public static bool EsDeAgenciaConocida(string host) => Todas.OfType<AgenciaEntradaPorPatrones>().Any(a => a.EsDominio(host));
+    }
+
+    /// <summary>
+    /// NestoAPI#857: la agencia de un correo de un PROVEEDOR que solo la nombra en el texto («Transportista: SCHENKER STANDARD»,
+    /// «El pedido será enviado por: MAILBOXES»). Solo con etiqueta: el nombre suelto («gracias por confiar en Correos») no cuenta.
+    /// Tras la etiqueta, el nombre (<see cref="AgenciaEntradaPorPatrones.NombresEnTexto"/>) tiene que estar en lo que queda de la
+    /// línea (como mucho <see cref="VENTANA"/> caracteres), como palabra entera, sin distinguir mayúsculas ni tildes. Si casan
+    /// varios, gana el nombre más largo («Correos Express» antes que «Correos»).
+    /// </summary>
+    public static class AgenciaPorNombreEnTexto
+    {
+        public const int VENTANA = 40;
+
+        /// <summary>Etiquetas (en minúsculas y sin tildes) tras las que va el nombre de la agencia.</summary>
+        private static readonly Regex Etiqueta = new Regex(
+            @"(?<![a-z0-9])(?:transportista|transporte|agencia(?:\s+de\s+transporte)?|empresa\s+de\s+transporte|operador\s+logistico|mensajeria|courier|carrier"
+            + @"|(?:enviad[oa]s?|expedid[oa]s?|remitid[oa]s?|despachad[oa]s?)\s+(?:con|por|mediante|a\s+traves\s+de)"
+            + @"|(?:se\s+)?enviara\s+(?:con|por|mediante)"
+            + @"|(?:shipped|sent|dispatched)\s+(?:via|with|by)|shipping\s+(?:carrier|company|method)|delivered\s+by"
+            + @"|versand\s+(?:mit|durch|via|uber))(?![a-z0-9])\s*[:\-–]?",
+            RegexOptions.Compiled);
+
+        public static IAgenciaEntrada Buscar(CorreoCompras correo, IEnumerable<IAgenciaEntrada> agencias)
+        {
+            if (correo == null || agencias == null)
+            {
+                return null;
+            }
+            List<string> ventanas = Ventanas((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+            if (!ventanas.Any())
+            {
+                return null;
+            }
+            IAgenciaEntrada mejor = null;
+            int longitudMejor = 0;
+            foreach (AgenciaEntradaPorPatrones agencia in agencias.OfType<AgenciaEntradaPorPatrones>())
+            {
+                if (agencia is AgenciaEntradaGenerica)
+                {
+                    continue;
+                }
+                foreach (string nombre in (agencia.NombresEnTexto ?? new string[0]).Select(TextoCorreo.Normalizar).Where(n => n.Length > 0))
+                {
+                    if (nombre.Length > longitudMejor && ventanas.Any(v => (" " + v + " ").Contains(" " + nombre + " ")))
+                    {
+                        mejor = agencia;
+                        longitudMejor = nombre.Length;
+                    }
+                }
+            }
+            return mejor;
+        }
+
+        /// <summary>Lo que sigue a cada etiqueta en su línea (normalizado: mayúsculas, sin tildes ni signos).</summary>
+        internal static List<string> Ventanas(string texto)
+        {
+            var ventanas = new List<string>();
+            foreach (string linea in (texto ?? string.Empty).Replace("\r", string.Empty).Split('\n'))
+            {
+                string minusculas = SinTildes(linea).ToLowerInvariant();
+                foreach (Match m in Etiqueta.Matches(minusculas))
+                {
+                    int inicio = m.Index + m.Length;
+                    string resto = linea.Substring(inicio, Math.Min(VENTANA, linea.Length - inicio));
+                    string normalizado = TextoCorreo.Normalizar(resto);
+                    if (normalizado.Length > 0)
+                    {
+                        ventanas.Add(normalizado);
+                    }
+                }
+            }
+            return ventanas;
+        }
+
+        /// <summary>Quita las tildes conservando la longitud (para que los índices valgan en el texto original).</summary>
+        private static string SinTildes(string texto)
+        {
+            var sb = new System.Text.StringBuilder(texto.Length);
+            foreach (char c in texto)
+            {
+                string d = c.ToString().Normalize(System.Text.NormalizationForm.FormD);
+                sb.Append(d.Length > 0 ? d[0] : c);
+            }
+            return sb.ToString();
+        }
     }
 
     #region Agencias (solo datos)
@@ -315,6 +403,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "DHL";
         protected override string[] Dominios => new[] { "dhl.com", "dhl.es", "dhl.de", "dhlparcel.es", "dhlparcel.com", "dhl.at", "dhl.fr", "dhl.it" };
         protected override string[] ParametrosCodigo => new[] { "tracking-id", "trackingnumber", "awb", "idc", "piececode", "tracking" };
+        public override string[] NombresEnTexto => new[] { "DHL", "DHL Express", "DHL Parcel" };
     }
 
     public class AgenciaEntradaUps : AgenciaEntradaPorPatrones
@@ -331,6 +420,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "Correos Express";
         protected override string[] Dominios => new[] { "correosexpress.com", "correosexpress.es" };
         protected override string[] ParametrosCodigo => new[] { "shippingnumber", "n", "envio" };
+        public override string[] NombresEnTexto => new[] { "Correos Express", "CorreosExpress" };
     }
 
     public class AgenciaEntradaCorreos : AgenciaEntradaPorPatrones
@@ -346,6 +436,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "CTT Express";
         protected override string[] Dominios => new[] { "cttexpress.com", "cttexpress.es", "ctt.pt" };
         protected override string[] ParametrosCodigo => new[] { "sc", "shipping_code", "codigo", "objects" };
+        public override string[] NombresEnTexto => new[] { "CTT Express", "CTTExpress", "CTT" };
     }
 
     public class AgenciaEntradaNacex : AgenciaEntradaPorPatrones
@@ -360,6 +451,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "TNT/FedEx";
         protected override string[] Dominios => new[] { "tnt.com", "tnt.es", "fedex.com" };
         protected override string[] ParametrosCodigo => new[] { "trknbr", "tracknumbers", "cons", "consignmentnumber" };
+        public override string[] NombresEnTexto => new[] { "TNT/FedEx", "TNT", "FedEx", "Fed Ex" };
     }
 
     public class AgenciaEntradaDachser : AgenciaEntradaPorPatrones
@@ -383,6 +475,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "TIPSA";
         protected override string[] Dominios => new[] { "tip-sa.com", "tipsa.es", "tipsa.com" };
         protected override string[] ParametrosCodigo => new[] { "ref", "codigo", "albaran", "cod" };
+        public override string[] NombresEnTexto => new[] { "TIPSA", "Tip-SA", "Tip SA" };
     }
 
     public class AgenciaEntradaEnvialia : AgenciaEntradaPorPatrones
@@ -404,6 +497,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "Redur/Rhenus";
         public override int HorasHastaEntrega => HORAS_GRUPAJE;
         protected override string[] Dominios => new[] { "redur.es", "redur.com", "rhenus.com", "rhenus.group" };
+        public override string[] NombresEnTexto => new[] { "Redur/Rhenus", "Redur", "Rhenus" };
     }
 
     public class AgenciaEntradaXpoGxo : AgenciaEntradaPorPatrones
@@ -411,6 +505,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "XPO/GXO";
         public override int HorasHastaEntrega => HORAS_GRUPAJE;
         protected override string[] Dominios => new[] { "xpo.com", "gxo.com", "xpoeurope.com" };
+        public override string[] NombresEnTexto => new[] { "XPO/GXO", "XPO", "GXO" };
     }
 
     public class AgenciaEntradaSchenker : AgenciaEntradaPorPatrones
@@ -419,6 +514,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override int HorasHastaEntrega => HORAS_GRUPAJE;
         protected override string[] Dominios => new[] { "dbschenker.com", "schenker.es", "dbschenker.es" };
         protected override string[] ParametrosCodigo => new[] { "refnumber", "reference" };
+        public override string[] NombresEnTexto => new[] { "DB Schenker", "DBSchenker", "Schenker" };
     }
 
     public class AgenciaEntradaDpd : AgenciaEntradaPorPatrones
@@ -446,6 +542,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string Nombre => "Palletways";
         public override int HorasHastaEntrega => HORAS_GRUPAJE;
         protected override string[] Dominios => new[] { "palletways.com" };
+    }
+
+    /// <summary>Mail Boxes Etc. (la usan proveedores pequeños: «El pedido será enviado por: MAILBOXES»).</summary>
+    public class AgenciaEntradaMbe : AgenciaEntradaPorPatrones
+    {
+        public override string Nombre => "MBE";
+        protected override string[] Dominios => new[] { "mbe.es", "mbe.it", "mbeglobal.com", "mbe-hub.com" };
+        protected override string[] ParametrosCodigo => new[] { "c", "tracking", "trackingnumber", "code" };
+        public override string[] NombresEnTexto => new[] { "MBE", "Mail Boxes", "MailBoxes", "Mail Boxes Etc", "MailBoxes Etc" };
     }
 
     #endregion
