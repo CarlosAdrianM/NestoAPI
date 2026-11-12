@@ -582,6 +582,8 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\PlanificadorRecepcionCompra.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorCompras.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorFaltasPicking.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\NoEstaSalida.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\NoEstaSalidaSql.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorReposiciones.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisoReposicionesRecibidasEnParte.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CierreReposiciones.cs" />

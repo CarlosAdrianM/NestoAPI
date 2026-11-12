@@ -446,6 +446,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (tipo `PickingConFaltas`, Datos pedido → NestoApp lo abre sin cambios) al buzón de quien hizo el pedido + su push de NestoApp, y push al
   vendedor si es otro (reglas de #688); a Compras (`TIPO_PICKING_FALTA`) lo pendiente sin compra que no es muestra. Ariadna: sin cambios
   (`ResultadoTerminarSalidaDTO.FaltasPorAvisar` es JsonIgnore).
+- **«No está» = hueco a cero (C1, Carlos 12/11/26)**: `POST api/Almacen/Recogidas/{tipo}/{n}/NoEsta` {Producto, Hueco, Cantidad}
+  (`ServicioNoEstaSalida`, núcleo común + `IOrigenNoEsta` por tipo; hoy solo PICK). En UNA transacción: applocks `InventarioRellenar:`,
+  la reserva propia del hueco vuelve a libre, fila de Inventarios (usuario técnico «Ariadna (No está)», contado 0) y
+  prdContabilizarInventario por su único call site (solo esas filas); cuadre comprobado (sin pendientes, hueco sin libre, extracto = lo
+  libre) o se deshace. Luego reserva en el siguiente hueco (`HuecoPropuesto`) o, sin más, falta definitiva YA (`QuitarFaltasDeLosPedidos`,
+  con A y B). `Regularizado` false = no se ha tocado nada (tienda, se está inventariando, REPO, interruptor) y la app da la falta como
+  siempre; 409 si falla. Interruptor `Salidas.NoEstaRegulariza` (solo «true»); `?ensayo=true` (Admin/Dirección). Ariadna aún no lo llama.
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

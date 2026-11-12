@@ -963,6 +963,41 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 cambios.Add($"{ServicioSalidas.Unidades(recorte.Cantidad)} de {recorte.Pieza.Producto} " +
                     $"{(recorte.Pieza.Hueco == null ? "sin hueco" : "del hueco " + ServicioSalidas.Hueco(recorte.Pieza.Hueco))} pasa a «pendiente de ubicar».");
             }
+            cambios.AddRange(await QuitarFaltasDeLosPedidos(empresa, numero, solos, tx, avisar, piezas).ConfigureAwait(false));
+            foreach (RecorteSalida recorte in aMano)
+            {
+                cambios.Add($"Pedido {recorte.Pieza.Pedido}: {ServicioSalidas.Unidades(recorte.Cantidad)} de {recorte.Pieza.Producto} " +
+                    "es de una línea con producto «en carpeta»: hay que quitarla a mano.");
+            }
+
+            string mensaje = $"Picking recogido con {ServicioSalidas.Unidades(unidades)} en falta: ";
+            if (solos.Any())
+            {
+                mensaje += "ya se ha quitado de sus pedidos (queda pendiente para otra entrega) y lo que no estaba en su hueco pasa a «pendiente de ubicar». ";
+            }
+            if (aMano.Any())
+            {
+                mensaje += $"Ojo: {ServicioSalidas.Unidades(aMano.Sum(r => r.Cantidad))} es de una línea con producto «en carpeta» y la oficina tiene que quitarla a mano. ";
+            }
+            mensaje += "Llévalo a la mesa de packing.";
+
+            ResultadoTerminarSalidaDTO resumen = ServicioSalidas.Resumen(Tipo, numero, estado, mensaje);
+            resumen.Cambios = cambios;
+            resumen.FaltasPorAvisar = avisar;
+            return resumen;
+        }
+
+        /// <summary>
+        /// Lo que hace una falta en el pedido (ya fuera de la reserva): lo de siempre queda pendiente; las muestras se quitan
+        /// (Novedades 1228); los portes de un pedido sin producto esperan con el resto. Lo usan el Terminar y la falta definitiva
+        /// del «No está» (C1). Devuelve los cambios y apunta en <paramref name="avisar"/> lo que hay que avisar.
+        /// </summary>
+        internal static async Task<List<string>> QuitarFaltasDeLosPedidos(string empresa, int numero, List<RecorteSalida> solos, ITransaccionSalida tx,
+            List<FaltaPickingPedido> avisar, List<PiezaSalida> piezas = null)
+        {
+            var cambios = new List<string>();
+            avisar = avisar ?? new List<FaltaPickingPedido>();
+            piezas = piezas ?? solos.Select(r => r.Pieza).Distinct().ToList();
             // Novedades 1228: las muestras (MMP, no de notas de entrega, con el interruptor de la regla del 27/10/26) se miran
             // después, cuando ya se sabe qué queda de cada pedido
             List<IGrouping<int, RecorteSalida>> lineas = solos.GroupBy(r => r.Pieza.Linea).ToList();
@@ -1011,27 +1046,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<int> sinProducto = new List<int>();
             cambios.AddRange(await SacarLoQueSeQuedaSinProducto(empresa, numero, pedidosConFaltas, tx, sinProducto).ConfigureAwait(false));
             avisar.ForEach(f => f.NoSaleNadaDelPedido = sinProducto.Contains(f.Pedido));
-            foreach (RecorteSalida recorte in aMano)
-            {
-                cambios.Add($"Pedido {recorte.Pieza.Pedido}: {ServicioSalidas.Unidades(recorte.Cantidad)} de {recorte.Pieza.Producto} " +
-                    "es de una línea con producto «en carpeta»: hay que quitarla a mano.");
-            }
-
-            string mensaje = $"Picking recogido con {ServicioSalidas.Unidades(unidades)} en falta: ";
-            if (solos.Any())
-            {
-                mensaje += "ya se ha quitado de sus pedidos (queda pendiente para otra entrega) y lo que no estaba en su hueco pasa a «pendiente de ubicar». ";
-            }
-            if (aMano.Any())
-            {
-                mensaje += $"Ojo: {ServicioSalidas.Unidades(aMano.Sum(r => r.Cantidad))} es de una línea con producto «en carpeta» y la oficina tiene que quitarla a mano. ";
-            }
-            mensaje += "Llévalo a la mesa de packing.";
-
-            ResultadoTerminarSalidaDTO resumen = ServicioSalidas.Resumen(Tipo, numero, estado, mensaje);
-            resumen.Cambios = cambios;
-            resumen.FaltasPorAvisar = avisar;
-            return resumen;
+            return cambios;
         }
 
         /// <summary>

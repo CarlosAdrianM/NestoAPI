@@ -45,6 +45,8 @@ namespace NestoAPI.Controllers
         private readonly Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking;
         /// <summary>Sugerencia 824: la ficha del producto (botón «Producto» del inicio de Ariadna). Null: no está configurada.</summary>
         private readonly IServicioFichaProductoAlmacen fichaProducto;
+        /// <summary>C1 (Carlos 12/11/26): el «No está» que deja el hueco a cero y manda al siguiente. Null: no está configurado.</summary>
+        private readonly IServicioNoEstaSalida noEsta;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
@@ -55,8 +57,10 @@ namespace NestoAPI.Controllers
             Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen = null,
             Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking = null,
             IServicioCambioHuecoReposicion cambioHuecoReposicion = null,
-            IServicioFichaProductoAlmacen fichaProducto = null)
+            IServicioFichaProductoAlmacen fichaProducto = null,
+            IServicioNoEstaSalida noEsta = null)
         {
+            this.noEsta = noEsta;
             this.fichaProducto = fichaProducto;
             this.cambioHuecoReposicion = cambioHuecoReposicion;
             this.etiquetaPacking = etiquetaPacking;
@@ -314,6 +318,45 @@ namespace NestoAPI.Controllers
                     return Ok(Dto(resultado));
                 case EstadoCambioHueco.NoSePuede:
                     return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                default:
+                    return BadRequest(resultado.Mensaje);
+            }
+        }
+
+        // POST api/Almacen/Recogidas/PICK/100070/NoEsta?empresa=1   { "Producto": "44729", "Hueco": "010/002/003", "Cantidad": 1 }
+        /// <summary>
+        /// C1 (Carlos 12/11/26): el mozo no encuentra el producto en el hueco de la parada. El hueco se deja a cero en el inventario
+        /// (contabilizado en el acto; solo lo libre y lo reservado por esta salida, no lo de otras), lo que no estaba se reserva en el
+        /// siguiente hueco con stock calculado (HuecoPropuesto) y, si no queda ninguno, es falta definitiva y sale ya de la salida.
+        /// 200 con <see cref="ResultadoNoEstaDTO"/>; con Regularizado = false no se ha tocado nada y la app da la falta como siempre.
+        /// 409 si la regularización falla (nada a medias) o la salida ya está terminada; 400 si la petición no vale; 403 sin permiso.
+        /// Con <paramref name="ensayo"/> (Admin o Dirección), lo mismo deshecho siempre.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{tipo}/{numero:int}/NoEsta")]
+        [ResponseType(typeof(ResultadoNoEstaDTO))]
+        public async Task<IHttpActionResult> PostNoEsta(string tipo, int numero, [FromBody] NoEstaSalidaDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ensayo = false)
+        {
+            if (noEsta == null)
+            {
+                return BadRequest("Este servidor todavía no deja el hueco a cero: dé la falta como siempre.");
+            }
+            ResultadoNoEsta resultado = await noEsta.MarcarNoEsta(Empresa(empresa), tipo, numero, peticion, User, ensayo).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoNoEsta.Hecho:
+                    if (!ensayo && resultado.Resultado?.Regularizado == true)
+                    {
+                        Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.NormalizarTipoOrigen(tipo), numero)); // las demás PDA
+                    }
+                    return Ok(resultado.Resultado);
+                case EstadoNoEsta.SinPermiso:
+                    return Content(HttpStatusCode.Forbidden, new MensajeAlmacenDTO { Message = resultado.Mensaje });
+                case EstadoNoEsta.NoSePuede:
+                    return Content(HttpStatusCode.Conflict, new MensajeAlmacenDTO { Message = resultado.Mensaje });
+                case EstadoNoEsta.NoExiste:
+                    return NotFound();
                 default:
                     return BadRequest(resultado.Mensaje);
             }
