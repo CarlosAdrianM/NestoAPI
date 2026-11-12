@@ -86,6 +86,41 @@ namespace NestoAPI.Controllers
             }
         }
 
+        private ServicioDeshacerRellenarInventario servicioDeshacerRellenar;
+
+        /// <summary>Los tests lo sustituyen; si no, el de verdad sobre la conexión de <c>db</c>.</summary>
+        internal ServicioDeshacerRellenarInventario ServicioDeshacerRellenar
+        {
+            get => servicioDeshacerRellenar ?? (servicioDeshacerRellenar = new ServicioDeshacerRellenarInventario(new RepositorioDeshacerRellenarInventarioSql(db)));
+            set => servicioDeshacerRellenar = value;
+        }
+
+        // DELETE: api/Inventarios/Rellenar?almacen=REI&fecha=2026-11-12&empresa=1
+        /// <summary>
+        /// Deshace el rellenado de una tienda: borra TODAS las filas pendientes (Estado 1, sin traspaso) de ese almacén ese día, de
+        /// cualquier usuario (también lo ya contado). Nunca toca lo contabilizado. Solo Dirección e Informática (403); fecha obligatoria y
+        /// almacén sin control de ubicaciones (400). 200 con Almacen, Fecha, FilasBorradas, FilasContadas y UnidadesContadas (ceros si
+        /// no había nada). Rastro: una fila resumen en Modificaciones («InventarioRellenadoDeshecho»).
+        /// </summary>
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Inventarios/Rellenar")]
+        [ResponseType(typeof(DeshacerRellenarInventarioRespuestaDTO))]
+        public async Task<IHttpActionResult> DeleteRellenar(string almacen = null, System.DateTime? fecha = null, string empresa = null)
+        {
+            ResultadoDeshacerRellenarInventario resultado = await ServicioDeshacerRellenar.Deshacer(empresa, almacen, fecha,
+                ServicioDeshacerRellenarInventario.PuedeDeshacer(User), UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoDeshacerRellenarInventario.Ok:
+                    return Ok(resultado.Respuesta);
+                case EstadoDeshacerRellenarInventario.SinPermiso:
+                    return Content(HttpStatusCode.Forbidden, new HttpError(resultado.Mensaje));
+                default:
+                    return Content(HttpStatusCode.BadRequest, new HttpError(resultado.Mensaje));
+            }
+        }
+
         internal static bool PuedeRellenarInventario(IPrincipal usuario)
         {
             return usuario != null && GRUPOS_RELLENAR_INVENTARIO.Any(g => usuario.IsInRoleSinDominio(g));

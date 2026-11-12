@@ -646,6 +646,7 @@
     <Compile Include="Infraestructure\Inventarios\RepositorioInventarioUbicaciones.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioInventarioACero.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioBorrarFilaInventario.cs" />
+    <Compile Include="Infraestructure\Inventarios\ServicioDeshacerRellenarInventario.cs" />
     <Compile Include="Infraestructure\Sincronizacion\BarreraClientesExternos.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioInventarioACero.cs" />
     <Compile Include="Models\Inventarios\InventarioUbicacionesDTO.cs" />

@@ -425,6 +425,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   traduce (`ErrorInventarioPendientePicking`, pura) a un mensaje con las filas pendientes (fuera de REI) de los productos del picking (o todas si
   no casa ninguna; 10 y «… y N más»). Es un `Exception` (INTERNAL_ERROR, sin «[CÓDIGO]» en Nesto) con el original dentro; si la consulta falla, el original.
 
+### Deshacer el rellenado del inventario de una tienda (12/11/26)
+- `DELETE api/Inventarios/Rellenar?almacen=REI&fecha=2026-11-12[&empresa=1]` (`ServicioDeshacerRellenarInventario`, sin UI: a mano con el token): borra
+  TODAS las filas pendientes (Estado 1, NºTraspaso NULL) de ese almacén y día, de cualquier usuario y aunque estén contadas. Solo Dirección e
+  Informática (403); fecha obligatoria y almacén sin ubicaciones (400). Applock `InventarioRellenar:{empresa}:{almacen}` y transacción; nunca lo
+  contabilizado ni ExtractoProducto. 200 `{ Almacen, Fecha, FilasBorradas, FilasContadas, UnidadesContadas }` (ceros si no hay nada, y sin rastro);
+  rastro = UNA fila en Modificaciones (Tabla «InventarioRellenadoDeshecho», resumen en JSON con el desglose por usuario).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
