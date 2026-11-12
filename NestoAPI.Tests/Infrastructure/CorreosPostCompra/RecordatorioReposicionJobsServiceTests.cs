@@ -332,7 +332,55 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             StringAssert.Contains(body, "Enviados de verdad (2 correos");
             StringAssert.Contains(body, "Fuera por vendedor (1)");
             StringAssert.Contains(body, "15200");
-            StringAssert.Contains(body, "Registrados para medir (vendedor en la lista): 1.");
+            StringAssert.Contains(body, "Registrados para medir (vendedor en la lista): 1</b>");
+            StringAssert.Contains(resumen.Subject, "1 de control registrados para medir");
+        }
+
+        /// <summary>
+        /// El asunto daba el grupo de control ENTERO (de cualquier vendedor) junto a los enviados, que van filtrados: «4 enviados y
+        /// 31 de control» cuando el control comparable eran 1. Ahora da el registrado y el cuerpo separa las dos partes.
+        /// </summary>
+        [TestMethod]
+        public async Task Procesar_ElControlDelAsuntoEsElRegistradoYElCuerpoSeparaLoQueQuedaFuera()
+        {
+            Modo("Activo");
+            DependenciasRecordatorioReposicion d = Dependencias();
+            d.Calcular = (consumibles, hoy) =>
+            {
+                ResultadoRecordatorioReposicionDTO r = Resultado();
+                r.GrupoControl.Add(Cliente("15400", "XYZ", "Pepe", control: true));
+                r.GrupoControl.Add(Cliente("15401", "OTRO", "Otro", control: true));
+                return Task.FromResult(r);
+            };
+
+            _ = await RecordatorioReposicionJobsService.Procesar(d);
+
+            MailMessage resumen = Resumen();
+            StringAssert.EndsWith(resumen.Subject, "1 de control registrados para medir");
+            Assert.IsFalse(resumen.Subject.Contains("3 "), "El total del grupo de control no va en el asunto: " + resumen.Subject);
+            string body = WebUtility.HtmlDecode(resumen.Body);
+            StringAssert.Contains(body, "Grupo de control (3 en total, de cualquier vendedor)");
+            StringAssert.Contains(body, "Registrados para medir (vendedor en la lista): 1</b>");
+            StringAssert.Contains(body, "Del grupo de control pero fuera por vendedor o por las reglas (no se registran): 2");
+            StringAssert.Contains(body, "Fuera por vendedor o por las reglas (2)");
+        }
+
+        [TestMethod]
+        public void AsuntoResumen_EnSombra_DiceLosQueSeRegistrarian()
+        {
+            var plan = new PlanRecordatorioReposicionDTO();
+            plan.Enviar.Add(Cliente("15191", "LM", "Lidia"));
+            plan.Control.Add(Cliente("15300", "LM", "Lidia", control: true));
+            ResultadoRecordatorioReposicionDTO resultado = Resultado();
+            resultado.GrupoControl.Add(Cliente("15400", "XYZ", "Pepe", control: true));
+
+            string asunto = RecordatorioReposicionJobsService.AsuntoResumen(new EjecucionRecordatorioReposicionDTO
+            {
+                Modo = ModoRecordatorioReposicion.Sombra, Resultado = resultado, Plan = plan
+            });
+
+            Assert.AreEqual("[Sombra] Recordatorio de reposición 24/09/2026: 1 se enviarían, 0 fuera por vendedor, " +
+                "0 fuera por vendedor de peluquería, 1 de control se registrarían para medir", asunto);
         }
 
         [TestMethod]

@@ -546,17 +546,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
         internal static MailMessage ConstruirCorreoSombra(EjecucionRecordatorioReposicionDTO ejecucion, string destinatarios)
         {
-            ResultadoRecordatorioReposicionDTO resultado = ejecucion.Resultado ?? new ResultadoRecordatorioReposicionDTO { Fecha = DateTime.Today };
-            PlanRecordatorioReposicionDTO plan = ejecucion.Plan ?? new PlanRecordatorioReposicionDTO();
-            bool activo = ejecucion.Modo == ModoRecordatorioReposicion.Activo;
-            string cabecera = activo
-                ? $"[Activo] Recordatorio de reposición {resultado.Fecha:dd/MM/yyyy}: {plan.Enviados.Count} enviados"
-                : $"[Sombra] Recordatorio de reposición {resultado.Fecha:dd/MM/yyyy}: {plan.Enviar.Count} se enviarían";
             var mail = new MailMessage
             {
                 From = new MailAddress("nesto@nuevavision.es", "Nesto - Nueva Visión"),
-                Subject = cabecera + $", {plan.FueraPorVendedor.Count} fuera por vendedor, " +
-                    $"{plan.FueraPorVendedorPeluqueria.Count} fuera por vendedor de peluquería, {resultado.GrupoControl.Count} en el grupo de control",
+                Subject = AsuntoResumen(ejecucion),
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
                 SubjectEncoding = Encoding.UTF8
@@ -575,6 +568,26 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             }
             mail.Body = GenerarHtmlSombra(ejecucion);
             return mail;
+        }
+
+        /// <summary>
+        /// Asunto del resumen interno. Todas las cifras son DESPUÉS del filtro de vendedores y de las reglas: el control que se
+        /// da es el registrado para medir (<see cref="PlanRecordatorioReposicionDTO.Control"/>), el comparable con los enviados,
+        /// no todo el grupo de control de la calculadora (que es de cualquier vendedor).
+        /// </summary>
+        internal static string AsuntoResumen(EjecucionRecordatorioReposicionDTO ejecucion)
+        {
+            ResultadoRecordatorioReposicionDTO resultado = ejecucion.Resultado ?? new ResultadoRecordatorioReposicionDTO { Fecha = DateTime.Today };
+            PlanRecordatorioReposicionDTO plan = ejecucion.Plan ?? new PlanRecordatorioReposicionDTO();
+            bool activo = ejecucion.Modo == ModoRecordatorioReposicion.Activo;
+            string cabecera = activo
+                ? $"[Activo] Recordatorio de reposición {resultado.Fecha:dd/MM/yyyy}: {plan.Enviados.Count} enviados"
+                : $"[Sombra] Recordatorio de reposición {resultado.Fecha:dd/MM/yyyy}: {plan.Enviar.Count} se enviarían";
+            string control = activo
+                ? $"{plan.Control.Count} de control registrados para medir"
+                : $"{plan.Control.Count} de control se registrarían para medir";
+            return cabecera + $", {plan.FueraPorVendedor.Count} fuera por vendedor, " +
+                $"{plan.FueraPorVendedorPeluqueria.Count} fuera por vendedor de peluquería, {control}";
         }
 
         internal static string GenerarHtmlSombra(EjecucionRecordatorioReposicionDTO ejecucion)
@@ -654,11 +667,28 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
             if (resultado.GrupoControl.Any())
             {
-                sb.AppendLine($"<h3>Grupo de control ({resultado.GrupoControl.Count}): cumplen, pero no se les escribe</h3>");
+                var registrados = new HashSet<RecordatorioReposicionClienteDTO>(plan.Control);
+                List<RecordatorioReposicionClienteDTO> sinRegistrar = resultado.GrupoControl.Where(c => !registrados.Contains(c)).ToList();
+                sb.AppendLine($"<h3>Grupo de control ({resultado.GrupoControl.Count} en total, de cualquier vendedor): cumplen, pero no se les escribe</h3>");
                 sb.AppendLine($"<p>Un {CalculadoraReposicion.PORCENTAJE_GRUPO_CONTROL} % de los clientes (siempre los mismos) no recibe el " +
-                    "correo, para comparar si los que lo reciben reponen más que los que no. " +
-                    (activo ? $"Registrados para medir (vendedor en la lista): {plan.Control.Count}." : "") + "</p>");
-                AppendTablaCorreos(sb, resultado.GrupoControl);
+                    "correo, para comparar si los que lo reciben reponen más que los que no. Solo es comparable con los " +
+                    (activo ? "enviados" : "que se enviarían") + " la parte con el vendedor en la lista y que pasa las mismas reglas.</p>");
+                sb.AppendLine("<ul>");
+                sb.AppendLine(activo
+                    ? $"<li><b>Registrados para medir (vendedor en la lista): {plan.Control.Count}</b></li>"
+                    : $"<li><b>Se registrarían para medir (vendedor en la lista): {plan.Control.Count}</b></li>");
+                sb.AppendLine($"<li>Del grupo de control pero fuera por vendedor o por las reglas (no se registran): {sinRegistrar.Count}</li>");
+                sb.AppendLine("</ul>");
+                if (plan.Control.Any())
+                {
+                    sb.AppendLine($"<h4>{(activo ? "Registrados" : "Se registrarían")} para medir ({plan.Control.Count})</h4>");
+                    AppendTablaCorreos(sb, plan.Control);
+                }
+                if (sinRegistrar.Any())
+                {
+                    sb.AppendLine($"<h4>Fuera por vendedor o por las reglas ({sinRegistrar.Count})</h4>");
+                    AppendTablaCorreos(sb, sinRegistrar);
+                }
             }
 
             if (resultado.Descartes.Any())
