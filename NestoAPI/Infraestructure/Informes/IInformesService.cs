@@ -40,5 +40,9 @@ namespace NestoAPI.Infraestructure.Informes
         /// <summary>NestoAPI#658: lo facturado en la tienda (líneas con almacén REI o ALC) entre las dos fechas (incluidas), cursos incluidos.
         /// Lo calcula <see cref="GestorFacturacionTienda"/>.</summary>
         Task<FacturacionTiendaDTO> LeerFacturacionTiendaAsync(string tienda, DateTime desde, DateTime hasta);
+
+        /// <summary>NestoAPI#719: lo facturado en la tienda de enero a <paramref name="hasta"/> por mes y, si <paramref name="aniosAnteriores"/>
+        /// es mayor que 0, el mismo periodo de esos años anteriores (tipo «Comparativo»). Lo calcula <see cref="GestorFacturacionTienda"/>.</summary>
+        Task<FacturacionTiendaAnualDTO> LeerFacturacionTiendaAnualAsync(string tienda, DateTime hasta, int aniosAnteriores);
     }
 }

@@ -45,6 +45,17 @@ namespace NestoAPI.Infraestructure.Informes
             return GestorFacturacionTienda.Construir(filas, tienda, desde, hasta);
         }
 
+        // NestoAPI#719: una sola consulta agregada en SQL por año y mes (nada de líneas en memoria).
+        public async Task<FacturacionTiendaAnualDTO> LeerFacturacionTiendaAnualAsync(string tienda, DateTime hasta, int aniosAnteriores)
+        {
+            List<FilaMesFacturacionTiendaDTO> filas = await db.Database
+                .SqlQuery<FilaMesFacturacionTiendaDTO>(GestorFacturacionTienda.SQL_FACTURACION_TIENDA_ANUAL,
+                    GestorFacturacionTienda.ParametrosAnual(tienda, hasta, aniosAnteriores))
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return GestorFacturacionTienda.ConstruirAnual(filas, tienda, hasta, aniosAnteriores);
+        }
+
         public async Task<List<ResumenVentasDTO>> LeerResumenVentasAsync(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
         {
             SqlParameter fechaDesdeParam = new SqlParameter("@FechaDesde", SqlDbType.DateTime)

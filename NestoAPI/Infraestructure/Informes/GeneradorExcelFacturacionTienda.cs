@@ -51,6 +51,158 @@ namespace NestoAPI.Infraestructure.Informes
             }
         }
 
+        /// <summary>NestoAPI#719: el Excel del «Acumulado» (hoja «Acumulado») o del «Comparativo» (hojas «Acumulado» y «Comparativo»).</summary>
+        public ByteArrayContent GenerarExcel(FacturacionTiendaAnualDTO informe)
+        {
+            ByteArrayContent contenido = new ByteArrayContent(GenerarBytes(informe));
+            contenido.Headers.ContentType = new MediaTypeHeaderValue(CONTENT_TYPE);
+            contenido.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+            {
+                FileName = NombreFichero(informe)
+            };
+            return contenido;
+        }
+
+        public static string NombreFichero(FacturacionTiendaAnualDTO informe)
+            => $"FacturacionTienda_{informe.Tienda}_{informe.Tipo}_{informe.Hasta:yyyyMMdd}.xlsx";
+
+        public const string HOJA_ACUMULADO = "Acumulado";
+        public const string HOJA_COMPARATIVO = "Comparativo";
+        private const string FORMATO_PORCENTAJE = "0.00 %";
+
+        public byte[] GenerarBytes(FacturacionTiendaAnualDTO informe)
+        {
+            if (informe == null)
+            {
+                throw new ArgumentNullException(nameof(informe));
+            }
+
+            using (XLWorkbook libro = new XLWorkbook())
+            {
+                HojaAcumulado(libro.Worksheets.Add(HOJA_ACUMULADO), informe);
+                if (informe.AniosAnteriores != null && informe.AniosAnteriores.Count > 0)
+                {
+                    HojaComparativo(libro.Worksheets.Add(HOJA_COMPARATIVO), informe);
+                }
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    libro.SaveAs(ms);
+                    return ms.ToArray();
+                }
+            }
+        }
+
+        /// <summary>NestoAPI#719: columnas de la hoja «Acumulado».</summary>
+        public static readonly string[] COLUMNAS_ACUMULADO = { "Mes", "Facturas", "Base imponible", "De ello, cursos", "Acumulado" };
+
+        /// <summary>NestoAPI#719: columnas de la hoja «Comparativo» («Mes», la base de cada año y la variación respecto a cada anterior).</summary>
+        public static string[] ColumnasComparativo(FacturacionTiendaAnualDTO informe)
+        {
+            var columnas = new List<string> { "Mes", $"Base {informe.Anio}" };
+            foreach (int anio in informe.AniosAnteriores)
+            {
+                columnas.Add($"Base {anio}");
+            }
+            foreach (int anio in informe.AniosAnteriores)
+            {
+                columnas.Add($"Var. € vs {anio}");
+                columnas.Add($"Var. % vs {anio}");
+            }
+            return columnas.ToArray();
+        }
+
+        private static string TituloAnual(FacturacionTiendaAnualDTO informe, string que)
+            => $"{que} de la tienda {informe.Tienda} del {informe.Desde:dd/MM/yyyy} al {informe.Hasta:dd/MM/yyyy} " +
+               "(base imponible, cursos incluidos)";
+
+        private static int CabeceraAnual(IXLWorksheet ws, string titulo, string[] columnas)
+        {
+            ws.Cell(1, 1).Value = titulo;
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            ws.Cell(1, 1).Style.Font.FontSize = 13;
+            for (int i = 0; i < columnas.Length; i++)
+            {
+                ws.Cell(3, i + 1).Value = columnas[i];
+            }
+            IXLRange cabecera = ws.Range(3, 1, 3, columnas.Length);
+            cabecera.Style.Font.Bold = true;
+            cabecera.Style.Fill.BackgroundColor = XLColor.LightGray;
+            cabecera.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            return 4;
+        }
+
+        private static string NombreMes(MesFacturacionTiendaDTO mes, DateTime hasta)
+        {
+            bool parcial = mes.Mes != 0 && mes.Hasta == hasta && mes.Hasta.AddDays(1).Month == mes.Hasta.Month;
+            return parcial ? $"{mes.NombreMes} (hasta el {mes.Hasta.Day})" : mes.NombreMes;
+        }
+
+        private static void HojaAcumulado(IXLWorksheet ws, FacturacionTiendaAnualDTO informe)
+        {
+            int fila = CabeceraAnual(ws, TituloAnual(informe, "Facturado mes a mes"), COLUMNAS_ACUMULADO);
+            var filas = new List<MesFacturacionTiendaDTO>(informe.Meses ?? new List<MesFacturacionTiendaDTO>());
+            if (informe.Total != null)
+            {
+                filas.Add(informe.Total);
+            }
+            foreach (MesFacturacionTiendaDTO mes in filas)
+            {
+                ws.Cell(fila, 1).Value = NombreMes(mes, informe.Hasta);
+                ws.Cell(fila, 2).Value = mes.NumeroFacturas;
+                Importe(ws.Cell(fila, 3), mes.BaseImponible);
+                Importe(ws.Cell(fila, 4), mes.BaseImponibleCursos);
+                Importe(ws.Cell(fila, 5), mes.Acumulado);
+                if (mes.Mes == 0)
+                {
+                    PieAnual(ws, fila, COLUMNAS_ACUMULADO.Length);
+                }
+                fila++;
+            }
+            Ajustar(ws, COLUMNAS_ACUMULADO.Length);
+        }
+
+        private static void HojaComparativo(IXLWorksheet ws, FacturacionTiendaAnualDTO informe)
+        {
+            string[] columnas = ColumnasComparativo(informe);
+            int fila = CabeceraAnual(ws, TituloAnual(informe, "Comparativo con el mismo periodo de años anteriores"), columnas);
+            int anteriores = informe.AniosAnteriores.Count;
+            var filas = new List<MesFacturacionTiendaDTO>(informe.Meses ?? new List<MesFacturacionTiendaDTO>());
+            if (informe.Total != null)
+            {
+                filas.Add(informe.Total);
+            }
+            foreach (MesFacturacionTiendaDTO mes in filas)
+            {
+                ws.Cell(fila, 1).Value = NombreMes(mes, informe.Hasta);
+                Importe(ws.Cell(fila, 2), mes.BaseImponible);
+                for (int i = 0; i < anteriores && i < mes.Anteriores.Count; i++)
+                {
+                    ComparativoMesFacturacionTiendaDTO anterior = mes.Anteriores[i];
+                    Importe(ws.Cell(fila, 3 + i), anterior.BaseImponible);
+                    Importe(ws.Cell(fila, 3 + anteriores + 2 * i), anterior.VariacionImporte);
+                    if (anterior.VariacionPorcentaje.HasValue)
+                    {
+                        IXLCell celda = ws.Cell(fila, 4 + anteriores + 2 * i);
+                        celda.Value = anterior.VariacionPorcentaje.Value / 100;
+                        celda.Style.NumberFormat.Format = FORMATO_PORCENTAJE;
+                    }
+                }
+                if (mes.Mes == 0)
+                {
+                    PieAnual(ws, fila, columnas.Length);
+                }
+                fila++;
+            }
+            Ajustar(ws, columnas.Length);
+        }
+
+        private static void PieAnual(IXLWorksheet ws, int fila, int columnas)
+        {
+            IXLRange pie = ws.Range(fila, 1, fila, columnas);
+            pie.Style.Font.Bold = true;
+            pie.Style.Border.TopBorder = XLBorderStyleValues.Thin;
+        }
+
         private static string Titulo(FacturacionTiendaDTO informe)
             => $"Facturado en la tienda {informe.Tienda} del {informe.Desde:dd/MM/yyyy} al {informe.Hasta:dd/MM/yyyy} (cursos incluidos)";
 

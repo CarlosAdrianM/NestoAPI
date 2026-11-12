@@ -67,6 +67,72 @@ namespace NestoAPI.Models.Informes
     }
 
     /// <summary>
+    /// NestoAPI#719 (sugerencia 792 de Paloma, gemela de Nesto#559): lo facturado en una tienda de enero a <see cref="Hasta"/>, mes a
+    /// mes (tipo «Acumulado») y, en el «Comparativo», el mismo periodo (1 de enero al mismo día y mes) de los <see cref="AniosAnteriores"/>
+    /// años anteriores, con la variación del año de <see cref="Hasta"/> respecto a cada uno. Base imponible (sin IVA), con las mismas
+    /// reglas que el informe de la semana (líneas del almacén de la tienda, empresa normal y espejo, rectificativas restan, cursos incluidos).
+    /// </summary>
+    public class FacturacionTiendaAnualDTO
+    {
+        /// <summary>«Acumulado» o «Comparativo».</summary>
+        public string Tipo { get; set; }
+        public string Tienda { get; set; }
+        /// <summary>El año del informe (el de <see cref="Hasta"/>).</summary>
+        public int Anio { get; set; }
+        /// <summary>Siempre el 1 de enero de <see cref="Anio"/>.</summary>
+        public DateTime Desde { get; set; }
+        /// <summary>Último día incluido.</summary>
+        public DateTime Hasta { get; set; }
+        /// <summary>Los años anteriores comparados, del más reciente al más antiguo (vacío en el «Acumulado»).</summary>
+        public List<int> AniosAnteriores { get; set; } = new List<int>();
+        /// <summary>De enero al mes de <see cref="Hasta"/> (el último, hasta ese día), todos aunque no tengan facturas.</summary>
+        public List<MesFacturacionTiendaDTO> Meses { get; set; } = new List<MesFacturacionTiendaDTO>();
+        /// <summary>La suma de los meses (Mes = 0, NombreMes «Total»; Acumulado = BaseImponible).</summary>
+        public MesFacturacionTiendaDTO Total { get; set; }
+    }
+
+    /// <summary>NestoAPI#719: un mes del informe anual de la tienda.</summary>
+    public class MesFacturacionTiendaDTO
+    {
+        /// <summary>1 a 12 (0 en el total).</summary>
+        public int Mes { get; set; }
+        public string NombreMes { get; set; }
+        /// <summary>Del año del informe, primer y último día del mes que entran (el último mes acaba en Hasta).</summary>
+        public DateTime Desde { get; set; }
+        public DateTime Hasta { get; set; }
+        public int NumeroFacturas { get; set; }
+        public decimal BaseImponible { get; set; }
+        /// <summary>De la base, lo de la serie de cursos (CV).</summary>
+        public decimal BaseImponibleCursos { get; set; }
+        /// <summary>La base de enero hasta este mes, incluido.</summary>
+        public decimal Acumulado { get; set; }
+        /// <summary>Solo en el «Comparativo»: el mismo mes de cada año anterior, en el orden de AniosAnteriores.</summary>
+        public List<ComparativoMesFacturacionTiendaDTO> Anteriores { get; set; } = new List<ComparativoMesFacturacionTiendaDTO>();
+    }
+
+    /// <summary>NestoAPI#719: el mismo mes (y días) de un año anterior y la variación del año del informe respecto a él.</summary>
+    public class ComparativoMesFacturacionTiendaDTO
+    {
+        public int Anio { get; set; }
+        public int NumeroFacturas { get; set; }
+        public decimal BaseImponible { get; set; }
+        /// <summary>Base del año del informe menos la de este año.</summary>
+        public decimal VariacionImporte { get; set; }
+        /// <summary>VariacionImporte sobre la base de este año, en % con dos decimales (12,5 = 12,5 %); null si esa base es 0.</summary>
+        public decimal? VariacionPorcentaje { get; set; }
+    }
+
+    /// <summary>NestoAPI#719: una fila de la consulta agregada (año, mes) del informe anual.</summary>
+    public class FilaMesFacturacionTiendaDTO
+    {
+        public int Anio { get; set; }
+        public int Mes { get; set; }
+        public int NumeroFacturas { get; set; }
+        public decimal BaseImponible { get; set; }
+        public decimal BaseImponibleCursos { get; set; }
+    }
+
+    /// <summary>
     /// Sugerencia 648: cuerpo de POST api/Informes/FacturacionTienda/Correo. Tienda y fechas como en el GET (null: la suya y la
     /// semana anterior). <see cref="Correo"/> null o vacío: el CorreoDefecto del usuario.
     /// </summary>

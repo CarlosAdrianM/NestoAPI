@@ -70,6 +70,166 @@ GROUP BY f.Empresa, f.[Número], f.Fecha, f.Serie, f.[Nº Cliente], f.Contacto, 
          c.CodPostal, f.CodPostalFiscal, c.[Población], f.PoblacionFiscal, f.Vendedor, v.[Descripción]
 ORDER BY f.Fecha, f.[Número]";
 
+        /// <summary>NestoAPI#719: los tipos del informe (parámetro «tipo» de GET api/Informes/FacturacionTienda).</summary>
+        public const string TIPO_SEMANA = "Semana";
+        public const string TIPO_ACUMULADO = "Acumulado";
+        public const string TIPO_COMPARATIVO = "Comparativo";
+
+        /// <summary>NestoAPI#719: años anteriores del «Comparativo» si no se dice (y el tope).</summary>
+        public const int ANIOS_COMPARATIVO_POR_DEFECTO = 2;
+        public const int MAXIMO_ANIOS_COMPARATIVO = 10;
+
+        public static readonly string[] NOMBRES_MESES =
+        {
+            "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        };
+
+        // NestoAPI#719: agregado en SQL por año y mes. @p0 empresa, @p1 espejo, @p2 1 de enero del año más antiguo (incluido), @p3 el día
+        // siguiente a «hasta» (excluido), @p4 almacén de la tienda, @p5 serie de cursos, @p6 mes y @p7 día de «hasta»: de cada año entra
+        // del 1 de enero a ese mismo día y mes (el rango de fechas acota la lectura; el mes y día solo descartan dentro de él).
+        internal const string SQL_FACTURACION_TIENDA_ANUAL = @"
+SELECT YEAR(f.Fecha) AS Anio, MONTH(f.Fecha) AS Mes,
+       COUNT(DISTINCT f.Empresa + '|' + f.[Número]) AS NumeroFacturas,
+       CAST(SUM(l.[Base Imponible]) AS decimal(18,4)) AS BaseImponible,
+       CAST(SUM(CASE WHEN RTRIM(f.Serie) = @p5 THEN l.[Base Imponible] ELSE 0 END) AS decimal(18,4)) AS BaseImponibleCursos
+FROM CabFacturaVta f WITH (NOLOCK)
+     INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = f.Empresa AND l.[Nº Factura] = f.[Número]
+WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3 AND l.[Almacén] = @p4
+      AND (MONTH(f.Fecha) < @p6 OR (MONTH(f.Fecha) = @p6 AND DAY(f.Fecha) <= @p7))
+GROUP BY YEAR(f.Fecha), MONTH(f.Fecha)";
+
+        /// <summary>
+        /// NestoAPI#719: el tipo normalizado («Semana», «Acumulado», «Comparativo»; vacío = «Semana») o null si no es ninguno.
+        /// </summary>
+        public static string NormalizarTipo(string tipo)
+        {
+            if (string.IsNullOrWhiteSpace(tipo))
+            {
+                return TIPO_SEMANA;
+            }
+            string limpio = tipo.Trim();
+            return new[] { TIPO_SEMANA, TIPO_ACUMULADO, TIPO_COMPARATIVO }
+                .FirstOrDefault(t => string.Equals(t, limpio, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// NestoAPI#719: los años anteriores del informe anual (0 en el «Acumulado»; en el «Comparativo», <paramref name="anios"/> o 2,
+        /// de 1 a 10). Devuelve el mensaje de error, o null si vale.
+        /// </summary>
+        public static string ResolverAniosAnteriores(string tipo, int? anios, out int aniosAnteriores)
+        {
+            aniosAnteriores = 0;
+            if (tipo != TIPO_COMPARATIVO)
+            {
+                return null;
+            }
+            aniosAnteriores = anios ?? ANIOS_COMPARATIVO_POR_DEFECTO;
+            if (aniosAnteriores < 1 || aniosAnteriores > MAXIMO_ANIOS_COMPARATIVO)
+            {
+                return $"«anios» tiene que estar entre 1 y {MAXIMO_ANIOS_COMPARATIVO}.";
+            }
+            return null;
+        }
+
+        /// <summary>Los parámetros de <see cref="SQL_FACTURACION_TIENDA_ANUAL"/>.</summary>
+        internal static object[] ParametrosAnual(string tienda, DateTime hasta, int aniosAnteriores) => new object[]
+        {
+            new SqlParameter("@p0", Constantes.Empresas.EMPRESA_POR_DEFECTO),
+            new SqlParameter("@p1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO),
+            new SqlParameter("@p2", new DateTime(hasta.Year - Math.Max(0, aniosAnteriores), 1, 1)),
+            new SqlParameter("@p3", hasta.Date.AddDays(1)),
+            new SqlParameter("@p4", tienda),
+            new SqlParameter("@p5", Constantes.Series.SERIE_CURSOS),
+            new SqlParameter("@p6", hasta.Month),
+            new SqlParameter("@p7", hasta.Day)
+        };
+
+        /// <summary>
+        /// NestoAPI#719: el informe anual a partir de las filas agregadas (año, mes): todos los meses de enero al de <paramref name="hasta"/>
+        /// (aunque no tengan facturas), su acumulado y, con años anteriores, la variación del año de «hasta» respecto a cada uno. Las filas
+        /// de otros años o meses (no debería haberlas) se ignoran.
+        /// </summary>
+        public static FacturacionTiendaAnualDTO ConstruirAnual(IEnumerable<FilaMesFacturacionTiendaDTO> filas, string tienda, DateTime hasta,
+            int aniosAnteriores)
+        {
+            DateTime dia = hasta.Date;
+            int anio = dia.Year;
+            List<int> anteriores = Enumerable.Range(1, Math.Max(0, aniosAnteriores)).Select(i => anio - i).ToList();
+            Dictionary<(int, int), FilaMesFacturacionTiendaDTO> porAnioMes = (filas ?? Enumerable.Empty<FilaMesFacturacionTiendaDTO>())
+                .GroupBy(f => (f.Anio, f.Mes))
+                .ToDictionary(g => g.Key, g => new FilaMesFacturacionTiendaDTO
+                {
+                    Anio = g.Key.Item1,
+                    Mes = g.Key.Item2,
+                    NumeroFacturas = g.Sum(f => f.NumeroFacturas),
+                    BaseImponible = g.Sum(f => f.BaseImponible),
+                    BaseImponibleCursos = g.Sum(f => f.BaseImponibleCursos)
+                });
+            FilaMesFacturacionTiendaDTO Leer(int a, int m) =>
+                porAnioMes.TryGetValue((a, m), out FilaMesFacturacionTiendaDTO f) ? f : new FilaMesFacturacionTiendaDTO { Anio = a, Mes = m };
+
+            var meses = new List<MesFacturacionTiendaDTO>();
+            decimal acumulado = 0;
+            for (int mes = 1; mes <= dia.Month; mes++)
+            {
+                FilaMesFacturacionTiendaDTO actual = Leer(anio, mes);
+                decimal baseMes = Redondear(actual.BaseImponible);
+                acumulado += baseMes;
+                DateTime primero = new DateTime(anio, mes, 1);
+                meses.Add(new MesFacturacionTiendaDTO
+                {
+                    Mes = mes,
+                    NombreMes = NOMBRES_MESES[mes - 1],
+                    Desde = primero,
+                    Hasta = mes == dia.Month ? dia : primero.AddMonths(1).AddDays(-1),
+                    NumeroFacturas = actual.NumeroFacturas,
+                    BaseImponible = baseMes,
+                    BaseImponibleCursos = Redondear(actual.BaseImponibleCursos),
+                    Acumulado = acumulado,
+                    Anteriores = anteriores.Select(a => Comparar(baseMes, a, Leer(a, mes).NumeroFacturas, Redondear(Leer(a, mes).BaseImponible))).ToList()
+                });
+            }
+
+            var total = new MesFacturacionTiendaDTO
+            {
+                Mes = 0,
+                NombreMes = "Total",
+                Desde = new DateTime(anio, 1, 1),
+                Hasta = dia,
+                NumeroFacturas = meses.Sum(m => m.NumeroFacturas),
+                BaseImponible = acumulado,
+                BaseImponibleCursos = meses.Sum(m => m.BaseImponibleCursos),
+                Acumulado = acumulado,
+                Anteriores = anteriores.Select((a, i) => Comparar(acumulado, a,
+                    meses.Sum(m => m.Anteriores[i].NumeroFacturas), meses.Sum(m => m.Anteriores[i].BaseImponible))).ToList()
+            };
+
+            return new FacturacionTiendaAnualDTO
+            {
+                Tipo = anteriores.Count > 0 ? TIPO_COMPARATIVO : TIPO_ACUMULADO,
+                Tienda = tienda,
+                Anio = anio,
+                Desde = new DateTime(anio, 1, 1),
+                Hasta = dia,
+                AniosAnteriores = anteriores,
+                Meses = meses,
+                Total = total
+            };
+        }
+
+        private static ComparativoMesFacturacionTiendaDTO Comparar(decimal baseActual, int anio, int numeroFacturas, decimal baseAnterior)
+        {
+            decimal variacion = baseActual - baseAnterior;
+            return new ComparativoMesFacturacionTiendaDTO
+            {
+                Anio = anio,
+                NumeroFacturas = numeroFacturas,
+                BaseImponible = baseAnterior,
+                VariacionImporte = variacion,
+                VariacionPorcentaje = baseAnterior == 0 ? (decimal?)null : Redondear(variacion * 100 / Math.Abs(baseAnterior))
+            };
+        }
+
         /// <summary>La tienda normalizada (REI, ALC) o null si no es una tienda.</summary>
         public static string NormalizarTienda(string tienda)
         {

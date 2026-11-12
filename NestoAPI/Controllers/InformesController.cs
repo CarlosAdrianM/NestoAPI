@@ -67,12 +67,38 @@ namespace NestoAPI.Controllers
         /// Dirección, Administración e Informática, cualquier tienda; las tiendas (grupo Tiendas), solo la de su AlmacénPedidoVta
         /// (sin <paramref name="tienda"/>, la suya; otra, 403).
         /// GET api/Informes/FacturacionTienda?tienda=REI&amp;desde=2026-10-12&amp;hasta=2026-10-18
+        /// <para>NestoAPI#719: <paramref name="tipo"/> «Semana» (o vacío) es lo de siempre (<see cref="FacturacionTiendaDTO"/>); «Acumulado»
+        /// y «Comparativo» devuelven <see cref="FacturacionTiendaAnualDTO"/>: de enero a <paramref name="hasta"/> (sin él, hoy) por mes y,
+        /// en el comparativo, el mismo periodo de los <paramref name="anios"/> años anteriores (2 por defecto, de 1 a 10) con la variación.
+        /// En esos dos se ignora <paramref name="desde"/>. <paramref name="almacen"/> es otro nombre de <paramref name="tienda"/>.</para>
+        /// GET api/Informes/FacturacionTienda?tipo=Comparativo&amp;hasta=2026-11-12&amp;anios=2&amp;almacen=REI
         /// </summary>
         [HttpGet]
         [Route("api/Informes/FacturacionTienda")]
         [ResponseType(typeof(FacturacionTiendaDTO))]
-        public async Task<IHttpActionResult> GetFacturacionTienda(string tienda = null, DateTime? desde = null, DateTime? hasta = null)
+        public async Task<IHttpActionResult> GetFacturacionTienda(string tienda = null, DateTime? desde = null, DateTime? hasta = null,
+            string tipo = null, int? anios = null, string almacen = null)
         {
+            string tipoNormalizado = GestorFacturacionTienda.NormalizarTipo(tipo);
+            if (tipoNormalizado == null)
+            {
+                return BadRequest(MensajeTipoNoValido(tipo));
+            }
+            tienda = string.IsNullOrWhiteSpace(tienda) ? almacen : tienda;
+            if (tipoNormalizado != GestorFacturacionTienda.TIPO_SEMANA)
+            {
+                HttpStatusCode? codigoAnual = ValidarFacturacionTiendaAnual(tienda, tipoNormalizado, hasta, anios, out string errorAnual,
+                    out string tiendaAnual, out DateTime fechaHastaAnual, out int aniosAnteriores);
+                if (codigoAnual.HasValue)
+                {
+                    return codigoAnual == HttpStatusCode.Forbidden ? Content(HttpStatusCode.Forbidden, errorAnual) : (IHttpActionResult)BadRequest(errorAnual);
+                }
+                FacturacionTiendaAnualDTO anual = await _servicio
+                    .LeerFacturacionTiendaAnualAsync(tiendaAnual, fechaHastaAnual, aniosAnteriores)
+                    .ConfigureAwait(false);
+                return Ok(anual);
+            }
+
             HttpStatusCode? codigo = ValidarFacturacionTienda(tienda, desde, hasta, out string error, out string tiendaNormalizada,
                 out DateTime fechaDesde, out DateTime fechaHasta);
             if (codigo.HasValue)
@@ -85,11 +111,38 @@ namespace NestoAPI.Controllers
             return Ok(informe);
         }
 
-        /// <summary>NestoAPI#658: el mismo informe que <see cref="GetFacturacionTienda"/> en Excel (hojas «Facturas» y «Por cliente»).</summary>
+        /// <summary>
+        /// NestoAPI#658: el mismo informe que <see cref="GetFacturacionTienda"/> en Excel (hojas «Facturas» y «Por cliente»).
+        /// NestoAPI#719: con tipo «Acumulado», la hoja «Acumulado»; con «Comparativo», «Acumulado» y «Comparativo». Mismos parámetros.
+        /// </summary>
         [HttpGet]
         [Route("api/Informes/FacturacionTienda/Excel")]
-        public async Task<HttpResponseMessage> GetFacturacionTiendaExcel(string tienda = null, DateTime? desde = null, DateTime? hasta = null)
+        public async Task<HttpResponseMessage> GetFacturacionTiendaExcel(string tienda = null, DateTime? desde = null, DateTime? hasta = null,
+            string tipo = null, int? anios = null, string almacen = null)
         {
+            string tipoNormalizado = GestorFacturacionTienda.NormalizarTipo(tipo);
+            if (tipoNormalizado == null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent(MensajeTipoNoValido(tipo)) };
+            }
+            tienda = string.IsNullOrWhiteSpace(tienda) ? almacen : tienda;
+            if (tipoNormalizado != GestorFacturacionTienda.TIPO_SEMANA)
+            {
+                HttpStatusCode? codigoAnual = ValidarFacturacionTiendaAnual(tienda, tipoNormalizado, hasta, anios, out string errorAnual,
+                    out string tiendaAnual, out DateTime fechaHastaAnual, out int aniosAnteriores);
+                if (codigoAnual.HasValue)
+                {
+                    return new HttpResponseMessage(codigoAnual.Value) { Content = new StringContent(errorAnual) };
+                }
+                FacturacionTiendaAnualDTO anual = await _servicio
+                    .LeerFacturacionTiendaAnualAsync(tiendaAnual, fechaHastaAnual, aniosAnteriores)
+                    .ConfigureAwait(false);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new GeneradorExcelFacturacionTienda().GenerarExcel(anual)
+                };
+            }
+
             HttpStatusCode? codigo = ValidarFacturacionTienda(tienda, desde, hasta, out string error, out string tiendaNormalizada,
                 out DateTime fechaDesde, out DateTime fechaHasta);
             if (codigo.HasValue)
@@ -106,6 +159,35 @@ namespace NestoAPI.Controllers
             {
                 Content = new GeneradorExcelFacturacionTienda().GenerarExcel(informe)
             };
+        }
+
+        private static string MensajeTipoNoValido(string tipo) =>
+            $"«{tipo}» no es un tipo del informe: tiene que ser {GestorFacturacionTienda.TIPO_SEMANA}, " +
+            $"{GestorFacturacionTienda.TIPO_ACUMULADO} o {GestorFacturacionTienda.TIPO_COMPARATIVO}.";
+
+        /// <summary>NestoAPI#719: permisos y tienda como la semana; «hasta» por defecto hoy; años del comparativo.</summary>
+        private HttpStatusCode? ValidarFacturacionTiendaAnual(string tienda, string tipo, DateTime? hasta, int? anios, out string error,
+            out string tiendaNormalizada, out DateTime fechaHasta, out int aniosAnteriores)
+        {
+            fechaHasta = default;
+            aniosAnteriores = 0;
+            HttpStatusCode? codigo = ValidarTiendaFacturacion(tienda, out error, out tiendaNormalizada);
+            if (codigo.HasValue)
+            {
+                return codigo;
+            }
+            error = GestorFacturacionTienda.ResolverAniosAnteriores(tipo, anios, out aniosAnteriores);
+            if (error != null)
+            {
+                return HttpStatusCode.BadRequest;
+            }
+            fechaHasta = (hasta ?? Ahora()).Date;
+            if (fechaHasta.Year - aniosAnteriores < 1900)
+            {
+                error = "«hasta» no es una fecha válida.";
+                return HttpStatusCode.BadRequest;
+            }
+            return null;
         }
 
         /// <summary>
@@ -210,8 +292,20 @@ namespace NestoAPI.Controllers
         private HttpStatusCode? ValidarFacturacionTienda(string tienda, DateTime? desde, DateTime? hasta, out string error,
             out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta)
         {
-            tiendaNormalizada = null;
             fechaDesde = fechaHasta = default;
+            HttpStatusCode? codigo = ValidarTiendaFacturacion(tienda, out error, out tiendaNormalizada);
+            if (codigo.HasValue)
+            {
+                return codigo;
+            }
+            error = GestorFacturacionTienda.ResolverPeriodo(desde, hasta, Ahora(), out fechaDesde, out fechaHasta);
+            return error == null ? (HttpStatusCode?)null : HttpStatusCode.BadRequest;
+        }
+
+        /// <summary>Permisos y tienda: null si vale; si no, 400 o 403 con su mensaje en <paramref name="error"/>.</summary>
+        private HttpStatusCode? ValidarTiendaFacturacion(string tienda, out string error, out string tiendaNormalizada)
+        {
+            tiendaNormalizada = null;
             bool cualquiera = PuedeVerCualquierTienda();
             bool esTienda = User != null && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS);
             if (!cualquiera && !esTienda)
@@ -249,8 +343,8 @@ namespace NestoAPI.Controllers
                 }
                 tiendaNormalizada = suya;
             }
-            error = GestorFacturacionTienda.ResolverPeriodo(desde, hasta, Ahora(), out fechaDesde, out fechaHasta);
-            return error == null ? (HttpStatusCode?)null : HttpStatusCode.BadRequest;
+            error = null;
+            return null;
         }
 
         [HttpGet]
