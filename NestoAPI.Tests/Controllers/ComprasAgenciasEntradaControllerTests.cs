@@ -148,5 +148,64 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(await Controller("Compras").GetCorreos(0), typeof(BadRequestErrorMessageResult));
             Assert.IsInstanceOfType(await Controller("Compras").GetCandidatos(1000), typeof(BadRequestErrorMessageResult));
         }
+
+        #region Fase 3
+
+        [TestMethod]
+        public async Task Fase3_SinGrupo_403EnTodos()
+        {
+            ComprasAgenciasEntradaController c = Controller("Almacén");
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.GetPorAsignar()).StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.PostAsignar(1, new PeticionAsignarCorreoCompraDTO { Pedido = 912001 })).StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.PostDescartar(1)).StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.GetRemitentesPaquete()).StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.DeleteRemitentePaquete(1)).StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.PostReanalizar()).StatusCode);
+            A.CallTo(() => repositorio.AplicarFecha(A<PeticionAplicacionFecha>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Fase3_Reanalizar_SoloDireccionOInformatica()
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await Controller("Compras").PostReanalizar()).StatusCode);
+            Assert.IsInstanceOfType(await Controller("Dirección").PostReanalizar(31), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task Fase3_SinScript_503()
+        {
+            A.CallTo(() => repositorio.AplicacionDisponible()).Returns(false);
+            ComprasAgenciasEntradaController c = Controller("Compras");
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ((NegotiatedContentResult<string>)await c.GetPorAsignar()).StatusCode);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ((NegotiatedContentResult<string>)await c.PostAsignar(1, new PeticionAsignarCorreoCompraDTO { Pedido = 912001 })).StatusCode);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ((NegotiatedContentResult<string>)await c.PostDescartar(1)).StatusCode);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ((NegotiatedContentResult<string>)await c.GetRemitentesPaquete()).StatusCode);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ((NegotiatedContentResult<string>)await c.DeleteRemitentePaquete(1)).StatusCode);
+            A.CallTo(() => repositorio.AplicarFecha(A<PeticionAplicacionFecha>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Fase3_Asignar_CodigosHttp()
+        {
+            A.CallTo(() => repositorio.AplicacionDisponible()).Returns(true);
+            A.CallTo(() => repositorio.LeerCorreo(1)).Returns(new CorreoSeguimientoFila { Id = 1, Recibido = DateTime.Now, Codigo = "1Z21E7X76890089163" });
+            A.CallTo(() => repositorio.LeerCorreo(2)).Returns(Task.FromResult<CorreoSeguimientoFila>(null));
+            A.CallTo(() => repositorio.LeerCorreos(A<DateTime>._)).Returns(new List<CorreoSeguimientoFila>());
+            A.CallTo(() => repositorio.AplicarFecha(A<PeticionAplicacionFecha>.That.Matches(p => p.Pedido == 912001)))
+                .Returns(new ResultadoAplicacionFecha { Estado = EstadoAplicacionFecha.Aplicada, LineasCambiadas = 2, Proveedor = "9100" });
+            A.CallTo(() => repositorio.AplicarFecha(A<PeticionAplicacionFecha>.That.Matches(p => p.Pedido == 912002)))
+                .Returns(new ResultadoAplicacionFecha { Estado = EstadoAplicacionFecha.NoEnElAire });
+            A.CallTo(() => repositorio.AplicarFecha(A<PeticionAplicacionFecha>.That.Matches(p => p.Pedido == 912003)))
+                .Returns(new ResultadoAplicacionFecha { Estado = EstadoAplicacionFecha.AplicadoAOtro, PedidoAnterior = 912001 });
+            ComprasAgenciasEntradaController c = Controller("Compras");
+
+            var ok = await c.PostAsignar(1, new PeticionAsignarCorreoCompraDTO { Pedido = 912001 }) as OkNegotiatedContentResult<RespuestaAsignacionCorreoCompraDTO>;
+            Assert.AreEqual(2, ok.Content.LineasCambiadas);
+            Assert.IsInstanceOfType(await c.PostAsignar(1, new PeticionAsignarCorreoCompraDTO { Pedido = 912002 }), typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual(HttpStatusCode.Conflict, ((NegotiatedContentResult<string>)await c.PostAsignar(1, new PeticionAsignarCorreoCompraDTO { Pedido = 912003 })).StatusCode);
+            Assert.AreEqual(HttpStatusCode.NotFound, ((NegotiatedContentResult<string>)await c.PostAsignar(2, new PeticionAsignarCorreoCompraDTO { Pedido = 912001 })).StatusCode);
+        }
+
+        #endregion
     }
 }

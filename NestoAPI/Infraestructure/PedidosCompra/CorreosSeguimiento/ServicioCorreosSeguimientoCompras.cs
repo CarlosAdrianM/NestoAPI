@@ -35,7 +35,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// NestoAPI#857 (fase 1, EN SOMBRA): una pasada del job «compras-correos-seguimiento». Lee lo nuevo del buzón de Compras, guarda
     /// SOLO los correos con algún seguimiento (o de un remitente marcado) con su agencia, código, enlace, extracto y la propuesta de
     /// proveedor y pedidos de compra candidatos; y, en un segundo paso, apunta qué candidato se recibió de verdad (para medir la
-    /// asignación antes de usarla). No escribe NADA en los pedidos de compra.
+    /// asignación antes de usarla). Fase 3: con <c>aplicacion</c> (solo el job) pone la fecha de lo inequívoco y avisa de lo que queda por
+    /// asignar (<see cref="ServicioAplicacionCorreosCompras"/>).
     /// </summary>
     public class ServicioCorreosSeguimientoCompras
     {
@@ -51,14 +52,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private readonly string empresa;
         private readonly Func<TimeSpan> horaCorte;
         private readonly Func<DateTime, bool> esFestivo;
+        private readonly ServicioAplicacionCorreosCompras aplicacion;
 
         /// <param name="lector">Null = sin claves en secretos.config (no se hace nada).</param>
         /// <param name="horaCorte">Hora de corte del picking (por defecto, <see cref="HoraCortePicking.Leer"/> de la empresa).</param>
         /// <param name="esFestivo">Festivo de Algete (por defecto, <see cref="GestorFestivos.EsFestivo"/> con ALG).</param>
+        /// <param name="aplicacion">Fase 3: enlazar por mismo envío, poner la fecha de lo inequívoco y avisar de lo que queda por asignar (solo el job y el reanálisis; null = nada).</param>
         public ServicioCorreosSeguimientoCompras(ILectorBuzonCompras lector, IRepositorioCorreosSeguimiento repositorio,
             Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null,
-            Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null)
+            Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null, ServicioAplicacionCorreosCompras aplicacion = null)
         {
+            this.aplicacion = aplicacion;
             this.lector = lector;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.registrar = registrar ?? (_ => { });
@@ -122,6 +126,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 registrar(new Exception($"[Correos de seguimiento de compras #857] {lectura.Error} (se sigue en la siguiente pasada; leídos {resultado.Leidos})"));
             }
 
+            if (aplicacion != null)
+            {
+                _ = await aplicacion.AvisarPendientes().ConfigureAwait(false); // fase 3: una campana por envío por asignar; nunca lanza
+            }
             resultado.Medidos = await Medir(ahora).ConfigureAwait(false);
             return resultado;
         }
@@ -129,16 +137,18 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private Task<bool> Guardar(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado)
         {
             List<PedidoCompraEnAire> pedidos = null;
-            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)));
+            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), aplicar: true);
         }
 
         /// <summary>
         /// El núcleo común del job y del histórico: analiza cada correo, guarda los que traen seguimiento (con su asignación en sombra
         /// y sus adjuntos) y cuenta. <paramref name="pedidosDe"/> da los pedidos en el aire contra los que se asigna ese correo (el
         /// job, los de ahora; el histórico, los del día del correo). False si alguno no se ha podido guardar (se reintenta: es idempotente).
+        /// Con <paramref name="aplicar"/> (SOLO el job), los correos NUEVOS de la tanda pasan juntos, al final, por la fase 3
+        /// (<see cref="ServicioAplicacionCorreosCompras.AlGuardar"/>): el histórico nunca escribe en compras.
         /// </summary>
         internal async Task<bool> GuardarCorreos(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado,
-            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe)
+            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool aplicar = false)
         {
             List<RemitenteMarcado> marcados;
             try
@@ -151,6 +161,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 return false;
             }
 
+            List<RemitentePaqueteRecordado> recordados = await LeerRecordados().ConfigureAwait(false);
+            var nuevas = new List<CorreoSeguimientoFila>();
             bool? conAdjuntos = null;
             int adjuntosSinLeer = 0;
             bool todo = true;
@@ -158,20 +170,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 try
                 {
-                    AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(correo, agencias, marcados);
-                    if (!analisis.Guardar || correo.Clave() == null)
+                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe).ConfigureAwait(false);
+                    if (fila == null)
                     {
                         continue;
                     }
-                    // Un envío nuestro de salida en copia se guarda (para medir) pero sin asignación ni disponible
-                    AsignacionPedidoCompra asignacion = null;
-                    if (!analisis.EsSalidaNuestra)
-                    {
-                        List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false);
-                        asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos);
-                    }
-                    CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
-                    fila.DisponibleEstimado = DisponibleEstimado(analisis);
                     // Los adjuntos (solo nombre, tipo y tamaño), una petición por correo GUARDADO con adjuntos y solo si hay columnas
                     if (correo.TieneAdjuntos && (conAdjuntos ?? (conAdjuntos = repositorio.AdjuntosDisponibles()).Value))
                     {
@@ -190,6 +193,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     if (await repositorio.Insertar(fila).ConfigureAwait(false))
                     {
                         resultado.Guardados++;
+                        nuevas.Add(fila);
                     }
                     else
                     {
@@ -203,6 +207,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         $"de {correo?.RemitenteDominio}: {ex.Message}", ex));
                 }
             }
+            if (aplicar && aplicacion != null && nuevas.Any())
+            {
+                await aplicacion.AlGuardar(nuevas).ConfigureAwait(false); // nunca lanza
+            }
             if (adjuntosSinLeer > 0)
             {
                 // Se guardan igual, sin adjuntos (NumAdjuntos NULL): una línea por tanda, no una por correo
@@ -210,6 +218,45 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     "correo(s): se guardan sin ellos."));
             }
             return todo;
+        }
+
+        /// <summary>
+        /// El análisis de un correo hasta la fila que se guarda (o se reanaliza): agencia, seguimientos, entrega, remitente del paquete y la
+        /// asignación en sombra. Null si no es de los que se guardan. Un envío nuestro de salida en copia va sin asignación ni disponible.
+        /// </summary>
+        private async Task<CorreoSeguimientoFila> FilaAnalizada(CorreoCompras correo, List<RemitenteMarcado> marcados,
+            List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe)
+        {
+            AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(correo, agencias, marcados);
+            if (!analisis.Guardar || correo.Clave() == null)
+            {
+                return null;
+            }
+            AsignacionPedidoCompra asignacion = null;
+            if (!analisis.EsSalidaNuestra)
+            {
+                List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false);
+                asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos, analisis.RemitentePaquete, recordados);
+            }
+            CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
+            fila.DisponibleEstimado = DisponibleEstimado(analisis);
+            return fila;
+        }
+
+        /// <summary>La memoria de remitentes del paquete (fase 3). Sin Scripts/Issue857d o si falla, ninguno (se guarda igual).</summary>
+        private async Task<List<RemitentePaqueteRecordado>> LeerRecordados()
+        {
+            try
+            {
+                return repositorio.AplicacionDisponible()
+                    ? await repositorio.LeerRemitentesPaquete().ConfigureAwait(false) ?? new List<RemitentePaqueteRecordado>()
+                    : new List<RemitentePaqueteRecordado>();
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #857] No se han podido leer los remitentes del paquete recordados: " + ex.Message, ex));
+                return new List<RemitentePaqueteRecordado>();
+            }
         }
 
         private async Task<List<PedidoCompraEnAire>> LeerPedidos()
@@ -248,7 +295,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 EntregaEstimadaDia = analisis.EntregaEstimada?.Dia,
                 EntregaEstimadaDesde = analisis.EntregaEstimada?.Desde,
                 EntregaEstimadaHasta = analisis.EntregaEstimada?.Hasta,
-                EsSalidaNuestra = analisis.EsSalidaNuestra
+                EsSalidaNuestra = analisis.EsSalidaNuestra,
+                RemitentePaquete = TextoCorreo.Recortar(analisis.RemitentePaquete, ExtractorRemitentePaquete.LONGITUD)
             };
         }
 
@@ -271,6 +319,74 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 registrar(new Exception("[Correos de seguimiento de compras #857] No se ha podido calcular el disponible estimado: " + ex.Message, ex));
                 return null;
             }
+        }
+
+        public const int DIAS_MAXIMOS_REANALISIS = 30;
+        public const int MAXIMO_PAGINAS_REANALISIS = 200;
+
+        /// <summary>
+        /// Fase 3: vuelve a analizar lo YA guardado de los últimos <paramref name="dias"/> días, releyendo el buzón por fechas (el mismo
+        /// <see cref="ILectorBuzonCompras.LeerPagina"/> del histórico, sin tocar el delta). Solo actualiza lo derivado del análisis de los
+        /// correos sin aplicar ni descartar (con los pedidos en el aire de AHORA) y rehace los enlaces por mismo envío; no inserta, no
+        /// aplica fechas ni avisa.
+        /// </summary>
+        public async Task<ResultadoReanalisisCorreos> Reanalizar(int dias, DateTime ahora)
+        {
+            var resultado = new ResultadoReanalisisCorreos { Estado = EstadoPasadaCorreosSeguimiento.Hecha, Dias = dias };
+            if (lector == null)
+            {
+                resultado.Estado = EstadoPasadaCorreosSeguimiento.SinConfiguracion;
+                return resultado;
+            }
+            if (!repositorio.TablasExisten() || !repositorio.AplicacionDisponible())
+            {
+                resultado.Estado = EstadoPasadaCorreosSeguimiento.SinTabla;
+                return resultado;
+            }
+            List<RemitenteMarcado> marcados = await repositorio.LeerRemitentes().ConfigureAwait(false) ?? new List<RemitenteMarcado>();
+            List<RemitentePaqueteRecordado> recordados = await LeerRecordados().ConfigureAwait(false);
+            List<PedidoCompraEnAire> pedidos = null;
+            string enlace = null;
+            for (int pagina = 0; pagina < MAXIMO_PAGINAS_REANALISIS; pagina++)
+            {
+                LecturaBuzonCompras lectura = await lector.LeerPagina(enlace, ahora.AddDays(-dias), ahora).ConfigureAwait(false)
+                    ?? new LecturaBuzonCompras { Error = "El lector no ha devuelto nada." };
+                if (lectura.Error != null)
+                {
+                    resultado.Estado = EstadoPasadaCorreosSeguimiento.ConError;
+                    resultado.Error = lectura.Error;
+                    registrar(new Exception($"[Correos de seguimiento de compras #857, reanálisis] {lectura.Error} (leídos {resultado.Leidos}, actualizados {resultado.Actualizados})"));
+                    break;
+                }
+                foreach (CorreoCompras correo in lectura.Correos)
+                {
+                    resultado.Leidos++;
+                    try
+                    {
+                        CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados,
+                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false))).ConfigureAwait(false);
+                        if (fila != null && await repositorio.ActualizarAnalisis(fila).ConfigureAwait(false))
+                        {
+                            resultado.Actualizados++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        resultado.Fallidos++;
+                        registrar(new Exception($"[Correos de seguimiento de compras #857, reanálisis] No se ha podido reanalizar el correo del {correo?.Recibido:dd/MM/yyyy HH:mm}: {ex.Message}", ex));
+                    }
+                }
+                enlace = lectura.SiguienteEnlace;
+                if (string.IsNullOrEmpty(enlace))
+                {
+                    break;
+                }
+            }
+            if (aplicacion != null)
+            {
+                resultado.Enlazados = await aplicacion.Reenlazar(ahora.AddDays(-dias)).ConfigureAwait(false);
+            }
+            return resultado;
         }
 
         /// <summary>Segundo paso: de los guardados con candidatos y sin real, si alguno de sus candidatos ya tiene albarán, cuál.</summary>
@@ -314,6 +430,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             return medidos;
         }
+    }
+
+    /// <summary>NestoAPI#857 (fase 3): lo que ha hecho POST api/Compras/AgenciasEntrada/Correos/Reanalizar.</summary>
+    public class ResultadoReanalisisCorreos
+    {
+        public EstadoPasadaCorreosSeguimiento Estado { get; set; }
+        public int Dias { get; set; }
+        public int Leidos { get; set; }
+        /// <summary>Correos ya guardados, sin aplicar ni descartar, cuyo análisis se ha vuelto a escribir.</summary>
+        public int Actualizados { get; set; }
+        /// <summary>Correos a los que se han puesto los candidatos de otro del mismo envío.</summary>
+        public int Enlazados { get; set; }
+        public int Fallidos { get; set; }
+        public string Error { get; set; }
     }
 
     /// <summary>NestoAPI#857: remitente captado aún sin marcar (para que Compras diga «este es GLS»).</summary>
@@ -397,7 +527,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 ConfiguracionBuzonCompras configuracion = ConfiguracionBuzonCompras.Leer(clave => ConfigurationManager.AppSettings[clave]);
                 ILectorBuzonCompras lector = configuracion == null ? null : new LectorBuzonComprasGraph(configuracion);
-                var servicio = new ServicioCorreosSeguimientoCompras(lector, new RepositorioCorreosSeguimiento(), ex => ElmahHelper.Log(ex, USUARIO_ELMAH));
+                var repositorio = new RepositorioCorreosSeguimiento();
+                Action<Exception> registrar = ex => ElmahHelper.Log(ex, USUARIO_ELMAH);
+                var aplicacion = new ServicioAplicacionCorreosCompras(repositorio, avisador: new AvisadorCorreosPorAsignar(), registrar: registrar);
+                var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion);
                 _ = await servicio.Pasada(DateTime.Now).ConfigureAwait(false);
             }
             catch (Exception ex)

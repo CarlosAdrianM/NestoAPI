@@ -23,6 +23,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public DateTime? FechaPedido { get; set; }
         /// <summary>Solo en el histórico: el último albarán si ya no le queda nada pendiente; null si sigue en el aire.</summary>
         public DateTime? FechaRecibidoEntero { get; set; }
+        /// <summary>Fase 3: líneas enviadas y sin recibir (en el job; en el histórico, las del filtro).</summary>
+        public int LineasPendientes { get; set; }
+        /// <summary>Fase 3: líneas ya albaraneadas del pedido (si hay, lo pendiente es un resto).</summary>
+        public int LineasYaRecibidas { get; set; }
     }
 
     public class CandidatoPedidoCompra
@@ -50,7 +54,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
     /// <summary>
     /// NestoAPI#857: asignación EN SOMBRA (pura) de un correo de seguimiento a pedidos de compra en el aire. Por este orden, y se
-    /// queda con el primer criterio que encuentra algo: (1) un número de pedido nuestro en el asunto o el cuerpo; (2) la dirección
+    /// queda con el primer criterio que encuentra algo: (1) un número de pedido nuestro en el asunto o el cuerpo; (1 bis, fase 3) quien
+    /// expide el paquete está en la memoria de remitentes del paquete (todos los pedidos en el aire de su proveedor); (2) la dirección
     /// del remitente (directo u original de un reenvío) es la de un contacto del proveedor; (3) su dominio es el del proveedor (web o
     /// contactos; nunca uno de correo gratuito, nuestro o de una agencia); (4) el nombre del proveedor sale en el texto. Con (2)-(4)
     /// TODOS los pedidos en el aire de ese proveedor son candidatos: no se elige uno a ciegas.
@@ -61,6 +66,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const string MOTIVO_CORREO = "Correo";
         public const string MOTIVO_DOMINIO = "Dominio";
         public const string MOTIVO_NOMBRE = "Nombre";
+        /// <summary>Fase 3: quien expide el paquete está en la memoria de remitentes (dbo.ComprasRemitentesPaquete).</summary>
+        public const string MOTIVO_REMITENTE_PAQUETE = "RemitentePaquete";
+        /// <summary>Fase 3: heredado de otro correo del mismo envío (comparten un código de seguimiento, <see cref="MismoEnvio"/>).</summary>
+        public const string MOTIVO_MISMO_ENVIO = "MismoEnvio";
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 
@@ -75,10 +84,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private static readonly HashSet<string> SufijosSociedad = new HashSet<string>
         {
             "S", "L", "A", "U", "SL", "SA", "SLU", "SAU", "SLL", "SC", "CB", "COOP", "SCOOP", "LTD", "LIMITED", "GMBH", "SRL", "SPA",
-            "INC", "LLC", "BV", "SAS", "SARL", "AG", "CO", "Y", "CIA"
+            "INC", "LLC", "BV", "SAS", "SARL", "AG", "CO", "Y", "CIA", "SLNE", "SCP", "SCCL", "SCL", "SRLS", "PLC", "CORP", "KG", "OHG", "NV", "SPRL"
         };
 
-        public static AsignacionPedidoCompra Asignar(CorreoCompras correo, IEnumerable<string> remitentesOriginales, IEnumerable<PedidoCompraEnAire> pedidos)
+        /// <param name="remitentePaquete">Quién expide el paquete según el aviso (<see cref="ExtractorRemitentePaquete"/>).</param>
+        /// <param name="recordados">La memoria de remitentes del paquete (dbo.ComprasRemitentesPaquete), como dato.</param>
+        public static AsignacionPedidoCompra Asignar(CorreoCompras correo, IEnumerable<string> remitentesOriginales, IEnumerable<PedidoCompraEnAire> pedidos,
+            string remitentePaquete = null, IEnumerable<RemitentePaqueteRecordado> recordados = null)
         {
             var asignacion = new AsignacionPedidoCompra();
             List<PedidoCompraEnAire> enAire = (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
@@ -95,6 +107,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             if (porNumero.Any())
             {
                 return Componer(porNumero, MOTIVO_NUMERO);
+            }
+
+            // (1 bis) Fase 3: quien expide el paquete ya lo ha dicho Compras de qué proveedor es
+            List<PedidoCompraEnAire> porRemitente = PorRemitentePaquete(enAire, remitentePaquete, recordados);
+            if (porRemitente.Any())
+            {
+                return Componer(porRemitente, MOTIVO_REMITENTE_PAQUETE);
             }
 
             // (2)-(4) Por proveedor
@@ -123,6 +142,25 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 }
             }
             return asignacion;
+        }
+
+        /// <summary>Los pedidos en el aire del proveedor que Compras asoció a ese remitente del paquete (misma empresa).</summary>
+        internal static List<PedidoCompraEnAire> PorRemitentePaquete(List<PedidoCompraEnAire> enAire, string remitentePaquete,
+            IEnumerable<RemitentePaqueteRecordado> recordados)
+        {
+            string clave = ExtractorRemitentePaquete.Normalizar(remitentePaquete);
+            if (clave == null || recordados == null)
+            {
+                return new List<PedidoCompraEnAire>();
+            }
+            RemitentePaqueteRecordado recordado = recordados
+                .FirstOrDefault(r => r != null && ExtractorRemitentePaquete.Normalizar(r.RemitentePaquete) == clave && !string.IsNullOrWhiteSpace(r.Proveedor));
+            if (recordado == null)
+            {
+                return new List<PedidoCompraEnAire>();
+            }
+            return enAire.Where(p => string.Equals(p.Proveedor?.Trim(), recordado.Proveedor.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(p.Empresa?.Trim(), recordado.Empresa?.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         }
 
         private static bool CasaProveedor(PedidoCompraEnAire proveedor, string motivo, List<string> direcciones, List<string> dominios, string texto)
@@ -162,9 +200,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         internal static string NombreSinSociedad(string nombre)
         {
             List<string> palabras = TextoCorreo.Normalizar(nombre).Split(' ').Where(p => p.Length > 0).ToList();
-            while (palabras.Count > 1 && SufijosSociedad.Contains(palabras[palabras.Count - 1]))
+            // La forma societaria entera, también partida en letras sueltas («S. L. U.», «C.B.», «S.COOP.»)
+            while (palabras.Count > 1)
             {
-                palabras.RemoveAt(palabras.Count - 1);
+                string ultima = palabras[palabras.Count - 1];
+                if (SufijosSociedad.Contains(ultima))
+                {
+                    palabras.RemoveAt(palabras.Count - 1);
+                }
+                else if (palabras.Count > 2 && SufijosSociedad.Contains(palabras[palabras.Count - 2] + ultima))
+                {
+                    palabras.RemoveRange(palabras.Count - 2, 2);
+                }
+                else
+                {
+                    break;
+                }
             }
             return string.Join(" ", palabras);
         }

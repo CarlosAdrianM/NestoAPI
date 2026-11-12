@@ -686,6 +686,10 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioCorreosSeguimientoCompras.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\HistoricoCorreosCompras.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\EntregaEstimadaCorreo.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AplicacionFechaCorreo.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\MismoEnvio.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\RemitentePaquete.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioAplicacionCorreosCompras.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />

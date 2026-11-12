@@ -45,6 +45,21 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public DateTime? DisponibleEstimado { get; set; }
         /// <summary>Envío nuestro de salida en copia (<see cref="EnvioNuestroDeSalida"/>): sin asignación. Null = sin apuntar.</summary>
         public bool? EsSalidaNuestra { get; set; }
+        /// <summary>Fase 3 (Scripts/Issue857d): quién expide el paquete (<see cref="ExtractorRemitentePaquete"/>), normalizado.</summary>
+        public string RemitentePaquete { get; set; }
+        /// <summary>Fase 3: el pedido al que se ha puesto la fecha de este correo (null = sin aplicar).</summary>
+        public string EmpresaAplicada { get; set; }
+        public int? PedidoAplicado { get; set; }
+        public DateTime? FechaRecepcionAplicada { get; set; }
+        public DateTime? AplicadoEl { get; set; }
+        /// <summary>El usuario que lo asignó, o «(automático)».</summary>
+        public string AplicadoPor { get; set; }
+        /// <summary>Compras ha dicho que no es de ninguna compra.</summary>
+        public bool? Descartado { get; set; }
+        /// <summary>Cuándo se avisó a Compras de que su envío estaba por asignar (uno por envío).</summary>
+        public DateTime? AvisadoPorAsignar { get; set; }
+        /// <summary>Al asignarlo a mano: si se eligió el pedido sugerido (null = no había sugerido o automático).</summary>
+        public bool? EligioSugerido { get; set; }
     }
 
     public interface IRepositorioCorreosSeguimiento
@@ -74,6 +89,31 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         Task<List<AlbaranPedidoCompra>> LeerAlbaranes(IEnumerable<CandidatoPedidoCompra> pedidos);
         Task GuardarReal(int id, AlbaranPedidoCompra albaran);
         Task<List<CorreoSeguimientoFila>> LeerCorreos(DateTime desde);
+
+        // Fase 3 (Scripts/Issue857d_ComprasCorreosAplicarFecha.sql)
+        /// <summary>¿Están las columnas de la aplicación y la tabla de remitentes del paquete? Con caché. Sin ellas, como antes.</summary>
+        bool AplicacionDisponible();
+        /// <summary>El Id de un correo guardado por su MensajeId (null si no está).</summary>
+        Task<int?> IdDe(string mensajeId);
+        Task<CorreoSeguimientoFila> LeerCorreo(int id);
+        /// <summary>
+        /// En UNA transacción: bloquea el correo, comprueba a qué pedido está aplicado (<see cref="ReglaAplicacionCorreo.Bloqueo"/>), lee
+        /// las líneas en el aire del pedido, cambia la fecha de las que no la tienen, deja el rastro en Modificaciones (si cambia alguna) y
+        /// marca el correo como aplicado (también si no cambia ninguna: ya tenían esa fecha).
+        /// </summary>
+        Task<ResultadoAplicacionFecha> AplicarFecha(PeticionAplicacionFecha peticion);
+        /// <summary>Descarta un correo sin aplicar (rastro en Modificaciones). Devuelve la fila como estaba (null si no existe).</summary>
+        Task<CorreoSeguimientoFila> Descartar(int id, string usuario);
+        Task<List<RemitentePaqueteRecordado>> LeerRemitentesPaquete();
+        /// <summary>Alta o cambio de proveedor (único por remitente). Devuelve el Id.</summary>
+        Task<int> GuardarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario);
+        Task<bool> BorrarRemitentePaquete(int id, string usuario);
+        /// <summary>Reanálisis: actualiza SOLO lo derivado del análisis de un correo ya guardado, sin aplicar ni descartar. True si lo ha cambiado.</summary>
+        Task<bool> ActualizarAnalisis(CorreoSeguimientoFila fila);
+        /// <summary>Mismo envío: pone el proveedor propuesto y los candidatos de un correo sin aplicar ni descartar. True si lo ha cambiado.</summary>
+        Task<bool> ActualizarAsignacion(int id, string proveedor, string candidatos);
+        /// <summary>Apunta que ya se ha avisado a Compras de este envío por asignar (un aviso por envío).</summary>
+        Task MarcarAvisado(int id);
     }
 
     public class RepositorioCorreosSeguimiento : IRepositorioCorreosSeguimiento
@@ -95,11 +135,91 @@ INSERT INTO dbo.ComprasCorreosSeguimiento (MensajeId, Recibido, RemitenteDirecci
 SELECT @mensajeId, @recibido, @remitente, @dominio, @asunto, @agencia, @codigo, @url, @seguimientos, @extracto, @proveedor, @candidatos, GETDATE(){1}
 WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOLDLOCK) WHERE MensajeId = @mensajeId)";
 
-        /// <summary>El INSERT con las columnas opcionales que existan (adjuntos de Issue857b, entrega estimada de Issue857c).</summary>
-        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega) => string.Format(SQL_INSERTAR_BASE,
-            (conAdjuntos ? ", " + COLUMNAS_ADJUNTOS : string.Empty) + (conEntrega ? ", " + COLUMNAS_ENTREGA : string.Empty),
+        /// <summary>
+        /// El INSERT con las columnas opcionales que existan (adjuntos de Issue857b, entrega estimada de Issue857c, remitente del
+        /// paquete de Issue857d).
+        /// </summary>
+        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega, bool conAplicacion = false) => string.Format(SQL_INSERTAR_BASE,
+            (conAdjuntos ? ", " + COLUMNAS_ADJUNTOS : string.Empty) + (conEntrega ? ", " + COLUMNAS_ENTREGA : string.Empty)
+                + (conAplicacion ? ", RemitentePaquete" : string.Empty),
             (conAdjuntos ? ", @numAdjuntos, @adjuntos" : string.Empty)
-                + (conEntrega ? ", @entregaDia, @entregaDesde, @entregaHasta, @disponible, @esSalida" : string.Empty));
+                + (conEntrega ? ", @entregaDia, @entregaDesde, @entregaHasta, @disponible, @esSalida" : string.Empty)
+                + (conAplicacion ? ", @remitentePaquete" : string.Empty));
+
+        // Scripts/Issue857d_ComprasCorreosAplicarFecha.sql (fase 3): siete columnas y la tabla de remitentes del paquete, todo junto
+        internal const string SQL_EXISTE_APLICACION = "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ComprasRemitentesPaquete', 'U') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'RemitentePaquete') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EmpresaAplicada') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'PedidoAplicado') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'FechaRecepcionAplicada') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AplicadoEl') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AplicadoPor') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'Descartado') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AvisadoPorAsignar') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EligioSugerido') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string COLUMNAS_APLICACION = "RemitentePaquete, RTRIM(EmpresaAplicada) AS EmpresaAplicada, PedidoAplicado, " +
+            "CAST(FechaRecepcionAplicada AS datetime) AS FechaRecepcionAplicada, AplicadoEl, AplicadoPor, Descartado, AvisadoPorAsignar, EligioSugerido";
+        internal const string COLUMNAS_APLICACION_NULAS = "CAST(NULL AS nvarchar(100)) AS RemitentePaquete, CAST(NULL AS varchar(3)) AS EmpresaAplicada, " +
+            "CAST(NULL AS int) AS PedidoAplicado, CAST(NULL AS datetime) AS FechaRecepcionAplicada, CAST(NULL AS datetime) AS AplicadoEl, " +
+            "CAST(NULL AS nvarchar(50)) AS AplicadoPor, CAST(NULL AS bit) AS Descartado, CAST(NULL AS datetime) AS AvisadoPorAsignar, " +
+            "CAST(NULL AS bit) AS EligioSugerido";
+
+        /// <summary>Las líneas de compra que cuentan como «en el aire» (el mismo criterio que la asignación: -1/1 con Enviado).</summary>
+        internal const string LINEAS_EN_AIRE = "c.Estado IN (-1, 1) AND c.Enviado = 1";
+
+        internal const string SQL_BLOQUEAR_CORREO = "SELECT RTRIM(EmpresaAplicada) AS EmpresaAplicada, PedidoAplicado FROM dbo.ComprasCorreosSeguimiento " +
+            "WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id";
+
+        internal const string SQL_LINEAS_PEDIDO_EN_AIRE = @"
+SELECT c.[NºOrden] AS NumeroOrden, RTRIM(c.Producto) AS Producto, c.Estado, c.Enviado, CAST(ISNULL(c.Cantidad, 0) AS int) AS Cantidad,
+    c.[FechaRecepción] AS FechaRecepcion, RTRIM(c.[NºProveedor]) AS Proveedor
+FROM dbo.LinPedidoCmp c WITH (UPDLOCK, ROWLOCK)
+WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND " + LINEAS_EN_AIRE;
+
+        // LinPedidoCmp no tiene disparador que toque FechaRecepción (trgLinPedidoCmpUpd mira VistoBueno, descuentos, Estado, Enviado y
+        // FechaAlbarán): Usuario y [Fecha Modificación] se ponen aquí, como en TransaccionRecepcionCompras.
+        internal const string SQL_CAMBIAR_FECHA = @"
+UPDATE c SET [FechaRecepción] = @fecha, Usuario = @usuario, [Fecha Modificación] = GETDATE()
+FROM dbo.LinPedidoCmp c
+WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND " + LINEAS_EN_AIRE + @"
+  AND (c.[FechaRecepción] IS NULL OR CAST(c.[FechaRecepción] AS date) <> CAST(@fecha AS date))";
+
+        internal const string SQL_MARCAR_APLICADO = "UPDATE dbo.ComprasCorreosSeguimiento SET EmpresaAplicada = @empresa, PedidoAplicado = @pedido, " +
+            "FechaRecepcionAplicada = @fecha, AplicadoEl = GETDATE(), AplicadoPor = @aplicadoPor, Descartado = 0, EligioSugerido = @eligioSugerido WHERE Id = @id";
+
+        internal const string SQL_ACTUALIZAR_ASIGNACION = "UPDATE dbo.ComprasCorreosSeguimiento SET ProveedorPropuesto = @proveedor, PedidosCandidatos = @candidatos " +
+            "WHERE Id = @id AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0) = 0";
+
+        internal const string SQL_MARCAR_AVISADO = "UPDATE dbo.ComprasCorreosSeguimiento SET AvisadoPorAsignar = GETDATE() WHERE Id = @id";
+
+        internal const string SQL_RASTRO = "INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@tabla, @anterior, @nuevo, @usuarioRastro)";
+
+        internal const string SQL_DESCARTAR = "UPDATE dbo.ComprasCorreosSeguimiento SET Descartado = 1, AplicadoPor = @usuario, AplicadoEl = GETDATE() " +
+            "WHERE Id = @id AND PedidoAplicado IS NULL";
+
+        internal const string SQL_REMITENTES_PAQUETE = "SELECT Id, RemitentePaquete, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, Usuario, FechaModificacion " +
+            "FROM dbo.ComprasRemitentesPaquete WITH (NOLOCK) ORDER BY RemitentePaquete";
+
+        internal const string SQL_GUARDAR_REMITENTE_PAQUETE = @"SET NOCOUNT ON;
+DECLARE @id int = (SELECT TOP 1 Id FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE RemitentePaquete = @remitente);
+IF @id IS NULL
+BEGIN
+    INSERT INTO dbo.ComprasRemitentesPaquete (RemitentePaquete, Empresa, Proveedor, Usuario, FechaModificacion) VALUES (@remitente, @empresa, @proveedor, @usuario, GETDATE());
+    SET @id = CAST(SCOPE_IDENTITY() AS int);
+END
+ELSE
+    UPDATE dbo.ComprasRemitentesPaquete SET Empresa = @empresa, Proveedor = @proveedor, Usuario = @usuario, FechaModificacion = GETDATE() WHERE Id = @id;
+SELECT @id;";
+
+        internal const string SQL_REMITENTE_PAQUETE_POR_ID = "SELECT Id, RemitentePaquete, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, Usuario, FechaModificacion " +
+            "FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id";
+        internal const string SQL_BORRAR_REMITENTE_PAQUETE = "DELETE FROM dbo.ComprasRemitentesPaquete WHERE Id = @id";
+        public const string TABLA_RASTRO_REMITENTES_PAQUETE = "ComprasRemitentesPaquete";
+        public const string TABLA_RASTRO_DESCARTE = "CompraCorreoDescartado";
+
+        // Reanálisis: solo lo derivado del análisis; {0} = las columnas de la entrega estimada si existen (Issue857c)
+        internal const string SQL_ACTUALIZAR_ANALISIS = @"
+UPDATE dbo.ComprasCorreosSeguimiento SET Agencia = @agencia, Codigo = @codigo, Url = @url, Seguimientos = @seguimientos, Extracto = @extracto,
+    ProveedorPropuesto = @proveedor, PedidosCandidatos = @candidatos, RemitentePaquete = @remitentePaquete{0}
+WHERE MensajeId = @mensajeId AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0) = 0";
+        internal const string SET_ENTREGA = ", EntregaEstimadaDia = @entregaDia, EntregaEstimadaDesde = @entregaDesde, EntregaEstimadaHasta = @entregaHasta, " +
+            "DisponibleEstimado = @disponible, EsSalidaNuestra = @esSalida";
 
         internal static readonly string SQL_INSERTAR = SqlInsertar(false, false);
 
@@ -125,6 +245,7 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOL
         internal static readonly TimeSpan CACHE_ADJUNTOS = TimeSpan.FromMinutes(10);
         private static readonly ColumnasOpcionales columnasAdjuntos = new ColumnasOpcionales(SQL_EXISTEN_ADJUNTOS);
         private static readonly ColumnasOpcionales columnasEntrega = new ColumnasOpcionales(SQL_EXISTEN_ENTREGA);
+        private static readonly ColumnasOpcionales columnasAplicacion = new ColumnasOpcionales(SQL_EXISTE_APLICACION);
 
         /// <summary>Si existen unas columnas opcionales, con caché de <see cref="CACHE_ADJUNTOS"/>. Ante cualquier fallo, que no.</summary>
         private sealed class ColumnasOpcionales
@@ -186,7 +307,7 @@ SELECT @id;";
         internal const string SQL_DESACTIVAR_REMITENTE = "UPDATE dbo.AgenciasEntradaRemitentes SET Activo = 0, Usuario = @usuario, FechaModificacion = GETDATE() WHERE Id = @id";
 
         // El mismo filtro que la sombra del modo de servicio y el aviso de proveedor vencido: líneas -1/1 con Enviado.
-        internal const string FILTRO_EN_AIRE = "c.Empresa IN (@empresa, @espejo) AND c.Estado IN (-1, 1) AND c.Enviado = 1";
+        internal const string FILTRO_EN_AIRE = "c.Empresa IN (@empresa, @espejo) AND " + LINEAS_EN_AIRE;
 
         /// <summary>
         /// Histórico: los en el aire de ahora y los que se han recibido (alguna línea con albarán) desde @desde. Una consulta por
@@ -198,6 +319,8 @@ SELECT @id;";
         // {0} = el filtro. FechaPedido/FechaRecibidoEntero solo hacen falta en el histórico (en el job, NULL).
         internal const string SQL_PEDIDOS = @"
 SELECT RTRIM(c.Empresa) AS Empresa, c.Número AS Pedido, RTRIM(MAX(c.NºProveedor)) AS Proveedor, MAX(cab.[Fecha Modificación]) AS FechaEnvio,
+    COUNT(*) AS LineasPendientes,
+    (SELECT COUNT(*) FROM dbo.LinPedidoCmp r WITH (NOLOCK) WHERE r.Empresa = c.Empresa AND r.Número = c.Número AND r.Estado >= 2) AS LineasYaRecibidas,
     {1}
 FROM dbo.LinPedidoCmp c WITH (NOLOCK)
 LEFT JOIN dbo.CabPedidoCmp cab WITH (NOLOCK) ON cab.Empresa = c.Empresa AND cab.Número = c.Número
@@ -230,14 +353,14 @@ WHERE pc.Empresa IN (@empresa, @espejo) AND pc.CorreoElectrónico IS NOT NULL AN
             "Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal";
 
         internal const string SQL_PENDIENTES_MEDIR = @"
-SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + @"
+SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Recibido";
 
         // Por la clave (Id, el índice agrupado), de @cuantos en @cuantos
         internal const string SQL_PENDIENTES_MEDIR_POR_ID = @"
-SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + @"
+SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE Id > @despues AND PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Id";
@@ -269,6 +392,8 @@ ORDER BY Recibido DESC";
             public DateTime? FechaEnvio { get; set; }
             public DateTime? FechaPedido { get; set; }
             public DateTime? FechaRecibidoEntero { get; set; }
+            public int LineasPendientes { get; set; }
+            public int LineasYaRecibidas { get; set; }
         }
 
         private class FilaProveedor
@@ -335,6 +460,7 @@ ORDER BY Recibido DESC";
         {
             bool conAdjuntos = AdjuntosDisponibles();
             bool conEntrega = EntregaEstimadaDisponible();
+            bool conAplicacion = AplicacionDisponible();
             using (NVEntities db = crearContexto())
             {
                 var parametros = new List<SqlParameter>
@@ -343,15 +469,9 @@ ORDER BY Recibido DESC";
                     new SqlParameter("@recibido", SqlDbType.DateTime) { Value = fila.Recibido },
                     Texto("@remitente", fila.RemitenteDireccion, 255),
                     Texto("@dominio", fila.RemitenteDominio, 255),
-                    Texto("@asunto", fila.Asunto, 255),
-                    Texto("@agencia", fila.Agencia, 50),
-                    Texto("@codigo", fila.Codigo, 50),
-                    Texto("@url", fila.Url, 1000),
-                    Texto("@seguimientos", fila.Seguimientos, 4000),
-                    Texto("@extracto", fila.Extracto, 600),
-                    Texto("@proveedor", fila.ProveedorPropuesto, 10),
-                    Texto("@candidatos", fila.PedidosCandidatos, 2000)
+                    Texto("@asunto", fila.Asunto, 255)
                 };
+                parametros.AddRange(ParametrosAnalisis(fila));
                 if (conAdjuntos)
                 {
                     parametros.Add(new SqlParameter("@numAdjuntos", SqlDbType.Int) { Value = (object)fila.NumAdjuntos ?? DBNull.Value });
@@ -359,17 +479,238 @@ ORDER BY Recibido DESC";
                 }
                 if (conEntrega)
                 {
-                    parametros.Add(new SqlParameter("@entregaDia", SqlDbType.Date) { Value = (object)fila.EntregaEstimadaDia?.Date ?? DBNull.Value });
-                    parametros.Add(new SqlParameter("@entregaDesde", SqlDbType.Time) { Scale = 0, Value = (object)fila.EntregaEstimadaDesde ?? DBNull.Value });
-                    parametros.Add(new SqlParameter("@entregaHasta", SqlDbType.Time) { Scale = 0, Value = (object)fila.EntregaEstimadaHasta ?? DBNull.Value });
-                    parametros.Add(new SqlParameter("@disponible", SqlDbType.Date) { Value = (object)fila.DisponibleEstimado?.Date ?? DBNull.Value });
-                    parametros.Add(new SqlParameter("@esSalida", SqlDbType.Bit) { Value = (object)fila.EsSalidaNuestra ?? DBNull.Value });
+                    parametros.AddRange(ParametrosEntrega(fila));
                 }
-                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega), parametros.ToArray())
+                if (conAplicacion)
+                {
+                    parametros.Add(Texto("@remitentePaquete", fila.RemitentePaquete, ExtractorRemitentePaquete.LONGITUD));
+                }
+                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega, conAplicacion), parametros.ToArray())
                     .ConfigureAwait(false);
                 return filas > 0;
             }
         }
+
+        private static IEnumerable<SqlParameter> ParametrosEntrega(CorreoSeguimientoFila fila) => new[]
+        {
+            new SqlParameter("@entregaDia", SqlDbType.Date) { Value = (object)fila.EntregaEstimadaDia?.Date ?? DBNull.Value },
+            new SqlParameter("@entregaDesde", SqlDbType.Time) { Scale = 0, Value = (object)fila.EntregaEstimadaDesde ?? DBNull.Value },
+            new SqlParameter("@entregaHasta", SqlDbType.Time) { Scale = 0, Value = (object)fila.EntregaEstimadaHasta ?? DBNull.Value },
+            new SqlParameter("@disponible", SqlDbType.Date) { Value = (object)fila.DisponibleEstimado?.Date ?? DBNull.Value },
+            new SqlParameter("@esSalida", SqlDbType.Bit) { Value = (object)fila.EsSalidaNuestra ?? DBNull.Value }
+        };
+
+        /// <summary>Lo derivado del análisis (lo mismo que el INSERT, sin MensajeId, Recibido, remitente ni asunto).</summary>
+        private static IEnumerable<SqlParameter> ParametrosAnalisis(CorreoSeguimientoFila fila) => new[]
+        {
+            Texto("@agencia", fila.Agencia, 50),
+            Texto("@codigo", fila.Codigo, 50),
+            Texto("@url", fila.Url, 1000),
+            Texto("@seguimientos", fila.Seguimientos, 4000),
+            Texto("@extracto", fila.Extracto, 600),
+            Texto("@proveedor", fila.ProveedorPropuesto, 10),
+            Texto("@candidatos", fila.PedidosCandidatos, 2000)
+        };
+
+        public bool AplicacionDisponible() => columnasAplicacion.Existen(crearContexto);
+
+        public async Task<int?> IdDe(string mensajeId)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return (await db.Database.SqlQuery<int>("SELECT Id FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK) WHERE MensajeId = @mensajeId",
+                    Texto("@mensajeId", mensajeId, 450)).ToListAsync().ConfigureAwait(false)).Cast<int?>().FirstOrDefault();
+            }
+        }
+
+        public async Task<CorreoSeguimientoFila> LeerCorreo(int id)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                string sql = "SELECT " + COLUMNAS_FILA + ", " + ColumnasOpcionalesSelect() + " FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK) WHERE Id = @id";
+                return (await db.Database.SqlQuery<CorreoSeguimientoFila>(sql, new SqlParameter("@id", SqlDbType.Int) { Value = id })
+                    .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            }
+        }
+
+        private class FilaBloqueo
+        {
+            public string EmpresaAplicada { get; set; }
+            public int? PedidoAplicado { get; set; }
+        }
+
+        public async Task<ResultadoAplicacionFecha> AplicarFecha(PeticionAplicacionFecha peticion)
+        {
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                var resultado = new ResultadoAplicacionFecha();
+                SqlParameter Id() => new SqlParameter("@id", SqlDbType.Int) { Value = peticion.CorreoId };
+                SqlParameter[] Pedido() => new[]
+                {
+                    new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = peticion.Empresa },
+                    new SqlParameter("@pedido", SqlDbType.Int) { Value = peticion.Pedido }
+                };
+
+                FilaBloqueo correo = (await db.Database.SqlQuery<FilaBloqueo>(SQL_BLOQUEAR_CORREO, Id()).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                if (correo == null)
+                {
+                    resultado.Estado = EstadoAplicacionFecha.NoExisteCorreo;
+                    return resultado;
+                }
+                resultado.EmpresaAnterior = correo.EmpresaAplicada;
+                resultado.PedidoAnterior = correo.PedidoAplicado;
+                resultado.LineasAntes = await db.Database.SqlQuery<LineaCompraCorreo>(SQL_LINEAS_PEDIDO_EN_AIRE, Pedido()).ToListAsync().ConfigureAwait(false);
+                resultado.Proveedor = resultado.LineasAntes.Select(l => l.Proveedor).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+
+                // Ya aplicado (a ese pedido, o a otro sin pedir reasignar): no se toca nada
+                EstadoAplicacionFecha? bloqueo = ReglaAplicacionCorreo.Bloqueo(correo.EmpresaAplicada, correo.PedidoAplicado, peticion.Empresa, peticion.Pedido, peticion.Reasignar);
+                if (bloqueo.HasValue)
+                {
+                    resultado.Estado = bloqueo.Value;
+                    return resultado;
+                }
+                if (!resultado.LineasAntes.Any())
+                {
+                    resultado.Estado = EstadoAplicacionFecha.NoEnElAire;
+                    return resultado;
+                }
+
+                List<LineaCompraCorreo> cambian = ReglaAplicacionCorreo.QueCambian(resultado.LineasAntes, peticion.Fecha);
+                if (cambian.Any())
+                {
+                    resultado.LineasCambiadas = await db.Database.ExecuteSqlCommandAsync(SQL_CAMBIAR_FECHA, Pedido()
+                        .Concat(new[]
+                        {
+                            new SqlParameter("@fecha", SqlDbType.DateTime) { Value = peticion.Fecha.Date },
+                            new SqlParameter("@usuario", SqlDbType.VarChar, 30) { Value = TextoCorreo.Recortar(peticion.UsuarioLineas, 30) ?? "DESCONOCIDO" }
+                        }).ToArray()).ConfigureAwait(false);
+                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                        Texto("@tabla", RastroAplicacionFecha.TABLA, 100),
+                        Texto("@anterior", RastroAplicacionFecha.Anterior(peticion, cambian), -1),
+                        Texto("@nuevo", RastroAplicacionFecha.Nuevo(peticion, resultado.LineasCambiadas, correo.EmpresaAplicada, correo.PedidoAplicado), -1),
+                        Texto("@usuarioRastro", peticion.AplicadoPor, 100)).ConfigureAwait(false);
+                }
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_APLICADO, Pedido()
+                    .Concat(new[]
+                    {
+                        Id(),
+                        new SqlParameter("@fecha", SqlDbType.Date) { Value = peticion.Fecha.Date },
+                        Texto("@aplicadoPor", peticion.AplicadoPor, 50),
+                        new SqlParameter("@eligioSugerido", SqlDbType.Bit) { Value = (object)peticion.EligioSugerido ?? DBNull.Value }
+                    }).ToArray()).ConfigureAwait(false);
+                transaccion.Commit();
+                resultado.Estado = EstadoAplicacionFecha.Aplicada;
+                return resultado;
+            }
+        }
+
+        public async Task<bool> ActualizarAsignacion(int id, string proveedor, string candidatos)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return await db.Database.ExecuteSqlCommandAsync(SQL_ACTUALIZAR_ASIGNACION, new SqlParameter("@id", SqlDbType.Int) { Value = id },
+                    Texto("@proveedor", proveedor, 10), Texto("@candidatos", candidatos, 2000)).ConfigureAwait(false) > 0;
+            }
+        }
+
+        public async Task MarcarAvisado(int id)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_AVISADO, new SqlParameter("@id", SqlDbType.Int) { Value = id }).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<CorreoSeguimientoFila> Descartar(int id, string usuario)
+        {
+            CorreoSeguimientoFila fila = await LeerCorreo(id).ConfigureAwait(false);
+            if (fila == null || fila.PedidoAplicado.HasValue || fila.Descartado == true)
+            {
+                return fila;
+            }
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                int filas = await db.Database.ExecuteSqlCommandAsync(SQL_DESCARTAR, new SqlParameter("@id", SqlDbType.Int) { Value = id },
+                    Texto("@usuario", usuario, 50)).ConfigureAwait(false);
+                if (filas > 0)
+                {
+                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                        Texto("@tabla", TABLA_RASTRO_DESCARTE, 100),
+                        Texto("@anterior", Newtonsoft.Json.JsonConvert.SerializeObject(new { CorreoId = id, fila.Agencia, fila.Codigo, fila.RemitenteDireccion, fila.Asunto }), -1),
+                        Texto("@nuevo", "Descartado: no es de ninguna compra", -1),
+                        Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
+                }
+                transaccion.Commit();
+            }
+            return fila;
+        }
+
+        public async Task<List<RemitentePaqueteRecordado>> LeerRemitentesPaquete()
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return await db.Database.SqlQuery<RemitentePaqueteRecordado>(SQL_REMITENTES_PAQUETE).ToListAsync().ConfigureAwait(false);
+            }
+        }
+
+        public async Task<int> GuardarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return (await db.Database.SqlQuery<int>(SQL_GUARDAR_REMITENTE_PAQUETE, Texto("@remitente", remitente, ExtractorRemitentePaquete.LONGITUD),
+                    new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa }, Texto("@proveedor", proveedor, 10),
+                    Texto("@usuario", usuario, 50)).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            }
+        }
+
+        public async Task<bool> BorrarRemitentePaquete(int id, string usuario)
+        {
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                RemitentePaqueteRecordado actual = (await db.Database.SqlQuery<RemitentePaqueteRecordado>(SQL_REMITENTE_PAQUETE_POR_ID,
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id }).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                if (actual == null)
+                {
+                    return false;
+                }
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_BORRAR_REMITENTE_PAQUETE, new SqlParameter("@id", SqlDbType.Int) { Value = id }).ConfigureAwait(false);
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                    Texto("@tabla", TABLA_RASTRO_REMITENTES_PAQUETE, 100),
+                    Texto("@anterior", Newtonsoft.Json.JsonConvert.SerializeObject(new { actual.Id, actual.RemitentePaquete, actual.Empresa, actual.Proveedor, actual.Usuario }), -1),
+                    Texto("@nuevo", "(borrado)", -1),
+                    Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
+                transaccion.Commit();
+                return true;
+            }
+        }
+
+        public async Task<bool> ActualizarAnalisis(CorreoSeguimientoFila fila)
+        {
+            bool conEntrega = EntregaEstimadaDisponible();
+            using (NVEntities db = crearContexto())
+            {
+                var parametros = new List<SqlParameter>(ParametrosAnalisis(fila))
+                {
+                    Texto("@mensajeId", fila.MensajeId, 450),
+                    Texto("@remitentePaquete", fila.RemitentePaquete, ExtractorRemitentePaquete.LONGITUD)
+                };
+                if (conEntrega)
+                {
+                    parametros.AddRange(ParametrosEntrega(fila));
+                }
+                return await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_ACTUALIZAR_ANALISIS, conEntrega ? SET_ENTREGA : string.Empty),
+                    parametros.ToArray()).ConfigureAwait(false) > 0;
+            }
+        }
+
+        /// <summary>Las columnas opcionales del SELECT de una fila (las que haya, o NULL con su nombre).</summary>
+        private string ColumnasOpcionalesSelect() =>
+            (AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS) + ", "
+            + (EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS) + ", "
+            + (AplicacionDisponible() ? COLUMNAS_APLICACION : COLUMNAS_APLICACION_NULAS);
 
         public async Task<List<RemitenteMarcado>> LeerRemitentes()
         {
@@ -413,7 +754,8 @@ ORDER BY Recibido DESC";
                     .Select(f => new PedidoCompraEnAire
                     {
                         Empresa = f.Empresa, Pedido = f.Pedido, Proveedor = f.Proveedor, FechaEnvio = f.FechaEnvio,
-                        FechaPedido = f.FechaPedido, FechaRecibidoEntero = f.FechaRecibidoEntero
+                        FechaPedido = f.FechaPedido, FechaRecibidoEntero = f.FechaRecibidoEntero,
+                        LineasPendientes = f.LineasPendientes, LineasYaRecibidas = f.LineasYaRecibidas
                     })
                     .ToList();
                 if (!pedidos.Any())
@@ -499,9 +841,11 @@ ORDER BY Recibido DESC";
         {
             using (NVEntities db = crearContexto())
             {
+                // {1} lleva también las de la fase 3 (Issue857d), o NULL con su nombre
                 return await db.Database.SqlQuery<CorreoSeguimientoFila>(
                     string.Format(SQL_CORREOS, AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS,
-                        EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS),
+                        (EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS) + ", "
+                        + (AplicacionDisponible() ? COLUMNAS_APLICACION : COLUMNAS_APLICACION_NULAS)),
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
             }
         }

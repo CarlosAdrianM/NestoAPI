@@ -55,6 +55,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// asignación a pedidos de compra ni disponible estimado.
         /// </summary>
         public bool EsSalidaNuestra { get; set; }
+        /// <summary>Fase 3: quién expide el paquete según el aviso (<see cref="ExtractorRemitentePaquete"/>), normalizado; null si no lo dice.</summary>
+        public string RemitentePaquete { get; set; }
     }
 
     /// <summary>
@@ -123,6 +125,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 analisis.Extracto = Extracto(correo, analisis.Seguimientos.FirstOrDefault());
                 analisis.EntregaEstimada = ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
                 analisis.EsSalidaNuestra = EnvioNuestroDeSalida.Es((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+                analisis.RemitentePaquete = ExtractorRemitentePaquete.Extraer(correo.Texto);
             }
             return analisis;
         }

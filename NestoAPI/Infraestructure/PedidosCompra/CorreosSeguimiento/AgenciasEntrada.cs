@@ -67,7 +67,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// etiqueta y el código puede ir el nombre corto de la agencia («Nº de seguimiento GLS 1378206148»).
         /// </summary>
         internal static readonly Regex CodigoConEtiqueta = new Regex(
-            @"(?:n[ºo°]\.?\s*de\s*(?:seguimiento|env[ií]o|expedici[oó]n)|n[uú]mero\s+de\s+(?:seguimiento|env[ií]o|expedici[oó]n)|c[oó]digo\s+de\s+(?:seguimiento|env[ií]o)|seguimiento|tracking(?:\s*(?:number|n[ºo°]|id|code))?|localizador|expedici[oó]n|sendungsnummer|awb)\s*(?:n[ºo°]\.?)?\s*[:#]?\s*(?:(?:GLS|UPS|DHL|SEUR|MRW|TNT|DPD|CTT|NACEX|TIPSA)\s+)?([A-Za-z0-9][A-Za-z0-9\-]{5,39})\b",
+            @"(?:n[ºo°]\.?\s*de\s*(?:seguimiento|env[ií]o|expedici[oó]n)|n[uú]mero\s+de\s+(?:seguimiento|env[ií]o|expedici[oó]n)|c[oó]digo\s+de\s+(?:seguimiento|env[ií]o)|seguimiento|tracking(?:\s*(?:number|n[ºo°]|id|code))?|localizador|expedici[oó]n|sendungsnummer|awb)(?:\s+MBE)?\s*(?:n[ºo°]\.?)?\s*[:#]?\s*(?:(?:GLS|UPS|DHL|SEUR|MRW|TNT|DPD|CTT|NACEX|TIPSA)\s+)?([A-Za-z0-9][A-Za-z0-9\-]{5,39})\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public abstract string Nombre { get; }

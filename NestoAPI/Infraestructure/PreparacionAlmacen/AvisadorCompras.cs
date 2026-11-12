@@ -40,7 +40,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return Avisar(titulo, avisos, TIPO_NOTIFICACION);
         }
 
-        public async Task Avisar(string titulo, IEnumerable<string> avisos, string tipo)
+        public Task Avisar(string titulo, IEnumerable<string> avisos, string tipo)
+        {
+            return Avisar(titulo, avisos, tipo, null);
+        }
+
+        /// <summary>NestoAPI#857: lo mismo con Datos propios del aviso (los que se pasan, más «tipo»).</summary>
+        public async Task Avisar(string titulo, IEnumerable<string> avisos, string tipo, IDictionary<string, string> datos)
         {
             tipo = string.IsNullOrWhiteSpace(tipo) ? TIPO_NOTIFICACION : tipo;
             List<string> lista = (avisos ?? Enumerable.Empty<string>()).Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
@@ -60,12 +66,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return;
             }
 
+            var todosLosDatos = new Dictionary<string, string>();
+            foreach (KeyValuePair<string, string> dato in datos ?? new Dictionary<string, string>())
+            {
+                todosLosDatos[dato.Key] = dato.Value;
+            }
+            todosLosDatos["tipo"] = tipo;
             var notificacion = new NotificacionPushDTO
             {
                 Titulo = titulo,
                 Cuerpo = string.Join(Environment.NewLine, lista),
                 Tipo = tipo,
-                Datos = new Dictionary<string, string> { ["tipo"] = tipo }
+                Datos = todosLosDatos
             };
             foreach (string usuario in usuarios)
             {

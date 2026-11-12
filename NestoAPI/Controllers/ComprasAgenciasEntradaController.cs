@@ -56,6 +56,83 @@ namespace NestoAPI.Controllers
         public DateTime? DisponibleEstimado { get; set; }
         /// <summary>Envío nuestro de salida que llega en copia (se guarda sin asignación); null = sin apuntar.</summary>
         public bool? EsSalidaNuestra { get; set; }
+        /// <summary>Fase 3 (Scripts/Issue857d): quién expide el paquete según el aviso, normalizado.</summary>
+        public string RemitentePaquete { get; set; }
+        /// <summary>Fase 3: el pedido al que se ha puesto la fecha de este correo (null = sin aplicar).</summary>
+        public string EmpresaAplicada { get; set; }
+        public int? PedidoAplicado { get; set; }
+        public DateTime? FechaRecepcionAplicada { get; set; }
+        public DateTime? AplicadoEl { get; set; }
+        /// <summary>El usuario, o «(automático)».</summary>
+        public string AplicadoPor { get; set; }
+        public bool? Descartado { get; set; }
+        public bool? EligioSugerido { get; set; }
+    }
+
+    /// <summary>NestoAPI#857 (fase 3): un pedido candidato de un envío por asignar, con lo que hace falta para elegir.</summary>
+    public class CandidatoPorAsignarDTO
+    {
+        public string Empresa { get; set; }
+        public int Pedido { get; set; }
+        public string Proveedor { get; set; }
+        public string NombreProveedor { get; set; }
+        public string Motivo { get; set; }
+        /// <summary>CabPedidoCmp.[Fecha Modificación] (cuando se envió).</summary>
+        public DateTime? FechaEnvio { get; set; }
+        public int LineasPendientes { get; set; }
+        /// <summary>Si es mayor que 0, lo pendiente es un resto.</summary>
+        public int LineasYaRecibidas { get; set; }
+        /// <summary>El enviado más recientemente antes del primer correo del envío (como mucho uno por envío). No se elige solo.</summary>
+        public bool Sugerido { get; set; }
+    }
+
+    /// <summary>NestoAPI#857 (fase 3): un envío por asignar (los correos que comparten código de seguimiento).</summary>
+    public class EnvioPorAsignarDTO
+    {
+        /// <summary>El Id del primer correo del envío (para referirse a él; se asigna con cualquiera de sus correos).</summary>
+        public int Clave { get; set; }
+        public DateTime PrimerCorreo { get; set; }
+        public List<CorreoSeguimientoCompraDTO> Correos { get; set; } = new List<CorreoSeguimientoCompraDTO>();
+        public List<string> Codigos { get; set; } = new List<string>();
+        public string Agencia { get; set; }
+        /// <summary>La entrega estimada más tardía de sus correos.</summary>
+        public DateTime? EntregaEstimadaDia { get; set; }
+        /// <summary>La fecha de recepción que se pondría al asignarlo hoy.</summary>
+        public DateTime FechaRecepcionPropuesta { get; set; }
+        public string RemitentePaquete { get; set; }
+        public string ProveedorPropuesto { get; set; }
+        public List<CandidatoPorAsignarDTO> Candidatos { get; set; } = new List<CandidatoPorAsignarDTO>();
+    }
+
+    /// <summary>NestoAPI#857 (fase 3): un pedido de compra en el aire, para elegir a mano.</summary>
+    public class PedidoEnAireDTO
+    {
+        public string Empresa { get; set; }
+        public int Pedido { get; set; }
+        public string Proveedor { get; set; }
+        public string NombreProveedor { get; set; }
+        public DateTime? FechaEnvio { get; set; }
+        public int LineasPendientes { get; set; }
+        public int LineasYaRecibidas { get; set; }
+        /// <summary>Es candidato de algún envío de la lista.</summary>
+        public bool EsCandidato { get; set; }
+        /// <summary>Las claves de los envíos de los que es candidato.</summary>
+        public List<int> Envios { get; set; } = new List<int>();
+    }
+
+    /// <summary>NestoAPI#857 (fase 3): GET api/Compras/AgenciasEntrada/PorAsignar.</summary>
+    public class PorAsignarCorreosCompraDTO
+    {
+        public List<EnvioPorAsignarDTO> Envios { get; set; } = new List<EnvioPorAsignarDTO>();
+        public List<PedidoEnAireDTO> PedidosEnAire { get; set; } = new List<PedidoEnAireDTO>();
+    }
+
+    /// <summary>NestoAPI#857 (fase 3): respuesta de POST …/Correos/{id}/Descartar.</summary>
+    public class RespuestaDescarteCorreoCompraDTO
+    {
+        public int CorreoId { get; set; }
+        public int CorreosDelMismoEnvio { get; set; }
+        public string Mensaje { get; set; }
     }
 
     public class AdjuntoCorreoCompraDTO
@@ -84,14 +161,26 @@ namespace NestoAPI.Controllers
         private readonly IRepositorioCorreosSeguimiento repositorio;
         private readonly Func<ServicioHistoricoCorreosCompras> crearHistorico;
 
+        private readonly Func<ServicioAplicacionCorreosCompras> crearAplicacion;
+        private readonly Func<ServicioCorreosSeguimientoCompras> crearNucleo;
+        private const string USUARIO_ELMAH = "Sistema (correos de seguimiento de compras)";
+
         public ComprasAgenciasEntradaController() : this(new RepositorioCorreosSeguimiento())
         {
         }
 
-        internal ComprasAgenciasEntradaController(IRepositorioCorreosSeguimiento repositorio, Func<ServicioHistoricoCorreosCompras> crearHistorico = null)
+        internal ComprasAgenciasEntradaController(IRepositorioCorreosSeguimiento repositorio, Func<ServicioHistoricoCorreosCompras> crearHistorico = null,
+            Func<ServicioAplicacionCorreosCompras> crearAplicacion = null, Func<ServicioCorreosSeguimientoCompras> crearNucleo = null)
         {
             this.repositorio = repositorio;
             this.crearHistorico = crearHistorico ?? HistoricoCorreosComprasJobs.CrearServicio;
+            this.crearAplicacion = crearAplicacion ?? (() => new ServicioAplicacionCorreosCompras(repositorio, registrar: ex => ElmahHelper.Log(ex, USUARIO_ELMAH)));
+            this.crearNucleo = crearNucleo ?? (() =>
+            {
+                ConfiguracionBuzonCompras configuracion = ConfiguracionBuzonCompras.Leer(clave => System.Configuration.ConfigurationManager.AppSettings[clave]);
+                ILectorBuzonCompras lector = configuracion == null ? null : new LectorBuzonComprasGraph(configuracion);
+                return new ServicioCorreosSeguimientoCompras(lector, repositorio, ex => ElmahHelper.Log(ex, USUARIO_ELMAH), aplicacion: this.crearAplicacion());
+            });
         }
 
         internal static bool PuedeVer(IPrincipal usuario) =>
@@ -314,6 +403,245 @@ namespace NestoAPI.Controllers
             return Ok((correos ?? new List<CorreoSeguimientoFila>()).Select(Dto).ToList());
         }
 
+        // GET api/Compras/AgenciasEntrada/PorAsignar?dias=7
+        /// <summary>
+        /// Fase 3: los envíos (correos que comparten código de seguimiento) de los últimos días que nadie ha asignado ni descartado, con sus
+        /// candidatos (fecha de envío, líneas pendientes y ya recibidas y el sugerido), y todos los pedidos de compra en el aire para elegir.
+        /// 503 sin Scripts/Issue857d.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/PorAsignar")]
+        [ResponseType(typeof(PorAsignarCorreosCompraDTO))]
+        public async Task<IHttpActionResult> GetPorAsignar(int dias = 7)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (dias < 1 || dias > DIAS_MAXIMOS)
+            {
+                return BadRequest($"Los días tienen que estar entre 1 y {DIAS_MAXIMOS}.");
+            }
+            if (!repositorio.TablasExisten() || !repositorio.AplicacionDisponible())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ServicioAplicacionCorreosCompras.MENSAJE_SIN_SCRIPT);
+            }
+            DateTime hoy = DateTime.Today;
+            List<CorreoSeguimientoFila> correos = await repositorio.LeerCorreos(hoy.AddDays(-dias - MismoEnvio.DIAS)).ConfigureAwait(false);
+            List<PedidoCompraEnAire> pedidos = await repositorio.LeerPedidosEnAire(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
+            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy));
+        }
+
+        /// <summary>
+        /// Pura: agrupa por envío lo que tiene algún correo por asignar recibido desde <paramref name="desde"/> (los demás correos del envío
+        /// solo cuentan para agrupar), con los candidatos del envío y el sugerido; y los pedidos en el aire marcando de qué envíos son candidatos.
+        /// </summary>
+        internal static PorAsignarCorreosCompraDTO ComponerPorAsignar(IEnumerable<CorreoSeguimientoFila> correos, IEnumerable<PedidoCompraEnAire> pedidos,
+            DateTime desde, DateTime hoy)
+        {
+            List<PedidoCompraEnAire> enAire = (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
+            var resultado = new PorAsignarCorreosCompraDTO();
+            foreach (List<CorreoSeguimientoFila> grupo in MismoEnvio.Agrupar(correos))
+            {
+                List<CorreoSeguimientoFila> porAsignar = grupo.Where(CorreosPorAsignar.Es).ToList();
+                if (!porAsignar.Any(f => f.Recibido >= desde))
+                {
+                    continue;
+                }
+                DecisionEnvio decision = MismoEnvio.Decidir(grupo);
+                DateTime primero = grupo.Min(f => f.Recibido);
+                List<PedidoCompraEnAire> delEnvio = ReglaPedidoSugerido.DelEnvio(enAire, decision.Candidatos);
+                PedidoCompraEnAire sugerido = ReglaPedidoSugerido.Sugerido(delEnvio, primero);
+                CorreoSeguimientoFila conPropios = grupo.FirstOrDefault(f => MismoEnvio.Propios(f).Any() && !string.IsNullOrWhiteSpace(f.RemitentePaquete));
+                var envio = new EnvioPorAsignarDTO
+                {
+                    Clave = porAsignar.Min(f => f.Id),
+                    PrimerCorreo = primero,
+                    Correos = porAsignar.Select(Dto).ToList(),
+                    Codigos = grupo.SelectMany(MismoEnvio.Codigos).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c).ToList(),
+                    Agencia = grupo.Select(f => f.Agencia).Where(a => !string.IsNullOrWhiteSpace(a)).GroupBy(a => a)
+                        .OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault(),
+                    EntregaEstimadaDia = decision.EntregaEstimadaDia,
+                    FechaRecepcionPropuesta = ReglaFechaRecepcionPorCorreo.Calcular(grupo, hoy),
+                    RemitentePaquete = conPropios?.RemitentePaquete ?? grupo.Select(f => f.RemitentePaquete).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)),
+                    ProveedorPropuesto = decision.ProveedorPropuesto
+                };
+                foreach (CandidatoPedidoCompra candidato in decision.Candidatos)
+                {
+                    PedidoCompraEnAire pedido = delEnvio.FirstOrDefault(p => AsignadorPedidosCompra.Clave(p.Empresa, p.Pedido) == AsignadorPedidosCompra.Clave(candidato.Empresa, candidato.Pedido));
+                    envio.Candidatos.Add(new CandidatoPorAsignarDTO
+                    {
+                        Empresa = candidato.Empresa,
+                        Pedido = candidato.Pedido,
+                        Proveedor = candidato.Proveedor,
+                        NombreProveedor = pedido?.NombreProveedor,
+                        Motivo = MismoEnvio.Propios(grupo.FirstOrDefault(f => MismoEnvio.Propios(f).Any(c => c.Pedido == candidato.Pedido)))
+                            .FirstOrDefault(c => c.Pedido == candidato.Pedido)?.Motivo ?? candidato.Motivo,
+                        FechaEnvio = pedido?.FechaEnvio,
+                        LineasPendientes = pedido?.LineasPendientes ?? 0,
+                        LineasYaRecibidas = pedido?.LineasYaRecibidas ?? 0,
+                        Sugerido = sugerido != null && pedido == sugerido
+                    });
+                }
+                resultado.Envios.Add(envio);
+            }
+            resultado.Envios = resultado.Envios.OrderByDescending(e => e.PrimerCorreo).ToList();
+            resultado.PedidosEnAire = enAire
+                .OrderBy(p => p.NombreProveedor ?? p.Proveedor).ThenByDescending(p => p.FechaEnvio ?? DateTime.MinValue)
+                .Select(p =>
+                {
+                    List<int> envios = resultado.Envios.Where(e => e.Candidatos.Any(c => AsignadorPedidosCompra.Clave(c.Empresa, c.Pedido) == AsignadorPedidosCompra.Clave(p.Empresa, p.Pedido)))
+                        .Select(e => e.Clave).ToList();
+                    return new PedidoEnAireDTO
+                    {
+                        Empresa = p.Empresa?.Trim(),
+                        Pedido = p.Pedido,
+                        Proveedor = p.Proveedor?.Trim(),
+                        NombreProveedor = p.NombreProveedor,
+                        FechaEnvio = p.FechaEnvio,
+                        LineasPendientes = p.LineasPendientes,
+                        LineasYaRecibidas = p.LineasYaRecibidas,
+                        EsCandidato = envios.Any(),
+                        Envios = envios
+                    };
+                }).ToList();
+            return resultado;
+        }
+
+        // POST api/Compras/AgenciasEntrada/Correos/12/Asignar?reasignar=false   { "Empresa": "1", "Pedido": 912001, "RecordarRemitente": true }
+        /// <summary>
+        /// Fase 3: Compras dice de qué pedido es un correo. Pone su fecha (la del envío) en las líneas enviadas y sin recibir del pedido, y
+        /// también a los demás correos del mismo envío sin aplicar. 400 si el pedido no está en el aire; 404 si no existe el correo; 409 si
+        /// ya está aplicado a otro pedido (con <paramref name="reasignar"/> = true se aplica al nuevo; el anterior NO se deshace); 503 sin
+        /// Scripts/Issue857d. Funciona con el interruptor apagado.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/Correos/{id:int}/Asignar")]
+        [ResponseType(typeof(RespuestaAsignacionCorreoCompraDTO))]
+        public async Task<IHttpActionResult> PostAsignar(int id, [FromBody] PeticionAsignarCorreoCompraDTO peticion, bool reasignar = false)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
+            ResultadoOperacionCorreoCompra resultado = await crearAplicacion().Asignar(id, peticion, reasignar, usuario).ConfigureAwait(false);
+            return Resultado(resultado, resultado.Respuesta);
+        }
+
+        // POST api/Compras/AgenciasEntrada/Correos/12/Descartar
+        /// <summary>Fase 3: el correo (y los demás de su envío sin aplicar) no es de ninguna compra. 409 si ya está aplicado.</summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/Correos/{id:int}/Descartar")]
+        [ResponseType(typeof(RespuestaDescarteCorreoCompraDTO))]
+        public async Task<IHttpActionResult> PostDescartar(int id)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
+            ResultadoOperacionCorreoCompra resultado = await crearAplicacion().Descartar(id, usuario).ConfigureAwait(false);
+            return Resultado(resultado, new RespuestaDescarteCorreoCompraDTO
+            {
+                CorreoId = id,
+                CorreosDelMismoEnvio = resultado.CorreosDelMismoEnvio,
+                Mensaje = resultado.Mensaje
+            });
+        }
+
+        private IHttpActionResult Resultado<T>(ResultadoOperacionCorreoCompra resultado, T ok)
+        {
+            switch (resultado.Codigo)
+            {
+                case CodigoOperacionCorreoCompra.Ok:
+                    return Ok(ok);
+                case CodigoOperacionCorreoCompra.SinTabla:
+                    return Content(HttpStatusCode.ServiceUnavailable, resultado.Mensaje);
+                case CodigoOperacionCorreoCompra.NoExiste:
+                    return Content(HttpStatusCode.NotFound, resultado.Mensaje);
+                case CodigoOperacionCorreoCompra.Conflicto:
+                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                default:
+                    return BadRequest(resultado.Mensaje);
+            }
+        }
+
+        // GET api/Compras/AgenciasEntrada/RemitentesPaquete
+        /// <summary>Fase 3: la memoria de remitentes del paquete (quién expide → proveedor).</summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/RemitentesPaquete")]
+        [ResponseType(typeof(List<RemitentePaqueteRecordado>))]
+        public async Task<IHttpActionResult> GetRemitentesPaquete()
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (!repositorio.TablasExisten() || !repositorio.AplicacionDisponible())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ServicioAplicacionCorreosCompras.MENSAJE_SIN_SCRIPT);
+            }
+            return Ok(await repositorio.LeerRemitentesPaquete().ConfigureAwait(false));
+        }
+
+        // DELETE api/Compras/AgenciasEntrada/RemitentesPaquete/12
+        /// <summary>Fase 3: olvida un remitente del paquete (rastro en Modificaciones).</summary>
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/RemitentesPaquete/{id:int}")]
+        public async Task<IHttpActionResult> DeleteRemitentePaquete(int id)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (!repositorio.TablasExisten() || !repositorio.AplicacionDisponible())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ServicioAplicacionCorreosCompras.MENSAJE_SIN_SCRIPT);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
+            return await repositorio.BorrarRemitentePaquete(id, usuario).ConfigureAwait(false) ? (IHttpActionResult)Ok() : NotFound();
+        }
+
+        // POST api/Compras/AgenciasEntrada/Correos/Reanalizar?dias=7
+        /// <summary>
+        /// Fase 3: relee el buzón de esos días (sin tocar el delta) y vuelve a analizar los correos YA guardados sin aplicar ni descartar
+        /// (agencia, códigos, entrega, remitente del paquete, candidatos contra los pedidos en el aire de ahora) y rehace los enlaces por
+        /// mismo envío. No inserta, no aplica fechas ni avisa. Solo Dirección o Informática; 1-30 días; 503 sin claves o sin scripts.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/Correos/Reanalizar")]
+        [ResponseType(typeof(ResultadoReanalisisCorreos))]
+        public async Task<IHttpActionResult> PostReanalizar(int dias = 7)
+        {
+            if (!PuedeLanzarHistorico(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_REANALIZAR);
+            }
+            if (dias < 1 || dias > ServicioCorreosSeguimientoCompras.DIAS_MAXIMOS_REANALISIS)
+            {
+                return BadRequest($"Los días tienen que estar entre 1 y {ServicioCorreosSeguimientoCompras.DIAS_MAXIMOS_REANALISIS}.");
+            }
+            ResultadoReanalisisCorreos resultado = await crearNucleo().Reanalizar(dias, DateTime.Now).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoPasadaCorreosSeguimiento.SinConfiguracion:
+                    return Content(HttpStatusCode.ServiceUnavailable, "Faltan las claves del buzón de Compras en secretos.config.");
+                case EstadoPasadaCorreosSeguimiento.SinTabla:
+                    return Content(HttpStatusCode.ServiceUnavailable, ServicioAplicacionCorreosCompras.MENSAJE_SIN_SCRIPT);
+                default:
+                    return Ok(resultado);
+            }
+        }
+
+        public const string MENSAJE_SIN_PERMISO_REANALIZAR = "Solo Dirección o Informática pueden volver a analizar los correos del buzón de Compras.";
+
         internal static CorreoSeguimientoCompraDTO Dto(CorreoSeguimientoFila fila)
         {
             var dto = new CorreoSeguimientoCompraDTO
@@ -338,7 +666,15 @@ namespace NestoAPI.Controllers
                 EntregaEstimadaDesde = fila.EntregaEstimadaDesde,
                 EntregaEstimadaHasta = fila.EntregaEstimadaHasta,
                 DisponibleEstimado = fila.DisponibleEstimado,
-                EsSalidaNuestra = fila.EsSalidaNuestra
+                EsSalidaNuestra = fila.EsSalidaNuestra,
+                RemitentePaquete = fila.RemitentePaquete,
+                EmpresaAplicada = fila.EmpresaAplicada,
+                PedidoAplicado = fila.PedidoAplicado,
+                FechaRecepcionAplicada = fila.FechaRecepcionAplicada,
+                AplicadoEl = fila.AplicadoEl,
+                AplicadoPor = fila.AplicadoPor,
+                Descartado = fila.Descartado,
+                EligioSugerido = fila.EligioSugerido
             };
             if (!string.IsNullOrWhiteSpace(fila.Adjuntos))
             {

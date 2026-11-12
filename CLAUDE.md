@@ -427,7 +427,7 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `ProveedorDocumentosCorreo.NombreVendedorDelUsuario` (claim «Vendedor» o parámetro «Vendedor»; null si no se conoce, SIN caer al usuario):
   firma del WhatsApp (`GestorEnlacesDescarga.Firma`, `EnlaceDescargaDTO.Remitente`). `FacturasController` pasa ya el claim al remitente.
 
-### Correos de seguimiento de compras, fase 1 EN SOMBRA (NestoAPI#857, 12/11/26)
+### Correos de seguimiento de compras: fase 1 en sombra y fase 3 (NestoAPI#857, 12/11/26)
 - Job `compras-correos-seguimiento` (cada 30 min, L-V 8:00-18:30 Madrid, `Infraestructure/PedidosCompra/CorreosSeguimiento/`): lee por
   Microsoft Graph (HttpClient, client credentials, SOLO lectura: nunca marca ni mueve) la bandeja de entrada del buzón de Compras con delta
   (`ComprasCorreosSeguimientoEstado`; sin enlace, los últimos 7 días; 410 = empezar de nuevo). Claves en secretos.config `ComprasBuzonTenant`,
@@ -456,6 +456,20 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   como máximo, el…», «will be delivered on…»; una fecha suelta no cuenta; fuera de [día del correo, +60] nada). `ReglaDisponibleCompra`: manda el FINAL del tramo
   (Carlos 12/11/26): antes del corte del picking en laborable de Algete, ese día; si no, el siguiente laborable. `EnvioNuestroDeSalida` («tu pedido … de NUEVA
   VISION», «remitente: NUEVA VISION»…; nombrarnos como destinatario no cuenta): se guarda con `EsSalidaNuestra` y SIN proveedor, candidatos ni disponible.
+- **FASE 3: ya NO es solo sombra** (`Scripts/Issue857d_ComprasCorreosAplicarFecha.sql`; sin él, todo como antes y los endpoints nuevos 503). El job pone
+  `LinPedidoCmp.FechaRecepción` (+Usuario «Correo de seguimiento», [Fecha Modificación]) de TODAS las líneas en el aire del pedido si el envío es
+  inequívoco (un solo candidato), el correo es de los últimos 3 días y ParametrosUsuario «(defecto)» `Compras.CorreosSeguimientoAplicar` = «1» (si no,
+  no escribe). Fecha = DÍA DE LLEGADA (`ReglaFechaRecepcionPorCorreo`: la entrega más tardía del envío o recibido + 24/48 h; nunca antes de hoy), no el
+  disponible. Pisa lo que hubiera; misma fecha → ni UPDATE ni rastro. Rastro: Modificaciones Tabla `CompraFechaPorCorreo`; marca en el correo
+  (EmpresaAplicada, PedidoAplicado, FechaRecepcionAplicada, AplicadoEl, AplicadoPor). El histórico NUNCA aplica. Anota la promesa en riesgo (#693) si retrasa.
+- **Mismo envío** (`MismoEnvio`, puro, sin columna): correos que comparten un código (Codigo + Seguimientos) con < 10 días; se deciden juntos al final
+  de la tanda (caso UPS ×3 + MBE con el proveedor). Heredan los candidatos (motivo `MismoEnvio`); uno aplicado fija el pedido de los demás. Remitente del
+  paquete (`ExtractorRemitentePaquete`, columna `RemitentePaquete`) y su memoria `ComprasRemitentesPaquete` (motivo `RemitentePaquete`, tras el número).
+  Por asignar: UNA campana `CompraSeguimientoPorAsignar` a Compras por envío (`AvisarPendientes`, 20 min después de su último correo).
+- `GET …/PorAsignar?dias=7` (por envío; candidatos con FechaEnvio, LineasPendientes/YaRecibidas y `Sugerido` = el enviado más reciente antes del primer
+  correo, `ReglaPedidoSugerido`), `POST …/Correos/{id}/Asignar[?reasignar=true]` {Empresa, Pedido, RecordarRemitente} (también con el interruptor
+  apagado; se propaga al envío; guarda `EligioSugerido`), `POST …/Correos/{id}/Descartar` (se propaga), `GET/DELETE …/RemitentesPaquete[/{id}]`,
+  `POST …/Correos/Reanalizar?dias=7` (Dirección/Informática, 1-30: relee por fechas, rehace análisis y enlaces de lo no aplicado; no aplica ni avisa).
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

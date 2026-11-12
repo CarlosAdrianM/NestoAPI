@@ -895,6 +895,9 @@
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoExtraccionTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAsignacionTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoEntregaEstimadaTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoFase3Tests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\RepositorioCorreosSeguimientoEnMemoria.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\ServicioAplicacionCorreosComprasTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\LectorBuzonComprasGraphTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ServicioCorreosSeguimientoComprasTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\HistoricoCorreosComprasTests.cs" />
