@@ -642,6 +642,7 @@
     <Compile Include="Infraestructure\Inventarios\ServicioRellenarInventario.cs" />
     <Compile Include="Controllers\InventariosController.Contabilizar.cs" />
     <Compile Include="Infraestructure\Inventarios\ComprobadorInventario.cs" />
+    <Compile Include="Infraestructure\Inventarios\HuecoInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\PermisosInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioContabilizarInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioContabilizarInventario.cs" />

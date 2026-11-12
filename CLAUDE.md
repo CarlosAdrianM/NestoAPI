@@ -312,6 +312,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Frena AT/16 (fecha de entrega, picking de rutas internas, RP, paradas), las llegadas de reposición (`CalculadoraFechaReposicion`) y el
   aviso de las 22:00 de la furgoneta. Lo dan de alta también Almacén (solo ese tipo; no hay grupo «Logística» en el dominio, Carlos 09/11/26). Requiere `Scripts/Issue841_FestivosRepartoPropio.sql` (CHECK).
 
+### Inventario por huecos en almacenes con ubicaciones (incidencia 1227, 12/11/26)
+- `POST api/Inventarios` en un almacén con `Almacenes.ControlUbicaciones` de un producto con `Ubicar` exige Pasillo, Fila y Columna (si no, 400
+  «En {almacén} el inventario va por huecos…») y pone de teórico (`StockCalculado`) lo LIBRE de ese producto en ese hueco (Ubicaciones Estado 0,
+  0 si no estaba), como el rellenado de Ariadna (`ILectorHuecoInventario`). `PUT` que quitaría el hueco a una fila que lo tenía: 400. Tiendas,
+  productos que no se ubican, «Dejar a cero», rellenado de Ariadna y «No está» no cambian (no pasan por aquí).
+
 ### Años disparatados en el calendario (12/11/26)
 - `CalendarioFestivos.DelAnio` de un año anterior a 2000 o de más de 5 por delante del actual (`EsAnioDisparatado`: las centinela 31/12/2099,
   2100…) → sin festivos, sin ELMAH y sin leer la tabla (los fines de semana siguen contando). El aviso del año que viene sin cargar no cambia.

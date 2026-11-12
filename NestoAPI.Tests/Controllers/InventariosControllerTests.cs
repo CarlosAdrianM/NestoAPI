@@ -188,6 +188,78 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(CreatedAtRouteNegotiatedContentResult<Inventario>));
         }
 
+        // ---------- Incidencia 1227: en un almacén con ubicaciones, un producto que se ubica va por huecos ----------
+
+        private ILectorHuecoInventario Huecos(bool control, int libre = 0)
+        {
+            ILectorHuecoInventario huecos = A.Fake<ILectorHuecoInventario>();
+            A.CallTo(() => huecos.ControlUbicaciones(A<string>._, A<string>._)).Returns(Task.FromResult(control));
+            A.CallTo(() => huecos.LibreEnHueco(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(libre));
+            return huecos;
+        }
+
+        private void ProductoQueSeUbica(bool ubicar = true) =>
+            ConfigurarFakeDbSet(fakeProductos, new List<Producto> { new Producto { Empresa = "1", Número = "45487", Ubicar = ubicar } }.AsQueryable());
+
+        [TestMethod]
+        public async Task PostInventario_AlgeteSinHueco_400YNoCrea_1227()
+        {
+            ProductoQueSeUbica();
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            controller.HuecosInventario = Huecos(true);
+            controller.Request = new System.Net.Http.HttpRequestMessage();
+            controller.Configuration = new System.Web.Http.HttpConfiguration();
+
+            var resultado = await controller.PostInventario(new Inventario { Empresa = "1", Almacén = "ALG", Fecha = hoy, Número = "45487", StockReal = 1, StockCalculado = 9 });
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, (await resultado.ExecuteAsync(System.Threading.CancellationToken.None)).StatusCode);
+            A.CallTo(() => fakeInventarios.Add(A<Inventario>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostInventario_AlgeteConHueco_FilaConHuecoYTeoricoLibreDelHueco_1227()
+        {
+            ProductoQueSeUbica();
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            controller.HuecosInventario = Huecos(true, libre: 3);
+            var fila = new Inventario { Empresa = "1", Almacén = "ALG", Fecha = hoy, Número = "45487", StockReal = 1, StockCalculado = 9, Pasillo = "003", Fila = "001", Columna = "002" };
+
+            var resultado = await controller.PostInventario(fila);
+
+            Assert.IsInstanceOfType(resultado, typeof(CreatedAtRouteNegotiatedContentResult<Inventario>));
+            Assert.AreEqual(3, fila.StockCalculado, "El teórico es lo libre de ese producto en ese hueco");
+            Assert.AreEqual("003", fila.Pasillo);
+            A.CallTo(() => fakeInventarios.Add(A<Inventario>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostInventario_TiendaOProductoQueNoSeUbica_ComoHoy_1227()
+        {
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            ProductoQueSeUbica();
+            controller.HuecosInventario = Huecos(false);
+            var tienda = new Inventario { Empresa = "1", Almacén = "REI", Fecha = hoy, Número = "45487", StockReal = 1, StockCalculado = 9 };
+            Assert.IsInstanceOfType(await controller.PostInventario(tienda), typeof(CreatedAtRouteNegotiatedContentResult<Inventario>));
+            Assert.AreEqual(9, tienda.StockCalculado);
+
+            ProductoQueSeUbica(ubicar: false);
+            controller.HuecosInventario = Huecos(true);
+            var noSeUbica = new Inventario { Empresa = "1", Almacén = "ALG", Fecha = hoy, Número = "45487", StockReal = 1, StockCalculado = 9 };
+            Assert.IsInstanceOfType(await controller.PostInventario(noSeUbica), typeof(CreatedAtRouteNegotiatedContentResult<Inventario>));
+        }
+
+        [TestMethod]
+        public async Task PutInventario_QuitarElHuecoAUnaFilaQueLoTenia_400_1227()
+        {
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario> { Pendiente(5, 2, pasillo: "003", fila: "001", columna: "002") }.AsQueryable());
+            controller.Request = new System.Net.Http.HttpRequestMessage();
+            controller.Configuration = new System.Web.Http.HttpConfiguration();
+
+            var resultado = await controller.PutInventario(5, new Inventario { NºOrden = 5, Empresa = "1", Almacén = "ALG", Número = "45487", StockReal = 3 });
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, (await resultado.ExecuteAsync(System.Threading.CancellationToken.None)).StatusCode);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

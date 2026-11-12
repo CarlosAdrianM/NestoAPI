@@ -35,7 +35,11 @@ namespace NestoAPI.Controllers
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
             lector = new LectorProductoLeido(codigos);
+            HuecosInventario = new Infraestructure.Inventarios.LectorHuecoInventarioSql(db);
         }
+
+        /// <summary>Incidencia 1227: si el almacén va por huecos y lo libre del hueco (sustituible en los tests).</summary>
+        internal Infraestructure.Inventarios.ILectorHuecoInventario HuecosInventario { get; set; }
 
         const int ESTADO_INVENTARIO_SIN_CONTABILIZAR = 1;
 
@@ -182,8 +186,15 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
-            bool? marcaGuardada = (await db.Inventarios.Where(i => i.NºOrden == id).Select(i => i.PorCodigoBarras).ToListAsync().ConfigureAwait(false))
-                .FirstOrDefault();
+            var guardada = (await db.Inventarios.Where(i => i.NºOrden == id).Select(i => new { i.PorCodigoBarras, i.Pasillo, i.Fila, i.Columna })
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            bool? marcaGuardada = guardada?.PorCodigoBarras;
+            // Incidencia 1227: una fila que tenía hueco no se queda sin él por un PUT (sería «sin ubicación» y bloquearía el contabilizar)
+            if (guardada != null && Infraestructure.Inventarios.ReglasHuecoInventario.TraeHueco(guardada.Pasillo, guardada.Fila, guardada.Columna)
+                && !Infraestructure.Inventarios.ReglasHuecoInventario.TraeHueco(inventario.Pasillo, inventario.Fila, inventario.Columna))
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.Inventarios.ReglasHuecoInventario.MensajeSinHueco(inventario.Almacén) });
+            }
             inventario.PorCodigoBarras = MarcaTrasSumar(marcaGuardada, porCodigoBarras);
 
             db.Entry(inventario).State = EntityState.Modified;
@@ -242,6 +253,19 @@ namespace NestoAPI.Controllers
             string fila = string.IsNullOrWhiteSpace(inventario.Fila) ? null : inventario.Fila.Trim();
             string columna = string.IsNullOrWhiteSpace(inventario.Columna) ? null : inventario.Columna.Trim();
             string numero = producto.Número;
+
+            // Incidencia 1227: en un almacén con ubicaciones, un producto que se ubica va por huecos (sin hueco, la fila bloquea el
+            // contabilizar y, de un día para otro, el picking). Con hueco, el teórico es lo libre de ese producto en ese hueco.
+            if (HuecosInventario != null && producto.Ubicar
+                && await HuecosInventario.ControlUbicaciones(inventario.Empresa, inventario.Almacén).ConfigureAwait(false))
+            {
+                if (!Infraestructure.Inventarios.ReglasHuecoInventario.TraeHueco(pasillo, fila, columna))
+                {
+                    return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.Inventarios.ReglasHuecoInventario.MensajeSinHueco(inventario.Almacén) });
+                }
+                inventario.StockCalculado = await HuecosInventario.LibreEnHueco(inventario.Almacén, numero, pasillo, fila, columna).ConfigureAwait(false);
+            }
+
             List<Inventario> yaHay = await db.Inventarios
                 .Where(i => i.Empresa == inventario.Empresa && i.Almacén == inventario.Almacén && i.Fecha >= dia && i.Fecha < diaMasUno
                     && i.Número == numero && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR
