@@ -166,10 +166,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
         public const string ORIGEN_DIAS_EN_SERVIR = "DiasEnServir";
         public const string ORIGEN_PLAZO_GENERICO = "PlazoGenerico";
         public const string ORIGEN_HOY = "Hoy";
+        /// <summary>NestoAPI#853: manda el modelo (Compras.FechaRecepcionQuienManda = «Modelo»).</summary>
+        public const string ORIGEN_MODELO = "Modelo";
+        /// <summary>NestoAPI#853: manda el modelo, pero hoy + DíasEnServir era más tarde.</summary>
+        public const string ORIGEN_MODELO_DIAS_EN_SERVIR = "ModeloDiasEnServir";
 
         public DateTime Fecha { get; set; }
         /// <summary>Hoy + P80 del proveedor (o el genérico si no tiene plazo propio), aunque no se haya usado. Null sin plazos.</summary>
         public DateTime? FechaRegla { get; set; }
+        /// <summary>NestoAPI#853: hoy + días prudentes del modelo ML.NET, aunque no se haya usado. Null sin modelo o si falla o tarda.</summary>
+        public DateTime? FechaModelo { get; set; }
         public string Origen { get; set; }
     }
 

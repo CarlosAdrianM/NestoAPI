@@ -608,6 +608,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `ReglaFechaOrientativaSinPedir` (hoy + hasta el próximo pedido según cadencia + P80). Lectura por tanda en `ILectorCertezaFechaEntrega`.
 - Textos: UNA pieza pura `TextosCertezaFechaEntrega` para el motivo del motor, el correo (etiqueta «[Prácticamente segura]», «[Aproximada]»,
   «[Orientativa]» al principio de cada bloque) y la promesa en riesgo. Fotos: proveedor con seguimiento → caso `EnTransito`.
+- **Modelo ML.NET en sombra** (`PlazosEntrega/ModeloPlazos/`): LightGBM de regresión de log(1 + días hasta el PRIMER albarán), 5 años, un
+  ejemplo por pedido recibido (0-120 días). Rasgos puros sin fuga (`ConstructorRasgosPlazos`: solo pedidos enviados ANTES de ese día y plazos
+  con albarán ANTES): proveedor (<10 pedidos → «(otros)»), día/mes, líneas, log importe, DíasEnServir, mediana/P80/último de sus 10 últimos
+  plazos, días desde su pedido anterior y pedidos en el aire. Prudente = media en log + P80 de los residuos (no hay cuantil público en 4.0.2).
+  Job `plazos-proveedores-modelo` 4:10 Madrid (cola «entrenamiento»): valida con los últimos 3 meses (margen calibrado con los 3 anteriores) contra
+  la regla «como si» (`ReglaPlazosComoSi`), apunta SIEMPRE las métricas en `dbo.PlazosProveedoresModeloEntrenamientos` y solo cambia el modelo si
+  no empeora (`PuertaCalidadPlazos`: % corto +1 punto, error +0,25 días). Modelo en `ModeloLlamadas:Carpeta` (`plazos_proveedores.zip`/`.json`
+  con la historia reciente por proveedor). Al enviar rellena `FechaModelo` (3 s como mucho; si falla, NULL). ParametrosUsuario «(defecto)»
+  `Compras.FechaRecepcionQuienManda` = «Regla» | «Modelo» (con el interruptor de plazo real a «1»: la del modelo, nunca < hoy + DíasEnServir;
+  Origen `Modelo`/`ModeloDiasEnServir`). `GET api/Compras/PlazosProveedores/Comparacion?meses=6` (último entrenamiento + lo real con veredicto,
+  ≥50 recibidos) y `POST …/Modelo/Entrenar[?ahora=true]` (Dirección/Informática; L-V 8-20 → a las 21:00).
 - `AsignadorPedidosCompra` (#857): un número cuenta como pedido nuestro solo si es token propio (no pegado a letras/guiones) Y lleva etiqueta
   de pedido/referencia delante (30 caracteres) o su proveedor se reconoce por otro criterio.
 

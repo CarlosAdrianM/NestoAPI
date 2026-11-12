@@ -20,7 +20,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
         public DateTime FechaRecepcionPuesta { get; set; }
         /// <summary>Hoy + P80 (aunque no se haya usado).</summary>
         public DateTime? FechaRegla { get; set; }
-        /// <summary>Reservada para el modelo ML.NET de un corte posterior: hoy siempre null.</summary>
+        /// <summary>Día del envío + días prudentes del modelo ML.NET en sombra (NestoAPI#853); null sin modelo o si falla o tarda.</summary>
         public DateTime? FechaModelo { get; set; }
         public int DiasEnServir { get; set; }
         /// <summary><see cref="FechaRecepcionEstimada"/>.ORIGEN_* de la fecha puesta (o «Interruptor apagado»).</summary>

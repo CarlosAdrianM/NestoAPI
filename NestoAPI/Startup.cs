@@ -982,6 +982,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'proveedores-plazos-entrega' configurado (todos los días a las 3:40)");
 
+            // NestoAPI#853: el modelo ML.NET de plazos EN SOMBRA (días hasta el primer albarán), con corte temporal, métricas de validación de
+            // modelo y regla en dbo.PlazosProveedoresModeloEntrenamientos y puerta de calidad. Cola «entrenamiento» (un hilo, después de los
+            // plazos de las 3:40). Sin el script no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosCompra.PlazosEntrega.ModeloPlazos.ModeloPlazosProveedoresJobsService.JOB_ID,
+                () => Infraestructure.PedidosCompra.PlazosEntrega.ModeloPlazos.ModeloPlazosProveedoresJobsService.EntrenarProgramado(),
+                Infraestructure.PedidosCompra.PlazosEntrega.ModeloPlazos.ModeloPlazosProveedoresJobsService.CRON, // Cron: todos los días a las 4:10
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'plazos-proveedores-modelo' configurado (todos los días a las 4:10)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

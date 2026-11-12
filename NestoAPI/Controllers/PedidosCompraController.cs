@@ -461,7 +461,11 @@ namespace NestoAPI.Controllers
             if (string.IsNullOrEmpty(cabPedidoCmp.PathPedido) && !string.IsNullOrEmpty(pedido.PathPedido))
             {
                 cabPedidoCmp.PathPedido = pedido.PathPedido;
-                fechaAlEnviar = FechaRecepcionAlEnviar.Calcular(cabPedidoCmp.Empresa, cabPedidoCmp.NºProveedor, cabPedidoCmp.DíasEnServir);
+                // NestoAPI#853: también la del modelo ML.NET en sombra (líneas e importe de producto del pedido); solo manda con
+                // Compras.FechaRecepcionQuienManda = «Modelo».
+                List<LinPedidoCmp> deProducto = cabPedidoCmp.LinPedidoCmps.Where(l => l.TipoLínea?.Trim() == "1").ToList();
+                fechaAlEnviar = FechaRecepcionAlEnviar.Calcular(cabPedidoCmp.Empresa, cabPedidoCmp.NºProveedor, cabPedidoCmp.DíasEnServir,
+                    deProducto.Count, (double)deProducto.Sum(l => l.BaseImponible), cabPedidoCmp.Número);
                 foreach (var linea in cabPedidoCmp.LinPedidoCmps)
                 {
                     linea.Enviado = true;

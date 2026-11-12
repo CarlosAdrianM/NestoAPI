@@ -1,4 +1,5 @@
 using Hangfire;
+using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega.ModeloPlazos;
 using NestoAPI.Infraestructure.IndicadoresStock;
 using NestoAPI.Models;
 using System;
@@ -184,24 +185,63 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
         private readonly Func<DateTime> ahora;
         private readonly Action<Exception> registrar;
         private readonly Func<string, PlazosProveedores> plazos;
+        private readonly Func<ConsultaPlazoModelo, int?> modelo;
+        private readonly Func<bool> mandaModelo;
+
+        /// <summary>NestoAPI#853: ParametrosUsuario empresa 1 «(defecto)»: «Regla» (o sin fila) o «Modelo».</summary>
+        public const string CLAVE_QUIEN_MANDA = "Compras.FechaRecepcionQuienManda";
+        public const string QUIEN_MANDA_REGLA = "Regla";
+        public const string QUIEN_MANDA_MODELO = "Modelo";
+        /// <summary>Lo más que se espera al modelo al enviar (la primera vez carga el zip); si tarda más, FechaModelo NULL.</summary>
+        internal static readonly TimeSpan LIMITE_MODELO = TimeSpan.FromSeconds(3);
 
         private static readonly object cerrojoTabla = new object();
         private static bool? tablaEnvios;
         private static DateTime tablaEnviosComprobadaUtc;
         private static bool falloRegistroAvisado;
+        private static bool falloModeloAvisado;
 
+        /// <param name="modelo">NestoAPI#853: días prudentes del modelo ML.NET (null = sin modelo). Por defecto el guardado, con límite de tiempo.</param>
+        /// <param name="mandaModelo">NestoAPI#853: ¿<see cref="CLAVE_QUIEN_MANDA"/> = «Modelo»?</param>
         public ServicioFechaRecepcionAlEnviar(Func<IRepositorioPlazosProveedores> repositorio = null, Func<bool> interruptor = null,
-            Func<DateTime> ahora = null, Action<Exception> registrar = null, Func<string, PlazosProveedores> plazos = null)
+            Func<DateTime> ahora = null, Action<Exception> registrar = null, Func<string, PlazosProveedores> plazos = null,
+            Func<ConsultaPlazoModelo, int?> modelo = null, Func<bool> mandaModelo = null)
         {
             this.repositorio = repositorio ?? (() => RepositorioPlazosProveedores.DesdeConfiguracion());
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex, USUARIO_ELMAH));
             this.interruptor = interruptor ?? (() => InterruptorEncendido(this.registrar));
             this.ahora = ahora ?? (() => DateTime.Now);
             this.plazos = plazos ?? (empresa => CachePlazosProveedores.Obtener(this.repositorio, empresa, this.registrar));
+            this.modelo = modelo ?? (consulta => ConLimite(() => PredictorPlazosProveedores.DiasPrudentes(AlmacenModeloPlazos.Produccion(), consulta), LIMITE_MODELO));
+            this.mandaModelo = mandaModelo ?? (() => MandaElModelo(this.registrar));
         }
 
         /// <summary>Encendido SOLO con «1».</summary>
         internal static bool Interpretar(string valor) => valor?.Trim() == "1";
+
+        /// <summary>NestoAPI#853: «Modelo» (sin mayúsculas ni espacios) = manda el modelo; cualquier otra cosa o sin fila, la regla.</summary>
+        internal static bool InterpretarQuienManda(string valor) => string.Equals(valor?.Trim(), QUIEN_MANDA_MODELO, StringComparison.OrdinalIgnoreCase);
+
+        internal static bool MandaElModelo(Action<Exception> registrar)
+        {
+            try
+            {
+                return InterpretarQuienManda(NestoAPI.Controllers.ParametrosUsuarioController.LeerParametroSinDefecto(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, USUARIO_DEFECTO, CLAVE_QUIEN_MANDA));
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Plazos de proveedores #853] No se ha podido leer {CLAVE_QUIEN_MANDA}: manda la regla. {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        /// <summary>El resultado si llega antes de <paramref name="limite"/>; si no, null (la tarea sigue y deja el modelo cargado para la próxima).</summary>
+        internal static int? ConLimite(Func<int?> calculo, TimeSpan limite)
+        {
+            System.Threading.Tasks.Task<int?> tarea = System.Threading.Tasks.Task.Run(calculo);
+            return tarea.Wait(limite) ? tarea.Result : null;
+        }
 
         internal static bool InterruptorEncendido(Action<Exception> registrar)
         {
@@ -217,30 +257,93 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
             }
         }
 
-        /// <summary>La fecha que se pone (y la de la regla, para el registro). Nunca lanza.</summary>
-        public FechaRecepcionEstimada Calcular(string empresa, string proveedor, int diasEnServir)
+        /// <summary>
+        /// La fecha que se pone (y las de la regla y el modelo, para el registro). Nunca lanza.
+        /// <para>NestoAPI#853: con <see cref="CLAVE_INTERRUPTOR"/> = «1», <see cref="CLAVE_QUIEN_MANDA"/> = «Modelo» y predicción del modelo,
+        /// la fecha es la del modelo (nunca antes de hoy + DíasEnServir); si no hay predicción, la regla como siempre.</para>
+        /// </summary>
+        /// <param name="lineas">Líneas de producto del pedido (para el modelo).</param>
+        /// <param name="importe">Base imponible de las líneas de producto (para el modelo).</param>
+        /// <param name="pedido">Número del pedido (para que el modelo no lo cuente en su propia historia).</param>
+        public FechaRecepcionEstimada Calcular(string empresa, string proveedor, int diasEnServir, int lineas = 0, double importe = 0, int? pedido = null)
         {
             DateTime hoy = ahora().Date;
             var comoAntes = new FechaRecepcionEstimada { Fecha = hoy.AddDays(diasEnServir), Origen = ORIGEN_COMO_ANTES };
+            DateTime? fechaModelo = FechaDelModelo(new ConsultaPlazoModelo
+            {
+                Empresa = empresa?.Trim(),
+                Pedido = pedido,
+                Proveedor = proveedor?.Trim(),
+                FechaEnvio = hoy,
+                DiasEnServir = diasEnServir,
+                Lineas = lineas,
+                Importe = importe
+            });
+            comoAntes.FechaModelo = fechaModelo;
             try
             {
                 PlazosProveedores leidos = plazos(empresa);
-                if (leidos == null || !leidos.TieneDatos)
+                FechaRecepcionEstimada regla = leidos == null || !leidos.TieneDatos
+                    ? null
+                    : ReglaFechaRecepcionEstimada.Calcular(hoy, diasEnServir, leidos.DeProveedor(proveedor), leidos.Generico);
+                if (regla == null && !fechaModelo.HasValue)
                 {
                     return comoAntes;
                 }
-                FechaRecepcionEstimada regla = ReglaFechaRecepcionEstimada.Calcular(hoy, diasEnServir, leidos.DeProveedor(proveedor), leidos.Generico);
+                comoAntes.FechaRegla = regla?.FechaRegla;
                 if (!interruptor())
                 {
-                    comoAntes.FechaRegla = regla.FechaRegla;
                     return comoAntes;
                 }
+                if (fechaModelo.HasValue && mandaModelo())
+                {
+                    DateTime minimo = hoy.AddDays(Math.Max(0, diasEnServir));
+                    bool mandaCompras = minimo > fechaModelo.Value;
+                    return new FechaRecepcionEstimada
+                    {
+                        Fecha = mandaCompras ? minimo : fechaModelo.Value,
+                        Origen = mandaCompras ? FechaRecepcionEstimada.ORIGEN_MODELO_DIAS_EN_SERVIR : FechaRecepcionEstimada.ORIGEN_MODELO,
+                        FechaRegla = regla?.FechaRegla,
+                        FechaModelo = fechaModelo
+                    };
+                }
+                if (regla == null)
+                {
+                    return comoAntes;
+                }
+                regla.FechaModelo = fechaModelo;
                 return regla;
             }
             catch (Exception ex)
             {
                 Avisar($"no se ha podido calcular la fecha de recepción por el plazo real del proveedor {proveedor?.Trim()}: se pone la de siempre", ex);
                 return comoAntes;
+            }
+        }
+
+        /// <summary>NestoAPI#853: hoy + días prudentes del modelo, o null (sin modelo, fallo o tarda). Nunca lanza; un fallo va a ELMAH una vez.</summary>
+        private DateTime? FechaDelModelo(ConsultaPlazoModelo consulta)
+        {
+            try
+            {
+                int? dias = modelo(consulta);
+                return dias.HasValue ? consulta.FechaEnvio.Date.AddDays(Math.Max(0, dias.Value)) : (DateTime?)null;
+            }
+            catch (Exception ex)
+            {
+                if (!falloModeloAvisado)
+                {
+                    falloModeloAvisado = true;
+                    try
+                    {
+                        registrar(new Exception($"[Plazos de proveedores #853] El modelo de plazos no ha podido predecir: FechaModelo queda vacía (se avisa una vez). {ex.Message}", ex));
+                    }
+                    catch
+                    {
+                        // nunca rompe el envío
+                    }
+                }
+                return null;
             }
         }
 
@@ -261,7 +364,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
                     FechaEnvio = ahora(),
                     FechaRecepcionPuesta = fecha.Fecha,
                     FechaRegla = fecha.FechaRegla,
-                    FechaModelo = null,
+                    FechaModelo = fecha.FechaModelo,
                     DiasEnServir = diasEnServir,
                     Origen = fecha.Origen,
                     Usuario = usuario
@@ -298,6 +401,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
             {
                 tablaEnvios = null;
                 falloRegistroAvisado = false;
+                falloModeloAvisado = false;
             }
         }
 

@@ -1,6 +1,8 @@
 using Hangfire;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento;
 using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega;
+using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega.ModeloPlazos;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
@@ -28,8 +30,16 @@ namespace NestoAPI.Controllers
         public const string MENSAJE_SIN_PERMISO = "Solo Compras, Dirección o Informática pueden ver los plazos de los proveedores.";
         public const string MENSAJE_SIN_PERMISO_RECALCULAR = "Solo Dirección o Informática pueden recalcular los plazos de los proveedores.";
 
+        public const string MENSAJE_SIN_PERMISO_ENTRENAR = "Solo Dirección o Informática pueden entrenar el modelo de plazos.";
+        public const int MESES_COMPARACION_MAXIMO = 24;
+
         private readonly Func<ServicioPlazosProveedores> crearServicio;
         private readonly Func<string> encolar;
+        private readonly Func<IRepositorioModeloPlazos> repositorioModelo;
+        private readonly IProgramadorModeloPlazos programador;
+        private readonly Func<DateTime> ahoraMadrid;
+        private readonly Func<bool> modeloGuardado;
+        private readonly Func<bool> mandaModelo;
 
         public ComprasPlazosProveedoresController()
             : this(() => new ServicioPlazosProveedores(RepositorioPlazosProveedores.DesdeConfiguracion()),
@@ -37,10 +47,18 @@ namespace NestoAPI.Controllers
         {
         }
 
-        internal ComprasPlazosProveedoresController(Func<ServicioPlazosProveedores> crearServicio, Func<string> encolar)
+        /// <param name="repositorioModelo">NestoAPI#853 (modelo en sombra). Null = el de producción.</param>
+        internal ComprasPlazosProveedoresController(Func<ServicioPlazosProveedores> crearServicio, Func<string> encolar,
+            Func<IRepositorioModeloPlazos> repositorioModelo = null, IProgramadorModeloPlazos programador = null, Func<DateTime> ahoraMadrid = null,
+            Func<bool> modeloGuardado = null, Func<bool> mandaModelo = null)
         {
             this.crearServicio = crearServicio ?? throw new ArgumentNullException(nameof(crearServicio));
             this.encolar = encolar ?? (() => "0");
+            this.repositorioModelo = repositorioModelo ?? (() => RepositorioModeloPlazos.DesdeConfiguracion());
+            this.programador = programador ?? new ProgramadorModeloPlazosHangfire();
+            this.ahoraMadrid = ahoraMadrid ?? (() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Startup.ZonaHorariaPeninsular()));
+            this.modeloGuardado = modeloGuardado ?? (() => AlmacenModeloPlazos.Produccion().HayModelo);
+            this.mandaModelo = mandaModelo ?? (() => ServicioFechaRecepcionAlEnviar.MandaElModelo(ex => ElmahHelper.Log(ex)));
         }
 
         internal static bool PuedeVer(IPrincipal usuario) =>
@@ -93,6 +111,80 @@ namespace NestoAPI.Controllers
             {
                 JobId = id,
                 Mensaje = "Recálculo de los plazos de los proveedores encolado: en unos minutos estará en GET api/Compras/PlazosProveedores."
+            });
+        }
+
+        // GET api/Compras/PlazosProveedores/Comparacion?meses=6
+        /// <summary>
+        /// NestoAPI#853: regla del P80 contra el modelo ML.NET en sombra: el último entrenamiento (métricas de validación de los dos) y lo
+        /// REAL de los últimos <paramref name="meses"/> (pedidos enviados con las dos fechas y ya recibidos, vPedidosCompraEnviosError)
+        /// con un veredicto. 503 sin el script.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/PlazosProveedores/Comparacion")]
+        [ResponseType(typeof(ComparacionModeloPlazosDTO))]
+        public IHttpActionResult GetComparacion(int meses = 6)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            IRepositorioModeloPlazos repositorio = repositorioModelo();
+            if (!repositorio.TablaEntrenamientosExiste())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ModeloPlazosProveedoresJobsService.MENSAJE_SIN_TABLA);
+            }
+            int mesesValidos = Math.Max(1, Math.Min(MESES_COMPARACION_MAXIMO, meses));
+            List<EnvioRecibidoPlazos> envios = repositorio.TablaEnviosExiste()
+                ? repositorio.LeerEnviosRecibidos(ahoraMadrid().Date.AddMonths(-mesesValidos))
+                : new List<EnvioRecibidoPlazos>();
+            return Ok(new ComparacionModeloPlazosDTO
+            {
+                Meses = mesesValidos,
+                ModeloGuardado = modeloGuardado(),
+                QuienManda = mandaModelo() ? ServicioFechaRecepcionAlEnviar.QUIEN_MANDA_MODELO : ServicioFechaRecepcionAlEnviar.QUIEN_MANDA_REGLA,
+                UltimoEntrenamiento = repositorio.UltimoEntrenamiento(),
+                Real = ComparacionPlazos.Comparar(envios)
+            });
+        }
+
+        // POST api/Compras/PlazosProveedores/Modelo/Entrenar?ahora=false
+        /// <summary>
+        /// NestoAPI#853: entrena el modelo de plazos (202). De lunes a viernes de 8 a 20 (Madrid) se programa para las 21:00, salvo
+        /// <paramref name="ahora"/> = true. 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/PlazosProveedores/Modelo/Entrenar")]
+        [ResponseType(typeof(LanzamientoModeloPlazosDTO))]
+        public IHttpActionResult PostEntrenarModelo(bool ahora = false)
+        {
+            if (!PuedeRecalcular(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_ENTRENAR);
+            }
+            if (!repositorioModelo().TablaEntrenamientosExiste())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ModeloPlazosProveedoresJobsService.MENSAJE_SIN_TABLA);
+            }
+            string usuario = User?.Identity?.Name;
+            DateTime madrid = ahoraMadrid();
+            if (!ahora && HorarioHistoricoCorreos.EnHorario(madrid))
+            {
+                DateTime cuando = HorarioHistoricoCorreos.CuandoEmpezar(madrid);
+                return Content(HttpStatusCode.Accepted, new LanzamientoModeloPlazosDTO
+                {
+                    JobId = programador.Programar(cuando, usuario),
+                    Programado = true,
+                    Mensaje = $"Es horario de trabajo: el modelo de plazos se entrenará a las {cuando:HH:mm} (hora de Madrid). El resultado, en GET api/Compras/PlazosProveedores/Comparacion."
+                });
+            }
+            return Content(HttpStatusCode.Accepted, new LanzamientoModeloPlazosDTO
+            {
+                JobId = programador.Encolar(usuario),
+                Programado = false,
+                Mensaje = "Entrenamiento del modelo de plazos encolado: en unos minutos, el resultado en GET api/Compras/PlazosProveedores/Comparacion."
             });
         }
     }
