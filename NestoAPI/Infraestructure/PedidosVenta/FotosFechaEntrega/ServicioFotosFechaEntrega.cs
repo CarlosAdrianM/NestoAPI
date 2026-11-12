@@ -245,7 +245,8 @@ FROM dbo.vFechasEntregaError WHERE FechaAlbaran >= @desde";
                     db.Configuration.ProxyCreationEnabled = false;
                     // Sin el aviso a Compras de proveedor vencido: esta pasada no es «alguien esperando».
                     var fechas = new ServicioFechaEntregaAgencia(new RepositorioFechaEntregaAgencia(db), () => DateTime.Now, GestorFestivos.EsFestivo,
-                        ex => ElmahHelper.Log(ex), avisadorProveedorVencido: null);
+                        ex => ElmahHelper.Log(ex), avisadorProveedorVencido: null,
+                        lectorCerteza: ServicioFechaEntregaAgencia.LectorCertezaPorDefecto()); // NestoAPI#853: para el caso EnTransito
                     var servicio = new ServicioFotosFechaEntrega(new RepositorioFotosFechaEntrega(), (empresa, pedido) => fechas.CalcularPedido(empresa, pedido),
                         ex => ElmahHelper.Log(ex, "Sistema (fechas de entrega)"));
                     _ = await servicio.Pasada(Constantes.Empresas.EMPRESA_POR_DEFECTO, DateTime.Today).ConfigureAwait(false);

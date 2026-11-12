@@ -48,10 +48,10 @@ FROM Productos p WITH (NOLOCK)
 WHERE p.Empresa = @empresa AND p.Número IN ({0})";
 
         internal const string SQL_COMPRAS = @"
-SELECT RTRIM(c.Producto), RTRIM(c.Almacén), ISNULL(SUM(CAST(c.Cantidad AS int)), 0), MIN(c.FechaRecepción), c.Número
+SELECT RTRIM(c.Producto), RTRIM(c.Almacén), ISNULL(SUM(CAST(c.Cantidad AS int)), 0), MIN(c.FechaRecepción), c.Número, RTRIM(c.Empresa)
 FROM LinPedidoCmp c WITH (NOLOCK)
 WHERE c.Empresa IN (@empresa, @espejo) AND c.Producto IN ({0}) AND c.Estado IN (-1, 1) AND c.Enviado = 1
-GROUP BY c.Producto, c.Almacén, c.Número";
+GROUP BY c.Producto, c.Almacén, c.Número, c.Empresa";
 
         /// <summary>
         /// NestoAPI#606 (kits): todos los componentes de los kits que llevan alguno de los productos. Fuera los «kits» con algún
@@ -201,6 +201,8 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
                             datos.FechaPrevista[clave] = fecha;
                             // NestoAPI#606 (correo del pedido): el pedido a proveedor de esa fecha más temprana.
                             datos.PedidoCompraPrevisto[clave] = lector.GetInt32(4);
+                            // NestoAPI#853: y su empresa (la 1 o la espejo), para buscar su correo de seguimiento.
+                            datos.EmpresaCompraPrevista[clave] = Cadena(lector, 5);
                         }
                     }
                 });

@@ -96,17 +96,34 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>NestoAPI#730: el reparto del stock de Algete por antigüedad, el MISMO del picking.</summary>
         private readonly IRepartoStockPorAntiguedad repartoStock;
 
+        /// <summary>NestoAPI#853: lo que se lee para la certeza (seguimiento de la agencia, plazos). Null = sin certeza (los tests de siempre).</summary>
+        private readonly ILectorCertezaFechaEntrega lectorCerteza;
+
         public ServicioFechaEntregaAgencia(NVEntities db)
             : this(new RepositorioFechaEntregaAgencia(db), () => DateTime.Now, GestorFestivos.EsFestivo,
-                  ex => ElmahHelper.Log(ex), new AvisadorProveedorVencido())
+                  ex => ElmahHelper.Log(ex), new AvisadorProveedorVencido(), lectorCerteza: LectorCertezaPorDefecto())
         {
+        }
+
+        /// <summary>NestoAPI#853: el lector de la BD; si no se puede crear (sin cadena de conexión), sin certeza.</summary>
+        internal static ILectorCertezaFechaEntrega LectorCertezaPorDefecto()
+        {
+            try
+            {
+                return new LectorCertezaFechaEntregaSql();
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         internal ServicioFechaEntregaAgencia(IRepositorioFechaEntregaAgencia repositorio, Func<DateTime> reloj,
             Func<DateTime, string, bool> esFestivo, Action<Exception> registrar, IAvisadorProveedorVencido avisadorProveedorVencido = null,
             Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado = null,
-            IRepartoStockPorAntiguedad repartoStock = null)
+            IRepartoStockPorAntiguedad repartoStock = null, ILectorCertezaFechaEntrega lectorCerteza = null)
         {
+            this.lectorCerteza = lectorCerteza;
             this.anotarPedidoGrabado = anotarPedidoGrabado ?? EventosPromesaRiesgo.Anotar;
             this.repartoStock = repartoStock ?? RepartoStockPorAntiguedad.PorDefecto();
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
@@ -383,10 +400,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             List<string> tiendasPorOrden = TiendasPorOrden(new CalculadoraFechaReposicion(esFestivo), calendario, horaCorte, ahora, empresa);
 
+            List<LineaFechaEntregaAgencia> repartidas = RepartidorStockFechaEntregaAgencia.Repartir(deAlgete, datos, tiendasPorOrden, ahora.Date, enAlgete);
+            CompletarCerteza(repartidas, empresa, ahora.Date);
+
             var entrada = new EntradaFechaEntregaAgencia
             {
                 Empresa = empresa,
-                Lineas = RepartidorStockFechaEntregaAgencia.Repartir(deAlgete, datos, tiendasPorOrden, ahora.Date, enAlgete),
+                Lineas = repartidas,
                 ModoServicio = modoServicio,
                 ModoFacturacion = modoFacturacion,
                 Ruta = ruta?.Trim(),
@@ -422,6 +442,36 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Aviso = resultado.Aviso,
                 Desglose = resultado.Desglose
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#853: el seguimiento de la agencia de los pedidos a proveedor y la llegada orientativa de lo no pedido. Fuera de la
+        /// transacción de quien llama (lecturas de apoyo) y sin romper nunca el cálculo: ante un fallo, sin certeza (y ELMAH con su límite).
+        /// </summary>
+        private void CompletarCerteza(List<LineaFechaEntregaAgencia> lineas, string empresa, DateTime hoy)
+        {
+            if (lectorCerteza == null)
+            {
+                return;
+            }
+            try
+            {
+                using (SinTransaccion())
+                {
+                    CertezaFechaEntrega.Completar(lineas, lectorCerteza, empresa, hoy);
+                }
+            }
+            catch (Exception ex)
+            {
+                foreach (LineaFechaEntregaAgencia linea in lineas ?? new List<LineaFechaEntregaAgencia>())
+                {
+                    linea.ConSeguimientoAgencia = false;
+                    linea.AgenciaSeguimiento = null;
+                    linea.LlegadaOrientativaSinPedir = null;
+                }
+                Registrar("no se ha podido leer la certeza de la fecha de NestoAPI#853 (seguimiento de la agencia o plazos de los proveedores); " +
+                    "la fecha sale sin ella", ex);
+            }
         }
 
         /// <summary>

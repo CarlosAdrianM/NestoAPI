@@ -102,6 +102,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 string motivoSinFecha = causas.SobrePedido > 0
                     ? "es un producto sobre pedido y aún no hay pedido al proveedor que lo cubra"
                     : null;
+                // NestoAPI#853: lo que va sin fecha porque el pedido a proveedor que lo cubre está previsto a más de 15 días
+                // (ClasificadorCausasModoServicio.DIAS_MAXIMOS_EN_CAMINO: esa regla NO cambia, decide el modo de servir). Antes decía
+                // «no hay stock ni fecha de llegada» (o «aún no hay pedido»), que era falso: ahora lo dice y lleva una fecha orientativa.
+                DateTime? previstaLejana = PrevistaLejana(datosProducto, causas, hoy);
+                int? pedidoLejano = previstaLejana.HasValue ? PedidoProveedor(datos, producto, previstaLejana) : null;
+                if (previstaLejana.HasValue)
+                {
+                    motivoSinFecha = TextosCertezaFechaEntrega.MotivoPedidoLejano(pedidoLejano, previstaLejana.Value,
+                        d => CalculadoraFechaEntregaAgencia.Dia(d, hoy));
+                }
+                string empresaProveedor = EmpresaProveedor(datos, producto, previstaLejana ?? causas.FechaPrevista);
 
                 foreach (LineaPedidoFechaEntregaAgencia linea in grupo.OrderByDescending(l => l.YaEnPicking))
                 {
@@ -128,7 +139,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         EnAlgete = enAlgetePorAntiguedad == null ? Tomar(ref libres) : TomarPropias(EnAlgete(enAlgetePorAntiguedad, linea)),
                         FechaProveedor = causas.FechaPrevista,
                         PedidoProveedor = PedidoProveedor(datos, producto, causas.FechaPrevista),
-                        MotivoSinFecha = motivoSinFecha
+                        MotivoSinFecha = motivoSinFecha,
+                        EmpresaProveedor = empresaProveedor,
+                        FechaProveedorLejana = previstaLejana,
+                        PedidoProveedorLejano = pedidoLejano
                     };
                     for (int i = 0; i < porKit.Count && resto > 0; i++)
                     {
@@ -286,6 +300,34 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 PendienteRecibir = datos.PendienteRecibir,
                 FechaPrevista = datos.FechaPrevista
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#853: la prevista del pedido a proveedor enviado que cubriría lo que falta pero no cuenta como «llega en días» por estar a
+        /// más de <see cref="ClasificadorCausasModoServicio.DIAS_MAXIMOS_EN_CAMINO"/> días. Null si no hay, si no cubre nada (lo que llega lo
+        /// consumen antes los pedidos que ya esperan) o si no queda nada sin fecha.
+        /// </summary>
+        internal static DateTime? PrevistaLejana(DatosStockCausaModoServicio datos, CausasLineaModoServicio causas, DateTime hoy)
+        {
+            if (datos?.FechaPrevista == null || causas == null || causas.EnCamino > 0 || causas.SobrePedido + causas.SinFecha <= 0)
+            {
+                return null;
+            }
+            if (datos.FechaPrevista.Value.Date <= hoy.Date.AddDays(ClasificadorCausasModoServicio.DIAS_MAXIMOS_EN_CAMINO))
+            {
+                return null;
+            }
+            int deudaPrevia = Math.Max(0, -datos.DisponibleTodos);
+            return datos.PendienteRecibir - deudaPrevia > 0 ? datos.FechaPrevista.Value.Date : (DateTime?)null;
+        }
+
+        /// <summary>NestoAPI#853: la empresa del pedido a proveedor de esa fecha prevista (la 1 o la espejo).</summary>
+        private static string EmpresaProveedor(DatosSombraModoServicio datos, string producto, DateTime? fechaPrevista)
+        {
+            return fechaPrevista.HasValue
+                && datos.EmpresaCompraPrevista.TryGetValue(ResumenStocksProductos.Clave(producto, Constantes.Almacenes.ALGETE), out string empresa)
+                ? empresa?.Trim()
+                : null;
         }
 
         /// <summary>NestoAPI#606 (correo del pedido): el pedido a proveedor de la fecha prevista más temprana de Algete.</summary>

@@ -88,5 +88,33 @@ namespace NestoAPI.Models.PedidosVenta
         /// a la nota de entrega, que nace SIN fecha (la pone almacén). <see cref="PuedeSalirEl"/> sigue diciendo cuándo podría salir.
         /// </summary>
         public bool ANotaDeEntrega { get; set; }
+
+        /// <summary>«Segura»: sale de Algete (picking, stock libre o desmontando un kit).</summary>
+        public const string CERTEZA_SEGURA = "Segura";
+        /// <summary>«CasiSegura»: en una tienda, de camino desde una tienda, o pedido a proveedor ya enviado con seguimiento de la agencia.</summary>
+        public const string CERTEZA_CASI_SEGURA = "CasiSegura";
+        /// <summary>«Aproximada»: pedido a proveedor con fecha prevista, sin seguimiento de la agencia.</summary>
+        public const string CERTEZA_APROXIMADA = "Aproximada";
+        /// <summary>«Orientativa»: partida SIN fecha con <see cref="FechaOrientativa"/> (no es un compromiso).</summary>
+        public const string CERTEZA_ORIENTATIVA = "Orientativa";
+
+        /// <summary>
+        /// NestoAPI#853: grado de certeza de la fecha de la partida (<see cref="CERTEZA_SEGURA"/>, <see cref="CERTEZA_CASI_SEGURA"/>,
+        /// <see cref="CERTEZA_APROXIMADA"/>, <see cref="CERTEZA_ORIENTATIVA"/>). Null si no hay nada que decir (p. ej. sin fecha y sin estimación).
+        /// </summary>
+        public string Certeza { get; set; }
+        /// <summary>NestoAPI#853: solo <see cref="ORIGEN_PROVEEDOR"/>: el pedido a proveedor tiene un correo de seguimiento de la agencia aplicado y vigente.</summary>
+        public bool ConSeguimientoAgencia { get; set; }
+        /// <summary>NestoAPI#853: la agencia de ese seguimiento, si se conoce («UPS», «GLS»…).</summary>
+        public string AgenciaSeguimiento { get; set; }
+        /// <summary>
+        /// NestoAPI#853: solo en partidas SIN fecha (<see cref="PuedeSalirEl"/> sigue null): el día en que estimamos que PODRÍA salir.
+        /// Orientativa: no entra en ninguna fecha del pedido (primera, completa, prometida) ni en la promesa en riesgo.
+        /// </summary>
+        public DateTime? FechaOrientativa { get; set; }
+        /// <summary>NestoAPI#853: si <see cref="FechaOrientativa"/> sale de un pedido a proveedor enviado con la prevista a más de 15 días, ese pedido.</summary>
+        public int? PedidoProveedorOrientativo { get; set; }
+        /// <summary>NestoAPI#853: la prevista de ese pedido lejano (la que no cuenta como «llega en días»).</summary>
+        public DateTime? FechaPrevistaProveedorOrientativo { get; set; }
     }
 }

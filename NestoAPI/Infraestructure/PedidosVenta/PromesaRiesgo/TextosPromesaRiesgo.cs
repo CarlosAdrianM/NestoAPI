@@ -132,15 +132,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool varias = p.Unidades != 1;
             string n = varias ? "n" : string.Empty;
             string sale = p.PuedeSalirEl.HasValue ? $"puede{n} salir el {Fecha(p.PuedeSalirEl)}" : "sin fecha";
+            // NestoAPI#853: el grado de certeza de la fecha nueva (TextosCertezaFechaEntrega, la misma pieza que el motivo y el correo)
+            string calificativo = TextosCertezaFechaEntrega.Calificativo(p);
+            string certeza = calificativo == null ? string.Empty : $" ({calificativo})";
             switch (p.Origen)
             {
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA:
                     string tienda = CalculadoraFechaEntregaAgencia.NombreAlmacen(p.Tienda?.Trim());
                     return p.PuedeSalirEl.HasValue
-                        ? $"no está en Algete: tiene{n} que venir de {tienda} en la reposición y {sale}"
+                        ? $"no está en Algete: tiene{n} que venir de {tienda} en la reposición y {sale}{certeza}"
                         : $"no está en Algete: está en {tienda} y no hay fecha de reposición ({p.MotivoSinFecha?.Trim() ?? "sin calendario de reposición"})";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO:
-                    return $"no está en Algete: viene{n} de camino desde una tienda y {sale}";
+                    return $"no está en Algete: viene{n} de camino desde una tienda y {sale}{certeza}";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR:
                     string pedidoProveedor = p.PedidoProveedor.HasValue ? $"el pedido al proveedor {p.PedidoProveedor.Value}" : "un pedido al proveedor";
                     if (p.LlegadaSupuesta.HasValue)
@@ -148,10 +151,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         string debia = p.FechaPrevistaProveedor.HasValue ? $" el {Fecha(p.FechaPrevistaProveedor)}" : string.Empty;
                         return $"no hay stock y {pedidoProveedor} tenía que haber llegado{debia} y no ha llegado";
                     }
+                    if (p.FechaPrevistaProveedor.HasValue && p.ConSeguimientoAgencia)
+                    {
+                        return $"no hay stock: llega{n} con {pedidoProveedor}, {TextosCertezaFechaEntrega.LlegadaProveedor(p, d => Fecha(d))}, y {sale}{certeza}";
+                    }
                     return p.FechaPrevistaProveedor.HasValue
-                        ? $"no hay stock: llega{n} con {pedidoProveedor}, previsto el {Fecha(p.FechaPrevistaProveedor)}, y {sale}"
+                        ? $"no hay stock: llega{n} con {pedidoProveedor}, previsto el {Fecha(p.FechaPrevistaProveedor)}, y {sale}{certeza}"
                         : $"no hay stock y {pedidoProveedor} no tiene fecha prevista";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK:
+                    string orientativa = TextosCertezaFechaEntrega.SinFechaOrientativa(p, d => Fecha(d));
+                    if (orientativa != null)
+                    {
+                        return $"no hay stock: {orientativa}";
+                    }
                     return string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni pedido al proveedor con fecha" : $"no hay stock: {p.MotivoSinFecha.Trim()}";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:
                     return $"hay que desmontar el kit {p.Kit?.Trim()} en Algete y {sale}";
@@ -190,6 +202,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool varias = p.Unidades != 1;
             string n = varias ? "n" : string.Empty;
             string saleEl = p.PuedeSalirEl.HasValue ? $"puede{n} salir el {Fecha(p.PuedeSalirEl)}" : "sin fecha";
+            // NestoAPI#853: el grado de certeza (la misma pieza que el motivo y el correo)
+            string calificativo = TextosCertezaFechaEntrega.Calificativo(p);
+            if (calificativo != null)
+            {
+                saleEl += $" ({calificativo})";
+            }
             switch (p.Origen)
             {
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA:
@@ -205,7 +223,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     string vencida = p.LlegadaSupuesta.HasValue ? " (ya pasó y no ha llegado)" : string.Empty;
                     return $"{p.Unidades} {pedidoProveedor}{prevista}{vencida}: {saleEl}";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK:
-                    return $"{p.Unidades} sin fecha: {(string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim())}";
+                    string orientativa = TextosCertezaFechaEntrega.SinFechaOrientativa(p, d => Fecha(d));
+                    return orientativa != null
+                        ? $"{p.Unidades} sin fecha todavía: {orientativa}"
+                        : $"{p.Unidades} sin fecha: {(string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim())}";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:
                     return $"{p.Unidades} desmontando el kit {p.Kit?.Trim()} en Algete: {saleEl}";
                 default:

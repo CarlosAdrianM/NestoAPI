@@ -39,8 +39,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
 
     /// <summary>
     /// Los casos de lo que falta (Carlos, 11/11/26): 1) SinPedir, aún no hay pedido al proveedor; 2) PedidoEnviado, pedido enviado sin
-    /// fecha fiable; 3) EnTransito, el proveedor ya lo ha enviado con seguimiento de la agencia (hoy la BD no lo sabe: no se asigna
-    /// nunca, queda reservado para el corte que lea el seguimiento). Interno: sale de una tienda o de una reposición en camino.
+    /// fecha fiable; 3) EnTransito, el proveedor ya lo ha enviado con seguimiento de la agencia (NestoAPI#853: el pedido tiene un correo de
+    /// seguimiento de #857 aplicado y vigente). Interno: sale de una tienda o de una reposición en camino.
     /// </summary>
     public static class CasosFotoFechaEntrega
     {
@@ -48,6 +48,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
         public const string SIN_PEDIR = "SinPedir";
         public const string PEDIDO_ENVIADO = "PedidoEnviado";
         public const string EN_TRANSITO = "EnTransito";
+
+        /// <summary>
+        /// NestoAPI#853: el caso de una partida: la del proveedor con seguimiento de la agencia vigente es <see cref="EN_TRANSITO"/>; el resto,
+        /// por su origen (<see cref="De(string)"/>).
+        /// </summary>
+        public static string De(PartidaFechaEntregaAgenciaDTO partida)
+        {
+            if (partida == null)
+            {
+                return null;
+            }
+            return partida.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR && partida.ConSeguimientoAgencia ? EN_TRANSITO : De(partida.Origen);
+        }
 
         public static string De(string origen)
         {
@@ -153,7 +166,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
                     Unidades = grupo.Sum(p => p.Unidades),
                     FechaSalida = algunaSinFecha ? (DateTime?)null : grupo.Max(p => p.PuedeSalirEl.Value).Date,
                     Origen = manda.Origen,
-                    Caso = CasosFotoFechaEntrega.De(manda.Origen),
+                    Caso = CasosFotoFechaEntrega.De(manda),
                     PedidoProveedor = proveedor?.PedidoProveedor,
                     FechaPrevistaProveedor = SinFecha(proveedor?.FechaPrevistaProveedor, hoy),
                     PrevistaVencida = proveedor?.LlegadaSupuesta != null,

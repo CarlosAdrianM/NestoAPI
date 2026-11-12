@@ -146,8 +146,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         {
             string html = HtmlDesglose(MARTES, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), DeReina("P4")); // por partes: la primera, el martes
 
-            StringAssert.Contains(html, "<li>Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
-                "puede salir el jueves 15/10/2026): P4 Producto P4 (1 ud.).</li>");
+            StringAssert.Contains(html, "<li><b>[Prácticamente segura]</b> Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
+                "puede salir el jueves 15/10/2026; ya está en nuestras tiendas): P4 Producto P4 (1 ud.).</li>");
             StringAssert.Contains(html, "<li>El resto: con stock en Algete (puede salir el martes 13/10/2026).</li>");
             Assert.IsFalse(html.Contains("P1"));
             Assert.IsTrue(html.IndexOf("P4", StringComparison.Ordinal) < html.IndexOf("El resto", StringComparison.Ordinal), "Primero la excepción");
@@ -159,8 +159,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             string html = HtmlDesglose(MARTES, EnAlgete("P1"), DeReina("P2"), DeReina("P3"), DeReina("P4")); // por partes: la primera, el martes
 
             StringAssert.Contains(html, "<li>Con stock en Algete (puede salir el martes 13/10/2026): P1 Producto P1 (1 ud.).</li>");
-            StringAssert.Contains(html, "<li>El resto: reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
-                "puede salir el jueves 15/10/2026).</li>");
+            StringAssert.Contains(html, "<li><b>[Prácticamente segura]</b> El resto: reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
+                "puede salir el jueves 15/10/2026; ya está en nuestras tiendas).</li>");
             Assert.IsFalse(html.Contains("P2"));
         }
 
@@ -171,8 +171,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             string html = HtmlDesglose(JUEVES, FechaEntregaAgenciaDTO.APLICA_COMPLETA, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), DeReina("P4"));
 
             StringAssert.Contains(html, "Por qué (va todo junto: sale cuando esté todo):");
-            StringAssert.Contains(html, "<li>Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
-                "puede salir el jueves 15/10/2026): P4 Producto P4 (1 ud.).</li>");
+            StringAssert.Contains(html, "<li><b>[Prácticamente segura]</b> Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
+                "puede salir el jueves 15/10/2026; ya está en nuestras tiendas): P4 Producto P4 (1 ud.).</li>");
             StringAssert.Contains(html, "<li>El resto: con stock en Algete.</li>");
             Assert.IsFalse(html.Contains("martes"), "Nada dice que salga antes del jueves");
         }
@@ -191,8 +191,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             StringAssert.Contains(html, "Por qué (lo que hay en Algete espera para salir en la misma entrega que lo que llega):");
             StringAssert.Contains(html, "<li>El resto: con stock en Algete.</li>");
-            StringAssert.Contains(html, "<li>Ya viene de camino desde una tienda: P5 Producto P5 (2 uds.).</li>");
-            StringAssert.Contains(html, "puede salir el jueves 15/10/2026): P4");
+            StringAssert.Contains(html, "<li><b>[Prácticamente segura]</b> Ya viene de camino desde una tienda: P5 Producto P5 (2 uds.).</li>");
+            StringAssert.Contains(html, "puede salir el jueves 15/10/2026; ya está en nuestras tiendas): P4");
             Assert.IsFalse(html.Contains("martes") || html.Contains("miércoles 14/10/2026)"), "Nada dice que salga antes del jueves");
         }
 
@@ -269,7 +269,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             StringAssert.Contains(html, "Entrega a la agencia: jueves 15/10/2026");
             StringAssert.Contains(html, "Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
-                "puede salir el jueves 15/10/2026): B Guantes talla L (1 ud.)");
+                "puede salir el jueves 15/10/2026; ya está en nuestras tiendas): B Guantes talla L (1 ud.)");
             StringAssert.Contains(html, "Con stock en Algete");
         }
 
@@ -282,7 +282,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             string html = Html(await servicio.CalcularYGuardarPrometidaAlCrear("1", PEDIDO));
 
             StringAssert.Contains(html, "Entrega a la agencia: lunes 19/10/2026");
-            StringAssert.Contains(html, "<li>Pedido a proveedor 220513, prevista el viernes 16/10/2026 (puede salir el lunes 19/10/2026): B Guantes talla L (1 ud.).</li>");
+            StringAssert.Contains(html, "<li><b>[Aproximada]</b> Pedido a proveedor 220513, llegada estimada el viernes 16/10/2026 (fecha aproximada, aún sin seguimiento de la agencia; puede salir el lunes 19/10/2026): B Guantes talla L (1 ud.).</li>");
         }
 
         [TestMethod]
@@ -294,7 +294,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             string html = Html(await servicio.CalcularYGuardarPrometidaAlCrear("1", PEDIDO));
 
             StringAssert.Contains(html, "Entrega a la agencia: jueves 15/10/2026");
-            StringAssert.Contains(html, "<li style=\"color:red\">Pedido a proveedor 220513, prevista el viernes 09/10/2026");
+            StringAssert.Contains(html, "<li style=\"color:red\"><b>[Aproximada]</b> Pedido a proveedor 220513, prevista el viernes 09/10/2026");
             StringAssert.Contains(html, "suponemos que llega el miércoles 14/10/2026 y puede salir el jueves 15/10/2026, pero puede retrasarse");
         }
 

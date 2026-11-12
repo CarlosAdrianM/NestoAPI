@@ -321,7 +321,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 new Dictionary<string, int> { ["42485"] = 3 }, new Dictionary<string, string> { ["42485"] = "PARCHES" });
 
             Assert.AreEqual("Por qué: 42485 PARCHES (3 uds.): Reina mandó 1 de 3 en la reposición 81094; no está en Algete: tienen que venir de " +
-                "Reina en la reposición y pueden salir el viernes 23/10/2026.", motivo);
+                "Reina en la reposición y pueden salir el viernes 23/10/2026 (fecha prácticamente segura: ya está en nuestras tiendas).", motivo);
             Assert.IsFalse(motivo.Contains("de camino"), "lo que sí llega a tiempo no se nombra: " + motivo);
         }
 
@@ -350,7 +350,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             string motivo = TextosPromesaRiesgo.Motivo(929104, PROMETIDA, calculo, null, null, new Dictionary<string, string> { ["43710"] = "BRILLO" }, VIERNES);
 
-            Assert.AreEqual("Por qué: 43710 BRILLO (1 ud.): no está en Algete: viene de camino desde una tienda y puede salir el lunes 26/10/2026. " +
+            Assert.AreEqual("Por qué: 43710 BRILLO (1 ud.): no está en Algete: viene de camino desde una tienda y puede salir el lunes 26/10/2026 (fecha prácticamente segura). " +
                 "El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
         }
 
@@ -409,7 +409,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             string motivo = TextosPromesaRiesgo.Motivo(928370, martes, calculo, null, null, null, VIERNES);
 
             Assert.AreEqual("Por qué: 42652 (5 uds.): no hay stock: llegan con el pedido al proveedor 220672, previsto el viernes 06/11/2026, " +
-                "y pueden salir el lunes 09/11/2026. El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
+                "y pueden salir el lunes 09/11/2026 (fecha aproximada, aún sin seguimiento de la agencia). El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
         }
 
         [TestMethod]

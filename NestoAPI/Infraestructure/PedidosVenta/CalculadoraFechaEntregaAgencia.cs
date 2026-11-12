@@ -43,6 +43,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public int? PedidoProveedor { get; set; }
         /// <summary>Texto que acompaña a lo que no tiene fecha (p. ej. «sobre pedido»). Opcional.</summary>
         public string MotivoSinFecha { get; set; }
+        /// <summary>NestoAPI#853: empresa del pedido a proveedor de <see cref="PedidoProveedor"/> (la 1 o la espejo).</summary>
+        public string EmpresaProveedor { get; set; }
+        /// <summary>NestoAPI#853: ese pedido a proveedor tiene un correo de seguimiento de la agencia aplicado y vigente.</summary>
+        public bool ConSeguimientoAgencia { get; set; }
+        public string AgenciaSeguimiento { get; set; }
+        /// <summary>
+        /// NestoAPI#853: hay un pedido a proveedor enviado que cubre lo que falta, pero con la prevista a más de
+        /// <see cref="ClasificadorCausasModoServicio.DIAS_MAXIMOS_EN_CAMINO"/> días (no cuenta como «llega en días»: va sin fecha).
+        /// </summary>
+        public DateTime? FechaProveedorLejana { get; set; }
+        public int? PedidoProveedorLejano { get; set; }
+        /// <summary>NestoAPI#853 (caso 1): cuándo podría LLEGAR lo que aún no se ha pedido (<c>ReglaFechaOrientativaSinPedir</c>). Orientativa.</summary>
+        public DateTime? LlegadaOrientativaSinPedir { get; set; }
     }
 
     /// <summary>NestoAPI#606: todo lo que necesita <see cref="CalculadoraFechaEntregaAgencia"/>.</summary>
@@ -360,7 +373,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Lote = l,
                     PuedeSalirEl = l.Disponible.HasValue ? (l.Disponible.Value > l.Elegible ? l.Disponible.Value : l.Elegible) : (DateTime?)null
                 })
-                .GroupBy(x => new { x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta, x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha, x.Lote.ANota })
+                .GroupBy(x => new
+                {
+                    x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta,
+                    x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha, x.Lote.ANota, x.Lote.ConSeguimientoAgencia, x.Lote.AgenciaSeguimiento, x.Lote.FechaOrientativa,
+                    x.Lote.PedidoProveedorOrientativo, x.Lote.FechaPrevistaOrientativa
+                })
                 .Select(g => new PartidaFechaEntregaAgenciaDTO
                 {
                     Origen = g.Key.Origen,
@@ -374,7 +392,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     LlegadaSupuesta = g.Key.LlegadaSupuesta,
                     PedidoProveedor = g.Key.PedidoProveedor,
                     MotivoSinFecha = g.Key.MotivoSinFecha,
-                    ANotaDeEntrega = g.Key.ANota
+                    ANotaDeEntrega = g.Key.ANota,
+                    ConSeguimientoAgencia = g.Key.ConSeguimientoAgencia,
+                    AgenciaSeguimiento = g.Key.AgenciaSeguimiento,
+                    FechaOrientativa = g.Key.FechaOrientativa,
+                    PedidoProveedorOrientativo = g.Key.PedidoProveedorOrientativo,
+                    FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa
+                })
+                .Select(p =>
+                {
+                    // NestoAPI#853: el grado de certeza, con la misma regla que usan los textos
+                    p.Certeza = TextosCertezaFechaEntrega.Certeza(p);
+                    return p;
                 })
                 .OrderBy(p => Array.IndexOf(PartidaFechaEntregaAgenciaDTO.ORDEN_ORIGENES, p.Origen))
                 .ThenBy(p => p.PuedeSalirEl ?? DateTime.MaxValue)
@@ -484,6 +513,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         Lote lote = Nuevo(proveedor, SiguienteLaborable(prevista.Value), ORIGEN_PROVEEDOR);
                         lote.FechaProveedor = prevista;
                         lote.PedidoProveedor = linea.PedidoProveedor;
+                        lote.ConSeguimientoAgencia = linea.ConSeguimientoAgencia;
+                        lote.AgenciaSeguimiento = linea.AgenciaSeguimiento;
                         lotes.Add(lote);
                     }
                     else if (prevista.HasValue)
@@ -496,6 +527,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         lote.FechaProveedor = prevista;
                         lote.LlegadaSupuesta = llegada;
                         lote.PedidoProveedor = linea.PedidoProveedor;
+                        lote.ConSeguimientoAgencia = linea.ConSeguimientoAgencia;
+                        lote.AgenciaSeguimiento = linea.AgenciaSeguimiento;
                         lotes.Add(lote);
                     }
                     else
@@ -505,11 +538,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 if (resto > 0)
                 {
-                    lotes.Add(Nuevo(resto, null, ORIGEN_SIN_STOCK, sinFecha: string.IsNullOrWhiteSpace(linea.MotivoSinFecha)
-                        ? "no hay stock ni fecha de llegada" : linea.MotivoSinFecha.Trim()));
+                    Lote lote = Nuevo(resto, null, ORIGEN_SIN_STOCK, sinFecha: string.IsNullOrWhiteSpace(linea.MotivoSinFecha)
+                        ? "no hay stock ni fecha de llegada" : linea.MotivoSinFecha.Trim());
+                    Orientar(lote, linea);
+                    lotes.Add(lote);
                 }
             }
             return lotes;
+        }
+
+        /// <summary>
+        /// NestoAPI#853: la fecha ORIENTATIVA de lo que se queda sin fecha: la de un pedido a proveedor previsto a más de 15 días o la
+        /// llegada estimada de lo que aún no se ha pedido, con la misma regla del motor (llega F → sale el laborable siguiente a F, y una
+        /// prevista en festivo cuenta como el siguiente laborable) y nunca antes de que la línea entre en el picking. El lote sigue SIN fecha
+        /// (<see cref="Lote.Disponible"/> null): no cambia la primera entrega, la completa ni la prometida.
+        /// </summary>
+        private void Orientar(Lote lote, LineaFechaEntregaAgencia linea)
+        {
+            DateTime? llegada = null;
+            if (linea.FechaProveedorLejana.HasValue)
+            {
+                llegada = RecepcionPrevistaEfectiva(linea.FechaProveedorLejana.Value);
+                lote.PedidoProveedorOrientativo = linea.PedidoProveedorLejano;
+                lote.FechaPrevistaOrientativa = llegada;
+            }
+            else if (linea.LlegadaOrientativaSinPedir.HasValue)
+            {
+                llegada = RecepcionPrevistaEfectiva(linea.LlegadaOrientativaSinPedir.Value);
+            }
+            if (llegada.HasValue)
+            {
+                DateTime sale = SiguienteLaborable(llegada.Value);
+                lote.FechaOrientativa = sale < lote.Elegible ? lote.Elegible : sale;
+            }
         }
 
         private string Motivo(EntradaFechaEntregaAgencia entrada, ResultadoFechaEntregaAgencia resultado, List<Lote> lotes, List<string> avisos,
@@ -584,9 +645,34 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             // Una frase por producto, origen y día (dos líneas del mismo producto no repiten frase).
             var grupos = lotes.Where(l => l.Origen != ORIGEN_ALGETE && l.Origen != ORIGEN_PICKING)
-                .GroupBy(l => new { l.Origen, l.Producto, l.Tienda, l.Kit, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha })
-                .Select(g => new { g.Key.Origen, g.Key.Producto, g.Key.Tienda, g.Key.Kit, g.Key.Disponible, g.Key.FechaProveedor, g.Key.LlegadaSupuesta, g.Key.MotivoSinFecha, Unidades = g.Sum(l => l.Unidades) })
+                .GroupBy(l => new
+                {
+                    l.Origen, l.Producto, l.Tienda, l.Kit, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha, l.PedidoProveedor,
+                    l.ConSeguimientoAgencia, l.AgenciaSeguimiento, l.FechaOrientativa, l.PedidoProveedorOrientativo, l.FechaPrevistaOrientativa
+                })
+                .Select(g => new
+                {
+                    g.Key.Origen, g.Key.Producto, g.Key.Tienda, g.Key.Kit, g.Key.Disponible, g.Key.FechaProveedor, g.Key.LlegadaSupuesta, g.Key.MotivoSinFecha,
+                    Unidades = g.Sum(l => l.Unidades),
+                    // NestoAPI#853: la partida tal como la ve el desglose, para los textos de certeza (la misma pieza que el correo)
+                    Partida = new PartidaFechaEntregaAgenciaDTO
+                    {
+                        Origen = g.Key.Origen,
+                        Unidades = g.Sum(l => l.Unidades),
+                        PuedeSalirEl = g.Key.Disponible,
+                        FechaPrevistaProveedor = g.Key.FechaProveedor,
+                        LlegadaSupuesta = g.Key.LlegadaSupuesta,
+                        PedidoProveedor = g.Key.PedidoProveedor,
+                        ConSeguimientoAgencia = g.Key.ConSeguimientoAgencia,
+                        AgenciaSeguimiento = g.Key.AgenciaSeguimiento,
+                        FechaOrientativa = g.Key.FechaOrientativa,
+                        PedidoProveedorOrientativo = g.Key.PedidoProveedorOrientativo,
+                        FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa
+                    }
+                })
                 .ToList();
+            string DiaHoy(DateTime d) => Dia(d, hoy);
+            string DiaCortoHoy(DateTime d) => DiaCorto(d, hoy);
             foreach (var g in grupos.Where(g => g.Disponible.HasValue))
             {
                 string n = g.Unidades == 1 ? string.Empty : "n";
@@ -597,24 +683,36 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         frases.Add($"{cuantas} desmontando el kit {g.Kit} en Algete: puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
                         break;
                     case ORIGEN_TIENDA:
-                        frases.Add($"{cuantas} en {NombreAlmacen(g.Tienda)}: llega{n} con la reposición y puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
+                        frases.Add($"{cuantas} en {NombreAlmacen(g.Tienda)}: llega{n} con la reposición y puede{n} salir el {Dia(g.Disponible.Value, hoy)} " +
+                            $"({TextosCertezaFechaEntrega.Calificativo(g.Partida)}).");
                         break;
                     case ORIGEN_EN_CAMINO:
-                        frases.Add($"{cuantas} ya viene{n} de camino desde una tienda: puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
+                        frases.Add($"{cuantas} ya viene{n} de camino desde una tienda: puede{n} salir el {Dia(g.Disponible.Value, hoy)} " +
+                            $"({TextosCertezaFechaEntrega.Calificativo(g.Partida)}).");
                         break;
                     case ORIGEN_PROVEEDOR when g.LlegadaSupuesta.HasValue:
                         frases.Add($"{cuantas} del proveedor: la fecha prevista del proveedor ({DiaCorto(g.FechaProveedor.Value, hoy)}) " +
                             $"ya pasó y no ha llegado; suponemos que llega{n} el {Dia(g.LlegadaSupuesta.Value, hoy)} y puede{n} salir el {Dia(g.Disponible.Value, hoy)}, " +
                             "pero puede retrasarse.");
                         break;
+                    case ORIGEN_PROVEEDOR when g.Partida.ConSeguimientoAgencia:
+                        // NestoAPI#853: con seguimiento de la agencia, fecha prácticamente segura
+                        frases.Add($"{cuantas} {DelPedido(g.Partida)}, {TextosCertezaFechaEntrega.LlegadaProveedor(g.Partida, DiaCortoHoy)} " +
+                            $"({TextosCertezaFechaEntrega.Calificativo(g.Partida)}): puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
+                        break;
                     case ORIGEN_PROVEEDOR:
-                        frases.Add($"{cuantas} del proveedor (prevista el {DiaCorto(g.FechaProveedor.Value, hoy)}): puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
+                        frases.Add($"{cuantas} {DelPedido(g.Partida)} (prevista el {DiaCorto(g.FechaProveedor.Value, hoy)}; " +
+                            $"{TextosCertezaFechaEntrega.Calificativo(g.Partida)}): puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
                         break;
                 }
             }
             foreach (var g in grupos.Where(g => !g.Disponible.HasValue))
             {
-                frases.Add($"{g.Unidades} {Unidades(g.Unidades)} de {g.Producto} sin fecha: {g.MotivoSinFecha}.");
+                // NestoAPI#853: sin fecha, pero con una estimación orientativa (no cambia ninguna fecha del pedido)
+                string orientativa = TextosCertezaFechaEntrega.SinFechaOrientativa(g.Partida, DiaHoy);
+                frases.Add(orientativa == null
+                    ? $"{g.Unidades} {Unidades(g.Unidades)} de {g.Producto} sin fecha: {g.MotivoSinFecha}."
+                    : $"{g.Unidades} {Unidades(g.Unidades)} de {g.Producto} sin fecha todavía: {orientativa}.");
             }
             if (esperoTiendas)
             {
@@ -659,6 +757,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         private static string Unidades(int n) => n == 1 ? "ud." : "uds.";
+
+        /// <summary>«del pedido a proveedor 220513» o, sin número, «del proveedor».</summary>
+        private static string DelPedido(PartidaFechaEntregaAgenciaDTO p) =>
+            p.PedidoProveedor.HasValue ? $"del pedido a proveedor {p.PedidoProveedor.Value}" : "del proveedor";
 
         internal static string NombreAlmacen(string codigo)
         {
@@ -730,6 +832,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             /// <summary>Solo de una tienda: día y hora a la que suele llegar a Algete su próxima reposición.</summary>
             public DateTime? LlegaAAlgete { get; set; }
             public string MotivoSinFecha { get; set; }
+            /// <summary>NestoAPI#853: solo del proveedor: su pedido tiene seguimiento de la agencia vigente.</summary>
+            public bool ConSeguimientoAgencia { get; set; }
+            public string AgenciaSeguimiento { get; set; }
+            /// <summary>NestoAPI#853: solo sin fecha: cuándo estimamos que podría salir (no entra en ninguna fecha del cálculo).</summary>
+            public DateTime? FechaOrientativa { get; set; }
+            public int? PedidoProveedorOrientativo { get; set; }
+            public DateTime? FechaPrevistaOrientativa { get; set; }
             public bool Enviado { get; set; }
             /// <summary>Facturado «todo ahora» y pasado a la nota de entrega sin fecha.</summary>
             public bool ANota { get; set; }

@@ -1494,6 +1494,8 @@ namespace NestoAPI.Infraestructure
             /// <summary>Lo que va tras el punto (el aviso del proveedor vencido).</summary>
             public string Coletilla = string.Empty;
             public string Estilo = string.Empty;
+            /// <summary>NestoAPI#853: el grado de certeza de un vistazo, al principio («<b>[Aproximada]</b> »); vacía en lo seguro.</summary>
+            public string Etiqueta = string.Empty;
             public List<PartidaFechaEntregaAgenciaDTO> Partidas;
         }
 
@@ -1521,13 +1523,13 @@ namespace NestoAPI.Infraestructure
 
             foreach (BloqueDesglose b in bloques.Where(b => b != resumido))
             {
-                yield return $"<li{b.Estilo}>{b.Cabecera}: {Lista(b.Partidas)}{b.Detalle}.{b.Coletilla}</li>";
+                yield return $"<li{b.Estilo}>{b.Etiqueta}{b.Cabecera}: {Lista(b.Partidas)}{b.Detalle}.{b.Coletilla}</li>";
             }
             if (resumido != null)
             {
                 string prefijo = bloques.Count == 1 ? "Todo el pedido" : "El resto";
                 string cabecera = char.ToLower(resumido.Cabecera[0], castellano) + resumido.Cabecera.Substring(1);
-                yield return $"<li{resumido.Estilo}>{prefijo}: {cabecera}{resumido.Detalle}.{resumido.Coletilla}</li>";
+                yield return $"<li{resumido.Estilo}>{resumido.Etiqueta}{prefijo}: {cabecera}{resumido.Detalle}.{resumido.Coletilla}</li>";
             }
         }
 
@@ -1543,6 +1545,12 @@ namespace NestoAPI.Infraestructure
                 return dentro.Length == 0 ? string.Empty : $" ({dentro})";
             }
             var bloques = new List<BloqueDesglose>();
+            // NestoAPI#853: la etiqueta de certeza del bloque (TextosCertezaFechaEntrega, la misma pieza que el motivo y la promesa en riesgo)
+            string EtiquetaDe(PartidaFechaEntregaAgenciaDTO p)
+            {
+                string etiqueta = Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.Etiqueta(Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.Certeza(p));
+                return etiqueta == null ? string.Empty : $"<b>[{etiqueta}]</b> ";
+            }
 
             List<PartidaFechaEntregaAgenciaDTO> enPicking = desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING).ToList();
             if (enPicking.Any())
@@ -1571,22 +1579,29 @@ namespace NestoAPI.Infraestructure
                     : null;
                 string sinCalendario = grupo.Key.PuedeSalirEl.HasValue ? string.Empty : $" ({EscaparHtml(grupo.First().MotivoSinFecha)})";
                 string salida = PuedeSalir(grupo.First());
+                string enTiendas = grupo.Key.PuedeSalirEl.HasValue ? Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.TEXTO_EN_TIENDAS : null;
                 bloques.Add(new BloqueDesglose
                 {
-                    Cabecera = $"Reposición {tienda} &rarr; Algete{Parentesis(llegada, salida == null ? null : salida + sinCalendario)}",
+                    Cabecera = $"Reposición {tienda} &rarr; Algete{Parentesis(llegada, salida == null ? null : salida + sinCalendario, enTiendas)}",
+                    Etiqueta = EtiquetaDe(grupo.First()),
                     Partidas = grupo.ToList()
                 });
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO).GroupBy(p => PuedeSalir(p)))
             {
-                bloques.Add(new BloqueDesglose { Cabecera = $"Ya viene de camino desde una tienda{Parentesis(PuedeSalir(grupo.First()))}", Partidas = grupo.ToList() });
+                bloques.Add(new BloqueDesglose
+                {
+                    Cabecera = $"Ya viene de camino desde una tienda{Parentesis(PuedeSalir(grupo.First()))}",
+                    Etiqueta = EtiquetaDe(grupo.First()),
+                    Partidas = grupo.ToList()
+                });
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR)
-                .GroupBy(p => new { p.PedidoProveedor, p.FechaPrevistaProveedor, p.LlegadaSupuesta, p.PuedeSalirEl }))
+                .GroupBy(p => new { p.PedidoProveedor, p.FechaPrevistaProveedor, p.LlegadaSupuesta, p.PuedeSalirEl, p.ConSeguimientoAgencia, p.AgenciaSeguimiento }))
             {
                 PartidaFechaEntregaAgenciaDTO p = grupo.First();
                 string pedidoProveedor = p.PedidoProveedor.HasValue ? $"Pedido a proveedor {p.PedidoProveedor.Value}" : "Pedido a proveedor";
-                var bloque = new BloqueDesglose { Partidas = grupo.ToList() };
+                var bloque = new BloqueDesglose { Partidas = grupo.ToList(), Etiqueta = EtiquetaDe(p) };
                 if (!p.FechaPrevistaProveedor.HasValue)
                 {
                     bloque.Cabecera = $"{pedidoProveedor} sin fecha prevista";
@@ -1600,14 +1615,24 @@ namespace NestoAPI.Infraestructure
                 }
                 else
                 {
-                    bloque.Cabecera = $"{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)}{Parentesis(PuedeSalir(p))}";
+                    // NestoAPI#853: «ya enviado por UPS, que prevé entregarlo el…» (prácticamente segura) o «llegada estimada el…» (aproximada)
+                    bloque.Cabecera = $"{pedidoProveedor}, {EscaparHtml(Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.LlegadaProveedor(p, DiaCorreo))}" +
+                        Parentesis(Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.Calificativo(p), PuedeSalir(p));
                 }
                 bloques.Add(bloque);
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK)
-                .GroupBy(p => string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim()))
+                .GroupBy(p => new
+                {
+                    Motivo = string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim(),
+                    p.FechaOrientativa, p.PedidoProveedorOrientativo, p.FechaPrevistaProveedorOrientativo
+                }))
             {
-                bloques.Add(new BloqueDesglose { Cabecera = "Sin fecha", Detalle = ": " + EscaparHtml(grupo.Key), Partidas = grupo.ToList() });
+                // NestoAPI#853: sin fecha, pero con la estimación orientativa si la hay (no es un compromiso)
+                string orientativa = Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.SinFechaOrientativa(grupo.First(), DiaCorreo);
+                bloques.Add(orientativa == null
+                    ? new BloqueDesglose { Cabecera = "Sin fecha", Detalle = ": " + EscaparHtml(grupo.Key.Motivo), Partidas = grupo.ToList() }
+                    : new BloqueDesglose { Cabecera = "Sin fecha todavía", Detalle = ": " + EscaparHtml(orientativa), Etiqueta = EtiquetaDe(grupo.First()), Partidas = grupo.ToList() });
             }
             return bloques;
         }
