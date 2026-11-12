@@ -102,7 +102,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             new OrigenSalidaPicking(repositorio),
             new OrigenSalidaReposicion(repositorio)
-        }, escriturasSalida, anulacionesLecturas, ordenRecorrido, correcciones: correccionesLecturas));
+        }, escriturasSalida, anulacionesLecturas, ordenRecorrido, correcciones: correccionesLecturas, avisadorFaltas: avisadorFaltasPicking));
+
+        /// <summary>Novedades 1228: el aviso de las faltas del picking a quien pasó el pedido (y a Compras). Null: a nadie.</summary>
+        private readonly IAvisadorFaltasPicking avisadorFaltasPicking;
 
         /// <summary>NestoAPI#646 / Ariadna#41: dónde se corrige una parada (en las pruebas del servicio, nada).</summary>
         private readonly IRepositorioCorrecciones correccionesLecturas;
@@ -131,6 +134,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public ServicioPreparacionAlmacen(IAvisadorCompras avisadorCompras) : this()
         {
             this.avisadorCompras = avisadorCompras;
+            avisadorFaltasPicking = new AvisadorFaltasPicking(avisadorCompras);
         }
 
         /// <summary>NestoAPI#641: con el lector de calles de la petición (el mismo para todos los servicios de almacén).</summary>

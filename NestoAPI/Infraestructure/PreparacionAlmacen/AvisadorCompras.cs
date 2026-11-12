@@ -18,6 +18,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public const string TIPO_NOTIFICACION = "RecepcionCompras";
         /// <summary>NestoAPI#556: un producto que no aparece en la mesa de packing (o que aparece después).</summary>
         public const string TIPO_PACKING_FALTA = "PackingFalta";
+        /// <summary>Novedades 1228: un producto dado por «No está» al terminar el picking que queda pendiente sin compra pendiente.</summary>
+        public const string TIPO_PICKING_FALTA = "PickingFalta";
         private const string DOMINIO = "NUEVAVISION\\";
 
         private readonly IServicioNotificacionesPush notificaciones;

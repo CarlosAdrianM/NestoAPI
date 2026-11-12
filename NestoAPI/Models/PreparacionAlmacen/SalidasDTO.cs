@@ -32,6 +32,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<FilaEnsayoDTO> FilasDespues { get; set; }
         /// <summary>El error real (procedimiento, trigger o restricción) si el ensayo ha fallado.</summary>
         public string ErrorEnsayo { get; set; }
+
+        /// <summary>
+        /// Novedades 1228: las faltas que el Terminar del picking ha quitado de cada pedido, para avisar a quien lo pasó una vez
+        /// guardado. No viaja a Ariadna (el contrato no cambia).
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public List<NestoAPI.Infraestructure.PreparacionAlmacen.FaltaPickingPedido> FaltasPorAvisar { get; set; } = new List<NestoAPI.Infraestructure.PreparacionAlmacen.FaltaPickingPedido>();
     }
 
     /// <summary>Una fila de una tabla en un ensayo, con las columnas que importan en texto.</summary>

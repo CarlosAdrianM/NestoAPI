@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
+using NestoAPI.Models.Picking;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
@@ -203,9 +204,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// </summary>
         public const string CLAVE_RECORTAR_FALTAS = "Salidas.RecortarFaltas";
 
+        /// <summary>Novedades 1228: a quién se avisa de las faltas de un picking terminado (null = a nadie).</summary>
+        private readonly IAvisadorFaltasPicking avisadorFaltas;
+
         public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null, IRepositorioAnulacionLecturas anulaciones = null,
-            ILectorOrdenRecorrido ordenRecorrido = null, Func<bool> recortarFaltas = null, IRepositorioCorrecciones correcciones = null)
+            ILectorOrdenRecorrido ordenRecorrido = null, Func<bool> recortarFaltas = null, IRepositorioCorrecciones correcciones = null,
+            IAvisadorFaltasPicking avisadorFaltas = null)
         {
+            this.avisadorFaltas = avisadorFaltas;
             this.correcciones = correcciones;
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenSalida>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
@@ -356,13 +362,50 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new InvalidOperationException("ServicioSalidas sin dónde escribir: no puede terminar salidas.");
             }
+            if (ensayo)
+            {
+                return new ResultadoTerminarSalida
+                {
+                    Estado = EstadoTerminarSalida.Terminada,
+                    Salida = await Ensayar(origen, empresa, numero, estado, usuario).ConfigureAwait(false)
+                };
+            }
+            ResultadoTerminarSalidaDTO salida = await escrituras.EnTransaccion(tx => TerminarYApuntar(origen, empresa, numero, estado, usuario, tx, false), false)
+                .ConfigureAwait(false);
+            AvisarFaltas(empresa, numero, recorrido.Almacen, salida);
             return new ResultadoTerminarSalida
             {
                 Estado = EstadoTerminarSalida.Terminada,
-                Salida = ensayo
-                    ? await Ensayar(origen, empresa, numero, estado, usuario).ConfigureAwait(false)
-                    : await escrituras.EnTransaccion(tx => TerminarYApuntar(origen, empresa, numero, estado, usuario, tx, false), false).ConfigureAwait(false)
+                Salida = salida
             };
+        }
+
+        /// <summary>
+        /// Novedades 1228: ya guardado, el aviso de las faltas a quien pasó cada pedido (en segundo plano). Nunca puede hacer
+        /// fallar el Terminar: lo hecho ya está guardado.
+        /// </summary>
+        private void AvisarFaltas(string empresa, int numero, string almacen, ResultadoTerminarSalidaDTO salida)
+        {
+            if (avisadorFaltas == null || salida?.FaltasPorAvisar == null || salida.FaltasPorAvisar.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                avisadorFaltas.Avisar(empresa, numero, almacen, salida.FaltasPorAvisar);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    ElmahHelper.Log(new Exception($"[Picking faltas] No se pudo lanzar el aviso de las faltas del picking {numero}: {ex.Message}", ex),
+                        AvisadorFaltasPicking.USUARIO_AUDITORIA);
+                }
+                catch
+                {
+                    // nunca romper el Terminar
+                }
+            }
         }
 
         /// <summary>
@@ -905,11 +948,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return ServicioSalidas.Resumen(Tipo, numero, estado, "Picking recogido entero. Llévalo a la mesa de packing.");
             }
 
-            List<RecorteSalida> recortes = PlanificadorFaltasSalida.Repartir(faltas, await tx.LeerPiezasPicking(empresa, numero).ConfigureAwait(false));
+            List<PiezaSalida> piezas = await tx.LeerPiezasPicking(empresa, numero).ConfigureAwait(false);
+            List<RecorteSalida> recortes = PlanificadorFaltasSalida.Repartir(faltas, piezas);
             List<RecorteSalida> solos = recortes.Where(r => !r.Pieza.QuitarAMano).ToList();
             List<RecorteSalida> aMano = recortes.Where(r => r.Pieza.QuitarAMano).ToList();
             string nombreUsuario = ServicioSalidas.NombreUsuario(usuario);
             var cambios = new List<string>();
+            var avisar = new List<FaltaPickingPedido>();
 
             // Primero las reservas: la línea se parte con lo que le queda reservado
             foreach (RecorteSalida recorte in solos.Where(r => r.Pieza.Ubicacion != null))
@@ -918,14 +963,54 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 cambios.Add($"{ServicioSalidas.Unidades(recorte.Cantidad)} de {recorte.Pieza.Producto} " +
                     $"{(recorte.Pieza.Hueco == null ? "sin hueco" : "del hueco " + ServicioSalidas.Hueco(recorte.Pieza.Hueco))} pasa a «pendiente de ubicar».");
             }
-            foreach (IGrouping<int, RecorteSalida> linea in solos.GroupBy(r => r.Pieza.Linea))
+            // Novedades 1228: las muestras (MMP, no de notas de entrega, con el interruptor de la regla del 27/10/26) se miran
+            // después, cuando ya se sabe qué queda de cada pedido
+            List<IGrouping<int, RecorteSalida>> lineas = solos.GroupBy(r => r.Pieza.Linea).ToList();
+            List<IGrouping<int, RecorteSalida>> muestras = lineas.Where(l => EsMuestraQueSePuedeQuitar(l.First().Pieza)).ToList();
+            foreach (IGrouping<int, RecorteSalida> linea in lineas.Except(muestras))
             {
                 int cantidad = linea.Sum(r => r.Cantidad);
                 await tx.SacarDelPedido(linea.Key, cantidad).ConfigureAwait(false);
                 RecorteSalida primero = linea.First();
                 cambios.Add($"Pedido {primero.Pieza.Pedido}: {ServicioSalidas.Unidades(cantidad)} de {primero.Pieza.Producto} queda pendiente para otra entrega.");
+                avisar.Add(Falta(empresa, primero.Pieza, cantidad, false));
             }
-            cambios.AddRange(await SacarLoQueSeQuedaSinProducto(empresa, numero, solos.Select(r => r.Pieza.Pedido).Distinct().ToList(), tx).ConfigureAwait(false));
+            if (muestras.Any())
+            {
+                List<LineaEnPickingSalida> siguen = await tx.LineasQueSiguenEnElPicking(empresa, numero,
+                    muestras.Select(l => l.First().Pieza.Pedido).Distinct().ToList()).ConfigureAwait(false) ?? new List<LineaEnPickingSalida>();
+                foreach (IGrouping<int, RecorteSalida> linea in muestras)
+                {
+                    int cantidad = linea.Sum(r => r.Cantidad);
+                    RecorteSalida primero = linea.First();
+                    bool quitada = false;
+                    if (SaleElRestoDelPedido(siguen, primero.Pieza.Pedido))
+                    {
+                        int deLaLinea = piezas.Where(p => p.Linea == linea.Key).Sum(p => p.Cantidad);
+                        var muestra = new MuestraQuitadaPicking
+                        {
+                            IdLinea = linea.Key,
+                            Producto = primero.Pieza.Producto?.Trim(),
+                            UnidadesQuitadas = cantidad,
+                            UnidadesQueSalen = Math.Max(0, deLaLinea - cantidad)
+                        };
+                        quitada = await tx.QuitarDelPedido(linea.Key, cantidad,
+                            EscritorMuestrasSinStock.ModificacionFaltaPicking(empresa, primero.Pieza.Pedido, numero, muestra, DateTime.Now)).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await tx.SacarDelPedido(linea.Key, cantidad).ConfigureAwait(false);
+                    }
+                    cambios.Add(quitada
+                        ? $"Pedido {primero.Pieza.Pedido}: {ServicioSalidas.Unidades(cantidad)} de {primero.Pieza.Producto} se quita del pedido (muestra sin existencias)."
+                        : $"Pedido {primero.Pieza.Pedido}: {ServicioSalidas.Unidades(cantidad)} de {primero.Pieza.Producto} queda pendiente para otra entrega.");
+                    avisar.Add(Falta(empresa, primero.Pieza, cantidad, quitada));
+                }
+            }
+            List<int> pedidosConFaltas = solos.Select(r => r.Pieza.Pedido).Distinct().ToList();
+            List<int> sinProducto = new List<int>();
+            cambios.AddRange(await SacarLoQueSeQuedaSinProducto(empresa, numero, pedidosConFaltas, tx, sinProducto).ConfigureAwait(false));
+            avisar.ForEach(f => f.NoSaleNadaDelPedido = sinProducto.Contains(f.Pedido));
             foreach (RecorteSalida recorte in aMano)
             {
                 cambios.Add($"Pedido {recorte.Pieza.Pedido}: {ServicioSalidas.Unidades(recorte.Cantidad)} de {recorte.Pieza.Producto} " +
@@ -945,8 +1030,38 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
             ResultadoTerminarSalidaDTO resumen = ServicioSalidas.Resumen(Tipo, numero, estado, mensaje);
             resumen.Cambios = cambios;
+            resumen.FaltasPorAvisar = avisar;
             return resumen;
         }
+
+        /// <summary>
+        /// Novedades 1228 (picking 100070, 12/11/26: el expositor 44729, muestra de 0 €, dado por «No está» se quedaba pendiente
+        /// y bloqueaba la factura de dos pedidos «al completar»): una muestra (SubGrupo MMP, la definición de
+        /// <see cref="GestorMuestrasSinStock"/>) dada por falta se quita del pedido, salvo en las notas de entrega o con el
+        /// interruptor <see cref="GestorMuestrasSinStock.CLAVE"/> apagado.
+        /// </summary>
+        internal static bool EsMuestraQueSePuedeQuitar(PiezaSalida pieza) =>
+            pieza != null && pieza.EsMuestra && !pieza.EsNotaEntrega && GestorMuestrasSinStock.Activo;
+
+        /// <summary>
+        /// Como en <see cref="GestorMuestrasSinStock.SeAplica"/>: la muestra solo se quita si del pedido sale algo más que
+        /// muestras (algún producto de verdad, ni ficticio ni muestra, que sigue en el picking). Si no sale nada, la muestra queda
+        /// pendiente como siempre y se decide en el siguiente picking.
+        /// </summary>
+        internal static bool SaleElRestoDelPedido(IEnumerable<LineaEnPickingSalida> siguen, int pedido) =>
+            (siguen ?? Enumerable.Empty<LineaEnPickingSalida>()).Any(l => l.Pedido == pedido
+                && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !l.Ficticio && !l.EsMuestra && l.Cantidad > 0);
+
+        private static FaltaPickingPedido Falta(string empresa, PiezaSalida pieza, int unidades, bool quitada) => new FaltaPickingPedido
+        {
+            Empresa = empresa?.Trim(),
+            Pedido = pieza.Pedido,
+            Linea = pieza.Linea,
+            Producto = pieza.Producto?.Trim(),
+            Unidades = unidades,
+            EsMuestra = pieza.EsMuestra,
+            QuitadaDelPedido = quitada
+        };
 
         /// <summary>
         /// Regla aprobada por Carlos (03/10/26): si a un pedido, después de quitar las faltas, no le queda NINGUNA línea de
@@ -954,7 +1069,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// picking (por el mismo SacarDelPedido que las faltas) y esperan con el resto del pedido. Si le queda algún
         /// producto, se quedan. Solo se miran los pedidos a los que se ha quitado algo.
         /// </summary>
-        private static async Task<List<string>> SacarLoQueSeQuedaSinProducto(string empresa, int numero, IReadOnlyCollection<int> pedidos, ITransaccionSalida tx)
+        private static async Task<List<string>> SacarLoQueSeQuedaSinProducto(string empresa, int numero, IReadOnlyCollection<int> pedidos, ITransaccionSalida tx,
+            List<int> sinProducto = null)
         {
             var cambios = new List<string>();
             if (pedidos.Count == 0)
@@ -963,6 +1079,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             List<LineaEnPickingSalida> siguen = await tx.LineasQueSiguenEnElPicking(empresa, numero, pedidos).ConfigureAwait(false)
                 ?? new List<LineaEnPickingSalida>();
+            // Novedades 1228: para el aviso, los pedidos a los que no les queda ningún producto en el picking
+            sinProducto?.AddRange(pedidos.Where(p => !siguen.Any(l => l.Pedido == p && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !l.Ficticio)));
             foreach (IGrouping<int, LineaEnPickingSalida> pedido in siguen.GroupBy(l => l.Pedido).OrderBy(g => g.Key))
             {
                 // NestoAPI#593: el cheque regalo o el cupón (ficticios) no hacen que el pedido salga: esperan con el resto

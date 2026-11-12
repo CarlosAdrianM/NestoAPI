@@ -62,6 +62,40 @@ namespace NestoAPI.Models.Picking
             }
         }
 
+        /// <summary>Novedades 1228: operación del rastro de una muestra dada por «No está» al terminar el picking.</summary>
+        public const string OPERACION_FALTA_PICKING = "Picking: muestra dada por falta al terminar, quitada del pedido";
+
+        /// <summary>
+        /// Novedades 1228 (12/11/26): el rastro de una muestra que el mozo ha dado por «No está» y que, al terminar el picking,
+        /// se quita del pedido en vez de quedar pendiente. Misma tabla, mismo usuario y misma forma que <see cref="Modificacion"/>.
+        /// </summary>
+        internal static Modificacion ModificacionFaltaPicking(string empresa, int pedido, int picking, MuestraQuitadaPicking quitada, DateTime fecha)
+        {
+            return new Modificacion
+            {
+                Tabla = TABLA_MODIFICACIONES,
+                Anterior = JsonConvert.SerializeObject(new
+                {
+                    Empresa = empresa?.Trim(),
+                    Pedido = pedido,
+                    NumeroOrden = quitada.IdLinea,
+                    Producto = quitada.Producto,
+                    Cantidad = quitada.UnidadesQuitadas + quitada.UnidadesQueSalen
+                }),
+                Nuevo = JsonConvert.SerializeObject(new
+                {
+                    Operacion = OPERACION_FALTA_PICKING,
+                    Picking = picking,
+                    Cantidad = quitada.UnidadesQueSalen,
+                    LineaBorrada = quitada.UnidadesQueSalen <= 0,
+                    Motivo = $"El mozo no encontró {quitada.UnidadesQuitadas} ud(s) de la muestra {quitada.Producto} en el picking {picking}; " +
+                        $"se quita del pedido en vez de quedar pendiente (Novedades 1228, {GestorMuestrasSinStock.CLAVE})"
+                }),
+                Usuario = GestorMuestrasSinStock.USUARIO_AUDITORIA,
+                Fecha = fecha
+            };
+        }
+
         /// <summary>La fila de Modificaciones de una muestra quitada (JSON antes/después, como el resto de rastros del pedido).</summary>
         internal static Modificacion Modificacion(PedidoPicking pedido, MuestraQuitadaPicking quitada, DateTime fecha)
         {

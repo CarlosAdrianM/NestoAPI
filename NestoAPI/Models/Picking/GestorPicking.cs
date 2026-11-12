@@ -473,7 +473,13 @@ namespace NestoAPI.Models.Picking
         /// <summary>El primer pedido a proveedor enviado y sin recibir de cada producto (mismo filtro que la sombra del modo de servicio).</summary>
         private Dictionary<string, CompraPendientePicking> ComprasPendientes(string empresa, List<string> productos)
         {
-            if (productos.Count == 0)
+            return ComprasPendientes(db, empresa, productos);
+        }
+
+        /// <summary>Lo mismo con cualquier contexto (Novedades 1228: el aviso de faltas al terminar el picking).</summary>
+        internal static Dictionary<string, CompraPendientePicking> ComprasPendientes(NVEntities db, string empresa, List<string> productos)
+        {
+            if (productos == null || productos.Count == 0)
             {
                 return new Dictionary<string, CompraPendientePicking>();
             }

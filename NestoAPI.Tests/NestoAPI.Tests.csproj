@@ -595,6 +595,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\CorregirLecturaSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorteFaltasSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SalidasEscriturasTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\FaltasPickingAvisoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AnularLecturasSalidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisosFichaProductoTests.cs" />
     <Compile Include="Controllers\AvisosFichaControllerTests.cs" />

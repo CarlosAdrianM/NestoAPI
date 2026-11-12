@@ -581,6 +581,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\PerfilAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\PlanificadorRecepcionCompra.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorCompras.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorFaltasPicking.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorReposiciones.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisoReposicionesRecibidasEnParte.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CierreReposiciones.cs" />
@@ -2141,6 +2142,7 @@
     <Compile Include="Models\Picking\GeneradorPendientes.cs" />
     <Compile Include="Models\Picking\GestorFacturarTodoAhora.cs" />
     <Compile Include="Models\Picking\GestorMuestrasSinStock.cs" />
+    <Compile Include="Models\Picking\AvisoFaltasPicking.cs" />
     <Compile Include="Models\Picking\EscritorMuestrasSinStock.cs" />
     <Compile Include="Models\Picking\GeneradorPortes.cs" />
     <Compile Include="Models\Picking\GestorImportesMinimos.cs" />

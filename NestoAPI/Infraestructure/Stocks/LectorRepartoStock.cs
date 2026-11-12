@@ -89,8 +89,41 @@ namespace NestoAPI.Infraestructure.Stocks
             }).ToList();
         }
 
+        /// <summary>
+        /// Novedades 1228: las existencias (ExtractoProducto, todas las empresas, como <see cref="LeerStocks"/>) de cada producto
+        /// en cada almacén (Algete, Reina y Alcobendas por separado, no juntas como StockTienda). Clave: producto sin espacios
+        /// ni mayúsculas → almacén → unidades. Solo los almacenes con alguna fila.
+        /// </summary>
+        public Dictionary<string, Dictionary<string, int>> LeerStocksPorAlmacen(IEnumerable<string> productos)
+        {
+            List<string> lista = (productos ?? Enumerable.Empty<string>()).Where(p => p != null).Select(p => p.Trim()).Distinct().ToList();
+            var resultado = new Dictionary<string, Dictionary<string, int>>();
+            if (!lista.Any())
+            {
+                return resultado;
+            }
+            var filas = db.ExtractosProducto
+                .Where(e => lista.Contains(e.Número)
+                    && (e.Almacén == Constantes.Almacenes.ALGETE || e.Almacén == Constantes.Almacenes.REINA || e.Almacén == Constantes.Almacenes.ALCOBENDAS))
+                .GroupBy(e => new { e.Número, e.Almacén })
+                .Select(g => new { Producto = g.Key.Número, Almacen = g.Key.Almacén, Cantidad = g.Sum(e => (int)e.Cantidad) })
+                .ToList();
+            foreach (var fila in filas)
+            {
+                string clave = Clave(fila.Producto);
+                if (!resultado.TryGetValue(clave, out Dictionary<string, int> almacenes))
+                {
+                    almacenes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    resultado[clave] = almacenes;
+                }
+                string almacen = fila.Almacen?.Trim() ?? string.Empty;
+                almacenes[almacen] = (almacenes.TryGetValue(almacen, out int ya) ? ya : 0) + fila.Cantidad;
+            }
+            return resultado;
+        }
+
         // SQL Server compara sin espacios finales ni mayúsculas: aquí, igual.
-        private static string Clave(string producto) => producto?.Trim().ToUpperInvariant() ?? string.Empty;
+        internal static string Clave(string producto) => producto?.Trim().ToUpperInvariant() ?? string.Empty;
 
         private static Dictionary<string, int> Agrupar(IEnumerable<KeyValuePair<string, int>> filas)
         {

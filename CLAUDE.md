@@ -437,6 +437,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
   una consulta por tabla (sin N+1). `NombreCliente` sigue siendo solo el del contacto exacto (etiqueta). El guardado los ignora y Nesto no los manda.
 
+### Faltas al terminar el picking: aviso y muestras fuera (Novedades 1228, 12/11/26)
+- `OrigenSalidaPicking.Terminar`: una falta de una MUESTRA (LinPedidoVta.SubGrupo MMP, no nota de entrega, interruptor
+  `GestorMuestrasSinStock.CLAVE`) se QUITA del pedido (`ITransaccionSalida.QuitarDelPedido`: total = línea borrada; parcial = se queda
+  con lo cogido y lo que falta no queda pendiente) con rastro `EscritorMuestrasSinStock.ModificacionFaltaPicking`, en la misma
+  transacción; solo si del pedido sale algo más que muestras (si no, pendiente como siempre). Lo demás queda pendiente como hoy.
+- Ya guardado, `IAvisadorFaltasPicking` (en segundo plano, nunca rompe el Terminar): por pedido, texto puro `AvisoFaltasPicking`
+  (tipo `PickingConFaltas`, Datos pedido → NestoApp lo abre sin cambios) al buzón de quien hizo el pedido + su push de NestoApp, y push al
+  vendedor si es otro (reglas de #688); a Compras (`TIPO_PICKING_FALTA`) lo pendiente sin compra que no es muestra. Ariadna: sin cambios
+  (`ResultadoTerminarSalidaDTO.FaltasPorAvisar` es JsonIgnore).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

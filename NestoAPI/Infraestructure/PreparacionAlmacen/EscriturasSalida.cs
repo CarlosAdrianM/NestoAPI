@@ -41,6 +41,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NestoAPI#593: la línea va en negativo (un abono, un descuento): no se recoge, así que una falta nunca
         /// se le aplica. Los productos ficticios ni siquiera llegan como pieza.</summary>
         public bool NoAdmiteFalta { get; set; }
+        /// <summary>Novedades 1228 (12/11/26): la línea es de una muestra (LinPedidoVta.SubGrupo = MMP, la definición de
+        /// <see cref="NestoAPI.Models.Picking.GestorMuestrasSinStock"/>). Si se da por falta, se quita del pedido en vez de quedar pendiente.</summary>
+        public bool EsMuestra { get; set; }
+        /// <summary>El pedido es una nota de entrega: sus muestras no se quitan (como en la regla del 27/10/26).</summary>
+        public bool EsNotaEntrega { get; set; }
     }
 
     /// <summary>
@@ -57,6 +62,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Cantidad { get; set; }
         /// <summary>NestoAPI#593: producto ficticio (cheque regalo, cupón, TiCKET): no cuenta como producto que sale.</summary>
         public bool Ficticio { get; set; }
+        /// <summary>Novedades 1228: muestra (SubGrupo MMP). No cuenta como «resto del pedido que sale» para quitar otra muestra.</summary>
+        public bool EsMuestra { get; set; }
     }
 
     /// <summary>NestoAPI#646: las faltas que de verdad se quitan y, de cada producto recortado, por qué.</summary>
@@ -270,6 +277,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// pasa a pendiente.
         /// </summary>
         Task SacarDelPedido(int lineaPedido, int cantidadQueFalta);
+        /// <summary>
+        /// Novedades 1228 (12/11/26): lo que falta de una línea de MUESTRA se quita del pedido en vez de quedar pendiente: si
+        /// falta todo, la línea se borra; si falta una parte, la línea se queda con lo cogido y lo que falta no se queda en
+        /// ninguna parte (como <see cref="NestoAPI.Models.Picking.EscritorMuestrasSinStock"/>). Con su <paramref name="rastro"/> en
+        /// Modificaciones, en la misma transacción. Devuelve false si no se ha podido quitar con seguridad y la línea ha
+        /// quedado pendiente como siempre (le quedaban reservas enganchadas).
+        /// </summary>
+        Task<bool> QuitarDelPedido(int lineaPedido, int cantidadQueFalta, Modificacion rastro);
         /// <summary>Las líneas de esos pedidos que siguen en el picking (estado 1), de cualquier tipo.</summary>
         Task<List<LineaEnPickingSalida>> LineasQueSiguenEnElPicking(string empresa, int picking, IReadOnlyCollection<int> pedidos);
 
@@ -450,10 +465,13 @@ SELECT l.[Nº Orden] AS Linea, l.[Número] AS Pedido, u.[NºOrden] AS Ubicacion,
             ELSE RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) END AS Hueco,
        CAST(ABS(ISNULL(u.Cantidad, l.Cantidad - l.Recoger)) AS int) AS Cantidad,
        CAST(CASE WHEN l.Recoger <> 0 THEN 1 ELSE 0 END AS bit) AS QuitarAMano,
-       CAST(CASE WHEN l.Cantidad < 0 THEN 1 ELSE 0 END AS bit) AS NoAdmiteFalta
+       CAST(CASE WHEN l.Cantidad < 0 THEN 1 ELSE 0 END AS bit) AS NoAdmiteFalta,
+       CAST(CASE WHEN l.SubGrupo = '" + Constantes.Productos.SUBGRUPO_MUESTRAS + @"' THEN 1 ELSE 0 END AS bit) AS EsMuestra,
+       CAST(ISNULL(c.NotaEntrega, 0) AS bit) AS EsNotaEntrega
 FROM LinPedidoVta l WITH (UPDLOCK)
      LEFT JOIN Ubicaciones u WITH (UPDLOCK) ON u.[NºOrdenVta] = l.[Nº Orden] AND u.Estado = 3
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+     LEFT JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
 WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND ISNULL(p.Ficticio, 0) = 0";
 
         internal const string SQL_PEDIDOS_DEL_PICKING = @"
@@ -462,7 +480,8 @@ SELECT DISTINCT l.[Número] FROM LinPedidoVta l WHERE l.Empresa = @p0 AND l.Pick
         internal const string SQL_LINEAS_QUE_SIGUEN_EN_EL_PICKING = @"
 SELECT l.[Nº Orden] AS Linea, l.[Número] AS Pedido, RTRIM(l.Producto) AS Producto, CAST(ISNULL(l.TipoLinea, 0) AS smallint) AS TipoLinea,
        CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad,
-       CAST(ISNULL(p.Ficticio, 0) AS bit) AS Ficticio
+       CAST(ISNULL(p.Ficticio, 0) AS bit) AS Ficticio,
+       CAST(CASE WHEN l.SubGrupo = '" + Constantes.Productos.SUBGRUPO_MUESTRAS + @"' THEN 1 ELSE 0 END AS bit) AS EsMuestra
 FROM LinPedidoVta l WITH (UPDLOCK)
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
 WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.Estado = 1 AND l.[Número] IN ({0})";
@@ -633,13 +652,58 @@ WHERE u.[NºTraspasoRepo] = @p1
 
         public async Task SacarDelPedido(int lineaPedido, int cantidadQueFalta)
         {
+            _ = await Separar(lineaPedido, cantidadQueFalta, null).ConfigureAwait(false);
+        }
+
+        public async Task<bool> QuitarDelPedido(int lineaPedido, int cantidadQueFalta, Modificacion rastro)
+        {
+            ResultadoSeparar separado = await Separar(lineaPedido, cantidadQueFalta, rastro).ConfigureAwait(false);
+            if (!separado.Hecho)
+            {
+                return false;
+            }
+            if (!separado.Entera)
+            {
+                // La parte que faltaba no llegó a guardarse (DividirLinea la añade y aquí se quita antes de guardar)
+                return true;
+            }
+            if (separado.Reservas.Any())
+            {
+                // Con reservas enganchadas no se borra: se queda pendiente, como siempre, para que no queden huérfanas
+                ElmahHelper.Log(new Exception($"[Picking muestras] La línea {lineaPedido} de muestra dada por falta tiene aún " +
+                    $"{separado.Reservas.Count} reserva(s): se deja pendiente en vez de quitarla del pedido."), NestoAPI.Models.Picking.GestorMuestrasSinStock.USUARIO_AUDITORIA);
+                return false;
+            }
+            _ = db.LinPedidoVtas.Remove(separado.Linea);
+            if (rastro != null)
+            {
+                _ = db.Modificaciones.Add(rastro);
+            }
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            return true;
+        }
+
+        private class ResultadoSeparar
+        {
+            public bool Hecho { get; set; }
+            public bool Entera { get; set; }
+            public LinPedidoVta Linea { get; set; }
+            public List<int> Reservas { get; set; } = new List<int>();
+        }
+
+        /// <summary>
+        /// Lo de SacarDelPedido. Con <paramref name="quitarLoQueFalta"/> (una muestra, Novedades 1228) la parte que falta de
+        /// una falta parcial no se queda pendiente: se descarta antes de guardar y el rastro se guarda en el mismo SaveChanges.
+        /// </summary>
+        private async Task<ResultadoSeparar> Separar(int lineaPedido, int cantidadQueFalta, Modificacion quitarLoQueFalta)
+        {
             LinPedidoVta linea = await db.LinPedidoVtas.SingleAsync(l => l.Nº_Orden == lineaPedido).ConfigureAwait(false);
             // NestoAPI#593 (pedido 928840): una falta (cantidad positiva) nunca saca del pedido una línea en negativo, como
             // la del cheque regalo: −1 − 1 la dejaba pendiente y la factura salía sin el descuento. Quitarla entera (los
             // portes y demás que esperan con el resto) llega con cantidadQueFalta = su cantidad y sí se hace.
             if (cantidadQueFalta > 0 && (linea.Cantidad ?? 0) - linea.Recoger <= 0)
             {
-                return;
+                return new ResultadoSeparar();
             }
             int picking = linea.Picking ?? 0;
             int servida = (linea.Cantidad ?? 0) - linea.Recoger - cantidadQueFalta;
@@ -648,7 +712,8 @@ WHERE u.[NºTraspasoRepo] = @p1
             _ = await db.Database.ExecuteSqlCommandAsync(SQL_SOLTAR_RESERVAS, lineaPedido).ConfigureAwait(false);
 
             linea.Picking = 0;
-            if (servida <= 0)
+            bool entera = servida <= 0;
+            if (entera)
             {
                 // No sale nada de la línea: se queda entera pendiente y sin picking (su reserva ya ha pasado a
                 // «pendiente de ubicar»), como las que GeneradorPendientes deja sin stock al sacar el picking
@@ -658,18 +723,32 @@ WHERE u.[NºTraspasoRepo] = @p1
             else
             {
                 LinPedidoVta pendiente = gestorPedidos.DividirLinea(db, linea, (short)(servida + linea.Recoger));
-                pendiente.Picking = 0;
-                pendiente.Recoger = 0;
-                pendiente.Estado = Constantes.EstadosLineaVenta.PENDIENTE;
+                if (quitarLoQueFalta != null)
+                {
+                    // Muestra: lo que falta no se queda en ninguna parte (como EscritorMuestrasSinStock)
+                    if (pendiente != null)
+                    {
+                        _ = db.LinPedidoVtas.Remove(pendiente);
+                    }
+                    _ = db.Modificaciones.Add(quitarLoQueFalta);
+                }
+                else
+                {
+                    pendiente.Picking = 0;
+                    pendiente.Recoger = 0;
+                    pendiente.Estado = Constantes.EstadosLineaVenta.PENDIENTE;
+                }
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
                 linea.Picking = picking;
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
             }
 
+            // Se vuelven a enganchar siempre; QuitarDelPedido no borra una línea entera a la que le quedaban reservas
             foreach (int reserva in reservas)
             {
                 _ = await db.Database.ExecuteSqlCommandAsync(SQL_ENGANCHAR_RESERVA, lineaPedido, reserva).ConfigureAwait(false);
             }
+            return new ResultadoSeparar { Hecho = true, Entera = entera, Linea = linea, Reservas = reservas };
         }
 
         public Task<List<PiezaSalida>> LeerPiezasReposicion(string empresa, int traspaso)

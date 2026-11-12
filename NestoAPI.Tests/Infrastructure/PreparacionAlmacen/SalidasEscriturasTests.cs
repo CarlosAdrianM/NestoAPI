@@ -58,6 +58,17 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return Task.CompletedTask;
         }
 
+        /// <summary>Novedades 1228: las líneas de muestra quitadas del pedido (con su rastro).</summary>
+        public List<(int Linea, int Cantidad, NestoAPI.Models.Modificacion Rastro)> QuitadoDePedidos { get; } = new List<(int, int, NestoAPI.Models.Modificacion)>();
+        /// <summary>Lo que contesta QuitarDelPedido (false: le quedaban reservas y se ha dejado pendiente).</summary>
+        public bool QuitarDelPedidoDevuelve { get; set; } = true;
+
+        public Task<bool> QuitarDelPedido(int lineaPedido, int cantidadQueFalta, NestoAPI.Models.Modificacion rastro)
+        {
+            QuitadoDePedidos.Add((lineaPedido, cantidadQueFalta, rastro));
+            return Task.FromResult(QuitarDelPedidoDevuelve);
+        }
+
         public Task<List<LineaEnPickingSalida>> LineasQueSiguenEnElPicking(string empresa, int picking, IReadOnlyCollection<int> pedidos)
         {
             PedidosMirados.Add(pedidos);
