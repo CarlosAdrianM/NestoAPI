@@ -227,6 +227,64 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.Recoger(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen(), User));
         }
 
+        /// <summary>NestoAPI#859: el servicio de las recogidas imprevistas (sustituible en los tests).</summary>
+        internal Func<ServicioRecogidasImprevistas> CrearServicioImprevistas { get; set; }
+
+        private ServicioRecogidasImprevistas ServicioImprevistas() =>
+            CrearServicioImprevistas?.Invoke() ?? new ServicioRecogidasImprevistas(new RepositorioRecogidasImprevistasSql(db),
+                new RefrescoSeguimientoEnvio(db, new FabricaAgenciasRemotas(db)), new AvisosRecogidaImprevista(),
+                new Infraestructure.PreparacionAlmacen.AlmacenFotosBultosAzure());
+
+        // POST api/RepartoPropio/RecogidasImprevistas/Comprobar { EnvioParada? | Empresa?, Cliente, Contacto }
+        /// <summary>
+        /// NestoAPI#859: antes de llevarse algo que no esperaba, ¿tiene el cliente un envío de agencia (no la 14) con retorno todavía sin
+        /// entregar? Refresca su seguimiento con un límite corto (si la agencia no contesta, el último estado conocido y se dice en Mensaje).
+        /// 400 sin parada ni cliente; 403; 404 si no existe el envío o el cliente; 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("RecogidasImprevistas/Comprobar")]
+        [ResponseType(typeof(ComprobacionRecogidaImprevistaDTO))]
+        public async Task<IHttpActionResult> ComprobarRecogidaImprevista([FromBody] ComprobarRecogidaImprevistaDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return ResponderImprevista(await ServicioImprevistas().Comprobar(peticion).ConfigureAwait(false));
+        }
+
+        // POST api/RepartoPropio/RecogidasImprevistas { Clave, FechaHora, EnvioParada? | Empresa?, Cliente, Contacto, Bultos, Texto, FotoBase64?, AceptaRetornoVivo }
+        /// <summary>
+        /// NestoAPI#859: «Me dan algo que no esperaba». En UNA transacción crea la nota de recogida NR{pedido} (como una recogida solicitada
+        /// que nace confirmada, Origen «Repartidor», sin parada ni picking) y apunta sus bultos como «Recogido» en la furgoneta de quien
+        /// llama. 201 (repetir con la misma Clave devuelve lo mismo); 400; 403; 404; 409 { Message, Codigo: "RETORNO_VIVO", RetornosVivos }
+        /// si hay un retorno vivo y no se acepta (no crea nada); 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("RecogidasImprevistas")]
+        [ResponseType(typeof(RecogidaImprevistaDTO))]
+        public async Task<IHttpActionResult> CrearRecogidaImprevista([FromBody] CrearRecogidaImprevistaDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return ResponderImprevista(await ServicioImprevistas().Crear(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")).ConfigureAwait(false));
+        }
+
+        private IHttpActionResult ResponderImprevista<T>(ResultadoRecogidaImprevista<T> resultado)
+        {
+            if (resultado.Codigo == HttpStatusCode.OK || resultado.Codigo == HttpStatusCode.Created)
+            {
+                return Content(resultado.Codigo, resultado.Contenido);
+            }
+            if (resultado.CodigoError != null)
+            {
+                return Content(resultado.Codigo, new { Message = resultado.Mensaje, Codigo = resultado.CodigoError, resultado.RetornosVivos });
+            }
+            return Content(resultado.Codigo, new { Message = resultado.Mensaje });
+        }
+
         // POST api/RepartoPropio/Descargar { Codigo, ClaveIdempotencia, FechaHora, SinLeer? }
         /// <summary>
         /// NestoAPI#772: por la tarde, cada bulto que sale de la furgoneta. 409 NO_EN_FURGONETA si no está en ninguna. Desde el

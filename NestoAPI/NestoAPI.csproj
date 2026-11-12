@@ -840,6 +840,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FechaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RepartidoresReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FurgonetaBultos.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\RecogidasImprevistas.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Furgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CierreCajaReparto.cs" />

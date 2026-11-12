@@ -514,6 +514,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   la siguiente lectura del NR). Con abono nuevo, `RecogidaSolicitadaRecibida` (push + campana, Datos + `estado` «Recogida») a quien la
   pidió. Las notas de recogida sin solicitud y `ProcesarNotaEntrega` (Facturar rutas) no cambian.
 
+### Recogida imprevista del repartidor (NestoAPI#859, 12/11/26; gemela Ariadna 29d1390)
+- `POST api/RepartoPropio/RecogidasImprevistas/Comprobar` {EnvioParada? | Empresa?, Cliente, Contacto} y `POST api/RepartoPropio/RecogidasImprevistas`
+  {Clave (Guid), FechaHora, …, Bultos 1-99, Texto ≤500, FotoBase64?, AceptaRetornoVivo} (`ServicioRecogidasImprevistas`, permisos de reparto).
+  Retorno vivo = envío de otra agencia (no la 14) del contacto con Retorno ≠ 0, Tramitado o Incidentado, de los últimos 60 días, tras refrescar su
+  seguimiento (4 s por envío; si no contesta, el estado guardado y se dice). Con retorno vivo sin aceptar: 409 `{Message, Codigo: "RETORNO_VIVO", RetornosVivos}`.
+- Crear, en UNA transacción (`RepositorioRecogidasSolicitadas.CrearImprevista`, mismo núcleo `CrearNota` que Confirmar de #855): la nota NR con
+  líneas a 31/12/2099 (sin picking ni parada), fila «Confirmada» con Origen «Repartidor», Clave y AvisoUrgente (`Scripts/Issue859_RecogidasImprevistas.sql`;
+  sin él, 503) y los «Recogido» NR{p}-{n} en la furgoneta de quien llama. Misma Clave → la misma respuesta. Se cierra como la del vendedor al leer
+  el NR (o NR-n) en Algete (`EsRecogidaDelVendedor` incluye Origen «Repartidor»). Foto opcional al blob de bultos (`recogidas-imprevistas/…`).
+- Avisos: campana `RecogidaImprevista` a Almacén, haCambiado a Reparto y RecogidasSolicitadas; con retorno aceptado, urgente
+  `RecogidaConRetornoEnCamino` (referencia = el envío; suena mientras siga vivo) y línea en EnviosHistoria. Nunca se toca la agencia.
+
 ### «Todo junto» con falta de pago: pedido retenido por falta (NestoAPI#858 punto 4, 12/11/26)
 - En `OrigenSalidaPicking.QuitarFaltasDeLosPedidos` (Terminar y falta definitiva del «No está»), dentro de su transacción
   (`ReglasRetencionTodoJunto.RetenerSiHaceFalta`, solo si la tx implementa `IRetencionTodoJuntoSalida`, como `TransaccionSalidaSql`): una falta

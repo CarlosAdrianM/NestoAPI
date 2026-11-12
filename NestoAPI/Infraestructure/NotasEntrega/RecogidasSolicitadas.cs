@@ -638,7 +638,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 {
                     return;
                 }
-                if (fila.QuienRecoge == QuienRecogeRecogida.VENDEDOR)
+                // NestoAPI#859: también la recogida imprevista del repartidor (sin parada; EsRecogidaDelVendedor la incluye)
+                if (fila.QuienRecoge == QuienRecogeRecogida.VENDEDOR || await repositorio.EsRecogidaDelVendedor(fila.Empresa, pedidoNota).ConfigureAwait(false))
                 {
                     try
                     {

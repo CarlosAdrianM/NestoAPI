@@ -349,6 +349,7 @@
     <Compile Include="Controllers\EnvioRepartoPropioRepetidoTests.cs" />
     <Compile Include="Controllers\AnularEnvioRepartoPropioTests.cs" />
     <Compile Include="Controllers\EtiquetaRepartoPropioNotaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RecogidasImprevistasTests.cs" />
     <Compile Include="Infrastructure\Clientes\EmbudoBloqueDiarioTests.cs" />
     <Compile Include="Infrastructure\Clientes\EmbudoAjusteRitmoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\AnulacionEnvioRepartoPropioTests.cs" />

@@ -253,7 +253,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             "Descripcion, ClaveIdempotencia";
         private const string COLUMNAS_JORNADA = "Id, RTRIM(Usuario) AS Usuario, CAST(Fecha AS datetime) AS Fecha, FechaFin, BultosPendientes, Pendientes, ClaveIdempotencia, FechaRegistro";
 
-        private const string SQL_INSERTAR = @"
+        internal const string SQL_INSERTAR = @"
 IF NOT EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ClaveIdempotencia = @Clave)
     INSERT INTO dbo." + TABLA + @" (Codigo, TipoCodigo, EnvioId, NumTraspaso, Pedido, Bulto, Total, Tipo, Usuario, FechaHora, FechaRegistro,
         Latitud, Longitud, Origen, Descripcion, ClaveIdempotencia)
@@ -426,7 +426,7 @@ SELECT {COLUMNAS} FROM (
             }
         }
 
-        private static object[] Parametros(MovimientoBultoReparto m)
+        internal static object[] Parametros(MovimientoBultoReparto m)
             => new object[]
             {
                 new SqlParameter("@Codigo", SqlDbType.VarChar, 30) { Value = Recortar(m.Codigo, 30) },

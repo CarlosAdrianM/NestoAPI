@@ -41,7 +41,9 @@ namespace NestoAPI.Infraestructure.Notificaciones
             // NestoAPI#844: un cierre de caja del repartidor que no cuadra (a Administración)
             TextosCierreCajaDescuadrado.TIPO_NOTIFICACION,
             // NestoAPI#734: el almacén pregunta a Administración si un pedido retenido sale con o sin reembolso (solo la pregunta)
-            TextosConsultaReembolso.TIPO_NOTIFICACION
+            TextosConsultaReembolso.TIPO_NOTIFICACION,
+            // NestoAPI#859: el repartidor se ha llevado la devolución de un cliente con un envío de agencia con retorno en camino
+            TextosRecogidaImprevista.TIPO_URGENTE
         };
 
         /// <summary>
@@ -159,7 +161,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     {
                         new ComprobadorAutorizacionesPendientes(new RepositorioAutorizacionesReembolso(db)),
                         new ComprobadorCierresCajaDescuadrados(new EstadoCajaReparto(db)), // NestoAPI#844
-                        new ComprobadorConsultasReembolsoAbiertas(new RepositorioConsultasReembolso()) // NestoAPI#734
+                        new ComprobadorConsultasReembolsoAbiertas(new RepositorioConsultasReembolso()), // NestoAPI#734
+                        ComprobadorRecogidasConRetornoEnCamino.DeLaBaseDeDatos(db) // NestoAPI#859
                     });
                 return await servicio.Pendientes(usuario).ConfigureAwait(false);
             }

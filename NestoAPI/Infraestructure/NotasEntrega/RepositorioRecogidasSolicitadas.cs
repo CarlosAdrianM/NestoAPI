@@ -11,6 +11,20 @@ using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.NotasEntrega
 {
+    /// <summary>NestoAPI#859: una recogida imprevista ya guardada (fila de RecogidasSolicitadas con su nota).</summary>
+    public class RecogidaImprevistaGuardada
+    {
+        public int Id { get; set; }
+        public string Empresa { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public short Bultos { get; set; }
+        public int? PedidoNota { get; set; }
+        public bool AvisoUrgente { get; set; }
+        /// <summary>Campo (no propiedad: no es columna de la consulta). True si ya existía con esa clave.</summary>
+        public bool YaExistia;
+    }
+
     /// <summary>
     /// NestoAPI#855: dbo.RecogidasSolicitadas por SQL, fuera del EDMX (como NotasEntregaCabecera, #757: si estuviera en el EDMX y el
     /// script no se hubiera lanzado, tumbaría el contexto). El pedido de la nota, sus líneas y la ficha del cliente, por EF.
@@ -161,11 +175,112 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
             return ids.First();
         }
 
-        public async Task<int?> Confirmar(FilaRecogidaSolicitada fila, short bultos, string texto, IReadOnlyList<string> lineas, FichaNotaCobro ficha, string usuario)
+        public Task<int?> Confirmar(FilaRecogidaSolicitada fila, short bultos, string texto, IReadOnlyList<string> lineas, FichaNotaCobro ficha, string usuario)
+        {
+            bool recogeVendedor = fila.QuienRecoge == QuienRecogeRecogida.VENDEDOR;
+            return CrearNota(fila, bultos, texto, lineas, ficha, usuario, recogeVendedor, null,
+                numero => $"Recogida solicitada {fila.Id} confirmada: nota de recogida {numero} para " +
+                    $"{fila.Cliente}/{fila.Contacto}, {bultos} bulto(s), la recoge {(recogeVendedor ? "el vendedor" : "el reparto")}, pedida por " +
+                    $"{fila.UsuarioSolicita} (NestoAPI#855, usuario {usuario})",
+                async numero => await db.Database.ExecuteSqlCommandAsync(SQL_CONFIRMAR,
+                        Parametro("@Pedido", SqlDbType.Int, numero),
+                        Parametro("@Bultos", SqlDbType.SmallInt, bultos),
+                        Parametro("@Texto", SqlDbType.NVarChar, texto),
+                        Parametro("@Usuario", SqlDbType.VarChar, ServicioRecogidasSolicitadas.Recortar(usuario, 50)),
+                        Parametro("@Id", SqlDbType.Int, fila.Id)).ConfigureAwait(false) == 1);
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#859: recogida imprevista
+
+        internal static readonly string[] COLUMNAS_IMPREVISTAS = { "Origen", "Clave", "FotoRuta", "AvisoUrgente" };
+        public const string ORIGEN_REPARTIDOR = "Repartidor";
+
+        internal const string SQL_IMPREVISTA_POR_CLAVE = "SELECT TOP 1 Id, RTRIM(Empresa) AS Empresa, RTRIM(Cliente) AS Cliente, RTRIM(Contacto) AS Contacto, " +
+            "Bultos, PedidoNota, AvisoUrgente FROM dbo." + TABLA + " WITH (UPDLOCK, HOLDLOCK) WHERE Clave = @Clave ORDER BY Id";
+
+        internal const string SQL_INSERTAR_IMPREVISTA = "INSERT INTO dbo." + TABLA + " (Empresa, Cliente, Contacto, Texto, Bultos, QuienRecoge, Vendedor, " +
+            "UsuarioSolicita, FechaSolicitud, Estado, PedidoNota, UsuarioResuelve, FechaResolucion, Origen, Clave, AvisoUrgente) VALUES (@Empresa, @Cliente, @Contacto, " +
+            "@Texto, @Bultos, '" + QuienRecogeRecogida.REPARTO + "', @Vendedor, @Usuario, GETDATE(), '" + EstadosRecogidaSolicitada.CONFIRMADA + "', @Pedido, " +
+            "@Usuario, GETDATE(), '" + ORIGEN_REPARTIDOR + "', @Clave, @AvisoUrgente)";
+
+        /// <summary>NestoAPI#859: ¿está el script de las imprevistas (y el de #855)?</summary>
+        public bool ScriptImprevistasAplicado() => ScriptAplicado() && ColumnasOpcionales.Existen(db, TABLA, COLUMNAS_IMPREVISTAS);
+
+        /// <summary>NestoAPI#859: la imprevista ya creada con esa clave del aparato, o null.</summary>
+        public async Task<RecogidaImprevistaGuardada> LeerImprevistaPorClave(Guid clave)
+            => (await db.Database.SqlQuery<RecogidaImprevistaGuardada>(SQL_IMPREVISTA_POR_CLAVE,
+                new SqlParameter("@Clave", SqlDbType.UniqueIdentifier) { Value = clave }).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+
+        /// <summary>
+        /// NestoAPI#859: en UNA transacción, la nota de recogida (como la de una solicitud confirmada de #855, con las líneas a 31/12/2099:
+        /// no entra en picking ni en Facturar rutas, ya está recogida), su fila en RecogidasSolicitadas («Confirmada», Origen «Repartidor»,
+        /// la clave) y los «Recogido» de sus bultos en la furgoneta del repartidor. Si otra petición con la misma clave ya la creó, no crea
+        /// nada y devuelve la suya (YaExistia).
+        /// </summary>
+        public async Task<RecogidaImprevistaGuardada> CrearImprevista(FilaRecogidaSolicitada fila, Guid clave, short bultos, string texto,
+            IReadOnlyList<string> lineas, FichaNotaCobro ficha, string usuario, string comentario, bool avisoUrgente,
+            Func<int, IReadOnlyList<Agencias.RepartoPropio.MovimientoBultoReparto>> movimientos)
+        {
+            RecogidaImprevistaGuardada yaExistia = null;
+            int? pedido = await CrearNota(fila, bultos, texto, lineas, ficha, usuario, true, comentario,
+                numero => $"Recogida imprevista del repartidor {fila.UsuarioSolicita}: nota de recogida {numero} para {fila.Cliente}/{fila.Contacto}, " +
+                    $"{bultos} bulto(s), ya recogida (NestoAPI#859)",
+                async numero =>
+                {
+                    yaExistia = await LeerImprevistaPorClave(clave).ConfigureAwait(false);
+                    if (yaExistia != null)
+                    {
+                        return false;
+                    }
+                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR_IMPREVISTA,
+                        Parametro("@Empresa", SqlDbType.Char, fila.Empresa),
+                        Parametro("@Cliente", SqlDbType.Char, fila.Cliente),
+                        Parametro("@Contacto", SqlDbType.Char, fila.Contacto),
+                        Parametro("@Texto", SqlDbType.NVarChar, texto),
+                        Parametro("@Bultos", SqlDbType.SmallInt, bultos),
+                        Parametro("@Vendedor", SqlDbType.Char, fila.Vendedor),
+                        Parametro("@Usuario", SqlDbType.VarChar, ServicioRecogidasSolicitadas.Recortar(fila.UsuarioSolicita, 50)),
+                        Parametro("@Pedido", SqlDbType.Int, numero),
+                        new SqlParameter("@Clave", SqlDbType.UniqueIdentifier) { Value = clave },
+                        new SqlParameter("@AvisoUrgente", SqlDbType.Bit) { Value = avisoUrgente }).ConfigureAwait(false);
+                    foreach (Agencias.RepartoPropio.MovimientoBultoReparto m in movimientos?.Invoke(numero) ?? new List<Agencias.RepartoPropio.MovimientoBultoReparto>())
+                    {
+                        _ = await db.Database.ExecuteSqlCommandAsync(Agencias.RepartoPropio.RepositorioFurgoneta.SQL_INSERTAR,
+                            Agencias.RepartoPropio.RepositorioFurgoneta.Parametros(m)).ConfigureAwait(false);
+                    }
+                    return true;
+                }).ConfigureAwait(false);
+            if (yaExistia != null)
+            {
+                yaExistia.YaExistia = true;
+                return yaExistia;
+            }
+            if (!pedido.HasValue)
+            {
+                return null;
+            }
+            RecogidaImprevistaGuardada creada = await LeerImprevistaPorClave(clave).ConfigureAwait(false);
+            return creada ?? new RecogidaImprevistaGuardada
+            {
+                Empresa = fila.Empresa, Cliente = fila.Cliente, Contacto = fila.Contacto, Bultos = bultos, PedidoNota = pedido
+            };
+        }
+
+        public async Task GuardarFotoImprevista(int id, string ruta)
+            => _ = await db.Database.ExecuteSqlCommandAsync("UPDATE dbo." + TABLA + " SET FotoRuta = @Ruta WHERE Id = @Id",
+                Parametro("@Ruta", SqlDbType.NVarChar, ruta), Parametro("@Id", SqlDbType.Int, id)).ConfigureAwait(false);
+
+        /// <summary>
+        /// El núcleo de la nota de recogida (NestoAPI#855 y #859): pedido NotaEntrega = 1 con sus líneas de texto, NotasEntregaCabecera
+        /// (Recogida) y Modificaciones, y <paramref name="paso"/> (la fila de RecogidasSolicitadas y lo que haga falta) en la MISMA transacción.
+        /// Si el paso devuelve false, se deshace todo y devuelve null.
+        /// </summary>
+        private async Task<int?> CrearNota(FilaRecogidaSolicitada fila, short bultos, string texto, IReadOnlyList<string> lineas, FichaNotaCobro ficha,
+            string usuario, bool sinParada, string comentario, Func<int, string> textoModificacion, Func<int, Task<bool>> paso)
         {
             string empresa = fila.Empresa;
             DateTime hoy = DateTime.Today;
-            bool recogeVendedor = fila.QuienRecoge == QuienRecogeRecogida.VENDEDOR;
+            bool recogeVendedor = sinParada;
             PlazoPago plazo = await db.PlazosPago.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Empresa == empresa && p.Número == Constantes.PlazosPago.CONTADO).ConfigureAwait(false);
             if (plazo == null)
@@ -176,6 +291,10 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
 
             int numero = db.TomarSiguienteNumeroPedido();
             CabPedidoVta cabecera = ConstruirCabecera(fila, numero, texto, ficha, hoy, usuarioPedido);
+            if (comentario != null)
+            {
+                cabecera.Comentarios = comentario;
+            }
             List<LinPedidoVta> lineasPedido;
             try
             {
@@ -202,10 +321,8 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
             var modificacion = new Modificacion
             {
                 Tabla = ServicioRecogidasSolicitadas.TABLA_MODIFICACIONES,
-                Anterior = $"Recogida solicitada {fila.Id}: {EstadosRecogidaSolicitada.SOLICITADA}",
-                Nuevo = ServicioRecogidasSolicitadas.Recortar($"Recogida solicitada {fila.Id} confirmada: nota de recogida {numero} para " +
-                    $"{fila.Cliente}/{fila.Contacto}, {bultos} bulto(s), la recoge {(recogeVendedor ? "el vendedor" : "el reparto")}, pedida por " +
-                    $"{fila.UsuarioSolicita} (NestoAPI#855, usuario {usuario})", 4000),
+                Anterior = fila.Id > 0 ? $"Recogida solicitada {fila.Id}: {EstadosRecogidaSolicitada.SOLICITADA}" : "Recogida imprevista: sin nota",
+                Nuevo = ServicioRecogidasSolicitadas.Recortar(textoModificacion(numero), 4000),
                 Usuario = ServicioRecogidasSolicitadas.Recortar(usuario, 50)
             };
 
@@ -227,13 +344,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
                         Parametro("@Factura", SqlDbType.VarChar, fila.FacturaOriginal),
                         Parametro("@Usuario", SqlDbType.VarChar, ServicioRecogidasSolicitadas.Recortar(usuario ?? "NestoAPI", 50))).ConfigureAwait(false);
 
-                    int filas = await db.Database.ExecuteSqlCommandAsync(SQL_CONFIRMAR,
-                        Parametro("@Pedido", SqlDbType.Int, numero),
-                        Parametro("@Bultos", SqlDbType.SmallInt, bultos),
-                        Parametro("@Texto", SqlDbType.NVarChar, texto),
-                        Parametro("@Usuario", SqlDbType.VarChar, ServicioRecogidasSolicitadas.Recortar(usuario, 50)),
-                        Parametro("@Id", SqlDbType.Int, fila.Id)).ConfigureAwait(false);
-                    if (filas != 1)
+                    if (!await paso(numero).ConfigureAwait(false))
                     {
                         transaccion.RollbackSeguro();
                         Soltar(cabecera, lineasPedido, modificacion);
@@ -391,8 +502,12 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
             {
                 return false;
             }
+            // NestoAPI#859: la imprevista del repartidor (Origen «Repartidor») tampoco tiene parada: se cierra igual al leer el NR en Algete
+            string sinParada = ColumnasOpcionales.Existen(db, TABLA, COLUMNAS_IMPREVISTAS)
+                ? $"(QuienRecoge = '{QuienRecogeRecogida.VENDEDOR}' OR Origen = '{ORIGEN_REPARTIDOR}')"
+                : $"QuienRecoge = '{QuienRecogeRecogida.VENDEDOR}'";
             List<int> filas = await db.Database.SqlQuery<int>(
-                $"SELECT TOP 1 Id FROM dbo.{TABLA} WITH (NOLOCK) WHERE Empresa = @p0 AND PedidoNota = @p1 AND QuienRecoge = '{QuienRecogeRecogida.VENDEDOR}' " +
+                $"SELECT TOP 1 Id FROM dbo.{TABLA} WITH (NOLOCK) WHERE Empresa = @p0 AND PedidoNota = @p1 AND {sinParada} " +
                 $"AND Estado = '{EstadosRecogidaSolicitada.CONFIRMADA}'", empresa, pedidoNota).ToListAsync().ConfigureAwait(false);
             return filas.Count > 0;
         }
