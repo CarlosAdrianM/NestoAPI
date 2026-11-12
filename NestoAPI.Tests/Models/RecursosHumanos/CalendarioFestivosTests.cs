@@ -47,6 +47,32 @@ namespace NestoAPI.Tests.Models.RecursosHumanos
             new Festivo { Fecha = fecha, TipoFestivo = tipo, Fiesta = descripcion };
 
         [TestMethod]
+        public void AnioDisparatado_SinFestivosNiElmahNiLectura()
+        {
+            ConTabla(F(LUNES_02_11_2026, TipoFestivo.Algete));
+
+            Assert.AreEqual(0, CalendarioFestivos.DelAnio(2099).Count);
+            Assert.AreEqual(0, CalendarioFestivos.DelAnio(2100).Count);
+            Assert.AreEqual(0, CalendarioFestivos.DelAnio(1999).Count);
+            Assert.IsFalse(GestorFestivos.EsFestivo(new DateTime(2099, 12, 31), Constantes.Almacenes.ALGETE));
+
+            Assert.AreEqual(0, errores.Count, "Las fechas centinela no avisan");
+            Assert.AreEqual(0, lecturas, "Ni siquiera se lee la tabla");
+        }
+
+        [TestMethod]
+        public void AnioQueVieneSinCargar_SigueAvisando()
+        {
+            ConTabla(F(LUNES_02_11_2026, TipoFestivo.Algete));
+
+            _ = CalendarioFestivos.DelAnio(2027);
+
+            Assert.AreEqual(1, errores.Count, "El aviso legítimo no cambia");
+            Assert.IsTrue(CalendarioFestivos.EsAnioDisparatado(2032, 2026));
+            Assert.IsFalse(CalendarioFestivos.EsAnioDisparatado(2031, 2026));
+        }
+
+        [TestMethod]
         public void SinLector_UsaLaListaDelCodigo()
         {
             CalendarioFestivos.Reiniciar();

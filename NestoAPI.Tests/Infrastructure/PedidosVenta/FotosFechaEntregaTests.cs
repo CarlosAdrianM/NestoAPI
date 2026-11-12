@@ -90,6 +90,20 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void Construir_FechasCentinela2099_SonSinFecha()
+        {
+            var centinela = new DateTime(2099, 12, 31);
+            List<FotoFechaEntrega> fotos = ReglasFotosFechaEntrega.Construir("1", 10, Calculo(
+                Partida("A", PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR, centinela, 1, 220894, centinela)), HOY);
+
+            Assert.IsNull(fotos[0].FechaSalida, "31/12/2099 es «sin determinar», no una fecha");
+            Assert.IsNull(fotos[0].FechaPrevistaProveedor);
+            Assert.AreEqual(220894, fotos[0].PedidoProveedor);
+            Assert.IsNull(ReglasFotosFechaEntrega.SinFecha(new DateTime(2100, 1, 1), HOY));
+            Assert.AreEqual(HOY.Date.AddYears(1), ReglasFotosFechaEntrega.SinFecha(HOY.AddYears(1), HOY));
+        }
+
+        [TestMethod]
         public void Construir_MandaLaPartidaMasTardia()
         {
             List<FotoFechaEntrega> fotos = ReglasFotosFechaEntrega.Construir("1", 10, Calculo(

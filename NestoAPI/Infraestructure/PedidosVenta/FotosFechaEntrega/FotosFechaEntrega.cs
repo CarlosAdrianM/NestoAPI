@@ -142,7 +142,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
                 }
                 PartidaFechaEntregaAgenciaDTO manda = QuienManda(grupo.ToList());
                 PartidaFechaEntregaAgenciaDTO proveedor = sinStock.FirstOrDefault(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR);
-                bool algunaSinFecha = grupo.Any(p => !p.PuedeSalirEl.HasValue);
+                // Las fechas centinela (31/12/2099 «sin determinar», 2100…) son «sin fecha», no una fecha con la que medir
+                bool algunaSinFecha = grupo.Any(p => SinFecha(p.PuedeSalirEl, hoy) == null);
                 fotos.Add(new FotoFechaEntrega
                 {
                     Empresa = empresa?.Trim(),
@@ -154,14 +155,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
                     Origen = manda.Origen,
                     Caso = CasosFotoFechaEntrega.De(manda.Origen),
                     PedidoProveedor = proveedor?.PedidoProveedor,
-                    FechaPrevistaProveedor = proveedor?.FechaPrevistaProveedor?.Date,
+                    FechaPrevistaProveedor = SinFecha(proveedor?.FechaPrevistaProveedor, hoy),
                     PrevistaVencida = proveedor?.LlegadaSupuesta != null,
-                    FechaEntregaAgencia = calculo.FechaEntregaAgencia?.Date,
-                    FechaPrometidaAlCrear = calculo.FechaPrometida?.Date
+                    FechaEntregaAgencia = SinFecha(calculo.FechaEntregaAgencia, hoy),
+                    FechaPrometidaAlCrear = SinFecha(calculo.FechaPrometida, hoy)
                 });
             }
             return fotos;
         }
+
+        /// <summary>
+        /// La fecha (sin hora), o null si es una fecha centinela: un año disparatado para el calendario
+        /// (<see cref="global::NestoAPI.Models.RecursosHumanos.CalendarioFestivos.EsAnioDisparatado"/>: 2099, 2100…).
+        /// </summary>
+        internal static DateTime? SinFecha(DateTime? fecha, DateTime hoy) =>
+            fecha.HasValue && !global::NestoAPI.Models.RecursosHumanos.CalendarioFestivos.EsAnioDisparatado(fecha.Value.Year, hoy.Year) ? fecha.Value.Date : (DateTime?)null;
 
         /// <summary>La partida que marca la fecha: la que no tiene fecha y, si todas la tienen, la más tardía (a igualdad, la de origen más lejano).</summary>
         internal static PartidaFechaEntregaAgenciaDTO QuienManda(List<PartidaFechaEntregaAgenciaDTO> partidas)

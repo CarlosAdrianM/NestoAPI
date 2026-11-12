@@ -312,6 +312,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Frena AT/16 (fecha de entrega, picking de rutas internas, RP, paradas), las llegadas de reposición (`CalculadoraFechaReposicion`) y el
   aviso de las 22:00 de la furgoneta. Lo dan de alta también Almacén (solo ese tipo; no hay grupo «Logística» en el dominio, Carlos 09/11/26). Requiere `Scripts/Issue841_FestivosRepartoPropio.sql` (CHECK).
 
+### Años disparatados en el calendario (12/11/26)
+- `CalendarioFestivos.DelAnio` de un año anterior a 2000 o de más de 5 por delante del actual (`EsAnioDisparatado`: las centinela 31/12/2099,
+  2100…) → sin festivos, sin ELMAH y sin leer la tabla (los fines de semana siguen contando). El aviso del año que viene sin cargar no cambia.
+  Las fotos de `fechas-entrega-fotos-sombra` guardan esas fechas como «sin fecha» (`ReglasFotosFechaEntrega.SinFecha`).
+
 ### Nota de cobro: parada de solo cobro (NestoAPI#786, 04/11/26)
 - `NotasEntregaCabecera.Tipo` = «Cobro» (`TiposNotaEntrega.COBRO`; `Scripts/Issue786_NotasCobro.sql`: CHECK ampliada, columna
   `ImporteCobro` y tabla `NotasEntregaCobroEfectos` con los Nº Orden de ExtractoCliente en su orden). Pedido con NotaEntrega = 1 **sin

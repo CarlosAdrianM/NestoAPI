@@ -63,6 +63,12 @@ namespace NestoAPI.Models.RecursosHumanos
         /// </summary>
         public static IReadOnlyList<Festivo> DelAnio(int anio)
         {
+            // Un año disparatado (las fechas centinela 31/12/2099, 2100…, o anteriores a 2000): sin festivos, sin ELMAH y sin tocar la
+            // caché (los fines de semana siguen contando). El aviso legítimo del año que viene sin cargar no cambia.
+            if (EsAnioDisparatado(anio, reloj().Year))
+            {
+                return NINGUNO;
+            }
             Estado estado = Actual();
             if (!estado.HayTabla)
             {
@@ -76,6 +82,13 @@ namespace NestoAPI.Models.RecursosHumanos
             AvisarAnioSinFestivos(anio, delCodigo.Count);
             return delCodigo;
         }
+
+        /// <summary>Más de estos años por delante de hoy ya no es una fecha de verdad (las centinela son 2099 y 2100).</summary>
+        public const int ANIOS_ADELANTE_MAXIMO = 5;
+        public const int ANIO_MINIMO = 2000;
+
+        /// <summary>Un año anterior a 2000 o más de <see cref="ANIOS_ADELANTE_MAXIMO"/> por delante del actual.</summary>
+        public static bool EsAnioDisparatado(int anio, int anioActual) => anio < ANIO_MINIMO || anio > anioActual + ANIOS_ADELANTE_MAXIMO;
 
         /// <summary>¿La tabla tiene alguna fila de ese año? False si no hay tabla o no se ha podido leer.</summary>
         public static bool TablaTieneAnio(int anio)
