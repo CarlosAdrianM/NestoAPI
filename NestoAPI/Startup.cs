@@ -320,6 +320,9 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(_ => Infraestructure.PreparacionAlmacen.RepositorioAvisosFichaSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto, Infraestructure.PreparacionAlmacen.AvisadorFichaProducto>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAvisosFicha, Infraestructure.PreparacionAlmacen.ServicioAvisosFicha>();
+            // NestoAPI#642: mantenimiento de las calles del recorrido (GET/PUT api/Almacen/Recorrido, ventana de Nesto#528)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioRecorrido>(_ => Infraestructure.PreparacionAlmacen.RepositorioRecorridoSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecorridoAlmacen, Infraestructure.PreparacionAlmacen.ServicioRecorridoAlmacen>();
             // Etiquetas de hueco: un solo sitio que imprime, en el servidor, para Nesto y Ariadna (05/10/26)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasHueco>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco(
                 Infraestructure.PreparacionAlmacen.RepositorioEtiquetasHuecoSql.ConContextoPropio(),

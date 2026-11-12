@@ -47,6 +47,8 @@ namespace NestoAPI.Controllers
         private readonly IServicioFichaProductoAlmacen fichaProducto;
         /// <summary>C1 (Carlos 12/11/26): el «No está» que deja el hueco a cero y manda al siguiente. Null: no está configurado.</summary>
         private readonly IServicioNoEstaSalida noEsta;
+        /// <summary>NestoAPI#642: el mantenimiento de las calles del recorrido (Nesto#528). Null: no está configurado.</summary>
+        private readonly IServicioRecorridoAlmacen recorrido;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
@@ -58,8 +60,10 @@ namespace NestoAPI.Controllers
             Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking = null,
             IServicioCambioHuecoReposicion cambioHuecoReposicion = null,
             IServicioFichaProductoAlmacen fichaProducto = null,
-            IServicioNoEstaSalida noEsta = null)
+            IServicioNoEstaSalida noEsta = null,
+            IServicioRecorridoAlmacen recorrido = null)
         {
+            this.recorrido = recorrido;
             this.noEsta = noEsta;
             this.fichaProducto = fichaProducto;
             this.cambioHuecoReposicion = cambioHuecoReposicion;
@@ -1016,6 +1020,63 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(ex);
                 return Content(HttpStatusCode.BadGateway, ex.Message);
+            }
+        }
+
+        public const string MENSAJE_RECORRIDO_NO_CONFIGURADO = "El mantenimiento del recorrido no está configurado en el servidor.";
+
+        // GET api/Almacen/Recorrido?almacen=ALG&empresa=1
+        /// <summary>
+        /// NestoAPI#642 (corte 4 de #639, ventana de Nesto#528): las calles del recorrido del almacén (orden, sentido y pasillos), los
+        /// pasillos con huecos en uso que no van en ninguna calle y la vista previa de los tramos en el orden que resulta. Leer: cualquiera
+        /// identificado (como todo api/Almacen).
+        /// </summary>
+        [HttpGet]
+        [Route("Recorrido")]
+        [ResponseType(typeof(RecorridoAlmacenDTO))]
+        public async Task<IHttpActionResult> GetRecorrido(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (recorrido == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, MENSAJE_RECORRIDO_NO_CONFIGURADO);
+            }
+            return Ok(await recorrido.Leer(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // PUT api/Almacen/Recorrido?almacen=ALG&empresa=1&ensayo=false
+        /// <summary>
+        /// NestoAPI#642: guarda TODO el recorrido del almacén (calles en el orden de la lista, sus pasillos en orden, nombres de pasillos
+        /// y FilaAMano) en una transacción y devuelve lo guardado como el GET. Con ensayo=true no guarda: devuelve lo que quedaría (vista
+        /// previa). Permiso: el mismo que Etiquetas de hueco (escribir en api/Almacen: Almacén o Dirección). 400 si lo pedido no vale,
+        /// 403 sin permiso, 503 si faltan las tablas (Scripts/Issue641_RecorridoCalles.sql).
+        /// </summary>
+        [HttpPut]
+        [Route("Recorrido")]
+        [ResponseType(typeof(RecorridoAlmacenDTO))]
+        public async Task<IHttpActionResult> PutRecorrido([FromBody] PeticionRecorridoAlmacenDTO peticion,
+            string almacen = Constantes.Almacenes.ALGETE, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ensayo = false)
+        {
+            // El [EscrituraSoloAlmacen] de la clase ya lo para; se repite aquí por si alguien lo quita del controlador
+            if (!EscrituraSoloAlmacenAttribute.PuedeEscribir(User))
+            {
+                return Content(HttpStatusCode.Forbidden, EscrituraSoloAlmacenAttribute.MENSAJE_SIN_PERMISO);
+            }
+            if (recorrido == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, MENSAJE_RECORRIDO_NO_CONFIGURADO);
+            }
+            try
+            {
+                return Ok(await recorrido.Guardar(Empresa(empresa), Almacen(almacen), peticion, Usuario(), ensayo).ConfigureAwait(false));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (RecorridoSinTablasException ex)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ex.Message);
             }
         }
 

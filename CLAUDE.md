@@ -476,6 +476,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   del año de `hasta` respecto a cada año). Una consulta agregada por año y mes (`SQL_FACTURACION_TIENDA_ANUAL`), del 1 de enero al mismo
   día y mes de cada año. Excel: hoja «Acumulado» y, en el comparativo, también «Comparativo». El correo (POST …/Correo) sigue siendo de la semana.
 
+### Mantenimiento de calles del recorrido (NestoAPI#642, corte 4 de #639, para Nesto#528, 12/11/26)
+- `GET api/Almacen/Recorrido?almacen=ALG&empresa=1` → `RecorridoAlmacenDTO`: calles (Orden, Sentido A/D, pasillos con Posicion, Nombre y
+  Huecos), `PasillosSinCalle` (con huecos en uso o con nombre) y `Tramos` (pasillo+columna+nivel AMano/Escalera de los huecos en uso, con la
+  regla única `OrdenRecorrido`). Sin las tablas de `Scripts/Issue641_RecorridoCalles.sql`: `TablasCreadas` false y el orden de siempre.
+- `PUT …/Recorrido?almacen=&empresa=&ensayo=` sustituye TODO el recorrido del almacén en una transacción (`RepositorioRecorridoSql.Guardar`):
+  el orden de la lista es el de las calles (Orden 10, 20…), el de cada lista de pasillos su Posicion; `FilaAMano` null = no tocar. Permiso: el
+  de Etiquetas de hueco (escribir en api/Almacen: Almacén o Dirección). 400 validación, 403, 503 sin tablas. Sin caché: el lector es Scoped.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
