@@ -766,10 +766,53 @@ WHERE u.[NºTraspasoRepo] = @p1
                 ? await db.Database.ExecuteSqlCommandAsync(SQL_REGISTRO_REPOSICION_A_PENDIENTE_DE_UBICAR, pieza.Ubicacion.Value, cantidad, Usuario(usuario)).ConfigureAwait(false)
                 : await db.Database.ExecuteSqlCommandAsync(SQL_PENDIENTE_DE_UBICAR_DE_LA_SALIDA, pieza.Linea, cantidad, Usuario(usuario)).ConfigureAwait(false);
             _ = await db.Database.ExecuteSqlCommandAsync(SQL_MENOS_SALIDA, pieza.Linea, cantidad).ConfigureAwait(false);
+            await MenosEntrada(empresa, traspaso, pieza.Producto, cantidad).ConfigureAwait(false);
+        }
 
-            // Lo que no sale tampoco entra en el destino
+        // NestoAPI#858: las líneas de salida del producto en el traspaso, la más nueva primero
+        internal const string SQL_SALIDAS_DEL_PRODUCTO = @"
+SELECT s.[Nº Orden] AS Linea, CAST(-s.Cantidad AS int) AS Cantidad FROM PreExtrProducto s WITH (UPDLOCK)
+     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.[Número] = @p2 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
+ORDER BY s.[Nº Orden] DESC";
+
+        /// <summary>
+        /// NestoAPI#858 (falta definitiva del «No está» de una reposición): menos en la salida y menos en la entrada, como
+        /// <see cref="QuitarDeLaReposicion"/> pero SIN tocar Ubicaciones (la reserva ya se ha soltado al hueco y el inventario la ha
+        /// quitado del stock: «pendiente de ubicar» la volvería a contar). Si no hay tanto en la salida o en la entrada, lanza y no queda nada.
+        /// </summary>
+        public async Task QuitarDelTraspaso(string empresa, int traspaso, string producto, int cantidad)
+        {
+            if (cantidad <= 0)
+            {
+                return;
+            }
             int queda = cantidad;
-            List<LineaCantidad> entradas = await db.Database.SqlQuery<LineaCantidad>(SQL_ENTRADAS_DEL_PRODUCTO, empresa, traspaso, pieza.Producto)
+            List<LineaCantidad> salidas = await db.Database.SqlQuery<LineaCantidad>(SQL_SALIDAS_DEL_PRODUCTO, empresa, traspaso, producto)
+                .ToListAsync().ConfigureAwait(false);
+            foreach (LineaCantidad salida in salidas)
+            {
+                if (queda == 0)
+                {
+                    break;
+                }
+                int menos = Math.Min(queda, salida.Cantidad);
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_MENOS_SALIDA, salida.Linea, menos).ConfigureAwait(false);
+                queda -= menos;
+            }
+            if (queda > 0)
+            {
+                throw new NestoBusinessException($"La salida del traspaso {traspaso} ya no tiene {queda} de {producto} pendiente: " +
+                    "no se puede quitar la falta sin descuadrar. No se ha hecho nada.");
+            }
+            await MenosEntrada(empresa, traspaso, producto, cantidad).ConfigureAwait(false);
+        }
+
+        /// <summary>Lo que no sale tampoco entra en el destino (la entrada del traspaso, la línea más nueva primero).</summary>
+        private async Task MenosEntrada(string empresa, int traspaso, string producto, int cantidad)
+        {
+            int queda = cantidad;
+            List<LineaCantidad> entradas = await db.Database.SqlQuery<LineaCantidad>(SQL_ENTRADAS_DEL_PRODUCTO, empresa, traspaso, producto)
                 .ToListAsync().ConfigureAwait(false);
             foreach (LineaCantidad entrada in entradas)
             {
@@ -783,7 +826,7 @@ WHERE u.[NºTraspasoRepo] = @p1
             }
             if (queda > 0)
             {
-                throw new NestoBusinessException($"La entrada del traspaso {traspaso} en el destino ya no tiene {queda} de {pieza.Producto} " +
+                throw new NestoBusinessException($"La entrada del traspaso {traspaso} en el destino ya no tiene {queda} de {producto} " +
                     "pendiente (¿ya se ha dado entrada?): no se puede quitar la falta sin descuadrar. No se ha hecho nada.");
             }
         }

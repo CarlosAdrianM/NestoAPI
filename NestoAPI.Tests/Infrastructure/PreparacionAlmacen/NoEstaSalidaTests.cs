@@ -23,6 +23,10 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public int? Pedido { get; set; }
         /// <summary>El picking de la línea (las reservas de otros pickings no son «propias»).</summary>
         public int Picking { get; set; }
+        /// <summary>NestoAPI#858: NºTraspasoRepo de una reserva de reposición (estado 4 o -4).</summary>
+        public int? Traspaso { get; set; }
+        /// <summary>NestoAPI#858: NºOrdenRepo (la línea de entrada del traspaso).</summary>
+        public int? LineaEntrada { get; set; }
         public FilaUbicacionFalsa Copia() => (FilaUbicacionFalsa)MemberwiseClone();
     }
 
@@ -46,6 +50,15 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public Exception FallarAlContabilizarInventario { get; set; }
         public int TraspasoInventario { get; set; } = 7001;
         private int siguienteId = 1000;
+
+        // NestoAPI#858: la reposición (PreExtrProducto del traspaso, en unidades)
+        public string AlmacenRepo { get; set; } = "ALG";
+        /// <summary>Lo que queda por salir del traspaso (todos sus productos).</summary>
+        public int PorSalir { get; set; }
+        public int SalidaDelProducto { get; set; }
+        public int EntradaDelProducto { get; set; }
+        public List<(string Producto, int Cantidad)> QuitadoDelTraspaso { get; } = new List<(string, int)>();
+        public bool FallarAlReservarParaElTraspaso { get; set; }
 
         public Task Bloquear(string recurso)
         {
@@ -113,7 +126,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         public Task SoltarReservaAlHueco(int ubicacion, int cantidad, string usuario)
         {
-            FilaUbicacionFalsa reserva = Ubicaciones.Single(u => u.Id == ubicacion && u.Estado == 3);
+            FilaUbicacionFalsa reserva = Ubicaciones.Single(u => u.Id == ubicacion && (u.Estado == 3 || u.Estado == 4));
             Ubicaciones.Add(new FilaUbicacionFalsa { Id = siguienteId++, Hueco = reserva.Hueco, Estado = 0, Cantidad = cantidad });
             reserva.Cantidad -= cantidad;
             Ubicaciones.RemoveAll(u => u.Cantidad == 0);
@@ -135,18 +148,54 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return Task.CompletedTask;
         }
 
-        // Para deshacer (transacción que no se confirma o falla)
-        internal (List<FilaUbicacionFalsa>, int, List<Inventario>, int, int) Foto() =>
-            (Ubicaciones.Select(u => u.Copia()).ToList(), Stock, Inventario.Select(i => new Inventario { Estado = i.Estado, Usuario = i.Usuario, StockCalculado = i.StockCalculado, StockReal = i.StockReal, Pasillo = i.Pasillo, Fila = i.Fila, Columna = i.Columna, NºTraspaso = i.NºTraspaso }).ToList(),
-                Rastros.Count, SacadoDePedidos.Count);
+        public Task<string> AlmacenReposicion(string empresa, int traspaso) => Task.FromResult(AlmacenRepo);
 
-        internal void Volver((List<FilaUbicacionFalsa> Ubicaciones, int Stock, List<Inventario> Inventario, int Rastros, int Sacados) foto)
+        public Task<List<ReservaPropiaNoEsta>> ReservasReposicion(string empresa, int traspaso, string producto, string hueco) =>
+            Task.FromResult(Ubicaciones.Where(u => u.Estado == 4 && u.Traspaso == traspaso && u.Hueco == hueco && u.Cantidad > 0)
+                .OrderByDescending(u => u.Id)
+                .Select(u => new ReservaPropiaNoEsta { Ubicacion = u.Id, Pedido = traspaso, LineaEntrada = u.LineaEntrada, EmpresaLinea = "1", Almacen = "ALG", Producto = producto, Cantidad = u.Cantidad })
+                .ToList());
+
+        public Task ReservarDeLaLibreParaElTraspaso(int libre, int cantidad, int? lineaEntrada, int traspaso, string usuario)
+        {
+            if (FallarAlReservarParaElTraspaso)
+            {
+                throw new InvalidOperationException("el hueco al que se iba a pasar la reserva ha cambiado mientras tanto (otra PDA): vuelva a intentarlo");
+            }
+            FilaUbicacionFalsa fila = Ubicaciones.Single(u => u.Id == libre && u.Estado == 0);
+            Ubicaciones.Add(new FilaUbicacionFalsa { Id = siguienteId++, Hueco = fila.Hueco, Estado = 4, Cantidad = cantidad, Traspaso = traspaso, LineaEntrada = lineaEntrada });
+            fila.Cantidad -= cantidad;
+            Ubicaciones.RemoveAll(u => u.Cantidad == 0);
+            return Task.CompletedTask;
+        }
+
+        public Task<int> UnidadesPorSalir(string empresa, int traspaso) => Task.FromResult(PorSalir);
+
+        public Task QuitarDelTraspaso(string empresa, int traspaso, string producto, int cantidad)
+        {
+            QuitadoDelTraspaso.Add((producto, cantidad));
+            PorSalir -= cantidad;
+            SalidaDelProducto -= cantidad;
+            EntradaDelProducto -= cantidad;
+            return Task.CompletedTask;
+        }
+
+        // Para deshacer (transacción que no se confirma o falla)
+        internal (List<FilaUbicacionFalsa>, int, List<Inventario>, int, int, (int, int, int, int)) Foto() =>
+            (Ubicaciones.Select(u => u.Copia()).ToList(), Stock, Inventario.Select(i => new Inventario { Estado = i.Estado, Usuario = i.Usuario, StockCalculado = i.StockCalculado, StockReal = i.StockReal, Pasillo = i.Pasillo, Fila = i.Fila, Columna = i.Columna, NºTraspaso = i.NºTraspaso }).ToList(),
+                Rastros.Count, SacadoDePedidos.Count, (PorSalir, SalidaDelProducto, EntradaDelProducto, QuitadoDelTraspaso.Count));
+
+        internal void Volver((List<FilaUbicacionFalsa> Ubicaciones, int Stock, List<Inventario> Inventario, int Rastros, int Sacados, (int PorSalir, int Salida, int Entrada, int Quitados) Traspaso) foto)
         {
             Ubicaciones = foto.Ubicaciones;
             Stock = foto.Stock;
             Inventario = foto.Inventario;
             Rastros.RemoveRange(foto.Rastros, Rastros.Count - foto.Rastros);
             SacadoDePedidos.RemoveRange(foto.Sacados, SacadoDePedidos.Count - foto.Sacados);
+            PorSalir = foto.Traspaso.PorSalir;
+            SalidaDelProducto = foto.Traspaso.Salida;
+            EntradaDelProducto = foto.Traspaso.Entrada;
+            QuitadoDelTraspaso.RemoveRange(foto.Traspaso.Quitados, QuitadoDelTraspaso.Count - foto.Traspaso.Quitados);
         }
     }
 
@@ -202,7 +251,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             tx = repositorio.Transaccion;
             avisador = A.Fake<IAvisadorFaltasPicking>();
             activo = true;
-            servicio = new ServicioNoEstaSalida(new IOrigenNoEsta[] { new OrigenNoEstaPicking() }, repositorio, null, avisador, () => activo,
+            servicio = new ServicioNoEstaSalida(new IOrigenNoEsta[] { new OrigenNoEstaPicking(), new OrigenNoEstaReposicion() }, repositorio, null, avisador, () => activo,
                 () => new DateTime(2026, 11, 12, 10, 0, 0));
             // En el hueco de la parada: 2 libres, 1 reservada para la línea 9001 de este picking y 3 de otro picking
             tx.Ubicaciones = new List<FilaUbicacionFalsa>
@@ -335,8 +384,10 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task NoEsta_EnUnaReposicion_TodaviaNo_DaLaFaltaComoSiempre()
+        public async Task NoEsta_TipoSinOrigen_DaLaFaltaComoSiempre_SinEntrarEnLaBaseDeDatos()
         {
+            servicio = new ServicioNoEstaSalida(new IOrigenNoEsta[] { new OrigenNoEstaPicking() }, repositorio, null, avisador, () => true);
+
             ResultadoNoEsta resultado = await NoEsta(tipo: "REPO");
 
             Assert.AreEqual(EstadoNoEsta.Hecho, resultado.Estado);
@@ -417,8 +468,256 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 Assert.IsFalse(sql.IndexOf("UPDATE ExtractoProducto", StringComparison.OrdinalIgnoreCase) >= 0);
                 Assert.IsFalse(sql.IndexOf("INSERT INTO Inventarios", StringComparison.OrdinalIgnoreCase) >= 0);
             }
-            StringAssert.Contains(TransaccionNoEstaSql.SQL_RESERVA_A_LIBRE, "Estado = 3");
+            StringAssert.Contains(TransaccionNoEstaSql.SQL_RESERVA_A_LIBRE, "Estado IN (3, 4)");
             StringAssert.Contains(TransaccionNoEstaSql.SQL_RESERVAS_PICKING, "ISNULL(l.Recoger, 0) = 0");
+        }
+
+        // ================================================================ NestoAPI#858: la reposición, encendido
+
+        private const int TRASPASO = 81234;
+
+        /// <summary>
+        /// En el hueco de la parada: 2 libres, 1 reservada (estado 4) para ESTE traspaso (línea de entrada 555), 3 de otro traspaso y 2
+        /// de un picking. El traspaso tiene 5 por salir (de este y de otros productos).
+        /// </summary>
+        private void PrepararReposicion()
+        {
+            tx.Ubicaciones = new List<FilaUbicacionFalsa>
+            {
+                new FilaUbicacionFalsa { Id = 1, Hueco = HUECO, Estado = 0, Cantidad = 2 },
+                new FilaUbicacionFalsa { Id = 2, Hueco = HUECO, Estado = 4, Cantidad = 1, Traspaso = TRASPASO, LineaEntrada = 555 },
+                new FilaUbicacionFalsa { Id = 3, Hueco = HUECO, Estado = 4, Cantidad = 3, Traspaso = 80000, LineaEntrada = 444 },
+                new FilaUbicacionFalsa { Id = 4, Hueco = HUECO, Estado = 3, Cantidad = 2, Linea = 8001, Pedido = 930001, Picking = 100060 }
+            };
+            tx.Stock = 8;
+            tx.PorSalir = 5;
+            tx.SalidaDelProducto = 1;
+            tx.EntradaDelProducto = 1;
+        }
+
+        private Task<ResultadoNoEsta> NoEstaRepo(int cantidad = 1, bool ensayo = false) =>
+            servicio.MarcarNoEsta(EMPRESA, "REPO", TRASPASO, new NoEstaSalidaDTO { Producto = TransaccionNoEstaFalsa.PRODUCTO, Hueco = "010/002/003", Cantidad = cantidad },
+                Usuario(ensayo ? "Dirección" : "Almacén"), ensayo);
+
+        [TestMethod]
+        public async Task NoEstaRepo_SoloQuitaLoLibreYLoDeEsteTraspaso_YReservaEnElSiguienteHueco_SinPendienteDeUbicar()
+        {
+            PrepararReposicion();
+            tx.Ubicaciones.Add(new FilaUbicacionFalsa { Id = 5, Hueco = OTRO_HUECO, Estado = 0, Cantidad = 5 });
+            tx.Stock = 13;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.AreEqual(EstadoNoEsta.Hecho, resultado.Estado);
+            ResultadoNoEstaDTO dto = resultado.Resultado;
+            Assert.IsTrue(dto.Regularizado);
+            Assert.AreEqual("REPO", dto.Tipo);
+            Assert.AreEqual(3, dto.UnidadesRegularizadas, "Las 2 libres y la del traspaso que no estaba");
+            Assert.AreEqual(10, tx.Stock, "El extracto baja justo eso (por el SP del inventario)");
+            CollectionAssert.AreEquivalent(new[] { 3, 4 }, tx.Ubicaciones.Where(u => u.Hueco == HUECO).Select(u => u.Id).ToList(),
+                "En el hueco solo quedan la reserva del otro traspaso y la del picking, sin tocar");
+            FilaUbicacionFalsa nueva = tx.Ubicaciones.Single(u => u.Hueco == OTRO_HUECO && u.Estado == 4);
+            Assert.AreEqual((TRASPASO, 555, 1), (nueva.Traspaso.Value, nueva.LineaEntrada.Value, nueva.Cantidad), "La reserva del traspaso pasa al siguiente hueco con su línea de entrada");
+            Assert.AreEqual(4, tx.Ubicaciones.Single(u => u.Hueco == OTRO_HUECO && u.Estado == 0).Cantidad);
+            Assert.IsFalse(tx.Ubicaciones.Any(u => u.Estado == 2), "Nada a «pendiente de ubicar»");
+            Assert.AreEqual(0, tx.QuitadoDelTraspaso.Count, "El traspaso sigue igual: sale lo mismo, de otro hueco");
+            Assert.AreEqual(0, tx.QuitadoDeReposicion.Count);
+            Assert.AreEqual(0, tx.Inventario.Count(i => i.Estado == 1), "Ninguna fila de inventario pendiente");
+            Assert.AreEqual(ServicioNoEstaSalida.USUARIO_INVENTARIO, tx.Inventario.Single().Usuario);
+            Assert.AreEqual("011/001/001", dto.HuecoPropuesto);
+            Assert.IsFalse(dto.SinMasHuecos);
+            Assert.IsTrue(repositorio.Confirmada);
+            CollectionAssert.AreEqual(new[] { "InventarioRellenar:1:ALG", "InventarioRellenar:1:ALG:010:002:003" }, tx.Bloqueos);
+            Modificacion rastro = tx.Rastros.Single();
+            StringAssert.Contains(rastro.Anterior, "REPO");
+            StringAssert.Contains(rastro.Anterior, "555");
+            A.CallTo(() => avisador.Avisar(A<string>._, A<int>._, A<string>._, A<IReadOnlyList<FaltaPickingPedido>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_SinMasHuecos_FaltaDefinitiva_SaleDeLaSalidaYDeLaEntrada_SinPendienteDeUbicar()
+        {
+            PrepararReposicion();
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            ResultadoNoEstaDTO dto = resultado.Resultado;
+            Assert.IsTrue(dto.Regularizado);
+            Assert.IsTrue(dto.SinMasHuecos);
+            Assert.AreEqual(1, dto.UnidadesEnFaltaDefinitiva);
+            Assert.AreEqual((TransaccionNoEstaFalsa.PRODUCTO, 1), tx.QuitadoDelTraspaso.Single());
+            Assert.AreEqual(4, tx.PorSalir);
+            Assert.AreEqual((0, 0), (tx.SalidaDelProducto, tx.EntradaDelProducto), "Ni sale del origen ni la espera la tienda");
+            Assert.AreEqual(5, tx.Stock, "8 - (2 libres + 1 del traspaso): no vuelve a contar como libre");
+            Assert.IsFalse(tx.Ubicaciones.Any(u => u.Estado == 0 || u.Estado == 2), "Ni libre ni «pendiente de ubicar»");
+            Assert.AreEqual(0, tx.QuitadoDeReposicion.Count, "No va por el camino del Terminar (que crea «pendiente de ubicar»)");
+            Assert.AreEqual(0, tx.SacadoDePedidos.Count);
+            Assert.IsTrue(repositorio.Confirmada);
+            A.CallTo(() => avisador.Avisar(A<string>._, A<int>._, A<string>._, A<IReadOnlyList<FaltaPickingPedido>>._)).MustNotHaveHappened();
+            StringAssert.Contains(dto.Mensaje, "No queda en ningún otro hueco");
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_SiEsLoUltimoQueQuedaPorSacar_NoSeRegulariza_YNoSeTocaNada()
+        {
+            PrepararReposicion();
+            tx.PorSalir = 1;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.AreEqual(EstadoNoEsta.Hecho, resultado.Estado);
+            Assert.IsFalse(resultado.Resultado.Regularizado);
+            StringAssert.Contains(resultado.Resultado.MotivoSinRegularizar, "lo último que queda por sacar");
+            Assert.IsFalse(repositorio.Confirmada);
+            Assert.AreEqual(8, tx.Stock);
+            Assert.AreEqual(0, tx.Inventario.Count);
+            Assert.AreEqual(1, tx.Ubicaciones.Single(u => u.Id == 2).Cantidad, "La reserva sigue donde estaba");
+            Assert.AreEqual(0, tx.QuitadoDelTraspaso.Count);
+            Assert.AreEqual(0, tx.Rastros.Count);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_SiFallaLaContabilizacion_NoSeTocaNada()
+        {
+            PrepararReposicion();
+            tx.FallarAlContabilizarInventario = new InvalidOperationException("No se han podido contabilizar las líneas de producto");
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.AreEqual(EstadoNoEsta.NoSePuede, resultado.Estado);
+            StringAssert.Contains(resultado.Mensaje, "no se ha tocado nada");
+            Assert.AreEqual(8, tx.Stock);
+            Assert.AreEqual(0, tx.Inventario.Count, "Ninguna fila de inventario (ni pendiente)");
+            Assert.AreEqual(1, tx.Ubicaciones.Single(u => u.Id == 2).Cantidad);
+            Assert.AreEqual(5, tx.PorSalir);
+            Assert.AreEqual(0, tx.Rastros.Count);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_SiFallaLaReservaEnElOtroHueco_NoSeTocaNada()
+        {
+            PrepararReposicion();
+            tx.Ubicaciones.Add(new FilaUbicacionFalsa { Id = 5, Hueco = OTRO_HUECO, Estado = 0, Cantidad = 5 });
+            tx.Stock = 13;
+            tx.FallarAlReservarParaElTraspaso = true;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.AreEqual(EstadoNoEsta.NoSePuede, resultado.Estado);
+            Assert.AreEqual(13, tx.Stock, "El inventario ya hecho también se deshace");
+            Assert.AreEqual(0, tx.Inventario.Count);
+            Assert.AreEqual(1, tx.Ubicaciones.Single(u => u.Id == 2).Cantidad);
+            Assert.AreEqual(5, tx.Ubicaciones.Single(u => u.Id == 5).Cantidad);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_ConLaReservaEnMenos4DeNestoViejo_NoSeRegulariza()
+        {
+            PrepararReposicion();
+            tx.Ubicaciones.Single(u => u.Id == 2).Estado = -4;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.IsFalse(resultado.Resultado.Regularizado);
+            Assert.AreEqual(0, tx.Inventario.Count);
+            Assert.AreEqual(8, tx.Stock);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_SinSalidaPendiente_NoExiste()
+        {
+            PrepararReposicion();
+            tx.AlmacenRepo = null;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.AreEqual(EstadoNoEsta.NoExiste, resultado.Estado);
+            Assert.AreEqual(8, tx.Stock);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_SiElProductoSeEstaInventariando_NoSeTocaNada()
+        {
+            PrepararReposicion();
+            tx.PendientesDeOtros = 1;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.IsFalse(resultado.Resultado.Regularizado);
+            StringAssert.Contains(resultado.Resultado.MotivoSinRegularizar, "se está inventariando");
+            Assert.AreEqual(0, tx.Inventario.Count);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_Ensayo_HaceLoMismoYNoGuarda()
+        {
+            PrepararReposicion();
+
+            ResultadoNoEsta resultado = await NoEstaRepo(ensayo: true);
+
+            Assert.IsTrue(resultado.Resultado.Regularizado);
+            Assert.IsTrue(resultado.Resultado.SinMasHuecos);
+            Assert.IsFalse(repositorio.Confirmada);
+            Assert.AreEqual(8, tx.Stock);
+            Assert.AreEqual(5, tx.PorSalir);
+            Assert.AreEqual(0, tx.QuitadoDelTraspaso.Count);
+        }
+
+        [TestMethod]
+        public async Task NoEstaRepo_ConElInterruptorApagado_NoEntraEnLaBaseDeDatos()
+        {
+            PrepararReposicion();
+            activo = false;
+
+            ResultadoNoEsta resultado = await NoEstaRepo();
+
+            Assert.IsFalse(resultado.Resultado.Regularizado);
+            Assert.AreEqual(0, repositorio.Llamadas);
+        }
+
+        [TestMethod]
+        public void Interruptor_EncendidoPorDefecto_YSoloSeApagaSiLoDiceExpresamente()
+        {
+            foreach (string encendido in new[] { null, "", "  ", "1", "true", "sí", "cualquier cosa" })
+            {
+                Assert.IsTrue(ServicioNoEstaSalida.Interpretar(encendido), $"«{encendido}» tiene que dejarlo encendido");
+            }
+            foreach (string apagado in new[] { "0", " 0 ", "false", "FALSE", "no", "off", "Apagado" })
+            {
+                Assert.IsFalse(ServicioNoEstaSalida.Interpretar(apagado), $"«{apagado}» tiene que apagarlo");
+            }
+            Assert.AreEqual("Salidas.NoEstaRegulariza", ServicioNoEstaSalida.CLAVE, "La clave del script Issue858_NoEsta_Interruptor.sql");
+            Assert.IsTrue(ServicioNoEstaSalida.CLAVE.Length <= 50, "ParametrosUsuario.Clave es char(50)");
+        }
+
+        [TestMethod]
+        public void LineaVigilancia_DiceTodoLoQueHaHecho()
+        {
+            var dto = new ResultadoNoEstaDTO
+            {
+                Tipo = "REPO", Numero = TRASPASO, Producto = "17404", Hueco = "010/002/003", Regularizado = true, UnidadesRegularizadas = 3,
+                TraspasoInventario = 7001, UnidadesReubicadas = 1, Huecos = new List<HuecoReubicadoNoEstaDTO> { new HuecoReubicadoNoEstaDTO { Ubicacion = "011/001/001", Cantidad = 1 } }
+            };
+
+            string linea = ServicioNoEstaSalida.LineaVigilancia(dto, "ALG");
+
+            StringAssert.StartsWith(linea, "[No está] REPO 81234, 17404 en 010/002/003 (ALG)");
+            StringAssert.Contains(linea, "7001");
+            StringAssert.Contains(linea, "1 a 011/001/001");
+        }
+
+        [TestMethod]
+        public void SqlRepo_LaFaltaDefinitivaNoTocaUbicaciones_YSoloSonPropiasLasReservasEnEstado4()
+        {
+            foreach (string sql in new[] { TransaccionSalidaSql.SQL_SALIDAS_DEL_PRODUCTO, TransaccionSalidaSql.SQL_MENOS_SALIDA,
+                TransaccionSalidaSql.SQL_ENTRADAS_DEL_PRODUCTO, TransaccionSalidaSql.SQL_MENOS_ENTRADA, TransaccionNoEstaSql.SQL_UNIDADES_POR_SALIR })
+            {
+                Assert.IsFalse(sql.IndexOf("Ubicaciones", StringComparison.OrdinalIgnoreCase) >= 0, sql);
+                Assert.IsFalse(sql.IndexOf("ExtractoProducto", StringComparison.OrdinalIgnoreCase) >= 0, "ExtractoProducto solo por sus SP: " + sql);
+            }
+            StringAssert.Contains(TransaccionNoEstaSql.SQL_RESERVAS_REPOSICION, "u.Estado = 4");
+            Assert.IsFalse(TransaccionNoEstaSql.SQL_RESERVAS_REPOSICION.Contains("-4"));
+            StringAssert.Contains(TransaccionNoEstaSql.SQL_RESERVAS_REPOSICION, "DiarioSalidaRep");
         }
     }
 }

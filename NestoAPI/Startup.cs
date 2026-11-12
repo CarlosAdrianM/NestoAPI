@@ -298,9 +298,10 @@ namespace NestoAPI
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoPicking, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoPicking>();
-            // C1 (Carlos 12/11/26): «No está» = el hueco a cero en el inventario y al siguiente hueco (interruptor Salidas.NoEstaRegulariza)
+            // C1 (Carlos 12/11/26): «No está» = el hueco a cero en el inventario y al siguiente hueco; NestoAPI#858: también en la
+            // reposición y ENCENDIDO (apagado de emergencia: ParametrosUsuario «(defecto)» Salidas.NoEstaRegulariza = 0)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioNoEstaSalida>(sp => new Infraestructure.PreparacionAlmacen.ServicioNoEstaSalida(
-                new Infraestructure.PreparacionAlmacen.IOrigenNoEsta[] { new Infraestructure.PreparacionAlmacen.OrigenNoEstaPicking() },
+                new Infraestructure.PreparacionAlmacen.IOrigenNoEsta[] { new Infraestructure.PreparacionAlmacen.OrigenNoEstaPicking(), new Infraestructure.PreparacionAlmacen.OrigenNoEstaReposicion() },
                 new Infraestructure.PreparacionAlmacen.RepositorioNoEstaSql(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.ILectorOrdenRecorrido>(),
                 new Infraestructure.PreparacionAlmacen.AvisadorFaltasPicking(sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorCompras>())));

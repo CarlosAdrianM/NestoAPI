@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure.Inventarios;
+using NestoAPI.Infraestructure.Ubicaciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -109,13 +110,35 @@ WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 A
       AND RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) = @p3 AND u.Cantidad > 0
 ORDER BY l.[Número] DESC, l.[Nº Orden] DESC";
 
-        // La reserva (estado 3) vuelve a libre EN SU HUECO (no a «pendiente de ubicar»): así el inventario del hueco la quita del stock
+        // La reserva (estado 3 del picking o 4 de la reposición, NestoAPI#858) vuelve a libre EN SU HUECO (no a «pendiente de
+        // ubicar»): así el inventario del hueco la quita del stock. La fila libre nueva no lleva pedido, línea ni traspaso.
         internal const string SQL_RESERVA_A_LIBRE = @"
 INSERT INTO Ubicaciones (Empresa, [Almacén], [Número], Cantidad, Pasillo, Fila, Columna, Estado, Usuario)
-SELECT Empresa, [Almacén], [Número], @p1, Pasillo, Fila, Columna, 0, @p2 FROM Ubicaciones WHERE [NºOrden] = @p0 AND Estado = 3 AND Cantidad >= @p1;
+SELECT Empresa, [Almacén], [Número], @p1, Pasillo, Fila, Columna, 0, @p2 FROM Ubicaciones WHERE [NºOrden] = @p0 AND Estado IN (3, 4) AND Cantidad >= @p1;
 IF @@ROWCOUNT = 0 THROW 50002, 'La reserva ya no está en ese hueco (otra PDA la ha cambiado): vuelva a abrir la recogida.', 1;
 UPDATE Ubicaciones SET Cantidad = Cantidad - @p1 WHERE [NºOrden] = @p0;
 DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0;";
+
+        // NestoAPI#858: lo reservado para el traspaso en el hueco (como SQL_RESERVAS_DEL_TRASPASO_EN_EL_HUECO de la puerta), solo en
+        // estado 4 (las -4 de Nesto viejo ya figuran como salida) y en el almacén de su salida pendiente. Pedido = el traspaso.
+        internal const string SQL_RESERVAS_REPOSICION = @"
+SELECT u.[NºOrden] AS Ubicacion, 0 AS Linea, CAST(u.[NºTraspasoRepo] AS int) AS Pedido, u.[NºOrdenRepo] AS LineaEntrada,
+       RTRIM(@p0) AS EmpresaLinea, RTRIM(u.[Almacén]) AS Almacen, RTRIM(u.[Número]) AS Producto, CAST(u.Cantidad AS int) AS Cantidad,
+       CAST(0 AS bit) AS EsMuestra, CAST(0 AS bit) AS EsNotaEntrega
+FROM Ubicaciones u WITH (UPDLOCK)
+WHERE u.[NºTraspasoRepo] = @p1 AND u.Estado = 4 AND u.[Número] = @p2 AND u.Cantidad > 0
+      AND RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) = @p3
+      AND u.[Almacén] IN (SELECT s.[Almacén] FROM PreExtrProducto s
+                               INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+                          WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
+                                AND s.[Número] = @p2)
+ORDER BY u.[NºOrden] DESC";
+
+        // NestoAPI#858: lo que queda por salir del traspaso (todas sus líneas de salida)
+        internal const string SQL_UNIDADES_POR_SALIR = @"
+SELECT CAST(ISNULL(-SUM(s.Cantidad), 0) AS int) FROM PreExtrProducto s WITH (UPDLOCK)
+     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0";
 
         private readonly NVEntities db;
         private readonly DbContextTransaction transaccion;
@@ -202,6 +225,30 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0;";
                 new SqlParameter("@p0", libre), new SqlParameter("@p1", cantidad), new SqlParameter("@p2", linea), new SqlParameter("@p3", pedido),
                 Char("@p4", 3, empresaLinea), Texto("@p5", Quien(usuario))).ConfigureAwait(false);
         }
+
+        public async Task<string> AlmacenReposicion(string empresa, int traspaso) =>
+            (await db.Database.SqlQuery<string>(RepositorioPreparacionAlmacen.SQL_ORIGEN_REPOSICION, Char("@p0", 3, empresa), new SqlParameter("@p1", traspaso))
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+
+        public Task<List<ReservaPropiaNoEsta>> ReservasReposicion(string empresa, int traspaso, string producto, string hueco) =>
+            db.Database.SqlQuery<ReservaPropiaNoEsta>(SQL_RESERVAS_REPOSICION, Char("@p0", 3, empresa), new SqlParameter("@p1", traspaso),
+                Char("@p2", 15, producto), Texto("@p3", hueco)).ToListAsync();
+
+        public async Task ReservarDeLaLibreParaElTraspaso(int libre, int cantidad, int? lineaEntrada, int traspaso, string usuario)
+        {
+            // La misma escritura que CambiarHuecoReservaReposicion (puerta de Ubicaciones): NULL si la libre ya no tenía esas unidades
+            int? nueva = (await db.Database.SqlQuery<int?>(PuertaUbicacionesSql.SQL_RESERVA_DE_LA_LIBRE_PARA_EL_TRASPASO,
+                new SqlParameter("@p0", libre), new SqlParameter("@p1", cantidad),
+                new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)lineaEntrada ?? DBNull.Value },
+                new SqlParameter("@p3", traspaso), Texto("@p4", Quien(usuario))).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            if (nueva == null)
+            {
+                throw new InvalidOperationException("el hueco al que se iba a pasar la reserva ha cambiado mientras tanto (otra PDA): vuelva a intentarlo");
+            }
+        }
+
+        public Task<int> UnidadesPorSalir(string empresa, int traspaso) =>
+            db.Database.SqlQuery<int>(SQL_UNIDADES_POR_SALIR, Char("@p0", 3, empresa), new SqlParameter("@p1", traspaso)).SingleAsync();
 
         public async Task ApuntarRastro(Modificacion rastro)
         {

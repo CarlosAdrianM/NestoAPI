@@ -84,13 +84,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         internal string Almacen { get; set; }
     }
 
-    /// <summary>La reserva de esta salida en el hueco de la parada (picking: estado 3 de una línea de pedido).</summary>
+    /// <summary>
+    /// La reserva de esta salida en el hueco de la parada: en el picking, el estado 3 de una línea de pedido; en la reposición
+    /// (NestoAPI#858), el estado 4 del traspaso (NºTraspasoRepo), con su línea de entrada (NºOrdenRepo).
+    /// </summary>
     public class ReservaPropiaNoEsta
     {
         /// <summary>Ubicaciones.NºOrden de la reserva.</summary>
         public int Ubicacion { get; set; }
+        /// <summary>La línea del pedido (picking). 0 en la reposición.</summary>
         public int Linea { get; set; }
+        /// <summary>El pedido (picking) o el traspaso (reposición).</summary>
         public int Pedido { get; set; }
+        /// <summary>NestoAPI#858, reposición: Ubicaciones.NºOrdenRepo de la reserva (la línea de ENTRADA del traspaso). Null en el picking.</summary>
+        public int? LineaEntrada { get; set; }
         public string EmpresaLinea { get; set; }
         public string Almacen { get; set; }
         public string Producto { get; set; }
@@ -145,11 +152,30 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<string> AlmacenPicking(string empresa, int picking);
         /// <summary>Las reservas (estado 3) de las líneas de ese picking con ese producto en ese hueco, el pedido más nuevo primero.</summary>
         Task<List<ReservaPropiaNoEsta>> ReservasPicking(string empresa, int picking, string producto, string hueco);
-        /// <summary>Esas unidades de la reserva vuelven a ser libres EN SU HUECO (estado 0), para que el inventario las quite.</summary>
+        /// <summary>
+        /// Esas unidades de la reserva (picking: estado 3; reposición: estado 4) vuelven a ser libres EN SU HUECO (estado 0), para
+        /// que el inventario las quite. Común a los dos orígenes.
+        /// </summary>
         Task SoltarReservaAlHueco(int ubicacion, int cantidad, string usuario);
         /// <summary>Reserva de la fila libre para la línea (lo de CambiarHueco, Ariadna#12).</summary>
         Task ReservarDeLaLibre(int libre, int cantidad, int linea, int pedido, string empresaLinea, string usuario);
         Task ApuntarRastro(Modificacion rastro);
+
+        // ---- NestoAPI#858: la reposición (REPO) ----
+
+        /// <summary>El almacén de origen del traspaso (el de su salida pendiente). Null si ya no tiene salida pendiente.</summary>
+        Task<string> AlmacenReposicion(string empresa, int traspaso);
+        /// <summary>Las reservas (estado 4, NºTraspasoRepo) del traspaso con ese producto en ese hueco, la más nueva primero. Las -4 (Nesto viejo) no.</summary>
+        Task<List<ReservaPropiaNoEsta>> ReservasReposicion(string empresa, int traspaso, string producto, string hueco);
+        /// <summary>De la fila libre, una reserva del traspaso (estado 4, con su línea de entrada), como CambiarHuecoReservaReposicion.</summary>
+        Task ReservarDeLaLibreParaElTraspaso(int libre, int cantidad, int? lineaEntrada, int traspaso, string usuario);
+        /// <summary>Las unidades que quedan en la salida del traspaso (todas sus líneas de salida en PreExtrProducto).</summary>
+        Task<int> UnidadesPorSalir(string empresa, int traspaso);
+        /// <summary>
+        /// La falta definitiva de una reposición: menos en la salida del origen y menos en la entrada del destino (PreExtrProducto),
+        /// SIN tocar Ubicaciones (la reserva ya se ha soltado al hueco y el inventario la ha quitado): nada de «pendiente de ubicar».
+        /// </summary>
+        Task QuitarDelTraspaso(string empresa, int traspaso, string producto, int cantidad);
     }
 
     public interface IRepositorioNoEsta
@@ -159,8 +185,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     }
 
     /// <summary>
-    /// C1: lo propio de cada tipo de salida en el «No está». Hoy solo PICK; REPO no (ver CLAUDE.md): para ese tipo la API contesta
-    /// Regularizado = false y la app da la falta como siempre.
+    /// C1: lo propio de cada tipo de salida en el «No está», y SOLO eso (Carlos 12/11/26: «lo máximo común posible»): (a) cuál es la
+    /// reserva propia y cómo se suelta al hueco, (b) cómo se reserva en el siguiente hueco y (c) qué es la falta definitiva. Bloqueos,
+    /// inventario, contabilización, cuadre, rastro, ELMAH, respuesta y ensayo son del núcleo (<see cref="ServicioNoEstaSalida"/>).
+    /// PICK (<see cref="OrigenNoEstaPicking"/>) y, desde NestoAPI#858, REPO (<see cref="OrigenNoEstaReposicion"/>): son los dos únicos
+    /// tipos de salida (<see cref="CasadorEscaneos.NormalizarTipoOrigen"/>).
     /// </summary>
     public interface IOrigenNoEsta
     {
@@ -170,7 +199,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<ReservaPropiaNoEsta>> ReservasPropias(ITransaccionNoEsta tx, string empresa, int numero, string producto, string hueco);
         Task SoltarAlHueco(ITransaccionNoEsta tx, ReservaPropiaNoEsta reserva, int cantidad, string usuario);
         Task Reservar(ITransaccionNoEsta tx, ReservaPropiaNoEsta reserva, LibreEnHueco libre, int cantidad, string usuario);
-        /// <summary>Lo que no se ha podido reservar en ningún hueco sale de la salida (como una falta al terminar). Devuelve los cambios.</summary>
+        /// <summary>
+        /// Lo que no se ha podido reservar en ningún hueco sale de la salida (como una falta al terminar). Devuelve los cambios. Si en
+        /// ese caso concreto no es seguro, lanza <see cref="NoEstaNoSeRegularizaException"/> ANTES de escribir: el núcleo contesta
+        /// Regularizado = false y se deshace todo (la app da la falta como siempre).
+        /// </summary>
         Task<List<string>> FaltaDefinitiva(ITransaccionNoEsta tx, string empresa, int numero, List<RecorteSalida> recortes, List<FaltaPickingPedido> avisar);
     }
 
@@ -189,7 +222,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// <item>Lo soltado se reserva en el siguiente hueco con libre (orden del recorrido); lo que no cabe en ninguno es falta definitiva
     /// y sale de la salida como al terminar (A y B incluidos).</item>
     /// </list>
-    /// Detrás del interruptor <see cref="CLAVE"/> (solo «true» lo enciende). Ensayo: lo mismo, deshecho siempre.
+    /// NestoAPI#858 (Carlos 12/11/26): ENCENDIDO por defecto, también sin fila. Apagado de emergencia sin publicar: ParametrosUsuario
+    /// empresa 1, usuario «(defecto)», clave <see cref="CLAVE"/> = «0» (o false/no/off/apagado). Ensayo: lo mismo, deshecho siempre.
+    /// Cada «No está» regularizado deja su rastro en Modificaciones y una línea «[No está] …» en ELMAH para vigilarlo.
     /// </summary>
     public interface IServicioNoEstaSalida
     {
@@ -222,8 +257,32 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.ahora = ahora ?? (() => DateTime.Now);
         }
 
-        internal static bool ActivoSegunConfiguracion() =>
-            string.Equals(System.Configuration.ConfigurationManager.AppSettings[CLAVE]?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// NestoAPI#858: el interruptor vive en ParametrosUsuario «(defecto)» de la empresa 1 (los flags de Web.config se pierden al
+        /// publicar). Se lee en cada «No está» (sin caché: apagarlo vale al momento) y sin crear filas. Sin fila, encendido; si no se
+        /// puede leer, encendido (lo demás va en la misma base de datos y, si falla, falla con 409 sin tocar nada).
+        /// </summary>
+        internal static bool ActivoSegunConfiguracion()
+        {
+            try
+            {
+                return Interpretar(NestoAPI.Controllers.ParametrosUsuarioController.LeerParametroSinDefecto(Constantes.Empresas.EMPRESA_POR_DEFECTO, USUARIO_DEFECTO, CLAVE));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[No está] No se ha podido leer el interruptor {CLAVE}: se deja encendido. {ex.Message}", ex), USUARIO_INVENTARIO);
+                return true;
+            }
+        }
+
+        internal const string USUARIO_DEFECTO = "(defecto)";
+
+        /// <summary>Encendido salvo que diga expresamente que no: «0», «false», «no», «off» o «apagado» (vacío o sin fila = encendido).</summary>
+        internal static bool Interpretar(string valor)
+        {
+            string limpio = valor?.Trim().ToLowerInvariant();
+            return !(limpio == "0" || limpio == "false" || limpio == "no" || limpio == "off" || limpio == "apagado");
+        }
 
         public async Task<ResultadoNoEsta> MarcarNoEsta(string empresa, string tipo, int numero, NoEstaSalidaDTO peticion, IPrincipal usuario, bool ensayo = false)
         {
@@ -257,7 +316,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             if (!activo())
             {
-                return SinRegularizar(base_, $"Dejar el hueco a cero está apagado ({CLAVE}): dé la falta como siempre.");
+                return SinRegularizar(base_, $"Dejar el hueco a cero está apagado (parámetro {CLAVE} de «{USUARIO_DEFECTO}»): dé la falta como siempre.");
             }
 
             string quien = ServicioSalidas.NombreUsuario(usuario);
@@ -273,6 +332,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     ServicioSalidas.MensajeCompleto(ex), ex), quien);
                 return Error(EstadoNoEsta.NoSePuede, "No se ha podido dejar el hueco a cero en el inventario y no se ha tocado nada " +
                     $"({ServicioSalidas.MensajeCompleto(ex)}). Inténtelo otra vez o dé la falta como siempre.");
+            }
+
+            if (!ensayo && resultado?.Estado == EstadoNoEsta.Hecho && resultado.Resultado?.Regularizado == true)
+            {
+                // NestoAPI#858: va encendido sin haberse probado contra la base de datos real: cada uno, a la vista en ELMAH
+                try
+                {
+                    ElmahHelper.Log(new Exception(LineaVigilancia(resultado.Resultado, resultado.Almacen)), quien);
+                }
+                catch (Exception)
+                {
+                    // Solo es el aviso para vigilarlo: el «No está» ya está guardado
+                }
             }
 
             if (!ensayo && resultado.Estado == EstadoNoEsta.Hecho && resultado.FaltasPorAvisar.Count > 0 && avisadorFaltas != null)
@@ -444,7 +516,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         EsNotaEntrega = f.Reserva.EsNotaEntrega
                     }
                 }).ToList();
-                dto.Cambios.AddRange(await origen.FaltaDefinitiva(tx, empresa, numero, recortes, resultado.FaltasPorAvisar).ConfigureAwait(false) ?? new List<string>());
+                List<string> cambios;
+                try
+                {
+                    cambios = await origen.FaltaDefinitiva(tx, empresa, numero, recortes, resultado.FaltasPorAvisar).ConfigureAwait(false);
+                }
+                catch (NoEstaNoSeRegularizaException ex)
+                {
+                    // Lo dice el origen antes de escribir la falta: Regularizado false y la transacción se deshace entera
+                    return SinRegularizar(new ResultadoNoEstaDTO { Tipo = dto.Tipo, Numero = dto.Numero, Producto = dto.Producto, Hueco = dto.Hueco, Ensayo = dto.Ensayo },
+                        ex.Message);
+                }
+                dto.Cambios.AddRange(cambios ?? new List<string>());
             }
             dto.Mensaje = Mensaje(dto);
 
@@ -502,6 +585,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return $"Hueco {dto.Hueco} puesto a cero. No queda en ningún otro hueco: es falta y ya se ha quitado de la salida.";
         }
 
+        /// <summary>NestoAPI#858: la línea informativa de ELMAH de cada «No está» regularizado.</summary>
+        internal static string LineaVigilancia(ResultadoNoEstaDTO dto, string almacen)
+        {
+            string huecos = dto.Huecos.Count == 0 ? "ningún otro hueco" : string.Join(", ", dto.Huecos.Select(h => $"{h.Cantidad} a {h.Ubicacion}"));
+            return $"[No está] {dto.Tipo} {dto.Numero}, {dto.Producto} en {dto.Hueco} ({almacen}): hueco a cero por inventario " +
+                $"({ServicioSalidas.Unidades(dto.UnidadesRegularizadas)} menos de stock, traspaso de inventario {(dto.TraspasoInventario?.ToString() ?? "ninguno")}); " +
+                $"reubicadas {dto.UnidadesReubicadas} ({huecos}); falta definitiva {dto.UnidadesEnFaltaDefinitiva}. " +
+                "Aviso para vigilarlo (NestoAPI#858), no es un error.";
+        }
+
         private static Inventario FilaInventario(ProductoNoEsta ficha, string empresa, string almacen, DateTime hoy, string hueco, int libre) => new Inventario
         {
             Empresa = empresa,
@@ -541,7 +634,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Producto = producto,
                 Hueco = hueco,
                 NoEsta = cantidad,
-                Reservas = soltadas.Select(s => new { s.Reserva.Ubicacion, s.Reserva.Linea, s.Reserva.Pedido, Soltadas = s.Cantidad }).ToList()
+                Reservas = soltadas.Select(s => new { s.Reserva.Ubicacion, s.Reserva.Linea, s.Reserva.Pedido, s.Reserva.LineaEntrada, Soltadas = s.Cantidad }).ToList()
             }),
             Nuevo = JsonConvert.SerializeObject(new
             {
@@ -586,5 +679,72 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public Task<List<string>> FaltaDefinitiva(ITransaccionNoEsta tx, string empresa, int numero, List<RecorteSalida> recortes, List<FaltaPickingPedido> avisar) =>
             OrigenSalidaPicking.QuitarFaltasDeLosPedidos(empresa, numero, recortes, tx, avisar);
+    }
+
+    /// <summary>
+    /// NestoAPI#858 (Carlos 12/11/26: «avanzar PDA y reposición ya, ENCENDIDO»), REPO: la salida de un traspaso de reposición aún sin
+    /// terminar (salida pendiente en PreExtrProducto, sin PreparacionSalidasTerminadas). Lo propio:
+    /// <list type="bullet">
+    /// <item>(a) La reserva propia es la del traspaso en el hueco: Ubicaciones en estado 4 con NºTraspasoRepo (NestoAPI#651). Se
+    /// suelta a libre EN SU HUECO (como la del picking, por la misma escritura) para que el inventario la quite. Las -4 de Nesto viejo
+    /// no cuentan como propias (ya figuran como salida): con ellas no se regulariza.</item>
+    /// <item>(b) Se reserva en el siguiente hueco como CambiarHuecoReservaReposicion (la misma escritura de la puerta de Ubicaciones):
+    /// estado 4 con el traspaso y su línea de entrada; sin pasar por «pendiente de ubicar».</item>
+    /// <item>(c) Falta definitiva: la unidad no estaba y el inventario ya la ha quitado del stock (ExtractoProducto, por el SP), así que
+    /// sale del traspaso: menos en la salida del origen y menos en la entrada del destino (como al terminar con faltas), SIN crear
+    /// «pendiente de ubicar» (no está en ninguna parte: crearlo la volvería a contar como libre). Así cuadran ExtractoProducto,
+    /// PreExtrProducto, Ubicaciones y lo que la tienda espera recibir. Si con eso la salida se quedara vacía (era lo último), NO se
+    /// regulariza: el Terminar no encontraría la salida («¿ya se ha sacado?») y la reposición se quedaría sin terminar; la app da la
+    /// falta como siempre.</item>
+    /// </list>
+    /// </summary>
+    public class OrigenNoEstaReposicion : IOrigenNoEsta
+    {
+        public string Tipo => CasadorEscaneos.ORIGEN_REPOSICION;
+
+        public Task<string> LeerAlmacen(ITransaccionNoEsta tx, string empresa, int numero) => tx.AlmacenReposicion(empresa, numero);
+
+        public Task<List<ReservaPropiaNoEsta>> ReservasPropias(ITransaccionNoEsta tx, string empresa, int numero, string producto, string hueco) =>
+            tx.ReservasReposicion(empresa, numero, producto, hueco);
+
+        public Task SoltarAlHueco(ITransaccionNoEsta tx, ReservaPropiaNoEsta reserva, int cantidad, string usuario) =>
+            tx.SoltarReservaAlHueco(reserva.Ubicacion, cantidad, usuario);
+
+        public Task Reservar(ITransaccionNoEsta tx, ReservaPropiaNoEsta reserva, LibreEnHueco libre, int cantidad, string usuario) =>
+            tx.ReservarDeLaLibreParaElTraspaso(libre.Ubicacion, cantidad, reserva.LineaEntrada, reserva.Pedido, usuario);
+
+        public async Task<List<string>> FaltaDefinitiva(ITransaccionNoEsta tx, string empresa, int numero, List<RecorteSalida> recortes, List<FaltaPickingPedido> avisar)
+        {
+            var cambios = new List<string>();
+            List<IGrouping<string, RecorteSalida>> porProducto = (recortes ?? new List<RecorteSalida>()).Where(r => r.Cantidad > 0)
+                .GroupBy(r => r.Pieza.Producto?.Trim()).ToList();
+            int falta = porProducto.Sum(g => g.Sum(r => r.Cantidad));
+            if (falta == 0)
+            {
+                return cambios;
+            }
+            int porSalir = await tx.UnidadesPorSalir(empresa, numero).ConfigureAwait(false);
+            if (falta >= porSalir)
+            {
+                throw new NoEstaNoSeRegularizaException($"Es lo último que queda por sacar de la reposición {numero}: el hueco no se deja a cero desde aquí. " +
+                    "Dé la falta como siempre.");
+            }
+            foreach (IGrouping<string, RecorteSalida> producto in porProducto)
+            {
+                int cantidad = producto.Sum(r => r.Cantidad);
+                await tx.QuitarDelTraspaso(empresa, numero, producto.Key, cantidad).ConfigureAwait(false);
+                cambios.Add($"{ServicioSalidas.Unidades(cantidad)} de {producto.Key} no sale en la reposición {numero}: se quita de la salida y de la entrada " +
+                    "del destino (no pasa a «pendiente de ubicar»: el hueco ya está inventariado).");
+            }
+            return cambios;
+        }
+    }
+
+    /// <summary>NestoAPI#858: el origen dice que en este caso concreto no es seguro dejar el hueco a cero (lanzado antes de escribir la falta).</summary>
+    public class NoEstaNoSeRegularizaException : Exception
+    {
+        public NoEstaNoSeRegularizaException(string motivo) : base(motivo)
+        {
+        }
     }
 }

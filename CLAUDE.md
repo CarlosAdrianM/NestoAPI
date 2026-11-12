@@ -462,12 +462,20 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   vendedor si es otro (reglas de #688); a Compras (`TIPO_PICKING_FALTA`) lo pendiente sin compra que no es muestra. Ariadna: sin cambios
   (`ResultadoTerminarSalidaDTO.FaltasPorAvisar` es JsonIgnore).
 - **«No está» = hueco a cero (C1, Carlos 12/11/26)**: `POST api/Almacen/Recogidas/{tipo}/{n}/NoEsta` {Producto, Hueco, Cantidad}
-  (`ServicioNoEstaSalida`, núcleo común + `IOrigenNoEsta` por tipo; hoy solo PICK). En UNA transacción: applocks `InventarioRellenar:`,
+  (`ServicioNoEstaSalida`, núcleo común + `IOrigenNoEsta` por tipo: PICK y REPO, los dos únicos tipos de salida). En UNA transacción: applocks `InventarioRellenar:`,
   la reserva propia del hueco vuelve a libre, fila de Inventarios (usuario técnico «Ariadna (No está)», contado 0) y
   prdContabilizarInventario por su único call site (solo esas filas); cuadre comprobado (sin pendientes, hueco sin libre, extracto = lo
   libre) o se deshace. Luego reserva en el siguiente hueco (`HuecoPropuesto`) o, sin más, falta definitiva YA (`QuitarFaltasDeLosPedidos`,
-  con A y B). `Regularizado` false = no se ha tocado nada (tienda, se está inventariando, REPO, interruptor) y la app da la falta como
-  siempre; 409 si falla. Interruptor `Salidas.NoEstaRegulariza` (solo «true»); `?ensayo=true` (Admin/Dirección). Ariadna aún no lo llama.
+  con A y B). `Regularizado` false = no se ha tocado nada (tienda, se está inventariando, interruptor…) y la app da la falta como
+  siempre; 409 si falla. `?ensayo=true` (Admin/Dirección). Ariadna aún no lo llama.
+- **REPO y ENCENDIDO (NestoAPI#858, Carlos 12/11/26)**: el origen solo pone (a) la reserva propia y cómo se suelta, (b) cómo se reserva
+  en el siguiente hueco y (c) la falta definitiva; lo demás es núcleo. REPO (`OrigenNoEstaReposicion`): (a) estado 4 del traspaso
+  (NºTraspasoRepo; las -4 de Nesto viejo no) → libre en su hueco por la MISMA escritura que el picking; (b) estado 4 con su NºOrdenRepo
+  como CambiarHuecoReservaReposicion (`SQL_RESERVA_DE_LA_LIBRE_PARA_EL_TRASPASO`), sin «pendiente de ubicar»; (c) menos en la salida y
+  en la entrada de PreExtrProducto SIN tocar Ubicaciones (`TransaccionSalidaSql.QuitarDelTraspaso`: el inventario ya la quitó del stock).
+  Si era lo último por sacar del traspaso, `Regularizado` false (el Terminar no encontraría la salida). Interruptor en ParametrosUsuario
+  empresa 1 «(defecto)» `Salidas.NoEstaRegulariza`: sin fila o «1» = encendido; «0»/false/no/off/apagado = apagado al momento
+  (`Scripts/Issue858_NoEsta_Interruptor.sql`, opcional; el appSettings ya no se lee). Cada uno regularizado: rastro + línea «[No está] …» en ELMAH.
 
 ### Facturado en tienda: acumulado del año y comparativo (NestoAPI#719, gemela de Nesto#559, 12/11/26)
 - `GET api/Informes/FacturacionTienda` (y `/Excel`) con `tipo=Semana|Acumulado|Comparativo` (vacío = Semana, lo de siempre),

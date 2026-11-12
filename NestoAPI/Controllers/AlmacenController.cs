@@ -332,6 +332,7 @@ namespace NestoAPI.Controllers
         /// C1 (Carlos 12/11/26): el mozo no encuentra el producto en el hueco de la parada. El hueco se deja a cero en el inventario
         /// (contabilizado en el acto; solo lo libre y lo reservado por esta salida, no lo de otras), lo que no estaba se reserva en el
         /// siguiente hueco con stock calculado (HuecoPropuesto) y, si no queda ninguno, es falta definitiva y sale ya de la salida.
+        /// Tipos PICK y REPO (NestoAPI#858), encendido salvo ParametrosUsuario «(defecto)» Salidas.NoEstaRegulariza = 0.
         /// 200 con <see cref="ResultadoNoEstaDTO"/>; con Regularizado = false no se ha tocado nada y la app da la falta como siempre.
         /// 409 si la regularización falla (nada a medias) o la salida ya está terminada; 400 si la petición no vale; 403 sin permiso.
         /// Con <paramref name="ensayo"/> (Admin o Dirección), lo mismo deshecho siempre.
