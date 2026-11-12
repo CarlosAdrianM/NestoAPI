@@ -416,6 +416,21 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `ProveedorDocumentosCorreo.NombreVendedorDelUsuario` (claim «Vendedor» o parámetro «Vendedor»; null si no se conoce, SIN caer al usuario):
   firma del WhatsApp (`GestorEnlacesDescarga.Firma`, `EnlaceDescargaDTO.Remitente`). `FacturasController` pasa ya el claim al remitente.
 
+### Correos de seguimiento de compras, fase 1 EN SOMBRA (NestoAPI#857, 12/11/26)
+- Job `compras-correos-seguimiento` (cada 30 min, L-V 8:00-18:30 Madrid, `Infraestructure/PedidosCompra/CorreosSeguimiento/`): lee por
+  Microsoft Graph (HttpClient, client credentials, SOLO lectura: nunca marca ni mueve) la bandeja de entrada del buzón de Compras con delta
+  (`ComprasCorreosSeguimientoEstado`; sin enlace, los últimos 7 días; 410 = empezar de nuevo). Claves en secretos.config `ComprasBuzonTenant`,
+  `ComprasBuzonClientId`, `ComprasBuzonSecreto`, `ComprasBuzon`: sin ellas no hace nada ni avisa. Sin `Scripts/Issue857_ComprasCorreosSeguimiento.sql`,
+  tampoco (ELMAH una vez). 401/429/red: ELMAH y sigue desde la misma página en la siguiente pasada; el delta solo avanza si todo se guardó.
+- Guarda en `ComprasCorreosSeguimiento` (idempotente por MensajeId) SOLO los correos con seguimiento o de un remitente marcado
+  (`AgenciasEntradaRemitentes`): agencia, primer código/URL (JSON con todos), extracto de 500, nada de cuerpo ni adjuntos. Agencias:
+  `IAgenciaEntrada` (núcleo `AgenciaEntradaPorPatrones` + una clase de datos por agencia en `AgenciasEntradaRegistradas`, `HorasHastaEntrega`
+  24/48) + `AgenciaEntradaGenerica` (descubre: agencia NULL). Enlaces desenvueltos sin peticiones (safelinks, Proofpoint v2, google.com/url, redirect=…).
+- Asignación en sombra (`AsignadorPedidosCompra`, pura): número de pedido nuestro > dirección de un contacto > dominio (web/contactos; nunca
+  gratuito, nuestro o de agencia) > nombre del proveedor; con proveedor, TODOS sus pedidos en el aire (-1/1 Enviado) son candidatos. El job
+  rellena PedidoReal/FechaAlbaranReal con el primer candidato albaraneado desde el día del correo (para medir). No toca compras (fase 3).
+- `GET/POST/DELETE api/Compras/AgenciasEntrada/Remitentes`, `GET …/Candidatos?dias=30`, `GET …/Correos?dias=7` (Compras/Dirección/Informática).
+
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,
   sin mirar si sobra; mismos permisos, applocks y rastro); las de hoy, solo las que sobran; las de días posteriores y las contabilizadas, nunca.

@@ -925,6 +925,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'fechas-entrega-fotos-sombra' configurado (L-S 4:50)");
 
+            // NestoAPI#857 (fase 1, EN SOMBRA, 12/11/26): lee por Graph (solo lectura) lo nuevo del buzón de Compras y guarda los correos
+            // de seguimiento de las agencias con la propuesta de pedido de compra. Sin las claves ComprasBuzon* en secretos.config no hace
+            // nada; sin Scripts/Issue857_ComprasCorreosSeguimiento.sql, tampoco (lo apunta una vez).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosCompra.CorreosSeguimiento.CorreosSeguimientoComprasJobsService.JOB_ID,
+                () => Infraestructure.PedidosCompra.CorreosSeguimiento.CorreosSeguimientoComprasJobsService.Pasada(),
+                Infraestructure.PedidosCompra.CorreosSeguimiento.CorreosSeguimientoComprasJobsService.CRON, // Cron: cada 30 min, L-V de 8:00 a 18:30
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'compras-correos-seguimiento' configurado (cada 30 min, L-V 8:00-18:30)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

@@ -672,6 +672,14 @@
     <Compile Include="Controllers\DocumentosController.cs" />
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
     <Compile Include="Controllers\FechasEntregaErrorController.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\CorreoCompras.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ExtractorEnlaces.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AgenciasEntrada.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AnalizadorCorreoSeguimiento.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AsignadorPedidosCompra.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\LectorBuzonComprasGraph.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\RepositorioCorreosSeguimiento.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioCorreosSeguimientoCompras.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />
@@ -2287,6 +2295,7 @@
     <Compile Include="Models\RecursosHumanos\CalendarioFestivos.cs" />
     <Compile Include="Infraestructure\Festivos\RepositorioFestivos.cs" />
     <Compile Include="Infraestructure\Festivos\AvisoFestivosSinCargarJobsService.cs" />
+    <Compile Include="Controllers\ComprasAgenciasEntradaController.cs" />
     <Compile Include="Controllers\FestivosController.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
     <Compile Include="Models\RecursosHumanos\IDiaNoLaborable.cs" />
