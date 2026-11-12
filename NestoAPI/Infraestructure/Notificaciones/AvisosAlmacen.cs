@@ -227,7 +227,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 : ModoAvisosConDatos.Ambos;
         }
 
-        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3}|PagoTPV:\d{1,9}|AutorizacionReembolso:\d{1,9})$",
+        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3}|PagoTPV:\d{1,9}|AutorizacionReembolso:\d{1,9}|RecogidasSolicitadas)$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>
@@ -235,6 +235,12 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// todos, filtrada por repartidor en GET Envios). Evento «repartoCambiado(RepartoCambiadoDTO)».
         /// </summary>
         public const string GRUPO_REPARTO = "Reparto";
+
+        /// <summary>
+        /// NestoAPI#855: «RecogidasSolicitadas», el de la pantalla de recogidas solicitadas de Nesto (Nesto#635): «haCambiado» cuando
+        /// un vendedor pide una recogida o alguien la confirma, la rechaza o la anula (Nesto relee GET .../Solicitudes/Pendientes).
+        /// </summary>
+        public const string GRUPO_RECOGIDAS_SOLICITADAS = "RecogidasSolicitadas";
 
         /// <summary>
         /// NestoAPI#772: «Reposiciones:REI», el de «Enviar reposición» de Nesto en esa tienda: «haCambiado» cuando el repartidor
@@ -275,6 +281,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
             if (string.Equals(limpio, GRUPO_REPARTO, StringComparison.OrdinalIgnoreCase))
             {
                 return GRUPO_REPARTO;
+            }
+            if (string.Equals(limpio, GRUPO_RECOGIDAS_SOLICITADAS, StringComparison.OrdinalIgnoreCase))
+            {
+                return GRUPO_RECOGIDAS_SOLICITADAS;
             }
             string[] partes = limpio.Split(':');
             if (string.Equals(partes[0], "Reposiciones", StringComparison.OrdinalIgnoreCase))

@@ -484,6 +484,23 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   el orden de la lista es el de las calles (Orden 10, 20…), el de cada lista de pasillos su Posicion; `FilaAMano` null = no tocar. Permiso: el
   de Etiquetas de hueco (escribir en api/Almacen: Almacén o Dirección). 400 validación, 403, 503 sin tablas. Sin caché: el lector es Scoped.
 
+### Recogida solicitada por el vendedor (NestoAPI#855, 12/11/26; gemelas Nesto#635 y NestoApp#259)
+- `dbo.RecogidasSolicitadas` (fuera del EDMX, `Scripts/Issue855_RecogidasSolicitadas.sql`; sin él, 503 y el job no hace nada). Estado
+  guardado Solicitada/Confirmada/Rechazada/Anulada; al leer se calcula EnReparto (parada de la 14 tramitada/incidentada) y Recogida
+  (abono hecho, parada entregada o bultos NR recogidos). `QuienRecoge`: Reparto (solo ruta propia, `RutasRepartoPropio` + interruptor;
+  400 «pídala como la recojo yo») o Vendedor (cualquier contacto).
+- `POST/GET api/NotasEntrega/Recogidas/Solicitudes` (vendedor de NestoApp solo sus clientes, `PermisosRecogidasSolicitadas`; empleados),
+  `GET …/Solicitudes/{id}`, `GET …/Pendientes`, `POST …/{id}/Confirmar` y `…/{id}/Rechazar` (los cuatro grupos de notas), `DELETE …/{id}?motivo=`.
+- Confirmar crea la nota de recogida como #757 (pedido NotaEntrega = 1, líneas de texto de 50, NotasEntregaCabecera Recogida) en UNA
+  transacción con la solicitud (`RepositorioRecogidasSolicitadas.Confirmar`). Con Vendedor las líneas nacen con fecha 31/12/2099: no
+  entran en picking ni Facturar rutas (no hay parada) y `POST Recogidas/Abono` (la lectura del NR en Algete) no le pide la parada
+  recogida (`ServicioAbonosRecogida.EsRecogidaDelVendedor`). Ese es el cierre en los dos casos; Descargar de Ariadna no vale (409 NO_EN_FURGONETA).
+- Anular: quien la pidió (o los grupos de notas) mientras no esté en marcha (Solicitada, o Confirmada sin picking, envío ni abono: se borra
+  la nota como Borrar pedido); en marcha, solo Almacén o Administración: se marca y la nota se queda (`AvisoAnulacion`, campana a Almacén).
+- Avisos: campana a Almacén (`RecogidaSolicitada`), push NestoApp + campana Nesto a quien la pidió (`RecogidaSolicitadaResuelta`,
+  `RecogidaSolicitadaAnulada`), `haCambiado` al grupo `RecogidasSolicitadas` del AlmacenHub. Job `recogidas-solicitadas-sin-respuesta`
+  (L-V cada hora 8-20): un día laborable de Algete sin contestar → `RecogidaSolicitadaSinRespuesta` a Almacén y a quien la pidió, una vez.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

@@ -863,6 +863,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'furgoneta-sin-descargar' configurado (L-V a las 22:00)");
 
+            // NestoAPI#855: las recogidas solicitadas por el vendedor que llevan un día laborable (Algete) sin respuesta del almacén:
+            // campana a Almacén y a quien la pidió, una sola vez por solicitud. Sin el script (Issue855_RecogidasSolicitadas.sql), nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.NotasEntrega.RecogidasSolicitadasJobsService.ID_JOB,
+                () => Infraestructure.NotasEntrega.RecogidasSolicitadasJobsService.ComprobarSinRespuesta(),
+                Infraestructure.NotasEntrega.RecogidasSolicitadasJobsService.CRON, // Cron: de lunes a viernes, cada hora de 8:00 a 20:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'recogidas-solicitadas-sin-respuesta' configurado (L-V cada hora de 8:00 a 20:00)");
+
             // NestoAPI#779: el día 1 de cada mes, si el calendario no tiene festivos del año que toca (en diciembre, el siguiente),
             // aviso a Dirección en la campana de Nesto y por correo.
             RecurringJob.AddOrUpdate(

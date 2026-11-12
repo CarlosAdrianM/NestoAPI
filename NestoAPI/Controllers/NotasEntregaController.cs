@@ -63,7 +63,11 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#760: el abono por recogida (sustituible en los tests).</summary>
         internal IServicioAbonosRecogida AbonosRecogida
         {
-            get => abonosRecogida ?? (abonosRecogida = new ServicioAbonosRecogida(new RepositorioAbonosRecogida(db)));
+            // NestoAPI#855: la nota de una recogida que recoge el vendedor no tiene parada: su NR leído en Algete la cierra.
+            get => abonosRecogida ?? (abonosRecogida = new ServicioAbonosRecogida(new RepositorioAbonosRecogida(db))
+            {
+                EsRecogidaDelVendedor = (empresa, pedido) => new RepositorioRecogidasSolicitadas(db).EsRecogidaDelVendedor(empresa, pedido)
+            });
             set => abonosRecogida = value;
         }
 
@@ -262,6 +266,162 @@ namespace NestoAPI.Controllers
             }
             return Content(HttpStatusCode.Created, resultado.Contenido);
         }
+
+        // ================================================================ NestoAPI#855: recogidas solicitadas por el vendedor
+
+        private ServicioRecogidasSolicitadas recogidasSolicitadas;
+
+        /// <summary>NestoAPI#855: las recogidas solicitadas (sustituible en los tests).</summary>
+        internal ServicioRecogidasSolicitadas RecogidasSolicitadas
+        {
+            get => recogidasSolicitadas ?? (recogidasSolicitadas = new ServicioRecogidasSolicitadas(new RepositorioRecogidasSolicitadas(db),
+                new AvisosRecogidasSolicitadas()));
+            set => recogidasSolicitadas = value;
+        }
+
+        /// <summary>NestoAPI#855: (empresa, usuario, vendedor, cliente) → el cliente es del vendedor (sustituible en los tests).</summary>
+        internal Func<string, string, string, string, bool> EsClienteDelVendedor { get; set; } = Infraestructure.Seguridad.ClientesDelVendedor.EsDelVendedor;
+
+        // POST api/NotasEntrega/Recogidas/Solicitudes { Empresa?, Cliente, Contacto, Texto, Bultos? (1), FacturaOriginal?, QuienRecoge? (Reparto) }
+        /// <summary>
+        /// NestoAPI#855: el vendedor (NestoApp, solo sus clientes) o un empleado pide una recogida. 201 con <see cref="RecogidaSolicitadaDTO"/>
+        /// (Estado «Solicitada») y campana a Almacén. 400: falta el contacto o el texto, bultos fuera de 1-999, quién recoge no es
+        /// Reparto/Vendedor, la factura no existe o es de otro cliente, o recoge el Reparto y el contacto no es de ruta propia; 403: el
+        /// cliente no es suyo; 404: no existe el contacto; 409: el contacto ya tiene otra sin contestar; 503: falta el script.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/Solicitudes")]
+        [ResponseType(typeof(RecogidaSolicitadaDTO))]
+        public async Task<IHttpActionResult> PostRecogidaSolicitada([FromBody] SolicitarRecogidaDTO peticion)
+        {
+            if (!PermisosRecogidasSolicitadas.PuedeCliente(User, peticion?.Empresa, peticion?.Cliente, EsClienteDelVendedor))
+            {
+                return ProhibidoRecogidas();
+            }
+            return Responder(await RecogidasSolicitadas.Solicitar(peticion, UsuarioRecogidas()));
+        }
+
+        // GET api/NotasEntrega/Recogidas/Solicitudes?empresa=1&cliente=15191&contacto=0
+        /// <summary>NestoAPI#855: las del cliente (y contacto, si viene), de la más reciente a la más antigua, con su estado calculado.</summary>
+        [HttpGet]
+        [Route("Recogidas/Solicitudes")]
+        [ResponseType(typeof(List<RecogidaSolicitadaDTO>))]
+        public async Task<IHttpActionResult> GetRecogidasSolicitadas(string cliente, string empresa = null, string contacto = null)
+        {
+            if (!PermisosRecogidasSolicitadas.PuedeCliente(User, empresa, cliente, EsClienteDelVendedor))
+            {
+                return ProhibidoRecogidas();
+            }
+            return Responder(await RecogidasSolicitadas.LeerDelCliente(empresa, cliente, contacto));
+        }
+
+        // GET api/NotasEntrega/Recogidas/Solicitudes/Pendientes?empresa=1
+        /// <summary>NestoAPI#855: para el almacén (los cuatro grupos de las notas): todas las «Solicitada», de la más antigua a la más reciente.</summary>
+        [HttpGet]
+        [Route("Recogidas/Solicitudes/Pendientes")]
+        [ResponseType(typeof(List<RecogidaSolicitadaDTO>))]
+        public async Task<IHttpActionResult> GetRecogidasSolicitadasPendientes(string empresa = null)
+        {
+            if (!PermisosNotasEntrega.Puede(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await RecogidasSolicitadas.LeerPendientes(empresa));
+        }
+
+        // GET api/NotasEntrega/Recogidas/Solicitudes/12
+        /// <summary>NestoAPI#855: una solicitud (la campana la abre): el almacén, quien la pidió o el vendedor del cliente. 404 si no existe.</summary>
+        [HttpGet]
+        [Route("Recogidas/Solicitudes/{id:int}")]
+        [ResponseType(typeof(RecogidaSolicitadaDTO))]
+        public async Task<IHttpActionResult> GetRecogidaSolicitada(int id)
+        {
+            ResultadoRecogidaSolicitada<RecogidaSolicitadaDTO> resultado = await RecogidasSolicitadas.Leer(id);
+            RecogidaSolicitadaDTO dto = resultado.Contenido;
+            if (dto != null && !PermisosNotasEntrega.Puede(User)
+                && !ServicioRecogidasSolicitadas.MismoUsuario(dto.UsuarioSolicita, UsuarioAuditoriaHelper.Resolver(User, null))
+                && !PermisosRecogidasSolicitadas.PuedeCliente(User, dto.Empresa, dto.Cliente, EsClienteDelVendedor))
+            {
+                return ProhibidoRecogidas();
+            }
+            return Responder(resultado);
+        }
+
+        // POST api/NotasEntrega/Recogidas/Solicitudes/12/Confirmar { Bultos?, Texto? }
+        /// <summary>
+        /// NestoAPI#855: el almacén la confirma: crea la nota de recogida (NR{pedido}: pedido con NotaEntrega = 1, tipo Recogida, bultos,
+        /// factura original y el texto en líneas de texto) y avisa a quien la pidió. Con QuienRecoge = Vendedor la nota no entra en el
+        /// picking (fecha sin determinar): no hay parada. 200 con el DTO; 400 texto o bultos que no valen o, si recoge el Reparto, el
+        /// contacto ya no es de ruta propia; 404 si no existe; 409 si ya no está «Solicitada»; 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/Solicitudes/{id:int}/Confirmar")]
+        [ResponseType(typeof(RecogidaSolicitadaDTO))]
+        public async Task<IHttpActionResult> PostConfirmarRecogidaSolicitada(int id, [FromBody] ConfirmarRecogidaSolicitadaDTO peticion)
+        {
+            if (!PermisosNotasEntrega.Puede(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await RecogidasSolicitadas.Confirmar(id, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
+        // POST api/NotasEntrega/Recogidas/Solicitudes/12/Rechazar { Motivo }
+        /// <summary>NestoAPI#855: el almacén la rechaza (motivo obligatorio, 400 sin él). 404 si no existe; 409 si ya no está «Solicitada».</summary>
+        [HttpPost]
+        [Route("Recogidas/Solicitudes/{id:int}/Rechazar")]
+        [ResponseType(typeof(RecogidaSolicitadaDTO))]
+        public async Task<IHttpActionResult> PostRechazarRecogidaSolicitada(int id, [FromBody] RechazarRecogidaSolicitadaDTO peticion)
+        {
+            if (!PermisosNotasEntrega.Puede(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await RecogidasSolicitadas.Rechazar(id, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
+        // DELETE api/NotasEntrega/Recogidas/Solicitudes/12?motivo=...
+        /// <summary>
+        /// NestoAPI#855: anularla. Quien la pidió (o el almacén) mientras no esté en reparto: «Solicitada», o «Confirmada» con la nota
+        /// sin empezar (sin picking, sin parada, sin abono), que se borra. Ya en reparto (parada o picking), solo Almacén o Administración:
+        /// se marca anulada, la nota se queda y se avisa a Almacén (AvisoAnulacion dice qué hacer a mano). 403 si no le toca; 404 si no
+        /// existe; 409 si ya está rechazada, anulada o recogida; 503 sin el script.
+        /// </summary>
+        [HttpDelete]
+        [Route("Recogidas/Solicitudes/{id:int}")]
+        [ResponseType(typeof(RecogidaSolicitadaDTO))]
+        public async Task<IHttpActionResult> DeleteRecogidaSolicitada(int id, string motivo = null)
+        {
+            if (!PermisosRecogidasSolicitadas.PuedeSolicitar(User))
+            {
+                return ProhibidoRecogidas();
+            }
+            return Responder(await RecogidasSolicitadas.Anular(id, motivo, UsuarioRecogidas()));
+        }
+
+        private UsuarioRecogidas UsuarioRecogidas() => new UsuarioRecogidas
+        {
+            Nombre = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"),
+            Vendedor = (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("Vendedor")?.Value?.Trim(),
+            PuedeGestionar = PermisosNotasEntrega.Puede(User),
+            PuedeAnularEnReparto = PermisosRecogidasSolicitadas.PuedeAnularEnReparto(User)
+        };
+
+        private IHttpActionResult Responder<T>(ResultadoRecogidaSolicitada<T> resultado)
+        {
+            if (resultado.Codigo == HttpStatusCode.OK)
+            {
+                return Ok(resultado.Contenido);
+            }
+            if (resultado.Codigo == HttpStatusCode.Created)
+            {
+                return Content(HttpStatusCode.Created, resultado.Contenido);
+            }
+            return Content(resultado.Codigo, new { Message = resultado.Mensaje });
+        }
+
+        private IHttpActionResult ProhibidoRecogidas()
+            => Content(HttpStatusCode.Forbidden, new { Message = "Su usuario no puede pedir ni ver recogidas de este cliente." });
 
         private IHttpActionResult Responder<T>(ResultadoAbonoRecogida<T> resultado)
         {

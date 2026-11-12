@@ -80,6 +80,13 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
         }
 
+        /// <summary>
+        /// NestoAPI#855: (empresa, pedido de la nota) → ¿es la nota de una recogida solicitada que recoge el VENDEDOR? Esa nota no tiene
+        /// parada (no va en el reparto): leer su NR en Algete es lo que la cierra, así que el abono no exige que figure como recogida.
+        /// Null (por defecto) = ninguna lo es, como hasta ahora. Si falla, cuenta como que no.
+        /// </summary>
+        internal Func<string, int, Task<bool>> EsRecogidaDelVendedor { get; set; }
+
         public async Task<ResultadoAbonoRecogida<RecogidaDTO>> Leer(string codigo, bool verDatosPersonales)
         {
             NotaResuelta resuelta = await Resolver(codigo).ConfigureAwait(false);
@@ -133,7 +140,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             if (!peticion.Forzar)
             {
                 ParadaRecogidaLeida parada = await repositorio.LeerParada(nota.Empresa, nota.Pedido).ConfigureAwait(false);
-                if (parada == null || parada.Estado != Constantes.Agencias.ESTADO_ENTREGADO)
+                if ((parada == null || parada.Estado != Constantes.Agencias.ESTADO_ENTREGADO) && !await RecogeElVendedor(nota).ConfigureAwait(false))
                 {
                     string estado = ServicioNotasEntregaCabecera.EstadoEnvio(parada?.Estado);
                     string comoVa = estado == null ? "no tiene envío de reparto propio" : $"estado {estado}";
@@ -189,6 +196,24 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                     null, null);
             }
             return ResultadoAbonoRecogida<AbonoRecogidaDTO>.Ok(Respuesta(nota, numero, nota.Cliente, nota.Contacto, cabecera.Serie?.Trim(), false), creado: true);
+        }
+
+        /// <summary>NestoAPI#855: la recoge el vendedor (sin parada). Nunca lanza.</summary>
+        private async Task<bool> RecogeElVendedor(NotaRecogidaLeida nota)
+        {
+            if (EsRecogidaDelVendedor == null)
+            {
+                return false;
+            }
+            try
+            {
+                return await EsRecogidaDelVendedor(nota.Empresa?.Trim(), nota.Pedido).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Abono por recogida #855] Nota {nota.Pedido}: no se ha podido comprobar si la recoge el vendedor: {ex.Message}", ex));
+                return false;
+            }
         }
 
         /// <summary>El número reservado no se ha usado: se devuelve al contador para no dejar un hueco (si sigue siendo el último).</summary>

@@ -1280,6 +1280,9 @@
     <Compile Include="Infraestructure\NotasEntrega\ServicioParadasNotaEntrega.cs" />
     <Compile Include="Infraestructure\NotasEntrega\GuardiaNotaSinPacking.cs" />
     <Compile Include="Infraestructure\NotasEntrega\NotasCobro.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\RecogidasSolicitadas.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\RepositorioRecogidasSolicitadas.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\AvisosRecogidasSolicitadas.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioEtiquetasRecogida.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioDocumentoNotaEntrega.cs" />
     <Compile Include="Infraestructure\Code128.cs" />
@@ -1289,6 +1292,7 @@
     <Compile Include="Models\PedidosVenta\AbonoRecogidaDTO.cs" />
     <Compile Include="Models\PedidosVenta\NotaEntregaCabeceraDTO.cs" />
     <Compile Include="Models\PedidosVenta\NotaCobroDTO.cs" />
+    <Compile Include="Models\PedidosVenta\RecogidaSolicitadaDTO.cs" />
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\ListadoReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
