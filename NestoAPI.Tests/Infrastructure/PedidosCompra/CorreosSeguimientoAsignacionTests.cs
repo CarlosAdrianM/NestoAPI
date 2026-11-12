@@ -46,6 +46,60 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(0, asignacion.Candidatos.Count);
         }
 
+        // NestoAPI#853 (la asignación escribe en compras): el texto real de MBE del 12/11/26 no da ningún pedido por número aunque haya
+        // pedidos en el aire con los números pegados a la referencia ni con los códigos postales.
+        [TestMethod]
+        public void MBE_NingunCandidatoPorNumero()
+        {
+            var pedidos = new List<PedidoCompraEnAire>
+            {
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 252231, Proveedor = "9001", NombreProveedor = "OTRO PROVEEDOR UNO SL" },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 77626, Proveedor = "9002", NombreProveedor = "OTRO PROVEEDOR DOS SL" },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 28110, Proveedor = "9003", NombreProveedor = "OTRO PROVEEDOR TRES SL" },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 8600, Proveedor = "9004", NombreProveedor = "OTRO PROVEEDOR CUATRO SL" }
+            };
+            CorreoCompras correo = Correo(CorreosSeguimientoFase3Tests.MBE_TEXTO, asunto: "Tus envíos MBE", remitente: "noreply@mbe.es");
+
+            AsignacionPedidoCompra asignacion = AsignadorPedidosCompra.Asignar(correo, TextoCorreo.RemitentesOriginales(correo.Texto), pedidos);
+
+            Assert.AreEqual(0, asignacion.Candidatos.Count(c => c.Motivo == AsignadorPedidosCompra.MOTIVO_NUMERO));
+            Assert.IsFalse(AsignadorPedidosCompra.NumerosDePedido(CorreosSeguimientoFase3Tests.MBE_TEXTO).Any(n => n.Numero == 252231 || n.Numero == 77626),
+                "Los números pegados a letras de la referencia no son tokens");
+        }
+
+        [TestMethod]
+        public void SuPedido_ConEtiqueta_EsCandidatoPorNumero()
+        {
+            var pedidos = new List<PedidoCompraEnAire> { new PedidoCompraEnAire { Empresa = "1", Pedido = 220873, Proveedor = "9009", NombreProveedor = "NADIE QUE SALGA" } };
+
+            AsignacionPedidoCompra asignacion = AsignadorPedidosCompra.Asignar(Correo("Hola, Su pedido 220873 ha salido hoy."), null, pedidos);
+
+            Assert.AreEqual(220873, asignacion.Candidatos.Single().Pedido);
+            Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_NUMERO, asignacion.Candidatos.Single().Motivo);
+        }
+
+        [DataTestMethod]
+        [DataRow("Nº pedido: 220873", true)]
+        [DataRow("Purchase Order No. 220873", true)]
+        [DataRow("Ref.: 220873", true)]
+        [DataRow("s/ref 220873", true)]
+        [DataRow("28110 ALGETE MADRID", false)]
+        [DataRow("Peso 220873 g", false)]
+        public void Etiqueta_DePedidoDelante(string texto, bool etiquetado)
+        {
+            Assert.AreEqual(etiquetado, AsignadorPedidosCompra.NumerosDePedido(texto).Single().Etiquetado, texto);
+        }
+
+        [TestMethod]
+        public void NumeroSuelto_SinOtroCriterio_NoBasta_YConElNombreDelProveedor_Si()
+        {
+            Assert.AreEqual(0, Asignar(Correo("Bultos: 3. Envío 912010 en reparto.")).Candidatos.Count, "Ni etiqueta ni proveedor reconocido");
+
+            AsignacionPedidoCompra conNombre = Asignar(Correo("LABORATORIOS DE PRUEBA: envío 912010 en reparto."));
+            Assert.AreEqual(912010, conNombre.Candidatos.Single().Pedido);
+            Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_NUMERO, conNombre.Candidatos.Single().Motivo);
+        }
+
         [TestMethod]
         public void ProveedorConVariosPedidosEnElAire_TodosSonCandidatosNoUnoInventado()
         {

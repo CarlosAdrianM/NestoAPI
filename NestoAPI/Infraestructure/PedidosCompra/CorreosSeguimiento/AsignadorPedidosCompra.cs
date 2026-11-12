@@ -73,7 +73,24 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 
-        private static readonly Regex Numeros = new Regex(@"(?<![\d.,/])\d{4,8}(?!\d|[.,/]\d)", RegexOptions.Compiled);
+        /// <summary>
+        /// NestoAPI#853 (ahora la asignación escribe en compras): un número de 4 a 8 cifras que es un token PROPIO: no pegado a letras, guiones
+        /// ni subrayados de una referencia («SO252231WKOUT77626» no da ni 252231 ni 77626), ni parte de un número con decimales o de una fecha.
+        /// </summary>
+        private static readonly Regex Numeros = new Regex(@"(?<![\p{L}\d.,/\-_])\d{4,8}(?![\p{L}\d\-_]|[.,/]\d)", RegexOptions.Compiled);
+
+        /// <summary>
+        /// NestoAPI#853: lo que va justo antes de un número de pedido (en minúsculas y sin tildes): una etiqueta de pedido o referencia
+        /// («pedido», «nº pedido», «su pedido», «PO», «purchase order», «order», «ref», «referencia», «s/ref», «n/ref»…) seguida solo de
+        /// separadores y palabras de relleno («nº», «número», «de», «del remitente»…), dentro de los <see cref="VENTANA_ETIQUETA"/> caracteres
+        /// anteriores.
+        /// </summary>
+        private static readonly Regex EtiquetaPedido = new Regex(
+            @"(?:^|[^a-z0-9])(?:pedido|purchase\s+order|order|orden|po|p\.o|ref|referencia|reference|s/ref|n/ref|s/pedido|n/pedido)" +
+            @"(?:[\s:#.\-º°]+|(?<![a-z])(?:n[º°o]|num|numero|number|no|de|del|su|nuestro|remitente|cliente|compra|pedido)(?![a-z]))*$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        internal const int VENTANA_ETIQUETA = 30;
 
         internal static readonly string[] DominiosGratuitos =
         {
@@ -99,24 +116,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 return asignacion;
             }
 
-            // (1) Número de pedido nuestro
             string textoCompleto = (correo.Asunto ?? string.Empty) + "\n" + correo.Texto;
-            var numeros = new HashSet<int>(Numeros.Matches(textoCompleto).Cast<Match>()
-                .Select(m => int.TryParse(m.Value, out int n) ? n : -1).Where(n => n > 0));
-            List<PedidoCompraEnAire> porNumero = enAire.Where(p => numeros.Contains(p.Pedido)).ToList();
-            if (porNumero.Any())
-            {
-                return Componer(porNumero, MOTIVO_NUMERO);
-            }
-
-            // (1 bis) Fase 3: quien expide el paquete ya lo ha dicho Compras de qué proveedor es
-            List<PedidoCompraEnAire> porRemitente = PorRemitentePaquete(enAire, remitentePaquete, recordados);
-            if (porRemitente.Any())
-            {
-                return Componer(porRemitente, MOTIVO_REMITENTE_PAQUETE);
-            }
-
-            // (2)-(4) Por proveedor
             List<string> direcciones = new[] { correo.RemitenteDireccion }
                 .Concat(remitentesOriginales ?? Enumerable.Empty<string>())
                 .Where(d => !string.IsNullOrWhiteSpace(d))
@@ -128,8 +128,34 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 .Where(d => d != null && !EsGratuito(d) && !AgenciasEntradaRegistradas.EsDeAgenciaConocida(d))
                 .Distinct().ToList();
             string textoNormalizado = " " + TextoCorreo.Normalizar((correo.RemitenteNombre ?? string.Empty) + " " + textoCompleto) + " ";
-
+            List<PedidoCompraEnAire> porRemitente = PorRemitentePaquete(enAire, remitentePaquete, recordados);
             var proveedores = enAire.GroupBy(p => (p.Empresa?.Trim() ?? string.Empty) + "|" + (p.Proveedor?.Trim() ?? string.Empty)).ToList();
+
+            // (1) Número de pedido nuestro (NestoAPI#853, ahora se escribe en compras): con una etiqueta de pedido delante, o suelto si su
+            // proveedor se reconoce también por otro criterio (correo, dominio, nombre o remitente del paquete). Un código postal o un número
+            // metido en una referencia ya no bastan.
+            List<(int Numero, bool Etiquetado)> numeros = NumerosDePedido(textoCompleto);
+            var etiquetados = new HashSet<int>(numeros.Where(n => n.Etiquetado).Select(n => n.Numero));
+            List<PedidoCompraEnAire> porNumero = enAire.Where(p => etiquetados.Contains(p.Pedido)).ToList();
+            if (!porNumero.Any())
+            {
+                var sueltos = new HashSet<int>(numeros.Where(n => !n.Etiquetado).Select(n => n.Numero));
+                porNumero = enAire.Where(p => sueltos.Contains(p.Pedido)
+                        && (porRemitente.Contains(p) || CRITERIOS_PROVEEDOR.Any(m => CasaProveedor(p, m, direcciones, dominios, textoNormalizado))))
+                    .ToList();
+            }
+            if (porNumero.Any())
+            {
+                return Componer(porNumero, MOTIVO_NUMERO);
+            }
+
+            // (1 bis) Fase 3: quien expide el paquete ya lo ha dicho Compras de qué proveedor es
+            if (porRemitente.Any())
+            {
+                return Componer(porRemitente, MOTIVO_REMITENTE_PAQUETE);
+            }
+
+            // (2)-(4) Por proveedor
             foreach (string motivo in new[] { MOTIVO_CORREO, MOTIVO_DOMINIO, MOTIVO_NOMBRE })
             {
                 List<PedidoCompraEnAire> casan = proveedores
@@ -142,6 +168,46 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 }
             }
             return asignacion;
+        }
+
+        private static readonly string[] CRITERIOS_PROVEEDOR = { MOTIVO_CORREO, MOTIVO_DOMINIO, MOTIVO_NOMBRE };
+
+        /// <summary>
+        /// NestoAPI#853: los números que pueden ser un pedido nuestro (tokens propios de 4 a 8 cifras) y si llevan delante una etiqueta de
+        /// pedido o referencia (<see cref="EtiquetaPedido"/>). Puro.
+        /// </summary>
+        internal static List<(int Numero, bool Etiquetado)> NumerosDePedido(string texto)
+        {
+            var resultado = new List<(int, bool)>();
+            if (string.IsNullOrEmpty(texto))
+            {
+                return resultado;
+            }
+            foreach (Match m in Numeros.Matches(texto))
+            {
+                if (!int.TryParse(m.Value, out int numero) || numero <= 0)
+                {
+                    continue;
+                }
+                int inicio = Math.Max(0, m.Index - VENTANA_ETIQUETA);
+                resultado.Add((numero, EtiquetaPedido.IsMatch(SinTildes(texto.Substring(inicio, m.Index - inicio)))));
+            }
+            return resultado;
+        }
+
+        /// <summary>En minúsculas y sin tildes, sin tocar la puntuación (al revés que <see cref="TextoCorreo.Normalizar"/>).</summary>
+        private static string SinTildes(string texto)
+        {
+            string descompuesto = texto.Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder(descompuesto.Length);
+            foreach (char c in descompuesto)
+            {
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                {
+                    _ = sb.Append(char.ToLowerInvariant(c));
+                }
+            }
+            return sb.ToString();
         }
 
         /// <summary>Los pedidos en el aire del proveedor que Compras asoció a ese remitente del paquete (misma empresa).</summary>

@@ -591,6 +591,26 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Un cobro tardío del enlace de una Inscrita no la paga ni factura: ELMAH + aviso de pago fuera de plazo a Administración. Los jobs de aviso,
   liberación y caducidad se saltan los eventos que hoy son gratuitos. `CrearEvento` con productos requeridos y sin importes nace 0/0.
 
+### Fechas de recepción y certeza (NestoAPI#853, 12/11/26)
+- Plazo real por proveedor en `dbo.ProveedoresPlazosEntrega` (fuera del EDMX, `Scripts/Issue853_PlazosProveedoresYEnvios.sql`): mediana y P80
+  de días (CabPedidoCmp.[Fecha Modificación] → FechaAlbarán, líneas TipoLínea '1', 24 meses, empresas 1+3, negativos fuera), cadencia de
+  pedidos del último año y fila genérica '*'. Cálculo puro `CalculoPlazosProveedores`; job `proveedores-plazos-entrega` 3:40 Madrid (cola
+  «indicadores»); `GET api/Compras/PlazosProveedores` (Compras/Dirección/Informática), `POST …/Recalcular` (Dirección/Informática, 202).
+  Caché de 10 min (`CachePlazosProveedores`). Proveedor habitual de un producto = ProveedoresProducto con menor Orden; si no, el de su última compra.
+- Al ENVIAR un pedido de compra (PUT api/PedidosCompra con PathPedido): con ParametrosUsuario «(defecto)» `Compras.FechaRecepcionPorPlazoReal`
+  = «1» y plazos, `ReglaFechaRecepcionEstimada` (hoy + P80 propio con ≥5 recepciones, nunca menos que DíasEnServir; si no, DíasEnServir; si
+  no, P80 genérico); si no, hoy + DíasEnServir. Nunca rompe el envío. Siempre (con tabla) se apunta en `dbo.PedidosCompraEnvios` (primer envío;
+  `FechaModelo` reservada para ML.NET) y `dbo.vPedidosCompraEnviosError` mide el error.
+- Certeza en el motor #606 (aditivo en `PartidaFechaEntregaAgenciaDTO`): `Certeza` (Segura, CasiSegura, Aproximada, Orientativa),
+  `ConSeguimientoAgencia`/`AgenciaSeguimiento` (correo de #857 aplicado, no descartado, con FechaRecepcionAplicada = la FechaRecepción de
+  ahora), `FechaOrientativa` (solo sin fecha: NO entra en ninguna fecha, prometida, promesa en riesgo ni simulación), `PedidoProveedorOrientativo`
+  y `FechaPrevistaProveedorOrientativo` (pedido enviado con prevista a >15 días: la regla de los 15 días NO cambia). Orientativa de lo no pedido:
+  `ReglaFechaOrientativaSinPedir` (hoy + hasta el próximo pedido según cadencia + P80). Lectura por tanda en `ILectorCertezaFechaEntrega`.
+- Textos: UNA pieza pura `TextosCertezaFechaEntrega` para el motivo del motor, el correo (etiqueta «[Prácticamente segura]», «[Aproximada]»,
+  «[Orientativa]» al principio de cada bloque) y la promesa en riesgo. Fotos: proveedor con seguimiento → caso `EnTransito`.
+- `AsignadorPedidosCompra` (#857): un número cuenta como pedido nuestro solo si es token propio (no pegado a letras/guiones) Y lleva etiqueta
+  de pedido/referencia delante (30 caracteres) o su proveedor se reconoce por otro criterio.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
