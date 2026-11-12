@@ -681,6 +681,9 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AgenciasEntrada.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AnalizadorCorreoSeguimiento.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AsignadorPedidosCompra.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\PlazosProveedores.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\RepositorioPlazosProveedores.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\ServicioPlazosProveedores.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\LectorBuzonComprasGraph.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\RepositorioCorreosSeguimiento.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioCorreosSeguimientoCompras.cs" />
@@ -1149,6 +1152,8 @@
     <Compile Include="Infraestructure\PedidosVenta\ModosServicioPermitidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ClasificadorCausasModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalculadoraFechaEntregaAgencia.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CertezaFechaEntrega.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\TextosCertezaFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalendarioRutasDia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\AvisoCondicionesCampana.cs" />
@@ -2313,6 +2318,7 @@
     <Compile Include="Infraestructure\Festivos\RepositorioFestivos.cs" />
     <Compile Include="Infraestructure\Festivos\AvisoFestivosSinCargarJobsService.cs" />
     <Compile Include="Controllers\ComprasAgenciasEntradaController.cs" />
+    <Compile Include="Controllers\ComprasPlazosProveedoresController.cs" />
     <Compile Include="Controllers\FestivosController.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
     <Compile Include="Models\RecursosHumanos\IDiaNoLaborable.cs" />

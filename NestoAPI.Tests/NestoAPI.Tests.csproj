@@ -884,6 +884,7 @@
     <Compile Include="Infrastructure\PedidosVenta\ModosServicioPermitidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ClasificadorCausasModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CalculadoraFechaEntregaAgenciaTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\CertezaFechaEntregaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RutaInternaDiaRepartoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AvisoCondicionesCampanaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CampanasAplicarDtoTests.cs" />
@@ -894,6 +895,8 @@
     <Compile Include="Infrastructure\PedidosVenta\PromesaRiesgoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoExtraccionTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAsignacionTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\PlazosProveedoresTests.cs" />
+    <Compile Include="Controllers\ComprasPlazosProveedoresControllerTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoEntregaEstimadaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoFase3Tests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\RepositorioCorreosSeguimientoEnMemoria.cs" />

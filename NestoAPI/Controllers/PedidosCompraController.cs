@@ -18,6 +18,7 @@ using Nesto.Modulos.PedidoCompra.Models;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.PedidosCompra;
+using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using NestoAPI.Models.PedidosBase;
@@ -33,6 +34,14 @@ namespace NestoAPI.Controllers
         private readonly ComprobadorFechaFacturaCompra _comprobadorFechas; // NestoAPI#668
 
         private NVEntities db = new NVEntities();
+
+        private ServicioFechaRecepcionAlEnviar fechaRecepcionAlEnviar;
+        /// <summary>NestoAPI#853: la fecha de recepción al enviar (sustituible en tests).</summary>
+        internal ServicioFechaRecepcionAlEnviar FechaRecepcionAlEnviar
+        {
+            get => fechaRecepcionAlEnviar ?? (fechaRecepcionAlEnviar = new ServicioFechaRecepcionAlEnviar());
+            set => fechaRecepcionAlEnviar = value;
+        }
 
         public PedidosCompraController()
         {
@@ -446,13 +455,17 @@ namespace NestoAPI.Controllers
             // NestoAPI#693: cómo estaban las líneas, para saber si el cambio retrasa pedidos de venta que contaban con ellas
             List<LineaCompraPromesaRiesgo> lineasAntes = cabPedidoCmp.LinPedidoCmps.Select(LineaCompraPromesaRiesgo.De).ToList();
 
+            // NestoAPI#853 (corte 2): al enviar, la fecha de recepción por el plazo real del proveedor (solo con el interruptor
+            // Compras.FechaRecepcionPorPlazoReal = «1» y la tabla de plazos con datos; si no, hoy + DíasEnServir, como siempre). Nunca lanza.
+            FechaRecepcionEstimada fechaAlEnviar = null;
             if (string.IsNullOrEmpty(cabPedidoCmp.PathPedido) && !string.IsNullOrEmpty(pedido.PathPedido))
             {
                 cabPedidoCmp.PathPedido = pedido.PathPedido;
+                fechaAlEnviar = FechaRecepcionAlEnviar.Calcular(cabPedidoCmp.Empresa, cabPedidoCmp.NºProveedor, cabPedidoCmp.DíasEnServir);
                 foreach (var linea in cabPedidoCmp.LinPedidoCmps)
                 {
                     linea.Enviado = true;
-                    linea.FechaRecepción = DateTime.Today.AddDays(cabPedidoCmp.DíasEnServir);
+                    linea.FechaRecepción = fechaAlEnviar.Fecha;
                 }
             }
 
@@ -472,6 +485,13 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
+            }
+
+            if (fechaAlEnviar != null)
+            {
+                // NestoAPI#853: registro del envío (con el interruptor encendido o apagado) para medir quién acierta. Nunca lanza.
+                FechaRecepcionAlEnviar.Registrar(cabPedidoCmp.Empresa, cabPedidoCmp.Número, cabPedidoCmp.NºProveedor, cabPedidoCmp.DíasEnServir,
+                    fechaAlEnviar, UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO));
             }
 
             // NestoAPI#693: si retrasa la fecha, baja la cantidad o quita líneas, se recalculan los pedidos de venta afectados

@@ -969,6 +969,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'compras-correos-seguimiento' configurado (cada 30 min, L-V 8:00-18:30)");
 
+            // NestoAPI#853 (corte 2): lo que suele tardar cada proveedor (mediana y P80 de 24 meses de recepciones de producto, cadencia de
+            // pedidos del último año) en dbo.ProveedoresPlazosEntrega. Sin Scripts/Issue853_PlazosProveedoresYEnvios.sql no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosCompra.PlazosEntrega.PlazosProveedoresJobsService.JOB_ID,
+                () => Infraestructure.PedidosCompra.PlazosEntrega.PlazosProveedoresJobsService.Recalcular(),
+                Infraestructure.PedidosCompra.PlazosEntrega.PlazosProveedoresJobsService.CRON, // Cron: todos los días a las 3:40
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'proveedores-plazos-entrega' configurado (todos los días a las 3:40)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(
