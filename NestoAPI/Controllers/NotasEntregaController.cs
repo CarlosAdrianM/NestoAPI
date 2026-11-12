@@ -78,6 +78,23 @@ namespace NestoAPI.Controllers
         internal Func<IEnumerable<string>, string, Task> FurgonetaAlAbonar { get; set; } =
             (codigos, usuario) => Infraestructure.Agencias.RepartoPropio.RedSeguridadFurgoneta.LeidosConContextoPropio(codigos, usuario, true);
 
+        /// <summary>
+        /// NestoAPI#855 (remates): después del abono de una recogida (empresa, pedido de la nota, abono recién creado, usuario): si es una
+        /// recogida solicitada, procesa la nota de una que recoge el vendedor y avisa a quien la pidió (RecogidaSolicitadaRecibida).
+        /// Las recogidas sin solicitud no cambian. Nunca lanza.
+        /// </summary>
+        internal Func<string, int, bool, string, Task> RecogidaSolicitadaAlAbonar
+        {
+            get => recogidaSolicitadaAlAbonar ?? (db == null ? null : (Func<string, int, bool, string, Task>)RecogidaSolicitadaAlAbonarPorDefecto);
+            set => recogidaSolicitadaAlAbonar = value;
+        }
+
+        private Func<string, int, bool, string, Task> recogidaSolicitadaAlAbonar;
+
+        private Task RecogidaSolicitadaAlAbonarPorDefecto(string empresa, int pedidoNota, bool abonoNuevo, string usuario) =>
+            new ServicioRecogidasSolicitadas(new RepositorioRecogidasSolicitadas(db), new AvisosRecogidasSolicitadas())
+                .AlAbonar(empresa, pedidoNota, abonoNuevo, usuario);
+
         /// <summary>NestoAPI#758: las etiquetas de recogida (sustituible en los tests).</summary>
         internal IServicioEtiquetasRecogida EtiquetasRecogida
         {
@@ -209,6 +226,19 @@ namespace NestoAPI.Controllers
             {
                 // NestoAPI#772: la nota entera (todas sus NR) ya está en el almacén
                 await FurgonetaAlAbonar(new[] { CodigoNotaEntrega.Documento(true, pedidoNota) }, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            }
+            if (resultado.Tipo == TipoResultadoNotaEntrega.Ok && resultado.Contenido != null && RecogidaSolicitadaAlAbonar != null)
+            {
+                // NestoAPI#855: la recogida solicitada ha llegado a Algete (ya con el abono guardado; nunca lo rompe)
+                try
+                {
+                    await RecogidaSolicitadaAlAbonar(resultado.Contenido.Empresa?.Trim(), resultado.Contenido.PedidoNota, resultado.Creado,
+                        UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Recogidas solicitadas #855] Abono de la nota {resultado.Contenido.PedidoNota}: {ex.Message}", ex));
+                }
             }
             if (resultado.Tipo == TipoResultadoNotaEntrega.Ok && resultado.Creado)
             {

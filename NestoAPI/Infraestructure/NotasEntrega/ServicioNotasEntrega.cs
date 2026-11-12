@@ -55,7 +55,28 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// <param name="pedido">Pedido a procesar como nota de entrega</param>
         /// <param name="usuario">Usuario que realiza la operación</param>
         /// <returns>DTO con los datos de la nota de entrega creada</returns>
-        public async Task<NotaEntregaCreadaDTO> ProcesarNotaEntrega(CabPedidoVta pedido, string usuario)
+        public Task<NotaEntregaCreadaDTO> ProcesarNotaEntrega(CabPedidoVta pedido, string usuario)
+        {
+            return Procesar(pedido, usuario, conExtractoRuta: true);
+        }
+
+        /// <summary>
+        /// NestoAPI#855 (remate): la nota de una recogida que hace el VENDEDOR nace con sus líneas a 31/12/2099 (no entra en el picking
+        /// ni en Facturar rutas: no hay parada). Cuando llega a Algete (el abono de la recogida) se procesa como cualquier nota (líneas a
+        /// NOTA_ENTREGA con su número de nota), con la fecha de entrega de hoy y SIN apunte en ExtractoRuta (no va en ninguna ruta).
+        /// Las notas del reparto siguen por <see cref="ProcesarNotaEntrega"/>, sin ningún cambio.
+        /// </summary>
+        public Task<NotaEntregaCreadaDTO> ProcesarNotaRecogidaDelVendedor(CabPedidoVta pedido, string usuario, DateTime hoy)
+        {
+            foreach (LinPedidoVta linea in pedido?.LinPedidoVtas?.Where(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO
+                && l.Fecha_Entrega == CreadorNotaEntregaPendiente.FECHA_ENTREGA_SIN_DETERMINAR) ?? Enumerable.Empty<LinPedidoVta>())
+            {
+                linea.Fecha_Entrega = hoy.Date;
+            }
+            return Procesar(pedido, usuario, conExtractoRuta: false);
+        }
+
+        private async Task<NotaEntregaCreadaDTO> Procesar(CabPedidoVta pedido, string usuario, bool conExtractoRuta)
         {
             System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Iniciando procesamiento de nota de entrega para pedido {pedido?.Número}");
 
@@ -166,7 +187,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
             // 5. Insertar en ExtractoRuta SOLO si el tipo de ruta lo requiere (Ruta Propia SÍ, Agencia NO)
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-            if (tipoRuta?.DebeInsertarEnExtractoRuta() == true)
+            if (conExtractoRuta && tipoRuta?.DebeInsertarEnExtractoRuta() == true)
             {
                 System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Insertando en ExtractoRuta (Ruta {pedido.Ruta} requiere inserción)");
                 var extractoRuta = new ExtractoRuta

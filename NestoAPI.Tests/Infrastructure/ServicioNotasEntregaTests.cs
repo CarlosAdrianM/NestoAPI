@@ -196,6 +196,59 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.StartsWith(insertado.Concepto, "Cerrado de 14h a 16:30h");
         }
 
+        // NestoAPI#855 (remate): la nota de una recogida del VENDEDOR se procesa al llegar a Algete, sin ExtractoRuta; la del reparto, igual que siempre
+        private CabPedidoVta NotaRecogidaRuta16(int numero, DateTime fechaEntrega) => new CabPedidoVta
+        {
+            Empresa = "1",
+            Número = numero,
+            Nº_Cliente = "17765",
+            Contacto = "0",
+            NotaEntrega = true,
+            Ruta = "16",
+            Comentarios = "Recoger secador",
+            LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Nº_Orden = 11, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Base_Imponible = 0m, Texto = "Recoger secador", Fecha_Entrega = fechaEntrega },
+                new LinPedidoVta { Nº_Orden = 12, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Base_Imponible = 0m, Texto = "averiado", Fecha_Entrega = fechaEntrega }
+            }
+        };
+
+        [TestMethod]
+        public async Task ProcesarNotaRecogidaDelVendedor_PasaANotaDeEntregaConFechaDeHoy_SinExtractoRuta()
+        {
+            CabPedidoVta pedido = NotaRecogidaRuta16(930500, CreadorNotaEntregaPendiente.FECHA_ENTREGA_SIN_DETERMINAR);
+            A.CallTo(() => db.Clientes.Find("1", "17765", "0")).Returns(new Cliente { Nombre = "Cliente Test" });
+            var extractos = db.ExtractoRutas;
+            bool insertado = false;
+            A.CallTo(() => extractos.Add(A<ExtractoRuta>._)).Invokes(() => insertado = true);
+
+            var resultado = await ((ServicioNotasEntrega)servicio).ProcesarNotaRecogidaDelVendedor(pedido, "Alfredo", new DateTime(2026, 11, 13, 9, 30, 0));
+
+            Assert.AreEqual(2, resultado.NumeroLineas);
+            Assert.IsTrue(pedido.LinPedidoVtas.All(l => l.Estado == Constantes.EstadosLineaVenta.NOTA_ENTREGA));
+            Assert.IsTrue(pedido.LinPedidoVtas.All(l => l.Fecha_Entrega == new DateTime(2026, 11, 13)), "Ya no se queda a 31/12/2099");
+            Assert.IsFalse(insertado, "No va en ninguna ruta: sin ExtractoRuta aunque el cliente sea de ruta propia");
+            Assert.AreEqual(0, llamadasPrdExtrProducto.Count, "Líneas de texto: no toca stock");
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_RecogidaDelReparto_SigueIgual_ConExtractoRuta_YSinTocarLaFecha()
+        {
+            DateTime fecha = new DateTime(2026, 11, 12);
+            CabPedidoVta pedido = NotaRecogidaRuta16(930501, fecha);
+            A.CallTo(() => db.Clientes.Find("1", "17765", "0")).Returns(new Cliente { Nombre = "Cliente Test" });
+            var extractos = db.ExtractoRutas;
+            bool insertado = false;
+            A.CallTo(() => extractos.Add(A<ExtractoRuta>._)).Invokes(() => insertado = true);
+
+            var resultado = await servicio.ProcesarNotaEntrega(pedido, "Alfredo");
+
+            Assert.AreEqual(2, resultado.NumeroLineas);
+            Assert.IsTrue(insertado, "La ruta 16 es propia: ExtractoRuta como siempre");
+            Assert.IsTrue(pedido.LinPedidoVtas.All(l => l.Fecha_Entrega == fecha));
+            Assert.IsTrue(pedido.LinPedidoVtas.All(l => l.Estado == Constantes.EstadosLineaVenta.NOTA_ENTREGA));
+        }
+
         #region ProcesarNotaEntrega - Líneas YA Facturadas
 
         [TestMethod]

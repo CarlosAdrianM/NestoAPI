@@ -538,6 +538,55 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             Assert.AreEqual("Alfredo", furgoneta.Single().Usuario);
         }
 
+        [TestMethod]
+        public async Task Controlador_Post_NestoAPI855_AvisaDeLaLlegada_ConAbonoNuevoOExistente_YNuncaRompeElAbono()
+        {
+            var llamadas = new List<(string Empresa, int Nota, bool Nuevo, string Usuario)>();
+            NotasEntregaController Con(IPrincipal usuario, bool fallar = false)
+            {
+                NotasEntregaController c = Controlador(usuario);
+                c.RecogidaSolicitadaAlAbonar = (empresa, nota, nuevo, quien) =>
+                {
+                    llamadas.Add((empresa, nota, nuevo, quien));
+                    if (fallar)
+                    {
+                        throw new InvalidOperationException("se cae");
+                    }
+                    return Task.CompletedTask;
+                };
+                return c;
+            }
+
+            HttpResponseMessage creado = await Ejecutar(await Con(Usuario("Alfredo", Constantes.GruposSeguridad.ALMACEN), fallar: true).PostAbonoRecogida(Peticion("NR929554-1")));
+            HttpResponseMessage otra = await Ejecutar(await Con(Usuario("Alfredo", Constantes.GruposSeguridad.ALMACEN)).PostAbonoRecogida(Peticion("NR929554-2")));
+            _ = await Ejecutar(await Con(Usuario("vendedor", "Ventas")).PostAbonoRecogida(Peticion("NR929554-1")));
+
+            Assert.AreEqual(HttpStatusCode.Created, creado.StatusCode, "Si el aviso o el cierre fallan, el abono sigue bien");
+            Assert.AreEqual(HttpStatusCode.OK, otra.StatusCode);
+            Assert.AreEqual(2, llamadas.Count, "El 403 no llega");
+            Assert.AreEqual(("1", NOTA, true, "Alfredo"), llamadas[0]);
+            Assert.AreEqual(("1", NOTA, false, "Alfredo"), llamadas[1]);
+        }
+
+        [TestMethod]
+        public async Task Controlador_Post_NestoAPI855_SinRecoger_NoAvisa()
+        {
+            repositorio.Parada.Estado = Constantes.Agencias.ESTADO_INCIDENTADO;
+            int llamadas = 0;
+            NotasEntregaController controlador = Controlador(Usuario("alfredo", Constantes.GruposSeguridad.ALMACEN));
+            controlador.RecogidaSolicitadaAlAbonar = (e, n, nuevo, u) => { llamadas++; return Task.CompletedTask; };
+
+            _ = await Ejecutar(await controlador.PostAbonoRecogida(Peticion("NR929554-1")));
+
+            Assert.AreEqual(0, llamadas);
+        }
+
+        [TestMethod]
+        public void Controlador_SinBaseDeDatos_NoHayAvisoPorDefecto()
+        {
+            Assert.IsNull(Controlador(Usuario("alfredo", Constantes.GruposSeguridad.ALMACEN)).RecogidaSolicitadaAlAbonar);
+        }
+
         private static Task<HttpResponseMessage> Ejecutar(IHttpActionResult resultado) => resultado.ExecuteAsync(CancellationToken.None);
 
         private static ClaimsPrincipal Usuario(string nombre, string grupo) => new ClaimsPrincipal(new ClaimsIdentity(new[]

@@ -20,6 +20,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         public const string TIPO_RESUELTA = "RecogidaSolicitadaResuelta";
         public const string TIPO_SIN_RESPUESTA = "RecogidaSolicitadaSinRespuesta";
         public const string TIPO_ANULADA = "RecogidaSolicitadaAnulada";
+        public const string TIPO_RECIBIDA = "RecogidaSolicitadaRecibida";
         internal const string DOMINIO = "NUEVAVISION\\";
 
         private readonly Func<IServicioNotificacionesPush> crearNotificaciones;
@@ -78,6 +79,29 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 notificacion.Datos["codigoDocumento"] = recogida.CodigoDocumento;
             }
             Lanzar(() => AQuienLaPidio(recogida, notificacion), "a quien la pidió de la respuesta");
+        }
+
+        /// <summary>
+        /// NestoAPI#855 (remate): la recogida ha llegado a Algete (se ha hecho su abono). A quien la pidió, push de NestoApp y campana
+        /// (si la pidió desde Nesto), con los Datos de siempre y «estado» = Recogida. En segundo plano: nunca rompe el abono.
+        /// </summary>
+        public void Recibida(RecogidaSolicitadaDTO recogida, string usuario)
+        {
+            if (recogida == null)
+            {
+                return;
+            }
+            Refrescar(usuario);
+            NotificacionPushDTO notificacion = Componer(TIPO_RECIBIDA, recogida, $"Recogida en Algete: {Cliente(recogida)}",
+                $"Ha llegado a Algete la recogida de {Cliente(recogida)}" +
+                (recogida.CodigoDocumento != null ? $" (nota {recogida.CodigoDocumento}, {Bultos(recogida.Bultos)})" : $" ({Bultos(recogida.Bultos)})") +
+                ": ya está hecho su abono.");
+            notificacion.Datos["estado"] = EstadosRecogidaSolicitada.RECOGIDA;
+            if (recogida.CodigoDocumento != null)
+            {
+                notificacion.Datos["codigoDocumento"] = recogida.CodigoDocumento;
+            }
+            Lanzar(() => AQuienLaPidio(recogida, notificacion), "a quien la pidió de la llegada a Algete");
         }
 
         public void Anulada(RecogidaSolicitadaDTO recogida, string usuario, bool avisarAlmacen)

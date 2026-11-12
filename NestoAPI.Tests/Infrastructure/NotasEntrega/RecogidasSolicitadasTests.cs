@@ -705,6 +705,111 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>._, Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustNotHaveHappened();
         }
 
+        // ================================================================ llega a Algete (remates de #855)
+
+        [TestMethod]
+        public async Task AlAbonar_LaDelVendedor_SeProcesaLaNota_YSeAvisaAQuienLaPidio()
+        {
+            RecogidaSolicitadaDTO confirmada = await Confirmada(CLIENTE_AGENCIA, QuienRecogeRecogida.VENDEDOR);
+            repositorio.Seguimientos[RecogidasFalsas.PEDIDO] = new SeguimientoNotaRecogida { Existe = true, PedidoAbono = 930600 };
+
+            await servicio.AlAbonar("1", RecogidasFalsas.PEDIDO, true, ALMACEN);
+
+            Assert.AreEqual(RecogidasFalsas.PEDIDO, repositorio.NotasCerradas.Single());
+            RecogidaSolicitadaDTO recibida = avisos.Recibidas.Single();
+            Assert.AreEqual(confirmada.Id, recibida.Id);
+            Assert.AreEqual(EstadosRecogidaSolicitada.RECOGIDA, recibida.Estado);
+        }
+
+        [TestMethod]
+        public async Task AlAbonar_LaDelReparto_NoTocaLaNota_PeroAvisa()
+        {
+            _ = await Confirmada();
+
+            await servicio.AlAbonar("1", RecogidasFalsas.PEDIDO, true, ALMACEN);
+
+            Assert.AreEqual(0, repositorio.NotasCerradas.Count, "La nota del reparto sigue su camino de siempre (Facturar rutas)");
+            Assert.AreEqual(1, avisos.Recibidas.Count);
+        }
+
+        [TestMethod]
+        public async Task AlAbonar_NotaDeRecogidaSinSolicitud_NoHaceNada()
+        {
+            _ = await Confirmada(CLIENTE_AGENCIA, QuienRecogeRecogida.VENDEDOR);
+
+            await servicio.AlAbonar("1", 929554, true, ALMACEN);
+
+            Assert.AreEqual(0, repositorio.NotasCerradas.Count);
+            Assert.AreEqual(0, avisos.Recibidas.Count);
+        }
+
+        [TestMethod]
+        public async Task AlAbonar_AbonoYaExistente_ReintentaElCierre_PeroNoVuelveAAvisar()
+        {
+            _ = await Confirmada(CLIENTE_AGENCIA, QuienRecogeRecogida.VENDEDOR);
+
+            await servicio.AlAbonar("1", RecogidasFalsas.PEDIDO, false, ALMACEN);
+
+            Assert.AreEqual(1, repositorio.NotasCerradas.Count);
+            Assert.AreEqual(0, avisos.Recibidas.Count);
+        }
+
+        [TestMethod]
+        public async Task AlAbonar_SiFallaElCierre_NoLanza_YAvisaIgual()
+        {
+            _ = await Confirmada(CLIENTE_AGENCIA, QuienRecogeRecogida.VENDEDOR);
+            repositorio.FallarAlCerrar = true;
+
+            await servicio.AlAbonar("1", RecogidasFalsas.PEDIDO, true, ALMACEN);
+
+            Assert.AreEqual(1, avisos.Recibidas.Count);
+        }
+
+        [TestMethod]
+        public async Task AlAbonar_SinScript_NoHaceNada()
+        {
+            _ = await Confirmada(CLIENTE_AGENCIA, QuienRecogeRecogida.VENDEDOR);
+            repositorio.Script = false;
+
+            await servicio.AlAbonar("1", RecogidasFalsas.PEDIDO, true, ALMACEN);
+
+            Assert.AreEqual(0, repositorio.NotasCerradas.Count);
+            Assert.AreEqual(0, avisos.Recibidas.Count);
+        }
+
+        [TestMethod]
+        public void Avisos_Recibida_PushYCampanaAQuienLaPidio_ConEstadoRecogida()
+        {
+            var grupos = new List<string>();
+            IServicioNotificacionesPush push = A.Fake<IServicioNotificacionesPush>();
+            var reales = new AvisosRecogidasSolicitadas(() => push, n => Task.CompletedTask, (g, u) => grupos.Add(g), t => t());
+            var recogida = new RecogidaSolicitadaDTO
+            {
+                Id = 5, Empresa = "1", Cliente = CLIENTE, Contacto = "0", UsuarioSolicita = "NUEVAVISION\\Laura", Bultos = 2,
+                Estado = EstadosRecogidaSolicitada.RECOGIDA, CodigoDocumento = "NR930500"
+            };
+
+            reales.Recibida(recogida, ALMACEN);
+
+            CollectionAssert.AreEqual(new[] { AvisosAlmacen.GRUPO_RECOGIDAS_SOLICITADAS }, grupos);
+            A.CallTo(() => push.EnviarAUsuario("Laura", Constantes.Aplicaciones.NESTO_APP,
+                A<NotificacionPushDTO>.That.Matches(n => n.Tipo == AvisosRecogidasSolicitadas.TIPO_RECIBIDA && n.Datos["tipo"] == "RecogidaSolicitadaRecibida"
+                    && n.Datos["estado"] == "Recogida" && n.Datos["id"] == "5" && n.Datos["cliente"] == CLIENTE && n.Datos["codigoDocumento"] == "NR930500")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Tipo == AvisosRecogidasSolicitadas.TIPO_RECIBIDA))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Avisos_Recibida_SiLaPushFalla_NoLanza()
+        {
+            IServicioNotificacionesPush push = A.Fake<IServicioNotificacionesPush>();
+            A.CallTo(() => push.EnviarAUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).Throws(new InvalidOperationException("sin red"));
+            var reales = new AvisosRecogidasSolicitadas(() => push, n => Task.CompletedTask, (g, u) => { }, t => t());
+
+            reales.Recibida(new RecogidaSolicitadaDTO { Id = 5, Empresa = "1", Cliente = CLIENTE, Contacto = "0", UsuarioSolicita = VENDEDORA, Bultos = 1 }, ALMACEN);
+        }
+
         // ================================================================ dobles
 
         private class AvisosFalsos : IAvisosRecogidasSolicitadas
@@ -713,6 +818,9 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
             public readonly List<RecogidaSolicitadaDTO> Resueltas = new List<RecogidaSolicitadaDTO>();
             public readonly List<(RecogidaSolicitadaDTO Recogida, bool AvisarAlmacen)> Anuladas = new List<(RecogidaSolicitadaDTO, bool)>();
             public readonly List<RecogidaSolicitadaDTO> SinRespuesta = new List<RecogidaSolicitadaDTO>();
+            public readonly List<RecogidaSolicitadaDTO> Recibidas = new List<RecogidaSolicitadaDTO>();
+
+            public void Recibida(RecogidaSolicitadaDTO recogida, string usuario) => Recibidas.Add(recogida);
 
             public void Solicitada(RecogidaSolicitadaDTO recogida, string usuario) => Solicitadas.Add(recogida);
             public void Resuelta(RecogidaSolicitadaDTO recogida, string usuario) => Resueltas.Add(recogida);
@@ -856,6 +964,22 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
 
             public Task<bool> EsRecogidaDelVendedor(string empresa, int pedidoNota)
                 => Task.FromResult(Filas.Any(f => f.PedidoNota == pedidoNota && f.QuienRecoge == QuienRecogeRecogida.VENDEDOR));
+
+            public readonly List<int> NotasCerradas = new List<int>();
+            public bool FallarAlCerrar;
+
+            public Task<FilaRecogidaSolicitada> LeerPorNota(string empresa, int pedidoNota)
+                => Task.FromResult(Copia(Filas.FirstOrDefault(f => f.PedidoNota == pedidoNota && f.Estado == EstadosRecogidaSolicitada.CONFIRMADA)));
+
+            public Task<bool> CerrarNotaDelVendedor(string empresa, int pedidoNota, string usuario)
+            {
+                if (FallarAlCerrar)
+                {
+                    throw new InvalidOperationException("trgLinPedidoVtaUpd");
+                }
+                NotasCerradas.Add(pedidoNota);
+                return Task.FromResult(true);
+            }
         }
     }
 }

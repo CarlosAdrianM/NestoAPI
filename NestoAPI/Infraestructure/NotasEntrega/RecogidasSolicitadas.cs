@@ -140,6 +140,14 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         Task<bool> MarcarAvisoSinRespuesta(int id);
         /// <summary>¿Esa nota de recogida es la de una solicitud confirmada que recoge el vendedor? False sin el script.</summary>
         Task<bool> EsRecogidaDelVendedor(string empresa, int pedidoNota);
+        /// <summary>La solicitud confirmada de esa nota de recogida, o null (nota de #757 sin solicitud, o sin el script).</summary>
+        Task<FilaRecogidaSolicitada> LeerPorNota(string empresa, int pedidoNota);
+        /// <summary>
+        /// En UNA transacción: la nota de una recogida del VENDEDOR (líneas a 31/12/2099, sin picking) se procesa como nota de entrega
+        /// (<see cref="ServicioNotasEntrega.ProcesarNotaRecogidaDelVendedor"/>) con su rastro. False (y nada cambiado) si ya estaba
+        /// procesada, no es una nota o alguna línea está en un picking. Idempotente.
+        /// </summary>
+        Task<bool> CerrarNotaDelVendedor(string empresa, int pedidoNota, string usuario);
     }
 
     /// <summary>NestoAPI#855: los avisos (campana, push y AlmacenHub). Nunca lanzan ni hacen esperar a la petición.</summary>
@@ -153,6 +161,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         void Anulada(RecogidaSolicitadaDTO recogida, string usuario, bool avisarAlmacen);
         /// <summary>Campana a Almacén y a quien la pidió (RecogidaSolicitadaSinRespuesta). Para el job: espera a que acabe; nunca lanza.</summary>
         Task SinRespuesta(RecogidaSolicitadaDTO recogida);
+        /// <summary>La recogida ha llegado a Algete (abono hecho): push de NestoApp y campana a quien la pidió (RecogidaSolicitadaRecibida) y haCambiado.</summary>
+        void Recibida(RecogidaSolicitadaDTO recogida, string usuario);
     }
 
     /// <summary>
@@ -604,6 +614,52 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             dto.AvisoAnulacion = aviso;
             Avisar(() => avisos?.Anulada(dto, usuario, avisarAlmacen));
             return ResultadoRecogidaSolicitada<RecogidaSolicitadaDTO>.Bien(dto);
+        }
+
+        // ================================================================ llega a Algete (el abono de la recogida)
+
+        /// <summary>
+        /// NestoAPI#855 (remates aprobados): después de POST api/NotasEntrega/Recogidas/Abono, ya guardado el abono. Si la nota es la de
+        /// una recogida SOLICITADA: (a) si la recoge el vendedor, su nota (líneas a 31/12/2099) se procesa como nota de entrega para que no
+        /// se quede de pedido pendiente para siempre (idempotente: se reintenta en cada lectura del NR mientras siga sin procesar); (b) si el
+        /// abono es nuevo (<paramref name="abonoNuevo"/>: la primera lectura), aviso RecogidaSolicitadaRecibida a quien la pidió. Las
+        /// notas de recogida sin solicitud (#757, las del reparto) no cambian. Nunca lanza: un fallo va a ELMAH y el abono ya está hecho.
+        /// </summary>
+        public async Task AlAbonar(string empresa, int pedidoNota, bool abonoNuevo, string usuario)
+        {
+            try
+            {
+                if (!repositorio.ScriptAplicado())
+                {
+                    return;
+                }
+                FilaRecogidaSolicitada fila = await repositorio.LeerPorNota(empresa, pedidoNota).ConfigureAwait(false);
+                if (fila == null)
+                {
+                    return;
+                }
+                if (fila.QuienRecoge == QuienRecogeRecogida.VENDEDOR)
+                {
+                    try
+                    {
+                        _ = await repositorio.CerrarNotaDelVendedor(fila.Empresa, pedidoNota, usuario).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Recogidas solicitadas #855] La nota {pedidoNota} (la recoge el vendedor) no se ha podido procesar al " +
+                            $"abonarla; el abono está hecho y se reintenta al volver a leer el NR: {ex.Message}", ex));
+                    }
+                }
+                if (abonoNuevo && avisos != null)
+                {
+                    List<RecogidaSolicitadaDTO> lista = await Construir(fila.Empresa, new List<FilaRecogidaSolicitada> { fila }).ConfigureAwait(false);
+                    avisos.Recibida(lista[0], usuario);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recogidas solicitadas #855] Abono de la nota {pedidoNota}: {ex.Message}", ex));
+            }
         }
 
         // ================================================================ un día laborable sin respuesta (job)

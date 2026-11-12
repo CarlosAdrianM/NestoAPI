@@ -508,6 +508,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Avisos: campana a Almacén (`RecogidaSolicitada`), push NestoApp + campana Nesto a quien la pidió (`RecogidaSolicitadaResuelta`,
   `RecogidaSolicitadaAnulada`), `haCambiado` al grupo `RecogidasSolicitadas` del AlmacenHub. Job `recogidas-solicitadas-sin-respuesta`
   (L-V cada hora 8-20): un día laborable de Algete sin contestar → `RecogidaSolicitadaSinRespuesta` a Almacén y a quien la pidió, una vez.
+- Al abonarla (`POST Recogidas/Abono`, ya guardado el abono; `ServicioRecogidasSolicitadas.AlAbonar`, nunca lo rompe): con Vendedor, su
+  nota se procesa como nota de entrega (`ServicioNotasEntrega.ProcesarNotaRecogidaDelVendedor`: líneas a -2 con fecha de hoy, SIN
+  ExtractoRuta; `RepositorioRecogidasSolicitadas.CerrarNotaDelVendedor`, una transacción, idempotente: si falla, ELMAH y se reintenta en
+  la siguiente lectura del NR). Con abono nuevo, `RecogidaSolicitadaRecibida` (push + campana, Datos + `estado` «Recogida») a quien la
+  pidió. Las notas de recogida sin solicitud y `ProcesarNotaEntrega` (Facturar rutas) no cambian.
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

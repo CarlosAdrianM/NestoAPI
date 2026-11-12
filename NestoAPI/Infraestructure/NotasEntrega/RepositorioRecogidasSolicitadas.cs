@@ -397,6 +397,62 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
             return filas.Count > 0;
         }
 
+        public async Task<FilaRecogidaSolicitada> LeerPorNota(string empresa, int pedidoNota)
+        {
+            if (!ScriptAplicado())
+            {
+                return null;
+            }
+            return (await db.Database.SqlQuery<FilaRecogidaSolicitada>(
+                $"SELECT TOP 1 {SQL_COLUMNAS} FROM dbo.{TABLA} WITH (NOLOCK) WHERE Empresa = @p0 AND PedidoNota = @p1 " +
+                $"AND Estado = '{EstadosRecogidaSolicitada.CONFIRMADA}' ORDER BY Id DESC", empresa, pedidoNota).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
+
+        public async Task<bool> CerrarNotaDelVendedor(string empresa, int pedidoNota, string usuario)
+        {
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                CabPedidoVta cabecera = null;
+                try
+                {
+                    cabecera = await db.CabPedidoVtas.Include(c => c.LinPedidoVtas)
+                        .FirstOrDefaultAsync(c => c.Empresa == empresa && c.Número == pedidoNota).ConfigureAwait(false);
+                    List<LinPedidoVta> pendientes = cabecera?.LinPedidoVtas?.Where(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO).ToList()
+                        ?? new List<LinPedidoVta>();
+                    // Ya procesada (o no es una nota): nada. Con alguna línea en un picking alguien la ha metido en el reparto: no se toca.
+                    if (cabecera == null || !cabecera.NotaEntrega || pendientes.Count == 0 || pendientes.Any(l => (l.Picking ?? 0) > 0))
+                    {
+                        transaccion.RollbackSeguro();
+                        Soltar(cabecera, cabecera?.LinPedidoVtas?.ToList(), null);
+                        return false;
+                    }
+                    Models.Facturas.NotaEntregaCreadaDTO nota = await new ServicioNotasEntrega(db).ProcesarNotaRecogidaDelVendedor(cabecera, usuario ?? "NestoAPI", DateTime.Today)
+                        .ConfigureAwait(false);
+                    _ = db.Modificaciones.Add(new Modificacion
+                    {
+                        Tabla = ServicioRecogidasSolicitadas.TABLA_MODIFICACIONES,
+                        Anterior = $"Nota de recogida {pedidoNota} (la recoge el vendedor): {pendientes.Count} línea(s) pendientes a 31/12/2099",
+                        Nuevo = ServicioRecogidasSolicitadas.Recortar($"Nota de recogida {pedidoNota} procesada al llegar a Algete (abono de la recogida): " +
+                            $"{nota?.NumeroLineas ?? 0} línea(s) a nota de entrega, sin ExtractoRuta (NestoAPI#855, usuario {usuario})", 4000),
+                        Usuario = ServicioRecogidasSolicitadas.Recortar(usuario, 50)
+                    });
+                    _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                    transaccion.Commit();
+                    return true;
+                }
+                catch
+                {
+                    transaccion.RollbackSeguro();
+                    // Lo que EF tenga en memoria de esta transacción (líneas, NotasEntrega, Modificaciones) no vale: se ha deshecho
+                    foreach (System.Data.Entity.Infrastructure.DbEntityEntry entrada in db.ChangeTracker.Entries().ToList())
+                    {
+                        entrada.State = EntityState.Detached;
+                    }
+                    throw;
+                }
+            }
+        }
+
         private void Soltar(CabPedidoVta cabecera, List<LinPedidoVta> lineas, Modificacion modificacion)
         {
             try
