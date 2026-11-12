@@ -40,6 +40,15 @@ namespace NestoAPI.Models.Alquileres
         public string CodPostalCliente { get; set; }
         public string PoblacionCliente { get; set; }
         public string ProvinciaCliente { get; set; }
+
+        // Novedad 1181 (solo lectura, la rejilla de Nesto; el guardado los ignora):
+        /// <summary>Nombre del producto (equipo) de su ficha en Productos; si no, la copia de CabAlquileres.NombreProducto.</summary>
+        public string ProductoNombre { get; set; }
+        /// <summary>
+        /// Nombre del cliente de la ficha: el del contacto del alquiler y, si falta o no casa, el del contacto principal.
+        /// (NombreCliente sigue siendo solo el del contacto exacto, para la etiqueta.)
+        /// </summary>
+        public string ClienteNombre { get; set; }
     }
 
     /// <summary>

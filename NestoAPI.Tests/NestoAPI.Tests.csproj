@@ -362,6 +362,7 @@
     <Compile Include="Controllers\InventariosLecturaCodigosTests.cs" />
     <Compile Include="Controllers\InventariosRellenarTests.cs" />
     <Compile Include="Controllers\InventariosDeshacerRellenarTests.cs" />
+    <Compile Include="Infrastructure\Alquileres\AlquileresNombresTests.cs" />
     <Compile Include="Controllers\InventariosContabilizarControllerTests.cs" />
     <Compile Include="Infrastructure\Inventarios\ContabilizarInventarioTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioUbicacionesTests.cs" />

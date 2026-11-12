@@ -221,6 +221,9 @@ namespace NestoAPI.Infraestructure.Alquileres
             // etiqueta (nombre/dirección). Se materializa y se hace el match en memoria con Trim
             // porque las claves de la BD vienen rellenas con espacios (sistema legacy).
             Dictionary<string, Cliente> clientesPorClave = new Dictionary<string, Cliente>();
+            // Novedad 1181: el nombre para la rejilla, aunque el contacto falte o no case (entonces, el del
+            // contacto principal). Sale de los mismos clientes ya leídos: sin consultas de más.
+            Dictionary<string, string> nombrePorCliente = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             List<string> numerosCliente = cabeceras
                 .Where(c => !string.IsNullOrWhiteSpace(c.Cliente))
                 .Select(c => c.Cliente)
@@ -238,6 +241,36 @@ namespace NestoAPI.Infraestructure.Alquileres
                 {
                     clientesPorClave[ClaveCliente(cli.Nº_Cliente, cli.Contacto)] = cli;
                 }
+                foreach (IGrouping<string, Cliente> grupo in clientes
+                    .Where(cli => !string.IsNullOrWhiteSpace(cli.Nº_Cliente))
+                    .GroupBy(cli => cli.Nº_Cliente.Trim(), StringComparer.OrdinalIgnoreCase))
+                {
+                    Cliente principal = grupo.OrderByDescending(cli => cli.ClientePrincipal)
+                        .ThenBy(cli => cli.Contacto?.Trim(), StringComparer.OrdinalIgnoreCase)
+                        .First();
+                    nombrePorCliente[grupo.Key] = principal.Nombre?.Trim();
+                }
+            }
+
+            // Novedad 1181: el nombre del equipo, de la ficha del producto (CabAlquileres.NombreProducto es una copia
+            // antigua que puede faltar). Una sola consulta con los productos de la lista.
+            Dictionary<string, string> nombrePorProducto = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            List<string> numerosProducto = cabeceras
+                .Where(c => !string.IsNullOrWhiteSpace(c.Producto))
+                .Select(c => c.Producto)
+                .Distinct()
+                .ToList();
+            if (numerosProducto.Any())
+            {
+                var productos = await db.Productos
+                    .Where(p => p.Empresa == empresa && numerosProducto.Contains(p.Número))
+                    .Select(p => new { p.Número, p.Nombre })
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                foreach (var p in productos.Where(p => !string.IsNullOrWhiteSpace(p.Número)))
+                {
+                    nombrePorProducto[p.Número.Trim()] = p.Nombre?.Trim();
+                }
             }
 
             return cabeceras.Select(c =>
@@ -247,7 +280,20 @@ namespace NestoAPI.Infraestructure.Alquileres
                 {
                     clientesPorClave.TryGetValue(ClaveCliente(c.Cliente, c.Contacto), out cli);
                 }
-                return MapearADto(c, cli);
+                AlquilerCabeceraDTO dto = MapearADto(c, cli);
+                string nombreProducto = null;
+                if (!string.IsNullOrWhiteSpace(c.Producto))
+                {
+                    nombrePorProducto.TryGetValue(c.Producto.Trim(), out nombreProducto);
+                }
+                dto.ProductoNombre = string.IsNullOrWhiteSpace(nombreProducto) ? c.NombreProducto?.Trim() : nombreProducto;
+                string nombreCliente = cli?.Nombre?.Trim();
+                if (string.IsNullOrWhiteSpace(nombreCliente) && !string.IsNullOrWhiteSpace(c.Cliente))
+                {
+                    nombrePorCliente.TryGetValue(c.Cliente.Trim(), out nombreCliente);
+                }
+                dto.ClienteNombre = nombreCliente;
+                return dto;
             }).ToList();
         }
 

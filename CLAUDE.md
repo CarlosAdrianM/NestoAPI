@@ -432,6 +432,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   contabilizado ni ExtractoProducto. 200 `{ Almacen, Fecha, FilasBorradas, FilasContadas, UnidadesContadas }` (ceros si no hay nada, y sin rastro);
   rastro = UNA fila en Modificaciones (Tabla «InventarioRellenadoDeshecho», resumen en JSON con el desglose por usuario).
 
+### Alquileres: equipo y nombre del cliente en la relación (Novedades 1181, 12/11/26)
+- `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de
+  Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
+  una consulta por tabla (sin N+1). `NombreCliente` sigue siendo solo el del contacto exacto (etiqueta). El guardado los ignora y Nesto no los manda.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
