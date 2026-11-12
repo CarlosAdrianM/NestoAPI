@@ -62,9 +62,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         private static readonly Regex CodigoValido = new Regex(@"^[A-Za-z0-9][A-Za-z0-9\-]{5,39}$", RegexOptions.Compiled);
 
-        /// <summary>Código con etiqueta en el texto: «Nº de seguimiento: X», «tracking number X», «localizador X», «expedición X».</summary>
+        /// <summary>
+        /// Código con etiqueta en el texto: «Nº de seguimiento: X», «tracking number X», «localizador X», «expedición X». Entre la
+        /// etiqueta y el código puede ir el nombre corto de la agencia («Nº de seguimiento GLS 1378206148»).
+        /// </summary>
         internal static readonly Regex CodigoConEtiqueta = new Regex(
-            @"(?:n[ºo°]\.?\s*de\s*(?:seguimiento|env[ií]o|expedici[oó]n)|n[uú]mero\s+de\s+(?:seguimiento|env[ií]o|expedici[oó]n)|c[oó]digo\s+de\s+(?:seguimiento|env[ií]o)|seguimiento|tracking(?:\s*(?:number|n[ºo°]|id|code))?|localizador|expedici[oó]n|sendungsnummer|awb)\s*(?:n[ºo°]\.?)?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\-]{5,39})\b",
+            @"(?:n[ºo°]\.?\s*de\s*(?:seguimiento|env[ií]o|expedici[oó]n)|n[uú]mero\s+de\s+(?:seguimiento|env[ií]o|expedici[oó]n)|c[oó]digo\s+de\s+(?:seguimiento|env[ií]o)|seguimiento|tracking(?:\s*(?:number|n[ºo°]|id|code))?|localizador|expedici[oó]n|sendungsnummer|awb)\s*(?:n[ºo°]\.?)?\s*[:#]?\s*(?:(?:GLS|UPS|DHL|SEUR|MRW|TNT|DPD|CTT|NACEX|TIPSA)\s+)?([A-Za-z0-9][A-Za-z0-9\-]{5,39})\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public abstract string Nombre { get; }
@@ -379,7 +382,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     public class AgenciaEntradaGls : AgenciaEntradaPorPatrones
     {
         public override string Nombre => "GLS";
-        protected override string[] Dominios => new[] { "gls-spain.es", "gls-group.eu", "gls-group.com", "gls-group.net", "gls-info.nl", "gls-pakete.de", "gls-italy.com" };
+        protected override string[] Dominios => new[] { "gls-spain.es", "gls-spain.com", "gls-group.eu", "gls-group.com", "gls-group.net", "gls-info.nl", "gls-pakete.de", "gls-italy.com" };
         protected override string[] ParametrosCodigo => new[] { "match", "codigo", "refs", "ref", "parcelno", "txtcodigo" };
         protected override Regex[] PatronesRuta => new[] { new Regex(@"/track/([A-Za-z0-9\-]+)", RegexOptions.IgnoreCase) };
     }

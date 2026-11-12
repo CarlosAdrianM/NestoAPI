@@ -894,6 +894,7 @@
     <Compile Include="Infrastructure\PedidosVenta\PromesaRiesgoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoExtraccionTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAsignacionTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoEntregaEstimadaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\LectorBuzonComprasGraphTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ServicioCorreosSeguimientoComprasTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\HistoricoCorreosComprasTests.cs" />

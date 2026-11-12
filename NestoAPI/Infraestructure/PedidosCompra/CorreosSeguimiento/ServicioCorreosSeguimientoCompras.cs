@@ -1,4 +1,6 @@
 using NestoAPI.Models;
+using NestoAPI.Models.Picking;
+using NestoAPI.Models.RecursosHumanos;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -47,16 +49,24 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private readonly IReadOnlyList<IAgenciaEntrada> agencias;
         private readonly Action<Exception> registrar;
         private readonly string empresa;
+        private readonly Func<TimeSpan> horaCorte;
+        private readonly Func<DateTime, bool> esFestivo;
 
         /// <param name="lector">Null = sin claves en secretos.config (no se hace nada).</param>
+        /// <param name="horaCorte">Hora de corte del picking (por defecto, <see cref="HoraCortePicking.Leer"/> de la empresa).</param>
+        /// <param name="esFestivo">Festivo de Algete (por defecto, <see cref="GestorFestivos.EsFestivo"/> con ALG).</param>
         public ServicioCorreosSeguimientoCompras(ILectorBuzonCompras lector, IRepositorioCorreosSeguimiento repositorio,
-            Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null)
+            Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null,
+            Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null)
         {
             this.lector = lector;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.registrar = registrar ?? (_ => { });
             this.agencias = agencias ?? AgenciasEntradaRegistradas.Todas;
             this.empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa;
+            string empresaCorte = this.empresa;
+            this.horaCorte = horaCorte ?? (() => HoraCortePicking.Leer(empresaCorte));
+            this.esFestivo = esFestivo ?? (d => GestorFestivos.EsFestivo(d, Constantes.Almacenes.ALGETE));
         }
 
         /// <summary>Para los tests: que el «sin tabla» se vuelva a apuntar.</summary>
@@ -153,9 +163,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     {
                         continue;
                     }
-                    List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false);
-                    AsignacionPedidoCompra asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos);
+                    // Un envío nuestro de salida en copia se guarda (para medir) pero sin asignación ni disponible
+                    AsignacionPedidoCompra asignacion = null;
+                    if (!analisis.EsSalidaNuestra)
+                    {
+                        List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false);
+                        asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos);
+                    }
                     CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
+                    fila.DisponibleEstimado = DisponibleEstimado(analisis);
                     // Los adjuntos (solo nombre, tipo y tamaño), una petición por correo GUARDADO con adjuntos y solo si hay columnas
                     if (correo.TieneAdjuntos && (conAdjuntos ?? (conAdjuntos = repositorio.AdjuntosDisponibles()).Value))
                     {
@@ -228,8 +244,33 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     : null,
                 Extracto = TextoCorreo.Recortar(analisis.Extracto, 600),
                 ProveedorPropuesto = asignacion?.ProveedorPropuesto,
-                PedidosCandidatos = AsignadorPedidosCompra.Serializar(asignacion?.Candidatos)
+                PedidosCandidatos = analisis.EsSalidaNuestra ? null : AsignadorPedidosCompra.Serializar(asignacion?.Candidatos),
+                EntregaEstimadaDia = analisis.EntregaEstimada?.Dia,
+                EntregaEstimadaDesde = analisis.EntregaEstimada?.Desde,
+                EntregaEstimadaHasta = analisis.EntregaEstimada?.Hasta,
+                EsSalidaNuestra = analisis.EsSalidaNuestra
             };
+        }
+
+        /// <summary>
+        /// Desde cuándo se podría servir lo que anuncia el correo (<see cref="ReglaDisponibleCompra"/>, con la hora de corte del
+        /// picking y los festivos de Algete). Null si no anuncia entrega, si es una salida nuestra o si falla (se apunta).
+        /// </summary>
+        internal DateTime? DisponibleEstimado(AnalisisCorreoSeguimiento analisis)
+        {
+            if (analisis?.EntregaEstimada == null || analisis.EsSalidaNuestra)
+            {
+                return null;
+            }
+            try
+            {
+                return ReglaDisponibleCompra.Calcular(analisis.EntregaEstimada, horaCorte(), esFestivo);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #857] No se ha podido calcular el disponible estimado: " + ex.Message, ex));
+                return null;
+            }
         }
 
         /// <summary>Segundo paso: de los guardados con candidatos y sin real, si alguno de sus candidatos ya tiene albarán, cuál.</summary>

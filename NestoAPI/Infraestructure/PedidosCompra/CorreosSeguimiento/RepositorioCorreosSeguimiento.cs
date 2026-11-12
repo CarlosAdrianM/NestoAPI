@@ -35,6 +35,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int? NumAdjuntos { get; set; }
         /// <summary>JSON [{Nombre, Tipo, Tamano}] de los 10 primeros (<see cref="ResumenAdjuntos"/>).</summary>
         public string Adjuntos { get; set; }
+        /// <summary>
+        /// La entrega que anuncia el correo (<see cref="ExtractorEntregaEstimada"/>) y desde cuándo se podría servir
+        /// (<see cref="ReglaDisponibleCompra"/>). Null = no lo dice, correo de antes o sin las columnas de Issue857c.
+        /// </summary>
+        public DateTime? EntregaEstimadaDia { get; set; }
+        public TimeSpan? EntregaEstimadaDesde { get; set; }
+        public TimeSpan? EntregaEstimadaHasta { get; set; }
+        public DateTime? DisponibleEstimado { get; set; }
+        /// <summary>Envío nuestro de salida en copia (<see cref="EnvioNuestroDeSalida"/>): sin asignación. Null = sin apuntar.</summary>
+        public bool? EsSalidaNuestra { get; set; }
     }
 
     public interface IRepositorioCorreosSeguimiento
@@ -78,30 +88,86 @@ UPDATE dbo.ComprasCorreosSeguimientoEstado SET EnlaceDelta = @enlace, UltimoErro
 IF @@ROWCOUNT = 0
     INSERT INTO dbo.ComprasCorreosSeguimientoEstado (Buzon, EnlaceDelta, UltimoError, FechaModificacion) VALUES (@buzon, @enlace, @error, GETDATE());";
 
-        internal const string SQL_INSERTAR = @"
+        // {0} = las columnas opcionales que haya; {1} = sus valores
+        internal const string SQL_INSERTAR_BASE = @"
 INSERT INTO dbo.ComprasCorreosSeguimiento (MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos,
-    Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura)
-SELECT @mensajeId, @recibido, @remitente, @dominio, @asunto, @agencia, @codigo, @url, @seguimientos, @extracto, @proveedor, @candidatos, GETDATE()
+    Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura{0})
+SELECT @mensajeId, @recibido, @remitente, @dominio, @asunto, @agencia, @codigo, @url, @seguimientos, @extracto, @proveedor, @candidatos, GETDATE(){1}
 WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOLDLOCK) WHERE MensajeId = @mensajeId)";
+
+        /// <summary>El INSERT con las columnas opcionales que existan (adjuntos de Issue857b, entrega estimada de Issue857c).</summary>
+        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega) => string.Format(SQL_INSERTAR_BASE,
+            (conAdjuntos ? ", " + COLUMNAS_ADJUNTOS : string.Empty) + (conEntrega ? ", " + COLUMNAS_ENTREGA : string.Empty),
+            (conAdjuntos ? ", @numAdjuntos, @adjuntos" : string.Empty)
+                + (conEntrega ? ", @entregaDia, @entregaDesde, @entregaHasta, @disponible, @esSalida" : string.Empty));
+
+        internal static readonly string SQL_INSERTAR = SqlInsertar(false, false);
 
         internal const string SQL_EXISTEN_ADJUNTOS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'NumAdjuntos') IS NULL " +
             "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'Adjuntos') IS NULL THEN 0 ELSE 1 END AS bit)";
 
         // Con las columnas de Scripts/Issue857b_ComprasCorreosHistoricoYAdjuntos.sql
-        internal const string SQL_INSERTAR_CON_ADJUNTOS = @"
-INSERT INTO dbo.ComprasCorreosSeguimiento (MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos,
-    Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, NumAdjuntos, Adjuntos)
-SELECT @mensajeId, @recibido, @remitente, @dominio, @asunto, @agencia, @codigo, @url, @seguimientos, @extracto, @proveedor, @candidatos, GETDATE(),
-    @numAdjuntos, @adjuntos
-WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOLDLOCK) WHERE MensajeId = @mensajeId)";
+        internal static readonly string SQL_INSERTAR_CON_ADJUNTOS = SqlInsertar(true, false);
 
         internal const string COLUMNAS_ADJUNTOS = "NumAdjuntos, Adjuntos";
         internal const string COLUMNAS_ADJUNTOS_NULAS = "CAST(NULL AS int) AS NumAdjuntos, CAST(NULL AS nvarchar(2000)) AS Adjuntos";
+
+        // Scripts/Issue857c_ComprasCorreosEntregaEstimada.sql (las cinco van juntas)
+        internal const string SQL_EXISTEN_ENTREGA = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EntregaEstimadaDia') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EntregaEstimadaDesde') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EntregaEstimadaHasta') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'DisponibleEstimado') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EsSalidaNuestra') IS NULL " +
+            "THEN 0 ELSE 1 END AS bit)";
+        internal const string COLUMNAS_ENTREGA = "EntregaEstimadaDia, EntregaEstimadaDesde, EntregaEstimadaHasta, DisponibleEstimado, EsSalidaNuestra";
+        internal const string COLUMNAS_ENTREGA_NULAS = "CAST(NULL AS date) AS EntregaEstimadaDia, CAST(NULL AS time(0)) AS EntregaEstimadaDesde, " +
+            "CAST(NULL AS time(0)) AS EntregaEstimadaHasta, CAST(NULL AS date) AS DisponibleEstimado, CAST(NULL AS bit) AS EsSalidaNuestra";
+
         /// <summary>Tras la comprobación de las columnas, cuánto vale lo sabido (así, lanzado el script, se nota sin reiniciar).</summary>
         internal static readonly TimeSpan CACHE_ADJUNTOS = TimeSpan.FromMinutes(10);
-        private static readonly object bloqueoAdjuntos = new object();
-        private static bool? adjuntosDisponibles;
-        private static DateTime adjuntosComprobadosUtc;
+        private static readonly ColumnasOpcionales columnasAdjuntos = new ColumnasOpcionales(SQL_EXISTEN_ADJUNTOS);
+        private static readonly ColumnasOpcionales columnasEntrega = new ColumnasOpcionales(SQL_EXISTEN_ENTREGA);
+
+        /// <summary>Si existen unas columnas opcionales, con caché de <see cref="CACHE_ADJUNTOS"/>. Ante cualquier fallo, que no.</summary>
+        private sealed class ColumnasOpcionales
+        {
+            private readonly string sql;
+            private readonly object bloqueo = new object();
+            private bool? existen;
+            private DateTime comprobadasUtc;
+
+            public ColumnasOpcionales(string sql)
+            {
+                this.sql = sql;
+            }
+
+            public bool Existen(Func<NVEntities> crearContexto)
+            {
+                lock (bloqueo)
+                {
+                    if (existen.HasValue && DateTime.UtcNow - comprobadasUtc < CACHE_ADJUNTOS)
+                    {
+                        return existen.Value;
+                    }
+                }
+                bool resultado;
+                try
+                {
+                    using (NVEntities db = crearContexto())
+                    {
+                        resultado = db.Database.SqlQuery<bool>(sql).FirstOrDefault();
+                    }
+                }
+                catch (Exception)
+                {
+                    resultado = false;
+                }
+                lock (bloqueo)
+                {
+                    existen = resultado;
+                    comprobadasUtc = DateTime.UtcNow;
+                }
+                return resultado;
+            }
+        }
 
         internal const string SQL_REMITENTES = "SELECT Id, RTRIM(Agencia) AS Agencia, RTRIM(Remitente) AS Remitente, Activo, Usuario, FechaModificacion " +
             "FROM dbo.AgenciasEntradaRemitentes WITH (NOLOCK) ORDER BY Agencia, Remitente";
@@ -164,14 +230,14 @@ WHERE pc.Empresa IN (@empresa, @espejo) AND pc.CorreoElectrónico IS NOT NULL AN
             "Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal";
 
         internal const string SQL_PENDIENTES_MEDIR = @"
-SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + @"
+SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Recibido";
 
         // Por la clave (Id, el índice agrupado), de @cuantos en @cuantos
         internal const string SQL_PENDIENTES_MEDIR_POR_ID = @"
-SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + @"
+SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE Id > @despues AND PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Id";
@@ -186,9 +252,9 @@ GROUP BY l.Empresa, l.Número, CAST(l.FechaAlbarán AS date)";
         internal const string SQL_GUARDAR_REAL = "UPDATE dbo.ComprasCorreosSeguimiento SET EmpresaReal = @empresa, PedidoReal = @pedido, FechaAlbaranReal = @fecha " +
             "WHERE Id = @id AND PedidoReal IS NULL";
 
-        // {0} = las columnas de los adjuntos (o NULL sin el script Issue857b)
+        // {0} = las columnas de los adjuntos (o NULL sin el script Issue857b); {1} = las de la entrega estimada (o NULL sin Issue857c)
         internal const string SQL_CORREOS = @"
-SELECT TOP 2000 " + COLUMNAS_FILA + @", {0}
+SELECT TOP 2000 " + COLUMNAS_FILA + @", {0}, {1}
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE Recibido >= @desde
 ORDER BY Recibido DESC";
@@ -243,34 +309,10 @@ ORDER BY Recibido DESC";
             }
         }
 
-        public bool AdjuntosDisponibles()
-        {
-            lock (bloqueoAdjuntos)
-            {
-                if (adjuntosDisponibles.HasValue && DateTime.UtcNow - adjuntosComprobadosUtc < CACHE_ADJUNTOS)
-                {
-                    return adjuntosDisponibles.Value;
-                }
-            }
-            bool existen;
-            try
-            {
-                using (NVEntities db = crearContexto())
-                {
-                    existen = db.Database.SqlQuery<bool>(SQL_EXISTEN_ADJUNTOS).FirstOrDefault();
-                }
-            }
-            catch (Exception)
-            {
-                existen = false;
-            }
-            lock (bloqueoAdjuntos)
-            {
-                adjuntosDisponibles = existen;
-                adjuntosComprobadosUtc = DateTime.UtcNow;
-            }
-            return existen;
-        }
+        public bool AdjuntosDisponibles() => columnasAdjuntos.Existen(crearContexto);
+
+        /// <summary>¿Tiene ComprasCorreosSeguimiento las columnas de la entrega estimada y EsSalidaNuestra (Scripts/Issue857c)? Con caché.</summary>
+        public bool EntregaEstimadaDisponible() => columnasEntrega.Existen(crearContexto);
 
         public async Task<string> LeerEstado(string buzon)
         {
@@ -292,6 +334,7 @@ ORDER BY Recibido DESC";
         public async Task<bool> Insertar(CorreoSeguimientoFila fila)
         {
             bool conAdjuntos = AdjuntosDisponibles();
+            bool conEntrega = EntregaEstimadaDisponible();
             using (NVEntities db = crearContexto())
             {
                 var parametros = new List<SqlParameter>
@@ -314,7 +357,15 @@ ORDER BY Recibido DESC";
                     parametros.Add(new SqlParameter("@numAdjuntos", SqlDbType.Int) { Value = (object)fila.NumAdjuntos ?? DBNull.Value });
                     parametros.Add(Texto("@adjuntos", fila.Adjuntos, ResumenAdjuntos.LONGITUD_JSON));
                 }
-                int filas = await db.Database.ExecuteSqlCommandAsync(conAdjuntos ? SQL_INSERTAR_CON_ADJUNTOS : SQL_INSERTAR, parametros.ToArray())
+                if (conEntrega)
+                {
+                    parametros.Add(new SqlParameter("@entregaDia", SqlDbType.Date) { Value = (object)fila.EntregaEstimadaDia?.Date ?? DBNull.Value });
+                    parametros.Add(new SqlParameter("@entregaDesde", SqlDbType.Time) { Scale = 0, Value = (object)fila.EntregaEstimadaDesde ?? DBNull.Value });
+                    parametros.Add(new SqlParameter("@entregaHasta", SqlDbType.Time) { Scale = 0, Value = (object)fila.EntregaEstimadaHasta ?? DBNull.Value });
+                    parametros.Add(new SqlParameter("@disponible", SqlDbType.Date) { Value = (object)fila.DisponibleEstimado?.Date ?? DBNull.Value });
+                    parametros.Add(new SqlParameter("@esSalida", SqlDbType.Bit) { Value = (object)fila.EsSalidaNuestra ?? DBNull.Value });
+                }
+                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega), parametros.ToArray())
                     .ConfigureAwait(false);
                 return filas > 0;
             }
@@ -449,7 +500,8 @@ ORDER BY Recibido DESC";
             using (NVEntities db = crearContexto())
             {
                 return await db.Database.SqlQuery<CorreoSeguimientoFila>(
-                    string.Format(SQL_CORREOS, AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS),
+                    string.Format(SQL_CORREOS, AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS,
+                        EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS),
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
             }
         }

@@ -47,6 +47,15 @@ namespace NestoAPI.Controllers
         public int? NumAdjuntos { get; set; }
         /// <summary>Los 10 primeros (nombre, tipo y tamaño en bytes); null si no se apuntaron.</summary>
         public List<AdjuntoCorreoCompraDTO> Adjuntos { get; set; }
+        /// <summary>Día de entrega que anuncia el correo; null si no lo dice (o sin el script Issue857c, o correo de antes).</summary>
+        public DateTime? EntregaEstimadaDia { get; set; }
+        /// <summary>Tramo horario que anuncia el correo (Desde puede faltar: «antes de las 14:00»).</summary>
+        public TimeSpan? EntregaEstimadaDesde { get; set; }
+        public TimeSpan? EntregaEstimadaHasta { get; set; }
+        /// <summary>Desde cuándo se podría servir (final del tramo antes del corte del picking → ese día; si no, el siguiente laborable de Algete).</summary>
+        public DateTime? DisponibleEstimado { get; set; }
+        /// <summary>Envío nuestro de salida que llega en copia (se guarda sin asignación); null = sin apuntar.</summary>
+        public bool? EsSalidaNuestra { get; set; }
     }
 
     public class AdjuntoCorreoCompraDTO
@@ -324,7 +333,12 @@ namespace NestoAPI.Controllers
                 EmpresaReal = fila.EmpresaReal,
                 PedidoReal = fila.PedidoReal,
                 FechaAlbaranReal = fila.FechaAlbaranReal,
-                NumAdjuntos = fila.NumAdjuntos
+                NumAdjuntos = fila.NumAdjuntos,
+                EntregaEstimadaDia = fila.EntregaEstimadaDia,
+                EntregaEstimadaDesde = fila.EntregaEstimadaDesde,
+                EntregaEstimadaHasta = fila.EntregaEstimadaHasta,
+                DisponibleEstimado = fila.DisponibleEstimado,
+                EsSalidaNuestra = fila.EsSalidaNuestra
             };
             if (!string.IsNullOrWhiteSpace(fila.Adjuntos))
             {

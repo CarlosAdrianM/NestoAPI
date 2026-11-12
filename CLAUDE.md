@@ -451,6 +451,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   L-V 8-20 Madrid no empieza: se programa a las 21:00 (salvo `ahora`).
 - **Adjuntos** (`Scripts/Issue857b_ComprasCorreosHistoricoYAdjuntos.sql`: `NumAdjuntos`, `Adjuntos` JSON de 10, sin los incrustados): una petición a Graph
   solo por correo GUARDADO con `hasAttachments`; sin las columnas (caché 10 min) se guarda como antes y `…/Correos` los da a null.
+- **Entrega estimada y salidas nuestras** (`EntregaEstimadaCorreo.cs`, `Scripts/Issue857c_ComprasCorreosEntregaEstimada.sql`, 5 columnas opcionales con
+  el mismo trato que los adjuntos): `ExtractorEntregaEstimada` (puro) saca día y tramo tras una etiqueta o frase («Entrega estimada», «te lo entregaremos,
+  como máximo, el…», «will be delivered on…»; una fecha suelta no cuenta; fuera de [día del correo, +60] nada). `ReglaDisponibleCompra`: manda el FINAL del tramo
+  (Carlos 12/11/26): antes del corte del picking en laborable de Algete, ese día; si no, el siguiente laborable. `EnvioNuestroDeSalida` («tu pedido … de NUEVA
+  VISION», «remitente: NUEVA VISION»…; nombrarnos como destinatario no cuenta): se guarda con `EsSalidaNuestra` y SIN proveedor, candidatos ni disponible.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

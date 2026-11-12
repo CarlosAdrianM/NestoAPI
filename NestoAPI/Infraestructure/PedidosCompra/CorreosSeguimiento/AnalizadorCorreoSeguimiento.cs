@@ -48,6 +48,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string Extracto { get; set; }
         /// <summary>Remitentes originales de un reenvío (líneas «De:» del cuerpo).</summary>
         public List<string> RemitentesOriginales { get; set; } = new List<string>();
+        /// <summary>La entrega que anuncia el propio correo (<see cref="ExtractorEntregaEstimada"/>); null si no dice ninguna.</summary>
+        public EntregaEstimada EntregaEstimada { get; set; }
+        /// <summary>
+        /// Es un envío NUESTRO de salida que llega en copia (<see cref="EnvioNuestroDeSalida"/>): se guarda para medir, pero sin
+        /// asignación a pedidos de compra ni disponible estimado.
+        /// </summary>
+        public bool EsSalidaNuestra { get; set; }
     }
 
     /// <summary>
@@ -114,6 +121,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             if (analisis.Guardar)
             {
                 analisis.Extracto = Extracto(correo, analisis.Seguimientos.FirstOrDefault());
+                analisis.EntregaEstimada = ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+                analisis.EsSalidaNuestra = EnvioNuestroDeSalida.Es((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
             }
             return analisis;
         }
