@@ -487,9 +487,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(mail.Body, WebUtility.HtmlEncode("DEVOLUCIÓN: AUSENTE"));
             StringAssert.Contains(mail.Body, "Contéstelo en Nesto › Agencias › Devueltos");
             StringAssert.Contains(mail.Body, "o en NestoApp, en el pedido"); // NestoApp#273
-            // 09/11/26 (Carlos): los vendedores que solo usan NestoApp contestan a Logística (va en copia), no a Administración
-            StringAssert.Contains(mail.Body, "Si no usa Nesto");
-            StringAssert.Contains(mail.Body, "avise a Logística");
+            // 09/11/26 (Carlos): quien no puede contestar en Nesto ni en NestoApp avisa a Logística (va en copia), no a Administración
+            StringAssert.Contains(mail.Body, "Si no puede, conteste a este correo o avise a Logística (va en copia)");
         }
 
         [TestMethod]
