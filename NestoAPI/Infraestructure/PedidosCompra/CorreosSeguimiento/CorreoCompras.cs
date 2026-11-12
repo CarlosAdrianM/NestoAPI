@@ -27,6 +27,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string Asunto { get; set; }
         public string Cuerpo { get; set; }
         public bool CuerpoEsHtml { get; set; }
+        /// <summary>hasAttachments de Graph (las imágenes de la firma, incrustadas, no lo ponen).</summary>
+        public bool TieneAdjuntos { get; set; }
 
         /// <summary>Dominio del remitente directo, en minúsculas (null si no hay dirección).</summary>
         public string RemitenteDominio => TextoCorreo.Dominio(RemitenteDireccion);
@@ -57,6 +59,48 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 return "sha256:" + string.Concat(sha.ComputeHash(Encoding.UTF8.GetBytes(id)).Select(b => b.ToString("x2")));
             }
         }
+    }
+
+    /// <summary>NestoAPI#857: lo que se apunta de los adjuntos de un correo guardado (nunca su contenido).</summary>
+    public class ResumenAdjuntos
+    {
+        public const int MAXIMO = 10;
+        public const int LONGITUD_JSON = 2000;
+        public const int LONGITUD_NOMBRE = 150;
+
+        /// <summary>Los que no son incrustados (todos, aunque el JSON lleve solo los <see cref="MAXIMO"/> primeros).</summary>
+        public int Numero { get; set; }
+        /// <summary>JSON [{Nombre, Tipo, Tamano}] de los primeros <see cref="MAXIMO"/>; null si no hay ninguno.</summary>
+        public string Json { get; set; }
+
+        /// <summary>Pura: quita los incrustados (firma), recorta los nombres y se queda con 10 (y el JSON, en 2000 caracteres).</summary>
+        public static ResumenAdjuntos Calcular(IEnumerable<AdjuntoCorreo> adjuntos)
+        {
+            List<AdjuntoCorreo> reales = (adjuntos ?? Enumerable.Empty<AdjuntoCorreo>()).Where(a => a != null && !a.EnLinea).ToList();
+            var resumen = new ResumenAdjuntos { Numero = reales.Count };
+            if (!reales.Any())
+            {
+                return resumen;
+            }
+            var lista = reales.Take(MAXIMO).Select(a => new AdjuntoCorreo
+            {
+                Nombre = TextoCorreo.Recortar(a.Nombre, LONGITUD_NOMBRE),
+                Tipo = TextoCorreo.Recortar(a.Tipo, 100),
+                Tamano = a.Tamano
+            }).ToList();
+            string json = Serializar(lista);
+            // Si no cabe (nombres muy largos), se quitan del final hasta que quepa: siempre un JSON válido
+            while (json.Length > LONGITUD_JSON && lista.Count > 1)
+            {
+                lista.RemoveAt(lista.Count - 1);
+                json = Serializar(lista);
+            }
+            resumen.Json = json.Length <= LONGITUD_JSON ? json : null;
+            return resumen;
+        }
+
+        private static string Serializar(List<AdjuntoCorreo> lista) => Newtonsoft.Json.JsonConvert.SerializeObject(
+            lista.Select(a => new { a.Nombre, a.Tipo, a.Tamano }));
     }
 
     /// <summary>NestoAPI#857: utilidades puras de texto de correo.</summary>

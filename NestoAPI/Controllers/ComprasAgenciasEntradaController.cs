@@ -43,6 +43,17 @@ namespace NestoAPI.Controllers
         public string EmpresaReal { get; set; }
         public int? PedidoReal { get; set; }
         public DateTime? FechaAlbaranReal { get; set; }
+        /// <summary>Adjuntos de verdad (sin los de la firma); null = sin apuntar (sin el script Issue857b, o correo de antes).</summary>
+        public int? NumAdjuntos { get; set; }
+        /// <summary>Los 10 primeros (nombre, tipo y tamaño en bytes); null si no se apuntaron.</summary>
+        public List<AdjuntoCorreoCompraDTO> Adjuntos { get; set; }
+    }
+
+    public class AdjuntoCorreoCompraDTO
+    {
+        public string Nombre { get; set; }
+        public string Tipo { get; set; }
+        public long Tamano { get; set; }
     }
 
     /// <summary>
@@ -59,21 +70,89 @@ namespace NestoAPI.Controllers
         private static readonly Regex Direccion = new Regex(@"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", RegexOptions.Compiled);
         private static readonly Regex DominioValido = new Regex(@"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$", RegexOptions.Compiled);
 
+        public const string MENSAJE_SIN_PERMISO_HISTORICO = "Solo Dirección o Informática pueden lanzar la lectura del histórico del buzón de Compras.";
+
         private readonly IRepositorioCorreosSeguimiento repositorio;
+        private readonly Func<ServicioHistoricoCorreosCompras> crearHistorico;
 
         public ComprasAgenciasEntradaController() : this(new RepositorioCorreosSeguimiento())
         {
         }
 
-        internal ComprasAgenciasEntradaController(IRepositorioCorreosSeguimiento repositorio)
+        internal ComprasAgenciasEntradaController(IRepositorioCorreosSeguimiento repositorio, Func<ServicioHistoricoCorreosCompras> crearHistorico = null)
         {
             this.repositorio = repositorio;
+            this.crearHistorico = crearHistorico ?? HistoricoCorreosComprasJobs.CrearServicio;
         }
 
         internal static bool PuedeVer(IPrincipal usuario) =>
             usuario != null && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.COMPRAS)
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
+
+        /// <summary>El histórico (trabajo pesado contra el buzón): solo Dirección o Informática.</summary>
+        internal static bool PuedeLanzarHistorico(IPrincipal usuario) =>
+            usuario != null && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
+                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
+
+        // POST api/Compras/AgenciasEntrada/Historico?meses=12[&ahora=true]
+        /// <summary>
+        /// Lee hacia atrás la bandeja de entrada del buzón de Compras (solo lectura, en sombra) con el mismo análisis que el job. No se
+        /// hace en la petición: se encola en Hangfire (202). Entre las 8:00 y las 20:00 de un día laborable empieza a las 21:00, salvo
+        /// <paramref name="ahora"/>. 409 si ya hay una en marcha; 503 sin claves del buzón o sin las tablas.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/Historico")]
+        [ResponseType(typeof(ResultadoLanzamientoHistorico))]
+        public async Task<IHttpActionResult> PostHistorico(int meses = ServicioHistoricoCorreosCompras.MESES_POR_DEFECTO, bool ahora = false)
+        {
+            if (!PuedeLanzarHistorico(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_HISTORICO);
+            }
+            if (meses < 1 || meses > ServicioHistoricoCorreosCompras.MESES_MAXIMOS)
+            {
+                return BadRequest($"Los meses tienen que estar entre 1 y {ServicioHistoricoCorreosCompras.MESES_MAXIMOS}.");
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
+            ResultadoLanzamientoHistorico resultado = await crearHistorico().Lanzar(meses, ahora, usuario).ConfigureAwait(false);
+            switch (resultado.Codigo)
+            {
+                case CodigoLanzamientoHistorico.SinConfiguracion:
+                case CodigoLanzamientoHistorico.SinTabla:
+                    return Content(HttpStatusCode.ServiceUnavailable, resultado.Mensaje);
+                case CodigoLanzamientoHistorico.YaEnMarcha:
+                    return Content(HttpStatusCode.Conflict, resultado);
+                default:
+                    return Content(HttpStatusCode.Accepted, resultado);
+            }
+        }
+
+        // GET api/Compras/AgenciasEntrada/Historico
+        /// <summary>El estado y el progreso de la lectura del histórico (null en Estado si nunca se ha lanzado).</summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/Historico")]
+        [ResponseType(typeof(EstadoHistoricoCorreosCompras))]
+        public async Task<IHttpActionResult> GetHistorico()
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            ServicioHistoricoCorreosCompras historico = crearHistorico();
+            if (!historico.Configurado)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, "Faltan las claves del buzón de Compras en secretos.config.");
+            }
+            if (!repositorio.TablasExisten())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, MENSAJE_SIN_TABLA);
+            }
+            EstadoHistoricoCorreosCompras estado = await historico.LeerEstado().ConfigureAwait(false);
+            return Ok(estado ?? new EstadoHistoricoCorreosCompras { Mensaje = "Nunca se ha lanzado." });
+        }
 
         /// <summary>«@Ejemplo.ES » → «ejemplo.es»; null si no es ni una dirección ni un dominio.</summary>
         internal static string NormalizarRemitente(string remitente)
@@ -244,8 +323,20 @@ namespace NestoAPI.Controllers
                 FechaCaptura = fila.FechaCaptura,
                 EmpresaReal = fila.EmpresaReal,
                 PedidoReal = fila.PedidoReal,
-                FechaAlbaranReal = fila.FechaAlbaranReal
+                FechaAlbaranReal = fila.FechaAlbaranReal,
+                NumAdjuntos = fila.NumAdjuntos
             };
+            if (!string.IsNullOrWhiteSpace(fila.Adjuntos))
+            {
+                try
+                {
+                    dto.Adjuntos = JsonConvert.DeserializeObject<List<AdjuntoCorreoCompraDTO>>(fila.Adjuntos);
+                }
+                catch (JsonException)
+                {
+                    dto.Adjuntos = null;
+                }
+            }
             if (!string.IsNullOrWhiteSpace(fila.Seguimientos))
             {
                 try

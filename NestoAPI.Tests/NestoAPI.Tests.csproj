@@ -896,6 +896,7 @@
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAsignacionTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\LectorBuzonComprasGraphTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ServicioCorreosSeguimientoComprasTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\HistoricoCorreosComprasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FotosFechaEntregaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AplazamientoPedidoConPickingTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AplazamientoEnvioEnAgenciaTests.cs" />

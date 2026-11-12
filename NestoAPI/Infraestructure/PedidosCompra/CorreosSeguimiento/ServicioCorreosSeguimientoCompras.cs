@@ -116,7 +116,19 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             return resultado;
         }
 
-        private async Task<bool> Guardar(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado)
+        private Task<bool> Guardar(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado)
+        {
+            List<PedidoCompraEnAire> pedidos = null;
+            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)));
+        }
+
+        /// <summary>
+        /// El núcleo común del job y del histórico: analiza cada correo, guarda los que traen seguimiento (con su asignación en sombra
+        /// y sus adjuntos) y cuenta. <paramref name="pedidosDe"/> da los pedidos en el aire contra los que se asigna ese correo (el
+        /// job, los de ahora; el histórico, los del día del correo). False si alguno no se ha podido guardar (se reintenta: es idempotente).
+        /// </summary>
+        internal async Task<bool> GuardarCorreos(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado,
+            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe)
         {
             List<RemitenteMarcado> marcados;
             try
@@ -129,7 +141,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 return false;
             }
 
-            List<PedidoCompraEnAire> pedidos = null;
+            bool? conAdjuntos = null;
+            int adjuntosSinLeer = 0;
             bool todo = true;
             foreach (CorreoCompras correo in correos)
             {
@@ -140,12 +153,24 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     {
                         continue;
                     }
-                    if (pedidos == null)
-                    {
-                        pedidos = await LeerPedidos().ConfigureAwait(false);
-                    }
+                    List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false);
                     AsignacionPedidoCompra asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos);
                     CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
+                    // Los adjuntos (solo nombre, tipo y tamaño), una petición por correo GUARDADO con adjuntos y solo si hay columnas
+                    if (correo.TieneAdjuntos && (conAdjuntos ?? (conAdjuntos = repositorio.AdjuntosDisponibles()).Value))
+                    {
+                        List<AdjuntoCorreo> adjuntos = await lector.LeerAdjuntos(correo.Id).ConfigureAwait(false);
+                        if (adjuntos == null)
+                        {
+                            adjuntosSinLeer++;
+                        }
+                        else
+                        {
+                            ResumenAdjuntos resumen = ResumenAdjuntos.Calcular(adjuntos);
+                            fila.NumAdjuntos = resumen.Numero;
+                            fila.Adjuntos = resumen.Json;
+                        }
+                    }
                     if (await repositorio.Insertar(fila).ConfigureAwait(false))
                     {
                         resultado.Guardados++;
@@ -161,6 +186,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     registrar(new Exception($"[Correos de seguimiento de compras #857] No se ha podido guardar el correo del {correo?.Recibido:dd/MM/yyyy HH:mm} " +
                         $"de {correo?.RemitenteDominio}: {ex.Message}", ex));
                 }
+            }
+            if (adjuntosSinLeer > 0)
+            {
+                // Se guardan igual, sin adjuntos (NumAdjuntos NULL): una línea por tanda, no una por correo
+                registrar(new Exception($"[Correos de seguimiento de compras #857] (informativo) No se han podido leer los adjuntos de {adjuntosSinLeer} " +
+                    "correo(s): se guardan sin ellos."));
             }
             return todo;
         }
@@ -206,36 +237,41 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         {
             try
             {
-                List<CorreoSeguimientoFila> pendientes = await repositorio.LeerPendientesDeMedir(ahora.AddDays(-DIAS_MEDICION)).ConfigureAwait(false)
-                    ?? new List<CorreoSeguimientoFila>();
-                if (!pendientes.Any())
-                {
-                    return 0;
-                }
-                var candidatos = pendientes.ToDictionary(p => p.Id, p => AsignadorPedidosCompra.Deserializar(p.PedidosCandidatos));
-                List<CandidatoPedidoCompra> todos = candidatos.Values.SelectMany(c => c).ToList();
-                if (!todos.Any())
-                {
-                    return 0;
-                }
-                List<AlbaranPedidoCompra> albaranes = await repositorio.LeerAlbaranes(todos).ConfigureAwait(false) ?? new List<AlbaranPedidoCompra>();
-                int medidos = 0;
-                foreach (CorreoSeguimientoFila pendiente in pendientes)
-                {
-                    AlbaranPedidoCompra real = AsignadorPedidosCompra.DecidirReal(pendiente.Recibido, candidatos[pendiente.Id], albaranes);
-                    if (real != null)
-                    {
-                        await repositorio.GuardarReal(pendiente.Id, real).ConfigureAwait(false);
-                        medidos++;
-                    }
-                }
-                return medidos;
+                List<CorreoSeguimientoFila> pendientes = await repositorio.LeerPendientesDeMedir(ahora.AddDays(-DIAS_MEDICION)).ConfigureAwait(false);
+                return await MedirLote(pendientes).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 registrar(new Exception("[Correos de seguimiento de compras #857] No se ha podido medir la asignación: " + ex.Message, ex));
                 return 0;
             }
+        }
+
+        /// <summary>El núcleo de la medición (job e histórico): albaranes de los candidatos por clave y, para cada fila, el real.</summary>
+        internal async Task<int> MedirLote(List<CorreoSeguimientoFila> pendientes)
+        {
+            if (pendientes == null || !pendientes.Any())
+            {
+                return 0;
+            }
+            var candidatos = pendientes.ToDictionary(p => p.Id, p => AsignadorPedidosCompra.Deserializar(p.PedidosCandidatos));
+            List<CandidatoPedidoCompra> todos = candidatos.Values.SelectMany(c => c).ToList();
+            if (!todos.Any())
+            {
+                return 0;
+            }
+            List<AlbaranPedidoCompra> albaranes = await repositorio.LeerAlbaranes(todos).ConfigureAwait(false) ?? new List<AlbaranPedidoCompra>();
+            int medidos = 0;
+            foreach (CorreoSeguimientoFila pendiente in pendientes)
+            {
+                AlbaranPedidoCompra real = AsignadorPedidosCompra.DecidirReal(pendiente.Recibido, candidatos[pendiente.Id], albaranes);
+                if (real != null)
+                {
+                    await repositorio.GuardarReal(pendiente.Id, real).ConfigureAwait(false);
+                    medidos++;
+                }
+            }
+            return medidos;
         }
     }
 

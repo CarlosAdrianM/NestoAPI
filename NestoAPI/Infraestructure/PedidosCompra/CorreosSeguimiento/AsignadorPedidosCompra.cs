@@ -19,6 +19,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public List<string> Correos { get; set; } = new List<string>();
         /// <summary>CabPedidoCmp.[Fecha Modificación] (cuando se crea el pedido).</summary>
         public DateTime? FechaEnvio { get; set; }
+        /// <summary>Solo en el histórico: CabPedidoCmp.Fecha.</summary>
+        public DateTime? FechaPedido { get; set; }
+        /// <summary>Solo en el histórico: el último albarán si ya no le queda nada pendiente; null si sigue en el aire.</summary>
+        public DateTime? FechaRecibidoEntero { get; set; }
     }
 
     public class CandidatoPedidoCompra
@@ -198,6 +202,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 .Where(a => a != null && claves.Contains(Clave(a.Empresa, a.Pedido)) && a.FechaAlbaran.Date >= recibido.Date)
                 .OrderBy(a => a.FechaAlbaran).ThenBy(a => a.Pedido)
                 .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Histórico (pura): de los pedidos de <see cref="IRepositorioCorreosSeguimiento.LeerPedidosDesde"/>, los que estaban en el
+        /// aire el día del correo: hechos ese día o antes y sin recibir entero antes de ese día. Así un correo de marzo no se
+        /// asigna a los pedidos en el aire de hoy (y la medición no da por bueno un albarán de un pedido que aún no existía).
+        /// </summary>
+        public static List<PedidoCompraEnAire> EnAireEl(IEnumerable<PedidoCompraEnAire> pedidos, DateTime dia)
+        {
+            return (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>())
+                .Where(p => p != null)
+                .Where(p => (p.FechaPedido ?? p.FechaEnvio) == null || (p.FechaPedido ?? p.FechaEnvio).Value.Date <= dia.Date)
+                .Where(p => p.FechaRecibidoEntero == null || p.FechaRecibidoEntero.Value.Date >= dia.Date)
+                .ToList();
         }
 
         internal static string Clave(string empresa, int pedido) => (empresa?.Trim() ?? string.Empty) + "/" + pedido;

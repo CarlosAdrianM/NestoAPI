@@ -31,12 +31,25 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string EmpresaReal { get; set; }
         public int? PedidoReal { get; set; }
         public DateTime? FechaAlbaranReal { get; set; }
+        /// <summary>Adjuntos de verdad (sin los incrustados de la firma); null = sin apuntar (sin las columnas de Issue857b o no se pudo).</summary>
+        public int? NumAdjuntos { get; set; }
+        /// <summary>JSON [{Nombre, Tipo, Tamano}] de los 10 primeros (<see cref="ResumenAdjuntos"/>).</summary>
+        public string Adjuntos { get; set; }
     }
 
     public interface IRepositorioCorreosSeguimiento
     {
         /// <summary>¿Se ha lanzado Scripts/Issue857_ComprasCorreosSeguimiento.sql? Sin las tablas no se hace nada.</summary>
         bool TablasExisten();
+        /// <summary>¿Tiene ComprasCorreosSeguimiento las columnas NumAdjuntos y Adjuntos (Scripts/Issue857b)? Con caché.</summary>
+        bool AdjuntosDisponibles();
+        /// <summary>
+        /// Histórico: los pedidos que estaban en el aire en algún momento desde <paramref name="desde"/> (los de ahora y los recibidos
+        /// desde entonces), con su fecha y la del recibido entero, para quedarse con los de cada correo (<see cref="AsignadorPedidosCompra.EnAireEl"/>).
+        /// </summary>
+        Task<List<PedidoCompraEnAire>> LeerPedidosDesde(string empresa, DateTime desde);
+        /// <summary>Medición del histórico, por lotes y por clave: los pendientes de medir recibidos desde <paramref name="desde"/> con Id mayor que <paramref name="despuesDeId"/>.</summary>
+        Task<List<CorreoSeguimientoFila>> LeerPendientesDeMedirPorId(DateTime desde, int despuesDeId, int cuantos);
         Task<string> LeerEstado(string buzon);
         Task GuardarEstado(string buzon, string enlace, string ultimoError);
         /// <summary>Inserta si no está ya ese MensajeId. True si la ha insertado.</summary>
@@ -71,6 +84,25 @@ INSERT INTO dbo.ComprasCorreosSeguimiento (MensajeId, Recibido, RemitenteDirecci
 SELECT @mensajeId, @recibido, @remitente, @dominio, @asunto, @agencia, @codigo, @url, @seguimientos, @extracto, @proveedor, @candidatos, GETDATE()
 WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOLDLOCK) WHERE MensajeId = @mensajeId)";
 
+        internal const string SQL_EXISTEN_ADJUNTOS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'NumAdjuntos') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'Adjuntos') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        // Con las columnas de Scripts/Issue857b_ComprasCorreosHistoricoYAdjuntos.sql
+        internal const string SQL_INSERTAR_CON_ADJUNTOS = @"
+INSERT INTO dbo.ComprasCorreosSeguimiento (MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos,
+    Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, NumAdjuntos, Adjuntos)
+SELECT @mensajeId, @recibido, @remitente, @dominio, @asunto, @agencia, @codigo, @url, @seguimientos, @extracto, @proveedor, @candidatos, GETDATE(),
+    @numAdjuntos, @adjuntos
+WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOLDLOCK) WHERE MensajeId = @mensajeId)";
+
+        internal const string COLUMNAS_ADJUNTOS = "NumAdjuntos, Adjuntos";
+        internal const string COLUMNAS_ADJUNTOS_NULAS = "CAST(NULL AS int) AS NumAdjuntos, CAST(NULL AS nvarchar(2000)) AS Adjuntos";
+        /// <summary>Tras la comprobación de las columnas, cuánto vale lo sabido (así, lanzado el script, se nota sin reiniciar).</summary>
+        internal static readonly TimeSpan CACHE_ADJUNTOS = TimeSpan.FromMinutes(10);
+        private static readonly object bloqueoAdjuntos = new object();
+        private static bool? adjuntosDisponibles;
+        private static DateTime adjuntosComprobadosUtc;
+
         internal const string SQL_REMITENTES = "SELECT Id, RTRIM(Agencia) AS Agencia, RTRIM(Remitente) AS Remitente, Activo, Usuario, FechaModificacion " +
             "FROM dbo.AgenciasEntradaRemitentes WITH (NOLOCK) ORDER BY Agencia, Remitente";
 
@@ -90,31 +122,59 @@ SELECT @id;";
         // El mismo filtro que la sombra del modo de servicio y el aviso de proveedor vencido: líneas -1/1 con Enviado.
         internal const string FILTRO_EN_AIRE = "c.Empresa IN (@empresa, @espejo) AND c.Estado IN (-1, 1) AND c.Enviado = 1";
 
-        internal const string SQL_PEDIDOS_EN_AIRE = @"
-SELECT RTRIM(c.Empresa) AS Empresa, c.Número AS Pedido, RTRIM(MAX(c.NºProveedor)) AS Proveedor, MAX(cab.[Fecha Modificación]) AS FechaEnvio
+        /// <summary>
+        /// Histórico: los en el aire de ahora y los que se han recibido (alguna línea con albarán) desde @desde. Una consulta por
+        /// lanzamiento del histórico, fuera de horario.
+        /// </summary>
+        internal const string FILTRO_DESDE = "c.Empresa IN (@empresa, @espejo) AND ((c.Estado IN (-1, 1) AND c.Enviado = 1) " +
+            "OR (c.Estado >= 2 AND c.FechaAlbarán >= @desde))";
+
+        // {0} = el filtro. FechaPedido/FechaRecibidoEntero solo hacen falta en el histórico (en el job, NULL).
+        internal const string SQL_PEDIDOS = @"
+SELECT RTRIM(c.Empresa) AS Empresa, c.Número AS Pedido, RTRIM(MAX(c.NºProveedor)) AS Proveedor, MAX(cab.[Fecha Modificación]) AS FechaEnvio,
+    {1}
 FROM dbo.LinPedidoCmp c WITH (NOLOCK)
 LEFT JOIN dbo.CabPedidoCmp cab WITH (NOLOCK) ON cab.Empresa = c.Empresa AND cab.Número = c.Número
-WHERE " + FILTRO_EN_AIRE + @"
+WHERE {0}
 GROUP BY c.Empresa, c.Número";
 
-        internal const string SQL_PROVEEDORES_EN_AIRE = @"
+        internal const string FECHAS_SIN_HISTORICO = "CAST(NULL AS datetime) AS FechaPedido, CAST(NULL AS datetime) AS FechaRecibidoEntero";
+        internal const string FECHAS_HISTORICO = "MAX(cab.Fecha) AS FechaPedido, " +
+            "CASE WHEN SUM(CASE WHEN c.Estado IN (-1, 1) THEN 1 ELSE 0 END) > 0 THEN NULL ELSE MAX(c.FechaAlbarán) END AS FechaRecibidoEntero";
+
+        internal static readonly string SQL_PEDIDOS_EN_AIRE = string.Format(SQL_PEDIDOS, FILTRO_EN_AIRE, FECHAS_SIN_HISTORICO);
+        internal static readonly string SQL_PEDIDOS_DESDE = string.Format(SQL_PEDIDOS, FILTRO_DESDE, FECHAS_HISTORICO);
+
+        internal const string SQL_PROVEEDORES = @"
 SELECT RTRIM(p.Empresa) AS Empresa, RTRIM(p.Número) AS Proveedor, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Web) AS Web, p.ProveedorPrincipal
 FROM dbo.Proveedores p WITH (NOLOCK)
 WHERE p.Empresa IN (@empresa, @espejo)
-  AND p.Número IN (SELECT DISTINCT c.NºProveedor FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE " + FILTRO_EN_AIRE + ")";
+  AND p.Número IN (SELECT DISTINCT c.NºProveedor FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE {0})";
 
-        internal const string SQL_CONTACTOS_EN_AIRE = @"
+        internal const string SQL_CONTACTOS = @"
 SELECT RTRIM(pc.Empresa) AS Empresa, RTRIM(pc.NºProveedor) AS Proveedor, RTRIM(pc.CorreoElectrónico) AS Correo
 FROM dbo.PersonasContactoProveedor pc WITH (NOLOCK)
 WHERE pc.Empresa IN (@empresa, @espejo) AND pc.CorreoElectrónico IS NOT NULL AND pc.CorreoElectrónico LIKE '%@%'
-  AND pc.NºProveedor IN (SELECT DISTINCT c.NºProveedor FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE " + FILTRO_EN_AIRE + ")";
+  AND pc.NºProveedor IN (SELECT DISTINCT c.NºProveedor FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE {0})";
+
+        internal static readonly string SQL_PROVEEDORES_EN_AIRE = string.Format(SQL_PROVEEDORES, FILTRO_EN_AIRE);
+        internal static readonly string SQL_CONTACTOS_EN_AIRE = string.Format(SQL_CONTACTOS, FILTRO_EN_AIRE);
+
+        internal const string COLUMNAS_FILA = "Id, MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos, " +
+            "Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal";
 
         internal const string SQL_PENDIENTES_MEDIR = @"
-SELECT TOP 500 Id, MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos, Extracto, ProveedorPropuesto,
-    PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal
+SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Recibido";
+
+        // Por la clave (Id, el índice agrupado), de @cuantos en @cuantos
+        internal const string SQL_PENDIENTES_MEDIR_POR_ID = @"
+SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + @"
+FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
+WHERE Id > @despues AND PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
+ORDER BY Id";
 
         // Por la clave de LinPedidoCmp (Empresa, Número): un día de albarán por fila (un pedido recibido en dos veces da dos).
         internal const string SQL_ALBARANES = @"
@@ -126,9 +186,9 @@ GROUP BY l.Empresa, l.Número, CAST(l.FechaAlbarán AS date)";
         internal const string SQL_GUARDAR_REAL = "UPDATE dbo.ComprasCorreosSeguimiento SET EmpresaReal = @empresa, PedidoReal = @pedido, FechaAlbaranReal = @fecha " +
             "WHERE Id = @id AND PedidoReal IS NULL";
 
+        // {0} = las columnas de los adjuntos (o NULL sin el script Issue857b)
         internal const string SQL_CORREOS = @"
-SELECT TOP 2000 Id, MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos, Extracto, ProveedorPropuesto,
-    PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal
+SELECT TOP 2000 " + COLUMNAS_FILA + @", {0}
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE Recibido >= @desde
 ORDER BY Recibido DESC";
@@ -141,6 +201,8 @@ ORDER BY Recibido DESC";
             public int Pedido { get; set; }
             public string Proveedor { get; set; }
             public DateTime? FechaEnvio { get; set; }
+            public DateTime? FechaPedido { get; set; }
+            public DateTime? FechaRecibidoEntero { get; set; }
         }
 
         private class FilaProveedor
@@ -181,6 +243,35 @@ ORDER BY Recibido DESC";
             }
         }
 
+        public bool AdjuntosDisponibles()
+        {
+            lock (bloqueoAdjuntos)
+            {
+                if (adjuntosDisponibles.HasValue && DateTime.UtcNow - adjuntosComprobadosUtc < CACHE_ADJUNTOS)
+                {
+                    return adjuntosDisponibles.Value;
+                }
+            }
+            bool existen;
+            try
+            {
+                using (NVEntities db = crearContexto())
+                {
+                    existen = db.Database.SqlQuery<bool>(SQL_EXISTEN_ADJUNTOS).FirstOrDefault();
+                }
+            }
+            catch (Exception)
+            {
+                existen = false;
+            }
+            lock (bloqueoAdjuntos)
+            {
+                adjuntosDisponibles = existen;
+                adjuntosComprobadosUtc = DateTime.UtcNow;
+            }
+            return existen;
+        }
+
         public async Task<string> LeerEstado(string buzon)
         {
             using (NVEntities db = crearContexto())
@@ -200,9 +291,11 @@ ORDER BY Recibido DESC";
 
         public async Task<bool> Insertar(CorreoSeguimientoFila fila)
         {
+            bool conAdjuntos = AdjuntosDisponibles();
             using (NVEntities db = crearContexto())
             {
-                int filas = await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR,
+                var parametros = new List<SqlParameter>
+                {
                     Texto("@mensajeId", fila.MensajeId, 450),
                     new SqlParameter("@recibido", SqlDbType.DateTime) { Value = fila.Recibido },
                     Texto("@remitente", fila.RemitenteDireccion, 255),
@@ -214,7 +307,15 @@ ORDER BY Recibido DESC";
                     Texto("@seguimientos", fila.Seguimientos, 4000),
                     Texto("@extracto", fila.Extracto, 600),
                     Texto("@proveedor", fila.ProveedorPropuesto, 10),
-                    Texto("@candidatos", fila.PedidosCandidatos, 2000)).ConfigureAwait(false);
+                    Texto("@candidatos", fila.PedidosCandidatos, 2000)
+                };
+                if (conAdjuntos)
+                {
+                    parametros.Add(new SqlParameter("@numAdjuntos", SqlDbType.Int) { Value = (object)fila.NumAdjuntos ?? DBNull.Value });
+                    parametros.Add(Texto("@adjuntos", fila.Adjuntos, ResumenAdjuntos.LONGITUD_JSON));
+                }
+                int filas = await db.Database.ExecuteSqlCommandAsync(conAdjuntos ? SQL_INSERTAR_CON_ADJUNTOS : SQL_INSERTAR, parametros.ToArray())
+                    .ConfigureAwait(false);
                 return filas > 0;
             }
         }
@@ -245,21 +346,32 @@ ORDER BY Recibido DESC";
             }
         }
 
-        public async Task<List<PedidoCompraEnAire>> LeerPedidosEnAire(string empresa)
+        public Task<List<PedidoCompraEnAire>> LeerPedidosEnAire(string empresa) =>
+            LeerPedidos(SQL_PEDIDOS_EN_AIRE, SQL_PROVEEDORES_EN_AIRE, SQL_CONTACTOS_EN_AIRE, () => Empresas(empresa));
+
+        public Task<List<PedidoCompraEnAire>> LeerPedidosDesde(string empresa, DateTime desde) =>
+            LeerPedidos(SQL_PEDIDOS_DESDE, string.Format(SQL_PROVEEDORES, FILTRO_DESDE), string.Format(SQL_CONTACTOS, FILTRO_DESDE),
+                () => Empresas(empresa).Concat(new[] { new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde } }).ToArray());
+
+        private async Task<List<PedidoCompraEnAire>> LeerPedidos(string sqlPedidos, string sqlProveedores, string sqlContactos, Func<SqlParameter[]> parametros)
         {
             using (NVEntities db = crearContexto())
             {
-                List<PedidoCompraEnAire> pedidos = (await db.Database.SqlQuery<FilaPedido>(SQL_PEDIDOS_EN_AIRE, Empresas(empresa))
+                List<PedidoCompraEnAire> pedidos = (await db.Database.SqlQuery<FilaPedido>(sqlPedidos, parametros())
                     .ToListAsync().ConfigureAwait(false))
-                    .Select(f => new PedidoCompraEnAire { Empresa = f.Empresa, Pedido = f.Pedido, Proveedor = f.Proveedor, FechaEnvio = f.FechaEnvio })
+                    .Select(f => new PedidoCompraEnAire
+                    {
+                        Empresa = f.Empresa, Pedido = f.Pedido, Proveedor = f.Proveedor, FechaEnvio = f.FechaEnvio,
+                        FechaPedido = f.FechaPedido, FechaRecibidoEntero = f.FechaRecibidoEntero
+                    })
                     .ToList();
                 if (!pedidos.Any())
                 {
                     return pedidos;
                 }
-                List<FilaProveedor> proveedores = await db.Database.SqlQuery<FilaProveedor>(SQL_PROVEEDORES_EN_AIRE, Empresas(empresa))
+                List<FilaProveedor> proveedores = await db.Database.SqlQuery<FilaProveedor>(sqlProveedores, parametros())
                     .ToListAsync().ConfigureAwait(false);
-                List<FilaContacto> contactos = await db.Database.SqlQuery<FilaContacto>(SQL_CONTACTOS_EN_AIRE, Empresas(empresa))
+                List<FilaContacto> contactos = await db.Database.SqlQuery<FilaContacto>(sqlContactos, parametros())
                     .ToListAsync().ConfigureAwait(false);
                 foreach (PedidoCompraEnAire pedido in pedidos)
                 {
@@ -282,6 +394,17 @@ ORDER BY Recibido DESC";
             using (NVEntities db = crearContexto())
             {
                 return await db.Database.SqlQuery<CorreoSeguimientoFila>(SQL_PENDIENTES_MEDIR,
+                    new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
+            }
+        }
+
+        public async Task<List<CorreoSeguimientoFila>> LeerPendientesDeMedirPorId(DateTime desde, int despuesDeId, int cuantos)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return await db.Database.SqlQuery<CorreoSeguimientoFila>(SQL_PENDIENTES_MEDIR_POR_ID,
+                    new SqlParameter("@cuantos", SqlDbType.Int) { Value = Math.Max(1, cuantos) },
+                    new SqlParameter("@despues", SqlDbType.Int) { Value = despuesDeId },
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
             }
         }
@@ -325,7 +448,8 @@ ORDER BY Recibido DESC";
         {
             using (NVEntities db = crearContexto())
             {
-                return await db.Database.SqlQuery<CorreoSeguimientoFila>(SQL_CORREOS,
+                return await db.Database.SqlQuery<CorreoSeguimientoFila>(
+                    string.Format(SQL_CORREOS, AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS),
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
             }
         }

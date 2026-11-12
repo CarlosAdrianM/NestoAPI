@@ -444,6 +444,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   gratuito, nuestro o de agencia) > nombre del proveedor; con proveedor, TODOS sus pedidos en el aire (-1/1 Enviado) son candidatos. El job
   rellena PedidoReal/FechaAlbaranReal con el primer candidato albaraneado desde el día del correo (para medir). No toca compras (fase 3).
 - `GET/POST/DELETE api/Compras/AgenciasEntrada/Remitentes`, `GET …/Candidatos?dias=30`, `GET …/Correos?dias=7` (Compras/Dirección/Informática).
+- **Histórico** (`ServicioHistoricoCorreosCompras`): `POST …/Historico?meses=12[&ahora=true]` (Dirección/Informática; 1-24; 202 encolado en Hangfire,
+  409 si hay otra viva, 503 sin claves o tablas) y `GET …/Historico` (progreso). Lee la bandeja por fechas (`LeerPagina`, sin delta) con el MISMO
+  núcleo (`GuardarCorreos`), asignando contra los pedidos en el aire EL DÍA del correo (`EnAireEl`) y midiendo por lotes por Id. Progreso en
+  `ComprasCorreosSeguimientoEstado` fila `historico|{buzón}` (JSON; reanuda por cursor de fecha); 429 → Retry-After (tope 5 min); 5 fallos → Fallo + ELMAH una vez.
+  L-V 8-20 Madrid no empieza: se programa a las 21:00 (salvo `ahora`).
+- **Adjuntos** (`Scripts/Issue857b_ComprasCorreosHistoricoYAdjuntos.sql`: `NumAdjuntos`, `Adjuntos` JSON de 10, sin los incrustados): una petición a Graph
+  solo por correo GUARDADO con `hasAttachments`; sin las columnas (caché 10 min) se guarda como antes y `…/Correos` los da a null.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

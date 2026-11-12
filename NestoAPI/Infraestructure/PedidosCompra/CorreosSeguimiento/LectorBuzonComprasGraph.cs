@@ -2,6 +2,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -61,6 +62,18 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>Texto del fallo (401, 429, red…); null si ha ido bien.</summary>
         public string Error { get; set; }
         public HttpStatusCode? Estado { get; set; }
+        /// <summary>Lo que Graph pide esperar (cabecera Retry-After de un 429/503); null si no lo dice.</summary>
+        public TimeSpan? EsperarAntesDeReintentar { get; set; }
+    }
+
+    /// <summary>NestoAPI#857: un adjunto de un correo, sin su contenido (nunca se descarga).</summary>
+    public class AdjuntoCorreo
+    {
+        public string Nombre { get; set; }
+        public string Tipo { get; set; }
+        public long Tamano { get; set; }
+        /// <summary>Imagen incrustada (la de la firma): no cuenta como adjunto.</summary>
+        public bool EnLinea { get; set; }
     }
 
     /// <summary>NestoAPI#857: lectura de SOLO LECTURA de la bandeja de entrada del buzón de Compras (nunca marca como leído ni mueve).</summary>
@@ -72,6 +85,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// recibidos desde <paramref name="desdeSiNoHayEnlace"/> (no se lee el histórico del buzón entero). Nunca lanza.
         /// </summary>
         Task<LecturaBuzonCompras> LeerNuevos(string enlaceGuardado, DateTime desdeSiNoHayEnlace);
+
+        /// <summary>
+        /// Lectura HACIA ATRÁS (histórico): UNA página de la bandeja de entrada con <c>receivedDateTime</c> en [desde, hasta), de la
+        /// más antigua a la más nueva. Sin <paramref name="enlace"/>, la primera; con él, el nextLink de la anterior. En la respuesta,
+        /// SiguienteEnlace = la página siguiente (null si no hay más). No usa ni toca el delta. Nunca lanza.
+        /// </summary>
+        Task<LecturaBuzonCompras> LeerPagina(string enlace, DateTime desde, DateTime hasta);
+
+        /// <summary>Nombre, tipo y tamaño de los adjuntos de un mensaje (sin el contenido). Null si no se han podido leer. Nunca lanza.</summary>
+        Task<List<AdjuntoCorreo>> LeerAdjuntos(string idGraph);
     }
 
     /// <summary>
@@ -83,7 +106,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     {
         public const string URL_GRAPH = "https://graph.microsoft.com/v1.0";
         public const string SCOPE = "https://graph.microsoft.com/.default";
-        public const string CAMPOS = "id,internetMessageId,receivedDateTime,from,subject,body";
+        public const string CAMPOS = "id,internetMessageId,receivedDateTime,from,subject,body,hasAttachments";
+        public const string CAMPOS_ADJUNTOS = "name,contentType,size,isInline";
         public const int TAMANO_PAGINA = 50;
         /// <summary>Tope de páginas por pasada; lo que quede se lee en la siguiente (se guarda el nextLink).</summary>
         public const int MAXIMO_PAGINAS = 20;
@@ -107,9 +131,153 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         internal string UrlInicial(DateTime desde)
         {
-            string filtro = "receivedDateTime ge " + desde.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+            string filtro = "receivedDateTime ge " + FechaGraph(desde);
             return $"{URL_GRAPH}/users/{Uri.EscapeDataString(configuracion.Buzon)}/mailFolders/inbox/messages/delta" +
                 $"?$select={CAMPOS}&$filter={Uri.EscapeDataString(filtro)}";
+        }
+
+        private static string FechaGraph(DateTime fecha) =>
+            fecha.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
+        /// <summary>NestoAPI#857 (histórico): la bandeja por fechas, de la más antigua a la más nueva (sin delta).</summary>
+        internal string UrlHistorico(DateTime desde, DateTime hasta)
+        {
+            string filtro = $"receivedDateTime ge {FechaGraph(desde)} and receivedDateTime lt {FechaGraph(hasta)}";
+            return $"{URL_GRAPH}/users/{Uri.EscapeDataString(configuracion.Buzon)}/mailFolders/inbox/messages" +
+                $"?$select={CAMPOS}&$filter={Uri.EscapeDataString(filtro)}&$orderby={Uri.EscapeDataString("receivedDateTime asc")}&$top={TAMANO_PAGINA}";
+        }
+
+        internal string UrlAdjuntos(string idGraph) =>
+            $"{URL_GRAPH}/users/{Uri.EscapeDataString(configuracion.Buzon)}/messages/{Uri.EscapeDataString(idGraph)}/attachments" +
+            $"?$select={CAMPOS_ADJUNTOS}&$top=50";
+
+        private class RespuestaGraph
+        {
+            public JObject Json { get; set; }
+            public HttpStatusCode Estado { get; set; }
+            public string Error { get; set; }
+            public TimeSpan? Esperar { get; set; }
+        }
+
+        /// <summary>Un GET a Graph (solo lectura). Los fallos de HTTP van en Error; los de red lanzan.</summary>
+        private async Task<RespuestaGraph> Get(string url, string bearer)
+        {
+            using (var peticion = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
+                peticion.Headers.Add("Prefer", "odata.maxpagesize=" + TAMANO_PAGINA);
+                using (HttpResponseMessage respuesta = await http.SendAsync(peticion).ConfigureAwait(false))
+                {
+                    string cuerpo = respuesta.Content == null ? null : await respuesta.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    if (!respuesta.IsSuccessStatusCode)
+                    {
+                        if (respuesta.StatusCode == HttpStatusCode.Unauthorized)
+                        {
+                            token = null;
+                        }
+                        return new RespuestaGraph
+                        {
+                            Estado = respuesta.StatusCode,
+                            Error = $"Graph ha contestado {(int)respuesta.StatusCode} ({respuesta.StatusCode}): {Recortar(cuerpo, 300)}",
+                            Esperar = RetryAfter(respuesta)
+                        };
+                    }
+                    return new RespuestaGraph { Estado = respuesta.StatusCode, Json = JObject.Parse(cuerpo ?? "{}") };
+                }
+            }
+        }
+
+        internal static TimeSpan? RetryAfter(HttpResponseMessage respuesta)
+        {
+            System.Net.Http.Headers.RetryConditionHeaderValue retry = respuesta?.Headers?.RetryAfter;
+            if (retry == null)
+            {
+                return null;
+            }
+            if (retry.Delta.HasValue)
+            {
+                return retry.Delta.Value;
+            }
+            if (retry.Date.HasValue)
+            {
+                TimeSpan falta = retry.Date.Value.UtcDateTime - DateTime.UtcNow;
+                return falta > TimeSpan.Zero ? falta : TimeSpan.Zero;
+            }
+            return null;
+        }
+
+        public async Task<LecturaBuzonCompras> LeerPagina(string enlace, DateTime desde, DateTime hasta)
+        {
+            var lectura = new LecturaBuzonCompras();
+            try
+            {
+                string bearer;
+                try
+                {
+                    bearer = await Token().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    lectura.Error = "No se ha podido obtener el token de Graph: " + ex.Message;
+                    return lectura;
+                }
+                RespuestaGraph respuesta = await Get(string.IsNullOrWhiteSpace(enlace) ? UrlHistorico(desde, hasta) : enlace.Trim(), bearer)
+                    .ConfigureAwait(false);
+                if (respuesta.Error != null)
+                {
+                    lectura.Estado = respuesta.Estado;
+                    lectura.Error = respuesta.Error;
+                    lectura.EsperarAntesDeReintentar = respuesta.Esperar;
+                    return lectura;
+                }
+                if (respuesta.Json["value"] is JArray mensajes)
+                {
+                    foreach (JToken mensaje in mensajes)
+                    {
+                        CorreoCompras correo = Convertir(mensaje);
+                        if (correo != null)
+                        {
+                            lectura.Correos.Add(correo);
+                        }
+                    }
+                }
+                lectura.SiguienteEnlace = (string)respuesta.Json["@odata.nextLink"];
+                lectura.Completa = string.IsNullOrEmpty(lectura.SiguienteEnlace);
+                return lectura;
+            }
+            catch (Exception ex)
+            {
+                lectura.Error = "No se ha podido leer el buzón: " + ex.Message;
+                return lectura;
+            }
+        }
+
+        public async Task<List<AdjuntoCorreo>> LeerAdjuntos(string idGraph)
+        {
+            if (string.IsNullOrWhiteSpace(idGraph))
+            {
+                return null;
+            }
+            try
+            {
+                string bearer = await Token().ConfigureAwait(false);
+                RespuestaGraph respuesta = await Get(UrlAdjuntos(idGraph.Trim()), bearer).ConfigureAwait(false);
+                if (respuesta.Error != null || !(respuesta.Json["value"] is JArray adjuntos))
+                {
+                    return null;
+                }
+                return adjuntos.Select(a => new AdjuntoCorreo
+                {
+                    Nombre = (string)a["name"],
+                    Tipo = (string)a["contentType"],
+                    Tamano = (long?)a["size"] ?? 0,
+                    EnLinea = (bool?)a["isInline"] ?? false
+                }).ToList();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         public async Task<LecturaBuzonCompras> LeerNuevos(string enlaceGuardado, DateTime desdeSiNoHayEnlace)
@@ -231,7 +399,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 RemitenteNombre = ((string)direccion?["name"])?.Trim(),
                 Asunto = (string)mensaje["subject"],
                 Cuerpo = (string)cuerpo?["content"],
-                CuerpoEsHtml = string.Equals((string)cuerpo?["contentType"], "html", StringComparison.OrdinalIgnoreCase)
+                CuerpoEsHtml = string.Equals((string)cuerpo?["contentType"], "html", StringComparison.OrdinalIgnoreCase),
+                TieneAdjuntos = mensaje["hasAttachments"]?.Type == JTokenType.Boolean && (bool)mensaje["hasAttachments"]
             };
         }
 
