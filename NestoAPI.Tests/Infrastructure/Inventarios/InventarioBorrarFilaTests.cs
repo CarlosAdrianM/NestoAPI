@@ -216,16 +216,123 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
             Assert.IsFalse(comprobaciones.Avisos[0].Filas[0].SePuedeBorrar);
         }
 
+        // ---------- Incidencias 1227 y 1057 (12/11/26): filas pendientes de días anteriores ----------
+
         [TestMethod]
-        public async Task DeOtroDia_409_InclusoParaDireccion()
+        public async Task PendienteDeAyer_FilaNormal_204ConBloqueosYRastro_SinMirarSiSobra()
+        {
+            // 21075 en ALG, sin ubicación, 0/0, de ayer: paraba el picking y no tenía salida (hubo que borrarla por SQL).
+            A.CallTo(() => repositorio.Leer(948700)).Returns(new FilaInventarioBorrar
+            {
+                NumeroOrden = 948700, Empresa = "1", Almacen = "ALG", Fecha = HOY.AddDays(-1).AddHours(17), Producto = "21075",
+                Pasillo = "005", Fila = "002", Columna = "001", Estado = 1, Usuario = "NUEVAVISION\\Alfredo"
+            });
+
+            Assert.AreEqual(HttpStatusCode.NoContent, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(948700)));
+
+            A.CallTo(() => repositorio.Empezar("InventarioRellenar:1:ALG")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.Bloquear("InventarioRellenar:1:ALG:005:002:001")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.BorrarSiPendiente(948700)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.Anotar(ServicioBorrarFilaInventario.TABLA_MODIFICACIONES, A<string>._,
+                A<string>.That.Contains("del 10/11/2026"), "NUEVAVISION\\Alfredo")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.Confirmar()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => contabilizar.Comprobar(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PendienteDeAyer_SinPermiso_403()
         {
             A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(-1)));
+
+            var resultado = await BorrarConError(948787, "Andre", "Almacén");
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
+            A.CallTo(() => repositorio.Empezar(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ContabilizadaDeAyer_409_NoSeBorraNunca()
+        {
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(-1), estado: 2, traspaso: 81350));
 
             var resultado = await BorrarConError(948787, "Carlos", "Dirección");
 
             Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
-            StringAssert.Contains(resultado.Content.Message, ReglaBorrarFilaInventario.MENSAJE_SOLO_HOY);
+            StringAssert.Contains(resultado.Content.Message, "contabilizada (traspaso 81350)");
             A.CallTo(() => repositorio.Empezar(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => unidad.BorrarSiPendiente(A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PendienteDeManana_409_InclusoParaDireccion()
+        {
+            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(1)));
+
+            var resultado = await BorrarConError(948787, "Carlos", "Dirección");
+
+            Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
+            StringAssert.Contains(resultado.Content.Message, ReglaBorrarFilaInventario.MENSAJE_FECHA_POSTERIOR);
+            A.CallTo(() => repositorio.Empezar(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PendienteDeAyer_LaContabilizanMientrasTanto_409YNoConfirma()
+        {
+            A.CallTo(() => repositorio.Leer(948787)).ReturnsNextFromSequence(Fila(fecha: HOY.AddDays(-1)),
+                Fila(fecha: HOY.AddDays(-1), estado: 2, traspaso: 81352));
+            A.CallTo(() => unidad.BorrarSiPendiente(948787)).Returns(0);
+
+            Assert.AreEqual(HttpStatusCode.Conflict, Codigo(await Controlador("Alfredo", "Almacén").DeleteFila(948787)));
+            A.CallTo(() => unidad.Confirmar()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Marcar_OtraFechaAnteriorAHoy_SePuedeBorrar_YLasDeHoyNo_AlComprobarAyer()
+        {
+            // Se comprueba AYER: en OtraFecha salen la de anteayer (borrable) y la de HOY (no: hoy solo se borra la que sobra).
+            pendientes.Add(new FilaInventarioPendiente { NumeroOrden = 948600, Producto = "21075", Fecha = HOY.AddDays(-2), Ubicar = true, Pasillo = "005", Fila = "002", Columna = "001" });
+            ComprobacionesInventarioDTO c = ComprobadorInventario.Comprobar("ALG", HOY.AddDays(-1), true, pendientes, Huecos());
+
+            ReglaBorrarFilaInventario.Marcar(c, true, HOY);
+
+            List<FilaComprobacionInventarioDTO> otraFecha = c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA).Filas;
+            Assert.IsTrue(otraFecha.Single(f => f.NºOrden == 948600).SePuedeBorrar);
+            Assert.IsTrue(otraFecha.Where(f => f.NºOrden != 948600).All(f => !f.SePuedeBorrar), "las de hoy no se marcan por esta regla");
+            Assert.AreEqual(5, otraFecha.Count);
+        }
+
+        [TestMethod]
+        public void Marcar_OtraFechaAnterior_SinPermiso_NoSePuedeBorrar()
+        {
+            pendientes.Add(new FilaInventarioPendiente { NumeroOrden = 948600, Producto = "21075", Fecha = HOY.AddDays(-1), Ubicar = true });
+            ComprobacionesInventarioDTO c = ComprobadorInventario.Comprobar("ALG", HOY, true, pendientes, Huecos());
+
+            ReglaBorrarFilaInventario.Marcar(c, false, HOY);
+
+            Assert.IsFalse(c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA).Filas.Single().SePuedeBorrar);
+        }
+
+        [TestMethod]
+        public async Task Comprobaciones_DeHoy_LaPendienteDeAyerSePuedeBorrar()
+        {
+            pendientes.Add(new FilaInventarioPendiente { NumeroOrden = 948600, Producto = "21075", Fecha = HOY.AddDays(-1), Ubicar = true });
+
+            ComprobacionesInventarioDTO c = await Comprobaciones("Alfredo", "Almacén");
+
+            Assert.IsTrue(c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA).Filas.Single().SePuedeBorrar);
+        }
+
+        [TestMethod]
+        public async Task Comprobaciones_BorradaHoyUnaFilaDeAyer_SaleEnElAvisoConSuDia()
+        {
+            FilaInventarioBorrar deAyer = Fila(948700, fecha: HOY.AddDays(-1));
+            deAyer.Descripcion = "CARTUCHO VINOTHERAPYA";
+            borradas.Add(new FilaInventarioBorrada { Fila = deAyer, BorradaPor = "NUEVAVISION\\Alfredo", BorradaEl = HOY.AddHours(9) });
+
+            ComprobacionesInventarioDTO c = await Comprobaciones("Alfredo", "Almacén");
+
+            FilaComprobacionInventarioDTO linea = c.Avisos.Single(a => a.Codigo == CodigosComprobacionInventario.FILAS_BORRADAS).Filas.Single();
+            Assert.AreEqual("CARTUCHO VINOTHERAPYA (fila del 10/11/2026)", linea.Descripcion);
         }
 
         [TestMethod]

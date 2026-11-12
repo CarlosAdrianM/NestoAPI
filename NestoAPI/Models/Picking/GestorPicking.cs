@@ -125,6 +125,65 @@ namespace NestoAPI.Models.Picking
 
         private void EnExclusiva(Action accion)
         {
+            try
+            {
+                EnExclusivaSinTraducir(accion);
+            }
+            catch (Exception ex) when (Infraestructure.Picking.ErrorInventarioPendientePicking.EsErrorDeInventario(ex))
+            {
+                // Incidencias 1227 y 1057 (12/11/26): el disparador del inventario no dice ni qué producto ni de quién. Ya fuera del
+                // applock (se ha soltado en el finally) se leen las filas pendientes y se dice; si no se puede, el error de siempre.
+                Exception traducida = Infraestructure.Picking.ErrorInventarioPendientePicking.Traducir(ex, LeerInventarioPendiente,
+                    ProductosDelPicking());
+                if (traducida == null)
+                {
+                    throw;
+                }
+                throw traducida;
+            }
+        }
+
+        /// <summary>Incidencias 1227 y 1057: (almacén, producto) de las líneas de los candidatos que se estaban sacando.</summary>
+        private List<KeyValuePair<string, string>> ProductosDelPicking()
+        {
+            return (candidatos ?? new List<PedidoPicking>())
+                .Where(c => c?.Lineas != null)
+                .SelectMany(c => c.Lineas)
+                .Where(l => l != null && !string.IsNullOrWhiteSpace(l.Producto))
+                .Select(l => new KeyValuePair<string, string>(l.Almacen?.Trim(), l.Producto.Trim()))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Incidencias 1227 y 1057: las filas que mira el disparador (Estado 1, sin NºTraspaso, fuera de REI). Solo lectura, con un
+        /// contexto aparte: el del picking puede llevar cambios a medias del SaveChanges que ha fallado.
+        /// </summary>
+        private static List<Infraestructure.Picking.FilaInventarioPendientePicking> LeerInventarioPendiente()
+        {
+            using (var contexto = new NVEntities())
+            {
+                string sinControl = Infraestructure.Picking.ErrorInventarioPendientePicking.ALMACEN_SIN_CONTROL;
+                return contexto.Inventarios
+                    .Where(i => i.Estado == 1 && i.NºTraspaso == null && i.Almacén != sinControl)
+                    .Select(i => new Infraestructure.Picking.FilaInventarioPendientePicking
+                    {
+                        NumeroOrden = i.NºOrden,
+                        Empresa = i.Empresa,
+                        Almacen = i.Almacén,
+                        Fecha = i.Fecha,
+                        Producto = i.Número,
+                        Descripcion = i.Descripción,
+                        Pasillo = i.Pasillo,
+                        Fila = i.Fila,
+                        Columna = i.Columna,
+                        Usuario = i.Usuario
+                    })
+                    .ToList();
+            }
+        }
+
+        private void EnExclusivaSinTraducir(Action accion)
+        {
             System.Data.Common.DbConnection conexion = db.Database.Connection;
             // El applock de ámbito Session vive mientras viva la CONEXIÓN, así que hay que
             // abrirla a mano: si se deja al pool, EF la devuelve entre operaciones y el bloqueo

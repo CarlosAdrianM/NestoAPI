@@ -416,6 +416,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `ProveedorDocumentosCorreo.NombreVendedorDelUsuario` (claim «Vendedor» o parámetro «Vendedor»; null si no se conoce, SIN caer al usuario):
   firma del WhatsApp (`GestorEnlacesDescarga.Firma`, `EnlaceDescargaDTO.Remitente`). `FacturasController` pasa ya el claim al remitente.
 
+### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
+- `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,
+  sin mirar si sobra; mismos permisos, applocks y rastro); las de hoy, solo las que sobran; las de días posteriores y las contabilizadas, nunca.
+  `Marcar` pone `SePuedeBorrar` en las de `OtraFecha` anteriores a hoy (no en las de hoy al comprobar otro día). El aviso `FilasBorradas` saca las
+  borradas ese día aunque la fila fuera de otro, con «(fila del dd/MM/yyyy)». Nesto y Ariadna pintan el botón solo por `SePuedeBorrar`.
+- Picking cortado por los disparadores del inventario («Se esta realizando el inventario del producto[1]»): `GestorPicking.EnExclusiva` lo
+  traduce (`ErrorInventarioPendientePicking`, pura) a un mensaje con las filas pendientes (fuera de REI) de los productos del picking (o todas si
+  no casa ninguna; 10 y «… y N más»). Es un `Exception` (INTERNAL_ERROR, sin «[CÓDIGO]» en Nesto) con el original dentro; si la consulta falla, el original.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

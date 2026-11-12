@@ -2152,6 +2152,7 @@
     <Compile Include="Infraestructure\Picking\ReglasRutaPropia.cs" />
     <Compile Include="Infraestructure\Picking\GestorSugerenciasRuta.cs" />
     <Compile Include="Infraestructure\Picking\RepositorioSugerenciasRutaSql.cs" />
+    <Compile Include="Infraestructure\Picking\ErrorInventarioPendientePicking.cs" />
     <Compile Include="Models\Picking\GestorAvisosPicking.cs" />
     <Compile Include="Models\Picking\GestorPrepagos.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />

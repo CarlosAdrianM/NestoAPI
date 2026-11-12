@@ -68,7 +68,7 @@ namespace NestoAPI.Infraestructure.Inventarios
         Borrada,
         NoExiste,
         SinPermiso,
-        /// <summary>409: contabilizada, de otro día o no es una fila que sobre.</summary>
+        /// <summary>409: contabilizada, de un día posterior a hoy o (de hoy) no es una fila que sobre.</summary>
         NoBorrable
     }
 
@@ -84,8 +84,9 @@ namespace NestoAPI.Infraestructure.Inventarios
     /// contabilizar solo toca las filas pendientes), así que borrar «lo que no hay» dejaría el stock del sistema. Solo se borran las
     /// filas pendientes de hoy que SOBRAN: las de los bloqueantes <see cref="CodigosComprobacionInventario.SIN_UBICACION"/> (producto que
     /// se ubica contado sin ubicación) y <see cref="CodigosComprobacionInventario.FILAS_DUPLICADAS"/> (en un grupo de dos o más siempre
-    /// queda otra). Nunca una fila normal, ni la de un aviso, ni RecontadaSinContar. Quién: Administración, Dirección e Informática, o
-    /// con el parámetro de usuario <see cref="PARAMETRO_USUARIO"/> = "1".
+    /// queda otra). Nunca una fila normal de hoy, ni la de un aviso, ni RecontadaSinContar. Y (12/11/26, incidencias 1227 y 1057)
+    /// cualquier fila pendiente de un día ANTERIOR a hoy (<see cref="EsDeDiaAnterior"/>): se quedó sin contabilizar y bloquea el picking.
+    /// Quién: Administración, Dirección e Informática, o con el parámetro de usuario <see cref="PARAMETRO_USUARIO"/> = "1".
     /// </summary>
     public static class ReglaBorrarFilaInventario
     {
@@ -97,11 +98,20 @@ namespace NestoAPI.Infraestructure.Inventarios
         public const string MENSAJE_NO_SOBRA = "Esta fila no se puede borrar: no es una fila que sobre. Si quiere decir que no hay ninguna unidad, " +
             "cuéntela a 0; si está mal contada, vuelva a contarla.";
         public const string MENSAJE_SIN_PERMISO = "No tiene permiso para borrar filas del inventario: avise a su encargado o a Dirección.";
-        public const string MENSAJE_SOLO_HOY = "Solo se pueden borrar filas del inventario de hoy.";
+        /// <summary>12/11/26: las de hoy, solo si sobran; las de días anteriores, siempre; las de días posteriores, nunca.</summary>
+        public const string MENSAJE_FECHA_POSTERIOR = "Las filas de un día posterior a hoy no se pueden borrar: solo las de hoy que sobran y las que se quedaron " +
+            "sin contabilizar de días anteriores.";
 
         /// <summary>Administración, Dirección e Informática siempre; el resto, con el parámetro a "1".</summary>
         public static bool PuedeBorrar(bool esGlobal, string valorParametro) =>
             esGlobal || string.Equals(valorParametro?.Trim(), "1", StringComparison.Ordinal);
+
+        /// <summary>
+        /// Incidencias 1227 y 1057 (Carlos 12/11/26): una fila pendiente de un día ANTERIOR a hoy se puede borrar siempre. Es, por
+        /// definición, una fila del bloqueante <see cref="CodigosComprobacionInventario.OTRA_FECHA"/> cuando se comprueba hoy, y mientras
+        /// siga pendiente los disparadores de Ubicaciones y ExtractoProducto paran el picking y los movimientos de ese producto.
+        /// </summary>
+        public static bool EsDeDiaAnterior(DateTime fecha, DateTime hoy) => fecha.Date < hoy.Date;
 
         /// <summary>La fila está ahora mismo en un bloqueante de los que se pueden borrar (y, si es duplicada, su grupo tiene otra).</summary>
         public static bool EsBorrable(ComprobacionesInventarioDTO comprobaciones, int numeroOrden)
@@ -131,8 +141,9 @@ namespace NestoAPI.Infraestructure.Inventarios
         }
 
         /// <summary>
-        /// Marca <see cref="FilaComprobacionInventarioDTO.SePuedeBorrar"/> en las filas de hoy de los bloqueantes borrables, si quien
-        /// pregunta puede borrar. Las demás, false.
+        /// Marca <see cref="FilaComprobacionInventarioDTO.SePuedeBorrar"/> en las filas de hoy de los bloqueantes borrables y (12/11/26)
+        /// en las del bloqueante <see cref="CodigosComprobacionInventario.OTRA_FECHA"/> de días anteriores a hoy, si quien pregunta puede
+        /// borrar. Las demás, false (también las de hoy que salen en OtraFecha cuando se comprueba otro día).
         /// </summary>
         public static void Marcar(ComprobacionesInventarioDTO comprobaciones, bool puedeBorrar, DateTime hoy)
         {
@@ -159,22 +170,34 @@ namespace NestoAPI.Infraestructure.Inventarios
             {
                 fila.SePuedeBorrar = EsBorrable(comprobaciones, fila.NºOrden.Value);
             }
+            foreach (FilaComprobacionInventarioDTO fila in bloqueantes
+                .Where(c => c?.Filas != null && c.Codigo == CodigosComprobacionInventario.OTRA_FECHA)
+                .SelectMany(c => c.Filas)
+                .Where(f => f != null && f.NºOrden.HasValue && f.Fecha.HasValue && EsDeDiaAnterior(f.Fecha.Value, hoy)))
+            {
+                fila.SePuedeBorrar = true;
+            }
         }
 
-        /// <summary>El aviso «Filas borradas hoy del recuento (N)» con las borradas ese día en ese almacén (null si no hay).</summary>
+        /// <summary>
+        /// El aviso «Filas borradas hoy del recuento (N)» con las borradas ese día (<paramref name="borradas"/> ya viene del rastro de
+        /// ese día) en ese almacén (null si no hay). 12/11/26: salen todas las borradas ese día, también las de una fila de otro día
+        /// (las pendientes de días anteriores que ahora se pueden borrar), con «(fila del dd/MM/yyyy)» detrás de la descripción.
+        /// </summary>
         public static ComprobacionInventarioDTO AvisoBorradas(IEnumerable<FilaInventarioBorrada> borradas, string empresa, string almacen, DateTime dia)
         {
             List<FilaComprobacionInventarioDTO> filas = (borradas ?? Enumerable.Empty<FilaInventarioBorrada>())
                 .Where(b => b?.Fila != null
                     && string.Equals(b.Fila.Empresa?.Trim(), empresa?.Trim(), StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(b.Fila.Almacen?.Trim(), almacen?.Trim(), StringComparison.OrdinalIgnoreCase)
-                    && b.Fila.Fecha.Date == dia.Date)
+                    && string.Equals(b.Fila.Almacen?.Trim(), almacen?.Trim(), StringComparison.OrdinalIgnoreCase))
                 .OrderBy(b => b.BorradaEl)
                 .Select(b => new FilaComprobacionInventarioDTO
                 {
                     NºOrden = null,
                     Producto = b.Fila.Producto?.Trim(),
-                    Descripcion = b.Fila.Descripcion?.Trim(),
+                    Descripcion = b.Fila.Fecha.Date == dia.Date
+                        ? b.Fila.Descripcion?.Trim()
+                        : $"{b.Fila.Descripcion?.Trim()} (fila del {b.Fila.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)})".TrimStart(),
                     StockCalculado = b.Fila.StockCalculado,
                     StockReal = b.Fila.StockReal,
                     Pasillo = b.Fila.Pasillo?.Trim(),
@@ -201,7 +224,8 @@ namespace NestoAPI.Infraestructure.Inventarios
 
     /// <summary>
     /// Épica #784 (incidencia 1186, 11/11/26): borrar una fila pendiente del inventario que sobra (<see cref="ReglaBorrarFilaInventario"/>).
-    /// Las contabilizadas no se borran nunca. Bloquea el almacén y la ubicación como el rellenado y el «a cero» y, ya con el bloqueo,
+    /// Las contabilizadas no se borran nunca. Incidencias 1227 y 1057 (12/11/26): una pendiente de un día anterior a hoy se borra
+    /// siempre (con los mismos permisos, bloqueos y rastro); una de un día posterior, nunca. Bloquea el almacén y la ubicación como el rellenado y el «a cero» y, ya con el bloqueo,
     /// comprueba que la fila sigue sobrando; frente a prdContabilizarInventario (que no usa applock) lo protege el propio DELETE, que
     /// solo borra si la fila sigue pendiente. Rastro en Modificaciones (Tabla <see cref="TABLA_MODIFICACIONES"/>, Anterior = la fila en
     /// JSON), del que sale el aviso «Filas borradas hoy del recuento».
@@ -242,11 +266,13 @@ namespace NestoAPI.Infraestructure.Inventarios
             {
                 return Resultado(EstadoBorrarFilaInventario.NoBorrable, MensajeNoPendiente(fila), fila);
             }
-            if (fila.Fecha.Date != hoy.Date)
+            if (fila.Fecha.Date > hoy.Date)
             {
                 return Resultado(EstadoBorrarFilaInventario.NoBorrable,
-                    $"La fila {numeroOrden} es del inventario del {Dia(fila.Fecha)}. " + ReglaBorrarFilaInventario.MENSAJE_SOLO_HOY, fila);
+                    $"La fila {numeroOrden} es del inventario del {Dia(fila.Fecha)}. " + ReglaBorrarFilaInventario.MENSAJE_FECHA_POSTERIOR, fila);
             }
+            // Incidencias 1227 y 1057 (12/11/26): la de un día anterior se borra siempre (no hace falta que sobre).
+            bool deDiaAnterior = ReglaBorrarFilaInventario.EsDeDiaAnterior(fila.Fecha, hoy);
 
             string empresa = fila.Empresa?.Trim();
             string almacen = fila.Almacen?.Trim().ToUpperInvariant();
@@ -259,7 +285,7 @@ namespace NestoAPI.Infraestructure.Inventarios
                         $"{fila.Fila?.Trim().ToUpperInvariant()}:{fila.Columna?.Trim().ToUpperInvariant()}").ConfigureAwait(false);
                 }
                 // Con el bloqueo puesto: nadie puede estar borrando a la vez la otra fila del mismo duplicado.
-                if (sobra == null || !await sobra(fila).ConfigureAwait(false))
+                if (!deDiaAnterior && (sobra == null || !await sobra(fila).ConfigureAwait(false)))
                 {
                     return Resultado(EstadoBorrarFilaInventario.NoBorrable, ReglaBorrarFilaInventario.MENSAJE_NO_SOBRA, fila);
                 }

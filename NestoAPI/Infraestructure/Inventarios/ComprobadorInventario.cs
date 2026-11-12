@@ -77,7 +77,9 @@ namespace NestoAPI.Infraestructure.Inventarios
 
             // ---- Bloqueantes ----
             Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.OTRA_FECHA,
-                "Filas pendientes de este almacén con otra fecha (el procedimiento contabiliza todas las del usuario: bórrelas o cámbieles la fecha)",
+                // 12/11/26 (incidencias 1227 y 1057): las de días anteriores a hoy ya se pueden borrar (DELETE api/Inventarios/Filas).
+                "Filas pendientes de este almacén con otra fecha (el procedimiento contabiliza todas las del usuario): las de días anteriores " +
+                "a hoy se pueden borrar; las demás, contabilícelas en su día",
                 todas.Where(f => f.Fecha.Date != dia));
             Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.CANTIDAD_DISPARATADA,
                 "Cantidades disparatadas: más de 9.999 o una referencia leída como cantidad",

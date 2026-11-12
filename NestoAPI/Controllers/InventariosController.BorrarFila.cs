@@ -90,8 +90,9 @@ namespace NestoAPI.Controllers
         // DELETE: api/Inventarios/Filas/948787
         /// <summary>
         /// Épica #784: borra una fila pendiente de HOY que sobra (<see cref="ReglaBorrarFilaInventario"/>: está ahora en el bloqueante
-        /// SinUbicacion o FilasDuplicadas). 204 si la borra; 404 {Message} si no existe; 409 {Message} si está contabilizada, es de otro
-        /// día o no es una fila que sobre; 403 {Message} sin permiso de contar en el almacén o sin permiso de borrar (Administración,
+        /// SinUbicacion, FilasDuplicadas o TeoricoConReservas) o (12/11/26) cualquier fila pendiente de un día ANTERIOR a hoy. 204 si la
+        /// borra; 404 {Message} si no existe; 409 {Message} si está contabilizada, es de un día posterior a hoy o (de hoy) no es una
+        /// fila que sobre; 403 {Message} sin permiso de contar en el almacén o sin permiso de borrar (Administración,
         /// Dirección, Informática o ParametrosUsuario «InventarioBorrarFilas» = "1"). Deja rastro en Modificaciones.
         /// </summary>
         [HttpDelete]
