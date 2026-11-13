@@ -684,6 +684,9 @@
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\PlazosProveedores.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\RepositorioPlazosProveedores.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\ServicioPlazosProveedores.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\FechasOrientativas\ReglasFechasOrientativas.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\FechasOrientativas\RepositorioFechasOrientativas.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\FechasOrientativas\ServicioFechasOrientativas.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\ModeloPlazos\EntrenadorModeloPlazos.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\ModeloPlazos\MetricasModeloPlazos.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\ModeloPlazos\RasgosModeloPlazos.cs" />

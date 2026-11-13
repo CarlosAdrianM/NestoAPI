@@ -621,6 +621,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   ≥50 recibidos) y `POST …/Modelo/Entrenar[?ahora=true]` (Dirección/Informática; L-V 8-20 → a las 21:00).
 - `AsignadorPedidosCompra` (#857): un número cuenta como pedido nuestro solo si es token propio (no pegado a letras/guiones) Y lleva etiqueta
   de pedido/referencia delante (30 caracteres) o su proveedor se reconoce por otro criterio.
+- **Medir las orientativas de lo no pedido (NestoAPI#861, 13/11/26)**: la regla no cambia. `dbo.FechasOrientativasSinPedir` (fuera del EDMX,
+  `Scripts/Issue861_FechasOrientativasSinPedir.sql`, requiere el de #853): una fila por día + empresa + producto con venta pendiente cuya partida del
+  motor queda SIN fecha y con orientativa de lo no pedido (`ReglasFechasOrientativas.EsOrientativaSinPedir`: SinStock, sin pedido lejano) y sus
+  ingredientes (proveedor habitual, último pedido, cadencia, días desde/hasta, plazo propio/genérico, llegada de la regla y la salida que ve el usuario,
+  `YaTocabaPedir`, `PrimeraDelEpisodio` = sin foto el laborable anterior). Job `fechas-orientativas-sin-pedir` 3:50 Madrid (cola «indicadores»): FOTO
+  con el mismo motor que `fechas-entrega-fotos-sombra` (sin avisos, nunca en caliente) y RESOLVER por lotes de Id con una consulta: primer pedido
+  al MISMO proveedor (empresas 1+3) con el producto enviado desde el día de la foto (`PedidosCompraEnvios.FechaEnvio` o `[Fecha Modificación]`) y
+  su primer albarán; errores real − previsto; sin llegar a los 120 días, `Caducada`. Sin tabla, nada (ELMAH una vez). `dbo.vFechasOrientativasError`
+  (primeras resueltas por proveedor; Grupo Todas/YaTocaba/NoTocaba). `GET api/Compras/PlazosProveedores/Orientativas?meses=6` (Compras/Dirección/
+  Informática; lo mismo en C# con los meses y los totales) y `POST …/Orientativas/Procesar` (Dirección/Informática, 202); 503 sin el script.
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

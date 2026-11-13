@@ -2,6 +2,7 @@ using Hangfire;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento;
 using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega;
+using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega.FechasOrientativas;
 using NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega.ModeloPlazos;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
@@ -16,6 +17,13 @@ namespace NestoAPI.Controllers
 {
     /// <summary>NestoAPI#853: respuesta de POST api/Compras/PlazosProveedores/Recalcular.</summary>
     public class RecalculoPlazosProveedoresDTO
+    {
+        public string JobId { get; set; }
+        public string Mensaje { get; set; }
+    }
+
+    /// <summary>NestoAPI#861: respuesta de POST api/Compras/PlazosProveedores/Orientativas/Procesar.</summary>
+    public class ProcesoFechasOrientativasDTO
     {
         public string JobId { get; set; }
         public string Mensaje { get; set; }
@@ -40,6 +48,11 @@ namespace NestoAPI.Controllers
         private readonly Func<DateTime> ahoraMadrid;
         private readonly Func<bool> modeloGuardado;
         private readonly Func<bool> mandaModelo;
+        private readonly Func<ServicioFechasOrientativas> crearOrientativas;
+        private readonly Func<string> encolarOrientativas;
+
+        public const string MENSAJE_SIN_PERMISO_ORIENTATIVAS = "Solo Compras, Dirección o Informática pueden ver la medida de las fechas orientativas.";
+        public const string MENSAJE_SIN_PERMISO_PROCESAR_ORIENTATIVAS = "Solo Dirección o Informática pueden procesar las fechas orientativas.";
 
         public ComprasPlazosProveedoresController()
             : this(() => new ServicioPlazosProveedores(RepositorioPlazosProveedores.DesdeConfiguracion()),
@@ -50,7 +63,8 @@ namespace NestoAPI.Controllers
         /// <param name="repositorioModelo">NestoAPI#853 (modelo en sombra). Null = el de producción.</param>
         internal ComprasPlazosProveedoresController(Func<ServicioPlazosProveedores> crearServicio, Func<string> encolar,
             Func<IRepositorioModeloPlazos> repositorioModelo = null, IProgramadorModeloPlazos programador = null, Func<DateTime> ahoraMadrid = null,
-            Func<bool> modeloGuardado = null, Func<bool> mandaModelo = null)
+            Func<bool> modeloGuardado = null, Func<bool> mandaModelo = null,
+            Func<ServicioFechasOrientativas> crearOrientativas = null, Func<string> encolarOrientativas = null)
         {
             this.crearServicio = crearServicio ?? throw new ArgumentNullException(nameof(crearServicio));
             this.encolar = encolar ?? (() => "0");
@@ -59,6 +73,10 @@ namespace NestoAPI.Controllers
             this.ahoraMadrid = ahoraMadrid ?? (() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Startup.ZonaHorariaPeninsular()));
             this.modeloGuardado = modeloGuardado ?? (() => AlmacenModeloPlazos.Produccion().HayModelo);
             this.mandaModelo = mandaModelo ?? (() => ServicioFechaRecepcionAlEnviar.MandaElModelo(ex => ElmahHelper.Log(ex)));
+            // NestoAPI#861: el endpoint solo lee la tabla (sin motor ni plazos); el proceso lo hace el job.
+            this.crearOrientativas = crearOrientativas ?? (() => new ServicioFechasOrientativas(RepositorioFechasOrientativas.DesdeConfiguracion(),
+                null, null, null, () => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Startup.ZonaHorariaPeninsular())));
+            this.encolarOrientativas = encolarOrientativas ?? (() => BackgroundJob.Enqueue(() => FechasOrientativasJobsService.Procesar()));
         }
 
         internal static bool PuedeVer(IPrincipal usuario) =>
@@ -185,6 +203,53 @@ namespace NestoAPI.Controllers
                 JobId = programador.Encolar(usuario),
                 Programado = false,
                 Mensaje = "Entrenamiento del modelo de plazos encolado: en unos minutos, el resultado en GET api/Compras/PlazosProveedores/Comparacion."
+            });
+        }
+
+        // GET api/Compras/PlazosProveedores/Orientativas?meses=6
+        /// <summary>
+        /// NestoAPI#861: cuánto acierta la fecha ORIENTATIVA de lo no pedido: por proveedor y en total, de las primeras fotos de cada
+        /// episodio ya resueltas de los últimos <paramref name="meses"/> (1-24), con los errores de pedido y de llegada y el % que se queda
+        /// corta, también separando «ya tocaba pedir». 503 sin el script.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/PlazosProveedores/Orientativas")]
+        [ResponseType(typeof(ResumenFechasOrientativasDTO))]
+        public IHttpActionResult GetOrientativas(int meses = 6, string empresa = null)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_ORIENTATIVAS);
+            }
+            ServicioFechasOrientativas servicio = crearOrientativas();
+            if (!servicio.TablaExiste())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ServicioFechasOrientativas.MENSAJE_SIN_TABLA);
+            }
+            return Ok(servicio.Resumen(empresa, meses));
+        }
+
+        // POST api/Compras/PlazosProveedores/Orientativas/Procesar
+        /// <summary>NestoAPI#861: encola la pasada del job (foto de hoy y resolución de las abiertas) (202). 503 sin el script.</summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/PlazosProveedores/Orientativas/Procesar")]
+        [ResponseType(typeof(ProcesoFechasOrientativasDTO))]
+        public IHttpActionResult PostProcesarOrientativas()
+        {
+            if (!PuedeRecalcular(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_PROCESAR_ORIENTATIVAS);
+            }
+            if (!crearOrientativas().TablaExiste())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ServicioFechasOrientativas.MENSAJE_SIN_TABLA);
+            }
+            return Content(HttpStatusCode.Accepted, new ProcesoFechasOrientativasDTO
+            {
+                JobId = encolarOrientativas(),
+                Mensaje = "Proceso de las fechas orientativas encolado: en unos minutos estará en GET api/Compras/PlazosProveedores/Orientativas."
             });
         }
     }

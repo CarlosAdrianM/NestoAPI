@@ -899,6 +899,8 @@
     <Compile Include="Infrastructure\PedidosCompra\PlazosProveedoresTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ModeloPlazosProveedoresTests.cs" />
     <Compile Include="Controllers\ComprasPlazosProveedoresControllerTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\FechasOrientativasTests.cs" />
+    <Compile Include="Controllers\ComprasPlazosProveedoresOrientativasControllerTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoEntregaEstimadaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoFase3Tests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\RepositorioCorreosSeguimientoEnMemoria.cs" />
