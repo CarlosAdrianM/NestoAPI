@@ -13,7 +13,8 @@
       1261 (dejar una plantilla nueva abierta al grabar el pedido) y 1263 (packs de la feria: precio especial y 6+1).
 
     Se omiten a propósito (nada perceptible todavía):
-      - Pago a plazos de un pedido ya creado (NestoAPI#864): interruptor apagado; faltan Nesto, NestoApp y la app de clientes.
+      - Pago a plazos de un pedido ya creado (NestoAPI#864, Nesto#640, TiendasNuevaVision#99): va en esta versión pero con el
+        interruptor APAGADO (el botón no se ve); su novedad se dará al encenderlo, tras la prueba. Falta NestoApp.
       - Medición de las fechas orientativas de lo no pedido (NestoAPI#861): solo recoge datos por la noche.
       - Fecha real del cobro en el prepago (NestoAPI#860): la API ya la guarda, pero nadie la rellena todavía.
       - Embudo de Odoo: los 7 días entre subidas cuentan desde el primer bloque.
@@ -31,6 +32,9 @@ DECLARE @fecha DATE = '2026-11-13';
 DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000), Perfiles nvarchar(200));
 
 INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
+    ('Mejorado', N'Enviar reposición: solo sale de la tienda lo que se lee',
+     N'Al preparar la reposición para Algete hay que leer el código de barras de cada unidad que se mete en la caja, igual que se hace en Algete al recibirla. Cada línea empieza en «0 de N» en la columna nueva «Leídas» y cada lectura suma una unidad; si el código no es de la reposición o ya se han leído todas las de ese producto, suena el error y esa unidad se queda en la tienda. Teclear la referencia no cuenta como lectura. Al terminar solo se manda lo leído: lo que falte se lo dice antes de confirmar y se queda en la tienda. Un producto sin código de barras se lee con la etiqueta que se le imprime, así que hay que pegarla antes de leerlo. Las muestras sin código se siguen tecleando como hasta ahora.',
+     NULL),
     ('Mejorado', N'Nesto avisa cuando otro usuario tiene bloqueada la base de datos',
      N'Si una operación no se puede completar porque otro usuario tiene algo a medias (por ejemplo, un albarán o un asiento sin terminar), aparece una banda en la parte de abajo de Nesto que dice quién lo tiene bloqueado y desde cuándo, para poder avisarle. La banda no interrumpe lo que se está haciendo y se cierra sola. Además, en Cajas y Bancos el mensaje de error incluye ahora ese mismo dato.',
      NULL),
