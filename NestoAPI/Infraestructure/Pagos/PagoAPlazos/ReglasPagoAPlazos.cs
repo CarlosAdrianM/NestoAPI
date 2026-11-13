@@ -114,6 +114,8 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
         public string Canal { get; set; }
         /// <summary>Algo que conviene decirle a quien pasa el pedido (no impide nada). Null si no hay.</summary>
         public string Aviso { get; set; }
+        /// <summary>El mensaje, listo para pegar, que invita al cliente a instalar la app. Null si ya la tiene.</summary>
+        public string InvitacionApp { get; set; }
         /// <summary>Se haría contra el entorno de pruebas del proveedor (sin dinero).</summary>
         public bool Pruebas { get; set; }
     }
@@ -165,6 +167,10 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
         public int DispositivosAvisados { get; set; }
         /// <summary>Algo que conviene decirle a quien pasa el pedido. Null si no hay.</summary>
         public string Aviso { get; set; }
+        /// <summary>El mensaje, listo para pegar, que invita al cliente a instalar la app. Null si ya la tiene.</summary>
+        public string InvitacionApp { get; set; }
+        /// <summary>Con enlace de pago: el mensaje completo para el cliente (el enlace y, si no tiene la app, la invitación). Null sin enlace.</summary>
+        public string MensajeCliente { get; set; }
     }
 
     // GET api/Pedidos/Cliente/{pedido}/PagoAPlazos (la app de clientes)
@@ -207,7 +213,36 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
         public const string MOTIVO_NO_DISPONIBLE = "El pago a plazos no está disponible ahora mismo.";
         public const string MOTIVO_CANAL_NO_VALIDO = "El canal tiene que ser «App» o «Enlace».";
         public const string MOTIVO_SIN_APP = "El cliente no tiene la app con las notificaciones activas: mándele el enlace.";
-        public const string AVISO_SIN_APP = "El cliente no tiene la app: con la app instalada le sería más cómodo terminar el pago.";
+        public const string AVISO_SIN_APP = "Este cliente no tiene la app. Si la instala, le llega el aviso al móvil y termina el pago a plazos ahí mismo; " +
+            "además ve sus pedidos y nuestros vídeos. Puede mandarle la invitación con «Copiar invitación a la app».";
+
+        /// <summary>Donde se instala la app de clientes (Carlos 13/11/26: que quien pasa el pedido pueda invitar al cliente).</summary>
+        public const string ENLACE_APP = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+
+        /// <summary>
+        /// El mensaje, listo para pegar, con el que quien pasa el pedido invita al cliente a instalar la app (de tú, como le
+        /// habla la app). Null si ya la tiene.
+        /// </summary>
+        public static string InvitacionApp(bool clienteTieneApp)
+            => clienteTieneApp ? null
+                : "Con la app de Nueva Visión puedes pagar tus pedidos a plazos desde el móvil, ver cómo van tus pedidos y seguir " +
+                  "nuestros vídeos. Instálala aquí: " + ENLACE_APP;
+
+        /// <summary>
+        /// El mensaje completo para el cliente cuando se le manda el enlace de pago: el enlace y, si no tiene la app, la
+        /// invitación debajo. Null si no hay enlace.
+        /// </summary>
+        public static string MensajeParaElCliente(string urlPago, int pedido, string nombreProveedor, bool clienteTieneApp)
+        {
+            if (string.IsNullOrWhiteSpace(urlPago))
+            {
+                return null;
+            }
+            string financiera = string.IsNullOrWhiteSpace(nombreProveedor) ? "la financiera" : nombreProveedor.Trim();
+            string mensaje = $"Aquí tienes el enlace para pagar a plazos tu pedido {pedido} con {financiera}: {urlPago.Trim()}";
+            string invitacion = InvitacionApp(clienteTieneApp);
+            return invitacion == null ? mensaje : mensaje + Environment.NewLine + Environment.NewLine + invitacion;
+        }
         public const string AVISO_CONTRA_REEMBOLSO = "El pedido va contra reembolso: cambie su forma de pago para que no se le cobre otra vez al entregarlo.";
 
         private static readonly CultureInfo Es = new CultureInfo("es-ES");

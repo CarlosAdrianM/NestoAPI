@@ -83,6 +83,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
             Assert.IsTrue(dto.ClienteTieneApp);
             Assert.AreEqual("App", dto.Canal);
             Assert.IsNull(dto.Aviso);
+            Assert.IsNull(dto.InvitacionApp, "Ya tiene la app: no hay a qué invitarle");
         }
 
         [TestMethod]
@@ -96,6 +97,8 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
             Assert.IsFalse(dto.ClienteTieneApp);
             Assert.AreEqual("Enlace", dto.Canal);
             Assert.AreEqual(ReglasPagoAPlazos.AVISO_SIN_APP, dto.Aviso);
+            // Carlos 13/11/26: quien pasa el pedido tiene con qué invitar al cliente a instalar la app
+            StringAssert.Contains(dto.InvitacionApp, ReglasPagoAPlazos.ENLACE_APP);
         }
 
         [TestMethod]
@@ -219,6 +222,10 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
             Assert.AreEqual("Enlace", sinApp.Canal);
             Assert.IsNotNull(sinApp.UrlPago);
             Assert.AreEqual(ReglasPagoAPlazos.AVISO_SIN_APP, sinApp.Aviso);
+            // El mensaje completo para el cliente: el enlace de pago y, debajo, la invitación a la app
+            StringAssert.Contains(sinApp.InvitacionApp, ReglasPagoAPlazos.ENLACE_APP);
+            StringAssert.Contains(sinApp.MensajeCliente, sinApp.UrlPago);
+            StringAssert.Contains(sinApp.MensajeCliente, ReglasPagoAPlazos.ENLACE_APP);
         }
 
         [TestMethod]

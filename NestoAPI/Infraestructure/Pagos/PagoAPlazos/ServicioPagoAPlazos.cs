@@ -176,6 +176,7 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                 ClienteTieneApp = contexto.Pedido.ClienteTieneApp,
                 Canal = canal,
                 Aviso = contexto.Motivo != null ? null : Aviso(contexto.Pedido, canal),
+                InvitacionApp = contexto.Motivo != null || !seOfrece ? null : ReglasPagoAPlazos.InvitacionApp(contexto.Pedido.ClienteTieneApp),
                 Pruebas = seOfrece && contexto.Configuracion.Pruebas
             });
         }
@@ -251,7 +252,8 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                     && !string.IsNullOrWhiteSpace(anterior.ReferenciaExterna);
                 if (igual)
                 {
-                    return ResultadoPagoAPlazos<SolicitudPagoAPlazosDTO>.Bien(await Entregar(anterior, proveedor, aviso).ConfigureAwait(false));
+                    return ResultadoPagoAPlazos<SolicitudPagoAPlazosDTO>.Bien(
+                        await Entregar(anterior, proveedor, aviso, contexto.Pedido.ClienteTieneApp).ConfigureAwait(false));
                 }
                 bool cerrada = await repositorio.CambiarEstado(anterior.Id, new[] { EstadosPagoAPlazos.PENDIENTE }, EstadosPagoAPlazos.CANCELADO, ahora,
                     "Sustituida por otra solicitud del mismo pedido").ConfigureAwait(false);
@@ -311,11 +313,13 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
             }
             await repositorio.GuardarReferencias(solicitud.Id, null, solicitud.ReferenciaExterna).ConfigureAwait(false);
 
-            return ResultadoPagoAPlazos<SolicitudPagoAPlazosDTO>.Bien(await Entregar(solicitud, proveedor, aviso).ConfigureAwait(false));
+            return ResultadoPagoAPlazos<SolicitudPagoAPlazosDTO>.Bien(
+                await Entregar(solicitud, proveedor, aviso, contexto.Pedido.ClienteTieneApp).ConfigureAwait(false));
         }
 
         /// <summary>Hace llegar la solicitud al cliente por su canal: la push de la app, o el enlace para quien pasa el pedido.</summary>
-        private async Task<SolicitudPagoAPlazosDTO> Entregar(SolicitudPagoAPlazos solicitud, IProveedorPagoAPlazos proveedor, string aviso)
+        private async Task<SolicitudPagoAPlazosDTO> Entregar(SolicitudPagoAPlazos solicitud, IProveedorPagoAPlazos proveedor, string aviso,
+            bool clienteTieneApp)
         {
             SolicitudPagoAPlazosDTO dto = new SolicitudPagoAPlazosDTO { Aviso = aviso };
             Rellenar(dto, solicitud, proveedor, Ahora());
@@ -338,6 +342,9 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                         "No se ha podido avisar al cliente en la app: mándele el enlace.").Trim();
                 }
             }
+            // Carlos 13/11/26: quien pasa el pedido tiene a mano con qué invitar al cliente a la app y el mensaje completo del enlace
+            dto.InvitacionApp = ReglasPagoAPlazos.InvitacionApp(clienteTieneApp);
+            dto.MensajeCliente = ReglasPagoAPlazos.MensajeParaElCliente(dto.UrlPago, solicitud.Pedido, proveedor.Nombre, clienteTieneApp);
             return dto;
         }
 

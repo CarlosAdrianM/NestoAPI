@@ -687,5 +687,31 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
             }
             StringAssert.Contains(RepositorioPagoAPlazos.SqlCambiarEstado(2), "Estado IN (@desde0, @desde1)");
         }
+
+        // ---- Carlos 13/11/26: invitar al cliente a instalar la app
+
+        [TestMethod]
+        public void PagoAPlazos_InvitacionApp_SoloSiNoLaTiene_YLlevaElEnlaceDeInstalacion()
+        {
+            Assert.IsNull(ReglasPagoAPlazos.InvitacionApp(clienteTieneApp: true));
+            string invitacion = ReglasPagoAPlazos.InvitacionApp(clienteTieneApp: false);
+            StringAssert.EndsWith(invitacion, ReglasPagoAPlazos.ENLACE_APP);
+            Assert.IsFalse(invitacion.ToLowerInvariant().Contains("aplazame") || invitacion.ToLowerInvariant().Contains("aplázame"),
+                "Neutro: la invitación no nombra a ninguna financiera");
+        }
+
+        [TestMethod]
+        public void PagoAPlazos_MensajeParaElCliente_ElEnlaceYLaInvitacionSoloSinApp()
+        {
+            Assert.IsNull(ReglasPagoAPlazos.MensajeParaElCliente(null, 930500, "Financiera", false), "Sin enlace no hay mensaje");
+            Assert.IsNull(ReglasPagoAPlazos.MensajeParaElCliente(" ", 930500, "Financiera", false));
+
+            string conApp = ReglasPagoAPlazos.MensajeParaElCliente("https://pago.example/1", 930500, "Financiera", true);
+            Assert.AreEqual("Aquí tienes el enlace para pagar a plazos tu pedido 930500 con Financiera: https://pago.example/1", conApp);
+
+            string sinApp = ReglasPagoAPlazos.MensajeParaElCliente("https://pago.example/1", 930500, null, false);
+            StringAssert.StartsWith(sinApp, "Aquí tienes el enlace para pagar a plazos tu pedido 930500 con la financiera: https://pago.example/1");
+            StringAssert.EndsWith(sinApp, ReglasPagoAPlazos.ENLACE_APP);
+        }
     }
 }
