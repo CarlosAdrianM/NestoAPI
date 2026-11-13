@@ -632,6 +632,36 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (primeras resueltas por proveedor; Grupo Todas/YaTocaba/NoTocaba). `GET api/Compras/PlazosProveedores/Orientativas?meses=6` (Compras/Dirección/
   Informática; lo mismo en C# con los meses y los totales) y `POST …/Orientativas/Procesar` (Dirección/Informática, 202); 503 sin el script.
 
+### Pago a plazos de un pedido ya creado, con cualquier financiera (NestoAPI#864, 13/11/26; continuación de #663)
+- Un empleado (Nesto) o un vendedor (NestoApp) pasa el pedido y el CLIENTE termina la financiación de ese pedido en la app (push) o con
+  un enlace. TODO NEUTRO (Carlos 13/11/26): el núcleo `ServicioPagoAPlazos` (`Infraestructure/Pagos/PagoAPlazos/`: pedido, prepago, estados,
+  canal, avisos, plazos) solo habla con `IProveedorPagoAPlazos` (condiciones y límites, crear la solicitud, URL de pago, interpretar y
+  contestar la notificación, consultar/capturar, cancelar, reembolsar). Aplázame = `Pagos/Aplazame/ProveedorPagoAPlazosAplazame` (sobre
+  `IClienteApiAplazame`). **Otra financiera** = una clase con la interfaz + una línea en `RegistroProveedoresPagoAPlazos.PorDefecto` + su
+  código en el parámetro `PagoAPlazosProveedor`. Lo de la app de #663 (api/Pedidos/Cliente/…/Aplazame, PagosTPV, job `aplazame-capturas`) NO cambia.
+- `dbo.SolicitudesPagoAPlazos` (fuera del EDMX, `Scripts/Issue864_PagoAPlazos.sql`; sin él los endpoints dan 503 y el job no hace nada).
+  Estados: Pendiente → Aprobado → Capturado; Rechazado, Cancelado, Caducado. Referencia ante el proveedor `PAP-{Id}`. Parámetros «(defecto)»:
+  `PagoAPlazosPedidos` (Apagado/Pruebas/Activo; interruptor PROPIO, no mira `AplazameApp`), `PagoAPlazosPedidosClientesPrueba`,
+  `PagoAPlazosProveedor` (Aplazame), `PagoAPlazosDiasAviso` (3), `PagoAPlazosDiasValidezSolicitud` (7). Límites y plazo de captura: del proveedor.
+- `GET api/PedidosVenta/{empresa}/{pedido}/PagoAPlazos/Disponible` (siempre 200: Disponible, Motivo, Proveedor, NombreProveedor, Importe,
+  límites, DiasPlazoCaptura, ClienteTieneApp, Canal sugerido, Aviso), `POST …/PagoAPlazos` {Canal? App|Enlace, Correo?} (409 no disponible o
+  App sin app; 400 canal/correo; 502 el proveedor falla; UrlPago si es Enlace o si la push no sale), `GET …/PagoAPlazos/Estado` (SinSolicitud…),
+  `DELETE …/PagoAPlazos?motivo=`. Permisos (`PermisosPagoAPlazos`): como los enlaces de pago, menos los clientes de la tienda (403) y el
+  vendedor de NestoApp solo con pedidos de sus clientes. App de clientes: `GET api/Pedidos/Cliente/{pedido}/PagoAPlazos` (UrlPago del WebView).
+- Disponibilidad (`ReglasPagoAPlazos.MotivoNoDisponible`, pura): interruptor, proveedor operativo, ni nota de entrega ni presupuesto ni
+  facturado, sin otra financiación concedida, pendiente (líneas -1/1/2 − prepagos − enlaces cobrados) > 0 y dentro de los límites, y todas las
+  líneas sin servir con Fecha_Entrega ≤ hoy + plazo de captura (NO mira stock). `ClienteTieneApp` = dispositivo activo de NestoTiendas.
+- Notificación: `POST api/PagoAPlazos/Notificacion/{proveedor}` (anónimo; la valida el proveedor). Aprobación = UPDATE condicional
+  Pendiente→Aprobado con el importe EXACTO + Prepago (cuenta y prefijo del proveedor; Aplázame: los de #663) con `Prepagos.FechaCobro` (#860)
+  = día de la aprobación, idempotente por el concepto; si el pedido ya debe menos de lo pedido, no se confirma. NO toca la forma de pago.
+- Job `pago-a-plazos-pedidos` (L-S cada hora 8:35-20:35): todo en albarán → captura lo servido (nunca más de lo aprobado, preguntando antes
+  lo ya capturado); a `PagoAPlazosDiasAviso` del límite sin salir → aviso (una vez); plazo vencido → cancela en el proveedor y QUITA el
+  prepago (con parte servida: captura lo servido y ajusta el prepago); pedido borrado (también en `DELETE api/PedidosVenta`) → cancela;
+  pendiente sin terminar a los 7 días → Caducado.
+- Avisos (`TextosAvisosPagoAPlazos`): al cliente push `PagoAPlazosPendiente` (de tú; Datos tipo, empresa, pedido, idSolicitud, cliente,
+  estado, proveedor, importe); a quien hizo el pedido, a quien pidió la financiación y a su vendedor (campana + push NestoApp)
+  `PagoAPlazosAprobado`, `PagoAPlazosRechazado`, `PagoAPlazosPlazoCerca` (+fechaLimite, dias) y `PagoAPlazosPerdido`.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
