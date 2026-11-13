@@ -99,6 +99,30 @@ namespace NestoAPI.Infraestructure.Filters
             AnadirBloqueosAlMensaje(responseContent, bloqueos);
 
             context.Response = context.Request.CreateResponse(statusCode, responseContent);
+
+            // 13/11/26: el diagnóstico va además en una cabecera propia, para que el cliente lo pueda enseñar desde un
+            // único punto común (el manejador de su fábrica de HttpClient) aunque el servicio que hizo la llamada tire
+            // un texto fijo y no lea el mensaje (pasó en Cajas de Nesto: la API decía quién bloqueaba y no se vio).
+            AnadirCabeceraBloqueos(context.Response, bloqueos);
+        }
+
+        /// <summary>Cabecera con el diagnóstico de bloqueos de un error (texto con Uri.EscapeDataString: las cabeceras son ASCII).</summary>
+        public const string CABECERA_BLOQUEOS = "X-Nesto-Bloqueo";
+
+        internal static void AnadirCabeceraBloqueos(System.Net.Http.HttpResponseMessage respuesta, string bloqueos)
+        {
+            if (respuesta == null || string.IsNullOrWhiteSpace(bloqueos))
+            {
+                return;
+            }
+            try
+            {
+                _ = respuesta.Headers.TryAddWithoutValidation(CABECERA_BLOQUEOS, Uri.EscapeDataString(bloqueos.Trim()));
+            }
+            catch
+            {
+                // Una cabecera de diagnóstico nunca puede romper la respuesta de error
+            }
         }
 
         /// <summary>

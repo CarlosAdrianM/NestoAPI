@@ -193,6 +193,33 @@ namespace NestoAPI.Tests.Infraestructure
         }
 
         [TestMethod]
+        public void AnadirCabeceraBloqueos_ConDiagnostico_VaEnLaCabeceraEscapado()
+        {
+            // 13/11/26: el cliente lo lee en un único punto común, aunque el servicio que llamó no enseñe el mensaje
+            const string texto = "Puede estar bloqueado por: NUEVAVISION\Santiago (Nesto, transacción abierta desde 10:59, bloquea a 2 sesión(es)).";
+            var respuesta = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
+
+            GlobalExceptionFilter.AnadirCabeceraBloqueos(respuesta, texto);
+
+            Assert.IsTrue(respuesta.Headers.TryGetValues(GlobalExceptionFilter.CABECERA_BLOQUEOS, out var valores));
+            string valor = System.Linq.Enumerable.Single(valores);
+            Assert.IsTrue(System.Linq.Enumerable.All(valor, c => c < 128), "La cabecera tiene que ser ASCII");
+            Assert.AreEqual(texto, Uri.UnescapeDataString(valor));
+        }
+
+        [TestMethod]
+        public void AnadirCabeceraBloqueos_SinDiagnostico_NoPoneCabecera()
+        {
+            var respuesta = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
+
+            GlobalExceptionFilter.AnadirCabeceraBloqueos(respuesta, null);
+            GlobalExceptionFilter.AnadirCabeceraBloqueos(respuesta, "  ");
+            GlobalExceptionFilter.AnadirCabeceraBloqueos(null, "algo");
+
+            Assert.IsFalse(respuesta.Headers.Contains(GlobalExceptionFilter.CABECERA_BLOQUEOS));
+        }
+
+        [TestMethod]
         public void AnadirBloqueosAlMensaje_SinDiagnostico_NoTocaElMensaje()
         {
             var respuesta = new Dictionary<string, object>
