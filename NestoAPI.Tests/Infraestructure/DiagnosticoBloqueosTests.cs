@@ -196,7 +196,7 @@ namespace NestoAPI.Tests.Infraestructure
         public void AnadirCabeceraBloqueos_ConDiagnostico_VaEnLaCabeceraEscapado()
         {
             // 13/11/26: el cliente lo lee en un único punto común, aunque el servicio que llamó no enseñe el mensaje
-            const string texto = "Puede estar bloqueado por: NUEVAVISION\Santiago (Nesto, transacción abierta desde 10:59, bloquea a 2 sesión(es)).";
+            const string texto = "Puede estar bloqueado por: NUEVAVISION\\Santiago (Nesto, transacción abierta desde 10:59, bloquea a 2 sesión(es)).";
             var respuesta = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
 
             GlobalExceptionFilter.AnadirCabeceraBloqueos(respuesta, texto);
