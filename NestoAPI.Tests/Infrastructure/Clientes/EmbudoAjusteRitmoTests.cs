@@ -50,6 +50,28 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
+        public void UltimoCambioEfectivo_SinCambioGuardado_CuentaDesdeElPrimerBloque()
+        {
+            // Carlos 13/11/26: sin cambio de tamaño anterior, los 7 días se cuentan desde el primer bloque (10/11/26).
+            DateTime efectivo = ReglasRitmoEmbudo.UltimoCambioEfectivo(null);
+            var job16 = new DateTime(2026, 11, 16, 5, 45, 0, DateTimeKind.Utc);
+            var job17 = new DateTime(2026, 11, 17, 5, 45, 0, DateTimeKind.Utc);
+            RecomendacionRitmoOdoo Subir(DateTime ahora) => new RecomendacionRitmoOdoo { Recomendacion = "subir", CalculadoEl = ahora.AddHours(-2) };
+
+            Assert.AreEqual(new DateTime(2026, 11, 10, 0, 0, 0, DateTimeKind.Utc), efectivo);
+            Assert.AreEqual(AccionRitmoEmbudo.Nada, ReglasRitmoEmbudo.Decidir(Subir(job16), 50, true, efectivo, job16).Accion, "El 16/11 aún no hace 7 días");
+            Assert.AreEqual(AccionRitmoEmbudo.Subir, ReglasRitmoEmbudo.Decidir(Subir(job17), 50, true, efectivo, job17).Accion, "El 17/11 ya puede subir");
+        }
+
+        [TestMethod]
+        public void UltimoCambioEfectivo_ConCambioGuardado_EsEse()
+        {
+            DateTime guardado = new DateTime(2026, 12, 1, 5, 45, 0, DateTimeKind.Utc);
+
+            Assert.AreEqual(guardado, ReglasRitmoEmbudo.UltimoCambioEfectivo(guardado));
+        }
+
+        [TestMethod]
         public void Subir_DatoDeOchoDiasOMas_NoSubeYEsNoValido()
         {
             DecisionRitmoEmbudo d = ReglasRitmoEmbudo.Decidir(Rec("subir", diasDato: 8), 50, true, null, AHORA);

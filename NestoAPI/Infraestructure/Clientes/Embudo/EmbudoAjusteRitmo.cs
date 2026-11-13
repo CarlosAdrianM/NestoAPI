@@ -130,6 +130,16 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public const string BAJAR = "bajar";
         public const string PARAR = "parar";
 
+        /// <summary>
+        /// Día del primer bloque del embudo (NV-2026-11-01, 10/11/26). Carlos 13/11/26: mientras el tamaño no haya cambiado nunca,
+        /// los 7 días entre subidas se cuentan desde aquí (primera subida posible, el 17/11/26). A medianoche UTC para que el
+        /// job de las 6:45 del séptimo día ya cuente los 7 días enteros.
+        /// </summary>
+        public static readonly DateTime PRIMER_BLOQUE_UTC = new DateTime(2026, 11, 10, 0, 0, 0, DateTimeKind.Utc);
+
+        /// <summary>El último cambio de tamaño guardado o, si nunca ha cambiado, el día del primer bloque.</summary>
+        public static DateTime UltimoCambioEfectivo(DateTime? guardadoUtc) => guardadoUtc ?? PRIMER_BLOQUE_UTC;
+
         public static DecisionRitmoEmbudo Decidir(RecomendacionRitmoOdoo r, int tamanoActual, bool encendido, DateTime? ultimoCambioUtc, DateTime ahoraUtc)
         {
             var d = new DecisionRitmoEmbudo { Accion = AccionRitmoEmbudo.Nada, TamanoAnterior = tamanoActual, TamanoNuevo = tamanoActual };
@@ -400,7 +410,7 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
 
                 bool encendido = EmbudoBloqueDiarioJobsService.EstaEncendido(parametros.Leer(EmbudoBloqueDiarioJobsService.PARAMETRO_INTERRUPTOR));
                 int tamano = EmbudoBloqueDiarioJobsService.TamanoBloque(parametros.Leer(EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO), Registrar);
-                DateTime? ultimoCambio = LeerFecha(parametros.Leer(PARAMETRO_FECHA_CAMBIO_TAMANO));
+                DateTime? ultimoCambio = ReglasRitmoEmbudo.UltimoCambioEfectivo(LeerFecha(parametros.Leer(PARAMETRO_FECHA_CAMBIO_TAMANO)));
                 DecisionRitmoEmbudo decision = ReglasRitmoEmbudo.Decidir(recomendacion, tamano, encendido, ultimoCambio, ahoraUtc);
 
                 string detalle = $"Motivo de Odoo: {recomendacion.Motivo ?? "(sin motivo)"}. Cifras: {recomendacion.TextoCifras()}. Calculado el {recomendacion.CalculadoEl:o}.";
