@@ -80,7 +80,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     /// <item>Al entregarla, el cobro (efectivo a la caja del repartidor, tarjeta por enlace o sin cobrar con autorización, #773)
     /// liquida esos efectos (<see cref="ServicioRepartoPropio"/>).</item>
     /// </list>
-    /// Solo para clientes de nuestra ruta (reparto propio encendido y ruta propia de la ficha).
+    /// Con el reparto propio encendido; la ruta de la ficha del cliente ya no cuenta (Carlos 13/11/26, sugerencia 1256).
     /// </summary>
     public class ServicioNotasCobro
     {
@@ -200,12 +200,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             {
                 return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.NoEncontrado, $"No existe el cliente {cliente}/{contacto}.");
             }
-            if (!RutasRepartoPropio.EsRutaPropia(ficha.Ruta))
-            {
-                return ResultadoNotaCobro.Mal(TipoResultadoNotaEntrega.Invalido,
-                    $"La nota de cobro es para nuestra ruta (reparto propio) y el cliente {cliente}/{contacto} tiene la ruta «{ficha.Ruta?.Trim()}». " +
-                    "Cóbrelo de otra forma (enlace de pago desde Nesto).");
-            }
+            // Carlos 13/11/26 (sugerencia 1256): la ruta de la ficha ya NO frena la nota de cobro. Si Almacén o Administración
+            // mandan al repartidor a cobrar a un cliente es por algo (caso real: ficha con ruta «FW», pedido que sale por la AT
+            // y dos facturas del día por cobrar en efectivo). Quien puede crearla lo decide PermisosNotasEntrega.
             List<int> enReparto = await repositorio.LeerNotasEnReparto(empresa, cliente, contacto).ConfigureAwait(false) ?? new List<int>();
             if (enReparto.Count > 0)
             {

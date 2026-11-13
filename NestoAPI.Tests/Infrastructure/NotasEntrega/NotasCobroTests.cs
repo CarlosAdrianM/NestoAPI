@@ -176,15 +176,15 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         }
 
         [TestMethod]
-        public async Task Crear_ClienteQueNoEsDeNuestraRuta_400()
+        public async Task Crear_ClienteQueNoEsDeNuestraRuta_SeCreaIgual()
         {
+            // Carlos 13/11/26 (sugerencia 1256): si Almacén o Administración mandan a cobrar, la ruta de la ficha no lo impide
             repositorio.Fichas[CLIENTE + "/0"].Ruta = "FW";
 
             ResultadoNotaCobro r = await servicio.Crear(new CrearNotaCobroDTO { Repartidor = ANDRE, Cliente = CLIENTE, Contacto = "0", Importe = 50m }, MIGUEL);
 
-            Assert.AreEqual(TipoResultadoNotaEntrega.Invalido, r.Tipo);
-            StringAssert.Contains(r.Mensaje, "FW");
-            Assert.IsNull(repositorio.CabeceraGuardada);
+            Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo, r.Mensaje);
+            Assert.IsNotNull(repositorio.CabeceraGuardada);
         }
 
         [TestMethod]

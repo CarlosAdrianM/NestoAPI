@@ -268,7 +268,7 @@ namespace NestoAPI.Controllers
         /// parada del reparto propio: un envío de la agencia 14 ya tramitado con Bultos 0 y Reembolso = el importe, que sale en
         /// GET api/RepartoPropio/Envios como «NotaCobro» (NC{pedido}), con soloMios solo al Repartidor asignado (obligatorio, uno de
         /// GET api/RepartoPropio/Repartidores; 400 si no lo es). 201 con <see cref="NotaCobroDTO"/>. 400 (de usted) sin efectos
-        /// ni importe, con un efecto de otro cliente o que ya no está pendiente, si el cliente no es de nuestra ruta o falta el script;
+        /// ni importe, con un efecto de otro cliente o que ya no está pendiente o si falta el script (la ruta de la ficha ya no cuenta, Carlos 13/11/26);
         /// 404 si no existe el cliente/contacto; 409 si ese cliente/contacto ya tiene otra nota de cobro en el reparto.
         /// </summary>
         [HttpPost]
