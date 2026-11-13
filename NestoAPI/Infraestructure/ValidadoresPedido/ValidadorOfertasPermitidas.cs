@@ -141,7 +141,19 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             // Validaciones específicas de ofertas
-            string fueraDeTarifa = ReglasOfertasPermitidas.MotivoCobradoFueraDeTarifa(oferta, producto);
+            // Novedades 1263 (13/11/26): si la oferta propia del producto está marcada como «admite además el precio
+            // especial», el suelo del precio es ese precio especial en vez del de ficha. Solo se leen los descuentos
+            // cuando alguna oferta del producto lleva la marca.
+            decimal? precioEspecialAdmitido = null;
+            List<OfertaPermitida> autorizaciones = ofertasFiltradas.ToList();
+            if (autorizaciones.Any(OfertasQueAcumulanPrecioEspecial.LaAcumula))
+            {
+                precioEspecialAdmitido = ReglasOfertasPermitidas.PrecioEspecialAdmitido(autorizaciones, producto,
+                    oferta.cantidad, oferta.cantidadOferta,
+                    servicio.BuscarDescuentosPermitidos(producto.Número, pedido.cliente, pedido.contacto),
+                    OfertasQueAcumulanPrecioEspecial.LaAcumula);
+            }
+            string fueraDeTarifa = ReglasOfertasPermitidas.MotivoCobradoFueraDeTarifa(oferta, producto, precioEspecialAdmitido);
             if (fueraDeTarifa != null)
             {
                 return new RespuestaValidacion

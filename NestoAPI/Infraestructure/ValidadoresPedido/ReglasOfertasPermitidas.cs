@@ -57,17 +57,70 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             => Denegaciones(reglas, producto).FirstOrDefault(d => EsMultiplo(d, cantidadCobrada, cantidadRegalada));
 
         /// <summary>
+        /// La oferta del pedido cabe en la regla: su N+M, un múltiplo, o más unidades de pago de las que pide (7+1 con un
+        /// 6+1). Es el mismo criterio con el que la validación da por buena una oferta autorizada.
+        /// </summary>
+        public static bool CabeEnLaRegla(OfertaPermitida regla, int cantidadCobrada, int cantidadRegalada)
+            => regla != null && regla.CantidadConPrecio > 0 && regla.CantidadRegalo > 0 && cantidadCobrada > 0 && cantidadRegalada > 0
+               && cantidadCobrada * regla.CantidadRegalo >= cantidadRegalada * regla.CantidadConPrecio;
+
+        /// <summary>
+        /// Novedades 1263 (13/11/26): el precio especial que se admite JUNTO con el N+M, o null si no se admite ninguno
+        /// (la regla de siempre: precio de ficha). Hace falta que una autorización PROPIA del producto, en la que quepa
+        /// la oferta del pedido, esté marcada como que acumula (<paramref name="acumula"/>), y que el producto tenga un
+        /// precio especial vigente para ese cliente (<paramref name="descuentos"/>, que ya vienen filtrados por vigencia,
+        /// cliente y sin los de proveedor): el más bajo de los que alcanza la cantidad cobrada. Pura.
+        /// </summary>
+        public static decimal? PrecioEspecialAdmitido(IEnumerable<OfertaPermitida> autorizaciones, Producto producto,
+            int cantidadCobrada, int cantidadRegalada, IEnumerable<DescuentosProducto> descuentos, Func<OfertaPermitida, bool> acumula)
+        {
+            if (producto?.Número == null || acumula == null || cantidadRegalada <= 0)
+            {
+                return null;
+            }
+            string referencia = producto.Número.Trim();
+            bool hayOfertaQueAcumula = (autorizaciones ?? Enumerable.Empty<OfertaPermitida>())
+                .Any(o => o != null && !o.Denegar && o.Número != null && o.Número.Trim() == referencia
+                    && CumpleFiltro(o, producto) && CabeEnLaRegla(o, cantidadCobrada, cantidadRegalada) && acumula(o));
+            if (!hayOfertaQueAcumula)
+            {
+                return null;
+            }
+            List<decimal> precios = (descuentos ?? Enumerable.Empty<DescuentosProducto>())
+                .Where(d => d != null && d.Nº_Producto != null && d.Nº_Producto.Trim() == referencia
+                    && d.Precio.HasValue && d.Precio.Value > 0 && d.CantidadMínima <= cantidadCobrada)
+                .Select(d => d.Precio.Value)
+                .ToList();
+            return precios.Count == 0 ? (decimal?)null : precios.Min();
+        }
+
+        /// <summary>
         /// Un N+M (unidades regaladas del mismo producto) exige cobrar las demás a precio de tarifa y sin descuento: o
         /// precio especial o descuento, o la oferta, nunca las dos. Devuelve el motivo si no se cumple, o null. Lo usan
         /// la validación y la sugerencia (NestoAPI#589, pedido 927595: no se sugería un 6+1 que no se aceptaría).
         /// </summary>
-        public static string MotivoCobradoFueraDeTarifa(PrecioDescuentoProducto oferta, Producto producto)
+        /// <param name="precioEspecialAdmitido">
+        /// Novedades 1263 (13/11/26): si la oferta que autoriza este N+M está marcada como «admite además el precio
+        /// especial» (<see cref="PrecioEspecialAdmitido"/>), el suelo del precio es ese precio especial en vez del de
+        /// ficha. Null = la regla de siempre. El descuento sigue sin poder acumularse.
+        /// </param>
+        public static string MotivoCobradoFueraDeTarifa(PrecioDescuentoProducto oferta, Producto producto, decimal? precioEspecialAdmitido = null)
         {
             if (oferta == null || producto == null || oferta.cantidadOferta == 0)
             {
                 return null;
             }
-            if (oferta.cantidad > 0 && oferta.precioCalculado < producto.PVP)
+            bool conPrecioEspecial = precioEspecialAdmitido.HasValue && precioEspecialAdmitido.Value > 0
+                && precioEspecialAdmitido.Value < (producto.PVP ?? 0);
+            if (conPrecioEspecial)
+            {
+                if (oferta.cantidad > 0 && oferta.precioCalculado < precioEspecialAdmitido.Value)
+                {
+                    return "Oferta a precio inferior al precio especial (" + precioEspecialAdmitido.Value.ToString("0.00##")
+                        + ") en el producto " + producto.Número.Trim();
+                }
+            }
+            else if (oferta.cantidad > 0 && oferta.precioCalculado < producto.PVP)
             {
                 return "Oferta a precio inferior al de ficha en el producto " + producto.Número.Trim();
             }

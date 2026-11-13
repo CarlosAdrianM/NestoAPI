@@ -1606,6 +1606,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasEscalonadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasPermitidas.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\OfertasQueAcumulanPrecioEspecial.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ReglasOfertasPermitidas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasYDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />

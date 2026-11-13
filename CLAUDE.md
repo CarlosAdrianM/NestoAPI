@@ -377,6 +377,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   anterior a hoy y de hace como mucho `DIAS_MAXIMOS_ATRAS` (15). Cómo: `ServicioPrecios.ParaDia(dia)` (instancia, sin estáticos);
   el motor de precios y las sugerencias siguen con hoy. Regalos por importe con día: por día inclusive.
 
+### Oferta N+M que además admite el precio especial (Novedades 1263, 13/11/26; continuación de #589)
+- La regla general NO cambia: un N+M exige cobrar a precio de ficha y sin descuento (`ReglasOfertasPermitidas.MotivoCobradoFueraDeTarifa`).
+  Excepción por DATO: `OfertasPermitidas.AcumulaPrecioEspecial` = 1 (fuera del EDMX, `Scripts/Novedades1263_OfertaAcumulaPrecioEspecial.sql`;
+  sin la columna, ninguna acumula) en una oferta PROPIA del producto (no vale en la de la familia). `OfertasQueAcumulanPrecioEspecial`
+  (caché de 5 min) + `ReglasOfertasPermitidas.PrecioEspecialAdmitido` (pura): el suelo del precio pasa a ser el precio especial vigente
+  del producto para ese cliente; ni por debajo ni con descuento. Primer caso: packs 45929/45930/45931, 6+1 del 12 al 16/11/26 (feria online).
+- `GET api/PlantillaVentas/CargarPrecio` admite `cantidadOferta` (opcional): con unidades de oferta, `aplicarDescuento` = false y la oferta
+  marcada, devuelve el precio especial sin descuento (`AplicarPrecioEspecialQueAcumulaConLaOferta`). Nesto y NestoApp solo mandan ese dato.
+  Las sugerencias de N+M siguen exigiendo precio de ficha (no proponen el 6+1 en un producto con precio especial).
+
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid
   (`EmbudoBloqueDiarioJobsService`): el siguiente bloque NV-AAAA-MM-NN (NN vuelve a 01 cada mes) de 50 por `ServicioEmbudoClientes.Republicar`

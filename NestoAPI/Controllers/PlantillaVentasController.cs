@@ -338,7 +338,7 @@ namespace NestoAPI.Controllers
 
         [HttpGet]
         [ResponseType(typeof(PrecioProductoDTO))]
-        public async Task<IHttpActionResult> GetCargarPrecio(string empresa, string cliente, string contacto, string productoPrecio, short cantidad, bool aplicarDescuento)
+        public async Task<IHttpActionResult> GetCargarPrecio(string empresa, string cliente, string contacto, string productoPrecio, short cantidad, bool aplicarDescuento, short cantidadOferta = 0)
         {
             Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
             if (empresaBuscada.IVA_por_defecto == null)
@@ -376,6 +376,7 @@ namespace NestoAPI.Controllers
             else
             {
                 GestorPrecios.calcularDescuentoProducto(precio);
+                AplicarPrecioEspecialQueAcumulaConLaOferta(precio, producto, cliente, contacto, cantidad, cantidadOferta);
             }
 
             datosPrecio.precio = precio.precioCalculado;
@@ -383,6 +384,48 @@ namespace NestoAPI.Controllers
             datosPrecio.aplicarDescuento = precio.aplicarDescuento;
 
             return Ok(datosPrecio);
+        }
+
+        /// <summary>
+        /// Novedades 1263 (13/11/26): lo normal es que con unidades de oferta (N+M) la unidad de pago vaya a precio de
+        /// ficha: el cliente pide el precio con <c>aplicarDescuento = false</c>. Pero si la oferta permitida PROPIA del
+        /// producto está marcada como «admite además el precio especial» (OfertasPermitidas.AcumulaPrecioEspecial) y la
+        /// oferta de la línea cabe en ella, se devuelve el precio especial del producto para ese cliente (sin
+        /// descuento), con <c>aplicarDescuento</c> igual que llegó. Sin <c>cantidadOferta</c> (clientes anteriores), sin
+        /// marca o sin precio especial, no toca nada. Nunca lanza: ante cualquier fallo queda el precio de ficha.
+        /// </summary>
+        internal static void AplicarPrecioEspecialQueAcumulaConLaOferta(PrecioDescuentoProducto precio, Producto producto,
+            string cliente, string contacto, short cantidad, short cantidadOferta)
+        {
+            if (precio == null || producto == null || cantidadOferta <= 0 || cantidad <= 0 || precio.aplicarDescuento)
+            {
+                return;
+            }
+            try
+            {
+                List<OfertaPermitida> ofertas = (GestorPrecios.servicio.BuscarOfertasPermitidas(producto.Número) ?? new List<OfertaPermitida>())
+                    .Where(o => (o.Cliente == null || o.Cliente == cliente)
+                        && (o.Contacto == null || (o.Cliente == cliente && o.Contacto == contacto)))
+                    .ToList();
+                List<OfertaPermitida> autorizaciones = Infraestructure.ValidadoresPedido.ReglasOfertasPermitidas.AutorizacionesEfectivas(ofertas, producto);
+                if (!autorizaciones.Any(Infraestructure.ValidadoresPedido.OfertasQueAcumulanPrecioEspecial.LaAcumula))
+                {
+                    return;
+                }
+                decimal? especial = Infraestructure.ValidadoresPedido.ReglasOfertasPermitidas.PrecioEspecialAdmitido(autorizaciones, producto,
+                    cantidad, cantidadOferta,
+                    GestorPrecios.servicio.BuscarDescuentosPermitidos(producto.Número, cliente, contacto),
+                    Infraestructure.ValidadoresPedido.OfertasQueAcumulanPrecioEspecial.LaAcumula);
+                if (especial.HasValue && especial.Value > 0 && especial.Value < precio.precioCalculado)
+                {
+                    precio.precioCalculado = especial.Value;
+                    precio.descuentoCalculado = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Oferta que acumula precio especial] No se ha podido calcular para el producto {producto.Número?.Trim()}: {ex.Message}", ex));
+            }
         }
 
         [HttpGet]
