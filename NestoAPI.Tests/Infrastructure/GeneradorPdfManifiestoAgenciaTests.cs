@@ -52,6 +52,66 @@ namespace NestoAPI.Tests.Infrastructure
             ComprobarCabeceraPdf(bytes);
         }
 
+        // ---- Sugerencia 1257 (Alfredo, 13/11/26): el reparto propio, un manifiesto por ruta
+
+        private static ManifiestoAgenciaDTO Envio(string nombre, string ruta, short bultos = 1)
+            => new ManifiestoAgenciaDTO { Nombre = nombre, Ruta = ruta, Bultos = bultos };
+
+        [TestMethod]
+        public void Secciones_SinSeparar_UnaSolaConTodo()
+        {
+            var envios = new List<ManifiestoAgenciaDTO> { Envio("A", "AT"), Envio("B", "16") };
+
+            var secciones = GeneradorPdfManifiestoAgencia.Secciones(envios, separarPorRuta: false);
+
+            Assert.AreEqual(1, secciones.Count);
+            Assert.IsNull(secciones[0].Key);
+            Assert.AreEqual(2, secciones[0].Value.Count);
+        }
+
+        [TestMethod]
+        public void Secciones_SeparandoConDosRutas_UnaPorRutaOrdenadasYSinRutaAlFinal()
+        {
+            var envios = new List<ManifiestoAgenciaDTO> { Envio("A", "AT "), Envio("B", "16"), Envio("C", "at"), Envio("D", null) };
+
+            var secciones = GeneradorPdfManifiestoAgencia.Secciones(envios, separarPorRuta: true);
+
+            CollectionAssert.AreEqual(new[] { "16", "AT", GeneradorPdfManifiestoAgencia.SIN_RUTA }, secciones.ConvertAll(s => s.Key));
+            Assert.AreEqual(1, secciones[0].Value.Count);
+            Assert.AreEqual(2, secciones[1].Value.Count, "«AT » y «at» son la misma ruta");
+            Assert.AreEqual(1, secciones[2].Value.Count);
+        }
+
+        [TestMethod]
+        public void Secciones_SeparandoConUnaSolaRuta_NoPoneTituloDeRuta()
+        {
+            var envios = new List<ManifiestoAgenciaDTO> { Envio("A", "AT"), Envio("B", "AT") };
+
+            var secciones = GeneradorPdfManifiestoAgencia.Secciones(envios, separarPorRuta: true);
+
+            Assert.AreEqual(1, secciones.Count);
+            Assert.IsNull(secciones[0].Key);
+        }
+
+        [TestMethod]
+        public void Secciones_ListaNullOVacia_UnaSeccionVacia()
+        {
+            Assert.AreEqual(0, GeneradorPdfManifiestoAgencia.Secciones(null, true)[0].Value.Count);
+            Assert.AreEqual(1, GeneradorPdfManifiestoAgencia.Secciones(new List<ManifiestoAgenciaDTO>(), true).Count);
+        }
+
+        [TestMethod]
+        public void GenerarPdf_SeparadoPorRuta_DevuelvePdfValido()
+        {
+            var envios = new List<ManifiestoAgenciaDTO> { Envio("A", "AT", 2), Envio("B", "16", 3) };
+
+            byte[] pdf = _generador.GenerarPdf(envios, "Reparto propio", new DateTime(2026, 11, 13), separarPorRuta: true)
+                .ReadAsByteArrayAsync().Result;
+
+            Assert.IsTrue(pdf.Length > 4);
+            Assert.AreEqual("%PDF", System.Text.Encoding.ASCII.GetString(pdf, 0, 4));
+        }
+
         [TestMethod]
         public void GenerarPdf_SinEnvios_DevuelvePdfValido()
         {

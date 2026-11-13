@@ -18,37 +18,75 @@ namespace NestoAPI.Infraestructure.Informes
     /// </summary>
     public class GeneradorPdfManifiestoAgencia
     {
-        public ByteArrayContent GenerarPdf(List<ManifiestoAgenciaDTO> envios, string nombreAgencia, DateTime fecha)
+        /// <param name="separarPorRuta">
+        /// Sugerencia 1257 (Alfredo, 13/11/26): en el reparto propio, un manifiesto por ruta (AT, 16…), cada uno en su página
+        /// y con sus totales, para que cada repartidor se lleve el suyo. Las demás agencias, como siempre (false).
+        /// </param>
+        public ByteArrayContent GenerarPdf(List<ManifiestoAgenciaDTO> envios, string nombreAgencia, DateTime fecha, bool separarPorRuta = false)
         {
             // Una lista vacía es válida (día sin envíos tramitados): cabecera y tabla sin filas.
             List<ManifiestoAgenciaDTO> datos = envios ?? new List<ManifiestoAgenciaDTO>();
+            List<KeyValuePair<string, List<ManifiestoAgenciaDTO>>> secciones = Secciones(datos, separarPorRuta);
 
             var documento = Document.Create(container =>
             {
-                container.Page(page =>
+                foreach (KeyValuePair<string, List<ManifiestoAgenciaDTO>> seccion in secciones)
                 {
-                    page.Size(PageSizes.A4.Landscape());
-                    page.MarginVertical(0.8f, Unit.Centimetre);
-                    page.MarginHorizontal(0.8f, Unit.Centimetre);
-                    page.DefaultTextStyle(x => x.FontSize(8));
+                    container.Page(page =>
+                    {
+                        page.Size(PageSizes.A4.Landscape());
+                        page.MarginVertical(0.8f, Unit.Centimetre);
+                        page.MarginHorizontal(0.8f, Unit.Centimetre);
+                        page.DefaultTextStyle(x => x.FontSize(8));
 
-                    page.Header().Element(c => ComponerCabecera(c, nombreAgencia, fecha));
-                    page.Content().Element(c => ComponerTabla(c, datos));
-                    page.Footer().Element(ComponerPie);
-                });
+                        page.Header().Element(c => ComponerCabecera(c, nombreAgencia, fecha, seccion.Key));
+                        page.Content().Element(c => ComponerTabla(c, seccion.Value));
+                        page.Footer().Element(ComponerPie);
+                    });
+                }
             });
 
             byte[] pdfBytes = documento.GeneratePdf();
             return new ByteArrayContent(pdfBytes);
         }
 
-        private void ComponerCabecera(IContainer container, string nombreAgencia, DateTime fecha)
+        internal const string SIN_RUTA = "sin ruta";
+
+        /// <summary>
+        /// Las secciones del manifiesto: una sola (ruta null) si no se separa o si todos los envíos son de la misma ruta;
+        /// si no, una por ruta, ordenadas, con los envíos sin ruta conocida al final («sin ruta»). Pura.
+        /// </summary>
+        internal static List<KeyValuePair<string, List<ManifiestoAgenciaDTO>>> Secciones(List<ManifiestoAgenciaDTO> envios, bool separarPorRuta)
+        {
+            envios = envios ?? new List<ManifiestoAgenciaDTO>();
+            var unica = new List<KeyValuePair<string, List<ManifiestoAgenciaDTO>>>
+            {
+                new KeyValuePair<string, List<ManifiestoAgenciaDTO>>(null, envios)
+            };
+            if (!separarPorRuta)
+            {
+                return unica;
+            }
+            List<IGrouping<string, ManifiestoAgenciaDTO>> grupos = envios
+                .GroupBy(e => string.IsNullOrWhiteSpace(e.Ruta) ? string.Empty : e.Ruta.Trim().ToUpperInvariant())
+                .OrderBy(g => g.Key.Length == 0 ? 1 : 0).ThenBy(g => g.Key, StringComparer.Ordinal)
+                .ToList();
+            if (grupos.Count <= 1)
+            {
+                return unica;
+            }
+            return grupos
+                .Select(g => new KeyValuePair<string, List<ManifiestoAgenciaDTO>>(g.Key.Length == 0 ? SIN_RUTA : g.Key, g.ToList()))
+                .ToList();
+        }
+
+        private void ComponerCabecera(IContainer container, string nombreAgencia, DateTime fecha, string ruta = null)
         {
             container.PaddingBottom(5).Row(row =>
             {
                 row.RelativeItem().Column(column =>
                 {
-                    column.Item().Text($"Manifiesto de agencia {nombreAgencia?.Trim()}").Bold().FontSize(14);
+                    column.Item().Text($"Manifiesto de agencia {nombreAgencia?.Trim()}" + (ruta == null ? string.Empty : $" - Ruta {ruta}")).Bold().FontSize(14);
                     column.Item().Text($"Fecha: {fecha:dd/MM/yyyy}").FontSize(9);
                 });
                 row.ConstantItem(150).AlignRight().Text($"Generado el {DateTime.Now:dd/MM/yyyy HH:mm}").FontSize(8);

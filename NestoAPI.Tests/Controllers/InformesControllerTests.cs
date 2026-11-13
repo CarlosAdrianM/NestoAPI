@@ -659,11 +659,24 @@ namespace NestoAPI.Tests.Controllers
             // Sugerencia 789 (Alfredo, 27/10/26): dos envíos de 1 bulto al 11121 (929302 y 929365) salían como 1 bulto porque
             // Bultos y Reembolso iban en el GROUP BY en vez de sumarse.
             string sql = InformesService.SQL_MANIFIESTO_AGENCIA;
-            StringAssert.Contains(sql, "SUM(Bultos)");
-            StringAssert.Contains(sql, "SUM(Reembolso)");
+            StringAssert.Contains(sql, "SUM(e.Bultos)");
+            StringAssert.Contains(sql, "SUM(e.Reembolso)");
             string groupBy = sql.Substring(sql.IndexOf("GROUP BY", StringComparison.OrdinalIgnoreCase));
             Assert.IsFalse(groupBy.IndexOf("bultos", StringComparison.OrdinalIgnoreCase) >= 0, "Bultos no puede ir en el GROUP BY");
             Assert.IsFalse(groupBy.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0, "Reembolso no puede ir en el GROUP BY");
+        }
+
+        [TestMethod]
+        public void ManifiestoAgencia_TraeLaRutaDelPedidoAunqueSeaDeOtraEmpresa()
+        {
+            // Sugerencia 1257 (Alfredo, 13/11/26): la ruta sale del pedido del envío, que puede ser de la empresa 3
+            // aunque el envío esté en la 1: se busca por número y la ruta entra en el GROUP BY.
+            string sql = InformesService.SQL_MANIFIESTO_AGENCIA;
+            StringAssert.Contains(sql, "p.Ruta Ruta");
+            StringAssert.Contains(sql, "c.Número = e.Pedido");
+            Assert.IsFalse(sql.Contains("c.Empresa = e.Empresa AND"), "El pedido no se filtra por la empresa del envío");
+            string groupBy = sql.Substring(sql.IndexOf("GROUP BY", StringComparison.OrdinalIgnoreCase));
+            StringAssert.Contains(groupBy, "p.Ruta");
         }
 
         [TestMethod]

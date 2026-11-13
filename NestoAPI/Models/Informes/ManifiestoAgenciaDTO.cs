@@ -14,5 +14,7 @@ namespace NestoAPI.Models.Informes
         public string TelefonoFijo { get; set; }
         public string TelefonoMovil { get; set; }
         public string Observaciones { get; set; }
+        /// <summary>Sugerencia 1257: la ruta del pedido del envío (AT, 16…). Solo sirve para separar el manifiesto del reparto propio.</summary>
+        public string Ruta { get; set; }
     }
 }

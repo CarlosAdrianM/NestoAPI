@@ -731,7 +731,9 @@ namespace NestoAPI.Controllers
             GeneradorPdfManifiestoAgencia generador = new GeneradorPdfManifiestoAgencia();
             HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = generador.GenerarPdf(lista, nombreAgencia, fecha)
+                // Sugerencia 1257: el reparto propio, un manifiesto por ruta; las demás agencias, como siempre
+                Content = generador.GenerarPdf(lista, nombreAgencia, fecha,
+                    Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(agencia))
             };
             result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
             return result;

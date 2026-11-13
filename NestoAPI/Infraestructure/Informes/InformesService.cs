@@ -404,15 +404,21 @@ namespace NestoAPI.Infraestructure.Informes
         // 929302 y 929365, 1 bulto cada uno) salían como una sola línea con 1 bulto, porque Bultos y Reembolso iban en el
         // GROUP BY en vez de sumarse. Lo correcto es lo que enseña la pantalla: 2 bultos de ese cliente.
         internal const string SQL_MANIFIESTO_AGENCIA = @"
-                SELECT rtrim(Cliente) Cliente, rtrim(Contacto) Contacto, rtrim(Nombre) Nombre,
-                    rtrim(Direccion) Direccion, rtrim(CodPostal) CodigoPostal, rtrim(Poblacion) Poblacion,
-                    rtrim(Provincia) Provincia, CAST(SUM(Bultos) AS smallint) Bultos, SUM(Reembolso) Reembolso,
-                    rtrim(Telefono) TelefonoFijo, rtrim(Movil) TelefonoMovil, rtrim(Observaciones) Observaciones
+                SELECT rtrim(e.Cliente) Cliente, rtrim(e.Contacto) Contacto, rtrim(e.Nombre) Nombre,
+                    rtrim(e.Direccion) Direccion, rtrim(e.CodPostal) CodigoPostal, rtrim(e.Poblacion) Poblacion,
+                    rtrim(e.Provincia) Provincia, CAST(SUM(e.Bultos) AS smallint) Bultos, SUM(e.Reembolso) Reembolso,
+                    rtrim(e.Telefono) TelefonoFijo, rtrim(e.Movil) TelefonoMovil, rtrim(e.Observaciones) Observaciones,
+                    p.Ruta Ruta
                 FROM enviosagencia e
+                -- Sugerencia 1257 (Alfredo, 13/11/26): la ruta es la del pedido del envío. El envío va en la empresa de la
+                -- agencia y su pedido puede ser de otra (la 3): se busca por número, prefiriendo la misma empresa.
+                OUTER APPLY (SELECT TOP 1 rtrim(c.Ruta) Ruta FROM CabPedidoVta c
+                             WHERE c.Número = e.Pedido
+                             ORDER BY CASE WHEN c.Empresa = e.Empresa THEN 0 ELSE 1 END) p
                 WHERE e.empresa = @Empresa AND e.estado = 1 AND e.agencia = @Agencia
-                    AND CAST(Fecha AS DATE) = CAST(@Fecha AS DATE)
-                GROUP BY nombre, Direccion, CodPostal, Poblacion, Provincia, Telefono,
-                    observaciones, cliente, contacto, Movil";
+                    AND CAST(e.Fecha AS DATE) = CAST(@Fecha AS DATE)
+                GROUP BY e.nombre, e.Direccion, e.CodPostal, e.Poblacion, e.Provincia, e.Telefono,
+                    e.observaciones, e.cliente, e.contacto, e.Movil, p.Ruta";
 
         public async Task<List<ManifiestoAgenciaDTO>> LeerManifiestoAgenciaAsync(string empresa, int agencia, DateTime fecha)
         {
