@@ -1024,15 +1024,36 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     })
                     .ToList();
 
-                List<PrepagoDTO> prepagos = db.Prepagos.Where(p => p.Empresa == empresa && p.Pedido == numero).
-                    Select(p => new PrepagoDTO
+                var filasPrepago = db.Prepagos.Where(p => p.Empresa == empresa && p.Pedido == numero).
+                    Select(p => new
                     {
-                        Importe = p.Importe,
-                        Factura = p.Factura,
-                        CuentaContable = p.CuentaContable,
-                        ConceptoAdicional = p.ConceptoAdicional
+                        p.Id,
+                        Dto = new PrepagoDTO
+                        {
+                            Importe = p.Importe,
+                            Factura = p.Factura,
+                            CuentaContable = p.CuentaContable,
+                            ConceptoAdicional = p.ConceptoAdicional
+                        }
                     })
                     .ToList();
+                // NestoAPI#860: la fecha real del cobro (columna fuera del EDMX). Sin columna o si falla, sin fecha, como antes.
+                if (filasPrepago.Any())
+                {
+                    try
+                    {
+                        Dictionary<int, DateTime> fechasCobro = new RepositorioFechaCobroPrepagos(db).Leer(empresa, numero);
+                        foreach (var fila in filasPrepago)
+                        {
+                            fila.Dto.FechaCobro = fechasCobro.TryGetValue(fila.Id, out DateTime fecha) ? fecha : (DateTime?)null;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Fecha de cobro del prepago #860] Pedido {numero}: no se ha podido leer: {ex.Message}", ex));
+                    }
+                }
+                List<PrepagoDTO> prepagos = filasPrepago.Select(f => f.Dto).ToList();
 
                 List<EfectoPedidoVentaDTO> efectos = db.EfectosPedidosVentas.Where(p => p.Empresa == empresa && p.Pedido == numero).
                     Select(p => new EfectoPedidoVentaDTO

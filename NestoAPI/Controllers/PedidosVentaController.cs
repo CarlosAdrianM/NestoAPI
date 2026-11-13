@@ -739,6 +739,35 @@ namespace NestoAPI.Controllers
         }
         private IRepositorioServirPendienteAlHaberStock repositorioServirPendiente;
 
+        // NestoAPI#860: la columna Prepagos.FechaCobro (fuera del EDMX). Para tests.
+        private IRepositorioFechaCobroPrepagos repositorioFechaCobroPrepagos;
+        internal IRepositorioFechaCobroPrepagos RepositorioFechaCobroPrepagos
+        {
+            get => repositorioFechaCobroPrepagos ?? (repositorioFechaCobroPrepagos = new RepositorioFechaCobroPrepagos(db));
+            set => repositorioFechaCobroPrepagos = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#860: tras guardar el pedido, escribe la fecha real del cobro de los prepagos que la traían. Sin la columna
+        /// (script sin lanzar) no hace nada. Nunca lanza: si falla, ELMAH y el prepago se queda sin fecha (al contabilizar, la
+        /// de la factura, como siempre).
+        /// </summary>
+        internal void GuardarFechasCobroPrepagos(int pedido, FechasCobroPrepagosAGuardar fechas)
+        {
+            try
+            {
+                if (fechas == null || !fechas.HayAlgo)
+                {
+                    return;
+                }
+                RepositorioFechaCobroPrepagos.Guardar(fechas.PorId());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Fecha de cobro del prepago #860] Pedido {pedido}: no se ha podido guardar: {ex.Message}", ex));
+            }
+        }
+
         /// <summary>
         /// NestoAPI#688: tras grabar el pedido, guarda la casilla (si hay algo que guardar; sin la columna no hace nada) y
         /// deja en el DTO su valor efectivo para el correo. Nunca lanza.
@@ -1306,6 +1335,13 @@ namespace NestoAPI.Controllers
             if (fechaEntregaNoValida != null)
             {
                 return BadRequest(fechaEntregaNoValida);
+            }
+            // NestoAPI#860: la fecha real del cobro de un prepago (de los que se guardan: sin factura) no puede ser posterior a
+            // hoy. Antes de tocar nada.
+            string motivoFechaCobro = ReglasFechaCobroPrepago.MotivoRechazo(pedido?.Prepagos?.Where(p => p != null && p.Factura == null), DateTime.Today);
+            if (motivoFechaCobro != null)
+            {
+                return BadRequest(motivoFechaCobro);
             }
 
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
@@ -2041,6 +2077,9 @@ namespace NestoAPI.Controllers
                 return BadRequest(motivoNoAnadirPrepago);
             }
 
+            // NestoAPI#860: las fechas de cobro que traen los prepagos se escriben tras guardar (columna fuera del EDMX)
+            FechasCobroPrepagosAGuardar fechasCobroPrepagos = new FechasCobroPrepagosAGuardar();
+
             // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
             // Carlos 12/01/22: usamos el concepto como Id
             if (pedido.Prepagos.Where(p => p.Factura == null).Any())
@@ -2053,17 +2092,21 @@ namespace NestoAPI.Controllers
                         prepagoCabecera.Importe = prepagoPedido.Importe;
                         prepagoCabecera.CuentaContable = prepagoPedido.CuentaContable;
                         prepagoCabecera.ConceptoAdicional = prepagoPedido.ConceptoAdicional;
+                        // NestoAPI#860: sin fecha no se toca la guardada
+                        fechasCobroPrepagos.Apuntar(prepagoCabecera, prepagoPedido.FechaCobro);
                     }
                     else
                     {
-                        cabPedidoVta.Prepagos.Add(new Prepago
+                        Prepago prepagoNuevo = new Prepago
                         {
                             Importe = prepagoPedido.Importe,
                             CuentaContable = prepagoPedido.CuentaContable,
                             ConceptoAdicional = prepagoPedido.ConceptoAdicional,
                             // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
                             Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)
-                        });
+                        };
+                        cabPedidoVta.Prepagos.Add(prepagoNuevo);
+                        fechasCobroPrepagos.Apuntar(prepagoNuevo, prepagoPedido.FechaCobro);
                     }
 
                 }
@@ -2468,6 +2511,8 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
+            // NestoAPI#860: la fecha real del cobro de los prepagos (columna fuera del EDMX). Nunca lanza.
+            GuardarFechasCobroPrepagos(pedido.numero, fechasCobroPrepagos);
             // NestoAPI#732: confirmado, las inscripciones que se han quedado sin justificante se anulan (y se avisa a la tienda)
             List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> inscripcionesAnuladas = await AnularInscripcionesSinFallar(
                 inscripcionesSinJustificante, pedido.numero, borrarPedido: false, UsuarioAuditoriaHelper.Resolver(User, pedido.Usuario));
@@ -2739,6 +2784,13 @@ namespace NestoAPI.Controllers
             if (pedido != null)
             {
                 pedido.Usuario = UsuarioAuditoriaHelper.SoloGrafia(pedido.Usuario);
+            }
+            // NestoAPI#860: la fecha real del cobro del prepago no puede ser posterior a hoy. Antes de tocar nada (y antes de
+            // separar los cursos, para no dejar creado su pedido).
+            string motivoFechaCobro = ReglasFechaCobroPrepago.MotivoRechazo(pedido?.Prepagos, DateTime.Today);
+            if (motivoFechaCobro != null)
+            {
+                return BadRequest(motivoFechaCobro);
             }
             if (pedido?.Lineas == null || ValidarDatosObligatoriosPedido(pedido) != null)
             {
@@ -3159,9 +3211,10 @@ namespace NestoAPI.Controllers
                 contador.Oferta += (int)maxNumeroOferta;
             }
 
+            FechasCobroPrepagosAGuardar fechasCobroPrepagos = new FechasCobroPrepagosAGuardar();
             foreach (var prepago in pedido.Prepagos)
             {
-                cabecera.Prepagos.Add(new Prepago
+                Prepago prepagoNuevo = new Prepago
                 {
                     Importe = prepago.Importe,
                     Factura = prepago.Factura,
@@ -3169,7 +3222,10 @@ namespace NestoAPI.Controllers
                     ConceptoAdicional = prepago.ConceptoAdicional,
                     // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
                     Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)
-                });
+                };
+                cabecera.Prepagos.Add(prepagoNuevo);
+                // NestoAPI#860: la fecha real del cobro, si viene (validada al principio de PostPedidoVenta)
+                fechasCobroPrepagos.Apuntar(prepagoNuevo, prepago.FechaCobro);
             }
 
             // Issue #326: cuadrar efectos antes de guardar y enviar correo
@@ -3302,6 +3358,8 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
+            // NestoAPI#860: la fecha real del cobro de los prepagos (columna fuera del EDMX). Nunca lanza.
+            GuardarFechasCobroPrepagos(pedido.numero, fechasCobroPrepagos);
 
             // NestoAPI#757: el tipo y los bultos de la nota (tabla fuera del EDMX). Nunca lanza.
             await ServicioNotasEntregaCabecera.GuardarAlCrear(pedido, UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)).ConfigureAwait(true);
