@@ -242,7 +242,8 @@ namespace NestoAPI.Controllers
                 Nombre = x.Nombre.Trim(),
                 Familia = x.Familia1.Descripción.Trim(),
                 Subgrupo = x.SubGruposProducto.Descripción.Trim(),
-                PrecioProfesional = (decimal)x.PVP,
+                // 13/11/26: un producto con el PVP sin rellenar tumbaba toda la búsqueda («The cast to value type 'System.Decimal' failed»)
+                PrecioProfesional = x.PVP ?? 0,
                 Estado = (short)x.Estado
             }).ToListAsync();
 
@@ -344,7 +345,7 @@ namespace NestoAPI.Controllers
             productoDTO.aplicarDescuento = precio.aplicarDescuento;
             productoDTO.descuento = precio.descuentoCalculado;
 
-            PoliticaPreciosOcultos.AplicarNivel(productoDTO, nivelPrecios, (decimal)producto.PVP);
+            PoliticaPreciosOcultos.AplicarNivel(productoDTO, nivelPrecios, producto.PVP ?? 0);
 
             return Ok(productoDTO);
         }
