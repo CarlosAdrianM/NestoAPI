@@ -166,6 +166,58 @@ Datos destino:
             Assert.IsNull(Extraer("Entrega estimada\n\n\n\n\n\nGracias.\nAlgo más\n16/11/2026"));
         }
 
+        // Los dos correos reales del 13/11/26 de los que no se sacó nada (texto tal como llegó)
+        private const string UPS_REPROGRAMADA = @"entrega se ha reprogramado.
+De MBE STORE C/O MULTIBOXES S.L
+Recibe notificaciones de los paquetes de UPS que te lleguen.
+Entrega reprogramada
+Viernes 13/11/2026
+entre 10:45 - 14:45
+Realiza el seguimiento de tu paquete >";
+
+        internal const string NACEX_PROGRAMADA = @"¡Hola NUEVA VISION SA!, ya tenemos tu envío de LASHES AND MORE SL y está en camino con el número de seguimiento 3300/11571609 . Este es tu PIN para una entrega segura: 8197
+Tu entrega está programada para el 16/11/2026 antes de las 20:00. Si necesitas redirigir tu envío, ¡podemos ayudarte!";
+
+        [TestMethod]
+        public void Ups_EntregaReprogramada_CasoReal_DiaYTramo()
+        {
+            Tramo(Extraer(UPS_REPROGRAMADA), 13, 11, 2026, "10:45", "14:45");
+        }
+
+        [TestMethod]
+        public void Nacex_EntregaProgramadaPara_CasoReal_DiaYHasta()
+        {
+            Tramo(Extraer(NACEX_PROGRAMADA), 16, 11, 2026, null, "20:00");
+        }
+
+        [DataTestMethod]
+        [DataRow("Entrega reprogramada: 16/11/2026 entre 10:45 - 14:45")]
+        [DataRow("Entrega reprogramada\n16/11/2026\nde 10:45 a 14:45")]
+        [DataRow("Tu entrega se ha reprogramado para el lunes 16/11/2026, entre las 10:45 y las 14:45")]
+        [DataRow("Su entrega ha sido programada para el 16 de noviembre de 10:45 a 14:45")]
+        public void EntregaProgramadaOReprogramada_EnCadaFormato(string texto)
+        {
+            Tramo(Extraer(texto), 16, 11, 2026, "10:45", "14:45");
+        }
+
+        [DataTestMethod]
+        [DataRow("Este es tu PIN para una entrega segura: 8197")]
+        [DataRow("Este es tu PIN para una entrega segura: 8197\nSi necesitas redirigir tu envío antes del 16/11/2026, ¡podemos ayudarte!")]
+        [DataRow("entrega se ha reprogramado.\nDe MBE STORE C/O MULTIBOXES S.L\nRecibe notificaciones de los paquetes de UPS que te lleguen.")]
+        [DataRow("Recogida programada para el 16/11/2026 antes de las 20:00")]
+        [DataRow("Entrega reprogramada: 11/11/2026")]
+        public void ElPinLaRecogidaOLaEtiquetaSinFechaValida_Nada(string texto)
+        {
+            Assert.IsNull(Extraer(texto));
+        }
+
+        [TestMethod]
+        public void Nacex_CasoReal_NoEsSalidaNuestra()
+        {
+            // «¡Hola NUEVA VISION SA!» nos nombra como destinatario; el envío es «de LASHES AND MORE SL»
+            Assert.IsFalse(EnvioNuestroDeSalida.Es(NACEX_PROGRAMADA));
+        }
+
         #endregion
 
         #region Disponible

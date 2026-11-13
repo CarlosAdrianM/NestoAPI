@@ -23,7 +23,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// 12/11/26: «¡Tu paquete está de camino!» / «De MBE STORE C/O MULTIBOXES S.L»: una tienda de Mail Boxes que envía por un
     /// proveedor). PURA. Por este orden: (1) tras una etiqueta «Remitente:», «Expedidor:», «Enviado por:» o «Shipper:» en cualquier
     /// línea; (2) la línea «De X» (sin dos puntos) justo tras el titular, en las primeras <see cref="LINEAS_TITULAR"/> líneas (UPS);
-    /// (3) tras «From:» al principio de una línea. Nunca nosotros (Nueva Visión) ni el nombre de una agencia a secas («Enviado por:
+    /// (3) la frase «tu envío de X (y) está en camino» (Nacex); (4) tras «From:» al principio de una línea. Nunca nosotros (Nueva Visión) ni el nombre de una agencia a secas («Enviado por:
     /// SEUR» es la agencia, no el remitente). Se devuelve normalizado (<see cref="Normalizar"/>), que es también la clave de la memoria.
     /// </summary>
     public static class ExtractorRemitentePaquete
@@ -42,6 +42,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>«De MBE STORE C/O MULTIBOXES S.L»: «De»/«From» y el nombre, sin dos puntos en la línea.</summary>
         private static readonly Regex LineaDe = new Regex(@"^\s*(?:de|from)\s+(\p{L}[^:]*)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// «ya tenemos tu envío de LASHES AND MORE SL y está en camino con el número de seguimiento…» (Nacex, 13/11/26): el nombre va
+        /// entre «tu/su envío (o paquete) de» y lo que sigue («(y) está», «con el número…», «ha…», «llegará»), en la misma línea. Sin
+        /// ese final no cuenta. No se corta en comas ni puntos: son parte del nombre («COSMÉTICOS, S.L.»).
+        /// </summary>
+        private static readonly Regex FraseEnvioDe = new Regex(
+            @"(?<![\p{L}\p{N}])(?:tu|su|vuestro)\s+(?:env[ií]o|paquete)\s+de\s+(\p{L}.{1,100}?)"
+            + @",?\s+(?:(?:y\s+)?(?:ya\s+)?(?:est[aá]|ha|llegar[aá])(?![\p{L}\p{N}])"
+            + @"|con\s+(?:el\s+)?(?:n[uú]mero|n[ºo°](?![\p{L}\p{N}])|seguimiento|c[oó]digo|localizador))",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>Lo que viene detrás en la misma línea («… Destinatario: NUEVA VISION»): se corta antes de la siguiente etiqueta.</summary>
         private static readonly Regex SiguienteEtiqueta = new Regex(@"\s+\p{L}+\s*:", RegexOptions.Compiled);
@@ -66,6 +77,19 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             for (int i = 1; i < lineas.Count && i < LINEAS_TITULAR; i++)
             {
                 Match m = LineaDe.Match(lineas[i]);
+                if (m.Success)
+                {
+                    string valor = Valido(m.Groups[1].Value);
+                    if (valor != null)
+                    {
+                        return valor;
+                    }
+                }
+            }
+
+            foreach (string linea in lineas)
+            {
+                Match m = FraseEnvioDe.Match(linea);
                 if (m.Success)
                 {
                     string valor = Valido(m.Groups[1].Value);

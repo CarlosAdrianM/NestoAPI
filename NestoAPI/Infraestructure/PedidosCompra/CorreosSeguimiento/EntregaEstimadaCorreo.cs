@@ -20,7 +20,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// <summary>
     /// NestoAPI#857: saca del texto de un correo (ya sin HTML) el día y el tramo de entrega que anuncia. PURA: la fecha del correo
     /// entra por parámetro. Solo cuenta una fecha que vaya tras una etiqueta («Entrega estimada», «Fecha prevista de entrega»,
-    /// «Estimated delivery»…) o una frase («te lo entregaremos, como máximo, el…», «llegará el…», «will be delivered on…») y
+    /// «Entrega reprogramada», «entrega está programada para», «Estimated delivery»…) o una frase («te lo entregaremos, como máximo, el…», «llegará el…», «will be delivered on…») y
     /// dentro de <see cref="VENTANA"/> caracteres (y <see cref="LINEAS_VENTANA"/> saltos de línea); una fecha suelta no cuenta.
     /// Fechas siempre día/mes (España). Se descarta si el día es anterior al del correo o más de <see cref="DIAS_MAXIMOS"/> posterior.
     /// </summary>
@@ -37,6 +37,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private static readonly Regex Etiqueta = new Regex(
             @"(?<![a-z])(?:fecha\s+(?:de\s+entrega\s+)?(?:estimada|prevista)(?:\s+de\s+entrega)?|fecha\s+de\s+entrega"
             + @"|entrega\s+(?:estimada|prevista)(?:\s+para)?"
+            // 13/11/26: «Entrega reprogramada» + fecha en la línea siguiente (UPS) y «Tu entrega está programada para el…» (Nacex).
+            // Siempre con «entrega» delante: «recogida programada para…» no es una entrega
+            + @"|entrega\s+(?:esta\s+|ha\s+sido\s+|se\s+ha\s+)?(?:re)?programad[oa](?:\s+para)?"
             + @"|(?:estimated|expected|scheduled|planned)\s+delivery(?:\s+date)?|delivery\s+date"
             + @"|entregaremos|seran?\s+entregad[oa]s?|se\s+entregaran?|llegaran?"
             + @"|will\s+be\s+delivered(?:\s+(?:on|by))?|will\s+arrive(?:\s+(?:on|by))?)(?![a-z])",

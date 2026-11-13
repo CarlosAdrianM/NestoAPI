@@ -211,6 +211,39 @@ Siga su envío<https://www.mbe.es/es/tracking?c=1Z21E7X76890915153>";
         }
 
         [TestMethod]
+        public void RemitentePaquete_CasoRealNacex_TuEnvioDeXYEstaEnCamino()
+        {
+            Assert.AreEqual("lashes and more sl", ExtractorRemitentePaquete.Extraer(CorreosSeguimientoEntregaEstimadaTests.NACEX_PROGRAMADA));
+        }
+
+        [DataTestMethod]
+        [DataRow("Tu envío de Cosméticos Inventados, S.L. está en camino.", "cosmeticos inventados, s.l")]
+        [DataRow("Hola: su paquete de LABORATORIOS EJEMPLO SA con el número de seguimiento 123456 ha salido.", "laboratorios ejemplo sa")]
+        [DataRow("Ya tenemos tu envío de Example Beauty Ltd, con nº 998877.", "example beauty ltd")]
+        [DataRow("Tu envío de Proveedor Inventado llegará mañana.", "proveedor inventado")]
+        public void RemitentePaquete_PorLaFraseTuEnvioDe(string texto, string esperado)
+        {
+            Assert.AreEqual(esperado, ExtractorRemitentePaquete.Extraer(texto));
+        }
+
+        [DataTestMethod]
+        [DataRow("Tu envío de NUEVA VISION S.A. está en camino.")]
+        [DataRow("¡Hola! Ya tenemos tu envío de NACEX y está en camino.")]
+        [DataRow("Tu envío de 3 bultos está en camino.")]
+        [DataRow("Si necesitas redirigir tu envío, ¡podemos ayudarte!")]
+        [DataRow("Gracias por confiar tu envío de paquetería a nosotros")]
+        public void RemitentePaquete_LaFraseTuEnvioDe_NiNosotrosNiLaAgenciaNiSinFinal(string texto)
+        {
+            Assert.IsNull(ExtractorRemitentePaquete.Extraer(texto));
+        }
+
+        [TestMethod]
+        public void RemitentePaquete_TuEnvioDeNuevaVision_SigueSiendoSalidaNuestra()
+        {
+            Assert.IsTrue(EnvioNuestroDeSalida.Es("Tu envío de NUEVA VISION S.A. está en camino."));
+        }
+
+        [TestMethod]
         public void RemitentePaquete_Normalizar()
         {
             Assert.AreEqual("mbe store c/o multiboxes s.l", ExtractorRemitentePaquete.Normalizar("  MBE Store C/O  Multiboxes S.L. "));
