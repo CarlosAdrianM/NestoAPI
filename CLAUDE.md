@@ -671,6 +671,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Avisos (`TextosAvisosPagoAPlazos`): al cliente push `PagoAPlazosPendiente` (de tú; Datos tipo, empresa, pedido, idSolicitud, cliente,
   estado, proveedor, importe); a quien hizo el pedido, a quien pidió la financiación y a su vendedor (campana + push NestoApp)
   `PagoAPlazosAprobado`, `PagoAPlazosRechazado`, `PagoAPlazosPlazoCerca` (+fechaLimite, dias) y `PagoAPlazosPerdido`.
+  El resultado también al CLIENTE (13/11/26; mismos Datos y dispositivos que el pendiente, sin app nada, TNV#99 los abre igual):
+  `PagoAPlazosAprobadoCliente` (con el prepago recién creado, como el del vendedor) y `PagoAPlazosRechazadoCliente` (al pasar a Rechazado).
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

@@ -588,6 +588,164 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
 
             Assert.AreEqual("Aceptar", (await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Intermedia)).Cuerpo);
             Assert.AreEqual(EstadosPagoAPlazos.PENDIENTE, Fila().Estado);
+            Assert.AreEqual(0, avisos.AvisosCliente.Count, "«En revisión» no es ni aprobado ni rechazado: al cliente, nada todavía");
+        }
+
+        #endregion
+
+        #region El resultado, también al cliente
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_AvisaTambienAlCliente_YLaRepetidaNoRepiteLaPush()
+        {
+            _ = repositorio.Anadir(Solicitud());
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+
+            CollectionAssert.AreEqual(new[] { $"AprobadoCliente:{PEDIDO}:Financiera Falsa:Aprobado" }, avisos.AvisosCliente);
+
+            // El proveedor repite la confirmación y luego manda la final: ni otro prepago ni otra push
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Aprobada);
+
+            Assert.AreEqual(1, avisos.AvisosCliente.Count);
+            Assert.AreEqual(1, pedidos.Prepagos.Count);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_TrasEstarEnRevision_AvisaAlClienteAlAprobarse()
+        {
+            _ = repositorio.Anadir(Solicitud());
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Intermedia);
+            Assert.AreEqual(0, avisos.AvisosCliente.Count);
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Aprobada);
+
+            CollectionAssert.AreEqual(new[] { $"AprobadoCliente:{PEDIDO}:Financiera Falsa:Aprobado" }, avisos.AvisosCliente);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_PorEnlace_TambienAvisaAlClienteSiTieneLaApp()
+        {
+            _ = repositorio.Anadir(Solicitud(canal: CanalesPagoAPlazos.ENLACE));
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+
+            Assert.AreEqual(1, avisos.AvisosCliente.Count, "Los dispositivos los mira el aviso, no el canal por el que se le mandó");
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_LaPushAlClienteFalla_NoRompeLaAprobacionNiLaRespuestaAlProveedor()
+        {
+            _ = repositorio.Anadir(Solicitud());
+            avisos.FallaLaPush = true;
+
+            RespuestaNotificacionProveedor respuesta = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+
+            Assert.AreEqual("Aceptar", respuesta.Cuerpo);
+            Assert.AreEqual(EstadosPagoAPlazos.APROBADO, Fila().Estado);
+            Assert.AreEqual(1, pedidos.Prepagos.Count);
+            CollectionAssert.AreEqual(new[] { $"Aprobado:{PEDIDO}:0:False" }, avisos.Avisos, "El del vendedor sale igual");
+            Assert.IsTrue(errores.Single().Message.Contains("al cliente de la aprobación"), "A ELMAH, como los demás avisos");
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_ElAvisoAlVendedorFalla_ElClienteSeEnteraIgual()
+        {
+            _ = repositorio.Anadir(Solicitud());
+            avisos.FallaElAvisoAlVendedor = true;
+
+            RespuestaNotificacionProveedor respuesta = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+
+            Assert.AreEqual("Aceptar", respuesta.Cuerpo);
+            Assert.AreEqual(1, avisos.AvisosCliente.Count);
+            Assert.AreEqual(1, errores.Count);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_ElPrepagoFalla_ElClienteNoSeEnteraHastaElReintento_YUnaSolaVez()
+        {
+            _ = repositorio.Anadir(Solicitud());
+            pedidos.FallaElPrepago = true;
+
+            _ = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion));
+            Assert.AreEqual(0, avisos.AvisosCliente.Count, "Sin prepago todavía no es verdad que esté todo hecho");
+
+            pedidos.FallaElPrepago = false;
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Aprobada);
+
+            Assert.AreEqual(1, avisos.AvisosCliente.Count);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Aprobacion_QueNoSeConfirma_NoDiceAlClienteQueEstaAprobado()
+        {
+            _ = repositorio.Anadir(Solicitud());
+            pedidos.Pedidos[PEDIDO] = Pedido(total: 200M);
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion);
+
+            Assert.AreEqual(EstadosPagoAPlazos.CANCELADO, Fila().Estado);
+            Assert.AreEqual(0, avisos.AvisosCliente.Count);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Rechazo_AvisaTambienAlCliente_YElRepetidoNoRepiteLaPush()
+        {
+            _ = repositorio.Anadir(Solicitud());
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Rechazada);
+
+            CollectionAssert.AreEqual(new[] { $"RechazadoCliente:{PEDIDO}:Financiera Falsa:Rechazado:False" }, avisos.AvisosCliente);
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Rechazada);
+            Assert.AreEqual(1, avisos.AvisosCliente.Count);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Rechazo_LaPushAlClienteFalla_NoRompeElRechazo()
+        {
+            _ = repositorio.Anadir(Solicitud());
+            avisos.FallaLaPush = true;
+
+            Assert.AreEqual("Aceptar", (await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Rechazada)).Cuerpo);
+            Assert.AreEqual(EstadosPagoAPlazos.RECHAZADO, Fila().Estado);
+            CollectionAssert.AreEqual(new[] { $"Rechazado:{PEDIDO}" }, avisos.Avisos);
+            Assert.IsTrue(errores.Single().Message.Contains("al cliente del rechazo"));
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Rechazo_PorImporteDistinto_TambienSeLeDiceAlCliente()
+        {
+            _ = repositorio.Anadir(Solicitud());
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion, 1M);
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.PideConfirmacion, 1M);
+
+            CollectionAssert.AreEqual(new[] { $"RechazadoCliente:{PEDIDO}:Financiera Falsa:Rechazado:False" }, avisos.AvisosCliente);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Rechazo_DespuesDeAprobar_SeLeDiceAlClienteQueYaNo()
+        {
+            _ = Aprobada();
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Rechazada);
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Rechazada);
+
+            CollectionAssert.AreEqual(new[] { $"RechazadoCliente:{PEDIDO}:Financiera Falsa:Rechazado:True" }, avisos.AvisosCliente);
+        }
+
+        [TestMethod]
+        public async Task PagoAPlazos_Rechazo_DeUnaYaCerrada_NoAvisaAlCliente()
+        {
+            _ = repositorio.Anadir(Solicitud(EstadosPagoAPlazos.CANCELADO));
+
+            _ = await Notificar("PAP-7", TipoNotificacionPagoAPlazos.Rechazada);
+
+            Assert.AreEqual(0, avisos.AvisosCliente.Count);
         }
 
         #endregion

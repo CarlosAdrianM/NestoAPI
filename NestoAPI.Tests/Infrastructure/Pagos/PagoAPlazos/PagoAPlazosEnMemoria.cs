@@ -290,8 +290,31 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
     internal class AvisosPagoAPlazosEspia : IAvisosPagoAPlazos
     {
         public List<string> Avisos { get; } = new List<string>();
+        /// <summary>Los del resultado (aprobado / rechazado) que van al CLIENTE, aparte de los del vendedor.</summary>
+        public List<string> AvisosCliente { get; } = new List<string>();
         public int Dispositivos { get; set; } = 1;
         public bool FallaLaPush { get; set; }
+        public bool FallaElAvisoAlVendedor { get; set; }
+
+        public Task<int> AprobadoAlCliente(SolicitudPagoAPlazos solicitud, string nombreProveedor)
+        {
+            if (FallaLaPush)
+            {
+                throw new InvalidOperationException("Firebase no contesta");
+            }
+            AvisosCliente.Add($"AprobadoCliente:{solicitud.Pedido}:{nombreProveedor}:{solicitud.Estado}");
+            return Task.FromResult(Dispositivos);
+        }
+
+        public Task<int> RechazadoAlCliente(SolicitudPagoAPlazos solicitud, string nombreProveedor, bool despuesDeAprobar)
+        {
+            if (FallaLaPush)
+            {
+                throw new InvalidOperationException("Firebase no contesta");
+            }
+            AvisosCliente.Add($"RechazadoCliente:{solicitud.Pedido}:{nombreProveedor}:{solicitud.Estado}:{despuesDeAprobar}");
+            return Task.FromResult(Dispositivos);
+        }
 
         public Task<int> AlCliente(SolicitudPagoAPlazos solicitud, string nombreProveedor)
         {
@@ -305,6 +328,10 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
 
         public Task Aprobado(SolicitudPagoAPlazos solicitud, string nombreProveedor, decimal faltaPorPagar, bool contraReembolso)
         {
+            if (FallaElAvisoAlVendedor)
+            {
+                throw new InvalidOperationException("El buzón no contesta");
+            }
             Avisos.Add($"Aprobado:{solicitud.Pedido}:{faltaPorPagar.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}:{contraReembolso}");
             return Task.CompletedTask;
         }

@@ -1,6 +1,7 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Pagos.PagoAPlazos;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
@@ -457,6 +458,95 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.PagoAPlazos
             StringAssert.Contains(push.Cuerpo, "302,50 €");
             StringAssert.Contains(push.Cuerpo, "Financiera Falsa");
             Assert.IsFalse(push.Cuerpo.Contains("usted") || push.Cuerpo.Contains(" su "), "La app de clientes habla de tú");
+        }
+
+        [TestMethod]
+        public void PagoAPlazos_PushAprobadoAlCliente_TipoPropioMismosDatosQueElPendiente_YDeTu()
+        {
+            NotificacionPushDTO push = TextosAvisosPagoAPlazos.AprobadoAlCliente(Solicitud(EstadosPagoAPlazos.APROBADO), "Financiera Falsa");
+
+            Assert.AreEqual("PagoAPlazosAprobadoCliente", push.Tipo);
+            Assert.AreEqual("PagoAPlazosAprobadoCliente", push.Datos["tipo"]);
+            Assert.AreEqual("Aprobado", push.Datos["estado"]);
+            CollectionAssert.AreEquivalent(TextosAvisosPagoAPlazos.AlCliente(Solicitud(), "Financiera Falsa").Datos.Keys.ToList(), push.Datos.Keys.ToList(),
+                "Los mismos Datos que la push del pendiente: la app los lee igual");
+            Assert.AreEqual("1", push.Datos["empresa"]);
+            Assert.AreEqual("930500", push.Datos["pedido"]);
+            Assert.AreEqual("7", push.Datos["idSolicitud"]);
+            Assert.AreEqual("15191", push.Datos["cliente"]);
+            Assert.AreEqual("Financiera Falsa", push.Datos["proveedor"]);
+            Assert.AreEqual("302.50", push.Datos["importe"], "Con punto decimal");
+            Assert.AreEqual("Pago a plazos aprobado", push.Titulo);
+            Assert.AreEqual("Tu pago a plazos del pedido 930500 (302,50 €) con Financiera Falsa está aprobado. Te avisaremos cuando salga.", push.Cuerpo);
+        }
+
+        [TestMethod]
+        public void PagoAPlazos_PushRechazadoAlCliente_TipoPropioYLeMandaASuVendedor()
+        {
+            NotificacionPushDTO push = TextosAvisosPagoAPlazos.RechazadoAlCliente(Solicitud(EstadosPagoAPlazos.RECHAZADO), "Financiera Falsa", false);
+
+            Assert.AreEqual("PagoAPlazosRechazadoCliente", push.Tipo);
+            Assert.AreEqual("PagoAPlazosRechazadoCliente", push.Datos["tipo"]);
+            Assert.AreEqual("Rechazado", push.Datos["estado"]);
+            Assert.AreEqual("930500", push.Datos["pedido"]);
+            Assert.AreEqual("302.50", push.Datos["importe"]);
+            Assert.AreEqual("Pago a plazos no aprobado", push.Titulo);
+            Assert.AreEqual("Financiera Falsa no ha aprobado el pago a plazos del pedido 930500. Habla con tu vendedor para ver otra forma de pago.", push.Cuerpo);
+
+            NotificacionPushDTO despues = TextosAvisosPagoAPlazos.RechazadoAlCliente(Solicitud(EstadosPagoAPlazos.RECHAZADO), "Financiera Falsa", true);
+            Assert.AreEqual("PagoAPlazosRechazadoCliente", despues.Tipo);
+            Assert.AreEqual("Financiera Falsa ha anulado el pago a plazos del pedido 930500 que había aprobado. Habla con tu vendedor para ver otra forma de pago.",
+                despues.Cuerpo);
+        }
+
+        [TestMethod]
+        public void PagoAPlazos_PushesDelResultadoAlCliente_DeTuNeutrasYSinDatosDelVendedor()
+        {
+            foreach (NotificacionPushDTO push in new[]
+            {
+                TextosAvisosPagoAPlazos.AprobadoAlCliente(Solicitud(EstadosPagoAPlazos.APROBADO), "Financiera Falsa"),
+                TextosAvisosPagoAPlazos.RechazadoAlCliente(Solicitud(EstadosPagoAPlazos.RECHAZADO), "Financiera Falsa", false),
+                TextosAvisosPagoAPlazos.RechazadoAlCliente(Solicitud(EstadosPagoAPlazos.RECHAZADO), "Financiera Falsa", true),
+                TextosAvisosPagoAPlazos.AprobadoAlCliente(Solicitud(EstadosPagoAPlazos.APROBADO), null),
+                TextosAvisosPagoAPlazos.RechazadoAlCliente(Solicitud(EstadosPagoAPlazos.RECHAZADO), " ", false)
+            })
+            {
+                string texto = push.Titulo + " " + push.Cuerpo;
+                Assert.IsFalse(texto.Contains("usted") || texto.Contains(" su ") || texto.Contains("Hable"), "La app de clientes habla de tú: " + texto);
+                Assert.IsFalse(texto.IndexOf("plazame", StringComparison.OrdinalIgnoreCase) >= 0, "El nombre de la financiera lo da el proveedor: " + texto);
+                Assert.IsFalse(texto.Contains("cliente 15191") || texto.Contains("prepago") || texto.Contains("Paloma"), "Nada de lo del vendedor: " + texto);
+                Assert.IsFalse(texto.Contains("el proveedor"), "Al cliente no se le habla de «el proveedor»: " + texto);
+            }
+            Assert.AreEqual("La financiera no ha aprobado el pago a plazos del pedido 930500. Habla con tu vendedor para ver otra forma de pago.",
+                TextosAvisosPagoAPlazos.RechazadoAlCliente(Solicitud(EstadosPagoAPlazos.RECHAZADO), null, false).Cuerpo);
+            StringAssert.Contains(TextosAvisosPagoAPlazos.AprobadoAlCliente(Solicitud(EstadosPagoAPlazos.APROBADO), null).Cuerpo, "con la financiera está aprobado");
+        }
+
+        [TestMethod]
+        public void PagoAPlazos_AvisosDelResultadoAlCliente_VanALaAppDeClientesDeEseClienteYDevuelvenLosDispositivos()
+        {
+            IServicioNotificacionesPush push = A.Fake<IServicioNotificacionesPush>();
+            List<NotificacionPushDTO> enviadas = new List<NotificacionPushDTO>();
+            _ = A.CallTo(() => push.EnviarACliente("1", "15191", A<NotificacionPushDTO>._))
+                .Invokes((string e, string c, NotificacionPushDTO n) => enviadas.Add(n))
+                .Returns(2);
+            AvisosPagoAPlazos avisos = new AvisosPagoAPlazos(() => push, (e, p) => throw new InvalidOperationException("Al cliente no se le buscan comerciales"));
+            SolicitudPagoAPlazos solicitud = Solicitud(EstadosPagoAPlazos.APROBADO);
+            solicitud.Cliente = "15191     ";
+            solicitud.Empresa = "1  ";
+
+            Assert.AreEqual(2, avisos.AprobadoAlCliente(solicitud, "Financiera Falsa").Result);
+            Assert.AreEqual(2, avisos.RechazadoAlCliente(solicitud, "Financiera Falsa", false).Result);
+
+            CollectionAssert.AreEqual(new[] { "PagoAPlazosAprobadoCliente", "PagoAPlazosRechazadoCliente" }, enviadas.Select(n => n.Tipo).ToList());
+            // Solo por EnviarACliente (la app de clientes: sin dispositivo ni manda ni guarda en el buzón); nada a Nesto ni a NestoApp
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => push.EnviarAUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => push.EnviarAVendedor(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+
+            solicitud.Cliente = " ";
+            Assert.AreEqual(0, avisos.AprobadoAlCliente(solicitud, "Financiera Falsa").Result, "Sin cliente, nada");
+            Assert.AreEqual(2, enviadas.Count);
         }
 
         [TestMethod]

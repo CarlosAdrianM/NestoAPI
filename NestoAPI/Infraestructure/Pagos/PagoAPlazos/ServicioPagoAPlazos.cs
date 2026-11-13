@@ -505,7 +505,10 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                         if (pendiente && await repositorio.CambiarEstado(solicitud.Id, new[] { EstadosPagoAPlazos.PENDIENTE }, EstadosPagoAPlazos.RECHAZADO,
                             ahora, "El importe de la confirmación no coincide").ConfigureAwait(false))
                         {
+                            solicitud.Estado = EstadosPagoAPlazos.RECHAZADO;
                             await Avisar(() => avisos.Rechazado(solicitud, proveedor.Nombre), solicitud, "del rechazo").ConfigureAwait(false);
+                            await Avisar(() => avisos.RechazadoAlCliente(solicitud, proveedor.Nombre, false), solicitud, "al cliente del rechazo")
+                                .ConfigureAwait(false);
                         }
                         return DecisionNotificacionPagoAPlazos.Rechazar;
                     }
@@ -621,6 +624,10 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                 bool contraReembolso = pedido != null && pedido.ContraReembolso;
                 await Avisar(() => avisos.Aprobado(solicitud, proveedor.Nombre, falta < 0 ? 0 : falta, contraReembolso), solicitud, "de la aprobación")
                     .ConfigureAwait(false);
+                // Al cliente también (Dirección 13/11/26). Cuelga de lo mismo que el del vendedor: el prepago recién creado, que solo
+                // pasa una vez por solicitud (su concepto es único), así que una notificación repetida del proveedor no lo repite; y
+                // si el prepago falló al aprobar, el aviso sale en el reintento, cuando ya es verdad que está todo hecho.
+                await Avisar(() => avisos.AprobadoAlCliente(solicitud, proveedor.Nombre), solicitud, "al cliente de la aprobación").ConfigureAwait(false);
             }
         }
 
@@ -634,6 +641,8 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                 {
                     solicitud.Estado = EstadosPagoAPlazos.RECHAZADO;
                     await Avisar(() => avisos.Rechazado(solicitud, proveedor.Nombre), solicitud, "del rechazo").ConfigureAwait(false);
+                    await Avisar(() => avisos.RechazadoAlCliente(solicitud, proveedor.Nombre, false), solicitud, "al cliente del rechazo")
+                        .ConfigureAwait(false);
                 }
                 return;
             }
@@ -651,6 +660,9 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                     (quitado ? "Se ha quitado el prepago del pedido." : "El prepago NO se ha podido quitar (¿ya facturado?): revisarlo.")));
                 await Avisar(() => avisos.Perdido(solicitud, proveedor.Nombre, $"{proveedor.Nombre} ha rechazado el pago después de aprobarlo. " +
                     TextoPrepago(quitado)), solicitud, "del rechazo").ConfigureAwait(false);
+                // A ese cliente se le dijo que estaba aprobado: que sepa que ya no
+                await Avisar(() => avisos.RechazadoAlCliente(solicitud, proveedor.Nombre, true), solicitud, "al cliente del rechazo")
+                    .ConfigureAwait(false);
             }
         }
 
