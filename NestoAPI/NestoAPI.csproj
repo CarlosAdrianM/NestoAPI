@@ -492,6 +492,7 @@
     <Compile Include="Controllers\AuthController.cs" />
     <Compile Include="Controllers\PagoRedirectController.cs" />
     <Compile Include="Controllers\AplazameController.cs" />
+    <Compile Include="Controllers\PagoAPlazosController.cs" />
     <Compile Include="Controllers\Pago3DSController.cs" />
     <Compile Include="Controllers\BancosController.cs" />
     <Compile Include="Controllers\PaisesController.cs" />
@@ -1532,7 +1533,15 @@
     <Compile Include="Infraestructure\Pagos\Aplazame\ClienteApiAplazame.cs" />
     <Compile Include="Infraestructure\Pagos\Aplazame\ConfiguracionAplazame.cs" />
     <Compile Include="Infraestructure\Pagos\Aplazame\RepositorioCobrosAplazame.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\ProveedorPagoAPlazosAplazame.cs" />
     <Compile Include="Infraestructure\Pagos\Aplazame\ServicioCobrosAplazame.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\AvisosPagoAPlazos.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\IProveedorPagoAPlazos.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\PagoAPlazosJobsService.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\RegistroProveedoresPagoAPlazos.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\ReglasPagoAPlazos.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\RepositorioPagoAPlazos.cs" />
+    <Compile Include="Infraestructure\Pagos\PagoAPlazos\ServicioPagoAPlazos.cs" />
     <Compile Include="Infraestructure\Sincronizacion\VigenciaCampanasJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\FechasComprasCliente.cs" />
     <Compile Include="Infraestructure\Sincronizacion\FechasComprasClientesJobsService.cs" />

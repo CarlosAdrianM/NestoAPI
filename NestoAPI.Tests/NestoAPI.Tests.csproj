@@ -310,6 +310,11 @@
     <Compile Include="Controllers\PedidosClienteMetodoPagoTests.cs" />
     <Compile Include="Controllers\PedidosClienteOrigenPushTests.cs" />
     <Compile Include="Controllers\AplazameControllersTests.cs" />
+    <Compile Include="Controllers\PagoAPlazosControllerTests.cs" />
+    <Compile Include="Infrastructure\Pagos\PagoAPlazos\PagoAPlazosEnMemoria.cs" />
+    <Compile Include="Infrastructure\Pagos\PagoAPlazos\ProveedorPagoAPlazosAplazameTests.cs" />
+    <Compile Include="Infrastructure\Pagos\PagoAPlazos\ReglasPagoAPlazosTests.cs" />
+    <Compile Include="Infrastructure\Pagos\PagoAPlazos\ServicioPagoAPlazosTests.cs" />
     <Compile Include="Infrastructure\Pagos\Aplazame\AplazameSandboxIntegracionTests.cs" />
     <Compile Include="Infrastructure\Pagos\Aplazame\CheckoutAplazameTests.cs" />
     <Compile Include="Infrastructure\Pagos\Aplazame\CobroCarritoAplazameTests.cs" />

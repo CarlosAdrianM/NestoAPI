@@ -1192,6 +1192,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'aplazame-capturas' configurado (cada hora en horario laboral)");
 
+            // NestoAPI#864: el pago a plazos de los pedidos pasados en Nesto o NestoApp (neutro: vale para cualquier proveedor).
+            // Cada hora en horario laboral: captura lo que ya ha salido, avisa de lo que se acerca al límite sin salir y cancela
+            // lo que se ha quedado sin pedido o fuera de plazo. Sin la tabla (script sin lanzar) no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Pagos.PagoAPlazos.PagoAPlazosJobsService.ID_JOB,
+                () => Infraestructure.Pagos.PagoAPlazos.PagoAPlazosJobsService.ProcesarPlazos(),
+                Infraestructure.Pagos.PagoAPlazos.PagoAPlazosJobsService.CRON,
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'pago-a-plazos-pedidos' configurado (cada hora en horario laboral)");
+
             // Ariadna#8: un aviso de dato mal se cierra solo («Cambiado») cuando el dato ya no es el que había al avisar.
             // Cada hora es de sobra: lo normal es que lo cierren a mano con el botón del correo.
             RecurringJob.AddOrUpdate(

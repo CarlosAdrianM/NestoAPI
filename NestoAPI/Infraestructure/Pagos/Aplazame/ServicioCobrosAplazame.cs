@@ -683,7 +683,7 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
         #endregion
 
         /// <summary>El cliente HTTP se crea al usarlo: así un servicio sin claves no revienta hasta que de verdad llama a Aplázame.</summary>
-        private class ClienteApiPerezoso : IClienteApiAplazame
+        internal class ClienteApiPerezoso : IClienteApiAplazame
         {
             private readonly Lazy<IClienteApiAplazame> cliente;
 
@@ -696,6 +696,7 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
             public Task<CapturasAplazame> ConsultarCapturas(string mid, bool sandbox) => cliente.Value.ConsultarCapturas(mid, sandbox);
             public Task Capturar(string mid, long centimos, bool sandbox) => cliente.Value.Capturar(mid, centimos, sandbox);
             public Task Cancelar(string mid, bool sandbox) => cliente.Value.Cancelar(mid, sandbox);
+            public Task Reembolsar(string mid, long centimos, bool sandbox) => cliente.Value.Reembolsar(mid, centimos, sandbox);
         }
     }
 }

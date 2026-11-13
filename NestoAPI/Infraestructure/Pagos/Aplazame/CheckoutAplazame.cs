@@ -82,6 +82,22 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
         [JsonProperty("method", NullValueHandling = NullValueHandling.Ignore)] public string Method { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#864: una línea de lo que se financia, ya leída (del carrito de la app o de un pedido que ya existe): lo justo
+    /// para montar los artículos del checkout.
+    /// </summary>
+    public class LineaCheckout
+    {
+        /// <summary>Línea de producto (va como artículo); si no, son portes u otros cargos (van en el envío).</summary>
+        public bool EsProducto { get; set; }
+        public string Producto { get; set; }
+        public string Texto { get; set; }
+        public int Cantidad { get; set; }
+        public decimal BaseImponible { get; set; }
+        /// <summary>IVA + recargo de equivalencia, en tanto por uno (0,21).</summary>
+        public decimal Impuestos { get; set; }
+    }
+
     /// <summary>Una dirección de la ficha (o de la tienda donde se recoge), ya leída.</summary>
     public class DireccionCheckout
     {
@@ -127,6 +143,22 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
             IEnumerable<LineaPedidoVentaDTO> lineas, decimal total,
             string urlNotificacion, string esquemaApp)
         {
+            return Construir(mid, correo, cliente, facturacion, envio, nombreEnvio, recogidaEnTienda,
+                (lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Where(l => l != null).Select(DeLineaDeVenta), total,
+                urlNotificacion, esquemaApp);
+        }
+
+        /// <summary>
+        /// NestoAPI#864: el mismo checkout a partir de líneas ya leídas (<see cref="LineaCheckout"/>), para financiar un pedido
+        /// que ya existe. <paramref name="prefijoRetorno"/> es a lo que se le añade ok / pending / ko / dismiss (el esquema de
+        /// la app, o la página web del resultado).
+        /// </summary>
+        public static CheckoutAplazame Construir(
+            string mid, string correo, string cliente,
+            DireccionCheckout facturacion, DireccionCheckout envio, string nombreEnvio, bool recogidaEnTienda,
+            IEnumerable<LineaCheckout> lineas, decimal total,
+            string urlNotificacion, string prefijoRetorno)
+        {
             PedidoAplazame pedido = ConstruirPedido(mid, lineas, total, out long portes, out long ivaPortes);
 
             return new CheckoutAplazame
@@ -134,11 +166,11 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
                 Merchant = new MerchantAplazame
                 {
                     NotificationUrl = urlNotificacion,
-                    SuccessUrl = esquemaApp + "ok",
-                    PendingUrl = esquemaApp + "pending",
-                    ErrorUrl = esquemaApp + "ko",
-                    KoUrl = esquemaApp + "ko",
-                    DismissUrl = esquemaApp + "dismiss"
+                    SuccessUrl = prefijoRetorno + "ok",
+                    PendingUrl = prefijoRetorno + "pending",
+                    ErrorUrl = prefijoRetorno + "ko",
+                    KoUrl = prefijoRetorno + "ko",
+                    DismissUrl = prefijoRetorno + "dismiss"
                 },
                 Order = pedido,
                 Customer = new ClienteAplazame { Id = cliente?.Trim(), Email = correo?.Trim() },
@@ -151,19 +183,41 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
         internal static PedidoAplazame ConstruirPedido(string mid, IEnumerable<LineaPedidoVentaDTO> lineas, decimal total,
             out long portes, out long ivaPortes)
         {
-            List<LineaPedidoVentaDTO> todas = (lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Where(l => l != null).ToList();
+            return ConstruirPedido(mid, (lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Where(l => l != null).Select(DeLineaDeVenta),
+                total, out portes, out ivaPortes);
+        }
+
+        /// <summary>NestoAPI#864: una línea de venta del carrito, como <see cref="LineaCheckout"/>.</summary>
+        internal static LineaCheckout DeLineaDeVenta(LineaPedidoVentaDTO linea)
+        {
+            return new LineaCheckout
+            {
+                EsProducto = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = linea.Producto,
+                Texto = linea.texto,
+                Cantidad = linea.Cantidad,
+                BaseImponible = linea.BaseImponible,
+                Impuestos = linea.PorcentajeIva + linea.PorcentajeRecargoEquivalencia
+            };
+        }
+
+        /// <summary>NestoAPI#864: el <c>order</c> a partir de líneas ya leídas: el núcleo del cálculo, sin tipos de la venta.</summary>
+        internal static PedidoAplazame ConstruirPedido(string mid, IEnumerable<LineaCheckout> lineas, decimal total,
+            out long portes, out long ivaPortes)
+        {
+            List<LineaCheckout> todas = (lineas ?? Enumerable.Empty<LineaCheckout>()).Where(l => l != null).ToList();
             long totalCentimos = Centimos(total);
 
             List<ArticuloAplazame> articulos = todas
-                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && l.BaseImponible >= 0)
+                .Where(l => l.EsProducto && l.BaseImponible >= 0)
                 .Select(Articulo)
                 .ToList();
 
-            List<LineaPedidoVentaDTO> lineasPortes = todas
-                .Where(l => l.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO && l.BaseImponible > 0)
+            List<LineaCheckout> lineasPortes = todas
+                .Where(l => !l.EsProducto && l.BaseImponible > 0)
                 .ToList();
             portes = lineasPortes.Sum(l => Centimos(l.BaseImponible));
-            ivaPortes = lineasPortes.Any() ? PuntosBasicos(Impuestos(lineasPortes.First())) : 0;
+            ivaPortes = lineasPortes.Any() ? PuntosBasicos(lineasPortes.First().Impuestos) : 0;
 
             long suma = Sumar(articulos, portes, ivaPortes);
             // El descuento no puede ser negativo: si los redondeos dejan la suma corta, se sube un céntimo el artículo
@@ -207,11 +261,11 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
             return (long)RoundingHelper.Round(conImpuestos, 0);
         }
 
-        private static ArticuloAplazame Articulo(LineaPedidoVentaDTO linea)
+        private static ArticuloAplazame Articulo(LineaCheckout linea)
         {
             long baseCentimos = Centimos(linea.BaseImponible);
             int cantidad = linea.Cantidad;
-            string nombre = string.IsNullOrWhiteSpace(linea.texto) ? linea.Producto?.Trim() : linea.texto.Trim();
+            string nombre = string.IsNullOrWhiteSpace(linea.Texto) ? linea.Producto?.Trim() : linea.Texto.Trim();
             bool exacto = cantidad > 0 && baseCentimos % cantidad == 0;
             return new ArticuloAplazame
             {
@@ -221,11 +275,9 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
                 ImageUrl = URL_IMAGEN_GENERICA,
                 Quantity = exacto ? cantidad : 1,
                 Price = exacto ? baseCentimos / cantidad : baseCentimos,
-                TaxRate = PuntosBasicos(Impuestos(linea))
+                TaxRate = PuntosBasicos(linea.Impuestos)
             };
         }
-
-        private static decimal Impuestos(LineaPedidoVentaDTO linea) => linea.PorcentajeIva + linea.PorcentajeRecargoEquivalencia;
 
         /// <summary>0,21 → 2100; 0,262 (IVA + recargo) → 2620.</summary>
         internal static long PuntosBasicos(decimal fraccion) => (long)RoundingHelper.Round(fraccion * 10000M, 0);

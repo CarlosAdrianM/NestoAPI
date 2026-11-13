@@ -378,6 +378,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 InscripcionesPorCompra = guardian,
                 ServicioCanje = A.Fake<NestoAPI.Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo>(),
                 ServicioCupones = A.Fake<IServicioCanjeCupones>(),
+                // NestoAPI#864: al borrar el pedido se cancela su pago a plazos; aquí no pinta nada
+                ServicioPagoAPlazos = A.Fake<NestoAPI.Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos>(),
                 RequestContext = new HttpRequestContext { Principal = VENDEDOR }
             };
         }
@@ -427,6 +429,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             IHttpActionResult resultado = await controller.DeleteCabPedidoVta("1", PEDIDO);
 
             Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.OkNegotiatedContentResult<CabPedidoVta>));
+            // NestoAPI#864: borrar el pedido cancela su pago a plazos (si lo tenía)
+            A.CallTo(() => controller.ServicioPagoAPlazos.CancelarPorPedidoBorrado("1", PEDIDO, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

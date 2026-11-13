@@ -27,6 +27,13 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
 
         /// <summary>POST /orders/{mid}/cancel (API v1): solo para pedidos confirmados y sin capturar.</summary>
         Task Cancelar(string mid, bool sandbox);
+
+        /// <summary>
+        /// NestoAPI#864: POST /orders/{mid}/refund-extended (API v1): devuelve al cliente parte o todo de un pedido ya
+        /// capturado. Está en el contrato del proveedor de pago a plazos; hoy nadie lo llama solo (las devoluciones de
+        /// Aplázame se hacen en su panel) y NO se ha probado contra el sandbox.
+        /// </summary>
+        Task Reembolsar(string mid, long centimos, bool sandbox);
     }
 
     /// <summary>Respuesta de GET /orders/{mid}/captures.</summary>
@@ -126,6 +133,12 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
         {
             return Enviar(HttpMethod.Post, $"/orders/{Uri.EscapeDataString(mid)}/cancel", new { }, sandbox,
                 VERSION_PEDIDOS, $"cancelar {mid}");
+        }
+
+        public Task Reembolsar(string mid, long centimos, bool sandbox)
+        {
+            return Enviar(HttpMethod.Post, $"/orders/{Uri.EscapeDataString(mid)}/refund-extended", new { amount = centimos }, sandbox,
+                VERSION_PEDIDOS, $"reembolsar {centimos} céntimos de {mid}");
         }
 
         private async Task<string> Enviar(HttpMethod metodo, string ruta, object cuerpo, bool sandbox, int version, string operacion)

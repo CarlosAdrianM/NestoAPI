@@ -141,6 +141,14 @@ namespace NestoAPI.Controllers
                 .ToList();
         }
 
+        // NestoAPI#864: el pago a plazos del pedido (para cancelarlo al borrar el pedido). Sustituible en tests.
+        private Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos servicioPagoAPlazos;
+        internal Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos ServicioPagoAPlazos
+        {
+            get => servicioPagoAPlazos ?? (servicioPagoAPlazos = Infraestructure.Pagos.PagoAPlazos.ServicioPagoAPlazos.CrearPorDefecto());
+            set => servicioPagoAPlazos = value;
+        }
+
         // NestoAPI#593 (c4): el canje del cheque regalo (reglas duras fuera del pipeline de validación). Para tests.
         private Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo servicioCanje;
         internal Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo ServicioCanje
@@ -3568,6 +3576,10 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(new Exception($"[Cupones #613] No se pudo soltar el cupón del pedido {numero} al borrarlo: {ex.Message}", ex));
             }
+
+            // NestoAPI#864: si el pedido tenía un pago a plazos vivo, se cancela (pendiente: ya no se podrá aprobar; aprobado: se
+            // cancela en el proveedor). Nunca lanza: el pedido ya está borrado y, si falla, lo recoge el job.
+            await ServicioPagoAPlazos.CancelarPorPedidoBorrado(empresa, numero, User?.Identity?.Name).ConfigureAwait(true);
 
             // NestoAPI#732: confirmado, las inscripciones que justificaba se anulan y se avisa a la tienda. Best-effort: el pedido ya
             // está borrado.

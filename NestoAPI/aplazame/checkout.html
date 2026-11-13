@@ -11,6 +11,11 @@
         La app abre esta página con ?id={CheckoutId}&pk={clave pública}&sandbox={true|false} (la URL la monta
         POST api/Pedidos/Cliente/Carrito/Aplazame) y espera volver por nestotiendas://aplazame/ok|pending|ko|dismiss.
         El dominio api.nuevavision.es está dado de alta en el panel de Aplázame.
+
+        NestoAPI#864: la misma página vale para el pago a plazos de un pedido ya creado. Desde la app, igual que arriba (la
+        URL la da GET api/Pedidos/Cliente/{pedido}/PagoAPlazos). Desde un enlace (navegador), con &volver=web: no hay app a
+        la que volver, así que el resultado se enseña aquí; y con ?volver=web&resultado=ok|pending|ko|dismiss (a donde
+        devuelve Aplázame) solo se enseña el mensaje.
     -->
     <style>
         :root {
@@ -75,14 +80,42 @@
                 return coincidencia ? decodeURIComponent(coincidencia[1].replace(/\+/g, ' ')) : '';
             }
 
+            // NestoAPI#864: con volver=web la página se ha abierto desde un enlace, en el navegador (no hay app a la que
+            // volver): el resultado se enseña aquí mismo. Sin ese parámetro, todo sigue como en #663.
+            var WEB = parametro('volver') === 'web';
+            var TEXTOS_WEB = {
+                ok: 'Pago aprobado. Su pedido sigue adelante: ya puede cerrar esta página.',
+                pending: 'Aplázame está revisando su solicitud. En cuanto la apruebe, su pedido seguirá adelante.',
+                ko: 'Aplázame no ha aprobado el pago. Póngase en contacto con nosotros para pagar su pedido de otra forma.',
+                dismiss: 'Ha cerrado el pago sin terminarlo. Puede volver a abrir este enlace cuando quiera.'
+            };
+
+            function mostrar(texto) {
+                document.getElementById('rueda').style.display = 'none';
+                document.getElementById('texto').textContent = texto;
+                document.getElementById('ayuda').textContent = '';
+            }
+
             function volver(resultado) {
+                if (WEB) {
+                    mostrar(TEXTOS_WEB[resultado] || TEXTOS_WEB.ko);
+                    return;
+                }
                 window.location.href = VOLVER + resultado;
             }
 
             function fallo(texto) {
-                document.getElementById('rueda').style.display = 'none';
-                document.getElementById('texto').textContent = texto;
-                document.getElementById('ayuda').innerHTML = '<a href="' + VOLVER + 'ko">Volver a la aplicación</a>';
+                mostrar(texto);
+                if (!WEB) {
+                    document.getElementById('ayuda').innerHTML = '<a href="' + VOLVER + 'ko">Volver a la aplicación</a>';
+                }
+            }
+
+            // NestoAPI#864: Aplázame ha devuelto al cliente a esta página (merchant.*_url del checkout de un enlace)
+            var resultado = parametro('resultado');
+            if (WEB && resultado) {
+                mostrar(TEXTOS_WEB[resultado] || TEXTOS_WEB.ko);
+                return;
             }
 
             var id = parametro('id');
