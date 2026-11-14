@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 {
@@ -113,23 +114,77 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             Calcular(fila.EntregaEstimadaDia, fila.Recibido, HorasDe(fila.Agencia), hoy);
 
         /// <summary>
-        /// La fecha de un ENVÍO (correos que comparten código, <see cref="MismoEnvio"/>): la entrega estimada más tardía de sus correos (pesimista,
-        /// Carlos 12/11/26); si ninguno la dice, la regla con el correo más reciente. La misma para todos sus correos.
+        /// La fecha de un ENVÍO (correos que comparten código, <see cref="MismoEnvio"/>). Carlos 14/11/26: por cada seguimiento (bulto),
+        /// manda su ÚLTIMO correo con fecha (una reprogramación corrige a la anterior; uno sin fecha no la borra) y, si alguno dice que
+        /// se ha entregado, el día de la entrega (<see cref="EntregaConfirmadaCorreo"/>); entre bultos, el que llegue más tarde (el pedido
+        /// no está hasta que llega el último). Un correo sin código es su propio bulto. Si ningún bulto tiene fecha, la regla con el
+        /// correo más reciente. La misma para todos sus correos. Caso real 13/11/26 (Weelko): con la más tardía de todos los correos
+        /// salía el 16/11 de UPS aunque luego lo reprogramó al 13/11 y entregó ese día.
         /// </summary>
         public static DateTime Calcular(IEnumerable<CorreoSeguimientoFila> envio, DateTime hoy)
         {
             List<CorreoSeguimientoFila> correos = (envio ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f != null).ToList();
-            DateTime? entrega = correos.Where(f => f.EntregaEstimadaDia.HasValue).Select(f => (DateTime?)f.EntregaEstimadaDia.Value.Date).Max();
-            CorreoSeguimientoFila ultimo = correos.OrderByDescending(f => f.Recibido).FirstOrDefault();
+            CorreoSeguimientoFila ultimo = correos.OrderByDescending(f => f.Recibido).ThenByDescending(f => f.Id).FirstOrDefault();
             if (ultimo == null)
             {
                 return hoy.Date;
             }
-            return Calcular(entrega, ultimo.Recibido, HorasDe(ultimo.Agencia), hoy);
+            return Calcular(LlegadaDelEnvio(correos), ultimo.Recibido, HorasDe(ultimo.Agencia), hoy);
+        }
+
+        /// <summary>El día que llega el último bulto con fecha, o null si ningún bulto la tiene. PURA.</summary>
+        internal static DateTime? LlegadaDelEnvio(IEnumerable<CorreoSeguimientoFila> correos)
+        {
+            var porBulto = new Dictionary<string, List<CorreoSeguimientoFila>>(StringComparer.OrdinalIgnoreCase);
+            foreach (CorreoSeguimientoFila correo in correos.Where(f => f != null))
+            {
+                HashSet<string> codigos = MismoEnvio.Codigos(correo);
+                if (!codigos.Any())
+                {
+                    _ = codigos.Add("#correo-" + correo.Id + "-" + correo.Recibido.Ticks);
+                }
+                foreach (string codigo in codigos)
+                {
+                    if (!porBulto.TryGetValue(codigo, out List<CorreoSeguimientoFila> lista))
+                    {
+                        porBulto[codigo] = lista = new List<CorreoSeguimientoFila>();
+                    }
+                    lista.Add(correo);
+                }
+            }
+            return porBulto.Values.Select(LlegadaDelBulto).Where(d => d.HasValue).Max();
+        }
+
+        /// <summary>Entregado → el día de la entrega; si no, la entrega estimada de su último correo que la dé; si no, null.</summary>
+        private static DateTime? LlegadaDelBulto(List<CorreoSeguimientoFila> correos)
+        {
+            CorreoSeguimientoFila entregado = correos.Where(EntregaConfirmadaCorreo.Es).OrderBy(f => f.Recibido).FirstOrDefault();
+            if (entregado != null)
+            {
+                return entregado.Recibido.Date;
+            }
+            return correos.Where(f => f.EntregaEstimadaDia.HasValue)
+                .OrderByDescending(f => f.Recibido).ThenByDescending(f => f.Id)
+                .Select(f => (DateTime?)f.EntregaEstimadaDia.Value.Date).FirstOrDefault();
         }
 
         /// <summary>¿Lo bastante reciente para que el job escriba (o avise) solo?</summary>
         public static bool Reciente(DateTime recibido, DateTime ahora) => recibido >= ahora.AddDays(-DIAS_APLICACION_AUTOMATICA);
+    }
+
+    /// <summary>
+    /// NestoAPI#857 (Carlos 14/11/26): ¿dice el correo que el paquete YA se ha entregado? Por el asunto o el extracto («Paquete
+    /// entregado», «Tu paquete se ha entregado», «has been delivered»…). Una entrega futura («será entregado», «Entrega estimada») no
+    /// cuenta. PURA.
+    /// </summary>
+    public static class EntregaConfirmadaCorreo
+    {
+        private static readonly Regex PATRON = new Regex(
+            @"\b(se\s+ha\s+entregado|ha\s+sido\s+entregad[oa]|(paquete|env[ií]o|pedido|bulto)\s+entregado|has\s+been\s+delivered|was\s+delivered)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+        public static bool Es(CorreoSeguimientoFila fila) =>
+            fila != null && (PATRON.IsMatch(fila.Asunto ?? string.Empty) || PATRON.IsMatch(fila.Extracto ?? string.Empty));
     }
 
     /// <summary>NestoAPI#857 (fase 3): qué hacer con un correo según a qué pedido está ya aplicado. PURA.</summary>

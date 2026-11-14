@@ -125,6 +125,74 @@ Siga su envío<https://www.mbe.es/es/tracking?c=1Z21E7X76890915153>";
             Assert.AreEqual(new DateTime(2026, 11, 13), ReglaFechaRecepcionPorCorreo.Calcular(envio.Take(2).Skip(1), HOY));
         }
 
+        private const string BULTO_A = "1Z21E7X76890915153";
+        private const string BULTO_B = "1Z21E7X76890089163";
+        private const string BULTO_C = "1Z21E7X76893119777";
+
+        private static int idBulto = 100;
+
+        private static CorreoSeguimientoFila DeBulto(string codigo, DateTime recibido, DateTime? entrega, string asunto = "Tu paquete está de camino") =>
+            new CorreoSeguimientoFila { Id = idBulto++, Codigo = codigo, Recibido = recibido, Agencia = "UPS", EntregaEstimadaDia = entrega, Asunto = asunto };
+
+        [TestMethod]
+        public void Fecha_DelEnvio_Weelko13Nov_ElUltimoCorreoDeCadaBultoYElEntregado()
+        {
+            // Caso real: la más tardía de todos los correos daba el 16/11; UPS reprogramó dos bultos al 13/11 y entregó el tercero ese día
+            var mbe = new CorreoSeguimientoFila
+            {
+                Id = idBulto++, Codigo = BULTO_A, Recibido = new DateTime(2026, 11, 12, 21, 15, 0), Agencia = "UPS",
+                Seguimientos = "[{\"Codigo\":\"" + BULTO_A + "\"},{\"Codigo\":\"" + BULTO_B + "\"},{\"Codigo\":\"" + BULTO_C + "\"}]"
+            };
+            var envio = new List<CorreoSeguimientoFila>
+            {
+                DeBulto(BULTO_A, new DateTime(2026, 11, 12, 20, 15, 0), new DateTime(2026, 11, 16)),
+                DeBulto(BULTO_B, new DateTime(2026, 11, 12, 20, 16, 0), new DateTime(2026, 11, 16)),
+                DeBulto(BULTO_C, new DateTime(2026, 11, 12, 21, 2, 0), new DateTime(2026, 11, 16)),
+                mbe,
+                DeBulto(BULTO_C, new DateTime(2026, 11, 13, 12, 33, 0), null, "Actualización de UPS: Paquete entregado"),
+                DeBulto(BULTO_A, new DateTime(2026, 11, 13, 14, 28, 0), new DateTime(2026, 11, 13), "Actualización de UPS: Fecha de entrega del paquete reprogramada"),
+                DeBulto(BULTO_B, new DateTime(2026, 11, 13, 15, 58, 0), new DateTime(2026, 11, 13), "Actualización de UPS: Fecha de entrega del paquete reprogramada")
+            };
+            Assert.AreEqual(new DateTime(2026, 11, 13), ReglaFechaRecepcionPorCorreo.Calcular(envio, new DateTime(2026, 11, 13)));
+            Assert.AreEqual(new DateTime(2026, 11, 16), ReglaFechaRecepcionPorCorreo.Calcular(envio.Take(4), new DateTime(2026, 11, 12)), "el 12/11 decían todos 16/11");
+        }
+
+        [TestMethod]
+        public void Fecha_DelEnvio_UnRetrasoDeUnBultoSeRecoge_YUnCorreoSinFechaNoLaBorra()
+        {
+            var envio = new List<CorreoSeguimientoFila>
+            {
+                DeBulto(BULTO_A, HOY.AddHours(9), new DateTime(2026, 11, 16)),
+                DeBulto(BULTO_A, HOY.AddHours(15), new DateTime(2026, 11, 19), "Entrega reprogramada"),
+                DeBulto(BULTO_A, HOY.AddHours(18), null, "Tu paquete va de camino")
+            };
+            Assert.AreEqual(new DateTime(2026, 11, 19), ReglaFechaRecepcionPorCorreo.Calcular(envio, HOY));
+        }
+
+        [TestMethod]
+        public void Fecha_DelEnvio_EntreBultos_ElQueLlegaMasTarde_YUnoEntregadoNoAdelantaAlOtro()
+        {
+            var envio = new List<CorreoSeguimientoFila>
+            {
+                DeBulto(BULTO_A, HOY.AddHours(9), new DateTime(2026, 11, 16)),
+                DeBulto(BULTO_B, HOY.AddHours(9.5), new DateTime(2026, 11, 18)),
+                DeBulto(BULTO_A, HOY.AddHours(12), null, "Tu paquete se ha entregado")
+            };
+            Assert.AreEqual(new DateTime(2026, 11, 18), ReglaFechaRecepcionPorCorreo.Calcular(envio, HOY));
+        }
+
+        [TestMethod]
+        public void EntregaConfirmada_SoloLaQueYaHaPasado()
+        {
+            Assert.IsTrue(EntregaConfirmadaCorreo.Es(new CorreoSeguimientoFila { Asunto = "Actualización de UPS: Paquete entregado" }));
+            Assert.IsTrue(EntregaConfirmadaCorreo.Es(new CorreoSeguimientoFila { Extracto = "Tu paquete se ha entregado. De MBE STORE" }));
+            Assert.IsTrue(EntregaConfirmadaCorreo.Es(new CorreoSeguimientoFila { Extracto = "Your package has been delivered" }));
+            Assert.IsTrue(EntregaConfirmadaCorreo.Es(new CorreoSeguimientoFila { Asunto = "Su envío ha sido entregado" }));
+            Assert.IsFalse(EntregaConfirmadaCorreo.Es(new CorreoSeguimientoFila { Asunto = "Tu paquete será entregado el lunes", Extracto = "Entrega estimada: 16/11" }));
+            Assert.IsFalse(EntregaConfirmadaCorreo.Es(new CorreoSeguimientoFila { Asunto = "Se ha enviado tu paquete" }));
+            Assert.IsFalse(EntregaConfirmadaCorreo.Es(null));
+        }
+
         [TestMethod]
         public void Reciente_TresDias()
         {
