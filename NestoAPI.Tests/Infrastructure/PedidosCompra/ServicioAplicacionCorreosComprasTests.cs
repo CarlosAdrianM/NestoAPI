@@ -280,6 +280,41 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
+        public async Task DosPedidos_SeRecibeUno_LosCorreosNuevosDelEnvioNoSeAplicanAlQueQueda()
+        {
+            // Caso real 13/11/26 (Weelko): el envío por asignar con dos pedidos; a las 10:58 se recibe el bueno (912001) y a las 15:58
+            // llega otro correo del mismo envío. Quedaba un solo pedido en el aire (911500) y el job le adelantó la fecha: ya no.
+            DosPedidosDeWeelko();
+            await Pasada(Envio().Values.ToArray());
+            Assert.AreEqual(1, avisos.Count, "por asignar: un aviso");
+
+            repositorio.Recibir(912001, new DateTime(2026, 11, 13, 10, 58, 16));
+            CorreoCompras otroDelEnvio = CorreosSeguimientoFase3Tests.Correo(CorreosSeguimientoFase3Tests.MBE_TEXTO, "recogidas061@mbe.es",
+                new DateTime(2026, 11, 13, 15, 58, 0), "Sus envíos con MBE 13/11/2026", "mbe-13");
+            ahora = new DateTime(2026, 11, 13, 16, 0, 0);
+            await Pasada(otroDelEnvio);
+            ahora = new DateTime(2026, 11, 13, 16, 30, 0);
+            await Pasada();
+
+            Assert.AreEqual(0, repositorio.Rastros.Count, "no se pone fecha a ningún pedido");
+            Assert.IsTrue(repositorio.Lineas[911500].All(l => l.FechaRecepcion == new DateTime(2026, 9, 20)), "el que queda en el aire no cambia");
+            Assert.IsTrue(repositorio.Correos.All(c => !c.PedidoAplicado.HasValue));
+            Assert.AreEqual(1, avisos.Count, "ni un aviso más: el envío ya ha llegado");
+            Assert.IsTrue(repositorio.Correos.Where(c => c.Recibido < ahora.Date).All(c => c.PedidoReal == 912001), "la medición dice el bueno");
+        }
+
+        [TestMethod]
+        public void Decidir_ConUnCorreoMedido_YaLlego()
+        {
+            var medido = new CorreoSeguimientoFila { Id = 1, Recibido = new DateTime(2026, 11, 12, 20, 15, 0), PedidoReal = 912001 };
+            var nuevo = new CorreoSeguimientoFila { Id = 2, Recibido = new DateTime(2026, 11, 13, 15, 58, 0) };
+            DecisionEnvio decision = MismoEnvio.Decidir(new[] { medido, nuevo });
+            Assert.IsTrue(decision.YaLlego);
+            Assert.AreSame(medido, decision.Llegado);
+            Assert.IsFalse(MismoEnvio.Decidir(new[] { nuevo }).YaLlego);
+        }
+
+        [TestMethod]
         public async Task DosPedidos_EnUnaPasada_UnSoloAviso()
         {
             DosPedidosDeWeelko();

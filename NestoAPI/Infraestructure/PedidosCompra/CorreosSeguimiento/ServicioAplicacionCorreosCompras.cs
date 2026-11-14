@@ -257,6 +257,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 }
                 return heredados;
             }
+            if (decision.YaLlego)
+            {
+                // Un candidato del envío ya tiene albarán: el envío ha llegado (era ese pedido). Ni se pone fecha a los que quedan en el
+                // aire (que el que quede sea uno solo no lo hace suyo) ni se avisa a Compras.
+                return heredados;
+            }
             CandidatoPedidoCompra unico = decision.Unico;
             if (unico != null)
             {
@@ -305,7 +311,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 foreach (List<CorreoSeguimientoFila> grupo in MismoEnvio.Agrupar(guardados))
                 {
                     DecisionEnvio decision = MismoEnvio.Decidir(grupo);
-                    if (decision.Avisado || decision.Aplicado != null || decision.Descartado || decision.Unico != null
+                    if (decision.Avisado || decision.Aplicado != null || decision.Descartado || decision.YaLlego || decision.Unico != null
                         || !decision.Correos.Any(CorreosPorAsignar.Es)
                         || !decision.Correos.Any(f => ReglaFechaRecepcionPorCorreo.Reciente(f.Recibido, momento))
                         || !decision.Correos.Any(f => f.FechaCaptura >= momento - CAPTURA_AVISO)

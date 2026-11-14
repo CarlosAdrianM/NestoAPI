@@ -21,6 +21,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public bool Descartado { get; set; }
         /// <summary>Ya se avisó a Compras por alguno de sus correos.</summary>
         public bool Avisado { get; set; }
+        /// <summary>
+        /// El primer correo del envío con medición (PedidoReal): un candidato suyo ya tiene albarán desde ese día, así que el envío ha
+        /// llegado y ya no hay fecha que poner. Caso real del 13/11/26 (Weelko): recibido el 220873, el job tomó por inequívoco el otro
+        /// pedido que quedaba en el aire (220181) y le adelantó la fecha del 23/11 al 16/11 con los correos de un envío que no era suyo.
+        /// </summary>
+        public CorreoSeguimientoFila Llegado { get; set; }
+        public bool YaLlego => Llegado != null;
 
         /// <summary>El pedido si es inequívoco (un solo candidato), o null.</summary>
         public CandidatoPedidoCompra Unico => ReglaAsignacionInequivoca.Pedido(false, Candidatos);
@@ -143,6 +150,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             };
             decision.EntregaEstimadaDia = decision.Correos.Where(f => f.EntregaEstimadaDia.HasValue).Select(f => (DateTime?)f.EntregaEstimadaDia.Value.Date).Max();
             decision.Avisado = decision.Correos.Any(f => f.AvisadoPorAsignar.HasValue);
+            // También con el envío ya aplicado: llegado el pedido, los correos que vengan después no vuelven a poner fecha
+            decision.Llegado = decision.Correos.Where(f => f.PedidoReal.HasValue).OrderBy(f => f.Recibido).ThenBy(f => f.Id).FirstOrDefault();
             decision.Aplicado = decision.Correos.Where(f => f.PedidoAplicado.HasValue)
                 .OrderByDescending(f => f.AplicadoEl ?? DateTime.MinValue).ThenByDescending(f => f.Id).FirstOrDefault();
             if (decision.Aplicado != null)

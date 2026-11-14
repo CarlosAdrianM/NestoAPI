@@ -101,6 +101,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 ?? new LecturaBuzonCompras { Error = "El lector no ha devuelto nada." };
             resultado.Leidos = lectura.Correos.Count;
 
+            // La medición ANTES de decidir los correos nuevos: si un candidato de su envío ya tiene albarán, el envío ha llegado y no se
+            // aplica (MismoEnvio.Llegado). Un albarán del viernes por la tarde y el correo del lunes a las 8:00 se decidirían si no a ciegas.
+            int medidosAntes = lectura.Correos.Any() ? await Medir(ahora).ConfigureAwait(false) : 0;
+
             bool todoGuardado = true;
             if (lectura.Correos.Any())
             {
@@ -130,7 +134,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 _ = await aplicacion.AvisarPendientes().ConfigureAwait(false); // fase 3: una campana por envío por asignar; nunca lanza
             }
-            resultado.Medidos = await Medir(ahora).ConfigureAwait(false);
+            resultado.Medidos = medidosAntes + await Medir(ahora).ConfigureAwait(false);
             return resultado;
         }
 

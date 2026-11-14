@@ -67,9 +67,34 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         public Task<bool> DesactivarRemitente(int id, string usuario) => Task.FromResult(true);
         public Task<List<PedidoCompraEnAire>> LeerPedidosEnAire(string empresa) =>
             Task.FromResult(Pedidos.Where(p => Lineas.TryGetValue(p.Pedido, out var l) && l.Any()).Select(p => p).ToList());
-        public Task<List<CorreoSeguimientoFila>> LeerPendientesDeMedir(DateTime desde) => Task.FromResult(new List<CorreoSeguimientoFila>());
-        public Task<List<AlbaranPedidoCompra>> LeerAlbaranes(IEnumerable<CandidatoPedidoCompra> pedidos) => Task.FromResult(new List<AlbaranPedidoCompra>());
-        public Task GuardarReal(int id, AlbaranPedidoCompra albaran) => Task.CompletedTask;
+        /// <summary>Los albaranes de los pedidos (para la medición, PedidoReal). Vacío = como antes: no se mide nada.</summary>
+        public List<AlbaranPedidoCompra> Albaranes { get; } = new List<AlbaranPedidoCompra>();
+
+        /// <summary>El pedido se recibe entero ese día: sale del aire y tiene albarán.</summary>
+        public void Recibir(int pedido, DateTime fechaAlbaran)
+        {
+            Lineas[pedido] = new List<LineaCompraCorreo>();
+            Albaranes.Add(new AlbaranPedidoCompra { Empresa = "1", Pedido = pedido, FechaAlbaran = fechaAlbaran });
+        }
+
+        public Task<List<CorreoSeguimientoFila>> LeerPendientesDeMedir(DateTime desde) => Task.FromResult(Correos
+            .Where(c => !c.PedidoReal.HasValue && c.PedidosCandidatos != null && c.Recibido >= desde).Select(Copia).ToList());
+        public Task<List<AlbaranPedidoCompra>> LeerAlbaranes(IEnumerable<CandidatoPedidoCompra> pedidos)
+        {
+            var claves = new HashSet<string>((pedidos ?? Enumerable.Empty<CandidatoPedidoCompra>()).Select(c => AsignadorPedidosCompra.Clave(c.Empresa, c.Pedido)));
+            return Task.FromResult(Albaranes.Where(a => claves.Contains(AsignadorPedidosCompra.Clave(a.Empresa, a.Pedido))).ToList());
+        }
+        public Task GuardarReal(int id, AlbaranPedidoCompra albaran)
+        {
+            CorreoSeguimientoFila fila = Correos.Single(c => c.Id == id);
+            if (!fila.PedidoReal.HasValue)
+            {
+                fila.EmpresaReal = albaran.Empresa;
+                fila.PedidoReal = albaran.Pedido;
+                fila.FechaAlbaranReal = albaran.FechaAlbaran.Date;
+            }
+            return Task.CompletedTask;
+        }
 
         public Task<List<CorreoSeguimientoFila>> LeerCorreos(DateTime desde) =>
             Task.FromResult(Correos.Where(c => c.Recibido >= desde).OrderByDescending(c => c.Recibido).Select(Copia).ToList());
