@@ -56,6 +56,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// propio (<see cref="TipoFestivo.RepartoPropio"/>, delegación <see cref="GestorFestivos.REPARTO_PROPIO"/>): ni la de ida
     /// (ALG→tienda) ni la de vuelta (tienda→ALG); se va a la siguiente del calendario. Ese día sigue siendo laborable para los
     /// almacenes y las tiendas (el cierre con antelación y el día en que sale el pedido no cambian).</para>
+    /// <para>NestoAPI#867: qué viajes llegan un día lo dice <see cref="ReglaCalendarioReposiciones"/> (calendario semanal +
+    /// excepciones por fecha: un día quitado no tiene viaje y se va al siguiente; un día extra cuenta como otro cualquiera).</para>
     /// </summary>
     public class CalculadoraFechaReposicion
     {
@@ -63,6 +65,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         internal const int DIAS_MAXIMOS_BUSQUEDA = 60;
 
         private readonly Func<DateTime, string, bool> esFestivo;
+        private readonly Func<IReadOnlyList<ExcepcionCalendarioReposicionDTO>> excepciones;
 
         /// <summary>Con los festivos de <see cref="GestorFestivos.EsFestivo"/> (delegación = código de almacén).</summary>
         public CalculadoraFechaReposicion() : this(GestorFestivos.EsFestivo)
@@ -70,9 +73,26 @@ namespace NestoAPI.Infraestructure.Reposiciones
         }
 
         /// <param name="esFestivo">(día, almacén) → true si ese almacén no trabaja ese día.</param>
-        public CalculadoraFechaReposicion(Func<DateTime, string, bool> esFestivo)
+        /// <param name="excepciones">
+        /// NestoAPI#867: las excepciones por fecha del calendario. Null: las de la caché
+        /// (<see cref="ExcepcionesCalendarioReposiciones.Vigentes"/>; sin lector, en las pruebas, ninguna).
+        /// </param>
+        public CalculadoraFechaReposicion(Func<DateTime, string, bool> esFestivo,
+            Func<IReadOnlyList<ExcepcionCalendarioReposicionDTO>> excepciones = null)
         {
             this.esFestivo = esFestivo ?? throw new ArgumentNullException(nameof(esFestivo));
+            this.excepciones = excepciones ?? ExcepcionesCalendarioReposiciones.Vigentes;
+        }
+
+        private IReadOnlyList<ExcepcionCalendarioReposicionDTO> Excepciones()
+        {
+            return excepciones() ?? new List<ExcepcionCalendarioReposicionDTO>();
+        }
+
+        /// <summary>NestoAPI#867: la excepción de esa ruta ese día de llegada, o null (ver <see cref="ReglaCalendarioReposiciones"/>).</summary>
+        public ExcepcionCalendarioReposicionDTO ExcepcionDelDia(string empresa, string origen, string destino, DateTime diaLlegada)
+        {
+            return ReglaCalendarioReposiciones.ExcepcionDelDia(Excepciones(), empresa, origen, destino, diaLlegada);
         }
 
         /// <summary>1 lunes … 7 domingo, como la columna DiaSemana.</summary>
@@ -99,6 +119,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             {
                 return null;
             }
+            IReadOnlyList<ExcepcionCalendarioReposicionDTO> excepcionesVigentes = Excepciones();
 
             for (int i = 0; i <= DIAS_MAXIMOS_BUSQUEDA; i++)
             {
@@ -108,8 +129,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     continue;
                 }
 
-                var candidata = filasRuta
-                    .Where(f => f.DiaSemana == DiaSemana(dia))
+                // NestoAPI#867: LA REGLA (calendario semanal + excepciones por fecha) dice qué viajes llegan ese día.
+                var candidata = ReglaCalendarioReposiciones.ViajesDelDia(filasRuta, excepcionesVigentes, empresaLimpia, origenLimpio, destinoLimpio, dia)
                     .Select(f => new { Fila = f, Cierre = DiaCierre(dia, f.LaborablesAntelacionCierre, origenLimpio) + f.HoraCierre })
                     .Where(c => c.Cierre > ahora)
                     .OrderBy(c => c.Cierre)
@@ -150,22 +171,29 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public List<CorteReposicion> CortesDelDia(IEnumerable<ReposicionCalendario> calendario, DateTime dia)
         {
             DateTime fecha = dia.Date;
+            IReadOnlyList<ExcepcionCalendarioReposicionDTO> excepcionesVigentes = Excepciones();
             var cortes = new List<CorteReposicion>();
-            foreach (ReposicionCalendario fila in FilasValidas(calendario))
+            foreach (RutaCalendario ruta in Rutas(calendario))
             {
-                string origen = Limpiar(fila.AlmacenOrigen);
-                // El día de cierre avanza con el de llegada: se recorren llegadas desde hoy hasta que su cierre pase de hoy.
+                // NestoAPI#867: una extra podría llevar otra antelación (la API no lo deja, pero la regla no lo supone).
+                byte antelacionMaxima = ruta.Filas.Select(f => f.LaborablesAntelacionCierre)
+                    .Concat(excepcionesVigentes.Where(e => e?.LaborablesAntelacionCierre != null).Select(e => e.LaborablesAntelacionCierre.Value))
+                    .DefaultIfEmpty((byte)0).Max();
+                // El día de cierre avanza con el de llegada: se recorren llegadas desde hoy hasta que ni con la mayor
+                // antelación su cierre caiga hoy o antes.
                 for (int i = 0; i <= DIAS_MAXIMOS_BUSQUEDA; i++)
                 {
                     DateTime llegada = fecha.AddDays(i);
-                    DateTime cierre = DiaCierre(llegada, fila.LaborablesAntelacionCierre, origen);
-                    if (cierre > fecha)
+                    if (DiaCierre(llegada, antelacionMaxima, ruta.Origen) > fecha)
                     {
                         break;
                     }
-                    if (cierre == fecha && EsDiaDeLlegada(fila, llegada))
+                    foreach (ReposicionCalendario fila in ReglaCalendarioReposiciones.ViajesDelDia(ruta.Filas, excepcionesVigentes, ruta.Empresa, ruta.Origen, ruta.Destino, llegada))
                     {
-                        cortes.Add(Corte(fila, llegada));
+                        if (DiaCierre(llegada, fila.LaborablesAntelacionCierre, ruta.Origen) == fecha && EsDiaDeLlegada(fila, llegada))
+                        {
+                            cortes.Add(Corte(fila, llegada));
+                        }
                     }
                 }
             }
@@ -179,7 +207,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public List<CorteReposicion> CortesQueLleganElDia(IEnumerable<ReposicionCalendario> calendario, DateTime dia)
         {
             DateTime fecha = dia.Date;
-            return Ordenar(FilasValidas(calendario)
+            IReadOnlyList<ExcepcionCalendarioReposicionDTO> excepcionesVigentes = Excepciones();
+            return Ordenar(Rutas(calendario)
+                .SelectMany(r => ReglaCalendarioReposiciones.ViajesDelDia(r.Filas, excepcionesVigentes, r.Empresa, r.Origen, r.Destino, fecha))
                 .Where(f => EsDiaDeLlegada(f, fecha))
                 .Select(f => Corte(f, fecha)));
         }
@@ -221,6 +251,28 @@ namespace NestoAPI.Infraestructure.Reposiciones
         {
             return (calendario ?? Enumerable.Empty<ReposicionCalendario>())
                 .Where(f => f != null && f.Activo && Limpiar(f.AlmacenOrigen) != null && Limpiar(f.AlmacenDestino) != null);
+        }
+
+        /// <summary>NestoAPI#867: las filas activas de una ruta (una extra solo cuenta en una ruta con alguna fila activa).</summary>
+        private class RutaCalendario
+        {
+            internal string Empresa;
+            internal string Origen;
+            internal string Destino;
+            internal List<ReposicionCalendario> Filas;
+        }
+
+        private static List<RutaCalendario> Rutas(IEnumerable<ReposicionCalendario> calendario)
+        {
+            return FilasValidas(calendario)
+                .GroupBy(f => new
+                {
+                    Empresa = Limpiar(f.Empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Origen = Limpiar(f.AlmacenOrigen),
+                    Destino = Limpiar(f.AlmacenDestino)
+                })
+                .Select(g => new RutaCalendario { Empresa = g.Key.Empresa, Origen = g.Key.Origen, Destino = g.Key.Destino, Filas = g.ToList() })
+                .ToList();
         }
 
         private bool EsDiaDeLlegada(ReposicionCalendario fila, DateTime dia)

@@ -326,7 +326,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 .ToList();
             if (!deHoy.Any())
             {
-                throw new NestoBusinessException($"Hoy no hay reposición de {origenLimpio} a {destinoLimpio} en el calendario (o es festivo en alguno de los dos).")
+                throw new NestoBusinessException($"Hoy no hay reposición de {origenLimpio} a {destinoLimpio} en el calendario (o es festivo en alguno de los dos, o se ha quitado ese día con una excepción).")
                 {
                     StatusCode = HttpStatusCode.NotFound
                 };

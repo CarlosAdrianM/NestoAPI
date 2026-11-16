@@ -1540,8 +1540,10 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             else
             {
                 // Hay fila para hoy (lunes a viernes) pero no viaje: festivo en la tienda o en Algete
+                // (NestoAPI#867: un día quitado con una excepción del calendario no es festivo: simplemente no hay viaje.)
                 festivo = momento.DayOfWeek != DayOfWeek.Saturday && momento.DayOfWeek != DayOfWeek.Sunday
-                    && deLaRuta.Any(f => f.DiaSemana == CalculadoraFechaReposicion.DiaSemana(momento));
+                    && deLaRuta.Any(f => f.DiaSemana == CalculadoraFechaReposicion.DiaSemana(momento))
+                    && calculadora.ExcepcionDelDia(empresa, origen, destino, momento) == null;
                 nombreOrigen = await repositorio.LeerNombreAlmacen(empresa, origen).ConfigureAwait(false);
                 nombreDestino = await repositorio.LeerNombreAlmacen(empresa, destino).ConfigureAwait(false);
             }

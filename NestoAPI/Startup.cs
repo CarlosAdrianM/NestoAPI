@@ -67,6 +67,8 @@ namespace NestoAPI
                 Infraestructure.PedidosVenta.CondicionesCampana.PlazosProntoPago.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#779: los festivos salen de la tabla Festivos (si no existe o le falta el año, de la lista de GestorFestivos).
                 Models.RecursosHumanos.CalendarioFestivos.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // NestoAPI#867: las excepciones por fecha del calendario de reposiciones (sin la tabla, ninguna).
+                Infraestructure.Reposiciones.ExcepcionesCalendarioReposiciones.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#823 (Carlos 05/11/26): una persona, una identidad: «Alfredo» (Ariadna/NestoApp) es «NUEVAVISION\Alfredo».
                 Infraestructure.UsuarioAuditoriaHelper.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#346 (06/11/26): los errores repetidos de Verifactu miran ELMAH (7 días) para no volver tras cada reciclaje.

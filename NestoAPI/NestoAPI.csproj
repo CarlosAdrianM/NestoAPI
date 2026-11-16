@@ -1327,6 +1327,8 @@
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
     <Compile Include="Infraestructure\Reposiciones\StockACeroNoEsta.cs" />
+    <Compile Include="Infraestructure\Reposiciones\ExcepcionesCalendarioReposiciones.cs" />
+    <Compile Include="Infraestructure\Reposiciones\ServicioExcepcionesCalendarioReposiciones.cs" />
     <Compile Include="Infraestructure\Eventos\EstadoSenalEvento.cs" />
     <Compile Include="Infraestructure\Rapports\MotorSugerenciasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\DatosSugerenciasContacto.cs" />

@@ -398,6 +398,70 @@ namespace NestoAPI.Controllers
             return Ok(await Calendario.Guardar(peticion, usuario).ConfigureAwait(false));
         }
 
+        /// <summary>NestoAPI#867: sustituible en los tests (null = el de la BD).</summary>
+        internal IServicioExcepcionesCalendarioReposiciones excepcionesCalendario;
+
+        private IServicioExcepcionesCalendarioReposiciones ExcepcionesCalendario =>
+            excepcionesCalendario ?? new ServicioExcepcionesCalendarioReposiciones(db);
+
+        // GET api/Reposiciones/Calendario/Excepciones?empresa=1&desde=2026-11-16
+        /// <summary>
+        /// NestoAPI#867: las excepciones por fecha del calendario de reposiciones (días quitados y días extra) con llegada desde
+        /// <paramref name="desde"/> (sin él, hoy), por fecha y ruta, con CierraEl (desde ese momento ya no se pueden tocar).
+        /// Leer basta con estar identificado (como GET Calendario). 503 sin Scripts/Issue867_ReposicionesCalendarioExcepciones.sql.
+        /// </summary>
+        [HttpGet]
+        [Route("Calendario/Excepciones")]
+        [ResponseType(typeof(List<ExcepcionCalendarioReposicionDTO>))]
+        public async Task<IHttpActionResult> GetExcepcionesCalendario(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, DateTime? desde = null)
+        {
+            return Ok(await ExcepcionesCalendario.Leer(empresa, desde).ConfigureAwait(false));
+        }
+
+        // POST api/Reposiciones/Calendario/Excepciones   { Empresa?, Origen, Destino, FechaLlegada, Tipo: SinReposicion|ReposicionExtra, HoraCierre?, LaborablesAntelacionCierre?, HoraLlegadaHabitual?, Motivo }
+        /// <summary>
+        /// NestoAPI#867: crea o cambia (por empresa + origen + destino + fecha de llegada) una excepción: quitar un día que el
+        /// calendario tiene (SinReposicion) o añadir uno que no tiene (ReposicionExtra; las horas que no vengan, las de la
+        /// ruta; la antelación, la de la ruta). Mismo permiso que PUT Calendario (403). 400 si no vale (fecha pasada, día que
+        /// no hay que quitar o que ya existe, festivo…); 409 si la reposición de ese día ya ha pasado su hora de cierre; 503
+        /// sin el script. Rastro en Modificaciones. Devuelve la excepción guardada.
+        /// </summary>
+        [HttpPost]
+        [Route("Calendario/Excepciones")]
+        [ResponseType(typeof(ExcepcionCalendarioReposicionDTO))]
+        public async Task<IHttpActionResult> PostExcepcionCalendario([FromBody] ExcepcionCalendarioReposicionDTO excepcion)
+        {
+            if (!PermisoManual.Puede(User))
+            {
+                return Prohibido(new UnauthorizedAccessException(ServicioCalendarioReposiciones.MENSAJE_SIN_PERMISO));
+            }
+            if (excepcion == null)
+            {
+                return BadRequest("Faltan los datos de la excepción.");
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            return Ok(await ExcepcionesCalendario.Guardar(excepcion, usuario).ConfigureAwait(false));
+        }
+
+        // DELETE api/Reposiciones/Calendario/Excepciones/5
+        /// <summary>
+        /// NestoAPI#867: borra una excepción (ese día vuelve a ser como dice el calendario semanal). Mismo permiso que PUT
+        /// Calendario (403); 404 si no existe; 409 si la reposición de ese día ya ha pasado su hora de cierre. Rastro en
+        /// Modificaciones. Devuelve la excepción borrada.
+        /// </summary>
+        [HttpDelete]
+        [Route("Calendario/Excepciones/{id:int}")]
+        [ResponseType(typeof(ExcepcionCalendarioReposicionDTO))]
+        public async Task<IHttpActionResult> DeleteExcepcionCalendario(int id)
+        {
+            if (!PermisoManual.Puede(User))
+            {
+                return Prohibido(new UnauthorizedAccessException(ServicioCalendarioReposiciones.MENSAJE_SIN_PERMISO));
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            return Ok(await ExcepcionesCalendario.Borrar(id, usuario).ConfigureAwait(false));
+        }
+
         // GET api/Reposiciones/EnTransito?empresa=1&almacen=ALC&productos=45146,45148
         /// <summary>
         /// Nesto#510: por producto, las unidades que viajan HACIA <paramref name="almacen"/> en una reposición: pendientes de

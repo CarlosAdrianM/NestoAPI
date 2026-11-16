@@ -312,6 +312,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Frena AT/16 (fecha de entrega, picking de rutas internas, RP, paradas), las llegadas de reposición (`CalculadoraFechaReposicion`) y el
   aviso de las 22:00 de la furgoneta. Lo dan de alta también Almacén (solo ese tipo; no hay grupo «Logística» en el dominio, Carlos 09/11/26). Requiere `Scripts/Issue841_FestivosRepartoPropio.sql` (CHECK).
 
+### Excepciones del calendario de reposiciones (NestoAPI#867, 16/11/26)
+- `dbo.ReposicionesCalendarioExcepciones` (fuera del EDMX, `Scripts/Issue867_ReposicionesCalendarioExcepciones.sql`; sin ella todo como antes y los
+  endpoints 503): una fila por empresa + origen + destino + día de LLEGADA, Tipo `SinReposicion` (quita ese día) o `ReposicionExtra` (añade uno, con
+  HoraCierre/LaborablesAntelacionCierre/HoraLlegadaHabitual). LA REGLA: `ReglaCalendarioReposiciones.ViajesDelDia` (pura); la usa
+  `CalculadoraFechaReposicion` (próxima llegada, fechas de entrega, cortes del job: un día quitado ni se rellena ni avisa «fuera de plazo»). Una extra
+  solo cuenta en una ruta con alguna fila activa; festivos y días sin reparto propio siguen mandando. Caché `ExcepcionesCalendarioReposiciones`
+  (5 min, `Invalidar` al escribir; la calculadora la lee sola si no se le inyectan).
+- `GET/POST api/Reposiciones/Calendario/Excepciones` (de hoy en adelante; POST = crear o cambiar por la clave) y `DELETE …/{id}`, con el permiso de
+  PUT Calendario. 400: fecha pasada, quitar un día que el calendario no tiene (o festivo), extra en un día que sí tiene o con otra antelación; 409 si
+  la hora de cierre del viaje afectado ya ha pasado. Rastro en Modificaciones. Nesto: sección «Excepciones» en la ventana del calendario.
+
 ### Inventario por huecos en almacenes con ubicaciones (incidencia 1227, 12/11/26)
 - `POST api/Inventarios` en un almacén con `Almacenes.ControlUbicaciones` de un producto con `Ubicar` exige Pasillo, Fila y Columna (si no, 400
   «En {almacén} el inventario va por huecos…») y pone de teórico (`StockCalculado`) lo LIBRE de ese producto en ese hueco (Ubicaciones Estado 0,
