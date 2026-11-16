@@ -43,11 +43,12 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly IChequesRegaloParaSugerencias chequesRegalo;
         private readonly IRepositorioOrigenesCliente origenes;
         private readonly IDatosSugerenciasContacto datos;
+        private readonly IImpulsoOfertasContacto ofertas;
 
         public ServicioSugerenciasContacto(NVEntities db)
             : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo,
                   new ServicioFrasesRitmo(), null, new ServicioEstadisticaChequesRegalo(new RepositorioEstadisticaChequesRegalo(db)),
-                  new RepositorioOrigenesClienteSql(), new DatosSugerenciasContactoSql(db))
+                  new RepositorioOrigenesClienteSql(), new DatosSugerenciasContactoSql(db), new ImpulsoOfertasContactoSql())
         {
         }
 
@@ -58,11 +59,14 @@ namespace NestoAPI.Infraestructure.Rapports
         /// Null = sin leads.</param>
         /// <param name="datos">NestoAPI#866 (corte 3): el origen y los productos en oferta de cada sugerencia registrada, en las
         /// columnas opcionales. Null = no se apunta.</param>
+        /// <param name="ofertas">NestoAPI#866 (corte 1): los clientes con productos habituales en oferta hoy
+        /// (<see cref="ReglasImpulsoOfertasContacto"/>). Null = sin impulso.</param>
         internal ServicioSugerenciasContacto(NVEntities db, IRepositorioCarteraContacto repositorio, IProbabilidadesContacto probabilidades,
             Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null,
             IBloqueoSugerenciasDelDia bloqueo = null, IChequesRegaloParaSugerencias chequesRegalo = null,
-            IRepositorioOrigenesCliente origenes = null, IDatosSugerenciasContacto datos = null)
+            IRepositorioOrigenesCliente origenes = null, IDatosSugerenciasContacto datos = null, IImpulsoOfertasContacto ofertas = null)
         {
+            this.ofertas = ofertas;
             this.datos = datos;
             this.origenes = origenes;
             this.chequesRegalo = chequesRegalo;
@@ -104,6 +108,9 @@ namespace NestoAPI.Infraestructure.Rapports
             Dictionary<string, ClienteConChequeRegalo> conCheque = ImpulsoChequesRegaloContacto.Asignar(cartera,
                 await LeerImpulsosChequeRegalo(vendedorLimpio, hoy).ConfigureAwait(false), hoy);
             List<SugerenciaContactoDTO> pendientes = ImpulsoChequesRegaloContacto.Aplicar(motor.Priorizar(cartera, hoy), conCheque, hoy);
+            // NestoAPI#866: detrás de los del cheque, los que compran habitualmente un producto en oferta hoy que ya les toca.
+            Dictionary<string, ClienteConOfertas> conOfertas = await LeerImpulsoOfertas(vendedorLimpio, cartera, hoy).ConfigureAwait(false);
+            pendientes = ReglasImpulsoOfertasContacto.Aplicar(pendientes, conOfertas, hoy);
             // Sugerencia 782: clientes distintos de la cartera, no rapports.
             ContactosVendedor contactos = MotorSugerenciasContacto.ContarContactos(
                 await repositorio.LeerContactos(vendedorLimpio, hoy).ConfigureAwait(false), cartera, hoy);
@@ -136,6 +143,14 @@ namespace NestoAPI.Infraestructure.Rapports
                         numero - actuales.Count, Math.Max(0, ritmo.CupoCoberturaHoy - coberturaRegistrada),
                         actuales.Select(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto)));
                     int ultimoOrden = actuales.Any() ? actuales.Max(s => s.Orden) : 0;
+                    // NestoAPI#866 (corte 3): sus productos en oferta, en todas (no solo en las que suben): grupo de control.
+                    foreach (SugerenciaContactoDTO nueva in nuevas.Where(n => n.ProductosOferta == null))
+                    {
+                        if (conOfertas.TryGetValue(ClienteCarteraContacto.ClaveDe(nueva.Cliente, nueva.Contacto), out ClienteConOfertas conOferta))
+                        {
+                            nueva.ProductosOferta = ReglasImpulsoOfertasContacto.ProductosJson(conOferta);
+                        }
+                    }
                     List<SugerenciaContacto> filas = registro.Anadir(nuevas, ultimoOrden, vendedorLimpio, usuario, ahora);
                     registradas.AddRange(filas.Zip(nuevas, (f, n) => (f, n)));
                     return filas;
@@ -162,7 +177,7 @@ namespace NestoAPI.Infraestructure.Rapports
                 Sugerencias = ImpulsoLeadsCampanaContacto.Aplicar(Ordenar(delDia
                     .OrderBy(s => s.Orden)
                     .Take(Math.Min(NUMERO_MAXIMO, Math.Max(numero, delDia.Count)))
-                    .Select(s => ADTO(s, porClave, conCheque, hoy))
+                    .Select(s => ADTO(s, porClave, conCheque, hoy, conOfertas))
                     .ToList()),
                     await LeerLeads(vendedorLimpio).ConfigureAwait(false), ahora, ReglasLeadsCampana.Laborable(esFestivo, delegacion))
             };
@@ -187,6 +202,11 @@ namespace NestoAPI.Infraestructure.Rapports
                 .ThenBy(x => x.Registrado)
                 .Select(x => x.Sugerencia)
                 .ToList();
+            // NestoAPI#866: detrás, las subidas por las ofertas del día, en su orden registrado (el de la puntuación).
+            delante.AddRange(conPuesto
+                .Where(x => !delante.Contains(x.Sugerencia) && x.Sugerencia.Origen == OrigenesSugerenciaContacto.OFERTAS)
+                .OrderBy(x => x.Registrado)
+                .Select(x => x.Sugerencia));
             var resto = conPuesto.Where(x => !delante.Contains(x.Sugerencia)).ToList();
             List<SugerenciaContactoDTO> porProbabilidad = resto
                 .Where(x => x.Sugerencia.Origen != OrigenesSugerenciaContacto.COBERTURA)
@@ -279,8 +299,28 @@ namespace NestoAPI.Infraestructure.Rapports
             }
         }
 
+        /// <summary>NestoAPI#866: los clientes con productos habituales en oferta hoy. Si falla, la lista sale igual, sin impulso (y queda en ELMAH).</summary>
+        private async Task<Dictionary<string, ClienteConOfertas>> LeerImpulsoOfertas(string vendedor, List<ClienteCarteraContacto> cartera, DateTime hoy)
+        {
+            var vacio = new Dictionary<string, ClienteConOfertas>(StringComparer.OrdinalIgnoreCase);
+            if (ofertas == null)
+            {
+                return vacio;
+            }
+            try
+            {
+                return await ofertas.Leer(vendedor, cartera, hoy).ConfigureAwait(false) ?? vacio;
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                    $"NestoAPI#866: no se han podido leer las ofertas del día para las sugerencias de {vendedor}; la lista sale sin ese impulso", ex)));
+                return vacio;
+            }
+        }
+
         private static SugerenciaContactoDTO ADTO(SugerenciaContacto fila, Dictionary<string, ClienteCarteraContacto> cartera,
-            Dictionary<string, ClienteConChequeRegalo> conCheque, DateTime hoy)
+            Dictionary<string, ClienteConChequeRegalo> conCheque, DateTime hoy, Dictionary<string, ClienteConOfertas> conOfertas = null)
         {
             bool enCartera = cartera.TryGetValue(ClienteCarteraContacto.ClaveDe(fila.Cliente, fila.Contacto), out ClienteCarteraContacto cliente);
             SugerenciaContactoDTO dto = enCartera
@@ -309,6 +349,17 @@ namespace NestoAPI.Infraestructure.Rapports
             else if (enCartera && dto.Origen == OrigenesSugerenciaContacto.COBERTURA)
             {
                 dto.Motivo = MotorSugerenciasContacto.MotivoCobertura(cliente, hoy);
+            }
+            else if (dto.Origen == OrigenesSugerenciaContacto.OFERTAS)
+            {
+                // NestoAPI#866: con los datos de ahora si sigue con productos en oferta; si no (la oferta caducó, ya compró…), lo registrado.
+                dto.Motivo = enCartera && conOfertas != null && conOfertas.TryGetValue(cliente.Clave, out ClienteConOfertas conOferta) && conOferta.Mejor != null
+                    ? ReglasImpulsoOfertasContacto.Motivo(conOferta, hoy)
+                    : fila.Motivo;
+                if (!enCartera)
+                {
+                    dto.Probabilidad = fila.Probabilidad;
+                }
             }
             else if (enCartera)
             {

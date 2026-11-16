@@ -66,11 +66,16 @@ namespace NestoAPI.Infraestructure.Rapports
         public const string COBERTURA = "Cobertura";
         /// <summary>NestoAPI#593: cheque regalo sin usar en los últimos días de la campaña.</summary>
         public const string CHEQUE_REGALO = "ChequeRegalo";
+        /// <summary>NestoAPI#866: compra habitualmente un producto que hoy está en oferta y ya le toca (<see cref="ReglasImpulsoOfertasContacto"/>).</summary>
+        public const string OFERTAS = "Ofertas";
 
         /// <summary>Principio del Motivo de las que entran por el cupo de cobertura.</summary>
         public const string PREFIJO_MOTIVO_COBERTURA = "Cobertura del mes: ";
         /// <summary>Principio de la frase del cheque (<c>EstadisticaChequesRegalo.FraseImpulso</c>).</summary>
         public const string PREFIJO_MOTIVO_CHEQUE = "Tiene un cheque";
+        /// <summary>NestoAPI#866: principio del motivo de las ofertas («Compra el 45929 … cada 45 días»). El de la prioridad Máxima
+        /// empieza por «Compra cada», que no casa.</summary>
+        public const string PREFIJO_MOTIVO_OFERTAS = "Compra el ";
 
         public static string DeMotivo(string motivo)
         {
@@ -83,8 +88,15 @@ namespace NestoAPI.Infraestructure.Rapports
             {
                 return CHEQUE_REGALO;
             }
+            if (texto.StartsWith(PREFIJO_MOTIVO_OFERTAS, StringComparison.Ordinal))
+            {
+                return OFERTAS;
+            }
             return PROBABILIDAD;
         }
+
+        /// <summary>NestoAPI#866: las que suben por una regla después del modelo y van delante (cheque regalo y ofertas).</summary>
+        public static bool VaDelante(string origen) => origen == CHEQUE_REGALO || origen == OFERTAS;
     }
 
     /// <summary>
@@ -271,8 +283,9 @@ namespace NestoAPI.Infraestructure.Rapports
                 .Where(p => !usadas.Contains(ClienteCarteraContacto.ClaveDe(p.Cliente, p.Contacto)))
                 .ToList();
 
-            List<SugerenciaContactoDTO> delante = disponibles.Where(p => p.Origen == OrigenesSugerenciaContacto.CHEQUE_REGALO).Take(cuantas).ToList();
-            List<SugerenciaContactoDTO> porProbabilidad = disponibles.Where(p => p.Origen != OrigenesSugerenciaContacto.CHEQUE_REGALO).ToList();
+            // NestoAPI#866: detrás de las del cheque, las que suben por las ofertas del día (ya vienen en ese orden).
+            List<SugerenciaContactoDTO> delante = disponibles.Where(p => OrigenesSugerenciaContacto.VaDelante(p.Origen)).Take(cuantas).ToList();
+            List<SugerenciaContactoDTO> porProbabilidad = disponibles.Where(p => !OrigenesSugerenciaContacto.VaDelante(p.Origen)).ToList();
             int libres = cuantas - delante.Count;
             int reservadas = Math.Min(libres, Math.Max(0, cupo));
 

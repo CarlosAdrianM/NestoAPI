@@ -998,6 +998,70 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             A.CallTo(() => datos.GuardarAlRegistrar(A<IList<DatosSugerenciaRegistrada>>._)).MustNotHaveHappened();
         }
 
+        // ---------------- NestoAPI#866 (corte 1): impulso por las ofertas del día ----------------
+
+        private static ClienteConOfertas ConOferta(ClienteCarteraContacto cliente, bool leToca) => new ClienteConOfertas
+        {
+            Cliente = cliente,
+            Productos = new List<ProductoEnOfertaCliente>
+            {
+                new ProductoEnOfertaCliente { Producto = "45929", Nombre = "CREMA", CicloDias = 45, DiasDesdeUltima = leToca ? 64 : 10, LeToca = leToca,
+                    Descuento = 0.2m, TextoOferta = "un 20 % de descuento", Puntuacion = 1 }
+            }
+        };
+
+        private IImpulsoOfertasContacto ImpulsoOfertas(params (string Cliente, bool LeToca)[] clientes)
+        {
+            var impulso = A.Fake<IImpulsoOfertasContacto>();
+            A.CallTo(() => impulso.Leer(A<string>._, A<IList<ClienteCarteraContacto>>._, A<DateTime>._))
+                .ReturnsLazily((string v, IList<ClienteCarteraContacto> carteraLeida, DateTime h) => Task.FromResult(clientes
+                    .Select(c => ConOferta(carteraLeida.Single(x => x.Cliente == c.Cliente), c.LeToca))
+                    .ToDictionary(c => c.Cliente.Clave, c => c, StringComparer.OrdinalIgnoreCase)));
+            return impulso;
+        }
+
+        [TestMethod]
+        public async Task Leer_ConOfertas_SubeDelanteConSuMotivoYApuntaLosProductosEnTodas()
+        {
+            var datos = A.Fake<IDatosSugerenciasContacto>();
+            List<DatosSugerenciaRegistrada> apuntadas = null;
+            A.CallTo(() => datos.GuardarAlRegistrar(A<IList<DatosSugerenciaRegistrada>>._))
+                .Invokes((IList<DatosSugerenciaRegistrada> filas) => apuntadas = filas.ToList());
+            // 1005 está dentro de su cadencia (hoy no le tocaba) y compra un producto en oferta que ya le toca; 1001, uno que aún no.
+            var servicio = new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo,
+                datos: datos, ofertas: ImpulsoOfertas(("1005", true), ("1001", false)));
+
+            SugerenciasContactoDTO respuesta = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1005", "1001", "1002" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+            SugerenciaContactoDTO subida = respuesta.Sugerencias[0];
+            Assert.AreEqual(OrigenesSugerenciaContacto.OFERTAS, subida.Origen);
+            StringAssert.StartsWith(subida.Motivo, "Compra el 45929 (CREMA) cada 45 días y lleva 64 sin comprarlo; hoy tiene un 20 % de descuento.");
+            Assert.AreEqual(OrigenesSugerenciaContacto.OFERTAS, apuntadas.Single(a => a.Id == sugerencias.Single(s => s.Cliente == "1005").Id).Origen);
+            StringAssert.Contains(apuntadas.Single(a => a.Id == sugerencias.Single(s => s.Cliente == "1005").Id).ProductosOferta, "\"t\":1");
+            StringAssert.Contains(apuntadas.Single(a => a.Id == sugerencias.Single(s => s.Cliente == "1001").Id).ProductosOferta, "\"t\":0",
+                "también en las que no suben: grupo de control");
+            Assert.IsNull(apuntadas.Single(a => a.Id == sugerencias.Single(s => s.Cliente == "1002").Id).ProductosOferta);
+
+            // La segunda consulta del día la mantiene delante aunque su probabilidad sea 0.
+            SugerenciasContactoDTO segunda = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+            Assert.AreEqual("1005", segunda.Sugerencias[0].Cliente);
+            Assert.AreEqual(OrigenesSugerenciaContacto.OFERTAS, segunda.Sugerencias[0].Origen);
+        }
+
+        [TestMethod]
+        public async Task Leer_SiFallanLasOfertas_LaListaSaleSinImpulso()
+        {
+            var impulso = A.Fake<IImpulsoOfertasContacto>();
+            A.CallTo(() => impulso.Leer(A<string>._, A<IList<ClienteCarteraContacto>>._, A<DateTime>._)).Throws(new InvalidOperationException("sin BD"));
+            var servicio = new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo,
+                ofertas: impulso);
+
+            SugerenciasContactoDTO respuesta = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1001", "1002", "1003" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+        }
+
         [TestMethod]
         public async Task Leer_SiFallaElApunte_LaListaSaleIgual()
         {

@@ -797,6 +797,7 @@
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoCoberturaTests.cs" />
     <Compile Include="Infrastructure\Rapports\DatosSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ReglasImpulsoOfertasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ServicioSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Vendedores\ServicioVendedoresVisiblesTests.cs" />
     <Compile Include="Infrastructure\Rapports\GeneradorFrasesRitmoTests.cs" />

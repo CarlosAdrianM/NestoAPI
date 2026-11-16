@@ -1329,6 +1329,8 @@
     <Compile Include="Infraestructure\Eventos\EstadoSenalEvento.cs" />
     <Compile Include="Infraestructure\Rapports\MotorSugerenciasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\DatosSugerenciasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\ImpulsoOfertasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\ReglasImpulsoOfertasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\ImpulsoChequesRegaloContacto.cs" />
     <Compile Include="Infraestructure\Rapports\SugerenciasContactoDTO.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioSugerenciasContacto.cs" />
