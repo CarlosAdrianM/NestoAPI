@@ -53,16 +53,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private readonly Func<TimeSpan> horaCorte;
         private readonly Func<DateTime, bool> esFestivo;
         private readonly ServicioAplicacionCorreosCompras aplicacion;
+        private readonly IReenviadorCorreosSeguimiento reenviador;
 
         /// <param name="lector">Null = sin claves en secretos.config (no se hace nada).</param>
         /// <param name="horaCorte">Hora de corte del picking (por defecto, <see cref="HoraCortePicking.Leer"/> de la empresa).</param>
         /// <param name="esFestivo">Festivo de Algete (por defecto, <see cref="GestorFestivos.EsFestivo"/> con ALG).</param>
         /// <param name="aplicacion">Fase 3: enlazar por mismo envío, poner la fecha de lo inequívoco y avisar de lo que queda por asignar (solo el job y el reanálisis; null = nada).</param>
+        /// <param name="reenviador">NestoAPI#865 (corte 3): reenviar a Compras cada correo que el JOB acaba de guardar (null = no).</param>
         public ServicioCorreosSeguimientoCompras(ILectorBuzonCompras lector, IRepositorioCorreosSeguimiento repositorio,
             Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null,
-            Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null, ServicioAplicacionCorreosCompras aplicacion = null)
+            Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null, ServicioAplicacionCorreosCompras aplicacion = null,
+            IReenviadorCorreosSeguimiento reenviador = null)
         {
             this.aplicacion = aplicacion;
+            this.reenviador = reenviador;
             this.lector = lector;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.registrar = registrar ?? (_ => { });
@@ -167,6 +171,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
             List<RemitentePaqueteRecordado> recordados = await LeerRecordados().ConfigureAwait(false);
             var nuevas = new List<CorreoSeguimientoFila>();
+            var originales = new List<(CorreoCompras Correo, CorreoSeguimientoFila Fila)>();
             bool? conAdjuntos = null;
             int adjuntosSinLeer = 0;
             bool todo = true;
@@ -198,6 +203,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     {
                         resultado.Guardados++;
                         nuevas.Add(fila);
+                        originales.Add((correo, fila));
                     }
                     else
                     {
@@ -211,9 +217,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         $"de {correo?.RemitenteDominio}: {ex.Message}", ex));
                 }
             }
+            Dictionary<string, ResultadoCorreoGuardado> desenlaces = null;
             if (aplicar && aplicacion != null && nuevas.Any())
             {
-                await aplicacion.AlGuardar(nuevas).ConfigureAwait(false); // nunca lanza
+                desenlaces = await aplicacion.AlGuardar(nuevas).ConfigureAwait(false); // nunca lanza
+            }
+            if (aplicar && reenviador != null && originales.Any())
+            {
+                Reenviar(originales, desenlaces);
             }
             if (adjuntosSinLeer > 0)
             {
@@ -222,6 +233,34 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     "correo(s): se guardan sin ellos."));
             }
             return todo;
+        }
+
+        /// <summary>
+        /// NestoAPI#865 (corte 3): solo el job (con <c>aplicar</c>), solo lo recién insertado y con el cuerpo que Graph ha dado en esta pasada
+        /// (no se guarda). Nunca lanza: el reenvío no puede romper la pasada.
+        /// </summary>
+        private void Reenviar(List<(CorreoCompras Correo, CorreoSeguimientoFila Fila)> originales, Dictionary<string, ResultadoCorreoGuardado> desenlaces)
+        {
+            try
+            {
+                _ = reenviador.Reenviar(originales.Select(o => (o.Correo, o.Fila, Desenlace(o.Fila, desenlaces))).ToList());
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #865] No se han podido reenviar los correos a Compras: " + ex.Message, ex));
+            }
+        }
+
+        internal static ResultadoCorreoGuardado Desenlace(CorreoSeguimientoFila fila, Dictionary<string, ResultadoCorreoGuardado> desenlaces)
+        {
+            if (fila?.MensajeId != null && desenlaces != null && desenlaces.TryGetValue(fila.MensajeId, out ResultadoCorreoGuardado r))
+            {
+                return r;
+            }
+            return new ResultadoCorreoGuardado
+            {
+                Desenlace = fila?.EsSalidaNuestra == true ? DesenlaceCorreoSeguimiento.SalidaNuestra : DesenlaceCorreoSeguimiento.SinAplicar
+            };
         }
 
         /// <summary>
@@ -534,7 +573,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 var repositorio = new RepositorioCorreosSeguimiento();
                 Action<Exception> registrar = ex => ElmahHelper.Log(ex, USUARIO_ELMAH);
                 var aplicacion = new ServicioAplicacionCorreosCompras(repositorio, avisador: new AvisadorCorreosPorAsignar(), registrar: registrar);
-                var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion);
+                var reenviador = new ReenviadorCorreosSeguimiento(new ServicioCorreoElectronico(), registrar: registrar);
+                var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion, reenviador: reenviador);
                 _ = await servicio.Pasada(DateTime.Now).ConfigureAwait(false);
             }
             catch (Exception ex)

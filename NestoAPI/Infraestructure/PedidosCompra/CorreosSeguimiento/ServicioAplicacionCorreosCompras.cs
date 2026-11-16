@@ -162,19 +162,25 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// nuevos es reciente), pone la fecha del envío en el pedido y marca todos sus correos; si no, UNA campana a Compras por envío (no si ya
         /// se avisó por otro de sus correos). Se hace al final de la tanda para que los correos de un mismo envío que llegan juntos (UPS + MBE)
         /// se decidan juntos. Nunca lanza: un fallo se apunta y el correo queda por asignar.
+        /// NestoAPI#865 (corte 3): devuelve, por MensajeId de cada correo NUEVO, qué se ha hecho con él (para la cabecera del reenvío a Compras).
         /// </summary>
-        public async Task AlGuardar(IReadOnlyCollection<CorreoSeguimientoFila> nuevas)
+        public async Task<Dictionary<string, ResultadoCorreoGuardado>> AlGuardar(IReadOnlyCollection<CorreoSeguimientoFila> nuevas)
         {
+            var desenlaces = new Dictionary<string, ResultadoCorreoGuardado>(StringComparer.Ordinal);
+            foreach (CorreoSeguimientoFila salida in (nuevas ?? new List<CorreoSeguimientoFila>()).Where(f => f?.MensajeId != null && f.EsSalidaNuestra == true))
+            {
+                desenlaces[salida.MensajeId] = new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.SalidaNuestra };
+            }
             List<CorreoSeguimientoFila> lista = (nuevas ?? new List<CorreoSeguimientoFila>()).Where(f => f != null && f.EsSalidaNuestra != true).ToList();
             if (!lista.Any())
             {
-                return;
+                return desenlaces;
             }
             try
             {
                 if (!repositorio.AplicacionDisponible())
                 {
-                    return;
+                    return desenlaces;
                 }
                 DateTime desde = lista.Min(f => f.Recibido).AddDays(-MismoEnvio.DIAS);
                 List<CorreoSeguimientoFila> guardados = await repositorio.LeerCorreos(desde).ConfigureAwait(false) ?? new List<CorreoSeguimientoFila>();
@@ -184,10 +190,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 {
                     try
                     {
-                        _ = await ProcesarEnvio(grupo, grupo.Where(nuevasGuardadas.Contains).ToList(), true).ConfigureAwait(false);
+                        _ = await ProcesarEnvio(grupo, grupo.Where(nuevasGuardadas.Contains).ToList(), true, desenlaces).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
+                        Anotar(desenlaces, grupo.Where(nuevasGuardadas.Contains), new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.Error });
                         registrar(new Exception("[Correos de seguimiento de compras #857] No se ha podido enlazar, aplicar o avisar el envío de los correos " +
                             string.Join(", ", grupo.Select(f => f.Id)) + ": " + ex.Message, ex));
                     }
@@ -196,6 +203,27 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             catch (Exception ex)
             {
                 registrar(new Exception("[Correos de seguimiento de compras #857] No se han podido aplicar o avisar los correos nuevos: " + ex.Message, ex));
+            }
+            return desenlaces;
+        }
+
+        /// <summary>NestoAPI#865: apunta el desenlace de esos correos (cada uno con su copia), sin pisar uno ya apuntado.</summary>
+        private static void Anotar(Dictionary<string, ResultadoCorreoGuardado> desenlaces, IEnumerable<CorreoSeguimientoFila> filas, ResultadoCorreoGuardado resultado)
+        {
+            if (desenlaces == null)
+            {
+                return;
+            }
+            foreach (CorreoSeguimientoFila fila in (filas ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f?.MensajeId != null))
+            {
+                if (!desenlaces.ContainsKey(fila.MensajeId))
+                {
+                    desenlaces[fila.MensajeId] = new ResultadoCorreoGuardado
+                    {
+                        Desenlace = resultado.Desenlace, Empresa = resultado.Empresa, Pedido = resultado.Pedido, FechasAntes = resultado.FechasAntes.ToList(),
+                        FechaNueva = resultado.FechaNueva, LineasCambiadas = resultado.LineasCambiadas, Candidatos = resultado.Candidatos, Detalle = resultado.Detalle
+                    };
+                }
             }
         }
 
@@ -227,7 +255,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         }
 
         /// <summary>Un envío: hereda candidatos y, si <paramref name="decidir"/>, aplica o avisa. Devuelve cuántos correos han heredado.</summary>
-        private async Task<int> ProcesarEnvio(List<CorreoSeguimientoFila> grupo, List<CorreoSeguimientoFila> nuevas, bool decidir)
+        private async Task<int> ProcesarEnvio(List<CorreoSeguimientoFila> grupo, List<CorreoSeguimientoFila> nuevas, bool decidir,
+            Dictionary<string, ResultadoCorreoGuardado> desenlaces = null)
         {
             DecisionEnvio decision = MismoEnvio.Decidir(grupo);
             int heredados = 0;
@@ -244,6 +273,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             DateTime momento = ahora();
             if (!decidir || !nuevas.Any(f => ReglaFechaRecepcionPorCorreo.Reciente(f.Recibido, momento)))
             {
+                Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.Antiguo });
                 return heredados;
             }
 
@@ -255,12 +285,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 {
                     _ = await repositorio.Descartar(fila.Id, APLICADO_POR_AUTOMATICO).ConfigureAwait(false);
                 }
+                Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.Descartado });
                 return heredados;
             }
             if (decision.YaLlego)
             {
                 // Un candidato del envío ya tiene albarán: el envío ha llegado (era ese pedido). Ni se pone fecha a los que quedan en el
                 // aire (que el que quede sea uno solo no lo hace suyo) ni se avisa a Compras.
+                Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.YaRecibido, Pedido = decision.Llegado?.PedidoReal });
                 return heredados;
             }
             CandidatoPedidoCompra unico = decision.Unico;
@@ -268,6 +300,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 if (!interruptor())
                 {
+                    Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.AplicarApagado, Empresa = unico.Empresa, Pedido = unico.Pedido });
                     return heredados; // inequívoco con el interruptor apagado: ni se escribe ni se avisa (queda en la lista por asignar)
                 }
                 DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(decision.Correos, momento.Date);
@@ -279,10 +312,40 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     {
                         registrar(new Exception($"[Correos de seguimiento de compras #857] (informativo) No se ha aplicado el correo {fila.Id} al pedido {unico.Pedido}: {resultado.Mensaje}"));
                     }
+                    Anotar(desenlaces, new[] { fila }.Where(nuevas.Contains), DesenlaceAplicacion(resultado, unico, fecha));
                 }
+                // Los nuevos que ya estaban aplicados (no pendientes): misma fecha
+                Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado
+                {
+                    Desenlace = DesenlaceCorreoSeguimiento.MismaFecha, Empresa = unico.Empresa, Pedido = unico.Pedido, FechaNueva = fecha
+                });
                 return heredados;
             }
+            Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.PorAsignar, Candidatos = decision.Candidatos.Count });
             return heredados; // por asignar: el aviso lo da AvisarPendientes, cuando el envío lleva un rato sin correos nuevos
+        }
+
+        /// <summary>NestoAPI#865: qué ha pasado al aplicar un correo nuevo, para la cabecera del reenvío. PURA.</summary>
+        internal static ResultadoCorreoGuardado DesenlaceAplicacion(ResultadoOperacionCorreoCompra resultado, CandidatoPedidoCompra pedido, DateTime fecha)
+        {
+            var desenlace = new ResultadoCorreoGuardado { Empresa = pedido?.Empresa, Pedido = pedido?.Pedido, FechaNueva = fecha };
+            RespuestaAsignacionCorreoCompraDTO r = resultado?.Respuesta;
+            switch (resultado?.Codigo)
+            {
+                case CodigoOperacionCorreoCompra.Ok:
+                    desenlace.LineasCambiadas = r?.LineasCambiadas ?? 0;
+                    desenlace.FechasAntes = r?.FechasAnteriores?.ToList() ?? new List<DateTime?>();
+                    desenlace.Desenlace = desenlace.LineasCambiadas > 0 ? DesenlaceCorreoSeguimiento.FechaCambiada : DesenlaceCorreoSeguimiento.MismaFecha;
+                    break;
+                case CodigoOperacionCorreoCompra.NoEnElAire:
+                    desenlace.Desenlace = DesenlaceCorreoSeguimiento.NoEnElAire;
+                    break;
+                default:
+                    desenlace.Desenlace = DesenlaceCorreoSeguimiento.Error;
+                    desenlace.Detalle = resultado?.Mensaje;
+                    break;
+            }
+            return desenlace;
         }
 
         /// <summary>Lo que se espera desde el último correo de un envío antes de avisar (sus otros correos suelen llegar a la vez).</summary>

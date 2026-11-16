@@ -678,6 +678,7 @@
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
     <Compile Include="Controllers\FechasEntregaErrorController.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\CorreoCompras.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ReenvioCorreosSeguimiento.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ExtractorEnlaces.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AgenciasEntrada.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AnalizadorCorreoSeguimiento.cs" />

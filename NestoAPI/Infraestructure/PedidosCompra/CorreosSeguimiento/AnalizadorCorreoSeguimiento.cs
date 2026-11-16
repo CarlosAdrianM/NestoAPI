@@ -72,7 +72,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             IEnumerable<RemitenteMarcado> marcados, IAgenciaEntrada generica = null)
         {
             var analisis = new AnalisisCorreoSeguimiento();
-            if (correo == null)
+            // NestoAPI#865: nuestro propio reenvío a Compras (si volviera al buzón que se lee) no se capta otra vez
+            if (correo == null || TextosReenvioCorreoSeguimiento.EsReenvioNuestro(correo.Asunto))
             {
                 return analisis;
             }

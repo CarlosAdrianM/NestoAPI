@@ -691,6 +691,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Corte 2: en «Clientes esperando», lo que trae una reposición de tienda en camino (PreExtrProducto con NºTraspaso, neto por traspaso y
   producto > 0, en el almacén de destino: lo mismo que el «en camino» del motor) sale aparte con su llegada (siguiente día de reparto
   propio, `GestorFestivos.EsFestivoRepartoPropio`) y NO cuenta como falta (`EsperaClientesProducto.CubiertoPorReposicion`; `Faltan` lo descuenta).
+- Corte 3 (TEMPORAL): el job `compras-correos-seguimiento` reenvía a compras@ cada correo que acaba de GUARDAR (`ReenviadorCorreosSeguimiento`,
+  `CorreosSeguimiento/ReenvioCorreosSeguimiento.cs`) por el SMTP de siempre: asunto «[Nesto: correo de seguimiento] …», cabecera con lo hecho
+  (`AlGuardar` devuelve el desenlace por MensajeId: fecha antes → después y pedido, misma fecha, por asignar, salida nuestra, descartado, ya
+  recibido, aplicar apagado, antiguo…; textos `TextosReenvioCorreoSeguimiento`) y debajo el cuerpo que Graph dio en esa pasada (no se guarda;
+  Graph sigue solo lectura). Idempotente sin columna (solo lo recién insertado; el INSERT es único por MensajeId). El histórico y Reanalizar no
+  reenvían. El analizador ignora los correos con esa marca en el asunto (por si vuelven al buzón). Fallo → ELMAH una vez al día, nunca rompe
+  la pasada. Interruptor `Compras.CorreosSeguimientoReenviar`: SOLO «1» = encendido (sin fila, apagado; el script lo crea a «1»).
 
 ### Agency and Shipping
 - Multiple shipping agencies supported
