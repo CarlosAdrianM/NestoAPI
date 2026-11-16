@@ -796,6 +796,7 @@
     <Compile Include="Infrastructure\Cupones\CuponesChequeRegaloNoAcumulablesTests.cs" />
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoCoberturaTests.cs" />
     <Compile Include="Infrastructure\Rapports\DatosSugerenciasContactoTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ExplicacionModeloContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ReglasImpulsoOfertasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ServicioSugerenciasContactoTests.cs" />

@@ -194,6 +194,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public string GrupoSubgrupoMasVendido { get; set; }
         /// <summary>NestoAPI#618: con el modelo por subgrupo, qué ha comprado del subgrupo elegido («De COS007: 4 pedidos en el último año…»). Null si no.</summary>
         public string MotivoSubgrupo { get; set; }
+        /// <summary>NestoAPI#866 (corte 2): las causas principales de su probabilidad según el modelo («Sobre todo porque …»). Null si no.</summary>
+        public string ExplicacionModelo { get; set; }
 
         public string Clave => ClaveDe(Cliente, Contacto);
 
@@ -210,6 +212,8 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <see cref="ProbabilidadesContactoModelo.CLAVE_SUBGRUPO_ACTIVO"/>): el motivo legible de la relación con el subgrupo.
         /// </summary>
         public string MotivoSubgrupo { get; set; }
+        /// <summary>NestoAPI#866 (corte 2): «Sobre todo porque …» (<see cref="ExplicacionModeloContacto"/>), solo con el modelo general. Null si no.</summary>
+        public string ExplicacionModelo { get; set; }
     }
 
     /// <summary>

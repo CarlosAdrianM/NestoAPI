@@ -101,6 +101,7 @@ namespace NestoAPI.Infraestructure.Rapports
                     cliente.Probabilidad = prediccion.Probabilidad;
                     cliente.GrupoSubgrupoMasVendido = prediccion.GrupoSubgrupoMasVendido;
                     cliente.MotivoSubgrupo = prediccion.MotivoSubgrupo;
+                    cliente.ExplicacionModelo = prediccion.ExplicacionModelo;
                 }
             }
 
@@ -364,6 +365,12 @@ namespace NestoAPI.Infraestructure.Rapports
             else if (enCartera)
             {
                 dto.Motivo = MotorSugerenciasContacto.Motivo(cliente, dto.Prioridad, hoy);
+                if (dto.Origen == OrigenesSugerenciaContacto.PROBABILIDAD)
+                {
+                    // NestoAPI#866 (corte 2): por qué lo ve el modelo, dejando sitio al «(hablado hoy)» que va detrás.
+                    dto.Motivo = ExplicacionModeloContacto.ConExplicacion(dto.Motivo, cliente.ExplicacionModelo,
+                        MotorSugerenciasContacto.HabladoReciente(dto.DiasDesdeUltimoContacto)?.Length ?? 0);
+                }
             }
             else
             {

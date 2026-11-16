@@ -48,6 +48,7 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly Func<string> rutaSubgrupo;
         private readonly Func<IList<ModeloContactoSubgrupoEntrada>, string, List<float>> puntuarSubgrupo;
         private readonly Action<Exception> registrarError;
+        private readonly Func<IList<ModeloContactoEntrada>, string, List<Dictionary<string, float>>> contribuciones;
 
         public ProbabilidadesContactoModelo() : this(SubgrupoActivo(clave => ConfigurationManager.AppSettings[clave]))
         {
@@ -62,10 +63,13 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <param name="rutaSubgrupo">NestoAPI#618: el zip del modelo por subgrupo (null si no hay). Null = ninguno.</param>
         /// <param name="puntuarSubgrupo">NestoAPI#618: null = <see cref="ModeloContacto.PuntuarSubgrupo"/>.</param>
         /// <param name="registrarError">Null = ELMAH.</param>
+        /// <param name="contribuciones">NestoAPI#866 (corte 2): null = <see cref="ModeloContacto.Contribuciones"/>.</param>
         internal ProbabilidadesContactoModelo(IRepositorioFeaturesContacto repositorio, Func<DateTime> ahora, string rutaModelo,
             Func<bool> subgrupoActivo = null, Func<string> rutaSubgrupo = null,
-            Func<IList<ModeloContactoSubgrupoEntrada>, string, List<float>> puntuarSubgrupo = null, Action<Exception> registrarError = null)
+            Func<IList<ModeloContactoSubgrupoEntrada>, string, List<float>> puntuarSubgrupo = null, Action<Exception> registrarError = null,
+            Func<IList<ModeloContactoEntrada>, string, List<Dictionary<string, float>>> contribuciones = null)
         {
+            this.contribuciones = contribuciones ?? ModeloContacto.Contribuciones;
             this.repositorio = repositorio;
             this.ahora = ahora;
             this.rutaModelo = rutaModelo;
@@ -150,6 +154,7 @@ namespace NestoAPI.Infraestructure.Rapports
 
             List<ModeloContactoEntrada> entradas = ModeloContacto.ConGrupoSubgrupo(reales, grupoSubgrupo);
             List<float> probabilidades = ModeloContacto.Puntuar(entradas, rutaModelo);
+            List<Dictionary<string, float>> contribuciones = Contribuciones(entradas, vendedor);
 
             var resultado = new Dictionary<string, PrediccionContacto>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < reales.Count && i < probabilidades.Count; i++)
@@ -157,10 +162,29 @@ namespace NestoAPI.Infraestructure.Rapports
                 resultado[reales[i].ClienteId.Trim()] = new PrediccionContacto
                 {
                     Probabilidad = probabilidades[i],
-                    GrupoSubgrupoMasVendido = GrupoReal(reales[i])
+                    GrupoSubgrupoMasVendido = GrupoReal(reales[i]),
+                    ExplicacionModelo = i < contribuciones.Count ? ExplicacionModeloContacto.Explicacion(contribuciones[i], entradas[i]) : null
                 };
             }
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#866 (corte 2): la contribución de cada rasgo, para explicar el motivo. Si falla, sin explicación (la probabilidad
+        /// sale igual) y a ELMAH.
+        /// </summary>
+        private List<Dictionary<string, float>> Contribuciones(List<ModeloContactoEntrada> entradas, string vendedor)
+        {
+            try
+            {
+                return contribuciones(entradas, rutaModelo) ?? new List<Dictionary<string, float>>();
+            }
+            catch (Exception ex)
+            {
+                registrarError(new Exception(
+                    $"NestoAPI#866: no se pudo calcular la contribución de los rasgos del modelo (vendedor {vendedor}); las sugerencias salen sin el motivo explicado", ex));
+                return new List<Dictionary<string, float>>();
+            }
         }
 
         /// <summary>NestoAPI#618: probabilidad de un pedido con el subgrupo y su motivo, para cada cliente de la cartera.</summary>

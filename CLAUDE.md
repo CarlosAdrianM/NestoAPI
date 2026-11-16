@@ -699,6 +699,22 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   reenvían. El analizador ignora los correos con esa marca en el asunto (por si vuelven al buzón). Fallo → ELMAH una vez al día, nunca rompe
   la pasada. Interruptor `Compras.CorreosSeguimientoReenviar`: SOLO «1» = encendido (sin fila, apagado; el script lo crea a «1»).
 
+### Sugerencias de llamadas y ofertas vigentes (NestoAPI#866, 16/11/26)
+- Siempre hay ofertas (bimestrales, de marca, campañas; Carlos 16/11/26): impulso SIEMPRE encendido salvo ParametrosUsuario empresa 1
+  «(defecto)» `Rapports.ImpulsoOfertas` = 0/false/no/off/apagado (sin fila = encendido). Regla pura `ReglasImpulsoOfertasContacto`, después del
+  modelo como el del cheque. Oferta = fila global de DescuentosProducto desde 1 unidad que «parece campaña» (fechas, audiencia o Campana, como
+  `api/Campanas?soloCampanas`) o N+M de OfertasPermitidas con fechas, vigente con la regla única `Vigencia`; de cada producto, la de más descuento
+  (precio especial = 1 − precio/PVP; N+M = M/(N+M)). Caché 10 min; compras de la cartera en UNA consulta por vendedor (`ImpulsoOfertasContactoSql`,
+  misma asignación que la cartera). Producto habitual = ≥ 2 días con compra en 12 meses; ciclo = mediana entre compras; puntuación: le toca > descuento > peso.
+- Suben como mucho 5 al día detrás del cheque (Origen «Ofertas», prefijo «Compra el »), solo si su mejor producto ya le toca y no se habló con él
+  desde que entró la oferta (en 14 días), ni intento < 2 días ni pedido < 6. Motivo: «Compra el 45929 (NOMBRE) cada 45 días y lleva 64 sin comprarlo; hoy
+  tiene un 20 % de descuento (hasta el 30/11). No hablamos con él desde el 02/10.» («solo hasta» si caduca en ≤ 7 días, «oferta nueva» si entró hace ≤ 7).
+- Motivo explicado (corte 2): las de Origen Probabilidad llevan detrás «Sobre todo porque …» con las 2 causas de más contribución positiva del LightGBM
+  (`ExplicacionModeloContacto`, CalculateFeatureContribution de ML.NET 4.0.2; one-hot sumado por rasgo, plantilla por rasgo). Solo modelo general; si falla, sin ella.
+- Datos (corte 3, `Scripts/Issue866_SugerenciasContactoOfertas.sql`, columnas opcionales fuera del EDMX): Origen, ProductosOferta (JSON de los 3 mejores en
+  TODAS las sugerencias con alguno: grupo de control), y job `sugerencias-contacto-resultado` 3:25 Madrid: PedidoEn7Dias, PedidoConOferta, ImportePedido7Dias
+  de las de hace 8-60 días (un UPDATE). Para decidir si se añaden rasgos de ofertas al modelo.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

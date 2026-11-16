@@ -81,6 +81,20 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         /// <summary>
+        /// NestoAPI#866 (corte 2): la contribución de cada rasgo a la puntuación de cada entrada, en el mismo orden
+        /// (<see cref="ExplicacionModeloContacto.Contribuciones"/>). Lanza si el modelo no lo permite.
+        /// </summary>
+        public static List<Dictionary<string, float>> Contribuciones(IList<ModeloContactoEntrada> entradas, string ruta = null)
+        {
+            if (entradas == null || entradas.Count == 0)
+            {
+                return new List<Dictionary<string, float>>();
+            }
+            ITransformer modelo = Cargar(ruta ?? RutaPorDefecto, out MLContext ml);
+            return ExplicacionModeloContacto.Contribuciones(modelo, ml, entradas);
+        }
+
+        /// <summary>
         /// NestoAPI#618: el modelo por subgrupo que deja el job mensual (C:\NestoAPI\ModelosIA\modelo_llamadas_subgrupo.zip). No hay
         /// copia en el deploy: null si todavía no se ha promovido ninguno.
         /// </summary>

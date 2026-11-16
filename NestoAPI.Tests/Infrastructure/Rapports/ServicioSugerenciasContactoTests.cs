@@ -1062,6 +1062,26 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             CollectionAssert.AreEqual(new[] { "1001", "1002", "1003" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
         }
 
+        // ---------------- NestoAPI#866 (corte 2): motivo explicado por el modelo ----------------
+
+        [TestMethod]
+        public async Task Leer_LasDeProbabilidadLlevanLaExplicacionDelModelo()
+        {
+            A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(
+                new Dictionary<string, PrediccionContacto>
+                {
+                    ["1001/0"] = new PrediccionContacto { Probabilidad = 0.8f, ExplicacionModelo = "Sobre todo porque lleva 40 días sin pedir" },
+                    ["1003/0"] = new PrediccionContacto { Probabilidad = 0.1f, ExplicacionModelo = "Sobre todo porque ha hecho 2 pedidos en el último año" }
+                }));
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 3, "", "u");
+
+            SugerenciaContactoDTO primera = respuesta.Sugerencias.Single(s => s.Cliente == "1001");
+            Assert.AreEqual(OrigenesSugerenciaContacto.PROBABILIDAD, primera.Origen);
+            StringAssert.EndsWith(primera.Motivo, ". Sobre todo porque lleva 40 días sin pedir.");
+            StringAssert.EndsWith(sugerencias.Single(s => s.Cliente == "1001").Motivo, ". Sobre todo porque lleva 40 días sin pedir.", "también lo registrado");
+        }
+
         [TestMethod]
         public async Task Leer_SiFallaElApunte_LaListaSaleIgual()
         {

@@ -199,7 +199,9 @@ namespace NestoAPI.Infraestructure.Rapports
                 SugerenciaContactoDTO sugerencia = ADTO(lista[i].Cliente, hoy);
                 sugerencia.Prioridad = lista[i].Prioridad;
                 sugerencia.Orden = i + 1;
-                sugerencia.Motivo = Motivo(lista[i].Cliente, lista[i].Prioridad, hoy);
+                // NestoAPI#866 (corte 2): con las causas principales del modelo detrás, si las hay.
+                sugerencia.Motivo = ExplicacionModeloContacto.ConExplicacion(Motivo(lista[i].Cliente, lista[i].Prioridad, hoy), lista[i].Cliente.ExplicacionModelo,
+                    HabladoReciente(lista[i].DiasContacto)?.Length ?? 0);
                 sugerencia.Origen = OrigenesSugerenciaContacto.PROBABILIDAD;
                 resultado.Add(sugerencia);
             }
