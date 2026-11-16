@@ -353,6 +353,77 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
         }
 
+        // Feria online 16/11/26 (Laura, novedad 1279): oferta 272 «2+1 aceites CV 500 ml», grupo de alternativas de 3 con
+        // «regalar menor importe». El pedido de la tienda llevaba 3 aceites cobrados a tarifa y el más barato (23599) al 100 %:
+        // se rechazaba porque el grupo exigía 3 unidades justas y la 4ª (¡cobrada!) contaba como material promocional suelto.
+        private OfertaCombinada Oferta272()
+        {
+            var detalles = new List<OfertaCombinadaDetalle>();
+            foreach (string p in new[] { "23474", "23599", "36383", "43451" })
+            {
+                detalles.Add(new OfertaCombinadaDetalle { OfertaId = 272, Empresa = "1", Producto = p, Precio = 0, Cantidad = 3, GrupoAlternativa = 1 });
+            }
+            return new OfertaCombinada { Id = 272, Empresa = "1", ImporteMinimo = 0, RegalarMenorImporte = true, UnidadesRegaladas = 1, OfertasCombinadasDetalles = detalles };
+        }
+
+        private void FakeOferta272()
+        {
+            OfertaCombinada oferta = Oferta272();
+            var lista = new List<OfertaCombinada> { oferta };
+            foreach (var p in new[] { ("23474", 42.85m), ("23599", 37.72m), ("36383", 48.54m), ("43451", 40.13m) })
+            {
+                A.CallTo(() => _servicio.BuscarOfertasCombinadas(p.Item1)).Returns(lista);
+                A.CallTo(() => _servicio.BuscarProducto(p.Item1)).Returns(new Producto { Número = p.Item1, PVP = p.Item2 });
+            }
+        }
+
+        [TestMethod]
+        public void Feria_TresCobradasYElMasBaratoDeRegalo_EsValido()
+        {
+            FakeOferta272();
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea("36383", 1, 48.54m),
+                Linea("43451", 1, 40.13m),
+                Linea("23474", 1, 42.85m),
+                Linea("23599", 1, 37.72m, descuento: 1.0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, "23599", _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void Feria_TresCobradasYDosDeRegalo_SigueRechazandose()
+        {
+            // Con 5 unidades del grupo hay 1 oferta completa: solo sale 1 de regalo
+            FakeOferta272();
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea("36383", 1, 48.54m),
+                Linea("43451", 1, 40.13m),
+                Linea("23474", 1, 42.85m),
+                Linea("23599", 2, 37.72m, descuento: 1.0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, "23599", _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "Con 3 cobradas un 2+1 solo regala 1");
+        }
+
+        [TestMethod]
+        public void Feria_TresCobradasYElCaroDeRegalo_SigueRechazandose()
+        {
+            FakeOferta272();
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea("23599", 1, 37.72m),
+                Linea("43451", 1, 40.13m),
+                Linea("23474", 1, 42.85m),
+                Linea("36383", 1, 48.54m, descuento: 1.0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, "36383", _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            StringAssert.Contains(respuesta.Motivo, "menor importe");
+        }
+
         [TestMethod]
         public void RegalarMenorImporte_GratisPorDescuentoCien_SigueContandoComoRegalo()
         {

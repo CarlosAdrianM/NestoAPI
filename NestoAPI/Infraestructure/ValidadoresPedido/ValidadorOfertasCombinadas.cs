@@ -144,7 +144,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // EXCEPCIÓN: los dos sobresurtidos (grupo y filtro) son transitorios por diseño — las
             // unidades sobrantes pasan a arbitrarse como material promocional suelto en
             // ValidadorMuestrasYMaterialPromocional, cuyo veredicto (el 5 %) es el mensaje bueno.
-            if (ofertaCumplida != null && ProductoEnGrupoSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
+            // Feria online 16/11/26 (Laura, 1279; oferta 272 «2+1 aceites CV 500 ml»): con «regalar menor importe», las unidades
+            // de más COBRADAS son venta normal (3 cobradas + 1 de regalo en un 2+1). Solo sobra algo si los regalos pasan de los
+            // que da la oferta; el resto (el más barato, cobrado a tarifa) lo vigila MotivoRegaloNoEsMenorImporte.
+            bool regalosDentroDeLaOferta = ofertaCumplida != null && ofertaCumplida.RegalarMenorImporte
+                && RegalosDentroDeLoQueDaLaOferta(ofertaCumplida, pedido, servicio);
+
+            if (ofertaCumplida != null && !regalosDentroDeLaOferta && ProductoEnGrupoSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
             {
                 return new RespuestaValidacion
                 {
@@ -160,7 +166,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // filtro superan la cantidad de la oferta (× instancias), las unidades sobrantes no las
             // cubre la oferta: son material promocional suelto (mismo criterio que los grupos de
             // alternativas). Sin esto, cumplida la oferta colarían unidades gratis extra del filtro.
-            if (ofertaCumplida != null && FiltroSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
+            if (ofertaCumplida != null && !regalosDentroDeLaOferta && FiltroSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
             {
                 return new RespuestaValidacion
                 {
@@ -391,6 +397,21 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// pagar 1 y llevarse 2 gratis (o todo gratis, o pagar bajo tarifa) cumplía el suelo
         /// (#289, pregunta de Carlos 13/07). Devuelve null si la regla se cumple, o el motivo.
         /// </summary>
+        /// <summary>
+        /// Feria online 16/11/26: en una oferta con «regalar menor importe», ¿las unidades a base 0 del conjunto caben en lo que
+        /// regala la oferta (instancias × UnidadesRegaladas)? Mismo conjunto y misma cuenta que <see cref="MotivoRegaloNoEsMenorImporte"/>.
+        /// </summary>
+        internal static bool RegalosDentroDeLoQueDaLaOferta(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
+        {
+            int gratis = oferta.OfertasCombinadasDetalles
+                .SelectMany(d => LineasQueCasan(d, pedido, servicio))
+                .Distinct()
+                .Where(l => l.Producto != null && l.Cantidad > 0 && !EsCompraNormalAjenaALaOferta(l) && l.BaseImponible == 0)
+                .Sum(l => l.Cantidad);
+            int maximoRegalado = InstanciasEnPedido(oferta, pedido, servicio) * Math.Max(oferta.UnidadesRegaladas, (short)1);
+            return gratis <= maximoRegalado;
+        }
+
         internal static string MotivoRegaloNoEsMenorImporte(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
             List<LineaPedidoVentaDTO> conjunto = oferta.OfertasCombinadasDetalles
