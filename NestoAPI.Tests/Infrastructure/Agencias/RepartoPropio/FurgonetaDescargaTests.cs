@@ -398,4 +398,67 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(AvisosFurgonetaSinDescargar.TIPO_NOTIFICACION_SIN_LEER, guardados[0].Aviso.Tipo);
         }
     }
+
+    /// <summary>
+    /// Novedad 1284 (Miguel, 16/11/26): descargó a las 14:46 los dos bultos de Vicenta (250953, con incidencia) y la tarjeta seguía en
+    /// «2 de 2 bultos cargados · Lo lleva Miguel»: la carga de las 10:12 seguía contando. Una carga vale hasta que se descarga.
+    /// </summary>
+    [TestClass]
+    public class CargasVigentesTests
+    {
+        private static readonly DateTime CARGA = new DateTime(2026, 11, 16, 10, 12, 0);
+        private static readonly DateTime DESCARGA = new DateTime(2026, 11, 16, 14, 46, 0);
+
+        private static CargaBultoReparto Carga(int bulto, DateTime cuando) =>
+            new CargaBultoReparto { EnvioId = 250953, Bulto = bulto, Usuario = "Miguel", FechaHora = cuando, FechaRegistro = cuando };
+
+        private static MovimientoBultoReparto Mov(int bulto, string tipo, DateTime cuando, int envio = 250953) =>
+            new MovimientoBultoReparto { Codigo = $"RP{envio}-{bulto}", TipoCodigo = CodigoBultoFurgoneta.RP, EnvioId = envio, Bulto = bulto, Tipo = tipo, FechaHora = cuando, FechaRegistro = cuando };
+
+        [TestMethod]
+        public void Descargados_YaNoCuentanComoCargados()
+        {
+            var cargas = new[] { Carga(1, CARGA), Carga(2, CARGA) };
+            var movs = new[] { Mov(1, TiposMovimientoBulto.CARGADO, CARGA), Mov(2, TiposMovimientoBulto.CARGADO, CARGA),
+                Mov(1, TiposMovimientoBulto.DESCARGADO, DESCARGA), Mov(2, TiposMovimientoBulto.DESCARGADO, DESCARGA) };
+
+            List<CargaBultoReparto> vigentes = ServicioRepartoPropio.CargasVigentes(cargas, movs);
+
+            Assert.AreEqual(0, vigentes.Count);
+            Assert.IsNull(ServicioRepartoPropio.Repartidor(vigentes), "Ya no «lo lleva Miguel»");
+        }
+
+        [TestMethod]
+        public void VueltoACargarOtroDia_CuentaLaCargaNueva()
+        {
+            DateTime manana = CARGA.AddDays(1);
+            var cargas = new[] { Carga(1, CARGA), Carga(1, manana) };
+            var movs = new[] { Mov(1, TiposMovimientoBulto.DESCARGADO, DESCARGA), Mov(1, TiposMovimientoBulto.CARGADO, manana) };
+
+            List<CargaBultoReparto> vigentes = ServicioRepartoPropio.CargasVigentes(cargas, movs);
+
+            Assert.AreEqual(1, vigentes.Count);
+            Assert.AreEqual(manana, vigentes[0].FechaRegistro);
+        }
+
+        [TestMethod]
+        public void SoloSeDescuentaElBultoDescargado_YDeSuEnvio()
+        {
+            var cargas = new[] { Carga(1, CARGA), Carga(2, CARGA) };
+            var movs = new[] { Mov(1, TiposMovimientoBulto.DESCARGADO, DESCARGA), Mov(2, TiposMovimientoBulto.DESCARGADO, DESCARGA, envio: 999999) };
+
+            List<CargaBultoReparto> vigentes = ServicioRepartoPropio.CargasVigentes(cargas, movs);
+
+            Assert.AreEqual(1, vigentes.Count);
+            Assert.AreEqual(2, vigentes[0].Bulto);
+        }
+
+        [TestMethod]
+        public void SinMovimientos_TodoComoAntes()
+        {
+            var cargas = new[] { Carga(1, CARGA), Carga(2, CARGA) };
+
+            Assert.AreEqual(2, ServicioRepartoPropio.CargasVigentes(cargas, null).Count);
+        }
+    }
 }

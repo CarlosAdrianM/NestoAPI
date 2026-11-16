@@ -211,7 +211,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return MalCarga(TipoResultadoReparto.Conflicto, FechaRepartoPropio.MensajeNoSeCargaHoy(envio));
             }
 
-            List<CargaBultoReparto> cargas = await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false) ?? new List<CargaBultoReparto>();
+            List<CargaBultoReparto> cargas = await SinLasDescargadas(await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false)).ConfigureAwait(false);
             string actual = Repartidor(cargas);
             bool esSuyo = !NucleoParadasReparto.EsDeOtro(actual, usuario);
             if (!esSuyo && !peticion.Reasignar)
@@ -286,8 +286,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .Where(e => e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && e.Estado == Constantes.Agencias.ESTADO_TRAMITADO
                     && FechaRepartoPropio.DeEnvio(e) == dia) // NestoAPI#831: los del día de reparto pedido
                 .ToList();
-            List<CargaBultoReparto> cargas = await carga.LeerCargas(envios.Select(e => e.Numero).ToList()).ConfigureAwait(false)
-                ?? new List<CargaBultoReparto>();
+            List<CargaBultoReparto> cargas = await SinLasDescargadas(await carga.LeerCargas(envios.Select(e => e.Numero).ToList()).ConfigureAwait(false))
+                .ConfigureAwait(false);
             Dictionary<int, NotaParadaReparto> notas = await NotasDe(envios.Select(e => e.Pedido)).ConfigureAwait(false);
             return ResultadoReparto<List<EnvioSinCargarDTO>>.Bien(envios
                 .Select(e =>
@@ -316,6 +316,44 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         // ---------------------------------------------------------------- piezas
 
+        /// <summary>
+        /// Novedad 1284 (Miguel, 16/11/26): una carga vale hasta que ese bulto se DESCARGA. Al descargar por la tarde un envío sin
+        /// entregar (Vicenta, 250953, con incidencia) la tarjeta seguía en «2 de 2 bultos cargados · Lo lleva Miguel» y la parada
+        /// no volvía a «sin cargar» para otro día. No se borra nada (queda quién lo cargó): solo se dejan de contar las cargas de
+        /// un bulto con un «Descargado» RP registrado después. Puro.
+        /// </summary>
+        internal static List<CargaBultoReparto> CargasVigentes(IEnumerable<CargaBultoReparto> cargas, IEnumerable<MovimientoBultoReparto> movimientos)
+        {
+            List<MovimientoBultoReparto> descargas = (movimientos ?? Enumerable.Empty<MovimientoBultoReparto>())
+                .Where(m => m != null && m.EnvioId.HasValue && m.TipoCodigo == CodigoBultoFurgoneta.RP && m.Tipo == TiposMovimientoBulto.DESCARGADO)
+                .ToList();
+            return (cargas ?? Enumerable.Empty<CargaBultoReparto>())
+                .Where(c => c != null && !descargas.Any(d => d.EnvioId == c.EnvioId && d.Bulto == c.Bulto && d.FechaRegistro >= c.FechaRegistro))
+                .ToList();
+        }
+
+        /// <summary>Las cargas sin las de bultos descargados después (<see cref="CargasVigentes"/>). Si la furgoneta no está o falla, tal cual.</summary>
+        private async Task<List<CargaBultoReparto>> SinLasDescargadas(List<CargaBultoReparto> cargas)
+        {
+            if (cargas == null || cargas.Count == 0 || !FurgonetaDisponible())
+            {
+                return cargas ?? new List<CargaBultoReparto>();
+            }
+            try
+            {
+                List<MovimientoBultoReparto> historia = await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto
+                {
+                    Envios = cargas.Select(c => c.EnvioId).Distinct().ToArray()
+                }).ConfigureAwait(false);
+                return CargasVigentes(cargas, historia);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Furgoneta] No se pudieron descontar las cargas de bultos descargados: {ex.Message}", ex));
+                return cargas;
+            }
+        }
+
         /// <summary>Repartidor y bultos cargados de cada envío de la lista (una consulta).</summary>
         private async Task CompletarCarga(List<EnvioRepartoDTO> lista)
         {
@@ -323,8 +361,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return;
             }
-            List<CargaBultoReparto> cargas = await carga.LeerCargas(lista.Select(e => e.EnvioId).ToList()).ConfigureAwait(false)
-                ?? new List<CargaBultoReparto>();
+            List<CargaBultoReparto> cargas = await SinLasDescargadas(await carga.LeerCargas(lista.Select(e => e.EnvioId).ToList()).ConfigureAwait(false))
+                .ConfigureAwait(false);
             foreach (EnvioRepartoDTO envio in lista)
             {
                 List<CargaBultoReparto> suyas = cargas.Where(c => c.EnvioId == envio.EnvioId).ToList();
@@ -343,7 +381,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return MalCarga(TipoResultadoReparto.Conflicto, $"Esa ClaveIdempotencia ya se usó para cargar el bulto {previa.Bulto} del envío " +
                     $"{previa.EnvioId}. Cada lectura lleva su propia clave.");
             }
-            List<CargaBultoReparto> cargas = await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false) ?? new List<CargaBultoReparto>();
+            List<CargaBultoReparto> cargas = await SinLasDescargadas(await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false)).ConfigureAwait(false);
             return ResultadoReparto<ResultadoCargaBultoDTO>.Bien(Respuesta(envio, bulto, cargas, previa.Usuario));
         }
 
