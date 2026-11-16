@@ -42,6 +42,13 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public int CandidatosQueQuedan { get; set; }
         /// <summary>Nº de cliente de los del bloque, en el orden en que entran.</summary>
         public List<string> Clientes { get; set; } = new List<string>();
+        /// <summary>
+        /// Carlos 16/11/26: de los del bloque, los de origen AMAZON o WEB (Nº de cliente → origen), entren por el origen o porque ya
+        /// cumplían lo del vendedor.
+        /// </summary>
+        public Dictionary<string, string> Origenes { get; set; } = new Dictionary<string, string>();
+        /// <summary>Carlos 16/11/26: de los del bloque, cuántos entran solo por su origen (no cumplían lo del vendedor y los estados).</summary>
+        public int IncluidosPorOrigen { get; set; }
     }
 
     public class PeticionSembrarEmbudo
@@ -79,6 +86,12 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public const int LONGITUD_MAXIMA_BLOQUE = 30;
         public const int LONGITUD_MAXIMA_ORIGEN = 30;
         public static readonly IReadOnlyList<short> ESTADOS_POR_DEFECTO = new short[] { 0, 7, 9, 93, 11, 22 };
+
+        /// <summary>
+        /// Carlos 16/11/26: los orígenes de canal (dbo.OrigenesCliente con EsLead = 0, #848) cuyos clientes entran SIEMPRE en el
+        /// embudo, sea cual sea su vendedor y su estado (salvo de baja), con alguna persona con correo y boletín.
+        /// </summary>
+        public static readonly IReadOnlyList<string> ORIGENES_QUE_ENTRAN = new[] { "AMAZON", "WEB" };
 
         public static string MensajeSinTabla =>
             $"Falta lanzar el script {RepositorioClientesEmbudoSql.NOMBRE_SCRIPT} (tabla dbo.ClientesEmbudo): sin él no se puede usar el embudo.";
@@ -132,7 +145,10 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
 
             List<CandidatoEmbudo> candidatos = await repositorio.LeerCandidatos(vendedor, estados, soloConCorreo).ConfigureAwait(false)
                 ?? new List<CandidatoEmbudo>();
-            List<CandidatoEmbudo> elegibles = candidatos.Where(c => !c.YaEnviado && !c.PendienteSincronizar).ToList();
+            // Los que entran por su origen, siempre con alguna persona con correo y boletín (aunque se pida sin correo)
+            List<CandidatoEmbudo> elegibles = candidatos
+                .Where(c => !c.YaEnviado && !c.PendienteSincronizar && (!c.EntraPorOrigen || c.PersonasConCorreo > 0))
+                .ToList();
             List<CandidatoEmbudo> delBloque = elegibles.Take(maximo).ToList();
 
             var resultado = new ResultadoRepublicarEmbudo
@@ -146,7 +162,11 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 ExcluidosPorPendienteSincronizar = candidatos.Count(c => !c.YaEnviado && c.PendienteSincronizar),
                 CandidatosQueQuedan = elegibles.Count - delBloque.Count,
                 Clientes = delBloque.Select(c => c.Cliente?.Trim()).ToList(),
-                ClientesEncolados = delBloque.Count
+                ClientesEncolados = delBloque.Count,
+                Origenes = delBloque.Where(c => !string.IsNullOrWhiteSpace(c.Origen))
+                    .GroupBy(c => c.Cliente?.Trim())
+                    .ToDictionary(g => g.Key, g => g.First().Origen.Trim()),
+                IncluidosPorOrigen = delBloque.Count(c => c.EntraPorOrigen)
             };
             if (!ensayo && delBloque.Count > 0)
             {

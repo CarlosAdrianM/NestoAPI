@@ -404,6 +404,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   dato viejo/ilegible/403/red → nada y aviso a Dirección una vez al día (`EmbudoRitmoUltimoAvisoFallo`). Cada cambio: Modificaciones
   con motivo y cifras de Odoo + campana. La última recomendación (`EmbudoRecomendacion*`) sale en GET Configuracion. «subir» exige además el DKIM de Office 365
   publicado (`IComprobadorDkim`, DNS de selector1._domainkey.nuevavision.es; hoy NO existe): si no, no sube y avisa como mucho 1 vez/semana.
+- **Orígenes AMAZON y WEB (Carlos 16/11/26)**: además de los del vendedor NV, `SqlCandidatos` añade los clientes con origen de
+  `ServicioEmbudoClientes.ORIGENES_QUE_ENTRAN` (AMAZON, WEB; constante en código, EsLead = 0) sea cual sea su vendedor y su estado (algún contacto
+  ≥ 0), SIEMPRE con alguna persona con correo y boletín (`EntraPorOrigen`; también con SoloConCorreo = false) y sin estar en `ClientesEmbudo`.
+  Mismo orden y tope. Por SQL dinámico (sin ClientesOrigen o sin EsLead, como antes). La respuesta trae `Origenes` (cliente → origen) e `IncluidosPorOrigen`.
 
 ### Eventos: candidatos a invitar, en MODO SOMBRA (NestoAPI#850, 11/11/26)
 - Solo se recogen datos (nada visible; cortes 2-4 en la issue). `dbo.EventosCandidatos` (fuera del EDMX, `Scripts/EventosCandidatosSombra.sql`):

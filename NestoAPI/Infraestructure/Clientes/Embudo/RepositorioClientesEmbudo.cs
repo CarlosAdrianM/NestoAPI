@@ -23,6 +23,16 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public DateTime? UltimoPedido { get; set; }
         /// <summary>El alta más antigua de sus contactos (para ordenar a los que nunca han comprado).</summary>
         public DateTime? FechaAlta { get; set; }
+        /// <summary>
+        /// Carlos 16/11/26: su origen (dbo.ClientesOrigen) si es uno de los que entran siempre en el embudo
+        /// (<see cref="ServicioEmbudoClientes.ORIGENES_QUE_ENTRAN"/>: AMAZON, WEB); si no, null.
+        /// </summary>
+        public string Origen { get; set; }
+        /// <summary>
+        /// Carlos 16/11/26: es candidato SOLO por su origen (no cumple lo del vendedor y los estados). Entra sea cual sea su vendedor y
+        /// su estado (salvo de baja), pero siempre con alguna persona con correo y boletín, aunque se pida sin correo.
+        /// </summary>
+        public bool EntraPorOrigen { get; set; }
     }
 
     /// <summary>Una fila para sembrar el registro con clientes que ya pasaron por el embudo de Odoo por otra puerta.</summary>
@@ -108,16 +118,23 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         /// <summary>
         /// Una sola consulta. Primero los clientes cuyos contactos activos son todos del vendedor y de los estados pedidos (un GROUP BY
         /// sobre los ~47.000 contactos de la empresa 1) a una tabla temporal; de ahí fuera los que tienen otro vendedor en algún grupo
-        /// de producto; y solo para los que quedan, los conteos, el registro, Nesto_sync y el último pedido (mismo criterio que
-        /// CalculoFechasComprasCliente: fecha de cabecera, línea en -1 o más, empresas 1 y espejo).
+        /// de producto; después (Carlos 16/11/26) se añaden los de origen AMAZON o WEB (<see cref="ServicioEmbudoClientes.ORIGENES_QUE_ENTRAN"/>,
+        /// de canal: EsLead = 0) sea cual sea su vendedor y su estado, con algún contacto que no sea de baja; y solo para los que quedan,
+        /// los conteos, el registro, Nesto_sync y el último pedido (mismo criterio que CalculoFechasComprasCliente: fecha de cabecera,
+        /// línea en -1 o más, empresas 1 y espejo). Los de origen van por SQL dinámico: sin las tablas de orígenes (o sin EsLead, #848)
+        /// no se añade ninguno y la consulta sigue como antes.
         /// </summary>
         internal static string SqlCandidatos(int numeroEstados)
         {
             string estados = string.Join(", ", Enumerable.Range(0, numeroEstados).Select(i => $"@e{i}"));
+            int numeroOrigenes = ServicioEmbudoClientes.ORIGENES_QUE_ENTRAN.Count;
+            string origenes = string.Join(", ", Enumerable.Range(0, numeroOrigenes).Select(i => $"@o{i}"));
+            string declaracionOrigenes = string.Join(", ", Enumerable.Range(0, numeroOrigenes).Select(i => $"@o{i} varchar(30)"));
             return $@"
 SET NOCOUNT ON;
 IF OBJECT_ID(N'tempdb..#AptosEmbudo') IS NOT NULL DROP TABLE #AptosEmbudo;
-SELECT c.[Nº Cliente] AS Cliente, COUNT(*) AS ContactosActivos, MIN(c.FechaAlta) AS FechaAlta
+SELECT c.[Nº Cliente] AS Cliente, COUNT(*) AS ContactosActivos, MIN(c.FechaAlta) AS FechaAlta,
+       CAST(NULL AS varchar(30)) AS Origen, CAST(0 AS bit) AS EntraPorOrigen
 INTO #AptosEmbudo
 FROM Clientes c WITH (NOLOCK)
 WHERE c.Empresa = @empresa AND c.Estado >= 0
@@ -130,10 +147,29 @@ WHERE EXISTS (SELECT 1 FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)
               INNER JOIN Clientes c WITH (NOLOCK) ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto
               WHERE v.Empresa = @empresa AND v.Cliente = a.Cliente AND c.Estado >= 0 AND v.Vendedor <> @vendedorGeneral);
 
+-- Carlos 16/11/26: los de origen AMAZON o WEB entran sea cual sea su vendedor y su estado (salvo de baja)
+IF OBJECT_ID(N'dbo.ClientesOrigen', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.OrigenesCliente', N'EsLead') IS NOT NULL
+    EXEC sp_executesql N'
+UPDATE a SET Origen = RTRIM(co.Origen)
+FROM #AptosEmbudo a
+INNER JOIN dbo.ClientesOrigen co WITH (NOLOCK) ON co.Empresa = @empresa AND co.Cliente = a.Cliente
+INNER JOIN dbo.OrigenesCliente o WITH (NOLOCK) ON o.Codigo = co.Origen
+WHERE co.Origen IN ({origenes}) AND o.EsLead = 0;
+
+INSERT INTO #AptosEmbudo (Cliente, ContactosActivos, FechaAlta, Origen, EntraPorOrigen)
+SELECT c.[Nº Cliente], COUNT(*), MIN(c.FechaAlta), MIN(RTRIM(co.Origen)), 1
+FROM dbo.ClientesOrigen co WITH (NOLOCK)
+INNER JOIN dbo.OrigenesCliente o WITH (NOLOCK) ON o.Codigo = co.Origen
+INNER JOIN Clientes c WITH (NOLOCK) ON c.Empresa = co.Empresa AND c.[Nº Cliente] = co.Cliente
+WHERE co.Empresa = @empresa AND co.Origen IN ({origenes}) AND o.EsLead = 0 AND c.Estado >= 0
+  AND NOT EXISTS (SELECT 1 FROM #AptosEmbudo a WHERE a.Cliente = co.Cliente)
+GROUP BY c.[Nº Cliente];',
+        N'@empresa char(3), {declaracionOrigenes}', @empresa, {origenes};
+
 SELECT RTRIM(t.Cliente) AS Cliente, t.Contactos, t.ContactosActivos, t.PersonasConCorreo, t.YaEnviado, t.PendienteSincronizar, t.UltimoPedido,
-       t.FechaAlta
+       t.FechaAlta, t.Origen, t.EntraPorOrigen
 FROM (
-    SELECT a.Cliente, a.ContactosActivos, a.FechaAlta,
+    SELECT a.Cliente, a.ContactosActivos, a.FechaAlta, a.Origen, a.EntraPorOrigen,
         (SELECT COUNT(*) FROM Clientes c WITH (NOLOCK) WHERE c.Empresa = @empresa AND c.[Nº Cliente] = a.Cliente) AS Contactos,
         (SELECT COUNT(*) FROM PersonasContactoCliente p WITH (NOLOCK)
          INNER JOIN Clientes c WITH (NOLOCK) ON c.Empresa = p.Empresa AND c.[Nº Cliente] = p.[NºCliente] AND c.Contacto = p.Contacto
@@ -150,7 +186,7 @@ FROM (
          WHERE l.Empresa IN (@empresa, @empresaEspejo) AND l.[Nº Cliente] = a.Cliente AND l.Estado >= @pendiente) AS UltimoPedido
     FROM #AptosEmbudo a
 ) t
-WHERE @soloConCorreo = 0 OR t.PersonasConCorreo > 0
+WHERE (@soloConCorreo = 0 AND t.EntraPorOrigen = 0) OR t.PersonasConCorreo > 0
 ORDER BY CASE WHEN t.UltimoPedido IS NULL THEN 1 ELSE 0 END, t.UltimoPedido DESC, t.FechaAlta DESC, LEN(t.Cliente) DESC, t.Cliente DESC;
 
 DROP TABLE #AptosEmbudo;";
@@ -170,6 +206,10 @@ DROP TABLE #AptosEmbudo;";
             for (int i = 0; i < estados.Count; i++)
             {
                 parametros.Add(new SqlParameter($"@e{i}", SqlDbType.SmallInt) { Value = estados[i] });
+            }
+            for (int i = 0; i < ServicioEmbudoClientes.ORIGENES_QUE_ENTRAN.Count; i++)
+            {
+                parametros.Add(new SqlParameter($"@o{i}", SqlDbType.VarChar, 30) { Value = ServicioEmbudoClientes.ORIGENES_QUE_ENTRAN[i] });
             }
             using (NVEntities db = crearContexto())
             {
