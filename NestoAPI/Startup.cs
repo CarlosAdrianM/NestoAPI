@@ -320,7 +320,12 @@ namespace NestoAPI
             // Ariadna#8: el mozo informa de un dato mal de la ficha (foto → Tienda online; lo demás → Compras)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(_ => Infraestructure.PreparacionAlmacen.RepositorioAvisosFichaSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto, Infraestructure.PreparacionAlmacen.AvisadorFichaProducto>();
-            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAvisosFicha, Infraestructure.PreparacionAlmacen.ServicioAvisosFicha>();
+            // NestoAPI#868: la foto del mozo se guarda en el blob de las fotos de bultos (avisos-ficha/...)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAvisosFicha>(sp => new Infraestructure.PreparacionAlmacen.ServicioAvisosFicha(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen>(),
+                new Infraestructure.PreparacionAlmacen.AlmacenFotosBultosAzure()));
             // NestoAPI#642: mantenimiento de las calles del recorrido (GET/PUT api/Almacen/Recorrido, ventana de Nesto#528)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioRecorrido>(_ => Infraestructure.PreparacionAlmacen.RepositorioRecorridoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecorridoAlmacen, Infraestructure.PreparacionAlmacen.ServicioRecorridoAlmacen>();

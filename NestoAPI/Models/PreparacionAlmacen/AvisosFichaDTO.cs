@@ -26,7 +26,16 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool Confirmado { get; set; }
         /// <summary>La foto que ha visto el mozo (si no viene, la que tenga la tienda ahora).</summary>
         public string UrlFoto { get; set; }
+        /// <summary>
+        /// NestoAPI#868: foto opcional hecha por el mozo del producto que tiene en la mano (JPEG en base64, con o sin
+        /// «data:image/jpeg;base64,» delante; como mucho <see cref="FOTO_MOZO_BYTES_MAXIMO"/> bytes). Va dentro del correo
+        /// y se guarda en el blob de fotos del almacén.
+        /// </summary>
+        public string FotoMozoBase64 { get; set; }
         public string Dispositivo { get; set; }
+
+        /// <summary>NestoAPI#868: tope de la foto del mozo ya decodificada (la de Ariadna, 1600 px JPEG, ronda 300-800 KB).</summary>
+        public const int FOTO_MOZO_BYTES_MAXIMO = 4 * 1024 * 1024;
     }
 
     public class ResultadoInformarDatoMalDTO

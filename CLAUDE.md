@@ -715,6 +715,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   TODAS las sugerencias con alguno: grupo de control), y job `sugerencias-contacto-resultado` 3:25 Madrid: PedidoEn7Dias, PedidoConOferta, ImportePedido7Dias
   de las de hace 8-60 días (un UPDATE). Para decidir si se añaden rasgos de ofertas al modelo.
 
+### Aviso de ficha desde Ariadna: foto del mozo (NestoAPI#868, 16/11/26)
+- `POST api/Almacen/AvisosFicha` admite `FotoMozoBase64` (opcional, JPEG, tope 4 MB; `FotoMozoAvisoFicha.Leer`, 400 si no vale): se sube UNA vez al blob de
+  bultos (`avisos-ficha/{producto}-{guid}.jpg`) y su ruta va en `AvisosFichaProducto.FotoMozo` (`Scripts/Issue868_AvisosFichaFotoMozo.sql`; sin la columna o
+  sin blob, no se guarda pero la foto va igual en el correo). Correo: «La foto de la tienda que ha visto» (cid foto-ficha) y «Lo que tiene el mozo en la
+  mano» (cid foto-mozo). Varios informantes: la última foto (sin foto nueva se queda la guardada; el correo solo lleva la del envío).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

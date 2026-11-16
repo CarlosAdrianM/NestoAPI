@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Notificaciones;
+﻿using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Verifactu;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
@@ -144,6 +144,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NestoAPI#604: de quién es el código leído, para decírselo al equipo. No se guarda: se mira al avisar.</summary>
         public InfoCodigoLeido InfoCodigo { get; set; }
         public string UrlFoto { get; set; }
+        /// <summary>
+        /// NestoAPI#868: la foto que ha hecho el mozo en ESTE envío (no se guarda en la tabla: solo va en el correo). Si se
+        /// suma otro informante con foto, la suya; sin foto en el envío, null y el correo no la lleva.
+        /// </summary>
+        public byte[] FotoMozo { get; set; }
+        /// <summary>NestoAPI#868: dónde se ha guardado la foto del mozo en el blob (columna FotoMozo, la última que ha llegado).</summary>
+        public string RutaFotoMozo { get; set; }
         /// <summary>El valor de cada campo marcado cuando se avisó: si cambia, el aviso se cierra solo.</summary>
         public Dictionary<string, string> Huella { get; set; } = new Dictionary<string, string>();
         /// <summary>Los mozos que han avisado (a todos les llega la respuesta).</summary>
@@ -247,6 +254,54 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Mensaje { get; set; }
     }
 
+    /// <summary>NestoAPI#868: la foto que manda el mozo con el aviso (opcional): base64 de un JPEG, con tope de tamaño.</summary>
+    public static class FotoMozoAvisoFicha
+    {
+        /// <summary>Null si está bien (o no viene: <paramref name="bytes"/> null); si no, el mensaje para el mozo.</summary>
+        public static string Leer(string base64, out byte[] bytes)
+        {
+            bytes = null;
+            if (string.IsNullOrWhiteSpace(base64))
+            {
+                return null;
+            }
+            string limpia = base64.Trim();
+            int coma = limpia.IndexOf(',');
+            if (limpia.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && coma > 0)
+            {
+                limpia = limpia.Substring(coma + 1);
+            }
+            // Tope antes de decodificar: 4 caracteres de base64 son 3 bytes
+            if ((long)limpia.Length * 3 / 4 > InformarDatoMalDTO.FOTO_MOZO_BYTES_MAXIMO + 3)
+            {
+                return MensajeDemasiadoGrande();
+            }
+            byte[] leidos;
+            try
+            {
+                leidos = Convert.FromBase64String(limpia);
+            }
+            catch (FormatException)
+            {
+                return "La foto no es una imagen válida. Vuelva a hacerla.";
+            }
+            if (leidos.Length > InformarDatoMalDTO.FOTO_MOZO_BYTES_MAXIMO)
+            {
+                return MensajeDemasiadoGrande();
+            }
+            // JPEG: empieza por FF D8 FF
+            if (leidos.Length < 3 || leidos[0] != 0xFF || leidos[1] != 0xD8 || leidos[2] != 0xFF)
+            {
+                return "La foto tiene que ser JPEG. Vuelva a hacerla con la cámara de Ariadna.";
+            }
+            bytes = leidos;
+            return null;
+        }
+
+        private static string MensajeDemasiadoGrande()
+            => $"La foto es demasiado grande (máximo {InformarDatoMalDTO.FOTO_MOZO_BYTES_MAXIMO / (1024 * 1024)} MB). Vuelva a hacerla con la cámara de Ariadna.";
+    }
+
     public interface IServicioAvisosFicha
     {
         Task<ResultadoInformarDatoMal> Informar(string empresa, InformarDatoMalDTO peticion, string usuario);
@@ -270,13 +325,31 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IRepositorioAvisosFicha repositorio;
         private readonly IAvisadorFichaProducto avisador;
         private readonly IFotosProductoAlmacen fotos;
+        private readonly IAlmacenFotosBultos fotosMozo;
+        private readonly Func<Guid> nuevaClave;
 
-        public ServicioAvisosFicha(IRepositorioAvisosFicha repositorio, IAvisadorFichaProducto avisador, IFotosProductoAlmacen fotos)
+        /// <param name="fotosMozo">NestoAPI#868: dónde se guarda la foto del mozo (el blob de las fotos de bultos). Sin él,
+        /// o sin configurar, la foto va igual en el correo pero no se guarda.</param>
+        public ServicioAvisosFicha(IRepositorioAvisosFicha repositorio, IAvisadorFichaProducto avisador, IFotosProductoAlmacen fotos,
+            IAlmacenFotosBultos fotosMozo = null)
+            : this(repositorio, avisador, fotos, fotosMozo, null)
+        {
+        }
+
+        internal ServicioAvisosFicha(IRepositorioAvisosFicha repositorio, IAvisadorFichaProducto avisador, IFotosProductoAlmacen fotos,
+            IAlmacenFotosBultos fotosMozo, Func<Guid> nuevaClave)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.avisador = avisador ?? throw new ArgumentNullException(nameof(avisador));
             this.fotos = fotos ?? throw new ArgumentNullException(nameof(fotos));
+            this.fotosMozo = fotosMozo;
+            this.nuevaClave = nuevaClave ?? Guid.NewGuid;
         }
+
+        /// <summary>NestoAPI#868: la carpeta del blob (contenedor de bultos) con las fotos de los mozos en los avisos de ficha.</summary>
+        internal const string CARPETA_FOTOS_MOZO = "avisos-ficha";
+
+        internal static string RutaFotoMozo(string producto, Guid clave) => $"{CARPETA_FOTOS_MOZO}/{producto?.Trim()}-{clave:N}.jpg";
 
         public async Task<ResultadoInformarDatoMal> Informar(string empresa, InformarDatoMalDTO peticion, string usuario)
         {
@@ -290,6 +363,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (campos.Count == 0 || campos.Count != marcados.Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count())
             {
                 return NoValido("Marca qué está mal: " + string.Join(", ", CamposFicha.TODOS.Select(CamposFicha.Texto)) + ".");
+            }
+            string errorFoto = FotoMozoAvisoFicha.Leer(peticion.FotoMozoBase64, out byte[] fotoMozo);
+            if (errorFoto != null)
+            {
+                return NoValido(errorFoto);
             }
             DatosFichaActual ficha = await repositorio.LeerFicha(empresa, producto).ConfigureAwait(false);
             if (ficha == null)
@@ -313,6 +391,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
 
             string quien = usuario?.Trim() ?? string.Empty;
+            // NestoAPI#868: una sola subida aunque el aviso vaya a los dos equipos; si no se puede, la foto va igual en el correo
+            string rutaFotoMozo = fotoMozo == null ? null : await GuardarFotoMozo(producto, fotoMozo).ConfigureAwait(false);
             var resultado = new ResultadoInformarDatoMal { Estado = EstadoInformarDatoMal.Guardado };
             var mensajes = new List<string>();
             foreach (IGrouping<string, string> grupo in campos.GroupBy(DestinosAvisoFicha.De).OrderBy(g => g.Key == DestinosAvisoFicha.TIENDA_ONLINE ? 0 : 1))
@@ -324,10 +404,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     if (existente == null)
                     {
                         nuevos = grupo.ToList();
-                        return await tx.Insertar(Nuevo(empresa, producto, grupo.Key, nuevos, ficha, peticion, quien)).ConfigureAwait(false);
+                        AvisoFicha nuevo = Nuevo(empresa, producto, grupo.Key, nuevos, ficha, peticion, quien);
+                        nuevo.FotoMozo = fotoMozo;
+                        nuevo.RutaFotoMozo = rutaFotoMozo;
+                        return await tx.Insertar(nuevo).ConfigureAwait(false);
                     }
                     nuevos = grupo.Where(c => !existente.Campos.Contains(c)).ToList();
                     Sumar(existente, nuevos, ficha, peticion, quien);
+                    // Varios informantes: manda la última foto (sin foto en este envío, se queda la que hubiera guardada)
+                    existente.FotoMozo = fotoMozo;
+                    existente.RutaFotoMozo = rutaFotoMozo ?? existente.RutaFotoMozo;
                     await tx.Actualizar(existente).ConfigureAwait(false);
                     return existente;
                 }).ConfigureAwait(false);
@@ -408,6 +494,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return conEscaner == true
                 ? "Ese es el código de la ficha y lo has leído con el escáner: el código de barras está bien. Si aun así quieres avisar, vuelve a enviar."
                 : "Ese es el código de la ficha. Lee con el escáner el código del envase, o deja el cuadro vacío y haz una foto. Si aun así quieres avisar, vuelve a enviar.";
+        }
+
+        private async Task<string> GuardarFotoMozo(string producto, byte[] foto)
+        {
+            if (fotosMozo == null || !fotosMozo.Configurado)
+            {
+                return null;
+            }
+            string ruta = RutaFotoMozo(producto, nuevaClave());
+            try
+            {
+                await fotosMozo.Subir(ruta, foto, "image/jpeg").ConfigureAwait(false);
+                return ruta;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[NestoAPI#868] No se ha podido guardar la foto del mozo del aviso de ficha del {producto}: {ex.Message}", ex));
+                return null;
+            }
         }
 
         private static ResultadoInformarDatoMal NoValido(string mensaje)
@@ -642,6 +747,18 @@ SET Campos = @campos, Comentarios = @comentarios, CodigoLeido = @codigoLeido, Co
     Informantes = @informantes, Veces = @veces, FechaModificacion = GETDATE()
 WHERE Id = @id AND Estado = 'Abierto'";
 
+        /// <summary>NestoAPI#868: la columna con la ruta de la foto del mozo (Scripts/Issue868_AvisosFichaFotoMozo.sql). Sin ella, no se guarda.</summary>
+        internal const string COLUMNA_FOTO_MOZO = "FotoMozo";
+
+        /// <summary>NestoAPI#868: el INSERT con la ruta de la foto del mozo (solo con la columna del script).</summary>
+        internal static readonly string SQL_INSERTAR_CON_FOTO_MOZO = SQL_INSERTAR
+            .Replace("Dispositivo, Veces)", "Dispositivo, Veces, FotoMozo)")
+            .Replace("@dispositivo, @veces)", "@dispositivo, @veces, @fotoMozo)");
+
+        /// <summary>NestoAPI#868: el UPDATE pone la última foto que llega; sin foto en el envío, se queda la que hubiera.</summary>
+        internal static readonly string SQL_ACTUALIZAR_CON_FOTO_MOZO = SQL_ACTUALIZAR
+            .Replace("Veces = @veces,", "Veces = @veces, FotoMozo = COALESCE(@fotoMozo, FotoMozo),");
+
         internal const string SQL_CERRAR = @"
 UPDATE dbo.AvisosFichaProducto SET Estado = @estado, CerradoPor = @cerradoPor, FechaCierre = GETDATE(), FechaModificacion = GETDATE()
 WHERE Id = @id AND Estado = 'Abierto'";
@@ -748,14 +865,24 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             return filas.Select(f => f.Aviso()).FirstOrDefault();
         }
 
+        private bool TieneColumnaFotoMozo() => ColumnasOpcionales.Existen(db, "AvisosFichaProducto", COLUMNA_FOTO_MOZO);
+
         public async Task<AvisoFicha> Insertar(AvisoFicha aviso)
         {
-            FilaInsertada fila = await db.Database.SqlQuery<FilaInsertada>(SQL_INSERTAR,
+            var parametros = new List<SqlParameter>
+            {
                 Char("@empresa", aviso.Empresa, 3), Char("@producto", aviso.Producto, 15), Texto("@destino", aviso.Destino),
                 Texto("@campos", string.Join(",", aviso.Campos)), Texto("@comentarios", aviso.Comentarios), Texto("@codigoLeido", aviso.CodigoLeido),
                 Bit("@conEscaner", aviso.CodigoLeidoConEscaner),
                 Texto("@urlFoto", aviso.UrlFoto), Texto("@huella", JsonConvert.SerializeObject(aviso.Huella)),
-                Texto("@informantes", string.Join(",", aviso.Informantes)), Texto("@dispositivo", aviso.Dispositivo), new SqlParameter("@veces", aviso.Veces))
+                Texto("@informantes", string.Join(",", aviso.Informantes)), Texto("@dispositivo", aviso.Dispositivo), new SqlParameter("@veces", aviso.Veces)
+            };
+            bool conFotoMozo = TieneColumnaFotoMozo();
+            if (conFotoMozo)
+            {
+                parametros.Add(Texto("@fotoMozo", aviso.RutaFotoMozo));
+            }
+            FilaInsertada fila = await db.Database.SqlQuery<FilaInsertada>(conFotoMozo ? SQL_INSERTAR_CON_FOTO_MOZO : SQL_INSERTAR, parametros.ToArray())
                 .SingleAsync().ConfigureAwait(false);
             aviso.Id = fila.Id;
             aviso.Clave = fila.Clave;
@@ -765,10 +892,18 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
 
         public Task Actualizar(AvisoFicha aviso)
         {
-            return db.Database.ExecuteSqlCommandAsync(SQL_ACTUALIZAR,
+            var parametros = new List<SqlParameter>
+            {
                 Texto("@campos", string.Join(",", aviso.Campos)), Texto("@comentarios", aviso.Comentarios), Texto("@codigoLeido", aviso.CodigoLeido), Bit("@conEscaner", aviso.CodigoLeidoConEscaner),
                 Texto("@urlFoto", aviso.UrlFoto), Texto("@huella", JsonConvert.SerializeObject(aviso.Huella)),
-                Texto("@informantes", string.Join(",", aviso.Informantes)), new SqlParameter("@veces", aviso.Veces), new SqlParameter("@id", aviso.Id));
+                Texto("@informantes", string.Join(",", aviso.Informantes)), new SqlParameter("@veces", aviso.Veces), new SqlParameter("@id", aviso.Id)
+            };
+            bool conFotoMozo = TieneColumnaFotoMozo();
+            if (conFotoMozo)
+            {
+                parametros.Add(Texto("@fotoMozo", aviso.RutaFotoMozo));
+            }
+            return db.Database.ExecuteSqlCommandAsync(conFotoMozo ? SQL_ACTUALIZAR_CON_FOTO_MOZO : SQL_ACTUALIZAR, parametros.ToArray());
         }
 
         public async Task<List<AvisoFicha>> LeerAbiertos()
@@ -886,6 +1021,11 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
 
         /// <summary>NestoAPI#752: el Content-ID de la foto metida en el correo.</summary>
         internal const string ID_FOTO = "foto-ficha";
+        /// <summary>NestoAPI#868: el Content-ID de la foto que ha hecho el mozo.</summary>
+        internal const string ID_FOTO_MOZO = "foto-mozo";
+        /// <summary>NestoAPI#868: los títulos de las dos fotos del correo.</summary>
+        internal const string TITULO_FOTO_TIENDA = "La foto de la tienda que ha visto";
+        internal const string TITULO_FOTO_MOZO = "Lo que tiene el mozo en la mano";
 
         public AvisadorFichaProducto(IServicioCorreoElectronico correo, IServicioNotificacionesPush notificaciones)
             : this(correo, notificaciones, null, null)
@@ -1020,8 +1160,9 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             };
             mail.To.Add(new MailAddress(DestinosAvisoFicha.Correo(aviso.Destino)));
             bool conFoto = foto?.Bytes != null && foto.Bytes.Length > 0 && !string.IsNullOrWhiteSpace(aviso.UrlFoto);
-            string html = CuerpoCorreo(aviso, ficha, campos, enlaceFicha, enlaceOtro, conFoto);
-            if (!conFoto)
+            bool conFotoMozo = aviso.FotoMozo != null && aviso.FotoMozo.Length > 0;
+            string html = CuerpoCorreo(aviso, ficha, campos, enlaceFicha, enlaceOtro, conFoto, conFotoMozo);
+            if (!conFoto && !conFotoMozo)
             {
                 mail.IsBodyHtml = true;
                 mail.Body = html;
@@ -1029,13 +1170,27 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             }
             AlternateView texto = AlternateView.CreateAlternateViewFromString(CuerpoTexto(aviso, ficha, campos), Encoding.UTF8, MediaTypeNames.Text.Plain);
             AlternateView vista = AlternateView.CreateAlternateViewFromString(html, Encoding.UTF8, MediaTypeNames.Text.Html);
-            var imagen = new LinkedResource(new MemoryStream(foto.Bytes), foto.TipoMime)
+            if (conFoto)
             {
-                ContentId = ID_FOTO,
-                TransferEncoding = TransferEncoding.Base64
-            };
-            imagen.ContentType.Name = $"foto-{aviso.Producto}{foto.Extension}";
-            vista.LinkedResources.Add(imagen);
+                var imagen = new LinkedResource(new MemoryStream(foto.Bytes), foto.TipoMime)
+                {
+                    ContentId = ID_FOTO,
+                    TransferEncoding = TransferEncoding.Base64
+                };
+                imagen.ContentType.Name = $"foto-{aviso.Producto}{foto.Extension}";
+                vista.LinkedResources.Add(imagen);
+            }
+            if (conFotoMozo)
+            {
+                // NestoAPI#868: la foto del mozo, segundo recurso (siempre JPEG: lo comprueba FotoMozoAvisoFicha)
+                var imagenMozo = new LinkedResource(new MemoryStream(aviso.FotoMozo), MediaTypeNames.Image.Jpeg)
+                {
+                    ContentId = ID_FOTO_MOZO,
+                    TransferEncoding = TransferEncoding.Base64
+                };
+                imagenMozo.ContentType.Name = $"mozo-{aviso.Producto}.jpg";
+                vista.LinkedResources.Add(imagenMozo);
+            }
             mail.AlternateViews.Add(texto);
             mail.AlternateViews.Add(vista);
             return mail;
@@ -1106,7 +1261,7 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
         internal const string NOTA_SIN_FOTO = "No se ha podido meter la foto en el correo (la tienda no la ha servido). Si no se ve, es que la tienda ya la ha cambiado o borrado.";
 
         internal static string CuerpoCorreo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos, string enlaceFicha, string enlaceOtro,
-            bool fotoDentro = false)
+            bool fotoDentro = false, bool fotoMozoDentro = false)
         {
             string H(string s) => WebUtility.HtmlEncode(s ?? string.Empty);
             var html = new StringBuilder();
@@ -1145,14 +1300,19 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             {
                 if (fotoDentro)
                 {
-                    _ = html.Append($"<p>La foto que ha visto:<br/><img src=\"cid:{ID_FOTO}\" alt=\"Foto que ha visto el mozo\" style=\"max-width:240px\"/>"
+                    _ = html.Append($"<p>{TITULO_FOTO_TIENDA}:<br/><img src=\"cid:{ID_FOTO}\" alt=\"Foto de la tienda que ha visto el mozo\" style=\"max-width:240px\"/>"
                         + $"<br/><a href=\"{H(aviso.UrlFoto)}\" style=\"color:#666;font-size:small\">Dirección de la foto en la tienda</a></p>");
                 }
                 else
                 {
-                    _ = html.Append($"<p>La foto que ha visto:<br/><img src=\"{H(aviso.UrlFoto)}\" style=\"max-width:240px\"/>"
+                    _ = html.Append($"<p>{TITULO_FOTO_TIENDA}:<br/><img src=\"{H(aviso.UrlFoto)}\" style=\"max-width:240px\"/>"
                         + $"<br/><a href=\"{H(aviso.UrlFoto)}\">Abrir la foto</a><br/><span style=\"color:#666\">{H(NOTA_SIN_FOTO)}</span></p>");
                 }
+            }
+            if (fotoMozoDentro)
+            {
+                // NestoAPI#868: la foto que ha hecho el mozo del producto que tiene delante
+                _ = html.Append($"<p>{TITULO_FOTO_MOZO}:<br/><img src=\"cid:{ID_FOTO_MOZO}\" alt=\"Foto del mozo\" style=\"max-width:480px;width:100%\"/></p>");
             }
             if (!string.IsNullOrWhiteSpace(enlaceFicha))
             {
