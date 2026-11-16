@@ -564,15 +564,26 @@ namespace NestoAPI.Infraestructure.Facturas
             // factura rectifica y que, una vez emitida, es firme (caso RV2600067: venta de fin de
             // mes en albarán, devolución facturada aparte). Va ANTES del cambio de serie para no
             // dejar nada tocado si no se factura.
+            // 16/11/26 (RV2600152/153, Carlos): y tampoco la devolución de lo que el cliente no ha comprado (o ya ha devuelto
+            // entero): la rectificativa no tendría factura que rectificar. Misma salida de emergencia.
             if ((serieAbono != null || RegistroSeriesVerifactu.EsSerieRectificativa(cabPedido.Serie))
                 && !PermitirDevolucionDeVentaSinFacturar())
             {
-                VentaSinFacturar venta = await VentaSinFacturarQueImpideLaDevolucion(empresa, cabPedido);
-                if (venta != null)
+                DevolucionNoFacturable devolucion = await DevolucionQueNoSePuedeFacturar(empresa, cabPedido);
+                if (devolucion?.Venta != null)
                 {
                     throw new FacturacionException(
-                        MensajeDevolucionDeVentaSinFacturar(pedido, venta),
+                        MensajeDevolucionDeVentaSinFacturar(pedido, devolucion.Venta),
                         "FACTURACION_DEVOLUCION_DE_VENTA_SIN_FACTURAR",
+                        empresa: empresa,
+                        pedido: pedido,
+                        usuario: usuario);
+                }
+                if (devolucion != null)
+                {
+                    throw new FacturacionException(
+                        MensajeDevolucionSinCompra(pedido, cabPedido.Nº_Cliente, devolucion),
+                        "FACTURACION_DEVOLUCION_SIN_COMPRA",
                         empresa: empresa,
                         pedido: pedido,
                         usuario: usuario);
@@ -1785,29 +1796,37 @@ namespace NestoAPI.Infraestructure.Facturas
                 "esa venta (si es de fin de mes, con ella a fin de mes).";
         }
 
+        /// <summary>16/11/26: un producto devuelto que no se puede facturar, y la venta en albarán que hay que facturar antes (si la hay).</summary>
+        internal class DevolucionNoFacturable
+        {
+            public string Producto { get; set; }
+            public decimal Cantidad { get; set; }
+            /// <summary>La venta sigue en albarán (#570): facturarla antes. Null = el cliente no lo ha comprado (o ya lo ha devuelto).</summary>
+            public VentaSinFacturar Venta { get; set; }
+        }
+
+        internal static string MensajeDevolucionSinCompra(int pedidoDevolucion, string cliente, DevolucionNoFacturable devolucion)
+        {
+            string cantidad = devolucion.Cantidad.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-ES"));
+            return $"El pedido {pedidoDevolucion} devuelve {cantidad} de {devolucion.Producto?.Trim()}, pero no hay ninguna factura del " +
+                $"cliente {cliente?.Trim()} con esas unidades sin devolver (no lo ha comprado, o ya lo ha devuelto). No se puede facturar: " +
+                "un abono tiene que corresponder a una venta facturada. Revise el cliente y las cantidades; si es correcto, avise a Informática.";
+        }
+
         /// <summary>
-        /// NestoAPI#570: la parte con reglas, separada de la base de datos para poder probarla.
-        /// Por cada producto devuelto (sumando sus líneas) que no tenga ya su factura de origen
-        /// indicada, mira si hay facturas de venta suficientes; si no las hay y existe una venta
-        /// de ese producto en albarán, devuelve esa venta. Si no hay facturas ni albarán no dice
-        /// nada: ese caso (no ha pasado nunca) se sigue facturando como hasta ahora y el aviso
-        /// de Verifactu lo cuenta.
+        /// NestoAPI#570 y 16/11/26: la parte con reglas, separada de la base de datos para poder probarla.
+        /// Por cada producto devuelto (sumando sus líneas) que no tenga ya su factura de origen indicada, mira si hay facturas de
+        /// venta suficientes (sin pasarse de lo ya devuelto). Si no las hay, devuelve ese producto: con la venta en albarán si
+        /// existe (#570: facturarla antes) o sin ella (no lo ha comprado o ya lo ha devuelto). Las ventas en albarán se buscan
+        /// primero en todos los productos, porque su mensaje dice qué hacer.
         /// </summary>
-        internal static async Task<VentaSinFacturar> BuscarVentaSinFacturar(
+        internal static async Task<DevolucionNoFacturable> BuscarDevolucionNoFacturable(
             IEnumerable<LinPedidoVta> lineas, ICollection<int> lineasConFacturaDeOrigen,
             Func<string, decimal, Task<bool>> hayFacturasDeOrigen,
             Func<string, Task<VentaSinFacturar>> ventaEnAlbaran)
         {
-            var devueltos = (lineas ?? Enumerable.Empty<LinPedidoVta>())
-                .Where(l => l.Cantidad < 0
-                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
-                    && l.Estado <= Constantes.EstadosLineaVenta.ALBARAN
-                    && !string.IsNullOrWhiteSpace(l.Producto)
-                    && (lineasConFacturaDeOrigen == null || !lineasConFacturaDeOrigen.Contains(l.Nº_Orden)))
-                .GroupBy(l => l.Producto)
-                .Select(g => new { Producto = g.Key, Cantidad = -g.Sum(l => (decimal)(l.Cantidad ?? 0)) });
-
-            foreach (var devuelto in devueltos)
+            DevolucionNoFacturable sinCompra = null;
+            foreach (var devuelto in ProductosDevueltosSinOrigen(lineas, lineasConFacturaDeOrigen))
             {
                 if (await hayFacturasDeOrigen(devuelto.Producto, devuelto.Cantidad))
                 {
@@ -1816,13 +1835,47 @@ namespace NestoAPI.Infraestructure.Facturas
                 VentaSinFacturar venta = await ventaEnAlbaran(devuelto.Producto);
                 if (venta != null)
                 {
-                    return venta;
+                    return new DevolucionNoFacturable { Producto = devuelto.Producto, Cantidad = devuelto.Cantidad, Venta = venta };
                 }
+                sinCompra = sinCompra ?? new DevolucionNoFacturable { Producto = devuelto.Producto, Cantidad = devuelto.Cantidad };
             }
-            return null;
+            return sinCompra;
         }
 
+        private static IEnumerable<(string Producto, decimal Cantidad)> ProductosDevueltosSinOrigen(
+            IEnumerable<LinPedidoVta> lineas, ICollection<int> lineasConFacturaDeOrigen)
+        {
+            return (lineas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => l.Cantidad < 0
+                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                    && l.Estado <= Constantes.EstadosLineaVenta.ALBARAN
+                    && !string.IsNullOrWhiteSpace(l.Producto)
+                    && (lineasConFacturaDeOrigen == null || !lineasConFacturaDeOrigen.Contains(l.Nº_Orden)))
+                .GroupBy(l => l.Producto)
+                .Select(g => (g.Key, -g.Sum(l => (decimal)(l.Cantidad ?? 0))))
+                .ToList();
+        }
+
+        /// <summary>NestoAPI#570: solo la venta en albarán que hay que facturar antes (null si no hay ninguna).</summary>
+        internal static async Task<VentaSinFacturar> BuscarVentaSinFacturar(
+            IEnumerable<LinPedidoVta> lineas, ICollection<int> lineasConFacturaDeOrigen,
+            Func<string, decimal, Task<bool>> hayFacturasDeOrigen,
+            Func<string, Task<VentaSinFacturar>> ventaEnAlbaran)
+        {
+            return (await BuscarDevolucionNoFacturable(lineas, lineasConFacturaDeOrigen, hayFacturasDeOrigen, ventaEnAlbaran))?.Venta;
+        }
+
+        /// <summary>NestoAPI#570: la venta en albarán que impide facturar la devolución (null si no hay o si no es ese el motivo).</summary>
         internal async Task<VentaSinFacturar> VentaSinFacturarQueImpideLaDevolucion(string empresa, CabPedidoVta cabPedido)
+        {
+            return (await DevolucionQueNoSePuedeFacturar(empresa, cabPedido))?.Venta;
+        }
+
+        /// <summary>
+        /// NestoAPI#570 y 16/11/26: el producto devuelto que impide facturar la devolución (con su venta en albarán, si es por
+        /// eso), o null. Si la comprobación falla, null: se factura como antes.
+        /// </summary>
+        internal async Task<DevolucionNoFacturable> DevolucionQueNoSePuedeFacturar(string empresa, CabPedidoVta cabPedido)
         {
             try
             {
@@ -1833,7 +1886,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     .Select(p => p.NumeroLinea).ToList();
                 var gestor = new Rectificativas.GestorFacturasRectificativas(db);
 
-                return await BuscarVentaSinFacturar(cabPedido.LinPedidoVtas, conOrigen,
+                return await BuscarDevolucionNoFacturable(cabPedido.LinPedidoVtas, conOrigen,
                     async (producto, cantidad) =>
                     {
                         try

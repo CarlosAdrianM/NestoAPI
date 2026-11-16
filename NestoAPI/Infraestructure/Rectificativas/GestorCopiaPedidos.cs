@@ -139,6 +139,14 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 return response;
             }
 
+            // 16/11/26 (RV2600152/153): ni a quien no la compró, ni dos veces lo mismo. Antes de crear nada.
+            string motivoNoAbonable = await MotivoNoSePuedeAbonar(request, todasLasLineas);
+            if (motivoNoAbonable != null)
+            {
+                response.Mensaje = motivoNoAbonable;
+                return response;
+            }
+
             // Usar el request original pero con NumeroFactura como la primera factura
             // (para trazabilidad en comentarios)
             request.NumeroFactura = string.Join(", ", facturasEncontradas);
@@ -890,6 +898,70 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 && !string.IsNullOrEmpty(Models.Facturas.RegistroSeriesVerifactu.ObtenerSerieRectificativa(serieDestino));
         }
 
+        /// <summary>
+        /// 16/11/26 (RV2600152/153): al invertir cantidades, (1) el abono va al cliente de la factura y (2) lo vendido no se abona
+        /// dos veces (rectificativas ya emitidas en LinFacturaVtaRectificacion + copias sin facturar en RectificativaPendiente).
+        /// Deshacer un abono (invertir una RV) solo mira el cliente: sus líneas son negativas. null = se puede.
+        /// </summary>
+        private async Task<string> MotivoNoSePuedeAbonar(CopiarFacturaRequest request, List<LinPedidoVta> lineasOrigen)
+        {
+            if (request == null || !request.InvertirCantidades || lineasOrigen == null || !lineasOrigen.Any())
+            {
+                return null;
+            }
+
+            string clienteDestino = request.AnadirAPedidoOriginal
+                ? lineasOrigen.First().Nº_Cliente
+                : (request.EsCambioCliente ? request.ClienteDestino : request.Cliente);
+            string motivoCliente = ReglasAbonoCopiaFactura.MotivoClienteDistinto(
+                lineasOrigen.Select(l => (l.Nº_Factura?.Trim(), l.Nº_Cliente?.Trim())).Distinct(), clienteDestino);
+            if (motivoCliente != null)
+            {
+                return motivoCliente;
+            }
+
+            List<ReglasAbonoCopiaFactura.LineaVendida> vendidas = lineasOrigen
+                .Where(l => (l.Cantidad ?? 0) > 0 && !string.IsNullOrWhiteSpace(l.Nº_Factura))
+                .Select(l => new ReglasAbonoCopiaFactura.LineaVendida
+                {
+                    Factura = l.Nº_Factura.Trim(),
+                    Linea = l.Nº_Orden,
+                    Producto = l.Producto,
+                    Cantidad = l.Cantidad ?? 0
+                })
+                .ToList();
+            if (!vendidas.Any())
+            {
+                return null;
+            }
+
+            string empresa = request.Empresa?.Trim();
+            List<string> facturas = vendidas.Select(v => v.Factura).Distinct().ToList();
+            var anteriores = (await _db.LinFacturaVtaRectificaciones
+                    .Where(r => r.Empresa == empresa && facturas.Contains(r.FacturaOriginalNumero.Trim()))
+                    .Select(r => new { r.FacturaOriginalNumero, r.FacturaOriginalLinea, r.CantidadRectificada, r.NumeroFactura })
+                    .ToListAsync())
+                .Select(r => new ReglasAbonoCopiaFactura.AbonoAnterior
+                {
+                    FacturaOriginal = r.FacturaOriginalNumero,
+                    LineaOriginal = r.FacturaOriginalLinea,
+                    Cantidad = r.CantidadRectificada,
+                    Documento = r.NumeroFactura?.Trim()
+                })
+                .ToList();
+            List<RectificativaPendienteDTO> pendientes = await _almacenRectificativasPendientes.LeerPorFacturasOriginales(empresa, facturas)
+                ?? new List<RectificativaPendienteDTO>();
+            anteriores.AddRange(pendientes.Select(p => new ReglasAbonoCopiaFactura.AbonoAnterior
+            {
+                FacturaOriginal = p.FacturaOriginalNumero,
+                LineaOriginal = p.FacturaOriginalLinea,
+                Cantidad = p.CantidadRectificada,
+                Documento = $"el pedido {p.NumeroPedido} (sin facturar)"
+            }));
+
+            return ReglasAbonoCopiaFactura.MotivoYaAbonado(vendidas, anteriores);
+        }
+
         private async Task<string> SerieDelPedido(string empresa, int pedido)
         {
             try
@@ -1331,6 +1403,14 @@ namespace NestoAPI.Infraestructure.Rectificativas
             if (numeroFacturaReal != request.NumeroFactura?.Trim())
             {
                 request.NumeroFactura = numeroFacturaReal;
+            }
+
+            // 16/11/26 (RV2600152/153): ni a quien no la compró, ni dos veces lo mismo. Antes de crear nada.
+            string motivoNoAbonable = await MotivoNoSePuedeAbonar(request, lineasOrigen);
+            if (motivoNoAbonable != null)
+            {
+                response.Mensaje = motivoNoAbonable;
+                return response;
             }
 
             // Obtener o crear el pedido destino

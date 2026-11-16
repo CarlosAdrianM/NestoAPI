@@ -14,5 +14,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
         Task GuardarPendientes(string empresa, int numeroPedido, List<RectificativaPendienteDTO> pendientes);
         Task<List<RectificativaPendienteDTO>> LeerPendientes(string empresa, int numeroPedido);
         Task BorrarPendientes(string empresa, int numeroPedido, List<int> numerosLinea);
+        /// <summary>16/11/26: los abonos copiados y aún sin facturar de esas facturas (solo los que siguen teniendo su línea en el pedido).</summary>
+        Task<List<RectificativaPendienteDTO>> LeerPorFacturasOriginales(string empresa, IList<string> facturas);
     }
 }

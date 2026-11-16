@@ -96,6 +96,56 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.IsFalse(preguntado);
         }
 
+        // 16/11/26 (RV2600152/153): la devolución de lo que el cliente no ha comprado (o ya ha devuelto) tampoco se factura.
+
+        private static Task<ServicioFacturas.DevolucionNoFacturable> BuscarNoFacturable(IEnumerable<LinPedidoVta> lineas,
+            bool hayFacturas, ServicioFacturas.VentaSinFacturar enAlbaran)
+        {
+            return ServicioFacturas.BuscarDevolucionNoFacturable(lineas, null,
+                (producto, cantidad) => Task.FromResult(hayFacturas),
+                producto => Task.FromResult(enAlbaran));
+        }
+
+        [TestMethod]
+        public async Task SinFacturasNiAlbaran_EsUnaDevolucionSinCompra()
+        {
+            var devolucion = await BuscarNoFacturable(new[] { Linea(1, "44724", -6), Linea(2, "44724", -2) }, hayFacturas: false, enAlbaran: null);
+
+            Assert.IsNotNull(devolucion);
+            Assert.IsNull(devolucion.Venta);
+            Assert.AreEqual("44724", devolucion.Producto);
+            Assert.AreEqual(8m, devolucion.Cantidad);
+        }
+
+        [TestMethod]
+        public async Task ConFacturasDeOrigen_SeFactura()
+        {
+            Assert.IsNull(await BuscarNoFacturable(new[] { Linea(1, "44724", -6) }, hayFacturas: true, enAlbaran: null));
+        }
+
+        [TestMethod]
+        public async Task SiOtroProductoTieneLaVentaEnAlbaran_MandaEseMotivo()
+        {
+            // El de la venta en albarán dice qué hacer (facturarla antes): va por delante del «no lo ha comprado»
+            var devolucion = await ServicioFacturas.BuscarDevolucionNoFacturable(
+                new[] { Linea(1, "40586", -1), Linea(2, "44194", -1) }, null,
+                (producto, cantidad) => Task.FromResult(false),
+                producto => Task.FromResult(producto == "44194" ? VENTA_EN_ALBARAN : null));
+
+            Assert.AreEqual(926942, devolucion.Venta?.Pedido);
+        }
+
+        [TestMethod]
+        public void MensajeSinCompra_DiceProductoClienteYQueHacer()
+        {
+            string mensaje = ServicioFacturas.MensajeDevolucionSinCompra(930081, "30976 ",
+                new ServicioFacturas.DevolucionNoFacturable { Producto = "44724 ", Cantidad = 8 });
+
+            StringAssert.Contains(mensaje, "El pedido 930081 devuelve 8 de 44724");
+            StringAssert.Contains(mensaje, "cliente 30976 con esas unidades sin devolver");
+            StringAssert.Contains(mensaje, "No se puede facturar");
+        }
+
         [TestMethod]
         public void Mensaje_DiceElPedidoElAlbaranYQueHacer()
         {

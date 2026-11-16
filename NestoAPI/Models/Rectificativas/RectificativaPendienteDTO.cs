@@ -12,5 +12,7 @@ namespace NestoAPI.Models.Rectificativas
         public string FacturaOriginalNumero { get; set; }
         public int FacturaOriginalLinea { get; set; }
         public decimal CantidadRectificada { get; set; }
+        /// <summary>16/11/26: solo lo rellena LeerPorFacturasOriginales (para decir en qué pedido está el abono sin facturar).</summary>
+        public int NumeroPedido { get; set; }
     }
 }

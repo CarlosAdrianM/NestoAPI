@@ -2,6 +2,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.Rectificativas;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Rectificativas
@@ -38,6 +39,26 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 "SELECT NumeroLinea, FacturaOriginalNumero, FacturaOriginalLinea, CantidadRectificada " +
                 "FROM RectificativaPendiente WHERE Empresa = @p0 AND NumeroPedido = @p1",
                 empresa, numeroPedido).ToListAsync();
+        }
+
+        public async Task<List<RectificativaPendienteDTO>> LeerPorFacturasOriginales(string empresa, IList<string> facturas)
+        {
+            List<string> numeros = (facturas ?? new List<string>())
+                .Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim()).Distinct().ToList();
+            if (numeros.Count == 0)
+            {
+                return new List<RectificativaPendienteDTO>();
+            }
+            var parametros = new List<object> { empresa?.Trim() };
+            parametros.AddRange(numeros);
+            string enLista = string.Join(", ", numeros.Select((f, i) => $"@p{i + 1}"));
+            // La fila sin su línea en el pedido (pedido borrado o línea quitada) ya no abona nada
+            return await _db.Database.SqlQuery<RectificativaPendienteDTO>(
+                "SELECT rp.NumeroPedido, rp.NumeroLinea, rp.FacturaOriginalNumero, rp.FacturaOriginalLinea, rp.CantidadRectificada " +
+                "FROM RectificativaPendiente rp WITH (NOLOCK) " +
+                "INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = rp.Empresa AND l.Número = rp.NumeroPedido AND l.[Nº Orden] = rp.NumeroLinea " +
+                $"WHERE rp.Empresa = @p0 AND rp.FacturaOriginalNumero IN ({enLista})",
+                parametros.ToArray()).ToListAsync();
         }
 
         public async Task BorrarPendientes(string empresa, int numeroPedido, List<int> numerosLinea)
