@@ -30,9 +30,10 @@ BEGIN
     ROLLBACK;
     RETURN;
 END
-IF (SELECT COUNT(*) FROM @filas) <> @lineas OR @lineas <> 10
+DECLARE @casadas int = (SELECT COUNT(*) FROM @filas);
+IF @casadas <> @lineas OR @lineas <> 10
 BEGIN
-    PRINT CONCAT('No casan todas las líneas (', (SELECT COUNT(*) FROM @filas), ' de ', @lineas, '): no se hace nada.');
+    PRINT CONCAT('No casan todas las líneas (', @casadas, ' de ', @lineas, '): no se hace nada.');
     ROLLBACK;
     RETURN;
 END
