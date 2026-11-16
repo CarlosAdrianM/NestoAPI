@@ -305,6 +305,63 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(0, new EsperaClientesProducto { Stock = 9, Pendientes = 5 }.Faltan);
         }
 
+        [TestMethod]
+        public void EsperaClientes_LoQueTraeLaReposicionEnCaminoNoEsFaltaDeLaCompra()
+        {
+            // NestoAPI#865 (corte 2)
+            var parcial = new EsperaClientesProducto { Stock = 2, Pendientes = 5, EnCaminoReposicion = 2 };
+            var total = new EsperaClientesProducto { Stock = 2, Pendientes = 5, EnCaminoReposicion = 7 };
+
+            Assert.AreEqual(2, parcial.CubiertoPorReposicion);
+            Assert.AreEqual(1, parcial.Faltan);
+            Assert.AreEqual(3, total.CubiertoPorReposicion);
+            Assert.AreEqual(0, total.Faltan);
+        }
+
+        [TestMethod]
+        public void ReposicionEnCamino_LlegaElSiguienteDiaDeRepartoPropio_YElTexto()
+        {
+            DateTime viernes = new DateTime(2026, 11, 20);
+            Assert.AreEqual(new DateTime(2026, 11, 23), ReposicionEnCaminoProveedorVencido.Llegada(viernes, null));
+            Assert.AreEqual(new DateTime(2026, 11, 24), ReposicionEnCaminoProveedorVencido.Llegada(viernes,
+                d => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday || d == new DateTime(2026, 11, 23)));
+
+            var espera = new EsperaClientesProducto { Stock = 0, Pendientes = 2, EnCaminoReposicion = 5, TraspasosEnCamino = new List<int> { 5123 },
+                LlegadaReposicion = new DateTime(2026, 11, 17) };
+            Assert.AreEqual("2 uds. llegan de una reposición de tienda en camino (traspaso 5123) el 17/11/2026: no esperan a esta compra",
+                ReposicionEnCaminoProveedorVencido.Texto(espera));
+            Assert.IsNull(ReposicionEnCaminoProveedorVencido.Texto(new EsperaClientesProducto { Stock = 9, Pendientes = 2, EnCaminoReposicion = 5 }));
+        }
+
+        [TestMethod]
+        public void Correo_LaReposicionEnCaminoSaleAparteConSuLlegada_YNoCuentaComoFalta()
+        {
+            // NestoAPI#865 (corte 2): 45945 lo cubre entero la reposición (va al resto, con la nota); 45646 solo en parte
+            var lineas = new List<LineaCompraVencida> { Linea(220515, 3, "45945"), Linea(220266, 1, "45646") };
+            var esperas = new Dictionary<string, EsperaClientesProducto>
+            {
+                [RepositorioProveedorVencidoSql.ClaveEspera("45945", "ALG")] = new EsperaClientesProducto
+                {
+                    Stock = 0, Pendientes = 2, Pedidos = new List<int> { 928020 }, EnCaminoReposicion = 3, TraspasosEnCamino = new List<int> { 5123 }
+                },
+                [RepositorioProveedorVencidoSql.ClaveEspera("45646", "ALG")] = new EsperaClientesProducto
+                {
+                    Stock = 1, Pendientes = 5, Pedidos = new List<int> { 927000 }, EnCaminoReposicion = 1, TraspasosEnCamino = new List<int> { 5124 }
+                }
+            };
+
+            Assert.IsTrue(ProcesarCorreo(lineas, esperas, out MailMessage correo));
+
+            StringAssert.Contains(correo.Subject, "1 línea con clientes esperando");
+            string html = System.Net.WebUtility.HtmlDecode(correo.Body);
+            int seccionResto = html.IndexOf("<h2>Resto</h2>", StringComparison.Ordinal);
+            Assert.IsTrue(html.IndexOf("45945", StringComparison.Ordinal) > seccionResto, "Cubierto entero por la reposición: no espera a la compra");
+            Assert.IsTrue(html.IndexOf("45646", StringComparison.Ordinal) < seccionResto);
+            StringAssert.Contains(html, "faltan 3 uds.");
+            StringAssert.Contains(html, "Aparte: 1 ud. llega de una reposición de tienda en camino (traspaso 5124) el 14/10/2026: no espera a esta compra.");
+            StringAssert.Contains(html, "2 uds. llegan de una reposición de tienda en camino (traspaso 5123) el 14/10/2026: no esperan a esta compra. (pedido 928020)");
+        }
+
         #endregion
     }
 }

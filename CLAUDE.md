@@ -688,6 +688,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Se recalcula cada vez; desde el 2.º vencimiento (filas del rastro de esa línea en 365 días) el correo marca «Hay que llamar al proveedor».
   Correo: columna «Nueva fecha» con `TextosFechaVencida` (de usted). Interruptor ParametrosUsuario «(defecto)» `Compras.RecalcularFechasVencidas`
   (sin fila o «1» encendido; «0»/false/no/off/apagado → el correo de siempre). Script `Scripts/Issue865_ComprasFechasVencidasYReenvio.sql`.
+- Corte 2: en «Clientes esperando», lo que trae una reposición de tienda en camino (PreExtrProducto con NºTraspaso, neto por traspaso y
+  producto > 0, en el almacén de destino: lo mismo que el «en camino» del motor) sale aparte con su llegada (siguiente día de reparto
+  propio, `GestorFestivos.EsFestivoRepartoPropio`) y NO cuenta como falta (`EsperaClientesProducto.CubiertoPorReposicion`; `Faltan` lo descuenta).
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

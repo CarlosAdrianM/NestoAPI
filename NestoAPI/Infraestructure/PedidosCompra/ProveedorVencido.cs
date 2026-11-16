@@ -46,8 +46,46 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         public int Pendientes { get; set; }
         /// <summary>Pedidos de venta con ese producto pendiente (-1 a 1) en ese almacén.</summary>
         public List<int> Pedidos { get; set; } = new List<int>();
-        /// <summary>Lo que el stock no cubre: hay clientes esperando al proveedor.</summary>
-        public int Faltan => Math.Max(0, Pendientes - Math.Max(0, Stock));
+        /// <summary>
+        /// NestoAPI#865 (corte 2): unidades que ya vienen de camino a ese almacén en una reposición de tienda (traspaso terminado y sin
+        /// recibir: PreExtrProducto con NºTraspaso, lo mismo que cuenta el motor de fechas de entrega como «en camino»).
+        /// </summary>
+        public int EnCaminoReposicion { get; set; }
+        public List<int> TraspasosEnCamino { get; set; } = new List<int>();
+        /// <summary>NestoAPI#865: cuándo llega esa reposición (el siguiente día de reparto propio). Null si no hay.</summary>
+        public DateTime? LlegadaReposicion { get; set; }
+        /// <summary>Lo que el stock no cubre.</summary>
+        public int SinStock => Math.Max(0, Pendientes - Math.Max(0, Stock));
+        /// <summary>NestoAPI#865: de lo que el stock no cubre, lo que trae la reposición en camino (no espera a la compra).</summary>
+        public int CubiertoPorReposicion => Math.Min(SinStock, Math.Max(0, EnCaminoReposicion));
+        /// <summary>Lo que no cubren ni el stock ni la reposición en camino: hay clientes esperando al proveedor.</summary>
+        public int Faltan => SinStock - CubiertoPorReposicion;
+    }
+
+    /// <summary>NestoAPI#865 (corte 2): la reposición de tienda en camino en el correo de proveedores vencidos. PURA.</summary>
+    public static class ReposicionEnCaminoProveedorVencido
+    {
+        /// <summary>
+        /// Lo que ya viene de camino llega el siguiente día de reparto propio (lo trae la furgoneta, #841): el día después de hoy que no
+        /// sea <paramref name="sinLlegada"/> (por defecto, sábados y domingos).
+        /// </summary>
+        public static DateTime Llegada(DateTime hoy, Func<DateTime, bool> sinLlegada) =>
+            ReglaFechaVencida.SiguienteLaborable(hoy, sinLlegada ?? (d => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday));
+
+        /// <summary>«3 uds. llegan de una reposición de tienda en camino (traspaso 5123) el 17/11/2026: no esperan a esta compra». Null si no hay.</summary>
+        public static string Texto(EsperaClientesProducto espera)
+        {
+            if (espera == null || espera.CubiertoPorReposicion <= 0)
+            {
+                return null;
+            }
+            int unidades = espera.CubiertoPorReposicion;
+            List<int> traspasos = (espera.TraspasosEnCamino ?? new List<int>()).Distinct().OrderBy(t => t).ToList();
+            string cuales = traspasos.Any() ? $" ({(traspasos.Count == 1 ? "traspaso" : "traspasos")} {string.Join(", ", traspasos)})" : string.Empty;
+            string cuando = espera.LlegadaReposicion.HasValue ? " el " + TextosFechaVencida.Dia(espera.LlegadaReposicion.Value) : string.Empty;
+            return $"{unidades} {(unidades == 1 ? "ud. llega" : "uds. llegan")} de una reposición de tienda en camino{cuales}{cuando}: no " +
+                $"{(unidades == 1 ? "espera" : "esperan")} a esta compra";
+        }
     }
 
     public interface IRepositorioProveedorVencido
@@ -131,6 +169,16 @@ SELECT RTRIM(e.Número), RTRIM(e.Almacén), ISNULL(SUM(CAST(e.Cantidad AS int)),
 FROM ExtractoProducto e WITH (NOLOCK)
 WHERE e.Número IN ({0})
 GROUP BY e.Número, e.Almacén";
+
+        // NestoAPI#865 (corte 2): lo que ya viene de camino en una reposición de tienda (PreExtrProducto con NºTraspaso, como SQL_REPOSICIONES del
+        // motor de fechas de entrega). Neto por traspaso y producto: mientras el traspaso tiene la salida y la entrada pendientes suma cero (no
+        // cuenta, como en el motor); terminado, queda la entrada en el almacén de destino.
+        internal const string SQL_REPOSICIONES_EN_CAMINO = @"
+SELECT RTRIM(p.Número), RTRIM(MAX(CASE WHEN p.Cantidad > 0 THEN p.Almacén END)), p.NºTraspaso, SUM(CAST(p.Cantidad AS int))
+FROM PreExtrProducto p WITH (NOLOCK)
+WHERE p.Empresa IN (@empresa, @espejo) AND p.Número IN ({0}) AND p.NºTraspaso > 0
+GROUP BY p.Número, p.NºTraspaso
+HAVING SUM(CAST(p.Cantidad AS int)) > 0";
 
         internal const string SQL_YA_AVISADA = @"
 SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
@@ -256,10 +304,30 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
                         }
                     }
                 }
+                using (SqlCommand comando = Comando(conexion, string.Format(SQL_REPOSICIONES_EN_CAMINO, EnLista(lista))))
+                {
+                    Productos(comando, lista);
+                    comando.Parameters.Add("@empresa", SqlDbType.VarChar, 3).Value = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                    comando.Parameters.Add("@espejo", SqlDbType.VarChar, 3).Value = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+                    using (SqlDataReader lector = comando.ExecuteReader())
+                    {
+                        while (lector.Read())
+                        {
+                            if (lector.IsDBNull(1) || lector.IsDBNull(2))
+                            {
+                                continue;
+                            }
+                            EsperaClientesProducto espera = De(Cadena(lector, 0), Cadena(lector, 1));
+                            espera.EnCaminoReposicion += lector.GetInt32(3);
+                            espera.TraspasosEnCamino.Add(lector.GetInt32(2));
+                        }
+                    }
+                }
             }
             foreach (EsperaClientesProducto espera in esperas.Values)
             {
                 espera.Pedidos = espera.Pedidos.Distinct().OrderBy(p => p).ToList();
+                espera.TraspasosEnCamino = espera.TraspasosEnCamino.Distinct().OrderBy(t => t).ToList();
             }
             return esperas;
         }
@@ -519,6 +587,8 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
         public Action<Exception, string> Trazar { get; set; }
         /// <summary>NestoAPI#865: recalcular las fechas vencidas antes de mandar el correo (null = no, el correo de siempre).</summary>
         public ServicioFechasVencidas FechasVencidas { get; set; }
+        /// <summary>NestoAPI#865 (corte 2): días sin llegada de reposición (por defecto, sábados y domingos; en producción, sin reparto propio).</summary>
+        public Func<DateTime, bool> SinLlegadaReposicion { get; set; }
     }
 
     /// <summary>
@@ -547,6 +617,7 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
                     Correo = new ServicioCorreoElectronico(),
                     Ahora = DateTime.Now,
                     EsFestivo = JobsFestivos.EsFestivoAlgete,
+                    SinLlegadaReposicion = d => Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio(d),
                     FechasVencidas = new ServicioFechasVencidas(repositorio, PlazosEntrega.RepositorioPlazosProveedores.DesdeConfiguracion(),
                         new CorreosSeguimiento.RepositorioCorreosSeguimiento(), JobsFestivos.EsFestivoAlgete,
                         registrar: ex => ElmahHelper.Log(ex, USUARIO_SISTEMA))
@@ -589,6 +660,11 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
             }
             Dictionary<string, EsperaClientesProducto> esperas = deps.Repositorio.LeerEsperas(lineas.Select(l => l.Producto))
                 ?? new Dictionary<string, EsperaClientesProducto>();
+            DateTime? llegadaReposicion = null;
+            foreach (EsperaClientesProducto espera in esperas.Values.Where(e => e != null && e.EnCaminoReposicion > 0))
+            {
+                espera.LlegadaReposicion = llegadaReposicion ?? (llegadaReposicion = ReposicionEnCaminoProveedorVencido.Llegada(hoy, deps.SinLlegadaReposicion));
+            }
             using (MailMessage correo = ConstruirCorreo(lineas, esperas, hoy, recalculos))
             {
                 if (!deps.Correo.EnviarCorreoSMTP(correo))
@@ -644,6 +720,8 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
                 .OrderBy(l => l.FechaPrevista).ThenBy(l => l.Pedido).ThenBy(l => l.Orden).ToList();
             List<LineaCompraVencida> resto = lineas.Except(conEspera)
                 .OrderBy(l => l.FechaPrevista).ThenBy(l => l.Pedido).ThenBy(l => l.Orden).ToList();
+            // NestoAPI#865 (corte 2): en el resto, la columna de clientes solo si alguno espera a una reposición de tienda en camino
+            bool restoConReposicion = resto.Any(l => (Espera(esperas, l)?.CubiertoPorReposicion ?? 0) > 0);
 
             var sb = new StringBuilder();
             sb.AppendLine("<!DOCTYPE html>");
@@ -661,7 +739,7 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
             sb.AppendLine("<h2>Resto</h2>");
             if (resto.Any())
             {
-                Tabla(sb, resto, esperas, hoy, false, recalculos);
+                Tabla(sb, resto, esperas, hoy, restoConReposicion, recalculos);
             }
             else
             {
@@ -699,13 +777,41 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
                 }
                 if (conClientes)
                 {
-                    EsperaClientesProducto e = Espera(esperas, l);
-                    sb.Append($"<td><b>faltan {e.Faltan} {(e.Faltan == 1 ? "ud." : "uds.")}</b> (stock {e.Stock}, pendientes {e.Pendientes}); " +
-                        $"{(e.Pedidos.Count == 1 ? "pedido" : "pedidos")} {string.Join(", ", e.Pedidos.Take(10))}{(e.Pedidos.Count > 10 ? "…" : string.Empty)}</td>");
+                    sb.Append("<td>").Append(CeldaClientes(Espera(esperas, l))).Append("</td>");
                 }
                 sb.AppendLine("</tr>");
             }
             sb.AppendLine("</table>");
+        }
+
+        /// <summary>
+        /// La columna «Clientes esperando»: lo que falta de la compra y, aparte (NestoAPI#865, corte 2), lo que cubre una reposición de
+        /// tienda en camino, con su llegada (no cuenta como falta de la compra).
+        /// </summary>
+        internal static string CeldaClientes(EsperaClientesProducto e)
+        {
+            if (e == null)
+            {
+                return string.Empty;
+            }
+            string pedidos = $"{(e.Pedidos.Count == 1 ? "pedido" : "pedidos")} {string.Join(", ", e.Pedidos.Take(10))}{(e.Pedidos.Count > 10 ? "…" : string.Empty)}";
+            string reposicion = ReposicionEnCaminoProveedorVencido.Texto(e);
+            if (e.Faltan <= 0 && reposicion == null)
+            {
+                return string.Empty;
+            }
+            var celda = new StringBuilder();
+            if (e.Faltan > 0)
+            {
+                celda.Append($"<b>faltan {e.Faltan} {(e.Faltan == 1 ? "ud." : "uds.")}</b> (stock {e.Stock}, pendientes {e.Pendientes}); {pedidos}");
+            }
+            if (reposicion != null)
+            {
+                celda.Append(e.Faltan > 0 ? "<br>Aparte: " : string.Empty)
+                    .Append(Html(reposicion + "."))
+                    .Append(e.Faltan > 0 ? string.Empty : $" ({pedidos})");
+            }
+            return celda.ToString();
         }
 
         /// <summary>NestoAPI#865: la fecha nueva y por qué; desde el 2.º vencimiento, en rojo, que hay que llamar al proveedor.</summary>
