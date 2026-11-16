@@ -714,6 +714,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   reenvían. El analizador ignora los correos con esa marca en el asunto (por si vuelven al buzón). Fallo → ELMAH una vez al día, nunca rompe
   la pasada. Interruptor `Compras.CorreosSeguimientoReenviar`: SOLO «1» = encendido (sin fila, apagado; el script lo crea a «1»).
 
+### Próxima entrada en la ficha del producto (NestoAPI#869, 16/11/26)
+- `GET api/Productos/ProximaEntrada?producto=&almacen=ALG&empresa=1` (`ProximaEntradaProductoController`, solo lectura, `[Authorize]`; 404 si no
+  existe): (1) la línea en el aire (LinPedidoCmp -1/1 Enviado, 1+3) de FechaRecepción más temprana, Aproximada o CasiSegura por `ReglaSeguimientoAgencia`
+  (correo #857 vigente), con `Recalculada` (Usuario de #865) y `PrevistaPasada`; (2) sin pedido, Orientativa = `ReglaFechaOrientativaSinPedir` del
+  proveedor habitual + `FechaSiSePidieraHoy` (`ReglaFechaRecepcionEstimada` sin DíasEnServir); (3) `SinDatos` con `Motivo`. `Texto` hecho
+  (`TextosProximaEntrada`, calificativos de `TextosCertezaFechaEntrega`). Lee con `LectorCertezaFechaEntregaSql`. Aparte de GET api/Productos (que va por Nesto_sync).
+
 ### Sugerencias de llamadas y ofertas vigentes (NestoAPI#866, 16/11/26)
 - Siempre hay ofertas (bimestrales, de marca, campañas; Carlos 16/11/26): impulso SIEMPRE encendido salvo ParametrosUsuario empresa 1
   «(defecto)» `Rapports.ImpulsoOfertas` = 0/false/no/off/apagado (sin fila = encendido). Regla pura `ReglasImpulsoOfertasContacto`, después del
