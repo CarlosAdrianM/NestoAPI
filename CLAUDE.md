@@ -725,6 +725,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   sin blob, no se guarda pero la foto va igual en el correo). Correo: «La foto de la tienda que ha visto» (cid foto-ficha) y «Lo que tiene el mozo en la
   mano» (cid foto-mozo). Varios informantes: la última foto (sin foto nueva se queda la guardada; el correo solo lleva la del envío).
 
+### Reenvíos: solo sale lo que ha vuelto (NestoAPI#870, 16/11/26)
+- El reenvío de «Reenviar» (#699) nace en Pendientes (corte 1). La caja del original «ha vuelto» = fila en `dbo.EnviosAgenciaHaVuelto`
+  (fuera del EDMX, `Scripts/Issue870_EnviosAgenciaHaVuelto.sql`; Envio, Fecha, Usuario, Como Lectura/YaEstaAqui/AlImprimir, Codigo) + línea
+  `HaVuelto` en EnviosHistoria (`Infraestructure/Agencias/EnviosHaVuelto.cs`). Idempotente; se marca aunque no tenga reenvío; solo lo que ha salido (Estado >= 1).
+- `POST api/EnviosAgencias/{id}/HaVuelto` (Nesto, «Ya está aquí» en Devueltos) y `POST api/EnviosAgencias/HaVuelto` {Codigo} (Ariadna, Entradas › F6
+  «Ha vuelto un paquete»: CodigoBarras exacto o con 1-4 cifras de bulto al final, o el número de envío tecleado). 404/409 (NO_HA_SALIDO,
+  VARIOS_ENVIOS)/503 sin el script. Con reenvío esperando: campana `EnvioHaVuelto` + push NestoApp a quien lo pidió (no si lo marca él ni forzado).
+- LA GUARDA (`ServicioEnviosHaVuelto.EsperandoCajaAsync`): reenvío (Decision Reenviar, < tramitado) sin vuelta del original → 409 `ESPERANDO_CAJA`
+  en PUT (pendiente→en curso/tramitado), Tramitar, ImprimirEtiqueta, EtiquetaZpl y ConfirmarTramitacion; `?yaEstaAqui=true` fuerza y marca
+  (AlImprimir). TramitarTodos (GLS) lo salta (`Resultado` EsperandoCaja). La propuesta de envío no reutiliza ese pendiente. Sin las tablas o si
+  falla la comprobación: no actúa (ELMAH). EntregadoPorLaAgencia sigue igual. Devueltos trae HaVuelto/FechaHaVuelto/UsuarioHaVuelto/ComoHaVuelto/ReenvioEsperandoCaja.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

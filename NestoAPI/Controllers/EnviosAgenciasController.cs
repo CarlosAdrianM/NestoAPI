@@ -90,6 +90,8 @@ namespace NestoAPI.Controllers
         public const string TRAMITADO = "Tramitado";
         public const string YA_TRAMITADO = "YaTramitado";
         public const string ERROR = "Error";
+        /// <summary>NestoAPI#870: reenvío cuya caja original no ha vuelto: se salta, sin tocarlo.</summary>
+        public const string ESPERANDO_CAJA = "EsperandoCaja";
 
         public int Numero { get; set; }
         public int? Pedido { get; set; }
@@ -120,6 +122,8 @@ namespace NestoAPI.Controllers
         public int Tramitados => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.TRAMITADO);
         public int YaTramitados => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.YA_TRAMITADO);
         public int Fallidos => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.ERROR);
+        /// <summary>NestoAPI#870: los reenvíos que se han saltado porque su caja no ha vuelto.</summary>
+        public int EsperandoCaja => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.ESPERANDO_CAJA);
         /// <summary>NestoAPI#552 (fase 5): los que hay que revisar con GLS (ver <see cref="ResultadoTramitarEnvioDTO.Aviso"/>).</summary>
         public int ConAviso => Envios.Count(e => !string.IsNullOrEmpty(e.Aviso));
     }
@@ -889,7 +893,7 @@ namespace NestoAPI.Controllers
         // PUT: api/EnviosAgencias/5?quitarRetorno=true (sugerencia 906: el usuario le quita a mano el retorno a un pendiente)
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutEnviosAgencia(int id, EnviosAgencia enviosAgencia,
-            bool confirmadoConLaAgencia = false, string confirmacionAgencia = null, bool quitarRetorno = false)
+            bool confirmadoConLaAgencia = false, string confirmacionAgencia = null, bool quitarRetorno = false, bool yaEstaAqui = false)
         {
             if (!ModelState.IsValid)
             {
@@ -924,6 +928,17 @@ namespace NestoAPI.Controllers
                 .Where(e => e.Numero == id)
                 .ToListAsync())
                 .FirstOrDefault();
+
+            // NestoAPI#870: registrar («Insertar e Imprimir») o tramitar un reenvío cuya caja original no ha vuelto: 409
+            // ESPERANDO_CAJA (?yaEstaAqui=true lo fuerza y marca que ha vuelto).
+            if (registrado != null && ReglasHaVuelto.PutLoHaceSalir(registrado.Estado, enviosAgencia.Estado))
+            {
+                IHttpActionResult sinCaja = await GuardaCajaReenvio(id, yaEstaAqui);
+                if (sinCaja != null)
+                {
+                    return sinCaja;
+                }
+            }
 
             // NestoAPI#847 / Novedades 1162 (pedido 930294, envíos 250772 y 250782): registrar («Insertar e Imprimir») una etiqueta
             // pendiente del reparto propio cuando el pedido ya tiene otro envío suyo de hoy creaba la segunda parada. Lo mismo
@@ -1141,12 +1156,21 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/EnviosAgencias/{id:int}/Tramitar")]
         [ResponseType(typeof(TramitarEnvioResultadoDTO))]
-        public async Task<IHttpActionResult> TramitarEnvio(int id)
+        public async Task<IHttpActionResult> TramitarEnvio(int id, bool yaEstaAqui = false)
         {
             EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
             if (envio == null)
             {
                 return NotFound();
+            }
+            // NestoAPI#870: un reenvío no se registra en la agencia hasta que la caja del original ha vuelto (o «Ya está aquí»).
+            if (envio.Estado < Constantes.Agencias.ESTADO_TRAMITADO)
+            {
+                IHttpActionResult sinCaja = await GuardaCajaReenvio(id, yaEstaAqui);
+                if (sinCaja != null)
+                {
+                    return sinCaja;
+                }
             }
             // NestoAPI#698: el envío de un pedido retenido no se registra en la agencia (ni se reimprime). NestoAPI#831: un aplazado
             // sí saca la etiqueta del reparto propio (con su día de reparto); la de las demás agencias, no.
@@ -1611,6 +1635,18 @@ namespace NestoAPI.Controllers
                 return ResultadoTramitarEnvioDTO.Error(numero, envio.Pedido,
                     $"El envío del pedido {envio.Pedido} es una etiqueta pendiente: no se tramita hasta que se imprima.");
             }
+            // NestoAPI#870: un reenvío cuya caja no ha vuelto se salta (y se dice); los demás siguen.
+            ReenvioEsperandoCaja esperando = await EsperandoCajaSeguro(numero);
+            if (esperando != null)
+            {
+                return new ResultadoTramitarEnvioDTO
+                {
+                    Numero = numero,
+                    Pedido = envio.Pedido,
+                    Resultado = ResultadoTramitarEnvioDTO.ESPERANDO_CAJA,
+                    Mensaje = esperando.Mensaje
+                };
+            }
 
             // TODO NestoAPI#552: la confirmación de «envío a la dirección de Nueva Visión» la sigue preguntando Nesto antes de
             // mandar la lista; se moverá aquí en el remate, cuando no quede otro camino.
@@ -1690,12 +1726,21 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/EnviosAgencias/{id:int}/EtiquetaZpl")]
         [ResponseType(typeof(EtiquetaEnvioDTO))]
-        public async Task<IHttpActionResult> GetEtiquetaZpl(int id)
+        public async Task<IHttpActionResult> GetEtiquetaZpl(int id, bool yaEstaAqui = false)
         {
             EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
             if (envio == null)
             {
                 return NotFound();
+            }
+            // NestoAPI#870: sin etiqueta para un reenvío cuya caja no ha vuelto.
+            if (envio.Estado < Constantes.Agencias.ESTADO_TRAMITADO)
+            {
+                IHttpActionResult sinCaja = await GuardaCajaReenvio(id, yaEstaAqui);
+                if (sinCaja != null)
+                {
+                    return sinCaja;
+                }
             }
             if (!AgenciasGls.Es(envio.Agencia) || !GlsTramitarPorApi())
             {
@@ -1868,12 +1913,21 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/EnviosAgencias/{id:int}/ImprimirEtiqueta")]
         [ResponseType(typeof(ImprimirEtiquetaEnvioResultadoDTO))]
-        public async Task<IHttpActionResult> ImprimirEtiqueta(int id, [FromBody] ImprimirEtiquetaEnvioDTO peticion)
+        public async Task<IHttpActionResult> ImprimirEtiqueta(int id, [FromBody] ImprimirEtiquetaEnvioDTO peticion, bool yaEstaAqui = false)
         {
             EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
             if (envio == null)
             {
                 return NotFound();
+            }
+            // NestoAPI#870: sin etiqueta para un reenvío cuya caja no ha vuelto.
+            if (envio.Estado < Constantes.Agencias.ESTADO_TRAMITADO)
+            {
+                IHttpActionResult sinCaja = await GuardaCajaReenvio(id, yaEstaAqui);
+                if (sinCaja != null)
+                {
+                    return sinCaja;
+                }
             }
             // NestoAPI#698: sin etiqueta para un pedido retenido. NestoAPI#831: la del reparto propio de un aplazado, sí.
             string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido, EsEtiquetaRepartoPropio(envio));
@@ -2381,8 +2435,15 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("api/EnviosAgencias/{id:int}/ConfirmarTramitacion")]
         [ResponseType(typeof(ResultadoTramitacionEnvio))]
-        public async Task<IHttpActionResult> ConfirmarTramitacion(int id)
+        public async Task<IHttpActionResult> ConfirmarTramitacion(int id, bool yaEstaAqui = false)
         {
+            // NestoAPI#870: un reenvío no se da por tramitado hasta que la caja del original ha vuelto (o «Ya está aquí»). La guarda
+            // solo actúa con el reenvío por debajo de tramitado.
+            IHttpActionResult sinCaja = await GuardaCajaReenvio(id, yaEstaAqui);
+            if (sinCaja != null)
+            {
+                return sinCaja;
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
             ResultadoTramitacionEnvio resultado = await servicio.TramitarAsync(id, usuario);
@@ -2547,7 +2608,8 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#699: el servicio de reenvíos (perezoso e inyectable para los tests).</summary>
         internal IServicioReenviosEnvio ServicioReenvios
         {
-            get => servicioReenvios ?? (servicioReenvios = new ServicioReenviosEnvio(new DatosReenviosEnvioEF(db), PlazasAgencias));
+            get => servicioReenvios ?? (servicioReenvios = new ServicioReenviosEnvio(new DatosReenviosEnvioEF(db), PlazasAgencias,
+                haVuelto: new RepositorioEnviosHaVuelto(db)));
             set => servicioReenvios = value;
         }
 
@@ -2617,6 +2679,124 @@ namespace NestoAPI.Controllers
                 default:
                     return BadRequest(resultado.Mensaje);
             }
+        }
+
+        // ========== NestoAPI#870: la caja de un devuelto ha vuelto; solo sale el reenvío de lo que está aquí ==========
+
+        private IServicioEnviosHaVuelto servicioHaVuelto;
+
+        /// <summary>NestoAPI#870: «ha vuelto» y la guarda de los reenvíos (perezoso e inyectable para los tests).</summary>
+        internal IServicioEnviosHaVuelto ServicioHaVuelto
+        {
+            get => servicioHaVuelto ?? (servicioHaVuelto = new ServicioEnviosHaVuelto(new DatosEnviosHaVueltoEF(db), new AvisosEnvioHaVuelto()));
+            set => servicioHaVuelto = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#870: «Ya está aquí» de Agencias › Devueltos (Nesto): la caja de este envío ha vuelto al almacén. Idempotente
+        /// (repetir devuelve la marca original con YaEstabaMarcado). Se marca aunque no tenga reenvío; si tiene uno esperando, se
+        /// avisa a quien lo pidió. 404 si no existe, 409 si no ha salido, 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("api/EnviosAgencias/{id:int}/HaVuelto")]
+        [ResponseType(typeof(EnvioHaVueltoDTO))]
+        public async Task<IHttpActionResult> HaVuelto(int id)
+        {
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            return RespuestaHaVuelto(await ServicioHaVuelto.MarcarAsync(id, ComoHaVuelto.YA_ESTA_AQUI, null, usuario));
+        }
+
+        /// <summary>
+        /// NestoAPI#870: Ariadna («Ha vuelto un paquete»): el mozo lee la etiqueta de un paquete devuelto (la de la agencia, con o
+        /// sin el número de bulto al final) o teclea el número del envío. Lo mismo que <see cref="HaVuelto(int)"/>; 400 sin código,
+        /// 404 si no casa con ningún envío, 409 VARIOS_ENVIOS si casa con varios.
+        /// </summary>
+        [HttpPost]
+        [Route("api/EnviosAgencias/HaVuelto")]
+        [ResponseType(typeof(EnvioHaVueltoDTO))]
+        public async Task<IHttpActionResult> HaVueltoPorLectura(LecturaHaVueltoDTO lectura)
+        {
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            return RespuestaHaVuelto(await ServicioHaVuelto.MarcarPorLecturaAsync(lectura?.Codigo, usuario));
+        }
+
+        private IHttpActionResult RespuestaHaVuelto(ResultadoHaVuelto resultado)
+        {
+            switch (resultado.Tipo)
+            {
+                case TipoResultadoHaVuelto.Correcto:
+                    return Ok(resultado.Envio);
+                case TipoResultadoHaVuelto.NoEncontrado:
+                    return Content(HttpStatusCode.NotFound, new { Message = resultado.Mensaje });
+                case TipoResultadoHaVuelto.Conflicto:
+                    return Content(HttpStatusCode.Conflict, new { Message = resultado.Mensaje, Codigo = resultado.Codigo });
+                case TipoResultadoHaVuelto.SinTabla:
+                    return Content(HttpStatusCode.ServiceUnavailable, new { Message = resultado.Mensaje });
+                default:
+                    return Content(HttpStatusCode.BadRequest, new { Message = resultado.Mensaje });
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#870, la guarda: si el envío es un reenvío cuya caja original no ha vuelto, la respuesta 409 ESPERANDO_CAJA; si
+        /// <paramref name="yaEstaAqui"/>, se marca que ha vuelto («AlImprimir») y sigue. Null = adelante. Nunca rompe lo de antes:
+        /// si no se puede comprobar, ELMAH y adelante.
+        /// </summary>
+        internal async Task<IHttpActionResult> GuardaCajaReenvio(int envio, bool yaEstaAqui)
+        {
+            ReenvioEsperandoCaja esperando = await EsperandoCajaSeguro(envio);
+            if (esperando == null)
+            {
+                return null;
+            }
+            if (yaEstaAqui)
+            {
+                try
+                {
+                    ResultadoHaVuelto marcado = await ServicioHaVuelto.MarcarAsync(esperando.EnvioOrigen, ComoHaVuelto.AL_IMPRIMIR, null,
+                        UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+                    if (marcado.Tipo != TipoResultadoHaVuelto.Correcto)
+                    {
+                        RegistrarEnElmah?.Invoke(new Exception($"[Ha vuelto #870] Reenvío {envio} forzado («Ya está aquí»), pero no se ha podido marcar " +
+                            $"que ha vuelto el {esperando.EnvioOrigen}: {marcado.Mensaje}"));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    RegistrarEnElmah?.Invoke(new Exception($"[Ha vuelto #870] Reenvío {envio} forzado: no se ha podido marcar que ha vuelto el {esperando.EnvioOrigen}. {ex.Message}", ex));
+                }
+                return null;
+            }
+            return RespuestaEsperandoCaja(esperando);
+        }
+
+        /// <summary>NestoAPI#870: la guarda sin forzar (también para los bucles). Si no se puede comprobar, ELMAH y null (adelante).</summary>
+        private async Task<ReenvioEsperandoCaja> EsperandoCajaSeguro(int numero)
+        {
+            try
+            {
+                return await ServicioHaVuelto.EsperandoCajaAsync(numero);
+            }
+            catch (Exception ex)
+            {
+                RegistrarEnElmah?.Invoke(new Exception($"[Ha vuelto #870] Envío {numero}: no se ha podido comprobar si es un reenvío que espera la caja. {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        internal IHttpActionResult RespuestaEsperandoCaja(ReenvioEsperandoCaja esperando)
+        {
+            var error = new HttpError(esperando.Mensaje)
+            {
+                ["Codigo"] = ReenvioEsperandoCaja.CODIGO,
+                ["Mensaje"] = esperando.Mensaje,
+                ["EnvioOrigen"] = esperando.EnvioOrigen,
+                ["EnvioNuevo"] = esperando.EnvioNuevo
+            };
+            return ResponseMessage(new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new ObjectContent<HttpError>(error, new System.Net.Http.Formatting.JsonMediaTypeFormatter())
+            });
         }
 
         // POST: api/EnviosAgencias/5/ActualizarSeguimiento

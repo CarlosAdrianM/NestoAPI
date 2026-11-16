@@ -833,6 +833,7 @@
     <Compile Include="Infraestructure\Agencias\FacturasConReembolsoPendienteDeEntrega.cs" />
     <Compile Include="Infraestructure\Agencias\ReenvioEntregadoPorLaAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\ReenviosEnvio.cs" />
+    <Compile Include="Infraestructure\Agencias\EnviosHaVuelto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AgenciaRemotaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AnulacionEnvioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EtiquetaRepartoPropio.cs" />

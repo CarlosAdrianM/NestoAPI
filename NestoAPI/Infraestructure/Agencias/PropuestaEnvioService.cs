@@ -855,11 +855,35 @@ namespace NestoAPI.Infraestructure.Agencias
         public async Task<bool> TieneAlgunaLineaConPicking(string empresa, int pedido)
             => (await new GestorPedidoParaAgencia(db).LeerSituacionLineas(empresa, pedido).ConfigureAwait(false)).TieneAlgunaLineaConPicking;
 
-        public Task<EnviosAgencia> LeerEnvioPendiente(string empresa, int pedido)
-            => db.EnviosAgencias.AsNoTracking()
+        public async Task<EnviosAgencia> LeerEnvioPendiente(string empresa, int pedido)
+        {
+            List<EnviosAgencia> pendientes = await db.EnviosAgencias.AsNoTracking()
                 .Where(e => e.Estado < Constantes.Agencias.ESTADO_EN_CURSO && e.Empresa == empresa && e.Pedido == pedido)
                 .OrderBy(e => e.Numero)
-                .FirstOrDefaultAsync();
+                .ToListAsync().ConfigureAwait(false);
+            // NestoAPI#870: el reenvío de un devuelto cuya caja no ha vuelto no se reutiliza (saldría con este envío sin estar aquí).
+            foreach (EnviosAgencia pendiente in pendientes)
+            {
+                if (!await EsReenvioEsperandoCaja(pendiente.Numero).ConfigureAwait(false))
+                {
+                    return pendiente;
+                }
+            }
+            return null;
+        }
+
+        private async Task<bool> EsReenvioEsperandoCaja(int envio)
+        {
+            try
+            {
+                return await new ServicioEnviosHaVuelto(new DatosEnviosHaVueltoEF(db), null).EsperandoCajaAsync(envio).ConfigureAwait(false) != null;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Ha vuelto #870] Envío pendiente {envio}: no se ha podido comprobar si es un reenvío que espera la caja. {ex.Message}", ex));
+                return false;
+            }
+        }
 
         public Task<EnviosAgencia> LeerEnvioAmpliacion(string cliente, string contacto, string direccion, int? excluirEnvio)
         {

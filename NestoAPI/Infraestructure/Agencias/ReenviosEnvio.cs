@@ -102,6 +102,14 @@ namespace NestoAPI.Infraestructure.Agencias
         public bool PortesIncluidos { get; set; }
         public string UsuarioDecision { get; set; }
         public DateTime? FechaDecision { get; set; }
+        /// <summary>NestoAPI#870: la caja ha vuelto al almacén (leída en Ariadna, «Ya está aquí» en Nesto o forzado al imprimir).</summary>
+        public bool HaVuelto { get; set; }
+        public DateTime? FechaHaVuelto { get; set; }
+        public string UsuarioHaVuelto { get; set; }
+        /// <summary><see cref="ComoHaVuelto"/>.</summary>
+        public string ComoHaVuelto { get; set; }
+        /// <summary>NestoAPI#870: decisión Reenviar, el reenvío sin tramitar y la caja sin volver: el reenvío no puede salir.</summary>
+        public bool ReenvioEsperandoCaja { get; set; }
     }
 
     /// <summary>
@@ -128,7 +136,7 @@ namespace NestoAPI.Infraestructure.Agencias
     public class RepositorioReenviosEnvio : IRepositorioReenviosEnvio
     {
         public const string TABLA = "EnviosAgenciaReenvios";
-        private const string COLUMNAS = "Id, EnvioOrigen, Decision, EnvioNuevo, EnvioAnulado, Direccion, CodPostal, Poblacion, Provincia, Telefono, Movil, " +
+        internal const string COLUMNAS = "Id, EnvioOrigen, Decision, EnvioNuevo, EnvioAnulado, Direccion, CodPostal, Poblacion, Provincia, Telefono, Movil, " +
             "Observaciones, IncluirPortes, Usuario, Fecha";
 
         private readonly NVEntities db;
@@ -295,12 +303,16 @@ namespace NestoAPI.Infraestructure.Agencias
         private readonly IDatosReenviosEnvio datos;
         private readonly RegistroPlazasAgencias plazas;
         private readonly Func<DateTime> hoy;
+        private readonly IRepositorioEnviosHaVuelto haVuelto;
 
-        public ServicioReenviosEnvio(IDatosReenviosEnvio datos, RegistroPlazasAgencias plazas, Func<DateTime> hoy = null)
+        /// <param name="haVuelto">NestoAPI#870: las marcas de «ha vuelto» (null = sin ellas, como antes).</param>
+        public ServicioReenviosEnvio(IDatosReenviosEnvio datos, RegistroPlazasAgencias plazas, Func<DateTime> hoy = null,
+            IRepositorioEnviosHaVuelto haVuelto = null)
         {
             this.datos = datos ?? throw new ArgumentNullException(nameof(datos));
             this.plazas = plazas ?? throw new ArgumentNullException(nameof(plazas));
             this.hoy = hoy ?? (() => DateTime.Today);
+            this.haVuelto = haVuelto;
         }
 
         /// <summary>Solo los devueltos (4) y los incidentados (3) admiten decisión.</summary>
@@ -458,6 +470,7 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 avisos.Add("El envío no tiene pedido: no se han añadido portes.");
             }
+            bool cajaYaAqui = await CajaHaVueltoAsync(origen.Numero);
             return ResultadoReenvio.Correcto(new DecisionReenvioDTO
             {
                 EnvioOrigen = id,
@@ -468,9 +481,29 @@ namespace NestoAPI.Infraestructure.Agencias
                 PortesIncluidos = portes > 0m,
                 Reembolso = nuevo.Reembolso,
                 Avisos = avisos,
-                Mensaje = $"Envío nuevo {nuevo.Numero} creado en Pendientes (etiqueta por imprimir): imprima la etiqueta cuando la caja " +
-                    $"del envío {origen.Numero} esté de vuelta en el almacén; hasta entonces no se tramita."
+                Mensaje = TextoReenvioCreado(nuevo.Numero, origen.Numero, cajaYaAqui)
             });
+        }
+
+        /// <summary>NestoAPI#870: el mensaje del reenvío recién creado, según la caja haya vuelto ya o no.</summary>
+        internal static string TextoReenvioCreado(int envioNuevo, int envioOrigen, bool cajaYaAqui) => cajaYaAqui
+            ? $"Envío nuevo {envioNuevo} creado en Pendientes (etiqueta por imprimir). La caja del envío {envioOrigen} ya ha vuelto al " +
+              "almacén: puede imprimir su etiqueta."
+            : $"Envío nuevo {envioNuevo} creado en Pendientes (etiqueta por imprimir): imprima la etiqueta cuando la caja " +
+              $"del envío {envioOrigen} esté de vuelta en el almacén; hasta entonces no se tramita. Al llegar, léala en Ariadna " +
+              "(«Ha vuelto un paquete») o pulse «Ya está aquí» en Agencias › Devueltos.";
+
+        /// <summary>NestoAPI#870: best-effort (sin la tabla o si falla, false).</summary>
+        private async Task<bool> CajaHaVueltoAsync(int envio)
+        {
+            try
+            {
+                return haVuelto != null && haVuelto.TablaDisponible() && await haVuelto.LeerAsync(envio) != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         public async Task<ResultadoReenvio> AbonarAsync(int id, string usuario)
@@ -515,11 +548,19 @@ namespace NestoAPI.Infraestructure.Agencias
             Dictionary<int, RegistroReenvioEnvio> decisiones = await datos.Reenvios.LeerAsync(envios.Select(e => e.Numero));
             Dictionary<int, short> estadosNuevos = await datos.LeerEstadosAsync(
                 decisiones.Values.Where(d => d.EnvioNuevo.HasValue).Select(d => d.EnvioNuevo.Value));
-            return Combinar(envios, decisiones, estadosNuevos);
+            Dictionary<int, RegistroHaVuelto> vueltas = haVuelto != null && haVuelto.TablaDisponible()
+                ? await haVuelto.LeerAsync(envios.Select(e => e.Numero))
+                : null;
+            return Combinar(envios, decisiones, estadosNuevos, vueltas);
         }
 
         internal static List<EnvioDevueltoDTO> Combinar(IEnumerable<EnvioAgenciaListadoDTO> envios,
             IDictionary<int, RegistroReenvioEnvio> decisiones, IDictionary<int, short> estadosNuevos)
+            => Combinar(envios, decisiones, estadosNuevos, null);
+
+        /// <param name="vueltas">NestoAPI#870: las marcas de «ha vuelto» por envío (null = sin la tabla: nada esperando la caja).</param>
+        internal static List<EnvioDevueltoDTO> Combinar(IEnumerable<EnvioAgenciaListadoDTO> envios,
+            IDictionary<int, RegistroReenvioEnvio> decisiones, IDictionary<int, short> estadosNuevos, IDictionary<int, RegistroHaVuelto> vueltas)
         {
             var resultado = new List<EnvioDevueltoDTO>();
             foreach (EnvioAgenciaListadoDTO e in envios ?? Enumerable.Empty<EnvioAgenciaListadoDTO>())
@@ -542,6 +583,18 @@ namespace NestoAPI.Infraestructure.Agencias
                 else
                 {
                     d.Decision = DecisionesReenvio.SIN_DECIDIR;
+                }
+                if (vueltas != null)
+                {
+                    if (vueltas.TryGetValue(e.Numero, out RegistroHaVuelto vuelta))
+                    {
+                        d.HaVuelto = true;
+                        d.FechaHaVuelto = vuelta.Fecha;
+                        d.UsuarioHaVuelto = vuelta.Usuario?.Trim();
+                        d.ComoHaVuelto = vuelta.Como?.Trim();
+                    }
+                    d.ReenvioEsperandoCaja = !d.HaVuelto && d.Decision == DecisionesReenvio.REENVIAR && d.EnvioNuevo.HasValue
+                        && d.EstadoEnvioNuevo.HasValue && d.EstadoEnvioNuevo.Value < Constantes.Agencias.ESTADO_TRAMITADO;
                 }
                 resultado.Add(d);
             }
