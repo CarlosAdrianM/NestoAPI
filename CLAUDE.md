@@ -674,6 +674,21 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   El resultado también al CLIENTE (13/11/26; mismos Datos y dispositivos que el pendiente, sin app nada, TNV#99 los abre igual):
   `PagoAPlazosAprobadoCliente` (con el prepago recién creado, como el del vendedor) y `PagoAPlazosRechazadoCliente` (al pasar a Rechazado).
 
+### Fechas de recepción vencidas: se recalculan (NestoAPI#865, 16/11/26)
+- En el job del correo de proveedores vencidos (L-V 8:00, `ProveedoresVencidosJobsService`), ANTES del correo, `ServicioFechasVencidas`
+  (`Infraestructure/PedidosCompra/FechasVencidas.cs`) pone fecha nueva a cada línea en el aire (LinPedidoCmp -1/1, Enviado) con FechaRecepción < hoy.
+  Regla pura `ReglaFechaVencida`: correo de seguimiento #857 del pedido (envío aplicado, o inequívoco sin descartar ni llegado:
+  `CorreosDelPedidoCompra`) con `ReglaFechaRecepcionPorCorreo.DiaDeLlegada` ≥ hoy → ese día; si no («sin noticias»), de las recepciones del
+  proveedor (mismo origen que #853, 24 meses, 1+3, `LeerRecepcionesDeProveedores`) que tardaron MÁS de los días que lleva esperando
+  (desde CabPedidoCmp.[Fecha Modificación]), el P80 desde ese día; con < 5 casos, hoy + P80 genérico ('*'); sin nada, no se toca. Lo
+  estimado nunca antes del siguiente laborable de Algete.
+- Escritura (`GuardarFechaRecalculada`, una transacción por línea, solo si sigue en el aire y con la fecha leída): Usuario «Fecha recalculada
+  (vencida)», [Fecha Modificación], Modificaciones Tabla `CompraFechaRecalculada` (JSON con Clave «empresa/pedido/orden», antes/después, origen y
+  cifras) y promesa en riesgo (#693) por el núcleo común `CambiosCompraPromesaRiesgo.AnotarCambioFecha` (el mismo de la fase 3 de #857).
+  Se recalcula cada vez; desde el 2.º vencimiento (filas del rastro de esa línea en 365 días) el correo marca «Hay que llamar al proveedor».
+  Correo: columna «Nueva fecha» con `TextosFechaVencida` (de usted). Interruptor ParametrosUsuario «(defecto)» `Compras.RecalcularFechasVencidas`
+  (sin fila o «1» encendido; «0»/false/no/off/apagado → el correo de siempre). Script `Scripts/Issue865_ComprasFechasVencidasYReenvio.sql`.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

@@ -75,6 +75,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return causas;
         }
 
+        /// <summary>
+        /// NestoAPI#865: el núcleo común de los cambios de fecha de recepción que hace la API por su cuenta (la fecha de un correo de
+        /// seguimiento, #857 fase 3, y la fecha vencida recalculada): las mismas líneas con la fecha nueva, y si eso retrasa algo con lo
+        /// que contaban pedidos de venta, se anota (#693). Devuelve true si ha anotado. Puede lanzar: el que llama lo registra.
+        /// </summary>
+        public static bool AnotarCambioFecha(string empresa, int pedidoCompra, IEnumerable<LineaCompraPromesaRiesgo> antes,
+            Func<LineaCompraPromesaRiesgo, DateTime?> fechaNueva, string descripcion,
+            Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotar)
+        {
+            List<LineaCompraPromesaRiesgo> lista = (antes ?? Enumerable.Empty<LineaCompraPromesaRiesgo>()).Where(l => l != null).ToList();
+            List<LineaCompraPromesaRiesgo> despues = lista.Select(l => new LineaCompraPromesaRiesgo
+            {
+                Id = l.Id, Producto = l.Producto, Estado = l.Estado, Enviado = l.Enviado, Cantidad = l.Cantidad, FechaRecepcion = fechaNueva(l)
+            }).ToList();
+            Dictionary<string, CausaPromesaRiesgo> empeoran = QueEmpeora(pedidoCompra, lista, despues);
+            if (!empeoran.Any())
+            {
+                return false;
+            }
+            (anotar ?? EventosPromesaRiesgo.Anotar)(empresa, empeoran.Keys, descripcion, empeoran);
+            return true;
+        }
+
         private static bool Retrasa(DateTime? antes, DateTime? despues) =>
             antes.HasValue && (!despues.HasValue || despues.Value.Date > antes.Value.Date);
 

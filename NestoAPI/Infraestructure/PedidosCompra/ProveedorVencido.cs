@@ -30,6 +30,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         public string Almacen { get; set; }
         public int Cantidad { get; set; }
         public DateTime FechaPrevista { get; set; }
+        /// <summary>NestoAPI#865: LinPedidoCmp.Estado (-1 o 1).</summary>
+        public short Estado { get; set; } = 1;
+        /// <summary>NestoAPI#865: el día en que se pidió (CabPedidoCmp.[Fecha Modificación], como los plazos de #853). Null si no consta.</summary>
+        public DateTime? FechaPedido { get; set; }
 
         /// <summary>Clave de la línea para no avisar dos veces el mismo día: «1/220515/3».</summary>
         public string Clave => $"{Empresa?.Trim()}/{Pedido}/{Orden}";
@@ -56,6 +60,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         bool YaAvisadaHoy(string claveLinea, DateTime hoy);
         /// <summary>Destinatarios (sin dominio) del aviso en la campana.</summary>
         List<string> LeerDestinatarios();
+        /// <summary>NestoAPI#865: el JSON «Nuevo» de las filas de Modificaciones <see cref="RastroFechaRecalculada.TABLA"/> desde ese día.</summary>
+        List<string> LeerRecalculosAnteriores(DateTime desde);
+        /// <summary>
+        /// NestoAPI#865: en UNA transacción, pone <paramref name="fecha"/> en la línea (si sigue en el aire y con la fecha vencida que se
+        /// leyó) y deja el rastro en Modificaciones. False si la línea ya no estaba así (no se toca nada).
+        /// </summary>
+        bool GuardarFechaRecalculada(LineaCompraVencida linea, DateTime fecha, string usuario, string anterior, string nuevo);
     }
 
     /// <summary>
@@ -99,8 +110,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 
         internal const string SQL_LINEAS = @"
 SELECT RTRIM(c.Empresa), c.Número, c.NºOrden, RTRIM(c.NºProveedor), RTRIM(pr.Nombre), RTRIM(c.Producto), RTRIM(c.Texto),
-       RTRIM(c.Almacén), CAST(c.Cantidad AS int), c.FechaRecepción
+       RTRIM(c.Almacén), CAST(c.Cantidad AS int), c.FechaRecepción, CAST(c.Estado AS int), cab.[Fecha Modificación]
 FROM LinPedidoCmp c WITH (NOLOCK)
+LEFT JOIN CabPedidoCmp cab WITH (NOLOCK) ON cab.Empresa = c.Empresa AND cab.Número = c.Número
 OUTER APPLY (SELECT TOP 1 p.Nombre FROM Proveedores p WITH (NOLOCK)
              WHERE p.Empresa = c.Empresa AND p.Número = c.NºProveedor
              ORDER BY CASE WHEN p.Contacto = c.Contacto THEN 0 ELSE 1 END, p.ProveedorPrincipal DESC) pr
@@ -123,6 +135,17 @@ GROUP BY e.Número, e.Almacén";
         internal const string SQL_YA_AVISADA = @"
 SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
                          WHERE Aplicacion = @aplicacion AND FechaCreacion >= @hoy AND Datos LIKE @patron) THEN 1 ELSE 0 END";
+
+        internal const string SQL_RECALCULOS_ANTERIORES = @"
+SELECT m.Nuevo FROM dbo.Modificaciones m WITH (NOLOCK) WHERE m.Tabla = @tabla AND m.Fecha >= @desde";
+
+        // NestoAPI#865: solo si la línea sigue en el aire y con la fecha que se leyó (si no, alguien la ha cambiado o recibido). LinPedidoCmp no
+        // tiene disparador que toque FechaRecepción (lo mismo que la fase 3 de #857): Usuario y [Fecha Modificación] se ponen aquí.
+        internal const string SQL_RECALCULAR_FECHA = @"
+UPDATE c SET [FechaRecepción] = @fecha, Usuario = @usuario, [Fecha Modificación] = GETDATE()
+FROM dbo.LinPedidoCmp c
+WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden AND c.Estado IN (-1, 1) AND c.Enviado = 1
+  AND c.[FechaRecepción] IS NOT NULL AND CAST(c.[FechaRecepción] AS date) = CAST(@antes AS date)";
 
         private readonly string cadenaConexion;
 
@@ -175,7 +198,9 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
                             Descripcion = Cadena(lector, 6),
                             Almacen = Cadena(lector, 7),
                             Cantidad = lector.IsDBNull(8) ? 0 : lector.GetInt32(8),
-                            FechaPrevista = lector.GetDateTime(9)
+                            FechaPrevista = lector.GetDateTime(9),
+                            Estado = lector.IsDBNull(10) ? (short)1 : (short)lector.GetInt32(10),
+                            FechaPedido = lector.IsDBNull(11) ? (DateTime?)null : lector.GetDateTime(11)
                         });
                     }
                 }
@@ -252,6 +277,65 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
         }
 
         public List<string> LeerDestinatarios() => DestinatariosAvisoProveedorVencido.Lista(DestinatariosAvisoProveedorVencido.LeerValor());
+
+        public List<string> LeerRecalculosAnteriores(DateTime desde)
+        {
+            var nuevos = new List<string>();
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, SQL_RECALCULOS_ANTERIORES))
+            {
+                comando.Parameters.Add("@tabla", SqlDbType.NVarChar, 100).Value = RastroFechaRecalculada.TABLA;
+                comando.Parameters.Add("@desde", SqlDbType.DateTime).Value = desde;
+                using (SqlDataReader lector = comando.ExecuteReader())
+                {
+                    while (lector.Read())
+                    {
+                        nuevos.Add(lector.IsDBNull(0) ? null : lector.GetString(0));
+                    }
+                }
+            }
+            return nuevos;
+        }
+
+        public bool GuardarFechaRecalculada(LineaCompraVencida linea, DateTime fecha, string usuario, string anterior, string nuevo)
+        {
+            using (SqlConnection conexion = Abrir())
+            using (SqlTransaction transaccion = conexion.BeginTransaction())
+            {
+                using (SqlCommand comando = Comando(conexion, SQL_RECALCULAR_FECHA))
+                {
+                    comando.Transaction = transaccion;
+                    comando.Parameters.Add("@empresa", SqlDbType.VarChar, 3).Value = linea.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                    comando.Parameters.Add("@pedido", SqlDbType.Int).Value = linea.Pedido;
+                    comando.Parameters.Add("@orden", SqlDbType.Int).Value = linea.Orden;
+                    comando.Parameters.Add("@antes", SqlDbType.DateTime).Value = linea.FechaPrevista.Date;
+                    comando.Parameters.Add("@fecha", SqlDbType.DateTime).Value = fecha.Date;
+                    comando.Parameters.Add("@usuario", SqlDbType.VarChar, 30).Value = Recortar(usuario, 30) ?? "DESCONOCIDO";
+                    if (comando.ExecuteNonQuery() != 1)
+                    {
+                        transaccion.Rollback();
+                        return false;
+                    }
+                }
+                using (SqlCommand rastro = Comando(conexion, CorreosSeguimiento.RepositorioCorreosSeguimiento.SQL_RASTRO))
+                {
+                    rastro.Transaction = transaccion;
+                    rastro.Parameters.Add("@tabla", SqlDbType.NVarChar, 100).Value = RastroFechaRecalculada.TABLA;
+                    rastro.Parameters.Add("@anterior", SqlDbType.NVarChar, -1).Value = (object)anterior ?? DBNull.Value;
+                    rastro.Parameters.Add("@nuevo", SqlDbType.NVarChar, -1).Value = (object)nuevo ?? DBNull.Value;
+                    rastro.Parameters.Add("@usuarioRastro", SqlDbType.NVarChar, 100).Value = (object)Recortar(usuario, 100) ?? DBNull.Value;
+                    _ = rastro.ExecuteNonQuery();
+                }
+                transaccion.Commit();
+                return true;
+            }
+        }
+
+        private static string Recortar(string texto, int maximo)
+        {
+            string limpio = texto?.Trim();
+            return limpio == null || limpio.Length <= maximo ? limpio : limpio.Substring(0, maximo);
+        }
 
         internal static string ClaveEspera(string producto, string almacen) => $"{producto?.Trim()}|{almacen?.Trim()}".ToUpperInvariant();
 
@@ -433,6 +517,8 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
         public Func<DateTime, bool> EsFestivo { get; set; }
         /// <summary>NestoAPI#780: la traza del festivo (null = ELMAH).</summary>
         public Action<Exception, string> Trazar { get; set; }
+        /// <summary>NestoAPI#865: recalcular las fechas vencidas antes de mandar el correo (null = no, el correo de siempre).</summary>
+        public ServicioFechasVencidas FechasVencidas { get; set; }
     }
 
     /// <summary>
@@ -454,12 +540,16 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
         {
             try
             {
+                RepositorioProveedorVencidoSql repositorio = RepositorioProveedorVencidoSql.DesdeConfiguracion();
                 _ = Procesar(new DependenciasProveedoresVencidos
                 {
-                    Repositorio = RepositorioProveedorVencidoSql.DesdeConfiguracion(),
+                    Repositorio = repositorio,
                     Correo = new ServicioCorreoElectronico(),
                     Ahora = DateTime.Now,
-                    EsFestivo = JobsFestivos.EsFestivoAlgete
+                    EsFestivo = JobsFestivos.EsFestivoAlgete,
+                    FechasVencidas = new ServicioFechasVencidas(repositorio, PlazosEntrega.RepositorioPlazosProveedores.DesdeConfiguracion(),
+                        new CorreosSeguimiento.RepositorioCorreosSeguimiento(), JobsFestivos.EsFestivoAlgete,
+                        registrar: ex => ElmahHelper.Log(ex, USUARIO_SISTEMA))
                 });
             }
             catch (Exception ex)
@@ -484,9 +574,22 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
             {
                 return false;
             }
+            // NestoAPI#865: antes del correo, la fecha nueva de cada línea (con el interruptor apagado, null: el correo de siempre)
+            Dictionary<string, ResultadoFechaVencida> recalculos = null;
+            if (deps.FechasVencidas != null)
+            {
+                try
+                {
+                    recalculos = deps.FechasVencidas.Recalcular(lineas, hoy);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception("[Fechas vencidas #865] No se han podido recalcular las fechas vencidas: " + ex.Message, ex), USUARIO_SISTEMA);
+                }
+            }
             Dictionary<string, EsperaClientesProducto> esperas = deps.Repositorio.LeerEsperas(lineas.Select(l => l.Producto))
                 ?? new Dictionary<string, EsperaClientesProducto>();
-            using (MailMessage correo = ConstruirCorreo(lineas, esperas, hoy))
+            using (MailMessage correo = ConstruirCorreo(lineas, esperas, hoy, recalculos))
             {
                 if (!deps.Correo.EnviarCorreoSMTP(correo))
                 {
@@ -500,25 +603,42 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
         internal static EsperaClientesProducto Espera(Dictionary<string, EsperaClientesProducto> esperas, LineaCompraVencida linea)
             => esperas != null && esperas.TryGetValue(RepositorioProveedorVencidoSql.ClaveEspera(linea.Producto, linea.Almacen), out EsperaClientesProducto e) ? e : null;
 
-        internal static MailMessage ConstruirCorreo(List<LineaCompraVencida> lineas, Dictionary<string, EsperaClientesProducto> esperas, DateTime hoy)
+        internal static MailMessage ConstruirCorreo(List<LineaCompraVencida> lineas, Dictionary<string, EsperaClientesProducto> esperas, DateTime hoy,
+            Dictionary<string, ResultadoFechaVencida> recalculos = null)
         {
             int conEspera = lineas.Count(l => (Espera(esperas, l)?.Faltan ?? 0) > 0);
             int pedidos = lineas.Select(l => $"{l.Empresa}/{l.Pedido}").Distinct().Count();
+            int llamar = recalculos == null ? 0 : lineas.Count(l => Recalculo(recalculos, l)?.HayQueLlamar == true);
             var mail = new MailMessage
             {
                 From = new MailAddress("nesto@nuevavision.es", "Nesto - Nueva Visión"),
                 Subject = $"Pedidos a proveedor con la fecha prevista vencida ({hoy.ToString("dd/MM/yyyy", es)}): {pedidos} " +
-                    $"{(pedidos == 1 ? "pedido" : "pedidos")}, {conEspera} {(conEspera == 1 ? "línea" : "líneas")} con clientes esperando",
+                    $"{(pedidos == 1 ? "pedido" : "pedidos")}, {conEspera} {(conEspera == 1 ? "línea" : "líneas")} con clientes esperando" +
+                    (llamar > 0 ? $", {llamar} {(llamar == 1 ? "línea" : "líneas")} para llamar al proveedor" : string.Empty),
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
                 SubjectEncoding = Encoding.UTF8
             };
             mail.To.Add(Constantes.Correos.COMPRAS);
-            mail.Body = GenerarHtml(lineas, esperas, hoy);
+            mail.Body = GenerarHtml(lineas, esperas, hoy, recalculos);
             return mail;
         }
 
-        internal static string GenerarHtml(List<LineaCompraVencida> lineas, Dictionary<string, EsperaClientesProducto> esperas, DateTime hoy)
+        internal static ResultadoFechaVencida Recalculo(Dictionary<string, ResultadoFechaVencida> recalculos, LineaCompraVencida linea) =>
+            recalculos != null && recalculos.TryGetValue(linea.Clave, out ResultadoFechaVencida r) ? r : null;
+
+        internal const string INTRODUCCION = "<p>Estos pedidos a proveedor están enviados, no se han recibido y su fecha prevista ya ha pasado. Mientras no se " +
+            "cambie, la fecha de entrega a la agencia que ven los vendedores supone que llegan mañana. Si tenéis otra fecha, ponedla en " +
+            "el pedido de compra; si ya ha llegado, recibidlo.</p>";
+
+        /// <summary>NestoAPI#865: con las fechas recalculadas (de usted, sin nombres de tablas).</summary>
+        internal const string INTRODUCCION_RECALCULADA = "<p>Estos pedidos a proveedor están enviados y no se han recibido, y su fecha prevista ya había " +
+            "pasado. A cada línea le hemos puesto una fecha nueva (columna «Nueva fecha», con el porqué), que es la que ven ya los vendedores: " +
+            "no tiene que hacer nada, salvo llamar al proveedor en las líneas que lo indican (se les ha pasado la fecha más de una vez). " +
+            "Si sabe otra fecha, póngala en el pedido de compra; si ya ha llegado, recíbalo.</p>";
+
+        internal static string GenerarHtml(List<LineaCompraVencida> lineas, Dictionary<string, EsperaClientesProducto> esperas, DateTime hoy,
+            Dictionary<string, ResultadoFechaVencida> recalculos = null)
         {
             List<LineaCompraVencida> conEspera = lineas.Where(l => (Espera(esperas, l)?.Faltan ?? 0) > 0)
                 .OrderBy(l => l.FechaPrevista).ThenBy(l => l.Pedido).ThenBy(l => l.Orden).ToList();
@@ -528,13 +648,11 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
             var sb = new StringBuilder();
             sb.AppendLine("<!DOCTYPE html>");
             sb.AppendLine("<html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 13px;'>");
-            sb.AppendLine("<p>Estos pedidos a proveedor están enviados, no se han recibido y su fecha prevista ya ha pasado. Mientras no se " +
-                "cambie, la fecha de entrega a la agencia que ven los vendedores supone que llegan mañana. Si tenéis otra fecha, ponedla en " +
-                "el pedido de compra; si ya ha llegado, recibidlo.</p>");
+            sb.AppendLine(recalculos == null ? INTRODUCCION : INTRODUCCION_RECALCULADA);
             sb.AppendLine("<h2 style='color:#b00'>Con pedidos de clientes esperando</h2>");
             if (conEspera.Any())
             {
-                Tabla(sb, conEspera, esperas, hoy, true);
+                Tabla(sb, conEspera, esperas, hoy, true, recalculos);
             }
             else
             {
@@ -543,22 +661,26 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
             sb.AppendLine("<h2>Resto</h2>");
             if (resto.Any())
             {
-                Tabla(sb, resto, esperas, hoy, false);
+                Tabla(sb, resto, esperas, hoy, false, recalculos);
             }
             else
             {
                 sb.AppendLine("<p>Ninguno.</p>");
             }
-            sb.AppendLine("<p style='color:#666'>Se calcula cada mañana en el momento de mandar el correo (NestoAPI#606).</p>");
+            sb.AppendLine(recalculos == null
+                ? "<p style='color:#666'>Se calcula cada mañana en el momento de mandar el correo (NestoAPI#606).</p>"
+                : "<p style='color:#666'>Se calcula cada mañana en el momento de mandar el correo (NestoAPI#606 y #865).</p>");
             sb.AppendLine("</body></html>");
             return sb.ToString();
         }
 
-        private static void Tabla(StringBuilder sb, List<LineaCompraVencida> lineas, Dictionary<string, EsperaClientesProducto> esperas, DateTime hoy, bool conClientes)
+        private static void Tabla(StringBuilder sb, List<LineaCompraVencida> lineas, Dictionary<string, EsperaClientesProducto> esperas, DateTime hoy, bool conClientes,
+            Dictionary<string, ResultadoFechaVencida> recalculos)
         {
             sb.AppendLine("<table style='border-collapse: collapse;' cellpadding='4' border='1'>");
             sb.AppendLine("<tr style='background:#eee'><th>Pedido</th><th>Proveedor</th><th>Producto</th><th>Descripción</th><th>Almacén</th>" +
-                "<th>Uds.</th><th>Prevista</th><th>Días de retraso</th>" + (conClientes ? "<th>Clientes esperando</th>" : string.Empty) + "</tr>");
+                "<th>Uds.</th><th>Prevista</th><th>Días de retraso</th>" + (recalculos != null ? "<th>Nueva fecha</th>" : string.Empty) +
+                (conClientes ? "<th>Clientes esperando</th>" : string.Empty) + "</tr>");
             foreach (LineaCompraVencida l in lineas)
             {
                 int retraso = (hoy.Date - l.FechaPrevista.Date).Days;
@@ -571,6 +693,10 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
                     .Append($"<td style='text-align:right'>{l.Cantidad}</td>")
                     .Append($"<td>{l.FechaPrevista.ToString("dd/MM/yyyy", es)}</td>")
                     .Append($"<td style='text-align:right'>{retraso}</td>");
+                if (recalculos != null)
+                {
+                    sb.Append("<td>").Append(CeldaNuevaFecha(Recalculo(recalculos, l))).Append("</td>");
+                }
                 if (conClientes)
                 {
                     EsperaClientesProducto e = Espera(esperas, l);
@@ -580,6 +706,23 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
                 sb.AppendLine("</tr>");
             }
             sb.AppendLine("</table>");
+        }
+
+        /// <summary>NestoAPI#865: la fecha nueva y por qué; desde el 2.º vencimiento, en rojo, que hay que llamar al proveedor.</summary>
+        internal static string CeldaNuevaFecha(ResultadoFechaVencida r)
+        {
+            if (r == null)
+            {
+                return Html(TextosFechaVencida.SIN_RECALCULAR);
+            }
+            string texto = Html(r.Texto);
+            if (r.Cambiada)
+            {
+                texto = $"<b>{Html(TextosFechaVencida.Dia(r.Recalculo.FechaNueva))}</b><br>{texto}";
+            }
+            return r.HayQueLlamar
+                ? $"{texto}<br><b style='color:#b00'>{Html(TextosFechaVencida.Llamar(r.Vencimiento))}</b>"
+                : texto;
         }
 
         private static string Html(string texto) => WebUtility.HtmlEncode(texto?.Trim() ?? string.Empty);

@@ -123,13 +123,23 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// </summary>
         public static DateTime Calcular(IEnumerable<CorreoSeguimientoFila> envio, DateTime hoy)
         {
+            DateTime? dia = DiaDeLlegada(envio);
+            return !dia.HasValue || dia.Value < hoy.Date ? hoy.Date : dia.Value;
+        }
+
+        /// <summary>
+        /// NestoAPI#865: el día de llegada que dicen los correos del envío SIN el suelo de hoy (puede ser pasado: la fecha vencida
+        /// recalculada lo trata entonces como «sin noticias»). Null sin correos. Las mismas reglas que <see cref="Calcular(IEnumerable{CorreoSeguimientoFila}, DateTime)"/>.
+        /// </summary>
+        public static DateTime? DiaDeLlegada(IEnumerable<CorreoSeguimientoFila> envio)
+        {
             List<CorreoSeguimientoFila> correos = (envio ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f != null).ToList();
             CorreoSeguimientoFila ultimo = correos.OrderByDescending(f => f.Recibido).ThenByDescending(f => f.Id).FirstOrDefault();
             if (ultimo == null)
             {
-                return hoy.Date;
+                return null;
             }
-            return Calcular(LlegadaDelEnvio(correos), ultimo.Recibido, HorasDe(ultimo.Agencia), hoy);
+            return LlegadaDelEnvio(correos) ?? ultimo.Recibido.AddHours(HorasDe(ultimo.Agencia) ?? HORAS_SIN_AGENCIA).Date;
         }
 
         /// <summary>El día que llega el último bulto con fecha, o null si ningún bulto la tiene. PURA.</summary>

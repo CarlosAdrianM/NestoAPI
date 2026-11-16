@@ -36,6 +36,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
         List<PlazoProveedor> LeerPlazos(string empresa);
         /// <summary>Recepciones (pedido + día de albarán) de líneas de producto desde <paramref name="desde"/>, de la empresa y su espejo.</summary>
         List<RecepcionCompra> LeerRecepciones(string empresa, DateTime desde);
+        /// <summary>NestoAPI#865: lo mismo que <see cref="LeerRecepciones"/>, solo de esos proveedores (la fecha vencida recalculada).</summary>
+        List<RecepcionCompra> LeerRecepcionesDeProveedores(string empresa, DateTime desde, IEnumerable<string> proveedores);
         /// <summary>Pedidos de compra con líneas de producto desde <paramref name="desde"/> (día en que se pidió), de la empresa y su espejo.</summary>
         List<PedidoCompraDia> LeerPedidos(string empresa, DateTime desde);
         /// <summary>Sustituye las filas de la empresa en una transacción.</summary>
@@ -70,12 +72,18 @@ WHERE Empresa = @empresa";
         /// Una fila por pedido de compra y día de albarán (líneas de producto, TipoLínea '1'; las de cuenta contable no cuentan). El día en
         /// que se pidió es CabPedidoCmp.[Fecha Modificación] (estable en las de producto; CabPedidoCmp.Fecha se mueve después).
         /// </summary>
-        internal const string SQL_RECEPCIONES = @"
+        internal const string SQL_RECEPCIONES_BASE = @"
 SELECT RTRIM(l.Empresa), RTRIM(c.[NºProveedor]), l.[Número], CAST(CAST(c.[Fecha Modificación] AS date) AS datetime), CAST(CAST(l.[FechaAlbarán] AS date) AS datetime)
 FROM LinPedidoCmp l WITH (NOLOCK)
 INNER JOIN CabPedidoCmp c WITH (NOLOCK) ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
-WHERE l.Empresa IN (@empresa, @espejo) AND l.[TipoLínea] = '1' AND l.[FechaAlbarán] >= @desde AND c.[Fecha Modificación] IS NOT NULL
+WHERE l.Empresa IN (@empresa, @espejo) AND l.[TipoLínea] = '1' AND l.[FechaAlbarán] >= @desde AND c.[Fecha Modificación] IS NOT NULL{0}
 GROUP BY l.Empresa, c.[NºProveedor], l.[Número], CAST(c.[Fecha Modificación] AS date), CAST(l.[FechaAlbarán] AS date)";
+
+        internal static readonly string SQL_RECEPCIONES = string.Format(SQL_RECEPCIONES_BASE, string.Empty);
+
+        /// <summary>NestoAPI#865: las mismas recepciones, solo de unos proveedores ({0} = la lista de parámetros @v0, @v1…).</summary>
+        internal static string SqlRecepcionesDeProveedores(string enLista) =>
+            string.Format(SQL_RECEPCIONES_BASE, $" AND c.[NºProveedor] IN ({enLista})");
 
         internal const string SQL_PEDIDOS = @"
 SELECT RTRIM(c.[NºProveedor]), CAST(CAST(c.[Fecha Modificación] AS date) AS datetime)
@@ -164,14 +172,31 @@ IF NOT EXISTS (SELECT 1 FROM dbo.PedidosCompraEnvios WITH (UPDLOCK, HOLDLOCK) WH
             return filas;
         }
 
-        public List<RecepcionCompra> LeerRecepciones(string empresa, DateTime desde)
+        public List<RecepcionCompra> LeerRecepciones(string empresa, DateTime desde) => LeerRecepciones(empresa, desde, SQL_RECEPCIONES, null);
+
+        public List<RecepcionCompra> LeerRecepcionesDeProveedores(string empresa, DateTime desde, IEnumerable<string> proveedores)
+        {
+            List<string> lista = (proveedores ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!lista.Any())
+            {
+                return new List<RecepcionCompra>();
+            }
+            return LeerRecepciones(empresa, desde, SqlRecepcionesDeProveedores(string.Join(", ", lista.Select((p, i) => "@v" + i))), lista);
+        }
+
+        private List<RecepcionCompra> LeerRecepciones(string empresa, DateTime desde, string sql, List<string> proveedores)
         {
             var filas = new List<RecepcionCompra>();
             using (SqlConnection conexion = Abrir())
-            using (SqlCommand comando = Comando(conexion, SQL_RECEPCIONES, TIMEOUT_CALCULO))
+            using (SqlCommand comando = Comando(conexion, sql, TIMEOUT_CALCULO))
             {
                 Empresas(comando, empresa);
                 comando.Parameters.Add("@desde", SqlDbType.DateTime).Value = desde;
+                for (int i = 0; proveedores != null && i < proveedores.Count; i++)
+                {
+                    comando.Parameters.Add("@v" + i, SqlDbType.VarChar, 10).Value = proveedores[i];
+                }
                 using (SqlDataReader lector = comando.ExecuteReader())
                 {
                     while (lector.Read())

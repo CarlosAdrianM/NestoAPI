@@ -1133,6 +1133,7 @@
     <Compile Include="Infraestructure\PedidosCompra\IPedidosCompraService.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PedidosCompraService.cs" />
     <Compile Include="Infraestructure\PedidosCompra\ProveedorVencido.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\FechasVencidas.cs" />
     <Compile Include="Infraestructure\RecursosGraficos.cs" />
     <Compile Include="Infraestructure\Pedidos\IServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacion.cs" />

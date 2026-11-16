@@ -431,15 +431,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 {
                     Id = l.NumeroOrden, Producto = l.Producto, Estado = l.Estado, Enviado = l.Enviado, Cantidad = l.Cantidad, FechaRecepcion = l.FechaRecepcion
                 }).ToList();
-                List<LineaCompraPromesaRiesgo> despues = antes.Select(l => new LineaCompraPromesaRiesgo
-                {
-                    Id = l.Id, Producto = l.Producto, Estado = l.Estado, Enviado = l.Enviado, Cantidad = l.Cantidad, FechaRecepcion = fecha
-                }).ToList();
-                Dictionary<string, CausaPromesaRiesgo> empeoran = CambiosCompraPromesaRiesgo.QueEmpeora(pedido, antes, despues);
-                if (empeoran.Any())
-                {
-                    anotarPromesaRiesgo(empresa, empeoran.Keys, $"pedido a proveedor {pedido}: fecha de un correo de seguimiento", empeoran);
-                }
+                _ = CambiosCompraPromesaRiesgo.AnotarCambioFecha(empresa, pedido, antes, _ => fecha,
+                    $"pedido a proveedor {pedido}: fecha de un correo de seguimiento", anotarPromesaRiesgo);
             }
             catch (Exception ex)
             {
