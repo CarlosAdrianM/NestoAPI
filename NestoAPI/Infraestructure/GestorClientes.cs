@@ -1545,7 +1545,8 @@ namespace NestoAPI.Infraestructure
                 Nombre = clienteCrear.Nombre?.ToUpper(),
                 PeriodoFacturación = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 Población = clienteCrear.Poblacion,
-                Provincia = clienteCrear.Provincia,
+                // Sugerencia 1276 (16/11/26): la columna admite 30; una provincia más larga tumbaba el alta entera
+                Provincia = Truncar(clienteCrear.Provincia?.Trim(), 30),
                 Ruta = clienteCrear.Ruta,
                 ServirJunto = true,
                 Teléfono = clienteCrear.Telefono,

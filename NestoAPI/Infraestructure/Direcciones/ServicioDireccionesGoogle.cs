@@ -196,13 +196,48 @@ namespace NestoAPI.Infraestructure.Direcciones
                 }
                 else if (tipos.Contains("administrative_area_level_2"))
                 {
-                    detalle.Provincia = valor;
+                    detalle.Provincia = ProvinciaSinPrefijo(valor);
                 }
             }
 
             detalle.DireccionCalleNumero = DireccionCalleNumero(detalle.Calle, detalle.Numero, detalle.PaisIso);
             return detalle;
         }
+
+        /// <summary>
+        /// Sugerencia 1276 (Enrique, 16/11/26): Google da la provincia italiana como «Città Metropolitana di Roma Capitale» (37
+        /// caracteres; la columna admite 30) y el alta del cliente fallaba. Se quita el tipo de entidad administrativa del
+        /// principio (y «Capitale» de Roma): queda «Roma». Lo que no lleva prefijo conocido, tal cual.
+        /// </summary>
+        internal static string ProvinciaSinPrefijo(string provincia)
+        {
+            string texto = provincia?.Trim();
+            if (string.IsNullOrEmpty(texto))
+            {
+                return texto;
+            }
+            foreach (string prefijo in PREFIJOS_PROVINCIA)
+            {
+                if (texto.StartsWith(prefijo, StringComparison.OrdinalIgnoreCase) && texto.Length > prefijo.Length)
+                {
+                    texto = texto.Substring(prefijo.Length).Trim();
+                    break;
+                }
+            }
+            if (texto.EndsWith(" Capitale", StringComparison.OrdinalIgnoreCase))
+            {
+                texto = texto.Substring(0, texto.Length - " Capitale".Length).Trim();
+            }
+            return texto;
+        }
+
+        // Los más largos primero (para que «Provincia della» gane a «Provincia di»…)
+        private static readonly string[] PREFIJOS_PROVINCIA =
+        {
+            "Libero consorzio comunale di ", "Città Metropolitana di ", "Citta Metropolitana di ", "Città metropolitana di ",
+            "Provincia autonoma di ", "Provincia della ", "Provincia dell'", "Provincia del ", "Provincia di ",
+            "Province of ", "County of "
+        };
 
         /// <summary>NestoAPI#826: países donde el número de la calle va delante («12 Rue de la Paix»).</summary>
         internal static readonly HashSet<string> PAISES_NUMERO_DELANTE = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

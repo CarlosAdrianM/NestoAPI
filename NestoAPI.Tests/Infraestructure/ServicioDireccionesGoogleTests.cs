@@ -314,5 +314,21 @@ namespace NestoAPI.Tests.Infraestructure
         {
             Assert.AreEqual(esperada, ServicioDireccionesGoogle.DireccionCalleNumero(calle, numero, pais));
         }
+
+        // Sugerencia 1276 (Enrique, 16/11/26): «Città Metropolitana di Roma Capitale» (37) no cabía en los 30 de la provincia
+        // y no dejaba dar de alta el cliente de Roma.
+        [DataTestMethod]
+        [DataRow("Città Metropolitana di Roma Capitale", "Roma")]
+        [DataRow("Città Metropolitana di Milano", "Milano")]
+        [DataRow("Provincia di Bergamo", "Bergamo")]
+        [DataRow("Provincia della Spezia", "Spezia")]
+        [DataRow("Libero consorzio comunale di Agrigento", "Agrigento")]
+        [DataRow("Madrid", "Madrid")]
+        [DataRow("Comunidad de Madrid", "Comunidad de Madrid")]
+        [DataRow(null, null)]
+        public void ProvinciaSinPrefijo_QuitaElTipoDeEntidad(string google, string esperada)
+        {
+            Assert.AreEqual(esperada, ServicioDireccionesGoogle.ProvinciaSinPrefijo(google));
+        }
     }
 }
