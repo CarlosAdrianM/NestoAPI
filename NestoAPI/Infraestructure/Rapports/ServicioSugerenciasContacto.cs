@@ -42,11 +42,12 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly IBloqueoSugerenciasDelDia bloqueo;
         private readonly IChequesRegaloParaSugerencias chequesRegalo;
         private readonly IRepositorioOrigenesCliente origenes;
+        private readonly IDatosSugerenciasContacto datos;
 
         public ServicioSugerenciasContacto(NVEntities db)
             : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo,
                   new ServicioFrasesRitmo(), null, new ServicioEstadisticaChequesRegalo(new RepositorioEstadisticaChequesRegalo(db)),
-                  new RepositorioOrigenesClienteSql())
+                  new RepositorioOrigenesClienteSql(), new DatosSugerenciasContactoSql(db))
         {
         }
 
@@ -55,11 +56,14 @@ namespace NestoAPI.Infraestructure.Rapports
         /// (<see cref="ImpulsoChequesRegaloContacto"/>). Null = sin impulso.</param>
         /// <param name="origenes">NestoAPI#623: los leads de campaña sin llamar, los primeros (<see cref="ImpulsoLeadsCampanaContacto"/>).
         /// Null = sin leads.</param>
+        /// <param name="datos">NestoAPI#866 (corte 3): el origen y los productos en oferta de cada sugerencia registrada, en las
+        /// columnas opcionales. Null = no se apunta.</param>
         internal ServicioSugerenciasContacto(NVEntities db, IRepositorioCarteraContacto repositorio, IProbabilidadesContacto probabilidades,
             Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null,
             IBloqueoSugerenciasDelDia bloqueo = null, IChequesRegaloParaSugerencias chequesRegalo = null,
-            IRepositorioOrigenesCliente origenes = null)
+            IRepositorioOrigenesCliente origenes = null, IDatosSugerenciasContacto datos = null)
         {
+            this.datos = datos;
             this.origenes = origenes;
             this.chequesRegalo = chequesRegalo;
             this.bloqueo = bloqueo;
@@ -115,6 +119,7 @@ namespace NestoAPI.Infraestructure.Rapports
             var registro = new RegistroSugerenciasContacto(db, bloqueo);
             List<SugerenciaContacto> delDia = await registro.LeerDelDia(vendedorLimpio, hoy).ConfigureAwait(false);
             bool cambios = await registro.ConciliarAtendidas(delDia, hoy).ConfigureAwait(false);
+            var registradas = new List<(SugerenciaContacto Fila, SugerenciaContactoDTO Sugerencia)>();
             if (delDia.Count < numero)
             {
                 // NestoAPI#603: bajo bloqueo por vendedor y día (dos llamadas a la vez no duplican la lista). Dentro se
@@ -131,8 +136,12 @@ namespace NestoAPI.Infraestructure.Rapports
                         numero - actuales.Count, Math.Max(0, ritmo.CupoCoberturaHoy - coberturaRegistrada),
                         actuales.Select(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto)));
                     int ultimoOrden = actuales.Any() ? actuales.Max(s => s.Orden) : 0;
-                    return registro.Anadir(nuevas, ultimoOrden, vendedorLimpio, usuario, ahora);
+                    List<SugerenciaContacto> filas = registro.Anadir(nuevas, ultimoOrden, vendedorLimpio, usuario, ahora);
+                    registradas.AddRange(filas.Zip(nuevas, (f, n) => (f, n)));
+                    return filas;
                 }).ConfigureAwait(false);
+                // NestoAPI#866 (corte 3): solo las que de verdad se han guardado (si otra llamada se adelantó, las nuestras no están).
+                GuardarDatos(registradas.Where(r => delDia.Contains(r.Fila)).ToList());
             }
             else if (cambios)
             {
@@ -196,6 +205,28 @@ namespace NestoAPI.Infraestructure.Rapports
                 ordenadas[i].Orden = i + 1;
             }
             return ordenadas;
+        }
+
+        /// <summary>NestoAPI#866 (corte 3): el origen y los productos en oferta de las recién registradas. Nunca rompe la lista.</summary>
+        private void GuardarDatos(List<(SugerenciaContacto Fila, SugerenciaContactoDTO Sugerencia)> registradas)
+        {
+            if (datos == null || !registradas.Any())
+            {
+                return;
+            }
+            try
+            {
+                datos.GuardarAlRegistrar(registradas.Select(r => new DatosSugerenciaRegistrada
+                {
+                    Id = r.Fila.Id,
+                    Origen = r.Sugerencia.Origen ?? OrigenesSugerenciaContacto.DeMotivo(r.Fila.Motivo),
+                    ProductosOferta = r.Sugerencia.ProductosOferta
+                }).ToList());
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.GetDefault(null)?.Log(new Error(new Exception("NestoAPI#866: no se han podido apuntar los datos de las sugerencias registradas", ex)));
+            }
         }
 
         /// <summary>

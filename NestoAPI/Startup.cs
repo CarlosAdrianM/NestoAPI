@@ -1377,6 +1377,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'recordatorio-sugerencias-contacto' configurado (L-V a las 9:30)");
 
+            // NestoAPI#866 (corte 3): cierra las sugerencias de contacto de hace 8 a 60 días con su resultado a 7 días (pedido, importe y
+            // si llevaba alguno de los productos en oferta que la justificaban). Un UPDATE. Sin Scripts/Issue866_SugerenciasContactoOfertas.sql
+            // no hace nada (ELMAH una vez).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Rapports.SugerenciasContactoResultadoJobsService.JOB_ID,
+                () => Infraestructure.Rapports.SugerenciasContactoResultadoJobsService.Procesar(),
+                Infraestructure.Rapports.SugerenciasContactoResultadoJobsService.CRON, // Cron: todos los días a las 3:25
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'sugerencias-contacto-resultado' configurado (todos los días a las 3:25)");
+
             // Recordatorios de respuesta en Novedades (Carlos, 16/10/26): a las sugerencias e incidencias en las que el
             // asistente le ha preguntado algo al autor (POST .../Comentarios/Asistente con EsperaRespuesta) y que llevan 2
             // días laborables sin respuesta, un recordatorio del asistente con la @mención del autor; tras el 2.º, se dan

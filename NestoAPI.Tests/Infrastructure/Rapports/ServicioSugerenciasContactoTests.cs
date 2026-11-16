@@ -963,5 +963,52 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.IsTrue(respuesta.Sugerencias.Single(s => s.Cliente == "1003").SinContactoEsteMes);
             Assert.IsTrue(respuesta.Sugerencias.Single(s => s.Cliente == "1004").SinContactoEsteMes);
         }
+
+        // ---------------- NestoAPI#866 (corte 3): origen y productos en oferta de lo registrado ----------------
+
+        [TestMethod]
+        public async Task Leer_PrimeraVezDelDia_ApuntaElOrigenDeCadaRegistradaConSuId()
+        {
+            var datos = A.Fake<IDatosSugerenciasContacto>();
+            List<DatosSugerenciaRegistrada> apuntadas = null;
+            A.CallTo(() => datos.GuardarAlRegistrar(A<IList<DatosSugerenciaRegistrada>>._))
+                .Invokes((IList<DatosSugerenciaRegistrada> filas) => apuntadas = filas.ToList());
+            var servicio = new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo,
+                datos: datos);
+
+            _ = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+
+            Assert.IsNotNull(apuntadas);
+            CollectionAssert.AreEqual(sugerencias.Select(s => s.Id).ToArray(), apuntadas.Select(a => a.Id).ToArray());
+            Assert.IsTrue(apuntadas.All(a => a.Origen == OrigenesSugerenciaContacto.PROBABILIDAD));
+            Assert.IsTrue(apuntadas.All(a => a.ProductosOferta == null), "sin impulso de ofertas no hay productos");
+        }
+
+        [TestMethod]
+        public async Task Leer_SegundaVezDelDia_NoVuelveAApuntarNada()
+        {
+            var datos = A.Fake<IDatosSugerenciasContacto>();
+            var servicio = new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo,
+                datos: datos);
+            _ = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+            Fake.ClearRecordedCalls(datos);
+
+            _ = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+
+            A.CallTo(() => datos.GuardarAlRegistrar(A<IList<DatosSugerenciaRegistrada>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Leer_SiFallaElApunte_LaListaSaleIgual()
+        {
+            var datos = A.Fake<IDatosSugerenciasContacto>();
+            A.CallTo(() => datos.GuardarAlRegistrar(A<IList<DatosSugerenciaRegistrada>>._)).Throws(new InvalidOperationException("sin BD"));
+            var servicio = new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo,
+                datos: datos);
+
+            SugerenciasContactoDTO respuesta = await servicio.Leer("MPP", "Llamada", 3, "", "u");
+
+            Assert.AreEqual(3, respuesta.Sugerencias.Count);
+        }
     }
 }

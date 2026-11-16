@@ -120,6 +120,13 @@ namespace NestoAPI.Infraestructure.Rapports
         /// ya no está en la cartera (sin dato, sin marca). Campo nuevo: los clientes que no lo lean no cambian.
         /// </summary>
         public bool SinContactoEsteMes { get; set; }
+        /// <summary>
+        /// NestoAPI#866 (corte 3): los productos que compra habitualmente y que hoy están en oferta, en el JSON corto de
+        /// <c>ReglasImpulsoOfertasContacto.ProductosJson</c> (null si ninguno). Solo se apunta al registrar
+        /// (dbo.SugerenciasContacto.ProductosOferta); no va en la respuesta.
+        /// </summary>
+        [JsonIgnore]
+        public string ProductosOferta { get; set; }
     }
 
     /// <summary>NestoAPI#603: GET api/Clientes/SugerenciasContacto/Uso, una fila por vendedor.</summary>
