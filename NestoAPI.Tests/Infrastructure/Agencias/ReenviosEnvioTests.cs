@@ -118,7 +118,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("910000000", nuevo.Telefono);
             Assert.AreEqual("cliente@ejemplo.es", nuevo.Email);
             Assert.AreEqual("Marta", nuevo.Atencion);
-            Assert.AreEqual((short)Constantes.Agencias.ESTADO_EN_CURSO, nuevo.Estado);
+            // NestoAPI#870 (novedad 1280): pendiente, para que «Tramitar todos» no se lo lleve antes de que vuelva la caja (250950)
+            Assert.AreEqual((short)Constantes.Agencias.ESTADO_PENDIENTE, nuevo.Estado);
             Assert.AreEqual(HOY, nuevo.Fecha);
             Assert.AreEqual(HOY.AddDays(1), nuevo.FechaEntrega);
             Assert.IsNull(nuevo.DetalleEstado);
@@ -132,7 +133,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsFalse(fila.IncluirPortes);
             Assert.AreEqual(USUARIO, fila.Usuario);
             Assert.AreEqual(nuevo.Numero, r.Decision.EnvioNuevo);
-            Assert.AreEqual($"Envío nuevo {nuevo.Numero} creado: imprima la etiqueta cuando llegue la caja.", r.Decision.Mensaje);
+            StringAssert.Contains(r.Decision.Mensaje, $"Envío nuevo {nuevo.Numero} creado en Pendientes");
+            StringAssert.Contains(r.Decision.Mensaje, "del envío 251300 esté de vuelta en el almacén");
             Assert.AreEqual(0, datos.PortesAnadidos.Count, "Por defecto los portes del reenvío nos los comemos");
             Assert.IsFalse(r.Decision.PortesIncluidos);
         }

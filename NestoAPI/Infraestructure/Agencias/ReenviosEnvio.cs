@@ -277,8 +277,8 @@ namespace NestoAPI.Infraestructure.Agencias
     /// NestoAPI#699 (corte 2, «Volver a enviar»): la agencia devuelve un envío (o lo deja incidentado) y alguien (almacén o
     /// vendedor) decide si el cliente lo sigue queriendo.
     /// <list type="bullet">
-    /// <item><b>Reenviar</b>: un envío NUEVO del mismo pedido, clonado del devuelto (dirección y teléfonos corregibles), en curso
-    /// y sin etiqueta: el almacén lo tramita e imprime como cualquier otro cuando llega la caja. Sin abono, sin stock, sin
+    /// <item><b>Reenviar</b>: un envío NUEVO del mismo pedido, clonado del devuelto (dirección y teléfonos corregibles), en
+    /// Pendientes (etiqueta por imprimir, #870) y sin etiqueta: el almacén imprime su etiqueta y lo tramita cuando llega la caja. Sin abono, sin stock, sin
     /// picking ni factura. Portes solo si se pide (por defecto, no).</item>
     /// <item><b>Abonar</b>: solo queda la decisión; el abono lo hace el almacén con Copiar factura, como hoy.</item>
     /// </list>
@@ -468,7 +468,8 @@ namespace NestoAPI.Infraestructure.Agencias
                 PortesIncluidos = portes > 0m,
                 Reembolso = nuevo.Reembolso,
                 Avisos = avisos,
-                Mensaje = $"Envío nuevo {nuevo.Numero} creado: imprima la etiqueta cuando llegue la caja."
+                Mensaje = $"Envío nuevo {nuevo.Numero} creado en Pendientes (etiqueta por imprimir): imprima la etiqueta cuando la caja " +
+                    $"del envío {origen.Numero} esté de vuelta en el almacén; hasta entonces no se tramita."
             });
         }
 
@@ -579,7 +580,10 @@ namespace NestoAPI.Infraestructure.Agencias
                 Cliente = o.Cliente,
                 Contacto = o.Contacto,
                 Pedido = o.Pedido,
-                Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO,
+                // NestoAPI#870 (novedad 1280, 16/11/26): nace PENDIENTE (etiqueta por imprimir), no en curso. En curso, «Tramitar
+                // todos» se llevó el 250950 (reenvío del 250875 incidentado, con el paquete aún en CTT) y salió en el manifiesto sin
+                // estar aquí. En Pendientes solo pasa a en curso al imprimir su etiqueta, que se imprime con la caja en la mano.
+                Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE,
                 Fecha = hoy.Date,
                 FechaEntrega = hoy.Date.AddDays(1),
                 Servicio = o.Servicio,
