@@ -680,6 +680,19 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void ManifiestoAgencia_ElRepartoPropioLlevaTambienLoPendienteDeDiasAnteriores()
+        {
+            // Sugerencia 1257 (Alfredo, 16/11/26): 250948 (18198, del 13/11) y 250907 (10571, del 12/11) seguían en la
+            // furgoneta sin entregar y no salían en el manifiesto del 16/11. Solo la 14; las demás agencias, solo las del día.
+            string sql = InformesService.SQL_MANIFIESTO_AGENCIA;
+            StringAssert.Contains(sql, "CAST(e.Fecha AS DATE) = CAST(@Fecha AS DATE)");
+            StringAssert.Contains(sql, "OR (e.agencia = 14");
+            StringAssert.Contains(sql, "CAST(e.Fecha AS DATE) < CAST(@Fecha AS DATE)");
+            StringAssert.Contains(sql, "DATEADD(day, -30, CAST(@Fecha AS DATE))");
+            Assert.AreEqual(14, NestoAPI.Models.Constantes.Agencias.AGENCIA_REPARTO_PROPIO, "El 14 del SQL es el reparto propio");
+        }
+
+        [TestMethod]
         public async Task GetManifiestoAgencia_PasaLosParametrosCorrectosAlServicio()
         {
             DateTime fecha = new DateTime(2026, 4, 16);

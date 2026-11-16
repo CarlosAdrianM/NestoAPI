@@ -416,7 +416,13 @@ namespace NestoAPI.Infraestructure.Informes
                              WHERE c.Número = e.Pedido
                              ORDER BY CASE WHEN c.Empresa = e.Empresa THEN 0 ELSE 1 END) p
                 WHERE e.empresa = @Empresa AND e.estado = 1 AND e.agencia = @Agencia
-                    AND CAST(e.Fecha AS DATE) = CAST(@Fecha AS DATE)
+                    AND (CAST(e.Fecha AS DATE) = CAST(@Fecha AS DATE)
+                        -- Sugerencia 1257 (Alfredo, 16/11/26): en el reparto propio, también lo de días anteriores que sigue sin
+                        -- entregar (lo lleva en la furgoneta: 250948 del 13/11 y 250907 del 12/11 no salían). 30 días como tope.
+                        -- 14 = Constantes.Agencias.AGENCIA_REPARTO_PROPIO.
+                        OR (e.agencia = 14
+                            AND CAST(e.Fecha AS DATE) < CAST(@Fecha AS DATE)
+                            AND CAST(e.Fecha AS DATE) >= DATEADD(day, -30, CAST(@Fecha AS DATE))))
                 GROUP BY e.nombre, e.Direccion, e.CodPostal, e.Poblacion, e.Provincia, e.Telefono,
                     e.observaciones, e.cliente, e.contacto, e.Movil, p.Ruta";
 
