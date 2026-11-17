@@ -105,6 +105,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// </summary>
         internal const string PARAMETRO_REENVIAR_CON_STOCK = "SincronizarStocks.ReenviarConStock";
         internal const string USUARIO_REENVIO_CON_STOCK = "Reenvío con stock (1308)";
+        /// <summary>
+        /// Los productos sin mensaje desde este día también se reenvían, tengan o no stock en Nesto: el mensaje con
+        /// CantidadDisponibleTotal empezó el 16/10 por la tarde, y una ficha con stock en la tienda y a 0 en Nesto se vendería
+        /// sin tener nada (agente de PrestaShop, NestoAPI#872: 2.858 fichas activas sin mensaje desde el 19/10).
+        /// </summary>
+        internal static readonly DateTime FECHA_CORTE_MENSAJE_COMPLETO = new DateTime(2026, 10, 17);
 
         internal const string SQL_REENVIAR_PRODUCTOS_CON_STOCK = @"
                         DECLARE @encolados int = 0;
@@ -114,13 +120,19 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                             INSERT INTO Nesto_sync (Tabla, ModificadoId, Usuario, FechaModificacion)
                             SELECT 'Productos', RTRIM(p.Número), @usuario, GETDATE()
                             FROM Productos p
-                            INNER JOIN (SELECT e.Número FROM ExtractoProducto e
-                                        WHERE e.Empresa IN (@empresa, @empresaEspejo)
-                                          AND e.Almacén IN (@almacen1, @almacen2, @almacen3)
-                                        GROUP BY e.Número
-                                        HAVING SUM(e.Cantidad) <> 0) s ON s.Número = p.Número
+                            LEFT JOIN (SELECT e.Número FROM ExtractoProducto e
+                                       WHERE e.Empresa IN (@empresa, @empresaEspejo)
+                                         AND e.Almacén IN (@almacen1, @almacen2, @almacen3)
+                                       GROUP BY e.Número
+                                       HAVING SUM(e.Cantidad) <> 0) s ON s.Número = p.Número
                             WHERE p.Empresa = @empresa
                               AND p.Estado >= 0
+                              -- con stock, o SIN mensaje desde el corte (agente de PrestaShop, NestoAPI#872: fichas con stock en la
+                              -- tienda y a 0 en Nesto se venderían sin tener nada si no reciben su mensaje)
+                              AND (s.Número IS NOT NULL
+                                   OR NOT EXISTS (SELECT 1 FROM Nesto_sync u
+                                                  WHERE u.Tabla = 'Productos' AND u.ModificadoId = RTRIM(p.Número)
+                                                    AND u.Sincronizado >= @corte))
                               AND NOT EXISTS (SELECT 1 FROM Nesto_sync ns
                                               WHERE ns.Tabla = 'Productos'
                                                 AND ns.ModificadoId = RTRIM(p.Número)
@@ -158,6 +170,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     int conStock = (await db.Database.SqlQuery<int>(SQL_REENVIAR_PRODUCTOS_CON_STOCK,
                         new SqlParameter("@usuario", USUARIO_REENVIO_CON_STOCK),
                         new SqlParameter("@parametro", PARAMETRO_REENVIAR_CON_STOCK),
+                        new SqlParameter("@corte", FECHA_CORTE_MENSAJE_COMPLETO),
                         new SqlParameter("@empresa", Constantes.Empresas.EMPRESA_POR_DEFECTO),
                         new SqlParameter("@empresaEspejo", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO),
                         new SqlParameter("@almacen1", Constantes.Almacenes.ALGETE),
