@@ -120,7 +120,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             StringAssert.Contains(sql, "N'@empresa char(3), @o0 varchar(30), @o1 varchar(30)', @empresa, @o0, @o1;");
             StringAssert.Contains(sql, "AND NOT EXISTS (SELECT 1 FROM #AptosEmbudo a WHERE a.Cliente = co.Cliente)");
             // Siempre con alguna persona con correo y boletín, aunque se pida sin correo
-            StringAssert.Contains(sql, "WHERE (@soloConCorreo = 0 AND t.EntraPorOrigen = 0) OR t.PersonasConCorreo > 0");
+            StringAssert.Contains(sql, "WHERE ((@soloConCorreo = 0 AND t.EntraPorOrigen = 0) OR t.PersonasConCorreo > 0)");
             StringAssert.Contains(sql, "t.Origen, t.EntraPorOrigen");
             // Se añaden DESPUÉS de quitar a los que tienen otro vendedor por grupo de producto (a ellos eso no les afecta)
             Assert.IsTrue(sql.IndexOf("DELETE a FROM #AptosEmbudo", StringComparison.Ordinal) < sql.IndexOf("INSERT INTO #AptosEmbudo", StringComparison.Ordinal));

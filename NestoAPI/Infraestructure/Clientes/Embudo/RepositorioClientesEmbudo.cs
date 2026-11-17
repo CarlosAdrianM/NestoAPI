@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -124,6 +124,13 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         /// línea en -1 o más, empresas 1 y espejo). Los de origen van por SQL dinámico: sin las tablas de orígenes (o sin EsLead, #848)
         /// no se añade ninguno y la consulta sigue como antes.
         /// </summary>
+        /// <summary>Carlos 17/11/26: el embudo es de reactivación. Solo entran los que nunca han comprado o llevan
+        /// <see cref="ANIOS_SIN_COMPRAR"/> años sin pedir (los bloques NV-03..08 metieron clientes vivos porque no había filtro).</summary>
+        public const int ANIOS_SIN_COMPRAR = 2;
+
+        /// <summary>Un cliente con último pedido anterior a esta fecha está dormido.</summary>
+        internal static DateTime DormidoDesde(DateTime hoy) => hoy.Date.AddYears(-ANIOS_SIN_COMPRAR);
+
         internal static string SqlCandidatos(int numeroEstados)
         {
             string estados = string.Join(", ", Enumerable.Range(0, numeroEstados).Select(i => $"@e{i}"));
@@ -186,7 +193,9 @@ FROM (
          WHERE l.Empresa IN (@empresa, @empresaEspejo) AND l.[Nº Cliente] = a.Cliente AND l.Estado >= @pendiente) AS UltimoPedido
     FROM #AptosEmbudo a
 ) t
-WHERE (@soloConCorreo = 0 AND t.EntraPorOrigen = 0) OR t.PersonasConCorreo > 0
+WHERE ((@soloConCorreo = 0 AND t.EntraPorOrigen = 0) OR t.PersonasConCorreo > 0)
+  -- Carlos 17/11/26: solo los que hay que recuperar: nunca han comprado o su último pedido es anterior a @dormidoDesde (2 años)
+  AND (t.UltimoPedido IS NULL OR t.UltimoPedido < @dormidoDesde)
 ORDER BY CASE WHEN t.UltimoPedido IS NULL THEN 1 ELSE 0 END, t.UltimoPedido DESC, t.FechaAlta DESC, LEN(t.Cliente) DESC, t.Cliente DESC;
 
 DROP TABLE #AptosEmbudo;";
@@ -201,7 +210,8 @@ DROP TABLE #AptosEmbudo;";
                 new SqlParameter("@vendedor", SqlDbType.Char, 3) { Value = vendedor },
                 new SqlParameter("@vendedorGeneral", SqlDbType.Char, 3) { Value = Constantes.Vendedores.VENDEDOR_GENERAL },
                 new SqlParameter("@pendiente", SqlDbType.SmallInt) { Value = Constantes.EstadosLineaVenta.PENDIENTE },
-                new SqlParameter("@soloConCorreo", SqlDbType.Bit) { Value = soloConCorreo }
+                new SqlParameter("@soloConCorreo", SqlDbType.Bit) { Value = soloConCorreo },
+                new SqlParameter("@dormidoDesde", SqlDbType.Date) { Value = DormidoDesde(DateTime.Today) }
             };
             for (int i = 0; i < estados.Count; i++)
             {

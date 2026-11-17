@@ -357,6 +357,17 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             StringAssert.Contains(sql, "p.EnviarBoletin = 1");
         }
 
+        [TestMethod]
+        public void SqlCandidatos_SoloLosQueNuncaHanCompradoOLlevanDosAniosSinPedir()
+        {
+            // Carlos 17/11/26: los bloques NV-03..08 metieron clientes vivos (último pedido de esa misma semana) en el embudo de
+            // reactivación. Solo entran los dormidos de verdad, también los de origen AMAZON/WEB.
+            string sql = RepositorioClientesEmbudoSql.SqlCandidatos(3);
+
+            StringAssert.Contains(sql, "AND (t.UltimoPedido IS NULL OR t.UltimoPedido < @dormidoDesde)");
+            Assert.AreEqual(new DateTime(2024, 11, 17), RepositorioClientesEmbudoSql.DormidoDesde(new DateTime(2026, 11, 17, 10, 30, 0)));
+        }
+
         // ===== Siembra del registro =====
 
         [TestMethod]
