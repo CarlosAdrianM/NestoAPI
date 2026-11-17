@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Notificaciones;
+﻿using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Verifactu;
 using NestoAPI.Models;
 using Newtonsoft.Json.Linq;
@@ -265,6 +265,8 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
 
     public enum ResultadoAjusteRitmoEmbudo
     {
+        /// <summary>Carlos 17/11/26: el ajuste automático está apagado (ParametrosUsuario «(defecto)» EmbudoAjusteRitmo distinto de «1»).</summary>
+        Apagado,
         /// <summary>Odoo recomienda subir, pero el dominio no tiene el DKIM de Office 365 (o no se ha podido comprobar): no sube.</summary>
         PendienteDkim,
         SinConfiguracion,
@@ -302,6 +304,12 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         public const string PARAMETRO_RECOMENDACION = "EmbudoRecomendacion";
         public const string PARAMETRO_RECOMENDACION_MOTIVO = "EmbudoRecomendacionMotivo";
         public const string PARAMETRO_ULTIMO_AVISO_FALLO = "EmbudoRitmoUltimoAvisoFallo";
+        /// <summary>
+        /// Carlos 17/11/26: interruptor del ajuste automático. SOLO «1» = encendido; sin fila o cualquier otro valor = apagado (no lee
+        /// a Odoo ni toca el tamaño). Se apagó al corregir la consulta del bloque (solo dormidos): la recomendación del 17/11 se calculó con
+        /// clientes vivos y no vale. Se vuelve a encender con unas 5 tandas de dormidos de verdad y Odoo recalculando.
+        /// </summary>
+        public const string PARAMETRO_AUTOMATICO = "EmbudoAjusteRitmo";
         /// <summary>Cuándo se avisó por última vez de que no se sube por el DKIM (como mucho una vez por semana).</summary>
         public const string PARAMETRO_ULTIMO_AVISO_DKIM = "EmbudoRitmoUltimoAvisoDkim";
         /// <summary>El dominio desde el que salen los correos del embudo (Office 365): su DKIM tiene que estar publicado para subir.</summary>
@@ -339,6 +347,9 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
         }
 
+        /// <summary>Solo «1» enciende el ajuste automático (sin fila, apagado).</summary>
+        internal static bool AutomaticoEncendido(string valor) => string.Equals(valor?.Trim(), "1", StringComparison.Ordinal);
+
         /// <summary>Punto de entrada de Hangfire.</summary>
         public static async Task Ajustar()
         {
@@ -360,6 +371,10 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
 
         public async Task<ResultadoAjusteRitmoEmbudo> AjustarAsync(DateTime ahoraUtc)
         {
+            if (!AutomaticoEncendido(parametros.Leer(PARAMETRO_AUTOMATICO)))
+            {
+                return ResultadoAjusteRitmoEmbudo.Apagado;
+            }
             string url = configuracion(CLAVE_URL)?.Trim();
             string clave = configuracion(CLAVE_SECRETO)?.Trim();
             if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(clave))

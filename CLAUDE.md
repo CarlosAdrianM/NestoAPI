@@ -411,7 +411,7 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   **Solo dormidos (Carlos 17/11/26)**: entran únicamente los que nunca han comprado o con último pedido de hace más de
   `RepositorioClientesEmbudoSql.ANIOS_SIN_COMPRAR` (2) años (`@dormidoDesde`), también los de origen AMAZON/WEB. Sin ese filtro los bloques
   NV-2026-11-03..08 metieron 325 clientes vivos; Carlos los saca de `ClientesEmbudo` con `Scripts/OneShot_20261117_Embudo_SacarClientesVivos.sql`.
-- Job `embudo-ajuste-ritmo` 6:45 Madrid (Odoo calcula a las 4:30 UTC; 404 = sin cálculo aún: nada, sin aviso) (`EmbudoAjusteRitmoJobsService`): GET {OdooEmbudoRitmoUrl}/nv/embudo/recomendacion con cabecera
+- Job `embudo-ajuste-ritmo` 6:45 Madrid (**APAGADO desde el 17/11/26**: solo actúa con ParametrosUsuario «(defecto)» `EmbudoAjusteRitmo` = «1»; sin fila, nada. Se apagó al pasar a solo dormidos: la recomendación de Odoo se calculó con clientes vivos; Odoo tampoco calcula. Encender con ~5 tandas de dormidos) (Odoo calcula a las 4:30 UTC; 404 = sin cálculo aún: nada, sin aviso) (`EmbudoAjusteRitmoJobsService`): GET {OdooEmbudoRitmoUrl}/nv/embudo/recomendacion con cabecera
   `X-NV-Clave` = OdooEmbudoRitmoClave (las dos en secretos.config; sin ellas, nada ni aviso). Reglas puras `ReglasRitmoEmbudo`: escalones
   50 → 75 → 100 (tope 100); «subir» un escalón si hace 7 días del último cambio (`EmbudoTamanoBloqueFecha`, también el PUT) y el dato
   (calculadoEl) tiene menos de 8, sin pasar de escalonRecomendado; «bajar» un escalón en el acto; «parar» apaga el interruptor;

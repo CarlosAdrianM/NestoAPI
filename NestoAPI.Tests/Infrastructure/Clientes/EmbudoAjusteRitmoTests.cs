@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Clientes.Embudo;
 using NestoAPI.Infraestructure.Notificaciones;
@@ -160,6 +160,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             parametros = new ParametrosFalsos();
             parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_INTERRUPTOR] = "1";
             parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO] = "50";
+            parametros.Valores[EmbudoAjusteRitmoJobsService.PARAMETRO_AUTOMATICO] = "1";
             notificaciones = A.Fake<IServicioNotificacionesPush>();
             config = new Dictionary<string, string>
             {
@@ -181,6 +182,28 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                 () => new List<string> { "Carlos" }, notificaciones, ex => { }, dkim);
 
         private int Avisos() => Fake.GetCalls(notificaciones).Count();
+
+        [TestMethod]
+        public async Task Job_AutomaticoApagadoOSinFila_NoLeeAOdooNiTocaElTamano()
+        {
+            // Carlos 17/11/26: la recomendación del 17/11 («subir») se calculó con clientes vivos; sin el interruptor a «1» no se aplica.
+            foreach (string valor in new[] { null, "0", "", "si" })
+            {
+                if (valor == null)
+                {
+                    parametros.Valores.Remove(EmbudoAjusteRitmoJobsService.PARAMETRO_AUTOMATICO);
+                }
+                else
+                {
+                    parametros.Valores[EmbudoAjusteRitmoJobsService.PARAMETRO_AUTOMATICO] = valor;
+                }
+
+                Assert.AreEqual(ResultadoAjusteRitmoEmbudo.Apagado, await Job().AjustarAsync(AHORA), $"Valor «{valor}»");
+            }
+            Assert.AreEqual(0, peticiones);
+            Assert.AreEqual(0, Avisos());
+            Assert.AreEqual("50", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_TAMANO]);
+        }
 
         [TestMethod]
         public async Task Job_SinConfiguracion_NoHaceNadaNiAvisa()
