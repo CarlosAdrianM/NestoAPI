@@ -372,6 +372,135 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
         #endregion
 
+        #region El pedido guardado en la respuesta (?devolverPedido=true)
+
+        private static PedidosVentaController ControllerConUrl(string url)
+        {
+            return new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                Request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Put, url)
+            };
+        }
+
+        [TestMethod]
+        public void QuiereElPedidoGuardado_SoloConElParametro()
+        {
+            Assert.IsTrue(ControllerConUrl("http://api/api/PedidosVenta?devolverPedido=true").QuiereElPedidoGuardado());
+            Assert.IsTrue(ControllerConUrl("http://api/api/PedidosVenta?DevolverPedido=True").QuiereElPedidoGuardado());
+            Assert.IsFalse(ControllerConUrl("http://api/api/PedidosVenta").QuiereElPedidoGuardado(), "Clientes viejos: lo de siempre");
+            Assert.IsFalse(ControllerConUrl("http://api/api/PedidosVenta?devolverPedido=quizas").QuiereElPedidoGuardado());
+            Assert.IsFalse(new PedidosVentaController(A.Fake<NVEntities>()).QuiereElPedidoGuardado(), "Sin Request (UnirPedidos, CambiarCliente): no");
+        }
+
+        /// <summary>El pedido tal como queda tras un PUT que añade dos líneas: la BD les ha dado los Nº de orden 7 y 8.</summary>
+        private static PedidoVentaDTO PedidoConLineasNuevasGuardadas()
+        {
+            var pedido = new PedidoVentaDTO { empresa = "1", numero = 929555 };
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 3, Producto = "38093" });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 7, Producto = "17404" });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 8, Producto = "11111" });
+            return pedido;
+        }
+
+        [TestMethod]
+        public async Task PedidoGuardado_ConLineasNuevas_TraeSusNumerosDeOrdenYSuVersion()
+        {
+            ILectorVersionPedido lector = A.Fake<ILectorVersionPedido>();
+            DatosVersionPedido tras = Datos();
+            tras.Lineas = 3;
+            A.CallTo(() => lector.Leer("1", 929555)).Returns(tras);
+            var controller = new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LectorVersionPedido = lector,
+                LeerPedidoGuardado = (e, n) => Task.FromResult(PedidoConLineasNuevasGuardadas())
+            };
+
+            PedidoVentaDTO guardado = await controller.LeerPedidoConVersionCoherente("1", 929555);
+
+            CollectionAssert.AreEqual(new[] { 3, 7, 8 }, guardado.Lineas.Select(l => l.id).ToArray());
+            Assert.AreEqual(VersionPedidoVenta.Calcular(tras), guardado.Version);
+        }
+
+        [TestMethod]
+        public async Task PedidoGuardado_SiAlguienEscribeMientrasSeLee_RepiteYDevuelveElDeLaVersionEstable()
+        {
+            DatosVersionPedido v1 = Datos();
+            DatosVersionPedido v2 = Datos();
+            v2.RowVersionLineas = new byte[] { 0, 0, 0, 0, 0, 9, 9, 9 };
+            ILectorVersionPedido lector = A.Fake<ILectorVersionPedido>();
+            A.CallTo(() => lector.Leer("1", 929555)).ReturnsNextFromSequence(v1, v2, v2, v2);
+            int lecturas = 0;
+            var controller = new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LectorVersionPedido = lector,
+                LeerPedidoGuardado = (e, n) => { lecturas++; return Task.FromResult(PedidoConLineasNuevasGuardadas()); }
+            };
+
+            PedidoVentaDTO guardado = await controller.LeerPedidoConVersionCoherente("1", 929555);
+
+            Assert.AreEqual(2, lecturas, "La primera lectura no vale: la versión cambió mientras");
+            Assert.AreEqual(VersionPedidoVenta.Calcular(v2), guardado.Version);
+        }
+
+        [TestMethod]
+        public async Task PedidoGuardado_SiNuncaEstaQuieto_Null()
+        {
+            ILectorVersionPedido lector = A.Fake<ILectorVersionPedido>();
+            int n = 0;
+            A.CallTo(() => lector.Leer("1", 929555)).ReturnsLazily(() =>
+            {
+                DatosVersionPedido d = Datos();
+                d.Lineas = ++n;
+                return d;
+            });
+            var controller = new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LectorVersionPedido = lector,
+                LeerPedidoGuardado = (e, num) => Task.FromResult(PedidoConLineasNuevasGuardadas())
+            };
+
+            Assert.IsNull(await controller.LeerPedidoConVersionCoherente("1", 929555));
+        }
+
+        [TestMethod]
+        public async Task PedidoGuardado_SiFallaLaLectura_NullSinLanzar()
+        {
+            var controller = new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LectorVersionPedido = A.Fake<ILectorVersionPedido>(),
+                LeerPedidoGuardado = (e, n) => throw new InvalidOperationException("caída")
+            };
+            A.CallTo(() => controller.LectorVersionPedido.Leer(A<string>._, A<int>._)).Returns(Datos());
+
+            Assert.IsNull(await controller.LeerPedidoConVersionCoherente("1", 929555));
+        }
+
+        [TestMethod]
+        public void RespuestaModificacion_SinPedido_NoLoSerializa()
+        {
+            // Aditivo: los clientes viejos (sin ?devolverPedido) reciben el mismo cuerpo de siempre
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(new RespuestaModificacionPedidoDTO { Version = "abc" });
+            StringAssert.DoesNotMatch(json, new System.Text.RegularExpressions.Regex("\"Pedido\""));
+            string conPedido = Newtonsoft.Json.JsonConvert.SerializeObject(new RespuestaModificacionPedidoDTO { Version = "abc", Pedido = PedidoConLineasNuevasGuardadas() });
+            StringAssert.Contains(conPedido, "\"Pedido\"");
+            StringAssert.DoesNotMatch(Newtonsoft.Json.JsonConvert.SerializeObject(new PedidoVentaDTO()), new System.Text.RegularExpressions.Regex("PedidoGuardado"));
+        }
+
+        [TestMethod]
+        public void PutYPost_DevuelvenElPedidoGuardadoSoloSiSePide()
+        {
+            // El PUT entero no se puede montar con fakes: se guarda la regla en el código
+            string ruta = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                @"..\..\..\NestoAPI\Controllers\PedidosVentaController.cs"));
+            string codigo = System.IO.File.ReadAllText(ruta);
+
+            StringAssert.Contains(codigo, "PedidoVentaDTO pedidoGuardado = QuiereElPedidoGuardado()");
+            StringAssert.Contains(codigo, "Version = versionNueva, Pedido = pedidoGuardado");
+            StringAssert.Contains(codigo, "pedido.PedidoGuardado = await LeerPedidoConVersionCoherente(pedido.empresa, pedido.numero)");
+        }
+
+        #endregion
+
         #region SignalR
 
         [TestMethod]

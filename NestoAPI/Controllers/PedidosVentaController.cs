@@ -809,6 +809,67 @@ namespace NestoAPI.Controllers
             set => lectorVersionPedido = value;
         }
 
+        /// <summary>
+        /// NestoAPI#873 (ampliación, Carlos 17/11/26): «?devolverPedido=true» en el PUT y el POST: la respuesta lleva además el pedido
+        /// tal como ha quedado (con los Nº de orden de las líneas nuevas) y su versión. Opcional por el tamaño (pedidos de 234 líneas):
+        /// los clientes viejos no lo mandan y reciben lo de siempre.
+        /// </summary>
+        public const string PARAMETRO_DEVOLVER_PEDIDO = "devolverPedido";
+
+        /// <summary>Para los tests: cómo se lee el pedido guardado (por defecto, el GET de siempre, con su propio contexto).</summary>
+        internal Func<string, int, Task<PedidoVentaDTO>> LeerPedidoGuardado { get; set; }
+
+        /// <summary>Si la petición pide el pedido guardado en la respuesta (sin Request, como en UnirPedidos: no).</summary>
+        internal bool QuiereElPedidoGuardado()
+        {
+            try
+            {
+                string valor = Request?.GetQueryNameValuePairs()
+                    .FirstOrDefault(p => string.Equals(p.Key, PARAMETRO_DEVOLVER_PEDIDO, StringComparison.OrdinalIgnoreCase)).Value;
+                return bool.TryParse(valor?.Trim(), out bool si) && si;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#873 (ampliación): el pedido guardado y SU versión, coherentes: versión, pedido y versión otra vez; solo si las dos
+        /// versiones coinciden el pedido es exactamente el de esa versión (nadie ha escrito mientras se leía). Si alguien escribe
+        /// entre medias se repite (3 veces como mucho); si no se consigue, null (el cliente hace lo de antes). Lo que se devuelve es
+        /// lo que hay en la BD, como un GET: si otro ha guardado justo después de este guardado, viene con lo suyo y su versión, y
+        /// el cliente lo enseña como si hubiera recargado (no queda un hueco entre lo que ve y lo que cree que hay). Nunca lanza.
+        /// </summary>
+        internal async Task<PedidoVentaDTO> LeerPedidoConVersionCoherente(string empresa, int numero)
+        {
+            try
+            {
+                Func<string, int, Task<PedidoVentaDTO>> leer = LeerPedidoGuardado ?? GestorPedidosVenta.LeerPedido;
+                for (int intento = 0; intento < 3; intento++)
+                {
+                    string antes = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(empresa, numero));
+                    PedidoVentaDTO leido = await leer(empresa, numero).ConfigureAwait(true);
+                    string despues = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(empresa, numero));
+                    if (leido == null || antes == null)
+                    {
+                        return null;
+                    }
+                    if (string.Equals(antes, despues, StringComparison.Ordinal))
+                    {
+                        leido.Version = antes;
+                        return leido;
+                    }
+                }
+                ElmahHelper.Log(new Exception($"[Pedido guardado #873] Pedido {numero}: no se ha podido leer con una versión estable (lo están cambiando a la vez)."));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Pedido guardado #873] Pedido {numero}: no se ha podido leer: {ex.Message}", ex));
+            }
+            return null;
+        }
+
         /// <summary>NestoAPI#873: los datos de la versión del pedido, o null si no existe o no se han podido leer (ELMAH). Nunca lanza.</summary>
         internal DatosVersionPedido LeerDatosVersionSinFallar(string empresa, int numero)
         {
@@ -2789,12 +2850,16 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#873: la versión tal como ha quedado (lo último, tras todo lo que escribe el PUT), para que el cliente siga
             // guardando sin recargar, y el aviso «pedidoCambiado» a quien tenga el pedido abierto (en segundo plano; nunca lanza).
-            string versionNueva = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
+            // Ampliación: con ?devolverPedido=true, además el pedido tal como ha quedado (Nº de orden de las líneas nuevas) y su versión.
+            PedidoVentaDTO pedidoGuardado = QuiereElPedidoGuardado()
+                ? await LeerPedidoConVersionCoherente(pedido.empresa, pedido.numero).ConfigureAwait(true)
+                : null;
+            string versionNueva = pedidoGuardado?.Version ?? VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
             AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, versionNueva);
 
             if (avisos.Count > 0 || tieneFechasFuturas.HasValue || versionNueva != null)
             {
-                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos, tieneFechasFuturas = tieneFechasFuturas, Version = versionNueva });
+                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos, tieneFechasFuturas = tieneFechasFuturas, Version = versionNueva, Pedido = pedidoGuardado });
             }
             return StatusCode(HttpStatusCode.NoContent);
         }
@@ -3600,6 +3665,16 @@ namespace NestoAPI.Controllers
             // NestoAPI#873: la versión del pedido recién creado (para que el cliente pueda modificarlo sin recargar) y el aviso
             // «pedidoCambiado» (en segundo plano; nunca lanza).
             pedido.Version = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
+            // Ampliación: con ?devolverPedido=true, además el pedido tal como ha quedado (con los Nº de orden de sus líneas) y su
+            // versión, en «PedidoGuardado» (el cuerpo de siempre no cambia: los clientes viejos leen numero y tieneFechasFuturas).
+            if (QuiereElPedidoGuardado())
+            {
+                pedido.PedidoGuardado = await LeerPedidoConVersionCoherente(pedido.empresa, pedido.numero).ConfigureAwait(true);
+                if (pedido.PedidoGuardado != null)
+                {
+                    pedido.Version = pedido.PedidoGuardado.Version;
+                }
+            }
             AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, pedido.Version);
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos

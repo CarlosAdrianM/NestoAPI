@@ -780,6 +780,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   cuándo = lo más reciente de cabecera/líneas/prepagos/efectos). Sin Version (NestoApp, TNV, Nesto viejo, CambiarCliente, UnirPedidos), como antes.
 - Prepagos (`AplicarPrepagosAlModificar`): los que no trae el PUT SOLO se quitan con la Version comprobada (`PuedeQuitarPrepagosQueNoVienen`);
   sin ella se conservan, aviso `PrepagoConservado` (respuesta y correo) y ELMAH. Añadir/actualizar por concepto, como siempre.
+- `?devolverPedido=true` (opcional, por tamaño) en PUT y POST: la respuesta trae además el pedido tal como ha quedado (el del GET, con
+  los Nº de orden de las líneas nuevas) y su Version, leídos de forma coherente (`LeerPedidoConVersionCoherente`: versión, pedido,
+  versión; si cambia mientras, repite 3 veces; si no, null). PUT → `RespuestaModificacionPedidoDTO.Pedido`; POST → `PedidoGuardado` del
+  cuerpo. Nulos no viajan. Nesto lo adopta como foto para «Recargar conservando mis cambios» (Nesto#642); NestoApp#285.
 - SignalR: `pedidoCambiado` {Empresa, Pedido, Usuario, Fecha, Version} al grupo `Pedido:{empresa}:{numero}` del **AlmacenHub** (donde Nesto ya
   entra/sale con Entrar/Salir), a todos (Nesto ignora el suyo por la Version), solo si alguien lo tiene abierto, en segundo plano
   (`AvisoPedidoCambiado`, nunca lanza): PUT, POST, cobro de la app (`ServicioPagos`) y pago a plazos (`RepositorioPagoAPlazos`).

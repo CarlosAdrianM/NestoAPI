@@ -123,6 +123,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// guardar nada. Null (NestoApp, TiendasNuevaVision, Nesto viejo) = como antes, pero sin poder quitar prepagos que no trae.
         /// </summary>
         public string Version { get; set; }
+        /// <summary>
+        /// NestoAPI#873 (ampliación): solo en la respuesta del POST con «?devolverPedido=true»: el pedido tal como ha quedado en la
+        /// BD (el del GET, con los Nº de orden de sus líneas) y su Version, leídos de forma coherente. Null en lo demás (no viaja).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public PedidoVentaDTO PedidoGuardado { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }

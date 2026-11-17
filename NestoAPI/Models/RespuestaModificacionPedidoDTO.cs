@@ -9,6 +9,13 @@ namespace NestoAPI.Models
         public bool? tieneFechasFuturas { get; set; }
         /// <summary>NestoAPI#873: la versión del pedido tal como ha quedado, para seguir guardando sin recargar. Null si no se ha podido calcular.</summary>
         public string Version { get; set; }
+        /// <summary>
+        /// NestoAPI#873 (ampliación): con «?devolverPedido=true», el pedido tal como ha quedado (el del GET, con los Nº de orden de
+        /// las líneas nuevas) y, en su Version, la misma que <see cref="Version"/>, leídos de forma coherente. Null si no se pide o no
+        /// se ha podido leer (el cliente hace lo de antes). No viaja si es null.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public NestoAPI.Models.PedidosVenta.PedidoVentaDTO Pedido { get; set; }
     }
 
     public class AvisoPedidoDTO
