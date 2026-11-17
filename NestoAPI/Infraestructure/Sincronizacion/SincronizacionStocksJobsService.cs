@@ -1,6 +1,8 @@
 ﻿using NestoAPI.Models;
 using System;
+using System.Data.Entity;
 using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Sincronizacion
@@ -93,6 +95,42 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                                             AND ns.ModificadoId = RTRIM(p.Número)
                                             AND ns.Sincronizado IS NULL)";
 
+        /// <summary>
+        /// Carlos 17/11/26 (Novedades 1308, Enrique: la 41329 salía sin stock en la web con una unidad en Algete): desde el
+        /// deploy del 16/10 (incidencia 645, CantidadDisponibleTotal) la tienda calcula el stock con un dato que solo llevan
+        /// los mensajes nuevos, y los productos sin movimiento desde entonces no se han vuelto a mandar. Pasada ÚNICA: con
+        /// ParametrosUsuario «(defecto)» <see cref="PARAMETRO_REENVIAR_CON_STOCK"/> = «1», la pasada de la noche encola además
+        /// TODOS los productos activos con stock en ALG/REI/ALC (empresas 1 + espejo) y deja el parámetro a «0». Así corre
+        /// en Hangfire, de noche, sin nadie delante. Para repetirla, volver a poner «1».
+        /// </summary>
+        internal const string PARAMETRO_REENVIAR_CON_STOCK = "SincronizarStocks.ReenviarConStock";
+        internal const string USUARIO_REENVIO_CON_STOCK = "Reenvío con stock (1308)";
+
+        internal const string SQL_REENVIAR_PRODUCTOS_CON_STOCK = @"
+                        DECLARE @encolados int = 0;
+                        IF EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = @empresa AND Usuario = '(defecto)'
+                                   AND Clave = @parametro AND RTRIM(Valor) = '1')
+                        BEGIN
+                            INSERT INTO Nesto_sync (Tabla, ModificadoId, Usuario, FechaModificacion)
+                            SELECT 'Productos', RTRIM(p.Número), @usuario, GETDATE()
+                            FROM Productos p
+                            INNER JOIN (SELECT e.Número FROM ExtractoProducto e
+                                        WHERE e.Empresa IN (@empresa, @empresaEspejo)
+                                          AND e.Almacén IN (@almacen1, @almacen2, @almacen3)
+                                        GROUP BY e.Número
+                                        HAVING SUM(e.Cantidad) <> 0) s ON s.Número = p.Número
+                            WHERE p.Empresa = @empresa
+                              AND p.Estado >= 0
+                              AND NOT EXISTS (SELECT 1 FROM Nesto_sync ns
+                                              WHERE ns.Tabla = 'Productos'
+                                                AND ns.ModificadoId = RTRIM(p.Número)
+                                                AND ns.Sincronizado IS NULL);
+                            SET @encolados = @@ROWCOUNT;
+                            UPDATE ParametrosUsuario SET Valor = '0', Usuario2 = @usuario, [Fecha Modificación] = GETDATE()
+                            WHERE Empresa = @empresa AND Usuario = '(defecto)' AND Clave = @parametro;
+                        END
+                        SELECT @encolados;";
+
         /// <summary>Punto de entrada para Hangfire (job recurrente).</summary>
         public static async Task EncolarProductosConMovimientos(int horasVentana)
         {
@@ -114,6 +152,22 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     string resumen = $"Sync de stocks: {encolados} productos con movimientos encolados en Nesto_sync " +
                         $"(ventana de {horasVentana} horas); el job de sincronización los publicará en los próximos minutos";
                     Console.WriteLine($"✅ [Hangfire] {resumen}");
+
+                    // Carlos 17/11/26 (1308): la pasada única de los productos con stock, si está pedida
+                    db.Database.CommandTimeout = 600;
+                    int conStock = (await db.Database.SqlQuery<int>(SQL_REENVIAR_PRODUCTOS_CON_STOCK,
+                        new SqlParameter("@usuario", USUARIO_REENVIO_CON_STOCK),
+                        new SqlParameter("@parametro", PARAMETRO_REENVIAR_CON_STOCK),
+                        new SqlParameter("@empresa", Constantes.Empresas.EMPRESA_POR_DEFECTO),
+                        new SqlParameter("@empresaEspejo", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO),
+                        new SqlParameter("@almacen1", Constantes.Almacenes.ALGETE),
+                        new SqlParameter("@almacen2", Constantes.Almacenes.REINA),
+                        new SqlParameter("@almacen3", Constantes.Almacenes.ALCOBENDAS))
+                        .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                    if (conStock > 0)
+                    {
+                        ElmahHelper.Log(new Exception($"[Sync stocks] (informativo) Reenvío único de productos con stock (1308): {conStock} encolados en Nesto_sync; parámetro {PARAMETRO_REENVIAR_CON_STOCK} vuelto a 0."));
+                    }
                 }
             }
             catch (Exception ex)

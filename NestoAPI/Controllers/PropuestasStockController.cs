@@ -1,4 +1,4 @@
-using Hangfire;
+﻿using Hangfire;
 using NestoAPI.Infrastructure;
 using NestoAPI.Infraestructure.Stocks.Tendencias;
 using System;
@@ -55,10 +55,13 @@ namespace NestoAPI.Controllers
 
         private bool EsDireccion() => User != null && User.IsInRoleSinDominio(GruposSeguridad.DIRECCION);
 
-        internal const string MENSAJE_SIN_PERMISO_CONSULTAR = "Solo Compras y Dirección pueden ver las propuestas de stock.";
+        internal const string MENSAJE_SIN_PERMISO_CONSULTAR = "Solo Dirección puede ver las propuestas de stock.";
 
-        /// <summary>NestoAPI#631: Compras y Dirección consultan y deciden (Carlos, 15/10/26: el resto no ve ni la lista ni el resumen).</summary>
-        private bool PuedeDecidir() => User != null && (User.IsInRoleSinDominio(GruposSeguridad.COMPRAS) || User.IsInRoleSinDominio(GruposSeguridad.DIRECCION));
+        /// <summary>
+        /// NestoAPI#631: quién consulta y decide. Carlos 17/11/26: SOLO Dirección (antes también Compras, desde el 15/10/26).
+        /// «Cambiar estado de productos» (#738) tiene su propio permiso (ReglasEstadoProducto) y sigue para Compras y Dirección.
+        /// </summary>
+        private bool PuedeDecidir() => User != null && User.IsInRoleSinDominio(GruposSeguridad.DIRECCION);
 
         /// <summary>
         /// Lanza a mano el job de propuestas (el mismo que corre el día 1 a las 04:30) para el mes AAAA-MM (por defecto, el último

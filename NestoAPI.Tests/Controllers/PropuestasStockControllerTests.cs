@@ -178,9 +178,9 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void Get_Compras_Consulta()
+        public void Get_Direccion_Consulta()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), null, 50, A<FiltroPropuestasStock>._))
@@ -189,6 +189,18 @@ namespace NestoAPI.Tests.Controllers
             var ok = (OkNegotiatedContentResult<List<PropuestaStockConDecision>>)controller.Get("2026-09");
 
             Assert.AreEqual(EstadosPropuesta.PENDIENTE, ok.Content[0].Estado);
+        }
+
+        [TestMethod]
+        public void Get_Compras_Forbidden()
+        {
+            // Carlos 17/11/26: las propuestas de stock, solo Dirección (Enrique, de Compras, aplicó una el 17/11).
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, controller.Get("2026-09").ExecuteAsync(default).Result.StatusCode);
+            A.CallTo(() => decisiones.LeerPropuestas(A<DateTime?>._, A<string>._, A<int>._, A<FiltroPropuestasStock>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -238,7 +250,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void MotivosSilencio_SinParametro_LosTresDeLaIssue()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => decisiones.LeerParametroMotivosSilencio()).Returns(null);
 
             var ok = (OkNegotiatedContentResult<List<string>>)controller.GetMotivosSilencio();
@@ -260,7 +272,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void Resumen_DevuelveLosEstadosDelMes()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1), A<FiltroPropuestasStock>._))
                 .Returns(new List<ResumenEstadoPropuestas> { new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 42 } });
@@ -274,7 +286,7 @@ namespace NestoAPI.Tests.Controllers
         public void Get_ConFiltros_PasaFamiliaGrupoAccionYTextoLimpios()
         {
             // Sugerencia 644 (Manuel): sin filtros la lista no es útil.
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
 
@@ -300,7 +312,7 @@ namespace NestoAPI.Tests.Controllers
         public void Resumen_ConFiltros_CuentaSoloLoFiltrado()
         {
             // Sugerencia 644: el contador de la pantalla refleja lo filtrado.
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1), A<FiltroPropuestasStock>.That.Matches(f => f.Familia == "Lisap" && f.Accion == AccionesPropuesta.LIQUIDAR)))
                 .Returns(new List<ResumenEstadoPropuestas> { new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 7 } });
@@ -322,7 +334,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void Filtros_DevuelveLasOpcionesDelMes()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
             _ = A.CallTo(() => decisiones.LeerOpcionesFiltro(new DateTime(2026, 9, 1))).Returns(new OpcionesFiltroPropuestas
             {
@@ -373,7 +385,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void Decision_Compras_Guarda()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.LeerPropuesta(7)).Returns(new PropuestaStockConDecision
             {
@@ -416,7 +428,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void Decision_PotenciarSinElScriptDe655_404ConElNombreDelScript()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.ExistePotenciacion()).Returns(false);
 
@@ -431,7 +443,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void Decision_Potenciar_DevuelveEnPotenciacion()
         {
-            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Dirección" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.ExistePotenciacion()).Returns(true);
             _ = A.CallTo(() => decisiones.LeerPropuesta(7)).Returns(new PropuestaStockConDecision
