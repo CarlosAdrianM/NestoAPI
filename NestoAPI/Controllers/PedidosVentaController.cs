@@ -3296,8 +3296,10 @@ namespace NestoAPI.Controllers
                 }
                 if (pedido.ParametrosIva.Any())
                 {
-                    linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeIvaProducto;
-                    linea.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeRecargoEquivalencia;
+                    // Novedades 1314: una línea sin tipo de IVA (las de texto) se queda con 0 %, no rompe el alta.
+                    var parametroIvaLinea = PorcentajesIvaLinea.Buscar(pedido.ParametrosIva, linea.iva);
+                    linea.PorcentajeIva = parametroIvaLinea?.PorcentajeIvaProducto ?? 0;
+                    linea.PorcentajeRecargoEquivalencia = parametroIvaLinea?.PorcentajeRecargoEquivalencia ?? 0;
                 }
                 //linea.Total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);
@@ -3332,8 +3334,9 @@ namespace NestoAPI.Controllers
                     };
                     if (pedido.ParametrosIva.Any())
                     {
-                        lineaPortes.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == lineaPortes.iva?.Trim()).PorcentajeIvaProducto;
-                        lineaPortes.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == lineaPortes.iva?.Trim()).PorcentajeRecargoEquivalencia;
+                        var parametroIvaPortes = PorcentajesIvaLinea.Buscar(pedido.ParametrosIva, lineaPortes.iva);
+                        lineaPortes.PorcentajeIva = parametroIvaPortes?.PorcentajeIvaProducto ?? 0;
+                        lineaPortes.PorcentajeRecargoEquivalencia = parametroIvaPortes?.PorcentajeRecargoEquivalencia ?? 0;
                     }
                     linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, vendedorContable);
                     //lineaPortes.BaseImponible = linPedido.Base_Imponible;
