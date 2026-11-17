@@ -3121,6 +3121,162 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
         }
 
+        // Carlos 17/11/26 (cliente 37480/2): elegir otra cuenta en la ficha y guardar no cambiaba Clientes.CCC.
+        // Ahora hay una orden explícita: establecerComoCuentaDelCliente.
+
+        private static (NVEntities db, Cliente cliente, List<Modificacion> modificaciones) CrearDbParaCuentaDelCliente(
+            string cccCliente, params CCC[] cuentas)
+        {
+            NVEntities dbFake = CrearDbParaCCCs(cuentas.ToList());
+            Cliente cliente = new Cliente { Empresa = "1", Nº_Cliente = "1000", Contacto = "0", CCC = cccCliente, Usuario = "otro" };
+            A.CallTo(() => dbFake.Clientes).Returns(CrearFakeDbSet(new List<Cliente> { cliente }));
+            List<Modificacion> modificaciones = new List<Modificacion>();
+            DbSet<Modificacion> modificacionesFake = CrearFakeDbSet(new List<Modificacion>());
+            A.CallTo(() => modificacionesFake.Add(A<Modificacion>.Ignored))
+                .ReturnsLazily((Modificacion m) => { modificaciones.Add(m); return m; });
+            A.CallTo(() => dbFake.Modificaciones).Returns(modificacionesFake);
+            return (dbFake, cliente, modificaciones);
+        }
+
+        private static CCC CuentaEnBD(string numero, short estado) => new CCC
+        {
+            Empresa = "1",
+            Cliente = "1000",
+            Contacto = "0",
+            Número = numero,
+            Estado = estado,
+            Secuencia = "FRST"
+        };
+
+        private static GuardarCCCsRequest PeticionEstablecer(string cccActivo, params CCCDTO[] cccs)
+        {
+            GuardarCCCsRequest peticion = CrearRequestCCC(cccActivo, cccs);
+            peticion.establecerComoCuentaDelCliente = true;
+            return peticion;
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerSinCuentasModificadas_PoneLaCuentaEnLaFichaYDejaRastro()
+        {
+            var (dbFake, cliente, modificaciones) = CrearDbParaCuentaDelCliente(null,
+                CuentaEnBD("1  ", Constantes.Clientes.Estados.NULO), CuentaEnBD("2", 0));
+            GestorClientes gestor = CrearGestorClientes();
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, PeticionEstablecer("2"), @"NUEVAVISION\Carlos").Result;
+
+            Assert.AreEqual("2", cliente.CCC);
+            Assert.AreEqual("2", respuesta.cccCliente);
+            Assert.AreEqual(@"NUEVAVISION\Carlos", cliente.Usuario);
+            Assert.AreEqual(1, modificaciones.Count);
+            Assert.AreEqual(GestorClientes.TABLA_MODIFICACIONES_CUENTA_CLIENTE, modificaciones[0].Tabla);
+            Assert.AreEqual("1000/0: (sin cuenta)", modificaciones[0].Anterior);
+            Assert.AreEqual("1000/0: 2", modificaciones[0].Nuevo);
+            A.CallTo(() => dbFake.CCCs.Add(A<CCC>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerConLaCuentaEnLaMismaPeticion_GuardaLaCuentaYLaPoneEnLaFicha()
+        {
+            var (dbFake, cliente, _) = CrearDbParaCuentaDelCliente("1", CuentaEnBD("1", 0));
+            CCC anadida = null;
+            _ = A.CallTo(() => dbFake.CCCs.Add(A<CCC>.Ignored)).Invokes((CCC c) => anadida = c);
+            GestorClientes gestor = CrearGestorClientes();
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, PeticionEstablecer("3", CuentaCompleta("3")), "usuario").Result;
+
+            Assert.IsNotNull(anadida);
+            Assert.AreEqual("3", cliente.CCC);
+            Assert.AreEqual("3", respuesta.cccCliente);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerUnaCuentaQueNoExiste_LanzaArgumentExceptionYNoTocaLaFicha()
+        {
+            var (dbFake, cliente, modificaciones) = CrearDbParaCuentaDelCliente("1", CuentaEnBD("1", 0));
+            GestorClientes gestor = CrearGestorClientes();
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.GuardarCCCs(dbFake, PeticionEstablecer("7"), "usuario").Result);
+
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+            Assert.AreEqual("La cuenta 7 no existe en el cliente 1000/0: no se puede usar para los recibos. Guárdela antes o elija otra.",
+                ex.InnerException.Message);
+            Assert.AreEqual("1", cliente.CCC);
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerUnaCuentaAnulada_LanzaArgumentExceptionYNoTocaLaFicha()
+        {
+            var (dbFake, cliente, modificaciones) = CrearDbParaCuentaDelCliente(null,
+                CuentaEnBD("1", Constantes.Clientes.Estados.NULO), CuentaEnBD("2", 0));
+            GestorClientes gestor = CrearGestorClientes();
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.GuardarCCCs(dbFake, PeticionEstablecer("1"), "usuario").Result);
+
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+            Assert.AreEqual("La cuenta 1 está anulada: no se puede usar para los recibos del cliente 1000/0. Cambie antes su estado o elija otra.",
+                ex.InnerException.Message);
+            Assert.IsNull(cliente.CCC);
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerUnaCuentaAnuladaQueLaPeticionRecupera_LaPoneEnLaFicha()
+        {
+            var (dbFake, cliente, _) = CrearDbParaCuentaDelCliente(null, CuentaEnBD("1", Constantes.Clientes.Estados.NULO));
+            GestorClientes gestor = CrearGestorClientes();
+            CCCDTO recuperada = CuentaCompleta("1");
+            recuperada.estado = 0;
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, PeticionEstablecer("1", recuperada), "usuario").Result;
+
+            Assert.AreEqual("1", cliente.CCC);
+            Assert.AreEqual("1", respuesta.cccCliente);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerSinCuentaElegida_LanzaArgumentException()
+        {
+            var (dbFake, cliente, _) = CrearDbParaCuentaDelCliente("1", CuentaEnBD("1", 0));
+            GestorClientes gestor = CrearGestorClientes();
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.GuardarCCCs(dbFake, PeticionEstablecer(null), "usuario").Result);
+
+            Assert.AreEqual("Indique qué cuenta quiere usar para los recibos del cliente.", ex.InnerException.Message);
+            Assert.AreEqual("1", cliente.CCC);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_EstablecerLaQueYaTiene_NoDejaRastroNiTocaElUsuario()
+        {
+            var (dbFake, cliente, modificaciones) = CrearDbParaCuentaDelCliente("2  ", CuentaEnBD("2  ", 0));
+            GestorClientes gestor = CrearGestorClientes();
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, PeticionEstablecer("2  "), "usuario").Result;
+
+            Assert.AreEqual("2", respuesta.cccCliente);
+            Assert.AreEqual("otro", cliente.Usuario);
+            Assert.AreEqual(0, modificaciones.Count);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_SinEstablecer_NoTocaLaFichaComoSiempre()
+        {
+            var (dbFake, cliente, modificaciones) = CrearDbParaCuentaDelCliente(null, CuentaEnBD("2", 0));
+            GestorClientes gestor = CrearGestorClientes();
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, CrearRequestCCC("2", CuentaCompleta("2")), "usuario").Result;
+
+            Assert.IsNull(cliente.CCC);
+            Assert.IsNull(respuesta.cccCliente);
+            Assert.AreEqual("otro", cliente.Usuario);
+            Assert.AreEqual(0, modificaciones.Count);
+            A.CallTo(() => dbFake.Clientes).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public void LeerEstadosCCC_SinEmpresa_LanzaArgumentException()
         {

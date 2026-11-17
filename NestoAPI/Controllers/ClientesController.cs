@@ -929,6 +929,8 @@ namespace NestoAPI.Controllers
         // 1C.8 slice 5: guardado del CRUD de CCCs de la ficha de clientes (upsert). Devuelve
         // los efectos pendientes y pedidos abiertos que apuntan a un CCC distinto del activo,
         // para que el cliente muestre los avisos que antes calculaba con EF.
+        // Carlos 17/11/26: con establecerComoCuentaDelCliente = true, cccActivo pasa además a ser la cuenta de la ficha
+        // (Clientes.CCC) en el mismo SaveChanges (cccs puede ir vacío); cuenta inexistente o anulada → 400 con el motivo.
         [ResponseType(typeof(GuardarCCCsRespuesta))]
         public async Task<IHttpActionResult> PutCCCs(GuardarCCCsRequest peticion)
         {

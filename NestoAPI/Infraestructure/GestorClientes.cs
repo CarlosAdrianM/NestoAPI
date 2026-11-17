@@ -976,17 +976,21 @@ namespace NestoAPI.Infraestructure
             {
                 throw new ArgumentException("Empresa, cliente y contacto son obligatorios para guardar los CCCs");
             }
-            if (peticion.cccs == null || !peticion.cccs.Any())
+            // Carlos 17/11/26: con establecerComoCuentaDelCliente se puede llamar sin cuentas modificadas
+            // (solo cambiar la cuenta de la ficha); sin él, como siempre.
+            if ((peticion.cccs == null || !peticion.cccs.Any()) && !peticion.establecerComoCuentaDelCliente)
             {
                 throw new ArgumentException("No se ha recibido ningún CCC para guardar");
             }
-            string erroresCCCs = ValidarCCCs(peticion.cccs);
+            List<CCCDTO> cccsRecibidos = peticion.cccs ?? new List<CCCDTO>();
+            string erroresCCCs = ValidarCCCs(cccsRecibidos);
             if (erroresCCCs != null)
             {
                 throw new ArgumentException(erroresCCCs);
             }
 
-            foreach (CCCDTO dto in peticion.cccs)
+            Dictionary<string, CCC> guardados = new Dictionary<string, CCC>();
+            foreach (CCCDTO dto in cccsRecibidos)
             {
                 CCC cccDB = await db.CCCs.SingleOrDefaultAsync(c =>
                     c.Empresa == peticion.empresa && c.Cliente == peticion.cliente &&
@@ -1017,9 +1021,14 @@ namespace NestoAPI.Infraestructure
                 cccDB.Secuencia = dto.secuencia;
                 cccDB.Usuario = usuario;
                 cccDB.Fecha_Modificación = DateTime.Now;
+                guardados[dto.numero?.Trim() ?? string.Empty] = cccDB;
             }
 
             GuardarCCCsRespuesta respuesta = new GuardarCCCsRespuesta();
+            if (peticion.establecerComoCuentaDelCliente)
+            {
+                respuesta.cccCliente = await EstablecerCuentaDelCliente(db, peticion, guardados, usuario).ConfigureAwait(false);
+            }
             if (!string.IsNullOrWhiteSpace(peticion.cccActivo))
             {
                 respuesta.extractoOtroCCC = await db.ExtractosCliente
@@ -1054,6 +1063,69 @@ namespace NestoAPI.Infraestructure
             }
 
             return respuesta;
+        }
+
+        /// <summary>Tabla de Modificaciones del rastro del cambio de cuenta de la ficha desde PUT api/Clientes/CCCs.</summary>
+        internal const string TABLA_MODIFICACIONES_CUENTA_CLIENTE = "ClienteCuentaRecibos";
+
+        // Carlos 17/11/26 (cliente 37480/2): elegir otra cuenta en la ficha y guardar NO cambiaba Clientes.CCC (nadie lo
+        // escribía desde la ficha, tampoco la versión EF). Ahora es una orden explícita: la cuenta tiene que existir en ese
+        // contacto (ya guardada o en esta misma petición) y no estar anulada. Mismo patrón que ModificarCliente (escalar CCC
+        // de la entidad + Usuario; Fecha Modificación la pone la BD, es Computed en el EDMX); el SaveChanges es del controller,
+        // así que el upsert de las cuentas y el cambio de la ficha van juntos. No se publica a Nesto_sync: el mensaje del
+        // cliente no lleva la cuenta. Devuelve la cuenta que queda en la ficha (sin espacios).
+        private static async Task<string> EstablecerCuentaDelCliente(NVEntities db, GuardarCCCsRequest peticion,
+            Dictionary<string, CCC> guardados, string usuario)
+        {
+            string numero = peticion.cccActivo?.Trim();
+            if (string.IsNullOrEmpty(numero))
+            {
+                throw new ArgumentException("Indique qué cuenta quiere usar para los recibos del cliente.");
+            }
+
+            if (!guardados.TryGetValue(numero, out CCC cuenta))
+            {
+                cuenta = await db.CCCs.SingleOrDefaultAsync(c =>
+                    c.Empresa == peticion.empresa && c.Cliente == peticion.cliente &&
+                    c.Contacto == peticion.contacto && c.Número == peticion.cccActivo).ConfigureAwait(false);
+            }
+            string quien = $"{peticion.cliente.Trim()}/{peticion.contacto.Trim()}";
+            if (cuenta == null)
+            {
+                throw new ArgumentException($"La cuenta {numero} no existe en el cliente {quien}: no se puede usar para los recibos. Guárdela antes o elija otra.");
+            }
+            if (cuenta.Estado == Constantes.Clientes.Estados.NULO)
+            {
+                throw new ArgumentException($"La cuenta {numero} está anulada: no se puede usar para los recibos del cliente {quien}. Cambie antes su estado o elija otra.");
+            }
+
+            Cliente clienteDB = await db.Clientes.SingleOrDefaultAsync(c =>
+                c.Empresa == peticion.empresa && c.Nº_Cliente == peticion.cliente &&
+                c.Contacto == peticion.contacto).ConfigureAwait(false);
+            if (clienteDB == null)
+            {
+                throw new ArgumentException($"No existe el cliente {quien} en la empresa {peticion.empresa.Trim()}.");
+            }
+
+            string anterior = clienteDB.CCC?.Trim();
+            string nueva = cuenta.Número?.Trim();
+            if (anterior == nueva)
+            {
+                return nueva;
+            }
+
+            clienteDB.CCC = cuenta.Número;
+            clienteDB.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            _ = db.Modificaciones.Add(new Modificacion
+            {
+                Tabla = TABLA_MODIFICACIONES_CUENTA_CLIENTE,
+                Anterior = $"{quien}: {(string.IsNullOrEmpty(anterior) ? "(sin cuenta)" : anterior)}",
+                Nuevo = $"{quien}: {nueva}",
+                // Computed en el EDMX (lo pone la BD); el cliente y la cuenta van en Anterior/Nuevo.
+                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario),
+                Fecha = DateTime.Now
+            });
+            return nueva;
         }
 
         // Incidente 13/10/26 (Laura Magán): una cuenta nueva sin entidad, oficina, DC o número de cuenta

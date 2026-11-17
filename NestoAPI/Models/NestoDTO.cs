@@ -144,6 +144,10 @@ namespace NestoAPI.Models
         // calculan respecto a él (efectos/pedidos que apuntan a OTRO CCC)
         public string cccActivo { get; set; }
         public List<CCCDTO> cccs { get; set; }
+        // Carlos 17/11/26 (cliente 37480/2): con true, además del upsert, cccActivo pasa a ser la cuenta de la
+        // ficha (Clientes.CCC, la de los recibos). Sin él (o false), como siempre: la ficha no se toca.
+        // Con true, cccs puede ir vacío (solo cambiar la cuenta del cliente).
+        public bool establecerComoCuentaDelCliente { get; set; }
     }
 
     public class ExtractoCCCDTO
@@ -165,6 +169,9 @@ namespace NestoAPI.Models
     {
         public List<ExtractoCCCDTO> extractoOtroCCC { get; set; } = new List<ExtractoCCCDTO>();
         public List<PedidoCCCDTO> pedidosOtroCCC { get; set; } = new List<PedidoCCCDTO>();
+        // Carlos 17/11/26: la cuenta que ha quedado en la ficha (Clientes.CCC, sin espacios) cuando se pidió
+        // establecerComoCuentaDelCliente; null si no se pidió.
+        public string cccCliente { get; set; }
     }
     public class DireccionesEntregaClienteDTO
     {
