@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Stocks.Tendencias;
 using System;
 using System.Collections.Generic;
@@ -151,11 +151,12 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         [TestMethod]
         public void Exceso_NuncaPorDebajoDeLaCoberturaAlcanzable()
         {
-            // Proveedor de 120 días: la alcanzable (127) manda sobre los 90 configurados
-            ResultadoTendencia r = Calcular(Producto(ventas: Constante(30), stock: 200, diasEnServir: 120));
+            // Proveedor de 120 días: el objetivo es el del máximo de la fórmula, 7 + 2 × 120 = 247 (Carlos 17/11/26), no los 90
+            ResultadoTendencia r = Calcular(Producto(ventas: Constante(30), stock: 300, diasEnServir: 120));
 
-            Assert.AreEqual(127, r.CoberturaObjetivoDias);
-            Assert.AreEqual(200 - 127, r.ExcesoUnidades);
+            Assert.AreEqual(127, r.CoberturaAlcanzableDias);
+            Assert.AreEqual(247, r.CoberturaObjetivoDias);
+            Assert.AreEqual(300 - 247, r.ExcesoUnidades);
         }
 
         [TestMethod]

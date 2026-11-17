@@ -171,7 +171,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             // NestoAPI#630 (Carlos, 16/10/26): el múltiplo de compra (lote) no sube la cobertura alcanzable ni el objetivo: se
             // respeta al hacer el pedido de compra, no en los máximos ni en el exceso.
             r.CoberturaAlcanzableDias = r.DiasEnServir + r.DiasSeguridad;
-            r.CoberturaObjetivoDias = Math.Max(p.CoberturaObjetivoDias, r.CoberturaAlcanzableDias);
+            // Carlos 17/11/26 (41213, proveedor de 150 días al que se pide 1-2 veces al año): el objetivo nunca recorta el máximo de la
+            // fórmula (seguridad + 2 × días en servir). Antes era max(90, días en servir + seguridad) = los días del MÍNIMO, y con
+            // proveedores de más de ~83 días el máximo quedaba igual que el mínimo (535/535 en vez de 1046/535).
+            r.CoberturaObjetivoDias = Math.Max(p.CoberturaObjetivoDias, r.DiasSeguridad + 2 * r.DiasEnServir);
             r.CoberturaMeses = r.VentaMedia6Meses > 0 ? Math.Round(r.Stock / r.VentaMedia6Meses, 1) : (decimal?)null;
             int stockObjetivo = (int)Math.Ceiling(r.CoberturaObjetivoDias / 30m * r.VentaMensualReferencia);
             r.ExcesoUnidades = Math.Max(0, r.Stock - stockObjetivo);
