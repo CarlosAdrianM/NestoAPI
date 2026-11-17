@@ -807,6 +807,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   quitar nada; si tampoco, aviso. Núcleo: `GestorPedidoParaAgencia` (GET ParaAgencia de Nesto, propuesta del servidor, DesdePedido y packing;
   el aviso sale en `PropuestaEnvioDTO.AvisoDireccion2` y en los avisos de DesdePedido) + etiqueta pendiente y ActualizarDireccionEtiqueta.
 
+### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
+- `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática
+  (`ExtractosClienteController.PuedeModificarEfecto`; 403 de usted). Escribe solo lo que cambia (textos sin relleno ni mayúsculas, null = vacío;
+  vencimiento sin FechaVto = Fecha); sin cambios, 400 (antes 500). `IniciarPago` (`POST api/Pagos` y los cobros internos) rechaza con 400 un efecto que
+  no existe o es de otro cliente (`ServicioPagos.MotivoEfectosDeOtroCliente`; no mira empresa ni contacto del cobro: 1/3 y varios contactos valen) y
+  pone a cada efecto el contacto de su apunte.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

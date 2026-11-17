@@ -247,6 +247,7 @@ namespace NestoAPI.Tests.Controllers
             impagado.Estado = "";
             impagado.FormaPago = "RCB";
             ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { impagado }.AsQueryable());
+            ComoUsuario(Constantes.GruposSeguridad.ADMINISTRACION);
 
             var resultado = await controller.PutExtractoCliente(new ExtractoClienteDTO
             {
@@ -271,6 +272,7 @@ namespace NestoAPI.Tests.Controllers
             factura.Estado = "";
             factura.FormaPago = "RCB";
             ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { factura }.AsQueryable());
+            ComoUsuario(Constantes.GruposSeguridad.ADMINISTRACION);
 
             var resultado = await controller.PutExtractoCliente(new ExtractoClienteDTO
             {
@@ -283,6 +285,146 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.StatusCodeResult));
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        // ----- PutExtractoCliente: permisos y solo lo que cambia (Nesto#644, hallazgo 8) -----
+
+        private ExtractoCliente EfectoGuardado(int numeroOrden)
+        {
+            var efecto = Crear("1", "9471", Constantes.ExtractosCliente.TiposApunte.FACTURA, new DateTime(2026, 10, 1));
+            efecto.Nº_Orden = numeroOrden;
+            efecto.FechaVto = new DateTime(2026, 11, 30);
+            efecto.CCC = "1   ";
+            efecto.Estado = null;
+            efecto.FormaPago = "RCB  ";
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { efecto }.AsQueryable());
+            return efecto;
+        }
+
+        private static ExtractoClienteDTO ComoLoEnsenaNesto(int numeroOrden, string estado) => new ExtractoClienteDTO
+        {
+            id = numeroOrden,
+            vencimiento = new DateTime(2026, 11, 30),
+            ccc = "1",
+            estado = estado,
+            formaPago = "RCB",
+            usuario = @"NUEVAVISION\Alguien"
+        };
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_SinUsuario_Devuelve403SinGuardar()
+        {
+            var efecto = EfectoGuardado(80);
+
+            var resultado = await controller.PutExtractoCliente(ComoLoEnsenaNesto(80, "RETENIDO"));
+
+            var contenido = resultado as System.Web.Http.Results.NegotiatedContentResult<string>;
+            Assert.IsNotNull(contenido, "Sin usuario: 403 con motivo");
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, contenido.StatusCode);
+            StringAssert.Contains(contenido.Content, "Administración");
+            Assert.IsNull(efecto.Estado, "No se toca el efecto");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_UsuarioSinGrupoDeAdministracion_Devuelve403SinGuardar()
+        {
+            var efecto = EfectoGuardado(81);
+            ComoUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            var resultado = await controller.PutExtractoCliente(ComoLoEnsenaNesto(81, "RETENIDO"));
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, ((System.Web.Http.Results.NegotiatedContentResult<string>)resultado).StatusCode);
+            Assert.IsNull(efecto.Estado, "No se toca el efecto");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_AdministracionConDominio_Guarda()
+        {
+            var efecto = EfectoGuardado(82);
+            ComoUsuario(@"NUEVAVISION\" + Constantes.GruposSeguridad.ADMINISTRACION);
+
+            var resultado = await controller.PutExtractoCliente(ComoLoEnsenaNesto(82, "retenido"));
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.StatusCodeResult));
+            Assert.AreEqual("RETENIDO", efecto.Estado);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void PuedeModificarEfecto_AdministracionDireccionEInformatica()
+        {
+            foreach (string grupo in new[] { Constantes.GruposSeguridad.ADMINISTRACION, Constantes.GruposSeguridad.DIRECCION, Constantes.GruposSeguridad.INFORMATICA })
+            {
+                Assert.IsTrue(ExtractosClienteController.PuedeModificarEfecto(Principal(grupo)), grupo);
+            }
+            Assert.IsFalse(ExtractosClienteController.PuedeModificarEfecto(Principal(Constantes.GruposSeguridad.ALMACEN)));
+            Assert.IsFalse(ExtractosClienteController.PuedeModificarEfecto(null));
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_SoloCambiaElEstado_NoReescribeLoQueNoHaCambiado()
+        {
+            // Lo guardado lleva relleno (CCC «1   », forma de pago «RCB  »); Nesto lo enseña recortado. Antes se reescribía todo.
+            var efecto = EfectoGuardado(83);
+            ComoUsuario(Constantes.GruposSeguridad.ADMINISTRACION);
+
+            var resultado = await controller.PutExtractoCliente(ComoLoEnsenaNesto(83, "RETENIDO"));
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.StatusCodeResult));
+            Assert.AreEqual("RETENIDO", efecto.Estado);
+            Assert.AreEqual("1   ", efecto.CCC, "El CCC no se toca");
+            Assert.AreEqual("RCB  ", efecto.FormaPago, "La forma de pago no se toca");
+            Assert.AreEqual(new DateTime(2026, 11, 30), efecto.FechaVto);
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_SinNingunCambioReal_Devuelve400SinGuardar()
+        {
+            var efecto = EfectoGuardado(84);
+            ComoUsuario(Constantes.GruposSeguridad.ADMINISTRACION);
+
+            var resultado = await controller.PutExtractoCliente(ComoLoEnsenaNesto(84, ""));
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.BadRequestErrorMessageResult));
+            StringAssert.Contains(((System.Web.Http.Results.BadRequestErrorMessageResult)resultado).Message, "No hay ningún cambio");
+            Assert.IsNull(efecto.Estado, "Un estado vacío frente a null no es un cambio");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void CambiaVencimiento_SinFechaVtoYConLaFechaDelApunte_NoEsCambio()
+        {
+            var fecha = new DateTime(2026, 10, 1);
+            Assert.IsFalse(ExtractosClienteController.CambiaVencimiento(null, fecha, fecha));
+            Assert.IsFalse(ExtractosClienteController.CambiaVencimiento(fecha, fecha, fecha));
+            Assert.IsTrue(ExtractosClienteController.CambiaVencimiento(null, fecha, fecha.AddDays(30)));
+            Assert.IsTrue(ExtractosClienteController.CambiaVencimiento(fecha, fecha, fecha.AddDays(1)));
+        }
+
+        [TestMethod]
+        public void MismoTexto_SinRellenoNiMayusculasYNullIgualAVacio()
+        {
+            Assert.IsTrue(ExtractosClienteController.MismoTexto("RCB  ", "rcb"));
+            Assert.IsTrue(ExtractosClienteController.MismoTexto(null, ""));
+            Assert.IsTrue(ExtractosClienteController.MismoTexto("   ", null));
+            Assert.IsFalse(ExtractosClienteController.MismoTexto("RCB", "EFC"));
+        }
+
+        private static System.Security.Claims.ClaimsPrincipal Principal(string grupo)
+        {
+            var identidad = new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, @"NUEVAVISION\Alguien"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, grupo)
+            }, "Bearer");
+            return new System.Security.Claims.ClaimsPrincipal(identidad);
+        }
+
+        private void ComoUsuario(string grupo)
+        {
+            controller.RequestContext = new System.Web.Http.Controllers.HttpRequestContext { Principal = Principal(grupo) };
         }
 
         private static ExtractoCliente ConDeuda(ExtractoCliente extracto, int diasHastaVencimiento, decimal importePendiente)

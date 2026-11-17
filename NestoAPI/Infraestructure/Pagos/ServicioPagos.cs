@@ -107,6 +107,14 @@ namespace NestoAPI.Infraestructure.Pagos
                     "'Pago señal curso quiromasaje') o seleccione los efectos que paga el cliente.");
             }
 
+            // Nesto#644 (hallazgo 2): los efectos que se liquidan tienen que ser del cliente del cobro. Antes solo se filtraban por
+            // empresa al contabilizar: con la pantalla desincronizada se cobraba a nombre de B liquidando apuntes de A.
+            string motivoEfectos = await MotivoEfectosDeOtroCliente(solicitud.Cliente, efectos).ConfigureAwait(false);
+            if (motivoEfectos != null)
+            {
+                throw new ArgumentException(motivoEfectos);
+            }
+
             // NestoAPI#728: además de "C" (tarjeta) y "z" (Bizum), "xpay" (Apple Pay) y
             // "google" (Google Pay). Otro valor no se puede mandar a Redsys.
             if (!MetodosPagoRedsys.EsValido(solicitud.MetodoPago))
@@ -1499,6 +1507,74 @@ namespace NestoAPI.Infraestructure.Pagos
                 return original != null
                     && RoundingHelper.DosDecimalesRound(original.ImportePdte) == RoundingHelper.DosDecimalesRound(g.Sum(e => e.Importe));
             });
+        }
+
+        /// <summary>Nesto#644: los movimientos del extracto con esos Nº de orden (de cualquier empresa). Sustituible en los tests.</summary>
+        internal Func<List<int>, Task<List<ExtractoCliente>>> LeerMovimientosDeEfectos { get; set; } = LeerMovimientosPorNumeroOrden;
+
+        /// <summary>
+        /// Nesto#644 (hallazgo 2): null si todos los efectos son del cliente del cobro; si no, el motivo (400). Sin cliente o sin
+        /// efectos no hay nada que comprobar (sin cliente el cobro no se contabiliza contra el extracto).
+        /// </summary>
+        internal async Task<string> MotivoEfectosDeOtroCliente(string cliente, List<EfectoAPagar> efectos)
+        {
+            if (string.IsNullOrWhiteSpace(cliente) || efectos == null || !efectos.Any(e => e.ExtractoClienteId > 0))
+            {
+                return null;
+            }
+            List<int> ids = efectos.Where(e => e.ExtractoClienteId > 0).Select(e => e.ExtractoClienteId).Distinct().ToList();
+            List<ExtractoCliente> movimientos = await LeerMovimientosDeEfectos(ids).ConfigureAwait(false);
+            return MotivoEfectosDeOtroCliente(cliente, efectos, movimientos);
+        }
+
+        /// <summary>
+        /// Nesto#644 (hallazgo 2, pura): cada efecto (Nº de orden &gt; 0) tiene que existir y ser del cliente del cobro. No se mira la
+        /// empresa (la 1 y su espejo la 3 son el mismo cliente) ni el contacto del cobro (se pueden pagar efectos de varios contactos
+        /// del mismo cliente), pero el contacto de cada efecto se corrige con el de su apunte: la línea del cobro va a ese contacto.
+        /// </summary>
+        internal static string MotivoEfectosDeOtroCliente(string cliente, List<EfectoAPagar> efectos, IEnumerable<ExtractoCliente> movimientos)
+        {
+            string clienteCobro = cliente?.Trim();
+            if (string.IsNullOrEmpty(clienteCobro) || efectos == null)
+            {
+                return null;
+            }
+            List<ExtractoCliente> lista = (movimientos ?? Enumerable.Empty<ExtractoCliente>()).ToList();
+            foreach (EfectoAPagar efecto in efectos.Where(e => e.ExtractoClienteId > 0))
+            {
+                ExtractoCliente movimiento = lista.FirstOrDefault(m => m.Nº_Orden == efecto.ExtractoClienteId);
+                string queEfecto = string.IsNullOrWhiteSpace(efecto.Documento)
+                    ? $"El efecto con nº de orden {efecto.ExtractoClienteId}"
+                    : $"El efecto {efecto.Documento.Trim()} (nº de orden {efecto.ExtractoClienteId})";
+                if (movimiento == null)
+                {
+                    return $"{queEfecto} no existe en el extracto. Vuelva a cargar la deuda del cliente {clienteCobro} y selecciónelo de nuevo.";
+                }
+                string clienteEfecto = movimiento.Número?.Trim();
+                if (!string.Equals(clienteEfecto, clienteCobro, StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"{queEfecto} es del cliente {clienteEfecto}, no del cliente {clienteCobro}. Vuelva a cargar la deuda del " +
+                        $"cliente {clienteCobro} y seleccione solo sus efectos.";
+                }
+                string contactoApunte = movimiento.Contacto?.Trim();
+                if (!string.IsNullOrEmpty(contactoApunte))
+                {
+                    efecto.Contacto = contactoApunte;
+                }
+            }
+            return null;
+        }
+
+        private static async Task<List<ExtractoCliente>> LeerMovimientosPorNumeroOrden(List<int> ids)
+        {
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                db.Configuration.ProxyCreationEnabled = false;
+                return await db.ExtractosCliente.AsNoTracking()
+                    .Where(e => ids.Contains(e.Nº_Orden))
+                    .ToListAsync().ConfigureAwait(false);
+            }
         }
 
         private static async Task<List<ExtractoCliente>> LeerEfectosPendientesFacturaPedido(string empresa, string cliente, int pedido)

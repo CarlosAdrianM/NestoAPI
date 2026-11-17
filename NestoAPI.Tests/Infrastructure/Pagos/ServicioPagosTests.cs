@@ -1206,5 +1206,132 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         #endregion
+
+        // ----- Nesto#644 (hallazgo 2): los efectos del cobro tienen que ser del cliente del cobro -----
+
+        private static ExtractoCliente Movimiento(int numeroOrden, string empresa, string cliente, string contacto) =>
+            new ExtractoCliente { Nº_Orden = numeroOrden, Empresa = empresa, Número = cliente, Contacto = contacto };
+
+        private static EfectoAPagar Efecto(int numeroOrden, string contacto = "0", string documento = null) =>
+            new EfectoAPagar { ExtractoClienteId = numeroOrden, Importe = 10m, Contacto = contacto, Documento = documento };
+
+        [TestMethod]
+        public void MotivoEfectosDeOtroCliente_EfectoDeOtroCliente_DiceCualYDeQuien()
+        {
+            var efectos = new List<EfectoAPagar> { Efecto(100), Efecto(200, documento: "NV26/000123") };
+            var movimientos = new List<ExtractoCliente>
+            {
+                Movimiento(100, "1  ", "15191     ", "0  "),
+                Movimiento(200, "1  ", "9471      ", "0  ")
+            };
+
+            string motivo = ServicioPagos.MotivoEfectosDeOtroCliente("15191", efectos, movimientos);
+
+            Assert.IsNotNull(motivo);
+            StringAssert.Contains(motivo, "NV26/000123");
+            StringAssert.Contains(motivo, "es del cliente 9471, no del cliente 15191");
+        }
+
+        [TestMethod]
+        public void MotivoEfectosDeOtroCliente_EfectoQueNoExiste_Rechaza()
+        {
+            string motivo = ServicioPagos.MotivoEfectosDeOtroCliente("15191", new List<EfectoAPagar> { Efecto(300) },
+                new List<ExtractoCliente>());
+
+            Assert.IsNotNull(motivo);
+            StringAssert.Contains(motivo, "300");
+            StringAssert.Contains(motivo, "no existe");
+        }
+
+        [TestMethod]
+        public void MotivoEfectosDeOtroCliente_VariosContactosYEmpresaEspejoDelMismoCliente_SonValidos()
+        {
+            // Flujo legítimo: efectos de los contactos 0 y 1 del mismo cliente, uno de la empresa 1 y otro de su espejo la 3.
+            var efectos = new List<EfectoAPagar> { Efecto(100, "0"), Efecto(101, "1"), Efecto(102, "0") };
+            var movimientos = new List<ExtractoCliente>
+            {
+                Movimiento(100, "1  ", "15191     ", "0  "),
+                Movimiento(101, "1  ", "15191     ", "1  "),
+                Movimiento(102, "3  ", "15191     ", "0  ")
+            };
+
+            Assert.IsNull(ServicioPagos.MotivoEfectosDeOtroCliente(" 15191 ", efectos, movimientos));
+        }
+
+        [TestMethod]
+        public void MotivoEfectosDeOtroCliente_ContactoDesincronizado_SeCorrigeConElDelApunte()
+        {
+            var efecto = Efecto(101, "0");
+
+            string motivo = ServicioPagos.MotivoEfectosDeOtroCliente("15191", new List<EfectoAPagar> { efecto },
+                new List<ExtractoCliente> { Movimiento(101, "1  ", "15191     ", "2  ") });
+
+            Assert.IsNull(motivo);
+            Assert.AreEqual("2", efecto.Contacto, "La línea del cobro va al contacto del apunte que liquida");
+        }
+
+        [TestMethod]
+        public void MotivoEfectosDeOtroCliente_SinClienteOSinEfectosOConNumeroCero_NoComprueba()
+        {
+            Assert.IsNull(ServicioPagos.MotivoEfectosDeOtroCliente(null, new List<EfectoAPagar> { Efecto(1) }, null));
+            Assert.IsNull(ServicioPagos.MotivoEfectosDeOtroCliente("15191", new List<EfectoAPagar>(), null));
+            Assert.IsNull(ServicioPagos.MotivoEfectosDeOtroCliente("15191", new List<EfectoAPagar> { Efecto(0) }, null));
+        }
+
+        [TestMethod]
+        public async Task IniciarPago_ConEfectoDeOtroCliente_LanzaArgumentExceptionSinCrearNada()
+        {
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
+            List<int> leidos = null;
+            servicio.LeerMovimientosDeEfectos = ids =>
+            {
+                leidos = ids;
+                return Task.FromResult(new List<ExtractoCliente> { Movimiento(200, "1  ", "9471      ", "0  ") });
+            };
+            var solicitud = new SolicitudPagoTPV
+            {
+                Empresa = "1",
+                Cliente = "15191",
+                Contacto = "0",
+                Importe = 10m,
+                Descripcion = "Pago efectos",
+                Correo = "cliente@ejemplo.es",
+                Efectos = new List<EfectoAPagar> { Efecto(200) }
+            };
+
+            ArgumentException error = null;
+            try
+            {
+                _ = await servicio.IniciarPago(solicitud, "NUEVAVISION\\Alguien");
+            }
+            catch (ArgumentException ex)
+            {
+                error = ex;
+            }
+
+            Assert.IsNotNull(error, "Efecto de otro cliente: ArgumentException (el controller lo da como 400)");
+            StringAssert.Contains(error.Message, "no del cliente 15191");
+            CollectionAssert.AreEqual(new List<int> { 200 }, leidos);
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._,
+                A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MotivoEfectosDeOtroCliente_Instancia_LeeSoloLosNumerosDeOrdenDistintosYPositivos()
+        {
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
+            List<int> leidos = null;
+            servicio.LeerMovimientosDeEfectos = ids =>
+            {
+                leidos = ids;
+                return Task.FromResult(new List<ExtractoCliente> { Movimiento(100, "1", "15191", "0"), Movimiento(101, "3", "15191", "0") });
+            };
+
+            string motivo = await servicio.MotivoEfectosDeOtroCliente("15191",
+                new List<EfectoAPagar> { Efecto(100), Efecto(100), Efecto(101), Efecto(0) });
+
+            Assert.IsNull(motivo);
+            CollectionAssert.AreEquivalent(new List<int> { 100, 101 }, leidos);
+        }
     }
 }

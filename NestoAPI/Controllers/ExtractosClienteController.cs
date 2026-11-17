@@ -422,10 +422,51 @@ namespace NestoAPI.Controllers
         }
 
 
-        // PUT: api/ExtractosCliente/5
+        /// <summary>Nesto#644 (hallazgo 8): quién puede cambiar vencimiento, CCC, estado y forma de pago de un efecto.</summary>
+        internal const string MOTIVO_SIN_PERMISO_MODIFICAR_EFECTO =
+            "Solo Administración, Dirección o Informática pueden modificar los efectos del extracto del cliente.";
+
+        /// <summary>
+        /// Nesto#644 (hallazgo 8): el PUT no llevaba [Authorize] ni miraba el grupo (Nesto solo enseña el botón a Administración).
+        /// Administración, como en Nesto, y Dirección e Informática, como el resto de cambios de administración del repo.
+        /// </summary>
+        internal static bool PuedeModificarEfecto(System.Security.Principal.IPrincipal usuario)
+        {
+            return usuario != null
+                && (Infrastructure.PrincipalExtensions.IsInRoleSinDominio(usuario, Constantes.GruposSeguridad.ADMINISTRACION)
+                    || Infrastructure.PrincipalExtensions.IsInRoleSinDominio(usuario, Constantes.GruposSeguridad.DIRECCION)
+                    || Infrastructure.PrincipalExtensions.IsInRoleSinDominio(usuario, Constantes.GruposSeguridad.INFORMATICA));
+        }
+
+        /// <summary>Nesto#644: compara dos textos del extracto como los ve el usuario (sin relleno, null = vacío, sin mayúsculas).</summary>
+        internal static bool MismoTexto(string guardado, string pedido)
+        {
+            return string.Equals((guardado ?? string.Empty).Trim(), (pedido ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Nesto#644: ¿el vencimiento pedido es distinto del guardado? Un apunte sin FechaVto se enseña con su Fecha (GET por
+        /// cliente): volver con esa misma fecha no es un cambio.
+        /// </summary>
+        internal static bool CambiaVencimiento(DateTime? guardado, DateTime fechaApunte, DateTime? pedido)
+        {
+            DateTime? comoSeVe = guardado ?? fechaApunte;
+            return !(guardado == pedido || (guardado == null && comoSeVe == pedido));
+        }
+
+        // PUT: api/ExtractosCliente
+        // Nesto#644 (hallazgo 8): [Authorize] + Administración/Dirección/Informática (403). Solo se escribe lo que de verdad cambia
+        // respecto a lo guardado (los textos se comparan sin relleno ni mayúsculas: antes un CCC o estado con espacios o un null
+        // frente a "" se reescribía aunque el usuario no lo hubiera tocado).
+        [Authorize]
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutExtractoCliente(ExtractoClienteDTO extractoCliente)
         {
+            if (!PuedeModificarEfecto(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SIN_PERMISO_MODIFICAR_EFECTO);
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
@@ -436,27 +477,31 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
-            ExtractoCliente extractoActual = db.ExtractosCliente.Single(e => e.Nº_Orden == extractoCliente.id);
+            ExtractoCliente extractoActual = db.ExtractosCliente.SingleOrDefault(e => e.Nº_Orden == extractoCliente.id);
+            if (extractoActual == null)
+            {
+                return NotFound();
+            }
             bool enviarCorreoDelCambio = false;
             MailMessage correo = new MailMessage();
             bool hayCambios = false;
 
-            if (extractoActual.FechaVto != extractoCliente.vencimiento)
+            if (CambiaVencimiento(extractoActual.FechaVto, extractoActual.Fecha, extractoCliente.vencimiento))
             {
                 hayCambios = true;
                 extractoActual.FechaVto = extractoCliente.vencimiento;
             }
 
-            if (extractoActual.CCC != extractoCliente.ccc)
+            if (!MismoTexto(extractoActual.CCC, extractoCliente.ccc))
             {
                 hayCambios = true;
-                extractoActual.CCC = string.IsNullOrWhiteSpace(extractoCliente.ccc) ? null : extractoCliente.ccc;
+                extractoActual.CCC = string.IsNullOrWhiteSpace(extractoCliente.ccc) ? null : extractoCliente.ccc.Trim();
             }
 
-            if (extractoActual.Estado != extractoCliente.estado)
+            if (!MismoTexto(extractoActual.Estado, extractoCliente.estado))
             {
                 hayCambios = true;
-                if (extractoActual.Estado?.ToUpper() == Constantes.ExtractosCliente.Estados.RETENIDO || extractoCliente.estado?.ToUpper() == Constantes.ExtractosCliente.Estados.RETENIDO)
+                if (extractoActual.Estado?.Trim().ToUpper() == Constantes.ExtractosCliente.Estados.RETENIDO || extractoCliente.estado?.Trim().ToUpper() == Constantes.ExtractosCliente.Estados.RETENIDO)
                 {
                     enviarCorreoDelCambio = true;
                 }
@@ -481,18 +526,18 @@ namespace NestoAPI.Controllers
                     correo.Subject = $"[ERROR {extractoActual.Número.Trim()}] Cambio de estado retenido en extracto cliente";
                 }
 
-                extractoActual.Estado = string.IsNullOrWhiteSpace(extractoCliente.estado) ? null : extractoCliente.estado.ToUpper();
+                extractoActual.Estado = string.IsNullOrWhiteSpace(extractoCliente.estado) ? null : extractoCliente.estado.Trim().ToUpper();
             }
 
-            if (extractoActual.FormaPago != extractoCliente.formaPago)
+            if (!MismoTexto(extractoActual.FormaPago, extractoCliente.formaPago))
             {
                 hayCambios = true;
-                extractoActual.FormaPago = extractoCliente.formaPago.ToUpper();
+                extractoActual.FormaPago = extractoCliente.formaPago?.Trim().ToUpper();
             }
 
             if (!hayCambios)
             {
-                throw new Exception("No hay ningún cambio que guardar");
+                return BadRequest("No hay ningún cambio que guardar: el efecto ya tiene esos datos.");
             }
 
             // #297: CK_ExtractoCliente = un IMPAGADO (TipoApunte 4) no puede tener CCC. Antes
