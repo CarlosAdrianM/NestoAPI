@@ -88,6 +88,11 @@ namespace NestoAPI.Models.Agencias
         /// (<see cref="CodigosAvisoPropuestaEnvio.REEMBOLSO_CERO_CONTRA_REEMBOLSO"/>).
         /// </summary>
         public string AvisoReembolsoPendiente { get; set; }
+        /// <summary>
+        /// NestoAPI#874: la Dirección 2 del cliente (piso, rótulo…) no cabe ni en la dirección ni en las observaciones del envío y
+        /// hay que ponerla a mano; null si ha cabido o no tiene. Informativo.
+        /// </summary>
+        public string AvisoDireccion2 { get; set; }
         /// <summary>NestoAPI#785: el reembolso del pendiente (que era 0) se ha recalculado: al grabar se pone <see cref="Reembolso"/> y queda en su historia.</summary>
         public bool ReembolsoPendienteRecalculado { get; set; }
     }

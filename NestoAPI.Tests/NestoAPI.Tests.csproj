@@ -385,6 +385,7 @@
     <Compile Include="Infrastructure\Sincronizacion\FechasComprasClientesTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VendedorEmailPublicacionTests.cs" />
     <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
+    <Compile Include="Infrastructure\Clientes\Direccion2ClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\SuPedidoObligatorioTests.cs" />
     <Compile Include="Infrastructure\Clientes\OrigenesClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\EmbudoOdooTests.cs" />

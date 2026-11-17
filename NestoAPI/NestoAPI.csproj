@@ -757,6 +757,7 @@
     <Compile Include="Infraestructure\Agencias\ReembolsoCalculado.cs" />
     <Compile Include="Infraestructure\Agencias\ReembolsoEtiquetaPendiente.cs" />
     <Compile Include="Infraestructure\Agencias\PropuestaEnvioService.cs" />
+    <Compile Include="Infraestructure\Agencias\DireccionEnvioCliente.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnvioDesdePedido.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEtiquetaPacking.cs" />
     <Compile Include="Infraestructure\Agencias\PasosEtiquetaPackingApi.cs" />
@@ -999,6 +1000,9 @@
     <Compile Include="Infraestructure\Clientes\PoliticaEmpleadosCliente.cs" />
     <Compile Include="Infraestructure\Clientes\MotivoCambioEstadoCliente.cs" />
     <Compile Include="Infraestructure\Clientes\DatosAltaCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\Direccion2Cliente.cs" />
+    <Compile Include="Infraestructure\Clientes\Direccion2ClienteSql.cs" />
+    <Compile Include="Infraestructure\Clientes\NumeroPropioDireccion.cs" />
     <Compile Include="Infraestructure\Clientes\MensajesValidacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NormalizadorClienteCrear.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />

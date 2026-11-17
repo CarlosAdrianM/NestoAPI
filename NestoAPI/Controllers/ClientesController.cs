@@ -992,11 +992,13 @@ namespace NestoAPI.Controllers
         // (ya son consistentes) → se salta el geocoding y solo normaliza para la BD.
         // NestoAPI#821: poblacion/provincia (opcionales) = las que dio Google; si el CP aún no está en la
         // tabla, se devuelven tal cual (se dará de alta al guardar el cliente).
-        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null, string poblacion = null, string provincia = null)
+        // NestoAPI#874: numero (opcional) = el que se teclea cuando Google dio la calle sin él (cifras o «S/N»); con
+        // direccionVerificada se comprueba con Google (calle + número + CP) y vuelve dentro de DireccionFormateada.
+        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null, string poblacion = null, string provincia = null, string numero = null)
         {
             try
             {
-                RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada, pais, poblacion, provincia);
+                RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada, pais, poblacion, provincia, numero);
 
                 return Ok(respuesta);
             }

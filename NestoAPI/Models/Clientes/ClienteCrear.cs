@@ -27,6 +27,30 @@ namespace NestoAPI.Models.Clientes
         /// en false: por eso el interruptor nace apagado.
         /// </summary>
         public bool DireccionVerificada { get; set; }
+        /// <summary>
+        /// NestoAPI#874: el número de la calle cuando Google dio la calle SIN número (cifras o «S/N»). Ya va dentro de
+        /// <see cref="Direccion"/> (lo pone ComprobarDatosGenerales); aquí es para que el alta lo vuelva a comprobar con Google.
+        /// Null si Google dio el número (lo normal).
+        /// </summary>
+        [StringLength(10, ErrorMessage = "El número de la calle no puede superar {1} caracteres.")]
+        public string Numero { get; set; }
+        /// <summary>
+        /// NestoAPI#874: «¿Qué es?» la dirección: Piso, Local, Casa, Nave u Otro (<see cref="Infraestructure.Clientes.TiposLugar"/>).
+        /// Con los campos de su tipo compone Clientes.Direccion2 (<see cref="Infraestructure.Clientes.Direccion2Cliente"/>).
+        /// </summary>
+        public string TipoLugar { get; set; }
+        /// <summary>NestoAPI#874, Piso: el piso («1», «BAJO»). Obligatorio con Puerta.</summary>
+        public string Piso { get; set; }
+        /// <summary>NestoAPI#874, Piso: la puerta («D»).</summary>
+        public string Puerta { get; set; }
+        /// <summary>NestoAPI#874, Local: número de local (opcional).</summary>
+        public string NumeroLocal { get; set; }
+        /// <summary>NestoAPI#874, Local: lo que pone en el rótulo (obligatorio; no se propone el nombre fiscal).</summary>
+        public string Rotulo { get; set; }
+        /// <summary>NestoAPI#874, Nave: número de la nave (obligatorio).</summary>
+        public string NumeroNave { get; set; }
+        /// <summary>NestoAPI#874, Otro: el texto (obligatorio).</summary>
+        public string OtroTexto { get; set; }
         public bool EsContacto {get;set;}
         public short? Estado { get; set; }
         public bool Estetica { get; set; }

@@ -84,6 +84,26 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         // ------------------------------------------------------------ nuevo
 
         [TestMethod]
+        public async Task Nuevo_ConLaDireccion2QueNoCabe_LlevaElAviso()
+        {
+            // NestoAPI#874: GestorPedidoParaAgencia ya ha metido la Dirección 2 donde cabía; si no cabía, la propuesta lo dice.
+            PedidoParaAgenciaDTO pedido = Pedido();
+            pedido.ClienteFicha.AvisoDireccion2 = "La dirección 2 del cliente («NAVE 4») no cabe";
+            A.CallTo(() => datos.LeerPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult(pedido));
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            Assert.AreEqual("La dirección 2 del cliente («NAVE 4») no cabe", p.AvisoDireccion2);
+            Assert.IsNull((await new PropuestaEnvioService(SinAviso()).Calcular(EMPRESA, PEDIDO, 1, 1m)).AvisoDireccion2);
+        }
+
+        private IDatosPropuestaEnvio SinAviso()
+        {
+            A.CallTo(() => datos.LeerPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult(Pedido()));
+            return datos;
+        }
+
+        [TestMethod]
         public async Task Nuevo_DestinoDeLaFichaAgenciaDelComparadorYDefaultsDelPerfil()
         {
             PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, null, 2.5m);

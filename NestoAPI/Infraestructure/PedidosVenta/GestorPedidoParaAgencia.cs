@@ -217,7 +217,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     .ToListAsync().ConfigureAwait(false)
             };
 
+            // NestoAPI#874: la Dirección 2 (piso, local + rótulo, nave…) entra en la dirección o en las observaciones del envío.
+            // Aquí es el núcleo común: de este DTO salen la pantalla de Agencias de Nesto, la propuesta del servidor y el packing.
+            AplicarDireccion2(dto, Clientes.Direccion2ClienteSql.Leer(db, ficha.Empresa, ficha.Nº_Cliente, ficha.Contacto));
+
             return dto;
+        }
+
+        /// <summary>
+        /// NestoAPI#874: pone en el DTO la dirección y las observaciones compuestas (<see cref="Agencias.DireccionEnvioCliente"/>).
+        /// Las observaciones del envío salen de <see cref="PedidoParaAgenciaDTO.Comentarios"/>, así que, si la Dirección 2 no cabe en
+        /// la dirección, va ahí. Sin Dirección 2 no se toca nada (la paridad sin Trim del DTO se conserva).
+        /// </summary>
+        internal static void AplicarDireccion2(PedidoParaAgenciaDTO dto, string direccion2)
+        {
+            if (dto?.ClienteFicha == null || string.IsNullOrWhiteSpace(direccion2))
+            {
+                return;
+            }
+            Agencias.DireccionEnvioCompuesta compuesta = Agencias.DireccionEnvioCliente.Componer(dto.ClienteFicha.Direccion, direccion2, dto.Comentarios);
+            dto.ClienteFicha.Direccion2 = direccion2.Trim();
+            dto.ClienteFicha.Direccion = compuesta.Direccion;
+            dto.Comentarios = compuesta.Observaciones;
+            dto.ClienteFicha.AvisoDireccion2 = compuesta.Aviso;
         }
     }
 }

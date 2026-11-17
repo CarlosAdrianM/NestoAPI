@@ -3793,6 +3793,9 @@ namespace NestoAPI.Controllers
                 Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")
             };
 
+            // NestoAPI#874: la Dirección 2 del cliente (piso, local + rótulo…) en la dirección o en las observaciones.
+            AplicarDireccion2(envio, direccion);
+
             // NestoAPI#546: servicio y horario salen de los defaults de la agencia, pero el retorno viene del
             // cliente (p. ej. «Recoger producto» con una agencia sin retornos, como Canteras).
             string errorCatalogo = CatalogoServiciosAgencias.Validar(envio);
@@ -3808,6 +3811,22 @@ namespace NestoAPI.Controllers
 
             var dto = new EnvioAgenciaDTO(envio);
             return Created(new Uri(Request.RequestUri, envio.Numero.ToString()), dto);
+        }
+
+        /// <summary>
+        /// NestoAPI#874: la Dirección 2 de la ficha entra en la dirección del envío o, si no cabe, en sus observaciones
+        /// (<see cref="DireccionEnvioCliente"/>). Si tampoco cabe, queda en ELMAH para ponerla a mano.
+        /// </summary>
+        private void AplicarDireccion2(EnviosAgencia envio, Cliente ficha)
+        {
+            DireccionEnvioCompuesta compuesta = DireccionEnvioCliente.DesdeFicha(db, ficha.Empresa, ficha.Nº_Cliente, ficha.Contacto,
+                envio.Direccion, envio.Observaciones);
+            envio.Direccion = compuesta.Direccion;
+            envio.Observaciones = compuesta.Observaciones;
+            if (compuesta.Aviso != null)
+            {
+                ElmahHelper.Log(new Exception($"[Dirección 2 #874] Etiqueta del pedido {envio.Pedido} (cliente {ficha.Nº_Cliente?.Trim()}/{ficha.Contacto?.Trim()}): {compuesta.Aviso}"));
+            }
         }
 
         // NestoAPI#310: texto que se añade a los comentarios de ruta como red de seguridad
@@ -3968,6 +3987,7 @@ namespace NestoAPI.Controllers
             envio.Movil = telefono.MovilUnico();
             envio.Email = correo.CorreoAgencia();
             envio.Atencion = direccion.Nombre?.Trim() ?? "";
+            AplicarDireccion2(envio, direccion); // NestoAPI#874
             envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             envio.FechaModificacion = DateTime.Now;
 

@@ -407,6 +407,12 @@ namespace NestoAPI.Infraestructure.Agencias
                 avisos.Add(propuesta.AvisoReembolsoPendiente);
                 Registrar(new Exception($"[Reembolso pendiente #785] Envío {envio.Numero} (pedido {peticion.Pedido}): {propuesta.AvisoReembolsoPendiente}"));
             }
+            // NestoAPI#874: la Dirección 2 del cliente no ha cabido en el envío; se dice para ponerla a mano.
+            if (propuesta.Origen != PropuestaEnvioDTO.ORIGEN_PENDIENTE_REUTILIZADO && !string.IsNullOrWhiteSpace(propuesta.AvisoDireccion2))
+            {
+                avisos.Add(propuesta.AvisoDireccion2);
+                Registrar(new Exception($"[Dirección 2 #874] Envío {envio.Numero} (pedido {peticion.Pedido}): {propuesta.AvisoDireccion2}"));
+            }
 
             string flujo = FlujoDe(envio.Agencia);
             var resultado = new EnvioDesdePedidoDTO

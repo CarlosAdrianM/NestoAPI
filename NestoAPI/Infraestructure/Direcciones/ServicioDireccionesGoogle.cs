@@ -26,6 +26,11 @@ namespace NestoAPI.Infraestructure.Direcciones
         /// Google no encuentra nada.
         /// </summary>
         Task<Models.Direcciones.DireccionDetalleDTO> LeerDesdeCoordenadas(double latitud, double longitud);
+        /// <summary>
+        /// NestoAPI#874: geocodificación directa (calle + número) restringida al país y al código postal, para comprobar el
+        /// número que se teclea cuando Places dio la calle sin él. Null si Google no encuentra nada.
+        /// </summary>
+        Task<Models.Direcciones.DireccionDetalleDTO> Geocodificar(string direccion, string codigoPostal, string pais);
     }
 
     public class ServicioDireccionesGoogle : IServicioDireccionesGoogle
@@ -73,6 +78,40 @@ namespace NestoAPI.Infraestructure.Direcciones
                 string json = await client.GetStringAsync(url).ConfigureAwait(false);
                 return ParsearGeocodificacionInversa(json);
             }
+        }
+
+        public async Task<Models.Direcciones.DireccionDetalleDTO> Geocodificar(string direccion, string codigoPostal, string pais)
+        {
+            string componentes = "country:" + NormalizarPais(pais) +
+                (string.IsNullOrWhiteSpace(codigoPostal) ? "" : "|postal_code:" + codigoPostal.Trim());
+            string url = "https://maps.googleapis.com/maps/api/geocode/json" +
+                "?address=" + Uri.EscapeDataString(direccion ?? string.Empty) +
+                "&components=" + Uri.EscapeDataString(componentes) +
+                "&language=es" +
+                "&key=" + ConfigurationManager.AppSettings["GoogleMapsApiKey"];
+
+            using (HttpClient client = new HttpClient())
+            {
+                string json = await client.GetStringAsync(url).ConfigureAwait(false);
+                return ParsearGeocodificacion(json);
+            }
+        }
+
+        /// <summary>NestoAPI#874: el primer resultado de la geocodificación directa; ZERO_RESULTS → null (no es un error).</summary>
+        internal static Models.Direcciones.DireccionDetalleDTO ParsearGeocodificacion(string json)
+        {
+            JObject respuesta = JObject.Parse(json);
+            string status = (string)respuesta["status"];
+            if (status == "ZERO_RESULTS")
+            {
+                return null;
+            }
+            if (status != "OK")
+            {
+                throw new Exception($"Google Geocoding devolvió {status}: {(string)respuesta["error_message"]}");
+            }
+            JToken primero = (respuesta["results"] ?? new JArray()).FirstOrDefault();
+            return primero == null ? null : LeerComponentes(primero);
         }
 
         /// <summary>

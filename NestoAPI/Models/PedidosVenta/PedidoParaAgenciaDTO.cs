@@ -48,6 +48,13 @@ namespace NestoAPI.Models.PedidosVenta
         public string Poblacion { get; set; }
         public string Provincia { get; set; }
         public string Telefono { get; set; }
+        /// <summary>
+        /// NestoAPI#874: Clientes.Direccion2 tal cual (piso, local + rótulo…). Ya va dentro de <see cref="Direccion"/> o, si no
+        /// cabía, en <see cref="PedidoParaAgenciaDTO.Comentarios"/> (de donde salen las observaciones del envío). Null si no tiene.
+        /// </summary>
+        public string Direccion2 { get; set; }
+        /// <summary>NestoAPI#874: la Dirección 2 no cabe ni en la dirección ni en las observaciones del envío (hay que ponerla a mano).</summary>
+        public string AvisoDireccion2 { get; set; }
 
         /// <summary>
         /// Nunca null: Agencias hace .Any() y .ToList() sin comprobarlo (con EF era un HashSet

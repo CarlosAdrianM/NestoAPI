@@ -784,6 +784,22 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   entra/sale con Entrar/Salir), a todos (Nesto ignora el suyo por la Version), solo si alguien lo tiene abierto, en segundo plano
   (`AvisoPedidoCambiado`, nunca lanza): PUT, POST, cobro de la app (`ServicioPagos`) y pago a plazos (`RepositorioPagoAPlazos`).
 
+### Dirección 2 y número propio en el alta (NestoAPI#874 corte 1, Nesto#643, 17/11/26)
+- `Clientes.Dirección` sigue siendo calle y número (50). Lo que necesita el repartidor va en `Clientes.Direccion2` (nvarchar(100)) +
+  `TipoLugar` (Piso/Local/Casa/Nave/Otro, CHECK `CK_Clientes_TipoLugar`), fuera del EDMX (`Scripts/Issue874_ClientesDireccion2.sql`;
+  `Direccion2ClienteSql`, sin columnas: no guarda ni lee y ELMAH una vez).
+- LA REGLA (pura): `Direccion2Cliente.Componer` / `ParaDireccion(clienteCrear, exigir)`: Piso = piso y puerta («1º D»); Local = nº opcional
+  + RÓTULO obligatorio sin valor por defecto («LOCAL 6 · RÓTULO: EL EDÉN»); Casa («CASA»); Nave = nº («NAVE 4»); Otro = texto. Mayúsculas.
+  En el alta (`ClienteCrear.TipoLugar`, `Piso`, `Puerta`, `NumeroLocal`, `Rotulo`, `NumeroNave`, `OtroTexto`): con dirección y sin tipo → 400
+  solo con ParametrosUsuario «(defecto)» `ExigirDireccion2Alta` = «1» (nace a «0» hasta NestoApp#286); con tipo se valida siempre.
+  Pensada para que la use también la modificación cuando CAMBIE la dirección (Carlos 17/11/26; pendiente, corte 2).
+- Número propio: si Places da la calle sin número, `ComprobarDatosGenerales(..., numero)` lo comprueba con Google (geocodificación calle +
+  número + CP, `IServicioDireccionesGoogle.Geocodificar`; `NumeroPropioDireccion.Confirmado`: mismo portal y mismo CP) y lo devuelve en
+  `DireccionFormateada`; «S/N» no se pregunta. El alta (`ClienteCrear.Numero`) lo vuelve a comprobar: no encontrado → 400; Google caído → sigue.
+- Envío: `DireccionEnvioCliente.Componer` (pura): Dirección + «, » + Dirección 2 si cabe en 80; si no, delante de las Observaciones (80) sin
+  quitar nada; si tampoco, aviso. Núcleo: `GestorPedidoParaAgencia` (GET ParaAgencia de Nesto, propuesta del servidor, DesdePedido y packing;
+  el aviso sale en `PropuestaEnvioDTO.AvisoDireccion2` y en los avisos de DesdePedido) + etiqueta pendiente y ActualizarDireccionEtiqueta.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

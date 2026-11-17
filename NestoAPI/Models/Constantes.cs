@@ -841,6 +841,13 @@ namespace NestoAPI.Models
             public const string EXIGIR_DIRECCION_VERIFICADA_ALTA = "ExigirDireccionVerificadaAlta";
 
             /// <summary>
+            /// NestoAPI#874: con "1" bajo «(defecto)», el alta de un cliente con dirección exige «¿Qué es?» (ClienteCrear.TipoLugar y
+            /// sus datos: Clientes.Direccion2). Nace a "0" (Scripts/Issue874_ClientesDireccion2.sql): NestoApp no lo manda hasta su
+            /// gemela (NestoApp#286). Con el tipo mandado se valida siempre, esté como esté.
+            /// </summary>
+            public const string EXIGIR_DIRECCION2_ALTA = "ExigirDireccion2Alta";
+
+            /// <summary>
             /// NestoAPI#517: interruptor de POST api/PedidosVenta/OfertasSugeridas (aviso de ofertas no
             /// aplicadas en Nesto y NestoApp). Bajo «(defecto)»: "0" lo apaga sin publicar (se nota en
             /// menos de un minuto); sin fila o cualquier otro valor, encendido.

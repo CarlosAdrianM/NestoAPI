@@ -308,6 +308,8 @@ namespace NestoAPI.Infraestructure.Agencias
             propuesta.Email = CorreoUnico(ficha.PersonasContacto);
             propuesta.Atencion = nombre;
             propuesta.Observaciones = Recortar(pedido.Comentarios?.Replace("\"", string.Empty), LONGITUD_OBSERVACIONES);
+            // NestoAPI#874: la Dirección 2 ya viene dentro de la dirección o de los comentarios (GestorPedidoParaAgencia); si no cabía, se avisa.
+            propuesta.AvisoDireccion2 = ficha.AvisoDireccion2;
             // VB 3544: el vendedor del pedido o "NV".
             propuesta.Vendedor = string.IsNullOrWhiteSpace(pedido.Vendedor) ? VENDEDOR_POR_DEFECTO : pedido.Vendedor.Trim();
             // Decisión #595: el país real del destino sale del CP (portugués → PT). Nesto pasa el país de la pantalla, que
