@@ -2238,6 +2238,7 @@
     <Compile Include="Models\Picking\PedidoPicking.cs" />
     <Compile Include="Models\Picking\RellenadorPickingService.cs" />
     <Compile Include="Models\Picking\RellenadorPrepagosService.cs" />
+    <Compile Include="Models\Picking\RepartoSaldoAFavorPrepago.cs" />
     <Compile Include="Models\Picking\RellenadorStocksService.cs" />
     <Compile Include="Models\Picking\RellenadorUbicacionesService.cs" />
     <Compile Include="Models\Picking\StockProducto.cs" />

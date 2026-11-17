@@ -1138,5 +1138,225 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         #endregion
+
+        #region Novedades 1302: el saldo a favor se reparte una sola vez entre los pedidos PRE del cliente
+
+        private const string CLIENTE_42004 = "42004";
+
+        /// <summary>Cliente 42004: pago a cuenta con tarjeta de 375,33 (saldo a favor), sin prepagos en ningún pedido.</summary>
+        private static IRellenadorPrepagosService Rellenador42004(List<PedidoPrepagoEnPickingDTO> enPicking = null, decimal saldoAFavor = 375.33M)
+        {
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored)).Returns(new List<PrepagoDTO>());
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO> { new ExtractoClienteDTO { importePendiente = -saldoAFavor, estado = "NRM" } });
+            A.CallTo(() => rellenador.PedidosPrepagoEnPicking(A<int>.Ignored))
+                .ReturnsLazily((int pedido) => (enPicking ?? new List<PedidoPrepagoEnPickingDTO>()).Where(p => p.Pedido != pedido).ToList());
+            return rellenador;
+        }
+
+        private static PedidoPicking PedidoPre42004(IRellenadorPrepagosService rellenador, int id, decimal total, string plazos = Constantes.PlazosPago.PREPAGO)
+        {
+            return new PedidoPicking(rellenador)
+            {
+                Id = id,
+                Cliente = CLIENTE_42004 + "     ",
+                PlazosPago = plazos,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking
+                    {
+                        Id = id,
+                        TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                        Producto = "P" + id,
+                        Cantidad = 1,
+                        CantidadReservada = 1,
+                        BaseImponible = Math.Round(total / 1.21M, 2),
+                        Total = total
+                    }
+                }
+            };
+        }
+
+        /// <summary>Lo que hace GestorPicking: prepara el reparto y decide por número de pedido.</summary>
+        private static Dictionary<int, bool> PasadaDePicking(params PedidoPicking[] candidatos)
+        {
+            List<PedidoPicking> lista = candidatos.ToList();
+            _ = RepartoSaldoAFavorPrepago.Preparar(lista);
+            var sale = new Dictionary<int, bool>();
+            foreach (PedidoPicking pedido in RepartoSaldoAFavorPrepago.EnOrden(lista))
+            {
+                sale[pedido.Id] = GestorPicking.DecidirSiSale(pedido);
+            }
+            return sale;
+        }
+
+        // Regresión Novedades 1302 (picking 100105): los dos pedidos PRE del 42004 salían con el mismo pago a cuenta.
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_Caso930831y930835_MismaPasada_SaleElPrimeroYElSegundoNo()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930835, pedido930831);
+
+            Assert.IsTrue(sale[930831], "El más antiguo se lleva el pago a cuenta y sale");
+            Assert.IsFalse(sale[930835], "El mismo dinero no cubre otro pedido");
+            Assert.IsFalse(pedido930831.RetenidoPorPrepago);
+            Assert.IsTrue(pedido930835.RetenidoPorPrepago);
+            Assert.AreEqual(MotivoNoSalePicking.RetenidoPorPrepago, pedido930835.MotivoNoSale);
+            Assert.AreEqual(375.33M, pedido930835.ImporteConsumidoPorOtrosPedidos);
+            Assert.AreEqual(0M, pedido930835.ImporteDisponiblePrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_Caso930831y930835_DaIgualElOrdenYCuantasVecesSePregunte()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+            _ = RepartoSaldoAFavorPrepago.Preparar(new List<PedidoPicking> { pedido930835, pedido930831 });
+
+            // Ensayos de antes del bucle («todo ahora», muestras) en cualquier orden
+            Assert.IsFalse(pedido930835.CubiertoPorPrepago());
+            Assert.IsTrue(pedido930831.CubiertoPorPrepago());
+            Assert.IsFalse(pedido930835.CubiertoPorPrepago());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_Caso930831EnUnPickingAnterior_930835NoSale()
+        {
+            var enPicking = new List<PedidoPrepagoEnPickingDTO>
+            {
+                new PedidoPrepagoEnPickingDTO { Pedido = 930831, ImporteEnPicking = 375.33M, Prepagos = 0 }
+            };
+            IRellenadorPrepagosService rellenador = Rellenador42004(enPicking);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Assert.IsFalse(PasadaDePicking(pedido930835)[930835]);
+            Assert.IsTrue(pedido930835.RetenidoPorPrepago);
+            Assert.AreEqual(375.33M, pedido930835.ImporteConsumidoPorOtrosPedidos);
+
+            // Y suelto (sin pasada de picking), igual
+            PedidoPicking suelto = PedidoPre42004(rellenador, 930835, 159.72M);
+            Assert.IsFalse(suelto.CubiertoPorPrepago());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_PedidoEnPickingAnteriorConSuPropioPrepago_NoConsumeSaldo()
+        {
+            var enPicking = new List<PedidoPrepagoEnPickingDTO>
+            {
+                new PedidoPrepagoEnPickingDTO { Pedido = 930831, ImporteEnPicking = 375.33M, Prepagos = 375.33M }
+            };
+            PedidoPicking pedido930835 = PedidoPre42004(Rellenador42004(enPicking), 930835, 159.72M);
+
+            Assert.IsTrue(PasadaDePicking(pedido930835)[930835], "El otro lo paga su prepago: el saldo a favor sigue libre");
+            Assert.AreEqual(0M, pedido930835.ImporteConsumidoPorOtrosPedidos);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_SaldoSuficienteParaLosDos_SalenLosDos()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldoAFavor: 535.05M);
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930831, pedido930835);
+
+            Assert.IsTrue(sale[930831]);
+            Assert.IsTrue(sale[930835]);
+            Assert.IsFalse(pedido930835.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_ElAntiguoNoSalePorStock_ElSiguienteSeLlevaElSaldo()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            pedido930831.ServirJunto = true;
+            pedido930831.Lineas[0].Cantidad = 2;  // falta una unidad y es «todo junto»
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930831, pedido930835);
+
+            Assert.IsFalse(sale[930831]);
+            Assert.IsTrue(sale[930835], "Lo que no se lleva el que no sale queda para el siguiente");
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_LosQueNoSonPrepago_NoCambian()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking prepago = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking contado = PedidoPre42004(rellenador, 930835, 159.72M, plazos: "CONTADO");
+
+            Dictionary<int, bool> sale = PasadaDePicking(prepago, contado);
+
+            Assert.IsTrue(sale[930831]);
+            Assert.IsTrue(sale[930835]);
+            Assert.IsFalse(contado.RetenidoPorPrepago);
+            A.CallTo(() => rellenador.Prepagos(930835)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_OtroClienteNoComparteSaldo()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking deOtro = PedidoPre42004(rellenador, 930835, 159.72M);
+            deOtro.Cliente = "11111";
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930831, deOtro);
+
+            Assert.IsTrue(sale[930831]);
+            Assert.IsTrue(sale[930835]);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_DescuadrePermitido_SigueValiendo()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldoAFavor: 535.00M);
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930831, pedido930835);
+
+            Assert.IsTrue(sale[930835], "Faltan 5 céntimos: dentro del descuadre permitido");
+        }
+
+        [TestMethod]
+        public void ReglaSaldoAFavorPrepago_Disponible_SinOtrosEsLaCuentaDeSiempreYLosOtrosNoSeComenLosPrepagos()
+        {
+            Assert.AreEqual(100M + 50M - 80M, ReglaSaldoAFavorPrepago.Disponible(100M, 50M, 80M, 0));
+            Assert.AreEqual(100M + 50M - 80M, ReglaSaldoAFavorPrepago.Disponible(100M, 50M, 80M, 30M),
+                "Si la deuda supera el saldo no queda saldo que consumir: lo de los otros no se come los prepagos propios");
+            Assert.AreEqual(100M + 50M - 10M - 30M, ReglaSaldoAFavorPrepago.Disponible(100M, 50M, 10M, 30M));
+            Assert.AreEqual(100M, ReglaSaldoAFavorPrepago.Disponible(100M, 50M, 10M, 500M));
+        }
+
+        [TestMethod]
+        public void ReglaSaldoAFavorPrepago_ConsumoAlSalir_LoQueNoCubrenSusPrepagosComoMuchoElSaldoLibre()
+        {
+            Assert.AreEqual(275.33M, ReglaSaldoAFavorPrepago.ConsumoAlSalir(375.33M, 100M, 375.33M));
+            Assert.AreEqual(0M, ReglaSaldoAFavorPrepago.ConsumoAlSalir(375.33M, 400M, 375.33M));
+            Assert.AreEqual(159.70M, ReglaSaldoAFavorPrepago.ConsumoAlSalir(159.72M, 0M, 159.70M));
+        }
+
+        [TestMethod]
+        public void ExplicadorPedidoSinPicking_RetenidoPorPrepago_DiceLoQueCubrenOtrosPedidos()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+            _ = PasadaDePicking(pedido930831, pedido930835);
+
+            var error = ExplicadorPedidoSinPicking.Error(pedido930835, new Dictionary<string, string>(), null);
+
+            StringAssert.Contains(error.Message, "375,33 € ya cubren otros pedidos suyos de prepago");
+        }
+
+        #endregion
     }
 }

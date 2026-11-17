@@ -69,6 +69,35 @@ namespace NestoAPI.Models.Picking
             }
         }
 
+        /// <summary>
+        /// Novedades 1302: los pedidos PRE del mismo cliente (distintos de este) con líneas en un picking anterior y sin
+        /// facturar (Picking &gt; 0, Estado de -1 a 2). Una sola consulta: líneas agrupadas por pedido y sus prepagos sin
+        /// factura en una subconsulta.
+        /// </summary>
+        public List<PedidoPrepagoEnPickingDTO> PedidosPrepagoEnPicking(int pedido)
+        {
+            string cliente = db.CabPedidoVtas.Where(p => p.Número == pedido).Select(p => p.Nº_Cliente).FirstOrDefault();
+            if (cliente == null)
+            {
+                return new List<PedidoPrepagoEnPickingDTO>();
+            }
+            string prepago = Constantes.PlazosPago.PREPAGO;
+            int pendiente = Constantes.EstadosLineaVenta.PENDIENTE;
+            int factura = Constantes.EstadosLineaVenta.FACTURA;
+            return (from l in db.LinPedidoVtas
+                    join c in db.CabPedidoVtas on new { l.Empresa, l.Número } equals new { c.Empresa, c.Número }
+                    where c.Nº_Cliente == cliente && c.PlazosPago == prepago && c.Número != pedido
+                        && l.Picking > 0 && l.Estado >= pendiente && l.Estado < factura
+                    group l by l.Número into g
+                    select new PedidoPrepagoEnPickingDTO
+                    {
+                        Pedido = g.Key,
+                        ImporteEnPicking = g.Sum(x => x.Total),
+                        Prepagos = db.Prepagos.Where(p => p.Pedido == g.Key && p.Factura == null).Sum(p => (decimal?)p.Importe) ?? 0
+                    })
+                .ToList();
+        }
+
         public List<PrepagoDTO> Prepagos(int pedido)
         {
             return db.Prepagos.Where(p => p.Pedido == pedido && p.Factura == null)

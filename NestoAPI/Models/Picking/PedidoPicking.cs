@@ -237,10 +237,22 @@ namespace NestoAPI.Models.Picking
             }
         }
 
+        /// <summary>Novedades 1302: el reparto del saldo a favor entre los pedidos PRE del cliente en esta pasada de picking
+        /// (lo pone GestorPicking con <see cref="RepartoSaldoAFavorPrepago.Preparar"/>). Null = pedido suelto: solo cuenta lo
+        /// que consumen sus pedidos PRE en pickings anteriores.</summary>
+        public RepartoSaldoAFavorPrepago RepartoSaldo { get; set; }
+
+        /// <summary>Novedades 1302: lo que se llevan del saldo a favor los otros pedidos PRE del cliente (pickings anteriores sin
+        /// facturar + los más antiguos que salen en esta pasada) la última vez que se miró.</summary>
+        public decimal ImporteConsumidoPorOtrosPedidos { get; private set; }
+
         /// <summary>
         /// NestoAPI#542: la retención por prepago, separada de <see cref="saleEnPicking"/> para que «todo
         /// ahora» (GestorFacturarTodoAhora) pueda preguntarla ANTES de convertir lo que falta en Recoger:
         /// un pedido retenido por prepago se queda como está. Marca RetenidoPorPrepago si no está cubierto.
+        ///
+        /// <para>Novedades 1302: el saldo a favor del cliente se reparte una sola vez entre sus pedidos PRE
+        /// (<see cref="ReglaSaldoAFavorPrepago"/>).</para>
         /// </summary>
         public bool CubiertoPorPrepago()
         {
@@ -248,54 +260,105 @@ namespace NestoAPI.Models.Picking
             {
                 return true;
             }
+            bool cubierto = EvaluarPrepago();
+            RetenidoPorPrepago = !cubierto;
+            if (!cubierto)
             {
-                Prepagos = rellenadorPrepagos.Prepagos(Id);
-                decimal total = Math.Round(ImporteTotalConIVA, 2, MidpointRounding.AwayFromZero);
-                var importePrepagos = Prepagos.Sum(i => i.Importe);
-
-                ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id);
-                var extractosValidos = ExtractosPendientes.Where(e => e.estado == null || e.estado == "NRM");
-
-                // Saldo a favor del cliente (importePendiente negativo): siempre se suma
-                var saldoAFavor = -extractosValidos.Where(e => e.importePendiente < 0).Sum(e => e.importePendiente);
-
-                // Deuda del cliente (importePendiente positivo): solo se resta si está vencida.
-                // NestoAPI#815: la factura de un pedido contra reembolso que la agencia aún no ha entregado (reembolso
-                // diferido, #742) no es deuda: el reembolso se contabilizará al entregarse. Nunca retiene un pedido.
-                var deudaVencida = extractosValidos
-                    .Where(e => e.importePendiente > 0 && e.vencimiento.HasValue && e.vencimiento.Value < DateTime.Today
-                        && !e.ReembolsoPendienteDeEntrega)
-                    .Sum(e => e.importePendiente);
-
-                // Sumar prepagos + saldo a favor - deuda vencida
-                var importeTotalDisponible = importePrepagos + saldoAFavor - deudaVencida;
-                ImporteDisponiblePrepago = importeTotalDisponible;
-                ImporteTotalPrepago = total;
-
-                if (importeTotalDisponible >= total - DESCUADRE_PERMITIDO)
-                {
-                    return true;
-                }
-                else
-                {
-                    // NestoAPI#202 (diagnóstico): si un pedido PREPAGO no sale en picking,
-                    // dejamos traza en ELMAH con el desglose. Sirve para investigar casos
-                    // como pedido 916885 (mayo 2026) donde según el usuario el prepago + un
-                    // movimiento pendiente cubrían el total pero el pedido no cogió picking.
-                    // Test reproduciendo los datos del ticket pasa, así que cuando vuelva a
-                    // ocurrir necesitamos ver los importes reales.
-                    System.Diagnostics.Trace.WriteLine(
-                        $"[Picking#202] Pedido {Id} retenido por prepago. " +
-                        $"Total={total}, Prepagos={importePrepagos}, " +
-                        $"SaldoAFavor={saldoAFavor}, DeudaVencida={deudaVencida}, " +
-                        $"Disponible={importeTotalDisponible}, " +
-                        $"ExtractosPendientesCount={ExtractosPendientes?.Count ?? 0}, " +
-                        $"ExtractosValidosCount={extractosValidos.Count()}." +
-                        TextoReembolsosPendientesDeEntrega(ExtractosPendientes));
-                    RetenidoPorPrepago = true;
-                    return false;
-                }
+                // NestoAPI#202 (diagnóstico): si un pedido PREPAGO no sale en picking,
+                // dejamos traza en ELMAH con el desglose. Sirve para investigar casos
+                // como pedido 916885 (mayo 2026) donde según el usuario el prepago + un
+                // movimiento pendiente cubrían el total pero el pedido no cogió picking.
+                var extractosValidos = ExtractosValidos();
+                System.Diagnostics.Trace.WriteLine(
+                    $"[Picking#202] Pedido {Id} retenido por prepago. " +
+                    $"Total={ImporteTotalPrepago}, Prepagos={importePrepagosEvaluado}, " +
+                    $"SaldoAFavor={saldoAFavorEvaluado}, DeudaVencida={deudaVencidaEvaluada}, " +
+                    $"ConsumidoPorOtrosPedidos={ImporteConsumidoPorOtrosPedidos}, " +
+                    $"Disponible={ImporteDisponiblePrepago}, " +
+                    $"ExtractosPendientesCount={ExtractosPendientes?.Count ?? 0}, " +
+                    $"ExtractosValidosCount={extractosValidos.Count()}." +
+                    TextoReembolsosPendientesDeEntrega(ExtractosPendientes));
             }
+            return cubierto;
+        }
+
+        private decimal importePrepagosEvaluado;
+        private decimal saldoAFavorEvaluado;
+        private decimal deudaVencidaEvaluada;
+
+        private IEnumerable<ExtractoClienteDTO> ExtractosValidos()
+        {
+            return (ExtractosPendientes ?? new List<ExtractoClienteDTO>()).Where(e => e.estado == null || e.estado == "NRM");
+        }
+
+        /// <summary>
+        /// Novedades 1302: la cuenta del prepago sin marcar RetenidoPorPrepago ni dejar traza (la usa también la primera vuelta
+        /// de <see cref="RepartoSaldoAFavorPrepago.Preparar"/>). Si está cubierto, registra en el reparto lo que se lleva del
+        /// saldo a favor; si no, lo suelta.
+        /// </summary>
+        internal bool EvaluarPrepago()
+        {
+            if (PlazosPago != Constantes.PlazosPago.PREPAGO || Lineas == null)
+            {
+                return true;
+            }
+            Prepagos = rellenadorPrepagos.Prepagos(Id) ?? new List<PrepagoDTO>();
+            decimal total = Math.Round(ImporteTotalConIVA, 2, MidpointRounding.AwayFromZero);
+            decimal importePrepagos = Prepagos.Sum(i => i.Importe);
+
+            ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id) ?? new List<ExtractoClienteDTO>();
+            var extractosValidos = ExtractosValidos();
+
+            // Saldo a favor del cliente (importePendiente negativo): siempre se suma
+            decimal saldoAFavor = -extractosValidos.Where(e => e.importePendiente < 0).Sum(e => e.importePendiente);
+
+            // Deuda del cliente (importePendiente positivo): solo se resta si está vencida.
+            // NestoAPI#815: la factura de un pedido contra reembolso que la agencia aún no ha entregado (reembolso
+            // diferido, #742) no es deuda: el reembolso se contabilizará al entregarse. Nunca retiene un pedido.
+            decimal deudaVencida = extractosValidos
+                .Where(e => e.importePendiente > 0 && e.vencimiento.HasValue && e.vencimiento.Value < DateTime.Today
+                    && !e.ReembolsoPendienteDeEntrega)
+                .Sum(e => e.importePendiente);
+
+            // Novedades 1302: lo que ya se llevan del saldo a favor los otros pedidos PRE del cliente
+            decimal consumidoPorOtros = ConsumidoPorOtrosPedidos();
+
+            decimal importeTotalDisponible = ReglaSaldoAFavorPrepago.Disponible(importePrepagos, saldoAFavor, deudaVencida, consumidoPorOtros);
+            importePrepagosEvaluado = importePrepagos;
+            saldoAFavorEvaluado = saldoAFavor;
+            deudaVencidaEvaluada = deudaVencida;
+            ImporteConsumidoPorOtrosPedidos = consumidoPorOtros;
+            ImporteDisponiblePrepago = importeTotalDisponible;
+            ImporteTotalPrepago = total;
+
+            bool cubierto = importeTotalDisponible >= total - DESCUADRE_PERMITIDO;
+            if (cubierto)
+            {
+                decimal saldoLibre = ReglaSaldoAFavorPrepago.SaldoLibre(saldoAFavor, deudaVencida, consumidoPorOtros);
+                RepartoSaldo?.Registrar(Cliente, Id, ReglaSaldoAFavorPrepago.ConsumoAlSalir(total, importePrepagos, saldoLibre));
+            }
+            else
+            {
+                RepartoSaldo?.Liberar(Cliente, Id);
+            }
+            return cubierto;
+        }
+
+        /// <summary>Novedades 1302: pickings anteriores sin facturar + (en una pasada) los más antiguos que ya salen.</summary>
+        private decimal ConsumidoPorOtrosPedidos()
+        {
+            List<PedidoPrepagoEnPickingDTO> enPicking = RepartoSaldo != null
+                ? RepartoSaldo.EnPickingsAnteriores(Cliente, () => rellenadorPrepagos.PedidosPrepagoEnPicking(Id))
+                : rellenadorPrepagos.PedidosPrepagoEnPicking(Id);
+            decimal anteriores = ReglaSaldoAFavorPrepago.ConsumoEnPickingsAnteriores(enPicking, Id);
+            decimal enEstaPasada = RepartoSaldo?.ConsumidoEnEstaPasadaPorAnteriores(Cliente, Id) ?? 0;
+            return anteriores + enEstaPasada;
+        }
+
+        /// <summary>Novedades 1302: el pedido no sale (por lo que sea): lo que se llevaba del saldo a favor queda libre.</summary>
+        internal void SoltarSaldoAFavor()
+        {
+            RepartoSaldo?.Liberar(Cliente, Id);
         }
 
         /// <summary>

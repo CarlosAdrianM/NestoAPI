@@ -755,6 +755,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (AlImprimir). TramitarTodos (GLS) lo salta (`Resultado` EsperandoCaja). La propuesta de envío no reutiliza ese pendiente. Sin las tablas o si
   falla la comprobación: no actúa (ELMAH). EntregadoPorLaAgencia sigue igual. Devueltos trae HaVuelto/FechaHaVuelto/UsuarioHaVuelto/ComoHaVuelto/ReenvioEsperandoCaja.
 
+### Prepago y saldo a favor (Novedades 1302, 17/11/26)
+- Un pedido PRE sale si sus prepagos + el saldo a favor LIBRE cubren su total (± `DESCUADRE_PERMITIDO`). Libre = saldo a favor − deuda vencida
+  (#815 igual) − lo que se llevan los otros PRE del cliente: los de pickings anteriores sin facturar (max(0, importe en picking − sus prepagos),
+  `IRellenadorPrepagosService.PedidosPrepagoEnPicking`, una consulta) y, en la misma pasada, los de número menor que salen. Regla pura
+  `ReglaSaldoAFavorPrepago`; acumulador `RepartoSaldoAFavorPrepago` (GestorPicking lo prepara y decide por número; el que no sale suelta lo suyo).
+  Antes cada pedido veía el saldo entero (930831 y 930835 del 42004 salieron en el 100105 con el mismo pago a cuenta).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

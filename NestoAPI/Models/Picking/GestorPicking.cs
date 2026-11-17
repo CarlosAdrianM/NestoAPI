@@ -270,6 +270,10 @@ namespace NestoAPI.Models.Picking
             // 27/10/26 (Carlos, caso David): una muestra (MMP) sin stock no retiene el pedido ni se queda pendiente. Si sin
             // ella el pedido sale, se quita del pedido (en memoria aquí; en BD, EscribirMuestrasQuitadas, solo si al final
             // sale). Antes de «todo ahora», para que la muestra sin stock no acabe en Recoger, y antes de decidir qué sale.
+            // Novedades 1302 (17/11/26): el saldo a favor de un cliente se reparte una sola vez entre sus pedidos PRE (el más
+            // antiguo primero). Antes de los ensayos, para que ya vean lo que se llevan los demás.
+            _ = RepartoSaldoAFavorPrepago.Preparar(candidatos);
+
             GestorMuestrasSinStock.Aplicar(candidatos, Decidir);
 
             // NestoAPI#542: los pedidos que se facturan «todo ahora» convierten lo que falta en Recoger, antes
@@ -282,10 +286,10 @@ namespace NestoAPI.Models.Picking
             // NestoAPI#613: y la del cupón de evento, en la que con lo entregado se llega al doble del cupón
             GestorReservasStock.ReservarCupones(candidatos);
 
-            // Recorrer Candidatos (quitamos los que no tienen que salir)
-            for (int i = 0; i < candidatos.Count(); i++)
+            // Recorrer Candidatos (quitamos los que no tienen que salir). Novedades 1302: por número de pedido, que es el orden en
+            // que se reparte el saldo a favor de los pedidos PRE de un mismo cliente.
+            foreach (PedidoPicking pedido in RepartoSaldoAFavorPrepago.EnOrden(candidatos))
             {
-                PedidoPicking pedido = candidatos[i];
                 if (!DecidirSiSale(pedido))
                 {
                     pedido.Borrar = true;
@@ -379,6 +383,11 @@ namespace NestoAPI.Models.Picking
         internal static bool DecidirSiSale(PedidoPicking pedido)
         {
             bool sale = Decidir(pedido);
+            if (!sale)
+            {
+                // Novedades 1302: si no sale, lo que se llevaba del saldo a favor queda para el siguiente pedido PRE del cliente
+                pedido.SoltarSaldoAFavor();
+            }
             pedido.LineasQueFaltanAlDecidir = sale ? null : ExplicadorPedidoSinPicking.LineasQueFaltan(pedido);
             return sale;
         }
