@@ -1419,6 +1419,20 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
+        public void ClasificadorSaldoAFavor_Clasificar_RectificativaQueSeNombraASiMismaEsLibre()
+        {
+            // Un abono se nombra a sí mismo en el concepto: no se reserva a sí mismo y sigue cubriendo pedidos como antes.
+            var abono = new ExtractoClienteDTO { importePendiente = -40M, concepto = "Efecto 1/1 factura RV2600154", documento = "RV2600154 " };
+            var abonoDeOtra = new ExtractoClienteDTO { importePendiente = -10M, concepto = "Abono de la factura NV2617724", documento = "RV2600155" };
+
+            ClasificadorSaldoAFavor.Clasificar(new List<ExtractoClienteDTO> { abono, abonoDeOtra },
+                new List<int>(), new List<string> { "RV2600154", "RV2600155", "NV2617724" });
+
+            Assert.IsTrue(ClasificadorSaldoAFavor.EsLibre(abono));
+            Assert.AreEqual("NV2617724", abonoDeOtra.FacturaReservada);
+        }
+
+        [TestMethod]
         public void PedidoPicking_SaldoAFavor_LosQueNoSonPrepago_NoCambian()
         {
             IRellenadorPrepagosService rellenador = Rellenador42004();

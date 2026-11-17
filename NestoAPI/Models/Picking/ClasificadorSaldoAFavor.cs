@@ -80,7 +80,10 @@ namespace NestoAPI.Models.Picking
                     extracto.PedidoReservado = pedido;
                     continue;
                 }
-                extracto.FacturaReservada = Referencias(extracto.concepto).FirstOrDefault(facturas.Contains);
+                // Un abono o rectificativa suele nombrarse a sí mismo («Efecto 1/1 factura RV2600154»): su propio documento no
+                // lo reserva (sería reservarlo a sí mismo y dejaría de cubrir pedidos, como hacía antes).
+                string propio = extracto.documento?.Trim().ToUpperInvariant();
+                extracto.FacturaReservada = Referencias(extracto.concepto).FirstOrDefault(f => facturas.Contains(f) && f != propio);
             }
         }
 
