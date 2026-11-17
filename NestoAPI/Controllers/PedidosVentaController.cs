@@ -1619,7 +1619,7 @@ namespace NestoAPI.Controllers
 
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ModelStateNoValido(); // Novedades 1314: dice qué falta
             }
 
             if (pedido.empresa != cabPedidoVta.Empresa.Trim() || pedido.numero != cabPedidoVta.Número)
@@ -2971,7 +2971,7 @@ namespace NestoAPI.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ModelStateNoValido(); // Novedades 1314: dice qué falta
             }
             // NestoAPI#827 (sugerencia 959; Carlos 05/11/26): el usuario de dominio con su grafía canónica.
             if (pedido != null)
@@ -3823,7 +3823,19 @@ namespace NestoAPI.Controllers
             return Ok(lineas);
         }
 
-
+        /// <summary>
+        /// Novedades 1314: el 400 de ModelState de siempre (Message + ModelState) pero con un Message que dice qué falta
+        /// («Faltan los plazos de pago del pedido») en vez de «La solicitud no es válida.».
+        /// </summary>
+        internal IHttpActionResult ModelStateNoValido()
+        {
+            bool incluirDetalle = RequestContext?.IncludeErrorDetail ?? false;
+            HttpError error = new HttpError(ModelState, incluirDetalle)
+            {
+                Message = MensajeModelStatePedido.Mensaje(ModelState)
+            };
+            return Content(HttpStatusCode.BadRequest, error);
+        }
 
         protected override void Dispose(bool disposing)
         {
