@@ -29,11 +29,30 @@ namespace NestoAPI.Models.Picking
                     importePendiente = e.ImportePdte,
                     estado = e.Estado,
                     vencimiento = e.FechaVto,
-                    documento = e.Nº_Documento
+                    documento = e.Nº_Documento,
+                    concepto = e.Concepto
                 })
                 .ToList();
             MarcarReembolsosPendientes(extractos, PedidosConReembolsoPendiente(extractos));
+            ClasificarSaldosAFavor(cliente, extractos);
             return extractos;
+        }
+
+        /// <summary>
+        /// Novedades 1302: de los números que nombran los saldos a favor, cuáles son pedidos y cuáles facturas de ESE cliente (una
+        /// consulta para cada cosa, sea cual sea el número de apuntes), y la clasificación pura de <see cref="ClasificadorSaldoAFavor"/>.
+        /// </summary>
+        private void ClasificarSaldosAFavor(string cliente, List<ExtractoClienteDTO> extractos)
+        {
+            List<int> numeros = ClasificadorSaldoAFavor.PedidosCandidatos(extractos).ToList();
+            List<string> referencias = ClasificadorSaldoAFavor.FacturasCandidatas(extractos).ToList();
+            List<int> pedidos = numeros.Count == 0 ? new List<int>()
+                : db.CabPedidoVtas.Where(c => c.Nº_Cliente == cliente && numeros.Contains(c.Número))
+                    .Select(c => c.Número).Distinct().ToList();
+            List<string> facturas = referencias.Count == 0 ? new List<string>()
+                : db.CabsFacturasVtas.Where(f => f.Nº_Cliente == cliente && referencias.Contains(f.Número))
+                    .Select(f => f.Número).Distinct().ToList();
+            ClasificadorSaldoAFavor.Clasificar(extractos, pedidos, facturas);
         }
 
         /// <summary>

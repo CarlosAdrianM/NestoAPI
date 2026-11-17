@@ -31,12 +31,14 @@ namespace NestoAPI.Models.Picking
             return Math.Max(0, importe - prepagos);
         }
 
-        /// <summary>Lo que consumen los pedidos PRE del cliente que ya están en un picking anterior, sin contar el propio.</summary>
-        public static decimal ConsumoEnPickingsAnteriores(IEnumerable<PedidoPrepagoEnPickingDTO> enPicking, int pedidoActual)
+        /// <summary>Lo que consumen del saldo LIBRE los pedidos PRE del cliente que ya están en un picking anterior, sin contar el
+        /// propio: lo que no cubren sus prepagos ni el saldo a favor reservado a ellos (<paramref name="reservadoA"/>).</summary>
+        public static decimal ConsumoEnPickingsAnteriores(IEnumerable<PedidoPrepagoEnPickingDTO> enPicking, int pedidoActual,
+            Func<int, decimal> reservadoA = null)
         {
             return (enPicking ?? Enumerable.Empty<PedidoPrepagoEnPickingDTO>())
                 .Where(p => p != null && p.Pedido != pedidoActual)
-                .Sum(p => Consumo(p.ImporteEnPicking, p.Prepagos));
+                .Sum(p => Consumo(p.ImporteEnPicking, p.Prepagos + (reservadoA?.Invoke(p.Pedido) ?? 0)));
         }
 
         /// <summary>
@@ -60,7 +62,7 @@ namespace NestoAPI.Models.Picking
             return prepagos + saldoNeto - consumidoDeVerdad;
         }
 
-        /// <summary>Lo que se lleva del saldo libre un pedido que sale: lo que no cubren sus prepagos, como mucho el saldo libre
+        /// <summary>Lo que se lleva del saldo libre un pedido que sale: lo que no cubren sus prepagos (y su saldo reservado), como mucho el saldo libre
         /// (si sale por el descuadre permitido no se lleva lo que no había).</summary>
         public static decimal ConsumoAlSalir(decimal total, decimal prepagos, decimal saldoLibre)
         {

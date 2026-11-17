@@ -257,6 +257,11 @@ namespace NestoAPI.Models
         public bool ReembolsoPendienteDeEntrega { get; set; }
         /// <summary>NestoAPI#815: el pedido de esa factura (el del envío con el reembolso pendiente), para explicarlo.</summary>
         public int? PedidoReembolsoPendiente { get; set; }
+        /// <summary>Novedades 1302: saldo a favor cuyo concepto (o nº de documento) nombra este pedido del cliente: solo cubre
+        /// ese pedido. Solo lo rellena el picking (<c>ClasificadorSaldoAFavor</c>).</summary>
+        public int? PedidoReservado { get; set; }
+        /// <summary>Novedades 1302: saldo a favor cuyo concepto nombra esta factura del cliente: no cubre ningún pedido.</summary>
+        public string FacturaReservada { get; set; }
     }
     public class FormaPagoDTO
     {

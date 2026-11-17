@@ -1143,13 +1143,27 @@ namespace NestoAPI.Tests.Models.Picking
 
         private const string CLIENTE_42004 = "42004";
 
-        /// <summary>Cliente 42004: pago a cuenta con tarjeta de 375,33 (saldo a favor), sin prepagos en ningún pedido.</summary>
-        private static IRellenadorPrepagosService Rellenador42004(List<PedidoPrepagoEnPickingDTO> enPicking = null, decimal saldoAFavor = 375.33M)
+        /// <summary>Pedidos y facturas del cliente 42004 (lo que el rellenador lee de la BD para clasificar).</summary>
+        private static readonly int[] PEDIDOS_42004 = { 930831, 930835 };
+        private static readonly string[] FACTURAS_42004 = { "NV2617724" };
+
+        private static ExtractoClienteDTO ACuenta(decimal importe, string concepto = null)
+        {
+            return new ExtractoClienteDTO { importePendiente = -importe, estado = "NRM", concepto = concepto };
+        }
+
+        /// <summary>Cliente 42004: pago a cuenta con tarjeta de 375,33 (saldo a favor), sin prepagos en ningún pedido. Sin concepto
+        /// que nombre un documento = saldo libre; con <paramref name="saldos"/>, esos apuntes clasificados como el rellenador.</summary>
+        private static IRellenadorPrepagosService Rellenador42004(List<PedidoPrepagoEnPickingDTO> enPicking = null, decimal saldoAFavor = 375.33M,
+            ExtractoClienteDTO[] saldos = null)
         {
             IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
             A.CallTo(() => rellenador.Prepagos(A<int>.Ignored)).Returns(new List<PrepagoDTO>());
-            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
-                .Returns(new List<ExtractoClienteDTO> { new ExtractoClienteDTO { importePendiente = -saldoAFavor, estado = "NRM" } });
+            List<ExtractoClienteDTO> extractos = saldos != null && saldos.Length > 0
+                ? saldos.ToList()
+                : new List<ExtractoClienteDTO> { ACuenta(saldoAFavor) };
+            ClasificadorSaldoAFavor.Clasificar(extractos, PEDIDOS_42004, FACTURAS_42004);
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored)).Returns(extractos);
             A.CallTo(() => rellenador.PedidosPrepagoEnPicking(A<int>.Ignored))
                 .ReturnsLazily((int pedido) => (enPicking ?? new List<PedidoPrepagoEnPickingDTO>()).Where(p => p.Pedido != pedido).ToList());
             return rellenador;
@@ -1270,10 +1284,13 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsFalse(pedido930835.RetenidoPorPrepago);
         }
 
+        private const string CONCEPTO_PALOMA_930831 = "S/Pago a cuenta a Paloma Pedido 930831";
+
+        // Carlos 17/11/26: un pago es de UN pedido. Si el pedido pagado no sale (sin stock), su dinero no se lo lleva otro.
         [TestMethod]
-        public void PedidoPicking_SaldoAFavor_ElAntiguoNoSalePorStock_ElSiguienteSeLlevaElSaldo()
+        public void PedidoPicking_SaldoAFavor_ElPagadoNoSalePorStock_SuPagoNoCubreOtroPedido()
         {
-            IRellenadorPrepagosService rellenador = Rellenador42004();
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldos: new[] { ACuenta(375.33M, CONCEPTO_PALOMA_930831) });
             PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
             pedido930831.ServirJunto = true;
             pedido930831.Lineas[0].Cantidad = 2;  // falta una unidad y es «todo junto»
@@ -1282,7 +1299,123 @@ namespace NestoAPI.Tests.Models.Picking
             Dictionary<int, bool> sale = PasadaDePicking(pedido930831, pedido930835);
 
             Assert.IsFalse(sale[930831]);
-            Assert.IsTrue(sale[930835], "Lo que no se lleva el que no sale queda para el siguiente");
+            Assert.IsFalse(sale[930835], "El pago a cuenta es del 930831: no cubre el 930835 aunque el 930831 no salga");
+            Assert.IsTrue(pedido930835.RetenidoPorPrepago);
+            Assert.AreEqual(0M, pedido930835.ImporteDisponiblePrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_ReservadoAlPedido_MismaPasada_SaleElPagadoYElOtroNo()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldos: new[] { ACuenta(375.33M, CONCEPTO_PALOMA_930831) });
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930835, pedido930831);
+
+            Assert.IsTrue(sale[930831]);
+            Assert.IsFalse(sale[930835]);
+            Assert.AreEqual(375.33M, pedido930831.ImporteDisponiblePrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_ReservadoAOtroPedido_NuncaCubreEste_NiSueltoNiConElOtroFacturado()
+        {
+            // El 930831 ya no está en ningún picking (facturado o sin sacar): su pago a cuenta sigue siendo suyo
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldos: new[] { ACuenta(375.33M, CONCEPTO_PALOMA_930831) });
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Assert.IsFalse(PasadaDePicking(pedido930835)[930835]);
+            Assert.IsFalse(PedidoPre42004(rellenador, 930835, 159.72M).CubiertoPorPrepago());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_ElPagadoEnUnPickingAnterior_NoGastaElSaldoLibre()
+        {
+            var enPicking = new List<PedidoPrepagoEnPickingDTO>
+            {
+                new PedidoPrepagoEnPickingDTO { Pedido = 930831, ImporteEnPicking = 375.33M, Prepagos = 0 }
+            };
+            IRellenadorPrepagosService rellenador = Rellenador42004(enPicking, saldos: new[]
+            {
+                ACuenta(375.33M, CONCEPTO_PALOMA_930831),
+                ACuenta(159.72M, "S/Pago a cuenta curso WOW")
+            });
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Assert.IsTrue(PasadaDePicking(pedido930835)[930835], "El 930831 lo paga su a cuenta: el libre queda para el 930835");
+            Assert.AreEqual(0M, pedido930835.ImporteConsumidoPorOtrosPedidos);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_NumeroQueNoEsDelCliente_EsSaldoLibre()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldos: new[] { ACuenta(159.72M, "pedido nueva visión 987654 del 17/11/26") });
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Assert.IsTrue(PasadaDePicking(pedido930835)[930835]);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_ReservadoAUnaFactura_NoCubreNingunPedido()
+        {
+            IRellenadorPrepagosService rellenador = Rellenador42004(saldos: new[] { ACuenta(159.72M, "Pago factura NV2617724") });
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Assert.IsFalse(PasadaDePicking(pedido930835)[930835]);
+            Assert.IsTrue(pedido930835.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_SaldoAFavor_Libre_ElAntiguoNoSalePorStock_ElSiguienteSeLoLleva()
+        {
+            // Saldo LIBRE (no nombra ningún documento): no es de nadie, así que si el más antiguo no sale queda para el siguiente
+            IRellenadorPrepagosService rellenador = Rellenador42004();
+            PedidoPicking pedido930831 = PedidoPre42004(rellenador, 930831, 375.33M);
+            pedido930831.ServirJunto = true;
+            pedido930831.Lineas[0].Cantidad = 2;
+            PedidoPicking pedido930835 = PedidoPre42004(rellenador, 930835, 159.72M);
+
+            Dictionary<int, bool> sale = PasadaDePicking(pedido930831, pedido930835);
+
+            Assert.IsFalse(sale[930831]);
+            Assert.IsTrue(sale[930835]);
+        }
+
+        [TestMethod]
+        public void ClasificadorSaldoAFavor_Numeros_SacaTodosLosNumerosDelTexto()
+        {
+            CollectionAssert.AreEqual(new List<int> { 930614 }, ClasificadorSaldoAFavor.Numeros("Pago TPV Pedido: 930614. Formación + EQUIPO + VIAL"));
+            CollectionAssert.AreEqual(new List<int> { 17, 11, 26, 930831 }, ClasificadorSaldoAFavor.Numeros("17/11/26 Pedido 930831"));
+            CollectionAssert.AreEqual(new List<int>(), ClasificadorSaldoAFavor.Numeros("S/Pago a cuenta curso WOW"));
+            CollectionAssert.AreEqual(new List<int>(), ClasificadorSaldoAFavor.Numeros(null));
+            CollectionAssert.AreEqual(new List<string> { "NV2617724" }, ClasificadorSaldoAFavor.Referencias("Pago factura nv2617724."));
+        }
+
+        [TestMethod]
+        public void ClasificadorSaldoAFavor_Clasificar_PedidoFacturaOLibre()
+        {
+            var pedidoTpv = ACuenta(100M, "Pago TPV Pedido: 930614. Formación + EQUIPO + VIAL");
+            var paloma = ACuenta(375.33M, CONCEPTO_PALOMA_930831);
+            var deOtroCliente = ACuenta(10M, "pedido nueva visión 987654");
+            var wow = ACuenta(150M, "S/Pago a cuenta curso WOW");
+            var factura = ACuenta(20M, "Pago factura NV2617724 de 12,50");
+            var porDocumento = new ExtractoClienteDTO { importePendiente = -5M, concepto = "Pago a cuenta", documento = "930831    " };
+            var deuda = new ExtractoClienteDTO { importePendiente = 50M, concepto = "Pedido 930831" };
+
+            ClasificadorSaldoAFavor.Clasificar(new List<ExtractoClienteDTO> { pedidoTpv, paloma, deOtroCliente, wow, factura, porDocumento, deuda },
+                new List<int> { 930614, 930831 }, new List<string> { "NV2617724 " });
+
+            Assert.AreEqual(930614, pedidoTpv.PedidoReservado);
+            Assert.AreEqual(930831, paloma.PedidoReservado);
+            Assert.IsTrue(ClasificadorSaldoAFavor.EsLibre(deOtroCliente), "987654 no es del cliente");
+            Assert.IsTrue(ClasificadorSaldoAFavor.EsLibre(wow));
+            Assert.AreEqual("NV2617724", factura.FacturaReservada);
+            Assert.IsNull(factura.PedidoReservado, "12 y 50 no son pedidos del cliente");
+            Assert.AreEqual(930831, porDocumento.PedidoReservado);
+            Assert.IsNull(deuda.PedidoReservado, "Solo se clasifican los saldos a favor");
+            Assert.AreEqual(150M + 10M, ClasificadorSaldoAFavor.Libre(new[] { pedidoTpv, paloma, deOtroCliente, wow, factura, porDocumento, deuda }));
+            Assert.AreEqual(375.33M + 5M, ClasificadorSaldoAFavor.ReservadoA(new[] { pedidoTpv, paloma, deOtroCliente, wow, factura, porDocumento, deuda }, 930831));
         }
 
         [TestMethod]

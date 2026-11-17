@@ -272,7 +272,8 @@ namespace NestoAPI.Models.Picking
                 System.Diagnostics.Trace.WriteLine(
                     $"[Picking#202] Pedido {Id} retenido por prepago. " +
                     $"Total={ImporteTotalPrepago}, Prepagos={importePrepagosEvaluado}, " +
-                    $"SaldoAFavor={saldoAFavorEvaluado}, DeudaVencida={deudaVencidaEvaluada}, " +
+                    $"SaldoAFavor={saldoAFavorEvaluado}, SaldoReservadoAlPedido={saldoReservadoEvaluado}, " +
+                    $"SaldoReservadoAOtros={SaldoReservadoAOtrosDocumentos()}, DeudaVencida={deudaVencidaEvaluada}, " +
                     $"ConsumidoPorOtrosPedidos={ImporteConsumidoPorOtrosPedidos}, " +
                     $"Disponible={ImporteDisponiblePrepago}, " +
                     $"ExtractosPendientesCount={ExtractosPendientes?.Count ?? 0}, " +
@@ -284,6 +285,7 @@ namespace NestoAPI.Models.Picking
 
         private decimal importePrepagosEvaluado;
         private decimal saldoAFavorEvaluado;
+        private decimal saldoReservadoEvaluado;
         private decimal deudaVencidaEvaluada;
 
         private IEnumerable<ExtractoClienteDTO> ExtractosValidos()
@@ -309,8 +311,11 @@ namespace NestoAPI.Models.Picking
             ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id) ?? new List<ExtractoClienteDTO>();
             var extractosValidos = ExtractosValidos();
 
-            // Saldo a favor del cliente (importePendiente negativo): siempre se suma
-            decimal saldoAFavor = -extractosValidos.Where(e => e.importePendiente < 0).Sum(e => e.importePendiente);
+            // Saldo a favor del cliente (importePendiente negativo). Novedades 1302: el que nombra un pedido o una factura del
+            // cliente es de ese documento (ClasificadorSaldoAFavor): el de este pedido se suma entero y el de otro documento no
+            // cuenta; el que no nombra nada es saldo libre y se reparte entre los pedidos PRE del cliente.
+            decimal saldoReservado = ClasificadorSaldoAFavor.ReservadoA(extractosValidos, Id);
+            decimal saldoAFavor = ClasificadorSaldoAFavor.Libre(extractosValidos);
 
             // Deuda del cliente (importePendiente positivo): solo se resta si está vencida.
             // NestoAPI#815: la factura de un pedido contra reembolso que la agencia aún no ha entregado (reembolso
@@ -323,8 +328,10 @@ namespace NestoAPI.Models.Picking
             // Novedades 1302: lo que ya se llevan del saldo a favor los otros pedidos PRE del cliente
             decimal consumidoPorOtros = ConsumidoPorOtrosPedidos();
 
-            decimal importeTotalDisponible = ReglaSaldoAFavorPrepago.Disponible(importePrepagos, saldoAFavor, deudaVencida, consumidoPorOtros);
+            decimal pagadoPropio = importePrepagos + saldoReservado;
+            decimal importeTotalDisponible = ReglaSaldoAFavorPrepago.Disponible(pagadoPropio, saldoAFavor, deudaVencida, consumidoPorOtros);
             importePrepagosEvaluado = importePrepagos;
+            saldoReservadoEvaluado = saldoReservado;
             saldoAFavorEvaluado = saldoAFavor;
             deudaVencidaEvaluada = deudaVencida;
             ImporteConsumidoPorOtrosPedidos = consumidoPorOtros;
@@ -335,7 +342,7 @@ namespace NestoAPI.Models.Picking
             if (cubierto)
             {
                 decimal saldoLibre = ReglaSaldoAFavorPrepago.SaldoLibre(saldoAFavor, deudaVencida, consumidoPorOtros);
-                RepartoSaldo?.Registrar(Cliente, Id, ReglaSaldoAFavorPrepago.ConsumoAlSalir(total, importePrepagos, saldoLibre));
+                RepartoSaldo?.Registrar(Cliente, Id, ReglaSaldoAFavorPrepago.ConsumoAlSalir(total, pagadoPropio, saldoLibre));
             }
             else
             {
@@ -350,9 +357,18 @@ namespace NestoAPI.Models.Picking
             List<PedidoPrepagoEnPickingDTO> enPicking = RepartoSaldo != null
                 ? RepartoSaldo.EnPickingsAnteriores(Cliente, () => rellenadorPrepagos.PedidosPrepagoEnPicking(Id))
                 : rellenadorPrepagos.PedidosPrepagoEnPicking(Id);
-            decimal anteriores = ReglaSaldoAFavorPrepago.ConsumoEnPickingsAnteriores(enPicking, Id);
+            decimal anteriores = ReglaSaldoAFavorPrepago.ConsumoEnPickingsAnteriores(enPicking, Id,
+                pedido => ClasificadorSaldoAFavor.ReservadoA(ExtractosValidos(), pedido));
             decimal enEstaPasada = RepartoSaldo?.ConsumidoEnEstaPasadaPorAnteriores(Cliente, Id) ?? 0;
             return anteriores + enEstaPasada;
+        }
+
+        /// <summary>Novedades 1302: el saldo a favor de otros pedidos o de facturas del cliente (para la traza).</summary>
+        private decimal SaldoReservadoAOtrosDocumentos()
+        {
+            return -ExtractosValidos()
+                .Where(e => e.importePendiente < 0 && !ClasificadorSaldoAFavor.EsLibre(e) && e.PedidoReservado != Id)
+                .Sum(e => e.importePendiente);
         }
 
         /// <summary>Novedades 1302: el pedido no sale (por lo que sea): lo que se llevaba del saldo a favor queda libre.</summary>

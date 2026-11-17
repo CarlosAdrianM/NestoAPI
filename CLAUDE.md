@@ -756,11 +756,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   falla la comprobación: no actúa (ELMAH). EntregadoPorLaAgencia sigue igual. Devueltos trae HaVuelto/FechaHaVuelto/UsuarioHaVuelto/ComoHaVuelto/ReenvioEsperandoCaja.
 
 ### Prepago y saldo a favor (Novedades 1302, 17/11/26)
-- Un pedido PRE sale si sus prepagos + el saldo a favor LIBRE cubren su total (± `DESCUADRE_PERMITIDO`). Libre = saldo a favor − deuda vencida
-  (#815 igual) − lo que se llevan los otros PRE del cliente: los de pickings anteriores sin facturar (max(0, importe en picking − sus prepagos),
-  `IRellenadorPrepagosService.PedidosPrepagoEnPicking`, una consulta) y, en la misma pasada, los de número menor que salen. Regla pura
-  `ReglaSaldoAFavorPrepago`; acumulador `RepartoSaldoAFavorPrepago` (GestorPicking lo prepara y decide por número; el que no sale suelta lo suyo).
-  Antes cada pedido veía el saldo entero (930831 y 930835 del 42004 salieron en el 100105 con el mismo pago a cuenta).
+- Un pago es de UN documento (Carlos 17/11/26): cada saldo a favor (ImportePdte < 0) se clasifica por los números de su Concepto (y, solo
+  como pedido, su Nº Documento) contra los pedidos y facturas DEL MISMO cliente (`ClasificadorSaldoAFavor`, puro; el rellenador lee esos
+  números en una consulta por cosa). Reservado a un pedido = solo cubre ese pedido, aunque no salga o ya esté facturado; reservado a una
+  factura = no cubre ningún pedido; sin documento del cliente («curso WOW», 987654 de otro cliente, fechas) = saldo LIBRE.
+- Disponible de un pedido PRE = sus Prepagos + lo reservado a él + su parte del saldo libre (± `DESCUADRE_PERMITIDO`). Libre = sin documento −
+  deuda vencida (#815 igual) − lo que se llevan los otros PRE del cliente: los de pickings anteriores sin facturar (max(0, importe en picking −
+  sus prepagos − lo reservado a ellos), `IRellenadorPrepagosService.PedidosPrepagoEnPicking`, una consulta) y, en la misma pasada, los de
+  número menor que salen. Regla pura `ReglaSaldoAFavorPrepago`; acumulador `RepartoSaldoAFavorPrepago` (GestorPicking lo prepara y decide por
+  número; el que no sale suelta su parte del LIBRE). Antes cada pedido veía el saldo entero (930831 y 930835 del 42004, picking 100105).
 
 ### Agency and Shipping
 - Multiple shipping agencies supported
