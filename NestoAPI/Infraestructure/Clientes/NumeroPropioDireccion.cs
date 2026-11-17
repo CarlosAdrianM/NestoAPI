@@ -6,21 +6,31 @@ namespace NestoAPI.Infraestructure.Clientes
 {
     /// <summary>
     /// NestoAPI#874 (Carlos 17/11/26, cliente 42143): Google da a veces la calle SIN número («Calle Sor Livia Alcorta») y la
-    /// comercial lo escribía en el texto libre, sin que nadie lo comprobara. Ahora el número va en su campo (cifras o «S/N»)
-    /// y se vuelve a preguntar a Google con calle + número + CP: si lo encuentra, queda verificado. Reglas puras.
+    /// comercial lo escribía en el texto libre, sin que nadie lo comprobara. Ahora el número va en su campo y se vuelve a
+    /// preguntar a Google con calle + número + CP. Reglas puras:
+    /// <list type="bullet">
+    /// <item>En «Número» SOLO va el número del portal: cifras con letra o «BIS» opcionales («99», «13 B», «13 BIS») o «S/N».
+    /// «Nº 99», «99 local 6» o «Edificio Rojo» no valen NUNCA (400): lo demás va en «¿Qué es?».</item>
+    /// <item>Número válido que Google no encuentra en esa calle y CP: NO se bloquea, se pregunta al usuario (Carlos 17/11/26) y,
+    /// si confirma (<c>ClienteCrear.NumeroConfirmadoSinGoogle</c>), el alta sigue y se apunta en Modificaciones
+    /// (<see cref="TABLA_MODIFICACIONES"/>) para medirlo y revisarlo.</item>
+    /// </list>
     /// </summary>
     public static class NumeroPropioDireccion
     {
         public const string SIN_NUMERO = "S/N";
+        /// <summary>Tabla (columna Tabla de Modificaciones) del rastro de los números confirmados sin Google.</summary>
+        public const string TABLA_MODIFICACIONES = "ClienteNumeroSinGoogle";
 
         private static readonly Regex FORMATO = new Regex(@"^\d{1,5}(BIS|[A-Z])?$", RegexOptions.Compiled);
         private static readonly Regex SIN_NUMERO_ESCRITO = new Regex(@"^(S\s*[/.\-]?\s*N(º|O|\.)?|SIN\s+N(Ú|U)MERO)\.?$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex CIFRAS_INICIALES = new Regex(@"^\d+", RegexOptions.Compiled);
 
-        public const string MOTIVO_FORMATO = "El número de la calle tiene que ser solo cifras (13, 13 B) o «S/N» si la calle no tiene número.";
+        public const string MOTIVO_FORMATO = "En «Número» solo va el número del portal (por ejemplo, 99) o S/N. " +
+            "Lo demás (piso, local, edificio, rótulo…) va en «¿Qué es?».";
 
-        /// <summary>«13», «13b» → «13B»; «13 bis» → «13BIS»; «s/n», «sn», «sin número» → «S/N»; vacío → null.</summary>
+        /// <summary>«13», «13 b» → «13B»; «13 bis» → «13BIS»; «s/n», «sn», «sin número» → «S/N»; vacío → null. Lo demás, sin espacios y en mayúsculas.</summary>
         public static string Normalizar(string numero)
         {
             if (string.IsNullOrWhiteSpace(numero))
@@ -32,12 +42,12 @@ namespace NestoAPI.Infraestructure.Clientes
             {
                 return SIN_NUMERO;
             }
-            return Regex.Replace(limpio, @"\s+", string.Empty).TrimStart('N', 'n', 'º', '.').ToUpperInvariant();
+            return Regex.Replace(limpio, @"\s+", string.Empty).ToUpperInvariant();
         }
 
         public static bool EsSinNumero(string numero) => Normalizar(numero) == SIN_NUMERO;
 
-        /// <summary>Normalizado: cifras con, como mucho, una letra o «BIS» detrás; o «S/N».</summary>
+        /// <summary>¿Es un número de portal? Cifras con, como mucho, una letra o «BIS» detrás; o «S/N».</summary>
         public static bool FormatoValido(string numero)
         {
             string n = Normalizar(numero);
@@ -68,9 +78,15 @@ namespace NestoAPI.Infraestructure.Clientes
             return string.Equals(SoloAlfanumerico(google.CodigoPostal), SoloAlfanumerico(codigoPostal), StringComparison.OrdinalIgnoreCase);
         }
 
-        public static string MotivoNoEncontrado(string calle, string numero, string codigoPostal)
-            => $"Google no encuentra el número {Normalizar(numero)} en {calle?.Trim().ToUpper()} ({codigoPostal?.Trim()}). " +
-               "Compruebe el número; si la calle no tiene número, escriba «S/N».";
+        /// <summary>La pregunta al usuario cuando Google no encuentra un número válido (de usted).</summary>
+        public static string PreguntaNoEncontrado(string calle, string numero, string codigoPostal)
+        {
+            string n = Normalizar(numero);
+            // En el alta llega la dirección ya con el número («C/ LA GRANJA, 99»): se nombra solo la calle.
+            string soloCalle = Regex.Replace(calle?.Trim() ?? string.Empty, @",\s*" + Regex.Escape(n ?? string.Empty) + "$", string.Empty, RegexOptions.IgnoreCase);
+            return $"Google Maps no encuentra el número {n} en {soloCalle.ToUpper()} ({codigoPostal?.Trim()}). " +
+                   "Es posible que el repartidor de la agencia no lo encuentre. ¿Quiere guardarlo igualmente?";
+        }
 
         public static string MotivoNumeroNoEstaEnLaDireccion(string direccion, string numero)
             => $"La dirección «{direccion?.Trim()}» no lleva el número {Normalizar(numero)} que se ha comprobado con Google. " +
@@ -103,5 +119,16 @@ namespace NestoAPI.Infraestructure.Clientes
         }
 
         private static string SoloAlfanumerico(string texto) => Regex.Replace(texto ?? string.Empty, @"[^0-9A-Za-z]", string.Empty);
+    }
+
+    /// <summary>NestoAPI#874: lo que decide el alta sobre el número propio.</summary>
+    public sealed class ResultadoNumeroPropio
+    {
+        /// <summary>Por qué no sigue el alta (400, de usted); null si sigue.</summary>
+        public string Motivo { get; set; }
+        /// <summary>El usuario confirmó un número que Google no encuentra: hay que dejar rastro tras guardar.</summary>
+        public bool ConfirmadoSinGoogle { get; set; }
+
+        internal static readonly ResultadoNumeroPropio Sigue = new ResultadoNumeroPropio();
     }
 }

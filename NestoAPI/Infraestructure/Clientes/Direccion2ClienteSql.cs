@@ -79,6 +79,34 @@ namespace NestoAPI.Infraestructure.Clientes
             }
         }
 
+        internal const string SQL_RASTRO_NUMERO_SIN_GOOGLE = @"
+            INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@p0, @p1, @p2, @p3)";
+
+        /// <summary>
+        /// NestoAPI#874: el usuario confirmó un número de portal que Google no encuentra. Una fila en Modificaciones (Tabla
+        /// <see cref="NumeroPropioDireccion.TABLA_MODIFICACIONES"/>; Anterior = cliente/contacto, Nuevo = dirección, CP y número)
+        /// para medir cuántos hay y revisarlos si la agencia devuelve el envío. Best-effort: si falla, ELMAH y el alta sigue.
+        /// </summary>
+        public static bool RegistrarNumeroSinGoogle(NVEntities db, Cliente cliente, string numero, string usuario)
+        {
+            if (db == null || cliente == null || string.IsNullOrWhiteSpace(cliente.Nº_Cliente))
+            {
+                return false;
+            }
+            string quien = $"{cliente.Nº_Cliente.Trim()}/{cliente.Contacto?.Trim()}";
+            string que = $"{cliente.Dirección?.Trim()} ({cliente.CodPostal?.Trim()}) · número {NumeroPropioDireccion.Normalizar(numero)} confirmado sin Google";
+            try
+            {
+                return db.Database.ExecuteSqlCommand(SQL_RASTRO_NUMERO_SIN_GOOGLE, NumeroPropioDireccion.TABLA_MODIFICACIONES, quien, que,
+                    string.IsNullOrWhiteSpace(usuario) ? UsuarioAuditoriaHelper.DESCONOCIDO : usuario.Trim()) > 0;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Clientes #874] Cliente {quien}: {que}. No se ha podido apuntar en Modificaciones: {ex.Message}", ex));
+                return false;
+            }
+        }
+
         private static bool HayColumnas(NVEntities db, string consecuencia)
         {
             if (ColumnasOpcionales.Existen(db, TABLA, COLUMNA_DIRECCION2, COLUMNA_TIPO_LUGAR))

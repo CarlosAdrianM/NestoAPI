@@ -795,7 +795,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Pensada para que la use también la modificación cuando CAMBIE la dirección (Carlos 17/11/26; pendiente, corte 2).
 - Número propio: si Places da la calle sin número, `ComprobarDatosGenerales(..., numero)` lo comprueba con Google (geocodificación calle +
   número + CP, `IServicioDireccionesGoogle.Geocodificar`; `NumeroPropioDireccion.Confirmado`: mismo portal y mismo CP) y lo devuelve en
-  `DireccionFormateada`; «S/N» no se pregunta. El alta (`ClienteCrear.Numero`) lo vuelve a comprobar: no encontrado → 400; Google caído → sigue.
+  `DireccionFormateada`; «S/N» no se pregunta. En «Número» SOLO va el portal (cifras + letra/BIS opcionales, o S/N): «Nº 99», «99 local 6»,
+  texto → 400 siempre. Válido que Google no encuentra (Carlos 17/11/26): no bloquea; la respuesta trae `NumeroSinConfirmarPorGoogle` +
+  `AvisoNumero` (la pregunta) y el alta (`ClienteCrear.Numero`, que se vuelve a comprobar) solo sigue con `NumeroConfirmadoSinGoogle`
+  (si no, 400 con la pregunta); entonces apunta una fila en Modificaciones (Tabla `ClienteNumeroSinGoogle`). Google caído en el alta → sigue.
 - Envío: `DireccionEnvioCliente.Componer` (pura): Dirección + «, » + Dirección 2 si cabe en 80; si no, delante de las Observaciones (80) sin
   quitar nada; si tampoco, aviso. Núcleo: `GestorPedidoParaAgencia` (GET ParaAgencia de Nesto, propuesta del servidor, DesdePedido y packing;
   el aviso sale en `PropuestaEnvioDTO.AvisoDireccion2` y en los avisos de DesdePedido) + etiqueta pendiente y ActualizarDireccionEtiqueta.

@@ -81,10 +81,12 @@ namespace NestoAPI.Infraestructure
             }
 
             // NestoAPI#874: Google dio la calle sin número y el usuario lo ha tecleado aparte. Se comprueba con Google (calle +
-            // número + CP) y la dirección sigue como verificada, ya con el número; «S/N» no se pregunta.
+            // número + CP) y la dirección vuelve ya con el número; «S/N» no se pregunta. Si Google no lo encuentra, no se
+            // bloquea: la respuesta lo dice (NumeroSinConfirmarPorGoogle + AvisoNumero) para que el cliente pregunte.
+            string avisoNumero = null;
             if (direccionVerificada && !string.IsNullOrWhiteSpace(numero))
             {
-                direccion = await CalleConNumeroComprobado(direccion, numero, codigoPostal, pais).ConfigureAwait(false);
+                (direccion, avisoNumero) = await CalleConNumeroComprobado(direccion, numero, codigoPostal, pais).ConfigureAwait(false);
             }
 
             //¿Qué ocurre si el Código postal no existe?
@@ -153,6 +155,8 @@ namespace NestoAPI.Infraestructure
                     respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
                 }
             }
+            respuesta.NumeroSinConfirmarPorGoogle = avisoNumero != null; // NestoAPI#874
+            respuesta.AvisoNumero = avisoNumero;
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
             string[] listaTelefonos = respuesta.TelefonoFormateado.Split(Constantes.Clientes.SEPARADOR_TELEFONOS);
@@ -169,11 +173,12 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
-        /// NestoAPI#874: la calle de Google (sin número) con el número tecleado, si Google lo encuentra en ese CP; si no,
-        /// ArgumentException (400 en ComprobarDatosGenerales) con el motivo. «S/N» no se pregunta a Google. Si Google falla,
-        /// también 400 para que el usuario lo repita (en el alta, en cambio, un fallo de Google no la para).
+        /// NestoAPI#874: la calle de Google (sin número) con el número tecleado. Un número que no es de portal (texto, «Nº 99»,
+        /// «99 local 6») es ArgumentException (400) siempre. Uno válido que Google no encuentra en ese CP no es un error (Carlos
+        /// 17/11/26): devuelve la pregunta para el usuario en Aviso. «S/N» no se pregunta a Google. Si Google falla, 400 para que
+        /// el usuario lo repita (en el alta, en cambio, un fallo de Google no la para).
         /// </summary>
-        internal async Task<string> CalleConNumeroComprobado(string calle, string numero, string codigoPostal, string pais)
+        internal async Task<(string Direccion, string Aviso)> CalleConNumeroComprobado(string calle, string numero, string codigoPostal, string pais)
         {
             if (!Clientes.NumeroPropioDireccion.FormatoValido(numero))
             {
@@ -184,7 +189,7 @@ namespace NestoAPI.Infraestructure
             string conNumero = Direcciones.ServicioDireccionesGoogle.DireccionCalleNumero(calle, n, paisIso);
             if (n == Clientes.NumeroPropioDireccion.SIN_NUMERO)
             {
-                return conNumero;
+                return (conNumero, null);
             }
             Models.Direcciones.DireccionDetalleDTO google;
             try
@@ -195,36 +200,37 @@ namespace NestoAPI.Infraestructure
             {
                 throw new ArgumentException($"No se ha podido comprobar el número con Google ({ex.Message}). Vuelva a intentarlo en un momento.", ex);
             }
-            if (!Clientes.NumeroPropioDireccion.Confirmado(google, n, codigoPostal))
-            {
-                throw new ArgumentException(Clientes.NumeroPropioDireccion.MotivoNoEncontrado(calle, n, codigoPostal));
-            }
-            return conNumero;
+            return Clientes.NumeroPropioDireccion.Confirmado(google, n, codigoPostal)
+                ? (conNumero, null)
+                : (conNumero, Clientes.NumeroPropioDireccion.PreguntaNoEncontrado(
+                    EsPaisExtranjero(paisIso) ? calle : PonerAbreviaturas(calle.ToUpper().Trim()), n, codigoPostal));
         }
 
         /// <summary>
-        /// NestoAPI#874: el alta vuelve a comprobar el número propio (<see cref="ClienteCrear.Numero"/>): la dirección tiene que
-        /// llevarlo y Google tiene que encontrarlo en ese CP. Si Google no contesta, el alta sigue (queda en ELMAH): ya se
-        /// comprobó en el paso del asistente. Devuelve el motivo del rechazo o null.
+        /// NestoAPI#874: el alta vuelve a comprobar el número propio (<see cref="ClienteCrear.Numero"/>): tiene que ser un número
+        /// de portal (si no, 400 siempre), la dirección tiene que llevarlo y Google tiene que encontrarlo en ese CP. Si Google no
+        /// lo encuentra, el alta solo sigue con <see cref="ClienteCrear.NumeroConfirmadoSinGoogle"/> (el usuario lo ha
+        /// confirmado; queda rastro tras guardar); sin él, 400 con la pregunta para que el cliente la haga. Si Google no contesta,
+        /// el alta sigue (queda en ELMAH): ya se comprobó en el paso del asistente.
         /// </summary>
-        internal async Task<string> MotivoRechazoNumeroPropio(ClienteCrear clienteCrear)
+        internal async Task<Clientes.ResultadoNumeroPropio> ComprobarNumeroPropio(ClienteCrear clienteCrear)
         {
             if (clienteCrear == null || !clienteCrear.DireccionVerificada || string.IsNullOrWhiteSpace(clienteCrear.Numero)
                 || string.IsNullOrWhiteSpace(clienteCrear.Direccion))
             {
-                return null;
+                return Clientes.ResultadoNumeroPropio.Sigue;
             }
             if (!Clientes.NumeroPropioDireccion.FormatoValido(clienteCrear.Numero))
             {
-                return Clientes.NumeroPropioDireccion.MOTIVO_FORMATO;
+                return new Clientes.ResultadoNumeroPropio { Motivo = Clientes.NumeroPropioDireccion.MOTIVO_FORMATO };
             }
             if (!Clientes.NumeroPropioDireccion.DireccionLlevaElNumero(clienteCrear.Direccion, clienteCrear.Numero))
             {
-                return Clientes.NumeroPropioDireccion.MotivoNumeroNoEstaEnLaDireccion(clienteCrear.Direccion, clienteCrear.Numero);
+                return new Clientes.ResultadoNumeroPropio { Motivo = Clientes.NumeroPropioDireccion.MotivoNumeroNoEstaEnLaDireccion(clienteCrear.Direccion, clienteCrear.Numero) };
             }
             if (Clientes.NumeroPropioDireccion.EsSinNumero(clienteCrear.Numero))
             {
-                return null;
+                return Clientes.ResultadoNumeroPropio.Sigue;
             }
             Models.Direcciones.DireccionDetalleDTO google;
             try
@@ -235,11 +241,15 @@ namespace NestoAPI.Infraestructure
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido volver a comprobar con Google el número {clienteCrear.Numero} de «{clienteCrear.Direccion}» ({clienteCrear.CodigoPostal}); el alta sigue: {ex.Message}", ex));
-                return null;
+                return Clientes.ResultadoNumeroPropio.Sigue;
             }
-            return Clientes.NumeroPropioDireccion.Confirmado(google, clienteCrear.Numero, clienteCrear.CodigoPostal)
-                ? null
-                : Clientes.NumeroPropioDireccion.MotivoNoEncontrado(clienteCrear.Direccion, clienteCrear.Numero, clienteCrear.CodigoPostal);
+            if (Clientes.NumeroPropioDireccion.Confirmado(google, clienteCrear.Numero, clienteCrear.CodigoPostal))
+            {
+                return Clientes.ResultadoNumeroPropio.Sigue;
+            }
+            return clienteCrear.NumeroConfirmadoSinGoogle
+                ? new Clientes.ResultadoNumeroPropio { ConfirmadoSinGoogle = true }
+                : new Clientes.ResultadoNumeroPropio { Motivo = Clientes.NumeroPropioDireccion.PreguntaNoEncontrado(clienteCrear.Direccion, clienteCrear.Numero, clienteCrear.CodigoPostal) };
         }
 
         /// <summary>
@@ -2038,10 +2048,10 @@ namespace NestoAPI.Infraestructure
                 {
                     throw new ValidationException(direccion2.Motivo);
                 }
-                string motivoNumero = await MotivoRechazoNumeroPropio(clienteCrear).ConfigureAwait(false);
-                if (motivoNumero != null)
+                Clientes.ResultadoNumeroPropio numeroPropio = await ComprobarNumeroPropio(clienteCrear).ConfigureAwait(false);
+                if (numeroPropio.Motivo != null)
                 {
-                    throw new ValidationException(motivoNumero);
+                    throw new ValidationException(numeroPropio.Motivo);
                 }
 
                 cliente = await PrepararClienteCrear(clienteCrear, db);
@@ -2078,6 +2088,11 @@ namespace NestoAPI.Infraestructure
                 _ = Clientes.DatosAltaCliente.Registrar(db, cliente, clienteCrear.Usuario, clienteCrear.AplicacionAlta, DateTime.Now);
                 // NestoAPI#874: Dirección 2 y tipo de lugar (columnas fuera del EDMX; sin el script, ELMAH una vez y sigue).
                 _ = Clientes.Direccion2ClienteSql.Guardar(db, cliente, direccion2);
+                // NestoAPI#874: número que Google no encuentra y el usuario confirmó: rastro en Modificaciones para medirlo y revisarlo.
+                if (numeroPropio.ConfirmadoSinGoogle)
+                {
+                    _ = Clientes.Direccion2ClienteSql.RegistrarNumeroSinGoogle(db, cliente, clienteCrear.Numero, clienteCrear.Usuario);
+                }
 
                 await PublicarClienteSincronizar(cliente);
 

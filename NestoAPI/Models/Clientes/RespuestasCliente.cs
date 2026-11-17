@@ -46,6 +46,13 @@ namespace NestoAPI.Models.Clientes
         public string VendedorEstetica { get; set; }
         public string VendedorPeluqueria { get; set; }
         public List<ClienteTelefonoLookup> ClientesMismoTelefono { get; set; }
+        /// <summary>
+        /// NestoAPI#874: el número propio es válido pero Google no lo encuentra en esa calle y CP. DireccionFormateada ya lo lleva;
+        /// el cliente pregunta con <see cref="AvisoNumero"/> y, si el usuario acepta, manda ClienteCrear.NumeroConfirmadoSinGoogle.
+        /// </summary>
+        public bool NumeroSinConfirmarPorGoogle { get; set; }
+        /// <summary>NestoAPI#874: la pregunta (de usted) cuando <see cref="NumeroSinConfirmarPorGoogle"/>; null si no.</summary>
+        public string AvisoNumero { get; set; }
     }
 
     public class ClienteTelefonoLookup

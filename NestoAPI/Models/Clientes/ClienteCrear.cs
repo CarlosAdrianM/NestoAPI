@@ -35,6 +35,11 @@ namespace NestoAPI.Models.Clientes
         [StringLength(10, ErrorMessage = "El número de la calle no puede superar {1} caracteres.")]
         public string Numero { get; set; }
         /// <summary>
+        /// NestoAPI#874: el usuario ha confirmado un <see cref="Numero"/> de portal válido que Google no encuentra en esa calle y CP
+        /// (ComprobarDatosGenerales devolvió NumeroSinConfirmarPorGoogle). Sin esto, ese caso es un 400 con la pregunta.
+        /// </summary>
+        public bool NumeroConfirmadoSinGoogle { get; set; }
+        /// <summary>
         /// NestoAPI#874: «¿Qué es?» la dirección: Piso, Local, Casa, Nave u Otro (<see cref="Infraestructure.Clientes.TiposLugar"/>).
         /// Con los campos de su tipo compone Clientes.Direccion2 (<see cref="Infraestructure.Clientes.Direccion2Cliente"/>).
         /// </summary>

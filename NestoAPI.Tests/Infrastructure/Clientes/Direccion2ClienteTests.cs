@@ -126,7 +126,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         {
             Assert.AreEqual("13", NumeroPropioDireccion.Normalizar(" 13 "));
             Assert.AreEqual("13B", NumeroPropioDireccion.Normalizar("13 b"));
-            Assert.AreEqual("13", NumeroPropioDireccion.Normalizar("nº13"));
+            Assert.AreEqual("13BIS", NumeroPropioDireccion.Normalizar("13 bis"));
             Assert.AreEqual("S/N", NumeroPropioDireccion.Normalizar("s/n"));
             Assert.AreEqual("S/N", NumeroPropioDireccion.Normalizar("SN"));
             Assert.AreEqual("S/N", NumeroPropioDireccion.Normalizar("sin número"));
@@ -136,13 +136,15 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         [TestMethod]
         public void NumeroPropio_FormatoValido()
         {
-            Assert.IsTrue(NumeroPropioDireccion.FormatoValido("13"));
-            Assert.IsTrue(NumeroPropioDireccion.FormatoValido("13 B"));
-            Assert.IsTrue(NumeroPropioDireccion.FormatoValido("13 bis"));
-            Assert.IsTrue(NumeroPropioDireccion.FormatoValido("S/N"));
-            Assert.IsFalse(NumeroPropioDireccion.FormatoValido("13, local 6"), "lo del local va en «¿Qué es?»");
-            Assert.IsFalse(NumeroPropioDireccion.FormatoValido("trece"));
-            Assert.IsFalse(NumeroPropioDireccion.FormatoValido(null));
+            foreach (string valido in new[] { "99", " 13 ", "13 B", "13b", "13 BIS", "13 bis", "S/N", "s/n", "SN", "sin número" })
+            {
+                Assert.IsTrue(NumeroPropioDireccion.FormatoValido(valido), valido);
+            }
+            // Carlos 17/11/26: en «Número» solo va el portal; lo demás, en «¿Qué es?».
+            foreach (string noValido in new[] { "nº 99", "Nº13", "n 99", "99 local 6", "13, local 6", "Edificio Rojo", "trece", "13 BB", "123456", "", null })
+            {
+                Assert.IsFalse(NumeroPropioDireccion.FormatoValido(noValido), noValido ?? "null");
+            }
         }
 
         [TestMethod]
@@ -203,15 +205,27 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
-        public async Task ComprobarDatosGenerales_ConNumeroQueGoogleNoEncuentra_400ConElMotivo()
+        public async Task ComprobarDatosGenerales_ConNumeroValidoQueGoogleNoEncuentra_NoBloqueaYDevuelveLaPregunta()
         {
-            IServicioDireccionesGoogle google = Google(new DireccionDetalleDTO { Calle = "Calle Sor Livia Alcorta", CodigoPostal = "28100" });
+            IServicioDireccionesGoogle google = Google(new DireccionDetalleDTO { Calle = "Calle La Granja", CodigoPostal = "28108" });
 
-            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Gestor(google).ComprobarDatosGenerales(
-                "Calle Sor Livia Alcorta", "28100", "916000000", direccionVerificada: true, pais: "ES", numero: "13"));
+            RespuestaDatosGeneralesClientes r = await Gestor(google).ComprobarDatosGenerales("Calle La Granja", "28108", "916000000",
+                direccionVerificada: true, pais: "ES", numero: "99");
 
-            StringAssert.Contains(ex.Message, "Google no encuentra el número 13");
-            StringAssert.Contains(ex.Message, "S/N");
+            Assert.AreEqual("C/ LA GRANJA, 99", r.DireccionFormateada);
+            Assert.IsTrue(r.NumeroSinConfirmarPorGoogle);
+            Assert.AreEqual("Google Maps no encuentra el número 99 en C/ LA GRANJA (28108). Es posible que el repartidor de la agencia " +
+                "no lo encuentre. ¿Quiere guardarlo igualmente?", r.AvisoNumero);
+        }
+
+        [TestMethod]
+        public async Task ComprobarDatosGenerales_ConNumeroQueGoogleEncuentra_SinPregunta()
+        {
+            RespuestaDatosGeneralesClientes r = await Gestor(Google(new DireccionDetalleDTO { Numero = "99", CodigoPostal = "28108" }))
+                .ComprobarDatosGenerales("Calle La Granja", "28108", "916000000", direccionVerificada: true, pais: "ES", numero: "99");
+
+            Assert.IsFalse(r.NumeroSinConfirmarPorGoogle);
+            Assert.IsNull(r.AvisoNumero);
         }
 
         [TestMethod]
@@ -227,40 +241,75 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
-        public async Task ComprobarDatosGenerales_NumeroConFormatoRaro_400()
+        public async Task ComprobarDatosGenerales_NumeroNoValido_400Siempre()
         {
-            ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Gestor(Google(null)).ComprobarDatosGenerales(
-                "Calle Sor Livia Alcorta", "28100", "916000000", direccionVerificada: true, pais: "ES", numero: "13 local 6"));
-            Assert.AreEqual(NumeroPropioDireccion.MOTIVO_FORMATO, ex.Message);
+            foreach (string noValido in new[] { "13 local 6", "nº 99", "Edificio Rojo" })
+            {
+                ArgumentException ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Gestor(Google(null)).ComprobarDatosGenerales(
+                    "Calle Sor Livia Alcorta", "28100", "916000000", direccionVerificada: true, pais: "ES", numero: noValido));
+                Assert.AreEqual(NumeroPropioDireccion.MOTIVO_FORMATO, ex.Message);
+            }
+            StringAssert.Contains(NumeroPropioDireccion.MOTIVO_FORMATO, "solo va el número del portal");
         }
 
         [TestMethod]
-        public async Task MotivoRechazoNumeroPropio_AltaVuelveAComprobar()
+        public async Task ComprobarNumeroPropio_AltaVuelveAComprobar()
         {
             var alta = new ClienteCrear { Direccion = "C/ SOR LIVIA ALCORTA, 13", CodigoPostal = "28100", DireccionVerificada = true, Numero = "13" };
 
-            Assert.IsNull(await Gestor(Google(new DireccionDetalleDTO { Numero = "13", CodigoPostal = "28100" })).MotivoRechazoNumeroPropio(alta));
-            StringAssert.Contains(await Gestor(Google(new DireccionDetalleDTO { CodigoPostal = "28100" })).MotivoRechazoNumeroPropio(alta), "no encuentra");
+            ResultadoNumeroPropio encontrado = await Gestor(Google(new DireccionDetalleDTO { Numero = "13", CodigoPostal = "28100" })).ComprobarNumeroPropio(alta);
+            Assert.IsNull(encontrado.Motivo);
+            Assert.IsFalse(encontrado.ConfirmadoSinGoogle);
+
+            ResultadoNumeroPropio sinConfirmar = await Gestor(Google(new DireccionDetalleDTO { CodigoPostal = "28100" })).ComprobarNumeroPropio(alta);
+            StringAssert.Contains(sinConfirmar.Motivo, "¿Quiere guardarlo igualmente?");
 
             alta.Direccion = "C/ SOR LIVIA ALCORTA, 15";
-            StringAssert.Contains(await Gestor(Google(null)).MotivoRechazoNumeroPropio(alta), "no lleva el número 13");
+            StringAssert.Contains((await Gestor(Google(null)).ComprobarNumeroPropio(alta)).Motivo, "no lleva el número 13");
         }
 
         [TestMethod]
-        public async Task MotivoRechazoNumeroPropio_GoogleCaido_ElAltaSigue()
+        public async Task ComprobarNumeroPropio_ValidoNoEncontradoYConfirmado_SigueYDejaRastro()
+        {
+            var alta = new ClienteCrear
+            {
+                Direccion = "C/ LA GRANJA, 99", CodigoPostal = "28108", DireccionVerificada = true, Numero = "99", NumeroConfirmadoSinGoogle = true
+            };
+
+            ResultadoNumeroPropio r = await Gestor(Google(new DireccionDetalleDTO { CodigoPostal = "28108" })).ComprobarNumeroPropio(alta);
+
+            Assert.IsNull(r.Motivo);
+            Assert.IsTrue(r.ConfirmadoSinGoogle, "Se apuntará en Modificaciones tras guardar");
+        }
+
+        [TestMethod]
+        public async Task ComprobarNumeroPropio_NoValido_400AunqueVengaConfirmado()
+        {
+            var alta = new ClienteCrear
+            {
+                Direccion = "C/ LA GRANJA, 99", CodigoPostal = "28108", DireccionVerificada = true, Numero = "nº 99", NumeroConfirmadoSinGoogle = true
+            };
+
+            Assert.AreEqual(NumeroPropioDireccion.MOTIVO_FORMATO, (await Gestor(Google(null)).ComprobarNumeroPropio(alta)).Motivo);
+        }
+
+        [TestMethod]
+        public async Task ComprobarNumeroPropio_GoogleCaido_ElAltaSigue()
         {
             IServicioDireccionesGoogle google = A.Fake<IServicioDireccionesGoogle>();
             A.CallTo(() => google.Geocodificar(A<string>._, A<string>._, A<string>._)).Throws(new System.Net.Http.HttpRequestException("sin red"));
             var alta = new ClienteCrear { Direccion = "C/ SOR LIVIA ALCORTA, 13", CodigoPostal = "28100", DireccionVerificada = true, Numero = "13" };
 
-            Assert.IsNull(await Gestor(google).MotivoRechazoNumeroPropio(alta));
+            ResultadoNumeroPropio r = await Gestor(google).ComprobarNumeroPropio(alta);
+            Assert.IsNull(r.Motivo);
+            Assert.IsFalse(r.ConfirmadoSinGoogle);
         }
 
         [TestMethod]
-        public async Task MotivoRechazoNumeroPropio_SinNumeroPropio_NiSePregunta()
+        public async Task ComprobarNumeroPropio_SinNumeroPropio_NiSePregunta()
         {
             IServicioDireccionesGoogle google = Google(null);
-            Assert.IsNull(await Gestor(google).MotivoRechazoNumeroPropio(new ClienteCrear { Direccion = "C/ MAYOR, 1", DireccionVerificada = true }));
+            Assert.IsNull((await Gestor(google).ComprobarNumeroPropio(new ClienteCrear { Direccion = "C/ MAYOR, 1", DireccionVerificada = true })).Motivo);
             A.CallTo(() => google.Geocodificar(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
@@ -287,7 +336,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
-        public async Task CrearCliente_NumeroQueGoogleNoEncuentra_400()
+        public async Task CrearCliente_NumeroQueGoogleNoEncuentraSinConfirmar_400ConLaPregunta()
         {
             var alta = new ClienteCrear
             {
@@ -298,7 +347,23 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             ValidationException ex = await Assert.ThrowsExceptionAsync<ValidationException>(() =>
                 Gestor(Google(new DireccionDetalleDTO { CodigoPostal = "28100" })).CrearCliente(alta, A.Fake<NVEntities>()));
 
-            StringAssert.Contains(ex.Message, "Google no encuentra el número 13");
+            StringAssert.Contains(ex.Message, "Google Maps no encuentra el número 13");
+            StringAssert.Contains(ex.Message, "¿Quiere guardarlo igualmente?");
+        }
+
+        [TestMethod]
+        public async Task CrearCliente_NumeroNoValido_400AunqueVengaConfirmado()
+        {
+            var alta = new ClienteCrear
+            {
+                Empresa = "1", Cliente = "42143", EsContacto = true, Direccion = "C/ SOR LIVIA ALCORTA, 13", CodigoPostal = "28100",
+                DireccionVerificada = true, Numero = "13 local 6", NumeroConfirmadoSinGoogle = true, TipoLugar = "Casa"
+            };
+
+            ValidationException ex = await Assert.ThrowsExceptionAsync<ValidationException>(() =>
+                Gestor(Google(null)).CrearCliente(alta, A.Fake<NVEntities>()));
+
+            Assert.AreEqual(NumeroPropioDireccion.MOTIVO_FORMATO, ex.Message);
         }
 
         [TestMethod]
