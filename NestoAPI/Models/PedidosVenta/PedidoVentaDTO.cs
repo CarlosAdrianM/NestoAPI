@@ -117,6 +117,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// NestoAPI#764). Solo de salida: lo rellenan GET, POST y PUT; null = no se ha podido calcular (el cliente, como antes).
         /// </summary>
         public bool? tieneFechasFuturas { get; set; }
+        /// <summary>
+        /// NestoAPI#873: la versión del pedido guardado (opaca, <see cref="Infraestructure.PedidosVenta.VersionPedidoVenta"/>). La
+        /// rellenan GET y POST; el cliente la devuelve en el PUT y, si ya no es la del pedido guardado, 409 PEDIDO_CAMBIADO sin
+        /// guardar nada. Null (NestoApp, TiendasNuevaVision, Nesto viejo) = como antes, pero sin poder quitar prepagos que no trae.
+        /// </summary>
+        public string Version { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }

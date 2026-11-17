@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using NestoAPI.Models.PreparacionAlmacen;
+using NestoAPI.Infraestructure.PedidosVenta;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
@@ -227,7 +228,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 : ModoAvisosConDatos.Ambos;
         }
 
-        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3}|PagoTPV:\d{1,9}|AutorizacionReembolso:\d{1,9}|RecogidasSolicitadas)$",
+        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3}|Reparto|Reposiciones:[A-Z0-9]{1,3}|PagoTPV:\d{1,9}|AutorizacionReembolso:\d{1,9}|RecogidasSolicitadas|Pedido:[A-Z0-9]{1,3}:\d{1,9})$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>
@@ -247,6 +248,12 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// recoge o descarga un bulto de una reposición de la tienda (Nesto relee GET api/Reposiciones/Puntual/Estado).
         /// </summary>
         public static string GrupoReposiciones(string almacen) => $"Reposiciones:{(almacen ?? string.Empty).Trim().ToUpperInvariant()}";
+
+        /// <summary>
+        /// NestoAPI#873: «Pedido:1:929555», el del detalle de ese pedido en Nesto (Nesto#642): «pedidoCambiado(PedidoCambiadoDTO)»
+        /// cada vez que se guarda (PUT/POST del pedido o un prepago). Nesto compara la Version con la suya para no avisarse de lo suyo.
+        /// </summary>
+        public static string GrupoPedido(string empresa, int numero) => $"Pedido:{(empresa ?? string.Empty).Trim().ToUpperInvariant()}:{numero}";
 
         /// <summary>«Recogida:PICK:99633», «Recogida:REPO:80905».</summary>
         public static string GrupoRecogida(string tipo, int numero) => $"Recogida:{(tipo ?? string.Empty).Trim().ToUpperInvariant()}:{numero}";
@@ -291,6 +298,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
             {
                 return GrupoReposiciones(partes[1]);
             }
+            if (partes.Length == 3 && string.Equals(partes[0], "Pedido", StringComparison.OrdinalIgnoreCase))
+            {
+                return GrupoPedido(partes[1], int.Parse(partes[2]));
+            }
             if (partes.Length == 4)
             {
                 return GrupoRecepcion(partes[1], partes[2], partes[3]);
@@ -312,7 +323,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// «haCambiado(grupo, dispositivo)», «lectura(grupo, dispositivo, LecturaAlmacenAvisoDTO)», «lecturas(grupo, dispositivo,
     /// [LecturaAlmacenAvisoDTO])» y «correccion(grupo, dispositivo, CorreccionAlmacenAvisoDTO)».
     /// </summary>
-    public class AvisosAlmacenSignalR : IAvisosAlmacen, Agencias.RepartoPropio.IAvisosReparto, Agencias.RepartoPropio.IAvisosCobroReparto
+    public class AvisosAlmacenSignalR : IAvisosAlmacen, Agencias.RepartoPropio.IAvisosReparto, Agencias.RepartoPropio.IAvisosCobroReparto, IAvisosPedidoCambiado
     {
         private readonly Func<IHubContext> contexto;
         private readonly Func<ModoAvisosConDatos> modo;
@@ -382,6 +393,24 @@ namespace NestoAPI.Infraestructure.Notificaciones
             {
                 MandarATodos(AvisosAlmacen.GrupoAutorizacion(autorizacion.Id), clientes => clientes.autorizacionRespondida(autorizacion));
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#873: «pedidoCambiado(PedidoCambiadoDTO)» al grupo «Pedido:{empresa}:{numero}», a todos (también a quien ha
+        /// guardado: Nesto lo distingue por la Version). Si no hay nadie mirando el pedido, no se manda nada. Nunca lanza.
+        /// </summary>
+        public void PedidoCambiado(PedidoCambiadoDTO aviso)
+        {
+            if (aviso == null || string.IsNullOrWhiteSpace(aviso.Empresa))
+            {
+                return;
+            }
+            string grupo = AvisosAlmacen.GrupoPedido(aviso.Empresa, aviso.Pedido);
+            if (!ConexionesAlmacen.HayOtros(grupo, null))
+            {
+                return; // nadie tiene el pedido abierto
+            }
+            MandarATodos(grupo, clientes => clientes.pedidoCambiado(aviso));
         }
 
         private void MandarATodos(string grupo, Action<dynamic> enviar)

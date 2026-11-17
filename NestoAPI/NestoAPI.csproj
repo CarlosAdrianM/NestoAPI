@@ -1187,6 +1187,8 @@
     <Compile Include="Infraestructure\PedidosVenta\MantenerJuntoContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FechaCobroPrepagos.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\VersionPedidoVenta.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\AvisoPedidoCambiado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioServirPendienteAlHaberStock.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\AvisadorConsultaReembolso.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConsultaReembolso\LiberacionConConsultaAbierta.cs" />

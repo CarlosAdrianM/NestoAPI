@@ -411,6 +411,7 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                     };
                     _ = db.Prepagos.Add(prepago);
                     _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                    AvisoPedidoCambiado.CalcularYAvisarEnSegundoPlano(empresa, pedido, usuario); // NestoAPI#873
                 }
                 // NestoAPI#860: la fecha real del cobro (la columna puede no estar: entonces no se escribe y se factura como siempre)
                 new RepositorioFechaCobroPrepagos(db).Guardar(new Dictionary<int, DateTime> { { prepago.Id, fechaCobro.Date } });
@@ -429,6 +430,7 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                 }
                 _ = db.Prepagos.Remove(prepago);
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                AvisoPedidoCambiado.CalcularYAvisarEnSegundoPlano(prepago.Empresa, prepago.Pedido, "Pago a plazos"); // NestoAPI#873
                 return true;
             }
         }
@@ -444,6 +446,7 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                 }
                 prepago.Importe = importe;
                 _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                AvisoPedidoCambiado.CalcularYAvisarEnSegundoPlano(prepago.Empresa, prepago.Pedido, "Pago a plazos"); // NestoAPI#873
                 return true;
             }
         }

@@ -7,6 +7,8 @@ namespace NestoAPI.Models
         public List<AvisoPedidoDTO> Avisos { get; set; } = new List<AvisoPedidoDTO>();
         /// <summary>Nesto#588: «fechas futuras» del pedido tal como ha quedado (la regla de la lista); null = no se ha podido calcular.</summary>
         public bool? tieneFechasFuturas { get; set; }
+        /// <summary>NestoAPI#873: la versión del pedido tal como ha quedado, para seguir guardando sin recargar. Null si no se ha podido calcular.</summary>
+        public string Version { get; set; }
     }
 
     public class AvisoPedidoDTO

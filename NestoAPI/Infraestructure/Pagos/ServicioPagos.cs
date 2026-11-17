@@ -1348,6 +1348,8 @@ namespace NestoAPI.Infraestructure.Pagos
 
             _ = db.Prepagos.Add(ConstruirPrepago(pago, numeroPedido, empresa));
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            // NestoAPI#873: quien tenga el pedido abierto en Nesto se entera de que tiene un prepago nuevo (nunca lanza)
+            PedidosVenta.AvisoPedidoCambiado.CalcularYAvisarEnSegundoPlano(empresa, numeroPedido, pago.Usuario);
 
             // El prepago tiene que cubrir el total para que el pedido salga en el picking. Si no
             // llega (un pago parcial, o el pedido ha cambiado despues de cobrarlo), mejor saberlo

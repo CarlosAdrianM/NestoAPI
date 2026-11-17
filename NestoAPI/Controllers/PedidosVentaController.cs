@@ -530,8 +530,33 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(PedidoVentaDTO))]
         public async Task<IHttpActionResult> GetPedidoVenta(string empresa, int numero)
         {
+            // NestoAPI#873: la versión se lee ANTES que el pedido: si alguien guarda entre medias, la versión es la de antes y el
+            // siguiente PUT da 409 (de más, nunca de menos: con la versión de después, un PUT con los datos de antes pasaría).
+            string version = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(empresa, numero));
             PedidoVentaDTO pedido = await GestorPedidosVenta.LeerPedido(empresa, numero).ConfigureAwait(false);
-            return pedido == null ? NotFound() : (IHttpActionResult)Ok(pedido);
+            if (pedido == null)
+            {
+                return NotFound();
+            }
+            pedido.Version = version;
+            return Ok(pedido);
+        }
+
+        /// <summary>
+        /// NestoAPI#873: la versión del pedido ahora y quién lo tocó el último ({ Version, Usuario, Fecha }), sin leer el pedido. Nesto
+        /// la pide al volver a enseñar el detalle o al recuperar la conexión de SignalR (pudo perderse un «pedidoCambiado»).
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/Version")]
+        public IHttpActionResult GetVersionPedido(string empresa, int numero)
+        {
+            DatosVersionPedido datos = LeerDatosVersionSinFallar(empresa, numero);
+            if (datos == null)
+            {
+                return NotFound();
+            }
+            UltimaModificacionPedido ultima = VersionPedidoVenta.UltimaModificacion(datos);
+            return Ok(new { Version = VersionPedidoVenta.Calcular(datos), ultima?.Usuario, ultima?.Fecha });
         }
 
         /// <summary>
@@ -774,6 +799,125 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(new Exception($"[Fecha de cobro del prepago #860] Pedido {pedido}: no se ha podido guardar: {ex.Message}", ex));
             }
+        }
+
+        // NestoAPI#873: lo que hace falta para la versión del pedido (una consulta). Para tests.
+        private ILectorVersionPedido lectorVersionPedido;
+        internal ILectorVersionPedido LectorVersionPedido
+        {
+            get => lectorVersionPedido ?? (lectorVersionPedido = new LectorVersionPedidoSql(db));
+            set => lectorVersionPedido = value;
+        }
+
+        /// <summary>NestoAPI#873: los datos de la versión del pedido, o null si no existe o no se han podido leer (ELMAH). Nunca lanza.</summary>
+        internal DatosVersionPedido LeerDatosVersionSinFallar(string empresa, int numero)
+        {
+            try
+            {
+                return LectorVersionPedido.Leer(empresa, numero);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Versión del pedido #873] Pedido {numero}: no se ha podido leer: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#873 (pedido 929555): aplica al pedido guardado los prepagos sin factura que trae el PUT. Los que trae se añaden o
+        /// se actualizan (por concepto) como siempre. Los que NO trae solo se quitan si el guardado mandó la versión y coincidía
+        /// (<see cref="VersionPedidoVenta.PuedeQuitarPrepagosQueNoVienen"/>): si no, se conservan, se devuelve un aviso por cada
+        /// uno y se apunta en ELMAH. Así un guardado con una copia de antes del prepago no puede borrarlo.
+        /// </summary>
+        internal List<AvisoPedidoDTO> AplicarPrepagosAlModificar(CabPedidoVta cabPedidoVta, PedidoVentaDTO pedido, bool versionComprobada,
+            FechasCobroPrepagosAGuardar fechasCobroPrepagos)
+        {
+            var avisosPrepagos = new List<AvisoPedidoDTO>();
+            IEnumerable<PrepagoDTO> prepagosDelPedido = (pedido.Prepagos ?? new List<PrepagoDTO>()).Where(p => p != null && p.Factura == null).ToList();
+
+            // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
+            // Carlos 12/01/22: usamos el concepto como Id
+            if (prepagosDelPedido.Any())
+            {
+                foreach (var prepagoPedido in prepagosDelPedido)
+                {
+                    if (cabPedidoVta.Prepagos.Where(p => p.Factura == null && p.ConceptoAdicional == prepagoPedido.ConceptoAdicional).Any())
+                    {
+                        Prepago prepagoCabecera = cabPedidoVta.Prepagos.Where(p => p.Factura == null && p.ConceptoAdicional == prepagoPedido.ConceptoAdicional).Single();
+                        prepagoCabecera.Importe = prepagoPedido.Importe;
+                        prepagoCabecera.CuentaContable = prepagoPedido.CuentaContable;
+                        prepagoCabecera.ConceptoAdicional = prepagoPedido.ConceptoAdicional;
+                        // NestoAPI#860: sin fecha no se toca la guardada
+                        fechasCobroPrepagos?.Apuntar(prepagoCabecera, prepagoPedido.FechaCobro);
+                    }
+                    else
+                    {
+                        Prepago prepagoNuevo = new Prepago
+                        {
+                            Importe = prepagoPedido.Importe,
+                            CuentaContable = prepagoPedido.CuentaContable,
+                            ConceptoAdicional = prepagoPedido.ConceptoAdicional,
+                            // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
+                            Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)
+                        };
+                        cabPedidoVta.Prepagos.Add(prepagoNuevo);
+                        fechasCobroPrepagos?.Apuntar(prepagoNuevo, prepagoPedido.FechaCobro);
+                    }
+                }
+                return avisosPrepagos;
+            }
+
+            List<Prepago> sinFactura = cabPedidoVta.Prepagos.Where(p => p.Factura == null).ToList();
+            if (!sinFactura.Any())
+            {
+                return avisosPrepagos;
+            }
+            if (VersionPedidoVenta.PuedeQuitarPrepagosQueNoVienen(versionComprobada))
+            {
+                foreach (var prepago in sinFactura)
+                {
+                    _ = db.Prepagos.Remove(prepago);
+                }
+                return avisosPrepagos;
+            }
+            foreach (var prepago in sinFactura)
+            {
+                string mensaje = VersionPedidoVenta.MensajePrepagoConservado(prepago.Importe, prepago.ConceptoAdicional);
+                avisosPrepagos.Add(new AvisoPedidoDTO
+                {
+                    Tipo = VersionPedidoVenta.TIPO_AVISO_PREPAGO_CONSERVADO,
+                    Mensaje = mensaje,
+                    Datos = new { prepago.Id, prepago.Importe, Concepto = prepago.ConceptoAdicional?.Trim() }
+                });
+                try
+                {
+                    ElmahHelper.Log(new Exception($"[Prepago conservado #873] Pedido {pedido.numero}: el guardado de {pedido.Usuario} llegó sin prepagos " +
+                        $"y sin versión; no se quita el prepago {prepago.Id} de {prepago.Importe:N2} € («{prepago.ConceptoAdicional?.Trim()}»)."));
+                }
+                catch
+                {
+                    // nada
+                }
+            }
+            return avisosPrepagos;
+        }
+
+        /// <summary>NestoAPI#873: el 409 PEDIDO_CAMBIADO, con el formato de GlobalExceptionFilter ({ error: { code, message, details } }) y Message.</summary>
+        private IHttpActionResult RespuestaPedidoCambiado(PedidoVentaDTO pedido, DatosVersionPedido datosVersion, string versionActual)
+        {
+            UltimaModificacionPedido ultima = VersionPedidoVenta.UltimaModificacion(datosVersion);
+            string mensaje = VersionPedidoVenta.MensajeConflicto(pedido.numero, ultima, pedido.Usuario, DateTime.Today);
+            object cuerpo = new
+            {
+                error = new
+                {
+                    code = VersionPedidoVenta.CODIGO_CONFLICTO,
+                    message = mensaje,
+                    details = new { Version = versionActual, ultima?.Usuario, ultima?.Fecha }
+                },
+                Message = mensaje
+            };
+            return Content(HttpStatusCode.Conflict, cuerpo);
         }
 
         /// <summary>
@@ -1359,6 +1503,19 @@ namespace NestoAPI.Controllers
             if (cabPedidoVta == null)
             {
                 return NotFound();
+            }
+            // NestoAPI#873 (pedido 929555): con Version, si el pedido guardado ya no es el que abrió el usuario, 409 sin tocar nada.
+            // Sin Version (NestoApp, TiendasNuevaVision, Nesto viejo), como antes; pero entonces no se quitan los prepagos que no trae.
+            bool versionComprobada = false;
+            if (!string.IsNullOrWhiteSpace(pedido.Version))
+            {
+                DatosVersionPedido datosVersion = LeerDatosVersionSinFallar(pedido.empresa, pedido.numero);
+                string versionActual = VersionPedidoVenta.Calcular(datosVersion);
+                if (VersionPedidoVenta.HayConflicto(pedido.Version, versionActual))
+                {
+                    return RespuestaPedidoCambiado(pedido, datosVersion, versionActual);
+                }
+                versionComprobada = versionActual != null;
             }
             // NestoAPI#830: fuera de la empresa 1, la ruta que vale es la de la ficha de la empresa 1 (antes de las fechas de entrega)
             _ = RutaQueVale.AjustarPedido(db, pedido);
@@ -2088,53 +2245,10 @@ namespace NestoAPI.Controllers
             // NestoAPI#860: las fechas de cobro que traen los prepagos se escriben tras guardar (columna fuera del EDMX)
             FechasCobroPrepagosAGuardar fechasCobroPrepagos = new FechasCobroPrepagosAGuardar();
 
-            // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
-            // Carlos 12/01/22: usamos el concepto como Id
-            if (pedido.Prepagos.Where(p => p.Factura == null).Any())
-            {
-                foreach (var prepagoPedido in pedido.Prepagos.Where(p => p.Factura == null))
-                {
-                    if (cabPedidoVta.Prepagos.Where(p => p.Factura == null && p.ConceptoAdicional == prepagoPedido.ConceptoAdicional).Any())
-                    {
-                        Prepago prepagoCabecera = cabPedidoVta.Prepagos.Where(p => p.Factura == null && p.ConceptoAdicional == prepagoPedido.ConceptoAdicional).Single();
-                        prepagoCabecera.Importe = prepagoPedido.Importe;
-                        prepagoCabecera.CuentaContable = prepagoPedido.CuentaContable;
-                        prepagoCabecera.ConceptoAdicional = prepagoPedido.ConceptoAdicional;
-                        // NestoAPI#860: sin fecha no se toca la guardada
-                        fechasCobroPrepagos.Apuntar(prepagoCabecera, prepagoPedido.FechaCobro);
-                    }
-                    else
-                    {
-                        Prepago prepagoNuevo = new Prepago
-                        {
-                            Importe = prepagoPedido.Importe,
-                            CuentaContable = prepagoPedido.CuentaContable,
-                            ConceptoAdicional = prepagoPedido.ConceptoAdicional,
-                            // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
-                            Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)
-                        };
-                        cabPedidoVta.Prepagos.Add(prepagoNuevo);
-                        fechasCobroPrepagos.Apuntar(prepagoNuevo, prepagoPedido.FechaCobro);
-                    }
-
-                }
-            }
-            else
-            {
-                if (cabPedidoVta.Prepagos.Where(p => p.Factura == null).Any())
-                {
-                    /*
-                    for (int i = 0; i < cabPedidoVta.Prepagos.Where(p => p.Factura == null).Count(); i++)
-                    {
-                        cabPedidoVta.Prepagos.Remove(cabPedidoVta.Prepagos.ElementAt(i));
-                    }
-                    */
-                    foreach (var prepago in cabPedidoVta.Prepagos.Where(p => p.Factura == null).ToList())
-                    {
-                        _ = db.Prepagos.Remove(prepago);
-                    }
-                }
-            }
+            // NestoAPI#873 (pedido 929555): los que no trae solo se quitan si el guardado mandó la versión y coincidía
+            List<AvisoPedidoDTO> avisosPrepagos = AplicarPrepagosAlModificar(cabPedidoVta, pedido, versionComprobada, fechasCobroPrepagos);
+            avisos.AddRange(avisosPrepagos);
+            avisosCorreoModificacion.AddRange(avisosPrepagos.Select(a => a.Mensaje));
 
 
             // Issue #326: cuadrar efectos antes de guardar y enviar correo
@@ -2672,9 +2786,15 @@ namespace NestoAPI.Controllers
             // Nesto#588: «fechas futuras» del pedido tal como ha quedado, con la regla de la lista. Si no se ha podido calcular
             // y no hay avisos, el 204 de siempre.
             bool? tieneFechasFuturas = TieneFechasFuturasGrabado(pedido, codigoPostalRutaInterna);
-            if (avisos.Count > 0 || tieneFechasFuturas.HasValue)
+
+            // NestoAPI#873: la versión tal como ha quedado (lo último, tras todo lo que escribe el PUT), para que el cliente siga
+            // guardando sin recargar, y el aviso «pedidoCambiado» a quien tenga el pedido abierto (en segundo plano; nunca lanza).
+            string versionNueva = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
+            AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, versionNueva);
+
+            if (avisos.Count > 0 || tieneFechasFuturas.HasValue || versionNueva != null)
             {
-                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos, tieneFechasFuturas = tieneFechasFuturas });
+                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos, tieneFechasFuturas = tieneFechasFuturas, Version = versionNueva });
             }
             return StatusCode(HttpStatusCode.NoContent);
         }
@@ -3476,6 +3596,11 @@ namespace NestoAPI.Controllers
 
             // Nesto#588: «fechas futuras» del pedido tal como se ha grabado, con la regla de la lista
             pedido.tieneFechasFuturas = TieneFechasFuturasGrabado(pedido, codigoPostalRutaInterna);
+
+            // NestoAPI#873: la versión del pedido recién creado (para que el cliente pueda modificarlo sin recargar) y el aviso
+            // «pedidoCambiado» (en segundo plano; nunca lanza).
+            pedido.Version = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
+            AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, pedido.Version);
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);

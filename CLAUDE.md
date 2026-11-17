@@ -769,6 +769,21 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   número menor que salen. Regla pura `ReglaSaldoAFavorPrepago`; acumulador `RepartoSaldoAFavorPrepago` (GestorPicking lo prepara y decide por
   número; el que no sale suelta su parte del LIBRE). Antes cada pedido veía el saldo entero (930831 y 930835 del 42004, picking 100105).
 
+### Versión del pedido y 409 al guardar con copia vieja (NestoAPI#873, gemela Nesto#642, 17/11/26)
+- Caso 929555: un PUT con una copia de antes del prepago («Prepagos: []») lo borró. `PedidoVentaDTO.Version` (opaca): LA REGLA pura
+  `VersionPedidoVenta.Calcular` sobre UNA consulta (`LectorVersionPedidoSql`, sin NOLOCK): RowVersion de la cabecera, nº y MAX(RowVersion)
+  de las líneas, y nº/suma de Id/CHECKSUM de prepagos y efectos (cambia con cualquier guardado, lo haga quien lo haga). La rellenan
+  GET pedido (leída ANTES que el pedido: de más, nunca de menos), POST y la respuesta del PUT (`RespuestaModificacionPedidoDTO.Version`,
+  ahora casi siempre 200). `GET api/PedidosVenta/{empresa}/{numero}/Version` → { Version, Usuario, Fecha } (sin leer el pedido).
+- PUT con Version distinta → 409 `PEDIDO_CAMBIADO` { error: { code, message, details: { Version, Usuario, Fecha } }, Message } ANTES de tocar
+  nada («El pedido 929555 lo ha modificado Aida a las 15:14 desde que usted lo abrió. Recárguelo y vuelva a hacer los cambios.»; quién y
+  cuándo = lo más reciente de cabecera/líneas/prepagos/efectos). Sin Version (NestoApp, TNV, Nesto viejo, CambiarCliente, UnirPedidos), como antes.
+- Prepagos (`AplicarPrepagosAlModificar`): los que no trae el PUT SOLO se quitan con la Version comprobada (`PuedeQuitarPrepagosQueNoVienen`);
+  sin ella se conservan, aviso `PrepagoConservado` (respuesta y correo) y ELMAH. Añadir/actualizar por concepto, como siempre.
+- SignalR: `pedidoCambiado` {Empresa, Pedido, Usuario, Fecha, Version} al grupo `Pedido:{empresa}:{numero}` del **AlmacenHub** (donde Nesto ya
+  entra/sale con Entrar/Salir), a todos (Nesto ignora el suyo por la Version), solo si alguien lo tiene abierto, en segundo plano
+  (`AvisoPedidoCambiado`, nunca lanza): PUT, POST, cobro de la app (`ServicioPagos`) y pago a plazos (`RepositorioPagoAPlazos`).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
