@@ -126,7 +126,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     var mail = new MailMessage
                     {
                         From = new MailAddress(CORREO_REMITENTE),
-                        Subject = TextosPromesaRiesgo.AsuntoCorreo(destino.Value.Count, sombra),
+                        Subject = TextosPromesaRiesgo.AsuntoCorreo(destino.Value, sombra),
                         Body = TextosPromesaRiesgo.CuerpoCorreo(destino.Value, sombra),
                         IsBodyHtml = true
                     };

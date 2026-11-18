@@ -137,5 +137,71 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public DateTime? AvisadoCorreo { get; set; }
         public DateTime? Resuelto { get; set; }
         public string MotivoResolucion { get; set; }
+        /// <summary>
+        /// Lo que faltaba al detectarlo (y lo que se fue sumando al empeorar o actualizar), en JSON (<see cref="CausaOriginalPromesaRiesgo"/>).
+        /// Columna opcional (Scripts/PromesaRiesgo_CausaOriginal.sql): sin ella, siempre null.
+        /// </summary>
+        public string CausaOriginal { get; set; }
+    }
+
+    /// <summary>Un producto que faltaba (para la causa original y la buena noticia).</summary>
+    public class FaltaPromesaRiesgo
+    {
+        public string Producto { get; set; }
+        /// <summary>El nombre ya recortado (<see cref="TextosPromesaRiesgo.NombreCorto"/>).</summary>
+        public string Nombre { get; set; }
+        public int Unidades { get; set; }
+    }
+
+    /// <summary>
+    /// Carlos (18/11/26): la causa original no se pierde al recalcular (pedido 929751: detectado por falta de stock el 05/11, el stock
+    /// llegó el 17/11 y el texto acabó diciendo «todo está listo en Algete, pero no salió el 05/11»). Puro: JSON corto con lo que faltaba.
+    /// </summary>
+    public static class CausaOriginalPromesaRiesgo
+    {
+        /// <summary>Tope de productos que se guardan (el texto solo nombra el primero).</summary>
+        public const int MAXIMO = 30;
+
+        public static string Serializar(IEnumerable<FaltaPromesaRiesgo> faltas)
+        {
+            List<FaltaPromesaRiesgo> lista = (faltas ?? Enumerable.Empty<FaltaPromesaRiesgo>()).Where(f => f != null && !string.IsNullOrWhiteSpace(f.Producto))
+                .Take(MAXIMO).ToList();
+            return lista.Any() ? Newtonsoft.Json.JsonConvert.SerializeObject(lista) : null;
+        }
+
+        /// <summary>Lo guardado; vacío si no hay o no se entiende (nunca lanza).</summary>
+        public static List<FaltaPromesaRiesgo> Leer(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new List<FaltaPromesaRiesgo>();
+            }
+            try
+            {
+                return (Newtonsoft.Json.JsonConvert.DeserializeObject<List<FaltaPromesaRiesgo>>(json) ?? new List<FaltaPromesaRiesgo>())
+                    .Where(f => f != null && !string.IsNullOrWhiteSpace(f.Producto)).ToList();
+            }
+            catch
+            {
+                return new List<FaltaPromesaRiesgo>();
+            }
+        }
+
+        /// <summary>Lo guardado más lo que falta ahora y no estaba (lo guardado manda: no se pierde nada).</summary>
+        public static string Unir(string guardada, IEnumerable<FaltaPromesaRiesgo> ahora)
+        {
+            List<FaltaPromesaRiesgo> lista = Leer(guardada);
+            foreach (FaltaPromesaRiesgo falta in ahora ?? Enumerable.Empty<FaltaPromesaRiesgo>())
+            {
+                if (falta != null && !string.IsNullOrWhiteSpace(falta.Producto)
+                    && !lista.Any(f => string.Equals(f.Producto.Trim(), falta.Producto.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                    lista.Add(falta);
+                }
+            }
+            string resultado = Serializar(lista);
+            // Sin cambios, lo mismo que había (para no escribir de más).
+            return Leer(guardada).Count == lista.Count && guardada != null ? guardada : resultado;
+        }
     }
 }

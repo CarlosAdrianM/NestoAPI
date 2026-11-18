@@ -363,10 +363,18 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             };
             var orientativa = new PartidaFechaEntregaAgenciaDTO { Origen = "SinStock", Producto = "C", Unidades = 1, FechaOrientativa = new DateTime(2026, 11, 24) };
 
-            Assert.AreEqual("no hay stock: llegan con el pedido al proveedor 220672, ya enviado por GLS, que prevé entregarlo el viernes 13/11/2026, " +
-                "y pueden salir el lunes 16/11/2026 (fecha prácticamente segura)", TextosPromesaRiesgo.FraseCulpable(conSeguimiento));
-            Assert.AreEqual("no hay stock: aún no hay pedido al proveedor que lo cubra; estimamos que podría salir sobre el martes 24/11/2026 " +
-                "(orientativo, no es un compromiso)", TextosPromesaRiesgo.FraseCulpable(orientativa));
+            // Carlos (18/11/26): la promesa en riesgo ya no usa las frases largas (antes «no hay stock: llegan con el pedido al proveedor
+            // 220672, ya enviado por GLS, que prevé entregarlo…»); la certeza va en una palabra en «Sale …», no en cada producto.
+            var hoy = new DateTime(2026, 11, 10);
+            Assert.AreEqual("llegan del proveedor el 13/11", TextosPromesaRiesgo.FraseLarga(conSeguimiento, true, hoy));
+            Assert.AreEqual("llegan mañana del proveedor", TextosPromesaRiesgo.FraseLarga(conSeguimiento, true, new DateTime(2026, 11, 12)));
+            Assert.AreEqual("aún no está pedido al proveedor", TextosPromesaRiesgo.FraseLarga(orientativa, false, hoy));
+            Assert.AreEqual("Faltan 2 productos: B del proveedor (13/11) y C sin pedir al proveedor. Sin fecha segura (orientativo: 24/11).",
+                TextosPromesaRiesgo.Motivo(new DateTime(2026, 11, 9), new FechaEntregaAgenciaDTO
+                {
+                    Desglose = new List<PartidaFechaEntregaAgenciaDTO> { conSeguimiento, orientativa }
+                }, null, hoy));
+            Assert.AreEqual("seguro", TextosCertezaFechaEntrega.CalificativoCorto(TextosCertezaFechaEntrega.Certeza(conSeguimiento)), "con seguimiento de la agencia");
         }
 
         #endregion

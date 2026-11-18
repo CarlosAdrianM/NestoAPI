@@ -16,7 +16,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Ya estaba registrado y sigue igual (o algo mejor sin llegar a cumplir): se actualiza el texto, sin avisar.</summary>
         Actualizar,
         /// <summary>Estaba registrado y vuelve a cumplir la fecha, se ha servido o la fecha se ha renegociado.</summary>
-        Resolver
+        Resolver,
+        /// <summary>
+        /// Carlos (18/11/26): estaba registrado, sigue saliendo después de la prometida pero ya no falta nada (le ha llegado lo que
+        /// faltaba: sale en el próximo picking). Se resuelve con la buena noticia («Faltaba X; llegó el 17/11. Sale hoy.») y, si ya se
+        /// le había avisado, se le dice una sola vez.
+        /// </summary>
+        YaLlego
     }
 
     public class DecisionPromesaRiesgo
@@ -48,6 +54,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public const string RESUELTO_CUMPLE = "Vuelve a cumplir la fecha prometida";
         public const string RESUELTO_SERVIDO = "Servido (no queda nada pendiente)";
         public const string RESUELTO_RENEGOCIADO = "Fecha prometida renegociada";
+        public const string RESUELTO_LLEGO = "Ha llegado lo que faltaba";
+
+        /// <summary>
+        /// Carlos (18/11/26): en riesgo Y con algo que contar al vendedor: algún culpable (lo que no está listo en Algete y sale después de
+        /// la prometida) o la fecha de entrega del pedido, que lo retiene. Un pedido que lo tiene todo en Algete (o en picking) y sale en el
+        /// siguiente picking ya no es un problema: no se registra ni se avisa (antes se avisaba «todo está listo, pero no salió el …»).
+        /// </summary>
+        public static bool MereceAviso(DateTime prometida, FechaEntregaAgenciaDTO calculo) =>
+            EstaEnRiesgo(prometida, calculo)
+            && (TextosPromesaRiesgo.Culpables(prometida, calculo).Any() || TextosPromesaRiesgo.TieneFechaEntregaPosterior(calculo));
 
         /// <summary>True si con este cálculo el pedido ya no llega a la fecha prometida.</summary>
         public static bool EstaEnRiesgo(DateTime prometida, FechaEntregaAgenciaDTO calculo)
@@ -89,7 +105,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 if (!prometida.HasValue || prometida.Value.Date != registrado.FechaPrometida.Date)
                 {
                     var renegociada = Resolver(RESUELTO_RENEGOCIADO);
-                    renegociada.AccionTrasRenegociar = prometida.HasValue && EstaEnRiesgo(prometida.Value, calculo)
+                    renegociada.AccionTrasRenegociar = prometida.HasValue && MereceAviso(prometida.Value, calculo)
                         ? AccionPromesaRiesgo.Registrar
                         : AccionPromesaRiesgo.Nada;
                     return renegociada;
@@ -98,12 +114,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     return Resolver(RESUELTO_CUMPLE);
                 }
+                if (!MereceAviso(prometida.Value, calculo))
+                {
+                    return new DecisionPromesaRiesgo { Accion = AccionPromesaRiesgo.YaLlego, MotivoResolucion = RESUELTO_LLEGO };
+                }
                 return new DecisionPromesaRiesgo
                 {
                     Accion = Empeora(registrado.FechaNueva, calculo.FechaEntregaAgencia) ? AccionPromesaRiesgo.Empeora : AccionPromesaRiesgo.Actualizar
                 };
             }
-            if (!prometida.HasValue || calculo == null || !quedaPendiente || !EstaEnRiesgo(prometida.Value, calculo))
+            if (!prometida.HasValue || calculo == null || !quedaPendiente || !MereceAviso(prometida.Value, calculo))
             {
                 return new DecisionPromesaRiesgo { Accion = AccionPromesaRiesgo.Nada };
             }

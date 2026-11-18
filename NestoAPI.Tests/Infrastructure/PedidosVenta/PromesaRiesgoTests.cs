@@ -54,11 +54,12 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Task.FromResult(Pedidos.TryGetValue(pedido, out var p) ? ((DateTime?)p.prometida, p.productos.Any()) : ((DateTime?)null, false));
 
         public Task<Dictionary<string, string>> LeerNombresProductos(string empresa, IEnumerable<string> productos) =>
-            Task.FromResult(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["42485"] = "PARCHES DE COLÁGENO" });
+            Task.FromResult(new Dictionary<string, string>(Nombres, StringComparer.OrdinalIgnoreCase));
 
         public Task<int> Insertar(RiesgoPromesa riesgo)
         {
             RiesgoPromesa fila = Copia(riesgo);
+            fila.CausaOriginal = ColumnaCausa ? riesgo.CausaOriginal : null;
             fila.Id = siguienteId++;
             Filas.Add(fila);
             return Task.FromResult(fila.Id);
@@ -73,8 +74,18 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             fila.Actualizado = riesgo.Actualizado;
             fila.AvisadoCampana = riesgo.AvisadoCampana;
             fila.AvisadoCorreo = riesgo.AvisadoCorreo;
+            fila.CausaOriginal = ColumnaCausa ? riesgo.CausaOriginal : null;
             return Task.CompletedTask;
         }
+
+        /// <summary>Sin la columna (script sin lanzar), la causa original no se guarda.</summary>
+        public bool ColumnaCausa { get; set; } = true;
+
+        public bool ColumnaCausaOriginalExiste() => ColumnaCausa;
+
+        public Task<List<RiesgoPromesa>> LeerYaSalenSinCorreo(string empresa, DateTime desde) =>
+            Task.FromResult(Filas.Where(f => f.Resuelto != null && f.Resuelto >= desde && f.MotivoResolucion == EvaluadorPromesaRiesgo.RESUELTO_LLEGO
+                && f.AvisadoCorreo == null).Select(Copia).ToList());
 
         public Task Resolver(int id, DateTime cuando, string motivo)
         {
@@ -118,8 +129,12 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             AvisadoCampana = r.AvisadoCampana,
             AvisadoCorreo = r.AvisadoCorreo,
             Resuelto = r.Resuelto,
-            MotivoResolucion = r.MotivoResolucion
+            MotivoResolucion = r.MotivoResolucion,
+            CausaOriginal = r.CausaOriginal
         };
+
+        /// <summary>Nombres de los productos (además del 42485 de siempre).</summary>
+        public Dictionary<string, string> Nombres { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["42485"] = "PARCHES DE COLÁGENO" };
     }
 
     [TestClass]
@@ -151,6 +166,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             A.CallTo(() => avisador.AvisarCampana(A<AvisoPromesaRiesgo>._)).Returns(Task.FromResult(3));
             modo = ModoAvisoPromesaRiesgo.Activo;
             calculoActual = CumpleElJueves();
+            reloj = AHORA;
         }
 
         private static readonly Func<ModoAvisoPromesaRiesgo> leerModoOriginal = EventosPromesaRiesgo.LeerModo;
@@ -164,7 +180,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             InterruptorAvisoPromesaRiesgo.LeerAjuste = null;
         }
 
-        private ServicioPromesaRiesgo Servicio() => new ServicioPromesaRiesgo(repositorio, fechas, avisador, () => AHORA, () => modo, _ => { });
+        private DateTime reloj = AHORA;
+
+        private ServicioPromesaRiesgo Servicio() => new ServicioPromesaRiesgo(repositorio, fechas, avisador, () => reloj, () => modo, _ => { });
 
         // ------------------------------------------------------------------ cálculos del motor (lo que devolvería #606)
 
@@ -313,15 +331,16 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual("se ha modificado el pedido", TextosPromesaRiesgo.TextoCausa(causa, 3, 929104));
         }
 
-        [TestMethod]
-        public void Motivo_DiceQueProductoFallaYPorQue()
-        {
-            var causas = new Dictionary<string, CausaPromesaRiesgo> { ["42485"] = new CausaPromesaRiesgo { Tienda = "REI", Mandadas = 1, Traspaso = 81094 } };
-            string motivo = TextosPromesaRiesgo.Motivo(PEDIDO, PROMETIDA, RetrasoAlViernes(), causas,
-                new Dictionary<string, int> { ["42485"] = 3 }, new Dictionary<string, string> { ["42485"] = "PARCHES" });
+        // Carlos (18/11/26): los tests de Motivo de antes fijaban las frases largas («Por qué: … no está en Algete: tienen que venir de
+        // Reina en la reposición y pueden salir el viernes 23/10/2026 (fecha prácticamente segura…)», «El resto está listo en Algete…»,
+        // «todo está listo en Algete, pero no salió…»). Se cambian A PROPÓSITO al formato nuevo: qué falta, cuándo llega y cuándo sale.
 
-            Assert.AreEqual("Por qué: 42485 PARCHES (3 uds.): Reina mandó 1 de 3 en la reposición 81094; no está en Algete: tienen que venir de " +
-                "Reina en la reposición y pueden salir el viernes 23/10/2026 (fecha prácticamente segura: ya está en nuestras tiendas).", motivo);
+        [TestMethod]
+        public void Motivo_DiceQueFaltaCuandoLlegaYCuandoSale_SinLoQueLlegaATiempo()
+        {
+            string motivo = TextosPromesaRiesgo.Motivo(PROMETIDA, RetrasoAlViernes(), new Dictionary<string, string> { ["42485"] = "PARCHES" }, AHORA.Date);
+
+            Assert.AreEqual("Faltan 42485 PARCHES (2 uds.): vienen de Reina. Sale el viernes 23/10 (seguro).", motivo);
             Assert.IsFalse(motivo.Contains("de camino"), "lo que sí llega a tiempo no se nombra: " + motivo);
         }
 
@@ -348,10 +367,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 }
             };
 
-            string motivo = TextosPromesaRiesgo.Motivo(929104, PROMETIDA, calculo, null, null, new Dictionary<string, string> { ["43710"] = "BRILLO" }, VIERNES);
+            string motivo = TextosPromesaRiesgo.Motivo(PROMETIDA, calculo, new Dictionary<string, string> { ["43710"] = "BRILLO" }, VIERNES);
 
-            Assert.AreEqual("Por qué: 43710 BRILLO (1 ud.): no está en Algete: viene de camino desde una tienda y puede salir el lunes 26/10/2026 (fecha prácticamente segura). " +
-                "El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
+            Assert.AreEqual("Falta 43710 BRILLO (1 ud.): viene de camino desde una tienda. Sale el lunes 26/10 (seguro). Va todo junto.", motivo);
         }
 
         [TestMethod]
@@ -366,14 +384,17 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("17404", lunes), EnAlgete("24868", lunes) }
             };
 
-            string motivo = TextosPromesaRiesgo.Motivo(929073, PROMETIDA, calculo, null, null, null, VIERNES);
+            string motivo = TextosPromesaRiesgo.Motivo(PROMETIDA, calculo, null, VIERNES);
 
-            Assert.AreEqual("Por qué: el pedido tiene fecha de entrega el lunes 26/10: no entra en el picking hasta ese día.", motivo);
+            Assert.AreEqual("El pedido tiene fecha de entrega el lunes 26/10: no entra en el picking hasta ese día.", motivo);
+            Assert.AreEqual(AccionPromesaRiesgo.Registrar, EvaluadorPromesaRiesgo.Decidir(PROMETIDA, calculo, true, null).Accion,
+                "la fecha de entrega del pedido lo retiene: sí se avisa");
         }
 
         [TestMethod]
-        public void Motivo_TodoEnAlgeteYLaPrometidaYaPaso_DiceQueNoSalio()
+        public void Motivo_TodoEnAlgeteYLaPrometidaYaPaso_NoDiceQueNoSalio_YNoSeRegistra()
         {
+            // Antes: «Por qué: todo está listo en Algete, pero no salió el jueves 22/10/2026.» (Carlos, 18/11/26: «no es cierto»).
             var calculo = new FechaEntregaAgenciaDTO
             {
                 FechaEntregaAgencia = VIERNES,
@@ -381,9 +402,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("23474", VIERNES), EnAlgete("27593", VIERNES) }
             };
 
-            string motivo = TextosPromesaRiesgo.Motivo(929077, PROMETIDA, calculo, null, null, null, VIERNES);
+            string motivo = TextosPromesaRiesgo.Motivo(PROMETIDA, calculo, null, VIERNES);
 
-            Assert.AreEqual("Por qué: todo está listo en Algete, pero no salió el jueves 22/10/2026.", motivo);
+            Assert.AreEqual(TextosPromesaRiesgo.TODO_EN_ALGETE, motivo);
+            Assert.IsTrue(EvaluadorPromesaRiesgo.EstaEnRiesgo(PROMETIDA, calculo), "sigue llegando tarde…");
+            Assert.AreEqual(AccionPromesaRiesgo.Nada, EvaluadorPromesaRiesgo.Decidir(PROMETIDA, calculo, true, null).Accion, "…pero no falta nada: no se avisa");
         }
 
         [TestMethod]
@@ -406,10 +429,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 }
             };
 
-            string motivo = TextosPromesaRiesgo.Motivo(928370, martes, calculo, null, null, null, VIERNES);
+            string motivo = TextosPromesaRiesgo.Motivo(martes, calculo, null, VIERNES);
 
-            Assert.AreEqual("Por qué: 42652 (5 uds.): no hay stock: llegan con el pedido al proveedor 220672, previsto el viernes 06/11/2026, " +
-                "y pueden salir el lunes 09/11/2026 (fecha aproximada, aún sin seguimiento de la agencia). El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
+            Assert.AreEqual("Faltan 42652 (5 uds.): llegan del proveedor el 06/11. Sale el lunes 09/11 (aproximado). Va todo junto.", motivo);
         }
 
         [TestMethod]
@@ -428,29 +450,303 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 }
             };
 
-            string motivo = TextosPromesaRiesgo.Motivo(928370, PROMETIDA, calculo, null, null, null, VIERNES);
+            string motivo = TextosPromesaRiesgo.Motivo(PROMETIDA, calculo, null, VIERNES);
 
-            Assert.AreEqual("Por qué: 42652 (1 ud.): no hay stock y el pedido al proveedor 220672 tenía que haber llegado el martes 20/10/2026 y no ha llegado.", motivo);
+            Assert.AreEqual("Falta 42652 (1 ud.): el proveedor tenía que traerlo el 20/10 y aún no ha llegado. Sin fecha.", motivo);
         }
 
         [TestMethod]
-        public void Notificacion_DeUsted_ConPedidoClienteYFechas()
+        public void Notificacion_DeUsted_ConPedidoClienteYFechas_SinRepetirLaFecha()
         {
             var aviso = new AvisoPromesaRiesgo
             {
                 Cliente = "40353",
                 NombreCliente = "BELLPROMUR",
-                Riesgo = new RiesgoPromesa { Empresa = "1", Pedido = PEDIDO, FechaPrometida = PROMETIDA, FechaNueva = null, Motivo = "42485 (3 uds.): 3 sin fecha: no hay stock ni fecha de llegada." }
+                Riesgo = new RiesgoPromesa { Empresa = "1", Pedido = PEDIDO, FechaPrometida = PROMETIDA, FechaNueva = null, Motivo = "Faltan 42485 (3 uds.): no hay stock ni pedido al proveedor. Sin fecha." }
             };
             NotificacionPushDTO n = TextosPromesaRiesgo.Notificacion(aviso);
 
             Assert.AreEqual("El pedido 928908 se queda sin fecha", n.Titulo);
-            StringAssert.Contains(n.Cuerpo, "cliente 40353 - BELLPROMUR");
-            StringAssert.Contains(n.Cuerpo, "jueves 22/10/2026");
-            StringAssert.Contains(n.Cuerpo, "ahora se queda sin fecha");
-            StringAssert.Contains(n.Cuerpo, "Revise el pedido");
+            Assert.AreEqual("Cliente 40353 - BELLPROMUR. Prometido a la agencia para el jueves 22/10/2026. Faltan 42485 (3 uds.): no hay stock ni pedido " +
+                "al proveedor. Sin fecha. Revise el pedido y, si hace falta, avise al cliente.", n.Cuerpo);
+            Assert.IsFalse(n.Cuerpo.Contains("ahora"), "la fecha nueva va en el título y en la frase, no dos veces");
             Assert.AreEqual(TextosPromesaRiesgo.TIPO_NOTIFICACION, n.Tipo);
             Assert.AreEqual("928908", n.Datos["pedido"]);
+        }
+
+        [TestMethod]
+        public void Notificacion_YaLlego_BuenaNoticiaCorta()
+        {
+            var aviso = new AvisoPromesaRiesgo
+            {
+                Cliente = "40353",
+                YaLlego = true,
+                Riesgo = new RiesgoPromesa { Empresa = "1", Pedido = 929751, FechaPrometida = PROMETIDA, Motivo = "Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11. Sale hoy." }
+            };
+            NotificacionPushDTO n = TextosPromesaRiesgo.Notificacion(aviso);
+
+            Assert.AreEqual("El pedido 929751 ya sale", n.Titulo);
+            Assert.AreEqual("Cliente 40353. Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11. Sale hoy.", n.Cuerpo);
+        }
+
+        // ------------------------------------------------------------------ los cinco ejemplos de Carlos (18/11/26)
+
+        private static readonly DateTime HOY = new DateTime(2026, 11, 18); // miércoles
+
+        private static PartidaFechaEntregaAgenciaDTO Proveedor(string producto, int unidades, DateTime prevista, DateTime sale) => new PartidaFechaEntregaAgenciaDTO
+        {
+            Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR, Producto = producto, Unidades = unidades, PedidoProveedor = 220856,
+            FechaPrevistaProveedor = prevista, PuedeSalirEl = sale
+        };
+
+        private static PartidaFechaEntregaAgenciaDTO SinPedirLejano(string producto, int unidades, DateTime previstaLejana, DateTime orientativa) => new PartidaFechaEntregaAgenciaDTO
+        {
+            Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK, Producto = producto, Unidades = unidades, PedidoProveedorOrientativo = 220900,
+            FechaPrevistaProveedorOrientativo = previstaLejana, FechaOrientativa = orientativa, MotivoSinFecha = "pedido lejano"
+        };
+
+        [TestMethod]
+        public void Ejemplo930396_SeisJabonesDelProveedor_UnaFraseConYCincoMas()
+        {
+            var jueves = new DateTime(2026, 11, 19);
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = jueves,
+                Motivo = "Sale entero a la agencia el jueves 19/11. Modo «Todo junto»: sale cuando esté todo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    EnAlgete("17404", jueves),
+                    Proveedor("45949", 9, HOY, jueves), Proveedor("45950", 9, HOY, jueves), Proveedor("45951", 8, HOY, jueves),
+                    Proveedor("45952", 8, HOY, jueves), Proveedor("45953", 8, HOY, jueves), Proveedor("45954", 8, HOY, jueves)
+                }
+            };
+            var nombres = new Dictionary<string, string> { ["45949"] = "JABON CARBON ACTIVO DETOXIFICANTE", ["45950"] = "JABON CAFE EXFOLIANTE" };
+
+            string motivo = TextosPromesaRiesgo.Motivo(new DateTime(2026, 11, 13), calculo, nombres, HOY);
+
+            Console.WriteLine(motivo);
+            Assert.AreEqual("Faltan 45949 JABON CARBON ACTIVO y 5 productos más (50 uds.): llegan hoy del proveedor. Sale mañana (aproximado). Va todo junto.", motivo);
+        }
+
+        [TestMethod]
+        public void Ejemplo930750_UnEsmalteDeReina()
+        {
+            var jueves = new DateTime(2026, 11, 19);
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = jueves,
+                Motivo = "Sale a la agencia el jueves 19/11.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA, Producto = "44082", Unidades = 1, Tienda = "REI",
+                        LlegaAAlgete = jueves.AddHours(10), PuedeSalirEl = jueves }
+                }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(HOY, calculo, new Dictionary<string, string> { ["44082"] = "ESMALTE PERMANENTE G V003" }, HOY);
+
+            Console.WriteLine(motivo);
+            Assert.AreEqual("Falta 44082 ESMALTE PERMANENTE G V003 (1 ud.): viene de Reina. Sale mañana (seguro).", motivo);
+        }
+
+        [TestMethod]
+        public void Ejemplo929934_SinPedirConPedidoLejano_Orientativo()
+        {
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = null,
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO> { SinPedirLejano("18863", 1, new DateTime(2026, 12, 14), new DateTime(2026, 12, 15)) }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(HOY, calculo, new Dictionary<string, string> { ["18863"] = "CONTORNO OJOS VITALIFT" }, HOY);
+
+            Console.WriteLine(motivo);
+            Assert.AreEqual("Falta 18863 CONTORNO OJOS VITALIFT (1 ud.): el proveedor lo trae hacia el 14/12. Sin fecha segura (orientativo: 15/12).", motivo);
+        }
+
+        [TestMethod]
+        public void Ejemplo930132_VariasCausas_EnUnaLineaYLoUltimo()
+        {
+            var jueves = new DateTime(2026, 11, 19);
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = null,
+                Motivo = "Sale entero a la agencia cuando esté todo. Modo «Todo junto»: sale cuando esté todo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA, Producto = "42445", Unidades = 1, Tienda = "REI",
+                        LlegaAAlgete = jueves.AddHours(10), PuedeSalirEl = jueves },
+                    Proveedor("38664", 2, new DateTime(2026, 12, 1), new DateTime(2026, 12, 2)),
+                    SinPedirLejano("40001", 1, new DateTime(2027, 1, 7), new DateTime(2027, 1, 8)),
+                    SinPedirLejano("40002", 3, new DateTime(2027, 1, 7), new DateTime(2027, 1, 8))
+                }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(HOY, calculo, null, HOY);
+
+            Console.WriteLine(motivo);
+            Assert.AreEqual("Faltan 4 productos: 42445 viene de Reina (mañana), 38664 del proveedor (01/12) y otros 2 del proveedor (07/01/2027). " +
+                "Sin fecha segura (orientativo: 08/01/2027).", motivo);
+        }
+
+        [TestMethod]
+        public void Ejemplo929751_YaLlegoLoQueFaltaba_BuenaNoticia()
+        {
+            var faltaba = new List<FaltaPromesaRiesgo> { new FaltaPromesaRiesgo { Producto = "45949", Nombre = "JABON CARBON ACTIVO", Unidades = 9 } };
+            var martes = new DateTime(2026, 11, 17);
+
+            Assert.AreEqual("Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11. Sale hoy.", TextosPromesaRiesgo.YaLlego(faltaba, martes, martes, martes));
+            Assert.AreEqual(TextosPromesaRiesgo.TODO_EN_ALGETE, TextosPromesaRiesgo.YaLlego(null, martes, martes, martes), "sin la causa original");
+            faltaba.Add(new FaltaPromesaRiesgo { Producto = "45950" });
+            Assert.AreEqual("Faltaban 45949 JABON CARBON ACTIVO y otro producto; llegaron el 17/11. Sale mañana.",
+                TextosPromesaRiesgo.YaLlego(faltaba, martes, HOY, martes));
+        }
+
+        [TestMethod]
+        public void Fechas_HoyMananaYOtroAnio()
+        {
+            Assert.AreEqual("hoy", TextosPromesaRiesgo.ElDia(HOY, HOY));
+            Assert.AreEqual("mañana", TextosPromesaRiesgo.ElDia(HOY.AddDays(1), HOY));
+            Assert.AreEqual("el viernes 20/11", TextosPromesaRiesgo.ElDia(HOY.AddDays(2), HOY));
+            Assert.AreEqual("el viernes 08/01/2027", TextosPromesaRiesgo.ElDia(new DateTime(2027, 1, 8), HOY));
+            Assert.AreEqual("JABON CARBON ACTIVO", TextosPromesaRiesgo.NombreCorto("JABON CARBON ACTIVO DETOXIFICANTE"));
+            Assert.AreEqual("ESMALTE PERMANENTE G V003", TextosPromesaRiesgo.NombreCorto("ESMALTE PERMANENTE G V003 "));
+        }
+
+        [TestMethod]
+        public void CertezaEnUnaPalabra_SinTocarLoDeOtrasPantallas()
+        {
+            Assert.AreEqual("seguro", TextosCertezaFechaEntrega.CalificativoCorto(PartidaFechaEntregaAgenciaDTO.CERTEZA_SEGURA));
+            Assert.AreEqual("seguro", TextosCertezaFechaEntrega.CalificativoCorto(PartidaFechaEntregaAgenciaDTO.CERTEZA_CASI_SEGURA));
+            Assert.AreEqual("aproximado", TextosCertezaFechaEntrega.CalificativoCorto(PartidaFechaEntregaAgenciaDTO.CERTEZA_APROXIMADA));
+            Assert.AreEqual("orientativo", TextosCertezaFechaEntrega.CalificativoCorto(PartidaFechaEntregaAgenciaDTO.CERTEZA_ORIENTATIVA));
+            Assert.IsNull(TextosCertezaFechaEntrega.CalificativoCorto(null));
+            Assert.AreEqual("Prácticamente segura", TextosCertezaFechaEntrega.Etiqueta(PartidaFechaEntregaAgenciaDTO.CERTEZA_CASI_SEGURA), "lo del correo de fechas no cambia");
+        }
+
+        [TestMethod]
+        public void CausaOriginal_SeUneSinPerderNadaYAguantaBasura()
+        {
+            string guardada = CausaOriginalPromesaRiesgo.Serializar(new[] { new FaltaPromesaRiesgo { Producto = "45949", Nombre = "JABON", Unidades = 9 } });
+            string igual = CausaOriginalPromesaRiesgo.Unir(guardada, new[] { new FaltaPromesaRiesgo { Producto = "45949 ", Unidades = 3 } });
+            string mas = CausaOriginalPromesaRiesgo.Unir(guardada, new[] { new FaltaPromesaRiesgo { Producto = "18863", Unidades = 1 } });
+
+            Assert.AreSame(guardada, igual, "sin nada nuevo, lo mismo (no se escribe)");
+            CollectionAssert.AreEqual(new[] { "45949", "18863" }, CausaOriginalPromesaRiesgo.Leer(mas).Select(f => f.Producto).ToArray());
+            Assert.AreEqual(9, CausaOriginalPromesaRiesgo.Leer(mas)[0].Unidades, "lo guardado manda");
+            Assert.AreEqual(0, CausaOriginalPromesaRiesgo.Leer("{no es json").Count);
+            Assert.IsNull(CausaOriginalPromesaRiesgo.Serializar(null));
+        }
+
+        [TestMethod]
+        public void Evaluador_RegistradoSinCulpablesYAunTarde_YaLlego()
+        {
+            var registrado = new RiesgoPromesa { Id = 1, FechaPrometida = PROMETIDA, FechaNueva = VIERNES };
+            var todoEnAlgete = new FechaEntregaAgenciaDTO { FechaEntregaAgencia = VIERNES, Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("42485", VIERNES) } };
+
+            DecisionPromesaRiesgo decision = EvaluadorPromesaRiesgo.Decidir(PROMETIDA, todoEnAlgete, true, registrado);
+
+            Assert.AreEqual(AccionPromesaRiesgo.YaLlego, decision.Accion);
+            Assert.AreEqual(EvaluadorPromesaRiesgo.RESUELTO_LLEGO, decision.MotivoResolucion);
+        }
+
+        /// <summary>
+        /// El caso real 929751 (Carlos, 18/11/26): detectado el 05/11 porque faltaba el 45949 (proveedor); el 17/11 llega el stock y el
+        /// pedido sale ese día. Antes el texto acababa diciendo «todo está listo en Algete, pero no salió el jueves 05/11/2026».
+        /// </summary>
+        [TestMethod]
+        public async Task Caso929751_DetectadoSinStock_LlegaElStock_BuenaNoticiaUnaVezYSinDecirQueNoSalio()
+        {
+            var jueves05 = new DateTime(2026, 11, 5);
+            var martes17 = new DateTime(2026, 11, 17);
+            repositorio.Pedidos.Clear();
+            repositorio.Pedidos[929751] = (jueves05, new List<string> { "45949" });
+            repositorio.Nombres["45949"] = "JABON CARBON ACTIVO DETOXIFICANTE";
+            reloj = jueves05.AddHours(9);
+            calculoActual = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = martes17,
+                Motivo = "Sale entero a la agencia el martes 17/11. Modo «Todo junto»: sale cuando esté todo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("17404", martes17), Proveedor("45949", 9, new DateTime(2026, 11, 16), martes17) }
+            };
+            ResultadoPromesaRiesgo detectado = await Servicio().ProcesarEvento(Evento("movimiento de stock (diario General)", "45949"));
+            _ = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => reloj, () => modo, "1");
+            Console.WriteLine("Detectado: " + repositorio.Filas.Single().Motivo);
+
+            // 17/11: llega el stock; todo en Algete, sale hoy (después de la prometida del 05/11)
+            reloj = martes17.AddHours(10);
+            calculoActual = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = martes17,
+                Motivo = "Sale entero a la agencia el martes 17/11. Modo «Todo junto»: sale cuando esté todo. Lo que hay en Algete está listo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("17404", martes17), EnAlgete("45949", martes17) }
+            };
+            ResultadoPromesaRiesgo llego = await Servicio().ProcesarEvento(Evento("albarán de compra 220856", "45949"));
+            ResultadoPromesaRiesgo otraVez = await Servicio().PasadaNocturna("1");
+            int correo = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => reloj, () => modo, "1");
+            int correoOtraVez = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => reloj, () => modo, "1");
+
+            RiesgoPromesa fila = repositorio.Filas.Single();
+            Console.WriteLine("Al llegar: " + fila.Motivo);
+            Assert.AreEqual(1, detectado.AvisadosCampana);
+            Assert.AreEqual(1, llego.YaSalen);
+            Assert.AreEqual(1, llego.AvisadosYaSalen, "la buena noticia, por la campana");
+            Assert.AreEqual(0, otraVez.AvisadosCampana + otraVez.AvisadosYaSalen + otraVez.Registrados, "y no más");
+            Assert.AreEqual("Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11. Sale hoy.", fila.Motivo);
+            Assert.IsFalse(fila.Motivo.Contains("no salió") || fila.Motivo.Contains("listo"), fila.Motivo);
+            Assert.AreEqual(EvaluadorPromesaRiesgo.RESUELTO_LLEGO, fila.MotivoResolucion);
+            Assert.AreEqual(1, correo, "la buena noticia va en el siguiente correo (la mala salió en uno)");
+            Assert.AreEqual(0, correoOtraVez);
+            A.CallTo(() => avisador.AvisarCampana(A<AvisoPromesaRiesgo>.That.Matches(a => a.YaLlego))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.EnviarCorreos(A<IEnumerable<AvisoPromesaRiesgo>>.That.Matches(l => l.Count() == 1 && l.First().YaLlego), false))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task YaLlego_SinAvisarAntes_SeResuelveSinRuido()
+        {
+            // Sombra: la campana nunca avisó y aún no había salido en un correo: se resuelve y no se cuenta nada.
+            modo = ModoAvisoPromesaRiesgo.Sombra;
+            calculoActual = RetrasoAlViernes();
+            _ = await Servicio().ProcesarEvento(TerminarReposicion81094());
+            calculoActual = new FechaEntregaAgenciaDTO { FechaEntregaAgencia = VIERNES, Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("42485", VIERNES) } };
+
+            ResultadoPromesaRiesgo resultado = await Servicio().ProcesarEvento(Evento("movimiento de stock (diario General)", "42485"));
+            int correo = await PromesaRiesgoJobsService.CorreoResumen(repositorio, avisador, () => reloj, () => modo, "1");
+
+            Assert.AreEqual(1, resultado.YaSalen);
+            Assert.AreEqual(0, correo);
+            A.CallTo(() => avisador.AvisarCampana(A<AvisoPromesaRiesgo>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task SinColumnaCausaOriginal_TextosNuevosYBuenaNoticiaNeutra()
+        {
+            repositorio.ColumnaCausa = false;
+            calculoActual = RetrasoAlViernes();
+            _ = await Servicio().ProcesarEvento(TerminarReposicion81094());
+            calculoActual = new FechaEntregaAgenciaDTO { FechaEntregaAgencia = VIERNES, Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("42485", VIERNES) } };
+
+            _ = await Servicio().ProcesarEvento(Evento("movimiento de stock (diario General)", "42485"));
+
+            Assert.AreEqual(TextosPromesaRiesgo.TODO_EN_ALGETE, repositorio.Filas.Single().Motivo);
+        }
+
+        [TestMethod]
+        public void Correo_LosQueYaSalenEnUnaLineaYElAsunto()
+        {
+            var riesgo = new AvisoPromesaRiesgo { Cliente = "40353", Riesgo = new RiesgoPromesa { Pedido = 930750, FechaPrometida = HOY, FechaNueva = HOY.AddDays(1),
+                Motivo = "Falta 44082 ESMALTE PERMANENTE G V003 (1 ud.): viene de Reina. Sale el jueves 19/11 (seguro)." } };
+            var yaSale = new AvisoPromesaRiesgo { Cliente = "15191", YaLlego = true, Riesgo = new RiesgoPromesa { Pedido = 929751, FechaPrometida = HOY,
+                Motivo = "Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11. Sale hoy." } };
+
+            string cuerpo = TextosPromesaRiesgo.CuerpoCorreo(new[] { riesgo, yaSale }, false);
+
+            StringAssert.Contains(cuerpo, "<td>Falta 44082 ESMALTE PERMANENTE G V003 (1 ud.): viene de Reina. Sale el jueves 19/11 (seguro).</td>");
+            StringAssert.Contains(cuerpo, "<li>Pedido 929751 (15191): Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11. Sale hoy.</li>");
+            Assert.AreEqual("Un pedido ya no llega a la fecha prometida (y uno ya sale)", TextosPromesaRiesgo.AsuntoCorreo(new[] { riesgo, yaSale }, false));
+            Assert.AreEqual("Ya sale un pedido que no llegaba a la fecha prometida", TextosPromesaRiesgo.AsuntoCorreo(new[] { yaSale }, false));
+            Assert.IsFalse(TextosPromesaRiesgo.CuerpoCorreo(new[] { yaSale }, false).Contains("<table"), "solo buenas noticias: sin tabla");
         }
 
         // ------------------------------------------------------------------ servicio
@@ -539,8 +835,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual(PROMETIDA, fila.FechaPrometida);
             Assert.AreEqual(VIERNES, fila.FechaNueva);
             Assert.IsNotNull(fila.AvisadoCampana);
-            StringAssert.Contains(fila.Motivo, "Reina mandó 1 de 3 en la reposición 81094", "se conserva el porqué del evento que lo detectó");
+            // Carlos (18/11/26): la frase dice qué falta, cuándo llega y cuándo sale; la causa del evento queda en Evento (antes la frase
+            // llevaba «Reina mandó 1 de 3 en la reposición 81094»).
+            Assert.AreEqual("Faltan 42485 PARCHES DE COLÁGENO (2 uds.): vienen de Reina. Sale el viernes 23/10 (seguro).", fila.Motivo);
             Assert.AreEqual("reposición 81094 de Reina a Algete", fila.Evento);
+            CollectionAssert.AreEqual(new[] { "42485" }, CausaOriginalPromesaRiesgo.Leer(fila.CausaOriginal).Select(f => f.Producto).ToArray(), "se guarda lo que faltaba");
         }
 
         [TestMethod]

@@ -71,6 +71,44 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        public const string CORTO_SEGURO = "seguro";
+        public const string CORTO_APROXIMADO = "aproximado";
+        public const string CORTO_ORIENTATIVO = "orientativo";
+
+        /// <summary>
+        /// La certeza en UNA palabra, para la promesa en riesgo (Carlos, 18/11/26): Segura y CasiSegura → «seguro» (sale de Algete, de una
+        /// tienda, de camino o con seguimiento de la agencia: para el vendedor es lo mismo), Aproximada → «aproximado», Orientativa →
+        /// «orientativo». Null sin certeza. No cambia nada de lo de arriba (motivo del motor y correo de fechas).
+        /// </summary>
+        public static string CalificativoCorto(string certeza)
+        {
+            switch (certeza)
+            {
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_SEGURA:
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_CASI_SEGURA:
+                    return CORTO_SEGURO;
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_APROXIMADA:
+                    return CORTO_APROXIMADO;
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_ORIENTATIVA:
+                    return CORTO_ORIENTATIVO;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>Para quedarse con la peor de varias certezas (Segura 0 … Orientativa 3; sin certeza, -1).</summary>
+        public static int Gravedad(string certeza)
+        {
+            switch (certeza)
+            {
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_SEGURA: return 0;
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_CASI_SEGURA: return 1;
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_APROXIMADA: return 2;
+                case PartidaFechaEntregaAgenciaDTO.CERTEZA_ORIENTATIVA: return 3;
+                default: return -1;
+            }
+        }
+
         /// <summary>
         /// Lo que se dice de la fecha de una partida CON fecha, sin el día: «fecha prácticamente segura: ya está en nuestras tiendas»,
         /// «fecha prácticamente segura», «fecha aproximada, aún sin seguimiento de la agencia». Null en lo seguro, en lo vencido (tiene su

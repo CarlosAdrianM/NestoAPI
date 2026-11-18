@@ -13,8 +13,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public int Registrados { get; set; }
         public int Empeorados { get; set; }
         public int Resueltos { get; set; }
+        /// <summary>De los resueltos, los que ya salen porque ha llegado lo que faltaba (Carlos, 18/11/26).</summary>
+        public int YaSalen { get; set; }
         /// <summary>Riesgos avisados por la campana (0 en Sombra).</summary>
         public int AvisadosCampana { get; set; }
+        /// <summary>Buenas noticias por la campana (0 en Sombra).</summary>
+        public int AvisadosYaSalen { get; set; }
         public List<int> PedidosAvisados { get; set; } = new List<int>();
     }
 
@@ -54,16 +58,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return Task.FromResult(new ResultadoPromesaRiesgo());
             }
-            // Hangfire deserializa el diccionario sin el comparador: se rehace sin distinguir mayúsculas.
-            var causas = new Dictionary<string, CausaPromesaRiesgo>(StringComparer.OrdinalIgnoreCase);
-            foreach (KeyValuePair<string, CausaPromesaRiesgo> causa in evento.Causas ?? new Dictionary<string, CausaPromesaRiesgo>())
-            {
-                if (!string.IsNullOrWhiteSpace(causa.Key) && causa.Value != null)
-                {
-                    causas[causa.Key.Trim()] = causa.Value;
-                }
-            }
-            return Recalcular(evento.Empresa, evento.Productos, causas, evento.Descripcion);
+            // Carlos (18/11/26): la causa del evento («Reina mandó 1 de 3 en la reposición 81094») ya no va en la frase del vendedor
+            // (qué falta, cuándo llega, cuándo sale); el evento queda en la columna Evento.
+            return Recalcular(evento.Empresa, evento.Productos, evento.Descripcion);
         }
 
         /// <summary>
@@ -71,7 +68,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// resolver) y, además, resuelve los riesgos de pedidos que ya se han servido. Cubre lo que no pasa por la API
         /// (Nesto viejo: regularizaciones de inventario, albaranes de compra, cambios directos en la BD…).
         /// </summary>
-        public Task<ResultadoPromesaRiesgo> PasadaNocturna(string empresa) => Recalcular(empresa, null, null, EVENTO_NOCTURNO);
+        public Task<ResultadoPromesaRiesgo> PasadaNocturna(string empresa) => Recalcular(empresa, null, EVENTO_NOCTURNO);
 
         public const string EVENTO_ANTES_DEL_CORREO = "revisión antes del correo resumen";
 
@@ -95,7 +92,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             empresa = string.IsNullOrWhiteSpace(empresa) ? Models.Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             DateTime ahora = reloj();
             List<RiesgoPromesa> sinCorreo = await repositorio.LeerSinCorreo(empresa).ConfigureAwait(false) ?? new List<RiesgoPromesa>();
-            var avisar = new List<(RiesgoPromesa riesgo, bool empeora)>();
+            var avisar = new List<Aviso>();
             foreach (RiesgoPromesa registrado in sinCorreo.GroupBy(r => r.Pedido).Select(g => g.First()))
             {
                 try
@@ -103,7 +100,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     (DateTime? prometida, bool quedaPendiente) = await repositorio.LeerEstadoPedido(empresa, registrado.Pedido).ConfigureAwait(false);
                     FechaEntregaAgenciaDTO calculo = quedaPendiente ? await fechas.CalcularPedido(empresa, registrado.Pedido).ConfigureAwait(false) : null;
                     resultado.Recalculados++;
-                    await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, null, EVENTO_ANTES_DEL_CORREO, ahora,
+                    await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, EVENTO_ANTES_DEL_CORREO, ahora,
                         resultado, avisar, rehacerMotivo: true).ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -115,8 +112,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return resultado;
         }
 
-        private async Task<ResultadoPromesaRiesgo> Recalcular(string empresa, IEnumerable<string> productos,
-            IDictionary<string, CausaPromesaRiesgo> causas, string descripcion)
+        private async Task<ResultadoPromesaRiesgo> Recalcular(string empresa, IEnumerable<string> productos, string descripcion)
         {
             var resultado = new ResultadoPromesaRiesgo();
             ModoAvisoPromesaRiesgo modoActual = modo();
@@ -132,7 +128,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ?? new List<PedidoConPromesa>();
             List<RiesgoPromesa> registrados = await repositorio.LeerSinResolver(empresa, nocturna ? null : candidatos.Select(c => c.Pedido))
                 .ConfigureAwait(false) ?? new List<RiesgoPromesa>();
-            var avisar = new List<(RiesgoPromesa riesgo, bool empeora)>();
+            var avisar = new List<Aviso>();
 
             foreach (PedidoConPromesa candidato in candidatos.GroupBy(c => c.Pedido).Select(g => g.First()))
             {
@@ -141,7 +137,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     FechaEntregaAgenciaDTO calculo = await fechas.CalcularPedido(empresa, candidato.Pedido).ConfigureAwait(false);
                     resultado.Recalculados++;
                     RiesgoPromesa registrado = registrados.FirstOrDefault(r => r.Pedido == candidato.Pedido);
-                    await Aplicar(empresa, candidato.Pedido, candidato.FechaPrometida, calculo, true, registrado, causas, descripcion, ahora,
+                    await Aplicar(empresa, candidato.Pedido, candidato.FechaPrometida, calculo, true, registrado, descripcion, ahora,
                         resultado, avisar).ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -159,7 +155,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         (DateTime? prometida, bool quedaPendiente) = await repositorio.LeerEstadoPedido(empresa, registrado.Pedido).ConfigureAwait(false);
                         FechaEntregaAgenciaDTO calculo = quedaPendiente ? await fechas.CalcularPedido(empresa, registrado.Pedido).ConfigureAwait(false) : null;
-                        await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, causas, descripcion, ahora,
+                        await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, descripcion, ahora,
                             resultado, avisar).ConfigureAwait(false);
                     }
                     catch (Exception ex)
@@ -173,20 +169,37 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return resultado;
         }
 
-        private async Task AvisarCampana(ModoAvisoPromesaRiesgo modoActual, List<(RiesgoPromesa riesgo, bool empeora)> avisar,
-            ResultadoPromesaRiesgo resultado)
+        /// <summary>Lo que hay que avisar por la campana al final de la pasada.</summary>
+        private class Aviso
+        {
+            public RiesgoPromesa Riesgo { get; set; }
+            public bool Empeora { get; set; }
+            /// <summary>La buena noticia (la fila ya está resuelta: no se marca AvisadoCampana).</summary>
+            public bool YaLlego { get; set; }
+        }
+
+        private async Task AvisarCampana(ModoAvisoPromesaRiesgo modoActual, List<Aviso> avisar, ResultadoPromesaRiesgo resultado)
         {
             if (modoActual == ModoAvisoPromesaRiesgo.Activo && avisador != null)
             {
-                foreach ((RiesgoPromesa riesgo, bool empeora) in avisar)
+                foreach (Aviso pendiente in avisar)
                 {
+                    RiesgoPromesa riesgo = pendiente.Riesgo;
                     try
                     {
-                        AvisoPromesaRiesgo aviso = avisador.Preparar(riesgo, empeora);
+                        AvisoPromesaRiesgo aviso = avisador.Preparar(riesgo, pendiente.Empeora);
+                        aviso.YaLlego = pendiente.YaLlego;
                         if (await avisador.AvisarCampana(aviso).ConfigureAwait(false) > 0)
                         {
-                            await repositorio.MarcarAvisadoCampana(riesgo.Id, reloj()).ConfigureAwait(false);
-                            resultado.AvisadosCampana++;
+                            if (pendiente.YaLlego)
+                            {
+                                resultado.AvisadosYaSalen++;
+                            }
+                            else
+                            {
+                                await repositorio.MarcarAvisadoCampana(riesgo.Id, reloj()).ConfigureAwait(false);
+                                resultado.AvisadosCampana++;
+                            }
                             resultado.PedidosAvisados.Add(riesgo.Pedido);
                         }
                     }
@@ -199,47 +212,77 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         private async Task Aplicar(string empresa, int pedido, DateTime? prometida, FechaEntregaAgenciaDTO calculo, bool quedaPendiente,
-            RiesgoPromesa registrado, IDictionary<string, CausaPromesaRiesgo> causas, string descripcion, DateTime ahora,
-            ResultadoPromesaRiesgo resultado, List<(RiesgoPromesa, bool)> avisar, bool rehacerMotivo = false)
+            RiesgoPromesa registrado, string descripcion, DateTime ahora,
+            ResultadoPromesaRiesgo resultado, List<Aviso> avisar, bool rehacerMotivo = false)
         {
             DecisionPromesaRiesgo decision = EvaluadorPromesaRiesgo.Decidir(prometida, calculo, quedaPendiente, registrado);
             switch (decision.Accion)
             {
                 case AccionPromesaRiesgo.Registrar:
-                    avisar.Add((await Registrar(empresa, pedido, prometida.Value, calculo, causas, descripcion, ahora).ConfigureAwait(false), false));
+                    avisar.Add(new Aviso { Riesgo = await Registrar(empresa, pedido, prometida.Value, calculo, descripcion, ahora).ConfigureAwait(false) });
                     resultado.Registrados++;
                     break;
                 case AccionPromesaRiesgo.Empeora:
-                    registrado.FechaNueva = calculo.FechaEntregaAgencia?.Date;
-                    registrado.Motivo = await Motivo(empresa, pedido, registrado.FechaPrometida, calculo, causas).ConfigureAwait(false);
-                    registrado.Evento = descripcion;
-                    registrado.Actualizado = ahora;
-                    registrado.AvisadoCampana = null;
-                    registrado.AvisadoCorreo = null; // vuelve a salir en el siguiente correo resumen
-                    await repositorio.Actualizar(registrado).ConfigureAwait(false);
-                    avisar.Add((registrado, true));
-                    resultado.Empeorados++;
+                    {
+                        Explicacion explicacion = await Explicar(empresa, pedido, registrado.FechaPrometida, calculo).ConfigureAwait(false);
+                        registrado.FechaNueva = calculo.FechaEntregaAgencia?.Date;
+                        registrado.Motivo = explicacion.Motivo;
+                        registrado.CausaOriginal = CausaOriginalPromesaRiesgo.Unir(registrado.CausaOriginal, explicacion.Faltas);
+                        registrado.Evento = descripcion;
+                        registrado.Actualizado = ahora;
+                        registrado.AvisadoCampana = null;
+                        registrado.AvisadoCorreo = null; // vuelve a salir en el siguiente correo resumen
+                        await repositorio.Actualizar(registrado).ConfigureAwait(false);
+                        avisar.Add(new Aviso { Riesgo = registrado, Empeora = true });
+                        resultado.Empeorados++;
+                    }
                     break;
                 case AccionPromesaRiesgo.Actualizar:
-                    // Igual que estaba: no se toca (se conserva el porqué con la causa del evento que lo detectó). Mejor sin
-                    // llegar a cumplir: se actualiza la fecha y el porqué, sin avisar. Antes del correo (#846), el porqué se rehace
-                    // aunque la fecha siga igual: el correo cuenta lo de ahora.
-                    DateTime? nueva = calculo.FechaEntregaAgencia?.Date;
-                    if (nueva != registrado.FechaNueva?.Date)
                     {
-                        registrado.FechaNueva = nueva;
-                        registrado.Motivo = await Motivo(empresa, pedido, registrado.FechaPrometida, calculo, causas).ConfigureAwait(false);
-                        registrado.Actualizado = ahora;
-                        await repositorio.Actualizar(registrado).ConfigureAwait(false);
-                    }
-                    else if (rehacerMotivo)
-                    {
-                        string motivoAhora = await Motivo(empresa, pedido, registrado.FechaPrometida, calculo, causas).ConfigureAwait(false);
-                        if (!string.Equals(motivoAhora, registrado.Motivo, StringComparison.Ordinal))
+                        // Igual que estaba: no se toca el texto. Mejor sin llegar a cumplir: se actualiza la fecha y el texto, sin avisar.
+                        // Antes del correo (#846), el texto se rehace aunque la fecha siga igual: el correo cuenta lo de ahora. La causa
+                        // original no se pierde nunca: se le suma lo que falte ahora y no estaba (Carlos, 18/11/26).
+                        DateTime? nueva = calculo.FechaEntregaAgencia?.Date;
+                        bool cambiaFecha = nueva != registrado.FechaNueva?.Date;
+                        if (!cambiaFecha && !rehacerMotivo && !repositorio.ColumnaCausaOriginalExiste())
                         {
-                            registrado.Motivo = motivoAhora;
+                            break;
+                        }
+                        Explicacion explicacion = await Explicar(empresa, pedido, registrado.FechaPrometida, calculo).ConfigureAwait(false);
+                        string causa = CausaOriginalPromesaRiesgo.Unir(registrado.CausaOriginal, explicacion.Faltas);
+                        bool escribir = !string.Equals(causa, registrado.CausaOriginal, StringComparison.Ordinal);
+                        registrado.CausaOriginal = causa;
+                        if (cambiaFecha || (rehacerMotivo && !string.Equals(explicacion.Motivo, registrado.Motivo, StringComparison.Ordinal)))
+                        {
+                            registrado.FechaNueva = nueva;
+                            registrado.Motivo = explicacion.Motivo;
+                            escribir = true;
+                        }
+                        if (escribir)
+                        {
                             registrado.Actualizado = ahora;
                             await repositorio.Actualizar(registrado).ConfigureAwait(false);
+                        }
+                    }
+                    break;
+                case AccionPromesaRiesgo.YaLlego:
+                    {
+                        // Carlos (18/11/26): «cuando llegó, decir que ya sale porque acaba de llegar el producto», una vez. La buena
+                        // noticia va por la campana solo a quien recibió la mala, y en el correo solo si la mala salió en un correo.
+                        bool avisadoCampana = registrado.AvisadoCampana.HasValue;
+                        bool avisadoCorreo = registrado.AvisadoCorreo.HasValue;
+                        registrado.Motivo = TextosPromesaRiesgo.YaLlego(CausaOriginalPromesaRiesgo.Leer(registrado.CausaOriginal), ahora,
+                            calculo.FechaEntregaAgencia, ahora.Date);
+                        registrado.FechaNueva = calculo.FechaEntregaAgencia?.Date;
+                        registrado.Actualizado = ahora;
+                        registrado.AvisadoCorreo = avisadoCorreo ? (DateTime?)null : ahora; // null = la buena noticia sale en el siguiente correo
+                        await repositorio.Actualizar(registrado).ConfigureAwait(false);
+                        await repositorio.Resolver(registrado.Id, ahora, decision.MotivoResolucion).ConfigureAwait(false);
+                        resultado.Resueltos++;
+                        resultado.YaSalen++;
+                        if (avisadoCampana)
+                        {
+                            avisar.Add(new Aviso { Riesgo = registrado, YaLlego = true });
                         }
                     }
                     break;
@@ -248,7 +291,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     resultado.Resueltos++;
                     if (decision.AccionTrasRenegociar == AccionPromesaRiesgo.Registrar)
                     {
-                        avisar.Add((await Registrar(empresa, pedido, prometida.Value, calculo, causas, descripcion, ahora).ConfigureAwait(false), false));
+                        avisar.Add(new Aviso { Riesgo = await Registrar(empresa, pedido, prometida.Value, calculo, descripcion, ahora).ConfigureAwait(false) });
                         resultado.Registrados++;
                     }
                     break;
@@ -256,15 +299,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         private async Task<RiesgoPromesa> Registrar(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo,
-            IDictionary<string, CausaPromesaRiesgo> causas, string descripcion, DateTime ahora)
+            string descripcion, DateTime ahora)
         {
+            Explicacion explicacion = await Explicar(empresa, pedido, prometida, calculo).ConfigureAwait(false);
             var riesgo = new RiesgoPromesa
             {
                 Empresa = empresa,
                 Pedido = pedido,
                 FechaPrometida = prometida.Date,
                 FechaNueva = calculo.FechaEntregaAgencia?.Date,
-                Motivo = await Motivo(empresa, pedido, prometida, calculo, causas).ConfigureAwait(false),
+                Motivo = explicacion.Motivo,
+                CausaOriginal = CausaOriginalPromesaRiesgo.Serializar(explicacion.Faltas),
                 Evento = descripcion,
                 Detectado = ahora,
                 Actualizado = ahora
@@ -273,20 +318,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return riesgo;
         }
 
-        private async Task<string> Motivo(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo,
-            IDictionary<string, CausaPromesaRiesgo> causas)
+        private class Explicacion
         {
-            // Lo que necesita el pedido de cada producto: lo que el motor reparte (todas sus partidas).
-            Dictionary<string, int> necesidades = (calculo.Desglose ?? new List<PartidaFechaEntregaAgenciaDTO>())
-                .Where(p => !string.IsNullOrWhiteSpace(p.Producto))
-                .GroupBy(p => p.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Sum(p => p.Unidades), StringComparer.OrdinalIgnoreCase);
-            List<string> fallan = TextosPromesaRiesgo.PartidasQueFallan(prometida, calculo).Select(p => p.Producto?.Trim()).Distinct().ToList();
+            public string Motivo { get; set; }
+            public List<FaltaPromesaRiesgo> Faltas { get; set; }
+        }
+
+        /// <summary>La frase para el vendedor y lo que falta (para la causa original), con los nombres de los culpables.</summary>
+        private async Task<Explicacion> Explicar(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo)
+        {
+            List<string> culpables = TextosPromesaRiesgo.Culpables(prometida, calculo).Select(p => p.Producto?.Trim())
+                .Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             Dictionary<string, string> nombres;
             try
             {
-                nombres = fallan.Any()
-                    ? await repositorio.LeerNombresProductos(empresa, fallan).ConfigureAwait(false)
+                nombres = culpables.Any()
+                    ? await repositorio.LeerNombresProductos(empresa, culpables).ConfigureAwait(false) ?? new Dictionary<string, string>()
                     : new Dictionary<string, string>();
             }
             catch (Exception ex)
@@ -294,7 +341,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Registrar($"no se han podido leer los nombres de los productos del pedido {pedido}", ex);
                 nombres = new Dictionary<string, string>();
             }
-            return TextosPromesaRiesgo.Motivo(pedido, prometida, calculo, causas, necesidades, nombres, reloj().Date);
+            return new Explicacion
+            {
+                Motivo = TextosPromesaRiesgo.Motivo(prometida, calculo, nombres, reloj().Date),
+                Faltas = TextosPromesaRiesgo.Faltas(prometida, calculo, nombres)
+            };
         }
 
         private void Registrar(string que, Exception ex)

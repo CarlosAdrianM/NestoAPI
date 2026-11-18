@@ -830,6 +830,19 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   almacén). Lo mismo filtra las etiquetas a anular y los envíos del reparto propio a los que se mueve el día. La usan el PUT del pedido (por línea)
   y AvisarLogisticaAplazamiento. Caso 930358: el 250999 entregado (picking 100095) ya no bloquea aplazar el 100114.
 
+### Promesa en riesgo: frase corta, causa original y buena noticia (NestoAPI#693, Carlos 18/11/26)
+- `TextosPromesaRiesgo.Motivo` (campana, pantalla de Nesto, que pinta `Motivo` tal cual, y correo): QUÉ FALTA, CUÁNDO LLEGA y CUÁNDO SALE, nada
+  de lo que está en Algete. Agrupa misma causa y fecha («Faltan 45949 JABON CARBON ACTIVO y 5 productos más (50 uds.): llegan hoy del proveedor.
+  Sale mañana (aproximado). Va todo junto.»); nombre a 30 letras por palabra; fechas «hoy»/«mañana»/«el jueves 19/11» (año solo si es otro);
+  certeza en una palabra (`TextosCertezaFechaEntrega.CalificativoCorto`: Segura y CasiSegura → seguro, Aproximada, Orientativa). Ya no lleva la
+  causa del evento («Reina mandó 1 de 3…»: queda en `Evento`) ni «todo está listo en Algete, pero no salió…».
+- Regla (`EvaluadorPromesaRiesgo.MereceAviso`): solo se registra/avisa lo que tiene culpables (no listo en Algete) o fecha de entrega posterior.
+  Sin culpables y sin registrar → Nada (aunque salga después de la prometida). Registrado y ya sin culpables → `YaLlego`: texto «Faltaba X;
+  llegó el 17/11. Sale hoy.», se resuelve con «Ha llegado lo que faltaba», campana UNA vez solo si se avisó la mala, y en el correo resumen en
+  una línea solo si la mala salió en un correo (`LeerYaSalenSinCorreo`, 7 días).
+- Causa original: `PedidosPromesaRiesgo.CausaOriginal` (JSON de lo que faltaba; se suma al empeorar/actualizar, nunca se pierde;
+  `Scripts/PromesaRiesgo_CausaOriginal.sql`, opcional, caché + ELMAH una vez). Sin ella: textos nuevos y buena noticia «Ya está todo en Algete: sale en el próximo picking.».
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

@@ -119,15 +119,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return 0;
             }
             List<RiesgoPromesa> nuevos = await repositorio.LeerSinCorreo(empresa).ConfigureAwait(false) ?? new List<RiesgoPromesa>();
-            if (!nuevos.Any())
+            // Carlos (18/11/26): y, en una línea cada uno, los que ya salen porque les llegó lo que faltaba (solo si la mala noticia salió
+            // en un correo; los de hace más de DIAS_YA_SALEN días ya no se cuentan).
+            List<RiesgoPromesa> yaSalen = await repositorio.LeerYaSalenSinCorreo(empresa, reloj().Date.AddDays(-DIAS_YA_SALEN)).ConfigureAwait(false)
+                ?? new List<RiesgoPromesa>();
+            if (!nuevos.Any() && !yaSalen.Any())
             {
                 return 0;
             }
             List<AvisoPromesaRiesgo> avisos = nuevos.Select(r => avisador.Preparar(r, false)).ToList();
+            foreach (RiesgoPromesa r in yaSalen)
+            {
+                AvisoPromesaRiesgo aviso = avisador.Preparar(r, false);
+                aviso.YaLlego = true;
+                avisos.Add(aviso);
+            }
             _ = avisador.EnviarCorreos(avisos, modoActual == ModoAvisoPromesaRiesgo.Sombra);
-            await repositorio.MarcarAvisadoCorreo(nuevos.Select(r => r.Id), reloj()).ConfigureAwait(false);
-            return nuevos.Count;
+            await repositorio.MarcarAvisadoCorreo(nuevos.Concat(yaSalen).Select(r => r.Id), reloj()).ConfigureAwait(false);
+            return nuevos.Count + yaSalen.Count;
         }
+
+        /// <summary>Días que una buena noticia espera al correo resumen (si no sale antes, ya no se cuenta).</summary>
+        public const int DIAS_YA_SALEN = 7;
 
         internal static ServicioPromesaRiesgo CrearServicio(NVEntities db)
         {
