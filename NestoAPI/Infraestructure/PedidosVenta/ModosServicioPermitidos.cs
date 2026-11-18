@@ -13,6 +13,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public bool Permitido { get; set; }
         /// <summary>Por qué NO se puede elegir, en lenguaje de usuario. Null si está permitido.</summary>
         public string Motivo { get; set; }
+        /// <summary>Sugerencia 1340: solo en el modo 6, con qué se va a juntar («Saldrá junto con la nota de entrega 929701.»). Null en los demás.</summary>
+        public string Explicacion { get; set; }
+        /// <summary>Sugerencia 1340: solo en el modo 6, los pedidos y notas con los que se junta. Null en los demás.</summary>
+        public List<int> PedidosConLosQueSeJunta { get; set; }
     }
 
     /// <summary>

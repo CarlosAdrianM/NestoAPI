@@ -37,6 +37,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public List<PartidaFechaEntregaAgenciaDTO> Desglose { get; set; } = new List<PartidaFechaEntregaAgenciaDTO>();
 
+        /// <summary>
+        /// Sugerencia 1340: solo en un pedido en modo 6 («Junto con lo pendiente del cliente») con algo con lo que juntarse. La fecha de
+        /// arriba ya es la del conjunto (la peor); aquí, con qué se junta y, si es lo pendiente lo que la retrasa, qué espera. Null en los
+        /// demás pedidos. <see cref="Desglose"/> sigue siendo solo el del propio pedido.
+        /// </summary>
+        public JuntoConPendienteFechaDTO JuntoConPendiente { get; set; }
+
         public const string APLICA_PRIMERA = "Primera";
         public const string APLICA_COMPLETA = "Completa";
     }
@@ -135,5 +142,28 @@ namespace NestoAPI.Models.PedidosVenta
         public int? PedidoProveedorOrientativo { get; set; }
         /// <summary>NestoAPI#853: la prevista de ese pedido lejano (la que no cuenta como «llega en días»).</summary>
         public DateTime? FechaPrevistaProveedorOrientativo { get; set; }
+    }
+
+    /// <summary>Sugerencia 1340: con qué sale junto un pedido en modo 6 y qué lo retrasa (lo monta ReglaFechaJuntoConPendiente).</summary>
+    public class JuntoConPendienteFechaDTO
+    {
+        /// <summary>Los pedidos y notas con los que se junta.</summary>
+        public List<int> Pedidos { get; set; } = new List<int>();
+        /// <summary>«la nota de entrega 929701» o «la nota de entrega 929701 y el pedido 931020».</summary>
+        public string Documentos { get; set; }
+        /// <summary>La fecha del conjunto (la peor; null = sin fecha). Es la misma que FechaEntregaAgencia.</summary>
+        public DateTime? Fecha { get; set; }
+        /// <summary>La fecha del propio pedido (como «Todo junto»), sin esperar a nada.</summary>
+        public DateTime? FechaPropia { get; set; }
+        /// <summary>Lo pendiente sale DESPUÉS que el pedido (o sin fecha): es lo que pone la fecha.</summary>
+        public bool LoRetrasaLoPendiente { get; set; }
+        /// <summary>Con <see cref="LoRetrasaLoPendiente"/>: el documento que manda («la nota de entrega 929701»).</summary>
+        public string DocumentoQueRetrasa { get; set; }
+        /// <summary>Con <see cref="LoRetrasaLoPendiente"/>: el producto que espera ese documento (el último en llegar), su nombre y su certeza.</summary>
+        public string Producto { get; set; }
+        public string NombreProducto { get; set; }
+        public string Certeza { get; set; }
+        /// <summary>La frase, de usted: «Sale el lunes 30/11/2026, junto con la nota de entrega 929701, que espera el CONJUNTO DUPLO STARPIL BASIC (45238).»</summary>
+        public string Texto { get; set; }
     }
 }

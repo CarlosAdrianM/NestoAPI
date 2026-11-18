@@ -541,6 +541,15 @@ namespace NestoAPI.Models
                 /// devuelven el pedido a su modo anterior. Manda sobre ServirJunto en <see cref="Efectivo"/>.
                 /// </summary>
                 public const byte RETENIDO = 5;
+                /// <summary>
+                /// Sugerencia 1340 (Carlos, 18/11/26): «Junto con lo pendiente del cliente». Es un «todo junto» (ServirJunto = true:
+                /// el pedido sale entero) que además no sale hasta que pueda salir lo que el MISMO cliente y contacto tiene pendiente
+                /// (notas de entrega y pedidos con líneas por servir en Algete; ver <c>ReglaJuntoConPendiente</c>): ese día salen en
+                /// la misma pasada y van en un solo envío. Sin nada pendiente, se comporta como «Todo junto». Solo se OFRECE cuando
+                /// el contacto tiene algo con lo que juntarse y la restricción CK_CabPedidoVta_ModoServicio admite el 6
+                /// (Scripts/Sugerencia1340_ModoJuntoConLoPendiente.sql). Nunca se sugiere ni vale como ModoServicioPorDefecto.
+                /// </summary>
+                public const byte JUNTO_CON_LO_PENDIENTE = 6;
 
                 /// <summary>
                 /// Modo con el que nace un pedido cuando el cliente (NestoApp, TNV, Nesto sin selector)
@@ -560,6 +569,7 @@ namespace NestoAPI.Models
                         case TRAS_REPONER_DE_TIENDAS: return "Tras reponer de tiendas";
                         case AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ: return "Ahora lo que hay, el resto de una vez";
                         case RETENIDO: return "Retenido";
+                        case JUNTO_CON_LO_PENDIENTE: return "Junto con lo pendiente del cliente";
                         default: return $"Modo {modo}";
                     }
                 }
@@ -634,8 +644,15 @@ namespace NestoAPI.Models
                     return Normalizar(pedido);
                 }
 
-                /// <summary>Los modos que se pueden ELEGIR (1..4). El 5 (<see cref="RETENIDO"/>) no: lo ponen Retener/Liberar.</summary>
+                /// <summary>Los modos GENERALES (1..4): los que valen para el parámetro ModoServicioPorDefecto y para cualquier pedido. El 5
+                /// (<see cref="RETENIDO"/>) no: lo ponen Retener/Liberar. El 6 tampoco: depende de lo pendiente del cliente (<see cref="EsElegible"/>).</summary>
                 public static bool EsValido(byte modo) => modo >= TODO_JUNTO && modo <= AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+
+                /// <summary>Sugerencia 1340: los que se pueden mandar en el pedido (1..4 y el 6, que se valida aparte contra lo pendiente).</summary>
+                public static bool EsElegible(byte modo) => EsValido(modo) || modo == JUNTO_CON_LO_PENDIENTE;
+
+                /// <summary>Sugerencia 1340: ¿espera a lo pendiente del cliente?</summary>
+                public static bool EsJuntoConLoPendiente(byte? modo) => modo.HasValue && modo.Value == JUNTO_CON_LO_PENDIENTE;
 
                 /// <summary>NestoAPI#698: ¿está retenido hasta nuevo aviso?</summary>
                 public static bool EsRetenido(byte? modo) => modo.HasValue && modo.Value == RETENIDO;
@@ -662,7 +679,8 @@ namespace NestoAPI.Models
                     }
                     if (servirJunto)
                     {
-                        return TODO_JUNTO;
+                        // Sugerencia 1340: el 6 refina el «todo junto» (con ServirJunto desmarcado deja de serlo y cae en el 2, como un 1).
+                        return EsJuntoConLoPendiente(modoServicio) ? JUNTO_CON_LO_PENDIENTE : TODO_JUNTO;
                     }
                     return EsModoParcialGuardable(modoServicio) ? modoServicio.Value : SEGUN_VAYA_ENTRANDO;
                 }
@@ -671,13 +689,15 @@ namespace NestoAPI.Models
                 private static bool EsModoParcialGuardable(byte? modo)
                     => modo.HasValue && (modo.Value == TRAS_REPONER_DE_TIENDAS || modo.Value == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ);
 
-                /// <summary>Solo el modo 1 es "servir junto" en el sentido de la columna y de las validaciones
-                /// de #220/#470: cualquier otro modo puede servir parcialmente en la primera pasada.</summary>
-                public static bool EsTodoJunto(byte modo) => modo == TODO_JUNTO;
+                /// <summary>Solo el modo 1 (y el 6, que es un «todo junto» que además espera a lo pendiente del cliente) es "servir
+                /// junto" en el sentido de la columna y de las validaciones de #220/#470: cualquier otro modo puede servir
+                /// parcialmente en la primera pasada.</summary>
+                public static bool EsTodoJunto(byte modo) => modo == TODO_JUNTO || modo == JUNTO_CON_LO_PENDIENTE;
 
-                /// <summary>A efectos de portes (Nesto#211/#365, "1 entrega → todo cuenta"): 1 y 4 acaban en
+                /// <summary>A efectos de portes (Nesto#211/#365, "1 entrega → todo cuenta"): 1, 4 y 6 acaban en
                 /// una entrega única del resto; 2 y 3 son por entrega.</summary>
-                public static bool EsEntregaUnica(byte modo) => modo == TODO_JUNTO || modo == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+                public static bool EsEntregaUnica(byte modo) => modo == TODO_JUNTO || modo == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ
+                    || modo == JUNTO_CON_LO_PENDIENTE;
 
                 /// <summary>
                 /// Para el aviso del correo de pedido (Carlos, 17/09/26): con stock de todo pero algo por traer de
@@ -719,9 +739,9 @@ namespace NestoAPI.Models
                     {
                         return MENSAJE_RETENIDO_SOLO_CON_RETENER;
                     }
-                    if (!EsValido(modo))
+                    if (!EsElegible(modo))
                     {
-                        return $"El modo de servicio {modo} no existe (1 todo junto, 2 según vaya entrando, 3 tras reponer de tiendas, 4 ahora lo que hay y el resto de una vez)";
+                        return $"El modo de servicio {modo} no existe (1 todo junto, 2 según vaya entrando, 3 tras reponer de tiendas, 4 ahora lo que hay y el resto de una vez, 6 junto con lo pendiente del cliente)";
                     }
                     pedido.servirJunto = EsTodoJunto(modo);
                     return null;

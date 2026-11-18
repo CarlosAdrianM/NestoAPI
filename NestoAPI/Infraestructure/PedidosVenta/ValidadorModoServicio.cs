@@ -69,6 +69,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         private static byte? Comprobar(PedidoVentaDTO pedido, byte modo, SugeridorModoServicio.Sugerencia sugerencia, string arranque)
         {
+            // Sugerencia 1340: el 6 sale entero, como «Todo junto»: con el stock vale si vale el 1 (en tienda se corrige al 2, como los
+            // demás). Si hay algo pendiente con lo que juntarse lo mira aparte ServicioJuntoConPendiente.
+            if (modo == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE)
+            {
+                modo = Constantes.Pedidos.ModosServicio.TODO_JUNTO;
+            }
             if (sugerencia?.ModosPermitidos == null || !sugerencia.ModosPermitidos.Any() || sugerencia.ModosPermitidos.Contains(modo))
             {
                 return null;

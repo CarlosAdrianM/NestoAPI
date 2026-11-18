@@ -75,7 +75,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// </summary>
         public static bool MereceAviso(DateTime prometida, FechaEntregaAgenciaDTO calculo) =>
             EstaEnRiesgo(prometida, calculo)
-            && (TextosPromesaRiesgo.Culpables(prometida, calculo).Any() || TextosPromesaRiesgo.TieneFechaEntregaPosterior(calculo));
+            && (TextosPromesaRiesgo.Culpables(prometida, calculo).Any() || TextosPromesaRiesgo.TieneFechaEntregaPosterior(calculo)
+                || TextosPromesaRiesgo.LoRetrasaLoPendienteDelCliente(prometida, calculo));
 
         /// <summary>
         /// Carlos (18/11/26): «pasa el tiempo» = ha terminado entero el primer día laborable de Algete posterior al día en que se vio todo en

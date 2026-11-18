@@ -503,6 +503,7 @@ namespace NestoAPI.Infraestructure
             switch (modoEfectivo)
             {
                 case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
+                case Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE: // sugerencia 1340: sale entero, como «Todo junto»
                     return false;
                 case Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS:
                     return faltaStockDeAlgo;
@@ -1539,6 +1540,12 @@ namespace NestoAPI.Infraestructure
                 _ = s.Append($"<b>Entrega a la agencia: {textoAhora}</b>" + (ahora.HasValue ? " (la que se le ha dicho al cliente)" : string.Empty) + "<br>");
             }
 
+            // Sugerencia 1340: el pedido en modo 6 sale con lo pendiente del cliente: con qué y, si es eso lo que lo retrasa, qué espera.
+            if (!string.IsNullOrWhiteSpace(fecha.JuntoConPendiente?.Texto))
+            {
+                _ = s.Append(EscaparHtml(fecha.JuntoConPendiente.Texto.Trim()) + "<br>");
+            }
+
             if (ahora.HasValue && fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_PRIMERA && fecha.EntregaCompleta?.Date != ahora)
             {
                 _ = s.Append(FraseRestoPrimeraEntrega(fecha.EntregaCompleta, desglose, servirPendienteAlHaberStock) + "<br>");
@@ -1553,7 +1560,9 @@ namespace NestoAPI.Infraestructure
                 bool todoJunto = fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_COMPLETA;
                 DateTime? esperaHasta = ahora ?? (todoJunto ? DateTime.MaxValue : (DateTime?)null);
                 bool algunoEspera = esperaHasta.HasValue && desglose.Any(p => p.PuedeSalirEl.HasValue && p.PuedeSalirEl.Value.Date < esperaHasta.Value);
-                string porQue = !algunoEspera ? "Por qué:"
+                bool esperaLoPendiente = fecha.JuntoConPendiente?.LoRetrasaLoPendiente == true;
+                string porQue = esperaLoPendiente ? "Lo de este pedido (espera a lo pendiente del cliente para salir junto):"
+                    : !algunoEspera ? "Por qué:"
                     : todoJunto ? "Por qué (va todo junto: sale cuando esté todo):"
                     : "Por qué (lo que hay en Algete espera para salir en la misma entrega que lo que llega):";
                 _ = s.Append(esModificacion && prometida.HasValue && prometida != ahora

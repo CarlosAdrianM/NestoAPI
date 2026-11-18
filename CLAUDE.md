@@ -922,6 +922,29 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`Scripts/PromesaRiesgo_CausaOriginal.sql`; la API las usa solo si están las tres; caché + ELMAH una vez). Sin ellas: textos nuevos, buena
   noticia «Ya está todo en Algete: sale en el próximo picking.» y sin aviso de los que lo tienen todo en Algete (como antes).
 
+### Modo de servicio 6, «Junto con lo pendiente del cliente» (sugerencia 1340, 18/11/26; Nesto gemelo)
+- `ModosServicio.JUNTO_CON_LO_PENDIENTE` = 6: un «todo junto» (ServirJunto = 1, `EsTodoJunto`/`EsEntregaUnica` true, facturación como el 1) que
+  además no sale hasta que pueda salir lo pendiente del MISMO empresa+cliente+contacto. `Efectivo(6, true)` = 6; ServirJunto desmarcado → 2.
+  `EsValido` sigue siendo 1..4 (parámetro ModoServicioPorDefecto); `EsElegible` = 1..4 + 6. Nunca se sugiere.
+- LA REGLA (`Infraestructure/PedidosVenta/JuntoConPendiente/ReglaJuntoConPendiente`): cuenta lo que tenga alguna línea de producto en ALG,
+  -1/1, con cantidad y SIN picking (también 31/12/2099: las notas nacen así). No cuentan el propio, presupuestos, cursos (van en la tienda),
+  notas de cobro/recogida (sin producto), retenidos (5) ni otros 6 (dos 6 no se esperan). Lectura en UNA consulta (`RepositorioJuntoConPendiente`).
+- Script `Scripts/Sugerencia1340_ModoJuntoConLoPendiente.sql`: amplía CK_CabPedidoVta_ModoServicio a 1..6 (lección #698) y crea
+  `PedidosJuntoConPendienteAvisos`. Sin él (`ModoAdmitido`, caché 5 min): no se ofrece, elegirlo → 400, el picking y el job no hacen nada.
+- Se OFRECE (ModoServicioSugerido y OpcionesModos, copia de la sugerencia, la caché no se toca) solo si hay algo con lo que juntarse o el pedido ya
+  está en 6, nunca en tienda; `ModoServicioPermitidoDTO.Explicacion` («Saldrá junto con la nota de entrega 929701.») y `PedidosConLosQueSeJunta`.
+  POST/PUT: ENTRAR en el 6 sin nada pendiente o sin script → 400 `MODO_SERVICIO_NO_PERMITIDO` (alternativa 1); quien devuelve el 6 no se rechaza.
+- Picking (`Models/Picking/JuntoConPendientePicking`): el rellenador arrastra los 6 del mismo contacto que un candidato y lo pendiente de los 6
+  (picking de un pedido, de un cliente o de rutas). El 6 se decide DESPUÉS de los demás: sale si todo lo suyo está en la pasada y sale
+  (`MotivoNoSalePicking.EsperaPendienteDelCliente` si no); mismo número de picking → un envío en el packing. Sin nada pendiente, como el 1.
+- Portes (decisión 7): al grabar, la base de lo pendiente se suma y si lo pendiente ya lleva portes el 6 no los añade; en el picking el grupo
+  que sale junto suma lo que se factura (`ImporteEntregaJunto`) y paga portes UNA vez (`PortesYaEnElGrupo`).
+- Fecha (#606): el motor calcula el 6 como 1 y cada pendiente con su modo; sale el día del PEOR (`ReglaFechaJuntoConPendiente`,
+  `FechaEntregaAgenciaDTO.JuntoConPendiente`): «Sale el lunes 30/11/2026, junto con la nota de entrega 929701, que espera el … (45238).» Va al pie
+  del correo y a la promesa en riesgo (culpable propio; `SQL_CANDIDATOS` incluye los 6 cuyo contacto tiene pendiente el producto).
+- Job `pedidos-junto-con-pendiente-esperando` (L-V 9:30): 15 días en 6 (desde PedidosModoServicioOrigen #704; si no, la fecha del pedido) y
+  aún esperando → campana/push a quien lo hizo y push a su vendedor, una vez (`PedidosJuntoConPendienteAvisos`).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

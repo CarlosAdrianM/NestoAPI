@@ -274,6 +274,9 @@ namespace NestoAPI.Models.Picking
             // antiguo primero). Antes de los ensayos, para que ya vean lo que se llevan los demás.
             _ = RepartoSaldoAFavorPrepago.Preparar(candidatos);
 
+            // Sugerencia 1340: los pedidos en modo 6 esperan a lo pendiente del cliente que ni siquiera está en esta pasada.
+            JuntoConPendientePicking.MarcarEsperasIniciales(candidatos);
+
             GestorMuestrasSinStock.Aplicar(candidatos, Decidir);
 
             // NestoAPI#542: los pedidos que se facturan «todo ahora» convierten lo que falta en Recoger, antes
@@ -288,13 +291,21 @@ namespace NestoAPI.Models.Picking
 
             // Recorrer Candidatos (quitamos los que no tienen que salir). Novedades 1302: por número de pedido, que es el orden en
             // que se reparte el saldo a favor de los pedidos PRE de un mismo cliente.
-            foreach (PedidoPicking pedido in RepartoSaldoAFavorPrepago.EnOrden(candidatos))
+            // Sugerencia 1340: los pedidos en modo 6 que esperan a algo se deciden DESPUÉS, cuando ya se sabe si lo suyo sale; los portes de
+            // los que pueden viajar con ellos, al final, sumando lo que viaja junto (una sola vez).
+            List<PedidoPicking> enOrden = RepartoSaldoAFavorPrepago.EnOrden(candidatos).ToList();
+            var portesAplazados = new List<PedidoPicking>();
+            foreach (PedidoPicking pedido in enOrden.Where(p => !JuntoConPendientePicking.EsperaAlgo(p)))
             {
                 if (!DecidirSiSale(pedido))
                 {
                     pedido.Borrar = true;
                     // NestoAPI#608: el motivo, también en los picking de varios pedidos
                     System.Diagnostics.Trace.WriteLine($"[Picking#608] Pedido {pedido.Id} no sale: {pedido.MotivoNoSale}");
+                }
+                else if (JuntoConPendientePicking.PuedeIrConUnModo6(pedido, candidatos))
+                {
+                    portesAplazados.Add(pedido);
                 }
                 else
                 {
@@ -305,6 +316,20 @@ namespace NestoAPI.Models.Picking
                     };
                 }
             }
+            foreach (PedidoPicking pedido in enOrden.Where(JuntoConPendientePicking.EsperaAlgo))
+            {
+                JuntoConPendientePicking.MarcarEsperasFinales(pedido, candidatos);
+                if (!DecidirSiSale(pedido))
+                {
+                    pedido.Borrar = true;
+                    System.Diagnostics.Trace.WriteLine($"[Picking#608] Pedido {pedido.Id} no sale: {pedido.MotivoNoSale}");
+                }
+                else
+                {
+                    portesAplazados.Add(pedido);
+                }
+            }
+            JuntoConPendientePicking.PortesDeLosAplazados(portesAplazados, candidatos, p => new GeneradorPortes(db, p).Ejecutar());
 
             // 27/10/26 (Carlos): las muestras quitadas de los pedidos que salen, fuera del pedido en BD (con su rastro en
             // Modificaciones y ELMAH). Va antes de los pendientes y del picking, en el mismo SaveChanges del finalizador.

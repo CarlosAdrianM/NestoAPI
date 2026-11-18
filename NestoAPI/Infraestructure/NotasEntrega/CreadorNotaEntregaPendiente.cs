@@ -273,7 +273,9 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
         internal static byte ModoServicioHeredado(CabPedidoVta original)
         {
             byte modo = Constantes.Pedidos.ModosServicio.Efectivo(original.ModoServicio, original.ServirJunto);
+            // Sugerencia 1340: tampoco el 6: la nota es parte de lo pendiente del cliente, no espera a nada (va todo junto).
             return modo == Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ
+                || modo == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE
                 ? Constantes.Pedidos.ModosServicio.TODO_JUNTO
                 : modo;
         }

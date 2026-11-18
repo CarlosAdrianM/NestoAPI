@@ -897,6 +897,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'pedidos-retenidos-por-falta' configurado (L-V cada 15 min de 8:00 a 18:45)");
 
+            // Sugerencia 1340: los pedidos en modo 6 («Junto con lo pendiente del cliente») que llevan 15 días esperando: campana a quien
+            // los hizo y push a su vendedor, una vez por pedido. Sin el script (Sugerencia1340_ModoJuntoConLoPendiente.sql), nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.JuntoConPendienteJobsService.ID_JOB,
+                () => Infraestructure.PedidosVenta.JuntoConPendienteJobsService.AvisarEsperando(),
+                Infraestructure.PedidosVenta.JuntoConPendienteJobsService.CRON, // L-V a las 9:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'pedidos-junto-con-pendiente-esperando' configurado (L-V a las 9:30)");
+
             // NestoAPI#779: el día 1 de cada mes, si el calendario no tiene festivos del año que toca (en diciembre, el siguiente),
             // aviso a Dirección en la campana de Nesto y por correo.
             RecurringJob.AddOrUpdate(

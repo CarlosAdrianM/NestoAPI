@@ -80,6 +80,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public static List<PartidaFechaEntregaAgenciaDTO> Culpables(DateTime prometida, FechaEntregaAgenciaDTO calculo) =>
             PartidasQueFallan(prometida, calculo).Where(p => !EstaListaEnAlgete(p)).ToList();
 
+        /// <summary>
+        /// Sugerencia 1340: un pedido en modo 6 que llega tarde porque lo pendiente del cliente con lo que se junta sale después de la
+        /// prometida (o sin fecha). Tiene culpable (lo que espera lo pendiente): se avisa en el acto, no se observa.
+        /// </summary>
+        public static bool LoRetrasaLoPendienteDelCliente(DateTime prometida, FechaEntregaAgenciaDTO calculo)
+        {
+            JuntoConPendienteFechaDTO junto = calculo?.JuntoConPendiente;
+            return junto != null && junto.LoRetrasaLoPendiente && (!junto.Fecha.HasValue || junto.Fecha.Value.Date > prometida.Date);
+        }
+
+        /// <summary>
+        /// Sugerencia 1340: «Va junto con la nota de entrega 929701, que espera el 45238 CONJUNTO DUPLO STARPIL BASIC: sale el lunes 30/11
+        /// (aproximado).» Sin fecha: «… y todavía no tiene fecha.»
+        /// </summary>
+        public static string MotivoJuntoConPendiente(FechaEntregaAgenciaDTO calculo, DateTime hoy)
+        {
+            JuntoConPendienteFechaDTO junto = calculo?.JuntoConPendiente;
+            if (junto == null)
+            {
+                return null;
+            }
+            string producto = string.IsNullOrWhiteSpace(junto.Producto) ? null
+                : string.IsNullOrWhiteSpace(junto.NombreProducto) ? junto.Producto.Trim() : $"{junto.Producto.Trim()} {NombreCorto(junto.NombreProducto)}";
+            string que = producto == null ? "que espera a que llegue lo que le falta" : $"que espera el {producto}";
+            if (!junto.Fecha.HasValue)
+            {
+                return $"Va junto con {junto.DocumentoQueRetrasa ?? junto.Documentos}, {que} y todavía no tiene fecha.";
+            }
+            string certeza = TextosCertezaFechaEntrega.CalificativoCorto(junto.Certeza);
+            return $"Va junto con {junto.DocumentoQueRetrasa ?? junto.Documentos}, {que}: sale {ElDia(junto.Fecha.Value, hoy)}" +
+                (certeza == null ? "." : $" ({certeza}).");
+        }
+
         /// <summary>El pedido tiene fecha de entrega posterior (la frase del motor «Tiene fecha de entrega el …»).</summary>
         public static bool TieneFechaEntregaPosterior(FechaEntregaAgenciaDTO calculo) => FraseDelMotor(calculo?.Motivo?.Trim(), "Tiene fecha de entrega") != null;
 
@@ -102,6 +135,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             List<PartidaFechaEntregaAgenciaDTO> culpables = Culpables(prometida, calculo);
             string motor = calculo?.Motivo?.Trim();
+            // Sugerencia 1340: lo que retrasa a un pedido en modo 6 es lo pendiente del cliente; si el propio pedido no tiene culpables, se dice eso.
+            if (!culpables.Any() && LoRetrasaLoPendienteDelCliente(prometida, calculo))
+            {
+                return MotivoJuntoConPendiente(calculo, hoy);
+            }
             if (!culpables.Any())
             {
                 string fechaEntrega = FraseDelMotor(motor, "Tiene fecha de entrega");
@@ -389,7 +427,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE || p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING;
 
         private static bool EsTodoJunto(string motor)
-            => motor != null && motor.Contains("«" + Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO) + "»");
+            => motor != null && (motor.Contains("«" + Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO) + "»")
+                || motor.Contains("«" + Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE) + "»"));
 
         /// <summary>La frase del motivo del motor que empieza por <paramref name="inicio"/>, con su punto. Null si no está.</summary>
         internal static string FraseDelMotor(string motor, string inicio)

@@ -1274,6 +1274,11 @@
     <Compile Include="Infraestructure\PedidosVenta\Anomalias\RepositorioAnomaliasPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Anomalias\SenalesAnomaliaPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\JuntoConPendiente\AvisosJuntoConPendiente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\JuntoConPendiente\ReglaFechaJuntoConPendiente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\JuntoConPendiente\ReglaJuntoConPendiente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\JuntoConPendiente\RepositorioJuntoConPendiente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\JuntoConPendiente\ServicioJuntoConPendiente.cs" />
     <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />
     <Compile Include="Controllers\SugerenciasProductosController.cs" />
@@ -2257,6 +2262,7 @@
     <Compile Include="Models\Picking\GestorImportesMinimos.cs" />
     <Compile Include="Models\Picking\GestorMargenes.cs" />
     <Compile Include="Models\Picking\GestorPicking.cs" />
+    <Compile Include="Models\Picking\JuntoConPendientePicking.cs" />
     <Compile Include="Models\Picking\HoraCortePicking.cs" />
     <Compile Include="Models\Picking\AvisadorPickingAutomatico.cs" />
     <Compile Include="Infraestructure\Picking\PickingJobsService.cs" />

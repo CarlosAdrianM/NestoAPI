@@ -29,6 +29,8 @@ namespace NestoAPI.Models.Picking
         public const string ERROR_ENTREGA_FUTURA = "PICKING_ENTREGA_FUTURA";
         /// <summary>NestoAPI#698: modo 5, retenido hasta nuevo aviso.</summary>
         public const string ERROR_RETENIDO = "PICKING_RETENIDO";
+        /// <summary>Sugerencia 1340: modo 6 esperando a lo pendiente del cliente.</summary>
+        public const string ERROR_ESPERA_PENDIENTE_CLIENTE = "PICKING_ESPERA_PENDIENTE_CLIENTE";
 
         private const int MAXIMO_PRODUCTOS_EN_MENSAJE = 8;
         private static readonly CultureInfo castellano = new CultureInfo("es-ES");
@@ -64,6 +66,8 @@ namespace NestoAPI.Models.Picking
                         : "está retenido hasta nuevo aviso";
                     return Crear(inicio + retenido + ". No saldrá en ningún picking hasta que se libere: botón «Liberar» en el pedido (lo puede hacer el vendedor o el almacén).",
                         ERROR_RETENIDO, pedido);
+                case MotivoNoSalePicking.EsperaPendienteDelCliente:
+                    return Crear(inicio + TextoEsperaPendienteDelCliente(pedido), ERROR_ESPERA_PENDIENTE_CLIENTE, pedido);
                 case MotivoNoSalePicking.EsperaSoloRegalos:
                     return Crear(inicio + $"lo que se cobra tiene stock, pero faltan regalos ({faltan}) y no se sirve a medias " +
                         "para no mandar luego un envío solo con el regalo. Quita esas líneas o espera a que entren.",
@@ -102,6 +106,22 @@ namespace NestoAPI.Models.Picking
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// Sugerencia 1340: «está en «Junto con lo pendiente del cliente» y espera a la nota de entrega 929701, que no sale en este picking.
+        /// Saldrán juntos en el picking en que salga; si el cliente lo quiere ya, cambie el modo de servicio.»
+        /// </summary>
+        internal static string TextoEsperaPendienteDelCliente(PedidoPicking pedido)
+        {
+            List<Infraestructure.PedidosVenta.PendienteDelCliente> esperando = (pedido?.JuntoCon ?? new List<Infraestructure.PedidosVenta.PendienteDelCliente>())
+                .Where(j => j != null && (pedido.EsperandoA == null || !pedido.EsperandoA.Any() || pedido.EsperandoA.Contains(j.Pedido)))
+                .ToList();
+            bool varios = esperando.Count > 1;
+            string que = esperando.Any() ? Infraestructure.PedidosVenta.ReglaJuntoConPendiente.Documentos(esperando) : "lo que el cliente tiene pendiente";
+            return $"está en «{Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE)}» y espera a {que}, " +
+                $"que no {(varios ? "salen" : "sale")} en este picking. Saldrán juntos en el picking en que {(varios ? "salgan" : "salga")}; " +
+                "si el cliente lo quiere ya, cambie el modo de servicio.";
         }
 
         /// <summary>Las que se guardaron al decidir (GeneradorPendientes quita luego las que no tienen nada reservado).</summary>
@@ -242,6 +262,8 @@ namespace NestoAPI.Models.Picking
                 "De prepago con el pago sin cubrir", false);
             Motivo(MotivoNoSalePicking.Retenido,
                 "Retenidos hasta nuevo aviso", false);
+            Motivo(MotivoNoSalePicking.EsperaPendienteDelCliente,
+                $"Esperan a lo pendiente del cliente («{Modo(Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE)}»)", false);
 
             // Lo que no se espera ver salir hoy: solo contado
             int futuros = descartados.Count(p => p != null && p.MotivoNoSale == MotivoNoSalePicking.SinLineas && p.PrimeraEntregaFuturaQuitada.HasValue);

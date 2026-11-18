@@ -94,6 +94,16 @@ WHERE l.Empresa = @empresa AND l.Estado >= -1 AND l.Estado <= 1 AND l.TipoLinea 
   AND ISNULL(c.ModoServicio, 0) <> 5
   AND c.FechaEntregaAgenciaPrometida IS NOT NULL
   AND (c.FechaEntregaAgenciaPrometida >= @hoy
+       OR EXISTS (SELECT 1 FROM dbo.PedidosPromesaRiesgo r WHERE r.Empresa = c.Empresa AND r.Pedido = c.Número AND r.Resuelto IS NULL))
+UNION
+SELECT RTRIM(c.Empresa) AS Empresa, c.Número AS Pedido, c.FechaEntregaAgenciaPrometida AS FechaPrometida
+FROM dbo.CabPedidoVta c WITH (NOLOCK)
+INNER JOIN dbo.LinPedidoVta l WITH (NOLOCK) ON l.Empresa = c.Empresa AND l.[Nº Cliente] = c.[Nº Cliente] AND l.Contacto = c.Contacto AND l.Número <> c.Número
+WHERE c.Empresa = @empresa AND c.ModoServicio = 6 AND c.ServirJunto = 1
+  AND l.Estado >= -1 AND l.Estado <= 1 AND l.TipoLinea = 1{0}
+  AND EXISTS (SELECT 1 FROM dbo.LinPedidoVta p WITH (NOLOCK) WHERE p.Empresa = c.Empresa AND p.Número = c.Número AND p.Estado >= -1 AND p.Estado <= 1 AND p.TipoLinea = 1)
+  AND c.FechaEntregaAgenciaPrometida IS NOT NULL
+  AND (c.FechaEntregaAgenciaPrometida >= @hoy
        OR EXISTS (SELECT 1 FROM dbo.PedidosPromesaRiesgo r WHERE r.Empresa = c.Empresa AND r.Pedido = c.Número AND r.Resuelto IS NULL))";
 
         internal const string COLUMNAS = "Id, RTRIM(Empresa) AS Empresa, Pedido, FechaPrometida, FechaNueva, Motivo, Evento, Detectado, Actualizado, " +

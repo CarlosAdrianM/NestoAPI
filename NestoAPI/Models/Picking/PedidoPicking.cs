@@ -157,6 +157,7 @@ namespace NestoAPI.Models.Picking
             switch (ModoServicioEfectivo)
             {
                 case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
+                case Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE: // sugerencia 1340: sale entero, como «Todo junto»
                     return true;
                 case Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ:
                     return TieneLineasServidas || new GestorStocksPicking(this).LoPendienteSonSoloRegalos();
@@ -185,6 +186,22 @@ namespace NestoAPI.Models.Picking
         /// en esta pasada para que salga con el resto. Vacía si ninguna. Viaja en la respuesta del picking.</summary>
         public List<MuestraQuitadaPicking> MuestrasQuitadas { get; set; } = new List<MuestraQuitadaPicking>();
 
+        /// <summary>
+        /// Sugerencia 1340 (modo 6): los pedidos y notas del mismo cliente y contacto con los que se junta (lo pendiente sin picking, ya
+        /// filtrado por <see cref="Infraestructure.PedidosVenta.ReglaJuntoConPendiente"/>). Lo rellena RellenadorPickingService; vacía = no
+        /// espera a nada (sale como «Todo junto»).
+        /// </summary>
+        public List<Infraestructure.PedidosVenta.PendienteDelCliente> JuntoCon { get; set; } = new List<Infraestructure.PedidosVenta.PendienteDelCliente>();
+
+        /// <summary>Sugerencia 1340: de <see cref="JuntoCon"/>, los que NO salen en esta pasada (y por eso este pedido no sale). Lo pone JuntoConPendientePicking.</summary>
+        public List<int> EsperandoA { get; set; } = new List<int>();
+
+        /// <summary>Sugerencia 1340 (portes, decisión 7): lo que se factura en esta pasada de los demás pedidos del grupo que viaja junto.</summary>
+        public decimal ImporteEntregaJunto { get; set; }
+
+        /// <summary>Sugerencia 1340 (portes, decisión 7): el grupo que viaja junto ya paga portes (los lleva o se le han puesto a otro): este no los añade.</summary>
+        public bool PortesYaEnElGrupo { get; set; }
+
         /// <summary>NestoAPI#698: la retención viva del pedido (quién, hasta cuándo, motivo) cuando está en modo 5. Lo rellena
         /// RellenadorPickingService; solo sirve para explicar (la decisión la toma el modo).</summary>
         public Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO Retencion { get; set; }
@@ -201,6 +218,12 @@ namespace NestoAPI.Models.Picking
             if (ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS && EsperaReposicionDeTiendas)
             {
                 MotivoNoSale = MotivoNoSalePicking.EsperaReposicionDeTiendas;
+                return false;
+            }
+            // Sugerencia 1340: modo 6 esperando a lo pendiente del cliente que no sale en esta pasada (lo marca JuntoConPendientePicking).
+            if (ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE && EsperandoA != null && EsperandoA.Any())
+            {
+                MotivoNoSale = MotivoNoSalePicking.EsperaPendienteDelCliente;
                 return false;
             }
             if (this.Lineas == null || this.Lineas.Count == 0)
@@ -229,6 +252,7 @@ namespace NestoAPI.Models.Picking
             switch (ModoServicioEfectivo)
             {
                 case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
+                case Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE:
                     return MotivoNoSalePicking.TodoJuntoSinStock;
                 case Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ when TieneLineasServidas:
                     return MotivoNoSalePicking.RestoDeUnaVezSinStock;
@@ -462,9 +486,10 @@ namespace NestoAPI.Models.Picking
                 return false;
             }
 
-            bool yaLlevaPortes = this.Lineas.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.Producto != null && l.Producto.StartsWith(PREFIJO_PORTES));
+            bool yaLlevaPortes = LlevaPortes();
 
-            if (yaLlevaPortes || EsProductoYaFacturado)
+            // Sugerencia 1340: en el grupo que viaja junto (modo 6) los portes se cobran una sola vez
+            if (yaLlevaPortes || EsProductoYaFacturado || PortesYaEnElGrupo)
             {
                 return false;
             }
@@ -499,6 +524,10 @@ namespace NestoAPI.Models.Picking
             return false;
             
         }
+        /// <summary>Lleva ya una línea de portes en esta pasada.</summary>
+        public bool LlevaPortes()
+            => Lineas != null && Lineas.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.Producto != null && l.Producto.StartsWith(PREFIJO_PORTES));
+
         public string CorreoUsuarioPedido
         {
             get => rellenadorPrepagos.CorreoUsuario(Usuario);

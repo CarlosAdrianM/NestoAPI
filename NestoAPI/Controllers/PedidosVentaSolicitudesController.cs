@@ -40,7 +40,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido");
             }
-            if (!Constantes.Pedidos.ModosServicio.EsValido(solicitud.ModoDeseado))
+            if (!Constantes.Pedidos.ModosServicio.EsElegible(solicitud.ModoDeseado))
             {
                 return BadRequest("El modo de entrega no es válido");
             }

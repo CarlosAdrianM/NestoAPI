@@ -25,6 +25,8 @@ namespace NestoAPI.Models.Picking
         /// <summary>No hay stock de nada que se cobre (HayStockDeAlgo falso).</summary>
         SinStockDePago,
         /// <summary>NestoAPI#698: modo 5, «Retenido hasta nuevo aviso» (Retener/Liberar en el pedido). No sale aunque haya stock de todo.</summary>
-        Retenido
+        Retenido,
+        /// <summary>Sugerencia 1340: modo 6, «Junto con lo pendiente del cliente», y lo pendiente con lo que se junta no sale en esta pasada.</summary>
+        EsperaPendienteDelCliente
     }
 }

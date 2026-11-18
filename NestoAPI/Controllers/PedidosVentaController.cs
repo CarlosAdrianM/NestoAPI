@@ -669,8 +669,22 @@ namespace NestoAPI.Controllers
             }
             // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
             _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
-            return Ok(SugerenciaModoServicio(pedido));
+            // Sugerencia 1340: el modo 6 solo se ofrece si el contacto tiene algo pendiente con lo que juntarse (o el pedido ya está en él).
+            bool yaEnModo6 = Constantes.Pedidos.ModosServicio.EsJuntoConLoPendiente(pedido.modoServicio) || (pedido.numero != 0
+                && JuntoConPendiente.ModoAdmitido()
+                && db.CabPedidoVtas.Where(c => c.Empresa == pedido.empresa && c.Número == pedido.numero)
+                    .Select(c => new { c.ModoServicio, c.ServirJunto }).ToList()
+                    .Any(c => Constantes.Pedidos.ModosServicio.Efectivo(c.ModoServicio, c.ServirJunto) == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE));
+            return Ok(JuntoConPendiente.Ofrecer(SugerenciaModoServicio(pedido), pedido, yaEnModo6));
         }
+
+        /// <summary>Sugerencia 1340: el modo 6 (con qué se junta el pedido). Sustituible en los tests.</summary>
+        internal ServicioJuntoConPendiente JuntoConPendiente
+        {
+            get => juntoConPendiente ?? (juntoConPendiente = new ServicioJuntoConPendiente());
+            set => juntoConPendiente = value;
+        }
+        private ServicioJuntoConPendiente juntoConPendiente;
 
         /// <summary>NestoAPI#688: la sugerencia de ModoServicioSugerido, para reutilizarla en OpcionesModos.</summary>
         private SugeridorModoServicio.Sugerencia SugerenciaModoServicio(PedidoVentaDTO pedido)
@@ -746,6 +760,10 @@ namespace NestoAPI.Controllers
             // El modo de servicio: el que manda el cliente; si no, el del pedido guardado; en la plantilla, el sugerido.
             byte modoServicio = pedido.modoServicio
                 ?? (guardado != null ? Constantes.Pedidos.ModosServicio.Efectivo(guardado.ModoServicio, guardado.ServirJunto) : servicio.Modo);
+            // Sugerencia 1340: el modo 6, solo si hay algo pendiente con lo que juntarse (o el pedido ya está en él).
+            bool yaEnModo6 = modoServicio == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE || (guardado != null
+                && Constantes.Pedidos.ModosServicio.Efectivo(guardado.ModoServicio, guardado.ServirJunto) == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE);
+            servicio = JuntoConPendiente.Ofrecer(servicio, pedido, yaEnModo6);
             // El de facturación: el informado tal cual (como Normalizar); si no, el efectivo del guardado con el bit del DTO.
             byte modoFacturacion = pedido.modoFacturacion
                 ?? Constantes.Pedidos.ModosFacturacion.Efectivo(guardado?.ModoFacturacion, pedido.mantenerJunto);
@@ -2452,8 +2470,10 @@ namespace NestoAPI.Controllers
                 // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
                 this.gestor.RellenarEstadoProducto(pedido);
                 decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, Constantes.Pedidos.ModosServicio.EsEntregaUnica(Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto)), new GestorStocks());
-                var inputPortesPut = GestorPortes.ConstruirInput(pedido, codigoPostalPut, baseImponibleProductosPut,
-                    DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()));
+                bool anadirPortesPut = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim());
+                // Sugerencia 1340: en modo 6, el mínimo sobre lo que viaja junto y los portes una sola vez
+                baseImponibleProductosPut = BasePortesConLoPendiente(pedido, baseImponibleProductosPut, ref anadirPortesPut);
+                var inputPortesPut = GestorPortes.ConstruirInput(pedido, codigoPostalPut, baseImponibleProductosPut, anadirPortesPut);
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
 
                 // Verificar si ya tiene línea de portes en BD (excluyendo reembolso, cuya cuenta
@@ -3450,8 +3470,10 @@ namespace NestoAPI.Controllers
                 decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, Constantes.Pedidos.ModosServicio.EsEntregaUnica(Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto)), new GestorStocks());
                 // NestoAPI#436: el input lo monta GestorPortes, que es de donde lo lee también el
                 // carrito de la app, para que el envío que se le enseña sea el que va a pagar.
-                var inputPortes = GestorPortes.ConstruirInput(pedido, codigoPostalPortes, baseImponibleProductos,
-                    DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()));
+                bool anadirPortesPost = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim());
+                // Sugerencia 1340: en modo 6, el mínimo sobre lo que viaja junto y los portes una sola vez
+                baseImponibleProductos = BasePortesConLoPendiente(pedido, baseImponibleProductos, ref anadirPortesPost);
+                var inputPortes = GestorPortes.ConstruirInput(pedido, codigoPostalPortes, baseImponibleProductos, anadirPortesPost);
                 var resultadoPortes = GestorPortes.CalcularPortes(inputPortes);
                 var resultadoGestionPortes = GestorPortes.GestionarLineasPortes(pedido.Lineas, resultadoPortes, pedido.iva, pedido.ParametrosIva);
 
@@ -4777,6 +4799,11 @@ namespace NestoAPI.Controllers
                 {
                     AplicarModoCorregido(pedido, corregido.Value);
                 }
+                // Sugerencia 1340: el modo 6 solo con algo pendiente con lo que juntarse (y con el script lanzado).
+                if (Constantes.Pedidos.ModosServicio.EsJuntoConLoPendiente(pedido.modoServicio))
+                {
+                    ComprobarJuntoConPendiente(pedido, Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE, null);
+                }
             }
             catch (ModoServicioNoPermitidoException)
             {
@@ -4799,6 +4826,8 @@ namespace NestoAPI.Controllers
                 {
                     AplicarModoCorregido(pedido, corregido.Value);
                 }
+                // Sugerencia 1340: solo al ENTRAR en el 6 (quien devuelve el 6 que leyó no se rechaza aunque ya no quede nada).
+                ComprobarJuntoConPendiente(pedido, Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto), modoEfectivoAnterior);
             }
             catch (ModoServicioNoPermitidoException)
             {
@@ -4808,6 +4837,33 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(new Exception($"NestoAPI#518: no se pudo comprobar el modo de servicio al modificar; se deja pasar ({ex.Message})", ex));
             }
+        }
+
+        /// <summary>Sugerencia 1340: 400 (MODO_SERVICIO_NO_PERMITIDO, con «Todo junto» como alternativa) si el pedido no puede entrar en el modo 6.</summary>
+        private void ComprobarJuntoConPendiente(PedidoVentaDTO pedido, byte modoEfectivoNuevo, byte? modoEfectivoAnterior)
+        {
+            string motivo = JuntoConPendiente.MotivoAlEntrar(pedido, modoEfectivoNuevo, modoEfectivoAnterior);
+            if (motivo != null)
+            {
+                byte alternativa = Constantes.Pedidos.ModosServicio.TODO_JUNTO;
+                throw new ModoServicioNoPermitidoException(motivo, alternativa, Constantes.Pedidos.ModosServicio.Nombre(alternativa),
+                    new[] { alternativa }, pedido.empresa, pedido.numero == 0 ? (int?)null : pedido.numero);
+            }
+        }
+
+        /// <summary>
+        /// Sugerencia 1340 (decisión 7): en modo 6 los portes se miran sobre lo que viaja junto. La base de lo pendiente con lo que se junta
+        /// se suma a la del pedido para el mínimo; si lo pendiente ya lleva portes, este pedido no los añade (se cobran una vez). Lo que ya
+        /// lleva lo pendiente no se toca (ni se devuelve ni se duplica). Fuera del modo 6, la base tal cual.
+        /// </summary>
+        private decimal BasePortesConLoPendiente(PedidoVentaDTO pedido, decimal baseImponibleProductos, ref bool anadirPortes)
+        {
+            (decimal basePendiente, bool yaLlevaPortes) = JuntoConPendiente.PortesDeLoPendiente(pedido);
+            if (yaLlevaPortes)
+            {
+                anadirPortes = false;
+            }
+            return baseImponibleProductos + basePendiente;
         }
 
         /// <summary>NestoAPI#518: en tienda el modo no se rechaza, se corrige al único permitido (2).</summary>

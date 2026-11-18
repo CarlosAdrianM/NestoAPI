@@ -96,7 +96,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return (faltas ?? Enumerable.Empty<FaltaPickingPedido>())
                 .Where(EsCandidata)
                 .Where(f => porLinea.TryGetValue(f.Linea, out LineaTodoJuntoSalida l) && l.BaseImponible > 0 && !l.Ficticio
-                    && Constantes.Pedidos.ModosServicio.Efectivo(l.ModoServicio, l.ServirJunto) == Constantes.Pedidos.ModosServicio.TODO_JUNTO)
+                    && Constantes.Pedidos.ModosServicio.EsTodoJunto(Constantes.Pedidos.ModosServicio.Efectivo(l.ModoServicio, l.ServirJunto)))
                 .Select(f => f.Pedido).Distinct().OrderBy(p => p).ToList();
         }
 

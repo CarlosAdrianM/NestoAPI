@@ -121,8 +121,82 @@ namespace NestoAPI.Models.Picking
                 .ToList();
         }
 
+        /// <summary>
+        /// Sugerencia 1340 (modo 6, «Junto con lo pendiente del cliente»): para que salgan en la misma pasada, se añaden a los pedidos del
+        /// picking (1) los pedidos en modo 6 del mismo cliente y contacto que alguno de ellos y (2) lo pendiente con lo que se juntan los
+        /// pedidos en modo 6 que ya estaban (o que se han añadido): así el picking de UN pedido, de un cliente o de unas rutas saca también
+        /// lo que tiene que ir con él. Todos pasan después por las reglas de siempre (stock, prepago, fechas, cierre del cliente…).
+        /// Devuelve lo pendiente leído (para <see cref="RellenarJuntoConPendiente"/>). Sin el script, o si falla, nada (ELMAH).
+        /// </summary>
+        private List<Infraestructure.PedidosVenta.PendienteDelCliente> PrepararJuntoConPendiente()
+        {
+            var pendientes = new List<Infraestructure.PedidosVenta.PendienteDelCliente>();
+            try
+            {
+                if (!pedidos.Any() || !RepositorioJuntoConPendiente.ModoAdmitido())
+                {
+                    return pendientes;
+                }
+                byte modo6 = Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE;
+                string almacen = Constantes.Productos.ALMACEN_POR_DEFECTO;
+                List<string> clientes = pedidos.Where(p => p.Nº_Cliente != null).Select(p => p.Nº_Cliente).Distinct().ToList();
+                List<int> numeros = pedidos.Select(p => p.Número).ToList();
+                List<CabPedidoVta> enModo6 = db.CabPedidoVtas
+                    .Where(c => c.ModoServicio == modo6 && c.ServirJunto && clientes.Contains(c.Nº_Cliente) && !numeros.Contains(c.Número)
+                        && c.LinPedidoVtas.Any(l => l.Almacén == almacen && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                            && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking == null || l.Picking == 0)))
+                    .ToList();
+                pedidos.AddRange(enModo6.Where(c => pedidos.Any(p => MismaDireccion(p, c))));
+
+                foreach (IGrouping<string, CabPedidoVta> grupo in pedidos
+                    .Where(p => Constantes.Pedidos.ModosServicio.Efectivo(p.ModoServicio, p.ServirJunto) == modo6)
+                    .GroupBy(p => p.Empresa?.Trim())
+                    .ToList())
+                {
+                    List<Infraestructure.PedidosVenta.PendienteDelCliente> leidos = RepositorioJuntoConPendiente.LeerPendientes(grupo.Key,
+                        grupo.Select(p => new Infraestructure.PedidosVenta.ClaveClienteContacto { Cliente = p.Nº_Cliente?.Trim(), Contacto = p.Contacto?.Trim() }).ToList());
+                    pendientes.AddRange(leidos);
+                    List<int> aTraer = grupo
+                        .SelectMany(p => Infraestructure.PedidosVenta.ReglaJuntoConPendiente.ConLoQueSeJunta(leidos, p.Empresa, p.Número, p.Nº_Cliente, p.Contacto))
+                        .Select(j => j.Pedido)
+                        .Where(n => !pedidos.Any(p => p.Número == n && p.Empresa?.Trim() == grupo.Key))
+                        .Distinct()
+                        .ToList();
+                    if (aTraer.Any())
+                    {
+                        string empresa = grupo.Key;
+                        pedidos.AddRange(db.CabPedidoVtas.Where(c => c.Empresa == empresa && aTraer.Contains(c.Número)).ToList());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Infraestructure.ElmahHelper.Log(new Exception(
+                    $"[Junto con lo pendiente, sugerencia 1340] No se ha podido preparar el modo 6 en el picking (esos pedidos salen como «Todo junto»): {ex.Message}", ex),
+                    "Sistema (picking)");
+            }
+            return pendientes;
+        }
+
+        /// <summary>Sugerencia 1340: a cada pedido en modo 6, con qué se junta (la regla, sobre lo leído en <see cref="PrepararJuntoConPendiente"/>).</summary>
+        private static void RellenarJuntoConPendiente(List<PedidoPicking> pedidosPicking, List<Infraestructure.PedidosVenta.PendienteDelCliente> pendientes)
+        {
+            foreach (PedidoPicking pedido in pedidosPicking.Where(p => p.ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE))
+            {
+                pedido.JuntoCon = Infraestructure.PedidosVenta.ReglaJuntoConPendiente.ConLoQueSeJunta(pendientes, pedido.Empresa, pedido.Id, pedido.Cliente, pedido.Contacto);
+            }
+        }
+
+        private static bool MismaDireccion(CabPedidoVta a, CabPedidoVta b)
+            => a.Empresa?.Trim() == b.Empresa?.Trim() && a.Nº_Cliente?.Trim() == b.Nº_Cliente?.Trim() && a.Contacto?.Trim() == b.Contacto?.Trim();
+
+        /// <summary>Sugerencia 1340: lo pendiente del cliente para el modo 6. Sustituible (tests).</summary>
+        internal Infraestructure.PedidosVenta.IRepositorioJuntoConPendiente RepositorioJuntoConPendiente { get; set; } = new Infraestructure.PedidosVenta.RepositorioJuntoConPendiente();
+
         private List<PedidoPicking> Ejecutar()
         {
+            List<Infraestructure.PedidosVenta.PendienteDelCliente> pendientesDelCliente = PrepararJuntoConPendiente();
+
             // VALIDACIÓN: Verificar que ninguna línea de los pedidos seleccionados tenga TipoLinea NULL
             var lineasConTipoNull = pedidos
                 .SelectMany(p => p.LinPedidoVtas
@@ -201,6 +275,7 @@ namespace NestoAPI.Models.Picking
             RellenarChequesRegalo(resultado);
             RellenarCupones(resultado);
             RellenarRetenciones(resultado);
+            RellenarJuntoConPendiente(resultado, pendientesDelCliente);
             return resultado;
         }
 

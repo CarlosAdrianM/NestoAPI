@@ -908,6 +908,7 @@
     <Compile Include="Infrastructure\PedidosVenta\ClasificadorCausasModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CalculadoraFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CertezaFechaEntregaTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\JuntoConPendienteTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RutaInternaDiaRepartoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AvisoCondicionesCampanaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CampanasAplicarDtoTests.cs" />

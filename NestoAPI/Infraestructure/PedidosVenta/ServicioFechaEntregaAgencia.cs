@@ -99,9 +99,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>NestoAPI#853: lo que se lee para la certeza (seguimiento de la agencia, plazos). Null = sin certeza (los tests de siempre).</summary>
         private readonly ILectorCertezaFechaEntrega lectorCerteza;
 
+        /// <summary>Sugerencia 1340: lo pendiente del cliente para el modo 6. Null = sin modo 6 (los tests de siempre).</summary>
+        private readonly IRepositorioJuntoConPendiente juntoConPendiente;
+
         public ServicioFechaEntregaAgencia(NVEntities db)
             : this(new RepositorioFechaEntregaAgencia(db), () => DateTime.Now, GestorFestivos.EsFestivo,
-                  ex => ElmahHelper.Log(ex), new AvisadorProveedorVencido(), lectorCerteza: LectorCertezaPorDefecto())
+                  ex => ElmahHelper.Log(ex), new AvisadorProveedorVencido(), lectorCerteza: LectorCertezaPorDefecto(),
+                  juntoConPendiente: new RepositorioJuntoConPendiente())
         {
         }
 
@@ -121,9 +125,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal ServicioFechaEntregaAgencia(IRepositorioFechaEntregaAgencia repositorio, Func<DateTime> reloj,
             Func<DateTime, string, bool> esFestivo, Action<Exception> registrar, IAvisadorProveedorVencido avisadorProveedorVencido = null,
             Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado = null,
-            IRepartoStockPorAntiguedad repartoStock = null, ILectorCertezaFechaEntrega lectorCerteza = null)
+            IRepartoStockPorAntiguedad repartoStock = null, ILectorCertezaFechaEntrega lectorCerteza = null,
+            IRepositorioJuntoConPendiente juntoConPendiente = null)
         {
             this.lectorCerteza = lectorCerteza;
+            this.juntoConPendiente = juntoConPendiente;
             this.anotarPedidoGrabado = anotarPedidoGrabado ?? EventosPromesaRiesgo.Anotar;
             this.repartoStock = repartoStock ?? RepartoStockPorAntiguedad.PorDefecto();
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
@@ -138,7 +144,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return (await CalcularPedidoConLineas(empresa, numero).ConfigureAwait(false)).dto;
         }
 
-        private async Task<(FechaEntregaAgenciaDTO dto, PedidoFechaEntregaAgencia pedido)> CalcularPedidoConLineas(string empresa, int numero)
+        private async Task<(FechaEntregaAgenciaDTO dto, PedidoFechaEntregaAgencia pedido)> CalcularPedidoConLineas(string empresa, int numero,
+            bool juntarConLoPendiente = true)
         {
             string empresaLimpia = Empresa(empresa);
             PedidoFechaEntregaAgencia pedido = await repositorio.LeerPedido(empresaLimpia, numero).ConfigureAwait(false);
@@ -146,13 +153,72 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return (null, null);
             }
+            byte modoServicio = Constantes.Pedidos.ModosServicio.Efectivo(pedido.ModoServicio, pedido.ServirJunto);
             FechaEntregaAgenciaDTO dto = await Calcular(empresaLimpia, numero, pedido.Ruta,
-                Constantes.Pedidos.ModosServicio.Efectivo(pedido.ModoServicio, pedido.ServirJunto),
+                ModoParaElMotor(modoServicio),
                 Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.ModoFacturacion, pedido.MantenerJunto),
                 pedido.DiasEnServir, pedido.TieneLineasServidas, pedido.Lineas, $"el pedido {numero}", pedido.CodigoPostal,
                 pedido.Cliente, pedido.Contacto).ConfigureAwait(false);
+            if (juntarConLoPendiente && modoServicio == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE)
+            {
+                dto = await JuntarConLoPendiente(empresaLimpia, numero, pedido.Cliente, pedido.Contacto, dto).ConfigureAwait(false);
+            }
             dto.FechaPrometida = await repositorio.LeerPrometida(empresaLimpia, numero).ConfigureAwait(false);
             return (dto, pedido);
+        }
+
+        /// <summary>Sugerencia 1340: el motor calcula el modo 6 como «Todo junto» (sale entero); lo de esperar se suma después.</summary>
+        private static byte ModoParaElMotor(byte modoServicio)
+            => modoServicio == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE ? Constantes.Pedidos.ModosServicio.TODO_JUNTO : modoServicio;
+
+        /// <summary>
+        /// Sugerencia 1340 (decisión 6): el pedido en modo 6 sale el día del peor entre él y lo pendiente con lo que se junta, cada uno con
+        /// su propio cálculo (<see cref="ReglaFechaJuntoConPendiente"/>). Si falla la lectura, la del pedido como «Todo junto» (ELMAH con límite).
+        /// </summary>
+        private async Task<FechaEntregaAgenciaDTO> JuntarConLoPendiente(string empresa, int? numero, string cliente, string contacto,
+            FechaEntregaAgenciaDTO propio)
+        {
+            if (juntoConPendiente == null || propio == null || string.IsNullOrWhiteSpace(cliente))
+            {
+                return propio;
+            }
+            List<PendienteDelCliente> conLoQueSeJunta;
+            try
+            {
+                using (SinTransaccion())
+                {
+                    if (!juntoConPendiente.ModoAdmitido())
+                    {
+                        return propio;
+                    }
+                    List<PendienteDelCliente> leidos = juntoConPendiente.LeerPendientes(empresa,
+                        new[] { new ClaveClienteContacto { Cliente = cliente.Trim(), Contacto = contacto?.Trim() } });
+                    conLoQueSeJunta = ReglaJuntoConPendiente.ConLoQueSeJunta(leidos, empresa, numero ?? 0, cliente, contacto);
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar($"no se ha podido leer lo pendiente del cliente {cliente?.Trim()}/{contacto?.Trim()} para la fecha del pedido en modo 6 " +
+                    "(sale con la suya, como «Todo junto»)", ex);
+                return propio;
+            }
+            var calculos = new List<CalculoPendienteDelCliente>();
+            foreach (PendienteDelCliente pendiente in conLoQueSeJunta)
+            {
+                FechaEntregaAgenciaDTO calculo;
+                try
+                {
+                    // Lo pendiente nunca está en modo 6 (la regla los deja fuera); aun así no se junta otra vez: nada de recursión.
+                    calculo = (await CalcularPedidoConLineas(empresa, pendiente.Pedido, juntarConLoPendiente: false).ConfigureAwait(false)).dto;
+                }
+                catch (Exception ex)
+                {
+                    Registrar($"no se ha podido calcular la fecha de {ReglaJuntoConPendiente.Documento(pendiente)} para el pedido en modo 6", ex);
+                    calculo = null;
+                }
+                calculos.Add(new CalculoPendienteDelCliente { Pendiente = pendiente, Calculo = calculo });
+            }
+            return ReglaFechaJuntoConPendiente.Combinar(propio, calculos);
         }
 
         public async Task<FechaEntregaAgenciaDTO> CalcularPlantilla(PedidoVentaDTO pedido)
@@ -183,7 +249,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool tieneLineasServidas = (pedido.Lineas ?? new List<LineaPedidoVentaDTO>())
                 .Any(l => l != null && l.estado >= Constantes.EstadosLineaVenta.ALBARAN);
             // Como ModosServicio/ModosFacturacion.Normalizar al grabar: el modo informado manda; sin él, el bit.
-            byte modoServicio = pedido.modoServicio.HasValue && Constantes.Pedidos.ModosServicio.EsValido(pedido.modoServicio.Value)
+            byte modoServicio = pedido.modoServicio.HasValue && Constantes.Pedidos.ModosServicio.EsElegible(pedido.modoServicio.Value)
                 ? pedido.modoServicio.Value
                 : Constantes.Pedidos.ModosServicio.Efectivo(null, pedido.servirJunto);
             byte modoFacturacion = pedido.modoFacturacion.HasValue && Constantes.Pedidos.ModosFacturacion.EsValido(pedido.modoFacturacion.Value)
@@ -193,8 +259,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             string codigoPostal = string.IsNullOrWhiteSpace(pedido.cliente) || !DiasRepartoCodigosPostales.PuedeTenerDia(pedido.ruta)
                 ? null
                 : await repositorio.LeerCodigoPostal(empresa, pedido.cliente.Trim(), pedido.contacto?.Trim()).ConfigureAwait(false);
-            return await Calcular(empresa, pedido.numero > 0 ? pedido.numero : (int?)null, pedido.ruta, modoServicio, modoFacturacion,
-                diasEnServir, tieneLineasServidas, lineas, QuienEspera(pedido), codigoPostal, pedido.cliente?.Trim(), pedido.contacto?.Trim()).ConfigureAwait(false);
+            FechaEntregaAgenciaDTO dto = await Calcular(empresa, pedido.numero > 0 ? pedido.numero : (int?)null, pedido.ruta, ModoParaElMotor(modoServicio),
+                modoFacturacion, diasEnServir, tieneLineasServidas, lineas, QuienEspera(pedido), codigoPostal, pedido.cliente?.Trim(), pedido.contacto?.Trim()).ConfigureAwait(false);
+            // Sugerencia 1340: en modo 6, el día del peor entre el pedido y lo pendiente con lo que se junta
+            return modoServicio == Constantes.Pedidos.ModosServicio.JUNTO_CON_LO_PENDIENTE
+                ? await JuntarConLoPendiente(empresa, pedido.numero > 0 ? pedido.numero : (int?)null, pedido.cliente, pedido.contacto, dto).ConfigureAwait(false)
+                : dto;
         }
 
         public async Task<DateTime?> GuardarPrometidaAlCrear(string empresa, int numero)

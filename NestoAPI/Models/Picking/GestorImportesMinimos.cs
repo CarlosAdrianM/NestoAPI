@@ -81,9 +81,13 @@ namespace NestoAPI.Models.Picking
             return (ruta == null || ruta.Trim() == "FW" || ruta.Trim() == "00" || ruta.Trim() == "16" || ruta.Trim() == "AT" || ruta.Trim() == "OT");
         }
 
+        /// <summary>Sugerencia 1340: lo que se factura de este pedido en esta pasada (para sumarlo al grupo que viaja junto).</summary>
+        public decimal ImporteEntrega() => pedido.Lineas.Sum(BaseQueSeFactura);
+
         public bool LaEntregaLlegaAlImporteMinimo()
         {
-            decimal importeEntrega = pedido.Lineas.Sum(BaseQueSeFactura);
+            // Sugerencia 1340: en modo 6 el mínimo se mira sobre todo lo que viaja junto (decisión 7)
+            decimal importeEntrega = ImporteEntrega() + pedido.ImporteEntregaJunto;
             if (importeEntrega >= importeMinimo) {
                 return true;
             }
