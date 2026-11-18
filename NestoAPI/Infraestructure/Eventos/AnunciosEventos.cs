@@ -87,6 +87,9 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string RECLAMO_ULTIMAS_PLAZAS = "¡Últimas plazas disponibles!";
         public const string RECLAMO_A_TIEMPO = "¡Aún está a tiempo!";
 
+        /// <summary>NestoAPI#875: lo que falta a un online sin enlace (ni en su campo ni en «Lugar»).</summary>
+        public const string FALTA_ENLACE_ONLINE = "el enlace de la conexión online";
+
         private static readonly CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
         private static readonly string[] numeros = { "cero", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez" };
 
@@ -156,9 +159,10 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 falta.Add("la imagen");
             }
-            if (EsOnline(evento) && FormatosEvento.EnlaceOnline(AEntidad(evento)) == null)
+            // NestoAPI#875: el enlace va en su propio campo; si está vacío, vale la dirección web de «Lugar», como antes
+            if (EsOnline(evento) && ReglasEnlaceOnlineEvento.DelEvento(evento.EnlaceOnline, evento.Lugar) == null)
             {
-                falta.Add("el enlace de conexión en «Lugar»");
+                falta.Add(FALTA_ENLACE_ONLINE);
             }
             return falta;
         }

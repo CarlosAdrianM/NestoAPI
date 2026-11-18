@@ -115,6 +115,21 @@ namespace NestoAPI.Infraestructure.Eventos
         /// </summary>
         public string Formato { get => formato; set { formato = value; recibidos.Add(nameof(Formato)); } }
 
+        private string enlaceOnline;
+        /// <summary>
+        /// NestoAPI#875: el enlace de la conexión online (Teams, Zoom…), aparte de «Lugar». Solo lo ven y lo cambian quienes
+        /// <see cref="PermisosEventos.PuedeVerEnlaceOnline"/>: a los demás no se les devuelve (null) y, si lo mandan, se ignora.
+        /// Al escribir, solo si viene: vacío lo quita; sin el campo, no se toca. Si está vacío, vale la dirección web de «Lugar».
+        /// </summary>
+        public string EnlaceOnline { get => enlaceOnline; set { enlaceOnline = value; recibidos.Add(nameof(EnlaceOnline)); } }
+
+        /// <summary>NestoAPI#875: quien no puede verlo, ni lo recibe ni lo cambia (el PUT lo trata como si no viniera).</summary>
+        public void OcultarEnlaceOnline()
+        {
+            enlaceOnline = null;
+            _ = recibidos.Remove(nameof(EnlaceOnline));
+        }
+
         /// <summary>
         /// NestoAPI#692: solo lectura. Tiene todo lo necesario para anunciarlo en las apps (ver
         /// <see cref="ReglasAnuncioEvento.QueFalta"/>, imagen incluida).
@@ -316,6 +331,87 @@ namespace NestoAPI.Infraestructure.Eventos
             PedidoMinimoCupon = new RepositorioPedidoMinimoCuponEventos(db);
             AsistentesInscripciones = new RepositorioAsistentesEventos(db);
             FormasAsistencia = new RepositorioFormaAsistenciaEventos(db);
+            EnlacesOnline = new RepositorioEnlaceOnlineEventos(db);
+            AlCambiarEnlaceOnline = EnlaceOnlineEventosJobs.Encolar;
+        }
+
+        /// <summary>
+        /// NestoAPI#875: la columna Eventos.EnlaceOnline (fuera del EDMX). Null (tests) o sin la columna: los eventos salen sin él
+        /// (vale «Lugar») y guardar uno contesta que falta el script.
+        /// </summary>
+        internal IRepositorioEnlaceOnlineEventos EnlacesOnline { get; set; }
+
+        /// <summary>
+        /// NestoAPI#875: (evento, ¿tenía enlace antes?) → avisa en segundo plano a las inscritas online de que hay enlace (nuevo).
+        /// Null (tests): no se avisa.
+        /// </summary>
+        internal Action<int, bool> AlCambiarEnlaceOnline { get; set; }
+
+        public const string MENSAJE_FALTA_SCRIPT_ENLACE = "Todavía no se puede guardar el enlace de la conexión online: falta lanzar el script " +
+            "Scripts/Issue875_EventosEnlaceOnline.sql. Mientras tanto, póngalo en «Lugar», como antes. Avise a Informática.";
+
+        /// <summary>NestoAPI#875: el enlace que viene en el cuerpo, comprobado. Viene = false si no está en el cuerpo (no se toca).</summary>
+        private static (bool viene, string enlace) ValidarEnlaceOnline(EventoDTO evento) =>
+            evento != null && evento.Trae(nameof(EventoDTO.EnlaceOnline))
+                ? (true, ReglasEnlaceOnlineEvento.Normalizar(evento.EnlaceOnline))
+                : (false, null);
+
+        /// <summary>NestoAPI#875: guarda el enlace si viene. Sin la columna, quitarlo no cambia nada y ponerlo contesta que falta el script.</summary>
+        private async Task GuardarEnlaceOnline(int eventoId, (bool viene, string enlace) enlace)
+        {
+            if (!enlace.viene)
+            {
+                return;
+            }
+            bool guardado = EnlacesOnline != null && await EnlacesOnline.Guardar(eventoId, enlace.enlace).ConfigureAwait(false);
+            if (!guardado && enlace.enlace != null)
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_ENLACE);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#875: el enlace de cada evento (en UNA consulta) y, con él, lo que falta para anunciar los online. Sin la columna
+        /// o si falla, sin enlace (ELMAH una vez). El controlador se lo quita a quien no puede verlo.
+        /// </summary>
+        private async Task ConEnlaceOnline(List<EventoDTO> lista)
+        {
+            if (EnlacesOnline == null || lista == null || !lista.Any())
+            {
+                return;
+            }
+            Dictionary<int, string> enlaces = await RepositorioEnlaceOnlineEventos.LeerSinFallar(EnlacesOnline, lista.Select(e => e.Id)).ConfigureAwait(false);
+            DateTime hoy = reloj().Date;
+            foreach (EventoDTO dto in lista)
+            {
+                if (enlaces.TryGetValue(dto.Id, out string enlace))
+                {
+                    dto.EnlaceOnline = enlace;
+                    _ = ReglasAnuncioEvento.Completar(dto, hoy);
+                }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#875 (decisión 5): si el enlace que se manda ha cambiado (o se ha puesto) en un evento que no ha pasado, avisa en
+        /// segundo plano a las inscritas online (correo «nuevo enlace» a las ya avisadas; el recordatorio a las que lo esperaban).
+        /// Nunca rompe el guardado.
+        /// </summary>
+        private void AvisarSiCambiaElEnlace(Evento entidad, string antes, string despues)
+        {
+            if (AlCambiarEnlaceOnline == null || despues == null || !ReglasEnlaceOnlineEvento.HaCambiado(antes, despues)
+                || !entidad.Activo || entidad.Fecha.Date < reloj().Date)
+            {
+                return;
+            }
+            try
+            {
+                AlCambiarEnlaceOnline(entidad.Id, antes != null);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #875] El evento {entidad.Id} está guardado, pero no se ha podido avisar del enlace nuevo: {ex.Message}", ex));
+            }
         }
 
         /// <summary>
@@ -419,6 +515,7 @@ namespace NestoAPI.Infraestructure.Eventos
         private async Task<List<EventoDTO>> ConProductosRequeridos(List<EventoDTO> lista)
         {
             await ConPedidoMinimoCupon(lista).ConfigureAwait(false);
+            await ConEnlaceOnline(lista).ConfigureAwait(false);
             if (ProductosRequeridos == null || lista == null || !lista.Any())
             {
                 return lista;
@@ -769,6 +866,7 @@ namespace NestoAPI.Infraestructure.Eventos
             EventoDTO dto = ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0);
             dto.ImagenUrl = RepositorioImagenesEventos.Url(id, fecha);
             await ConPedidoMinimoCupon(new List<EventoDTO> { dto }).ConfigureAwait(false);
+            await ConEnlaceOnline(new List<EventoDTO> { dto }).ConfigureAwait(false);
             return ConAnuncio(dto, await Anunciados(new List<int> { id }).ConfigureAwait(false));
         }
 
@@ -851,6 +949,7 @@ namespace NestoAPI.Infraestructure.Eventos
             string modoRequeridos = ValidarModoProductosRequeridos(evento);
             (bool viene, decimal? importe) importeMinimoRequeridos = ValidarImporteMinimoRequeridos(evento);
             decimal? pedidoMinimoCupon = ValidarPedidoMinimoCupon(evento);
+            (bool viene, string enlace) enlaceOnline = ValidarEnlaceOnline(evento);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa), Formato = FormatosEvento.PRESENCIAL };
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
@@ -859,6 +958,7 @@ namespace NestoAPI.Infraestructure.Eventos
             await GuardarModoProductosRequeridos(entidad.Id, modoRequeridos).ConfigureAwait(false);
             await GuardarImporteMinimoRequeridos(entidad.Id, importeMinimoRequeridos).ConfigureAwait(false);
             await GuardarPedidoMinimoCupon(entidad.Id, pedidoMinimoCupon).ConfigureAwait(false);
+            await GuardarEnlaceOnline(entidad.Id, enlaceOnline).ConfigureAwait(false);
             return await ConProductosRequeridos(ConAnuncio(ADTO(entidad, 0), null)).ConfigureAwait(false);
         }
 
@@ -875,6 +975,11 @@ namespace NestoAPI.Infraestructure.Eventos
             string modoRequeridos = ValidarModoProductosRequeridos(evento);
             (bool viene, decimal? importe) importeMinimoRequeridos = ValidarImporteMinimoRequeridos(evento);
             decimal? pedidoMinimoCupon = ValidarPedidoMinimoCupon(evento);
+            (bool viene, string enlace) enlaceOnline = ValidarEnlaceOnline(evento);
+            // NestoAPI#875: el enlace que se mandaba antes (el propio o el de «Lugar»), para avisar si cambia
+            string enlacePropioAntes = EnlacesOnline == null ? null
+                : await RepositorioEnlaceOnlineEventos.LeerUnoSinFallar(EnlacesOnline, id).ConfigureAwait(false);
+            string enlaceAntes = ReglasEnlaceOnlineEvento.DelEvento(enlacePropioAntes, entidad.Lugar);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
@@ -918,6 +1023,8 @@ namespace NestoAPI.Infraestructure.Eventos
             await GuardarModoProductosRequeridos(id, modoRequeridos).ConfigureAwait(false);
             await GuardarImporteMinimoRequeridos(id, importeMinimoRequeridos).ConfigureAwait(false);
             await GuardarPedidoMinimoCupon(id, pedidoMinimoCupon).ConfigureAwait(false);
+            await GuardarEnlaceOnline(id, enlaceOnline).ConfigureAwait(false);
+            AvisarSiCambiaElEnlace(entidad, enlaceAntes, ReglasEnlaceOnlineEvento.DelEvento(enlaceOnline.viene ? enlaceOnline.enlace : enlacePropioAntes, entidad.Lugar));
             int ocupadasDespues = ocupadasEvento;
             if (plan != null && plan.ARecuperar.Any())
             {

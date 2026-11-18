@@ -133,8 +133,12 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             EventoDTO online = Completo();
             online.Formato = FormatosEvento.ONLINE;
             online.Lugar = "Sala de Zoom";
-            CollectionAssert.AreEqual(new[] { "el enlace de conexión en «Lugar»" }, ReglasAnuncioEvento.QueFalta(online, JUEVES_10.Date));
+            CollectionAssert.AreEqual(new[] { "el enlace de la conexión online" }, ReglasAnuncioEvento.QueFalta(online, JUEVES_10.Date));
             online.Lugar = "https://zoom.us/j/123";
+            Assert.AreEqual(0, ReglasAnuncioEvento.QueFalta(online, JUEVES_10.Date).Count);
+            // NestoAPI#875: o en su propio campo
+            online.Lugar = "Sala de Zoom";
+            online.EnlaceOnline = "https://teams.microsoft.com/l/x";
             Assert.AreEqual(0, ReglasAnuncioEvento.QueFalta(online, JUEVES_10.Date).Count);
 
             EventoDTO pasado = Completo();

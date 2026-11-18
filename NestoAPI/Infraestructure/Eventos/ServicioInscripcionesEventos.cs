@@ -433,6 +433,32 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             ParametrosPlazasLlenas = () => ParametrosPlazasLlenasEventos.Leer(db);
             EncolarPlazasLlenas = PlazasLlenasEventosJobsService.Encolar;
             AvisarPagoFueraDePlazo = PlazasLlenasEventosJobsService.AvisarPagoFueraDePlazo;
+            EncolarAvisosInscripcion = AvisosInscripcionEventosJobs.Encolar;
+        }
+
+        /// <summary>
+        /// NestoAPI#875: (inscripción) → en segundo plano, lo que le toque ya por haber cambiado (el recordatorio con el enlace si
+        /// ya salió el de su evento). Null (tests): nada.
+        /// </summary>
+        internal Action<int> EncolarAvisosInscripcion { get; set; }
+
+        private readonly HashSet<int> avisosEncolados = new HashSet<int>();
+
+        /// <summary>NestoAPI#875: encola una vez por petición los avisos de la inscripción. Nunca rompe lo que la ha cambiado.</summary>
+        private void EncolarAvisos(EventoInscripcion inscripcion)
+        {
+            if (EncolarAvisosInscripcion == null || inscripcion == null || inscripcion.Id <= 0 || !avisosEncolados.Add(inscripcion.Id))
+            {
+                return;
+            }
+            try
+            {
+                EncolarAvisosInscripcion(inscripcion.Id);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #875] No se han podido encolar los avisos de la inscripción {inscripcion.Id}: {ex.Message}", ex));
+            }
         }
 
         /// <summary>
@@ -798,6 +824,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             }
             // NestoAPI#746: si con esta se llena (o ya estaba lleno y ha entrado pagada), aviso a las reservas sin pagar
             await AvisarSiSeLlena(evento).ConfigureAwait(false);
+            // NestoAPI#875: si el recordatorio de su evento ya ha salido, el suyo (con el enlace) ahora
+            EncolarAvisos(inscripcion);
             return dto;
         }
 
@@ -964,6 +992,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             InscripcionEventoDTO dto = (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
                 .Single();
             dto.FormaAsistencia = forma;
+            // NestoAPI#875: si pasa a online con el recordatorio ya en marcha, el enlace ahora
+            EncolarAvisos(inscripcion);
             return dto;
         }
 
@@ -1868,6 +1898,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             AnotarPago(inscripcion, forma, importe, fecha, usuario, eventoSenalId);
             await db.SaveChangesAsync().ConfigureAwait(false);
             await ProcesarPagada(inscripcion, evento).ConfigureAwait(false);
+            // NestoAPI#875: pagada ya espera al evento: si su recordatorio ya habría salido, el suyo ahora
+            EncolarAvisos(inscripcion);
             if (estado == EstadoInscripcionEvento.Caducada)
             {
                 // NestoAPI#746: pagada fuera de plazo: el dinero manda (recupera la plaza aunque el evento quede por encima de

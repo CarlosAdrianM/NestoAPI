@@ -141,6 +141,19 @@ namespace NestoAPI.Infraestructure.Eventos
                 .Any(v => !string.IsNullOrWhiteSpace(v) && suyos.Contains(v.Trim()));
         }
 
+        /// <summary>
+        /// NestoAPI#875 (Carlos 17/11/26, «con un grupo»): quién VE y CAMBIA el enlace de la conexión online de los eventos. Reina
+        /// pidió a Paloma, Laura Camacho, Laura Villacieros, Manuel, Alberto y Pilar: Tiendas y Dirección, y, como en
+        /// <see cref="PuedeMantener"/>, Administración e Informática. Tienda online no (no mantiene eventos con tienda) ni el
+        /// cliente de la tienda online. Cambiarlo, además, exige poder mantener ese evento (el PUT ya lo comprueba). Para cambiar
+        /// quién, solo esta función (y su gemela en Nesto, MantenimientoEventosViewModel.PuedeVerEnlaceOnline).
+        /// </summary>
+        public static bool PuedeVerEnlaceOnline(IPrincipal usuario) =>
+            usuario != null && ClienteDelToken(usuario) == null
+            && (EsDireccion(usuario)
+                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
+                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
+
         public const string MENSAJE_SIN_PERMISO_IMAGEN =
             "La imagen del evento la pone Tienda online.";
 

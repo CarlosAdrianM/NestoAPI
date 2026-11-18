@@ -55,8 +55,27 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EventoDTO>))]
         public async Task<IHttpActionResult> GetEventos(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool soloActivos = true)
         {
-            return Ok(await servicio.LeerEventos(empresa, soloActivos).ConfigureAwait(false));
+            return Ok(SinEnlaceSiNoPuede(await servicio.LeerEventos(empresa, soloActivos).ConfigureAwait(false)));
         }
+
+        /// <summary>
+        /// NestoAPI#875: el enlace de la conexión online solo lo ven quienes <see cref="PermisosEventos.PuedeVerEnlaceOnline"/>
+        /// (ni la tienda online ni la app de clientes ni los demás usuarios). Devuelve la misma lista.
+        /// </summary>
+        private List<EventoDTO> SinEnlaceSiNoPuede(List<EventoDTO> eventos)
+        {
+            if (eventos != null && !PermisosEventos.PuedeVerEnlaceOnline(User))
+            {
+                foreach (EventoDTO evento in eventos)
+                {
+                    evento?.OcultarEnlaceOnline();
+                }
+            }
+            return eventos;
+        }
+
+        private EventoDTO SinEnlaceSiNoPuede(EventoDTO evento) =>
+            evento == null ? null : SinEnlaceSiNoPuede(new List<EventoDTO> { evento }).Single();
 
         /// <summary>NestoAPI#691: los eventos de un curso que se pueden vender (sustituible en los tests).</summary>
         internal ICatalogoCursosPlantilla Catalogo
@@ -94,9 +113,11 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
+            // NestoAPI#875: quien no puede ver el enlace tampoco lo cambia (si lo manda, se ignora)
+            SinEnlaceSiNoPuede(evento);
             EventoDTO creado = await servicio.CrearEvento(evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
             EncolarCandidatosSombra(creado?.Id ?? 0, ServicioCandidatosEventos.MOTIVO_ALTA);
-            return Ok(creado);
+            return Ok(SinEnlaceSiNoPuede(creado));
         }
 
         // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo, y solo los campos nuevos que vengan: Almacen, ProductoCurso, Plazas, Lugar, DescripcionLarga }
@@ -116,7 +137,8 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
-            return Ok(await servicio.ModificarEvento(id, evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            SinEnlaceSiNoPuede(evento);
+            return Ok(SinEnlaceSiNoPuede(await servicio.ModificarEvento(id, evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false)));
         }
 
         // POST api/Eventos/5/ProductoCurso   { Modalidad: "Reembolsable" | "NoReembolsable" }
@@ -289,7 +311,7 @@ namespace NestoAPI.Controllers
                     ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(validacion.Error))
                     : (IHttpActionResult)BadRequest(validacion.Error);
             }
-            return Ok(await servicio.GuardarImagen(id, validacion.Imagen, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            return Ok(SinEnlaceSiNoPuede(await servicio.GuardarImagen(id, validacion.Imagen, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false)));
         }
 
         // DELETE api/Eventos/5/Imagen
