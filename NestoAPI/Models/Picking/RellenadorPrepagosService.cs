@@ -24,7 +24,12 @@ namespace NestoAPI.Models.Picking
         public List<ExtractoClienteDTO> ExtractosPendientes(int pedido)
         {
             var cliente = db.CabPedidoVtas.First(p => p.Número == pedido).Nº_Cliente;
-            List<ExtractoClienteDTO> extractos = db.ExtractosCliente.Where(e => e.ImportePdte != 0 && e.Número == cliente)
+            // Novedades 1013 (Carlos, 18/11/26): solo cuenta lo pendiente del cliente en las empresas 1 y 3. El 930959 del 31517 se
+            // quedó retenido, con su prepago entero, por una factura de 2019 de la empresa 4 (14,40 €) que contaba como deuda vencida.
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string espejo = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+            List<ExtractoClienteDTO> extractos = db.ExtractosCliente
+                .Where(e => e.ImportePdte != 0 && e.Número == cliente && (e.Empresa == empresa || e.Empresa == espejo))
                 .Select(e => new ExtractoClienteDTO {
                     importePendiente = e.ImportePdte,
                     estado = e.Estado,
