@@ -13,7 +13,8 @@ namespace NestoAPI.Infraestructure
     /// </summary>
     public interface IServicioPreciosConDiaVigencia
     {
-        IServicioPrecios ParaDia(DateTime dia);
+        /// <param name="diasMargenFin">Black Friday 2026: días de margen por el FINAL de la vigencia (0 = ninguno).</param>
+        IServicioPrecios ParaDia(DateTime dia, int diasMargenFin);
     }
 
     /// <summary>
@@ -28,10 +29,19 @@ namespace NestoAPI.Infraestructure
     /// plantilla sigue con hoy.</para>
     /// <para>Y solo si quien pasa el pedido es de la tienda online o de Dirección (<see cref="PuedeValidarConDiaDelPedido"/>,
     /// Carlos 11/11/26): para cualquier otro usuario, con hoy. El controlador lo decide con su principal y se lo pasa al gestor.</para>
+    /// <para>Black Friday 2026 (Carlos 18/11/26): un día de margen por el FINAL (<see cref="DIAS_MARGEN_TIENDA"/>). Una campaña
+    /// que acaba el día D se retira de la tienda de madrugada del D+1 (job vigencia-campanas hacia la 1:00, y la tienda tarda un
+    /// par de horas en actualizar ~7.000 productos): un pedido web del D+1 lleva aún el descuento y se da por bueno. Por eso
+    /// el día del pedido cuenta también cuando es HOY. Por el principio no hay margen (lo que no ha empezado no vale) y los
+    /// pedidos de vendedores (Nesto, NestoApp) siguen acabando el día D.</para>
     /// </summary>
     public static class VigenciaPedidoTienda
     {
         public const int DIAS_MAXIMOS_ATRAS = 15;
+
+        /// <summary>Black Friday 2026 (Carlos 18/11/26): una oferta, descuento o campaña que acabó el día D vale para los pedidos
+        /// de la tienda online del D+1 (lo que tarda la tienda en retirarla). Solo pedidos de la tienda.</summary>
+        public const int DIAS_MARGEN_TIENDA = 1;
 
         public const string MARCA_COMENTARIO_TIENDA = "TOTAL PEDIDO:";
 
@@ -71,7 +81,9 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
-        /// El día contra el que se mira la vigencia al validar, o null si es hoy (lo de siempre).
+        /// El día contra el que se mira la vigencia al validar (con <see cref="DIAS_MARGEN_TIENDA"/> de margen por el final), o
+        /// null si no es un pedido de la tienda con fecha de hoy o de los últimos <see cref="DIAS_MAXIMOS_ATRAS"/> días: hoy y sin
+        /// margen (lo de siempre). Desde el 18/11/26 también HOY, por el margen.
         /// </summary>
         public static DateTime? DiaVigencia(PedidoVentaDTO pedido, DateTime? fechaPedido, DateTime hoy)
         {
@@ -81,11 +93,21 @@ namespace NestoAPI.Infraestructure
             }
             DateTime dia = fechaPedido.Value.Date;
             DateTime hoyDia = hoy.Date;
-            if (dia >= hoyDia || dia < hoyDia.AddDays(-DIAS_MAXIMOS_ATRAS))
+            if (dia > hoyDia || dia < hoyDia.AddDays(-DIAS_MAXIMOS_ATRAS))
             {
                 return null;
             }
             return dia;
+        }
+
+        /// <summary>
+        /// Black Friday 2026: ¿vale para un pedido de la tienda online del <paramref name="diaPedido"/> una oferta con estas fechas?
+        /// La regla con nombre (la aplica ServicioPrecios con <see cref="Vigencia"/>): empezada ese día y acabada, como mucho,
+        /// <see cref="DIAS_MARGEN_TIENDA"/> días antes.
+        /// </summary>
+        public static bool VigenteParaPedidoTienda(DateTime? fechaDesde, DateTime? fechaHasta, DateTime diaPedido)
+        {
+            return Vigencia.EsVigente(fechaDesde, fechaHasta, diaPedido.Date, DIAS_MARGEN_TIENDA);
         }
 
         /// <summary>
@@ -102,7 +124,7 @@ namespace NestoAPI.Infraestructure
             }
             DateTime? dia = DiaVigencia(pedido, fechaPedido, hoy);
             return dia.HasValue && servicio is IServicioPreciosConDiaVigencia conDia
-                ? conDia.ParaDia(dia.Value)
+                ? conDia.ParaDia(dia.Value, DIAS_MARGEN_TIENDA)
                 : servicio;
         }
     }

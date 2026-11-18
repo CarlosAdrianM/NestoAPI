@@ -51,9 +51,10 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void DiaVigencia_PedidoTiendaDeHoy_EsHoy()
+        public void DiaVigencia_PedidoTiendaDeHoy_EsHoy_ConElMargenDeLaTienda()
         {
-            Assert.IsNull(VigenciaPedidoTienda.DiaVigencia(Pedido(true, HOY), HOY, HOY));
+            // Black Friday 2026: el pedido de la madrugada del D+1 se pasa ese mismo día; también lleva el día de margen.
+            Assert.AreEqual(HOY, VigenciaPedidoTienda.DiaVigencia(Pedido(true, HOY), HOY, HOY));
         }
 
         [TestMethod]
@@ -88,7 +89,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioPrecios servicio = A.Fake<IServicioPrecios>(o => o.Implements<IServicioPreciosConDiaVigencia>());
             IServicioPrecios delDia = A.Fake<IServicioPrecios>();
-            _ = A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(new DateTime(2026, 11, 16))).Returns(delDia);
+            _ = A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(new DateTime(2026, 11, 16), VigenciaPedidoTienda.DIAS_MARGEN_TIENDA)).Returns(delDia);
 
             IServicioPrecios resultado = VigenciaPedidoTienda.ServicioParaValidar(servicio, Pedido(true, new DateTime(2026, 11, 16)), new DateTime(2026, 11, 16), HOY, true);
 
@@ -103,7 +104,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioPrecios resultado = VigenciaPedidoTienda.ServicioParaValidar(servicio, Pedido(false, new DateTime(2026, 11, 16)), new DateTime(2026, 11, 16), HOY, true);
 
             Assert.AreSame(servicio, resultado);
-            A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(A<DateTime>._)).MustNotHaveHappened();
+            A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(A<DateTime>._, A<int>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -114,7 +115,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioPrecios resultado = VigenciaPedidoTienda.ServicioParaValidar(servicio, Pedido(true, new DateTime(2026, 11, 16)), new DateTime(2026, 11, 16), HOY, false);
 
             Assert.AreSame(servicio, resultado);
-            A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(A<DateTime>._)).MustNotHaveHappened();
+            A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(A<DateTime>._, A<int>._)).MustNotHaveHappened();
         }
 
         private static ClaimsPrincipal Usuario(params string[] grupos)
@@ -152,6 +153,37 @@ namespace NestoAPI.Tests.Infrastructure
             ServicioPrecios delDia = (ServicioPrecios)new ServicioPrecios().ParaDia(new DateTime(2026, 11, 16, 18, 30, 0));
             Assert.AreEqual(new DateTime(2026, 11, 16), delDia.DiaVigencia);
             Assert.IsNull(new ServicioPrecios().DiaVigencia);
+            Assert.AreEqual(0, delDia.DiasMargenFin);
+            Assert.AreEqual(1, ((ServicioPrecios)new ServicioPrecios().ParaDia(new DateTime(2026, 12, 1), 1)).DiasMargenFin);
+        }
+
+        // --- Black Friday 2026: un día de margen por el final para los pedidos de la tienda ---
+
+        private static readonly DateTime FIN_BLACK_FRIDAY = new DateTime(2026, 11, 30);
+
+        [TestMethod]
+        public void VigenteParaPedidoTienda_PedidoDelDiaSiguienteAlFin_Vale()
+        {
+            Assert.IsTrue(VigenciaPedidoTienda.VigenteParaPedidoTienda(new DateTime(2026, 11, 25), FIN_BLACK_FRIDAY, new DateTime(2026, 12, 1, 1, 30, 0)));
+        }
+
+        [TestMethod]
+        public void VigenteParaPedidoTienda_PedidoDosDiasDespuesDelFin_NoVale()
+        {
+            Assert.IsFalse(VigenciaPedidoTienda.VigenteParaPedidoTienda(new DateTime(2026, 11, 25), FIN_BLACK_FRIDAY, new DateTime(2026, 12, 2)));
+        }
+
+        [TestMethod]
+        public void VigenteParaPedidoTienda_OfertaQueEmpiezaManana_NoVale()
+        {
+            Assert.IsFalse(VigenciaPedidoTienda.VigenteParaPedidoTienda(new DateTime(2026, 11, 25), FIN_BLACK_FRIDAY, new DateTime(2026, 11, 24, 23, 59, 0)));
+        }
+
+        [TestMethod]
+        public void Vigencia_SinMargen_AcabaElDiaD()
+        {
+            Assert.IsTrue(Vigencia.EsVigente(new DateTime(2026, 11, 25), FIN_BLACK_FRIDAY, FIN_BLACK_FRIDAY, 0));
+            Assert.IsFalse(Vigencia.EsVigente(new DateTime(2026, 11, 25), FIN_BLACK_FRIDAY, new DateTime(2026, 12, 1), 0));
         }
     }
 
@@ -181,11 +213,11 @@ namespace NestoAPI.Tests.Infrastructure
 
             IServicioPrecios servicio = A.Fake<IServicioPrecios>(o => o.Implements<IServicioPreciosConDiaVigencia>());
             Configurar(servicio, () => HOY);
-            _ = A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(A<DateTime>._))
-                .ReturnsLazily((DateTime dia) =>
+            _ = A.CallTo(() => ((IServicioPreciosConDiaVigencia)servicio).ParaDia(A<DateTime>._, A<int>._))
+                .ReturnsLazily((DateTime dia, int margen) =>
                 {
                     IServicioPrecios delDia = A.Fake<IServicioPrecios>();
-                    Configurar(delDia, () => dia);
+                    Configurar(delDia, () => dia, margen);
                     return delDia;
                 });
             GestorPrecios.servicio = servicio;
@@ -197,7 +229,7 @@ namespace NestoAPI.Tests.Infrastructure
             GestorPrecios.servicio = _servicioAnterior;
         }
 
-        private void Configurar(IServicioPrecios servicio, Func<DateTime> dia)
+        private void Configurar(IServicioPrecios servicio, Func<DateTime> dia, int margen = 0)
         {
             foreach (string numero in new[] { "FERIA_NM", "FERIA_DTO", "FERIA_C1", "FERIA_C2", "FERIA_SIN_APLICAR_DTO" })
             {
@@ -215,12 +247,12 @@ namespace NestoAPI.Tests.Infrastructure
                     Estado = 0 // con Estado > 2 (o null) ValidadorRegalosTiendaOnline acepta cualquier línea web
                 });
                 _ = A.CallTo(() => servicio.BuscarOfertasPermitidas(n))
-                    .ReturnsLazily(() => _ofertas.Where(o => o.Número == n && Vigencia.EsVigente(o, dia())).ToList());
+                    .ReturnsLazily(() => _ofertas.Where(o => o.Número == n && Vigencia.EsVigente(o, dia(), margen)).ToList());
                 _ = A.CallTo(() => servicio.BuscarDescuentosPermitidos(n, A<string>._, A<string>._))
-                    .ReturnsLazily(() => _descuentos.Where(d => d.Nº_Producto == n && Vigencia.EsVigente(d, dia())).ToList());
+                    .ReturnsLazily(() => _descuentos.Where(d => d.Nº_Producto == n && Vigencia.EsVigente(d, dia(), margen)).ToList());
                 _ = A.CallTo(() => servicio.BuscarOfertasCombinadas(n))
                     .ReturnsLazily(() => _combinadas.Where(o => o.OfertasCombinadasDetalles.Any(d => d.Producto == n)
-                        && (o.FechaHasta == null || o.FechaHasta >= dia()) && (o.FechaDesde == null || o.FechaDesde <= dia())).ToList());
+                        && Vigencia.EsVigente(o.FechaDesde, o.FechaHasta, dia(), margen)).ToList());
                 _ = A.CallTo(() => servicio.BuscarOfertasEscalonadas(n)).Returns(new List<OfertaEscalonada>());
                 _ = A.CallTo(() => servicio.BuscarRegaloPorImportePedido(n)).Returns(new List<RegaloImportePedido>());
             }
@@ -328,10 +360,54 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void NM_PedidoTiendaDeHoy_ComoHoy()
+        public void NM_PedidoTiendaDeHoy_OfertaQueAcaboAyer_PasaPorElDiaDeMargen()
+        {
+            // Black Friday 2026: el pedido web de la madrugada del D+1, pasado ese mismo día.
+            OfertaSeisMasUno(AYER.AddDays(-4), AYER);
+            var r = GestorPrecios.EsPedidoValido(PedidoSeisMasUno(true, HOY), true);
+            Assert.IsTrue(r.ValidacionSuperada, r.Motivo + " / " + string.Join(" | ", r.Motivos ?? new List<string>()));
+        }
+
+        [TestMethod]
+        public void NM_PedidoTiendaDeHoy_OfertaQueAcaboAnteayer_SeRechaza()
+        {
+            OfertaSeisMasUno(AYER.AddDays(-5), AYER.AddDays(-1));
+            Assert.IsFalse(GestorPrecios.EsPedidoValido(PedidoSeisMasUno(true, HOY), true).ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void NM_PedidoNoDeTiendaDeHoy_OfertaQueAcaboAyer_SeRechaza()
         {
             OfertaSeisMasUno(AYER.AddDays(-4), AYER);
-            var r = GestorPrecios.EsPedidoValido(PedidoSeisMasUno(true, HOY), true); Assert.IsFalse(r.ValidacionSuperada, r.Motivo + " / " + string.Join(" | ", r.Motivos));
+            Assert.IsFalse(GestorPrecios.EsPedidoValido(PedidoSeisMasUno(false, HOY), true).ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void NM_PedidoTiendaDeHoy_OfertaQueEmpiezaManana_SeRechaza()
+        {
+            OfertaSeisMasUno(HOY.AddDays(1), HOY.AddDays(5));
+            Assert.IsFalse(GestorPrecios.EsPedidoValido(PedidoSeisMasUno(true, HOY), true).ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void Descuento_PedidoTiendaDeHoy_DescuentoQueAcaboAyer_PasaPorElDiaDeMargen()
+        {
+            DescuentoVeintePorCiento(AYER.AddDays(-4), AYER);
+            Assert.IsTrue(GestorPrecios.EsPedidoValido(PedidoVeintePorCiento(true, HOY), true).ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void Descuento_PedidoTiendaDeAyer_DescuentoQueAcaboAnteayer_PasaPorElDiaDeMargen()
+        {
+            DescuentoVeintePorCiento(AYER.AddDays(-5), AYER.AddDays(-1));
+            Assert.IsTrue(GestorPrecios.EsPedidoValido(PedidoVeintePorCiento(true, AYER), true).ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void Combinada_PedidoTiendaDeHoy_CombinadaQueAcaboAyer_PasaPorElDiaDeMargen()
+        {
+            Combinada(AYER.AddDays(-4), AYER);
+            Assert.IsTrue(GestorPrecios.EsPedidoValido(PedidoCombinada(true, HOY), true).ValidacionSuperada);
         }
 
         [TestMethod]

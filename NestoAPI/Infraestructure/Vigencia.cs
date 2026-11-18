@@ -61,13 +61,43 @@ namespace NestoAPI.Infraestructure
 
         internal static bool EsVigente(IConVigencia fila, DateTime dia)
         {
+            return EsVigente(fila, dia, 0);
+        }
+
+        /// <summary>
+        /// Black Friday 2026 (Carlos 18/11/26): la vigencia con <paramref name="diasMargenFin"/> días de margen SOLO por el
+        /// final: la fila vale si ya ha empezado el <paramref name="dia"/> y acabó, como mucho, <paramref name="diasMargenFin"/>
+        /// días antes. Por el principio no hay margen: lo que aún no ha empezado no vale. Con 0, la regla de siempre.
+        /// </summary>
+        internal static bool EsVigente(IConVigencia fila, DateTime dia, int diasMargenFin)
+        {
             if (fila == null)
             {
                 return false;
             }
+            return EsVigente(fila.FechaDesde, fila.FechaHasta, dia, diasMargenFin);
+        }
 
-            return (fila.FechaDesde == null || fila.FechaDesde <= dia)
-                && (fila.FechaHasta == null || fila.FechaHasta >= dia);
+        /// <summary>La misma regla con las dos fechas sueltas (combinadas, escalonadas, regalos por importe…).</summary>
+        internal static bool EsVigente(DateTime? fechaDesde, DateTime? fechaHasta, DateTime dia, int diasMargenFin)
+        {
+            DateTime finMinimo = FinMinimo(dia, diasMargenFin);
+            return (fechaDesde == null || fechaDesde <= dia)
+                && (fechaHasta == null || fechaHasta >= finMinimo);
+        }
+
+        /// <summary>Lo más pronto que puede haber acabado una fila para seguir valiendo el <paramref name="dia"/>.</summary>
+        internal static DateTime FinMinimo(DateTime dia, int diasMargenFin)
+        {
+            return diasMargenFin > 0 ? dia.AddDays(-diasMargenFin) : dia;
+        }
+
+        /// <summary>Como <see cref="Vigentes(IQueryable{DescuentosProducto}, DateTime)"/> con margen por el final (ver arriba).</summary>
+        internal static IQueryable<DescuentosProducto> Vigentes(IQueryable<DescuentosProducto> descuentos, DateTime dia, int diasMargenFin)
+        {
+            DateTime finMinimo = FinMinimo(dia, diasMargenFin);
+            return descuentos.Where(d => (d.FechaDesde == null || d.FechaDesde <= dia)
+                                      && (d.FechaHasta == null || d.FechaHasta >= finMinimo));
         }
 
         /// <summary>

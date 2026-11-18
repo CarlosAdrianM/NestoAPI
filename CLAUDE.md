@@ -387,6 +387,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   OfertasPermitidas, combinadas, escalonadas y regalos por importe del día `pedido.fecha` (en el PUT, `cabPedidoVta.Fecha`), si es
   anterior a hoy y de hace como mucho `DIAS_MAXIMOS_ATRAS` (15). Cómo: `ServicioPrecios.ParaDia(dia)` (instancia, sin estáticos);
   el motor de precios y las sugerencias siguen con hoy. Regalos por importe con día: por día inclusive.
+- **Un día de margen (Black Friday 2026, Carlos 18/11/26)**: para esos pedidos de la tienda (mismo usuario permitido), lo que acabó
+  el día D vale todavía para un pedido del D+1 (`VigenciaPedidoTienda.DIAS_MARGEN_TIENDA` = 1; regla `VigenteParaPedidoTienda` /
+  `Vigencia.EsVigente(desde, hasta, dia, diasMargenFin)`): `vigencia-campanas` la retira hacia la 1:00 y la tienda tarda un par de
+  horas en actualizarse. Por eso el día del pedido cuenta también si es HOY (`ParaDia(dia, diasMargenFin)`). Solo por el FINAL: lo
+  que aún no ha empezado no vale. Vendedores (Nesto, NestoApp) y pedidos que no son de la tienda: acaba el día D, como siempre.
 
 ### Oferta N+M que además admite el precio especial (Novedades 1263, 13/11/26; continuación de #589)
 - La regla general NO cambia: un N+M exige cobrar a precio de ficha y sin descuento (`ReglasOfertasPermitidas.MotivoCobradoFueraDeTarifa`).

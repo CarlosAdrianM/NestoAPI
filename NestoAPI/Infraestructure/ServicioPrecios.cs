@@ -16,22 +16,35 @@ namespace NestoAPI.Infraestructure
         // pedidos de la tienda online (VigenciaPedidoTienda). Es de la instancia, no estático: cada
         // validación lleva el suyo y no hay estado compartido entre hilos.
         private readonly DateTime? _diaVigencia;
+        // Black Friday 2026 (Carlos 18/11/26): días de margen por el FINAL de la vigencia (solo pedidos de la tienda online,
+        // VigenciaPedidoTienda.DIAS_MARGEN_TIENDA). 0 = la regla de siempre.
+        private readonly int _diasMargenFin;
 
         public ServicioPrecios()
         {
         }
 
-        public ServicioPrecios(DateTime diaVigencia)
+        public ServicioPrecios(DateTime diaVigencia) : this(diaVigencia, 0)
+        {
+        }
+
+        public ServicioPrecios(DateTime diaVigencia, int diasMargenFin)
         {
             _diaVigencia = diaVigencia.Date;
+            _diasMargenFin = diasMargenFin > 0 ? diasMargenFin : 0;
         }
 
         /// <summary>El día de vigencia de esta instancia (null = hoy).</summary>
         public DateTime? DiaVigencia => _diaVigencia;
 
+        /// <summary>Días de margen por el final de la vigencia (0 = ninguno).</summary>
+        public int DiasMargenFin => _diasMargenFin;
+
         private DateTime Dia => _diaVigencia ?? DateTime.Today;
 
         public IServicioPrecios ParaDia(DateTime dia) => new ServicioPrecios(dia);
+
+        public IServicioPrecios ParaDia(DateTime dia, int diasMargenFin) => new ServicioPrecios(dia, diasMargenFin);
 
         /// <summary>
         /// NestoAPI#501: familias que impiden vender esta. Solo las filas activas (Estado >= 0).
@@ -143,7 +156,7 @@ namespace NestoAPI.Infraestructure
                 return db.OfertasPermitidas
                     .Where(o => o.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (o.Número == numeroProducto.Trim() || o.Familia == producto.Familia))
                     .ToList()
-                    .Where(o => Vigencia.EsVigente(o, Dia))
+                    .Where(o => Vigencia.EsVigente(o, Dia, _diasMargenFin))
                     .Where(o => string.IsNullOrWhiteSpace(o.SubGrupo) || string.Equals(o.SubGrupo.Trim(), subGrupo, System.StringComparison.OrdinalIgnoreCase))
                     .ToList();
             }
@@ -168,7 +181,7 @@ namespace NestoAPI.Infraestructure
                 // Issue #423: un descuento caducado ya no autoriza nada. Sin este filtro, la campaña
                 // seguiría dando por bueno en el pedido un descuento que el motor de precios ya no
                 // calcula, que es la peor de las dos incoherencias posibles.
-                return Vigencia.Vigentes(db.DescuentosProductoes, Dia).Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                return Vigencia.Vigentes(db.DescuentosProductoes, Dia, _diasMargenFin).Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
                     d.NºProveedor == null &&
                     (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo || (d.Familia == producto.Familia && producto.Nombre.StartsWith(d.FiltroProducto))))
                     .Where(FiltroClienteContacto(numeroCliente, contactoCliente))
@@ -201,10 +214,11 @@ namespace NestoAPI.Infraestructure
                 // prefijo de nombre). Las candidatas con filtro se traen a memoria (las ofertas
                 // activas son pocas) y se casan contra la familia/nombre del producto.
                 DateTime dia = Dia;
+                DateTime finMinimo = Vigencia.FinMinimo(dia, _diasMargenFin);
                 List<OfertaCombinada> listaOfertas = db.OfertasCombinadas.Include("OfertasCombinadasDetalles")
                     .Where(o =>
                         o.OfertasCombinadasDetalles.Any(d => d.Producto == numeroProducto || d.Producto == null) &&
-                        (o.FechaHasta == null || o.FechaHasta >= dia) &&
+                        (o.FechaHasta == null || o.FechaHasta >= finMinimo) &&
                         (o.FechaDesde == null || o.FechaDesde <= dia)
                     ).ToList();
 
@@ -246,6 +260,7 @@ namespace NestoAPI.Infraestructure
         public List<OfertaEscalonada> BuscarOfertasEscalonadas(string numeroProducto)
         {
             DateTime dia = Dia;
+            DateTime finMinimo = Vigencia.FinMinimo(dia, _diasMargenFin);
             using (NVEntities db = new NVEntities())
             {
                 return db.OfertasEscalonadas
@@ -253,7 +268,7 @@ namespace NestoAPI.Infraestructure
                     .Include("OfertasEscalonadasTramos")
                     .Where(o =>
                         o.OfertasEscalonadasProductos.Any(p => p.Producto == numeroProducto) &&
-                        (o.FechaHasta == null || o.FechaHasta >= dia) &&
+                        (o.FechaHasta == null || o.FechaHasta >= finMinimo) &&
                         (o.FechaDesde == null || o.FechaDesde <= dia)
                     ).ToList();
             }
@@ -332,9 +347,10 @@ namespace NestoAPI.Infraestructure
                     // Con el día del pedido se compara por DÍA (inclusive), no por instante.
                     DateTime dia = _diaVigencia.Value;
                     DateTime diaSiguiente = dia.AddDays(1);
+                    DateTime finMinimo = Vigencia.FinMinimo(dia, _diasMargenFin);
                     return db.RegalosImportePedido.Where(
                         r => r.Producto == numeroProducto && (r.FechaInicio == null || r.FechaInicio < diaSiguiente) &&
-                        (r.FechaFin == null || r.FechaFin >= dia)
+                        (r.FechaFin == null || r.FechaFin >= finMinimo)
                     ).ToList();
                 }
                 return db.RegalosImportePedido.Where(
@@ -356,9 +372,10 @@ namespace NestoAPI.Infraestructure
                 {
                     DateTime dia = _diaVigencia.Value;
                     DateTime diaSiguiente = dia.AddDays(1);
+                    DateTime finMinimo = Vigencia.FinMinimo(dia, _diasMargenFin);
                     return db.RegalosImportePedido.Where(
                         r => (r.FechaInicio == null || r.FechaInicio < diaSiguiente) &&
-                        (r.FechaFin == null || r.FechaFin >= dia)
+                        (r.FechaFin == null || r.FechaFin >= finMinimo)
                     ).ToList();
                 }
                 return db.RegalosImportePedido.Where(
