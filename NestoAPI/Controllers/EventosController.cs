@@ -66,9 +66,15 @@ namespace NestoAPI.Controllers
         {
             if (eventos != null && !PermisosEventos.PuedeVerEnlaceOnline(User))
             {
-                foreach (EventoDTO evento in eventos)
+                bool clienteTienda = PermisosEventos.ClienteDelToken(User) != null;
+                foreach (EventoDTO evento in eventos.Where(e => e != null))
                 {
-                    evento?.OcultarEnlaceOnline();
+                    evento.OcultarEnlaceOnline();
+                    if (clienteTienda)
+                    {
+                        // Sugerencia 1332: el dosier (nombre, envío) es cosa de la casa
+                        evento.Dosier = null;
+                    }
                 }
             }
             return eventos;
@@ -366,6 +372,115 @@ namespace NestoAPI.Controllers
             respuesta.Headers.ETag = etag;
             respuesta.Headers.CacheControl = new CacheControlHeaderValue { Public = true, MaxAge = TimeSpan.FromDays(7) };
             return ResponseMessage(respuesta);
+        }
+
+        // ---------------- Sugerencia 1332: dosier del evento ----------------
+
+        // POST api/Eventos/5/Dosier   multipart/form-data, el PDF en el campo «fichero»
+        /// <summary>
+        /// Sugerencia 1332 (Reina; Carlos 18/11/26): pone (o sustituye) el dosier del evento, un PDF de hasta 10 MB. Sale solo, por
+        /// correo, a todas las inscritas vivas unas 2 horas antes de empezar (y al momento a quien se inscriba después); si se sube
+        /// cuando ya es la hora, sale entonces a quien no lo tenga. Quien mantiene el evento. 415 si no es un PDF; 503 sin el script
+        /// Scripts/EventosDosier.sql. Devuelve el dosier (nombre, fecha, cuándo sale y a cuántas ha llegado).
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Dosier")]
+        [ResponseType(typeof(DosierEventoDTO))]
+        public async Task<IHttpActionResult> PostDosier(int id)
+        {
+            IHttpActionResult sinPermiso = await ComprobarDosier(id).ConfigureAwait(false);
+            if (sinPermiso != null)
+            {
+                return sinPermiso;
+            }
+            if (Request.Content == null || !Request.Content.IsMimeMultipartContent())
+            {
+                return Content(HttpStatusCode.UnsupportedMediaType, new HttpError(
+                    $"Envíe el dosier como multipart/form-data en el campo «{ReglasAdjuntosNovedades.CAMPO_FICHERO}»."));
+            }
+            MultipartMemoryStreamProvider partes = await Request.Content.ReadAsMultipartAsync(new MultipartMemoryStreamProvider()).ConfigureAwait(false);
+            var ficheros = new List<(string Nombre, string Tipo, byte[] Contenido)>();
+            foreach (HttpContent parte in partes.Contents)
+            {
+                ContentDispositionHeaderValue disposicion = parte.Headers.ContentDisposition;
+                string campo = disposicion?.Name?.Trim('"');
+                string nombre = disposicion?.FileNameStar ?? disposicion?.FileName?.Trim('"');
+                if (!string.Equals(campo, ReglasAdjuntosNovedades.CAMPO_FICHERO, StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(nombre))
+                {
+                    continue;
+                }
+                ficheros.Add((nombre, parte.Headers.ContentType?.MediaType, await parte.ReadAsByteArrayAsync().ConfigureAwait(false)));
+            }
+            ReglasDosierEvento.Validacion validacion = ReglasDosierEvento.Validar(ficheros);
+            if (validacion.Error != null)
+            {
+                return validacion.TipoNoPermitido
+                    ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(validacion.Error))
+                    : (IHttpActionResult)BadRequest(validacion.Error);
+            }
+            return Ok(await servicio.GuardarDosier(id, validacion.Dosier, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // GET api/Eventos/5/Dosier
+        /// <summary>Sugerencia 1332: el PDF del dosier (para abrirlo). Quien mantiene el evento. 404 si no tiene; 503 sin el script.</summary>
+        [HttpGet]
+        [Route("{id:int}/Dosier")]
+        public async Task<IHttpActionResult> GetDosier(int id)
+        {
+            IHttpActionResult sinPermiso = await ComprobarDosier(id).ConfigureAwait(false);
+            if (sinPermiso != null)
+            {
+                return sinPermiso;
+            }
+            DosierEvento dosier = await servicio.LeerDosier(id).ConfigureAwait(false);
+            if (dosier?.Contenido == null || dosier.Contenido.Length == 0)
+            {
+                return NotFound();
+            }
+            var respuesta = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(dosier.Contenido) };
+            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(ReglasDosierEvento.TIPO_PDF);
+            respuesta.Content.Headers.ContentLength = dosier.Contenido.Length;
+            respuesta.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline")
+            {
+                FileName = ReglasAdjuntosNovedades.NombreAscii(dosier.Nombre),
+                FileNameStar = dosier.Nombre
+            };
+            return ResponseMessage(respuesta);
+        }
+
+        // DELETE api/Eventos/5/Dosier
+        /// <summary>Sugerencia 1332: quita el dosier (204; 404 si no tenía). Ya no se manda a nadie más. Quien mantiene el evento.</summary>
+        [HttpDelete]
+        [Route("{id:int}/Dosier")]
+        public async Task<IHttpActionResult> DeleteDosier(int id)
+        {
+            IHttpActionResult sinPermiso = await ComprobarDosier(id).ConfigureAwait(false);
+            if (sinPermiso != null)
+            {
+                return sinPermiso;
+            }
+            return await servicio.BorrarDosier(id).ConfigureAwait(false)
+                ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent)
+                : NotFound();
+        }
+
+        /// <summary>Sugerencia 1332: 404 si el evento no existe, 403 si no lo mantiene, 503 sin el script; null si se puede seguir.</summary>
+        private async Task<IHttpActionResult> ComprobarDosier(int id)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PuedeMantener(null, almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+            }
+            if (!servicio.DosierDisponible())
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.ServiceUnavailable, ServicioEventos.MENSAJE_FALTA_SCRIPT_DOSIER));
+            }
+            return null;
         }
 
         // ---------------- NestoAPI#611: inscripciones ----------------

@@ -1449,6 +1449,7 @@
     <Compile Include="Infraestructure\Eventos\ImagenesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\EnlaceOnlineEventos.cs" />
     <Compile Include="Infraestructure\Eventos\AvisosInscripcionEventos.cs" />
+    <Compile Include="Infraestructure\Eventos\DosierEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ProductoCursoEvento.cs" />
     <Compile Include="Infraestructure\Eventos\RecordatorioEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PropuestasSenalesEventos.cs" />

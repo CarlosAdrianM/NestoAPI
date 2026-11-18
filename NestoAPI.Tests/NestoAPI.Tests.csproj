@@ -781,6 +781,7 @@
     <Compile Include="Infrastructure\Eventos\EventoDTOJsonTests.cs" />
     <Compile Include="Infrastructure\Eventos\ServicioEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\EnlaceOnlineEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\DosierEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\AnunciosEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\CandidatosEventosTests.cs" />
     <Compile Include="Controllers\PreferenciasNotificacionesControllerTests.cs" />

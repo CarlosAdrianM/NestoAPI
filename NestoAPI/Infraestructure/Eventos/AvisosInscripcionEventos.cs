@@ -8,7 +8,8 @@ namespace NestoAPI.Infraestructure.Eventos
 {
     /// <summary>
     /// NestoAPI#875: lo que le toca a una inscripción en el momento en que cambia (se crea, pasa a online o queda pagada) y que
-    /// normalmente le llegaría con un envío programado que ya ha pasado: el recordatorio con el enlace de la conexión online.
+    /// normalmente le llegaría con un envío programado que ya ha pasado: el recordatorio con el enlace de la conexión online
+    /// (NestoAPI#875) y el dosier del evento (sugerencia 1332).
     /// En segundo plano (Hangfire): no frena la inscripción y, si falla, no la deshace. Idempotente (cada envío tiene su marca en
     /// la inscripción), así que encolarlo de más no duplica nada.
     /// </summary>
@@ -55,6 +56,15 @@ namespace NestoAPI.Infraestructure.Eventos
                 catch (Exception ex)
                 {
                     ElmahHelper.Log(new Exception($"[Eventos #875] No se ha podido mandar el enlace a la inscripción {inscripcionId}: {ex.Message}", ex));
+                }
+                // Sugerencia 1332: si el dosier de su evento ya ha salido (o ya es la hora), el suyo ahora
+                try
+                {
+                    _ = await DosierEventosJobs.AlInscribirse(DosierEventosJobs.Dependencias(db), evento, inscripcion).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Dosier de eventos] No se ha podido mandar el dosier a la inscripción {inscripcionId}: {ex.Message}", ex));
                 }
             }
         }

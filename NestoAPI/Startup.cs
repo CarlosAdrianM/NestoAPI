@@ -1330,6 +1330,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'recordatorio-eventos' configurado (todos los días a las 10:00; apagado salvo interruptor)");
 
+            // Sugerencia 1332 (Reina; Carlos 18/11/26): el dosier (PDF) del evento sale solo, por correo, a todas las inscritas
+            // vivas unas 2 horas antes de empezar. Cada 15 minutos de 7:00 a 21:45 (Madrid) mira los eventos de hoy: el estado se
+            // lee en cada pasada (vale la hora del evento de ese momento; tras un reinicio, la siguiente pasada lo hace) y cada
+            // inscripción lo recibe una sola vez (EventosInscripciones.DosierEnviado). Sin Scripts/EventosDosier.sql, no hace nada.
+            RecurringJob.AddOrUpdate(
+                "eventos-dosier",
+                () => Infraestructure.Eventos.DosierEventosJobs.Procesar(null),
+                Infraestructure.Eventos.DosierEventosJobs.CRON,
+                new RecurringJobOptions
+                {
+                    TimeZone = ZonaHorariaPeninsular()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'eventos-dosier' configurado (cada 15 minutos de 7:00 a 21:45, hora de Madrid)");
+
             // NestoAPI#746: reservas sin pagar con el evento lleno. La pasada de cada evento se encola al llenarse y se programa
             // al vencer cada plazo; esta diaria (10:05) solo recoge lo que se haya escapado. Sin el script de las columnas, o
             // con EventosPlazasLlenasActivo = 0 en «(defecto)», no hace nada.

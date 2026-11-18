@@ -123,6 +123,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// </summary>
         public string EnlaceOnline { get => enlaceOnline; set { enlaceOnline = value; recibidos.Add(nameof(EnlaceOnline)); } }
 
+        /// <summary>
+        /// Sugerencia 1332: solo lectura. El dosier (PDF) del evento: nombre, fecha, cuándo sale solo y a cuántas les ha llegado;
+        /// null si no tiene (o sin el script). Se sube con POST api/Eventos/{id}/Dosier. No se devuelve al cliente de la tienda online.
+        /// </summary>
+        public DosierEventoDTO Dosier { get; set; }
+
         /// <summary>NestoAPI#875: quien no puede verlo, ni lo recibe ni lo cambia (el PUT lo trata como si no viniera).</summary>
         public void OcultarEnlaceOnline()
         {
@@ -281,6 +287,14 @@ namespace NestoAPI.Infraestructure.Eventos
         /// (EVENTO00123 / EVENTO00123NR) y la liga al evento. Idempotente.
         /// </summary>
         Task<ProductoCursoDTO> CrearProductoCurso(int id, PeticionProductoCursoDTO peticion, string usuario);
+        /// <summary>Sugerencia 1332: ¿está el script del dosier (Scripts/EventosDosier.sql)?</summary>
+        bool DosierDisponible();
+        /// <summary>Sugerencia 1332: sustituye el dosier y, si ya es la hora de mandarlo, lo manda a quien no lo tenga.</summary>
+        Task<DosierEventoDTO> GuardarDosier(int id, DosierEvento dosier, string usuario);
+        /// <summary>Sugerencia 1332: false si no tenía.</summary>
+        Task<bool> BorrarDosier(int id);
+        /// <summary>Sugerencia 1332: el PDF, o null.</summary>
+        Task<DosierEvento> LeerDosier(int id);
     }
 
     /// <summary>
@@ -333,6 +347,136 @@ namespace NestoAPI.Infraestructure.Eventos
             FormasAsistencia = new RepositorioFormaAsistenciaEventos(db);
             EnlacesOnline = new RepositorioEnlaceOnlineEventos(db);
             AlCambiarEnlaceOnline = EnlaceOnlineEventosJobs.Encolar;
+            Dosieres = new RepositorioDosierEventos(db);
+            AlSubirDosier = DosierEventosJobs.Encolar;
+            AhoraMadrid = () => ReglasDosierEvento.AhoraMadrid(DateTime.UtcNow);
+        }
+
+        // ---------------- Sugerencia 1332: el dosier del evento ----------------
+
+        /// <summary>Sugerencia 1332: el dosier de los eventos (fuera del EDMX). Null (tests) o sin el script: no hay dosier y los endpoints dan 503.</summary>
+        internal IRepositorioDosierEventos Dosieres { get; set; }
+
+        /// <summary>Sugerencia 1332: (evento) → una pasada del envío en segundo plano, si ya es la hora. Null (tests): nada.</summary>
+        internal Action<int> AlSubirDosier { get; set; }
+
+        /// <summary>La hora de Madrid (la de las fechas y horas de los eventos). Null (tests): el reloj.</summary>
+        internal Func<DateTime> AhoraMadrid { get; set; }
+
+        private static int dosierFalloRegistrado;
+
+        public bool DosierDisponible()
+        {
+            try
+            {
+                return Dosieres?.Disponible() == true;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Dosier de eventos] No se ha podido comprobar el script del dosier: {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        public async Task<DosierEventoDTO> GuardarDosier(int id, DosierEvento dosier, string usuario)
+        {
+            Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false)
+                ?? throw NoEncontrado($"No existe el evento {id}.");
+            if (!DosierDisponible())
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_DOSIER) { StatusCode = HttpStatusCode.ServiceUnavailable };
+            }
+            _ = await Dosieres.Guardar(id, dosier, UsuarioAuditoriaHelper.ParaAuditoria(usuario)).ConfigureAwait(false);
+            // Si ya es la hora (se sube tarde, o se sustituye), sale ya a quien no lo tenga; el PDF nuevo no se reenvía a quien ya tenía el anterior
+            if (AlSubirDosier != null && ReglasDosierEvento.TocaEnviar(evento, (AhoraMadrid ?? reloj)()))
+            {
+                try
+                {
+                    AlSubirDosier(id);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Dosier de eventos] El dosier del evento {id} está guardado, pero no se ha podido encolar su envío: {ex.Message}", ex));
+                }
+            }
+            Dictionary<int, DosierEventoDTO> info = await LeerInfoDosier(new List<Evento> { evento }).ConfigureAwait(false);
+            return info.TryGetValue(id, out DosierEventoDTO dto) ? dto : null;
+        }
+
+        public async Task<bool> BorrarDosier(int id)
+        {
+            if (!DosierDisponible())
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_DOSIER) { StatusCode = HttpStatusCode.ServiceUnavailable };
+            }
+            return await Dosieres.Borrar(id).ConfigureAwait(false);
+        }
+
+        public async Task<DosierEvento> LeerDosier(int id)
+        {
+            if (!DosierDisponible())
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_DOSIER) { StatusCode = HttpStatusCode.ServiceUnavailable };
+            }
+            return await Dosieres.Leer(id).ConfigureAwait(false);
+        }
+
+        public const string MENSAJE_FALTA_SCRIPT_DOSIER = "Todavía no se puede poner el dosier de los eventos: falta lanzar el script " +
+            "Scripts/EventosDosier.sql. Avise a Informática.";
+
+        /// <summary>
+        /// Sugerencia 1332: el dosier de cada evento en UNA consulta, con cuándo sale (null si el evento ya ha pasado). Sin el script
+        /// o si falla, ninguno (ELMAH una vez).
+        /// </summary>
+        private async Task<Dictionary<int, DosierEventoDTO>> LeerInfoDosier(List<Evento> eventos)
+        {
+            if (Dosieres == null || eventos == null || !eventos.Any())
+            {
+                return new Dictionary<int, DosierEventoDTO>();
+            }
+            try
+            {
+                Dictionary<int, DosierEventoDTO> info = await Dosieres.LeerInfo(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false)
+                    ?? new Dictionary<int, DosierEventoDTO>();
+                DateTime ahora = (AhoraMadrid ?? reloj)();
+                foreach (Evento evento in eventos)
+                {
+                    if (info.TryGetValue(evento.Id, out DosierEventoDTO dto))
+                    {
+                        dto.EnvioPrevisto = ahora < ReglasDosierEvento.FinEnvio(evento) ? ReglasDosierEvento.MomentoEnvio(evento) : (DateTime?)null;
+                    }
+                }
+                return info;
+            }
+            catch (Exception ex)
+            {
+                if (System.Threading.Interlocked.Exchange(ref dosierFalloRegistrado, 1) == 0)
+                {
+                    ElmahHelper.Log(new Exception($"[Dosier de eventos] No se ha podido leer el dosier de los eventos: {ex.Message}", ex));
+                }
+                return new Dictionary<int, DosierEventoDTO>();
+            }
+        }
+
+        /// <summary>Sugerencia 1332: pone el dosier en los DTO (con las fechas y horas que tienen ahora).</summary>
+        private async Task ConDosier(List<EventoDTO> lista)
+        {
+            if (Dosieres == null || lista == null || !lista.Any())
+            {
+                return;
+            }
+            // Las horas del DTO salen de EscribirHora («HH:mm»), así que se leen sin error
+            List<Evento> eventos = lista.Select(d => new Evento
+            {
+                Id = d.Id, Fecha = d.Fecha, Activo = d.Activo,
+                HoraInicio = string.IsNullOrWhiteSpace(d.HoraInicio) ? (TimeSpan?)null : ReglasModalidadEvento.LeerHora(d.HoraInicio, "inicio"),
+                HoraFin = string.IsNullOrWhiteSpace(d.HoraFin) ? (TimeSpan?)null : ReglasModalidadEvento.LeerHora(d.HoraFin, "fin")
+            }).ToList();
+            Dictionary<int, DosierEventoDTO> info = await LeerInfoDosier(eventos).ConfigureAwait(false);
+            foreach (EventoDTO dto in lista)
+            {
+                dto.Dosier = info.TryGetValue(dto.Id, out DosierEventoDTO d) ? d : null;
+            }
         }
 
         /// <summary>
@@ -516,6 +660,7 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             await ConPedidoMinimoCupon(lista).ConfigureAwait(false);
             await ConEnlaceOnline(lista).ConfigureAwait(false);
+            await ConDosier(lista).ConfigureAwait(false);
             if (ProductosRequeridos == null || lista == null || !lista.Any())
             {
                 return lista;
