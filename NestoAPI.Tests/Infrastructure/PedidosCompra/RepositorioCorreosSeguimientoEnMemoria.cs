@@ -62,8 +62,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             return Task.FromResult(true);
         }
 
-        public Task<List<RemitenteMarcado>> LeerRemitentes() => Task.FromResult(new List<RemitenteMarcado>());
-        public Task<int> GuardarRemitente(string agencia, string remitente, string usuario) => Task.FromResult(1);
+        /// <summary>NestoAPI#857e: los remitentes marcados (vacía = como antes).</summary>
+        public List<RemitenteMarcado> Remitentes { get; } = new List<RemitenteMarcado>();
+        public Task<List<RemitenteMarcado>> LeerRemitentes() => Task.FromResult(Remitentes.ToList());
+        public Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf) => Task.FromResult(1);
+        public bool AvisosProveedorDisponibles() => true;
         public Task<bool> DesactivarRemitente(int id, string usuario) => Task.FromResult(true);
         public Task<List<PedidoCompraEnAire>> LeerPedidosEnAire(string empresa) =>
             Task.FromResult(Pedidos.Where(p => Lineas.TryGetValue(p.Pedido, out var l) && l.Any()).Select(p => p).ToList());
@@ -203,6 +206,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             correo.RemitentePaquete = fila.RemitentePaquete;
             correo.EntregaEstimadaDia = fila.EntregaEstimadaDia;
             correo.EsSalidaNuestra = fila.EsSalidaNuestra;
+            correo.AvisoProveedor = fila.AvisoProveedor;
+            correo.PedidoEnAdjunto = fila.PedidoEnAdjunto;
+            correo.AdjuntoLeido = fila.AdjuntoLeido;
             return Task.FromResult(true);
         }
 

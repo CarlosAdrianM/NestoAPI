@@ -70,6 +70,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const string MOTIVO_REMITENTE_PAQUETE = "RemitentePaquete";
         /// <summary>Fase 3: heredado de otro correo del mismo envío (comparten un código de seguimiento, <see cref="MismoEnvio"/>).</summary>
         public const string MOTIVO_MISMO_ENVIO = "MismoEnvio";
+        /// <summary>NestoAPI#857e: el número del pedido sale en el PDF adjunto de un aviso de salida del proveedor (<see cref="ExtractorAvisoSalida"/>).</summary>
+        public const string MOTIVO_PDF_ADJUNTO = "PdfAdjunto";
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 

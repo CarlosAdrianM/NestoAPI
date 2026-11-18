@@ -17,6 +17,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public DateTime FechaRecepcionAplicada { get; set; }
         public string Agencia { get; set; }
         public DateTime? AplicadoEl { get; set; }
+        /// <summary>
+        /// NestoAPI#857e: es un aviso de salida del PROVEEDOR (remitente marcado sin agencia) sin código ni enlace de seguimiento: sabemos
+        /// que ha salido, pero ninguna agencia lo está siguiendo. No cuenta como seguimiento (la fecha queda Aproximada, no CasiSegura).
+        /// </summary>
+        public bool SinSeguimientoAgencia { get; set; }
     }
 
     /// <summary>NestoAPI#853: lo que lee el cálculo de la fecha de entrega para la certeza (sustituible en los tests). Por tanda, sin N+1.</summary>
@@ -32,7 +37,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
     /// <summary>
     /// NestoAPI#853: un pedido de compra está «con seguimiento» si tiene un correo aplicado, no descartado, cuya FechaRecepcionAplicada es
-    /// la FechaRecepción que tiene ahora (si Compras la ha cambiado después, el correo ya no manda). Pura.
+    /// la FechaRecepción que tiene ahora (si Compras la ha cambiado después, el correo ya no manda). NestoAPI#857e: un aviso de salida del
+    /// proveedor sin código de seguimiento (<see cref="CorreoAplicadoPedidoCompra.SinSeguimientoAgencia"/>) pone la fecha, pero NO es
+    /// seguimiento de la agencia: con solo ese correo, la línea queda Aproximada (Carlos 18/11/26). Pura.
     /// </summary>
     public static class ReglaSeguimientoAgencia
     {
@@ -40,7 +47,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public static CorreoAplicadoPedidoCompra Vigente(IEnumerable<CorreoAplicadoPedidoCompra> correos, string empresa, int pedido, DateTime fechaRecepcion)
         {
             List<CorreoAplicadoPedidoCompra> suyos = (correos ?? Enumerable.Empty<CorreoAplicadoPedidoCompra>())
-                .Where(c => c != null && c.Pedido == pedido
+                .Where(c => c != null && !c.SinSeguimientoAgencia && c.Pedido == pedido
                     && (string.IsNullOrWhiteSpace(empresa) || string.Equals(c.Empresa?.Trim(), empresa.Trim(), StringComparison.OrdinalIgnoreCase))
                     && c.FechaRecepcionAplicada.Date == fechaRecepcion.Date)
                 .OrderByDescending(c => c.AplicadoEl ?? DateTime.MinValue)
@@ -137,15 +144,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'FechaRecepcionAplicada') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AplicadoEl') IS NULL " +
             "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'Descartado') IS NULL THEN 0 ELSE 1 END";
 
+        // {0} = los pedidos; {1} = si es un aviso del proveedor sin seguimiento (con Scripts/Issue857e) o 0
         internal const string SQL_CORREOS_APLICADOS = @"
-SELECT RTRIM(c.EmpresaAplicada), c.PedidoAplicado, CAST(c.FechaRecepcionAplicada AS datetime), RTRIM(c.Agencia), c.AplicadoEl
+SELECT RTRIM(c.EmpresaAplicada), c.PedidoAplicado, CAST(c.FechaRecepcionAplicada AS datetime), RTRIM(c.Agencia), c.AplicadoEl, {1}
 FROM dbo.ComprasCorreosSeguimiento c WITH (NOLOCK)
 WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecepcionAplicada IS NOT NULL";
+        internal const string SIN_SEGUIMIENTO_AVISO = "CAST(CASE WHEN ISNULL(c.AvisoProveedor, 0) = 1 AND c.Codigo IS NULL AND c.Url IS NULL THEN 1 ELSE 0 END AS bit)";
+        internal const string SIN_SEGUIMIENTO_NUNCA = "CAST(0 AS bit)";
+        internal const string SQL_EXISTE_AVISO = "SELECT CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AvisoProveedor') IS NULL THEN 0 ELSE 1 END";
 
         private const int TIMEOUT = 15;
         private static readonly object cerrojo = new object();
         private static bool? columnas;
         private static DateTime columnasComprobadasUtc;
+        private static bool? columnaAviso;
+        private static DateTime columnaAvisoComprobadaUtc;
 
         private readonly string cadenaConexion;
         private readonly Func<IRepositorioPlazosProveedores> plazos;
@@ -178,7 +191,8 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
             using (var conexion = new SqlConnection(cadenaConexion))
             {
                 conexion.Open();
-                string sql = string.Format(SQL_CORREOS_APLICADOS, string.Join(", ", lista.Select((p, i) => "@p" + i)));
+                string sql = string.Format(SQL_CORREOS_APLICADOS, string.Join(", ", lista.Select((p, i) => "@p" + i)),
+                    Comprobar(SQL_EXISTE_AVISO, ref columnaAviso, ref columnaAvisoComprobadaUtc) ? SIN_SEGUIMIENTO_AVISO : SIN_SEGUIMIENTO_NUNCA);
                 using (var comando = new SqlCommand(sql, conexion) { CommandTimeout = TIMEOUT })
                 {
                     for (int i = 0; i < lista.Count; i++)
@@ -195,7 +209,8 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
                                 Pedido = lector.GetInt32(1),
                                 FechaRecepcionAplicada = lector.GetDateTime(2),
                                 Agencia = lector.IsDBNull(3) ? null : Convert.ToString(lector.GetValue(3)),
-                                AplicadoEl = lector.IsDBNull(4) ? (DateTime?)null : lector.GetDateTime(4)
+                                AplicadoEl = lector.IsDBNull(4) ? (DateTime?)null : lector.GetDateTime(4),
+                                SinSeguimientoAgencia = !lector.IsDBNull(5) && lector.GetBoolean(5)
                             });
                         }
                     }
@@ -210,20 +225,23 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
             plazos().ProveedorHabitual(CachePlazosProveedores.EmpresaPlazos(empresa), productos);
 
         /// <summary>¿Están las columnas de Scripts/Issue857d? Con caché de 10 minutos; ante un fallo, que no.</summary>
-        private bool ColumnasExisten()
+        private bool ColumnasExisten() => Comprobar(SQL_EXISTEN_COLUMNAS, ref columnas, ref columnasComprobadasUtc);
+
+        /// <summary>Una comprobación de columnas opcionales con caché de 10 minutos (Issue857d, Issue857e); ante un fallo, que no.</summary>
+        private bool Comprobar(string sql, ref bool? valor, ref DateTime comprobadaUtc)
         {
             lock (cerrojo)
             {
-                if (columnas.HasValue && DateTime.UtcNow - columnasComprobadasUtc < CachePlazosProveedores.DURACION)
+                if (valor.HasValue && DateTime.UtcNow - comprobadaUtc < CachePlazosProveedores.DURACION)
                 {
-                    return columnas.Value;
+                    return valor.Value;
                 }
             }
             bool existen;
             try
             {
                 using (var conexion = new SqlConnection(cadenaConexion))
-                using (var comando = new SqlCommand(SQL_EXISTEN_COLUMNAS, conexion) { CommandTimeout = TIMEOUT })
+                using (var comando = new SqlCommand(sql, conexion) { CommandTimeout = TIMEOUT })
                 {
                     conexion.Open();
                     existen = Convert.ToInt32(comando.ExecuteScalar()) == 1;
@@ -235,8 +253,8 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
             }
             lock (cerrojo)
             {
-                columnas = existen;
-                columnasComprobadasUtc = DateTime.UtcNow;
+                valor = existen;
+                comprobadaUtc = DateTime.UtcNow;
             }
             return existen;
         }

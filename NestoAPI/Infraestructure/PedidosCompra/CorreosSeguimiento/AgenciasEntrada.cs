@@ -312,13 +312,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             + @"|versand\s+(?:mit|durch|via|uber))(?![a-z0-9])\s*[:\-–]?",
             RegexOptions.Compiled);
 
-        public static IAgenciaEntrada Buscar(CorreoCompras correo, IEnumerable<IAgenciaEntrada> agencias)
+        public static IAgenciaEntrada Buscar(CorreoCompras correo, IEnumerable<IAgenciaEntrada> agencias) =>
+            correo == null ? null : Buscar((correo.Asunto ?? string.Empty) + "\n" + correo.Texto, agencias);
+
+        /// <summary>NestoAPI#857e: lo mismo sobre un texto suelto (el de un PDF adjunto).</summary>
+        public static IAgenciaEntrada Buscar(string texto, IEnumerable<IAgenciaEntrada> agencias)
         {
-            if (correo == null || agencias == null)
+            if (string.IsNullOrEmpty(texto) || agencias == null)
             {
                 return null;
             }
-            List<string> ventanas = Ventanas((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+            List<string> ventanas = Ventanas(texto);
             if (!ventanas.Any())
             {
                 return null;

@@ -4,16 +4,27 @@ using System.Linq;
 
 namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 {
-    /// <summary>NestoAPI#857: una dirección o un dominio marcado por Compras como de una agencia (tabla AgenciasEntradaRemitentes).</summary>
+    /// <summary>
+    /// NestoAPI#857: una dirección o un dominio marcado por Compras (tabla AgenciasEntradaRemitentes): de una agencia o, desde #857e
+    /// (Scripts/Issue857e), de un PROVEEDOR que avisa de la salida (sin agencia), con filtro de texto y lectura del PDF opcionales.
+    /// </summary>
     public class RemitenteMarcado
     {
         public int Id { get; set; }
+        /// <summary>Null = remitente de un proveedor (aviso de salida), no de una agencia (#857e).</summary>
         public string Agencia { get; set; }
         /// <summary>Dirección completa (contiene «@») o dominio («ejemplo-transportes.es»), en minúsculas.</summary>
         public string Remitente { get; set; }
         public bool Activo { get; set; }
         public string Usuario { get; set; }
         public DateTime? FechaModificacion { get; set; }
+        /// <summary>
+        /// NestoAPI#857e: solo cuentan sus correos que lo digan en el asunto o el cuerpo (<see cref="FiltroRemitente"/>; alternativas con
+        /// «|»). Null = todos.
+        /// </summary>
+        public string FiltroTexto { get; set; }
+        /// <summary>NestoAPI#857e: leer sus PDF adjuntos (en memoria) para sacar el pedido, la agencia y la entrega.</summary>
+        public bool LeerPdf { get; set; }
 
         /// <summary>¿Casa con esa dirección? Una dirección, exacta; un dominio, también sus subdominios.</summary>
         public bool Casa(string direccion)
@@ -57,6 +68,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public bool EsSalidaNuestra { get; set; }
         /// <summary>Fase 3: quién expide el paquete según el aviso (<see cref="ExtractorRemitentePaquete"/>), normalizado; null si no lo dice.</summary>
         public string RemitentePaquete { get; set; }
+        /// <summary>
+        /// NestoAPI#857e: viene de un remitente marcado SIN agencia: un aviso de salida del propio proveedor. Si además no trae código de
+        /// seguimiento, su fecha aplicada no cuenta como «seguimiento de la agencia» en la certeza (#853): queda Aproximada.
+        /// </summary>
+        public bool AvisoProveedor { get; set; }
     }
 
     /// <summary>
@@ -85,9 +101,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 direcciones.Add(correo.RemitenteDireccion.Trim().ToLowerInvariant());
             }
             direcciones.AddRange(analisis.RemitentesOriginales);
+            // NestoAPI#857e: un remitente con filtro de texto solo cuenta si el asunto o el cuerpo lo dicen (si no, el correo se trata como
+            // de un remitente sin marcar: se guarda solo si trae seguimiento)
             analisis.RemitenteMarcado = (marcados ?? Enumerable.Empty<RemitenteMarcado>())
                 .Where(m => m != null && m.Activo)
-                .FirstOrDefault(m => direcciones.Any(m.Casa));
+                .Where(m => direcciones.Any(m.Casa))
+                .FirstOrDefault(m => FiltroRemitente.Casa(m.FiltroTexto, correo.Asunto, correo.Texto));
+            analisis.AvisoProveedor = analisis.RemitenteMarcado != null && string.IsNullOrWhiteSpace(analisis.RemitenteMarcado.Agencia);
 
             foreach (IAgenciaEntrada agencia in agencias ?? Enumerable.Empty<IAgenciaEntrada>())
             {
@@ -108,9 +128,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     analisis.Agencia = analisis.RemitenteMarcado.Agencia?.Trim();
                     analisis.HorasHastaEntrega = AgenciasEntradaRegistradas.PorNombre(analisis.Agencia)?.HorasHastaEntrega;
                 }
-                if (string.IsNullOrWhiteSpace(analisis.Agencia) && analisis.Seguimientos.Any())
+                if (string.IsNullOrWhiteSpace(analisis.Agencia) && (analisis.Seguimientos.Any() || analisis.AvisoProveedor))
                 {
-                    // Correo de un proveedor que nombra la agencia tras una etiqueta («Transportista: SCHENKER STANDARD»)
+                    // Correo de un proveedor que nombra la agencia tras una etiqueta («Transportista: SCHENKER STANDARD»); también un aviso
+                    // de salida de un remitente marcado sin agencia (#857e), aunque no traiga código
                     IAgenciaEntrada porNombre = AgenciaPorNombreEnTexto.Buscar(correo, agencias);
                     if (porNombre != null)
                     {

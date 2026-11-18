@@ -95,6 +95,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>Nombre, tipo y tamaño de los adjuntos de un mensaje (sin el contenido). Null si no se han podido leer. Nunca lanza.</summary>
         Task<List<AdjuntoCorreo>> LeerAdjuntos(string idGraph);
+
+        /// <summary>
+        /// NestoAPI#857e: los PDF adjuntos de un mensaje (no incrustados), descargados EN MEMORIA (nunca a disco), como mucho
+        /// <paramref name="maximoPdfs"/>; uno de más de <paramref name="maximoBytes"/> va sin contenido (no se descarga). Lista vacía si no
+        /// tiene ninguno; null si no se han podido leer. Solo lectura. Nunca lanza.
+        /// </summary>
+        Task<List<PdfAdjunto>> LeerPdfs(string idGraph, int maximoPdfs, long maximoBytes);
     }
 
     /// <summary>
@@ -277,6 +284,79 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             catch (Exception)
             {
                 return null;
+            }
+        }
+
+        /// <summary>NestoAPI#857e: la lista de adjuntos con su id (para descargar los PDF).</summary>
+        internal string UrlAdjuntosConId(string idGraph) =>
+            $"{URL_GRAPH}/users/{Uri.EscapeDataString(configuracion.Buzon)}/messages/{Uri.EscapeDataString(idGraph)}/attachments" +
+            $"?$select=id,{CAMPOS_ADJUNTOS}&$top=50";
+
+        /// <summary>NestoAPI#857e: el contenido en bruto de un adjunto de fichero.</summary>
+        internal string UrlContenidoAdjunto(string idGraph, string idAdjunto) =>
+            $"{URL_GRAPH}/users/{Uri.EscapeDataString(configuracion.Buzon)}/messages/{Uri.EscapeDataString(idGraph)}/attachments/" +
+            $"{Uri.EscapeDataString(idAdjunto)}/$value";
+
+        public async Task<List<PdfAdjunto>> LeerPdfs(string idGraph, int maximoPdfs, long maximoBytes)
+        {
+            if (string.IsNullOrWhiteSpace(idGraph))
+            {
+                return null;
+            }
+            try
+            {
+                string bearer = await Token().ConfigureAwait(false);
+                RespuestaGraph lista = await Get(UrlAdjuntosConId(idGraph.Trim()), bearer).ConfigureAwait(false);
+                if (lista.Error != null || !(lista.Json["value"] is JArray adjuntos))
+                {
+                    return null;
+                }
+                var pdfs = new List<PdfAdjunto>();
+                foreach (JToken a in adjuntos)
+                {
+                    if (pdfs.Count >= Math.Max(0, maximoPdfs))
+                    {
+                        break;
+                    }
+                    string tipoGraph = (string)a["@odata.type"];
+                    if (((bool?)a["isInline"] ?? false) || string.IsNullOrEmpty((string)a["id"])
+                        || (tipoGraph != null && !tipoGraph.EndsWith("fileAttachment", StringComparison.OrdinalIgnoreCase))
+                        || !LimitesPdfAdjuntos.EsPdf((string)a["name"], (string)a["contentType"]))
+                    {
+                        continue;
+                    }
+                    var pdf = new PdfAdjunto { Nombre = (string)a["name"], Tamano = (long?)a["size"] ?? 0 };
+                    if (pdf.Tamano <= maximoBytes)
+                    {
+                        pdf.Contenido = await Bytes(UrlContenidoAdjunto(idGraph.Trim(), (string)a["id"]), bearer, maximoBytes).ConfigureAwait(false);
+                    }
+                    pdfs.Add(pdf);
+                }
+                return pdfs;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Un GET de un contenido en bruto (solo lectura), sin pasar de <paramref name="maximo"/> bytes (null si pasa o falla).</summary>
+        private async Task<byte[]> Bytes(string url, string bearer, long maximo)
+        {
+            using (var peticion = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
+                using (HttpResponseMessage respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                {
+                    if (!respuesta.IsSuccessStatusCode || respuesta.Content == null)
+                    {
+                        return null;
+                    }
+                    using (System.IO.Stream flujo = await respuesta.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                    {
+                        return LimitesPdfAdjuntos.LeerConTope(flujo, maximo);
+                    }
+                }
             }
         }
 

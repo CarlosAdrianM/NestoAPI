@@ -107,12 +107,47 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
         }
 
+        /// <summary>
+        /// NestoAPI#857e: de dónde ha salido el pedido de un aviso de salida del proveedor (remitente marcado sin agencia o con «leer el
+        /// PDF»), en una frase; null si no es un aviso ni se ha leído ningún PDF.
+        /// </summary>
+        public static string OrigenAviso(CorreoSeguimientoFila fila)
+        {
+            if (fila == null || (fila.AvisoProveedor != true && fila.AdjuntoLeido == null))
+            {
+                return null;
+            }
+            string que = fila.AvisoProveedor == true ? "Aviso de salida del proveedor" : "Correo con PDF adjunto";
+            if (fila.PedidoEnAdjunto.HasValue)
+            {
+                return $"{que}: pedido {fila.PedidoEnAdjunto} leído del PDF adjunto.";
+            }
+            switch (fila.AdjuntoLeido)
+            {
+                case nameof(EstadoPdfAdjunto.Leido):
+                    return $"{que}: el PDF adjunto no dice ningún pedido nuestro en el aire (o dice varios).";
+                case nameof(EstadoPdfAdjunto.SinTexto):
+                    return $"{que}: el PDF adjunto no tiene texto (¿escaneado?); se sigue sin él.";
+                case nameof(EstadoPdfAdjunto.Ilegible):
+                    return $"{que}: el PDF adjunto no se ha podido leer; se sigue sin él.";
+                case nameof(EstadoPdfAdjunto.Grande):
+                    return $"{que}: el PDF adjunto es demasiado grande para leerlo; se sigue sin él.";
+                case nameof(EstadoPdfAdjunto.NoDescargado):
+                    return $"{que}: no se ha podido descargar el PDF adjunto; se sigue sin él.";
+                case nameof(EstadoPdfAdjunto.SinPdf):
+                    return $"{que}: no trae ningún PDF adjunto.";
+                default:
+                    return $"{que}.";
+            }
+        }
+
         /// <summary>La cabecera (HTML) con lo que se ha hecho y los datos del correo original.</summary>
         public static string Cabecera(CorreoSeguimientoFila fila, ResultadoCorreoGuardado r, string remitente, DateTime recibido)
         {
             var sb = new StringBuilder();
             sb.Append("<div style='font-family: Arial, sans-serif; font-size: 13px; border: 2px solid #1f6fb2; padding: 8px; margin-bottom: 12px; background: #eef5fb'>");
-            sb.Append($"<p style='margin:0 0 6px 0'><b>{Html(QueSeHaHecho(r))}</b></p>");
+            string origen = OrigenAviso(fila);
+            sb.Append($"<p style='margin:0 0 6px 0'><b>{Html(origen == null ? QueSeHaHecho(r) : origen + " " + QueSeHaHecho(r))}</b></p>");
             var datos = new List<string>();
             if (!string.IsNullOrWhiteSpace(fila?.Agencia))
             {

@@ -54,19 +54,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private readonly Func<DateTime, bool> esFestivo;
         private readonly ServicioAplicacionCorreosCompras aplicacion;
         private readonly IReenviadorCorreosSeguimiento reenviador;
+        private readonly ILectorTextoPdf lectorPdf;
 
         /// <param name="lector">Null = sin claves en secretos.config (no se hace nada).</param>
         /// <param name="horaCorte">Hora de corte del picking (por defecto, <see cref="HoraCortePicking.Leer"/> de la empresa).</param>
         /// <param name="esFestivo">Festivo de Algete (por defecto, <see cref="GestorFestivos.EsFestivo"/> con ALG).</param>
         /// <param name="aplicacion">Fase 3: enlazar por mismo envío, poner la fecha de lo inequívoco y avisar de lo que queda por asignar (solo el job y el reanálisis; null = nada).</param>
         /// <param name="reenviador">NestoAPI#865 (corte 3): reenviar a Compras cada correo que el JOB acaba de guardar (null = no).</param>
+        /// <param name="lectorPdf">NestoAPI#857e: el texto de los PDF adjuntos de los remitentes con «leer el PDF» (por defecto, PdfPig).</param>
         public ServicioCorreosSeguimientoCompras(ILectorBuzonCompras lector, IRepositorioCorreosSeguimiento repositorio,
             Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null,
             Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null, ServicioAplicacionCorreosCompras aplicacion = null,
-            IReenviadorCorreosSeguimiento reenviador = null)
+            IReenviadorCorreosSeguimiento reenviador = null, ILectorTextoPdf lectorPdf = null)
         {
             this.aplicacion = aplicacion;
             this.reenviador = reenviador;
+            this.lectorPdf = lectorPdf ?? new LectorTextoPdfPig();
             this.lector = lector;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.registrar = registrar ?? (_ => { });
@@ -145,7 +148,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private Task<bool> Guardar(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado)
         {
             List<PedidoCompraEnAire> pedidos = null;
-            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), aplicar: true);
+            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), aplicar: true, leerPdf: true);
         }
 
         /// <summary>
@@ -154,9 +157,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// job, los de ahora; el histórico, los del día del correo). False si alguno no se ha podido guardar (se reintenta: es idempotente).
         /// Con <paramref name="aplicar"/> (SOLO el job), los correos NUEVOS de la tanda pasan juntos, al final, por la fase 3
         /// (<see cref="ServicioAplicacionCorreosCompras.AlGuardar"/>): el histórico nunca escribe en compras.
+        /// NestoAPI#857e: con <paramref name="leerPdf"/> (el job; el histórico no, por coste) se leen los PDF de los remitentes marcados con «leer el PDF».
         /// </summary>
         internal async Task<bool> GuardarCorreos(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado,
-            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool aplicar = false)
+            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool aplicar = false, bool leerPdf = false)
         {
             List<RemitenteMarcado> marcados;
             try
@@ -179,7 +183,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 try
                 {
-                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe).ConfigureAwait(false);
+                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf).ConfigureAwait(false);
                     if (fila == null)
                     {
                         continue;
@@ -268,7 +272,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// asignación en sombra. Null si no es de los que se guardan. Un envío nuestro de salida en copia va sin asignación ni disponible.
         /// </summary>
         private async Task<CorreoSeguimientoFila> FilaAnalizada(CorreoCompras correo, List<RemitenteMarcado> marcados,
-            List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe)
+            List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool leerPdf)
         {
             AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(correo, agencias, marcados);
             if (!analisis.Guardar || correo.Clave() == null)
@@ -276,14 +280,77 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 return null;
             }
             AsignacionPedidoCompra asignacion = null;
+            List<PedidoCompraEnAire> pedidos = null;
             if (!analisis.EsSalidaNuestra)
             {
-                List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false);
+                pedidos = await pedidosDe(correo).ConfigureAwait(false);
                 asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos, analisis.RemitentePaquete, recordados);
+            }
+            // NestoAPI#857e: el PDF del aviso de salida (solo si el remitente lo pide; ni el histórico ni las salidas nuestras)
+            LecturaPdfsCorreo pdfs = leerPdf && analisis.RemitenteMarcado?.LeerPdf == true && !analisis.EsSalidaNuestra
+                ? await LeerTextoPdfs(correo).ConfigureAwait(false)
+                : null;
+            AvisoSalidaPdf aviso = null;
+            if (pdfs?.Texto != null)
+            {
+                aviso = ExtractorAvisoSalida.Extraer(pdfs.Texto, correo.Recibido, AvisoSalidaProveedor.DelProveedor(pedidos, asignacion), pedidos, agencias);
+                asignacion = AvisoSalidaProveedor.Completar(analisis, asignacion, aviso);
             }
             CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
             fila.DisponibleEstimado = DisponibleEstimado(analisis);
+            fila.AvisoProveedor = analisis.AvisoProveedor;
+            fila.PedidoEnAdjunto = aviso?.Pedido?.Pedido;
+            fila.AdjuntoLeido = pdfs?.Estado.ToString();
             return fila;
+        }
+
+        /// <summary>
+        /// NestoAPI#857e: los PDF del correo (como mucho <see cref="LimitesPdfAdjuntos.MAXIMO_PDFS"/>, de <see cref="LimitesPdfAdjuntos.MAXIMO_BYTES"/>
+        /// y <see cref="LimitesPdfAdjuntos.MAXIMO_PAGINAS"/> páginas), leídos en memoria: el contenido se suelta al salir y nunca se guarda. Un
+        /// PDF escaneado, dañado o que Graph no da no rompe nada: el correo sigue como si no lo tuviera y el estado lo dice. Nunca lanza.
+        /// </summary>
+        private async Task<LecturaPdfsCorreo> LeerTextoPdfs(CorreoCompras correo)
+        {
+            if (!correo.TieneAdjuntos)
+            {
+                return new LecturaPdfsCorreo { Estado = EstadoPdfAdjunto.SinPdf };
+            }
+            try
+            {
+                List<PdfAdjunto> descargados = await lector.LeerPdfs(correo.Id, LimitesPdfAdjuntos.MAXIMO_PDFS, LimitesPdfAdjuntos.MAXIMO_BYTES).ConfigureAwait(false);
+                if (descargados == null)
+                {
+                    return new LecturaPdfsCorreo { Estado = EstadoPdfAdjunto.NoDescargado };
+                }
+                var estados = new List<EstadoPdfAdjunto>();
+                var textos = new List<string>();
+                foreach (PdfAdjunto pdf in descargados.Where(p => p != null).Take(LimitesPdfAdjuntos.MAXIMO_PDFS))
+                {
+                    if (pdf.Contenido == null)
+                    {
+                        estados.Add(pdf.Tamano > LimitesPdfAdjuntos.MAXIMO_BYTES ? EstadoPdfAdjunto.Grande : EstadoPdfAdjunto.NoDescargado);
+                        continue;
+                    }
+                    ResultadoTextoPdf leido = lectorPdf.Leer(pdf.Contenido, LimitesPdfAdjuntos.MAXIMO_PAGINAS)
+                        ?? new ResultadoTextoPdf { Estado = EstadoPdfAdjunto.Ilegible };
+                    estados.Add(leido.Estado);
+                    if (leido.Estado == EstadoPdfAdjunto.Leido && !string.IsNullOrWhiteSpace(leido.Texto))
+                    {
+                        textos.Add(leido.Texto);
+                    }
+                }
+                return new LecturaPdfsCorreo
+                {
+                    Estado = AvisoSalidaProveedor.EstadoConjunto(estados),
+                    Texto = textos.Any() ? string.Join("\n", textos) : null
+                };
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857e] No se ha podido leer el PDF del correo del {correo.Recibido:dd/MM/yyyy HH:mm} " +
+                    $"de {correo.RemitenteDominio}: {ex.Message} (se trata como si no lo tuviera)", ex));
+                return new LecturaPdfsCorreo { Estado = EstadoPdfAdjunto.Ilegible };
+            }
         }
 
         /// <summary>La memoria de remitentes del paquete (fase 3). Sin Scripts/Issue857d o si falla, ninguno (se guarda igual).</summary>
@@ -371,7 +438,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// Fase 3: vuelve a analizar lo YA guardado de los últimos <paramref name="dias"/> días, releyendo el buzón por fechas (el mismo
         /// <see cref="ILectorBuzonCompras.LeerPagina"/> del histórico, sin tocar el delta). Solo actualiza lo derivado del análisis de los
         /// correos sin aplicar ni descartar (con los pedidos en el aire de AHORA) y rehace los enlaces por mismo envío; no inserta, no
-        /// aplica fechas ni avisa.
+        /// aplica fechas ni avisa. NestoAPI#857e: SÍ lee los PDF de los remitentes con «leer el PDF» (son pocos días y pocos correos).
         /// </summary>
         public async Task<ResultadoReanalisisCorreos> Reanalizar(int dias, DateTime ahora)
         {
@@ -407,7 +474,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     try
                     {
                         CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados,
-                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false))).ConfigureAwait(false);
+                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true).ConfigureAwait(false);
                         if (fila != null && await repositorio.ActualizarAnalisis(fila).ConfigureAwait(false))
                         {
                             resultado.Actualizados++;
@@ -574,7 +641,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 Action<Exception> registrar = ex => ElmahHelper.Log(ex, USUARIO_ELMAH);
                 var aplicacion = new ServicioAplicacionCorreosCompras(repositorio, avisador: new AvisadorCorreosPorAsignar(), registrar: registrar);
                 var reenviador = new ReenviadorCorreosSeguimiento(new ServicioCorreoElectronico(), registrar: registrar);
-                var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion, reenviador: reenviador);
+                var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion, reenviador: reenviador,
+                    lectorPdf: new LectorTextoPdfPig());
                 _ = await servicio.Pasada(DateTime.Now).ConfigureAwait(false);
             }
             catch (Exception ex)

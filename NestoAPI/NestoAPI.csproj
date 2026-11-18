@@ -192,6 +192,9 @@
     <Reference Include="Microsoft.Bcl.AsyncInterfaces, Version=9.0.0.4, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Bcl.AsyncInterfaces.9.0.4\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.Bcl.HashCode, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.Bcl.HashCode.6.0.0\lib\net462\Microsoft.Bcl.HashCode.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.Bcl.Numerics, Version=9.0.0.3, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Bcl.Numerics.9.0.3\lib\net462\Microsoft.Bcl.Numerics.dll</HintPath>
     </Reference>
@@ -324,6 +327,27 @@
     </Reference>
     <Reference Include="Polly, Version=7.0.0.0, Culture=neutral, PublicKeyToken=c8a3ffc3f8f825cc, processorArchitecture=MSIL">
       <HintPath>..\packages\Polly.7.2.4\lib\netstandard2.0\Polly.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig, Version=0.1.16.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig.Core, Version=0.1.16.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig.DocumentLayoutAnalysis, Version=0.1.16.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.DocumentLayoutAnalysis.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig.Fonts, Version=0.1.16.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.Fonts.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig.Package, Version=0.1.16.0, Culture=neutral, PublicKeyToken=null, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.Package.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig.Tokenization, Version=0.1.16.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.Tokenization.dll</HintPath>
+    </Reference>
+    <Reference Include="UglyToad.PdfPig.Tokens, Version=0.1.16.0, Culture=neutral, PublicKeyToken=605d367334e74123, processorArchitecture=MSIL">
+      <HintPath>..\packages\PdfPig.0.1.16\lib\net471\UglyToad.PdfPig.Tokens.dll</HintPath>
     </Reference>
     <Reference Include="QRCoder, Version=1.4.3.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\QRCoder.1.4.3\lib\net40\QRCoder.dll</HintPath>
@@ -704,6 +728,8 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\MismoEnvio.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\RemitentePaquete.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioAplicacionCorreosCompras.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AvisoSalidaProveedor.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\LectorTextoPdf.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />

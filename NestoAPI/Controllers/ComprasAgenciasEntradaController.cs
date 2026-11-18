@@ -18,10 +18,20 @@ namespace NestoAPI.Controllers
     /// <summary>NestoAPI#857: cuerpo del POST de un remitente marcado.</summary>
     public class PeticionRemitenteAgenciaDTO
     {
-        /// <summary>Nombre de la agencia («GLS») o texto libre («Transportista de tal proveedor»).</summary>
+        /// <summary>
+        /// Nombre de la agencia («GLS») o texto libre («Transportista de tal proveedor»). NestoAPI#857e: vacío = remitente de un PROVEEDOR
+        /// que avisa de la salida (con Scripts/Issue857e; sin él, obligatoria).
+        /// </summary>
         public string Agencia { get; set; }
         /// <summary>Dirección («avisos@ejemplo-agencia.es») o dominio («ejemplo-agencia.es»).</summary>
         public string Remitente { get; set; }
+        /// <summary>
+        /// NestoAPI#857e: solo cuentan sus correos que lo digan en el asunto o el cuerpo, sin distinguir mayúsculas ni tildes; varias
+        /// alternativas con «|» («albarán de entrega|delivery note»). Vacío = todos.
+        /// </summary>
+        public string FiltroTexto { get; set; }
+        /// <summary>NestoAPI#857e: leer sus PDF adjuntos (en memoria) para sacar el pedido, la agencia y la entrega.</summary>
+        public bool LeerPdf { get; set; }
     }
 
     /// <summary>NestoAPI#857: un correo captado, con los candidatos ya leídos del JSON.</summary>
@@ -67,6 +77,12 @@ namespace NestoAPI.Controllers
         public string AplicadoPor { get; set; }
         public bool? Descartado { get; set; }
         public bool? EligioSugerido { get; set; }
+        /// <summary>NestoAPI#857e: aviso de salida de un remitente marcado sin agencia (el propio proveedor); null = sin apuntar.</summary>
+        public bool? AvisoProveedor { get; set; }
+        /// <summary>NestoAPI#857e: el pedido de compra que se ha leído del PDF adjunto; null si ninguno.</summary>
+        public int? PedidoEnAdjunto { get; set; }
+        /// <summary>NestoAPI#857e: SinPdf, Leido, SinTexto, Ilegible, Grande o NoDescargado; null = no se pidió leer el PDF.</summary>
+        public string AdjuntoLeido { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): un pedido candidato de un envío por asignar, con lo que hace falta para elegir.</summary>
@@ -282,8 +298,15 @@ namespace NestoAPI.Controllers
             return Ok(await repositorio.LeerRemitentes().ConfigureAwait(false));
         }
 
+        public const string MENSAJE_SIN_SCRIPT_AVISOS = "Para marcar un remitente de proveedor (sin agencia), con filtro de texto o con lectura del PDF, " +
+            "hay que lanzar antes Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql.";
+
         // POST api/Compras/AgenciasEntrada/Remitentes   { "Agencia": "GLS", "Remitente": "ejemplo-agencia.es" }
-        /// <summary>Marca una dirección o un dominio como de una agencia (si ya estaba, cambia la agencia y lo reactiva).</summary>
+        //   NestoAPI#857e: { "Agencia": null, "Remitente": "sales@dduueett.com", "FiltroTexto": "albarán de entrega|delivery note", "LeerPdf": true }
+        /// <summary>
+        /// Marca una dirección o un dominio como de una agencia (si ya estaba, cambia la agencia y lo reactiva). NestoAPI#857e: sin agencia,
+        /// es el remitente de un proveedor que avisa de la salida; FiltroTexto y LeerPdf, opcionales (503 si se usan sin Scripts/Issue857e).
+        /// </summary>
         [HttpPost]
         [Authorize]
         [Route("api/Compras/AgenciasEntrada/Remitentes")]
@@ -294,16 +317,32 @@ namespace NestoAPI.Controllers
             {
                 return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
             }
-            string agencia = peticion?.Agencia?.Trim();
+            if (peticion == null)
+            {
+                return BadRequest("Falta el remitente.");
+            }
+            string agencia = peticion.Agencia?.Trim();
             if (string.IsNullOrEmpty(agencia))
             {
-                return BadRequest("Falta la agencia.");
+                agencia = null;
             }
-            // Si es una conocida, con su nombre de siempre (así casa con HorasHastaEntrega)
-            agencia = AgenciasEntradaRegistradas.PorNombre(agencia)?.Nombre ?? agencia;
-            if (agencia.Length > LONGITUD_AGENCIA)
+            else
             {
-                agencia = agencia.Substring(0, LONGITUD_AGENCIA);
+                // Si es una conocida, con su nombre de siempre (así casa con HorasHastaEntrega)
+                agencia = AgenciasEntradaRegistradas.PorNombre(agencia)?.Nombre ?? agencia;
+                if (agencia.Length > LONGITUD_AGENCIA)
+                {
+                    agencia = agencia.Substring(0, LONGITUD_AGENCIA);
+                }
+            }
+            string filtro = FiltroRemitente.Limpiar(peticion.FiltroTexto);
+            if (filtro != null && filtro.Length > FiltroRemitente.LONGITUD)
+            {
+                return BadRequest($"El filtro de texto no puede pasar de {FiltroRemitente.LONGITUD} caracteres.");
+            }
+            if (filtro == null && !string.IsNullOrWhiteSpace(peticion.FiltroTexto))
+            {
+                return BadRequest("El filtro de texto no tiene ninguna palabra: escriba lo que tiene que decir el correo (varias alternativas, separadas por «|»).");
             }
             string remitente = NormalizarRemitente(peticion.Remitente);
             if (remitente == null)
@@ -322,8 +361,14 @@ namespace NestoAPI.Controllers
             {
                 return Content(HttpStatusCode.Conflict, MENSAJE_SIN_TABLA);
             }
+            if ((agencia == null || filtro != null || peticion.LeerPdf) && !repositorio.AvisosProveedorDisponibles())
+            {
+                return agencia == null && filtro == null && !peticion.LeerPdf
+                    ? (IHttpActionResult)BadRequest("Falta la agencia. " + MENSAJE_SIN_SCRIPT_AVISOS)
+                    : Content(HttpStatusCode.ServiceUnavailable, MENSAJE_SIN_SCRIPT_AVISOS);
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
-            int id = await repositorio.GuardarRemitente(agencia, remitente, usuario).ConfigureAwait(false);
+            int id = await repositorio.GuardarRemitente(agencia, remitente, usuario, filtro, peticion.LeerPdf).ConfigureAwait(false);
             return Ok(new RemitenteMarcado
             {
                 Id = id,
@@ -331,7 +376,9 @@ namespace NestoAPI.Controllers
                 Remitente = remitente,
                 Activo = true,
                 Usuario = usuario,
-                FechaModificacion = DateTime.Now
+                FechaModificacion = DateTime.Now,
+                FiltroTexto = filtro,
+                LeerPdf = peticion.LeerPdf
             });
         }
 
@@ -674,7 +721,10 @@ namespace NestoAPI.Controllers
                 AplicadoEl = fila.AplicadoEl,
                 AplicadoPor = fila.AplicadoPor,
                 Descartado = fila.Descartado,
-                EligioSugerido = fila.EligioSugerido
+                EligioSugerido = fila.EligioSugerido,
+                AvisoProveedor = fila.AvisoProveedor,
+                PedidoEnAdjunto = fila.PedidoEnAdjunto,
+                AdjuntoLeido = fila.AdjuntoLeido
             };
             if (!string.IsNullOrWhiteSpace(fila.Adjuntos))
             {

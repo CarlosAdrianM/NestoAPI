@@ -506,6 +506,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   correo, `ReglaPedidoSugerido`), `POST …/Correos/{id}/Asignar[?reasignar=true]` {Empresa, Pedido, RecordarRemitente} (también con el interruptor
   apagado; se propaga al envío; guarda `EligioSugerido`), `POST …/Correos/{id}/Descartar` (se propaga), `GET/DELETE …/RemitentesPaquete[/{id}]`,
   `POST …/Correos/Reanalizar?dias=7` (Dirección/Informática, 1-30: relee por fechas, rehace análisis y enlaces de lo no aplicado; no aplica ni avisa).
+- **Avisos de salida del proveedor (#857e, Carlos 18/11/26; caso DDUUEETT 220923)**: no hay «correos de proveedor» aparte: el remitente marcado
+  (`AgenciasEntradaRemitentes`, `Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql`; sin él, como antes) puede ir SIN agencia (proveedor), con
+  `FiltroTexto` («albarán de entrega|delivery note»: asunto o cuerpo, sin mayúsculas ni tildes, palabras enteras; si no casa, el correo es de un
+  remitente sin marcar) y `LeerPdf`. Con `LeerPdf` (job y Reanalizar; el histórico NO) se bajan por Graph hasta 3 PDF de 5 MB y se leen EN MEMORIA
+  (`ILectorTextoPdf` → PdfPig 0.1.16, 10 páginas; nada a disco ni a BD). `ExtractorAvisoSalida` (puro): pedido = número del texto que es un pedido
+  en el aire de SU proveedor (etiquetado «REF/Pedido/PO…» primero; uno solo → inequívoco, motivo `PdfAdjunto`; sin proveedor, solo etiquetado),
+  agencia por `AgenciaPorNombreEnTexto` («Compañía de transporte: SCHENKER») y entrega por `ExtractorEntregaEstimada`. Se guarda y aplica por el
+  camino de siempre (fase 3, interruptor, 3 días, rastro, promesa en riesgo, reenvío con «Aviso de salida del proveedor: pedido N leído del PDF»).
+  Columnas `AvisoProveedor`, `PedidoEnAdjunto`, `AdjuntoLeido` (SinPdf/Leido/SinTexto/Ilegible/Grande/NoDescargado). Certeza: un aviso del
+  proveedor SIN código ni enlace (`CorreoAplicadoPedidoCompra.SinSeguimientoAgencia`) no es seguimiento de agencia → Aproximada, no CasiSegura.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,
