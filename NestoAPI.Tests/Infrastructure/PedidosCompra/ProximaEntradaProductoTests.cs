@@ -170,7 +170,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(12, r.PlazoDias);
             Assert.IsTrue(r.PlazoPropio);
             Assert.AreEqual(PROVEEDOR, r.ProveedorHabitual);
-            Assert.AreEqual("Orientativa: no hay pedido; si se pidiera hoy, llegaría hacia el 28/11. El próximo pedido habitual a COSMÉTICA EJEMPLO, S.L. " +
+            Assert.AreEqual("Orientativa: no hay pedido; si se pidiera hoy, llegaría hacia el 28/11. El próximo pedido habitual al proveedor " +
                 "sería hacia el 23/11 y llegaría hacia el 05/12 (orientativo, no es un compromiso).", r.Texto);
         }
 
@@ -216,7 +216,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             ProximaEntradaProductoDTO r = Calcular(new LineaCompraEnElAire[0], plazos: plazos);
 
             Assert.AreEqual(ProximaEntradaProductoDTO.TIPO_SIN_DATOS, r.Tipo);
-            Assert.AreEqual("No hay pedido al proveedor y no hay datos de cuánto tarda COSMÉTICA EJEMPLO, S.L.", r.Motivo);
+            Assert.AreEqual("No hay pedido al proveedor y no hay datos de cuánto tarda en servir.", r.Motivo);
         }
 
         [TestMethod]
@@ -330,6 +330,44 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.IsNotNull(r);
             Assert.AreEqual(ProximaEntradaProductoDTO.TIPO_ORIENTATIVA, r.Content.Tipo);
             Assert.AreEqual(new DateTime(2026, 12, 5), r.Content.Fecha);
+        }
+
+        // Carlos 18/11/26: a quién se compra cada producto solo lo ven Compras, Dirección e Informática
+        [TestMethod]
+        public void ProximaEntradaController_UsuarioQueNoEsDeCompras_NoRecibeElProveedor()
+        {
+            var dto = new ProximaEntradaProductoDTO { ProveedorPedido = "65", NombreProveedorPedido = "COSMÉTICA EJEMPLO, S.L.", ProveedorHabitual = "65", NombreProveedorHabitual = "COSMÉTICA EJEMPLO, S.L.", Texto = "Pedido 220856: 27/11", Pedido = 220856 };
+            var vendedor = new System.Security.Principal.GenericPrincipal(new System.Security.Principal.GenericIdentity("NUEVAVISION\\Sancho"), new[] { NestoAPI.Models.Constantes.GruposSeguridad.TIENDAS });
+
+            ProximaEntradaProductoDTO r = ProximaEntradaProductoController.SinProveedorSiNoPuedeVerlo(dto, vendedor);
+
+            Assert.IsNull(r.ProveedorPedido);
+            Assert.IsNull(r.NombreProveedorPedido);
+            Assert.IsNull(r.ProveedorHabitual);
+            Assert.IsNull(r.NombreProveedorHabitual);
+            Assert.AreEqual(220856, r.Pedido);
+            Assert.AreEqual("Pedido 220856: 27/11", r.Texto);
+        }
+
+        [TestMethod]
+        public void ProximaEntradaController_UsuarioDeCompras_RecibeElProveedor()
+        {
+            var dto = new ProximaEntradaProductoDTO { ProveedorPedido = "65", NombreProveedorPedido = "COSMÉTICA EJEMPLO, S.L.", ProveedorHabitual = "65", NombreProveedorHabitual = "COSMÉTICA EJEMPLO, S.L." };
+            var compras = new System.Security.Principal.GenericPrincipal(new System.Security.Principal.GenericIdentity("NUEVAVISION\\Manuel"), new[] { NestoAPI.Models.Constantes.GruposSeguridad.COMPRAS });
+
+            ProximaEntradaProductoDTO r = ProximaEntradaProductoController.SinProveedorSiNoPuedeVerlo(dto, compras);
+
+            Assert.AreEqual("COSMÉTICA EJEMPLO, S.L.", r.NombreProveedorPedido);
+            Assert.AreEqual("65", r.ProveedorHabitual);
+        }
+
+        [TestMethod]
+        public void ProximaEntrada_ElTextoNoNombraNuncaAlProveedor()
+        {
+            ProximaEntradaProductoDTO r = Calcular(new LineaCompraEnElAire[0]);
+
+            Assert.IsFalse((r.Texto ?? string.Empty).Contains("COSMÉTICA"), r.Texto);
+            Assert.IsFalse((r.Motivo ?? string.Empty).Contains("COSMÉTICA"), r.Motivo);
         }
     }
 }

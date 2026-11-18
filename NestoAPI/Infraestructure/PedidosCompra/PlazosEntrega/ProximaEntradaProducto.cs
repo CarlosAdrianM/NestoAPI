@@ -102,7 +102,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
         public const string MOTIVO_FICTICIO = "Es un producto ficticio: no se compra.";
         public const string MOTIVO_SIN_PROVEEDOR = "No hay pedido al proveedor y no se sabe a qué proveedor se compra este producto.";
         public const string MOTIVO_SIN_PLAZOS = "No hay pedido al proveedor y aún no hay plazos de proveedores calculados.";
-        public const string MOTIVO_SIN_PLAZO_PROVEEDOR = "No hay pedido al proveedor y no hay datos de cuánto tarda {0}";
+        // Carlos 18/11/26: sin el nombre del proveedor (los usuarios no tienen por qué saber a quién se compra cada cosa)
+        public const string MOTIVO_SIN_PLAZO_PROVEEDOR = "No hay pedido al proveedor y no hay datos de cuánto tarda en servir.";
 
         public static ProximaEntradaProductoDTO Calcular(DateTime hoy, string producto, string almacen, IEnumerable<LineaCompraEnElAire> lineas,
             IEnumerable<CorreoAplicadoPedidoCompra> correos, PlazosProveedores plazos, string proveedorHabitual,
@@ -169,8 +170,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
             }
             if (!resultado.FechaSiSePidieraHoy.HasValue && !resultado.LlegadaConPedidoHabitual.HasValue)
             {
-                string motivo = string.Format(MOTIVO_SIN_PLAZO_PROVEEDOR, NombreParaTexto(resultado.ProveedorHabitual, resultado.NombreProveedorHabitual));
-                return SinDatos(resultado, motivo.EndsWith(".") ? motivo : motivo + ".");
+                return SinDatos(resultado, MOTIVO_SIN_PLAZO_PROVEEDOR);
             }
             resultado.Tipo = ProximaEntradaProductoDTO.TIPO_ORIENTATIVA;
             // La fecha principal es la del motor (#853), si la hay; si no (proveedor sin cadencia), la de «si se pidiera hoy».
@@ -281,7 +281,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
         }
 
         /// <summary>
-        /// «Orientativa: no hay pedido; si se pidiera hoy, llegaría hacia el 03/12. El próximo pedido habitual a COSMÉTICA X sería hacia el
+        /// «Orientativa: no hay pedido; si se pidiera hoy, llegaría hacia el 03/12. El próximo pedido habitual al proveedor sería hacia el
         /// 20/11 y llegaría hacia el 08/12 (orientativo, no es un compromiso)».
         /// </summary>
         public static string Orientativa(ProximaEntradaProductoDTO p, DateTime hoy)
@@ -293,8 +293,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
                 : $"{inicio}.");
             if (p.FechaProximoPedidoHabitual.HasValue && p.LlegadaConPedidoHabitual.HasValue)
             {
-                string proveedor = ReglaProximaEntrada.NombreParaTexto(p.ProveedorHabitual, p.NombreProveedorHabitual);
-                partes.Add($"El próximo pedido habitual a {proveedor} sería hacia el {Dia(p.FechaProximoPedidoHabitual.Value, hoy)} " +
+                // Carlos 18/11/26: el texto lo ve cualquier usuario en la ficha del producto: sin el nombre del proveedor
+                partes.Add($"El próximo pedido habitual al proveedor sería hacia el {Dia(p.FechaProximoPedidoHabitual.Value, hoy)} " +
                     $"y llegaría hacia el {Dia(p.LlegadaConPedidoHabitual.Value, hoy)} ({TextosCertezaFechaEntrega.TEXTO_ORIENTATIVA}).");
             }
             else

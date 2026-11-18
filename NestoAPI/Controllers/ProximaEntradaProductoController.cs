@@ -50,7 +50,23 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            return Ok(resultado);
+            return Ok(SinProveedorSiNoPuedeVerlo(resultado, User));
+        }
+
+        /// <summary>
+        /// Carlos 18/11/26: a quién se compra cada producto solo lo ven Compras, Dirección e Informática. A los demás el código y el
+        /// nombre del proveedor (del pedido y el habitual) les llegan vacíos; las fechas y el texto, igual. El texto no lo nombra nunca.
+        /// </summary>
+        internal static ProximaEntradaProductoDTO SinProveedorSiNoPuedeVerlo(ProximaEntradaProductoDTO resultado, System.Security.Principal.IPrincipal usuario)
+        {
+            if (resultado != null && !ComprasPlazosProveedoresController.PuedeVer(usuario))
+            {
+                resultado.ProveedorPedido = null;
+                resultado.NombreProveedorPedido = null;
+                resultado.ProveedorHabitual = null;
+                resultado.NombreProveedorHabitual = null;
+            }
+            return resultado;
         }
     }
 }
