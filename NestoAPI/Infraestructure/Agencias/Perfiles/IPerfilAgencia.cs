@@ -91,4 +91,14 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     public interface IPerfilSinCanalesExternos : IPerfilAgencia
     {
     }
+
+    /// <summary>
+    /// Sugerencia 1329 (18/11/26): la agencia NO se consulta (no tiene <see cref="IPerfilConSeguimiento"/>), pero sus envíos
+    /// pasan de Tramitado a Entregado o Incidentado solos por un circuito propio. Hoy, el reparto propio: el repartidor los
+    /// cierra desde Ariadna (api/RepartoPropio). Para <see cref="ReglaSeguimientoAutomaticoAgencia"/> cuenta como agencia con
+    /// seguimiento automático: un envío suyo que sigue tramitado días después es un retraso de verdad.
+    /// </summary>
+    public interface IPerfilConEstadosPropios : IPerfilAgencia
+    {
+    }
 }

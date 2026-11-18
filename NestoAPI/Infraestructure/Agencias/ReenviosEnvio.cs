@@ -110,6 +110,33 @@ namespace NestoAPI.Infraestructure.Agencias
         public string ComoHaVuelto { get; set; }
         /// <summary>NestoAPI#870: decisión Reenviar, el reenvío sin tramitar y la caja sin volver: el reenvío no puede salir.</summary>
         public bool ReenvioEsperandoCaja { get; set; }
+        /// <summary>
+        /// Sugerencia 1329: no queda nada por hacer con él (<see cref="ReglaDevueltoResuelto"/>). Solo lectura; la lista sigue
+        /// trayéndolos todos y es Nesto quien oculta los resueltos por defecto.
+        /// </summary>
+        public bool Resuelto => ReglaDevueltoResuelto.EstaResuelto(this);
+    }
+
+    /// <summary>
+    /// Sugerencia 1329 (18/11/26): un devuelto o incidentado de Agencias › Devueltos está RESUELTO cuando la caja ha vuelto (hay
+    /// marca de #870), hay decisión tomada (no SinDecidir) y, si la decisión es Reenviar, el envío nuevo ya está tramitado
+    /// (<see cref="EnvioDevueltoDTO.EnvioNuevoConEtiqueta"/>). Todo lo demás tiene algo por hacer. Sin la tabla de «ha vuelto»
+    /// nada consta como vuelto y, por tanto, nada está resuelto (se ve todo, como antes).
+    /// </summary>
+    public static class ReglaDevueltoResuelto
+    {
+        public static bool EstaResuelto(bool haVuelto, string decision, bool envioNuevoConEtiqueta)
+        {
+            string d = decision?.Trim();
+            if (!haVuelto || string.IsNullOrEmpty(d) || d == DecisionesReenvio.SIN_DECIDIR)
+            {
+                return false;
+            }
+            return d != DecisionesReenvio.REENVIAR || envioNuevoConEtiqueta;
+        }
+
+        public static bool EstaResuelto(EnvioDevueltoDTO devuelto)
+            => devuelto != null && EstaResuelto(devuelto.HaVuelto, devuelto.Decision, devuelto.EnvioNuevoConEtiqueta);
     }
 
     /// <summary>

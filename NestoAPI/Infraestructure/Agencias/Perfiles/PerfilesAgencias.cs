@@ -257,9 +257,10 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// NestoAPI#739: el reparto propio (rutas AT y 16) como una agencia más. Gestión «remota» sin webservice: tramitar = numerar
     /// los bultos (RP{envío}-{N}) y la etiqueta la genera la API. Sin seguimiento que consultar: los estados los pone el
     /// repartidor desde Ariadna (api/RepartoPropio). Con el interruptor Agencias:RepartoPropio apagado, no hay gestión remota
-    /// (Tramitar da el 400 de siempre).
+    /// (Tramitar da el 400 de siempre). Sugerencia 1329: <see cref="IPerfilConEstadosPropios"/>, porque esos estados del
+    /// repartidor llevan el envío a Entregado sin consultar a nadie (sí sale en Retrasados).
     /// </summary>
-    public class PerfilAgenciaRepartoPropio : IPerfilConGestionRemota, IPerfilSinCanalesExternos, IPerfilConPruebaEntrega
+    public class PerfilAgenciaRepartoPropio : IPerfilConGestionRemota, IPerfilSinCanalesExternos, IPerfilConPruebaEntrega, IPerfilConEstadosPropios
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
 

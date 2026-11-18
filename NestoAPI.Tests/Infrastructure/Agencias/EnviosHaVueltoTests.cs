@@ -310,6 +310,68 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 "Sin la tabla nada se da por esperando");
         }
 
+        // ===== Sugerencia 1329: Resuelto (la caja ha vuelto, hay decisión y, si es Reenviar, el reenvío ya ha salido) =====
+
+        [TestMethod]
+        public void Resuelto_SoloConCajaDecisionYReenvioTramitado()
+        {
+            Assert.IsTrue(ReglaDevueltoResuelto.EstaResuelto(true, DecisionesReenvio.ABONAR, false), "Abonar con la caja aquí: nada más que hacer en la lista");
+            Assert.IsTrue(ReglaDevueltoResuelto.EstaResuelto(true, DecisionesReenvio.REENVIAR, true), "el reenvío ya ha salido");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(true, DecisionesReenvio.REENVIAR, false), "falta imprimir/tramitar el reenvío");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(true, DecisionesReenvio.SIN_DECIDIR, false), "falta decidir");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(true, null, false), "sin decisión = sin decidir");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.ABONAR, false), "la caja no ha vuelto");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.REENVIAR, true), "la caja no ha vuelto");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, false),
+                "la regla aprobada pide la caja aquí: el que entregó la agencia sigue a la vista");
+            Assert.IsTrue(ReglaDevueltoResuelto.EstaResuelto(true, " Abonar  ", false), "la decisión viene con relleno de la BD");
+            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(null));
+        }
+
+        [TestMethod]
+        public void Combinar_CalculaResuelto_YSinLaTablaNadaLoEsta()
+        {
+            var listado = new List<EnvioAgenciaListadoDTO>
+            {
+                new EnvioAgenciaListadoDTO { Numero = 1, Estado = Constantes.Agencias.ESTADO_DEVUELTO, Fecha = new DateTime(2026, 11, 12) },
+                new EnvioAgenciaListadoDTO { Numero = 2, Estado = Constantes.Agencias.ESTADO_DEVUELTO, Fecha = new DateTime(2026, 11, 12) },
+                new EnvioAgenciaListadoDTO { Numero = 3, Estado = Constantes.Agencias.ESTADO_DEVUELTO, Fecha = new DateTime(2026, 11, 12) },
+                new EnvioAgenciaListadoDTO { Numero = 4, Estado = Constantes.Agencias.ESTADO_DEVUELTO, Fecha = new DateTime(2026, 11, 12) }
+            };
+            var decisiones = new Dictionary<int, RegistroReenvioEnvio>
+            {
+                [1] = new RegistroReenvioEnvio { EnvioOrigen = 1, Decision = DecisionesReenvio.ABONAR },
+                [2] = new RegistroReenvioEnvio { EnvioOrigen = 2, Decision = DecisionesReenvio.REENVIAR, EnvioNuevo = 12 },
+                [3] = new RegistroReenvioEnvio { EnvioOrigen = 3, Decision = DecisionesReenvio.REENVIAR, EnvioNuevo = 13 }
+            };
+            var estados = new Dictionary<int, short> { [12] = Constantes.Agencias.ESTADO_TRAMITADO, [13] = (short)Constantes.Agencias.ESTADO_PENDIENTE };
+            var vueltas = new Dictionary<int, RegistroHaVuelto>
+            {
+                [1] = new RegistroHaVuelto { Envio = 1 },
+                [2] = new RegistroHaVuelto { Envio = 2 },
+                [3] = new RegistroHaVuelto { Envio = 3 },
+                [4] = new RegistroHaVuelto { Envio = 4 }
+            };
+
+            List<EnvioDevueltoDTO> r = ServicioReenviosEnvio.Combinar(listado, decisiones, estados, vueltas);
+
+            CollectionAssert.AreEquivalent(new[] { 1, 2 }, r.Where(d => d.Resuelto).Select(d => d.Numero).ToArray(),
+                "3: el reenvío sigue en Pendientes; 4: sin decidir");
+            Assert.AreEqual(4, r.Count, "la API sigue devolviéndolos todos");
+            Assert.IsFalse(ServicioReenviosEnvio.Combinar(listado, decisiones, estados).Any(d => d.Resuelto),
+                "Sin la tabla de «ha vuelto» nada consta como vuelto: se ve todo, como antes");
+        }
+
+        [TestMethod]
+        public void Resuelto_ViajaEnElJson()
+        {
+            var d = new EnvioDevueltoDTO { HaVuelto = true, Decision = DecisionesReenvio.ABONAR };
+
+            Newtonsoft.Json.Linq.JObject json = Newtonsoft.Json.Linq.JObject.FromObject(d);
+
+            Assert.IsTrue((bool)json["Resuelto"]);
+        }
+
         [TestMethod]
         public void TextoReenvioCreado_SegunLaCajaHayaVuelto()
         {

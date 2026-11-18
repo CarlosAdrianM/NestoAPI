@@ -548,6 +548,13 @@ namespace NestoAPI.Controllers
         /// ASM y 952 de Correos Express) que nadie va a reclamar ya. Sin techo, el listado nacería
         /// con tres mil falsos positivos y no lo miraría nadie, que es la manera segura de que una
         /// pantalla así no sirva para nada.</para>
+        ///
+        /// <para><b>Solo agencias con seguimiento automático</b> (sugerencia 1329, 18/11/26): un envío de una agencia cuyo estado
+        /// no avanza solo (Canteras, sin integración) se queda en TRAMITADO aunque se haya entregado, y salía aquí sus 60 días
+        /// enteros. Ahora solo entran las agencias de <see cref="ReglaSeguimientoAutomaticoAgencia"/>: las que consulta el job de
+        /// seguimiento (las mismas de <see cref="SeguimientoEnviosJobsService"/>) más el reparto propio, cuyo repartidor cierra
+        /// los envíos desde Ariadna (si uno suyo sigue tramitado días después, es un retraso de verdad). Con
+        /// <paramref name="agencia"/> de una agencia sin seguimiento, la lista sale vacía.</para>
         /// </summary>
         /// <param name="diasUmbral">Días desde la salida a partir de los cuales interesa mirarlo (por defecto 3).</param>
         /// <param name="diasMaximo">Antigüedad máxima; más allá es residuo histórico (por defecto 60).</param>
@@ -571,11 +578,13 @@ namespace NestoAPI.Controllers
             DateTime hoy = DateTime.Today;
             DateTime salidaMasReciente = hoy.AddDays(-diasUmbral);
             DateTime salidaMasAntigua = hoy.AddDays(-diasMaximo);
+            List<int> conSeguimiento = LeerAgenciasConSeguimientoAutomatico().ToList();
 
             IQueryable<EnviosAgencia> query = db.EnviosAgencias
                 .Where(e => e.Estado == Constantes.Agencias.ESTADO_TRAMITADO
                             && e.Fecha <= salidaMasReciente
-                            && e.Fecha >= salidaMasAntigua);
+                            && e.Fecha >= salidaMasAntigua
+                            && conSeguimiento.Contains(e.Agencia));
             if (agencia.HasValue)
             {
                 query = query.Where(e => e.Agencia == agencia.Value);
@@ -619,6 +628,19 @@ namespace NestoAPI.Controllers
 
             return Ok(envios);
         }
+
+        /// <summary>
+        /// Sugerencia 1329: las agencias con seguimiento automático (<see cref="ReglaSeguimientoAutomaticoAgencia"/>). Sustituible
+        /// en los tests; null = las del job de seguimiento (<see cref="IFabricaAgenciasRemotas.AgenciasConSeguimiento"/>, con la
+        /// puerta de activas) más las de estados propios.
+        /// </summary>
+        internal Func<ISet<int>> AgenciasConSeguimientoAutomatico { get; set; }
+
+        private ISet<int> LeerAgenciasConSeguimientoAutomatico()
+            => AgenciasConSeguimientoAutomatico != null
+                ? AgenciasConSeguimientoAutomatico()
+                : ReglaSeguimientoAutomaticoAgencia.AgenciasConSeguimientoAutomatico(
+                    fabricaAgenciasRemotas.AgenciasConSeguimiento, ReglaSeguimientoAutomaticoAgencia.AgenciasConEstadosPropios);
 
         /// <summary>Días naturales transcurridos desde la salida. Internal para tests.</summary>
         internal static int DiasDesde(DateTime? fecha, DateTime hoy)

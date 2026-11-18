@@ -818,6 +818,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)
 - Shipping cost tracking through specific accounts
+- **Seguimiento automático y Retrasados (sugerencia 1329, 18/11/26)**: LA REGLA `ReglaSeguimientoAutomaticoAgencia`: una agencia tiene
+  seguimiento automático si la consulta el job de seguimiento (`IFabricaAgenciasRemotas.AgenciasConSeguimiento`: perfil con
+  `IPerfilConSeguimiento` + puerta de activas, sin cuarentena ni sombra; con perfil de seguimiento: GLS 1, Innovatrans 12 y CTT 13) o si su perfil declara
+  `IPerfilConEstadosPropios` (el reparto propio 14: el repartidor cierra los envíos desde Ariadna). `GET api/EnviosAgencias/Retrasados`
+  solo lista las de esa regla: Canteras (11), la GLS de la espejo (5), Glovo, Sending, CEX… no salen (se quedaban 60 días en Tramitado).
+  Ninguna agencia escrita a mano: la que tenga perfil con seguimiento entra sola.
+- **Devueltos: `Resuelto` (sugerencia 1329)**: `EnvioDevueltoDTO.Resuelto` (solo lectura, `ReglaDevueltoResuelto`) = la caja ha vuelto
+  (#870) + decisión tomada + (si es Reenviar) el reenvío ya tramitado. La API devuelve todos; Nesto oculta los resueltos por defecto
+  (casilla «Ver también los resueltos») y tiene una caja de lectura que llama a `POST api/EnviosAgencias/HaVuelto` {Codigo}.
 
 ## Testing Notes
 

@@ -36,6 +36,8 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
             controller = new EnviosAgenciasController(db);
             controller.MotivoPedidoRetenido = (e, p, rp) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
+            // Sugerencia 1329: las agencias con seguimiento automático (GLS, Innovatrans, CTT y el reparto propio), sin BD.
+            controller.AgenciasConSeguimientoAutomatico = () => new HashSet<int> { 1, 12, 13, Constantes.Agencias.AGENCIA_REPARTO_PROPIO };
         }
 
         private void ConEnvios(params EnviosAgencia[] envios)
@@ -655,6 +657,48 @@ namespace NestoAPI.Tests.Controllers
                 as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
             Assert.AreEqual(1, porVendedor.Content.Count);
             Assert.AreEqual(3, porVendedor.Content.Single().Numero);
+        }
+
+        [TestMethod]
+        public async Task Retrasados_LasAgenciasSinSeguimientoAutomaticoNoSalen()
+        {
+            // Sugerencia 1329: Canteras no tiene integración; su envío sigue TRAMITADO aunque ya se haya entregado.
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-10), agencia: Constantes.Agencias.AGENCIA_CANTERAS),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-10), agencia: Constantes.Agencias.AGENCIA_GLS),
+                EnvioConFecha(3, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-10), agencia: Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            CollectionAssert.AreEqual(new[] { 2 }, resultado.Content.Select(e => e.Numero).ToArray());
+        }
+
+        [TestMethod]
+        public async Task Retrasados_ElRepartoPropioSiSale()
+        {
+            // Sugerencia 1329: el repartidor cierra sus envíos desde Ariadna; si uno sigue tramitado días después, es un retraso.
+            DateTime hoy = DateTime.Today;
+            ConEnvios(EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-4), agencia: Constantes.Agencias.AGENCIA_REPARTO_PROPIO));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            Assert.AreEqual(1, resultado.Content.Single().Numero);
+        }
+
+        [TestMethod]
+        public async Task Retrasados_PidiendoUnaAgenciaSinSeguimiento_ListaVacia()
+        {
+            DateTime hoy = DateTime.Today;
+            ConEnvios(EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-10), agencia: Constantes.Agencias.AGENCIA_CANTERAS));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3, agencia: Constantes.Agencias.AGENCIA_CANTERAS)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
         }
 
         [TestMethod]
