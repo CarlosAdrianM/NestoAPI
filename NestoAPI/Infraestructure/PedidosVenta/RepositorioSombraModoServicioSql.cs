@@ -43,7 +43,7 @@ WHERE p.Empresa IN (@empresa, @espejo) AND p.Número IN ({0}) AND p.NºTraspaso 
 GROUP BY p.Número";
 
         internal const string SQL_ESTADOS = @"
-SELECT RTRIM(p.Número), p.Estado
+SELECT RTRIM(p.Número), p.Estado, RTRIM(p.Nombre)
 FROM Productos p WITH (NOLOCK)
 WHERE p.Empresa = @empresa AND p.Número IN ({0})";
 
@@ -63,6 +63,20 @@ SELECT RTRIM(k.Número), RTRIM(k.NúmeroAsociado), CAST(k.Cantidad AS int)
 FROM Kits k WITH (NOLOCK)
 WHERE k.Empresa = @empresa
   AND k.Número IN (SELECT a.Número FROM Kits a WITH (NOLOCK) WHERE a.Empresa = @empresa AND a.NúmeroAsociado IN ({0}))
+  AND NOT EXISTS (SELECT 1 FROM Kits m WITH (NOLOCK) INNER JOIN Productos pm WITH (NOLOCK) ON pm.Empresa = m.Empresa AND pm.Número = m.NúmeroAsociado
+                  WHERE m.Empresa = k.Empresa AND m.Número = k.Número AND pm.Grupo = '" + GRUPO_MATERIAS_PRIMAS + @"')";
+
+        /// <summary>
+        /// NestoAPI#606 (packs montables, 18/11/26): las filas de los kits que llevan algún COMPONENTE de los productos que son titulares
+        /// de un kit (las del propio pack y las de los demás packs que comparten componente), sin los de materias primas (MTP: fabricar no es
+        /// montar). Una sola consulta para toda la tanda.
+        /// </summary>
+        internal const string SQL_KITS_MONTAJE = @"
+SELECT RTRIM(k.Número), RTRIM(k.NúmeroAsociado), CAST(k.Cantidad AS int)
+FROM Kits k WITH (NOLOCK)
+WHERE k.Empresa = @empresa AND k.Número <> k.NúmeroAsociado
+  AND k.Número IN (SELECT b.Número FROM Kits b WITH (NOLOCK) WHERE b.Empresa = @empresa AND b.NúmeroAsociado IN (
+        SELECT a.NúmeroAsociado FROM Kits a WITH (NOLOCK) WHERE a.Empresa = @empresa AND a.Número IN ({0}) AND a.Número <> a.NúmeroAsociado))
   AND NOT EXISTS (SELECT 1 FROM Kits m WITH (NOLOCK) INNER JOIN Productos pm WITH (NOLOCK) ON pm.Empresa = m.Empresa AND pm.Número = m.NúmeroAsociado
                   WHERE m.Empresa = k.Empresa AND m.Número = k.Número AND pm.Grupo = '" + GRUPO_MATERIAS_PRIMAS + @"')";
 
@@ -160,7 +174,9 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
             {
                 if (conKits)
                 {
-                    LeerKits(conexion, datos, lista, enLista, empresa, pedidoExcluir);
+                    // NestoAPI#606 (packs montables): los componentes de los packs del pedido entran en la lectura general
+                    lista = LeerKits(conexion, datos, lista, enLista, empresa, pedidoExcluir);
+                    enLista = string.Join(", ", lista.Select((p, i) => "@p" + i));
                 }
                 Leer(conexion, SQL_STOCK, lista, enLista, empresa, pedidoExcluir, lector =>
                 {
@@ -188,6 +204,10 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
                     {
                         datos.Estados[ResumenStocksProductos.Clave(Cadena(lector, 0))] = lector.GetInt16(1);
                     }
+                    if (!lector.IsDBNull(2))
+                    {
+                        datos.Nombres[ResumenStocksProductos.Clave(Cadena(lector, 0))] = Cadena(lector, 2);
+                    }
                 });
                 Leer(conexion, SQL_COMPRAS, lista, enLista, empresa, pedidoExcluir, lector =>
                 {
@@ -214,10 +234,28 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
         /// NestoAPI#606 (kits): los kits con algún producto de la lista y el stock y los pendientes de esos kits (los que no
         /// están ya en la lista: esos los lee la consulta general). Solo stock y pendientes POR ALMACÉN: un kit no se compra ni
         /// se repone para esto, y no debe tocar el disponible de todas las sedes del resto de cuentas.
+        /// <para>NestoAPI#606 (packs montables, 18/11/26): y las filas de los kits que comparten componente con los productos de la lista que
+        /// son titulares de un kit (<see cref="DatosSombraModoServicio.KitsMontaje"/>). Devuelve la lista ampliada con los componentes de esos
+        /// packs, que se leen como cualquier producto (sus tiendas, sus compras y su estado deciden la fecha del pack si faltan en Algete).</para>
         /// </summary>
-        private static void LeerKits(SqlConnection conexion, DatosSombraModoServicio datos, List<string> lista, string enLista, string empresa,
+        private static List<string> LeerKits(SqlConnection conexion, DatosSombraModoServicio datos, List<string> lista, string enLista, string empresa,
             int? pedidoExcluir)
         {
+            Leer(conexion, SQL_KITS_MONTAJE, lista, enLista, empresa, pedidoExcluir, lector =>
+            {
+                int cantidad = lector.GetInt32(2);
+                if (cantidad > 0)
+                {
+                    datos.KitsMontaje.Add(new ComponenteKitFechaEntregaAgencia { Kit = Cadena(lector, 0), Componente = Cadena(lector, 1), Cantidad = cantidad });
+                }
+            });
+            List<string> ampliada = lista
+                .Concat(datos.KitsMontaje.Where(k => lista.Contains(k.Kit, StringComparer.OrdinalIgnoreCase)).Select(k => k.Componente))
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             Leer(conexion, SQL_KITS, lista, enLista, empresa, pedidoExcluir, lector =>
             {
                 int cantidad = lector.GetInt32(2);
@@ -227,18 +265,21 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
                 }
             });
             List<string> kits = datos.Kits.Select(k => k.Kit)
-                .Where(k => !string.IsNullOrWhiteSpace(k) && !lista.Contains(k, StringComparer.OrdinalIgnoreCase))
+                .Concat(datos.KitsMontaje.Select(k => k.Kit))
+                .Where(k => !string.IsNullOrWhiteSpace(k) && !ampliada.Contains(k, StringComparer.OrdinalIgnoreCase))
+                .Select(k => k.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (!kits.Any())
             {
-                return;
+                return ampliada;
             }
             string enListaKits = string.Join(", ", kits.Select((p, i) => "@p" + i));
             Leer(conexion, SQL_STOCK, kits, enListaKits, empresa, pedidoExcluir, lector =>
                 ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave(Cadena(lector, 0), Cadena(lector, 1)), lector.GetInt32(2)));
             Leer(conexion, SQL_PENDIENTES, kits, enListaKits, empresa, pedidoExcluir, lector =>
                 ResumenStocksProductos.Sumar(datos.Resumen.PendienteEntregarAlmacen, ResumenStocksProductos.Clave(Cadena(lector, 0), Cadena(lector, 1)), lector.GetInt32(2)));
+            return ampliada;
         }
 
         public void Guardar(FilaSombraModoServicio fila)

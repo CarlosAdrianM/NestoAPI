@@ -173,6 +173,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega.FechasOrientativa
             && partida.FechaOrientativa.HasValue
             && !partida.PedidoProveedorOrientativo.HasValue
             && !partida.FechaPrevistaProveedorOrientativo.HasValue
+            // NestoAPI#606 (packs montables): la de un pack que espera un componente no es suya (el pack no se compra)
+            && string.IsNullOrWhiteSpace(partida.ComponenteQueFalta)
             && !string.IsNullOrWhiteSpace(partida.Producto);
 
         /// <summary>Los productos sin pedir de los cálculos de los pedidos de venta pendientes (uno por producto).</summary>

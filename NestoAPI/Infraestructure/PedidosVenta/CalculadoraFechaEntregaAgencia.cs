@@ -56,6 +56,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public int? PedidoProveedorLejano { get; set; }
         /// <summary>NestoAPI#853 (caso 1): cuándo podría LLEGAR lo que aún no se ha pedido (<c>ReglaFechaOrientativaSinPedir</c>). Orientativa.</summary>
         public DateTime? LlegadaOrientativaSinPedir { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (packs montables, 18/11/26): unidades de un pack (titular de un kit) que se montan YA en Algete con sus componentes
+        /// libres. Salen como las libres: almacén las monta con el informe de kits de antes del picking (<see cref="BolsaMontajeAlgete"/>).
+        /// </summary>
+        public int Montaje { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (packs montables): unidades del pack que se montarán en Algete cuando lleguen los componentes que faltan
+        /// (<see cref="ComponentesMontaje"/>): su fecha es la del peor componente.
+        /// </summary>
+        public int MontajeConComponentes { get; set; }
+        /// <summary>NestoAPI#606 (packs montables): lo que falta de cada componente, ya repartido con las reglas de cualquier producto (un nivel).</summary>
+        public List<LineaFechaEntregaAgencia> ComponentesMontaje { get; set; }
+        /// <summary>NestoAPI#606 (packs montables): Productos.Nombre (solo en los componentes, para el texto).</summary>
+        public string Nombre { get; set; }
     }
 
     /// <summary>NestoAPI#606: todo lo que necesita <see cref="CalculadoraFechaEntregaAgencia"/>.</summary>
@@ -314,8 +328,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             resultado.EntregaCompleta = entregas.Any() && lotes.All(l => l.Enviado) ? entregas.Max : (DateTime?)null;
             resultado.Motivo = Motivo(entrada, resultado, lotes, avisos, esperoTiendas, esperoRegalos, fueANota, todoANota, diasCerrados);
             resultado.Desglose = Desglose(lotes);
+            // NestoAPI#606 (packs montables): el vencido de un componente se avisa con el componente, no con el pack
             resultado.ProveedorVencido = lotes
-                .Where(l => l.LlegadaSupuesta.HasValue && l.FechaProveedor.HasValue)
+                .Concat(lotes.SelectMany(l => l.LotesComponentes))
+                .Where(l => l.Origen != ORIGEN_MONTAJE && l.LlegadaSupuesta.HasValue && l.FechaProveedor.HasValue)
                 .GroupBy(l => l.Producto, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new ProveedorVencidoFechaEntregaAgencia
                 {
@@ -377,7 +393,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta,
                     x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha, x.Lote.ANota, x.Lote.ConSeguimientoAgencia, x.Lote.AgenciaSeguimiento, x.Lote.FechaOrientativa,
-                    x.Lote.PedidoProveedorOrientativo, x.Lote.FechaPrevistaOrientativa
+                    x.Lote.PedidoProveedorOrientativo, x.Lote.FechaPrevistaOrientativa, x.Lote.ComponenteQueFalta, x.Lote.NombreComponente, x.Lote.OrigenComponente
                 })
                 .Select(g => new PartidaFechaEntregaAgenciaDTO
                 {
@@ -397,7 +413,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     AgenciaSeguimiento = g.Key.AgenciaSeguimiento,
                     FechaOrientativa = g.Key.FechaOrientativa,
                     PedidoProveedorOrientativo = g.Key.PedidoProveedorOrientativo,
-                    FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa
+                    FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa,
+                    ComponenteQueFalta = g.Key.ComponenteQueFalta,
+                    NombreComponente = g.Key.NombreComponente,
+                    OrigenComponente = g.Key.OrigenComponente
                 })
                 .Select(p =>
                 {
@@ -422,6 +441,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 DateTime fechaLinea = linea.FechaEntrega.HasValue && linea.FechaEntrega.Value > DateTime.MinValue ? linea.FechaEntrega.Value : hoy;
                 DateTime elegible = GestorPedidosVenta.FechaEntregaAjustada(fechaLinea, entrada.Ruta, Constantes.Almacenes.ALGETE,
                     entrada.Ahora, entrada.HoraCorte, esFestivo, entrada.DiaRutaInterna);
+                lotes.AddRange(LotesDeLinea(linea, elegible, entrada, hoy, reposicionPorTienda));
+            }
+            return lotes;
+        }
+
+        /// <summary>
+        /// Los lotes de una línea, en el orden de siempre: picking; libres en Algete; desmontando kits; montando el pack en Algete
+        /// (NestoAPI#606, packs montables); tiendas; en camino; proveedor; el pack que espera a sus componentes; sin fecha. Lo usan también los
+        /// componentes de un pack (la misma regla para cualquier producto).
+        /// </summary>
+        private List<Lote> LotesDeLinea(LineaFechaEntregaAgencia linea, DateTime elegible, EntradaFechaEntregaAgencia entrada, DateTime hoy,
+            Dictionary<string, ProximaReposicionDTO> reposicionPorTienda)
+        {
+            var lotes = new List<Lote>();
+            {
                 bool regalo = linea.BaseImponible == 0;
                 string producto = linea.Producto?.Trim();
 
@@ -445,7 +479,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Lote lote = Nuevo(linea.Cantidad, hoy, ORIGEN_PICKING);
                     lote.YaEnPicking = true;
                     lotes.Add(lote);
-                    continue;
+                    return lotes;
                 }
 
                 int resto = linea.Cantidad;
@@ -470,6 +504,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         lote.Kit = kit.Key?.Trim();
                         lotes.Add(lote);
                     }
+                }
+                // NestoAPI#606 (packs montables): se monta en Algete con sus componentes libres: sale como lo libre
+                int montaje = Tomar(linea.Montaje);
+                if (montaje > 0)
+                {
+                    lotes.Add(Nuevo(montaje, hoy, ORIGEN_MONTAJE));
                 }
                 foreach (KeyValuePair<string, int> tienda in (linea.EnTiendas ?? new Dictionary<string, int>()).OrderBy(t => t.Key))
                 {
@@ -536,6 +576,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         lotes.Add(Nuevo(proveedor, null, ORIGEN_PROVEEDOR, sinFecha: "el pedido al proveedor no tiene fecha prevista"));
                     }
                 }
+                // NestoAPI#606 (packs montables): lo que se monta cuando lleguen los componentes que faltan
+                int conComponentes = Tomar(linea.MontajeConComponentes);
+                if (conComponentes > 0)
+                {
+                    lotes.Add(LoteMontajeConComponentes(Nuevo(conComponentes, null, ORIGEN_MONTAJE), linea, elegible, entrada, hoy, reposicionPorTienda));
+                }
                 if (resto > 0)
                 {
                     Lote lote = Nuevo(resto, null, ORIGEN_SIN_STOCK, sinFecha: string.IsNullOrWhiteSpace(linea.MotivoSinFecha)
@@ -545,6 +591,67 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
             }
             return lotes;
+        }
+
+        /// <summary>
+        /// NestoAPI#606 (packs montables, 18/11/26): el pack que espera componentes sale el día del PEOR componente, calculado con las reglas de
+        /// cualquier producto (<see cref="LotesDeLinea"/>: tienda → reposición, proveedor → su llegada, sin stock → sin fecha y orientativa). Con
+        /// fecha: <see cref="ORIGEN_MONTAJE"/> con el componente que manda y su origen; sin fecha: <see cref="ORIGEN_SIN_STOCK"/> nombrando el
+        /// componente. Un solo nivel.
+        /// </summary>
+        private Lote LoteMontajeConComponentes(Lote lote, LineaFechaEntregaAgencia linea, DateTime elegible, EntradaFechaEntregaAgencia entrada, DateTime hoy,
+            Dictionary<string, ProximaReposicionDTO> reposicionPorTienda)
+        {
+            var componentes = (linea.ComponentesMontaje ?? new List<LineaFechaEntregaAgencia>())
+                .Where(c => c != null && c.Cantidad > 0)
+                .Select(c =>
+                {
+                    List<Lote> suyos = LotesDeLinea(c, elegible, entrada, hoy, reposicionPorTienda);
+                    bool sinFecha = suyos.Any(l => !l.Disponible.HasValue);
+                    Lote manda = sinFecha
+                        ? suyos.First(l => !l.Disponible.HasValue)
+                        : suyos.OrderByDescending(l => l.Disponible.Value).ThenByDescending(l => Array.IndexOf(PartidaFechaEntregaAgenciaDTO.ORDEN_ORIGENES, l.Origen)).First();
+                    return new { Linea = c, Lotes = suyos, SinFecha = sinFecha, Manda = manda };
+                })
+                .ToList();
+            lote.LotesComponentes = componentes.SelectMany(c => c.Lotes).ToList();
+            lote.DeTienda = lote.LotesComponentes.Any(l => l.DeTienda);
+            if (!componentes.Any())
+            {
+                lote.Origen = ORIGEN_SIN_STOCK;
+                lote.MotivoSinFecha = "no hay stock ni fecha de llegada";
+                return lote;
+            }
+            var peor = componentes.FirstOrDefault(c => c.SinFecha)
+                ?? componentes.OrderByDescending(c => c.Manda.Disponible.Value).First();
+            lote.ComponenteQueFalta = peor.Linea.Producto?.Trim();
+            lote.NombreComponente = peor.Linea.Nombre;
+            lote.OrigenComponente = peor.Manda.Origen;
+            if (peor.SinFecha)
+            {
+                lote.Origen = ORIGEN_SIN_STOCK;
+                lote.Disponible = null;
+                lote.MotivoSinFecha = $"para montarlo en Algete falta {MontajeKits.Componente(new PartidaFechaEntregaAgenciaDTO { ComponenteQueFalta = lote.ComponenteQueFalta, NombreComponente = lote.NombreComponente })}" +
+                    $": {peor.Manda.MotivoSinFecha ?? "no hay stock ni fecha de llegada"}";
+                // Orientativa: la peor de los componentes, solo si todos tienen alguna (fecha u orientativa)
+                DateTime? Orientativa(List<Lote> suyos)
+                {
+                    List<Lote> sinFecha = suyos.Where(l => !l.Disponible.HasValue).ToList();
+                    return sinFecha.All(l => l.FechaOrientativa.HasValue) ? sinFecha.Max(l => l.FechaOrientativa) : null;
+                }
+                List<DateTime?> fechas = componentes.Select(c => c.SinFecha ? Orientativa(c.Lotes) : c.Manda.Disponible).ToList();
+                lote.FechaOrientativa = fechas.All(f => f.HasValue) ? fechas.Max() : null;
+                return lote;
+            }
+            lote.Disponible = peor.Manda.Disponible;
+            lote.Tienda = peor.Manda.Tienda;
+            lote.LlegaAAlgete = peor.Manda.LlegaAAlgete;
+            lote.FechaProveedor = peor.Manda.FechaProveedor;
+            lote.LlegadaSupuesta = peor.Manda.LlegadaSupuesta;
+            lote.PedidoProveedor = peor.Manda.PedidoProveedor;
+            lote.ConSeguimientoAgencia = peor.Manda.ConSeguimientoAgencia;
+            lote.AgenciaSeguimiento = peor.Manda.AgenciaSeguimiento;
+            return lote;
         }
 
         /// <summary>
@@ -648,7 +755,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .GroupBy(l => new
                 {
                     l.Origen, l.Producto, l.Tienda, l.Kit, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha, l.PedidoProveedor,
-                    l.ConSeguimientoAgencia, l.AgenciaSeguimiento, l.FechaOrientativa, l.PedidoProveedorOrientativo, l.FechaPrevistaOrientativa
+                    l.ConSeguimientoAgencia, l.AgenciaSeguimiento, l.FechaOrientativa, l.PedidoProveedorOrientativo, l.FechaPrevistaOrientativa,
+                    l.ComponenteQueFalta, l.NombreComponente, l.OrigenComponente, l.LlegaAAlgete
                 })
                 .Select(g => new
                 {
@@ -667,7 +775,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         AgenciaSeguimiento = g.Key.AgenciaSeguimiento,
                         FechaOrientativa = g.Key.FechaOrientativa,
                         PedidoProveedorOrientativo = g.Key.PedidoProveedorOrientativo,
-                        FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa
+                        FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa,
+                        Producto = g.Key.Producto,
+                        MotivoSinFecha = g.Key.MotivoSinFecha,
+                        Tienda = g.Key.Tienda,
+                        LlegaAAlgete = g.Key.LlegaAAlgete,
+                        ComponenteQueFalta = g.Key.ComponenteQueFalta,
+                        NombreComponente = g.Key.NombreComponente,
+                        OrigenComponente = g.Key.OrigenComponente
                     }
                 })
                 .ToList();
@@ -681,6 +796,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     case ORIGEN_KIT:
                         frases.Add($"{cuantas} desmontando el kit {g.Kit} en Algete: puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
+                        break;
+                    case ORIGEN_MONTAJE when string.IsNullOrWhiteSpace(g.Partida.ComponenteQueFalta):
+                        // NestoAPI#606 (packs montables): almacén lo monta con el informe de kits de antes del picking
+                        frases.Add($"{cuantas} se monta{n} en Algete con sus componentes: puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
+                        break;
+                    case ORIGEN_MONTAJE:
+                        string calificativo = TextosCertezaFechaEntrega.Calificativo(g.Partida);
+                        frases.Add($"{cuantas} se monta{n} en Algete cuando llegue {MontajeKits.Componente(g.Partida)}, que " +
+                            $"{MontajeKits.LlegadaComponente(g.Partida, DiaCortoHoy)}: puede{n} salir el {Dia(g.Disponible.Value, hoy)}" +
+                            (calificativo == null ? "." : $" ({calificativo})."));
                         break;
                     case ORIGEN_TIENDA:
                         frases.Add($"{cuantas} en {NombreAlmacen(g.Tienda)}: llega{n} con la reposición y puede{n} salir el {Dia(g.Disponible.Value, hoy)} " +
@@ -804,6 +929,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private const string ORIGEN_PICKING = PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING;
         private const string ORIGEN_ALGETE = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE;
         private const string ORIGEN_KIT = PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT;
+        private const string ORIGEN_MONTAJE = PartidaFechaEntregaAgenciaDTO.ORIGEN_MONTAJE;
         private const string ORIGEN_TIENDA = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA;
         private const string ORIGEN_EN_CAMINO = PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO;
         private const string ORIGEN_PROVEEDOR = PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR;
@@ -839,6 +965,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public DateTime? FechaOrientativa { get; set; }
             public int? PedidoProveedorOrientativo { get; set; }
             public DateTime? FechaPrevistaOrientativa { get; set; }
+            /// <summary>NestoAPI#606 (packs montables): el componente del que depende la fecha del pack, su nombre y su origen.</summary>
+            public string ComponenteQueFalta { get; set; }
+            public string NombreComponente { get; set; }
+            public string OrigenComponente { get; set; }
+            /// <summary>NestoAPI#606 (packs montables): los lotes de los componentes que faltan (no son del pedido: solo explican la fecha).</summary>
+            public List<Lote> LotesComponentes { get; set; } = new List<Lote>();
             public bool Enviado { get; set; }
             /// <summary>Facturado «todo ahora» y pasado a la nota de entrega sin fecha.</summary>
             public bool ANota { get; set; }

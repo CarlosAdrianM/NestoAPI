@@ -53,6 +53,13 @@ namespace NestoAPI.Models.PedidosVenta
         public const string ORIGEN_ALGETE = "Algete";
         /// <summary>NestoAPI#606 (kits, 13/10/26): desmontando un kit libre en Algete que lo lleva (sale como lo libre).</summary>
         public const string ORIGEN_KIT = "Kit";
+        /// <summary>
+        /// NestoAPI#606 (packs montables, 18/11/26): el producto es el titular de un kit (un pack) que se MONTA en Algete con sus
+        /// componentes. Sin <see cref="ComponenteQueFalta"/>: los componentes están libres en Algete y sale como lo libre (almacén
+        /// lo monta con el informe de kits de antes del picking). Con él: espera a ese componente, que llega por su propio origen
+        /// (<see cref="OrigenComponente"/>, con sus datos en <see cref="Tienda"/>, <see cref="LlegaAAlgete"/>, <see cref="FechaPrevistaProveedor"/>…).
+        /// </summary>
+        public const string ORIGEN_MONTAJE = "Montaje";
         /// <summary>En una tienda: llega con su próxima reposición.</summary>
         public const string ORIGEN_TIENDA = "Tienda";
         /// <summary>Ya viene de camino desde una tienda (reposición generada y sin recibir).</summary>
@@ -62,7 +69,7 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>Sin stock ni fecha de llegada.</summary>
         public const string ORIGEN_SIN_STOCK = "SinStock";
         /// <summary>El orden en que se explican.</summary>
-        public static readonly string[] ORDEN_ORIGENES = { ORIGEN_PICKING, ORIGEN_ALGETE, ORIGEN_KIT, ORIGEN_TIENDA, ORIGEN_EN_CAMINO, ORIGEN_PROVEEDOR, ORIGEN_SIN_STOCK };
+        public static readonly string[] ORDEN_ORIGENES = { ORIGEN_PICKING, ORIGEN_ALGETE, ORIGEN_KIT, ORIGEN_MONTAJE, ORIGEN_TIENDA, ORIGEN_EN_CAMINO, ORIGEN_PROVEEDOR, ORIGEN_SIN_STOCK };
 
         public string Origen { get; set; }
         public string Producto { get; set; }
@@ -71,6 +78,18 @@ namespace NestoAPI.Models.PedidosVenta
         public string Tienda { get; set; }
         /// <summary>Solo <see cref="ORIGEN_KIT"/>: el kit que se desmonta.</summary>
         public string Kit { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (packs montables): solo <see cref="ORIGEN_MONTAJE"/> (o <see cref="ORIGEN_SIN_STOCK"/> de un pack): el componente que
+        /// no está en Algete y del que depende la fecha (el peor). Null = todos los componentes están en Algete.
+        /// </summary>
+        public string ComponenteQueFalta { get; set; }
+        /// <summary>NestoAPI#606 (packs montables): el nombre de <see cref="ComponenteQueFalta"/> (Productos.Nombre), si se conoce.</summary>
+        public string NombreComponente { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (packs montables): de dónde llega <see cref="ComponenteQueFalta"/> (<see cref="ORIGEN_TIENDA"/>,
+        /// <see cref="ORIGEN_EN_CAMINO"/>, <see cref="ORIGEN_PROVEEDOR"/> o <see cref="ORIGEN_SIN_STOCK"/>).
+        /// </summary>
+        public string OrigenComponente { get; set; }
         /// <summary>Solo <see cref="ORIGEN_TIENDA"/>: día y hora a la que suele llegar a Algete la reposición que lo trae.</summary>
         public DateTime? LlegaAAlgete { get; set; }
         /// <summary>Primer día en que puede salir a la agencia. Null = sin fecha.</summary>

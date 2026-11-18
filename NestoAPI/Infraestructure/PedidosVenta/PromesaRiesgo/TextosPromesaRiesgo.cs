@@ -228,7 +228,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             foreach (PartidaFechaEntregaAgenciaDTO p in culpables)
             {
                 string clave = string.Join("|", p.Origen, p.Tienda?.Trim(), D(p.PuedeSalirEl), D(p.FechaPrevistaProveedor), p.LlegadaSupuesta.HasValue,
-                    D(p.FechaOrientativa), D(p.FechaPrevistaProveedorOrientativo), p.PedidoProveedorOrientativo.HasValue, D(p.LlegaAAlgete), p.Kit?.Trim());
+                    D(p.FechaOrientativa), D(p.FechaPrevistaProveedorOrientativo), p.PedidoProveedorOrientativo.HasValue, D(p.LlegaAAlgete), p.Kit?.Trim(),
+                    p.ComponenteQueFalta?.Trim(), p.OrigenComponente);
                 if (!grupos.TryGetValue(clave, out Grupo g))
                 {
                     g = new Grupo { Primera = p, Orden = p.PuedeSalirEl ?? p.FechaOrientativa ?? DateTime.MaxValue };
@@ -315,6 +316,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                     return $"llega{n} {ElDia(p.FechaPrevistaProveedor.Value, hoy)} del proveedor";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK:
+                    if (!string.IsNullOrWhiteSpace(p.ComponenteQueFalta))
+                    {
+                        // NestoAPI#606 (packs montables): el pack espera un componente sin fecha
+                        return $"para montarlo falta el componente {p.ComponenteQueFalta.Trim()}, sin fecha de llegada";
+                    }
                     if (p.FechaPrevistaProveedorOrientativo.HasValue)
                     {
                         return $"el proveedor lo{s} trae hacia {ElDia(p.FechaPrevistaProveedorOrientativo.Value, hoy)}";
@@ -322,6 +328,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     return p.FechaOrientativa.HasValue ? $"aún no está{n} pedido{s} al proveedor" : "no hay stock ni pedido al proveedor";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:
                     return "hay que desmontar un kit en Algete";
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_MONTAJE:
+                    // NestoAPI#606 (packs montables): con todo en Algete, montarlo; si espera un componente, lo que dice ese componente
+                    PartidaFechaEntregaAgenciaDTO componente = MontajeKits.ComoComponente(p);
+                    return componente == null
+                        ? "hay que montarlo en Algete"
+                        : $"para montarlo falta el componente {p.ComponenteQueFalta.Trim()}, que {FraseLarga(componente, false, hoy)}";
                 default:
                     return $"no está{n} en Algete";
             }
@@ -346,6 +358,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                     return p.LlegadaSupuesta.HasValue ? "del proveedor, con retraso" : Con("del proveedor", p.FechaPrevistaProveedor);
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK:
+                    if (!string.IsNullOrWhiteSpace(p.ComponenteQueFalta))
+                    {
+                        return $"falta el componente {p.ComponenteQueFalta.Trim()}, sin fecha";
+                    }
                     if (p.FechaPrevistaProveedorOrientativo.HasValue)
                     {
                         return Con("del proveedor", p.FechaPrevistaProveedorOrientativo);
@@ -353,6 +369,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     return p.FechaOrientativa.HasValue ? "sin pedir al proveedor" : "sin stock ni pedido";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:
                     return Con("de un kit", p.PuedeSalirEl);
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_MONTAJE:
+                    PartidaFechaEntregaAgenciaDTO componente = MontajeKits.ComoComponente(p);
+                    return componente == null
+                        ? Con($"se monta{n} en Algete", p.PuedeSalirEl)
+                        : $"falta el componente {p.ComponenteQueFalta.Trim()}: {FraseCorta(componente, false, hoy)}";
                 default:
                     return "fuera de Algete";
             }

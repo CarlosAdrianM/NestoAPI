@@ -9,7 +9,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// (<c>GestorPresupuestos.GenerarHtmlFechaEntregaAgencia</c>) y la promesa en riesgo (<see cref="TextosPromesaRiesgo"/>). Cada uno
     /// formatea los días a su manera (<paramref name="dia"/> en cada método).
     /// <list type="bullet">
-    /// <item>Segura: sale de Algete (picking, libre, kit).</item>
+    /// <item>Segura: sale de Algete (picking, libre, kit, pack que se monta con sus componentes en Algete). Un pack que espera un
+    /// componente tiene la certeza de ese componente (<see cref="MontajeKits.ComoComponente"/>).</item>
     /// <item>Prácticamente segura: en una tienda o de camino desde ella; pedido a proveedor ya enviado con seguimiento de la agencia.</item>
     /// <item>Aproximada: pedido a proveedor con fecha prevista y sin seguimiento (también con la prevista vencida).</item>
     /// <item>Orientativa: sin fecha, con la estimación de <see cref="PartidaFechaEntregaAgenciaDTO.FechaOrientativa"/> (no es un compromiso).</item>
@@ -39,6 +40,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE:
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:
                     return PartidaFechaEntregaAgenciaDTO.CERTEZA_SEGURA;
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_MONTAJE:
+                    // NestoAPI#606 (packs montables): con los componentes en Algete, segura; si espera uno, la certeza de ese componente
+                    PartidaFechaEntregaAgenciaDTO componente = MontajeKits.ComoComponente(p);
+                    return componente == null ? PartidaFechaEntregaAgenciaDTO.CERTEZA_SEGURA : Certeza(componente);
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA:
                     return p.PuedeSalirEl.HasValue ? PartidaFechaEntregaAgenciaDTO.CERTEZA_CASI_SEGURA : Orientativa(p);
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO:
@@ -132,6 +137,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         return null;
                     }
                     return p.ConSeguimientoAgencia ? TEXTO_CASI_SEGURA : TEXTO_APROXIMADA;
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_MONTAJE:
+                    PartidaFechaEntregaAgenciaDTO componente = MontajeKits.ComoComponente(p);
+                    return componente == null ? null : Calificativo(componente);
                 default:
                     return null;
             }
@@ -169,6 +177,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return null;
             }
             string estimacion = $"estimamos que podría salir sobre el {dia(p.FechaOrientativa.Value)} ({TEXTO_ORIENTATIVA})";
+            if (!string.IsNullOrWhiteSpace(p.ComponenteQueFalta))
+            {
+                // NestoAPI#606 (packs montables): el pack espera un componente sin fecha
+                return $"para montarlo en Algete falta {MontajeKits.Componente(p)}, aún sin fecha de llegada; {estimacion}";
+            }
             if (p.PedidoProveedorOrientativo.HasValue || p.FechaPrevistaProveedorOrientativo.HasValue)
             {
                 string pedido = p.PedidoProveedorOrientativo.HasValue ? $"el pedido a proveedor {p.PedidoProveedorOrientativo.Value}" : "el pedido al proveedor";

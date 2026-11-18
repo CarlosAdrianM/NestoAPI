@@ -1212,6 +1212,7 @@
     <Compile Include="Infraestructure\PedidosVenta\RepositorioDiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FechasFuturasPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AvisoClienteCierraDiaReparto.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\MontajeKitsAlgete.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioFechaEntregaAgencia.cs" />

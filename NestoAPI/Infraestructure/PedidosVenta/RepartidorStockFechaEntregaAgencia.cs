@@ -24,9 +24,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// NestoAPI#606: de dónde sale cada unidad de las líneas de Algete, con el stock leído para la sombra del modo de
     /// servicio (<see cref="DatosSombraModoServicio"/>, pendientes SIN el propio pedido) y el MISMO reparto por causas que
     /// usa el sugeridor (<see cref="ClasificadorCausasModoServicio.ClasificarLinea"/>, #563): libres en Algete → desmontando un
-    /// kit libre en Algete que lo lleve (<see cref="BolsaKitsAlgete"/>, 13/10/26) → tiendas →
+    /// kit libre en Algete que lo lleve (<see cref="BolsaKitsAlgete"/>, 13/10/26) → montando el pack en Algete con sus componentes
+    /// libres (<see cref="BolsaMontajeAlgete"/>, 18/11/26) → tiendas →
     /// pedido a proveedor enviado (con su fecha prevista, si no pasa de
-    /// <see cref="ClasificadorCausasModoServicio.DIAS_MAXIMOS_EN_CAMINO"/> días) → sobre pedido / sin fecha.
+    /// <see cref="ClasificadorCausasModoServicio.DIAS_MAXIMOS_EN_CAMINO"/> días) → (de un pack) cuando lleguen los componentes que
+    /// faltan, repartidos con estas mismas reglas (<see cref="LineaFechaEntregaAgencia.ComponentesMontaje"/>) → sobre pedido / sin fecha.
     ///
     /// <para>Lo de las tiendas se reparte entre Reina y Alcobendas según las unidades libres de cada una (stock − sus
     /// pendientes), empezando por la tienda cuya reposición deja salir antes el pedido (la que se lo lleva primero); lo
@@ -48,6 +50,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public static List<LineaFechaEntregaAgencia> Repartir(IEnumerable<LineaPedidoFechaEntregaAgencia> lineas, DatosSombraModoServicio datos,
             IEnumerable<string> tiendasPorOrden, DateTime hoy, IReadOnlyDictionary<LineaPedidoFechaEntregaAgencia, int> enAlgetePorAntiguedad = null)
         {
+            return Repartir(lineas, datos, tiendasPorOrden, hoy, enAlgetePorAntiguedad, conKits: true, descontarDisponible: null);
+        }
+
+        /// <param name="conKits">False en los componentes de un pack que faltan: un solo nivel (ni se desmonta ni se monta nada para ellos).</param>
+        /// <param name="descontarDisponible">Producto → unidades que se quitan de su disponible de todas las sedes (las libres de Algete de un
+        /// componente, que ya se han contado para montar: lo que falta no puede «estar en las tiendas» por tenerlo Algete).</param>
+        private static List<LineaFechaEntregaAgencia> Repartir(IEnumerable<LineaPedidoFechaEntregaAgencia> lineas, DatosSombraModoServicio datos,
+            IEnumerable<string> tiendasPorOrden, DateTime hoy, IReadOnlyDictionary<LineaPedidoFechaEntregaAgencia, int> enAlgetePorAntiguedad,
+            bool conKits, IReadOnlyDictionary<string, int> descontarDisponible)
+        {
             datos = datos ?? new DatosSombraModoServicio();
             List<string> tiendas = (tiendasPorOrden ?? TIENDAS).ToList();
             var fuente = new FuenteDatosCausasSombra(datos);
@@ -55,7 +67,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .Where(l => l != null && !string.IsNullOrWhiteSpace(l.Producto) && l.Cantidad > 0 && EsDeAlgete(l.Almacen))
                 .ToList();
             var repartidas = new Dictionary<LineaPedidoFechaEntregaAgencia, LineaFechaEntregaAgencia>();
-            var kits = new BolsaKitsAlgete(datos, deAlgete);
+            BolsaKitsAlgete kits = conKits ? new BolsaKitsAlgete(datos, deAlgete) : null;
+            // NestoAPI#606 (packs montables, 18/11/26): los packs del pedido que se montan en Algete con sus componentes
+            BolsaMontajeAlgete montaje = conKits ? new BolsaMontajeAlgete(datos, deAlgete) : null;
 
             foreach (IGrouping<string, LineaPedidoFechaEntregaAgencia> grupo in deAlgete.GroupBy(l => ResumenStocksProductos.Clave(l.Producto)))
             {
@@ -68,19 +82,45 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     // de causas (kits, tiendas, proveedor, sobre pedido) se clasifica igual que antes.
                     datosProducto = ConLibresEnAlgete(datosProducto, grupo.Sum(l => EnAlgete(enAlgetePorAntiguedad, l)));
                 }
+                if (descontarDisponible != null && descontarDisponible.TryGetValue(ResumenStocksProductos.Clave(producto), out int descontar) && descontar > 0)
+                {
+                    datosProducto = ConDisponibleTodos(datosProducto, datosProducto.DisponibleTodos - descontar);
+                }
                 CausasLineaModoServicio causas = ClasificadorCausasModoServicio.ClasificarLinea(producto, Constantes.Almacenes.ALGETE,
                     cantidad, datosProducto, hoy);
 
                 // NestoAPI#606 (kits, Carlos 13/10/26, pedido 928288): lo que falta en Algete puede salir desmontando un kit que
                 // lo lleve y esté libre en Algete, antes que de las tiendas o del proveedor. El resto se vuelve a clasificar sin
                 // esas unidades (las libres no cambian: el kit solo cubre lo que faltaba).
-                Dictionary<string, int> deKitsGrupo = causas.Faltan > 0 ? kits.Tomar(producto, causas.Faltan) : new Dictionary<string, int>();
+                Dictionary<string, int> deKitsGrupo = causas.Faltan > 0 && kits != null ? kits.Tomar(producto, causas.Faltan) : new Dictionary<string, int>();
                 int deKits = deKitsGrupo.Values.Sum();
                 if (deKits > 0)
                 {
                     causas = ClasificadorCausasModoServicio.ClasificarLinea(producto, Constantes.Almacenes.ALGETE, cantidad - deKits, datosProducto, hoy);
                 }
                 List<KeyValuePair<string, int>> porKit = deKitsGrupo.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase).ToList();
+
+                // NestoAPI#606 (packs montables, 18/11/26, caso 44376): lo que sigue faltando de un pack se MONTA en Algete si sus componentes
+                // están libres allí (antes que traer el pack de una tienda). El resto se vuelve a clasificar sin esas unidades.
+                bool esPack = montaje != null && montaje.EsMontable(producto);
+                int montados = esPack ? montaje.Montar(producto, causas.Faltan) : 0;
+                if (montados > 0)
+                {
+                    causas = ClasificadorCausasModoServicio.ClasificarLinea(producto, Constantes.Almacenes.ALGETE, cantidad - deKits - montados, datosProducto, hoy);
+                }
+                // Lo que de un pack queda sin fecha depende de sus componentes: cada uno con sus propias reglas (tienda, proveedor, sin stock).
+                int conComponentes = 0;
+                List<LineaFechaEntregaAgencia> componentesQueFaltan = null;
+                int packsSinFecha = causas.SobrePedido + causas.SinFecha;
+                if (esPack && packsSinFecha > 0)
+                {
+                    List<ComponenteKitFechaEntregaAgencia> faltanComponentes = montaje.Faltan(producto, packsSinFecha);
+                    if (faltanComponentes.Any())
+                    {
+                        conComponentes = packsSinFecha;
+                        componentesQueFaltan = RepartirComponentes(faltanComponentes, datos, tiendas, hoy, grupo.First().FechaEntrega);
+                    }
+                }
 
                 int libres = causas.Libres;
                 int paraTiendas = causas.Tiendas;
@@ -154,6 +194,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                             repartida.DeKits[porKit[i].Key] = unidades;
                         }
                     }
+                    repartida.Montaje = Tomar(ref montados);
                     for (int i = 0; i < porTienda.Count && resto > 0; i++)
                     {
                         int bolsa = porTienda[i].Value;
@@ -166,6 +207,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                     repartida.EnCaminoDeTiendas = Tomar(ref enCamino);
                     repartida.DelProveedor = Tomar(ref delProveedor);
+                    repartida.MontajeConComponentes = Tomar(ref conComponentes);
+                    if (repartida.MontajeConComponentes > 0)
+                    {
+                        repartida.ComponentesMontaje = componentesQueFaltan;
+                    }
                     repartidas[linea] = repartida;
                 }
             }
@@ -275,6 +321,53 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 return tomadas;
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#606 (packs montables): los componentes que faltan en Algete para montar un pack, repartidos con las MISMAS reglas que
+        /// cualquier producto (tiendas, en camino, proveedor, sin fecha), sin nada libre en Algete (lo libre ya cuenta para el montaje) y sin
+        /// kits (un solo nivel). Con su nombre, para el texto.
+        /// </summary>
+        private static List<LineaFechaEntregaAgencia> RepartirComponentes(List<ComponenteKitFechaEntregaAgencia> faltan, DatosSombraModoServicio datos,
+            List<string> tiendas, DateTime hoy, DateTime? fechaEntrega)
+        {
+            List<LineaPedidoFechaEntregaAgencia> virtuales = faltan
+                .Select(c => new LineaPedidoFechaEntregaAgencia
+                {
+                    Producto = c.Componente,
+                    Almacen = Constantes.Almacenes.ALGETE,
+                    Cantidad = c.Cantidad,
+                    BaseImponible = 1,
+                    FechaEntrega = fechaEntrega
+                })
+                .ToList();
+            var sinNadaEnAlgete = virtuales.ToDictionary(v => v, v => 0);
+            var libresAlgete = new Dictionary<string, int>();
+            foreach (LineaPedidoFechaEntregaAgencia v in virtuales)
+            {
+                string clave = ResumenStocksProductos.Clave(v.Producto, Constantes.Almacenes.ALGETE);
+                libresAlgete[ResumenStocksProductos.Clave(v.Producto)] = Math.Max(0, ResumenStocksProductos.Valor(datos.Resumen.StockAlmacen, clave)
+                    - ResumenStocksProductos.Valor(datos.Resumen.PendienteEntregarAlmacen, clave));
+            }
+            List<LineaFechaEntregaAgencia> repartidas = Repartir(virtuales, datos, tiendas, hoy, sinNadaEnAlgete, conKits: false, descontarDisponible: libresAlgete);
+            foreach (LineaFechaEntregaAgencia componente in repartidas)
+            {
+                componente.Nombre = datos.Nombres.TryGetValue(ResumenStocksProductos.Clave(componente.Producto), out string nombre) ? nombre?.Trim() : null;
+            }
+            return repartidas;
+        }
+
+        private static DatosStockCausaModoServicio ConDisponibleTodos(DatosStockCausaModoServicio datos, int disponibleTodos)
+        {
+            return new DatosStockCausaModoServicio
+            {
+                StockAlmacen = datos.StockAlmacen,
+                PendientesAlmacen = datos.PendientesAlmacen,
+                DisponibleTodos = disponibleTodos,
+                EstadoProducto = datos.EstadoProducto,
+                PendienteRecibir = datos.PendienteRecibir,
+                FechaPrevista = datos.FechaPrevista
+            };
         }
 
         /// <summary>NestoAPI#730: lo que le toca a la línea en Algete por antigüedad (nunca más que su cantidad).</summary>

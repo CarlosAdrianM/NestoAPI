@@ -59,6 +59,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
             {
                 return null;
             }
+            // NestoAPI#606 (packs montables): un pack que espera un componente cuenta como ese componente
+            PartidaFechaEntregaAgenciaDTO componente = MontajeKits.ComoComponente(partida);
+            if (componente != null)
+            {
+                return De(componente);
+            }
             return partida.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR && partida.ConSeguimientoAgencia ? EN_TRANSITO : De(partida.Origen);
         }
 
@@ -136,6 +142,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
             PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT
         };
 
+        /// <summary>
+        /// ¿Sale del stock de Algete? Picking, libre, desmontando un kit o (NestoAPI#606, packs montables) montando el pack con componentes que
+        /// ya están en Algete. Un pack que espera un componente NO: se mide como ese componente.
+        /// </summary>
+        internal static bool SaleDelStock(PartidaFechaEntregaAgenciaDTO p) =>
+            ORIGENES_CON_STOCK.Contains(p.Origen) || MontajeKits.SeMontaYa(p);
+
         /// <summary>Las fotos de un pedido a partir del cálculo de su fecha de entrega: una por producto que no sale del stock.</summary>
         public static List<FotoFechaEntrega> Construir(string empresa, int pedido, FechaEntregaAgenciaDTO calculo, DateTime hoy)
         {
@@ -148,7 +161,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.FotosFechaEntrega
                 .Where(p => !string.IsNullOrWhiteSpace(p?.Producto))
                 .GroupBy(p => p.Producto.Trim(), StringComparer.OrdinalIgnoreCase))
             {
-                List<PartidaFechaEntregaAgenciaDTO> sinStock = grupo.Where(p => !ORIGENES_CON_STOCK.Contains(p.Origen)).ToList();
+                List<PartidaFechaEntregaAgenciaDTO> sinStock = grupo.Where(p => !SaleDelStock(p)).ToList();
                 if (!sinStock.Any())
                 {
                     continue;

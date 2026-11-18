@@ -1570,6 +1570,26 @@ namespace NestoAPI.Infraestructure
                     Partidas = grupo.ToList()
                 });
             }
+            // NestoAPI#606 (packs montables, 18/11/26): el pack se monta en Algete con sus componentes (ya allí, o cuando llegue el que falta)
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_MONTAJE)
+                .GroupBy(p => new { Componente = p.ComponenteQueFalta?.Trim(), p.OrigenComponente, p.Tienda, p.FechaPrevistaProveedor, Salida = PuedeSalir(p) }))
+            {
+                PartidaFechaEntregaAgenciaDTO p = grupo.First();
+                string llegada = Infraestructure.PedidosVenta.MontajeKits.LlegadaComponente(p, DiaCorreo);
+                bloques.Add(string.IsNullOrWhiteSpace(grupo.Key.Componente)
+                    ? new BloqueDesglose
+                    {
+                        Cabecera = $"Se monta en Algete con sus componentes{Parentesis(grupo.Key.Salida)}",
+                        Partidas = grupo.ToList()
+                    }
+                    : new BloqueDesglose
+                    {
+                        Cabecera = $"Se monta en Algete cuando llegue {EscaparHtml(Infraestructure.PedidosVenta.MontajeKits.Componente(p))}" +
+                            Parentesis(EscaparHtml(llegada), Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.Calificativo(p), grupo.Key.Salida),
+                        Etiqueta = EtiquetaDe(p),
+                        Partidas = grupo.ToList()
+                    });
+            }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA)
                 .GroupBy(p => new { p.Tienda, p.LlegaAAlgete, p.PuedeSalirEl }))
             {

@@ -684,6 +684,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   su primer albarán; errores real − previsto; sin llegar a los 120 días, `Caducada`. Sin tabla, nada (ELMAH una vez). `dbo.vFechasOrientativasError`
   (primeras resueltas por proveedor; Grupo Todas/YaTocaba/NoTocaba). `GET api/Compras/PlazosProveedores/Orientativas?meses=6` (Compras/Dirección/
   Informática; lo mismo en C# con los meses y los totales) y `POST …/Orientativas/Procesar` (Dirección/Informática, 202); 503 sin el script.
+- **Packs montables (NestoAPI#606, 18/11/26, caso 44376)**: un producto TITULAR de un kit (tabla Kits, sin materias primas MTP) sin stock propio
+  suficiente en Algete se MONTA con sus componentes (origen `Montaje`, después de libres y de desmontar kits y antes que las tiendas). Lo monta almacén a
+  mano (`POST api/Productos/MontarKit`, Diario _MontarKit) con el informe de kits de antes del picking (`prdInformeKitsQueSePuedenMontar`, parte «m»): el
+  picking NO monta (sin stock del pack no lo reserva). Mismo supuesto que el origen `Kit` (desmontar). LA REGLA (pura, `BolsaMontajeAlgete` en
+  `MontajeKitsAlgete.cs`): componente libre = stock Algete − pendientes de otros en Algete − lo que pide suelto el propio pedido − lo que necesitan los packs
+  que otros pedidos deben por encima del stock de ese pack; se montan los que permite el componente más escaso → Segura, sale como lo libre. Lo que no se
+  puede montar: cada componente que falta se reparte con las reglas de cualquier producto (`ComponentesMontaje`, un solo nivel, sin lo libre de Algete) y el
+  pack sale el día del PEOR (`Montaje` con `ComponenteQueFalta`/`NombreComponente`/`OrigenComponente` y la certeza de ese componente) o, si alguno no tiene
+  fecha, `SinStock` nombrándolo («para montarlo en Algete falta el componente 40010 …»; su orientativa no se mide en #861). Lectura por tanda:
+  `SQL_KITS_MONTAJE` (una consulta) y los componentes entran en la lectura general; `SQL_ESTADOS` trae el nombre. Llega a todo lo que usa el motor
+  (prometida, correo, promesa en riesgo, fotos: un pack que se monta ya «sale del stock»; el que espera, se mide como su componente). El modo de servicio
+  sugerido (`SugeridorModoServicio`) no lo usa aún; el aviso de Nesto antes del picking solo pregunta por los kits que DESMONTAR.
 
 ### Pago a plazos de un pedido ya creado, con cualquier financiera (NestoAPI#864, 13/11/26; continuación de #663)
 - Un empleado (Nesto) o un vendedor (NestoApp) pasa el pedido y el CLIENTE termina la financiación de ese pedido en la app (push) o con

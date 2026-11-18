@@ -30,6 +30,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// el stock y los pendientes de esos kits van en <see cref="Resumen"/> (StockAlmacen y PendienteEntregarAlmacen).
         /// </summary>
         public List<ComponenteKitFechaEntregaAgencia> Kits { get; } = new List<ComponenteKitFechaEntregaAgencia>();
+        /// <summary>
+        /// NestoAPI#606 (packs montables, 18/11/26): las filas de Kits de los kits (sin materias primas) que llevan algún COMPONENTE de un
+        /// producto leído que es titular de un kit: sus propias filas y las de los demás packs que comparten esos componentes (para saber lo
+        /// que esos otros packs ya tienen comprometido). Los componentes entran en la lectura general (stock, pendientes, compras…) y el stock
+        /// y los pendientes de los packs van en <see cref="Resumen"/>. Solo con <see cref="RepositorioSombraModoServicioSql.LeerDatosConKits"/>.
+        /// </summary>
+        public List<ComponenteKitFechaEntregaAgencia> KitsMontaje { get; } = new List<ComponenteKitFechaEntregaAgencia>();
+        /// <summary>NestoAPI#606 (packs montables): Productos.Nombre (clave producto), para nombrar el componente que falta.</summary>
+        public Dictionary<string, string> Nombres { get; } = new Dictionary<string, string>();
     }
 
     /// <summary>NestoAPI#606 (kits): una fila de la tabla Kits: <see cref="Cantidad"/> unidades de <see cref="Componente"/> por cada <see cref="Kit"/>.</summary>

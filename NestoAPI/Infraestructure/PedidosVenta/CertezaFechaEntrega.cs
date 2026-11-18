@@ -83,6 +83,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return;
             }
+            // NestoAPI#606 (packs montables): los componentes que faltan para montar un pack, igual que cualquier línea (una lectura para todos)
+            lineas = lineas
+                .Concat(lineas.Where(l => l?.ComponentesMontaje != null).SelectMany(l => l.ComponentesMontaje))
+                .Where(l => l != null)
+                .Distinct()
+                .ToList();
 
             // Seguimiento de la agencia de los pedidos a proveedor con fecha
             List<LineaFechaEntregaAgencia> conPedido = lineas.Where(l => l != null && l.DelProveedor > 0 && l.PedidoProveedor.HasValue && l.FechaProveedor.HasValue).ToList();
@@ -128,7 +134,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return 0;
             }
             int cubiertas = Math.Max(0, l.EnAlgete) + (l.DeKits?.Values.Sum() ?? 0) + (l.EnTiendas?.Values.Sum() ?? 0)
-                + Math.Max(0, l.EnCaminoDeTiendas) + Math.Max(0, l.DelProveedor);
+                + Math.Max(0, l.EnCaminoDeTiendas) + Math.Max(0, l.DelProveedor)
+                + Math.Max(0, l.Montaje) + Math.Max(0, l.MontajeConComponentes);
             return Math.Max(0, l.Cantidad - cubiertas);
         }
     }
