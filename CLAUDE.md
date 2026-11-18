@@ -516,6 +516,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   camino de siempre (fase 3, interruptor, 3 días, rastro, promesa en riesgo, reenvío con «Aviso de salida del proveedor: pedido N leído del PDF»).
   Columnas `AvisoProveedor`, `PedidoEnAdjunto`, `AdjuntoLeido` (SinPdf/Leido/SinTexto/Ilegible/Grande/NoDescargado). Certeza: un aviso del
   proveedor SIN código ni enlace (`CorreoAplicadoPedidoCompra.SinSeguimientoAgencia`) no es seguimiento de agencia → Aproximada, no CasiSegura.
+- **Boletines y remitentes ignorados (#857e, falso positivo 18/11/26: boletín de comunicaciones@perfectbeauty.es por `track.…/click.php?L=…&J=…`)**:
+  el genérico no cuenta los redirectores de clic (`RedirectorMailing`: dominios de envío masivo —sendgrid, list-manage, mailjet, acumbamail,
+  brevo, hubspot…—, tramos click.php/click/ls/click/track/click… o parámetros L y J). Un boletín (`BoletinComercial`: «darse de baja»,
+  «unsubscribe», «ver en el navegador»… o buzón comunicaciones@/newsletter@/news@/marketing@…) no se guarda por la vía genérica (solo si una agencia
+  registrada saca su seguimiento o es de un remitente marcado). Marca `Ignorar` del remitente (columna del mismo Issue857e): sus correos ni se
+  guardan, ni se reenvían, ni avisan. `POST …/Remitentes` con `Ignorar`; `POST …/Correos/{id}/Descartar?ignorarRemitente=true` deja la dirección
+  exacta como ignorada (rastro `CompraCorreoRemitenteIgnorado` en Modificaciones; respuesta con `RemitenteIgnorado`). Nesto: botón pendiente.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

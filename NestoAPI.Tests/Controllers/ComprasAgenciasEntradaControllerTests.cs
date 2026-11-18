@@ -41,13 +41,13 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.DeleteRemitente(1)).StatusCode);
             Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.GetCandidatos()).StatusCode);
             Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await c.GetCorreos()).StatusCode);
-            A.CallTo(() => repositorio.GuardarRemitente(A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarRemitente(A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
         public async Task Post_DeCompras_NormalizaYUsaElNombreDeLaAgenciaConocida()
         {
-            A.CallTo(() => repositorio.GuardarRemitente("GLS", "avisos.ejemplo-agencia.es", A<string>._, null, false)).Returns(12);
+            A.CallTo(() => repositorio.GuardarRemitente("GLS", "avisos.ejemplo-agencia.es", A<string>._, null, false, false)).Returns(12);
 
             var resultado = await Controller("Compras").PostRemitente(new PeticionRemitenteAgenciaDTO { Agencia = " gls ", Remitente = " @Avisos.Ejemplo-Agencia.ES " })
                 as OkNegotiatedContentResult<RemitenteMarcado>;

@@ -25,6 +25,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string FiltroTexto { get; set; }
         /// <summary>NestoAPI#857e: leer sus PDF adjuntos (en memoria) para sacar el pedido, la agencia y la entrega.</summary>
         public bool LeerPdf { get; set; }
+        /// <summary>
+        /// NestoAPI#857e: remitente que no manda nada de envíos (boletines…): sus correos no se guardan, ni se reenvían, ni avisan, traigan lo
+        /// que traigan. Se marca con POST …/Remitentes (Ignorar) o al descartar un correo con ignorarRemitente=true.
+        /// </summary>
+        public bool Ignorar { get; set; }
 
         /// <summary>¿Casa con esa dirección? Una dirección, exacta; un dominio, también sus subdominios.</summary>
         public bool Casa(string direccion)
@@ -73,6 +78,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// seguimiento, su fecha aplicada no cuenta como «seguimiento de la agencia» en la certeza (#853): queda Aproximada.
         /// </summary>
         public bool AvisoProveedor { get; set; }
+        /// <summary>NestoAPI#857e: de un remitente marcado como «Ignorar»: no se guarda.</summary>
+        public bool Ignorado { get; set; }
+        /// <summary>NestoAPI#857e: lo había captado solo el genérico, pero es un boletín comercial: no se guarda.</summary>
+        public bool DescartadoPorBoletin { get; set; }
     }
 
     /// <summary>
@@ -101,10 +110,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 direcciones.Add(correo.RemitenteDireccion.Trim().ToLowerInvariant());
             }
             direcciones.AddRange(analisis.RemitentesOriginales);
+            List<RemitenteMarcado> activos = (marcados ?? Enumerable.Empty<RemitenteMarcado>()).Where(m => m != null && m.Activo).ToList();
+            // NestoAPI#857e: de un remitente marcado como «Ignorar», nada (ni se guarda, ni se reenvía, ni avisa), traiga lo que traiga
+            if (activos.Any(m => m.Ignorar && direcciones.Any(m.Casa)))
+            {
+                analisis.Ignorado = true;
+                return analisis;
+            }
             // NestoAPI#857e: un remitente con filtro de texto solo cuenta si el asunto o el cuerpo lo dicen (si no, el correo se trata como
             // de un remitente sin marcar: se guarda solo si trae seguimiento)
-            analisis.RemitenteMarcado = (marcados ?? Enumerable.Empty<RemitenteMarcado>())
-                .Where(m => m != null && m.Activo)
+            analisis.RemitenteMarcado = activos
                 .Where(m => direcciones.Any(m.Casa))
                 .FirstOrDefault(m => FiltroRemitente.Casa(m.FiltroTexto, correo.Asunto, correo.Texto));
             analisis.AvisoProveedor = analisis.RemitenteMarcado != null && string.IsNullOrWhiteSpace(analisis.RemitenteMarcado.Agencia);
@@ -123,6 +138,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             if (!analisis.Seguimientos.Any())
             {
                 analisis.Seguimientos = generica.ExtraerSeguimientos(correo) ?? new List<SeguimientoCorreo>();
+                // NestoAPI#857e: lo que solo capta el genérico en un boletín comercial no es un envío (salvo remitente marcado)
+                if (analisis.Seguimientos.Any() && analisis.RemitenteMarcado == null && BoletinComercial.Es(correo))
+                {
+                    analisis.Seguimientos = new List<SeguimientoCorreo>();
+                    analisis.DescartadoPorBoletin = true;
+                }
                 if (analisis.RemitenteMarcado != null)
                 {
                     analisis.Agencia = analisis.RemitenteMarcado.Agencia?.Trim();

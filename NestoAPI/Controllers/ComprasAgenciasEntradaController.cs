@@ -32,6 +32,8 @@ namespace NestoAPI.Controllers
         public string FiltroTexto { get; set; }
         /// <summary>NestoAPI#857e: leer sus PDF adjuntos (en memoria) para sacar el pedido, la agencia y la entrega.</summary>
         public bool LeerPdf { get; set; }
+        /// <summary>NestoAPI#857e: no mirar nunca sus correos (boletines…): ni se guardan, ni se reenvían, ni avisan.</summary>
+        public bool Ignorar { get; set; }
     }
 
     /// <summary>NestoAPI#857: un correo captado, con los candidatos ya leídos del JSON.</summary>
@@ -149,6 +151,8 @@ namespace NestoAPI.Controllers
         public int CorreoId { get; set; }
         public int CorreosDelMismoEnvio { get; set; }
         public string Mensaje { get; set; }
+        /// <summary>NestoAPI#857e: con ?ignorarRemitente=true, la dirección que ha quedado como «Ignorar» (null si no se ha podido o no se pidió).</summary>
+        public string RemitenteIgnorado { get; set; }
     }
 
     public class AdjuntoCorreoCompraDTO
@@ -361,14 +365,14 @@ namespace NestoAPI.Controllers
             {
                 return Content(HttpStatusCode.Conflict, MENSAJE_SIN_TABLA);
             }
-            if ((agencia == null || filtro != null || peticion.LeerPdf) && !repositorio.AvisosProveedorDisponibles())
+            if ((agencia == null || filtro != null || peticion.LeerPdf || peticion.Ignorar) && !repositorio.AvisosProveedorDisponibles())
             {
-                return agencia == null && filtro == null && !peticion.LeerPdf
+                return agencia == null && filtro == null && !peticion.LeerPdf && !peticion.Ignorar
                     ? (IHttpActionResult)BadRequest("Falta la agencia. " + MENSAJE_SIN_SCRIPT_AVISOS)
                     : Content(HttpStatusCode.ServiceUnavailable, MENSAJE_SIN_SCRIPT_AVISOS);
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
-            int id = await repositorio.GuardarRemitente(agencia, remitente, usuario, filtro, peticion.LeerPdf).ConfigureAwait(false);
+            int id = await repositorio.GuardarRemitente(agencia, remitente, usuario, filtro, peticion.LeerPdf, peticion.Ignorar).ConfigureAwait(false);
             return Ok(new RemitenteMarcado
             {
                 Id = id,
@@ -378,7 +382,8 @@ namespace NestoAPI.Controllers
                 Usuario = usuario,
                 FechaModificacion = DateTime.Now,
                 FiltroTexto = filtro,
-                LeerPdf = peticion.LeerPdf
+                LeerPdf = peticion.LeerPdf,
+                Ignorar = peticion.Ignorar
             });
         }
 
@@ -578,25 +583,30 @@ namespace NestoAPI.Controllers
             return Resultado(resultado, resultado.Respuesta);
         }
 
-        // POST api/Compras/AgenciasEntrada/Correos/12/Descartar
-        /// <summary>Fase 3: el correo (y los demás de su envío sin aplicar) no es de ninguna compra. 409 si ya está aplicado.</summary>
+        // POST api/Compras/AgenciasEntrada/Correos/12/Descartar[?ignorarRemitente=true]
+        /// <summary>
+        /// Fase 3: el correo (y los demás de su envío sin aplicar) no es de ninguna compra. 409 si ya está aplicado. NestoAPI#857e: con
+        /// <paramref name="ignorarRemitente"/>, además su remitente (dirección exacta) queda como «Ignorar» (rastro en Modificaciones);
+        /// RemitenteIgnorado y Mensaje lo dicen.
+        /// </summary>
         [HttpPost]
         [Authorize]
         [Route("api/Compras/AgenciasEntrada/Correos/{id:int}/Descartar")]
         [ResponseType(typeof(RespuestaDescarteCorreoCompraDTO))]
-        public async Task<IHttpActionResult> PostDescartar(int id)
+        public async Task<IHttpActionResult> PostDescartar(int id, bool ignorarRemitente = false)
         {
             if (!PuedeVer(User))
             {
                 return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
-            ResultadoOperacionCorreoCompra resultado = await crearAplicacion().Descartar(id, usuario).ConfigureAwait(false);
+            ResultadoOperacionCorreoCompra resultado = await crearAplicacion().Descartar(id, usuario, ignorarRemitente).ConfigureAwait(false);
             return Resultado(resultado, new RespuestaDescarteCorreoCompraDTO
             {
                 CorreoId = id,
                 CorreosDelMismoEnvio = resultado.CorreosDelMismoEnvio,
-                Mensaje = resultado.Mensaje
+                Mensaje = resultado.Mensaje,
+                RemitenteIgnorado = resultado.RemitenteIgnorado
             });
         }
 

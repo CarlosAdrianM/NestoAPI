@@ -928,6 +928,7 @@
     <Compile Include="Infrastructure\PedidosCompra\ServicioCorreosSeguimientoComprasTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ReenvioCorreosSeguimientoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAvisoSalidaTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoBoletinesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\HistoricoCorreosComprasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FotosFechaEntregaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AplazamientoPedidoConPickingTests.cs" />

@@ -550,7 +550,7 @@ Navàs (Barcelona)";
             IRepositorioCorreosSeguimiento repo = A.Fake<IRepositorioCorreosSeguimiento>();
             A.CallTo(() => repo.TablasExisten()).Returns(true);
             A.CallTo(() => repo.AvisosProveedorDisponibles()).Returns(true);
-            A.CallTo(() => repo.GuardarRemitente(null, "sales@dduueett.com", A<string>._, FILTRO, true)).Returns(7);
+            A.CallTo(() => repo.GuardarRemitente(null, "sales@dduueett.com", A<string>._, FILTRO, true, false)).Returns(7);
 
             var resultado = await Controller(repo).PostRemitente(new PeticionRemitenteAgenciaDTO
             {
@@ -576,7 +576,7 @@ Navàs (Barcelona)";
             var conPdf = await Controller(repo).PostRemitente(new PeticionRemitenteAgenciaDTO { Agencia = "GLS", Remitente = "gls-spain.es", LeerPdf = true })
                 as NegotiatedContentResult<string>;
             Assert.AreEqual(HttpStatusCode.ServiceUnavailable, conPdf.StatusCode);
-            A.CallTo(() => repo.GuardarRemitente(A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._)).MustNotHaveHappened();
+            A.CallTo(() => repo.GuardarRemitente(A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

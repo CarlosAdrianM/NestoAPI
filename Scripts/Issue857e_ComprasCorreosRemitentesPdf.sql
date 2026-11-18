@@ -11,6 +11,9 @@
         tildes; varias alternativas separadas por «|»). NULL = todos sus correos (como hasta ahora).
       - LeerPdf bit NOT NULL DEFAULT 0: 1 = se descargan EN MEMORIA sus PDF adjuntos (3 como mucho, 5 MB y 10 páginas) y se saca el
         pedido, la agencia y la entrega. Del PDF no se guarda nada: solo lo extraído (abajo).
+      - Ignorar bit NOT NULL DEFAULT 0: 1 = remitente que no manda nada de envíos (boletines): sus correos ni se guardan, ni se
+        reenvían, ni avisan, traigan lo que traigan. Se marca por el POST de remitentes o al descartar un correo con
+        ?ignorarRemitente=true (caso 18/11/26: el boletín de comunicaciones@perfectbeauty.es captado por un enlace de clics).
     Añade a dbo.ComprasCorreosSeguimiento:
       - AvisoProveedor bit NULL: 1 = viene de un remitente marcado sin agencia. Si además no trae código ni enlace de seguimiento, su
         fecha aplicada NO cuenta como «seguimiento de la agencia» (la certeza queda Aproximada, no Prácticamente segura).
@@ -42,6 +45,9 @@ GO
 IF OBJECT_ID(N'dbo.AgenciasEntradaRemitentes', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AgenciasEntradaRemitentes', N'LeerPdf') IS NULL
     ALTER TABLE dbo.AgenciasEntradaRemitentes ADD LeerPdf bit NOT NULL CONSTRAINT DF_AgenciasEntradaRemitentes_LeerPdf DEFAULT (0);
 GO
+IF OBJECT_ID(N'dbo.AgenciasEntradaRemitentes', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AgenciasEntradaRemitentes', N'Ignorar') IS NULL
+    ALTER TABLE dbo.AgenciasEntradaRemitentes ADD Ignorar bit NOT NULL CONSTRAINT DF_AgenciasEntradaRemitentes_Ignorar DEFAULT (0);
+GO
 -- Correos: lo extraído del aviso del proveedor
 IF OBJECT_ID(N'dbo.ComprasCorreosSeguimiento', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.ComprasCorreosSeguimiento', N'AvisoProveedor') IS NULL
     ALTER TABLE dbo.ComprasCorreosSeguimiento ADD AvisoProveedor bit NULL;
@@ -56,10 +62,11 @@ GO
 SELECT CASE WHEN COLUMNPROPERTY(OBJECT_ID(N'dbo.AgenciasEntradaRemitentes'), N'Agencia', N'AllowsNull') = 1
              AND COL_LENGTH(N'dbo.AgenciasEntradaRemitentes', N'FiltroTexto') IS NOT NULL
              AND COL_LENGTH(N'dbo.AgenciasEntradaRemitentes', N'LeerPdf') IS NOT NULL
+             AND COL_LENGTH(N'dbo.AgenciasEntradaRemitentes', N'Ignorar') IS NOT NULL
              AND COL_LENGTH(N'dbo.ComprasCorreosSeguimiento', N'AvisoProveedor') IS NOT NULL
              AND COL_LENGTH(N'dbo.ComprasCorreosSeguimiento', N'PedidoEnAdjunto') IS NOT NULL
              AND COL_LENGTH(N'dbo.ComprasCorreosSeguimiento', N'AdjuntoLeido') IS NOT NULL
-            THEN N'OK: remitentes con Agencia opcional, FiltroTexto y LeerPdf; correos con AvisoProveedor, PedidoEnAdjunto y AdjuntoLeido'
+            THEN N'OK: remitentes con Agencia opcional, FiltroTexto, LeerPdf e Ignorar; correos con AvisoProveedor, PedidoEnAdjunto y AdjuntoLeido'
             ELSE N'FALTA: no está todo (¿existen las tablas de Issue857?)' END AS Resultado;
 GO
 /*
@@ -68,7 +75,13 @@ GO
     POST api/Compras/AgenciasEntrada/Remitentes
     { "Agencia": null, "Remitente": "sales@dduueett.com", "FiltroTexto": "albarán de entrega|delivery note", "LeerPdf": true }
 
-    Equivale a (solo como referencia):
-    INSERT INTO dbo.AgenciasEntradaRemitentes (Agencia, Remitente, Activo, Usuario, FechaModificacion, FiltroTexto, LeerPdf)
-    VALUES (NULL, N'sales@dduueett.com', 1, N'Carlos', GETDATE(), N'albarán de entrega|delivery note', 1);
+    Y el boletín que no es de envíos (o, mejor, al descartar su correo: POST …/Correos/{id}/Descartar?ignorarRemitente=true):
+    POST api/Compras/AgenciasEntrada/Remitentes
+    { "Agencia": null, "Remitente": "comunicaciones@perfectbeauty.es", "Ignorar": true }
+
+    Equivalen a (solo como referencia):
+    INSERT INTO dbo.AgenciasEntradaRemitentes (Agencia, Remitente, Activo, Usuario, FechaModificacion, FiltroTexto, LeerPdf, Ignorar)
+    VALUES (NULL, N'sales@dduueett.com', 1, N'Carlos', GETDATE(), N'albarán de entrega|delivery note', 1, 0);
+    INSERT INTO dbo.AgenciasEntradaRemitentes (Agencia, Remitente, Activo, Usuario, FechaModificacion, FiltroTexto, LeerPdf, Ignorar)
+    VALUES (NULL, N'comunicaciones@perfectbeauty.es', 1, N'Carlos', GETDATE(), NULL, 0, 1);
 */

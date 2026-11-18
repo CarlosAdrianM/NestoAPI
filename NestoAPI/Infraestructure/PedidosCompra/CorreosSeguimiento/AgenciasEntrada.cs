@@ -241,8 +241,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             foreach (string enlace in correo.Enlaces)
             {
+                // NestoAPI#857e: el rastreo de clics de un boletín («track.ejemplo.es/click.php?L=…&J=…») no es un seguimiento
                 if (!Uri.TryCreate(enlace, UriKind.Absolute, out Uri uri) || Excluido(enlace)
-                    || DominiosPropios.Any(d => TextoCorreo.HostDe(uri.Host, d)))
+                    || DominiosPropios.Any(d => TextoCorreo.HostDe(uri.Host, d)) || RedirectorMailing.Es(uri))
                 {
                     continue;
                 }

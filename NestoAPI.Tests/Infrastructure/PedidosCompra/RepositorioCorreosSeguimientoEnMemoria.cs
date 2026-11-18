@@ -65,7 +65,24 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         /// <summary>NestoAPI#857e: los remitentes marcados (vacía = como antes).</summary>
         public List<RemitenteMarcado> Remitentes { get; } = new List<RemitenteMarcado>();
         public Task<List<RemitenteMarcado>> LeerRemitentes() => Task.FromResult(Remitentes.ToList());
-        public Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf) => Task.FromResult(1);
+        public Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf, bool ignorar) => Task.FromResult(1);
+
+        /// <summary>NestoAPI#857e: los remitentes ignorados al descartar (remitente, usuario, correo).</summary>
+        public List<(string Remitente, string Usuario, int CorreoId)> Ignorados { get; } = new List<(string, string, int)>();
+
+        public Task<int> IgnorarRemitente(string remitente, string usuario, int correoId)
+        {
+            Ignorados.Add((remitente, usuario, correoId));
+            RemitenteMarcado existente = Remitentes.FirstOrDefault(r => r.Remitente == remitente);
+            if (existente == null)
+            {
+                Remitentes.Add(existente = new RemitenteMarcado { Id = Remitentes.Count + 100, Remitente = remitente });
+            }
+            existente.Activo = true;
+            existente.Ignorar = true;
+            existente.Usuario = usuario;
+            return Task.FromResult(existente.Id);
+        }
         public bool AvisosProveedorDisponibles() => true;
         public Task<bool> DesactivarRemitente(int id, string usuario) => Task.FromResult(true);
         public Task<List<PedidoCompraEnAire>> LeerPedidosEnAire(string empresa) =>

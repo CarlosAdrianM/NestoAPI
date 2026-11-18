@@ -70,6 +70,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public RespuestaAsignacionCorreoCompraDTO Respuesta { get; set; }
         /// <summary>Al descartar: cuántos correos más del mismo envío se han descartado.</summary>
         public int CorreosDelMismoEnvio { get; set; }
+        /// <summary>NestoAPI#857e: al descartar con ignorarRemitente, el remitente que ha quedado ignorado (null si no se ha marcado).</summary>
+        public string RemitenteIgnorado { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): la campana a Compras de un correo que se queda por asignar.</summary>
@@ -602,9 +604,36 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>
         /// Compras dice que el correo no es de ninguna compra (sale de la lista por asignar), y con él los demás de su envío que no estén
-        /// aplicados. 409 si ya está aplicado.
+        /// aplicados. 409 si ya está aplicado. NestoAPI#857e: con <paramref name="ignorarRemitente"/>, además deja su remitente (la dirección
+        /// exacta) como «Ignorar» (<see cref="IRepositorioCorreosSeguimiento.IgnorarRemitente"/>); el mensaje dice lo que se ha hecho.
         /// </summary>
-        public async Task<ResultadoOperacionCorreoCompra> Descartar(int id, string usuario)
+        public async Task<ResultadoOperacionCorreoCompra> Descartar(int id, string usuario, bool ignorarRemitente = false)
+        {
+            ResultadoOperacionCorreoCompra resultado = await DescartarCorreo(id, usuario).ConfigureAwait(false);
+            if (!ignorarRemitente || resultado.Codigo != CodigoOperacionCorreoCompra.Ok)
+            {
+                return resultado;
+            }
+            CorreoSeguimientoFila fila = await repositorio.LeerCorreo(id).ConfigureAwait(false);
+            string remitente = ReglaIgnorarRemitente.Remitente(fila?.RemitenteDireccion);
+            if (remitente == null)
+            {
+                resultado.Mensaje += " No se ha podido dejar de mirar su remitente: no tiene una dirección válida (o es de Nueva Visión).";
+            }
+            else if (!repositorio.AvisosProveedorDisponibles())
+            {
+                resultado.Mensaje += $" No se ha podido dejar de mirar {remitente}: hay que lanzar antes Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql.";
+            }
+            else
+            {
+                _ = await repositorio.IgnorarRemitente(remitente, usuario, id).ConfigureAwait(false);
+                resultado.RemitenteIgnorado = remitente;
+                resultado.Mensaje += $" Desde ahora no se mirarán los correos de {remitente}.";
+            }
+            return resultado;
+        }
+
+        private async Task<ResultadoOperacionCorreoCompra> DescartarCorreo(int id, string usuario)
         {
             if (!Disponible)
             {

@@ -730,6 +730,7 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioAplicacionCorreosCompras.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AvisoSalidaProveedor.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\LectorTextoPdf.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\BoletinesCorreo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />

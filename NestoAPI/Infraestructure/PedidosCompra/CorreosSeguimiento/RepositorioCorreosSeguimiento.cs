@@ -93,7 +93,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// un proveedor), <paramref name="filtroTexto"/> y <paramref name="leerPdf"/> solo se guardan con Scripts/Issue857e
         /// (<see cref="AvisosProveedorDisponibles"/>); sin él, se ignoran.
         /// </summary>
-        Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf);
+        Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf, bool ignorar);
+        /// <summary>
+        /// NestoAPI#857e: marca ese remitente (dirección exacta) como «Ignorar» (alta sin agencia si no estaba; si estaba, solo la marca) con
+        /// rastro en Modificaciones, en una transacción. Devuelve el Id. Solo con <see cref="AvisosProveedorDisponibles"/>.
+        /// </summary>
+        Task<int> IgnorarRemitente(string remitente, string usuario, int correoId);
         /// <summary>
         /// NestoAPI#857e: ¿se ha lanzado Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql (Agencia opcional, FiltroTexto y LeerPdf en los
         /// remitentes; AvisoProveedor, PedidoEnAdjunto y AdjuntoLeido en los correos)? Con caché. Sin él, como antes.
@@ -166,7 +171,7 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOL
 
         // Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql: remitentes de proveedor (Agencia opcional), filtro de texto y PDF, todo junto
         internal const string SQL_EXISTEN_AVISOS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.AgenciasEntradaRemitentes', 'FiltroTexto') IS NULL " +
-            "OR COL_LENGTH('dbo.AgenciasEntradaRemitentes', 'LeerPdf') IS NULL " +
+            "OR COL_LENGTH('dbo.AgenciasEntradaRemitentes', 'LeerPdf') IS NULL OR COL_LENGTH('dbo.AgenciasEntradaRemitentes', 'Ignorar') IS NULL " +
             "OR ISNULL(COLUMNPROPERTY(OBJECT_ID('dbo.AgenciasEntradaRemitentes'), 'Agencia', 'AllowsNull'), 0) = 0 " +
             "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AvisoProveedor') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'PedidoEnAdjunto') IS NULL " +
             "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AdjuntoLeido') IS NULL THEN 0 ELSE 1 END AS bit)";
@@ -324,8 +329,8 @@ WHERE MensajeId = @mensajeId AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0
         // {0} = FiltroTexto y LeerPdf (Issue857e) o sus valores por defecto
         internal const string SQL_REMITENTES_BASE = "SELECT Id, RTRIM(Agencia) AS Agencia, RTRIM(Remitente) AS Remitente, Activo, Usuario, FechaModificacion, {0} " +
             "FROM dbo.AgenciasEntradaRemitentes WITH (NOLOCK) ORDER BY Agencia, Remitente";
-        internal const string COLUMNAS_REMITENTE_PDF = "FiltroTexto, LeerPdf";
-        internal const string COLUMNAS_REMITENTE_PDF_NULAS = "CAST(NULL AS nvarchar(500)) AS FiltroTexto, CAST(0 AS bit) AS LeerPdf";
+        internal const string COLUMNAS_REMITENTE_PDF = "FiltroTexto, LeerPdf, Ignorar";
+        internal const string COLUMNAS_REMITENTE_PDF_NULAS = "CAST(NULL AS nvarchar(500)) AS FiltroTexto, CAST(0 AS bit) AS LeerPdf, CAST(0 AS bit) AS Ignorar";
         internal static readonly string SQL_REMITENTES = string.Format(SQL_REMITENTES_BASE, COLUMNAS_REMITENTE_PDF_NULAS);
 
         internal const string SQL_GUARDAR_REMITENTE = @"SET NOCOUNT ON;
@@ -344,14 +349,30 @@ SELECT @id;";
 DECLARE @id int = (SELECT TOP 1 Id FROM dbo.AgenciasEntradaRemitentes WHERE Remitente = @remitente);
 IF @id IS NULL
 BEGIN
-    INSERT INTO dbo.AgenciasEntradaRemitentes (Agencia, Remitente, Activo, Usuario, FechaModificacion, FiltroTexto, LeerPdf)
-    VALUES (@agencia, @remitente, 1, @usuario, GETDATE(), @filtro, @leerPdf);
+    INSERT INTO dbo.AgenciasEntradaRemitentes (Agencia, Remitente, Activo, Usuario, FechaModificacion, FiltroTexto, LeerPdf, Ignorar)
+    VALUES (@agencia, @remitente, 1, @usuario, GETDATE(), @filtro, @leerPdf, @ignorar);
     SET @id = CAST(SCOPE_IDENTITY() AS int);
 END
 ELSE
     UPDATE dbo.AgenciasEntradaRemitentes SET Agencia = @agencia, Activo = 1, Usuario = @usuario, FechaModificacion = GETDATE(),
-        FiltroTexto = @filtro, LeerPdf = @leerPdf WHERE Id = @id;
+        FiltroTexto = @filtro, LeerPdf = @leerPdf, Ignorar = @ignorar WHERE Id = @id;
 SELECT @id;";
+
+        // NestoAPI#857e: al descartar un correo con ignorarRemitente=true. Si el remitente ya estaba, solo se marca Ignorar (lo demás no se toca);
+        // si no, se da de alta sin agencia. Rastro en Modificaciones. Todo en una transacción (la del repositorio).
+        internal const string SQL_IGNORAR_REMITENTE = @"SET NOCOUNT ON;
+DECLARE @id int = (SELECT TOP 1 Id FROM dbo.AgenciasEntradaRemitentes WITH (UPDLOCK, HOLDLOCK) WHERE Remitente = @remitente);
+IF @id IS NULL
+BEGIN
+    INSERT INTO dbo.AgenciasEntradaRemitentes (Agencia, Remitente, Activo, Usuario, FechaModificacion, FiltroTexto, LeerPdf, Ignorar)
+    VALUES (NULL, @remitente, 1, @usuario, GETDATE(), NULL, 0, 1);
+    SET @id = CAST(SCOPE_IDENTITY() AS int);
+END
+ELSE
+    UPDATE dbo.AgenciasEntradaRemitentes SET Activo = 1, Ignorar = 1, Usuario = @usuario, FechaModificacion = GETDATE() WHERE Id = @id;
+INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@tabla, @anterior, @nuevo, @usuario);
+SELECT @id;";
+        public const string TABLA_RASTRO_REMITENTE_IGNORADO = "CompraCorreoRemitenteIgnorado";
 
         internal const string SQL_DESACTIVAR_REMITENTE = "UPDATE dbo.AgenciasEntradaRemitentes SET Activo = 0, Usuario = @usuario, FechaModificacion = GETDATE() WHERE Id = @id";
 
@@ -791,7 +812,7 @@ ORDER BY Recibido DESC";
             }
         }
 
-        public async Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf)
+        public async Task<int> GuardarRemitente(string agencia, string remitente, string usuario, string filtroTexto, bool leerPdf, bool ignorar)
         {
             bool conPdf = AvisosProveedorDisponibles();
             using (NVEntities db = crearContexto())
@@ -804,9 +825,26 @@ ORDER BY Recibido DESC";
                 {
                     parametros.Add(Texto("@filtro", filtroTexto, FiltroRemitente.LONGITUD));
                     parametros.Add(new SqlParameter("@leerPdf", SqlDbType.Bit) { Value = leerPdf });
+                    parametros.Add(new SqlParameter("@ignorar", SqlDbType.Bit) { Value = ignorar });
                 }
                 return (await db.Database.SqlQuery<int>(conPdf ? SQL_GUARDAR_REMITENTE_CON_PDF : SQL_GUARDAR_REMITENTE, parametros.ToArray())
                     .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            }
+        }
+
+        public async Task<int> IgnorarRemitente(string remitente, string usuario, int correoId)
+        {
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                int id = (await db.Database.SqlQuery<int>(SQL_IGNORAR_REMITENTE,
+                    Texto("@remitente", remitente, 255), Texto("@usuario", usuario, 50),
+                    Texto("@tabla", TABLA_RASTRO_REMITENTE_IGNORADO, 100),
+                    Texto("@anterior", Newtonsoft.Json.JsonConvert.SerializeObject(new { CorreoId = correoId, Remitente = remitente }), -1),
+                    Texto("@nuevo", "Ignorar: no se vuelven a mirar sus correos (al descartar un correo)", -1))
+                    .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                transaccion.Commit();
+                return id;
             }
         }
 
