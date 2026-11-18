@@ -59,8 +59,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// </summary>
         Task<List<RiesgoPromesa>> LeerYaSalenSinCorreo(string empresa, DateTime desde);
 
-        /// <summary>¿Existe la columna CausaOriginal (Scripts/PromesaRiesgo_CausaOriginal.sql)? Sin ella no se guarda ni se lee.</summary>
-        bool ColumnaCausaOriginalExiste();
+        /// <summary>
+        /// ¿Existen las columnas CausaOriginal, TodoListoDesde y EnObservacion (Scripts/PromesaRiesgo_CausaOriginal.sql)? Sin ellas no se
+        /// guarda la causa original ni se observan los pedidos con todo en Algete (no se avisa de ellos, como antes).
+        /// </summary>
+        bool ColumnasNuevasExisten();
+
+        /// <summary>Lo barato que explica por qué un pedido con todo en Algete no sale (prepago, retenido por falta #858). Nunca null.</summary>
+        Task<TextosPromesaRiesgo.CausasSinSalir> LeerCausasSinSalir(string empresa, int pedido);
 
         /// <summary>
         /// Sin resolver y con algo pendiente, con cliente y vendedores (para el listado). Con <paramref name="incluirResueltos"/>,
@@ -93,19 +99,41 @@ WHERE l.Empresa = @empresa AND l.Estado >= -1 AND l.Estado <= 1 AND l.TipoLinea 
         internal const string COLUMNAS = "Id, RTRIM(Empresa) AS Empresa, Pedido, FechaPrometida, FechaNueva, Motivo, Evento, Detectado, Actualizado, " +
             "AvisadoCampana, AvisadoCorreo, Resuelto, MotivoResolucion";
 
-        /// <summary>{0} = «, CausaOriginal» si existe la columna.</summary>
+        /// <summary>{0} = las columnas nuevas si existen; {1} = filtro de pedidos. Incluye las filas en observación (las usa el servicio).</summary>
         internal const string SQL_SIN_RESOLVER = "SELECT " + COLUMNAS + "{0} FROM dbo.PedidosPromesaRiesgo WHERE Empresa = @empresa AND Resuelto IS NULL{1}";
 
-        internal const string SQL_SIN_CORREO = "SELECT " + COLUMNAS + "{0} FROM dbo.PedidosPromesaRiesgo WHERE Empresa = @empresa AND Resuelto IS NULL AND AvisadoCorreo IS NULL";
+        /// <summary>{1} = sin las filas en observación (no salen en el correo).</summary>
+        internal const string SQL_SIN_CORREO = "SELECT " + COLUMNAS + "{0} FROM dbo.PedidosPromesaRiesgo WHERE Empresa = @empresa AND Resuelto IS NULL AND AvisadoCorreo IS NULL{1}";
 
         internal const string SQL_YA_SALEN_SIN_CORREO = "SELECT " + COLUMNAS + "{0} FROM dbo.PedidosPromesaRiesgo WHERE Empresa = @empresa " +
-            "AND Resuelto IS NOT NULL AND Resuelto >= @desde AND MotivoResolucion = @motivo AND AvisadoCorreo IS NULL";
+            "AND Resuelto IS NOT NULL AND Resuelto >= @desde AND MotivoResolucion = @motivo AND AvisadoCorreo IS NULL{1}";
 
-        internal const string SQL_EXISTE_CAUSA = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.PedidosPromesaRiesgo', 'CausaOriginal') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string SQL_EXISTEN_COLUMNAS_NUEVAS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.PedidosPromesaRiesgo', 'CausaOriginal') IS NULL " +
+            "OR COL_LENGTH('dbo.PedidosPromesaRiesgo', 'TodoListoDesde') IS NULL OR COL_LENGTH('dbo.PedidosPromesaRiesgo', 'EnObservacion') IS NULL THEN 0 ELSE 1 END AS bit)";
 
-        internal const string SQL_ACTUALIZAR_CAUSA = "UPDATE dbo.PedidosPromesaRiesgo SET CausaOriginal = @causa WHERE Id = @id";
+        internal const string COLUMNAS_NUEVAS = ", CausaOriginal, TodoListoDesde, EnObservacion";
+        internal const string SIN_OBSERVACION = " AND EnObservacion = 0";
 
-        private static string ColumnaCausa(bool existe) => existe ? ", CausaOriginal" : string.Empty;
+        internal const string SQL_INSERTAR_NUEVAS = @"INSERT INTO dbo.PedidosPromesaRiesgo (Empresa, Pedido, FechaPrometida, FechaNueva, Motivo, Evento, Detectado, Actualizado, AvisadoCampana, AvisadoCorreo,
+  CausaOriginal, TodoListoDesde, EnObservacion)
+VALUES (@empresa, @pedido, @prometida, @nueva, @motivo, @evento, @detectado, @actualizado, @avisadoCampana, @avisadoCorreo, @causa, @todoListoDesde, @enObservacion);
+SELECT CAST(SCOPE_IDENTITY() AS int);";
+
+        internal const string SQL_ACTUALIZAR_NUEVAS = @"UPDATE dbo.PedidosPromesaRiesgo SET FechaNueva = @nueva, Motivo = @motivo, Evento = @evento,
+  Actualizado = @actualizado, AvisadoCampana = @avisadoCampana, AvisadoCorreo = @avisadoCorreo, Detectado = @detectado,
+  CausaOriginal = @causa, TodoListoDesde = @todoListoDesde, EnObservacion = @enObservacion
+WHERE Id = @id AND Resuelto IS NULL";
+
+        /// <summary>Prepago (PlazosPago PRE) y retenido por falta (#858, si existe la tabla), del pedido.</summary>
+        internal const string SQL_CAUSAS_SIN_SALIR = @"DECLARE @retenido bit = 0;
+IF OBJECT_ID('dbo.PedidosRetenidosPorFalta', 'U') IS NOT NULL
+    EXEC sp_executesql N'SELECT @r = CASE WHEN EXISTS (SELECT 1 FROM dbo.PedidosRetenidosPorFalta WITH (NOLOCK) WHERE Empresa = @e AND Pedido = @p AND Estado = ''Pendiente'') THEN 1 ELSE 0 END',
+        N'@e varchar(3), @p int, @r bit OUTPUT', @e = @empresa, @p = @pedido, @r = @retenido OUTPUT;
+SELECT CAST(CASE WHEN RTRIM(c.PlazosPago) = 'PRE' THEN 1 ELSE 0 END AS bit) AS Prepago, @retenido AS RetenidoPorFalta
+FROM dbo.CabPedidoVta c WITH (NOLOCK) WHERE c.Empresa = @empresa AND c.Número = @pedido";
+
+        private static string Columnas(bool nuevas) => nuevas ? COLUMNAS_NUEVAS : string.Empty;
+        private static string SinObservacion(bool nuevas) => nuevas ? SIN_OBSERVACION : string.Empty;
 
         internal const string SQL_ESTADO_PEDIDO = @"SELECT c.FechaEntregaAgenciaPrometida AS Prometida,
   CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.Número = c.Número
@@ -229,7 +257,7 @@ ORDER BY r.Resuelto DESC, r.Pedido";
                 // Enteros: van en el texto sin riesgo de inyección.
                 filtro = " AND Pedido IN (" + string.Join(", ", lista) + ")";
             }
-            string sql = string.Format(SQL_SIN_RESOLVER, ColumnaCausa(ColumnaCausaOriginalExiste()), filtro);
+            string sql = string.Format(SQL_SIN_RESOLVER, Columnas(ColumnasNuevasExisten()), filtro);
             using (NVEntities db = crearContexto())
             {
                 return await db.Database.SqlQuery<RiesgoPromesa>(sql, parametros.ToArray()).ToListAsync().ConfigureAwait(false);
@@ -272,67 +300,76 @@ ORDER BY r.Resuelto DESC, r.Pedido";
             return nombres;
         }
 
+        /// <summary>
+        /// Con las columnas nuevas, en UNA sentencia (una fila en observación nunca debe quedar a medias, visible en el listado). Sin
+        /// ellas, como antes; una fila en observación no se llega a pedir (el servicio no observa sin columnas).
+        /// </summary>
         public async Task<int> Insertar(RiesgoPromesa riesgo)
         {
-            int id = await InsertarFila(riesgo).ConfigureAwait(false);
-            await GuardarCausa(id, riesgo.CausaOriginal).ConfigureAwait(false);
-            return id;
-        }
-
-        /// <summary>La causa original, aparte (columna opcional). Nunca rompe: sin ella, el texto ya está guardado.</summary>
-        private async Task GuardarCausa(int id, string causa)
-        {
-            if (causa == null || !ColumnaCausaOriginalExiste())
+            bool nuevas = ColumnasNuevasExisten();
+            var parametros = new List<SqlParameter>
             {
-                return;
-            }
-            try
+                ParametroEmpresa(riesgo.Empresa),
+                new SqlParameter("@pedido", SqlDbType.Int) { Value = riesgo.Pedido },
+                Fecha("@prometida", riesgo.FechaPrometida.Date),
+                Fecha("@nueva", riesgo.FechaNueva?.Date),
+                Texto("@motivo", riesgo.Motivo),
+                Texto("@evento", Recortar(riesgo.Evento, 200)),
+                Fecha("@detectado", riesgo.Detectado),
+                Fecha("@actualizado", riesgo.Actualizado),
+                Fecha("@avisadoCampana", riesgo.AvisadoCampana),
+                Fecha("@avisadoCorreo", riesgo.AvisadoCorreo)
+            };
+            if (nuevas)
             {
-                using (NVEntities db = crearContexto())
-                {
-                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_ACTUALIZAR_CAUSA,
-                        new SqlParameter("@id", SqlDbType.Int) { Value = id }, Texto("@causa", causa)).ConfigureAwait(false);
-                }
+                parametros.AddRange(ParametrosNuevos(riesgo));
             }
-            catch (Exception ex)
-            {
-                ElmahHelper.Log(new Exception($"[Promesa en riesgo] No se ha podido guardar la causa original de la fila {id}: {ex.Message}", ex),
-                    "Sistema (promesa en riesgo)");
-            }
-        }
-
-        private async Task<int> InsertarFila(RiesgoPromesa riesgo)
-        {
             using (NVEntities db = crearContexto())
             {
-                return await db.Database.SqlQuery<int>(SQL_INSERTAR,
-                    ParametroEmpresa(riesgo.Empresa),
-                    new SqlParameter("@pedido", SqlDbType.Int) { Value = riesgo.Pedido },
-                    Fecha("@prometida", riesgo.FechaPrometida.Date),
-                    Fecha("@nueva", riesgo.FechaNueva?.Date),
-                    Texto("@motivo", riesgo.Motivo),
-                    Texto("@evento", Recortar(riesgo.Evento, 200)),
-                    Fecha("@detectado", riesgo.Detectado),
-                    Fecha("@actualizado", riesgo.Actualizado),
-                    Fecha("@avisadoCampana", riesgo.AvisadoCampana),
-                    Fecha("@avisadoCorreo", riesgo.AvisadoCorreo)).FirstOrDefaultAsync().ConfigureAwait(false);
+                return await db.Database.SqlQuery<int>(nuevas ? SQL_INSERTAR_NUEVAS : SQL_INSERTAR, parametros.ToArray<object>())
+                    .FirstOrDefaultAsync().ConfigureAwait(false);
             }
         }
 
         public async Task Actualizar(RiesgoPromesa riesgo)
         {
+            bool nuevas = ColumnasNuevasExisten();
+            var parametros = new List<SqlParameter>
+            {
+                new SqlParameter("@id", SqlDbType.Int) { Value = riesgo.Id },
+                Fecha("@nueva", riesgo.FechaNueva?.Date),
+                Texto("@motivo", riesgo.Motivo),
+                Texto("@evento", Recortar(riesgo.Evento, 200)),
+                Fecha("@actualizado", riesgo.Actualizado),
+                Fecha("@avisadoCampana", riesgo.AvisadoCampana),
+                Fecha("@avisadoCorreo", riesgo.AvisadoCorreo)
+            };
+            if (nuevas)
+            {
+                parametros.Add(Fecha("@detectado", riesgo.Detectado));
+                parametros.AddRange(ParametrosNuevos(riesgo));
+            }
             using (NVEntities db = crearContexto())
             {
-                _ = await db.Database.ExecuteSqlCommandAsync(SQL_ACTUALIZAR,
-                    new SqlParameter("@id", SqlDbType.Int) { Value = riesgo.Id },
-                    Fecha("@nueva", riesgo.FechaNueva?.Date),
-                    Texto("@motivo", riesgo.Motivo),
-                    Texto("@evento", Recortar(riesgo.Evento, 200)),
-                    Fecha("@actualizado", riesgo.Actualizado),
-                    Fecha("@avisadoCampana", riesgo.AvisadoCampana),
-                    Fecha("@avisadoCorreo", riesgo.AvisadoCorreo)).ConfigureAwait(false);
+                _ = await db.Database.ExecuteSqlCommandAsync(nuevas ? SQL_ACTUALIZAR_NUEVAS : SQL_ACTUALIZAR, parametros.ToArray<object>()).ConfigureAwait(false);
             }
-            await GuardarCausa(riesgo.Id, riesgo.CausaOriginal).ConfigureAwait(false);
+        }
+
+        private static IEnumerable<SqlParameter> ParametrosNuevos(RiesgoPromesa riesgo) => new[]
+        {
+            Texto("@causa", riesgo.CausaOriginal),
+            Fecha("@todoListoDesde", riesgo.TodoListoDesde),
+            new SqlParameter("@enObservacion", SqlDbType.Bit) { Value = riesgo.EnObservacion }
+        };
+
+        public async Task<TextosPromesaRiesgo.CausasSinSalir> LeerCausasSinSalir(string empresa, int pedido)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return await db.Database.SqlQuery<TextosPromesaRiesgo.CausasSinSalir>(SQL_CAUSAS_SIN_SALIR, ParametroEmpresa(empresa),
+                    new SqlParameter("@pedido", SqlDbType.Int) { Value = pedido }).FirstOrDefaultAsync().ConfigureAwait(false)
+                    ?? new TextosPromesaRiesgo.CausasSinSalir();
+            }
         }
 
         public async Task Resolver(int id, DateTime cuando, string motivo)
@@ -371,7 +408,8 @@ ORDER BY r.Resuelto DESC, r.Pedido";
 
         public async Task<List<RiesgoPromesa>> LeerSinCorreo(string empresa)
         {
-            string sql = string.Format(SQL_SIN_CORREO, ColumnaCausa(ColumnaCausaOriginalExiste()));
+            bool nuevas = ColumnasNuevasExisten();
+            string sql = string.Format(SQL_SIN_CORREO, Columnas(nuevas), SinObservacion(nuevas));
             using (NVEntities db = crearContexto())
             {
                 return await db.Database.SqlQuery<RiesgoPromesa>(sql, ParametroEmpresa(empresa)).ToListAsync().ConfigureAwait(false);
@@ -380,7 +418,8 @@ ORDER BY r.Resuelto DESC, r.Pedido";
 
         public async Task<List<RiesgoPromesa>> LeerYaSalenSinCorreo(string empresa, DateTime desde)
         {
-            string sql = string.Format(SQL_YA_SALEN_SIN_CORREO, ColumnaCausa(ColumnaCausaOriginalExiste()));
+            bool nuevas = ColumnasNuevasExisten();
+            string sql = string.Format(SQL_YA_SALEN_SIN_CORREO, Columnas(nuevas), SinObservacion(nuevas));
             using (NVEntities db = crearContexto())
             {
                 return await db.Database.SqlQuery<RiesgoPromesa>(sql, ParametroEmpresa(empresa), Fecha("@desde", desde),
@@ -395,9 +434,9 @@ ORDER BY r.Resuelto DESC, r.Pedido";
 
         /// <summary>
         /// Caché como <see cref="TablaExiste"/>: una vez vista, se da por buena; sin ella, se vuelve a mirar cada 5 minutos y se apunta en
-        /// ELMAH una sola vez (los textos nuevos funcionan igual; solo se pierde la causa original).
+        /// ELMAH una sola vez (los textos nuevos funcionan igual; se pierde la causa original y no se observan los que lo tienen todo en Algete).
         /// </summary>
-        public bool ColumnaCausaOriginalExiste()
+        public bool ColumnasNuevasExisten()
         {
             lock (cerrojoCausa)
             {
@@ -411,7 +450,7 @@ ORDER BY r.Resuelto DESC, r.Pedido";
             {
                 using (NVEntities db = crearContexto())
                 {
-                    ahora = db.Database.SqlQuery<bool>(SQL_EXISTE_CAUSA).FirstOrDefault();
+                    ahora = db.Database.SqlQuery<bool>(SQL_EXISTEN_COLUMNAS_NUEVAS).FirstOrDefault();
                 }
             }
             catch (Exception)
@@ -433,8 +472,9 @@ ORDER BY r.Resuelto DESC, r.Pedido";
             {
                 try
                 {
-                    ElmahHelper.Log(new Exception("[Promesa en riesgo] Falta la columna PedidosPromesaRiesgo.CausaOriginal " +
-                        "(Scripts/PromesaRiesgo_CausaOriginal.sql): no se guarda lo que faltaba y la buena noticia sale sin el producto."),
+                    ElmahHelper.Log(new Exception("[Promesa en riesgo] Faltan las columnas CausaOriginal, TodoListoDesde y EnObservacion de " +
+                        "PedidosPromesaRiesgo (Scripts/PromesaRiesgo_CausaOriginal.sql): no se guarda lo que faltaba, la buena noticia sale sin el " +
+                        "producto y no se avisa de los pedidos que lo tienen todo en Algete y no salen."),
                         "Sistema (promesa en riesgo)");
                 }
                 catch
@@ -447,17 +487,24 @@ ORDER BY r.Resuelto DESC, r.Pedido";
 
         public async Task<List<RiesgoPromesaListado>> LeerListado(string empresa, bool incluirResueltos = false)
         {
+            // Las filas en observación no se enseñan nunca (ni vivas ni resueltas).
+            bool nuevas = ColumnasNuevasExisten();
+            string vivos = nuevas ? SinObservacionListado(SQL_LISTADO) : SQL_LISTADO;
+            string resueltos = nuevas ? SinObservacionListado(SQL_LISTADO_RESUELTOS) : SQL_LISTADO_RESUELTOS;
             using (NVEntities db = crearContexto())
             {
-                List<RiesgoPromesaListado> filas = await db.Database.SqlQuery<RiesgoPromesaListado>(SQL_LISTADO, ParametroEmpresa(empresa)).ToListAsync().ConfigureAwait(false);
+                List<RiesgoPromesaListado> filas = await db.Database.SqlQuery<RiesgoPromesaListado>(vivos, ParametroEmpresa(empresa)).ToListAsync().ConfigureAwait(false);
                 if (incluirResueltos)
                 {
-                    filas.AddRange(await db.Database.SqlQuery<RiesgoPromesaListado>(SQL_LISTADO_RESUELTOS, ParametroEmpresa(empresa),
+                    filas.AddRange(await db.Database.SqlQuery<RiesgoPromesaListado>(resueltos, ParametroEmpresa(empresa),
                         Fecha("@desde", DateTime.Today.AddDays(-DIAS_RESUELTOS))).ToListAsync().ConfigureAwait(false));
                 }
                 return filas;
             }
         }
+
+        internal static string SinObservacionListado(string sql) =>
+            sql.Replace("WHERE r.Empresa = @empresa AND ", "WHERE r.Empresa = @empresa AND r.EnObservacion = 0 AND ");
 
         internal static List<string> Limpios(IEnumerable<string> productos) => (productos ?? Enumerable.Empty<string>())
             .Where(p => !string.IsNullOrWhiteSpace(p))

@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
     /// <summary>
     /// NestoAPI#693: los textos, puros y de usted. Carlos (18/11/26): una o dos líneas por pedido con QUÉ FALTA (resumido), CUÁNDO LLEGA
-    /// y CUÁNDO SALE; nada de lo que sí está en Algete. «Faltan 45949 JABON CARBON ACTIVO y 5 productos más (50 uds.): llegan hoy del
+    /// y CUÁNDO SALE; nada de lo que sí está en Algete. «Faltan 45949 JABON CARBON ACTIVO y 5 productos más (50 uds.): llegan el miércoles 18/11 del
     /// proveedor. Sale el jueves 19/11 (aproximado). Va todo junto.» Sale del desglose del motor de #606
     /// (<see cref="FechaEntregaAgenciaDTO.Desglose"/>); la certeza en una palabra (<see cref="TextosCertezaFechaEntrega.CalificativoCorto"/>).
     /// </summary>
@@ -40,29 +40,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>«jueves 22/10/2026» o «sin fecha».</summary>
         public static string Fecha(DateTime? fecha) => fecha.HasValue ? GestorPresupuestos.DiaCorreo(fecha.Value.Date) : "sin fecha";
 
-        /// <summary>«hoy», «mañana», «19/11» o, de otro año, «08/01/2027».</summary>
-        public static string DiaCorto(DateTime dia, DateTime hoy)
-        {
-            if (dia.Date == hoy.Date)
-            {
-                return "hoy";
-            }
-            if (dia.Date == hoy.Date.AddDays(1))
-            {
-                return "mañana";
-            }
-            return Numeros(dia, hoy);
-        }
+        /// <summary>
+        /// «jueves 19/11» o, de otro año, «viernes 08/01/2027». Nunca «hoy» ni «mañana» (Carlos, 18/11/26): la frase se guarda y se lee
+        /// días después en el listado de Nesto. <paramref name="hoy"/> solo decide si va el año.
+        /// </summary>
+        public static string DiaCorto(DateTime dia, DateTime hoy) => $"{castellano.DateTimeFormat.GetDayName(dia.DayOfWeek)} {Numeros(dia, hoy)}";
 
-        /// <summary>«hoy», «mañana», «el jueves 19/11» o, de otro año, «el viernes 08/01/2027».</summary>
-        public static string ElDia(DateTime dia, DateTime hoy)
-        {
-            if (dia.Date == hoy.Date || dia.Date == hoy.Date.AddDays(1))
-            {
-                return DiaCorto(dia, hoy);
-            }
-            return $"el {castellano.DateTimeFormat.GetDayName(dia.DayOfWeek)} {Numeros(dia, hoy)}";
-        }
+        /// <summary>«el jueves 19/11» o, de otro año, «el viernes 08/01/2027».</summary>
+        public static string ElDia(DateTime dia, DateTime hoy) => "el " + DiaCorto(dia, hoy);
 
         private static string Numeros(DateTime dia, DateTime hoy) =>
             dia.Year == hoy.Year ? dia.ToString("dd/MM", CultureInfo.InvariantCulture) : dia.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
@@ -112,7 +97,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// (ya no se dice «todo está listo en Algete, pero no salió el …», que no era cierto).
         /// </summary>
         /// <param name="nombres">Producto → descripción (opcional).</param>
-        /// <param name="hoy">Para «hoy», «mañana» y el año.</param>
+        /// <param name="hoy">Solo para el año (otro año: «08/01/2027»).</param>
         public static string Motivo(DateTime prometida, FechaEntregaAgenciaDTO calculo, IDictionary<string, string> nombres, DateTime hoy)
         {
             List<PartidaFechaEntregaAgenciaDTO> culpables = Culpables(prometida, calculo);
@@ -134,7 +119,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             else if (productos == 1)
             {
-                // Un solo producto repartido entre varios sitios: «Faltan 42485 PARCHES (3 uds.): 1 viene de camino (hoy) y 2 vienen de Reina (23/10).»
+                // Un solo producto repartido entre varios sitios: «Faltan 42485 PARCHES (3 uds.): 1 viene de camino (jueves 22/10) y 2 vienen de Reina (viernes 23/10).»
                 int unidades = grupos.Sum(g => g.Unidades);
                 string producto = Producto(grupos[0].Productos[0], nombres);
                 falta = $"{(unidades > 1 ? "Faltan" : "Falta")} {producto} ({Unidades(unidades)}): " +
@@ -164,7 +149,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         /// <summary>
         /// La buena noticia de un pedido avisado al que le ha llegado lo que faltaba: «Faltaba 45949 JABON CARBON ACTIVO; llegó el 17/11.
-        /// Sale hoy.» Sin la causa original, <see cref="TODO_EN_ALGETE"/>. La llegada va con la fecha (es un hecho pasado que se guarda).
+        /// Sale el martes 17/11.» Sin la causa original, <see cref="TODO_EN_ALGETE"/>. La llegada va con la fecha (es un hecho pasado que se guarda).
         /// </summary>
         public static string YaLlego(IList<FaltaPromesaRiesgo> faltaba, DateTime llego, DateTime? sale, DateTime hoy)
         {
@@ -178,7 +163,51 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool varios = lista.Count > 1;
             string mas = varios ? " " + YMas(lista.Count - 1) : string.Empty;
             string cuando = sale.HasValue ? ElDia(sale.Value, hoy) : "en el próximo picking";
-            return $"{(varios ? "Faltaban" : "Faltaba")} {producto}{mas}; {(varios ? "llegaron" : "llegó")} el {Numeros(llego, hoy)}. Sale {cuando}.";
+            return $"{(varios ? "Faltaban" : "Faltaba")} {producto}{mas}; {(varios ? "llegaron" : "llegó")} {ElDia(llego, hoy)}. Sale {cuando}.";
+        }
+
+        /// <summary>Lo que se sabe (barato) de por qué un pedido con todo en Algete no sale.</summary>
+        public class CausasSinSalir
+        {
+            /// <summary>Plazos de pago PRE: puede estar esperando el pago (no se sabe si está cubierto: se dice como posibilidad).</summary>
+            public bool Prepago { get; set; }
+            /// <summary>Fila «Pendiente» en PedidosRetenidosPorFalta (#858): espera la decisión del vendedor.</summary>
+            public bool RetenidoPorFalta { get; set; }
+        }
+
+        public const string REVISE_GENERICO = "Revise el pedido (retenido, pendiente de prepago, fecha de entrega…).";
+
+        /// <summary>
+        /// Carlos (18/11/26): el caso raro, todo en Algete desde hace al menos un día laborable completo y sin salir. Frase verdadera: desde
+        /// cuándo lo vemos todo en Algete y, si se sabe, la causa; si no, el paréntesis genérico. «Está todo en Algete desde el lunes 16/11 y
+        /// sigue sin salir. Es de prepago: compruebe que está pagado. Revise el pedido.»
+        /// </summary>
+        public static string SigueSinSalir(DateTime desde, FechaEntregaAgenciaDTO calculo, CausasSinSalir causas, DateTime hoy)
+        {
+            var conocidas = new List<string>();
+            if (causas?.RetenidoPorFalta == true)
+            {
+                conocidas.Add("Está retenido por una falta, esperando la decisión del vendedor");
+            }
+            if (causas?.Prepago == true)
+            {
+                conocidas.Add("Es de prepago: compruebe que está pagado");
+            }
+            string motor = calculo?.Motivo;
+            if (TieneFechaEntregaPosterior(calculo))
+            {
+                conocidas.Add("El pedido tiene una fecha de entrega posterior");
+            }
+            if (motor != null && motor.Contains("Alguna línea tiene una fecha de entrega posterior"))
+            {
+                conocidas.Add("Alguna línea tiene una fecha de entrega posterior");
+            }
+            if (motor != null && (motor.Contains("próximo reparto de nuestra ruta") || motor.Contains("hora de corte de nuestra ruta")))
+            {
+                conocidas.Add("Va por nuestra ruta y sale el día de reparto de su zona");
+            }
+            string inicio = $"Está todo en Algete desde {ElDia(desde, hoy)} y sigue sin salir.";
+            return conocidas.Any() ? $"{inicio} {string.Join(". ", conocidas)}. Revise el pedido." : $"{inicio} {REVISE_GENERICO}";
         }
 
         // ------------------------------------------------------------------ piezas
@@ -233,7 +262,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             if (sinFecha.All(p => p.FechaOrientativa.HasValue))
             {
                 DateTime orientativa = culpables.Select(p => (p.PuedeSalirEl ?? p.FechaOrientativa).Value.Date).Max();
-                return $"Sin fecha segura ({TextosCertezaFechaEntrega.CORTO_ORIENTATIVO}: {Numeros(orientativa, hoy)}).";
+                return $"Sin fecha segura ({TextosCertezaFechaEntrega.CORTO_ORIENTATIVO}: {DiaCorto(orientativa, hoy)}).";
             }
             return "Sin fecha.";
         }
@@ -263,7 +292,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private static string Nombre(IDictionary<string, string> nombres, string producto) =>
             nombres != null && producto != null && nombres.TryGetValue(producto, out string nombre) ? nombre : null;
 
-        /// <summary>Cuándo llega lo que falta, para una sola causa: «llegan hoy del proveedor», «viene de Reina», «el proveedor lo trae hacia el 14/12».</summary>
+        /// <summary>Cuándo llega lo que falta, para una sola causa: «llegan el miércoles 18/11 del proveedor», «viene de Reina», «el proveedor lo trae hacia el lunes 14/12».</summary>
         internal static string FraseLarga(PartidaFechaEntregaAgenciaDTO p, bool plural, DateTime hoy)
         {
             string n = plural ? "n" : string.Empty;
@@ -282,14 +311,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                     if (p.LlegadaSupuesta.HasValue)
                     {
-                        return $"el proveedor tenía que traerlo{s} el {Numeros(p.FechaPrevistaProveedor.Value, hoy)} y aún no ha llegado";
+                        return $"el proveedor tenía que traerlo{s} {ElDia(p.FechaPrevistaProveedor.Value, hoy)} y aún no ha llegado";
                     }
-                    string dia = DiaCorto(p.FechaPrevistaProveedor.Value, hoy);
-                    return dia == "hoy" || dia == "mañana" ? $"llega{n} {dia} del proveedor" : $"llega{n} del proveedor el {dia}";
+                    return $"llega{n} {ElDia(p.FechaPrevistaProveedor.Value, hoy)} del proveedor";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK:
                     if (p.FechaPrevistaProveedorOrientativo.HasValue)
                     {
-                        return $"el proveedor lo{s} trae hacia el {Numeros(p.FechaPrevistaProveedorOrientativo.Value, hoy)}";
+                        return $"el proveedor lo{s} trae hacia {ElDia(p.FechaPrevistaProveedorOrientativo.Value, hoy)}";
                     }
                     return p.FechaOrientativa.HasValue ? $"aún no está{n} pedido{s} al proveedor" : "no hay stock ni pedido al proveedor";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:

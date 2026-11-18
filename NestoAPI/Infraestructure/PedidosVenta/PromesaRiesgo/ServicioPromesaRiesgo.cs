@@ -19,6 +19,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public int AvisadosCampana { get; set; }
         /// <summary>Buenas noticias por la campana (0 en Sombra).</summary>
         public int AvisadosYaSalen { get; set; }
+        /// <summary>Filas «en observación» nuevas (todo en Algete y va tarde; sin aviso todavía).</summary>
+        public int Observados { get; set; }
+        /// <summary>Observados que pasan a aviso: un día laborable completo con todo en Algete y sin salir.</summary>
+        public int SiguenSinSalir { get; set; }
         public List<int> PedidosAvisados { get; set; } = new List<int>();
     }
 
@@ -39,10 +43,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private readonly Func<DateTime> reloj;
         private readonly Func<ModoAvisoPromesaRiesgo> modo;
         private readonly Action<Exception> registrar;
+        private readonly Func<DateTime, bool> esFestivoAlgete;
 
+        /// <param name="esFestivoAlgete">Fines de semana y festivos de Algete (para «un día laborable completo»). Null: GestorFestivos.</param>
         public ServicioPromesaRiesgo(IRepositorioPromesaRiesgo repositorio, IServicioFechaEntregaAgencia fechas, IAvisadorPromesaRiesgo avisador,
-            Func<DateTime> reloj = null, Func<ModoAvisoPromesaRiesgo> modo = null, Action<Exception> registrar = null)
+            Func<DateTime> reloj = null, Func<ModoAvisoPromesaRiesgo> modo = null, Action<Exception> registrar = null,
+            Func<DateTime, bool> esFestivoAlgete = null)
         {
+            this.esFestivoAlgete = esFestivoAlgete ?? (d => Models.RecursosHumanos.GestorFestivos.EsFestivo(d, Models.Constantes.Almacenes.ALGETE));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.fechas = fechas ?? throw new ArgumentNullException(nameof(fechas));
             this.avisador = avisador;
@@ -215,16 +223,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             RiesgoPromesa registrado, string descripcion, DateTime ahora,
             ResultadoPromesaRiesgo resultado, List<Aviso> avisar, bool rehacerMotivo = false)
         {
-            DecisionPromesaRiesgo decision = EvaluadorPromesaRiesgo.Decidir(prometida, calculo, quedaPendiente, registrado);
+            bool vencida = registrado != null && registrado.EnObservacion && registrado.TodoListoDesde.HasValue
+                && EvaluadorPromesaRiesgo.ObservacionVencida(registrado.TodoListoDesde.Value, ahora, esFestivoAlgete);
+            DecisionPromesaRiesgo decision = EvaluadorPromesaRiesgo.Decidir(prometida, calculo, quedaPendiente, registrado, vencida);
             switch (decision.Accion)
             {
                 case AccionPromesaRiesgo.Registrar:
                     avisar.Add(new Aviso { Riesgo = await Registrar(empresa, pedido, prometida.Value, calculo, descripcion, ahora).ConfigureAwait(false) });
                     resultado.Registrados++;
                     break;
+                case AccionPromesaRiesgo.Observar:
+                    await Observar(empresa, pedido, prometida.Value, calculo, descripcion, ahora, resultado).ConfigureAwait(false);
+                    break;
+                case AccionPromesaRiesgo.SigueSinSalir:
+                    {
+                        // Carlos (18/11/26): «si se da ese caso extraño, es bueno que se avise al vendedor». La fila deja de estar en
+                        // observación y pasa a ser un aviso normal (listado, campana, correo); TodoListoDesde dice que es de este tipo.
+                        registrado.EnObservacion = false;
+                        registrado.FechaNueva = calculo.FechaEntregaAgencia?.Date;
+                        registrado.Motivo = await TextoSigueSinSalir(empresa, pedido, registrado.TodoListoDesde.Value, calculo, ahora).ConfigureAwait(false);
+                        registrado.Evento = descripcion;
+                        registrado.Detectado = ahora;
+                        registrado.Actualizado = ahora;
+                        registrado.AvisadoCampana = null;
+                        registrado.AvisadoCorreo = null;
+                        await repositorio.Actualizar(registrado).ConfigureAwait(false);
+                        avisar.Add(new Aviso { Riesgo = registrado });
+                        resultado.SiguenSinSalir++;
+                    }
+                    break;
                 case AccionPromesaRiesgo.Empeora:
                     {
-                        Explicacion explicacion = await Explicar(empresa, pedido, registrado.FechaPrometida, calculo).ConfigureAwait(false);
+                        Explicacion explicacion = await Explicar(empresa, pedido, registrado.FechaPrometida, calculo, registrado.TodoListoDesde).ConfigureAwait(false);
+                        registrado.TodoListoDesde = explicacion.Faltas.Any() ? null : registrado.TodoListoDesde; // con culpables, es un riesgo normal
                         registrado.FechaNueva = calculo.FechaEntregaAgencia?.Date;
                         registrado.Motivo = explicacion.Motivo;
                         registrado.CausaOriginal = CausaOriginalPromesaRiesgo.Unir(registrado.CausaOriginal, explicacion.Faltas);
@@ -244,14 +275,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         // original no se pierde nunca: se le suma lo que falte ahora y no estaba (Carlos, 18/11/26).
                         DateTime? nueva = calculo.FechaEntregaAgencia?.Date;
                         bool cambiaFecha = nueva != registrado.FechaNueva?.Date;
-                        if (!cambiaFecha && !rehacerMotivo && !repositorio.ColumnaCausaOriginalExiste())
+                        if (!cambiaFecha && !rehacerMotivo && !repositorio.ColumnasNuevasExisten())
                         {
                             break;
                         }
-                        Explicacion explicacion = await Explicar(empresa, pedido, registrado.FechaPrometida, calculo).ConfigureAwait(false);
+                        Explicacion explicacion = await Explicar(empresa, pedido, registrado.FechaPrometida, calculo, registrado.TodoListoDesde).ConfigureAwait(false);
                         string causa = CausaOriginalPromesaRiesgo.Unir(registrado.CausaOriginal, explicacion.Faltas);
                         bool escribir = !string.Equals(causa, registrado.CausaOriginal, StringComparison.Ordinal);
                         registrado.CausaOriginal = causa;
+                        if (registrado.TodoListoDesde.HasValue && explicacion.Faltas.Any())
+                        {
+                            registrado.TodoListoDesde = null; // el de «sigue sin salir» ahora tiene un culpable: es un riesgo normal
+                            registrado.Motivo = explicacion.Motivo;
+                            escribir = true;
+                        }
                         if (cambiaFecha || (rehacerMotivo && !string.Equals(explicacion.Motivo, registrado.Motivo, StringComparison.Ordinal)))
                         {
                             registrado.FechaNueva = nueva;
@@ -284,18 +321,72 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         {
                             avisar.Add(new Aviso { Riesgo = registrado, YaLlego = true });
                         }
+                        // Y se queda en observación: si al día laborable siguiente sigue sin salir, se avisa (caso raro).
+                        if (decision.AccionTrasRenegociar == AccionPromesaRiesgo.Observar)
+                        {
+                            await Observar(empresa, pedido, registrado.FechaPrometida, calculo, descripcion, ahora, resultado).ConfigureAwait(false);
+                        }
                     }
                     break;
                 case AccionPromesaRiesgo.Resolver:
                     await repositorio.Resolver(registrado.Id, ahora, decision.MotivoResolucion).ConfigureAwait(false);
-                    resultado.Resueltos++;
+                    if (!registrado.EnObservacion)
+                    {
+                        resultado.Resueltos++;
+                    }
                     if (decision.AccionTrasRenegociar == AccionPromesaRiesgo.Registrar)
                     {
                         avisar.Add(new Aviso { Riesgo = await Registrar(empresa, pedido, prometida.Value, calculo, descripcion, ahora).ConfigureAwait(false) });
                         resultado.Registrados++;
                     }
+                    else if (decision.AccionTrasRenegociar == AccionPromesaRiesgo.Observar)
+                    {
+                        await Observar(empresa, pedido, prometida.Value, calculo, descripcion, ahora, resultado).ConfigureAwait(false);
+                    }
                     break;
             }
+        }
+
+        /// <summary>
+        /// Fila «en observación»: todo en Algete, va tarde y aún no toca avisar. Sin las columnas nuevas, nada (como antes: sin aviso).
+        /// </summary>
+        private async Task Observar(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo, string descripcion, DateTime ahora,
+            ResultadoPromesaRiesgo resultado)
+        {
+            if (!repositorio.ColumnasNuevasExisten())
+            {
+                return;
+            }
+            var observado = new RiesgoPromesa
+            {
+                Empresa = empresa,
+                Pedido = pedido,
+                FechaPrometida = prometida.Date,
+                FechaNueva = calculo.FechaEntregaAgencia?.Date,
+                Motivo = TextosPromesaRiesgo.TODO_EN_ALGETE,
+                Evento = descripcion,
+                Detectado = ahora,
+                Actualizado = ahora,
+                TodoListoDesde = ahora,
+                EnObservacion = true
+            };
+            observado.Id = await repositorio.Insertar(observado).ConfigureAwait(false);
+            resultado.Observados++;
+        }
+
+        private async Task<string> TextoSigueSinSalir(string empresa, int pedido, DateTime desde, FechaEntregaAgenciaDTO calculo, DateTime ahora)
+        {
+            TextosPromesaRiesgo.CausasSinSalir causas;
+            try
+            {
+                causas = await repositorio.LeerCausasSinSalir(empresa, pedido).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Registrar($"no se han podido leer las causas de que el pedido {pedido} no salga", ex);
+                causas = null;
+            }
+            return TextosPromesaRiesgo.SigueSinSalir(desde, calculo, causas, ahora.Date);
         }
 
         private async Task<RiesgoPromesa> Registrar(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo,
@@ -324,9 +415,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public List<FaltaPromesaRiesgo> Faltas { get; set; }
         }
 
-        /// <summary>La frase para el vendedor y lo que falta (para la causa original), con los nombres de los culpables.</summary>
-        private async Task<Explicacion> Explicar(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo)
+        /// <summary>
+        /// La frase para el vendedor y lo que falta (para la causa original), con los nombres de los culpables. Con
+        /// <paramref name="todoListoDesde"/> (el aviso de «sigue sin salir») y sin culpables, la frase de ese caso.
+        /// </summary>
+        private async Task<Explicacion> Explicar(string empresa, int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo,
+            DateTime? todoListoDesde = null)
         {
+            if (todoListoDesde.HasValue && !TextosPromesaRiesgo.Culpables(prometida, calculo).Any())
+            {
+                return new Explicacion
+                {
+                    Motivo = await TextoSigueSinSalir(empresa, pedido, todoListoDesde.Value, calculo, reloj()).ConfigureAwait(false),
+                    Faltas = new List<FaltaPromesaRiesgo>()
+                };
+            }
             List<string> culpables = TextosPromesaRiesgo.Culpables(prometida, calculo).Select(p => p.Producto?.Trim())
                 .Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             Dictionary<string, string> nombres;

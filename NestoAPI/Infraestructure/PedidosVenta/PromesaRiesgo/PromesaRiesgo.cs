@@ -142,6 +142,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// Columna opcional (Scripts/PromesaRiesgo_CausaOriginal.sql): sin ella, siempre null.
         /// </summary>
         public string CausaOriginal { get; set; }
+        /// <summary>
+        /// Carlos (18/11/26): desde cuándo el cálculo lo ve todo en Algete (o en picking) y aun así va tarde. En una fila en observación,
+        /// la primera vez que se vio; en una fila avisada, que es el aviso del caso raro («sigue sin salir»). Columna opcional.
+        /// </summary>
+        public DateTime? TodoListoDesde { get; set; }
+        /// <summary>
+        /// Fila «en observación»: todo en Algete y va tarde, pero aún no ha pasado un día laborable completo de Algete. No avisa ni sale en
+        /// el listado ni en el correo; solo sirve para saber desde cuándo y para que el pedido siga siendo candidato. Columna opcional.
+        /// </summary>
+        public bool EnObservacion { get; set; }
     }
 
     /// <summary>Un producto que faltaba (para la causa original y la buena noticia).</summary>

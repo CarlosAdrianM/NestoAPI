@@ -833,15 +833,22 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 ### Promesa en riesgo: frase corta, causa original y buena noticia (NestoAPI#693, Carlos 18/11/26)
 - `TextosPromesaRiesgo.Motivo` (campana, pantalla de Nesto, que pinta `Motivo` tal cual, y correo): QUÉ FALTA, CUÁNDO LLEGA y CUÁNDO SALE, nada
   de lo que está en Algete. Agrupa misma causa y fecha («Faltan 45949 JABON CARBON ACTIVO y 5 productos más (50 uds.): llegan hoy del proveedor.
-  Sale mañana (aproximado). Va todo junto.»); nombre a 30 letras por palabra; fechas «hoy»/«mañana»/«el jueves 19/11» (año solo si es otro);
+  Sale el jueves 19/11 (aproximado). Va todo junto.»); nombre a 30 letras por palabra; fechas SIEMPRE «el jueves 19/11» (nunca «hoy» ni
+  «mañana»: la frase se guarda y se lee días después; año solo si es otro);
   certeza en una palabra (`TextosCertezaFechaEntrega.CalificativoCorto`: Segura y CasiSegura → seguro, Aproximada, Orientativa). Ya no lleva la
   causa del evento («Reina mandó 1 de 3…»: queda en `Evento`) ni «todo está listo en Algete, pero no salió…».
-- Regla (`EvaluadorPromesaRiesgo.MereceAviso`): solo se registra/avisa lo que tiene culpables (no listo en Algete) o fecha de entrega posterior.
-  Sin culpables y sin registrar → Nada (aunque salga después de la prometida). Registrado y ya sin culpables → `YaLlego`: texto «Faltaba X;
-  llegó el 17/11. Sale hoy.», se resuelve con «Ha llegado lo que faltaba», campana UNA vez solo si se avisó la mala, y en el correo resumen en
-  una línea solo si la mala salió en un correo (`LeerYaSalenSinCorreo`, 7 días).
-- Causa original: `PedidosPromesaRiesgo.CausaOriginal` (JSON de lo que faltaba; se suma al empeorar/actualizar, nunca se pierde;
-  `Scripts/PromesaRiesgo_CausaOriginal.sql`, opcional, caché + ELMAH una vez). Sin ella: textos nuevos y buena noticia «Ya está todo en Algete: sale en el próximo picking.».
+- Regla (`EvaluadorPromesaRiesgo.MereceAviso`): se avisa en el acto lo que tiene culpables (no listo en Algete) o fecha de entrega posterior.
+  Registrado y ya sin culpables → `YaLlego`: «Faltaba X; llegó el martes 17/11. Sale el martes 17/11.», se resuelve con «Ha llegado lo que
+  faltaba», campana UNA vez solo si se avisó la mala, y en el correo resumen en una línea solo si la mala salió en un correo (`LeerYaSalenSinCorreo`, 7 días).
+- Todo en Algete y va tarde (sin registrar, o tras la buena noticia) → fila «en observación» (`EnObservacion` = 1, `TodoListoDesde`): sin
+  aviso, fuera del listado y del correo; sigue siendo candidato. Si sale, se resuelve sin ruido. Si termina entero el primer día laborable de
+  Algete posterior (`ObservacionVencida`, fines de semana y festivos) y sigue sin salir → `SigueSinSalir`: pasa a aviso normal («Está todo en
+  Algete desde el lunes 16/11 y sigue sin salir. Es de prepago: compruebe que está pagado. Revise el pedido.»; causas baratas: prepago PRE,
+  retenido por falta #858, fecha de entrega posterior, ruta propia; si no, «Revise el pedido (retenido, pendiente de prepago, fecha de
+  entrega…).»). Una vez: que su fecha se corra un día cada día no es «empeorar»; si aparece un culpable, riesgo normal.
+- Columnas opcionales `CausaOriginal` (JSON de lo que faltaba; se suma, nunca se pierde), `TodoListoDesde` y `EnObservacion`
+  (`Scripts/PromesaRiesgo_CausaOriginal.sql`; la API las usa solo si están las tres; caché + ELMAH una vez). Sin ellas: textos nuevos, buena
+  noticia «Ya está todo en Algete: sale en el próximo picking.» y sin aviso de los que lo tienen todo en Algete (como antes).
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

@@ -366,10 +366,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             // Carlos (18/11/26): la promesa en riesgo ya no usa las frases largas (antes «no hay stock: llegan con el pedido al proveedor
             // 220672, ya enviado por GLS, que prevé entregarlo…»); la certeza va en una palabra en «Sale …», no en cada producto.
             var hoy = new DateTime(2026, 11, 10);
-            Assert.AreEqual("llegan del proveedor el 13/11", TextosPromesaRiesgo.FraseLarga(conSeguimiento, true, hoy));
-            Assert.AreEqual("llegan mañana del proveedor", TextosPromesaRiesgo.FraseLarga(conSeguimiento, true, new DateTime(2026, 11, 12)));
+            Assert.AreEqual("llegan el viernes 13/11 del proveedor", TextosPromesaRiesgo.FraseLarga(conSeguimiento, true, hoy));
             Assert.AreEqual("aún no está pedido al proveedor", TextosPromesaRiesgo.FraseLarga(orientativa, false, hoy));
-            Assert.AreEqual("Faltan 2 productos: B del proveedor (13/11) y C sin pedir al proveedor. Sin fecha segura (orientativo: 24/11).",
+            Assert.AreEqual("Faltan 2 productos: B del proveedor (viernes 13/11) y C sin pedir al proveedor. Sin fecha segura (orientativo: martes 24/11).",
                 TextosPromesaRiesgo.Motivo(new DateTime(2026, 11, 9), new FechaEntregaAgenciaDTO
                 {
                     Desglose = new List<PartidaFechaEntregaAgenciaDTO> { conSeguimiento, orientativa }
