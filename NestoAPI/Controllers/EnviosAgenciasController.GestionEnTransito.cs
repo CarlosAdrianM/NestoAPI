@@ -363,6 +363,8 @@ namespace NestoAPI.Controllers
                 }
                 return null;
             }
+            // Incidencia 1328: el retorno es una recogida en casa del cliente: no lleva nada del almacén (nunca lanza).
+            await PickingsEnvio.ApuntarAsync(retorno.Numero, new[] { Infraestructure.Agencias.ReglasPickingsEnvio.SIN_MERCANCIA }, retorno.Usuario);
             return retorno.Numero;
         }
 

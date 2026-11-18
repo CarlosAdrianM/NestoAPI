@@ -342,6 +342,12 @@ namespace NestoAPI.Infraestructure.Agencias
             this.haVuelto = haVuelto;
         }
 
+        /// <summary>
+        /// Incidencia 1328: (envío original, reenvío, usuario) → copia al reenvío los pickings del original
+        /// (<see cref="IRepositorioPickingsEnvio.CopiarAsync"/>). Sin él, el reenvío queda sin dato.
+        /// </summary>
+        internal Func<int, int, string, Task> CopiarPickings { get; set; }
+
         /// <summary>Solo los devueltos (4) y los incidentados (3) admiten decisión.</summary>
         internal static bool AdmiteDecision(EnviosAgencia envio) =>
             envio != null && (envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO || envio.Estado == Constantes.Agencias.ESTADO_INCIDENTADO);
@@ -491,6 +497,26 @@ namespace NestoAPI.Infraestructure.Agencias
             catch (SinCodigoBarrasReenvioException ex)
             {
                 return ResultadoReenvio.Invalido(ex.Message);
+            }
+
+            // Incidencia 1328: el reenvío lleva la misma caja que el original, así que los mismos pickings (nunca lanza).
+            if (CopiarPickings != null)
+            {
+                try
+                {
+                    await CopiarPickings(origen.Numero, nuevo.Numero, usuario);
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        ElmahHelper.Log(new Exception($"[Pickings del envío, incidencia 1328] Reenvío {nuevo.Numero} del {origen.Numero}: {ex.Message}", ex));
+                    }
+                    catch
+                    {
+                        // El registro nunca rompe el reenvío.
+                    }
+                }
             }
 
             if (peticion.IncluirPortes && !nuevo.Pedido.HasValue)

@@ -814,6 +814,19 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   no existe o es de otro cliente (`ServicioPagos.MotivoEfectosDeOtroCliente`; no mira empresa ni contacto del cobro: 1/3 y varios contactos valen) y
   pone a cada efecto el contacto de su apunte.
 
+### Qué picking lleva cada envío (incidencia 1328, 18/11/26)
+- `dbo.EnviosAgenciaPickings` (Envio, Picking, FechaAlta, Usuario; PK Envio+Picking; fuera del EDMX, `Scripts/Issue1328_EnviosAgenciaPickings.sql`;
+  sin ella, todo como antes y ELMAH una vez). Un único punto: `RepositorioPickingsEnvio` (`Infraestructure/Agencias/PickingsEnvio.cs`, nunca lanza).
+  Se apunta (unión, nunca se quita) con los pickings de las líneas del pedido en curso o en albarán (`ReglasPickingsEnvio.PickingsDeLasLineas`) al
+  crear en curso por POST api/EnviosAgencias, en DesdePedido (nuevo, pendiente reutilizado, ampliación; también el packing de Ariadna) y en el PUT
+  de un envío aún en el almacén que queda en curso o más (`ApuntarAlModificar`). El reenvío (#699) copia los del original; el retorno de
+  GestionEnTransito lleva `SIN_MERCANCIA` (0). La etiqueta pendiente (estado -1), las paradas de notas y las notas de cobro no apuntan (sin dato).
+- LA REGLA (`AplazamientoPedidoConPicking.YaLoTieneLaAgencia(envios, pickings, …)`, `EnvioDelPedido.PuedeLlevar`): la agencia «ya tiene» las
+  líneas que cambian de fecha si un envío del pedido tramitado o más (no devuelto ni reparto propio por entregar) PUEDE llevarlas: con dato, si
+  lleva alguno de sus pickings; sin dato, si no está terminado (entregado 2 o cerrado a mano 5: lo terminado no puede contener lo que sigue en el
+  almacén). Lo mismo filtra las etiquetas a anular y los envíos del reparto propio a los que se mueve el día. La usan el PUT del pedido (por línea)
+  y AvisarLogisticaAplazamiento. Caso 930358: el 250999 entregado (picking 100095) ya no bloquea aplazar el 100114.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

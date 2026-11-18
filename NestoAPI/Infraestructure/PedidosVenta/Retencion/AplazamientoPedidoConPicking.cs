@@ -31,6 +31,32 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         /// </summary>
         public bool EsRepartoPropioPorEntregar => Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
             && (Estado == Constantes.Agencias.ESTADO_EN_CURSO || Estado == Constantes.Agencias.ESTADO_TRAMITADO || Estado == Constantes.Agencias.ESTADO_INCIDENTADO);
+
+        /// <summary>
+        /// Incidencia 1328: los pickings que lleva el envío (EnviosAgenciaPickings). Null = SIN dato (envíos de antes del cambio o
+        /// creados por un camino que no lo sabe). <see cref="Agencias.ReglasPickingsEnvio.SIN_MERCANCIA"/> (0) = no lleva nada del almacén.
+        /// </summary>
+        public List<int> Pickings { get; set; }
+
+        /// <summary>
+        /// Incidencia 1328: terminado = entregado o cerrado a mano (5, <see cref="Agencias.CierreManualEnvio"/>: un incidentado que la
+        /// agencia nunca cerró y se da por terminado). Lo que lleva ya no está en el almacén, así que no puede ser lo que sigue
+        /// pendiente en él.
+        /// </summary>
+        public bool EstaTerminado => Estado == Constantes.Agencias.ESTADO_ENTREGADO || Estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO;
+
+        /// <summary>
+        /// Incidencia 1328: ¿este envío lleva (o puede llevar) las líneas de esos pickings? Con dato, solo si lleva alguno. Sin dato,
+        /// como antes (puede), salvo si ya está terminado. Sin saber los pickings de las líneas (null), con dato también «puede».
+        /// </summary>
+        public bool PuedeLlevar(ICollection<int> pickingsDeLasLineas)
+        {
+            if (Pickings == null)
+            {
+                return !EstaTerminado;
+            }
+            return pickingsDeLasLineas == null || Pickings.Any(pickingsDeLasLineas.Contains);
+        }
     }
 
     public enum DecisionAplazamiento
@@ -72,16 +98,40 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         public const string TIPO_AVISO = "AplazadoConPicking";
         private static readonly CultureInfo castellano = new CultureInfo("es-ES");
 
-        /// <summary>Ya lo tiene la agencia: tramitado o más allá (entregado, incidentado…). Una etiqueta en curso todavía se puede parar.</summary>
+        /// <summary>
+        /// Ya lo tiene la agencia: tramitado o más allá (entregado, incidentado…). Una etiqueta en curso todavía se puede parar. Sin
+        /// saber qué pickings cambian: los envíos con dato cuentan (prudente) y los sin dato, como en <see cref="EnvioDelPedido.PuedeLlevar"/>.
+        /// </summary>
         public static bool YaLoTieneLaAgencia(IEnumerable<EnvioDelPedido> envios, out int envio)
+            => YaLoTieneLaAgencia(envios, null, out envio);
+
+        /// <summary>
+        /// Incidencia 1328, LA REGLA: la agencia «ya tiene» unas líneas si hay un envío del pedido tramitado o más (no devuelto, ni del
+        /// reparto propio por entregar: NestoAPI#831) que las PUEDE llevar: con dato, que lleve alguno de sus pickings; sin dato,
+        /// cualquiera menos el ya entregado o cerrado a mano (lo terminado no puede contener lo que sigue en el almacén).
+        /// </summary>
+        /// <param name="pickingsDeLasLineas">Los pickings de las líneas que cambian; null = no se saben.</param>
+        public static bool YaLoTieneLaAgencia(IEnumerable<EnvioDelPedido> envios, IEnumerable<int> pickingsDeLasLineas, out int envio)
         {
-            // NestoAPI#831: el del reparto propio por entregar no cuenta: se le mueve la fecha
+            HashSet<int> pickings = pickingsDeLasLineas == null ? null : new HashSet<int>(pickingsDeLasLineas.Where(p => p > 0));
             EnvioDelPedido tramitado = (envios ?? Enumerable.Empty<EnvioDelPedido>())
                 .Where(e => e != null && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO && e.Estado != Constantes.Agencias.ESTADO_DEVUELTO
-                    && !e.EsRepartoPropioPorEntregar)
+                    && !e.EsRepartoPropioPorEntregar && e.PuedeLlevar(pickings))
                 .OrderByDescending(e => e.Numero).FirstOrDefault();
             envio = tramitado?.Numero ?? 0;
             return tramitado != null;
+        }
+
+        /// <summary>
+        /// NestoAPI#831 + incidencia 1328: los envíos del reparto propio por entregar a los que se mueve el día de reparto al aplazar:
+        /// los que pueden llevar esas líneas (con dato, solo si llevan alguno de sus pickings; sin dato, todos, como antes).
+        /// </summary>
+        public static List<int> EnviosRepartoPropioAfectados(IEnumerable<EnvioDelPedido> envios, IEnumerable<int> pickingsDeLasLineas)
+        {
+            HashSet<int> pickings = pickingsDeLasLineas == null ? null : new HashSet<int>(pickingsDeLasLineas.Where(p => p > 0));
+            return (envios ?? Enumerable.Empty<EnvioDelPedido>())
+                .Where(e => e != null && e.EsRepartoPropioPorEntregar && e.PuedeLlevar(pickings))
+                .Select(e => e.Numero).Distinct().OrderBy(n => n).ToList();
         }
 
         public static ResultadoAplazamiento Evaluar(int pedido, IEnumerable<LineaAplazable> lineas, IEnumerable<EnvioDelPedido> envios, DateTime hoy)
@@ -92,20 +142,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
             {
                 return new ResultadoAplazamiento { Decision = DecisionAplazamiento.Nada };
             }
-            if (YaLoTieneLaAgencia(envios, out int envio))
+            List<int> pickings = cambian.Select(l => l.Picking).Distinct().OrderBy(p => p).ToList();
+            if (YaLoTieneLaAgencia(envios, pickings, out int envio))
             {
                 return new ResultadoAplazamiento { Decision = DecisionAplazamiento.Rechazar, EnvioEnAgencia = envio, Mensaje = MensajeRechazo(pedido, envio) };
             }
+            var conjunto = new HashSet<int>(pickings);
             var resultado = new ResultadoAplazamiento
             {
                 Decision = DecisionAplazamiento.Aplazar,
-                Pickings = cambian.Select(l => l.Picking).Distinct().OrderBy(p => p).ToList(),
+                Pickings = pickings,
+                // Incidencia 1328: solo las etiquetas que pueden llevar estas líneas (la de otro picking no hay que anularla)
                 Etiquetas = (envios ?? Enumerable.Empty<EnvioDelPedido>())
-                    .Where(e => e != null && e.Estado < Constantes.Agencias.ESTADO_TRAMITADO && !e.EsRepartoPropioPorEntregar)
+                    .Where(e => e != null && e.Estado < Constantes.Agencias.ESTADO_TRAMITADO && !e.EsRepartoPropioPorEntregar && e.PuedeLlevar(conjunto))
                     .Select(e => e.Numero).Distinct().OrderBy(n => n).ToList(),
                 // NestoAPI#831: los del reparto propio se quedan, con el día de reparto nuevo
-                EnviosRepartoPropio = (envios ?? Enumerable.Empty<EnvioDelPedido>())
-                    .Where(e => e != null && e.EsRepartoPropioPorEntregar).Select(e => e.Numero).Distinct().OrderBy(n => n).ToList(),
+                EnviosRepartoPropio = EnviosRepartoPropioAfectados(envios, pickings),
                 FechaNueva = cambian.Max(l => l.FechaNueva.Date)
             };
             resultado.Mensaje = AvisoUsuario(pedido, resultado, hoy);

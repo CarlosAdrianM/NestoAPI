@@ -1337,6 +1337,35 @@ namespace NestoAPI.Controllers
         }
         private IServicioCorreoElectronico servicioCorreoAplazamiento;
 
+        /// <summary>Incidencia 1328: los pickings que lleva cada envío (EnviosAgenciaPickings). Sustituible en los tests.</summary>
+        internal Infraestructure.Agencias.IRepositorioPickingsEnvio PickingsEnvio
+        {
+            get => pickingsEnvio ?? (pickingsEnvio = new Infraestructure.Agencias.RepositorioPickingsEnvio(db));
+            set => pickingsEnvio = value;
+        }
+        private Infraestructure.Agencias.IRepositorioPickingsEnvio pickingsEnvio;
+
+        /// <summary>Incidencia 1328: a cada envío, sus pickings (los que no tienen fila se quedan sin dato). Nunca lanza.</summary>
+        private async Task RellenarPickingsEnvios(List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido> envios)
+        {
+            if (envios == null || envios.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                Dictionary<int, List<int>> pickings = await PickingsEnvio.LeerAsync(envios.Select(e => e.Numero)).ConfigureAwait(true);
+                foreach (Infraestructure.PedidosVenta.Retencion.EnvioDelPedido envio in envios)
+                {
+                    envio.Pickings = pickings != null && pickings.TryGetValue(envio.Numero, out List<int> suyos) ? suyos : null;
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Pickings del envío, incidencia 1328] No se han podido leer: {ex.Message}", ex));
+            }
+        }
+
         /// <summary>
         /// NestoAPI#722 (06/11/26): el botón del rechazo PEDIDO_YA_EN_AGENCIA del PUT. Manda a logística, con copia al vendedor del
         /// pedido, el pedido, el envío, la fecha pedida y quién lo pide, para que intenten hablar con la agencia (sin prometer nada).
@@ -1380,8 +1409,27 @@ namespace NestoAPI.Controllers
             }
             else
             {
+                // Incidencia 1328: con los pickings de cada envío y los de las líneas que se aplazarían (con picking, sin albarán)
+                List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido> delPedido = envios
+                    .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado, Agencia = e.Agencia })
+                    .ToList();
+                await RellenarPickingsEnvios(delPedido).ConfigureAwait(true);
+                List<int> pickingsPendientes = null;
+                try
+                {
+                    short albaran = Constantes.EstadosLineaVenta.ALBARAN;
+                    pickingsPendientes = await db.LinPedidoVtas
+                        .Where(l => l.Empresa == empresaPedido && l.Número == numero && l.Picking > 0 && l.Estado < albaran)
+                        .Select(l => l.Picking ?? 0)
+                        .Distinct().ToListAsync().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    // Sin los pickings de las líneas: los envíos con dato cuentan (prudente), como antes
+                    ElmahHelper.Log(new Exception($"[Pickings del envío, incidencia 1328] Pedido {numero}: no se han podido leer los pickings de sus líneas: {ex.Message}", ex));
+                }
                 envio = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
-                    envios.Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado, Agencia = e.Agencia }), out int numeroEnvio)
+                    delPedido, pickingsPendientes?.Count > 0 ? pickingsPendientes : null, out int numeroEnvio)
                     ? envios.First(e => e.Numero == numeroEnvio)
                     : null;
             }
@@ -2036,8 +2084,12 @@ namespace NestoAPI.Controllers
                                 .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero)
                                 .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado, Agencia = e.Agencia })
                                 .ToList();
+                            // Incidencia 1328: qué picking(s) lleva cada envío (sin la tabla o sin filas, sin dato: como antes)
+                            await RellenarPickingsEnvios(enviosDelPedido).ConfigureAwait(true);
                         }
-                        if (envioACambiarEnAgencia == 0 && Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(enviosDelPedido, out int envioEnAgencia))
+                        // Incidencia 1328: solo cuenta el envío que puede llevar ESTA línea (su picking), no cualquiera del pedido
+                        if (envioACambiarEnAgencia == 0 && Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(
+                                enviosDelPedido, new[] { linea.Picking ?? 0 }, out int envioEnAgencia))
                         {
                             // Si la agencia no admite cambiarle la fecha (no es CTT, o su estado no lo deja): 403 PEDIDO_YA_EN_AGENCIA
                             envioACambiarEnAgencia = await Infraestructure.PedidosVenta.Retencion.AplazamientoEnvioEnAgencia.EnvioACambiarOExcepcion(
@@ -2630,7 +2682,9 @@ namespace NestoAPI.Controllers
             // NestoAPI#831: el envío del reparto propio ya etiquetado no se anula: pasa al día de reparto nuevo (se guarda con el pedido)
             if (lineasAplazadas.Count > 0 && enviosDelPedido != null)
             {
-                List<int> repartoPropio = enviosDelPedido.Where(e => e.EsRepartoPropioPorEntregar).Select(e => e.Numero).Distinct().ToList();
+                // Incidencia 1328: solo los que pueden llevar las líneas aplazadas (sin dato, todos, como antes)
+                List<int> repartoPropio = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.EnviosRepartoPropioAfectados(
+                    enviosDelPedido, lineasAplazadas.Select(l => l.Picking));
                 if (repartoPropio.Count > 0)
                 {
                     List<EnviosAgencia> aMover = await db.EnviosAgencias.Where(e => repartoPropio.Contains(e.Numero)).ToListAsync().ConfigureAwait(true);

@@ -248,6 +248,12 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         internal Func<string, int, int?, Task<EnviosAgencia>> EnvioRepartoPropioDelPedido { get; set; }
 
+        /// <summary>
+        /// Incidencia 1328: (envío, pedido, usuario) → apunta qué picking(s) lleva el envío ya grabado (<see cref="IRepositorioPickingsEnvio"/>,
+        /// nunca lanza). En una ampliación, los del pedido que se añade se suman a los que ya tenía. Sin él, no se apunta nada.
+        /// </summary>
+        internal Func<int, int?, string, Task> ApuntarPickings { get; set; }
+
         // Sin ConfigureAwait(false): ELMAH toma el usuario de HttpContext.Current.
         public async Task<ResultadoEnvioDesdePedido> Crear(CrearEnvioDesdePedidoDTO peticion, string usuario)
         {
@@ -393,6 +399,19 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 return ResultadoEnvioDesdePedido.Invalido(CodigosErrorEnvioDesdePedido.ENVIO_CAMBIADO,
                     $"El envío {propuesta.EnvioOrigen} ha cambiado mientras se grababa. Vuelva a intentarlo.");
+            }
+
+            // Incidencia 1328: después del commit (fuera de su transacción) y sin romper nunca la respuesta.
+            if (ApuntarPickings != null)
+            {
+                try
+                {
+                    await ApuntarPickings(envio.Numero, peticion.Pedido, usuario);
+                }
+                catch (Exception ex)
+                {
+                    Registrar(new Exception($"[Pickings del envío, incidencia 1328] Envío {envio.Numero} (pedido {peticion.Pedido}): {ex.Message}", ex));
+                }
             }
 
             // NestoAPI#718: ya grabado (con su fila en la historia), se avisa en la respuesta y queda en ELMAH.

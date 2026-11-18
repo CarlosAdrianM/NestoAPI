@@ -1121,6 +1121,12 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // Incidencia 1328: al registrar o tocar un envío que aún está en el almacén, sus pickings (unión; nunca hace fallar el PUT).
+            if (Infraestructure.Agencias.ReglasPickingsEnvio.ApuntarAlModificar(registrado?.Estado, enviosAgencia.Estado))
+            {
+                await PickingsEnvio.ApuntarDesdeLineasAsync(id, enviosAgencia.Pedido ?? registrado?.Pedido, enviosAgencia.Usuario);
+            }
+
             // NestoAPI#595 (slice 2): sombra de la plaza y el código de barras (solo lectura + log; nunca hace fallar el PUT).
             await SombraPlazaYCodigoBarras(enviosAgencia, registrado != null, registrado?.CodigoBarras);
 
@@ -2631,7 +2637,11 @@ namespace NestoAPI.Controllers
         internal IServicioReenviosEnvio ServicioReenvios
         {
             get => servicioReenvios ?? (servicioReenvios = new ServicioReenviosEnvio(new DatosReenviosEnvioEF(db), PlazasAgencias,
-                haVuelto: new RepositorioEnviosHaVuelto(db)));
+                haVuelto: new RepositorioEnviosHaVuelto(db))
+            {
+                // Incidencia 1328: el reenvío lleva lo mismo que el original
+                CopiarPickings = (origen, nuevo, usuario) => PickingsEnvio.CopiarAsync(origen, nuevo, usuario)
+            });
             set => servicioReenvios = value;
         }
 
@@ -3331,10 +3341,20 @@ namespace NestoAPI.Controllers
                 // NestoAPI#831: con la agencia ya decidida, un aplazado solo sale por el reparto propio
                 MotivoNoSale = (empresa, pedido, agencia) => MotivoPedidoRetenido(empresa, pedido, agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO),
                 // NestoAPI#847 / Novedades 1162: también cuando la 14 la elige la propuesta (sin Cambios.Agencia) o se reutiliza un pendiente
-                EnvioRepartoPropioDelPedido = (empresa, pedido, excluir) => EnvioRepartoPropioDelPedido(empresa, pedido, excluir)
+                EnvioRepartoPropioDelPedido = (empresa, pedido, excluir) => EnvioRepartoPropioDelPedido(empresa, pedido, excluir),
+                // Incidencia 1328: el envío grabado (nuevo, pendiente reutilizado o ampliado) apunta los pickings del pedido
+                ApuntarPickings = (envio, pedido, usuario) => PickingsEnvio.ApuntarDesdeLineasAsync(envio, pedido, usuario)
             });
             set => envioDesdePedido = value;
         }
+
+        /// <summary>Incidencia 1328: los pickings que lleva cada envío (EnviosAgenciaPickings). Sustituible en los tests.</summary>
+        internal Infraestructure.Agencias.IRepositorioPickingsEnvio PickingsEnvio
+        {
+            get => pickingsEnvio ?? (pickingsEnvio = new Infraestructure.Agencias.RepositorioPickingsEnvio(db));
+            set => pickingsEnvio = value;
+        }
+        private Infraestructure.Agencias.IRepositorioPickingsEnvio pickingsEnvio;
 
         // POST: api/EnviosAgencias/DesdePedido
         /// <summary>
@@ -3556,6 +3576,13 @@ namespace NestoAPI.Controllers
             NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.AplicarFechaPago(enviosAgencia);
             db.EnviosAgencias.Add(enviosAgencia);
             await db.SaveChangesAsync();
+
+            // Incidencia 1328: qué picking(s) lleva (los del pedido en curso o en albarán). Una etiqueta pendiente aún no lleva nada:
+            // se le apuntan al registrarla (PUT). Nunca hace fallar el alta.
+            if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                await PickingsEnvio.ApuntarDesdeLineasAsync(enviosAgencia.Numero, enviosAgencia.Pedido, enviosAgencia.Usuario);
+            }
 
             // NestoAPI#595: sombra de la propuesta de envío (solo lectura + log; nunca hace fallar el alta).
             await SombraPropuestaEnvio(enviosAgencia);
