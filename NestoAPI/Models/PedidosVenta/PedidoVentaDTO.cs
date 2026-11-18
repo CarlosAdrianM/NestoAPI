@@ -129,6 +129,28 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public PedidoVentaDTO PedidoGuardado { get; set; }
+        /// <summary>
+        /// Caso 931007 (Carlos 18/11/26): qué hacer con lo que el PUT añade a un pedido EN PREPARACIÓN (picking vivo o albarán de hoy) que sale
+        /// hoy. «PedidoNuevo» = lo añadido va en un pedido nuevo (lo crea la API; su número en RespuestaModificacionPedidoDTO.PedidoNuevo);
+        /// «PedirAlmacen» = se guarda en el mismo pedido y se pregunta a Almacén si entra en el envío de hoy (solo si la agencia no lo tiene).
+        /// Null (NestoApp, Nesto viejo) = si hace falta elegir, 409 PEDIDO_EN_PREPARACION sin guardar nada. Solo de entrada.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AmpliacionEnPreparacion { get; set; }
+        /// <summary>
+        /// Caso 931007: solo de salida, en el DTO que devuelve UnirPedidos cuando lo añadido ha ido a un pedido nuevo: su número.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? PedidoNuevoAmpliacion { get; set; }
+        /// <summary>Caso 931007: la ampliación ya está decidida (el PUT interno del pedido nuevo): no se vuelve a mirar. Nunca viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool AmpliacionResuelta { get; set; }
+        /// <summary>
+        /// Caso 931007: los Nº de orden de las líneas añadidas que salen hacia un pedido nuevo (el «No» de Almacén): el PUT las quita aunque
+        /// el pedido tenga picking y sea después del corte. Nunca viaja.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal HashSet<int> LineasQuePasanAPedidoNuevo { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }

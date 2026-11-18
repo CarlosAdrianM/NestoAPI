@@ -734,6 +734,7 @@
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />
+    <Compile Include="Controllers\PedidosVentaAmpliacionesController.cs" />
     <Compile Include="Controllers\PedidosVentaRetencionPorFaltaController.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
     <Compile Include="Controllers\PedidosVentaAnomaliasController.cs" />
@@ -1176,6 +1177,10 @@
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioClientePedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioModoConPicking.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\AmpliacionPedidoEnPreparacion.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\AvisosAmpliacionPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\RepositorioAmpliacionesPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ServicioAmpliacionPedidoEnPreparacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioAlmacenPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorCambioClientePedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioDatosTransferenciaPedido.cs" />

@@ -16,6 +16,12 @@ namespace NestoAPI.Models
         /// </summary>
         [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public NestoAPI.Models.PedidosVenta.PedidoVentaDTO Pedido { get; set; }
+        /// <summary>
+        /// Caso 931007: con AmpliacionEnPreparacion = «PedidoNuevo», el número del pedido nuevo que ha creado la API con lo añadido (el aviso
+        /// AmpliacionEnPedidoNuevo lo explica). No viaja si es null.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? PedidoNuevo { get; set; }
     }
 
     public class AvisoPedidoDTO

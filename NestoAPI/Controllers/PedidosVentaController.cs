@@ -1626,6 +1626,15 @@ namespace NestoAPI.Controllers
                 }
                 versionComprobada = versionActual != null;
             }
+            // Caso 931007: añadir líneas a un pedido en preparación no pasa en silencio (409 PEDIDO_EN_PREPARACION, pedido nuevo o pedir a
+            // Almacén). Antes de tocar nada; con «PedidoNuevo» este mismo PUT (sin lo añadido) y el POST del pedido nuevo van en una transacción.
+            Infraestructure.PedidosVenta.ComprobacionAmpliacion ampliacion = await ServicioAmpliacionEnPreparacion.Comprobar(pedido).ConfigureAwait(true);
+            if (ampliacion.Accion == Infraestructure.PedidosVenta.AccionAmpliacion.PedidoNuevo)
+            {
+                Infraestructure.PedidosVenta.ResultadoSeparacion separacion = await Infraestructure.PedidosVenta.ServicioAmpliacionPedidoEnPreparacion
+                    .SepararDelPut(pedido, ampliacion, PutPedidoVenta, PostPedidoVenta, DateTime.Today).ConfigureAwait(true);
+                return separacion.Error ?? Ok(separacion.Respuesta);
+            }
             // NestoAPI#830: fuera de la empresa 1, la ruta que vale es la de la ficha de la empresa 1 (antes de las fechas de entrega)
             _ = RutaQueVale.AjustarPedido(db, pedido);
             // NestoAPI#571: «Recoge en tienda» contra la ruta GUARDADA; si cambia, la ruta nueva va ANTES de la fecha de entrega
@@ -2116,7 +2125,9 @@ namespace NestoAPI.Controllers
 
                 if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))
                 {
-                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto)))
+                    // Caso 931007: lo añadido que Almacén no mete en el envío de hoy sale hacia un pedido nuevo aunque sea después del corte
+                    bool pasaAPedidoNuevo = pedido.LineasQuePasanAPedidoNuevo?.Contains(linea.Nº_Orden) == true;
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && !pasaAPedidoNuevo && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén, codigoPostalRutaInterna, pedido.empresa, pedido.cliente, pedido.contacto)))
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
@@ -2220,6 +2231,8 @@ namespace NestoAPI.Controllers
             }
 
 
+            // Caso 931007: las líneas nuevas con su fila, para apuntar sus Nº de orden en la solicitud a Almacén ya guardado el pedido
+            var lineasNuevasCreadas = new List<KeyValuePair<LineaPedidoVentaDTO, LinPedidoVta>>();
             // Modificamos las líneas
             if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto || pasarAPresupuesto)
             {
@@ -2229,12 +2242,14 @@ namespace NestoAPI.Controllers
 
                     if (linea.id == 0)
                     {
-                        ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
+                        // Caso 931007: lo que impedía insertar (ComprobarSiSePuedenInsertarLineas: picking + fecha de hoy + pasada la hora de
+                        // corte) no saltaba nunca tras el corte; ahora lo decide ServicioAmpliacionEnPreparacion.Comprobar al principio.
                         // NestoAPI#503: el estado de una línea nueva lo decide el servidor según la
                         // transición y el estado real del pedido, no lo que traiga el DTO.
                         linea.estado = TransicionPresupuesto.EstadoLineaNueva(transicion, pedidoEsPresupuestoVivoEnBD, linea.estado);
                         lineaPedido = this.gestor.CrearLineaVtaConIvaCabecera(linea, pedido.empresa, pedido.numero, null, cabPedidoVta.IVA);
                         _ = db.LinPedidoVtas.Add(lineaPedido);
+                        lineasNuevasCreadas.Add(new KeyValuePair<LineaPedidoVentaDTO, LinPedidoVta>(linea, lineaPedido));
                         //linea.BaseImponible = lineaPedido.Base_Imponible;
                         //linea.Total = lineaPedido.Total;
                         continue;
@@ -2750,6 +2765,14 @@ namespace NestoAPI.Controllers
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
             // NestoAPI#860: la fecha real del cobro de los prepagos (columna fuera del EDMX). Nunca lanza.
             GuardarFechasCobroPrepagos(pedido.numero, fechasCobroPrepagos);
+            // Caso 931007: ya guardado, la pregunta urgente a Almacén (PedirAlmacen) o el aviso de lo añadido a un pedido que hoy no sale. Nunca lanza.
+            AvisoPedidoDTO avisoAmpliacion = await ServicioAmpliacionEnPreparacion.DespuesDeGuardar(pedido, ampliacion, lineasNuevasCreadas, cliente?.Nombre)
+                .ConfigureAwait(true);
+            if (avisoAmpliacion != null)
+            {
+                avisos.Add(avisoAmpliacion);
+                avisosCorreoModificacion.Add(avisoAmpliacion.Mensaje);
+            }
             // NestoAPI#732: confirmado, las inscripciones que se han quedado sin justificante se anulan (y se avisa a la tienda)
             List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> inscripcionesAnuladas = await AnularInscripcionesSinFallar(
                 inscripcionesSinJustificante, pedido.numero, borrarPedido: false, UsuarioAuditoriaHelper.Resolver(User, pedido.Usuario));
@@ -2861,7 +2884,8 @@ namespace NestoAPI.Controllers
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {
                 FechaEntregaAgencia = fechaEntregaAgencia,
-                FechaEntregaAgenciaRecienPrometida = fechaEntregaAgenciaRecienPrometida
+                FechaEntregaAgenciaRecienPrometida = fechaEntregaAgenciaRecienPrometida,
+                ProductosPendientesDeAlmacen = ampliacion.ProductosPendientesDeAlmacen // caso 931007
             };
             gestor.Avisos.AddRange(avisosCorreoModificacion);
             await gestor.EnviarCorreo("Modificación");
@@ -2961,15 +2985,17 @@ namespace NestoAPI.Controllers
                 "y la agencia se lo cobraría otra vez al cliente. Quite primero el reembolso de la etiqueta.";
         }
 
-        public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
+        // Caso 931007 (18/11/26): ComprobarSiSePuedenInsertarLineas se ha quitado. Exigía fecha de entrega ajustada <= hoy Y pasada la hora
+        // de corte, pero FechaEntregaAjustada ya da mañana pasado el corte: no saltaba nunca. Lo sustituye ServicioAmpliacionEnPreparacion.
+
+        private Infraestructure.PedidosVenta.ServicioAmpliacionPedidoEnPreparacion servicioAmpliacionEnPreparacion;
+        /// <summary>Caso 931007: la ampliación de un pedido en preparación (sustituible en los tests).</summary>
+        internal Infraestructure.PedidosVenta.ServicioAmpliacionPedidoEnPreparacion ServicioAmpliacionEnPreparacion
         {
-            TimeSpan horaCorte = Models.Picking.HoraCortePicking.Leer(pedido.empresa);
-            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen,
-                    gestor.CodigoPostalSiRutaInterna(pedido.empresa, pedido.cliente, pedido.contacto, pedido.ruta), pedido.empresa, pedido.cliente, pedido.contacto) <= DateTime.Today
-                && DateTime.Now.TimeOfDay >= horaCorte)
-            {
-                errorPersonalizado("No se pueden insertar líneas porque son más de las " + horaCorte.ToString(@"hh\:mm") + " y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
-            }
+            get => servicioAmpliacionEnPreparacion ?? (servicioAmpliacionEnPreparacion = new Infraestructure.PedidosVenta.ServicioAmpliacionPedidoEnPreparacion(
+                new Infraestructure.PedidosVenta.LectorAmpliacionPedido(db), new Infraestructure.PedidosVenta.RepositorioAmpliacionesPedido(),
+                new Infraestructure.PedidosVenta.AvisosAmpliacionPedido()));
+            set => servicioAmpliacionEnPreparacion = value;
         }
 
         // NestoAPI#200: cuando un pedido llega con iva=null la cabecera se persiste con los

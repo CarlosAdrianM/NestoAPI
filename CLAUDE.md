@@ -827,6 +827,24 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   entra/sale con Entrar/Salir), a todos (Nesto ignora el suyo por la Version), solo si alguien lo tiene abierto, en segundo plano
   (`AvisoPedidoCambiado`, nunca lanza): PUT, POST, cobro de la app (`ServicioPagos`) y pago a plazos (`RepositorioPagoAPlazos`).
 
+### Ampliar un pedido en preparación (caso 931007, 18/11/26)
+- Añadir líneas de PRODUCTO (id 0, cantidad > 0, sin evento, cheque ni cupón) a un pedido EN PREPARACIÓN que sale hoy ya no pasa en silencio.
+  LA REGLA (pura): `AmpliacionPedidoEnPreparacion.Evaluar`; «en preparación» = la de #533 (`CambioModoConPicking.TienePickingVivo` /
+  `TieneAlbaranDeHoy`). No salta en presupuestos, notas, ni si hoy no sale (`GuardiaPedidoRetenido`: retenido, aplazado, por falta): ahí se guarda y
+  campana normal a Almacén. Las de texto nuevas van con los productos; las de cuenta contable nuevas se quedan. Sustituye a `ComprobarSiSePuedenInsertarLineas` (no saltaba tras el corte).
+- PUT (`ServicioAmpliacionPedidoEnPreparacion.Comprobar`, antes de tocar nada): `PedidoVentaDTO.AmpliacionEnPreparacion` null → 409 `PEDIDO_EN_PREPARACION`
+  (details Pickings, Envio, AgenciaYaLoTiene, Opciones, Productos); «PedidoNuevo» → en UNA transacción el original sin lo añadido (el mismo PUT) y un
+  pedido nuevo por el POST de siempre (`Separar`, núcleo común; sin prepago: lo dice el aviso), `RespuestaModificacionPedidoDTO.PedidoNuevo` (y en
+  UnirPedidos `PedidoNuevoAmpliacion`; la elección solo viaja en una ampliación nueva, la plantilla); «PedirAlmacen» → solo si la agencia no lo tiene
+  (`YaLoTieneLaAgencia`, en la 14 = cargado en la furgoneta) ni hay etiqueta en curso con reembolso: se guarda y se pregunta a Almacén.
+- PedirAlmacen: `dbo.AmpliacionesPedidoEnPreparacion` (fuera del EDMX, `Scripts/AmpliacionesPedidoEnPreparacion.sql`; sin ella, 503 y PedidoNuevo igual).
+  Urgente #775 (tipo `AmpliacionPedidoEnPreparacion`, acción «pregunta», referencia = Id) a los Nesto de Almacén. `POST api/PedidosVenta/AmpliacionesEnPreparacion/{id}/Respuesta`
+  {Entra} (Almacén/Dirección/Informática): «Sí» saca el picking del pedido (`GestorPicking.SacarPicking`; si no coge lo añadido, cuenta como «No»), «No» o
+  60 min sin respuesta (`AmpliacionesPedidoJobs.Vencer`, Hangfire) lo pasan a un pedido nuevo (`PasoAmpliacionAPedidoNuevo`: si ya tiene picking, no se
+  toca y se avisa). `notificacionResuelta` + campana/push a quien lo pidió. `GET …/AmpliacionesEnPreparacion[?pendientes=false]`, `GET …/{id}`.
+- Correo: lo añadido sin picking en un pedido con picking sale como «Añadido después de sacar el picking (pendiente de que Almacén diga…)» o, en
+  «Todo junto», «(sale aparte; puede salir el…)» (`GestorPresupuestos.PartidasAnadidasTrasElPicking`).
+
 ### Dirección 2 y número propio en el alta (NestoAPI#874 corte 1, Nesto#643, 17/11/26)
 - `Clientes.Dirección` sigue siendo calle y número (50). Lo que necesita el repartidor va en `Clientes.Direccion2` (nvarchar(100)) +
   `TipoLugar` (Piso/Local/Casa/Nave/Otro, CHECK `CK_Clientes_TipoLugar`), fuera del EDMX (`Scripts/Issue874_ClientesDireccion2.sql`;

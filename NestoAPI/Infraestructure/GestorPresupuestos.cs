@@ -69,6 +69,12 @@ namespace NestoAPI.Infraestructure
         public bool FechaEntregaAgenciaRecienPrometida { get; set; }
 
         /// <summary>
+        /// Caso 931007: los productos añadidos a un pedido en preparación que se han pedido a Almacén para el envío de hoy (PedirAlmacen). El
+        /// desglose los pinta como «Añadido después de sacar el picking (pendiente de que Almacén diga si entra en el envío de hoy)».
+        /// </summary>
+        public ISet<string> ProductosPendientesDeAlmacen { get; set; }
+
+        /// <summary>
         /// Genera el bloque HTML de avisos destacados (amarillo). Estático y puro para poder
         /// testearlo sin montar el correo entero (mismo patrón que GenerarHtmlFechaEntregaComun).
         /// </summary>
@@ -785,7 +791,7 @@ namespace NestoAPI.Infraestructure
             // NestoAPI#606 (09/10): la fecha de entrega a la agencia que se le ha dicho al cliente y por qué.
             _ = s.Append(GenerarHtmlFechaEntregaAgencia(FechaEntregaAgencia, pedido.EsPresupuesto,
                 tipoCorreo == "Modificación" && !FechaEntregaAgenciaRecienPrometida, pedido.Lineas, colspanFechaEntrega,
-                pedido.servirPendienteAlHaberStock == true));
+                pedido.servirPendienteAlHaberStock == true, ProductosPendientesDeAlmacen));
 
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
             int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
@@ -1379,8 +1385,10 @@ namespace NestoAPI.Infraestructure
         /// Pura: todo sale de <paramref name="fecha"/> (<see cref="Infraestructure.PedidosVenta.CalculadoraFechaEntregaAgencia"/>),
         /// aquí solo se pinta. Vacía en presupuestos, sin cálculo (falló) o sin nada que decir.
         /// </summary>
+        /// <param name="productosPendientesDeAlmacen">Caso 931007: lo añadido a un pedido en preparación que Almacén aún no ha dicho si entra hoy.</param>
         internal static string GenerarHtmlFechaEntregaAgencia(FechaEntregaAgenciaDTO fecha, bool esPresupuesto, bool esModificacion,
-            IEnumerable<LineaPedidoVentaDTO> lineas, int colspan, bool servirPendienteAlHaberStock = false)
+            IEnumerable<LineaPedidoVentaDTO> lineas, int colspan, bool servirPendienteAlHaberStock = false,
+            ISet<string> productosPendientesDeAlmacen = null)
         {
             if (fecha == null || esPresupuesto)
             {
@@ -1443,7 +1451,7 @@ namespace NestoAPI.Infraestructure
                     ? $"Por qué sale {(ahora.HasValue ? "el " + textoAhora : "sin fecha")} con el pedido como queda:"
                     : porQue);
                 _ = s.Append("<ul style=\"margin:2px 0 2px 0\">");
-                foreach (string item in ItemsDesglose(desglose, descripciones, esperaHasta))
+                foreach (string item in ItemsDesglose(desglose, descripciones, esperaHasta, todoJunto, productosPendientesDeAlmacen))
                 {
                     _ = s.Append(item);
                 }
@@ -1506,7 +1514,7 @@ namespace NestoAPI.Infraestructure
         /// diez productos, si falta uno se nombra el que falta, y si faltan nueve, el que hay.
         /// </summary>
         private static IEnumerable<string> ItemsDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, Dictionary<string, string> descripciones,
-            DateTime? esperaHasta)
+            DateTime? esperaHasta, bool todoJunto = false, ISet<string> productosPendientesDeAlmacen = null)
         {
             string Producto(PartidaFechaEntregaAgenciaDTO p)
             {
@@ -1516,7 +1524,7 @@ namespace NestoAPI.Infraestructure
             }
             string Lista(IEnumerable<PartidaFechaEntregaAgenciaDTO> partidas) => string.Join(", ", partidas.Select(Producto));
 
-            List<BloqueDesglose> bloques = BloquesDesglose(desglose, esperaHasta);
+            List<BloqueDesglose> bloques = BloquesDesglose(desglose, esperaHasta, todoJunto, productosPendientesDeAlmacen);
             BloqueDesglose resumido = bloques
                 .Where(b => b.Partidas.Count >= 2 && bloques.All(o => o == b || o.Partidas.Count < b.Partidas.Count))
                 .FirstOrDefault();
@@ -1534,7 +1542,28 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <param name="esperaHasta">El día en que sale la entrega: lo que podría salir antes espera a ella y no lleva fecha.</param>
-        private static List<BloqueDesglose> BloquesDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, DateTime? esperaHasta)
+        /// <summary>
+        /// Caso 931007: las partidas con stock en Algete de un pedido que ya tiene algo en el picking que se añadieron DESPUÉS de sacarlo: las
+        /// que se han pedido a Almacén para el envío de hoy y, con «Todo junto», todas (su picking coge todo o nada, así que solo puede ser
+        /// algo añadido después: datos de antes de este cambio). Vacía si no hay nada en el picking.
+        /// </summary>
+        internal static List<PartidaFechaEntregaAgenciaDTO> PartidasAnadidasTrasElPicking(IEnumerable<PartidaFechaEntregaAgenciaDTO> desglose, bool todoJunto,
+            ISet<string> productosPendientesDeAlmacen)
+        {
+            List<PartidaFechaEntregaAgenciaDTO> todas = (desglose ?? Enumerable.Empty<PartidaFechaEntregaAgenciaDTO>()).Where(p => p != null).ToList();
+            if (!todas.Any(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING))
+            {
+                return new List<PartidaFechaEntregaAgenciaDTO>();
+            }
+            return todas.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE
+                && (todoJunto || productosPendientesDeAlmacen?.Contains(p.Producto?.Trim() ?? string.Empty) == true)).ToList();
+        }
+
+        /// <param name="todoJunto">Caso 931007: con «Todo junto», lo que hay en Algete sin picking en un pedido que ya tiene picking solo puede
+        /// ser algo añadido después (el picking de un «todo junto» coge todo o nada).</param>
+        /// <param name="productosPendientesDeAlmacen">Caso 931007: lo añadido que se ha pedido a Almacén para el envío de hoy.</param>
+        private static List<BloqueDesglose> BloquesDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, DateTime? esperaHasta,
+            bool todoJunto = false, ISet<string> productosPendientesDeAlmacen = null)
         {
             string PuedeSalirSiempre(PartidaFechaEntregaAgenciaDTO p) => p.PuedeSalirEl.HasValue ? $"puede salir el {DiaCorreo(p.PuedeSalirEl.Value)}" : "sin fecha";
             string PuedeSalir(PartidaFechaEntregaAgenciaDTO p) =>
@@ -1557,7 +1586,20 @@ namespace NestoAPI.Infraestructure
             {
                 bloques.Add(new BloqueDesglose { Cabecera = "Ya en el picking (sale hoy)", Partidas = enPicking });
             }
-            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).GroupBy(p => PuedeSalir(p)))
+            // Caso 931007: lo añadido después de sacar el picking no «puede salir» sin más: o Almacén lo mete en el envío de hoy, o sale aparte
+            List<PartidaFechaEntregaAgenciaDTO> anadidas = PartidasAnadidasTrasElPicking(desglose, todoJunto, productosPendientesDeAlmacen);
+            foreach (var grupo in anadidas.GroupBy(p => productosPendientesDeAlmacen?.Contains(p.Producto?.Trim() ?? string.Empty) == true))
+            {
+                bloques.Add(new BloqueDesglose
+                {
+                    Cabecera = "Añadido después de sacar el picking" + (grupo.Key
+                        ? " (pendiente de que Almacén diga si entra en el envío de hoy)"
+                        : Parentesis("sale aparte", PuedeSalirSiempre(grupo.First()))),
+                    Estilo = " style=\"color:#b26a00\"",
+                    Partidas = grupo.ToList()
+                });
+            }
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE && !anadidas.Contains(p)).GroupBy(p => PuedeSalir(p)))
             {
                 bloques.Add(new BloqueDesglose { Cabecera = $"Con stock en Algete{Parentesis(PuedeSalir(grupo.First()))}", Partidas = grupo.ToList() });
             }

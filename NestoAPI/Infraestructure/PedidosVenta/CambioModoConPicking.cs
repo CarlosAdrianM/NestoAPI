@@ -26,16 +26,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal static string Motivo(IEnumerable<LinPedidoVta> lineas, DateTime hoy)
         {
             List<LinPedidoVta> todas = lineas?.ToList() ?? new List<LinPedidoVta>();
-            bool conPicking = todas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
-                && l.Estado < Constantes.EstadosLineaVenta.ALBARAN
-                && (l.Picking ?? 0) != 0);
+            bool conPicking = todas.Any(TienePickingVivo);
             if (conPicking)
             {
                 return "Este pedido ya está en preparación (tiene picking) y el modo de entrega ya no se puede cambiar desde aquí. " +
                     "Si hace falta, se lo podemos pedir a almacén: lo intentarán, pero puede que ya no llegue a tiempo.";
             }
-            bool albaranDeHoy = todas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN
-                && l.Fecha_Albarán.HasValue && l.Fecha_Albarán.Value.Date == hoy.Date);
+            bool albaranDeHoy = todas.Any(l => TieneAlbaranDeHoy(l, hoy));
             if (albaranDeHoy)
             {
                 return "Parte de este pedido ha salido hoy, así que el modo de entrega ya no se puede cambiar desde aquí. " +
@@ -43,6 +40,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             return null;
         }
+
+        /// <summary>
+        /// «En preparación», LA REGLA (la comparten este cambio de modo y la ampliación de un pedido en preparación, caso 931007):
+        /// una línea viva (pendiente o en curso) con picking…
+        /// </summary>
+        internal static bool TienePickingVivo(LinPedidoVta linea)
+            => linea != null && linea.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                && linea.Estado < Constantes.EstadosLineaVenta.ALBARAN
+                && (linea.Picking ?? 0) != 0;
+
+        /// <summary>… o una línea con albarán de HOY (parte del pedido ha salido hoy).</summary>
+        internal static bool TieneAlbaranDeHoy(LinPedidoVta linea, DateTime hoy)
+            => linea != null && linea.Estado >= Constantes.EstadosLineaVenta.ALBARAN
+                && linea.Fecha_Albarán.HasValue && linea.Fecha_Albarán.Value.Date == hoy.Date;
 
         /// <summary>
         /// Sugerencia 618 (Alfredo, 15/10/26): el correo pide a almacén que lo cambie, pero la regla también le

@@ -43,7 +43,9 @@ namespace NestoAPI.Infraestructure.Notificaciones
             // NestoAPI#734: el almacén pregunta a Administración si un pedido retenido sale con o sin reembolso (solo la pregunta)
             TextosConsultaReembolso.TIPO_NOTIFICACION,
             // NestoAPI#859: el repartidor se ha llevado la devolución de un cliente con un envío de agencia con retorno en camino
-            TextosRecogidaImprevista.TIPO_URGENTE
+            TextosRecogidaImprevista.TIPO_URGENTE,
+            // Caso 931007: ¿entra en el envío de hoy lo añadido a un pedido en preparación? (solo la pregunta a Almacén)
+            PedidosVenta.TextosAmpliacionPedido.TIPO_NOTIFICACION
         };
 
         /// <summary>
@@ -52,7 +54,9 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// </summary>
         internal static readonly IReadOnlyDictionary<string, string> ACCIONES_URGENTES = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TextosConsultaReembolso.TIPO_NOTIFICACION] = TextosConsultaReembolso.ACCION_CONSULTA
+            [TextosConsultaReembolso.TIPO_NOTIFICACION] = TextosConsultaReembolso.ACCION_CONSULTA,
+            // Caso 931007: la pregunta a Almacén sí; la respuesta a quien lo pidió y los avisos normales, no
+            [PedidosVenta.TextosAmpliacionPedido.TIPO_NOTIFICACION] = PedidosVenta.TextosAmpliacionPedido.ACCION_PREGUNTA
         };
 
         public static IReadOnlyCollection<string> Tipos => TIPOS;
@@ -162,7 +166,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                         new ComprobadorAutorizacionesPendientes(new RepositorioAutorizacionesReembolso(db)),
                         new ComprobadorCierresCajaDescuadrados(new EstadoCajaReparto(db)), // NestoAPI#844
                         new ComprobadorConsultasReembolsoAbiertas(new RepositorioConsultasReembolso()), // NestoAPI#734
-                        ComprobadorRecogidasConRetornoEnCamino.DeLaBaseDeDatos(db) // NestoAPI#859
+                        ComprobadorRecogidasConRetornoEnCamino.DeLaBaseDeDatos(db), // NestoAPI#859
+                        PedidosVenta.ComprobadorAmpliacionesProduccion.Crear() // caso 931007
                     });
                 return await servicio.Pendientes(usuario).ConfigureAwait(false);
             }

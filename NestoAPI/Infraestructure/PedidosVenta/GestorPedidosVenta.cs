@@ -1268,6 +1268,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             // AMPLIACIÓN. Sin propagar el flag, el reintento volvía a fallar con el mismo error de
             // validación y la pregunta no servía de nada.
             pedidoOriginal.CreadoSinPasarValidacion = pedidoOriginal.CreadoSinPasarValidacion || pedidoAmpliacion.CreadoSinPasarValidacion;
+            // Caso 931007: la elección sobre lo que se añade a un pedido en preparación también viaja en la ampliación, pero solo si es una
+            // ampliación nueva (la plantilla). Al unir dos pedidos que ya existen, lo añadido ya tiene su pedido: sin elección (409).
+            if (pedidoAmpliacion.numero == 0 && string.IsNullOrWhiteSpace(pedidoOriginal.AmpliacionEnPreparacion))
+            {
+                pedidoOriginal.AmpliacionEnPreparacion = pedidoAmpliacion.AmpliacionEnPreparacion;
+            }
 
             // NestoAPI#323: el timeout por defecto del TransactionScope es 60 segundos, y dentro van
             // los DOS PutPedidoVenta completos con su pipeline de validación (una consulta por
