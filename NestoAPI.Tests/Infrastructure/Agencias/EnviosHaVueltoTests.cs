@@ -322,8 +322,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(true, null, false), "sin decisión = sin decidir");
             Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.ABONAR, false), "la caja no ha vuelto");
             Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.REENVIAR, true), "la caja no ha vuelto");
-            Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, false),
-                "la regla aprobada pide la caja aquí: el que entregó la agencia sigue a la vista");
+            Assert.IsTrue(ReglaDevueltoResuelto.EstaResuelto(false, DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, false),
+                "Carlos 18/11/26: la agencia acabó entregando el original: ya no se espera la caja, fuera de la lista");
             Assert.IsTrue(ReglaDevueltoResuelto.EstaResuelto(true, " Abonar  ", false), "la decisión viene con relleno de la BD");
             Assert.IsFalse(ReglaDevueltoResuelto.EstaResuelto(null));
         }

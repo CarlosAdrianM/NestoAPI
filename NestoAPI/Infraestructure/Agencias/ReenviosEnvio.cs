@@ -128,6 +128,12 @@ namespace NestoAPI.Infraestructure.Agencias
         public static bool EstaResuelto(bool haVuelto, string decision, bool envioNuevoConEtiqueta)
         {
             string d = decision?.Trim();
+            // Carlos (18/11/26): si la agencia acabó entregando el original, ya no se espera ninguna caja ni queda nada por
+            // hacer (su reenvío se borró al pasar a esta decisión): fuera de la lista, haya «vuelto» o no.
+            if (d == DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA)
+            {
+                return true;
+            }
             if (!haVuelto || string.IsNullOrEmpty(d) || d == DecisionesReenvio.SIN_DECIDIR)
             {
                 return false;

@@ -411,6 +411,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   **Solo dormidos (Carlos 17/11/26)**: entran únicamente los que nunca han comprado o con último pedido de hace más de
   `RepositorioClientesEmbudoSql.ANIOS_SIN_COMPRAR` (2) años (`@dormidoDesde`), también los de origen AMAZON/WEB. Sin ese filtro los bloques
   NV-2026-11-03..08 metieron 325 clientes vivos; Carlos los saca de `ClientesEmbudo` con `Scripts/OneShot_20261117_Embudo_SacarClientesVivos.sql`.
+- **Numeración (18/11/26)**: un número ya usado no se repite aunque el bloque se borre de `ClientesEmbudo` (Odoo agrupa por el nombre, también lo archivado): el job apunta el último
+  lanzado en ParametrosUsuario «(defecto)» `EmbudoUltimoBloque` (sin rastro en Modificaciones; sin fila, solo el registro) y `SiguienteBloque` nunca numera por debajo.
+  `BLOQUES_QUEMADOS` = NV-2026-11-08 (el 17/11 se borraron 03-08 y el del 18/11 repitió el 03; desde el 19/11 sigue en el 09).
 - Job `embudo-ajuste-ritmo` 6:45 Madrid (**APAGADO desde el 17/11/26**: solo actúa con ParametrosUsuario «(defecto)» `EmbudoAjusteRitmo` = «1»; sin fila, nada. Se apagó al pasar a solo dormidos: la recomendación de Odoo se calculó con clientes vivos; Odoo tampoco calcula. Encender con ~5 tandas de dormidos) (Odoo calcula a las 4:30 UTC; 404 = sin cálculo aún: nada, sin aviso) (`EmbudoAjusteRitmoJobsService`): GET {OdooEmbudoRitmoUrl}/nv/embudo/recomendacion con cabecera
   `X-NV-Clave` = OdooEmbudoRitmoClave (las dos en secretos.config; sin ellas, nada ni aviso). Reglas puras `ReglasRitmoEmbudo`: escalones
   50 → 75 → 100 (tope 100); «subir» un escalón si hace 7 días del último cambio (`EmbudoTamanoBloqueFecha`, también el PUT) y el dato
@@ -838,7 +841,7 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   solo lista las de esa regla: Canteras (11), la GLS de la espejo (5), Glovo, Sending, CEX… no salen (se quedaban 60 días en Tramitado).
   Ninguna agencia escrita a mano: la que tenga perfil con seguimiento entra sola.
 - **Devueltos: `Resuelto` (sugerencia 1329)**: `EnvioDevueltoDTO.Resuelto` (solo lectura, `ReglaDevueltoResuelto`) = la caja ha vuelto
-  (#870) + decisión tomada + (si es Reenviar) el reenvío ya tramitado. La API devuelve todos; Nesto oculta los resueltos por defecto
+  (#870) + decisión tomada + (si es Reenviar) el reenvío ya tramitado; y siempre los `EntregadoPorLaAgencia` (Carlos 18/11/26: si la agencia acabó entregando, ya no se espera caja). La API devuelve todos; Nesto oculta los resueltos por defecto
   (casilla «Ver también los resueltos») y tiene una caja de lectura que llama a `POST api/EnviosAgencias/HaVuelto` {Codigo}.
 
 ## Testing Notes
