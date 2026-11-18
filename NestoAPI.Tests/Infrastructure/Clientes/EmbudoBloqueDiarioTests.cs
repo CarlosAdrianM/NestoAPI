@@ -102,7 +102,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             ResultadoBloqueDiarioEmbudo r = await Servicio().LanzarAsync(HOY);
 
             Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, r);
-            A.CallTo(() => repo.Registrar("NV-2026-11-03", A<IList<string>>.That.Matches(c => c.Count == 50), A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repo.Registrar("NV-2026-11-09", A<IList<string>>.That.Matches(c => c.Count == 50), A<string>._)).MustHaveHappenedOnceExactly();
             // Las reglas del lanzamiento a mano: vendedor NV, los estados de siempre, solo con correo
             A.CallTo(() => repo.LeerCandidatos("NV", A<IList<short>>.That.Matches(e => e.SequenceEqual(new short[] { 0, 7, 9, 93, 11, 22 })), true))
                 .MustHaveHappened();
@@ -151,7 +151,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             ResultadoBloqueDiarioEmbudo r = await Servicio().LanzarAsync(HOY);
 
             Assert.AreEqual(ResultadoBloqueDiarioEmbudo.LanzadoIncompleto, r);
-            A.CallTo(() => repo.Registrar("NV-2026-11-03", A<IList<string>>.That.Matches(c => c.Count == 45), A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repo.Registrar("NV-2026-11-09", A<IList<string>>.That.Matches(c => c.Count == 45), A<string>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
             Assert.AreEqual(0, registrados.Count);
         }
@@ -198,6 +198,52 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             SeHaAvisadoADireccion();
         }
 
+        // 18/11/26: el 17/11 se borraron del registro los bloques NV-2026-11-03 a 08 y el del 18 volvió a llamarse 03; Odoo
+        // agrupa por nombre (también lo archivado), así que un número usado no se repite aunque su bloque ya no esté.
+        [TestMethod]
+        public async Task Lanzar_ConBloquesBorradosDelRegistro_NoRepiteLosNumerosQuemadosDeNoviembre()
+        {
+            bloques.Add(new BloqueEmbudo { Bloque = "NV-2026-11-03", Fecha = new DateTime(2026, 11, 18, 7, 0, 0) });
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, await Servicio().LanzarAsync(new DateTime(2026, 11, 19)));
+
+            A.CallTo(() => repo.Registrar("NV-2026-11-09", A<IList<string>>._, A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual("NV-2026-11-09", parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_ULTIMO_BLOQUE], "Queda apuntado el último");
+            Assert.AreEqual(0, parametros.Escritos.Count, "Sin rastro en Modificaciones: cambia todos los días");
+        }
+
+        [TestMethod]
+        public async Task Lanzar_ConElUltimoBloqueApuntado_SigueDesdeAhiAunqueSeHayaBorradoDelRegistro()
+        {
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_ULTIMO_BLOQUE] = "NV-2026-12-07";
+            bloques.Clear(); // alguien ha borrado los bloques de diciembre
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, await Servicio().LanzarAsync(new DateTime(2026, 12, 9)));
+
+            A.CallTo(() => repo.Registrar("NV-2026-12-08", A<IList<string>>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Lanzar_ElUltimoBloqueApuntadoEsDeOtroMes_EmpiezaEn01()
+        {
+            parametros.Valores[EmbudoBloqueDiarioJobsService.PARAMETRO_ULTIMO_BLOQUE] = "NV-2026-11-28";
+            bloques.Clear();
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, await Servicio().LanzarAsync(new DateTime(2026, 12, 1)));
+
+            A.CallTo(() => repo.Registrar("NV-2026-12-01", A<IList<string>>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Lanzar_SinCandidatos_NoApuntaElBloqueComoUsado()
+        {
+            Candidatos(0);
+
+            Assert.AreEqual(ResultadoBloqueDiarioEmbudo.SinCandidatos, await Servicio().LanzarAsync(HOY));
+
+            Assert.IsFalse(parametros.Valores.ContainsKey(EmbudoBloqueDiarioJobsService.PARAMETRO_ULTIMO_BLOQUE));
+        }
+
         [TestMethod]
         public async Task Lanzar_ElInterruptorACeroTambienEsApagado()
         {
@@ -214,7 +260,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Candidatos(200);
 
             Assert.AreEqual(ResultadoBloqueDiarioEmbudo.Lanzado, await Servicio().LanzarAsync(HOY));
-            A.CallTo(() => repo.Registrar("NV-2026-11-03", A<IList<string>>.That.Matches(c => c.Count == 80), A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repo.Registrar("NV-2026-11-09", A<IList<string>>.That.Matches(c => c.Count == 80), A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

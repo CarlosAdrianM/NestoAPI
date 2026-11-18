@@ -52,6 +52,16 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
         /// <summary>Límite de cordura: por encima se recorta a este y se registra.</summary>
         /// <remarks>Carlos (11/11/26): 100, el envío sale por la cuenta de Office 365 de la empresa y no debe pasar de 100 al día.</remarks>
         public const int TAMANO_MAXIMO = 100;
+        /// <summary>
+        /// 18/11/26: el nombre del último bloque que lanzó el job («NV-2026-11-09»). El número siguiente nunca baja de ahí aunque el
+        /// bloque se borre de ClientesEmbudo: Odoo agrupa sus resúmenes y su cálculo de ritmo por el nombre, también con lo archivado.
+        /// </summary>
+        public const string PARAMETRO_ULTIMO_BLOQUE = "EmbudoUltimoBloque";
+        /// <summary>
+        /// Nombres usados y borrados del registro antes de existir <see cref="PARAMETRO_ULTIMO_BLOQUE"/>: el 17/11/26 se borraron los
+        /// bloques NV-2026-11-03 a 08 (325 clientes vivos) y el del 18/11 volvió a llamarse 03. Desde el 19/11 se sigue en el 09.
+        /// </summary>
+        internal static readonly string[] BLOQUES_QUEMADOS = { "NV-2026-11-08" };
         public const string TIPO_NOTIFICACION = "EmbudoBloqueDiario";
         internal const string USUARIO = "NestoAPI (embudo diario)";
         internal const string USUARIO_DEFECTO = "(defecto)";
@@ -169,7 +179,8 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 {
                     return ResultadoBloqueDiarioEmbudo.YaLanzadoHoy;
                 }
-                bloque = SiguienteBloque(hoy, bloques.Select(b => b?.Bloque));
+                // 18/11/26: un número ya usado no se repite aunque su bloque se haya borrado del registro (Odoo agrupa por nombre)
+                bloque = SiguienteBloque(hoy, bloques.Select(b => b?.Bloque).Concat(BloquesYaUsados()));
 
                 // El mismo camino que el lanzamiento a mano: primero el ensayo (cuántos entrarían) y, si llena el bloque, de verdad
                 var servicio = new ServicioEmbudoClientes(repositorio);
@@ -184,12 +195,49 @@ namespace NestoAPI.Infraestructure.Clientes.Embudo
                 // Con menos que el tamaño (cuando se agote la cola entran unos 45 al mes), se lanza con los que haya, sin aviso
                 ResultadoRepublicarEmbudo lanzado = await servicio.Republicar(
                     new PeticionRepublicarEmbudo { Bloque = bloque, Maximo = tamano, Ensayo = false }, USUARIO, TAMANO_MAXIMO).ConfigureAwait(false);
+                await ApuntarUltimoBloque(bloque).ConfigureAwait(false);
                 return lanzado.ClientesEncolados >= tamano ? ResultadoBloqueDiarioEmbudo.Lanzado : ResultadoBloqueDiarioEmbudo.LanzadoIncompleto;
             }
             catch (Exception ex)
             {
                 await NoLanzado(hoy, bloque, $"ha fallado: {ex.Message}", ex).ConfigureAwait(false);
                 return ResultadoBloqueDiarioEmbudo.Fallo;
+            }
+        }
+
+        /// <summary>
+        /// Los nombres de bloque que ya se han usado aunque no estén en el registro: el último que lanzó el job
+        /// (<see cref="PARAMETRO_ULTIMO_BLOQUE"/>) y los quemados a mano (<see cref="BLOQUES_QUEMADOS"/>). Si el parámetro no se
+        /// puede leer, se sigue con lo que haya (se registra): el bloque sale igual.
+        /// </summary>
+        private IEnumerable<string> BloquesYaUsados()
+        {
+            var usados = new List<string>(BLOQUES_QUEMADOS);
+            try
+            {
+                string ultimo = parametros.Leer(PARAMETRO_ULTIMO_BLOQUE);
+                if (!string.IsNullOrWhiteSpace(ultimo))
+                {
+                    usados.Add(ultimo.Trim());
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[Embudo diario] No se ha podido leer el parámetro {PARAMETRO_ULTIMO_BLOQUE}: se numera solo con el registro. {ex.Message}", ex));
+            }
+            return usados;
+        }
+
+        /// <summary>Deja apuntado el bloque recién lanzado (sin rastro en Modificaciones: cambia todos los días). Nunca lanza.</summary>
+        private async Task ApuntarUltimoBloque(string bloque)
+        {
+            try
+            {
+                await parametros.Escribir(PARAMETRO_ULTIMO_BLOQUE, bloque, USUARIO, null, false).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[Embudo diario] El bloque {bloque} se ha lanzado, pero no se ha podido apuntar en {PARAMETRO_ULTIMO_BLOQUE}: {ex.Message}", ex));
             }
         }
 
