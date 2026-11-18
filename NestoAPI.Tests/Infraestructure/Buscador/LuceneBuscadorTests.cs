@@ -587,5 +587,83 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
             Assert.AreEqual(1, resultados.Count);
             Assert.AreEqual("1", resultados[0].Id);
         }
+
+        #region Tamaño y unidad en la respuesta (sugerencia 1339)
+
+        private static ResultadoBusqueda ConTamanno(ResultadoBusqueda producto, short? tamanno, string unidad)
+        {
+            producto.Tamanno = tamanno;
+            producto.UnidadMedida = unidad;
+            return producto;
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_ConTamannoYUnidad_SalenEnLaRespuesta()
+        {
+            Indexar(ConTamanno(CrearProducto("44256", "HIDRATANTE OPTIMA CREAM", anulado: false), 50, "ml   "));
+
+            dynamic resultado = Buscar("hidratante", incluirAnulados: false).Single();
+
+            Assert.AreEqual(50, (int?)resultado.Tamanno);
+            Assert.AreEqual("ml", (string)resultado.UnidadMedida, "la unidad va recortada");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_SinTamanno_SalenANull()
+        {
+            Indexar(
+                ConTamanno(CrearProducto("1", "Crema sin tamaño", anulado: false), null, "ml"),
+                ConTamanno(CrearProducto("2", "Crema tamaño cero", anulado: false), 0, "ml"),
+                ConTamanno(CrearProducto("3", "Crema sin unidad", anulado: false), 50, "  "));
+
+            List<dynamic> resultados = Buscar("crema", incluirAnulados: false);
+
+            Assert.AreEqual(3, resultados.Count);
+            foreach (dynamic r in resultados)
+            {
+                Assert.IsNull((int?)r.Tamanno, $"{r.Id}: sin tamaño y unidad no se guarda");
+                Assert.IsNull((string)r.UnidadMedida, $"{r.Id}: sin tamaño y unidad no se guarda");
+            }
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_LosVideos_LlevanTamannoNull()
+        {
+            // Un vídeo, igual que un producto de un índice de antes de la 1339, no lleva los campos.
+            LuceneBuscador.Indexar(
+                _rutaIndice,
+                new List<ResultadoBusqueda>(),
+                new List<(int, string, string, string)> { (99, "Protocolo de manicura", "transcripción", "Vídeo de manicura") });
+
+            dynamic video = Buscar("manicura", incluirAnulados: false).Single();
+
+            Assert.IsNull((int?)video.Tamanno);
+            Assert.IsNull((string)video.UnidadMedida);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_ElTamanno_NoCambiaNiElOrdenNiLoQueSeEncuentra()
+        {
+            Func<bool, ResultadoBusqueda[]> productos = conTamanno => new[]
+            {
+                ConTamanno(CrearProducto("10", "CREMA HIDRATANTE 50", anulado: false, posicionMasVendido: 300), conTamanno ? (short?)50 : null, conTamanno ? "ml" : null),
+                ConTamanno(CrearProducto("11", "CREMA HIDRATANTE INTENSIVA", anulado: false), conTamanno ? (short?)200 : null, conTamanno ? "ml" : null),
+                ConTamanno(CrearProducto("12", "HIDRATANTE CORPORAL", anulado: false, posicionMasVendido: 5), conTamanno ? (short?)1 : null, conTamanno ? "l" : null),
+                ConTamanno(CrearProducto("13", "CREMA DE MANOS", anulado: false), null, null)
+            };
+
+            Indexar(productos(false));
+            List<string> sinTamanno = Ids(Buscar("crema hidratante 50 ml", incluirAnulados: false));
+
+            Limpiar();
+            Inicializar();
+            Indexar(productos(true));
+            List<string> conTamanno2 = Ids(Buscar("crema hidratante 50 ml", incluirAnulados: false));
+
+            CollectionAssert.AreEqual(sinTamanno, conTamanno2, "el tamaño solo se almacena: ni busca ni puntúa");
+            Assert.AreEqual(0, Ids(Buscar("ml", incluirAnulados: false)).Count, "la unidad no es buscable");
+        }
+
+        #endregion
     }
 }

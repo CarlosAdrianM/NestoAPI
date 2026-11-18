@@ -49,6 +49,16 @@ namespace NestoAPI.Infraestructure.Buscador
         /// </summary>
         internal const string CAMPO_NOMBRE_FONETICO = "NombreFonetico";
 
+        /// <summary>
+        /// Sugerencia 1339: el tamaño del producto (Productos.Tamaño) y su unidad, para que quien
+        /// pinta el resultado ponga «HIDRATANTE OPTIMA CREAM 50 ml». Solo ALMACENADOS
+        /// (<see cref="StoredField"/>): no se indexan, no tienen normas ni términos y por tanto no
+        /// tocan la relevancia ni el orden. Solo se guardan si hay tamaño &gt; 0 y unidad; un índice
+        /// viejo (sin ellos) devuelve null en los dos.
+        /// </summary>
+        internal const string CAMPO_TAMANNO = "Tamanno";
+        internal const string CAMPO_UNIDAD_MEDIDA = "UnidadMedida";
+
         public static void IndexarTodo()
         {
             Indexar(_luceneIndexDirectory, ObtenerProductos(), ObtenerVideos());
@@ -86,6 +96,12 @@ namespace NestoAPI.Infraestructure.Buscador
                         // (la caja del footer de la tienda, Nesto y la app buscan por referencia).
                         new TextField("TextoCompleto", $"{producto.Id} {producto.Nombre} {producto.Familia} {producto.Subgrupo} {producto.DescripcionBreve} {QuitarHtml(producto.DescripcionLarga)}", Field.Store.NO),
                     };
+                    // Sugerencia 1339: solo almacenados, y solo si hay las dos cosas.
+                    if (producto.Tamanno.HasValue && producto.Tamanno.Value > 0 && !string.IsNullOrWhiteSpace(producto.UnidadMedida))
+                    {
+                        doc.Add(new StoredField(CAMPO_TAMANNO, (int)producto.Tamanno.Value));
+                        doc.Add(new StoredField(CAMPO_UNIDAD_MEDIDA, producto.UnidadMedida.Trim()));
+                    }
                     writer.AddDocument(doc);
                 }
 
@@ -421,7 +437,10 @@ namespace NestoAPI.Infraestructure.Buscador
                     Nombre = doc.Get("Nombre"),
                     Familia = doc.Get("Familia"),
                     Anulado = doc.Get("Anulado") == "true",
-                    SoloVentaPresencial = doc.Get(CAMPO_SOLO_PRESENCIAL) == "true"
+                    SoloVentaPresencial = doc.Get(CAMPO_SOLO_PRESENCIAL) == "true",
+                    // Sugerencia 1339: null si el producto no tiene tamaño o el índice es de antes.
+                    Tamanno = doc.GetField(CAMPO_TAMANNO)?.GetInt32Value(),
+                    UnidadMedida = doc.Get(CAMPO_UNIDAD_MEDIDA)
                 });
             }
 
@@ -458,7 +477,9 @@ namespace NestoAPI.Infraestructure.Buscador
 	                        ISNULL(rtrim(s.Descripción), '') AS Subgrupo,
                             ISNULL(p.Estado, 0) AS Estado,
                             c.Posicion AS PosicionMasVendido,
-                            f.SoloVentaPresencial AS SoloVentaPresencial
+                            f.SoloVentaPresencial AS SoloVentaPresencial,
+                            p.[Tamaño] AS Tamanno,
+                            LTRIM(RTRIM(p.UnidadMedida)) AS UnidadMedida
                         FROM Productos p INNER JOIN Familias f
                         on f.Empresa = p.Empresa and f.Número = p.Familia
                         INNER JOIN SubGruposProducto s
@@ -484,6 +505,8 @@ namespace NestoAPI.Infraestructure.Buscador
                                 short estado = lector.GetInt16(6);
                                 int? posicionMasVendido = lector.IsDBNull(7) ? (int?)null : lector.GetInt32(7);
                                 bool soloVentaPresencial = !lector.IsDBNull(8) && lector.GetBoolean(8);
+                                short? tamanno = lector.IsDBNull(9) ? (short?)null : lector.GetInt16(9);
+                                string unidadMedida = lector.IsDBNull(10) ? null : lector.GetString(10);
 
                                 resultado.Add(new ResultadoBusqueda
                                 {
@@ -496,7 +519,9 @@ namespace NestoAPI.Infraestructure.Buscador
                                     DescripcionLarga = descripcionLarga,
                                     Anulado = estado < 0,
                                     PosicionMasVendido = posicionMasVendido,
-                                    SoloVentaPresencial = soloVentaPresencial
+                                    SoloVentaPresencial = soloVentaPresencial,
+                                    Tamanno = tamanno,
+                                    UnidadMedida = unidadMedida
                                 });
                             }
 
@@ -592,6 +617,12 @@ namespace NestoAPI.Infraestructure.Buscador
 
             /// <summary>Posición en ClasificacionMasVendidos (1 = el que más). Null si no está clasificado.</summary>
             public int? PosicionMasVendido { get; set; }
+
+            /// <summary>Sugerencia 1339: Productos.Tamaño (null si no tiene).</summary>
+            public short? Tamanno { get; set; }
+
+            /// <summary>Sugerencia 1339: Productos.UnidadMedida recortada (null si no tiene).</summary>
+            public string UnidadMedida { get; set; }
         }
 
 
