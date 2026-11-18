@@ -83,5 +83,53 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
         {
             Assert.AreEqual(0, GestorSincronizacion.AgruparPorModificado(new List<NestoSyncRecord>()).Count);
         }
+
+        // 18/11/26: tope por pasada en la sincronización de productos (8.078 encolados, una pasada de 98 minutos).
+
+        [TestMethod]
+        public void AgruparPorModificado_PorPrimeraFila_LoMasAntiguoPrimeroConElUltimoDeRepresentante()
+        {
+            var registros = new List<NestoSyncRecord>
+            {
+                Fila(5, "111", "primero"),
+                Fila(6, "222"),
+                Fila(7, "111", "ultimo"),
+                Fila(8, "333")
+            };
+
+            var agrupados = GestorSincronizacion.AgruparPorModificado(registros, porPrimeraFila: true);
+
+            CollectionAssert.AreEqual(new[] { "111", "222", "333" }, agrupados.Select(r => r.ModificadoId).ToArray(),
+                "El 111 lleva esperando desde la fila 5: no pasa al final por haberse vuelto a encolar");
+            Assert.AreEqual(7, agrupados[0].Id, "El representante sigue siendo la última fila (marca hasta ella)");
+            Assert.AreEqual("ultimo", agrupados[0].Usuario);
+        }
+
+        [TestMethod]
+        public void SeguirCogiendo_SinTope_SiempreSigue()
+        {
+            var empezo = new System.DateTime(2026, 11, 18, 1, 0, 0);
+            Assert.IsTrue(GestorSincronizacion.SeguirCogiendo(empezo, empezo.AddHours(2), null));
+        }
+
+        [TestMethod]
+        public void SeguirCogiendo_ConTope_SigueAntesYParaAlLlegar()
+        {
+            var empezo = new System.DateTime(2026, 11, 18, 1, 0, 0);
+            System.TimeSpan tope = SincronizacionJobsService.TIEMPO_MAXIMO_PASADA_PRODUCTOS;
+
+            Assert.IsTrue(GestorSincronizacion.SeguirCogiendo(empezo, empezo, tope));
+            Assert.IsTrue(GestorSincronizacion.SeguirCogiendo(empezo, empezo + tope - System.TimeSpan.FromSeconds(1), tope));
+            Assert.IsFalse(GestorSincronizacion.SeguirCogiendo(empezo, empezo + tope, tope));
+            Assert.IsFalse(GestorSincronizacion.SeguirCogiendo(empezo, empezo.AddMinutes(98), tope));
+        }
+
+        [TestMethod]
+        public void TiempoMaximoPasadaProductos_PorDebajoDeLaRecurrenciaYDelVigilante()
+        {
+            System.TimeSpan tope = SincronizacionJobsService.TIEMPO_MAXIMO_PASADA_PRODUCTOS;
+            Assert.IsTrue(tope < System.TimeSpan.FromMinutes(5), "La recurrencia es cada 5 minutos");
+            Assert.IsTrue(tope < NestoAPI.Infraestructure.VigilanciaHangfire.VigilanteHangfire.MAXIMO_EN_MARCHA_POR_COLA[SincronizacionJobsService.COLA]);
+        }
     }
 }

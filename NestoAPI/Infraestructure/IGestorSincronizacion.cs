@@ -19,13 +19,15 @@ namespace NestoAPI.Infraestructure
         /// <param name="publicarEntidad">Función que publica una entidad al sistema externo, recibe el usuario del registro</param>
         /// <param name="batchSize">Tamaño del lote (por defecto 50)</param>
         /// <param name="delayMs">Pausa entre lotes en milisegundos (por defecto 5000)</param>
+        /// <param name="tiempoMaximo">Tope por pasada (null = sin tope); lo que quede, la siguiente, empezando por lo más antiguo.</param>
         /// <returns>True si todos los registros se procesaron correctamente, False si hubo algún error</returns>
         Task<bool> ProcesarTabla<T>(
             string tabla,
             Func<NestoSyncRecord, Task<List<T>>> obtenerEntidades,
             Func<T, string, Task> publicarEntidad,
             int batchSize = 50,
-            int delayMs = 5000
+            int delayMs = 5000,
+            TimeSpan? tiempoMaximo = null
         ) where T : class;
     }
 }

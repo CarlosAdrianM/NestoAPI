@@ -112,6 +112,16 @@ namespace NestoAPI.Infraestructure
 
         internal const string USUARIO_SISTEMA = "Sistema (sincronización)";
 
+        /// <summary>
+        /// 18/11/26 (falsa alarma del vigilante): una pasada de productos deja de coger registros a los 4 minutos y termina; lo
+        /// que quede lo coge la siguiente (cada 5 minutos), empezando por lo más antiguo. La noche del 17 al 18 se encolaron
+        /// 8.078 productos y UNA pasada tardó 98 minutos (≈ 0,7 s por producto): el vigilante (#820) avisó de «job colgado»
+        /// a los 45 y la sincronización de clientes, en la misma cola de un solo worker, estuvo parada todo ese rato.
+        /// Por debajo de la recurrencia (5 min) para que la siguiente encuentre libre el candado y los clientes tengan su turno
+        /// entre pasada y pasada. Con colas normales (decenas de productos) no se llega nunca.
+        /// </summary>
+        internal static readonly TimeSpan TIEMPO_MAXIMO_PASADA_PRODUCTOS = TimeSpan.FromMinutes(4);
+
         [Queue(COLA)]
         public static Task SincronizarProductos() => EjecutarSinSolapar("sincronizar-productos", SincronizarProductosSinCandado);
 
@@ -171,7 +181,8 @@ namespace NestoAPI.Infraestructure
                         publicarEntidad: async (productoDTO, usuario) =>
                         {
                             await gestorProductos.PublicarProductoSincronizar(productoDTO, "Nesto viejo", usuario);
-                        }
+                        },
+                        tiempoMaximo: TIEMPO_MAXIMO_PASADA_PRODUCTOS
                     );
 
                     if (resultado)

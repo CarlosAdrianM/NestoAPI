@@ -29,16 +29,21 @@ namespace NestoAPI.Infraestructure
         /// <param name="publicarEntidad">Función que publica una entidad al sistema externo, recibe el usuario del registro</param>
         /// <param name="batchSize">Tamaño del lote (por defecto 50)</param>
         /// <param name="delayMs">Pausa entre lotes en milisegundos (por defecto 5000)</param>
+        /// <param name="tiempoMaximo">18/11/26: pasado este tiempo desde que empezó la pasada no se coge ningún registro más; lo
+        /// que quede lo coge la siguiente pasada, empezando por lo más antiguo (ordenado por su primera fila pendiente).
+        /// Null = sin tope: todo de una vez y en el orden de siempre (clientes).</param>
         /// <returns>True si todos los registros se procesaron correctamente, False si hubo algún error</returns>
         public async Task<bool> ProcesarTabla<T>(
             string tabla,
             Func<NestoSyncRecord, Task<List<T>>> obtenerEntidades,
             Func<T, string, Task> publicarEntidad,
             int batchSize = 50,
-            int delayMs = 5000
+            int delayMs = 5000,
+            TimeSpan? tiempoMaximo = null
         ) where T : class
         {
             bool todosOK = true;
+            DateTime empezo = DateTime.UtcNow;
 
             // Obtenemos los registros de Nesto_sync que necesitan sincronización
             List<NestoSyncRecord> registrosParaSincronizar = await _db.Database.SqlQuery<NestoSyncRecord>(
@@ -51,7 +56,7 @@ namespace NestoAPI.Infraestructure
             // vendedor con dos filas a 13 ms). Publicarlas todas duplica mensajes idénticos, y en
             // Odoo dos mensajes casi simultáneos son dos escrituras (dos correos de asignación):
             // se publica UNA vez por ModificadoId y se marcan sincronizadas TODAS sus filas.
-            List<NestoSyncRecord> registrosAgrupados = AgruparPorModificado(registrosParaSincronizar);
+            List<NestoSyncRecord> registrosAgrupados = AgruparPorModificado(registrosParaSincronizar, porPrimeraFila: tiempoMaximo.HasValue);
 
             int totalRegistros = registrosAgrupados.Count;
 
@@ -65,8 +70,11 @@ namespace NestoAPI.Infraestructure
             Console.WriteLine($"🔄 Procesando {totalRegistros} registros de la tabla {tabla} en lotes de {batchSize}" +
                 (duplicados > 0 ? $" ({duplicados} filas duplicadas agrupadas)" : string.Empty));
 
+            int procesados = 0;
+            bool cortadoPorTiempo = false;
+
             // Procesar por lotes
-            for (int i = 0; i < totalRegistros; i += batchSize)
+            for (int i = 0; i < totalRegistros && !cortadoPorTiempo; i += batchSize)
             {
                 List<NestoSyncRecord> loteRegistros = registrosAgrupados.Skip(i).Take(batchSize).ToList();
                 int loteActual = (i / batchSize) + 1;
@@ -76,6 +84,12 @@ namespace NestoAPI.Infraestructure
 
                 foreach (NestoSyncRecord registro in loteRegistros)
                 {
+                    if (!SeguirCogiendo(empezo, DateTime.UtcNow, tiempoMaximo))
+                    {
+                        cortadoPorTiempo = true;
+                        break;
+                    }
+                    procesados++;
                     string usuario = string.IsNullOrWhiteSpace(registro.Usuario) ? "DESCONOCIDO" : registro.Usuario.Trim();
 
                     try
@@ -123,7 +137,7 @@ namespace NestoAPI.Infraestructure
                 }
 
                 // Esperar antes de procesar el siguiente lote (si no es el último)
-                if (i + batchSize < totalRegistros)
+                if (!cortadoPorTiempo && i + batchSize < totalRegistros)
                 {
                     Console.WriteLine($"⏳ Esperando {delayMs}ms antes del siguiente lote...");
                     await Task.Delay(delayMs);
@@ -131,7 +145,8 @@ namespace NestoAPI.Infraestructure
             }
 
             string resultado = todosOK ? "✅ ÉXITO" : "⚠️ COMPLETADO CON ERRORES";
-            Console.WriteLine($"{resultado}: Sincronización de tabla {tabla} finalizada. Total procesados: {totalRegistros}");
+            Console.WriteLine($"{resultado}: Sincronización de tabla {tabla} finalizada. Total procesados: {procesados}" +
+                (cortadoPorTiempo ? $" (tope de {tiempoMaximo.Value.TotalMinutes} min: quedan {totalRegistros - procesados} para la siguiente pasada)" : string.Empty));
 
             return todosOK;
         }
@@ -142,13 +157,27 @@ namespace NestoAPI.Infraestructure
         /// fila por sentencia SQL, así que los duplicados son el caso normal, no la excepción.
         /// </summary>
         internal static List<NestoSyncRecord> AgruparPorModificado(List<NestoSyncRecord> registros)
+            => AgruparPorModificado(registros, porPrimeraFila: false);
+
+        /// <param name="porPrimeraFila">18/11/26: true = ordenados por su fila pendiente MÁS ANTIGUA (el representante sigue
+        /// siendo la última). Con tope por pasada es lo que garantiza que nada se quede atrás: un registro que se vuelve a
+        /// encolar mientras espera no pasa al final de la cola.</param>
+        internal static List<NestoSyncRecord> AgruparPorModificado(List<NestoSyncRecord> registros, bool porPrimeraFila)
         {
             return registros
                 .GroupBy(r => r.ModificadoId?.Trim())
-                .Select(g => g.OrderBy(r => r.Id).Last())
-                .OrderBy(r => r.Id)
+                .Select(g => new { Representante = g.OrderBy(r => r.Id).Last(), PrimeraId = g.Min(r => r.Id) })
+                .OrderBy(x => porPrimeraFila ? x.PrimeraId : x.Representante.Id)
+                .Select(x => x.Representante)
                 .ToList();
         }
+
+        /// <summary>
+        /// 18/11/26 (falsa alarma del vigilante): ¿puede la pasada coger otro registro? Sí mientras no haya pasado
+        /// <paramref name="tiempoMaximo"/> desde que empezó (null = sin tope). El registro que ya ha empezado se termina.
+        /// </summary>
+        internal static bool SeguirCogiendo(DateTime empezo, DateTime ahora, TimeSpan? tiempoMaximo)
+            => !tiempoMaximo.HasValue || ahora - empezo < tiempoMaximo.Value;
 
         /// <summary>
         /// Marca sincronizadas todas las filas pendientes del registro hasta el Id del
