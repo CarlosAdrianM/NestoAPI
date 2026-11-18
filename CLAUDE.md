@@ -845,6 +845,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Envío: `DireccionEnvioCliente.Componer` (pura): Dirección + «, » + Dirección 2 si cabe en 80; si no, delante de las Observaciones (80) sin
   quitar nada; si tampoco, aviso. Núcleo: `GestorPedidoParaAgencia` (GET ParaAgencia de Nesto, propuesta del servidor, DesdePedido y packing;
   el aviso sale en `PropuestaEnvioDTO.AvisoDireccion2` y en los avisos de DesdePedido) + etiqueta pendiente y ActualizarDireccionEtiqueta.
+- **A Odoo (corte 3, 18/11/26), SOLO de ida**: el mensaje de clientes (`ClienteSyncMessage`, uno por contacto) lleva `Direccion2` y `TipoLugar` al
+  lado de `Direccion`, ausentes (WhenWritingNull) si el contacto no tiene, si están en blanco o sin el script; nunca "". Se leen en UNA consulta
+  por cliente (`Direccion2ClienteSql.LeerDeClientes`, vía `IServicioGestorClientes.LeerDireccion2Clientes`; el gestor guarda las filas del último
+  cliente para sus contactos seguidos y la publicación suelta las vuelve a leer). Cuándo viajan: en cualquier publicación del cliente; el alta
+  escribe la Dirección 2 ANTES de publicar, así que su mensaje ya la lleva. `trgClientesUpd` NO encola por Direccion2/TipoLugar (hoy solo las
+  escribe el alta). De Odoo a Nesto se ignoran: ni `ClienteChangeDetector` ni `BarreraClientesExternos` las miran.
 
 ### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
 - `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática

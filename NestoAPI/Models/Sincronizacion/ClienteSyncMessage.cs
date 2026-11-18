@@ -41,6 +41,18 @@ namespace NestoAPI.Models.Sincronizacion
         public string Direccion { get; set; }
 
         /// <summary>
+        /// NestoAPI#874 (corte 3): Clientes.Direccion2, ya compuesta y en mayúsculas («1º D», «LOCAL 6 · RÓTULO: EL EDÉN»). SOLO de Nesto a
+        /// Odoo: al recibir se ignora (ni el detector ni la barrera la miran). Ausente = no tocar: viaja solo si el contacto la tiene (sin
+        /// las columnas, sin Dirección 2 o en blanco, no viaja; nunca "").
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string Direccion2 { get; set; }
+
+        /// <summary>NestoAPI#874 (corte 3): Clientes.TipoLugar (Piso, Local, Casa, Nave, Otro). Misma regla que <see cref="Direccion2"/>.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string TipoLugar { get; set; }
+
+        /// <summary>
         /// Código postal
         /// </summary>
         public string CodigoPostal { get; set; }

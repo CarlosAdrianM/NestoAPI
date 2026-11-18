@@ -1,5 +1,6 @@
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
@@ -79,6 +80,59 @@ namespace NestoAPI.Infraestructure.Clientes
             }
         }
 
+        /// <summary>NestoAPI#874 (corte 3): todas las filas (contactos) de los clientes, en UNA consulta. {0} = @p1, @p2…</summary>
+        internal const string SQL_LEER_CLIENTES = @"
+            SELECT RTRIM([Nº Cliente]) AS Cliente, RTRIM(Contacto) AS Contacto, Direccion2, RTRIM(TipoLugar) AS TipoLugar
+            FROM dbo.Clientes WITH (NOLOCK)
+            WHERE Empresa = @p0 AND [Nº Cliente] IN ({0})";
+
+        /// <summary>
+        /// NestoAPI#874 (corte 3, mensaje a Odoo): la Dirección 2 y el tipo de lugar de todos los contactos de esos clientes, por
+        /// <see cref="ClaveContacto"/>. Null si no existen las columnas (sin el script: los campos no viajan) o si falla la lectura
+        /// (ELMAH; el mensaje sale sin ellos). Nunca lanza.
+        /// </summary>
+        public static Dictionary<string, Direccion2Contacto> LeerDeClientes(NVEntities db, string empresa, IEnumerable<string> clientes)
+        {
+            List<string> numeros = (clientes ?? Enumerable.Empty<string>())
+                .Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (db == null || !numeros.Any() || !HayColumnas(db, "la dirección 2 de los clientes no viaja a Odoo"))
+            {
+                return null;
+            }
+            try
+            {
+                var parametros = new List<object> { (empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO).Trim() };
+                parametros.AddRange(numeros);
+                string enLista = string.Join(", ", numeros.Select((n, i) => "@p" + (i + 1)));
+                return db.Database.SqlQuery<Direccion2Contacto>(string.Format(SQL_LEER_CLIENTES, enLista), parametros.ToArray())
+                    .ToList()
+                    .GroupBy(f => ClaveContacto(f.Cliente, f.Contacto))
+                    .ToDictionary(g => g.Key, g => g.First());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido leer la dirección 2 de los clientes {string.Join(", ", numeros)} para Odoo; el mensaje sale sin ella: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>«cliente|contacto», recortados.</summary>
+        public static string ClaveContacto(string cliente, string contacto) => $"{cliente?.Trim()}|{contacto?.Trim()}";
+
+        /// <summary>
+        /// NestoAPI#874 (corte 3): lo que viaja a Odoo de un contacto. Vacío o en blanco = null = la propiedad NO viaja (Odoo no toca
+        /// nada); nunca se manda "" (vaciar) porque la Dirección 2 de hoy solo la pone el alta. Puro.
+        /// </summary>
+        public static (string Direccion2, string TipoLugar) ParaPublicar(IReadOnlyDictionary<string, Direccion2Contacto> filas, string cliente, string contacto)
+        {
+            if (filas == null || !filas.TryGetValue(ClaveContacto(cliente, contacto), out Direccion2Contacto fila) || fila == null)
+            {
+                return (null, null);
+            }
+            return (string.IsNullOrWhiteSpace(fila.Direccion2) ? null : fila.Direccion2.Trim(),
+                string.IsNullOrWhiteSpace(fila.TipoLugar) ? null : fila.TipoLugar.Trim());
+        }
+
         internal const string SQL_RASTRO_NUMERO_SIN_GOOGLE = @"
             INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@p0, @p1, @p2, @p3)";
 
@@ -121,5 +175,14 @@ namespace NestoAPI.Infraestructure.Clientes
         }
 
         internal static void ReiniciarAvisoParaTests() => Interlocked.Exchange(ref avisadoSinColumnas, 0);
+    }
+
+    /// <summary>NestoAPI#874 (corte 3): una fila de <see cref="Direccion2ClienteSql.SQL_LEER_CLIENTES"/>.</summary>
+    public class Direccion2Contacto
+    {
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public string Direccion2 { get; set; }
+        public string TipoLugar { get; set; }
     }
 }

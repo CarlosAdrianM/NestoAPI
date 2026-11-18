@@ -2194,6 +2194,8 @@ namespace NestoAPI.Infraestructure
 
         public async Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null)
         {
+            // NestoAPI#874 (corte 3): publicación suelta (alta, modificación…): la Dirección 2 se lee de nuevo, nunca de la memoria
+            OlvidarDireccion2();
             // NestoAPI#498: publicación suelta de un cliente, así que se calculan sus fechas aquí.
             // Quien publica muchos (carga inicial, job de Nesto_sync) las calcula antes de una vez
             // con LeerFechasCompras y usa la otra sobrecarga.
@@ -2236,6 +2238,7 @@ namespace NestoAPI.Infraestructure
                 .ToList();
 
             string vendedorPeluqueria = await VendedorPeluqueriaParaPublicar(cliente).ConfigureAwait(false);
+            (string direccion2, string tipoLugar) = await Direccion2ParaPublicar(cliente).ConfigureAwait(false);
 
             // Obtener email del vendedor. Si Vendedore está cargado (por Include) usamos su Mail;
             // si no, consulta al servicio. NestoAPI#504: un Mail en blanco NO es "resuelto" (antes el
@@ -2274,6 +2277,8 @@ namespace NestoAPI.Infraestructure
                 ClientePrincipal = cliente.ClientePrincipal,
                 Nombre = cliente.Nombre?.Trim(),
                 Direccion = cliente.Dirección?.Trim(),
+                Direccion2 = direccion2,
+                TipoLugar = tipoLugar,
                 CodigoPostal = cliente.CodPostal?.Trim(),
                 Poblacion = cliente.Población?.Trim(),
                 Provincia = cliente.Provincia?.Trim(),
@@ -2293,6 +2298,45 @@ namespace NestoAPI.Infraestructure
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
             await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", message);
+        }
+
+        // NestoAPI#874 (corte 3): las filas del último cliente leído. Quien publica todos los contactos de un cliente seguidos (el job de
+        // Nesto_sync, la carga de un vendedor) hace UNA consulta por cliente, no una por contacto. La publicación suelta la olvida antes.
+        private string direccion2DelCliente;
+        private Dictionary<string, Clientes.Direccion2Contacto> direccion2Filas;
+
+        internal void OlvidarDireccion2()
+        {
+            direccion2DelCliente = null;
+            direccion2Filas = null;
+        }
+
+        /// <summary>
+        /// NestoAPI#874 (corte 3): la Dirección 2 y el tipo de lugar del contacto para el mensaje a Odoo, o (null, null): sin las columnas, sin
+        /// Dirección 2 o si falla la lectura (el mensaje sale sin ellos, como antes). Nunca para la publicación.
+        /// </summary>
+        private async Task<(string Direccion2, string TipoLugar)> Direccion2ParaPublicar(Cliente cliente)
+        {
+            string numero = cliente?.Nº_Cliente?.Trim();
+            if (string.IsNullOrEmpty(numero))
+            {
+                return (null, null);
+            }
+            if (!string.Equals(direccion2DelCliente, numero, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    direccion2Filas = await servicio.LeerDireccion2Clientes(cliente.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        new[] { numero }).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"   ⚠️ NestoAPI#874: no se ha podido leer la dirección 2 de {numero}; se publica sin ella: {ex.Message}");
+                    direccion2Filas = null;
+                }
+                direccion2DelCliente = numero;
+            }
+            return Clientes.Direccion2ClienteSql.ParaPublicar(direccion2Filas, numero, cliente.Contacto);
         }
 
         /// <summary>
@@ -2350,6 +2394,7 @@ namespace NestoAPI.Infraestructure
                 return;
             }
             Dictionary<string, FechasComprasCliente> fechas = await LeerFechasCompras(new[] { clienteDb.Nº_Cliente }).ConfigureAwait(false);
+            OlvidarDireccion2();
             await PublicarClienteSincronizar(clienteDb, CalculoFechasComprasCliente.Buscar(fechas, clienteDb.Nº_Cliente), "Nesto", usuario, m =>
             {
                 m.Origen = origen?.Trim();

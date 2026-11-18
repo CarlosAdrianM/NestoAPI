@@ -996,6 +996,14 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        public Task<Dictionary<string, Clientes.Direccion2Contacto>> LeerDireccion2Clientes(string empresa, IEnumerable<string> clientes)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return Task.FromResult(Clientes.Direccion2ClienteSql.LeerDeClientes(db, empresa, clientes));
+            }
+        }
+
         public async Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes)
         {
             using (NVEntities db = new NVEntities())

@@ -48,5 +48,10 @@ namespace NestoAPI.Infraestructure
         Task<string> RutaMasFrecuenteProvincia(string empresa, string codigoPostal);
         Task<string> ObtenerEmailVendedor(string empresa, string vendedor);
         Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);
+        /// <summary>
+        /// NestoAPI#874 (corte 3): Dirección 2 y tipo de lugar de todos los contactos de esos clientes (UNA consulta), por
+        /// <see cref="Clientes.Direccion2ClienteSql.ClaveContacto"/>. Null sin las columnas o si falla: el mensaje a Odoo sale sin ellos.
+        /// </summary>
+        Task<Dictionary<string, Clientes.Direccion2Contacto>> LeerDireccion2Clientes(string empresa, IEnumerable<string> clientes);
     }
 }

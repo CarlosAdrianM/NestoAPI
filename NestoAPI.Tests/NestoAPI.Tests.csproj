@@ -378,6 +378,7 @@
     <Compile Include="Infrastructure\Inventarios\InventarioBorrarFilaTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioReservasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\BarreraClientesExternosTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\Direccion2SincronizacionTests.cs" />
     <Compile Include="Controllers\InventariosAriadnaControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
