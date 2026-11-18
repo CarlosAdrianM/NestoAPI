@@ -1505,5 +1505,86 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         #endregion
+
+        #region Novedades 1013: desglose de la retención por prepago a ELMAH
+
+        private static PedidoPicking PedidoPrepagoParaTraza(decimal prepago, List<ExtractoClienteDTO> extractos, List<Exception> registrados)
+        {
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored)).Returns(new List<PrepagoDTO> { new PrepagoDTO { Importe = prepago } });
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored)).Returns(extractos);
+            A.CallTo(() => rellenador.PedidosPrepagoEnPicking(A<int>.Ignored)).Returns(new List<PedidoPrepagoEnPickingDTO>());
+            var pedido = new PedidoPicking(rellenador)
+            {
+                Id = 930959,
+                Empresa = "1",
+                Cliente = "15191",
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "A", Cantidad = 1, CantidadReservada = 1, Total = 100M }
+                }
+            };
+            pedido.RegistrarEnElmah = registrados.Add;
+            return pedido;
+        }
+
+        [TestMethod]
+        public void PedidoPicking_CubiertoPorPrepago_Retenido_RegistraElDesgloseUnaSolaVezConLasCifras()
+        {
+            var registrados = new List<Exception>();
+            var extractos = new List<ExtractoClienteDTO>
+            {
+                new ExtractoClienteDTO { empresa = "4", documento = "FV4001", importePendiente = 60M, vencimiento = DateTime.Today.AddDays(-30) },
+                new ExtractoClienteDTO { empresa = "1", documento = "PAGO", importePendiente = -50M }
+            };
+            PedidoPicking pedido = PedidoPrepagoParaTraza(20M, extractos, registrados);
+
+            Assert.IsFalse(pedido.CubiertoPorPrepago());
+            Assert.IsFalse(pedido.CubiertoPorPrepago(), "Segunda pregunta en la misma pasada (todo ahora + decisión)");
+
+            Assert.AreEqual(1, registrados.Count);
+            string texto = registrados[0].Message;
+            StringAssert.StartsWith(texto, PedidoPicking.PREFIJO_TRAZA_RETENIDO);
+            StringAssert.Contains(texto, "Pedido 930959");
+            StringAssert.Contains(texto, "cliente 15191");
+            StringAssert.Contains(texto, $"Total={100M:0.00}");
+            StringAssert.Contains(texto, $"Prepagos={20M:0.00}");
+            StringAssert.Contains(texto, $"DeudaVencida={60M:0.00}");
+            StringAssert.Contains(texto, $"FV4001 (empresa 4) {60M:0.00} vto. {DateTime.Today.AddDays(-30):dd/MM/yyyy}");
+            StringAssert.Contains(texto, $"PAGO (empresa 1) {50M:0.00} libre");
+        }
+
+        [TestMethod]
+        public void PedidoPicking_CubiertoPorPrepago_Cubierto_NoRegistraNada()
+        {
+            var registrados = new List<Exception>();
+            PedidoPicking pedido = PedidoPrepagoParaTraza(100M, new List<ExtractoClienteDTO>(), registrados);
+
+            Assert.IsTrue(pedido.CubiertoPorPrepago());
+            Assert.AreEqual(0, registrados.Count);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_EvaluarPrepago_NoCubierto_NoRegistraNada()
+        {
+            var registrados = new List<Exception>();
+            PedidoPicking pedido = PedidoPrepagoParaTraza(10M, new List<ExtractoClienteDTO>(), registrados);
+
+            Assert.IsFalse(pedido.EvaluarPrepago());
+            Assert.AreEqual(0, registrados.Count, "La primera vuelta del reparto del saldo no deja traza");
+        }
+
+        [TestMethod]
+        public void PedidoPicking_CubiertoPorPrepago_SiElRegistroFalla_NoRompeElPicking()
+        {
+            PedidoPicking pedido = PedidoPrepagoParaTraza(10M, new List<ExtractoClienteDTO>(), new List<Exception>());
+            pedido.RegistrarEnElmah = _ => throw new InvalidOperationException("ELMAH caído");
+
+            Assert.IsFalse(pedido.CubiertoPorPrepago());
+            Assert.IsTrue(pedido.RetenidoPorPrepago);
+        }
+
+        #endregion
     }
 }

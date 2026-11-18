@@ -264,23 +264,84 @@ namespace NestoAPI.Models.Picking
             RetenidoPorPrepago = !cubierto;
             if (!cubierto)
             {
-                // NestoAPI#202 (diagnóstico): si un pedido PREPAGO no sale en picking,
-                // dejamos traza en ELMAH con el desglose. Sirve para investigar casos
-                // como pedido 916885 (mayo 2026) donde según el usuario el prepago + un
-                // movimiento pendiente cubrían el total pero el pedido no cogió picking.
-                var extractosValidos = ExtractosValidos();
-                System.Diagnostics.Trace.WriteLine(
-                    $"[Picking#202] Pedido {Id} retenido por prepago. " +
-                    $"Total={ImporteTotalPrepago}, Prepagos={importePrepagosEvaluado}, " +
-                    $"SaldoAFavor={saldoAFavorEvaluado}, SaldoReservadoAlPedido={saldoReservadoEvaluado}, " +
-                    $"SaldoReservadoAOtros={SaldoReservadoAOtrosDocumentos()}, DeudaVencida={deudaVencidaEvaluada}, " +
-                    $"ConsumidoPorOtrosPedidos={ImporteConsumidoPorOtrosPedidos}, " +
-                    $"Disponible={ImporteDisponiblePrepago}, " +
-                    $"ExtractosPendientesCount={ExtractosPendientes?.Count ?? 0}, " +
-                    $"ExtractosValidosCount={extractosValidos.Count()}." +
-                    TextoReembolsosPendientesDeEntrega(ExtractosPendientes));
+                // NestoAPI#202 (diagnóstico): si un pedido PREPAGO no sale en picking, dejamos traza en ELMAH con el
+                // desglose (casos 916885 de mayo de 2026 y 930959 de noviembre: antes iba a Trace y no quedaba en ningún
+                // sitio). Novedades 1013: una entrada por pedido y pasada (este objeto vive una pasada) y nunca rompe el picking.
+                RegistrarDesgloseRetencion();
             }
             return cubierto;
+        }
+
+        /// <summary>Novedades 1013: dónde va el desglose de la retención por prepago (ELMAH; los tests lo sustituyen).</summary>
+        internal Action<Exception> RegistrarEnElmah { get; set; } = ex => Infraestructure.ElmahHelper.Log(ex, "Sistema (picking)");
+
+        private bool desgloseRetencionRegistrado;
+
+        /// <summary>Novedades 1013: como mucho las deudas vencidas y los saldos a favor que se listan en la traza.</summary>
+        internal const int MAXIMO_APUNTES_EN_TRAZA = 10;
+
+        internal const string PREFIJO_TRAZA_RETENIDO = "[Picking: retenido por prepago]";
+
+        private void RegistrarDesgloseRetencion()
+        {
+            if (desgloseRetencionRegistrado)
+            {
+                return;
+            }
+            desgloseRetencionRegistrado = true;
+            try
+            {
+                RegistrarEnElmah?.Invoke(new Exception(TextoDesgloseRetencion()));
+            }
+            catch
+            {
+                // La traza nunca rompe el picking.
+            }
+        }
+
+        /// <summary>Novedades 1013: el desglose de por qué el pedido no está cubierto, con las deudas que cuentan y los saldos a favor.</summary>
+        internal string TextoDesgloseRetencion()
+        {
+            var extractosValidos = ExtractosValidos().ToList();
+            var texto = new System.Text.StringBuilder();
+            texto.Append($"{PREFIJO_TRAZA_RETENIDO} Pedido {Id} (empresa {Empresa?.Trim()}) del cliente {Cliente?.Trim()}. ");
+            texto.Append($"Total={ImporteTotalPrepago:0.00}, Prepagos={importePrepagosEvaluado:0.00}, ");
+            texto.Append($"SaldoAFavorLibre={saldoAFavorEvaluado:0.00}, SaldoReservadoAlPedido={saldoReservadoEvaluado:0.00}, ");
+            texto.Append($"SaldoReservadoAOtros={SaldoReservadoAOtrosDocumentos():0.00}, DeudaVencida={deudaVencidaEvaluada:0.00}, ");
+            texto.Append($"ConsumidoPorOtrosPedidos={ImporteConsumidoPorOtrosPedidos:0.00}, Disponible={ImporteDisponiblePrepago:0.00}, ");
+            texto.Append($"Extractos pendientes={ExtractosPendientes?.Count ?? 0} (válidos {extractosValidos.Count}).");
+            texto.Append(TextoReembolsosPendientesDeEntrega(ExtractosPendientes));
+
+            var deudas = extractosValidos
+                .Where(e => e.importePendiente > 0 && e.vencimiento.HasValue && e.vencimiento.Value < DateTime.Today && !e.ReembolsoPendienteDeEntrega)
+                .OrderBy(e => e.vencimiento)
+                .ToList();
+            if (deudas.Any())
+            {
+                texto.Append(" Deudas vencidas que cuentan: ");
+                texto.Append(string.Join("; ", deudas.Take(MAXIMO_APUNTES_EN_TRAZA).Select(e =>
+                    $"{e.documento?.Trim()} (empresa {e.empresa?.Trim()}) {e.importePendiente:0.00} vto. {e.vencimiento:dd/MM/yyyy}")));
+                texto.Append(deudas.Count > MAXIMO_APUNTES_EN_TRAZA ? $" y {deudas.Count - MAXIMO_APUNTES_EN_TRAZA} más." : ".");
+            }
+
+            var saldos = extractosValidos.Where(e => e.importePendiente < 0).ToList();
+            if (saldos.Any())
+            {
+                texto.Append(" Saldos a favor: ");
+                texto.Append(string.Join("; ", saldos.Take(MAXIMO_APUNTES_EN_TRAZA).Select(e =>
+                    $"{e.documento?.Trim()} (empresa {e.empresa?.Trim()}) {-e.importePendiente:0.00} {DestinoSaldo(e)}")));
+                texto.Append(saldos.Count > MAXIMO_APUNTES_EN_TRAZA ? $" y {saldos.Count - MAXIMO_APUNTES_EN_TRAZA} más." : ".");
+            }
+            return texto.ToString();
+        }
+
+        private string DestinoSaldo(ExtractoClienteDTO extracto)
+        {
+            if (extracto.PedidoReservado.HasValue)
+            {
+                return extracto.PedidoReservado == Id ? "reservado a este pedido" : $"reservado al pedido {extracto.PedidoReservado}";
+            }
+            return string.IsNullOrEmpty(extracto.FacturaReservada) ? "libre" : $"reservado a la factura {extracto.FacturaReservada.Trim()}";
         }
 
         private decimal importePrepagosEvaluado;
