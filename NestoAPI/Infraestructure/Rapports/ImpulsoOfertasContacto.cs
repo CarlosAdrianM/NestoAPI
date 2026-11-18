@@ -95,7 +95,7 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>
         /// Las ofertas vigentes <paramref name="dia"/> y los productos a los que alcanzan (ver <see cref="ReglasImpulsoOfertasContacto"/>):
         /// filas globales de DescuentosProducto desde 1 unidad que «parecen campaña» (fechas, audiencia o nombre de campaña, como
-        /// GET api/Campanas?soloCampanas=true) y N+M de OfertasPermitidas sin cliente y con fechas.
+        /// GET api/Campanas?soloCampanas=true) y N+M de OfertasPermitidas sin cliente, con fechas o (18/11/26) sin fechas y modificadas en 90 días.
         /// </summary>
         internal static Dictionary<string, OfertaProductoDia> LeerOfertasDelDia(DateTime dia)
         {
@@ -126,11 +126,11 @@ namespace NestoAPI.Infraestructure.Rapports
                     .ToList();
 
                 // Como ServicioPrecios.BuscarOfertasPermitidas: la vigencia en memoria con la regla única (son pocas filas).
+                // 18/11/26: también las N+M SIN fechas modificadas en los últimos 90 días (ReglasImpulsoOfertasContacto.CuentaOfertaNm).
                 filas.AddRange(db.OfertasPermitidas
-                    .Where(o => o.Empresa == empresa && !o.Denegar && (o.Cliente == null || o.Cliente.Trim() == string.Empty) && o.CantidadRegalo > 0 && o.CantidadConPrecio > 0
-                        && (o.FechaDesde != null || o.FechaHasta != null))
+                    .Where(o => o.Empresa == empresa && !o.Denegar && (o.Cliente == null || o.Cliente.Trim() == string.Empty) && o.CantidadRegalo > 0 && o.CantidadConPrecio > 0)
                     .ToList()
-                    .Where(o => Vigencia.EsVigente(o, dia))
+                    .Where(o => ReglasImpulsoOfertasContacto.CuentaOfertaNm(o.FechaDesde, o.FechaHasta, o.FechaModificación, dia))
                     .Select(o => new FilaOfertaDia
                     {
                         Producto = o.Número,
@@ -140,7 +140,8 @@ namespace NestoAPI.Infraestructure.Rapports
                         CantidadConPrecio = o.CantidadConPrecio,
                         CantidadRegalo = o.CantidadRegalo,
                         FechaDesde = o.FechaDesde,
-                        FechaHasta = o.FechaHasta
+                        FechaHasta = o.FechaHasta,
+                        FechaModificacion = o.FechaDesde == null && o.FechaHasta == null ? o.FechaModificación : (DateTime?)null
                     }));
 
                 if (!filas.Any())

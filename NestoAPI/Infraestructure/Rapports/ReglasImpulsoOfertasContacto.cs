@@ -26,6 +26,11 @@ namespace NestoAPI.Infraestructure.Rapports
         public int CantidadRegalo { get; set; }
         public DateTime? FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
+        /// <summary>NestoAPI#866 (18/11/26): solo en un N+M SIN fechas (<see cref="ReglasImpulsoOfertasContacto.DIAS_NM_SIN_FECHAS"/>):
+        /// su FechaModificación, que hace de fecha de entrada.</summary>
+        public DateTime? FechaModificacion { get; set; }
+        /// <summary>Cuándo entró la oferta: su FechaDesde o, en un N+M sin fechas, su FechaModificación.</summary>
+        public DateTime? FechaEntrada => FechaDesde ?? FechaModificacion;
     }
 
     /// <summary>NestoAPI#866: lo que hace falta de un producto para casar las ofertas de familia o grupo y escribir el motivo.</summary>
@@ -50,6 +55,9 @@ namespace NestoAPI.Infraestructure.Rapports
         public string Texto { get; set; }
         public DateTime? FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
+        private DateTime? fechaEntrada;
+        /// <summary>Cuándo entró la oferta (18/11/26): la FechaDesde o, en un N+M sin fechas, su FechaModificación. Sin dar, la FechaDesde.</summary>
+        public DateTime? FechaEntrada { get => fechaEntrada ?? FechaDesde; set => fechaEntrada = value; }
     }
 
     /// <summary>NestoAPI#866: una compra (día de pedido) de un producto en oferta hoy por un cliente de la cartera.</summary>
@@ -85,6 +93,9 @@ namespace NestoAPI.Infraestructure.Rapports
         public bool CaducaPronto { get; set; }
         public DateTime? FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
+        private DateTime? fechaEntrada;
+        /// <summary>Cuándo entró la oferta (ver <see cref="OfertaProductoDia.FechaEntrada"/>). Sin dar, la FechaDesde.</summary>
+        public DateTime? FechaEntrada { get => fechaEntrada ?? FechaDesde; set => fechaEntrada = value; }
         public double Puntuacion { get; set; }
     }
 
@@ -110,7 +121,8 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <list type="bullet">
     /// <item>Oferta = fila global de DescuentosProducto (sin cliente ni proveedor, desde 1 unidad) que «parece campaña» (con fechas,
     /// audiencia o nombre de campaña, el mismo criterio que la pantalla de campañas) o N+M de OfertasPermitidas con fechas, vigente
-    /// hoy con la regla única <c>Vigencia</c>. De cada producto, la de más descuento.</item>
+    /// hoy con la regla única <c>Vigencia</c>, o sin fechas y modificada en los últimos <see cref="DIAS_NM_SIN_FECHAS"/> días
+    /// (<see cref="CuentaOfertaNm"/>). De cada producto, la de más descuento.</item>
     /// <item>Por cliente de la cartera: los productos en oferta que compra habitualmente (≥ <see cref="COMPRAS_MINIMAS"/> días con
     /// compra en 12 meses), su ciclo (mediana entre compras), los días desde la última, el descuento, su peso en la compra y si la
     /// oferta acaba de entrar o caduca pronto.</item>
@@ -133,6 +145,13 @@ namespace NestoAPI.Infraestructure.Rapports
         public const int PRODUCTOS_APUNTADOS = 3;
         public const int LONGITUD_NOMBRE_CORTO = 25;
 
+        /// <summary>
+        /// NestoAPI#866 (Carlos 18/11/26): las N+M bimestrales que cargan Manuel y Santiago suelen quedar SIN fechas (25 en octubre de
+        /// 2026) y sin fechas no contaban: el impulso no proponía a nadie. Una N+M sin fechas cuenta si se modificó en los últimos
+        /// 90 días (una bimestral con margen); su fecha de entrada es esa FechaModificación y no tiene fin (no dice «solo hasta»).
+        /// </summary>
+        public const int DIAS_NM_SIN_FECHAS = 90;
+
         private static readonly CultureInfo es = new CultureInfo("es-ES");
 
         /// <summary>Encendido salvo «0», «false», «no», «off» o «apagado» (como Salidas.NoEstaRegulariza); sin fila, encendido.</summary>
@@ -143,6 +162,21 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         // ---------------- Ofertas de hoy por producto ----------------
+
+        /// <summary>
+        /// ¿Cuenta hoy esta N+M de OfertasPermitidas? Con alguna fecha, la regla única de vigencia (como siempre). Sin fechas, si su
+        /// FechaModificación es de los últimos <see cref="DIAS_NM_SIN_FECHAS"/> días (y no posterior a hoy).
+        /// </summary>
+        public static bool CuentaOfertaNm(DateTime? fechaDesde, DateTime? fechaHasta, DateTime fechaModificacion, DateTime hoy)
+        {
+            DateTime dia = hoy.Date;
+            if (fechaDesde.HasValue || fechaHasta.HasValue)
+            {
+                return Vigencia.EsVigente(fechaDesde, fechaHasta, dia, 0);
+            }
+            int dias = (dia - fechaModificacion.Date).Days;
+            return dias >= 0 && dias <= DIAS_NM_SIN_FECHAS;
+        }
 
         /// <summary>¿La fila de oferta vale para este producto? Producto exacto, o familia/grupo/subgrupo/prefijo en AND (alguno tiene que venir).</summary>
         public static bool Casa(FilaOfertaDia fila, ProductoOfertable producto)
@@ -220,7 +254,8 @@ namespace NestoAPI.Infraestructure.Rapports
                     Descuento = mejor.Descuento,
                     Texto = TextoOferta(mejor.Fila, mejor.Descuento),
                     FechaDesde = mejor.Fila.FechaDesde?.Date,
-                    FechaHasta = mejor.Fila.FechaHasta?.Date
+                    FechaHasta = mejor.Fila.FechaHasta?.Date,
+                    FechaEntrada = mejor.Fila.FechaEntrada?.Date
                 };
             }
             return resultado;
@@ -257,7 +292,7 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>No se le sube: hablado desde que entró la oferta (y en las 2 últimas semanas), no contestó hace menos de 2 días o pidió hace menos de 6.</summary>
         public static bool Excluido(ClienteCarteraContacto cliente, ProductoEnOfertaCliente mejor, DateTime hoy)
         {
-            DateTime desde = new[] { mejor?.FechaDesde?.Date ?? DateTime.MinValue, hoy.Date.AddDays(-DIAS_CONTACTO_RECIENTE) }.Max();
+            DateTime desde = new[] { mejor?.FechaEntrada?.Date ?? DateTime.MinValue, hoy.Date.AddDays(-DIAS_CONTACTO_RECIENTE) }.Max();
             int? diasIntento = MotorSugerenciasContacto.DiasDesde(cliente.UltimoIntento, hoy);
             int? diasPedido = MotorSugerenciasContacto.DiasDesde(RepositorioCarteraContactoSql.MasReciente(cliente.UltimoPedido, cliente.UltimoPedidoCliente), hoy);
             return (cliente.UltimoContacto.HasValue && cliente.UltimoContacto.Value.Date >= desde)
@@ -301,7 +336,7 @@ namespace NestoAPI.Infraestructure.Rapports
                     int ciclo = Ciclo(dias);
                     int desdeUltima = (dia - dias.Max()).Days;
                     decimal peso = cliente.Importe12Meses > 0 ? Math.Max(0, Math.Min(1, delProducto.Sum(c => c.Importe) / cliente.Importe12Meses)) : 0;
-                    bool recien = oferta.FechaDesde.HasValue && (dia - oferta.FechaDesde.Value.Date).Days <= DIAS_NOVEDAD;
+                    bool recien = oferta.FechaEntrada.HasValue && (dia - oferta.FechaEntrada.Value.Date).Days <= DIAS_NOVEDAD;
                     bool caduca = oferta.FechaHasta.HasValue && (oferta.FechaHasta.Value.Date - dia).Days <= DIAS_CADUCA_PRONTO;
                     productos.Add(new ProductoEnOfertaCliente
                     {
@@ -318,6 +353,7 @@ namespace NestoAPI.Infraestructure.Rapports
                         CaducaPronto = caduca,
                         FechaDesde = oferta.FechaDesde,
                         FechaHasta = oferta.FechaHasta,
+                        FechaEntrada = oferta.FechaEntrada,
                         Puntuacion = Puntuacion(ciclo, desdeUltima, oferta.Descuento, peso, recien, caduca)
                     });
                 }
@@ -441,9 +477,9 @@ namespace NestoAPI.Infraestructure.Rapports
             {
                 return $" (solo hasta el {Fecha(p.FechaHasta.Value, hoy)})";
             }
-            if (p.RecienEntrada && p.FechaDesde.HasValue)
+            if (p.RecienEntrada && p.FechaEntrada.HasValue)
             {
-                return $" (oferta nueva, desde el {Fecha(p.FechaDesde.Value, hoy)})";
+                return $" (oferta nueva, desde el {Fecha(p.FechaEntrada.Value, hoy)})";
             }
             return p.FechaHasta.HasValue ? $" (hasta el {Fecha(p.FechaHasta.Value, hoy)})" : string.Empty;
         }

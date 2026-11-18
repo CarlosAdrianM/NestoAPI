@@ -736,7 +736,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Siempre hay ofertas (bimestrales, de marca, campañas; Carlos 16/11/26): impulso SIEMPRE encendido salvo ParametrosUsuario empresa 1
   «(defecto)» `Rapports.ImpulsoOfertas` = 0/false/no/off/apagado (sin fila = encendido). Regla pura `ReglasImpulsoOfertasContacto`, después del
   modelo como el del cheque. Oferta = fila global de DescuentosProducto desde 1 unidad que «parece campaña» (fechas, audiencia o Campana, como
-  `api/Campanas?soloCampanas`) o N+M de OfertasPermitidas con fechas, vigente con la regla única `Vigencia`; de cada producto, la de más descuento
+  `api/Campanas?soloCampanas`) o N+M de OfertasPermitidas con fechas, vigente con la regla única `Vigencia`, o SIN fechas y con `FechaModificación`
+  de los últimos 90 días (`ReglasImpulsoOfertasContacto.DIAS_NM_SIN_FECHAS`, `CuentaOfertaNm`, 18/11/26: las bimestrales suelen cargarse sin fechas;
+  su fecha de entrada, `FechaEntrada`, es esa FechaModificación y no tienen fin); de cada producto, la de más descuento
   (precio especial = 1 − precio/PVP; N+M = M/(N+M)). Caché 10 min; compras de la cartera en UNA consulta por vendedor (`ImpulsoOfertasContactoSql`,
   misma asignación que la cartera). Producto habitual = ≥ 2 días con compra en 12 meses; ciclo = mediana entre compras; puntuación: le toca > descuento > peso.
 - Suben como mucho 5 al día detrás del cheque (Origen «Ofertas», prefijo «Compra el »), solo si su mejor producto ya le toca y no se habló con él

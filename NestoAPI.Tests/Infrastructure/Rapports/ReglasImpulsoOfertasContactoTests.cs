@@ -104,6 +104,65 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual("CREMA HIDRATANTE 50 ML", oferta.Nombre);
         }
 
+        // ---------------- N+M sin fechas (18/11/26): red de 90 días ----------------
+
+        [TestMethod]
+        public void CuentaOfertaNm_SinFechas_CuentaDentroDe90DiasYA91No()
+        {
+            int dias = ReglasImpulsoOfertasContacto.DIAS_NM_SIN_FECHAS;
+            Assert.IsTrue(ReglasImpulsoOfertasContacto.CuentaOfertaNm(null, null, HOY.AddDays(-dias).AddHours(17), HOY), "a 90 días cuenta");
+            Assert.IsTrue(ReglasImpulsoOfertasContacto.CuentaOfertaNm(null, null, HOY.AddHours(9), HOY), "modificada hoy");
+            Assert.IsFalse(ReglasImpulsoOfertasContacto.CuentaOfertaNm(null, null, HOY.AddDays(-dias - 1), HOY), "a 91 no");
+        }
+
+        [TestMethod]
+        public void CuentaOfertaNm_ConFechas_ComoSiempre_SinMirarLaModificacion()
+        {
+            DateTime antigua = HOY.AddYears(-2);
+            Assert.IsTrue(ReglasImpulsoOfertasContacto.CuentaOfertaNm(HOY.AddDays(-3), HOY.AddDays(10), antigua, HOY));
+            Assert.IsTrue(ReglasImpulsoOfertasContacto.CuentaOfertaNm(null, HOY, antigua, HOY), "el último día cuenta");
+            Assert.IsFalse(ReglasImpulsoOfertasContacto.CuentaOfertaNm(null, HOY.AddDays(-1), HOY, HOY), "caducada, aunque se modificara hoy");
+            Assert.IsFalse(ReglasImpulsoOfertasContacto.CuentaOfertaNm(HOY.AddDays(1), null, HOY, HOY), "aún no ha empezado");
+        }
+
+        [TestMethod]
+        public void NmSinFechas_LaFechaDeEntradaEsLaModificacion_SinFin()
+        {
+            var filas = new List<FilaOfertaDia>
+            {
+                new FilaOfertaDia { Producto = "45929", CantidadConPrecio = 6, CantidadRegalo = 1, FechaModificacion = HOY.AddDays(-3).AddHours(11) }
+            };
+
+            OfertaProductoDia oferta = ReglasImpulsoOfertasContacto.OfertasPorProducto(filas, new[] { Crema })["45929"];
+
+            Assert.AreEqual(HOY.AddDays(-3), oferta.FechaEntrada);
+            Assert.IsNull(oferta.FechaDesde);
+            Assert.IsNull(oferta.FechaHasta);
+
+            var compras = new[] { Compra("1001", "45929", 120), Compra("1001", "45929", 60) };
+            ClienteConOfertas con = ReglasImpulsoOfertasContacto.Evaluar(new[] { Cliente("1001", diasContacto: 2) }, compras,
+                new Dictionary<string, OfertaProductoDia>(StringComparer.OrdinalIgnoreCase) { ["45929"] = oferta }, HOY)["1001/0"];
+
+            Assert.IsTrue(con.Mejor.RecienEntrada, "entró hace 3 días");
+            Assert.IsFalse(con.Mejor.CaducaPronto, "no tiene fin");
+            Assert.IsTrue(con.Excluido, "se habló con él hace 2 días, después de entrar la oferta");
+            Assert.AreEqual($" (oferta nueva, desde el {HOY.AddDays(-3):dd/MM})", ReglasImpulsoOfertasContacto.TextoVigencia(con.Mejor, HOY));
+            StringAssert.DoesNotMatch(ReglasImpulsoOfertasContacto.Motivo(con, HOY), new System.Text.RegularExpressions.Regex("hasta el"));
+        }
+
+        [TestMethod]
+        public void NmSinFechas_HabladoAntesDeEntrar_NoExcluido()
+        {
+            var oferta = new OfertaProductoDia { Producto = "45929", Nombre = "CREMA", Descuento = 1m / 7m, Texto = "el 6+1", FechaEntrada = HOY.AddDays(-3) };
+            var compras = new[] { Compra("1001", "45929", 120), Compra("1001", "45929", 60) };
+
+            ClienteConOfertas con = ReglasImpulsoOfertasContacto.Evaluar(new[] { Cliente("1001", diasContacto: 5) }, compras,
+                new Dictionary<string, OfertaProductoDia>(StringComparer.OrdinalIgnoreCase) { ["45929"] = oferta }, HOY)["1001/0"];
+
+            Assert.IsFalse(con.Excluido, "se habló con él antes de que entrara la oferta");
+            Assert.IsTrue(con.PuedeSubir);
+        }
+
         // ---------------- Ciclo y puntuación ----------------
 
         [TestMethod]
