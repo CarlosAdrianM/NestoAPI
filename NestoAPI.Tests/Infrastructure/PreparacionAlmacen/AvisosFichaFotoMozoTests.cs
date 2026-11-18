@@ -314,5 +314,32 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(mail.Body, AvisadorFichaProducto.TITULO_FOTO_TIENDA + ":");
             Assert.IsFalse(mail.Body.Contains(AvisadorFichaProducto.TITULO_FOTO_MOZO));
         }
+
+        [TestMethod]
+        public void Correo_SinFotoDelMozo_DiceQueElMozoNoLaHaAdjuntado()
+        {
+            MailMessage mail = AvisadorFichaProducto.Correo(AvisoCorreo(null), new DatosFichaActual { Producto = "43449" }, new[] { "Foto" }, "t", null, null, null);
+
+            Assert.AreEqual("El mozo no ha adjuntado foto del producto.", AvisadorFichaProducto.NOTA_SIN_FOTO_MOZO);
+            StringAssert.Contains(mail.Body, AvisadorFichaProducto.NOTA_SIN_FOTO_MOZO);
+            Assert.IsTrue(mail.Body.IndexOf(AvisadorFichaProducto.TITULO_FOTO_TIENDA, StringComparison.Ordinal) < mail.Body.IndexOf(AvisadorFichaProducto.NOTA_SIN_FOTO_MOZO, StringComparison.Ordinal),
+                "La línea va donde iría la foto del mozo, detrás de la de la tienda");
+        }
+
+        [TestMethod]
+        public void Correo_SinNingunaFoto_TambienDiceQueElMozoNoLaHaAdjuntado()
+        {
+            MailMessage mail = AvisadorFichaProducto.Correo(AvisoCorreo(null, urlFoto: null), new DatosFichaActual { Producto = "43449" }, new[] { "Precio" }, "t", null, null, null);
+
+            StringAssert.Contains(mail.Body, AvisadorFichaProducto.NOTA_SIN_FOTO_MOZO);
+        }
+
+        [TestMethod]
+        public void Correo_ConFotoDelMozo_NoDiceQueFalte()
+        {
+            MailMessage mail = AvisadorFichaProducto.Correo(AvisoCorreo(JPEG), new DatosFichaActual { Producto = "43449" }, new[] { "Foto" }, "t", null, null, null);
+
+            Assert.IsFalse(Html(mail).Contains(AvisadorFichaProducto.NOTA_SIN_FOTO_MOZO));
+        }
     }
 }

@@ -1026,6 +1026,8 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
         /// <summary>NestoAPI#868: los títulos de las dos fotos del correo.</summary>
         internal const string TITULO_FOTO_TIENDA = "La foto de la tienda que ha visto";
         internal const string TITULO_FOTO_MOZO = "Lo que tiene el mozo en la mano";
+        /// <summary>18/11/26: la línea del correo cuando el mozo no ha mandado foto (para que no parezca que se ha perdido).</summary>
+        internal const string NOTA_SIN_FOTO_MOZO = "El mozo no ha adjuntado foto del producto.";
 
         public AvisadorFichaProducto(IServicioCorreoElectronico correo, IServicioNotificacionesPush notificaciones)
             : this(correo, notificaciones, null, null)
@@ -1313,6 +1315,11 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             {
                 // NestoAPI#868: la foto que ha hecho el mozo del producto que tiene delante
                 _ = html.Append($"<p>{TITULO_FOTO_MOZO}:<br/><img src=\"cid:{ID_FOTO_MOZO}\" alt=\"Foto del mozo\" style=\"max-width:480px;width:100%\"/></p>");
+            }
+            else
+            {
+                // Sugerencia 18/11/26: que quien lo recibe sepa que la foto no falta, es que el mozo no la hizo
+                _ = html.Append($"<p style=\"color:#666\">{H(NOTA_SIN_FOTO_MOZO)}</p>");
             }
             if (!string.IsNullOrWhiteSpace(enlaceFicha))
             {
