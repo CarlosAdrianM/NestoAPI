@@ -380,13 +380,15 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// Sugerencia 1332 (Reina; Carlos 18/11/26): pone (o sustituye) el dosier del evento, un PDF de hasta 10 MB. Sale solo, por
         /// correo, a todas las inscritas vivas unas 2 horas antes de empezar (y al momento a quien se inscriba después); si se sube
-        /// cuando ya es la hora, sale entonces a quien no lo tenga. Quien mantiene el evento. 415 si no es un PDF; 503 sin el script
-        /// Scripts/EventosDosier.sql. Devuelve el dosier (nombre, fecha, cuándo sale y a cuántas ha llegado).
+        /// cuando ya es la hora, sale entonces a quien no lo tenga; con <paramref name="reenviar"/> = true (Carlos 18/11/26: Nesto lo
+        /// pregunta al sustituirlo), también a las que ya tenían el anterior, como versión actualizada. Quien mantiene el evento.
+        /// 415 si no es un PDF; 503 sin el script Scripts/EventosDosier.sql. Devuelve el dosier (nombre, fecha, cuándo sale y a
+        /// cuántas ha llegado).
         /// </summary>
         [HttpPost]
         [Route("{id:int}/Dosier")]
         [ResponseType(typeof(DosierEventoDTO))]
-        public async Task<IHttpActionResult> PostDosier(int id)
+        public async Task<IHttpActionResult> PostDosier(int id, bool reenviar = false)
         {
             IHttpActionResult sinPermiso = await ComprobarDosier(id).ConfigureAwait(false);
             if (sinPermiso != null)
@@ -418,7 +420,7 @@ namespace NestoAPI.Controllers
                     ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(validacion.Error))
                     : (IHttpActionResult)BadRequest(validacion.Error);
             }
-            return Ok(await servicio.GuardarDosier(id, validacion.Dosier, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            return Ok(await servicio.GuardarDosier(id, validacion.Dosier, UsuarioAuditoriaHelper.Resolver(User, null), reenviar).ConfigureAwait(false));
         }
 
         // GET api/Eventos/5/Dosier

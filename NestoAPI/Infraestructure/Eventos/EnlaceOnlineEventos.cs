@@ -83,12 +83,7 @@ namespace NestoAPI.Infraestructure.Eventos
             !string.Equals(antes?.Trim() ?? string.Empty, despues?.Trim() ?? string.Empty, StringComparison.Ordinal);
 
         /// <summary>La inscripción sigue esperando al evento: pagada, facturada o inscrita (gratuita) y sin «No podré ir».</summary>
-        public static bool EsperaAlEvento(EventoInscripcion inscripcion)
-        {
-            EstadoInscripcionEvento? estado = ReglasInscripcionEvento.Estado(inscripcion?.Estado);
-            return estado.HasValue && ReglasInscripcionEvento.ESPERAN_AL_EVENTO.Contains(estado.Value)
-                && ReglasInscripcionEvento.OcupaPlaza(inscripcion);
-        }
+        public static bool EsperaAlEvento(EventoInscripcion inscripcion) => ReglasInscripcionEvento.EstaFormalizada(inscripcion);
 
         /// <summary>
         /// El evento ya ha acabado (o, sin hora de fin, ya ha empezado; sin horario, cuando acaba el día): a partir de ahí no se manda

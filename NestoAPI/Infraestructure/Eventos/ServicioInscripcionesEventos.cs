@@ -1579,6 +1579,9 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             foreach (KeyValuePair<EventoInscripcion, Evento> pagada in pagadas)
             {
                 await ProcesarPagada(pagada.Key, pagada.Value).ConfigureAwait(false);
+                // Carlos (18/11/26): pagada ya está formalizada: si el dosier (o el recordatorio) de su evento ya salió, el suyo ahora,
+                // como en Pagar
+                EncolarAvisos(pagada.Key);
             }
             EventoInscripcion primera = delEnlace.OrderBy(i => i.Id).First();
             return Componer(primera, await LeerEvento(primera.EventoId).ConfigureAwait(false), null);

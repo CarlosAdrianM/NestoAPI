@@ -289,12 +289,35 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<ProductoCursoDTO> CrearProductoCurso(int id, PeticionProductoCursoDTO peticion, string usuario);
         /// <summary>Sugerencia 1332: ¿está el script del dosier (Scripts/EventosDosier.sql)?</summary>
         bool DosierDisponible();
-        /// <summary>Sugerencia 1332: sustituye el dosier y, si ya es la hora de mandarlo, lo manda a quien no lo tenga.</summary>
-        Task<DosierEventoDTO> GuardarDosier(int id, DosierEvento dosier, string usuario);
+        /// <summary>
+        /// Sugerencia 1332: sustituye el dosier y, si ya es la hora de mandarlo, lo manda a quien no lo tenga; con
+        /// <paramref name="reenviar"/>, también a las que ya tenían el anterior (como versión actualizada).
+        /// </summary>
+        Task<DosierEventoDTO> GuardarDosier(int id, DosierEvento dosier, string usuario, bool reenviar = false);
         /// <summary>Sugerencia 1332: false si no tenía.</summary>
         Task<bool> BorrarDosier(int id);
         /// <summary>Sugerencia 1332: el PDF, o null.</summary>
         Task<DosierEvento> LeerDosier(int id);
+    }
+
+    /// <summary>
+    /// Carlos (18/11/26): «¿cuándo vienen o cuándo se conectan las alumnas?»: no puede haber eventos sin hora de inicio. Se exige al
+    /// crear y al guardar. Los ya existentes sin hora se siguen leyendo; uno pasado se puede guardar sin ella (no se toca), uno de
+    /// hoy en adelante la pide la primera vez que se guarde.
+    /// </summary>
+    public static class ReglasHoraInicioEvento
+    {
+        public const string MENSAJE_FALTA = "Falta la hora de inicio del evento: indique a qué hora vienen (o se conectan) las alumnas.";
+
+        /// <summary>El motivo del 400, o null si vale. <paramref name="evento"/> ya con lo que se va a guardar.</summary>
+        public static string MotivoFalta(Evento evento, bool alta, DateTime hoy)
+        {
+            if (evento == null || evento.HoraInicio.HasValue)
+            {
+                return null;
+            }
+            return alta || evento.Fecha.Date >= hoy.Date ? MENSAJE_FALTA : null;
+        }
     }
 
     /// <summary>
@@ -357,8 +380,8 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>Sugerencia 1332: el dosier de los eventos (fuera del EDMX). Null (tests) o sin el script: no hay dosier y los endpoints dan 503.</summary>
         internal IRepositorioDosierEventos Dosieres { get; set; }
 
-        /// <summary>Sugerencia 1332: (evento) → una pasada del envío en segundo plano, si ya es la hora. Null (tests): nada.</summary>
-        internal Action<int> AlSubirDosier { get; set; }
+        /// <summary>Sugerencia 1332: (evento, reenviar) → una pasada del envío en segundo plano, si ya es la hora. Null (tests): nada.</summary>
+        internal Action<int, bool> AlSubirDosier { get; set; }
 
         /// <summary>La hora de Madrid (la de las fechas y horas de los eventos). Null (tests): el reloj.</summary>
         internal Func<DateTime> AhoraMadrid { get; set; }
@@ -378,7 +401,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
         }
 
-        public async Task<DosierEventoDTO> GuardarDosier(int id, DosierEvento dosier, string usuario)
+        public async Task<DosierEventoDTO> GuardarDosier(int id, DosierEvento dosier, string usuario, bool reenviar = false)
         {
             Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false)
                 ?? throw NoEncontrado($"No existe el evento {id}.");
@@ -387,12 +410,13 @@ namespace NestoAPI.Infraestructure.Eventos
                 throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_DOSIER) { StatusCode = HttpStatusCode.ServiceUnavailable };
             }
             _ = await Dosieres.Guardar(id, dosier, UsuarioAuditoriaHelper.ParaAuditoria(usuario)).ConfigureAwait(false);
-            // Si ya es la hora (se sube tarde, o se sustituye), sale ya a quien no lo tenga; el PDF nuevo no se reenvía a quien ya tenía el anterior
+            // Si ya es la hora (se sube tarde, o se sustituye), sale ya a quien no lo tenga; a quien ya tenía el anterior, solo si
+            // quien lo sustituye ha pedido reenviarlo (Nesto lo pregunta)
             if (AlSubirDosier != null && ReglasDosierEvento.TocaEnviar(evento, (AhoraMadrid ?? reloj)()))
             {
                 try
                 {
-                    AlSubirDosier(id);
+                    AlSubirDosier(id, reenviar);
                 }
                 catch (Exception ex)
                 {
@@ -443,7 +467,8 @@ namespace NestoAPI.Infraestructure.Eventos
                 {
                     if (info.TryGetValue(evento.Id, out DosierEventoDTO dto))
                     {
-                        dto.EnvioPrevisto = ahora < ReglasDosierEvento.FinEnvio(evento) ? ReglasDosierEvento.MomentoEnvio(evento) : (DateTime?)null;
+                        // Sin hora de inicio no sale (null), igual que si el evento ya ha pasado
+                        dto.EnvioPrevisto = ahora < ReglasDosierEvento.FinEnvio(evento) ? ReglasDosierEvento.MomentoEnvio(evento) : null;
                     }
                 }
                 return info;
@@ -1097,6 +1122,7 @@ namespace NestoAPI.Infraestructure.Eventos
             (bool viene, string enlace) enlaceOnline = ValidarEnlaceOnline(evento);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa), Formato = FormatosEvento.PRESENCIAL };
             Copiar(evento, entidad, usuario);
+            ExigirHoraInicio(entidad, alta: true);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
             await GuardarProductosRequeridos(entidad.Id, requeridos, usuario).ConfigureAwait(false);
@@ -1134,6 +1160,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             bool eraGratuito = ReglasModalidadEvento.EsGratuito(entidad);
             Copiar(evento, entidad, usuario);
+            ExigirHoraInicio(entidad, alta: false);
             // NestoAPI#690: las inscripciones gratuitas no tienen pago: con inscripciones vivas, el evento no pasa de gratuito a de pago.
             if (eraGratuito && !ReglasModalidadEvento.EsGratuito(entidad) && ocupadasEvento > 0)
             {
@@ -1397,6 +1424,16 @@ namespace NestoAPI.Infraestructure.Eventos
                     throw new NestoBusinessException($"El producto {producto} no es un curso (grupo {Constantes.Productos.GRUPO_CURSOS}): " +
                         "elija la referencia de un curso o cree una para este evento con «Producto del curso».");
                 }
+            }
+        }
+
+        /// <summary>Carlos (18/11/26): la hora de inicio es obligatoria (<see cref="ReglasHoraInicioEvento"/>). 400 si falta.</summary>
+        private void ExigirHoraInicio(Evento entidad, bool alta)
+        {
+            string motivo = ReglasHoraInicioEvento.MotivoFalta(entidad, alta, reloj());
+            if (motivo != null)
+            {
+                throw new NestoBusinessException(motivo);
             }
         }
 

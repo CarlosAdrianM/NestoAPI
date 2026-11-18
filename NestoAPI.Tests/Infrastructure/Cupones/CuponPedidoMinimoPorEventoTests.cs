@@ -239,7 +239,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         }
 
         private static EventoDTO Put(decimal? pedidoMinimo) => new EventoDTO
-        {
+        { HoraInicio = "07:00",
             Titulo = "Curso Peeling",
             Fecha = new DateTime(2026, 11, 26),
             Activo = true,

@@ -228,7 +228,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task GuardarEvento_ProductoForzado_CualquierCursoQueExista()
         {
             EventoDTO creado = await Servicio().CrearEvento(new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Masterclass Rosácea", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", ProductoCurso = " 90077 "
             }, "Reina");
 
@@ -239,7 +239,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task GuardarEvento_ProductoQueNoEsCurso_400()
         {
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().CrearEvento(new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "X", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", ProductoCurso = "17404"
             }, "Reina"));
 

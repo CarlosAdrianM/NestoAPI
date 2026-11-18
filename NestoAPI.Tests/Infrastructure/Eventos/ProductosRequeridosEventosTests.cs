@@ -457,7 +457,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         private static EventoDTO PutPorCompra(params string[] productos) => new EventoDTO
-        {
+        { HoraInicio = "07:00",
             Titulo = "Formación por compra Lifting Coreano",
             Fecha = new DateTime(2026, 11, 25),
             Activo = true,
@@ -489,7 +489,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         [TestMethod]
         public async Task PutEvento_SinElCampo_NoTocaLosProductos()
         {
-            var sinCampo = new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true };
+            var sinCampo = new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true };
 
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA, sinCampo, "x");
 
@@ -627,7 +627,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 DosProductos(todos: true);
                 return Task.FromResult(true);
             });
-            var put = new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = " todos " };
+            var put = new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = " todos " };
 
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA, put, "x");
 
@@ -640,7 +640,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task PutEvento_SinElCampoModo_NoLoToca()
         {
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = null }, "x");
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = null }, "x");
 
             A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).MustNotHaveHappened();
             Assert.AreEqual("Alguno", dto.ProductosRequeridosModo, "Sin dato, «Alguno»");
@@ -652,7 +652,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).Returns(Task.FromResult(false));
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = "Todos" }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = "Todos" }, "x"));
 
             StringAssert.Contains(ex.Message, "Issue732_EventosProductosRequeridosModo.sql");
         }
@@ -663,7 +663,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).Returns(Task.FromResult(false));
 
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = "Alguno" }, "x");
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = "Alguno" }, "x");
 
             Assert.AreEqual("Alguno", dto.ProductosRequeridosModo);
         }
@@ -981,7 +981,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 ConMinimo(400);
                 return Task.FromResult(true);
             });
-            var put = new EventoDTO { Titulo = "Rentabiliza cada ML de tus viales", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 400.004M };
+            var put = new EventoDTO { HoraInicio = "07:00", Titulo = "Rentabiliza cada ML de tus viales", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 400.004M };
 
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA, put, "x");
 
@@ -995,7 +995,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             ConMinimo(400);
 
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true }, "x");
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true }, "x");
 
             A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).MustNotHaveHappened();
             Assert.AreEqual(400M, dto.ImporteMinimoProductosRequeridos, "El que tenía");
@@ -1007,9 +1007,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).Returns(Task.FromResult(true));
 
             _ = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = null }, "x");
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = null }, "x");
             _ = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 0 }, "x");
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 0 }, "x");
 
             A.CallTo(() => repositorio.GuardarImporteMinimo(EVENTO_POR_COMPRA, null)).MustHaveHappenedTwiceExactly();
         }
@@ -1018,7 +1018,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task PutEvento_ImporteMinimoNegativo_400SinGuardar()
         {
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = -5 }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = -5 }, "x"));
 
             StringAssert.Contains(ex.Message, "no puede ser negativo");
             A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).MustNotHaveHappened();
@@ -1030,9 +1030,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => repositorio.GuardarImporteMinimo(A<int>._, A<decimal?>._)).Returns(Task.FromResult(false));
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 400 }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 400 }, "x"));
             EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
-                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 0 }, "x");
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ImporteMinimoProductosRequeridos = 0 }, "x");
 
             StringAssert.Contains(ex.Message, "Issue843_EventosImporteMinimoRequeridos.sql");
             Assert.IsNull(dto.ImporteMinimoProductosRequeridos);
@@ -1052,9 +1052,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         [TestMethod]
         public void ImporteMinimo_Json_NullExplicitoSeTraeYSinCampoNo()
         {
-            EventoDTO conNull = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{\"Titulo\":\"x\",\"ImporteMinimoProductosRequeridos\":null}");
-            EventoDTO conValor = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{\"Titulo\":\"x\",\"ImporteMinimoProductosRequeridos\":400.5}");
-            EventoDTO sinCampo = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{\"Titulo\":\"x\"}");
+            EventoDTO conNull = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{ \"HoraInicio\": \"07:00\",\"Titulo\":\"x\",\"ImporteMinimoProductosRequeridos\":null}");
+            EventoDTO conValor = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{ \"HoraInicio\": \"07:00\",\"Titulo\":\"x\",\"ImporteMinimoProductosRequeridos\":400.5}");
+            EventoDTO sinCampo = Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>("{ \"HoraInicio\": \"07:00\",\"Titulo\":\"x\"}");
 
             Assert.IsTrue(conNull.Trae(nameof(EventoDTO.ImporteMinimoProductosRequeridos)));
             Assert.AreEqual(400.5M, conValor.ImporteMinimoProductosRequeridos);

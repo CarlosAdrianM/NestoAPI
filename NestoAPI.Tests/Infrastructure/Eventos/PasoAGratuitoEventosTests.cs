@@ -91,7 +91,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         private static EventoDTO AGratuito() => JsonConvert.DeserializeObject<EventoDTO>(
-            "{ \"Titulo\": \"Curso por compra\", \"Fecha\": \"2026-11-30\", \"ImporteSenal\": 0, \"ImporteSenalNoReembolsable\": 0, \"Activo\": true }");
+            "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Curso por compra\", \"Fecha\": \"2026-11-30\", \"ImporteSenal\": 0, \"ImporteSenalNoReembolsable\": 0, \"Activo\": true }");
 
         // ---------------- Paso a gratuito ----------------
 
@@ -321,7 +321,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task Crear_ConProductosYSinImportes_NaceSinSenal()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Curso por compra\", \"Fecha\": \"2026-12-01\", \"Almacen\": \"REI\", \"ProductosRequeridos\": [ { \"Producto\": \"17404\" } ] }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Curso por compra\", \"Fecha\": \"2026-12-01\", \"Almacen\": \"REI\", \"ProductosRequeridos\": [ { \"Producto\": \"17404\" } ] }");
 
             EventoDTO creado = await ServicioConRequeridos().CrearEvento(cuerpo, "Reina");
 
@@ -334,7 +334,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task Crear_ConProductosEImportes_SeRespetan()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Curso por compra\", \"Fecha\": \"2026-12-01\", \"Almacen\": \"REI\", \"ImporteSenal\": 50, \"ImporteSenalNoReembolsable\": 20, \"ProductosRequeridos\": [ { \"Producto\": \"17404\" } ] }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Curso por compra\", \"Fecha\": \"2026-12-01\", \"Almacen\": \"REI\", \"ImporteSenal\": 50, \"ImporteSenalNoReembolsable\": 20, \"ProductosRequeridos\": [ { \"Producto\": \"17404\" } ] }");
 
             EventoDTO creado = await ServicioConRequeridos().CrearEvento(cuerpo, "Reina");
 
@@ -346,7 +346,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task Crear_SinProductos_CienYSesentaComoHoy()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-12-01\", \"Almacen\": \"REI\", \"ProductosRequeridos\": [] }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-12-01\", \"Almacen\": \"REI\", \"ProductosRequeridos\": [] }");
 
             EventoDTO creado = await ServicioConRequeridos().CrearEvento(cuerpo, "Reina");
 

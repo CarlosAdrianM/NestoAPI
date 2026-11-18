@@ -403,7 +403,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task PutEvento_CambiaElEnlace_AvisaQueHabiaUno()
         {
             var resultado = await Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas")).PutEvento(7, new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Webinar Peeling", Fecha = AHORA.Date.AddDays(1), ImporteSenal = 0, ImporteSenalNoReembolsable = 0, Almacen = "REI",
                 Formato = FormatosEvento.ONLINE, EnlaceOnline = "https://meet.google.com/xyz"
             }) as OkNegotiatedContentResult<EventoDTO>;
@@ -417,7 +417,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task PutEvento_SinElCampo_NoLoTocaNiAvisa()
         {
             _ = await Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas")).PutEvento(7, new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Webinar Peeling (2.ª)", Fecha = AHORA.Date.AddDays(1), ImporteSenal = 0, ImporteSenalNoReembolsable = 0, Almacen = "REI"
             });
 
@@ -433,7 +433,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             eventos[0].Lugar = "Sala virtual";
 
             _ = await Controlador(Usuario("NUEVAVISION\\Carlos", "Dirección")).PutEvento(7, new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Webinar Peeling", Fecha = AHORA.Date.AddDays(1), ImporteSenal = 0, ImporteSenalNoReembolsable = 0, Almacen = "REI",
                 EnlaceOnline = TEAMS
             });
@@ -445,7 +445,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task PutEvento_EnlaceNoValido_400SinGuardar()
         {
             _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas")).PutEvento(7, new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Webinar Peeling", Fecha = AHORA.Date.AddDays(1), ImporteSenal = 0, ImporteSenalNoReembolsable = 0, Almacen = "REI",
                 EnlaceOnline = "pregunte en tienda"
             }));
@@ -458,7 +458,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => repositorio.Guardar(A<int>._, A<string>._)).Returns(Task.FromResult(false));
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas")).PutEvento(7, new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Webinar Peeling", Fecha = AHORA.Date.AddDays(1), ImporteSenal = 0, ImporteSenalNoReembolsable = 0, Almacen = "REI",
                 EnlaceOnline = "https://meet.google.com/xyz"
             }));
@@ -468,7 +468,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         [TestMethod]
         public void OcultarEnlaceOnline_QuienNoPuedeNoLoCambia()
         {
-            var dto = new EventoDTO { EnlaceOnline = TEAMS };
+            var dto = new EventoDTO { HoraInicio = "07:00", EnlaceOnline = TEAMS };
             Assert.IsTrue(dto.Trae(nameof(EventoDTO.EnlaceOnline)));
             dto.OcultarEnlaceOnline();
             Assert.IsFalse(dto.Trae(nameof(EventoDTO.EnlaceOnline)));

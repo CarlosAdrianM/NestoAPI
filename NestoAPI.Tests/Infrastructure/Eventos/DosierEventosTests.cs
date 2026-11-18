@@ -4,6 +4,7 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Cupones;
 using NestoAPI.Infraestructure.Eventos;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
 using System;
@@ -66,10 +67,10 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         // ---------------- Cuándo ----------------
 
         [TestMethod]
-        public void MomentoEnvio_DosHorasAntes_SinHora_ALas9_DeMadrugada_DesdeLas0()
+        public void MomentoEnvio_DosHorasAntes_SinHora_Nunca_DeMadrugada_DesdeLas0()
         {
             Assert.AreEqual(HOY.AddHours(15), ReglasDosierEvento.MomentoEnvio(A_LAS_17()));
-            Assert.AreEqual(HOY.AddHours(9), ReglasDosierEvento.MomentoEnvio(Evento()));
+            Assert.IsNull(ReglasDosierEvento.MomentoEnvio(Evento()), "Carlos 18/11/26: sin hora de inicio no hay envío");
             Assert.AreEqual(HOY, ReglasDosierEvento.MomentoEnvio(Evento(new TimeSpan(1, 0, 0))));
             Assert.AreEqual(HOY.AddHours(19), ReglasDosierEvento.FinEnvio(A_LAS_17()));
             Assert.AreEqual(HOY.AddDays(1), ReglasDosierEvento.FinEnvio(Evento(new TimeSpan(17, 0, 0))));
@@ -86,8 +87,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.IsFalse(ReglasDosierEvento.TocaEnviar(Evento(new TimeSpan(17, 0, 0), activo: false), HOY.AddHours(16)));
             Assert.IsTrue(ReglasDosierEvento.TocaEnviar(Evento(new TimeSpan(17, 0, 0), gratuito: false), HOY.AddHours(16)), "De pago, igual");
             Assert.IsTrue(ReglasDosierEvento.TocaEnviar(Evento(new TimeSpan(17, 0, 0), gratuito: true), HOY.AddHours(16)), "Gratuito, igual");
-            Assert.IsTrue(ReglasDosierEvento.TocaEnviar(Evento(), HOY.AddHours(9)), "Sin hora: desde las 9:00");
-            Assert.IsFalse(ReglasDosierEvento.TocaEnviar(Evento(), HOY.AddHours(8)));
+            Assert.IsFalse(ReglasDosierEvento.TocaEnviar(Evento(), HOY.AddHours(9)), "Sin hora: nunca (ya no hay «desde las 9:00»)");
+            Assert.IsFalse(ReglasDosierEvento.TocaEnviar(Evento(), HOY.AddHours(20)));
             Assert.IsFalse(ReglasDosierEvento.TocaEnviar(null, HOY.AddHours(16)));
         }
 
@@ -106,12 +107,13 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         };
 
         [TestMethod]
-        public void LoRecibe_LasVivasUnaSolaVez()
+        public void LoRecibe_LasFormalizadasUnaSolaVez()
         {
             Assert.IsTrue(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Pagada), false));
             Assert.IsTrue(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Facturada), false));
             Assert.IsTrue(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Inscrita), false));
-            Assert.IsTrue(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Reservada), false), "Viva aunque no haya pagado");
+            Assert.IsFalse(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Reservada), false),
+                "Carlos 18/11/26: una reserva sin pagar no está formalizada");
             Assert.IsTrue(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Asistio), false));
             Assert.IsFalse(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Pagada), true), "Ya lo tiene");
             Assert.IsFalse(ReglasDosierEvento.LoRecibe(Inscripcion(1, EstadoInscripcionEvento.Anulada), false));
@@ -132,6 +134,12 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 StringAssert.Contains(antes.Body, "que empieza hoy a las 17:00");
                 Assert.AreEqual("Dosier Peeling.pdf", antes.Attachments.Single().Name);
                 Assert.AreEqual("application/pdf", antes.Attachments.Single().ContentType.MediaType);
+            }
+            using (MailMessage nuevo = ReglasDosierEvento.Correo(A_LAS_17(), dosier, "Luna", "luna@example.com", HOY.AddHours(16), actualizado: true))
+            {
+                Assert.AreEqual("Dosier actualizado de «Masterclass Peeling»", nuevo.Subject);
+                StringAssert.Contains(nuevo.Body, "la versión actualizada del dosier");
+                StringAssert.Contains(nuevo.Body, "Sustituye al que le mandamos antes");
             }
             Assert.AreEqual("que ha empezado hoy a las 17:00", ReglasDosierEvento.CuandoEmpieza(A_LAS_17(), HOY.AddHours(17).AddMinutes(30)));
             Assert.AreEqual("que es hoy", ReglasDosierEvento.CuandoEmpieza(Evento(), HOY.AddHours(9)));
@@ -186,7 +194,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
-        public async Task ProcesarHoy_ALaHora_ATodasLasVivasConCorreo_YSoloUnaVez()
+        public async Task ProcesarHoy_ALaHora_ATodasLasFormalizadasConCorreo_YSoloUnaVez()
         {
             var e = new Escenario();
             e.Eventos.Add(A_LAS_17());
@@ -195,17 +203,90 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             e.Inscripciones.Add(Inscripcion(3, EstadoInscripcionEvento.Anulada));
             e.Inscripciones.Add(Inscripcion(4, EstadoInscripcionEvento.Inscrita, "NoPodraIr"));
             e.Inscripciones.Add(Inscripcion(5, EstadoInscripcionEvento.Pagada, cliente: "SIN"));
+            e.Inscripciones.Add(Inscripcion(6, EstadoInscripcionEvento.Inscrita));
 
             ResultadoDosierEventos r = await DosierEventosJobs.ProcesarHoy(e.Deps());
 
             Assert.AreEqual(2, r.Enviados);
             Assert.AreEqual(1, r.SinCorreo);
-            CollectionAssert.AreEquivalent(new[] { "C1@example.com", "C2@example.com" }, e.Correos.Select(c => c.To[0].Address).ToArray());
-            CollectionAssert.AreEquivalent(new[] { 1, 2 }, e.Marcadas.ToArray());
+            CollectionAssert.AreEquivalent(new[] { "C1@example.com", "C6@example.com" }, e.Correos.Select(c => c.To[0].Address).ToArray(),
+                "La reserva sin pagar (2) no lo recibe");
+            CollectionAssert.AreEquivalent(new[] { 1, 6 }, e.Marcadas.ToArray());
 
             ResultadoDosierEventos otraPasada = await DosierEventosJobs.ProcesarHoy(e.Deps());
             Assert.AreEqual(0, otraPasada.Enviados, "La siguiente pasada no repite");
             Assert.AreEqual(2, e.Correos.Count);
+        }
+
+        [TestMethod]
+        public async Task ProcesarHoy_EventoSinHoraDeInicio_NoSeManda()
+        {
+            var e = new Escenario { Ahora = HOY.AddHours(12) };
+            e.Eventos.Add(Evento());
+            e.Inscripciones.Add(Inscripcion(1, EstadoInscripcionEvento.Pagada));
+
+            Assert.AreEqual(0, (await DosierEventosJobs.ProcesarHoy(e.Deps())).Enviados);
+            Assert.AreEqual(0, e.Correos.Count);
+        }
+
+        [TestMethod]
+        public async Task ReservaQuePagaALaUltimaHora_LoRecibeAlPagar_ComoUnaInscripcionTardia()
+        {
+            var e = new Escenario();
+            e.Eventos.Add(A_LAS_17());
+            EventoInscripcion reserva = Inscripcion(2, EstadoInscripcionEvento.Reservada);
+            e.Inscripciones.Add(reserva);
+
+            Assert.AreEqual(0, (await DosierEventosJobs.ProcesarHoy(e.Deps())).Enviados, "Sin pagar, no");
+
+            reserva.Estado = EstadoInscripcionEvento.Pagada.ToString();
+            ResultadoDosierEventos alPagar = await DosierEventosJobs.AlInscribirse(e.Deps(), A_LAS_17(), reserva);
+
+            Assert.AreEqual(1, alPagar.Enviados);
+            Assert.AreEqual("C2@example.com", e.Correos.Single().To[0].Address);
+            Assert.AreEqual("Dosier de «Masterclass Peeling»", e.Correos.Single().Subject, "El de siempre, no «actualizado»");
+        }
+
+        // ---------------- Sustituirlo pidiendo reenviarlo (Carlos 18/11/26) ----------------
+
+        [TestMethod]
+        public void AReenviar_LasFormalizadasQueYaLoTenian_SoloMientrasTocaEnviar()
+        {
+            var inscripciones = new List<EventoInscripcion>
+            {
+                Inscripcion(1, EstadoInscripcionEvento.Pagada),
+                Inscripcion(2, EstadoInscripcionEvento.Pagada),
+                Inscripcion(3, EstadoInscripcionEvento.Anulada),
+                Inscripcion(4, EstadoInscripcionEvento.Inscrita, "NoPodraIr"),
+                Inscripcion(5, EstadoInscripcionEvento.Reservada)
+            };
+            var enviados = new HashSet<int> { 1, 3, 4, 5 };
+
+            CollectionAssert.AreEqual(new[] { 1 }, ReglasDosierEvento.AReenviar(A_LAS_17(), inscripciones, enviados, HOY.AddHours(16)),
+                "Solo la 1: la 2 no lo tenía (le llega igual), la 3 está anulada, la 4 no irá y la 5 no ha pagado");
+            Assert.AreEqual(0, ReglasDosierEvento.AReenviar(A_LAS_17(), inscripciones, enviados, HOY.AddHours(14)).Count, "Antes de la hora, nada");
+            Assert.AreEqual(0, ReglasDosierEvento.AReenviar(A_LAS_17(), inscripciones, enviados, HOY.AddHours(19)).Count, "Acabado, nada");
+            Assert.AreEqual(0, ReglasDosierEvento.AReenviar(Evento(), inscripciones, enviados, HOY.AddHours(16)).Count, "Sin hora, nada");
+        }
+
+        [TestMethod]
+        public async Task ProcesarEvento_ConReenviar_LasQueLoTeniamLoRecibenComoActualizado_YLasDemasElDeSiempre()
+        {
+            var e = new Escenario { Ahora = HOY.AddHours(16) };
+            e.Eventos.Add(A_LAS_17());
+            e.Inscripciones.Add(Inscripcion(1, EstadoInscripcionEvento.Pagada));
+            e.Inscripciones.Add(Inscripcion(2, EstadoInscripcionEvento.Pagada));
+            e.Inscripciones.Add(Inscripcion(3, EstadoInscripcionEvento.Anulada));
+            _ = e.Marcadas.Add(1);
+            _ = e.Marcadas.Add(3);
+
+            ResultadoDosierEventos r = await DosierEventosJobs.ProcesarEvento(e.Deps(), 9, reenviar: true);
+
+            Assert.AreEqual(1, r.Reenviados);
+            Assert.AreEqual(2, r.Enviados);
+            Assert.AreEqual("Dosier actualizado de «Masterclass Peeling»", e.Correos.Single(c => c.To[0].Address == "C1@example.com").Subject);
+            Assert.AreEqual("Dosier de «Masterclass Peeling»", e.Correos.Single(c => c.To[0].Address == "C2@example.com").Subject);
+            CollectionAssert.AreEquivalent(new[] { 1, 2, 3 }, e.Marcadas.ToArray(), "La anulada conserva su marca y no se le reenvía");
         }
 
         [TestMethod]
@@ -302,6 +383,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         private List<Evento> eventos;
         private IRepositorioDosierEventos repositorio;
         private List<int> encolados;
+        private List<bool> reenvios;
 
         [TestInitialize]
         public void Preparar()
@@ -317,13 +399,14 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 [9] = new DosierEventoDTO { EventoId = 9, Nombre = "Dosier.pdf", Tamano = PDF.Length, Fecha = HOY.AddHours(8), Enviados = 3 }
             }));
             encolados = new List<int>();
+            reenvios = new List<bool>();
         }
 
         private ServicioEventos Servicio(DateTime ahora) => new ServicioEventos(db, () => ahora, (e, u) => u == "Reina" ? "REI" : null,
             A.Fake<IRepositorioFacturacionCursos>(), A.Fake<IRepositorioCupones>(), t => t())
         {
             Dosieres = repositorio,
-            AlSubirDosier = encolados.Add,
+            AlSubirDosier = (id, reenviar) => { encolados.Add(id); reenvios.Add(reenviar); },
             AhoraMadrid = () => ahora
         };
 
@@ -339,6 +422,53 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             _ = await Servicio(HOY.AddHours(10)).GuardarDosier(9, new DosierEvento { Nombre = "Dosier.pdf", Contenido = PDF }, "NUEVAVISION\\Reina");
             Assert.AreEqual(0, encolados.Count, "Antes de la hora, lo manda el job");
             A.CallTo(() => repositorio.Guardar(9, A<DosierEvento>._, A<string>._)).MustHaveHappenedTwiceExactly();
+            CollectionAssert.AreEqual(new[] { false }, reenvios, "Sin pedirlo, no se reenvía");
+        }
+
+        [TestMethod]
+        public async Task GuardarDosier_ConReenviar_LoPasaAlEnvio()
+        {
+            _ = await Servicio(HOY.AddHours(16)).GuardarDosier(9, new DosierEvento { Nombre = "Dosier.pdf", Contenido = PDF }, "NUEVAVISION\\Reina", reenviar: true);
+
+            CollectionAssert.AreEqual(new[] { 9 }, encolados);
+            CollectionAssert.AreEqual(new[] { true }, reenvios);
+        }
+
+        [TestMethod]
+        public async Task LeerEventos_SinHoraDeInicio_NoTieneEnvioPrevisto()
+        {
+            eventos[0].HoraInicio = null;
+            eventos[0].HoraFin = null;
+
+            List<EventoDTO> lista = await Servicio(HOY.AddHours(10)).LeerEventos("1", false);
+
+            Assert.IsNull(lista.Single().Dosier.EnvioPrevisto);
+        }
+
+        // ---------------- Hora de inicio obligatoria (Carlos 18/11/26) ----------------
+
+        [TestMethod]
+        public void HoraInicio_ObligatoriaAlCrear_YAlGuardarUnoDeHoyEnAdelante_NoEnUnoPasado()
+        {
+            Assert.AreEqual(ReglasHoraInicioEvento.MENSAJE_FALTA, ReglasHoraInicioEvento.MotivoFalta(Evento(), true, HOY));
+            Assert.AreEqual(ReglasHoraInicioEvento.MENSAJE_FALTA, ReglasHoraInicioEvento.MotivoFalta(Evento(), false, HOY), "De hoy");
+            Assert.IsNull(ReglasHoraInicioEvento.MotivoFalta(Evento(), false, HOY.AddDays(1)), "Pasado: no se toca");
+            Assert.AreEqual(ReglasHoraInicioEvento.MENSAJE_FALTA, ReglasHoraInicioEvento.MotivoFalta(Evento(), true, HOY.AddDays(1)), "Al crear, siempre");
+            Assert.IsNull(ReglasHoraInicioEvento.MotivoFalta(A_LAS_17(), true, HOY));
+        }
+
+        [TestMethod]
+        public async Task ModificarEvento_FuturoSinHora_400_YNoSeGuarda()
+        {
+            eventos[0].HoraInicio = null;
+            eventos[0].HoraFin = null;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio(HOY.AddHours(10))
+                .ModificarEvento(9, new EventoDTO { Titulo = "Masterclass Peeling", Fecha = HOY, Almacen = "REI" }, "NUEVAVISION\\Reina"));
+
+            Assert.AreEqual(ReglasHoraInicioEvento.MENSAJE_FALTA, ex.Message);
+            Assert.AreEqual(HttpStatusCode.BadRequest, ex.StatusCode);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
         [TestMethod]

@@ -52,8 +52,6 @@ namespace NestoAPI.Infraestructure.Eventos
         public const int HORAS_ANTES_DOSIER = 2;
         public const int TAMANO_MAXIMO = 10 * 1024 * 1024;
         public const string TIPO_PDF = "application/pdf";
-        /// <summary>Decisión propia: un evento sin hora de inicio recibe el dosier a partir de las 9:00 de su día.</summary>
-        public static readonly TimeSpan HORA_SIN_HORARIO = new TimeSpan(9, 0, 0);
 
         public class Validacion
         {
@@ -128,16 +126,16 @@ namespace NestoAPI.Infraestructure.Eventos
 
         /// <summary>
         /// Cuándo sale el dosier (hora de Madrid): <see cref="HORAS_ANTES_DOSIER"/> horas antes de la hora de inicio, sin salirse del
-        /// día del evento (un evento a las 8:00 lo recibe desde las 0:00, y el job lo manda en su primera pasada, a las 7:00). Sin
-        /// hora de inicio, a las <see cref="HORA_SIN_HORARIO"/> de ese día.
+        /// día del evento (un evento a las 8:00 lo recibe desde las 0:00, y el job lo manda en su primera pasada, a las 7:00).
+        /// Sin hora de inicio, null: no sale (Carlos 18/11/26: no puede haber eventos sin hora; los antiguos sin ella no lo reciben).
         /// </summary>
-        public static DateTime MomentoEnvio(Evento evento)
+        public static DateTime? MomentoEnvio(Evento evento)
         {
-            DateTime dia = evento.Fecha.Date;
-            if (!evento.HoraInicio.HasValue)
+            if (evento?.HoraInicio == null)
             {
-                return dia + HORA_SIN_HORARIO;
+                return null;
             }
+            DateTime dia = evento.Fecha.Date;
             DateTime momento = dia + evento.HoraInicio.Value - TimeSpan.FromHours(HORAS_ANTES_DOSIER);
             return momento < dia ? dia : momento;
         }
@@ -150,23 +148,43 @@ namespace NestoAPI.Infraestructure.Eventos
         }
 
         /// <summary>
-        /// ¿Toca mandarlo ya? Evento activo, ya es la hora (<see cref="MomentoEnvio"/>) y no ha acabado (<see cref="FinEnvio"/>).
-        /// Gratuito o de pago, da igual. Si el evento cambia de hora, vale la nueva (se mira en cada pasada).
+        /// ¿Toca mandarlo ya? Evento activo, con hora de inicio, ya es la hora (<see cref="MomentoEnvio"/>) y no ha acabado
+        /// (<see cref="FinEnvio"/>). Gratuito o de pago, da igual. Si el evento cambia de hora, vale la nueva (se mira en cada pasada).
         /// </summary>
-        public static bool TocaEnviar(Evento evento, DateTime ahoraMadrid) =>
-            evento != null && evento.Activo && ahoraMadrid >= MomentoEnvio(evento) && ahoraMadrid < FinEnvio(evento);
+        public static bool TocaEnviar(Evento evento, DateTime ahoraMadrid)
+        {
+            DateTime? momento = MomentoEnvio(evento);
+            return momento.HasValue && evento.Activo && ahoraMadrid >= momento.Value && ahoraMadrid < FinEnvio(evento);
+        }
 
         /// <summary>
-        /// ¿Lo recibe esta inscripción? Las vivas: inscritas, reservadas, pagadas o facturadas (presenciales y online), no las
-        /// anuladas, caducadas ni las que han dicho «No podré ir»; y solo si todavía no lo tiene.
+        /// ¿Lo recibe esta inscripción? Solo las formalizadas (<see cref="ReglasInscripcionEvento.EstaFormalizada"/>: pagadas,
+        /// facturadas o inscritas en un evento gratuito, sin «No podré ir») y las que ya tienen pasado «Asistió»; y solo si todavía
+        /// no lo tiene. Carlos (18/11/26): una reserva sin pagar no está formalizada; si paga a última hora, lo recibe al pagar,
+        /// exactamente igual que quien se inscribe a última hora.
         /// </summary>
         public static bool LoRecibe(EventoInscripcion inscripcion, bool yaEnviado)
         {
-            if (inscripcion == null || yaEnviado || !ReglasInscripcionEvento.OcupaPlaza(inscripcion))
+            if (inscripcion == null || yaEnviado)
             {
                 return false;
             }
-            return ReglasInscripcionEvento.Estado(inscripcion.Estado) != EstadoInscripcionEvento.NoAsistio;
+            return ReglasInscripcionEvento.EstaFormalizada(inscripcion)
+                || ReglasInscripcionEvento.Estado(inscripcion.Estado) == EstadoInscripcionEvento.Asistio;
+        }
+
+        /// <summary>
+        /// Al sustituir el dosier pidiendo reenviarlo (Carlos 18/11/26): las inscripciones que ya tenían el anterior y lo seguirían
+        /// recibiendo (<see cref="LoRecibe"/> sin contar la marca). Solo mientras <see cref="TocaEnviar"/>: antes nadie lo tiene y,
+        /// acabado el evento, ya no se manda nada.
+        /// </summary>
+        public static List<int> AReenviar(Evento evento, IEnumerable<EventoInscripcion> inscripciones, ISet<int> enviados, DateTime ahoraMadrid)
+        {
+            if (!TocaEnviar(evento, ahoraMadrid) || inscripciones == null || enviados == null)
+            {
+                return new List<int>();
+            }
+            return inscripciones.Where(i => i != null && enviados.Contains(i.Id) && LoRecibe(i, false)).Select(i => i.Id).Distinct().ToList();
         }
 
         /// <summary>«que empieza hoy a las 17:00», «que ha empezado hoy a las 17:00» o «que es hoy» (sin hora).</summary>
@@ -184,19 +202,30 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>La hora de Madrid (la del evento) a partir de la hora UTC.</summary>
         public static DateTime AhoraMadrid(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Startup.ZonaHorariaPeninsular());
 
-        /// <summary>El correo (de usted) con el PDF adjunto, mismo remitente y estilo que el recordatorio.</summary>
-        public static MailMessage Correo(Evento evento, DosierEvento dosier, string nombre, string destino, DateTime ahoraMadrid)
+        /// <summary>
+        /// El correo (de usted) con el PDF adjunto, mismo remitente y estilo que el recordatorio. <paramref name="actualizado"/>: es la
+        /// versión nueva para quien ya tenía la anterior.
+        /// </summary>
+        public static MailMessage Correo(Evento evento, DosierEvento dosier, string nombre, string destino, DateTime ahoraMadrid, bool actualizado = false)
         {
             string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
             var cuerpo = new StringBuilder();
             cuerpo.Append("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 14px; max-width: 600px;'>");
             cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre.Trim()))}:</p>");
-            cuerpo.Append($"<p>Le enviamos el dosier de <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(CuandoEmpieza(evento, ahoraMadrid))}. Lo tiene adjunto a este correo, en PDF.</p>");
+            if (actualizado)
+            {
+                cuerpo.Append($"<p>Le enviamos la versión actualizada del dosier de <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(CuandoEmpieza(evento, ahoraMadrid))}. " +
+                    "Sustituye al que le mandamos antes: use este. Lo tiene adjunto a este correo, en PDF.</p>");
+            }
+            else
+            {
+                cuerpo.Append($"<p>Le enviamos el dosier de <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(CuandoEmpieza(evento, ahoraMadrid))}. Lo tiene adjunto a este correo, en PDF.</p>");
+            }
             cuerpo.Append("<p>Esperamos que lo disfrute.</p><p>Nueva Visión</p></body></html>");
             var mail = new MailMessage
             {
                 From = new MailAddress("nuevavision@nuevavision.es", "Nueva Visión"),
-                Subject = $"Dosier de «{evento.Titulo?.Trim()}»",
+                Subject = actualizado ? $"Dosier actualizado de «{evento.Titulo?.Trim()}»" : $"Dosier de «{evento.Titulo?.Trim()}»",
                 Body = cuerpo.ToString(),
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
@@ -377,6 +406,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public int Enviados { get; set; }
         public int SinCorreo { get; set; }
         public int Fallidos { get; set; }
+        /// <summary>Al sustituirlo pidiendo reenviarlo: a cuántas que ya lo tenían se les ha quitado la marca para mandarles el nuevo.</summary>
+        public int Reenviados { get; set; }
         public string MotivoNoSeEnvia { get; set; }
     }
 
@@ -388,8 +419,9 @@ namespace NestoAPI.Infraestructure.Eventos
     /// <see cref="ReglasDosierEvento.TocaEnviar"/>, les manda el dosier a quien no lo tenga. Se mira el estado en cada pasada (no se
     /// programa nada al guardar): si cambia la hora del evento, vale la nueva; si la API se reinicia o una pasada falla, la siguiente
     /// lo hace; nada se manda dos veces (marca por inscripción, apartada con un UPDATE condicional antes de mandarlo).</item>
-    /// <item>Al subir (o sustituir) el dosier: si ya es la hora, una pasada de ese evento al momento (solo a quien no lo tenga: el
-    /// PDF nuevo NO se reenvía a quien ya tenía el anterior).</item>
+    /// <item>Al subir (o sustituir) el dosier: si ya es la hora, una pasada de ese evento al momento. Sin reenviar, solo a quien no
+    /// lo tenga; con reenviar (Nesto lo pregunta al sustituirlo), también a las que ya tenían el anterior, con el texto de versión
+    /// actualizada (<see cref="ReglasDosierEvento.AReenviar"/>).</item>
     /// <item>Al inscribirse después (o quedar pagada), por <see cref="AvisosInscripcionEventosJobs"/>.</item>
     /// </list>
     /// </summary>
@@ -399,12 +431,12 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string CRON = "*/15 7-21 * * *";
         internal const string MOTIVO_SIN_SCRIPT = "Falta el script Scripts/EventosDosier.sql.";
 
-        /// <summary>Encola una pasada de un evento (al subir el dosier). Nunca lanza.</summary>
-        public static void Encolar(int eventoId)
+        /// <summary>Encola una pasada de un evento (al subir el dosier; con <paramref name="reenviar"/>, también a quien ya lo tenía). Nunca lanza.</summary>
+        public static void Encolar(int eventoId, bool reenviar)
         {
             try
             {
-                _ = BackgroundJob.Enqueue(() => Procesar(eventoId));
+                _ = BackgroundJob.Enqueue(() => Procesar(eventoId, reenviar));
             }
             catch (Exception ex)
             {
@@ -412,10 +444,13 @@ namespace NestoAPI.Infraestructure.Eventos
             }
         }
 
-        /// <summary>La pasada: con <paramref name="eventoId"/>, solo ese evento; sin él (el job recurrente), los de hoy.</summary>
+        /// <summary>
+        /// La pasada: con <paramref name="eventoId"/>, solo ese evento (con <paramref name="reenviar"/>, también a las que ya tenían
+        /// el dosier anterior); sin él (el job recurrente), los de hoy.
+        /// </summary>
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 1800)]
-        public static async Task Procesar(int? eventoId)
+        public static async Task Procesar(int? eventoId, bool reenviar)
         {
             try
             {
@@ -425,7 +460,7 @@ namespace NestoAPI.Infraestructure.Eventos
                     db.Configuration.ProxyCreationEnabled = false;
                     DependenciasDosierEventos deps = Dependencias(db);
                     _ = eventoId.HasValue
-                        ? await ProcesarEvento(deps, eventoId.Value).ConfigureAwait(false)
+                        ? await ProcesarEvento(deps, eventoId.Value, reenviar).ConfigureAwait(false)
                         : await ProcesarHoy(deps).ConfigureAwait(false);
                 }
             }
@@ -471,8 +506,11 @@ namespace NestoAPI.Infraestructure.Eventos
             return resultado;
         }
 
-        /// <summary>Una pasada de un evento (al subir el dosier).</summary>
-        internal static async Task<ResultadoDosierEventos> ProcesarEvento(DependenciasDosierEventos deps, int eventoId)
+        /// <summary>
+        /// Una pasada de un evento (al subir el dosier). Con <paramref name="reenviar"/>, antes se les quita la marca a las que ya lo
+        /// tenían (<see cref="ReglasDosierEvento.AReenviar"/>), y a esas les llega con el texto de versión actualizada.
+        /// </summary>
+        internal static async Task<ResultadoDosierEventos> ProcesarEvento(DependenciasDosierEventos deps, int eventoId, bool reenviar = false)
         {
             var resultado = new ResultadoDosierEventos();
             if (!deps.Repositorio.Disponible())
@@ -482,10 +520,23 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             DateTime ahora = deps.AhoraMadrid();
             Evento evento = await deps.Evento(eventoId).ConfigureAwait(false);
-            if (ReglasDosierEvento.TocaEnviar(evento, ahora))
+            if (!ReglasDosierEvento.TocaEnviar(evento, ahora))
             {
-                await EnviarDelEvento(deps, evento, null, ahora, resultado).ConfigureAwait(false);
+                return resultado;
             }
+            var actualizadas = new HashSet<int>();
+            if (reenviar)
+            {
+                List<EventoInscripcion> todas = await deps.Inscripciones(evento.Id).ConfigureAwait(false) ?? new List<EventoInscripcion>();
+                HashSet<int> yaLoTienen = await deps.Repositorio.Enviados(todas.Select(i => i.Id).ToList()).ConfigureAwait(false) ?? new HashSet<int>();
+                foreach (int id in ReglasDosierEvento.AReenviar(evento, todas, yaLoTienen, ahora))
+                {
+                    await deps.Repositorio.Soltar(id).ConfigureAwait(false);
+                    _ = actualizadas.Add(id);
+                }
+                resultado.Reenviados = actualizadas.Count;
+            }
+            await EnviarDelEvento(deps, evento, null, ahora, resultado, actualizadas).ConfigureAwait(false);
             return resultado;
         }
 
@@ -512,7 +563,7 @@ namespace NestoAPI.Infraestructure.Eventos
         /// reintenta sin repetírselo a las demás).
         /// </summary>
         internal static async Task EnviarDelEvento(DependenciasDosierEventos deps, Evento evento, List<EventoInscripcion> soloEstas,
-            DateTime ahora, ResultadoDosierEventos resultado)
+            DateTime ahora, ResultadoDosierEventos resultado, ISet<int> actualizadas = null)
         {
             DosierEvento dosier = await deps.Repositorio.Leer(evento.Id).ConfigureAwait(false);
             if (dosier?.Contenido == null || dosier.Contenido.Length == 0)
@@ -543,7 +594,8 @@ namespace NestoAPI.Infraestructure.Eventos
                     try
                     {
                         string nombre = await deps.NombreCliente(empresa, cliente, contacto).ConfigureAwait(false);
-                        using (MailMessage mail = ReglasDosierEvento.Correo(evento, dosier, nombre, destino, ahora))
+                        using (MailMessage mail = ReglasDosierEvento.Correo(evento, dosier, nombre, destino, ahora,
+                            actualizadas?.Contains(inscripcion.Id) == true))
                         {
                             enviado = deps.Correo.EnviarCorreoSMTP(mail);
                         }

@@ -232,7 +232,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task CrearEvento_SinImportes_CienYSesenta()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"Almacen\": \"REI\" }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"Almacen\": \"REI\" }");
 
             EventoDTO creado = await ServicioEventos().CrearEvento(cuerpo, "NUEVAVISION\\Reina");
 
@@ -246,7 +246,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task CrearEvento_CeroExplicitoEnLasDos_Gratuito()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Presentación\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 0, \"ImporteSenalNoReembolsable\": 0, \"Almacen\": \"ALC\" }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Presentación\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 0, \"ImporteSenalNoReembolsable\": 0, \"Almacen\": \"ALC\" }");
 
             EventoDTO creado = await ServicioEventos().CrearEvento(cuerpo, "NUEVAVISION\\Carlos");
 
@@ -260,7 +260,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task CrearEvento_ComoElNestoDeHoy_SoloImporteSenal_LaNoReembolsablePorDefecto()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 50, \"Almacen\": \"REI\" }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 50, \"Almacen\": \"REI\" }");
 
             EventoDTO creado = await ServicioEventos().CrearEvento(cuerpo, "NUEVAVISION\\Carlos");
 
@@ -288,9 +288,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), HoraInicio = "14:00", HoraFin = "10:00" }, "x"));
             StringAssert.Contains(ex.Message, "posterior");
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
-                new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), Ponente = new string('a', 101) }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "X", Fecha = new DateTime(2026, 11, 10), Ponente = new string('a', 101) }, "x"));
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
-                new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), ImporteSenalNoReembolsable = -1 }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "X", Fecha = new DateTime(2026, 11, 10), ImporteSenalNoReembolsable = -1 }, "x"));
         }
 
         [TestMethod]
@@ -321,7 +321,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             _ = Inscripcion(1, EVENTO_GRATIS, "15191", EstadoInscripcionEvento.Inscrita, "Gratuita");
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Presentación Maystar\", \"Fecha\": \"2026-10-30\", \"ImporteSenal\": 50, \"Activo\": true }");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Presentación Maystar\", \"Fecha\": \"2026-10-30\", \"ImporteSenal\": 50, \"Activo\": true }");
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_GRATIS, cuerpo, "x"));
 
@@ -1056,7 +1056,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task PlazoPago_EventoDTO_SeGuardaYElPutQueNoLoTraeLoConserva()
         {
             EventoDTO creado = await ServicioEventos().CrearEvento(new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Curso nuevo", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", DiasPagoAntesEvento = 10
             }, "Reina");
             A.CallTo(() => db.Eventos.Add(A<Evento>._)).MustHaveHappened();
@@ -1065,11 +1065,11 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(10, creado.DiasPagoAntesEvento);
 
             eventos[2].DiasPagoAntesEvento = 5;
-            _ = await ServicioEventos().ModificarEvento(EVENTO_SOLO_NR, new EventoDTO { Titulo = "Curso Peeling", Fecha = new DateTime(2026, 11, 20), Almacen = "REI" }, "Reina");
+            _ = await ServicioEventos().ModificarEvento(EVENTO_SOLO_NR, new EventoDTO { HoraInicio = "07:00", Titulo = "Curso Peeling", Fecha = new DateTime(2026, 11, 20), Almacen = "REI" }, "Reina");
             Assert.AreEqual(5, eventos[2].DiasPagoAntesEvento);
 
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(new EventoDTO
-            {
+            { HoraInicio = "07:00",
                 Titulo = "Curso nuevo", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", DiasPagoAntesEvento = 100
             }, "Reina"));
         }
@@ -1080,7 +1080,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task Formato_OnlineConTienda_SeGuardaYLosDeAntesSonPresenciales()
         {
             EventoDTO creado = await ServicioEventos().CrearEvento(JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Webinar Maystar\", \"Fecha\": \"2026-11-10\", \"Almacen\": \"ALC\", \"Formato\": \"online\" }"), "NUEVAVISION\\Paloma");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Webinar Maystar\", \"Fecha\": \"2026-11-10\", \"Almacen\": \"ALC\", \"Formato\": \"online\" }"), "NUEVAVISION\\Paloma");
 
             Assert.AreEqual("Online", creado.Formato);
             Assert.AreEqual("Presencial", (await ServicioEventos().LeerEventos("1", true)).Single(e => e.Id == EVENTO_PAGO).Formato,
@@ -1092,11 +1092,11 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             eventos[0].Formato = "Online";
             _ = await ServicioEventos().ModificarEvento(EVENTO_PAGO, JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass Cloasma\", \"Fecha\": \"2026-10-30\", \"Activo\": true }"), "NUEVAVISION\\Reina");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Masterclass Cloasma\", \"Fecha\": \"2026-10-30\", \"Activo\": true }"), "NUEVAVISION\\Reina");
             Assert.AreEqual("Online", eventos[0].Formato);
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
-                new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Híbrido" }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Híbrido" }, "x"));
             Assert.AreEqual("El formato del evento tiene que ser Presencial, Online o Mixto.", ex.Message);
         }
 
@@ -1106,7 +1106,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task Formato_Mixto_SeGuardaYSeLee()
         {
             EventoDTO creado = await ServicioEventos().CrearEvento(JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass mixta\", \"Fecha\": \"2026-11-10\", \"Almacen\": \"REI\", \"Formato\": \"mixto\" }"), "NUEVAVISION\\Reina");
+                "{ \"HoraInicio\": \"07:00\", \"Titulo\": \"Masterclass mixta\", \"Fecha\": \"2026-11-10\", \"Almacen\": \"REI\", \"Formato\": \"mixto\" }"), "NUEVAVISION\\Reina");
 
             Assert.AreEqual("Mixto", creado.Formato);
             eventos[0].Formato = "Mixto";
@@ -1123,17 +1123,17 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             servicio.FormasAsistencia = sinScript;
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.CrearEvento(
-                new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Mixto" }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Mixto" }, "x"));
             StringAssert.Contains(ex.Message, "Issue829_EventosInscripcionesModalidad.sql");
 
-            _ = await servicio.CrearEvento(new EventoDTO { Titulo = "Y", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Online" }, "x");
+            _ = await servicio.CrearEvento(new EventoDTO { HoraInicio = "07:00", Titulo = "Y", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Online" }, "x");
         }
 
         [TestMethod]
         public async Task Formato_OnlineSinTienda_400DeUsted()
         {
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
-                new EventoDTO { Titulo = "Webinar", Fecha = new DateTime(2026, 11, 10), Formato = "Online" }, "x"));
+                new EventoDTO { HoraInicio = "07:00", Titulo = "Webinar", Fecha = new DateTime(2026, 11, 10), Formato = "Online" }, "x"));
 
             StringAssert.Contains(ex.Message, "También en los eventos online");
         }

@@ -136,6 +136,17 @@ namespace NestoAPI.Infraestructure.Eventos
             return ReglasAsistenciaEvento.Respuesta(inscripcion.AsistenciaRespuesta) != RespuestaAsistenciaEvento.NoPodraIr;
         }
 
+        /// <summary>
+        /// LA regla de «formalizada» (Carlos 18/11/26): pagada, facturada o inscrita (evento gratuito), sin «No podré ir». Una
+        /// reserva sin pagar no lo está. Es la que espera al evento: recibe el recordatorio, el enlace de la conexión online (#875) y
+        /// el dosier (sugerencia 1332).
+        /// </summary>
+        public static bool EstaFormalizada(EventoInscripcion inscripcion)
+        {
+            EstadoInscripcionEvento? estado = Estado(inscripcion?.Estado);
+            return estado.HasValue && ESPERAN_AL_EVENTO.Contains(estado.Value) && OcupaPlaza(inscripcion);
+        }
+
         public static bool PuedePasar(EstadoInscripcionEvento desde, EstadoInscripcionEvento hasta) =>
             desde == hasta || (transiciones.TryGetValue(desde, out EstadoInscripcionEvento[] destinos) && destinos.Contains(hasta));
 
