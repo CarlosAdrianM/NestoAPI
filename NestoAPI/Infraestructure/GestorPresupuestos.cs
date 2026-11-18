@@ -49,6 +49,59 @@ namespace NestoAPI.Infraestructure
         internal static int CantidadParaColorStock(LineaPedidoVentaDTO linea)
             => linea != null && linea.estado == Constantes.EstadosLineaVenta.PRESUPUESTO ? linea.Cantidad : 0;
 
+        /// <summary>Pedido 925901: el color de una línea del correo y lo que cuelga de él.</summary>
+        internal sealed class StockLineaCorreo
+        {
+            public string Color;
+            /// <summary>La situación según el motor de la fecha de entrega a la agencia; null = color de <see cref="GestorStocks.ColorStock(string, string, int)"/> (respaldo).</summary>
+            public Infraestructure.PedidosVenta.SituacionStockLineaCorreo? DelMotor;
+            /// <summary>Tiene que venir de una tienda: reservas y el «¡¡¡ ATENCIÓN !!!» del modo de entrega.</summary>
+            public bool TieneQueVenir;
+            /// <summary>Falta de verdad (roja): NestoAPI#507 y el «¡¡¡ ATENCIÓN !!!».</summary>
+            public bool FaltaStock;
+        }
+
+        /// <summary>
+        /// Pedido 925901 (18/11/26, decisión de Carlos): el color de la línea sale del MISMO motor que el pie «Entrega a la agencia…
+        /// Por qué:» (<see cref="FechaEntregaAgencia"/>, regla <see cref="Infraestructure.PedidosVenta.ReglaColorLineaCorreo"/>) cuando lo
+        /// hay para ella; si no (presupuesto, línea que no es de Algete o ya servida, el motor falló o no la trae), de
+        /// <see cref="GestorStocks.ColorStock(string, string, int)"/> como siempre. Un kit que se desmonta o un pack que se monta en
+        /// Algete va en rosa pero no cuenta como «tiene que venir»: sale de Algete como lo libre, ni se reserva ni parte el pedido.
+        /// </summary>
+        internal StockLineaCorreo StockDeLinea(LineaPedidoVentaDTO linea, GestorStocks gestorStocks)
+        {
+            if (linea == null || linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO)
+            {
+                return new StockLineaCorreo { Color = "black" };
+            }
+            Infraestructure.PedidosVenta.SituacionStockLineaCorreo? delMotor =
+                Infraestructure.PedidosVenta.ReglaColorLineaCorreo.DeLinea(linea, FechaEntregaAgencia, pedido.EsPresupuesto);
+            if (delMotor.HasValue)
+            {
+                return new StockLineaCorreo
+                {
+                    Color = Infraestructure.PedidosVenta.ReglaColorLineaCorreo.Color(delMotor.Value),
+                    DelMotor = delMotor,
+                    TieneQueVenir = delMotor.Value == Infraestructure.PedidosVenta.SituacionStockLineaCorreo.TieneQueVenir,
+                    FaltaStock = delMotor.Value == Infraestructure.PedidosVenta.SituacionStockLineaCorreo.FaltaStock
+                };
+            }
+            string color = gestorStocks.ColorStock(linea.Producto, linea.almacen, CantidadParaColorStock(linea));
+            return new StockLineaCorreo
+            {
+                Color = color,
+                TieneQueVenir = color == Infraestructure.PedidosVenta.ReglaColorLineaCorreo.ROSA,
+                FaltaStock = color == Infraestructure.PedidosVenta.ReglaColorLineaCorreo.ROJO
+            };
+        }
+
+        /// <summary>Pedido 925901: si falta stock de algo (NestoAPI#507) y si tiene que venir algo de una tienda, de los mismos colores que las líneas.</summary>
+        internal static (bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto) ResumenStock(IEnumerable<StockLineaCorreo> lineas)
+        {
+            List<StockLineaCorreo> lista = (lineas ?? Enumerable.Empty<StockLineaCorreo>()).Where(l => l != null).ToList();
+            return (lista.Any(l => l.FaltaStock), lista.Any(l => l.TieneQueVenir));
+        }
+
         /// <summary>
         /// NestoAPI#335: avisos operativos acumulados durante el guardado (p. ej. "se quitó la
         /// comisión de reembolso pero el envío de agencia sigue con su importe"). Se pintan
@@ -674,36 +727,39 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine("</thead>");
             _ = s.AppendLine("<tbody align = \"right\">");
 
-            bool faltaStockDeAlgo = false;
-            bool tieneQueVenirAlgunProducto = false;
+            // Pedido 925901 (18/11/26): el color de cada línea sale del motor de la fecha de entrega a la agencia (el mismo del pie
+            // «Por qué:») cuando lo hay para ella; si no, de ColorStock como siempre. Lo que cuelga del color (si falta algo, si tiene
+            // que venir algo de una tienda) se deriva de lo mismo.
+            List<LineaPedidoVentaDTO> lineasCorreo = pedido.Lineas.ToList();
+            List<StockLineaCorreo> stockLineas = lineasCorreo.Select(l => StockDeLinea(l, gestorStocks)).ToList();
+            (bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto) = ResumenStock(stockLineas);
 
             // Estructura para guardar qué almacenes deben reservar stock
             Dictionary<string, HashSet<string>> almacenesConReservas = new Dictionary<string, HashSet<string>>();
 
-            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            for (int indiceLinea = 0; indiceLinea < lineasCorreo.Count; indiceLinea++)
             {
-                string colorCantidad = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO
-                    ? gestorStocks.ColorStock(linea.Producto, linea.almacen, CantidadParaColorStock(linea))
-                    : "black";
+                LineaPedidoVentaDTO linea = lineasCorreo[indiceLinea];
+                StockLineaCorreo stockLinea = stockLineas[indiceLinea];
+                string colorCantidad = stockLinea.Color;
                 string textoReserva = "";
 
                 // Carlos 23/10/25: Calcular si la línea necesita reservas AHORA
-                if (colorCantidad == "DeepPink")
+                if (stockLinea.TieneQueVenir)
                 {
-                    tieneQueVenirAlgunProducto = true;
                     // Mostrar reserva si es línea nueva, si la cantidad cambió, o si cambió el producto
                     if (linea.EsLineaNueva || linea.CambioProducto || (linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad))
                     {
-                        textoReserva = CalcularReservasAlmacenes(linea, gestorStocks, servicioGestorStocks, almacenesConReservas);
+                        // Pedido 925901: con motor, se reserva lo que el motor trae de cada tienda (lo que dice el pie)
+                        textoReserva = stockLinea.DelMotor.HasValue
+                            ? CalcularReservasDesdeMotor(linea, gestorStocks, servicioGestorStocks, almacenesConReservas)
+                            : CalcularReservasAlmacenes(linea, gestorStocks, servicioGestorStocks, almacenesConReservas);
                     }
-                }
-                else if (colorCantidad == "red")
-                {
-                    faltaStockDeAlgo = true;
                 }
                 // Carlos 23/10/25: En modificaciones, si la línea TENÍA reservas antes pero ya NO las necesita, informar
                 // Carlos 28/10/25: FIX - Verificar SIEMPRE si antes necesitaba reservas, no solo cuando cambió algo
-                else if (tipoCorreo == "Modificación" && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !linea.EsLineaNueva)
+                // (las rojas no: les falta stock y no hay nada que liberar; ya cuentan en ResumenStock)
+                else if (!stockLinea.FaltaStock && tipoCorreo == "Modificación" && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !linea.EsLineaNueva)
                 {
                     // Verificar si ANTES necesitaba reservas (solo si tenemos CantidadAnterior)
                     if (linea.CantidadAnterior.HasValue)
@@ -721,7 +777,8 @@ namespace NestoAPI.Infraestructure
 
                         if (faltanteAntes > 0)
                         {
-                            // Antes SÍ necesitaba reservas, pero ahora NO (ya que colorCantidad != "DeepPink")
+                            // Antes SÍ necesitaba reservas, pero ahora NO (no tiene que venir de ninguna tienda).
+                            // Pedido 925901: el «antes» sigue con la cuenta de siempre (no hay motor del pedido anterior).
                             // Informar al almacén que debe LIBERAR reservas
                             // Esto puede pasar por:
                             // 1. Cambió el producto o la cantidad
@@ -929,33 +986,7 @@ namespace NestoAPI.Infraestructure
                 return "";
             }
 
-            // Carlos 24/10/25: Solo mostramos "Antes: X uds" si el producto anterior TAMBIÉN necesitaba reservas
-            StringBuilder prefijo = new StringBuilder();
-            bool productoAnteriorNecesitabaReservas = false;
-
-            // Verificar si había un cambio de cantidad o producto
-            if ((linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad) || linea.CambioProducto)
-            {
-                // Determinar qué producto y cantidad usar para verificar si necesitaba reservas antes
-                string productoAVerificar = linea.CambioProducto ? linea.ProductoAnterior : linea.Producto;
-                int cantidadAVerificar = linea.CantidadAnterior ?? linea.Cantidad;
-
-                // Calcular si el producto anterior necesitaba reservas
-                int stockAlmacenAnterior = gestorStocks.Stock(productoAVerificar, linea.almacen);
-                int pendientesTotalesAnterior = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAVerificar, linea.almacen);
-                // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
-                int pendientesOtrosPedidosAnterior = Math.Max(0, pendientesTotalesAnterior - linea.Cantidad);
-                int disponibleAnterior = stockAlmacenAnterior - pendientesOtrosPedidosAnterior;
-                int faltanteAnterior = Math.Max(0, cantidadAVerificar - disponibleAnterior);
-
-                productoAnteriorNecesitabaReservas = faltanteAnterior > 0;
-
-                // Solo mostramos el prefijo si el producto anterior TAMBIÉN necesitaba reservas
-                if (productoAnteriorNecesitabaReservas && linea.CantidadAnterior.HasValue)
-                {
-                    _ = prefijo.Append($"<em>Antes: {linea.CantidadAnterior.Value} uds → Ahora: {linea.Cantidad} uds</em><br/>");
-                }
-            }
+            string prefijo = PrefijoCambioReservas(linea, gestorStocks, servicioGestorStocks);
 
             // Calculamos cuánto falta en el almacén solicitado
             int stockAlmacenSolicitado = gestorStocks.Stock(linea.Producto, linea.almacen);
@@ -968,7 +999,7 @@ namespace NestoAPI.Infraestructure
             {
                 // No falta nada, no necesitamos reservas
                 // Carlos 23/10/25: pero si la cantidad cambió, devolvemos el prefijo
-                return prefijo.ToString();
+                return prefijo;
             }
 
             // Buscamos en otros almacenes (todos excepto el solicitado)
@@ -1003,7 +1034,7 @@ namespace NestoAPI.Infraestructure
             if (almacenesDisponibles.Count == 0)
             {
                 // Carlos 23/10/25: si no hay stock en otros almacenes, devolvemos solo el prefijo (si existe)
-                return prefijo.ToString();
+                return prefijo;
             }
             else if (almacenesDisponibles.Count == 1)
             {
@@ -1027,14 +1058,12 @@ namespace NestoAPI.Infraestructure
 
                 // Luego listamos los almacenes con stock disponible
                 List<string> reservasPorAlmacen = new List<string>();
-                int totalDisponibleOtrosAlmacenes = 0;
 
                 foreach (string almacen in almacenesDisponibles)
                 {
                     int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
                     int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
                     int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
-                    totalDisponibleOtrosAlmacenes += disponibleAlmacen;
 
                     reservasPorAlmacen.Add($"{almacen}: {disponibleAlmacen} uds");
                 }
@@ -1044,7 +1073,71 @@ namespace NestoAPI.Infraestructure
             }
 
             // Carlos 23/10/25: combinamos el prefijo (si existe) con el texto de reserva
-            return prefijo.ToString() + textoReserva.ToString();
+            return prefijo + textoReserva.ToString();
+        }
+
+        /// <summary>
+        /// Pedido 925901 (18/11/26): la reserva de una línea que el motor de la fecha de entrega a la agencia (NestoAPI#606) trae de
+        /// una tienda: lo que el pie dice que llega de cada tienda («Reposición Reina → Algete»), no la cuenta de
+        /// <see cref="CalcularReservasAlmacenes"/> (stock − todos los pendientes). Ya viene de camino o es el componente de un pack: sin
+        /// reserva. El «Antes: X uds → Ahora: Y uds» es el de siempre.
+        /// </summary>
+        internal string CalcularReservasDesdeMotor(LineaPedidoVentaDTO linea, GestorStocks gestorStocks,
+            IServicioGestorStocks servicioGestorStocks, Dictionary<string, HashSet<string>> almacenesConReservas)
+        {
+            if (linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO || linea.estado == Constantes.EstadosLineaVenta.PRESUPUESTO)
+            {
+                return "";
+            }
+            string prefijo = PrefijoCambioReservas(linea, gestorStocks, servicioGestorStocks);
+            List<KeyValuePair<string, int>> reservas = Infraestructure.PedidosVenta.ReglaColorLineaCorreo.ReservasEnTiendas(
+                Infraestructure.PedidosVenta.ReglaColorLineaCorreo.PartidasDe(FechaEntregaAgencia, linea.Producto));
+            if (!reservas.Any())
+            {
+                return prefijo;
+            }
+            foreach (KeyValuePair<string, int> reserva in reservas)
+            {
+                if (!almacenesConReservas.ContainsKey(reserva.Key))
+                {
+                    almacenesConReservas[reserva.Key] = new HashSet<string>();
+                }
+                _ = almacenesConReservas[reserva.Key].Add(linea.Producto);
+            }
+            return prefijo + "<strong>" + string.Join("<br/>", reservas.Select(r => $"{r.Key}: {r.Value} uds")) + "</strong>";
+        }
+
+        /// <summary>Carlos 24/10/25: «Antes: X uds → Ahora: Y uds» solo si el producto anterior TAMBIÉN necesitaba reservas.</summary>
+        private static string PrefijoCambioReservas(LineaPedidoVentaDTO linea, GestorStocks gestorStocks, IServicioGestorStocks servicioGestorStocks)
+        {
+            StringBuilder prefijo = new StringBuilder();
+            bool productoAnteriorNecesitabaReservas = false;
+
+            // Verificar si había un cambio de cantidad o producto
+            if ((linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad) || linea.CambioProducto)
+            {
+                // Determinar qué producto y cantidad usar para verificar si necesitaba reservas antes
+                string productoAVerificar = linea.CambioProducto ? linea.ProductoAnterior : linea.Producto;
+                int cantidadAVerificar = linea.CantidadAnterior ?? linea.Cantidad;
+
+                // Calcular si el producto anterior necesitaba reservas
+                int stockAlmacenAnterior = gestorStocks.Stock(productoAVerificar, linea.almacen);
+                int pendientesTotalesAnterior = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAVerificar, linea.almacen);
+                // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
+                int pendientesOtrosPedidosAnterior = Math.Max(0, pendientesTotalesAnterior - linea.Cantidad);
+                int disponibleAnterior = stockAlmacenAnterior - pendientesOtrosPedidosAnterior;
+                int faltanteAnterior = Math.Max(0, cantidadAVerificar - disponibleAnterior);
+
+                productoAnteriorNecesitabaReservas = faltanteAnterior > 0;
+
+                // Solo mostramos el prefijo si el producto anterior TAMBIÉN necesitaba reservas
+                if (productoAnteriorNecesitabaReservas && linea.CantidadAnterior.HasValue)
+                {
+                    _ = prefijo.Append($"<em>Antes: {linea.CantidadAnterior.Value} uds → Ahora: {linea.Cantidad} uds</em><br/>");
+                }
+            }
+
+            return prefijo.ToString();
         }
 
         private HashSet<string> ObtenerAlmacenesConReservas()
@@ -1058,6 +1151,22 @@ namespace NestoAPI.Infraestructure
                 if (linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO ||
                     linea.estado == Constantes.EstadosLineaVenta.PRESUPUESTO)
                 {
+                    continue;
+                }
+
+                // Pedido 925901: con motor, las tiendas son las de las partidas «Reposición tienda → Algete» (lo que dice el pie)
+                Infraestructure.PedidosVenta.SituacionStockLineaCorreo? delMotor =
+                    Infraestructure.PedidosVenta.ReglaColorLineaCorreo.DeLinea(linea, FechaEntregaAgencia, pedido.EsPresupuesto);
+                if (delMotor.HasValue)
+                {
+                    if (delMotor.Value == Infraestructure.PedidosVenta.SituacionStockLineaCorreo.TieneQueVenir)
+                    {
+                        foreach (KeyValuePair<string, int> reserva in Infraestructure.PedidosVenta.ReglaColorLineaCorreo.ReservasEnTiendas(
+                            Infraestructure.PedidosVenta.ReglaColorLineaCorreo.PartidasDe(FechaEntregaAgencia, linea.Producto)))
+                        {
+                            _ = almacenes.Add(reserva.Key);
+                        }
+                    }
                     continue;
                 }
 

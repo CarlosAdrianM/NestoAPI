@@ -697,6 +697,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (prometida, correo, promesa en riesgo, fotos: un pack que se monta ya «sale del stock»; el que espera, se mide como su componente). El modo de servicio
   sugerido (`SugeridorModoServicio`) no lo usa aún; el aviso de Nesto antes del picking solo pregunta por los kits que DESMONTAR.
 
+### Color de las líneas del correo del pedido: el mismo motor que el pie (pedido 925901, 18/11/26)
+- El correo pintaba cada línea con `GestorStocks.ColorStock` (stock − TODOS los pendientes) y el pie con el motor #606: un pedido a 31/12/2099
+  ponía en rojo una línea que el pie daba «con stock en Algete». LA REGLA (pura): `ReglaColorLineaCorreo` (`Infraestructure/PedidosVenta/`): de
+  las partidas del producto en `FechaEntregaAgencia.Desglose`, la PEOR: Picking/Algete → verde; Kit/Montaje sin componente que falte → rosa (no
+  cuenta como «tiene que venir»: ni reserva ni parte el pedido); Tienda/EnCamino (o pack que espera un componente de tienda) → rosa «tiene que
+  venir»; Proveedor/SinStock (o pack que espera eso) → rojo. `GestorPresupuestos.StockDeLinea` + `ResumenStock`: de ahí salen `faltaStockDeAlgo`
+  (#507, «¡¡¡ ATENCIÓN !!!») y `tieneQueVenirAlgunProducto`. Reservas a tiendas y su copia (`CalcularReservasDesdeMotor`, `ObtenerAlmacenesConReservas`):
+  lo que el motor trae de cada tienda (Tienda + Unidades).
+- Respaldo `ColorStock` (como siempre) para lo que el motor no calcula: presupuestos, líneas que no son de Algete, servidas (≥ 2) o sin cantidad,
+  producto que no está en el desglose, origen desconocido, o el motor falló (FechaEntregaAgencia null). El «antes» del «✓ LIBERAR» y su copia a
+  tiendas siguen con la cuenta de siempre (no hay motor del pedido anterior). Sugeridor de modo de servicio y portes no cambian.
+
 ### Pago a plazos de un pedido ya creado, con cualquier financiera (NestoAPI#864, 13/11/26; continuación de #663)
 - Un empleado (Nesto) o un vendedor (NestoApp) pasa el pedido y el CLIENTE termina la financiación de ese pedido en la app (push) o con
   un enlace. TODO NEUTRO (Carlos 13/11/26): el núcleo `ServicioPagoAPlazos` (`Infraestructure/Pagos/PagoAPlazos/`: pedido, prepago, estados,
