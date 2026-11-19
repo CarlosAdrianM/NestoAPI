@@ -72,6 +72,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const string MOTIVO_MISMO_ENVIO = "MismoEnvio";
         /// <summary>NestoAPI#857e: el número del pedido sale en el PDF adjunto de un aviso de salida del proveedor (<see cref="ExtractorAvisoSalida"/>).</summary>
         public const string MOTIVO_PDF_ADJUNTO = "PdfAdjunto";
+        /// <summary>NestoAPI#857g: la referencia del remitente es el pedido del proveedor de una confirmación suya (<see cref="ReglaPedidoProveedor"/>).</summary>
+        public const string MOTIVO_PEDIDO_PROVEEDOR = "PedidoProveedor";
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 

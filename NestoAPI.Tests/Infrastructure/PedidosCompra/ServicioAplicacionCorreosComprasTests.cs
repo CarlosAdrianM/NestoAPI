@@ -330,7 +330,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         {
             DosPedidosDeWeelko();
             await Pasada(EnOrden("UPS1,MBE,UPS2,UPS3"));
-            int mbe = repositorio.Correos.Single(c => c.Agencia == "UPS" && c.RemitentePaquete == "weelko barcelona s. l").Id;
+            int mbe = repositorio.Correos.Single(c => c.Agencia == "MBE" && c.RemitentePaquete == "weelko barcelona s. l").Id;
 
             ResultadoOperacionCorreoCompra resultado = await Aplicacion().Asignar(mbe,
                 new PeticionAsignarCorreoCompraDTO { Empresa = "1", Pedido = 912001, RecordarRemitente = true }, false, @"NUEVAVISION\Compras1");

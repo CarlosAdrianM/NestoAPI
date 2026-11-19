@@ -102,6 +102,42 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// si no dice ninguna, el día de (recibido + las horas de la agencia: 24 paquetería, 48 grupaje; sin agencia conocida, 48). Nunca
     /// antes de hoy. PURA.
     /// </summary>
+    /// <summary>
+    /// NestoAPI#857g: el día que llega lo que una agencia tiene «sin noticias» (recibido + su plazo). Por defecto en horas naturales
+    /// (recibido + 24/48 h); si la agencia lo pide (<see cref="IAgenciaEntrada.PlazoEnLaborables"/>: DB Schenker, 72 h = 3 laborables), en días
+    /// LABORABLES de Algete: sin sábados, domingos ni <paramref name="esFestivo"/> (sin él, solo fines de semana). PURA.
+    /// </summary>
+    public static class PlazoAgenciaEntrada
+    {
+        private const int TOPE_DIAS = 400;
+
+        public static DateTime DiaDeLlegada(DateTime recibido, int horas, bool enLaborables, Func<DateTime, bool> esFestivo = null)
+        {
+            if (!enLaborables)
+            {
+                return recibido.AddHours(horas).Date;
+            }
+            int dias = Math.Max(1, (int)Math.Ceiling(horas / 24.0));
+            DateTime dia = recibido.Date;
+            for (int i = 0; i < TOPE_DIAS && dias > 0; i++)
+            {
+                dia = dia.AddDays(1);
+                if (dia.DayOfWeek != DayOfWeek.Saturday && dia.DayOfWeek != DayOfWeek.Sunday && (esFestivo == null || !esFestivo(dia)))
+                {
+                    dias--;
+                }
+            }
+            return dia;
+        }
+
+        /// <summary>Por el nombre de la agencia guardado en el correo; sin agencia conocida, <see cref="ReglaFechaRecepcionPorCorreo.HORAS_SIN_AGENCIA"/> naturales.</summary>
+        public static DateTime DiaDeLlegada(DateTime recibido, string agencia, Func<DateTime, bool> esFestivo = null)
+        {
+            IAgenciaEntrada conocida = AgenciasEntradaRegistradas.PorNombre(agencia);
+            return DiaDeLlegada(recibido, conocida?.HorasHastaEntrega ?? ReglaFechaRecepcionPorCorreo.HORAS_SIN_AGENCIA, conocida?.PlazoEnLaborables == true, esFestivo);
+        }
+    }
+
     public static class ReglaFechaRecepcionPorCorreo
     {
         public const int HORAS_SIN_AGENCIA = AgenciaEntradaPorPatrones.HORAS_GRUPAJE;
@@ -117,8 +153,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>Las horas de la agencia guardada en el correo (por su nombre); null si no es una conocida.</summary>
         public static int? HorasDe(string agencia) => AgenciasEntradaRegistradas.PorNombre(agencia)?.HorasHastaEntrega;
 
-        public static DateTime Calcular(CorreoSeguimientoFila fila, DateTime hoy) =>
-            Calcular(fila.EntregaEstimadaDia, fila.Recibido, HorasDe(fila.Agencia), hoy);
+        /// <param name="esFestivo">NestoAPI#857g: festivos de Algete para las agencias con plazo en laborables (sin él, solo fines de semana).</param>
+        public static DateTime Calcular(CorreoSeguimientoFila fila, DateTime hoy, Func<DateTime, bool> esFestivo = null)
+        {
+            DateTime dia = fila.EntregaEstimadaDia?.Date ?? PlazoAgenciaEntrada.DiaDeLlegada(fila.Recibido, fila.Agencia, esFestivo);
+            return dia < hoy.Date ? hoy.Date : dia;
+        }
 
         /// <summary>
         /// La fecha de un ENVÍO (correos que comparten código, <see cref="MismoEnvio"/>). Carlos 14/11/26: por cada seguimiento (bulto),
@@ -128,9 +168,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// correo más reciente. La misma para todos sus correos. Caso real 13/11/26 (Weelko): con la más tardía de todos los correos
         /// salía el 16/11 de UPS aunque luego lo reprogramó al 13/11 y entregó ese día.
         /// </summary>
-        public static DateTime Calcular(IEnumerable<CorreoSeguimientoFila> envio, DateTime hoy)
+        public static DateTime Calcular(IEnumerable<CorreoSeguimientoFila> envio, DateTime hoy, Func<DateTime, bool> esFestivo = null)
         {
-            DateTime? dia = DiaDeLlegada(envio);
+            DateTime? dia = DiaDeLlegada(envio, esFestivo);
             return !dia.HasValue || dia.Value < hoy.Date ? hoy.Date : dia.Value;
         }
 
@@ -138,7 +178,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// NestoAPI#865: el día de llegada que dicen los correos del envío SIN el suelo de hoy (puede ser pasado: la fecha vencida
         /// recalculada lo trata entonces como «sin noticias»). Null sin correos. Las mismas reglas que <see cref="Calcular(IEnumerable{CorreoSeguimientoFila}, DateTime)"/>.
         /// </summary>
-        public static DateTime? DiaDeLlegada(IEnumerable<CorreoSeguimientoFila> envio)
+        public static DateTime? DiaDeLlegada(IEnumerable<CorreoSeguimientoFila> envio, Func<DateTime, bool> esFestivo = null)
         {
             List<CorreoSeguimientoFila> correos = (envio ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f != null).ToList();
             CorreoSeguimientoFila ultimo = correos.OrderByDescending(f => f.Recibido).ThenByDescending(f => f.Id).FirstOrDefault();
@@ -146,7 +186,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 return null;
             }
-            return LlegadaDelEnvio(correos) ?? ultimo.Recibido.AddHours(HorasDe(ultimo.Agencia) ?? HORAS_SIN_AGENCIA).Date;
+            return LlegadaDelEnvio(correos) ?? PlazoAgenciaEntrada.DiaDeLlegada(ultimo.Recibido, ultimo.Agencia, esFestivo);
         }
 
         public const string ORIGEN_ENTREGADO = "Entregado";

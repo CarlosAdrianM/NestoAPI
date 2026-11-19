@@ -75,9 +75,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual("DB Schenker", a.Agencia);
             Assert.AreEqual("ESMNR264773770", a.Seguimientos.Single().Codigo);
             Assert.AreEqual(URL_DSV, a.Seguimientos.Single().Url);
-            Assert.IsNull(a.EntregaEstimada, "El aviso no dice entrega: va por recibido + 48 h");
+            Assert.IsNull(a.EntregaEstimada, "El aviso no dice entrega: va por recibido + 3 laborables (#857g)");
             Assert.IsNull(a.OrigenEntrega);
-            Assert.AreEqual(new DateTime(2026, 11, 20), ReglaFechaRecepcionPorCorreo.Calcular(
+            Assert.AreEqual(new DateTime(2026, 11, 23), ReglaFechaRecepcionPorCorreo.Calcular(
                 new CorreoSeguimientoFila { Recibido = correo.Recibido, Agencia = a.Agencia }, new DateTime(2026, 11, 18)));
         }
 
@@ -257,14 +257,14 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         #region Nacex (implementación por defecto) y encapsulación
 
         [TestMethod]
-        public void Nacex_CodigoDelEnlace_ElRemitenteDelPaquete_YSinEstadoPropio()
+        public void Nacex_CodigoDelEnlace_ElRemitenteDelPaquete_YSuEstado()
         {
             AnalisisCorreoSeguimiento a = Analizar(Correo("no-reply@nacex.com", "Tu envío está en camino", NACEX_HTML, new DateTime(2026, 11, 13, 9, 0, 0), html: true));
 
             Assert.AreEqual("Nacex", a.Agencia);
             Assert.AreEqual("11571609", a.Seguimientos.First().Codigo);
             Assert.AreEqual("lashes and more sl", a.RemitentePaquete);
-            Assert.IsNull(a.EstadoEnvio, "La implementación por defecto no dice estado");
+            Assert.AreEqual(EstadoEnvioAgencia.EnCamino, a.EstadoEnvio, "#857g: Nacex lee su estado («está en camino»)");
         }
 
         [TestMethod]

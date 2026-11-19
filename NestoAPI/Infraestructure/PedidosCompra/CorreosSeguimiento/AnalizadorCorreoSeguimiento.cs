@@ -90,6 +90,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string FormatoAviso { get; set; }
         /// <summary>NestoAPI#857f: se guarda por ser un correo de la propia agencia que dice la entrega o el estado, aunque no traiga código.</summary>
         public bool GuardadoPorNoticiaDeAgencia { get; set; }
+        /// <summary>
+        /// NestoAPI#857g: es la CONFIRMACIÓN de un pedido del proveedor (no una salida): no se guarda como correo de seguimiento ni pone fecha;
+        /// sirve para enlazar el pedido del proveedor con el nuestro (<see cref="ReglaPedidoProveedor"/>). Null si no lo es.
+        /// </summary>
+        public ConfirmacionPedidoProveedor Confirmacion { get; set; }
+        /// <summary>NestoAPI#857g: las referencias del remitente que da la agencia («Ref.: SO252231WKOUT77626», MBE). No se guardan.</summary>
+        public List<string> ReferenciasRemitente { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -133,7 +140,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             analisis.AvisoProveedor = analisis.RemitenteMarcado != null && string.IsNullOrWhiteSpace(analisis.RemitenteMarcado.Agencia);
 
             List<IAgenciaEntrada> lista = (agencias ?? Enumerable.Empty<IAgenciaEntrada>()).ToList();
-            foreach (IAgenciaEntrada agencia in lista)
+            // NestoAPI#857g (nivel 1): la confirmación de un pedido del proveedor no es un envío: ni se guarda ni pone fecha (solo enlaza)
+            analisis.Confirmacion = FormatosAvisoSalida.Confirmacion(correo.Asunto, correo.Texto, lista);
+            if (analisis.Confirmacion != null)
+            {
+                return analisis;
+            }
+            // NestoAPI#857g: primero las agencias que MANDAN el correo (el resumen de MBE trae códigos 1Z de UPS: es de MBE, no de UPS)
+            foreach (IAgenciaEntrada agencia in lista.Where(a => a.EsCorreoPropio(correo)).Concat(lista.Where(a => !a.EsCorreoPropio(correo))))
             {
                 List<SeguimientoCorreo> seguimientos = agencia.ExtraerSeguimientos(correo) ?? new List<SeguimientoCorreo>();
                 if (seguimientos.Any())
@@ -209,8 +223,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 analisis.Extracto = Extracto(correo, analisis.Seguimientos.FirstOrDefault());
                 LeerEntrega(correo, analisis, lista, noticiaSinCodigo, formato);
-                analisis.EsSalidaNuestra = EnvioNuestroDeSalida.Es((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
-                analisis.RemitentePaquete = ExtractorRemitentePaquete.Extraer(correo.Texto, correo.Asunto);
+                // NestoAPI#857g: lo que sabe del envío la clase de la agencia que lo manda (MBE: remitente, referencia, mensajero, salidas nuestras)
+                IAgenciaEntrada deLaAgencia = Agencia(analisis.Agencia, lista);
+                DatosEnvioAgencia datos = deLaAgencia != null && deLaAgencia.EsCorreoPropio(correo) ? deLaAgencia.LeerDatosEnvio(correo) : null;
+                analisis.EsSalidaNuestra = datos?.EsSalidaNuestra ?? EnvioNuestroDeSalida.Es((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+                analisis.RemitentePaquete = datos?.RemitentePaquete ?? ExtractorRemitentePaquete.Extraer(correo.Texto, correo.Asunto);
+                analisis.ReferenciasRemitente = datos?.ReferenciasRemitente ?? new List<string>();
                 CompletarEnlaces(analisis, lista);
             }
             return analisis;
@@ -250,14 +268,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// </summary>
         internal static void CompletarEnlaces(AnalisisCorreoSeguimiento analisis, IEnumerable<IAgenciaEntrada> agencias)
         {
-            IAgenciaEntrada agencia = Agencia(analisis?.Agencia, agencias);
-            if (agencia == null)
+            if (analisis == null)
             {
                 return;
             }
+            IAgenciaEntrada agencia = Agencia(analisis.Agencia, agencias);
             foreach (SeguimientoCorreo s in analisis.Seguimientos.Where(s => string.IsNullOrWhiteSpace(s.Url) && !string.IsNullOrWhiteSpace(s.Codigo)))
             {
-                s.Url = agencia.UrlSeguimiento(s.Codigo);
+                // NestoAPI#857g: un código del mensajero real (intermediario) lo compone SU agencia
+                IAgenciaEntrada suya = string.IsNullOrWhiteSpace(s.Agencia) ? agencia : Agencia(s.Agencia, agencias);
+                s.Url = suya?.UrlSeguimiento(s.Codigo);
             }
         }
 

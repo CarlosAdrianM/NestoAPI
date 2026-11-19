@@ -411,7 +411,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                     correosPorPedido.TryGetValue(AsignadorPedidosCompra.Clave(linea.Empresa, linea.Pedido), out List<CorreoSeguimientoFila> suyos);
                     resultado.Recalculo = ReglaFechaVencida.Calcular(hoy, linea.FechaPrevista, linea.FechaPedido,
                         linea.Proveedor != null && plazosPorProveedor.TryGetValue(linea.Proveedor.Trim(), out List<int> dias) ? dias : null,
-                        p80Generico, ReglaFechaRecepcionPorCorreo.DiaDeLlegada(suyos), CorreosDelPedidoCompra.Agencia(suyos), esFestivo);
+                        p80Generico, ReglaFechaRecepcionPorCorreo.DiaDeLlegada(suyos, esFestivo), CorreosDelPedidoCompra.Agencia(suyos), esFestivo);
                     if (resultado.Recalculo == null)
                     {
                         resultado.Problema = TextosFechaVencida.SIN_RECALCULAR;

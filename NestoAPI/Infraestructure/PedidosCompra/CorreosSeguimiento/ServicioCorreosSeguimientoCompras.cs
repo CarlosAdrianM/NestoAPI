@@ -174,6 +174,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
 
             List<RemitentePaqueteRecordado> recordados = await LeerRecordados().ConfigureAwait(false);
+            List<ConfirmacionPedidoProveedorFila> confirmaciones = await LeerConfirmaciones(
+                (correos.Any() ? correos.Where(c => c != null).Select(c => c.Recibido).DefaultIfEmpty(DateTime.Now).Min() : DateTime.Now)
+                .AddDays(-ReglaPedidoProveedor.DIAS_CONFIRMACIONES)).ConfigureAwait(false);
             var nuevas = new List<CorreoSeguimientoFila>();
             var originales = new List<(CorreoCompras Correo, CorreoSeguimientoFila Fila)>();
             bool? conAdjuntos = null;
@@ -183,7 +186,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 try
                 {
-                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf).ConfigureAwait(false);
+                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf, confirmaciones).ConfigureAwait(false);
                     if (fila == null)
                     {
                         continue;
@@ -271,10 +274,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// El análisis de un correo hasta la fila que se guarda (o se reanaliza): agencia, seguimientos, entrega, remitente del paquete y la
         /// asignación en sombra. Null si no es de los que se guardan. Un envío nuestro de salida en copia va sin asignación ni disponible.
         /// </summary>
+        /// <param name="confirmaciones">NestoAPI#857g: las confirmaciones de pedido del proveedor (las nuevas de la tanda se añaden).</param>
         private async Task<CorreoSeguimientoFila> FilaAnalizada(CorreoCompras correo, List<RemitenteMarcado> marcados,
-            List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool leerPdf)
+            List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool leerPdf,
+            List<ConfirmacionPedidoProveedorFila> confirmaciones = null)
         {
             AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(correo, agencias, marcados);
+            if (analisis.Confirmacion != null)
+            {
+                await GuardarConfirmacion(correo, analisis, pedidosDe, confirmaciones).ConfigureAwait(false);
+                return null; // no es un envío: ni se guarda como correo de seguimiento, ni pone fecha, ni se reenvía
+            }
             if (!analisis.Guardar || correo.Clave() == null)
             {
                 return null;
@@ -295,6 +305,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 aviso = ExtractorAvisoSalida.Extraer(pdfs.Texto, correo.Recibido, AvisoSalidaProveedor.DelProveedor(pedidos, asignacion), pedidos, agencias);
                 asignacion = AvisoSalidaProveedor.Completar(analisis, asignacion, aviso);
+            }
+            // NestoAPI#857g: la referencia del remitente («Ref.: SO252231…», MBE) es el pedido de una confirmación del proveedor: su pedido nuestro
+            if (!analisis.EsSalidaNuestra && analisis.ReferenciasRemitente.Any())
+            {
+                asignacion = ReglaPedidoProveedor.Completar(asignacion, analisis.ReferenciasRemitente, confirmaciones, pedidos);
             }
             CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
             fila.DisponibleEstimado = DisponibleEstimado(analisis);
@@ -350,6 +365,65 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 registrar(new Exception($"[Correos de seguimiento de compras #857e] No se ha podido leer el PDF del correo del {correo.Recibido:dd/MM/yyyy HH:mm} " +
                     $"de {correo.RemitenteDominio}: {ex.Message} (se trata como si no lo tuviera)", ex));
                 return new LecturaPdfsCorreo { Estado = EstadoPdfAdjunto.Ilegible };
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#857g: guarda la confirmación de un pedido del proveedor con nuestros pedidos candidatos (<see cref="ReglaPedidoConfirmado"/>).
+        /// Sin Scripts/Issue857g, nada. Nunca lanza: si falla, se apunta y la tanda sigue.
+        /// </summary>
+        private async Task GuardarConfirmacion(CorreoCompras correo, AnalisisCorreoSeguimiento analisis,
+            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, List<ConfirmacionPedidoProveedorFila> confirmaciones)
+        {
+            try
+            {
+                if (correo.Clave() == null || !repositorio.ConfirmacionesDisponibles())
+                {
+                    return;
+                }
+                List<PedidoCompraEnAire> pedidos = await pedidosDe(correo).ConfigureAwait(false) ?? new List<PedidoCompraEnAire>();
+                AsignacionPedidoCompra asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos);
+                List<CandidatoPedidoCompra> candidatos = ReglaPedidoConfirmado.Elegir(asignacion.Candidatos, pedidos,
+                    analisis.Confirmacion.ReferenciaCliente, correo.Recibido);
+                List<string> proveedores = candidatos.Select(c => c.Proveedor?.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var fila = new ConfirmacionPedidoProveedorFila
+                {
+                    MensajeId = correo.Clave(),
+                    Recibido = correo.Recibido,
+                    RemitenteDireccion = TextoCorreo.Recortar(correo.RemitenteDireccion?.ToLowerInvariant(), 255),
+                    Formato = TextoCorreo.Recortar(analisis.Confirmacion.Formato, 50),
+                    PedidoProveedor = TextoCorreo.Recortar(analisis.Confirmacion.PedidoProveedor, 40),
+                    ReferenciaCliente = TextoCorreo.Recortar(analisis.Confirmacion.ReferenciaCliente, 40),
+                    Agencia = TextoCorreo.Recortar(analisis.Confirmacion.Agencia?.Nombre, 50),
+                    ProveedorPropuesto = proveedores.Count == 1 ? proveedores[0] : asignacion.ProveedorPropuesto,
+                    PedidosCandidatos = AsignadorPedidosCompra.Serializar(candidatos)
+                };
+                if (await repositorio.GuardarConfirmacion(fila).ConfigureAwait(false) && confirmaciones != null)
+                {
+                    _ = confirmaciones.RemoveAll(c => c.MensajeId == fila.MensajeId);
+                    confirmaciones.Add(fila);
+                }
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857g] No se ha podido guardar la confirmación del pedido {analisis?.Confirmacion?.PedidoProveedor} " +
+                    $"del {correo?.Recibido:dd/MM/yyyy HH:mm}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>NestoAPI#857g: las confirmaciones desde ese día. Sin Scripts/Issue857g o si falla, ninguna (se guarda igual, sin enlazar).</summary>
+        private async Task<List<ConfirmacionPedidoProveedorFila>> LeerConfirmaciones(DateTime desde)
+        {
+            try
+            {
+                return repositorio.ConfirmacionesDisponibles()
+                    ? await repositorio.LeerConfirmaciones(desde).ConfigureAwait(false) ?? new List<ConfirmacionPedidoProveedorFila>()
+                    : new List<ConfirmacionPedidoProveedorFila>();
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #857g] No se han podido leer las confirmaciones de pedido de los proveedores: " + ex.Message, ex));
+                return new List<ConfirmacionPedidoProveedorFila>();
             }
         }
 
@@ -458,6 +532,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             List<RemitenteMarcado> marcados = await repositorio.LeerRemitentes().ConfigureAwait(false) ?? new List<RemitenteMarcado>();
             List<RemitentePaqueteRecordado> recordados = await LeerRecordados().ConfigureAwait(false);
+            List<ConfirmacionPedidoProveedorFila> confirmaciones = await LeerConfirmaciones(ahora.AddDays(-dias - ReglaPedidoProveedor.DIAS_CONFIRMACIONES)).ConfigureAwait(false);
             List<PedidoCompraEnAire> pedidos = null;
             string enlace = null;
             for (int pagina = 0; pagina < MAXIMO_PAGINAS_REANALISIS; pagina++)
@@ -477,7 +552,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     try
                     {
                         CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados,
-                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true).ConfigureAwait(false);
+                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true, confirmaciones).ConfigureAwait(false);
                         if (fila != null && await repositorio.ActualizarAnalisis(fila).ConfigureAwait(false))
                         {
                             resultado.Actualizados++;

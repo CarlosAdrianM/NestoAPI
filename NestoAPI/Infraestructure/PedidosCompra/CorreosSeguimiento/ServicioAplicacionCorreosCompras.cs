@@ -122,14 +122,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private readonly Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPromesaRiesgo;
         private readonly Func<DateTime> ahora;
         private readonly Action<Exception> registrar;
+        private readonly Func<DateTime, bool> esFestivo;
 
+        /// <param name="esFestivo">NestoAPI#857g: festivo de Algete (plazos en laborables); por defecto, <see cref="GestorFestivos.EsFestivo"/> con ALG.</param>
         /// <param name="interruptor">Por defecto, ParametrosUsuario «(defecto)» <see cref="CLAVE_INTERRUPTOR"/> = «1».</param>
         /// <param name="anotarPromesaRiesgo">Por defecto, <see cref="EventosPromesaRiesgo.Anotar"/> (como el PUT de PedidosCompra).</param>
         public ServicioAplicacionCorreosCompras(IRepositorioCorreosSeguimiento repositorio, Func<bool> interruptor = null,
             IAvisadorCorreosPorAsignar avisador = null,
             Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPromesaRiesgo = null,
-            Func<DateTime> ahora = null, Action<Exception> registrar = null)
+            Func<DateTime> ahora = null, Action<Exception> registrar = null, Func<DateTime, bool> esFestivo = null)
         {
+            this.esFestivo = esFestivo ?? (d => NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivo(d, Constantes.Almacenes.ALGETE));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.registrar = registrar ?? (_ => { });
             this.interruptor = interruptor ?? (() => InterruptorEncendido(this.registrar));
@@ -311,7 +314,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.AplicarApagado, Empresa = unico.Empresa, Pedido = unico.Pedido });
                     return heredados; // inequívoco con el interruptor apagado: ni se escribe ni se avisa (queda en la lista por asignar)
                 }
-                DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(decision.Correos, momento.Date);
+                DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(decision.Correos, momento.Date, esFestivo);
                 string origen = ReglaFechaRecepcionPorCorreo.Origen(decision.Correos);
                 foreach (CorreoSeguimientoFila fila in pendientes)
                 {
@@ -514,7 +517,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     return new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.AplicarApagado, Empresa = fila.EmpresaAplicada, Pedido = fila.PedidoAplicado };
                 }
                 List<CorreoSeguimientoFila> envio = await EnvioDe(fila).ConfigureAwait(false);
-                DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date);
+                DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date, esFestivo);
                 ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, fila.EmpresaAplicada, fila.PedidoAplicado.Value, false, APLICADO_POR_AUTOMATICO,
                     USUARIO_LINEAS_AUTOMATICO, true, fecha, corregir: true, origenFecha: ReglaFechaRecepcionPorCorreo.Origen(envio)).ConfigureAwait(false);
                 return DesenlaceAplicacion(resultado, new CandidatoPedidoCompra { Empresa = fila.EmpresaAplicada, Pedido = fila.PedidoAplicado.Value }, fecha);
@@ -571,7 +574,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             // El envío entero: su fecha (la entrega más tardía de sus correos) y los demás correos, que van al mismo pedido
             List<CorreoSeguimientoFila> envio = await EnvioDe(fila).ConfigureAwait(false);
             DecisionEnvio decision = MismoEnvio.Decidir(envio);
-            DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date);
+            DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date, esFestivo);
             bool? eligioSugerido = await EligioSugerido(envio, decision, empresa, peticion.Pedido).ConfigureAwait(false);
             string auditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
 

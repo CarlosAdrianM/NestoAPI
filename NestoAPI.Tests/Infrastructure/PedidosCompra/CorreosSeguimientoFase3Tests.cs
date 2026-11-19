@@ -330,12 +330,14 @@ Siga su envío<https://www.mbe.es/es/tracking?c=1Z21E7X76890915153>";
         }
 
         [TestMethod]
-        public void CorreoMbe_AgenciaUps_LosTresCodigosYElDeMbe()
+        public void CorreoMbe_AgenciaMbe_LosTresCodigosDeUpsYElDeMbe()
         {
             AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(
                 Correo(MBE_TEXTO, "recogidas061@mbe.es", HOY.AddHours(20.25), "Sus envíos con MBE 12/11/2026"), AgenciasEntradaRegistradas.Todas, null);
 
-            Assert.AreEqual("UPS", analisis.Agencia);
+            // NestoAPI#857g: el correo es de MBE (intermediario); los códigos 1Z van marcados con su mensajero real
+            Assert.AreEqual("MBE", analisis.Agencia);
+            Assert.AreEqual("UPS", analisis.Seguimientos.First().Agencia);
             List<string> codigos = analisis.Seguimientos.Select(s => s.Codigo).ToList();
             CollectionAssert.IsSubsetOf(new[] { "1Z21E7X76890915153", "1Z21E7X76890089163", "1Z21E7X76893119777", "ES0061-0L-000000VTHP" }, codigos);
             Assert.AreEqual("1Z21E7X76890915153", codigos.First());

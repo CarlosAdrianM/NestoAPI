@@ -268,5 +268,29 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             }
             return Task.CompletedTask;
         }
+
+        /// <summary>NestoAPI#857g: con la tabla de Issue857g (por defecto, sí).</summary>
+        public bool ConConfirmaciones { get; set; } = true;
+        public List<ConfirmacionPedidoProveedorFila> Confirmaciones { get; } = new List<ConfirmacionPedidoProveedorFila>();
+        public bool ConfirmacionesDisponibles() => ConConfirmaciones;
+
+        public Task<bool> GuardarConfirmacion(ConfirmacionPedidoProveedorFila fila)
+        {
+            ConfirmacionPedidoProveedorFila ya = Confirmaciones.FirstOrDefault(c => c.MensajeId == fila.MensajeId);
+            if (ya != null)
+            {
+                Confirmaciones.Remove(ya);
+                fila.Id = ya.Id;
+            }
+            else
+            {
+                fila.Id = Confirmaciones.Count + 1;
+            }
+            Confirmaciones.Add(fila);
+            return Task.FromResult(true);
+        }
+
+        public Task<List<ConfirmacionPedidoProveedorFila>> LeerConfirmaciones(DateTime desde) =>
+            Task.FromResult(Confirmaciones.Where(c => c.Recibido >= desde).ToList());
     }
 }

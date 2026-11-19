@@ -521,7 +521,7 @@ namespace NestoAPI.Controllers
                     Agencia = grupo.Select(f => f.Agencia).Where(a => !string.IsNullOrWhiteSpace(a)).GroupBy(a => a)
                         .OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault(),
                     EntregaEstimadaDia = decision.EntregaEstimadaDia,
-                    FechaRecepcionPropuesta = ReglaFechaRecepcionPorCorreo.Calcular(grupo, hoy),
+                    FechaRecepcionPropuesta = ReglaFechaRecepcionPorCorreo.Calcular(grupo, hoy, NestoAPI.Infraestructure.JobsFestivos.EsFestivoAlgete),
                     RemitentePaquete = conPropios?.RemitentePaquete ?? grupo.Select(f => f.RemitentePaquete).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)),
                     ProveedorPropuesto = decision.ProveedorPropuesto
                 };

@@ -89,7 +89,7 @@ Navàs (Barcelona)";
 
             Assert.AreEqual(220923, aviso.Pedido?.Pedido);
             Assert.AreEqual("DB Schenker", aviso.Agencia?.Nombre);
-            Assert.AreEqual(48, aviso.Agencia.HorasHastaEntrega);
+            Assert.AreEqual(72, aviso.Agencia.HorasHastaEntrega, "#857g: 3 laborables");
             Assert.IsNull(aviso.Entrega, "«Fecha Entrega:» viene vacía: no hay fecha (la del documento no es de entrega)");
         }
 
@@ -158,7 +158,7 @@ Navàs (Barcelona)";
             Assert.AreEqual(220923, unico.Pedido);
             Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_PDF_ADJUNTO, unico.Motivo);
             Assert.AreEqual("DB Schenker", analisis.Agencia);
-            Assert.AreEqual(48, analisis.HorasHastaEntrega);
+            Assert.AreEqual(72, analisis.HorasHastaEntrega, "#857g: 3 laborables");
         }
 
         [TestMethod]
@@ -308,7 +308,7 @@ Navàs (Barcelona)";
         }
 
         [TestMethod]
-        public async Task Job_AvisoConPdf_SeGuardaYSeAplicaEl19AlPedido220923()
+        public async Task Job_AvisoConPdf_SeGuardaYSeAplicaEl20AlPedido220923()
         {
             await Pasada(Aviso());
 
@@ -320,8 +320,8 @@ Navàs (Barcelona)";
             Assert.IsNull(fila.Codigo);
             Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_PDF_ADJUNTO, AsignadorPedidosCompra.Deserializar(fila.PedidosCandidatos).Single().Motivo);
             Assert.AreEqual(220923, fila.PedidoAplicado);
-            DateTime dia19 = new DateTime(2026, 11, 19);
-            Assert.AreEqual(dia19, fila.FechaRecepcionAplicada, "Recibido el 17 + 48 h de Schenker");
+            DateTime dia19 = new DateTime(2026, 11, 20);
+            Assert.AreEqual(dia19, fila.FechaRecepcionAplicada, "Recibido el martes 17 + 3 laborables de Schenker (#857g)");
             Assert.IsTrue(repositorio.Lineas[220923].All(l => l.FechaRecepcion == dia19));
             Assert.IsTrue(repositorio.Lineas[220782].All(l => l.FechaRecepcion == new DateTime(2026, 11, 26)), "El otro pedido no se toca");
             Assert.AreEqual(0, errores.Count, string.Join(" | ", errores.Select(e => e.Message)));
@@ -330,7 +330,7 @@ Navàs (Barcelona)";
             var (_, filaReenviada, resultado) = reenviados.Single();
             string cabecera = WebUtility.HtmlDecode(TextosReenvioCorreoSeguimiento.Cabecera(filaReenviada, resultado, "sales@dduueett.com", RECIBIDO));
             StringAssert.Contains(cabecera, "Aviso de salida del proveedor: pedido 220923 leído del PDF adjunto.");
-            StringAssert.Contains(cabecera, "10/12/2026 → 19/11/2026");
+            StringAssert.Contains(cabecera, "10/12/2026 → 20/11/2026");
         }
 
         [TestMethod]

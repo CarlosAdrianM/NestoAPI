@@ -19,6 +19,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     }
 
     /// <summary>
+    /// NestoAPI#857g: la CONFIRMACIÓN de un pedido que manda el proveedor al recibirlo (antes de que salga). No es un envío: no pone fecha ni
+    /// se guarda como correo de seguimiento; enlaza su número de pedido con el nuestro (dbo.ComprasConfirmacionesProveedor).
+    /// </summary>
+    public class ConfirmacionPedidoProveedor
+    {
+        /// <summary>El formato que la ha leído.</summary>
+        public string Formato { get; set; }
+        /// <summary>El número de pedido del proveedor («SO253360»).</summary>
+        public string PedidoProveedor { get; set; }
+        /// <summary>La referencia que le dimos (si la da): puede ser nuestro número de pedido.</summary>
+        public string ReferenciaCliente { get; set; }
+        /// <summary>La agencia que anuncia («El pedido será enviado por: MAILBOXES»), o null.</summary>
+        public IAgenciaEntrada Agencia { get; set; }
+    }
+
+    /// <summary>
     /// NestoAPI#857f (nivel 1, Carlos 19/11/26): un FORMATO de aviso de salida de un proveedor (en la práctica, el de su ERP: los proveedores
     /// que comparten ERP comparten formato). Sabe reconocer su aviso por el texto (cuerpo o PDF) y sacar, como mínimo, la agencia y el número
     /// de envío y, si puede, nuestro pedido y la entrega que anuncia. Nada propio de una agencia: la agencia la busca por los nombres que da
@@ -34,6 +50,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         List<string> Codigos(string texto);
         EntregaEstimada Entrega(string texto, DateTime recibido);
         PedidoCompraEnAire Pedido(string texto, IEnumerable<PedidoCompraEnAire> delProveedor, IEnumerable<PedidoCompraEnAire> enAire);
+        /// <summary>NestoAPI#857g: ¿es la CONFIRMACIÓN de un pedido (no una salida) con este formato? Null si no.</summary>
+        ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias);
     }
 
     /// <summary>
@@ -63,6 +81,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         public virtual PedidoCompraEnAire Pedido(string texto, IEnumerable<PedidoCompraEnAire> delProveedor, IEnumerable<PedidoCompraEnAire> enAire) =>
             ExtractorAvisoSalida.Pedido(texto, delProveedor, enAire);
+
+        public virtual ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias) => null;
 
         protected static void Anadir(List<string> codigos, string codigo)
         {
@@ -130,13 +150,85 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private static string Limpio(string texto) => (texto ?? string.Empty).Replace("\r", string.Empty);
     }
 
+    /// <summary>
+    /// NestoAPI#857g: Weelko (noreply@weelko.com; su tienda parece Odoo, pero el texto es propio: no se ha visto en otro proveedor). Hoy solo su
+    /// CONFIRMACIÓN de pedido («Pedido SO253360»: «Hemos recibido su pedido correctamente y lo estamos tramitando… Número del pedidor / Referencia
+    /// del cliente … SO253360 21325 … El pedido será enviado por: MAILBOXES … Resumen del pedido»): el pedido del proveedor (SO…), nuestra
+    /// referencia (si la da) y la agencia que anuncia. Su aviso de «ha salido» aún no se ha visto: no lo reconoce (lo lee el genérico). Ni su
+    /// factura («Factura BCN/2026/27757 (con referencia SO252231)») ni su publicidad (info@weelko.com) son confirmaciones.
+    /// </summary>
+    public class FormatoAvisoSalidaWeelko : FormatoAvisoSalidaBase
+    {
+        public const string NOMBRE = "Weelko";
+        private static readonly Regex Recibido = new Regex(@"hemos\s+recibido\s+su\s+pedido", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex Resumen = new Regex(@"resumen\s+del\s+pedido", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex NumeroPedidor = new Regex(@"n[uú]mero\s+del\s+pedid", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex PedidoEnAsunto = new Regex(@"(?<![\p{L}\p{N}])pedido\s+(SO\d{4,10})(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex PedidoEnTexto = new Regex(@"(?<![\p{L}\p{N}])(SO\d{4,10})(?![\p{L}\p{N}])", RegexOptions.Compiled);
+        private static readonly Regex ReferenciaCliente = new Regex(@"referencia\s+del\s+cliente", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        public override string Nombre => NOMBRE;
+
+        /// <summary>Su aviso de salida aún no se conoce.</summary>
+        public override bool Reconoce(string texto) => false;
+
+        public override ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias)
+        {
+            string t = texto ?? string.Empty;
+            if (!Recibido.IsMatch(t) || !Resumen.IsMatch(t) || !NumeroPedidor.IsMatch(t))
+            {
+                return null;
+            }
+            Match enAsunto = PedidoEnAsunto.Match(asunto ?? string.Empty);
+            Match enTexto = PedidoEnTexto.Match(t);
+            string pedido = enAsunto.Success ? enAsunto.Groups[1].Value : enTexto.Success ? enTexto.Groups[1].Value : null;
+            if (pedido == null)
+            {
+                return null;
+            }
+            string referencia = null;
+            if (ReferenciaCliente.IsMatch(t))
+            {
+                // Tabla «Fecha de compra | Número del pedidor | Referencia del cliente»: la referencia va justo detrás del número del pedido
+                Match m = new Regex(@"(?<![\p{L}\p{N}])" + Regex.Escape(pedido) + @"\s+(\d[0-9A-Za-z\-/]{2,19})(?![\p{L}\p{N}])").Match(t);
+                referencia = m.Success ? m.Groups[1].Value : null;
+            }
+            return new ConfirmacionPedidoProveedor
+            {
+                Formato = NOMBRE,
+                PedidoProveedor = pedido.ToUpperInvariant(),
+                ReferenciaCliente = referencia,
+                Agencia = AgenciaPorNombreEnTexto.Buscar(t, agencias ?? AgenciasEntradaRegistradas.Todas)
+            };
+        }
+    }
+
     /// <summary>NestoAPI#857f (nivel 1): los formatos de aviso conocidos, en orden (el primero que reconoce el texto, gana); si ninguno, el genérico.</summary>
     public static class FormatosAvisoSalida
     {
         public static readonly IReadOnlyList<IFormatoAvisoSalida> Registrados = new List<IFormatoAvisoSalida>
         {
-            new FormatoAvisoSalidaDduueett()
+            new FormatoAvisoSalidaDduueett(), new FormatoAvisoSalidaWeelko()
         }.AsReadOnly();
+
+        /// <summary>NestoAPI#857g: la confirmación de pedido que reconozca algún formato, o null.</summary>
+        public static ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias = null,
+            IEnumerable<IFormatoAvisoSalida> formatos = null)
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                return null;
+            }
+            foreach (IFormatoAvisoSalida formato in formatos ?? Registrados)
+            {
+                ConfirmacionPedidoProveedor confirmacion = formato.Confirmacion(asunto, texto, agencias);
+                if (confirmacion != null && !string.IsNullOrWhiteSpace(confirmacion.PedidoProveedor))
+                {
+                    return confirmacion;
+                }
+            }
+            return null;
+        }
 
         public static readonly IFormatoAvisoSalida Generico = new FormatoAvisoSalidaGenerico();
 

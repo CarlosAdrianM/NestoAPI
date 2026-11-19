@@ -542,6 +542,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   8 s y nunca lanza, `Corregir` con `PeticionAplicacionFecha.Corregir`), interruptor `Compras.CorreosSeguimientoConsultarAgencia` (solo «1»; escribir exige
   además el de aplicar). `Scripts/Issue857f_ComprasCorreosEstadoEnvio.sql`: `EstadoEnvio`, `OrigenEntrega`, `EntregaConsultadaEl` (opcionales, mismo trato).
   Reanalizar ahora también INSERTA lo que antes no se guardaba (`Insertados`). La DSV pública da 429: PROHIBIDO intentar leerla.
+- **Nacex, MBE, Weelko y Schenker (#857g, Carlos 19/11/26)**: el analizador prueba PRIMERO las agencias que mandan el correo (`EsCorreoPropio`).
+  `IAgenciaEntrada` suma `PlazoEnLaborables` y `LeerDatosEnvio` (`DatosEnvioAgencia`: remitente del paquete, referencias del remitente, mensajero
+  real, salida nuestra); `SeguimientoCorreo.Agencia` = la agencia de ESE código si no es la del correo (su enlace lo compone ella). Nacex lee
+  «Tu entrega está programada para el dd/MM/yyyy antes de las HH:mm» (día + Hasta, EnCamino; los horarios NACEX.shop no cuentan); código = el
+  albarán; sin `UrlSeguimiento`. MBE = INTERMEDIARIO: por cada «Envío: N» del resumen, remitente (nombre hasta la forma societaria), «Ref.:»,
+  «Courier:» y sus «Tracking:» (marcados con su agencia) + «Tracking MBE:»; los envíos nuestros del resumen no cuentan (todos nuestros = salida).
+  Así queda en el mismo envío que los avisos de UPS, que dan la fecha. Weelko (`FormatoAvisoSalidaWeelko`, nivel 1): solo su CONFIRMACIÓN de pedido
+  (`IFormatoAvisoSalida.Confirmacion`): no se guarda como correo ni pone fecha; va a `dbo.ComprasConfirmacionesProveedor`
+  (`Scripts/Issue857g_ComprasConfirmacionesProveedor.sql`, opcional) con nuestros candidatos (`ReglaPedidoConfirmado`: la referencia, el único o el
+  único enviado 48 h antes). Un correo con «Ref.: SO253360…» se asigna a esos candidatos (`ReglaPedidoProveedor`, motivo `PedidoProveedor`; no
+  pisa número ni PDF). DB Schenker: 72 h LABORABLES (`PlazoAgenciaEntrada`, festivos de Algete); las demás, horas naturales como antes.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

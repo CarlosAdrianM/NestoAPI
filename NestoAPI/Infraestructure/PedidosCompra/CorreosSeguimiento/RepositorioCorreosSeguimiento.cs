@@ -154,6 +154,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// aplicado (es lo que se corrige). Solo con <see cref="EstadoEnvioDisponible"/>.
         /// </summary>
         Task GuardarConsulta(int id, EntregaAgencia respuesta, DateTime consultadaEl);
+
+        // NestoAPI#857g (Scripts/Issue857g_ComprasConfirmacionesProveedor.sql)
+        /// <summary>¿Existe dbo.ComprasConfirmacionesProveedor? Con caché. Sin ella, las confirmaciones ni se guardan ni enlazan (como antes).</summary>
+        bool ConfirmacionesDisponibles();
+        /// <summary>Guarda la confirmación (por MensajeId: si ya está, solo actualiza lo leído y los candidatos). True si ha escrito.</summary>
+        Task<bool> GuardarConfirmacion(ConfirmacionPedidoProveedorFila fila);
+        /// <summary>Las confirmaciones recibidas desde <paramref name="desde"/>.</summary>
+        Task<List<ConfirmacionPedidoProveedorFila>> LeerConfirmaciones(DateTime desde);
     }
 
     public class RepositorioCorreosSeguimiento : IRepositorioCorreosSeguimiento
@@ -321,6 +329,21 @@ WHERE MensajeId = @mensajeId AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0
         private static readonly ColumnasOpcionales columnasAplicacion = new ColumnasOpcionales(SQL_EXISTE_APLICACION);
         private static readonly ColumnasOpcionales columnasAvisos = new ColumnasOpcionales(SQL_EXISTEN_AVISOS);
         private static readonly ColumnasOpcionales columnasEstado = new ColumnasOpcionales(SQL_EXISTE_ESTADO);
+        private static readonly ColumnasOpcionales tablaConfirmaciones = new ColumnasOpcionales(SQL_EXISTEN_CONFIRMACIONES);
+
+        // NestoAPI#857g: Scripts/Issue857g_ComprasConfirmacionesProveedor.sql
+        internal const string SQL_EXISTEN_CONFIRMACIONES = "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ComprasConfirmacionesProveedor', 'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string SQL_GUARDAR_CONFIRMACION = @"
+UPDATE dbo.ComprasConfirmacionesProveedor WITH (UPDLOCK, HOLDLOCK)
+SET Formato = @formato, PedidoProveedor = @pedidoProveedor, ReferenciaCliente = @referencia, Agencia = @agencia, ProveedorPropuesto = @proveedor,
+    PedidosCandidatos = @candidatos, FechaModificacion = GETDATE()
+WHERE MensajeId = @mensajeId;
+IF @@ROWCOUNT = 0
+    INSERT INTO dbo.ComprasConfirmacionesProveedor (MensajeId, Recibido, RemitenteDireccion, Formato, PedidoProveedor, ReferenciaCliente, Agencia,
+        ProveedorPropuesto, PedidosCandidatos, FechaCaptura, FechaModificacion)
+    VALUES (@mensajeId, @recibido, @remitente, @formato, @pedidoProveedor, @referencia, @agencia, @proveedor, @candidatos, GETDATE(), GETDATE());";
+        internal const string SQL_LEER_CONFIRMACIONES = "SELECT Id, MensajeId, Recibido, RemitenteDireccion, Formato, PedidoProveedor, ReferenciaCliente, Agencia, " +
+            "RTRIM(ProveedorPropuesto) AS ProveedorPropuesto, PedidosCandidatos FROM dbo.ComprasConfirmacionesProveedor WITH (NOLOCK) WHERE Recibido >= @desde ORDER BY Recibido, Id";
 
         /// <summary>Si existen unas columnas opcionales, con caché de <see cref="CACHE_ADJUNTOS"/>. Ante cualquier fallo, que no.</summary>
         private sealed class ColumnasOpcionales
@@ -620,6 +643,39 @@ ORDER BY Recibido DESC";
         public bool AvisosProveedorDisponibles() => columnasAvisos.Existen(crearContexto);
 
         public bool EstadoEnvioDisponible() => columnasEstado.Existen(crearContexto);
+
+        public bool ConfirmacionesDisponibles() => tablaConfirmaciones.Existen(crearContexto);
+
+        public async Task<bool> GuardarConfirmacion(ConfirmacionPedidoProveedorFila fila)
+        {
+            if (fila == null || string.IsNullOrWhiteSpace(fila.MensajeId) || string.IsNullOrWhiteSpace(fila.PedidoProveedor))
+            {
+                return false;
+            }
+            using (NVEntities db = crearContexto())
+            {
+                int filas = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_CONFIRMACION,
+                    Texto("@mensajeId", fila.MensajeId, 450),
+                    new SqlParameter("@recibido", SqlDbType.DateTime) { Value = fila.Recibido },
+                    Texto("@remitente", fila.RemitenteDireccion, 255),
+                    Texto("@formato", fila.Formato, 50),
+                    Texto("@pedidoProveedor", fila.PedidoProveedor, 40),
+                    Texto("@referencia", fila.ReferenciaCliente, 40),
+                    Texto("@agencia", fila.Agencia, 50),
+                    Texto("@proveedor", fila.ProveedorPropuesto, 10),
+                    Texto("@candidatos", fila.PedidosCandidatos, 2000)).ConfigureAwait(false);
+                return filas > 0;
+            }
+        }
+
+        public async Task<List<ConfirmacionPedidoProveedorFila>> LeerConfirmaciones(DateTime desde)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return await db.Database.SqlQuery<ConfirmacionPedidoProveedorFila>(SQL_LEER_CONFIRMACIONES,
+                    new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
+            }
+        }
 
         private static IEnumerable<SqlParameter> ParametrosEstado(CorreoSeguimientoFila fila) => new[]
         {

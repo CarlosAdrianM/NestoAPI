@@ -129,7 +129,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(agencia, analisis.Agencia, url);
             Assert.AreEqual(codigo, analisis.Seguimientos.Single().Codigo, url);
             Assert.AreEqual(url, analisis.Seguimientos.Single().Url);
-            Assert.IsTrue(analisis.HorasHastaEntrega == 24 || analisis.HorasHastaEntrega == 48);
+            Assert.IsTrue(analisis.HorasHastaEntrega == 24 || analisis.HorasHastaEntrega == 48 || (agencia == "DB Schenker" && analisis.HorasHastaEntrega == 72));
         }
 
         [TestMethod]
@@ -140,10 +140,14 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
-        public void Agencias_TodasTienenNombreDistintoYHorasDe24O48()
+        public void Agencias_TodasTienenNombreDistintoYHorasDe24O48_O72Laborables()
         {
             Assert.AreEqual(AgenciasEntradaRegistradas.Todas.Count, AgenciasEntradaRegistradas.Todas.Select(a => a.Nombre).Distinct().Count());
-            Assert.IsTrue(AgenciasEntradaRegistradas.Todas.All(a => a.HorasHastaEntrega == 24 || a.HorasHastaEntrega == 48));
+            Assert.IsTrue(AgenciasEntradaRegistradas.Todas.All(a => a.PlazoEnLaborables
+                ? a.HorasHastaEntrega == 72
+                : a.HorasHastaEntrega == 24 || a.HorasHastaEntrega == 48));
+            CollectionAssert.AreEqual(new[] { "DB Schenker" }, AgenciasEntradaRegistradas.Todas.Where(a => a.PlazoEnLaborables).Select(a => a.Nombre).ToList(),
+                "#857g: solo Schenker cuenta en laborables");
         }
 
         [TestMethod]
@@ -319,7 +323,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
                 asunto: "Tu pedido ha sido enviado", remitente: "logistics@dduueett.com"));
 
             Assert.AreEqual("DB Schenker", analisis.Agencia);
-            Assert.AreEqual(48, analisis.HorasHastaEntrega);
+            Assert.AreEqual(72, analisis.HorasHastaEntrega);
             Assert.IsTrue(analisis.AgenciaPorNombreEnTexto);
             Assert.AreEqual("ESMNR264647742", analisis.Seguimientos.Single().Codigo);
             // NestoAPI#857f: el enlace público lo compone la clase de Schenker (DSV) a partir del código

@@ -12,6 +12,29 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     {
         public string Codigo { get; set; }
         public string Url { get; set; }
+        /// <summary>
+        /// NestoAPI#857g: la agencia que lleva ESTE código si no es la del correo (un intermediario como MBE manda el código del mensajero
+        /// real: «Courier: UPS»). Null = la del correo. Su enlace lo compone esa agencia.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Agencia { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#857g: lo que cuenta del ENVÍO el correo de una agencia más allá del código: quién lo expide, la referencia que le ha dado el
+    /// remitente (el pedido del proveedor: «Ref.: SO252231WKOUT77626») y, en un INTERMEDIARIO (MBE), el mensajero real que lo lleva. Lo
+    /// saca la clase de la agencia (<see cref="IAgenciaEntrada.LeerDatosEnvio"/>); fuera de ella no se sabe nada de su formato.
+    /// </summary>
+    public class DatosEnvioAgencia
+    {
+        /// <summary>Quién expide el paquete, normalizado (<see cref="ExtractorRemitentePaquete.Normalizar"/>); null = el extractor común.</summary>
+        public string RemitentePaquete { get; set; }
+        /// <summary>Las referencias del remitente (su pedido), tal cual.</summary>
+        public List<string> ReferenciasRemitente { get; set; } = new List<string>();
+        /// <summary>Intermediario: la agencia que lleva el paquete de verdad (sus correos son los que dicen la entrega); null si no lo es.</summary>
+        public IAgenciaEntrada Mensajero { get; set; }
+        /// <summary>True/false si la agencia sabe si es una salida NUESTRA (un resumen de MBE con nuestros envíos); null = la regla común.</summary>
+        public bool? EsSalidaNuestra { get; set; }
     }
 
     /// <summary>
@@ -28,6 +51,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     {
         string Nombre { get; }
         int HorasHastaEntrega { get; }
+        /// <summary>
+        /// NestoAPI#857g: <see cref="HorasHastaEntrega"/> se cuenta en días LABORABLES de Algete (sin fines de semana ni festivos: DB Schenker,
+        /// 72 h = 3 laborables) y no en horas naturales. El cálculo es el común (<see cref="PlazoAgenciaEntrada"/>).
+        /// </summary>
+        bool PlazoEnLaborables { get; }
+        /// <summary>NestoAPI#857g: quién expide, la referencia del remitente y, si es un intermediario, el mensajero real; null si no sabe nada.</summary>
+        DatosEnvioAgencia LeerDatosEnvio(CorreoCompras correo);
         bool Reconoce(CorreoCompras correo);
         List<SeguimientoCorreo> ExtraerSeguimientos(CorreoCompras correo);
         /// <summary>NestoAPI#857f: ¿lo manda la propia agencia (remitente, o remitente original de un reenvío, de sus dominios)?</summary>
@@ -50,6 +80,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     {
         public const int HORAS_PAQUETERIA = 24;
         public const int HORAS_GRUPAJE = 48;
+        /// <summary>NestoAPI#857g: 3 días laborables (DB Schenker, Carlos 19/11/26).</summary>
+        public const int HORAS_GRUPAJE_LABORABLES = 72;
 
         /// <summary>Parámetros que suelen llevar el código en cualquier agencia (después de los suyos).</summary>
         internal static readonly string[] ParametrosComunes =
@@ -86,6 +118,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         public abstract string Nombre { get; }
         public virtual int HorasHastaEntrega => HORAS_PAQUETERIA;
+        public virtual bool PlazoEnLaborables => false;
+        public virtual DatosEnvioAgencia LeerDatosEnvio(CorreoCompras correo) => null;
         /// <summary>Dominios de la agencia (también subdominios: «gls-spain.es» vale para «mygls.gls-spain.es»).</summary>
         protected abstract string[] Dominios { get; }
         /// <summary>Parámetros propios de la agencia donde va el código (se miran antes que los comunes).</summary>
@@ -631,11 +665,80 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override string[] NombresEnTexto => new[] { "CTT Express", "CTTExpress", "CTT" };
     }
 
+    /// <summary>
+    /// Nacex. NestoAPI#857g (correo real del 13/11/26, no-reply@nacex.com): «…tu envío de LASHES AND MORE SL y está en camino con el número de
+    /// seguimiento 3300/11571609 … Tu entrega está programada para el 16/11/2026 antes de las 20:00». El número es agencia de origen / albarán:
+    /// el código es el albarán (el mismo que su enlace seguimientoDetalle.do?…numero_albaran=…). Los horarios de los puntos NACEX.shop del pie
+    /// («Lun - Vie : 10:00-13:30») no son la entrega. Sin enlace público propio: el de sus correos lleva más parámetros que no se conocen.
+    /// </summary>
     public class AgenciaEntradaNacex : AgenciaEntradaPorPatrones
     {
         public override string Nombre => "Nacex";
         protected override string[] Dominios => new[] { "nacex.es", "nacex.com", "nacex.pt" };
         protected override string[] ParametrosCodigo => new[] { "numero_albaran", "albaran", "expe_codigo", "codigo_exp", "ref" };
+
+        // Sobre el texto normalizado (minúsculas y sin tildes)
+        private static readonly Regex Programada = new Regex(
+            @"entrega\s+esta\s+programada\s+para\s+(?:el\s+)?(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(?:antes\s+de\s+las|hasta\s+las)\s+(\d{1,2})[:.h](\d{2}))?",
+            RegexOptions.Compiled);
+        private static readonly Regex Entregado = new Regex(@"(?<![a-z])(?:ha\s+sido\s+entregad[oa]|se\s+ha\s+entregado|envio\s+entregado)(?![a-z])", RegexOptions.Compiled);
+        private static readonly Regex EnReparto = new Regex(@"(?<![a-z])(?:esta\s+en\s+reparto|en\s+reparto\s+hoy)(?![a-z])", RegexOptions.Compiled);
+        private static readonly Regex EnCamino = new Regex(@"(?<![a-z])esta\s+en\s+camino(?![a-z])", RegexOptions.Compiled);
+        /// <summary>«número de seguimiento 3300/11571609»: agencia de origen / albarán.</summary>
+        private static readonly Regex NumeroSeguimiento = new Regex(@"seguimiento\s*:?\s*(\d{3,5})\s*/\s*(\d{6,12})(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        public override List<SeguimientoCorreo> ExtraerSeguimientos(CorreoCompras correo)
+        {
+            List<SeguimientoCorreo> resultado = base.ExtraerSeguimientos(correo);
+            if (correo == null || resultado.Any(s => !string.IsNullOrEmpty(s.Codigo)) || !EsCorreoPropio(correo))
+            {
+                return resultado;
+            }
+            foreach (Match m in NumeroSeguimiento.Matches((correo.Asunto ?? string.Empty) + "\n" + correo.Texto))
+            {
+                Anadir(resultado, m.Groups[2].Value, null);
+            }
+            return resultado;
+        }
+
+        public override EntregaAgencia LeerEntrega(CorreoCompras correo)
+        {
+            if (!EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            string t = ExtractorEntregaEstimada.Normalizar((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+            if (Entregado.IsMatch(t))
+            {
+                return new EntregaAgencia { Estado = EstadoEnvioAgencia.Entregado };
+            }
+            EntregaEstimada entrega = EntregaProgramada(t, correo.Recibido) ?? ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+            EstadoEnvioAgencia? estado = EnReparto.IsMatch(t) ? EstadoEnvioAgencia.EnReparto
+                : entrega != null || EnCamino.IsMatch(t) ? EstadoEnvioAgencia.EnCamino
+                : (EstadoEnvioAgencia?)null;
+            return estado.HasValue || entrega != null ? new EntregaAgencia { Entrega = entrega, Estado = estado } : null;
+        }
+
+        /// <summary>«Tu entrega está programada para el 16/11/2026 antes de las 20:00»: ese día, hasta esa hora.</summary>
+        private static EntregaEstimada EntregaProgramada(string normalizado, DateTime recibido)
+        {
+            Match m = Programada.Match(normalizado);
+            if (!m.Success)
+            {
+                return null;
+            }
+            DateTime? dia = ReglaAnioEntregaAgencia.Resolver(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value), recibido);
+            if (!dia.HasValue || !ExtractorEntregaEstimada.EnRango(dia.Value, recibido))
+            {
+                return null;
+            }
+            var entrega = new EntregaEstimada { Dia = dia.Value };
+            if (m.Groups[4].Success && int.TryParse(m.Groups[4].Value, out int h) && int.TryParse(m.Groups[5].Value, out int mi) && h <= 23 && mi <= 59)
+            {
+                entrega.Hasta = new TimeSpan(h, mi, 0);
+            }
+            return entrega;
+        }
     }
 
     public class AgenciaEntradaTntFedex : AgenciaEntradaPorPatrones
@@ -703,7 +806,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     public class AgenciaEntradaSchenker : AgenciaEntradaPorPatrones
     {
         public override string Nombre => "DB Schenker";
-        public override int HorasHastaEntrega => HORAS_GRUPAJE;
+        /// <summary>NestoAPI#857g (Carlos 19/11/26): 3 días LABORABLES (el aviso del 18/11 llegó el 23/11), no 48 h naturales.</summary>
+        public override int HorasHastaEntrega => HORAS_GRUPAJE_LABORABLES;
+        public override bool PlazoEnLaborables => true;
         protected override string[] Dominios => new[] { "dbschenker.com", "schenker.es", "dbschenker.es" };
         protected override string[] ParametrosCodigo => new[] { "refnumber", "reference" };
         public override string[] NombresEnTexto => new[] { "DB Schenker", "DBSchenker", "Schenker" };
@@ -747,13 +852,189 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected override string[] Dominios => new[] { "palletways.com" };
     }
 
-    /// <summary>Mail Boxes Etc. (la usan proveedores pequeños: «El pedido será enviado por: MAILBOXES»).</summary>
+    /// <summary>
+    /// Mail Boxes Etc. (la usan proveedores pequeños: «El pedido será enviado por: MAILBOXES»). NestoAPI#857g: es un INTERMEDIARIO. Su resumen
+    /// («Sus envíos con MBE 12/11/2026», recogidas061@mbe.es, mbe225@mbe.es) trae por cada envío el remitente, la referencia del remitente
+    /// («Ref.: SO252231WKOUT77626»), su código («Tracking MBE: ES0061-0L-000000VTHP») y el MENSAJERO real («Courier: UPS») con TODOS sus
+    /// códigos («Tracking: 1Z…», uno por bulto). Los del mensajero van marcados con su agencia (<see cref="SeguimientoCorreo.Agencia"/>): así el
+    /// correo queda en el mismo envío (<see cref="MismoEnvio"/>) que los avisos del mensajero, que son los que dicen la fecha; MBE no pone fecha
+    /// propia (su plazo por defecto). El mismo resumen lleva también NUESTRAS salidas por MBE («Remitente: NUEVA VISION SA»): un envío nuestro
+    /// del resumen no cuenta; si todos lo son, es una salida nuestra.
+    /// </summary>
     public class AgenciaEntradaMbe : AgenciaEntradaPorPatrones
     {
         public override string Nombre => "MBE";
         protected override string[] Dominios => new[] { "mbe.es", "mbe.it", "mbeglobal.com", "mbe-hub.com" };
         protected override string[] ParametrosCodigo => new[] { "c", "tracking", "trackingnumber", "code" };
         public override string[] NombresEnTexto => new[] { "MBE", "Mail Boxes", "MailBoxes", "Mail Boxes Etc", "MailBoxes Etc" };
+
+        /// <summary>Cada envío del resumen empieza en «Envío: 1», «Envío: 2»… («Envío: Servicio…» es otra cosa).</summary>
+        private static readonly Regex InicioEnvio = new Regex(@"(?<![\p{L}])Env[ií]o\s*:\s*\d+(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex Remitente = new Regex(@"(?<![\p{L}])Remitente\s*:[ \t]*([^\n]*)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex HastaOtraEtiqueta = new Regex(@"\s*(?<![\p{L}])(?:Destinatario|Env[ií]o|Servicio|Peso|Ref\.?|Tracking|Courier|Detalles)\s*(?:MBE\s*)?:",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        /// <summary>El nombre acaba en la forma societaria («Weelko Barcelona S. L.»); si no la hay, en la primera coma o cifra (la dirección).</summary>
+        private static readonly Regex NombreConSociedad = new Regex(
+            @"^(.*?(?<![\p{L}])(?:S\.?\s?L\.?\s?U\.?|S\.?\s?L\.?\s?L\.?|S\.?\s?L\.?|S\.?\s?A\.?\s?U\.?|S\.?\s?A\.?|C\.?\s?B\.?|GmbH|Ltd\.?|S\.?r\.?l\.?)(?![\p{L}]))",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex Referencia = new Regex(@"(?<![\p{L}])Ref\.?\s*:\s*([A-Za-z0-9][A-Za-z0-9\-/_]{2,59})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex TrackingMbe = new Regex(@"(?<![\p{L}])Tracking\s+MBE\s*:\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex TrackingMensajero = new Regex(@"(?<![\p{L}])Tracking\s*:\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex Courier = new Regex(@"(?<![\p{L}])Courier\s*:([^\n]*)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private class EnvioDelResumen
+        {
+            public string Texto { get; set; }
+            public bool EsNuestro { get; set; }
+        }
+
+        public override List<SeguimientoCorreo> ExtraerSeguimientos(CorreoCompras correo)
+        {
+            List<SeguimientoCorreo> deEnlaces = base.ExtraerSeguimientos(correo);
+            if (correo == null || !EsCorreoPropio(correo))
+            {
+                return deEnlaces;
+            }
+            var resultado = new List<SeguimientoCorreo>();
+            foreach (EnvioDelResumen envio in EnviosQueCuentan(correo.Texto))
+            {
+                IAgenciaEntrada mensajero = MensajeroDe(envio.Texto);
+                // Primero los del mensajero (el seguimiento de verdad) y luego el de MBE
+                foreach (Match m in TrackingMensajero.Matches(envio.Texto))
+                {
+                    string codigo = m.Groups[1].Value;
+                    if (EsCodigo(codigo) && !resultado.Any(s => string.Equals(s.Codigo, codigo, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        resultado.Add(new SeguimientoCorreo { Codigo = codigo, Agencia = mensajero?.Nombre });
+                    }
+                }
+                foreach (Match m in TrackingMbe.Matches(envio.Texto))
+                {
+                    if (EsCodigo(m.Groups[1].Value))
+                    {
+                        Anadir(resultado, m.Groups[1].Value, null);
+                    }
+                }
+            }
+            // De lo común, solo los enlaces (los códigos del texto ya salen de cada envío, sin los de nuestras salidas)
+            foreach (SeguimientoCorreo s in deEnlaces.Where(e => !string.IsNullOrEmpty(e.Url)))
+            {
+                Anadir(resultado, s.Codigo, s.Url);
+            }
+            return resultado;
+        }
+
+        public override DatosEnvioAgencia LeerDatosEnvio(CorreoCompras correo)
+        {
+            if (correo == null || !EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            List<EnvioDelResumen> envios = Envios(correo.Texto);
+            if (!envios.Any(e => Remitente.IsMatch(e.Texto)))
+            {
+                return null; // no es un resumen de envíos
+            }
+            var datos = new DatosEnvioAgencia { EsSalidaNuestra = envios.All(e => e.EsNuestro) };
+            foreach (EnvioDelResumen envio in EnviosQueCuentan(correo.Texto))
+            {
+                datos.RemitentePaquete = datos.RemitentePaquete ?? NombreRemitente(envio.Texto);
+                datos.Mensajero = datos.Mensajero ?? MensajeroDe(envio.Texto);
+                foreach (Match m in Referencia.Matches(envio.Texto))
+                {
+                    string referencia = m.Groups[1].Value.TrimEnd('-', '/', '_');
+                    if (!datos.ReferenciasRemitente.Contains(referencia, StringComparer.OrdinalIgnoreCase))
+                    {
+                        datos.ReferenciasRemitente.Add(referencia);
+                    }
+                }
+            }
+            return datos;
+        }
+
+        /// <summary>Los envíos del resumen (uno solo si no los numera).</summary>
+        private static List<EnvioDelResumen> Envios(string texto)
+        {
+            string t = (texto ?? string.Empty).Replace("\r", string.Empty);
+            List<int> inicios = InicioEnvio.Matches(t).Cast<Match>().Select(m => m.Index).ToList();
+            var trozos = new List<string>();
+            if (inicios.Count == 0)
+            {
+                trozos.Add(t);
+            }
+            for (int i = 0; i < inicios.Count; i++)
+            {
+                int fin = i + 1 < inicios.Count ? inicios[i + 1] : t.Length;
+                trozos.Add(t.Substring(inicios[i], fin - inicios[i]));
+            }
+            return trozos.Select(x =>
+            {
+                string remitente = RemitenteEnBruto(x);
+                return new EnvioDelResumen { Texto = x, EsNuestro = remitente != null && EnvioNuestroDeSalida.Es("Remitente: " + remitente) };
+            }).ToList();
+        }
+
+        /// <summary>Los que cuentan: los que no son salidas nuestras; si todos lo son, todos (el correo se guarda como salida nuestra).</summary>
+        private static List<EnvioDelResumen> EnviosQueCuentan(string texto)
+        {
+            List<EnvioDelResumen> envios = Envios(texto);
+            List<EnvioDelResumen> entradas = envios.Where(e => !e.EsNuestro).ToList();
+            return entradas.Any() ? entradas : envios;
+        }
+
+        /// <summary>Lo que va tras «Remitente:» (en su línea o, si está vacía, en la siguiente), hasta la siguiente etiqueta.</summary>
+        private static string RemitenteEnBruto(string envio)
+        {
+            Match m = Remitente.Match(envio ?? string.Empty);
+            if (!m.Success)
+            {
+                return null;
+            }
+            string valor = m.Groups[1].Value;
+            if (string.IsNullOrWhiteSpace(valor))
+            {
+                string resto = envio.Substring(m.Index + m.Length);
+                valor = resto.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? string.Empty;
+            }
+            Match otra = HastaOtraEtiqueta.Match(valor);
+            return (otra.Success ? valor.Substring(0, otra.Index) : valor).Trim();
+        }
+
+        private static string NombreRemitente(string envio)
+        {
+            string bruto = RemitenteEnBruto(envio);
+            if (string.IsNullOrWhiteSpace(bruto))
+            {
+                return null;
+            }
+            Match conSociedad = NombreConSociedad.Match(bruto);
+            string nombre;
+            if (conSociedad.Success)
+            {
+                nombre = conSociedad.Groups[1].Value;
+            }
+            else
+            {
+                int corte = bruto.IndexOfAny(new[] { ',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' });
+                nombre = corte > 0 ? bruto.Substring(0, corte) : bruto;
+            }
+            return EnvioNuestroDeSalida.Es("Remitente: " + nombre) ? null : ExtractorRemitentePaquete.Normalizar(nombre);
+        }
+
+        /// <summary>La agencia de «Courier: UPS» (por los nombres de cada clase de agencia), o null.</summary>
+        private static IAgenciaEntrada MensajeroDe(string envio)
+        {
+            Match m = Courier.Match(envio ?? string.Empty);
+            if (!m.Success)
+            {
+                return null;
+            }
+            string valor = m.Groups[1].Value;
+            Match otra = HastaOtraEtiqueta.Match(valor);
+            string nombre = (otra.Success ? valor.Substring(0, otra.Index) : valor).Trim();
+            IAgenciaEntrada agencia = AgenciaPorNombreEnTexto.Buscar("Courier: " + nombre, AgenciasEntradaRegistradas.Todas);
+            return agencia is AgenciaEntradaMbe ? null : agencia;
+        }
     }
 
     #endregion
