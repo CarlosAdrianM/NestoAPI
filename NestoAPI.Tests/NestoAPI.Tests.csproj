@@ -523,6 +523,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaDescargaTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\SeguimientoReposicionesTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ParadasRepartoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\AvisoParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenSugeridoRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenConHorariosTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CierreCajaRepartoTests.cs" />

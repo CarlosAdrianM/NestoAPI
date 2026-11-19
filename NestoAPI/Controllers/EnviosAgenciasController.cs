@@ -1209,6 +1209,14 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // NestoAPI#881: el PUT adjunta la entidad entera (sin valores originales), así que el guardado no ve qué ha cambiado: se
+            // compara aquí con lo registrado. Si cambia una parada del reparto propio, las PDA lo releen (agrupado; nunca lanza).
+            if (registrado != null && Infraestructure.Agencias.RepartoPropio.CambiosParadasReparto.AfectaAlReparto(EntityState.Modified,
+                    Infraestructure.Agencias.RepartoPropio.FotoEnvioParada.De(registrado), Infraestructure.Agencias.RepartoPropio.FotoEnvioParada.De(enviosAgencia)))
+            {
+                AvisarRepartoCambiado?.Invoke(enviosAgencia.Usuario);
+            }
+
             // Novedad 1366: un PUT que lo deja entregado o cerrado a mano anula su reenvío sin tramitar (nunca hace fallar el PUT)
             if (registrado != null && ReenvioEntregadoPorLaAgencia.PasaATerminado(registrado.Estado, enviosAgencia.Estado))
             {
@@ -2324,9 +2332,11 @@ namespace NestoAPI.Controllers
             }
         }
 
-        /// <summary>Novedades 1162: «repartoCambiado» a las PDA del reparto (como NotasEntregaController). Sustituible en los tests. Nunca lanza.</summary>
-        internal Action<string> AvisarRepartoCambiado { get; set; } = usuario =>
-            new Infraestructure.Notificaciones.AvisosAlmacenSignalR().RepartoCambiado(usuario, Models.Agencias.RepartoCambiadoDTO.MOTIVO_PARADA, DateTime.Now, null);
+        /// <summary>
+        /// Novedades 1162: «repartoCambiado» (Motivo «Parada») a las PDA del reparto. NestoAPI#881: por el punto único agrupado, así que
+        /// no se repite con el del guardado. Sustituible en los tests. Nunca lanza.
+        /// </summary>
+        internal Action<string> AvisarRepartoCambiado { get; set; } = Infraestructure.Agencias.RepartoPropio.AvisoParadasReparto.Avisar;
 
         // POST: api/EnviosAgencias/5/Modificar
         // Modifica en la agencia un envío YA registrado (con albarán, Estado En curso) con la

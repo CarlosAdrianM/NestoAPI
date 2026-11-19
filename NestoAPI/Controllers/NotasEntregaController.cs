@@ -258,8 +258,8 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>NestoAPI#786: avisar a las PDA del reparto de que hay una parada nueva (sustituible en los tests). Nunca lanza.</summary>
-        internal Action<string> AvisarReparto { get; set; } = usuario =>
-            new Infraestructure.Notificaciones.AvisosAlmacenSignalR().RepartoCambiado(usuario, Models.Agencias.RepartoCambiadoDTO.MOTIVO_PARADA, DateTime.Now, null);
+        /// <remarks>NestoAPI#881: por el punto único agrupado (el guardado del envío también avisa: sale uno).</remarks>
+        internal Action<string> AvisarReparto { get; set; } = AvisoParadasReparto.Avisar;
 
         // POST api/NotasEntrega/Cobro { Empresa?, Cliente, Contacto?, Efectos?: [NºOrden…], Importe?, Fecha?, Comentario?, Repartidor }
         /// <summary>

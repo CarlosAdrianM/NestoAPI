@@ -82,8 +82,10 @@ namespace NestoAPI.Models
             AcotarHistoriaEnvios();
             ComprobarFechasEntregaLineasVenta();
             List<string> productosAEncolar = ProductosLineasVentaAEncolar();
+            CambioParadas cambioParadas = CambioParadasReparto();
             int resultado = base.SaveChanges();
             EncolarProductosLineasVentaSinRomper(productosAEncolar);
+            AvisarParadasReparto(cambioParadas);
             return resultado;
         }
 
@@ -92,9 +94,66 @@ namespace NestoAPI.Models
             AcotarHistoriaEnvios();
             ComprobarFechasEntregaLineasVenta();
             List<string> productosAEncolar = ProductosLineasVentaAEncolar();
+            CambioParadas cambioParadas = CambioParadasReparto();
             int resultado = await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await EncolarProductosLineasVentaSinRomperAsync(productosAEncolar).ConfigureAwait(false);
+            AvisarParadasReparto(cambioParadas);
             return resultado;
+        }
+
+        private sealed class CambioParadas
+        {
+            public string Usuario { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#881 (fleco): ¿cambia alguna parada del reparto propio por algo que no hace el repartidor? (la regla está en
+        /// <see cref="Infraestructure.Agencias.RepartoPropio.CambiosParadasReparto"/>). Mirado antes de grabar; null si no. Nunca rompe.
+        /// </summary>
+        private CambioParadas CambioParadasReparto()
+        {
+            try
+            {
+                foreach (DbEntityEntry<EnviosAgencia> entrada in ChangeTracker.Entries<EnviosAgencia>())
+                {
+                    if (entrada.State != EntityState.Added && entrada.State != EntityState.Deleted && entrada.State != EntityState.Modified)
+                    {
+                        continue;
+                    }
+                    var antes = entrada.State == EntityState.Added ? null : FotoParada(entrada.OriginalValues);
+                    var despues = entrada.State == EntityState.Deleted ? null : FotoParada(entrada.CurrentValues);
+                    if (Infraestructure.Agencias.RepartoPropio.CambiosParadasReparto.AfectaAlReparto(entrada.State, antes, despues))
+                    {
+                        string usuario = entrada.State == EntityState.Deleted
+                            ? entrada.OriginalValues.GetValue<string>(nameof(EnviosAgencia.Usuario))
+                            : entrada.Entity.Usuario;
+                        return new CambioParadas { Usuario = usuario };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto propio #881] No se han podido mirar los envíos para avisar a las PDA: {ex.Message}", ex));
+            }
+            return null;
+        }
+
+        private static Infraestructure.Agencias.RepartoPropio.FotoEnvioParada FotoParada(DbPropertyValues valores)
+            => new Infraestructure.Agencias.RepartoPropio.FotoEnvioParada
+            {
+                Agencia = valores.GetValue<int>(nameof(EnviosAgencia.Agencia)),
+                Estado = valores.GetValue<short>(nameof(EnviosAgencia.Estado)),
+                FechaEntrega = valores.GetValue<DateTime?>(nameof(EnviosAgencia.FechaEntrega)),
+                Reembolso = valores.GetValue<decimal>(nameof(EnviosAgencia.Reembolso)),
+                Bultos = valores.GetValue<short>(nameof(EnviosAgencia.Bultos))
+            };
+
+        private static void AvisarParadasReparto(CambioParadas cambio)
+        {
+            if (cambio != null)
+            {
+                Infraestructure.Agencias.RepartoPropio.AvisoParadasReparto.Avisar(cambio.Usuario);
+            }
         }
 
         /// <summary>Longitud de EnviosHistoria.Campo y EnviosHistoria.ValorAnterior en la BD (nvarchar(50)).</summary>

@@ -287,6 +287,34 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotInstanceOfType(resultado, typeof(NegotiatedContentResult<EnvioRepartoPropioRepetidoDTO>));
             Assert.AreEqual(250782, controller.Marcados.Single().Numero);
+            Assert.AreEqual(0, avisosReparto.Count, "En curso todavía no es parada");
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#881: el PUT de una parada avisa a las PDA
+
+        [TestMethod]
+        public async Task Put_TramitadoDelRepartoPropioQueCambiaDeDia_AvisaAlReparto()
+        {
+            Con(Envio(250772, Constantes.Agencias.ESTADO_TRAMITADO));
+            EnviosAgencia enviado = Envio(250772, Constantes.Agencias.ESTADO_TRAMITADO);
+            enviado.FechaEntrega = HOY.AddDays(3);
+
+            _ = await controller.PutEnviosAgencia(250772, enviado);
+
+            Assert.AreEqual(1, controller.Marcados.Count);
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Alfredo" }, avisosReparto);
+        }
+
+        [TestMethod]
+        public async Task Put_TramitadoDelRepartoPropioSinCambiarDiaReembolsoNiBultos_NoAvisa()
+        {
+            Con(Envio(250772, Constantes.Agencias.ESTADO_TRAMITADO));
+            EnviosAgencia enviado = Envio(250772, Constantes.Agencias.ESTADO_TRAMITADO);
+
+            _ = await controller.PutEnviosAgencia(250772, enviado);
+
+            Assert.AreEqual(1, controller.Marcados.Count);
+            Assert.AreEqual(0, avisosReparto.Count);
         }
 
         [TestMethod]

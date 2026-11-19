@@ -332,6 +332,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   «entrenamiento», nunca en horario): valida las últimas 4 semanas contra la REGLA y apunta SIEMPRE en `dbo.RepartoTiemposModeloEntrenamientos`;
   guarda `tiempos_parada.zip` en ModeloLlamadas:Carpeta si no empeora. Interruptor «(defecto)» `Reparto.TiempoParadaQuienManda` = «Regla» | «Modelo»
   (con «Modelo» el fin de ruta usa el modelo; `MinutosDe` en la respuesta). `GET api/RepartoPropio/TiemposParada/Comparacion` (Dirección/Informática).
+- **Aviso de paradas para recalcular el fin de ruta (19/11/26)**: `repartoCambiado` Motivo «Parada» (grupo «Reparto», Dispositivo «NestoAPI»: sin
+  excluir PDA) cuando las paradas cambian por algo que NO hace el repartidor. LA REGLA (pura) `CambiosParadasReparto.AfectaAlReparto` (parada = 14 en
+  Tramitado/Incidentado): nace (alta tramitada o paso a Tramitado), deja de serlo (borrado, pendiente/en curso, cerrado, otra agencia) o cambia
+  día (fecha), reembolso o bultos; NO entregar ni incidencia (el repartidor ya avisa). Se mira en `NVEntities.SaveChanges` (todo lo de EF: tramitar,
+  TramitarTodos, ConfirmarTramitacion, DesdePedido/packing, Facturar rutas, notas de cobro, aplazar, anular, reembolso desfasado…) y en el PUT de
+  EnviosAgencias (adjunta la entidad: compara con lo registrado); también el PUT del servicio técnico de una nota. Punto único
+  `AvisoParadasReparto.Avisar` → `AgrupadorAvisosParadas`: UN aviso tras 3 s sin más (máx. 20 s), en segundo plano, nunca lanza. Las paradas de
+  reposición solo las crea/cierra el repartidor (Carga/Entrega): sin aviso nuevo. Lo que Nesto escriba en EnviosAgencia por su cuenta no avisa.
 
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).

@@ -89,8 +89,25 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido();
             }
-            return Responder(await crearServicio().Poner(empresa, pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ResultadoServicioTecnico<ServicioTecnicoNotaDTO> resultado = await crearServicio().Poner(empresa, pedido, peticion, usuario);
+            if (resultado.Bien)
+            {
+                // NestoAPI#881: cambian los minutos de la parada: las PDA del reparto recalculan el fin de ruta. Nunca rompe la respuesta.
+                try
+                {
+                    AvisarReparto?.Invoke(usuario);
+                }
+                catch
+                {
+                    // el aviso es un extra
+                }
+            }
+            return Responder(resultado);
         }
+
+        /// <summary>NestoAPI#881: «repartoCambiado» (Motivo «Parada») por el punto único agrupado. Sustituible en los tests. Nunca lanza.</summary>
+        internal Action<string> AvisarReparto { get; set; } = AvisoParadasReparto.Avisar;
 
         private IHttpActionResult Responder<T>(ResultadoServicioTecnico<T> resultado)
             => resultado.Bien ? Ok(resultado.Contenido) : (IHttpActionResult)Content(resultado.Estado, new { Message = resultado.Mensaje });

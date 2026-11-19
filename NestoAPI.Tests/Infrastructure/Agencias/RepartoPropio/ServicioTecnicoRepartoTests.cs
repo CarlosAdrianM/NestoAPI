@@ -194,13 +194,15 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
-        public void Controlador_Almacen_CreaYLee()
+        public void Controlador_Almacen_CreaYLee_YAvisaAlRepartoSoloSiSeGuarda()
         {
+            var avisos = new List<string>();
             var controlador = new ServicioTecnicoRepartoController(null, () => servicio)
             {
                 Request = new HttpRequestMessage(),
                 Configuration = new HttpConfiguration(),
-                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "Alfredo"), new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN) }, "Prueba"))
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "Alfredo"), new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN) }, "Prueba")),
+                AvisarReparto = u => avisos.Add(u)
             };
 
             HttpResponseMessage creado = controlador.PostTipo(new CrearTipoServicioTecnicoDTO { Nombre = "Montaje" }).Result.ExecuteAsync(CancellationToken.None).Result;
@@ -212,6 +214,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(HttpStatusCode.OK, creado.StatusCode);
             Assert.AreEqual(HttpStatusCode.OK, puesto.StatusCode);
             Assert.AreEqual(HttpStatusCode.BadRequest, mal.StatusCode);
+            // NestoAPI#881: cambian los minutos de la parada → «repartoCambiado» (Motivo «Parada»); el 400 no avisa
+            CollectionAssert.AreEqual(new[] { "Alfredo" }, avisos);
         }
 
         // ================================================================ dobles
