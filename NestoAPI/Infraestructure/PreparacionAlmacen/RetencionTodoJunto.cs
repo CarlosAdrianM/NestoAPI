@@ -378,13 +378,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public static bool EsDeLosGrupos(IPrincipal usuario) => usuario != null && GRUPOS.Any(g => usuario.IsInRoleSinDominio(g));
 
         /// <summary>Quien hizo el pedido, uno de sus vendedores (claim «Vendedor» o usuario del vendedor) o los grupos.</summary>
-        public static bool PuedeDecidir(IPrincipal usuario, ComercialesPedido comerciales)
+        public static bool PuedeDecidir(IPrincipal usuario, ComercialesPedido comerciales) => PuedeDecidir(usuario, comerciales, GRUPOS);
+
+        /// <summary>El mismo núcleo con otros grupos (19/11/26: los Devueltos, sin Administración).</summary>
+        public static bool PuedeDecidir(IPrincipal usuario, ComercialesPedido comerciales, IEnumerable<string> grupos)
         {
             if (usuario?.Identity?.IsAuthenticated != true)
             {
                 return false;
             }
-            if (EsDeLosGrupos(usuario))
+            if ((grupos ?? Enumerable.Empty<string>()).Any(g => usuario.IsInRoleSinDominio(g)))
             {
                 return true;
             }

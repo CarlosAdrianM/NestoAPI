@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.Agencias
@@ -24,6 +25,33 @@ namespace NestoAPI.Infraestructure.Agencias
         /// ha borrado (su número queda en EnvioAnulado). Lo pone el seguimiento, no una persona.
         /// </summary>
         public const string ENTREGADO_POR_LA_AGENCIA = "EntregadoPorLaAgencia";
+    }
+
+    /// <summary>
+    /// Carlos 19/11/26: quién decide sobre un envío devuelto. Reenviar y Abonar: quien hizo el pedido, su vendedor (NestoApp o Nesto) y
+    /// Almacén, Dirección e Informática (Administración NO). «Ya está aquí» (HaVuelto): Almacén, Dirección e Informática. Mismo núcleo
+    /// que «Retenido por falta» (<see cref="PreparacionAlmacen.ServicioRetencionesPorFalta.PuedeDecidir(System.Security.Principal.IPrincipal, ComercialesPedido, IEnumerable{string})"/>). PURA.
+    /// </summary>
+    public static class PermisosDevueltos
+    {
+        public static readonly IReadOnlyList<string> GRUPOS_DECIDEN = new[]
+        {
+            Constantes.GruposSeguridad.ALMACEN, Constantes.GruposSeguridad.DIRECCION, Constantes.GruposSeguridad.INFORMATICA
+        };
+        public static readonly IReadOnlyList<string> GRUPOS_HA_VUELTO = GRUPOS_DECIDEN;
+
+        public const string MENSAJE_DECIDIR = "Solo pueden decidir qué se hace con un envío devuelto quien hizo el pedido, su vendedor, " +
+            "Almacén o Dirección. Pídaselo a alguno de ellos.";
+        public const string MENSAJE_HA_VUELTO = "Solo Almacén (o Dirección) puede marcar que un paquete ha vuelto: es quien lo tiene en la mano.";
+
+        public static bool EsDeLosGruposQueDeciden(System.Security.Principal.IPrincipal usuario)
+            => usuario != null && GRUPOS_DECIDEN.Any(g => usuario.IsInRoleSinDominio(g));
+
+        public static bool PuedeDecidir(System.Security.Principal.IPrincipal usuario, ComercialesPedido comerciales)
+            => PreparacionAlmacen.ServicioRetencionesPorFalta.PuedeDecidir(usuario, comerciales, GRUPOS_DECIDEN);
+
+        public static bool PuedeMarcarHaVuelto(System.Security.Principal.IPrincipal usuario)
+            => usuario?.Identity?.IsAuthenticated == true && GRUPOS_HA_VUELTO.Any(g => usuario.IsInRoleSinDominio(g));
     }
 
     /// <summary>NestoAPI#699: una fila de EnviosAgenciaReenvios (fuera del EDMX).</summary>

@@ -447,6 +447,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosPendientes()
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Estado < Constantes.Agencias.ESTADO_EN_CURSO))
                 .ToListAsync();
@@ -471,6 +475,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnvioPendientePorPedido(string empresa, int pedido)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envio = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Estado < Constantes.Agencias.ESTADO_EN_CURSO &&
                             e.Empresa == empresa && e.Pedido == pedido)
@@ -491,6 +499,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosPorPedido(string empresa, int pedido)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Empresa == empresa && e.Pedido == pedido)
                 .OrderBy(e => e.Numero))
@@ -512,6 +524,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnvioEnCursoPorClienteYDireccion(string cliente, string contacto, string direccion)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envio = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Estado == Constantes.Agencias.ESTADO_EN_CURSO &&
                             e.Cliente == cliente && e.Contacto == contacto && e.Direccion == direccion)
@@ -528,6 +544,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosEnCurso(int agencia)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Agencia == agencia && e.Estado == Constantes.Agencias.ESTADO_EN_CURSO)
                 .OrderBy(e => e.Numero))
@@ -572,6 +592,10 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetEnviosRetrasados(int diasUmbral = 3, int diasMaximo = 60,
             int? agencia = null, string vendedor = null)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             if (diasUmbral < 0)
             {
                 return BadRequest("El umbral de días no puede ser negativo.");
@@ -664,6 +688,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(Infraestructure.Agencias.Gls.ResultadoSombraGls))]
         public async Task<IHttpActionResult> GetSombraGls(DateTime desde, DateTime? hasta = null)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             var resultado = await new Infraestructure.Agencias.Gls.SombraPeticionesGls(db)
                 .Ejecutar(desde, hasta ?? DateTime.Now).ConfigureAwait(false);
             return Ok(resultado);
@@ -681,6 +709,10 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetEnviosTramitados(string empresa, int? agencia = null,
             DateTime? fecha = null, string cliente = null, string texto = null)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             if (fecha == null && string.IsNullOrWhiteSpace(cliente) && string.IsNullOrWhiteSpace(texto))
             {
                 return BadRequest("Indique al menos una fecha, un cliente o un texto de búsqueda.");
@@ -723,6 +755,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosIncidentados(string empresa)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Empresa == empresa && e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO)
                 .OrderByDescending(e => e.Fecha))
@@ -741,6 +777,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosReembolsos(string empresa, int agencia)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             // NestoAPI#778: el reembolso del reparto propio lo cobra el repartidor; ninguna agencia nos lo debe ni lo liquida.
             if (NestoAPI.Infraestructure.Agencias.RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(agencia))
             {
@@ -774,6 +814,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioHistoriaDTO>))]
         public async Task<IHttpActionResult> GetHistoriaEnvio(int id)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioHistoriaDTO> historia = await db.EnviosHistorias
                 .Where(h => h.NumeroEnvio == id)
                 // El orden lo fija el servidor: la consulta de Nesto no lo hacía y dependía del
@@ -824,6 +868,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
         public async Task<IHttpActionResult> GetEnviosRetornos(string empresa, int agencia, int tipoRetornoExcluido)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
                 .Where(e => e.Empresa == empresa && e.Agencia == agencia
                     && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
@@ -859,6 +907,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EnviosAgencia))]
         public async Task<IHttpActionResult> GetEnviosAgencia(int id)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             EnviosAgencia enviosAgencia = await db.EnviosAgencias.FindAsync(id);
             if (enviosAgencia == null)
             {
@@ -872,6 +924,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioAgenciaDTO>))]
         public async Task<IHttpActionResult> GetEnviosAgencia(string empresa, int pedido)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             List<EnvioAgenciaDTO> enviosAgencia = await db.EnviosAgencias.Where(e => e.Empresa == empresa && e.Pedido == pedido).Include("AgenciasTransportes").Select(e => new EnvioAgenciaDTO {
                 Numero = e.Numero,
                 AgenciaId = e.Agencia,
@@ -2696,6 +2752,10 @@ namespace NestoAPI.Controllers
             {
                 return SoloInterno();
             }
+            if (await SinPermisoParaDecidirDevuelto(id) is IHttpActionResult prohibido)
+            {
+                return prohibido;
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaReenvio(await ServicioReenvios.ReenviarAsync(id, datos, usuario));
         }
@@ -2714,8 +2774,49 @@ namespace NestoAPI.Controllers
             {
                 return SoloInterno();
             }
+            if (await SinPermisoParaDecidirDevuelto(id) is IHttpActionResult prohibido)
+            {
+                return prohibido;
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaReenvio(await ServicioReenvios.AbonarAsync(id, usuario));
+        }
+
+        /// <summary>Quién hizo el pedido del envío y sus comerciales (inyectable en los tests). Null si el envío no existe.</summary>
+        internal Func<int, Task<ComercialesPedido>> ComercialesDelEnvio { get; set; }
+
+        private async Task<ComercialesPedido> LeerComercialesDelEnvio(int id)
+        {
+            var envio = await db.EnviosAgencias.Where(e => e.Numero == id)
+                .Select(e => new { e.Empresa, e.Pedido, e.Vendedor, e.Usuario }).FirstOrDefaultAsync();
+            if (envio == null)
+            {
+                return null;
+            }
+            var lector = new LectorComercialesPedido(db);
+            return (envio.Pedido.HasValue ? lector.Leer(envio.Empresa, envio.Pedido.Value) : null)
+                ?? lector.LeerDeVendedor(envio.Empresa, envio.Vendedor, envio.Usuario)
+                ?? new ComercialesPedido();
+        }
+
+        /// <summary>
+        /// Carlos 19/11/26: Reenviar y Abonar los deciden quien hizo el pedido, su vendedor, Almacén, Dirección e Informática (no
+        /// Administración). Null si puede; 403 de usted si no. Envío que no existe: null (el servicio dará su 404).
+        /// </summary>
+        private async Task<IHttpActionResult> SinPermisoParaDecidirDevuelto(int id)
+        {
+            if (PermisosDevueltos.EsDeLosGruposQueDeciden(User))
+            {
+                return null;
+            }
+            ComercialesPedido comerciales = await (ComercialesDelEnvio ?? LeerComercialesDelEnvio)(id);
+            if (comerciales == null)
+            {
+                return null; // el envío no existe: el servicio dará su 404
+            }
+            return PermisosDevueltos.PuedeDecidir(User, comerciales)
+                ? null
+                : Content(HttpStatusCode.Forbidden, new { Message = PermisosDevueltos.MENSAJE_DECIDIR });
         }
 
         /// <summary>403 para un token de cliente de la tienda online en los endpoints de Devueltos (datos de otros clientes).</summary>
@@ -2762,6 +2863,10 @@ namespace NestoAPI.Controllers
             {
                 return SoloInterno();
             }
+            if (!PermisosDevueltos.PuedeMarcarHaVuelto(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = PermisosDevueltos.MENSAJE_HA_VUELTO });
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaHaVuelto(await ServicioHaVuelto.MarcarAsync(id, ComoHaVuelto.YA_ESTA_AQUI, null, usuario));
         }
@@ -2779,6 +2884,10 @@ namespace NestoAPI.Controllers
             if (ValidadorAccesoCliente.EsClienteTienda(User))
             {
                 return SoloInterno();
+            }
+            if (!PermisosDevueltos.PuedeMarcarHaVuelto(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = PermisosDevueltos.MENSAJE_HA_VUELTO });
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaHaVuelto(await ServicioHaVuelto.MarcarPorLecturaAsync(lectura?.Codigo, usuario));
@@ -3319,6 +3428,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(PropuestaEnvioDTO))]
         public async Task<IHttpActionResult> GetPropuestaEnvio(string empresa, int pedido, short? bultos = null, decimal? peso = null)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             if (string.IsNullOrWhiteSpace(empresa))
             {
                 return BadRequest("Hay que indicar la empresa.");
@@ -4121,6 +4234,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(UltimoEnvioClienteDTO))]
         public async Task<IHttpActionResult> GetUltimoEnvioCliente(string empresa, string cliente)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno(); // 19/11/26: datos personales de otros clientes
+            }
             if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(cliente))
             {
                 return BadRequest("Los parámetros empresa y cliente son obligatorios");

@@ -15,6 +15,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using System.Web.Http;
 using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Infrastructure.Agencias
@@ -434,8 +435,93 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private EnviosAgenciasController Controlador() => new EnviosAgenciasController(A.Fake<NVEntities>())
         {
             ServicioReenvios = servicio,
-            User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, USUARIO) }, "Bearer"))
+            // 19/11/26: deciden quien hizo el pedido, su vendedor, Almacén, Dirección e Informática
+            User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, USUARIO), new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN) }, "Bearer"))
         };
+
+        private static ClaimsPrincipal Usuario(string nombre, string grupo = null, string vendedor = null)
+        {
+            var claims = new List<Claim> { new Claim(ClaimTypes.Name, nombre) };
+            if (grupo != null)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, grupo));
+            }
+            if (vendedor != null)
+            {
+                claims.Add(new Claim("Vendedor", vendedor));
+            }
+            return new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
+        }
+
+        private EnviosAgenciasController ControladorDe(ClaimsPrincipal usuario) => new EnviosAgenciasController(A.Fake<NVEntities>())
+        {
+            ServicioReenvios = servicio,
+            ServicioHaVuelto = A.Fake<IServicioEnviosHaVuelto>(),
+            User = usuario,
+            ComercialesDelEnvio = id => Task.FromResult(new ComercialesPedido
+            {
+                UsuarioPedido = "Pilar",
+                Comerciales = new List<ComercialPedido> { new ComercialPedido { Vendedor = "JE", Usuarios = new List<string> { @"NUEVAVISION\Jesus" } } }
+            })
+        };
+
+        private static int Estado(IHttpActionResult r)
+            => r.GetType().GetProperty("StatusCode") is System.Reflection.PropertyInfo p ? (int)(HttpStatusCode)p.GetValue(r) : 200;
+
+        [DataTestMethod]
+        [DataRow(@"NUEVAVISION\Pilar", null, null, 200, DisplayName = "Quien hizo el pedido")]
+        [DataRow("jesus", null, "JE", 200, DisplayName = "Su vendedor de NestoApp (claim Vendedor)")]
+        [DataRow(@"NUEVAVISION\Jesus", null, null, 200, DisplayName = "Su vendedor de Nesto (usuario del vendedor)")]
+        [DataRow("Andre", Constantes.GruposSeguridad.ALMACEN, null, 200, DisplayName = "Almacén")]
+        [DataRow("Carlos", Constantes.GruposSeguridad.DIRECCION, null, 200, DisplayName = "Dirección")]
+        [DataRow("Ana", Constantes.GruposSeguridad.INFORMATICA, null, 200, DisplayName = "Informática")]
+        [DataRow("Laura", Constantes.GruposSeguridad.ADMINISTRACION, null, 403, DisplayName = "Administración NO")]
+        [DataRow("otro", null, "XX", 403, DisplayName = "Otro vendedor")]
+        public async Task Devueltos_QuienPuedeDecidir(string nombre, string grupo, string vendedor, int esperado)
+        {
+            datos.Envios[251300] = Devuelto();
+            EnviosAgenciasController c = ControladorDe(Usuario(nombre, grupo, vendedor));
+
+            IHttpActionResult r = await c.Reenviar(251300, new ReenviarEnvioDTO());
+
+            Assert.AreEqual(esperado, Estado(r));
+            if (esperado == 403)
+            {
+                StringAssert.Contains(r.GetType().GetProperty("Content").GetValue(r).ToString(), "Solo pueden decidir");
+                Assert.IsFalse(datos.Repo.Filas.ContainsKey(251300));
+            }
+        }
+
+        [TestMethod]
+        public async Task Seguridad_TokenDeClienteDeLaTienda_403EnLosListadosConDatosPersonales()
+        {
+            var c = new EnviosAgenciasController(A.Fake<NVEntities>())
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("cliente", "15191") }, "Bearer"))
+            };
+
+            var resultados = new IHttpActionResult[]
+            {
+                await c.GetEnviosPendientes(), await c.GetEnvioPendientePorPedido("1", 1), await c.GetEnviosPorPedido("1", 1),
+                await c.GetEnvioEnCursoPorClienteYDireccion("1", "0", "x"), await c.GetEnviosEnCurso(1), await c.GetEnviosRetrasados(),
+                await c.GetSombraGls(DateTime.Today), await c.GetEnviosTramitados("1"), await c.GetEnviosIncidentados("1"),
+                await c.GetEnviosReembolsos("1", 1), await c.GetHistoriaEnvio(1), await c.GetEnviosRetornos("1", 1, 0),
+                await c.GetEnviosAgencia(1), await c.GetEnviosAgencia("1", 1), await c.GetPropuestaEnvio("1", 1), await c.GetUltimoEnvioCliente("1", "1")
+            };
+
+            foreach (IHttpActionResult r in resultados)
+            {
+                Assert.AreEqual(403, Estado(r));
+            }
+        }
+
+        [TestMethod]
+        public async Task Devueltos_YaEstaAqui_SoloAlmacenDireccionEInformatica()
+        {
+            Assert.AreEqual(403, Estado(await ControladorDe(Usuario(@"NUEVAVISION\Pilar")).HaVuelto(251300)), "Ni quien hizo el pedido");
+            Assert.AreEqual(403, Estado(await ControladorDe(Usuario("Laura", Constantes.GruposSeguridad.ADMINISTRACION)).HaVueltoPorLectura(new LecturaHaVueltoDTO { Codigo = "251300" })));
+            Assert.AreNotEqual(403, Estado(await ControladorDe(Usuario("Andre", Constantes.GruposSeguridad.ALMACEN)).HaVuelto(251300)));
+        }
 
         [TestMethod]
         public async Task Controlador_Reenviar_DevuelveLaDecisionConElUsuarioDelToken()
@@ -509,7 +595,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             var vendedor = new EnviosAgenciasController(A.Fake<NVEntities>())
             {
                 ServicioReenvios = servicio,
-                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, USUARIO), new Claim("IsVendedor", "true") }, "Bearer"))
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, USUARIO), new Claim("IsVendedor", "true") }, "Bearer")),
+                // 19/11/26: es quien hizo el pedido
+                ComercialesDelEnvio = id => Task.FromResult(new ComercialesPedido { UsuarioPedido = USUARIO })
             };
 
             Assert.IsInstanceOfType(await vendedor.Reenviar(251300, new ReenviarEnvioDTO()), typeof(OkNegotiatedContentResult<DecisionReenvioDTO>));

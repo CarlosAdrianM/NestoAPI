@@ -1103,6 +1103,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `IPerfilConEstadosPropios` (el reparto propio 14: el repartidor cierra los envíos desde Ariadna). `GET api/EnviosAgencias/Retrasados`
   solo lista las de esa regla: Canteras (11), la GLS de la espejo (5), Glovo, Sending, CEX… no salen (se quedaban 60 días en Tramitado).
   Ninguna agencia escrita a mano: la que tenga perfil con seguimiento entra sola.
+- **Devueltos: quién decide (Carlos 19/11/26)**: `POST {id}/Reenviar` y `{id}/Abonar` solo quien hizo el pedido, su vendedor (claim «Vendedor» o
+  usuario del vendedor) y Almacén, Dirección e Informática (Administración NO): `PermisosDevueltos` (mismo núcleo que RetencionPorFalta/Decidir), 403
+  de usted. «Ya está aquí» (`HaVuelto`, las dos rutas): Almacén, Dirección e Informática. El GET de Devueltos sigue abierto a empleados y vendedores.
+  Los GET de EnviosAgencias con datos personales (Pendientes, PorPedido, Tramitados, Historia, Propuesta, UltimoEnvioCliente…) dan 403 a un token de
+  cliente de la tienda (`ValidadorAccesoCliente.EsClienteTienda`); la app del cliente usa PedidosClienteController.
 - **Devueltos: `Resuelto` (sugerencia 1329)**: `EnvioDevueltoDTO.Resuelto` (solo lectura, `ReglaDevueltoResuelto`) = la caja ha vuelto
   (#870) + decisión tomada + (si es Reenviar) el reenvío ya tramitado; y siempre los `EntregadoPorLaAgencia` (Carlos 18/11/26: si la agencia acabó entregando, ya no se espera caja). La API devuelve todos; Nesto oculta los resueltos por defecto
   (casilla «Ver también los resueltos») y tiene una caja de lectura que llama a `POST api/EnviosAgencias/HaVuelto` {Codigo}.
