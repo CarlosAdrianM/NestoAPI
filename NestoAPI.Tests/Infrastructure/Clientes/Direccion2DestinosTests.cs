@@ -185,6 +185,37 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.AreEqual("CALLE MAYOR, 3, LOCAL · RÓTULO: LOHÉ", documento.Direcciones.Single(d => d.Tipo == "Fiscal").Direccion);
         }
 
+        // ---- Bloque 4b: tienda online y Aplázame ----
+
+        [TestMethod]
+        public void Tienda_DireccionesDeEntrega_DireccionCompletaAditiva()
+        {
+            Direccion2ClienteSql.LectorClientesParaTests = (empresa, clientes) => Filas(("15191", "1", "1º D"));
+            var direcciones = new List<DireccionEntregaClienteDTO>
+            {
+                new DireccionEntregaClienteDTO { Contacto = "0", Direccion = "CALLE MAYOR, 3" },
+                new DireccionEntregaClienteDTO { Contacto = "1", Direccion = "CALLE MENOR, 5" }
+            };
+
+            DireccionCompletaCliente.RellenarPorEmpresa(null, direcciones, d => "1", d => "15191", d => d.Contacto, d => d.Direccion,
+                (d, completa) => d.DireccionCompleta = completa);
+
+            Assert.AreEqual("CALLE MAYOR, 3", direcciones[0].DireccionCompleta);
+            Assert.AreEqual("CALLE MENOR, 5, 1º D", direcciones[1].DireccionCompleta);
+            Assert.AreEqual("CALLE MENOR, 5", direcciones[1].Direccion, "Direccion no cambia");
+        }
+
+        [TestMethod]
+        public void Aplazame_Calle_ConDireccion2SiCabeEnteraEn100_SiNoLaDireccionSola()
+        {
+            Assert.AreEqual(100, NestoAPI.Infraestructure.Pagos.Aplazame.ConstructorCheckoutAplazame.LONGITUD_CALLE);
+            Assert.AreEqual("CALLE MAYOR, 3, LOCAL · RÓTULO: LOHÉ",
+                NestoAPI.Infraestructure.Pagos.Aplazame.ConstructorCheckoutAplazame.Calle("CALLE MAYOR, 3", "LOCAL · RÓTULO: LOHÉ"));
+            Assert.AreEqual("CALLE MAYOR, 3", NestoAPI.Infraestructure.Pagos.Aplazame.ConstructorCheckoutAplazame.Calle("CALLE MAYOR, 3", null));
+            string calle = new string('A', 50);
+            Assert.AreEqual(calle, NestoAPI.Infraestructure.Pagos.Aplazame.ConstructorCheckoutAplazame.Calle(calle, new string('B', 49)), "50 + 2 + 49 > 100");
+        }
+
         // ---- Bloque 4a: dirección fiscal ----
 
         [TestMethod]

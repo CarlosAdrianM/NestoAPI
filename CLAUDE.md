@@ -997,6 +997,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   si no, la Dirección sola. Solo en facturas que se emiten desde hoy (`ServicioFacturas` al guardar los datos fiscales); una factura emitida no
   cambia (la guardada se pinta tal cual; la antigua sin datos guardados, de la ficha SIN Dirección 2). También en pedido/albarán/proforma (fiscal
   de la ficha), PDF del 347 y mandato SEPA (DireccionDeudor). Verifactu no manda dirección (solo NIF y nombre). Rectificativas copian la de la original.
+- **Tienda online y Aplázame (bloque 4b, 19/11/26)**: aditivos `DireccionCompleta` en GET api/Pedidos/Cliente/Direcciones
+  (`DireccionEntregaClienteDTO`) y `direccionCompleta` en el ClienteDTO del login de la tienda (`direccion` no cambia en ninguno). Checkout de
+  Aplázame (app #663 y pago a plazos #864): la calle (`street`) = `ConstructorCheckoutAplazame.Calle`, con la Dirección 2 si cabe ENTERA en 100
+  (`LONGITUD_CALLE`, tope prudente: el código no tenía ninguno); si no, la Dirección sola.
 - **Devueltos (seguridad, 19/11/26)**: GET Devueltos, Reenviar, Abonar y HaVuelto dan 403 a un token de cliente de la tienda
   (`ValidadorAccesoCliente.EsClienteTienda`). Empleados y vendedores, como antes.
 

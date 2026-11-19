@@ -136,6 +136,11 @@ namespace NestoAPI.Models.PedidosVenta
 
         public string Nombre { get; set; }
         public string Direccion { get; set; }
+        /// <summary>
+        /// NestoAPI#874 (bloque 4b): Dirección + «, » + Dirección 2 (piso, rótulo, nave) para enseñar; sin Dirección 2, igual que
+        /// <see cref="Direccion"/>. Aditivo: Direccion no cambia.
+        /// </summary>
+        public string DireccionCompleta { get; set; }
         public string CodigoPostal { get; set; }
         public string Poblacion { get; set; }
         public string Provincia { get; set; }

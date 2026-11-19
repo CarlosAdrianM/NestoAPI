@@ -852,6 +852,9 @@ namespace NestoAPI.Controllers
                 direccion.Provincia = direccion.Provincia?.Trim();
                 direccion.Telefono = direccion.Telefono?.Trim();
             }
+            // NestoAPI#874 (bloque 4b): aditivo, la dirección con la Dirección 2 (una lectura para todos los contactos)
+            Infraestructure.Clientes.DireccionCompletaCliente.RellenarPorEmpresa(db, direcciones, d => empresa, d => cliente, d => d.Contacto,
+                d => d.Direccion, (d, completa) => d.DireccionCompleta = completa);
 
             return Ok(direcciones);
         }
@@ -1280,7 +1283,9 @@ namespace NestoAPI.Controllers
             DireccionCheckout Direccion(Cliente ficha) => ficha == null ? null : new DireccionCheckout
             {
                 Nombre = ficha.Nombre?.Trim(),
-                Direccion = ficha.Dirección?.Trim(),
+                // NestoAPI#874 (bloque 4b): la calle con la Dirección 2 si cabe entera en lo que admitimos para Aplázame
+                Direccion = ConstructorCheckoutAplazame.Calle(ficha.Dirección,
+                    Infraestructure.Clientes.Direccion2ClienteSql.Leer(db, ficha.Empresa, ficha.Nº_Cliente, ficha.Contacto)),
                 CodigoPostal = ficha.CodPostal?.Trim(),
                 Poblacion = ficha.Población?.Trim(),
                 Provincia = ficha.Provincia?.Trim(),

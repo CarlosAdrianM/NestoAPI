@@ -678,7 +678,14 @@ namespace NestoAPI.Infraestructure
 
                 Cliente cliente = ElegirFichaParaLogin(candidatos, nifNormalizado);
 
-                return MapearClienteParaLogin(cliente, email);
+                ClienteDTO dto = MapearClienteParaLogin(cliente, email);
+                // NestoAPI#874 (bloque 4b): aditivo, la dirección con la Dirección 2 (direccion no cambia)
+                if (cliente != null)
+                {
+                    dto.direccionCompleta = Clientes.DireccionCompletaCliente.Componer(cliente.Dirección,
+                        Clientes.Direccion2ClienteSql.Leer(db, cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto));
+                }
+                return dto;
             }
         }
 

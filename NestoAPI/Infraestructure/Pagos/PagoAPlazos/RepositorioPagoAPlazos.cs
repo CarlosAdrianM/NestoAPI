@@ -366,17 +366,18 @@ namespace NestoAPI.Infraestructure.Pagos.PagoAPlazos
                     Prepagos = prepagos,
                     CobradoPorEnlaces = enlaces,
                     Correo = correos.Select(c => c?.Trim()).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c) && c.Contains("@")),
-                    Facturacion = Direccion(principal),
-                    Envio = Direccion(entrega ?? principal),
+                    Facturacion = Direccion(principal, db),
+                    Envio = Direccion(entrega ?? principal, db),
                     ClienteTieneApp = tieneApp
                 };
             }
         }
 
-        private static DireccionPagoAPlazos Direccion(Cliente ficha) => ficha == null ? null : new DireccionPagoAPlazos
+        private static DireccionPagoAPlazos Direccion(Cliente ficha, NVEntities db) => ficha == null ? null : new DireccionPagoAPlazos
         {
             Nombre = ficha.Nombre?.Trim(),
-            Direccion = ficha.Dirección?.Trim(),
+            // NestoAPI#874 (bloque 4b): la calle con la Dirección 2 si cabe entera en lo que admitimos para Aplázame
+            Direccion = Aplazame.ConstructorCheckoutAplazame.Calle(ficha.Dirección, Clientes.Direccion2ClienteSql.Leer(db, ficha.Empresa, ficha.Nº_Cliente, ficha.Contacto)),
             CodigoPostal = ficha.CodPostal?.Trim(),
             Poblacion = ficha.Población?.Trim(),
             Provincia = ficha.Provincia?.Trim(),

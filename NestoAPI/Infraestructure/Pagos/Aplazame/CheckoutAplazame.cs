@@ -294,6 +294,19 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
             return resultado;
         }
 
+        /// <summary>
+        /// NestoAPI#874 (bloque 4b): tope prudente para la calle («street») que mandamos a Aplázame. El código no aplicaba ninguno y la
+        /// documentación no se ha podido comprobar desde aquí: la Dirección 2 solo se añade si la calle entera no pasa de esto.
+        /// </summary>
+        public const int LONGITUD_CALLE = 100;
+
+        /// <summary>
+        /// NestoAPI#874 (bloque 4b, pura): la calle del checkout: Dirección + «, » + Dirección 2 si cabe ENTERA en <see cref="LONGITUD_CALLE"/>;
+        /// si no, la Dirección sola (como antes). Misma regla que la fiscal (<see cref="Clientes.DireccionCompletaCliente.ParaFiscal"/>).
+        /// </summary>
+        public static string Calle(string direccion, string direccion2)
+            => Clientes.DireccionCompletaCliente.ParaFiscal(direccion, direccion2, LONGITUD_CALLE);
+
         private static T Direccion<T>(T destino, DireccionCheckout origen) where T : DireccionAplazame
         {
             string nombre = Limpio(origen?.Nombre) ?? "Cliente";
