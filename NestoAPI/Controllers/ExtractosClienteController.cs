@@ -239,7 +239,9 @@ namespace NestoAPI.Controllers
             }
 
             modelo.nombre = clienteComprobacion.Nombre != null ? clienteComprobacion.Nombre.Trim() : "";
-            modelo.direccion = clienteComprobacion.Dirección != null ? clienteComprobacion.Dirección.Trim() : "";
+            // NestoAPI#874 (bloque 4a): la fiscal con la Dirección 2 si cabe entera
+            modelo.direccion = Infraestructure.Clientes.DireccionCompletaCliente.ParaFiscal(clienteComprobacion.Dirección,
+                Infraestructure.Clientes.Direccion2ClienteSql.Leer(db, empresa, clienteComprobacion.Nº_Cliente, clienteComprobacion.Contacto)) ?? "";
             modelo.codigoPostal = clienteComprobacion.CodPostal != null ? clienteComprobacion.CodPostal.Trim() : "";
 
             DateTime hoy = System.DateTime.Today;
@@ -325,7 +327,8 @@ namespace NestoAPI.Controllers
             {
                 nombre = clienteDb.Nombre?.Trim() ?? "",
                 cifNif = clienteDb.CIF_NIF?.Trim() ?? "",
-                direccion = clienteDb.Dirección?.Trim() ?? "",
+                direccion = Infraestructure.Clientes.DireccionCompletaCliente.ParaFiscal(clienteDb.Dirección, // NestoAPI#874 (bloque 4a)
+                    Infraestructure.Clientes.Direccion2ClienteSql.Leer(db, clienteDb.Empresa, clienteDb.Nº_Cliente, clienteDb.Contacto)) ?? "",
                 codigoPostal = clienteDb.CodPostal?.Trim() ?? "",
                 trimestre = new decimal[4]
             };

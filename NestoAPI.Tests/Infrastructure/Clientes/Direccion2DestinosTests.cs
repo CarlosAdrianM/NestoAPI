@@ -174,14 +174,75 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
-        public void PdfPedido_EntregaConDireccion2_FiscalSinElla()
+        public void PdfPedido_EntregaYFiscalConDireccion2()
         {
+            // Bloque 4a (Carlos 19/11/26): un pedido no está emitido; su fiscal (de la ficha) también la lleva.
             IServicioFacturas servicio = ServicioConPedido("LOCAL · RÓTULO: LOHÉ");
 
             Factura documento = new GestorFacturas(servicio).LeerPedido("1", 900001);
 
             Assert.AreEqual("CALLE MAYOR, 3, LOCAL · RÓTULO: LOHÉ", documento.Direcciones.Single(d => d.Tipo == "Entrega").Direccion);
-            Assert.AreEqual("CALLE MAYOR, 3", documento.Direcciones.Single(d => d.Tipo == "Fiscal").Direccion);
+            Assert.AreEqual("CALLE MAYOR, 3, LOCAL · RÓTULO: LOHÉ", documento.Direcciones.Single(d => d.Tipo == "Fiscal").Direccion);
+        }
+
+        // ---- Bloque 4a: dirección fiscal ----
+
+        [TestMethod]
+        public void ParaFiscal_LaCompletaSiCabeEntera_SiNoLaDireccionSola()
+        {
+            Assert.AreEqual("CALLE MAYOR, 3, 1º D", DireccionCompletaCliente.ParaFiscal("CALLE MAYOR, 3  ", "1º D"));
+            Assert.AreEqual("CALLE MAYOR, 3", DireccionCompletaCliente.ParaFiscal("CALLE MAYOR, 3", null));
+            string calle = new string('A', 150);
+            string d2 = new string('B', 60); // 150 + 2 + 60 = 212 > 200
+            Assert.AreEqual(calle, DireccionCompletaCliente.ParaFiscal(calle, d2), "no se trunca: la Dirección sola");
+            Assert.AreEqual(calle + ", " + new string('B', 48), DireccionCompletaCliente.ParaFiscal(calle, new string('B', 48)), "justo 200 sí cabe");
+            Assert.AreEqual(200, DireccionCompletaCliente.LONGITUD_DIRECCION_FISCAL);
+        }
+
+        private static (IServicioFacturas servicio, CabFacturaVta cab) ServicioConFactura(string direccionFiscalGuardada)
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "15191";
+            cab.Serie = "NV";
+            cab.NombreFiscal = direccionFiscalGuardada == null ? null : "LOHÉ S.L.";
+            cab.CifNif = direccionFiscalGuardada == null ? null : "B11111111";
+            cab.DireccionFiscal = direccionFiscalGuardada;
+            cab.LinPedidoVtas.Add(new LinPedidoVta
+            {
+                Nº_Albarán = 1, Fecha_Albarán = new DateTime(2026, 1, 29), Cantidad = 1, Texto = "PRODUCTO", Precio = 100, Producto = "12345",
+                Base_Imponible = 100M, ImporteIVA = 21M, ImporteRE = 0, Total = 121, PorcentajeIVA = 21, PorcentajeRE = 0M
+            });
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV26/000001")).Returns(cab);
+            var cliente = new Cliente { Empresa = "1", Nº_Cliente = "15191", Contacto = "0", Nombre = "LOHÉ S.L.", CIF_NIF = "B11111111", Dirección = "CALLE MAYOR, 3", ClientePrincipal = true };
+            A.CallTo(() => servicio.CargarCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(cliente);
+            A.CallTo(() => servicio.CargarClientePrincipal(A<string>.Ignored, A<string>.Ignored)).Returns(cliente);
+            A.CallTo(() => servicio.LeerDireccion2Cliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns("1º D");
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<VencimientoFactura> { new VencimientoFactura { Importe = 121, ImportePendiente = 121 } });
+            return (servicio, cab);
+        }
+
+        [TestMethod]
+        public void FacturaYaEmitida_ConDatosGuardados_LaFiscalNoCambia_AunqueLaFichaTengaDireccion2()
+        {
+            (IServicioFacturas servicio, _) = ServicioConFactura("CALLE MAYOR, 3");
+
+            Factura factura = new GestorFacturas(servicio).LeerFactura("1", "NV26/000001");
+
+            Assert.AreEqual("CALLE MAYOR, 3", factura.Direcciones.Single(d => d.Tipo == "Fiscal").Direccion);
+            Assert.AreEqual("CALLE MAYOR, 3, 1º D", factura.Direcciones.Single(d => d.Tipo == "Entrega").Direccion, "la de entrega sí (bloque 1)");
+        }
+
+        [TestMethod]
+        public void FacturaAntigua_SinDatosGuardados_LaFiscalDeLaFichaSinDireccion2()
+        {
+            (IServicioFacturas servicio, _) = ServicioConFactura(null);
+
+            Factura factura = new GestorFacturas(servicio).LeerFactura("1", "NV26/000001");
+
+            Assert.AreEqual("CALLE MAYOR, 3", factura.Direcciones.Single(d => d.Tipo == "Fiscal").Direccion);
         }
 
         [TestMethod]

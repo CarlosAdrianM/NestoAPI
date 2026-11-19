@@ -1223,7 +1223,10 @@ namespace NestoAPI.Infraestructure.Facturas
             // Guardar datos fiscales en la factura
             factura.NombreFiscal = clientePrincipal.Nombre?.Trim();
             factura.CifNif = clientePrincipal.CIF_NIF?.Trim();
-            factura.DireccionFiscal = clientePrincipal.Dirección?.Trim();
+            // NestoAPI#874 (bloque 4a): solo las facturas que se emiten desde hoy llevan la Dirección 2 (si cabe entera en los 200);
+            // lo ya guardado en facturas emitidas no se toca nunca.
+            factura.DireccionFiscal = DireccionCompletaCliente.ParaFiscal(clientePrincipal.Dirección,
+                Direccion2ClienteSql.Leer(db, clientePrincipal.Empresa, clientePrincipal.Nº_Cliente, clientePrincipal.Contacto));
             factura.CodPostalFiscal = clientePrincipal.CodPostal?.Trim();
             factura.PoblacionFiscal = clientePrincipal.Población?.Trim();
             factura.ProvinciaFiscal = clientePrincipal.Provincia?.Trim();

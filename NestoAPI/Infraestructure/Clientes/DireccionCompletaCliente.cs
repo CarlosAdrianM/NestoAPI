@@ -26,6 +26,20 @@ namespace NestoAPI.Infraestructure.Clientes
             return string.IsNullOrEmpty(calle) ? d2 : calle + SEPARADOR + d2;
         }
 
+        /// <summary>Longitud de CabFacturaVta.DireccionFiscal (nvarchar(200) en el EDMX).</summary>
+        public const int LONGITUD_DIRECCION_FISCAL = 200;
+
+        /// <summary>
+        /// NestoAPI#874 (bloque 4a, Carlos 19/11/26): la dirección FISCAL (la que se congela en una factura NUEVA, la del 347 y la del
+        /// mandato SEPA). Regla explícita, sin truncar a ciegas: la completa (<see cref="Componer"/>) si cabe ENTERA en
+        /// <paramref name="maximo"/>; si no, la Dirección sola (como antes). Pura.
+        /// </summary>
+        public static string ParaFiscal(string direccion, string direccion2, int maximo = LONGITUD_DIRECCION_FISCAL)
+        {
+            string completa = Componer(direccion, direccion2);
+            return completa != null && completa.Length <= maximo ? completa : direccion?.Trim();
+        }
+
         /// <summary>
         /// Pone <c>direccionCompleta</c> a cada contacto de la lista con las filas de <see cref="Direccion2ClienteSql.LeerDeClientes"/>
         /// (null = sin columnas o la lectura falló: la Dirección tal cual). Pura.

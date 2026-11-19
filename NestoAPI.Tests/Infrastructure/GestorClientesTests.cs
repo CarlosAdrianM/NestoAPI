@@ -3464,5 +3464,22 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(string.Empty, mandato.DireccionDeudor);
         }
 
+        [TestMethod]
+        public async Task GestorClientes_LeerMandato_DireccionDelDeudorConDireccion2()
+        {
+            // NestoAPI#874 (bloque 4a): la fiscal con la Dirección 2 si cabe entera
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(new Cliente { Empresa = "1", Nº_Cliente = "1234", Contacto = "0", Nombre = "Cliente", Dirección = "CALLE MAYOR, 3" });
+            A.CallTo(() => servicio.BuscarCCC("1", "1234", "0", "1")).Returns(new CCC { Pais = "ES", DC_IBAN = "91", Entidad = "2100", Oficina = "0418", DC = "45", Nº_Cuenta = "0200051332" });
+            A.CallTo(() => servicio.LeerDireccion2Clientes("1", A<IEnumerable<string>>._)).Returns(new Dictionary<string, NestoAPI.Infraestructure.Clientes.Direccion2Contacto>
+            {
+                ["1234|0"] = new NestoAPI.Infraestructure.Clientes.Direccion2Contacto { Cliente = "1234", Contacto = "0", Direccion2 = "NAVE 4" }
+            });
+
+            Mandato mandato = await CrearGestorClientes(servicio).LeerMandato("1", "1234", "0", "1");
+
+            Assert.AreEqual("CALLE MAYOR, 3, NAVE 4", mandato.DireccionDeudor);
+        }
+
     }
 }

@@ -993,6 +993,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   regla del alta, se valida siempre); `QuitarDireccion2` = borrar; sin nada = NO TOCAR (NestoApp y Nesto viejos); se exige solo si la Dirección
   CAMBIA y `ExigirDireccion2Alta` = 1—. La nueva va a la sesión (`Direccion2EnSesion`) antes del SaveChanges (correo del disparador) y se escribe
   antes de publicar a Odoo (la modificación publica siempre). Nesto: «¿Qué es?» también al modificar (sin tipo elegido, ni aviso ni envío).
+- **Fiscal (bloque 4a, Carlos 19/11/26)**: `DireccionCompletaCliente.ParaFiscal` = la completa si cabe ENTERA en 200 (CabFacturaVta.DireccionFiscal);
+  si no, la Dirección sola. Solo en facturas que se emiten desde hoy (`ServicioFacturas` al guardar los datos fiscales); una factura emitida no
+  cambia (la guardada se pinta tal cual; la antigua sin datos guardados, de la ficha SIN Dirección 2). También en pedido/albarán/proforma (fiscal
+  de la ficha), PDF del 347 y mandato SEPA (DireccionDeudor). Verifactu no manda dirección (solo NIF y nombre). Rectificativas copian la de la original.
 - **Devueltos (seguridad, 19/11/26)**: GET Devueltos, Reenviar, Abonar y HaVuelto dan 403 a un token de cliente de la tienda
   (`ValidadorAccesoCliente.EsClienteTienda`). Empleados y vendedores, como antes.
 

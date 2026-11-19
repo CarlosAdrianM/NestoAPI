@@ -279,7 +279,7 @@ namespace NestoAPI.Infraestructure.Facturas
             // Fallback a datos del cliente para facturas antiguas sin datos persistidos.
             DireccionFactura direccionRazonSocial = TieneDatosFiscalesPersistidos(cabFactura)
                 ? CargarDireccionRazonSocialDesdeFactura(cabFactura)
-                : CargarDireccionRazonSocial(clienteRazonSocial);
+                : CargarDireccionRazonSocial(clienteRazonSocial, conDireccion2: false); // NestoAPI#874: una factura emitida no cambia
             DireccionFactura direccionEntrega = CargarDireccionEntrega(clienteEntrega);
 
             List<DireccionFactura> direcciones = new List<DireccionFactura>
@@ -949,14 +949,31 @@ namespace NestoAPI.Infraestructure.Facturas
             };
         }
 
-        private static DireccionFactura CargarDireccionRazonSocial(Cliente clienteRazonSocial)
+        /// <summary>
+        /// La dirección FISCAL de la ficha. NestoAPI#874 (bloque 4a): en pedidos, albaranes y proformas (aún no emitidos) con la Dirección 2
+        /// (<see cref="Clientes.DireccionCompletaCliente.ParaFiscal"/>); en una FACTURA sin datos fiscales guardados (antigua),
+        /// <paramref name="conDireccion2"/> = false: una factura ya emitida no cambia.
+        /// </summary>
+        private DireccionFactura CargarDireccionRazonSocial(Cliente clienteRazonSocial, bool conDireccion2 = true)
         {
+            string direccion2 = null;
+            if (conDireccion2)
+            {
+                try
+                {
+                    direccion2 = servicio.LeerDireccion2Cliente(clienteRazonSocial.Empresa?.Trim(), clienteRazonSocial.Nº_Cliente?.Trim(), clienteRazonSocial.Contacto?.Trim());
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Documentos #874] No se ha podido leer la dirección 2 fiscal de {clienteRazonSocial.Nº_Cliente?.Trim()}: {ex.Message}", ex));
+                }
+            }
             return new DireccionFactura
             {
                 Tipo = "Fiscal",
                 Nombre = clienteRazonSocial.Nombre?.Trim(),
                 CodigoPostal = clienteRazonSocial.CodPostal?.Trim(),
-                Direccion = clienteRazonSocial.Dirección?.Trim(),
+                Direccion = Clientes.DireccionCompletaCliente.ParaFiscal(clienteRazonSocial.Dirección, direccion2),
                 Poblacion = clienteRazonSocial.Población?.Trim(),
                 Provincia = clienteRazonSocial.Provincia?.Trim(),
                 Telefonos = clienteRazonSocial.Teléfono?.Trim()

@@ -1867,6 +1867,21 @@ namespace NestoAPI.Infraestructure
         /// <summary>NestoAPI#735: para los tests (que no vayan a internet a por el logo).</summary>
         internal Func<GeneradorPdfMandatoSepa> CrearGeneradorMandato { get; set; } = () => new GeneradorPdfMandatoSepa();
 
+        /// <summary>NestoAPI#874: la Dirección 2 de un contacto por el servicio (null sin ella, sin columnas o si falla). Nunca lanza.</summary>
+        internal async Task<string> LeerDireccion2Contacto(Cliente ficha)
+        {
+            try
+            {
+                Dictionary<string, Clientes.Direccion2Contacto> filas = await servicio.LeerDireccion2Clientes(ficha.Empresa?.Trim(), new[] { ficha.Nº_Cliente?.Trim() }).ConfigureAwait(false);
+                return Clientes.Direccion2ClienteSql.ParaPublicar(filas, ficha.Nº_Cliente, ficha.Contacto).Direccion2;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido leer la dirección 2 de {ficha.Nº_Cliente?.Trim()}/{ficha.Contacto?.Trim()}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
         public async Task<Mandato> LeerMandato(string empresa, string cliente, string contacto, string ccc)
         {
             Cliente clienteDB = await servicio.BuscarCliente(empresa, cliente, contacto).ConfigureAwait(false);
@@ -1892,7 +1907,7 @@ namespace NestoAPI.Infraestructure
                 ProvinciaAcreedor = "Madrid",
                 PaisAcreedor = "España",
                 NombreDeudor = clienteDB.Nombre?.Trim() ?? string.Empty,
-                DireccionDeudor = clienteDB.Dirección?.Trim() ?? string.Empty,
+                DireccionDeudor = Clientes.DireccionCompletaCliente.ParaFiscal(clienteDB.Dirección, await LeerDireccion2Contacto(clienteDB).ConfigureAwait(false)) ?? string.Empty, // NestoAPI#874 (4a)
                 CodigoPostalDeudor = clienteDB.CodPostal?.Trim() ?? string.Empty,
                 PoblacionDeudor = clienteDB.Población?.Trim() ?? string.Empty,
                 ProvinciaDeudor = clienteDB.Provincia?.Trim() ?? string.Empty,
