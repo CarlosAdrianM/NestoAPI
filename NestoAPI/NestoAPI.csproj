@@ -1035,6 +1035,7 @@
     <Compile Include="Infraestructure\Clientes\NumeroPropioDireccion.cs" />
     <Compile Include="Infraestructure\Clientes\MensajesValidacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NormalizadorClienteCrear.cs" />
+    <Compile Include="Infraestructure\Clientes\AltaConDireccionEntrega.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\BuscadorClientesPorFactura.cs" />
@@ -2455,6 +2456,8 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\SyncMessageRetry.Partial.cs" />
+    <Compile Include="Models\Cliente.Partial.cs" />
+    <Compile Include="Models\Clientes\DireccionEntregaCrear.cs" />
     <Compile Include="Models\Ubicacion.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

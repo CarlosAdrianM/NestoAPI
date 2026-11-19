@@ -51,6 +51,11 @@ namespace NestoAPI.Infraestructure.Clientes
             }
             var errores = new List<string>();
             errores.AddRange(ErroresDe(cliente, CamposCliente, null));
+            if (cliente.DireccionEntrega != null)
+            {
+                // Alta con dirección de entrega distinta (19/11/26): los mismos límites, diciendo que es la de entrega.
+                errores.AddRange(ErroresDe(cliente.DireccionEntrega, CamposCliente, " de entrega"));
+            }
             if (cliente.PersonasContacto != null)
             {
                 List<PersonaContactoDTO> personas = cliente.PersonasContacto.Where(p => p != null).ToList();

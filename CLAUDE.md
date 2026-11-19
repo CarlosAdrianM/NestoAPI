@@ -881,6 +881,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   cliente para sus contactos seguidos y la publicación suelta las vuelve a leer). Cuándo viajan: en cualquier publicación del cliente; el alta
   escribe la Dirección 2 ANTES de publicar, así que su mensaje ya la lleva. `trgClientesUpd` NO encola por Direccion2/TipoLugar (hoy solo las
   escribe el alta). De Odoo a Nesto se ignoran: ni `ClienteChangeDetector` ni `BarreraClientesExternos` las miran.
+- **Dirección de entrega distinta en la misma alta (19/11/26, Carlos)**: `ClienteCrear.DireccionEntrega` (`DireccionEntregaCrear`, opcional; sin
+  él, el alta de siempre): Direccion, DireccionVerificada, Numero, NumeroConfirmadoSinGoogle, TipoLugar + sus campos, CodigoPostal, Poblacion,
+  Provincia, Ruta, Telefono, ComentariosRuta, ComentariosPicking. Solo en un cliente NUEVO con dirección fiscal (`AltaConDireccionEntrega.MotivoNoAdmitida`:
+  con EsContacto, sin dirección, sin CP → 400). La segunda dirección pasa por el MISMO núcleo que la fiscal (`GestorClientes.ValidarDireccionAlta`:
+  #499, «¿Qué es?» y número propio) y su 400 empieza por «Dirección de entrega: ». El contacto de entrega es un alta de contacto de las de siempre
+  (`AltaConDireccionEntrega.ContactoDeEntrega` + `PrepararClienteCrear` con el contacto siguiente reservado): hereda NIF, nombre, estado, forma y
+  plazos, IBAN (CCC), vendedores, días de servir y las MISMAS personas de contacto (comunes); no los Comentarios generales ni el origen. En UNA
+  transacción (`AbrirTransaccionAlta`; lo que lee por otra conexión se lee antes del primer guardado): principal, entrega y `ContactoDefecto` del
+  principal = el de entrega (ContactoCobro/Bonificacion siguen en el principal). Se publican los dos a Odoo (primero el principal), cada uno con su
+  Dirección 2. Respuesta: la ficha del principal + `ContactoEntrega` (solo si se creó). Un CP nuevo compartido por las dos se crea una vez.
+  Nesto: casilla «La entrega es en otra dirección» en «Datos generales» (`BloqueDireccionAlta`, el mismo bloque que la fiscal). NestoApp: issue gemela.
 
 ### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
 - `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática

@@ -120,6 +120,13 @@ namespace NestoAPI.Models.Clientes
         /// </summary>
         public string Origen { get; set; }
 
+        /// <summary>
+        /// Alta con dirección de entrega distinta (19/11/26). Opcional y solo en el alta de un cliente NUEVO (con <see cref="EsContacto"/>
+        /// es un 400): crea además un segundo contacto con esta dirección y deja el ContactoDefecto del principal apuntándole. Sin él,
+        /// el alta es exactamente la de siempre. La respuesta trae el contacto creado en Cliente.ContactoEntrega.
+        /// </summary>
+        public DireccionEntregaCrear DireccionEntrega { get; set; }
+
 
         public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }
     }

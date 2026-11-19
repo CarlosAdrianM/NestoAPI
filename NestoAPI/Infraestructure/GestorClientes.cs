@@ -1656,7 +1656,12 @@ namespace NestoAPI.Infraestructure
             return clienteDB;
         }
 
-        public async Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db)
+        public Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db)
+            => PrepararClienteCrear(clienteCrear, db, null);
+
+        /// <param name="contactoForzado">Alta con dirección de entrega (19/11/26): el número del contacto de entrega, que no se puede
+        /// pedir a la BD porque el principal aún no está guardado. Null = el siguiente libre (lo de siempre).</param>
+        internal async Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db, string contactoForzado)
         {
             // GUARDA #388 (21/08/26): con el certificado de la AEAT caducado, el wizard de una
             // persona jurídica manda el nombre de relleno ("UNDEFINED") esperando la razón
@@ -1668,7 +1673,7 @@ namespace NestoAPI.Infraestructure
             // Nesto#555: alumna (estado 10) o público final (estado 8), las dos con vendedor NV: lo decide la API, no el cliente.
             _ = Clientes.AltaClienteEspecial.Aplicar(clienteCrear);
 
-            string contacto = await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
+            string contacto = contactoForzado ?? await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
 
             if (clienteCrear.Nif != null && clienteCrear.Nif.Trim() == string.Empty)
             {
@@ -2081,6 +2086,13 @@ namespace NestoAPI.Infraestructure
             Cliente cliente = new Cliente();
             try
             {
+                // Alta con dirección de entrega distinta (19/11/26): solo en un cliente nuevo y con las dos direcciones.
+                string motivoEntrega = Clientes.AltaConDireccionEntrega.MotivoNoAdmitida(clienteCrear);
+                if (motivoEntrega != null)
+                {
+                    throw new ValidationException(motivoEntrega);
+                }
+
                 ContadorGlobal contador;
                 if (!clienteCrear.EsContacto)
                 {
@@ -2106,24 +2118,22 @@ namespace NestoAPI.Infraestructure
                     clienteCrear.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
                 }
 
-                // NestoAPI#499: guardarraíl de la dirección verificada por Google (detrás del
-                // parámetro ExigirDireccionVerificadaAlta; ValidationException → 400 en PostCliente).
-                string motivoDireccion = MotivoRechazoDireccionNoVerificada(clienteCrear, ExigirDireccionVerificadaAlta(clienteCrear.Empresa));
-                if (motivoDireccion != null)
+                // NestoAPI#499 (dirección elegida de Google) y NestoAPI#874 («¿Qué es?» y número propio); ValidationException → 400.
+                ValidacionDireccionAlta direccionValidada = await ValidarDireccionAlta(clienteCrear).ConfigureAwait(false);
+                if (direccionValidada.Motivo != null)
                 {
-                    throw new ValidationException(motivoDireccion);
+                    throw new ValidationException(direccionValidada.Motivo);
                 }
 
-                // NestoAPI#874: «¿Qué es?» (Dirección 2) y el número propio; ValidationException → 400 en PostCliente.
-                Clientes.ResultadoDireccion2 direccion2 = Clientes.Direccion2Cliente.ParaDireccion(clienteCrear, ExigirDireccion2Alta(clienteCrear.Empresa));
-                if (!direccion2.Valida)
+                // Alta con dirección de entrega distinta (19/11/26): la segunda dirección pasa por las MISMAS reglas, antes de tocar nada.
+                ValidacionDireccionAlta entregaValidada = null;
+                if (clienteCrear.DireccionEntrega != null)
                 {
-                    throw new ValidationException(direccion2.Motivo);
-                }
-                Clientes.ResultadoNumeroPropio numeroPropio = await ComprobarNumeroPropio(clienteCrear).ConfigureAwait(false);
-                if (numeroPropio.Motivo != null)
-                {
-                    throw new ValidationException(numeroPropio.Motivo);
+                    entregaValidada = await ValidarDireccionAlta(Clientes.AltaConDireccionEntrega.ContactoDeEntrega(clienteCrear)).ConfigureAwait(false);
+                    if (entregaValidada.Motivo != null)
+                    {
+                        throw new ValidationException(Clientes.AltaConDireccionEntrega.DeLaEntrega(entregaValidada.Motivo));
+                    }
                 }
 
                 cliente = await PrepararClienteCrear(clienteCrear, db);
@@ -2147,24 +2157,15 @@ namespace NestoAPI.Infraestructure
                     cliente.ClientePrincipal = false;
                 }
 
+                if (entregaValidada != null)
+                {
+                    return await GuardarConDireccionEntrega(clienteCrear, cliente, direccionValidada, entregaValidada, db).ConfigureAwait(false);
+                }
+
                 _ = db.Clientes.Add(cliente);
 
-                _ = await db.SaveChangesAsync();
-                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
-                {
-                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
-                    _ = await db.SaveChangesAsync();
-                }
-
-                // NestoAPI#716 (2.3): fecha, usuario y aplicación del alta (columnas fuera del EDMX; best-effort).
-                _ = Clientes.DatosAltaCliente.Registrar(db, cliente, clienteCrear.Usuario, clienteCrear.AplicacionAlta, DateTime.Now);
-                // NestoAPI#874: Dirección 2 y tipo de lugar (columnas fuera del EDMX; sin el script, ELMAH una vez y sigue).
-                _ = Clientes.Direccion2ClienteSql.Guardar(db, cliente, direccion2);
-                // NestoAPI#874: número que Google no encuentra y el usuario confirmó: rastro en Modificaciones para medirlo y revisarlo.
-                if (numeroPropio.ConfirmadoSinGoogle)
-                {
-                    _ = Clientes.Direccion2ClienteSql.RegistrarNumeroSinGoogle(db, cliente, clienteCrear.Numero, clienteCrear.Usuario);
-                }
+                await GuardarFichaNueva(cliente, db).ConfigureAwait(false);
+                GuardarDatosDelAlta(db, cliente, clienteCrear, direccionValidada);
 
                 await PublicarClienteSincronizar(cliente);
 
@@ -2190,6 +2191,107 @@ namespace NestoAPI.Infraestructure
                 }
                 throw;
             }
+        }
+
+        /// <summary>Lo que dicen las reglas de una dirección del alta (la fiscal o la de entrega): el motivo del 400 o lo que se guarda.</summary>
+        internal sealed class ValidacionDireccionAlta
+        {
+            public string Motivo { get; set; }
+            public Clientes.ResultadoDireccion2 Direccion2 { get; set; }
+            public Clientes.ResultadoNumeroPropio NumeroPropio { get; set; }
+        }
+
+        /// <summary>
+        /// El núcleo de las reglas de una dirección del alta, el mismo para la fiscal y para la de entrega (19/11/26): NestoAPI#499
+        /// (elegida de Google, con su interruptor), NestoAPI#874 («¿Qué es?», con su interruptor, y el número propio comprobado con Google).
+        /// </summary>
+        internal async Task<ValidacionDireccionAlta> ValidarDireccionAlta(ClienteCrear alta)
+        {
+            string empresa = alta.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string motivoDireccion = MotivoRechazoDireccionNoVerificada(alta, ExigirDireccionVerificadaAlta(empresa));
+            if (motivoDireccion != null)
+            {
+                return new ValidacionDireccionAlta { Motivo = motivoDireccion };
+            }
+            Clientes.ResultadoDireccion2 direccion2 = Clientes.Direccion2Cliente.ParaDireccion(alta, ExigirDireccion2Alta(empresa));
+            if (!direccion2.Valida)
+            {
+                return new ValidacionDireccionAlta { Motivo = direccion2.Motivo };
+            }
+            Clientes.ResultadoNumeroPropio numeroPropio = await ComprobarNumeroPropio(alta).ConfigureAwait(false);
+            return new ValidacionDireccionAlta { Motivo = numeroPropio.Motivo, Direccion2 = direccion2, NumeroPropio = numeroPropio };
+        }
+
+        /// <summary>Guarda una ficha recién añadida al contexto y, si tiene cuenta, la deja como la suya (dos guardados, NestoAPI#462).</summary>
+        private static async Task GuardarFichaNueva(Cliente cliente, NVEntities db)
+        {
+            _ = await db.SaveChangesAsync();
+            if (cliente.CCCs.Count != 0 && cliente.CCC == null)
+            {
+                cliente.CCC1 = cliente.CCCs.FirstOrDefault();
+                _ = await db.SaveChangesAsync();
+            }
+        }
+
+        /// <summary>Lo que se apunta de una ficha ya guardada, fuera del EDMX (best-effort, nunca lanza).</summary>
+        private static void GuardarDatosDelAlta(NVEntities db, Cliente cliente, ClienteCrear alta, ValidacionDireccionAlta direccion)
+        {
+            // NestoAPI#716 (2.3): fecha, usuario y aplicación del alta (columnas fuera del EDMX; best-effort).
+            _ = Clientes.DatosAltaCliente.Registrar(db, cliente, alta.Usuario, alta.AplicacionAlta, DateTime.Now);
+            // NestoAPI#874: Dirección 2 y tipo de lugar (columnas fuera del EDMX; sin el script, ELMAH una vez y sigue).
+            _ = Clientes.Direccion2ClienteSql.Guardar(db, cliente, direccion.Direccion2);
+            // NestoAPI#874: número que Google no encuentra y el usuario confirmó: rastro en Modificaciones para medirlo y revisarlo.
+            if (direccion.NumeroPropio?.ConfirmadoSinGoogle == true)
+            {
+                _ = Clientes.Direccion2ClienteSql.RegistrarNumeroSinGoogle(db, cliente, alta.Numero, alta.Usuario);
+            }
+        }
+
+        /// <summary>Para los tests (no tienen BD): cómo se abre la transacción del alta con dirección de entrega.</summary>
+        internal Func<NVEntities, Clientes.ITransaccionAltaCliente> AbrirTransaccionAlta { get; set; }
+            = db => new Clientes.TransaccionAltaClienteEf(db.Database.BeginTransaction());
+
+        /// <summary>
+        /// Alta con dirección de entrega distinta (19/11/26): el principal (ya preparado) y el contacto de entrega en UNA transacción; si
+        /// algo falla, no queda ninguno. El contacto de entrega es un alta de contacto de las de siempre (PrepararClienteCrear con
+        /// EsContacto), con su número reservado por delante. El ContactoDefecto del principal pasa a ser el de entrega (la entrega por
+        /// defecto); ContactoCobro y ContactoBonificacion siguen siendo el principal. Se publican los dos (primero el principal) al acabar.
+        /// Todo lo que lee la BD por fuera de este contexto (siguiente contacto, códigos postales, vendedores) se lee ANTES del primer
+        /// guardado: dentro de la transacción esa otra conexión esperaría a las filas sin confirmar.
+        /// </summary>
+        private async Task<Cliente> GuardarConDireccionEntrega(ClienteCrear clienteCrear, Cliente principal, ValidacionDireccionAlta direccionPrincipal,
+            ValidacionDireccionAlta direccionEntrega, NVEntities db)
+        {
+            // Con lo del principal ya preparado (estado, vendedores, NIF y CP en su forma final): lo hereda tal cual.
+            ClienteCrear altaEntrega = Clientes.AltaConDireccionEntrega.ContactoDeEntrega(clienteCrear);
+            altaEntrega.Cliente = principal.Nº_Cliente;
+            Cliente entrega = await PrepararClienteCrear(altaEntrega, db, Clientes.AltaConDireccionEntrega.SiguienteContacto(principal.Contacto)).ConfigureAwait(false);
+            entrega.ClientePrincipal = false;
+            Clientes.AltaConDireccionEntrega.CompartirCodigoPostalNuevo(db, principal, entrega);
+
+            using (Clientes.ITransaccionAltaCliente transaccion = AbrirTransaccionAlta(db))
+            {
+                _ = db.Clientes.Add(principal);
+                await GuardarFichaNueva(principal, db).ConfigureAwait(false);
+                _ = db.Clientes.Add(entrega);
+                await GuardarFichaNueva(entrega, db).ConfigureAwait(false);
+
+                // Con las dos fichas ya guardadas (FK_Clientes_Clientes: el ContactoDefecto tiene que existir).
+                principal.ContactoDefecto = entrega.Contacto;
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
+
+                GuardarDatosDelAlta(db, principal, clienteCrear, direccionPrincipal);
+                GuardarDatosDelAlta(db, entrega, altaEntrega, direccionEntrega);
+
+                transaccion.Commit();
+            }
+
+            principal.ContactoEntrega = entrega.Contacto?.Trim();
+
+            await PublicarClienteSincronizar(principal);
+            await PublicarClienteSincronizar(entrega);
+
+            return principal;
         }
 
         public async Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null)

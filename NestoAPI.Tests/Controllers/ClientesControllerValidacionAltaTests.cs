@@ -140,6 +140,49 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.Contains((resultado as BadRequestErrorMessageResult)?.Message, "Elija la dirección en el buscador de Google");
         }
 
+        // Alta con dirección de entrega distinta (19/11/26)
+
+        [TestMethod]
+        public async Task PostCliente_DireccionDeEntregaDemasiadoLarga_400QueDiceQueEsLaDeEntrega()
+        {
+            var controller = Controller();
+            ClienteCrear alta = Alta(Correo(30));
+            alta.DireccionEntrega = new DireccionEntregaCrear { Direccion = new string('C', 60), CodigoPostal = "28001" };
+
+            var resultado = await controller.PostCliente(alta);
+
+            Assert.AreEqual("La dirección de entrega no puede superar 50 caracteres (tiene 60).", (resultado as BadRequestErrorMessageResult)?.Message);
+            A.CallTo(() => _gestor.CrearCliente(A<ClienteCrear>._, A<NVEntities>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostCliente_ConDireccionDeEntrega_LaRecortaYDevuelveElContactoDeEntrega()
+        {
+            var controller = Controller();
+            _ = A.CallTo(() => _gestor.CrearCliente(A<ClienteCrear>._, A<NVEntities>._))
+                .Returns(new Cliente { Empresa = "1", Nº_Cliente = "42109", Contacto = "0", ContactoDefecto = "1", ContactoEntrega = "1" });
+            ClienteCrear alta = Alta(Correo(30));
+            alta.DireccionEntrega = new DireccionEntregaCrear { Direccion = "  C/ MAYOR, 1  ", CodigoPostal = " 28001 " };
+
+            var resultado = await controller.PostCliente(alta);
+
+            var creado = resultado as CreatedAtRouteNegotiatedContentResult<Cliente>;
+            Assert.IsNotNull(creado);
+            Assert.AreEqual("1", creado.Content.ContactoEntrega);
+            _ = A.CallTo(() => _gestor.CrearCliente(
+                    A<ClienteCrear>.That.Matches(c => c.DireccionEntrega.Direccion == "C/ MAYOR, 1" && c.DireccionEntrega.CodigoPostal == "28001"), A<NVEntities>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Cliente_SinContactoDeEntrega_NoLoSerializa()
+        {
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(new Cliente { Empresa = "1", Nº_Cliente = "42109", Contacto = "0" },
+                new Newtonsoft.Json.JsonSerializerSettings { ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore });
+
+            Assert.IsFalse(json.Contains("ContactoEntrega"), "Las respuestas de siempre no cambian");
+        }
+
         [TestMethod]
         public async Task PostCliente_SinCuerpo_400ConMensaje()
         {

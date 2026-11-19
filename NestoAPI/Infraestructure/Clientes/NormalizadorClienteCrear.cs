@@ -20,6 +20,10 @@ namespace NestoAPI.Infraestructure.Clientes
                 return;
             }
             RecortarTextos(cliente);
+            if (cliente.DireccionEntrega != null)
+            {
+                RecortarTextos(cliente.DireccionEntrega); // alta con dirección de entrega distinta (19/11/26)
+            }
             if (cliente.PersonasContacto != null)
             {
                 foreach (PersonaContactoDTO persona in cliente.PersonasContacto.Where(p => p != null))
