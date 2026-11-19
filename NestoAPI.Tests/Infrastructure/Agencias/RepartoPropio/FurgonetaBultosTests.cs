@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
@@ -500,8 +500,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
-        public async Task Entregar_LeyendoAlgunos_LosDemasSiguenEnLaFurgoneta_YReintentarNoDuplica()
+        public async Task Entregar_LeyendoAlgunos_LosDemasDelEnvioTambienSalen_YReintentarNoDuplica()
         {
+            // Caso 251099 (Carlos 19/11/26): antes, los no leídos se quedaban en la furgoneta
             Envio();
             _ = await servicio.Cargar(Carga("RP251300-1"), ANDRE);
             _ = await servicio.Cargar(Carga("RP251300-2"), ANDRE);
@@ -511,9 +512,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             int filas = furgoneta.Filas.Count;
             _ = await servicio.Entregar(251300, Entrega(clave, "RP251300-1"), ANDRE);
 
-            Assert.AreEqual(1, r.Contenido.BultosEntregados);
-            CollectionAssert.AreEqual(new[] { "RP251300-2" }, (await LoQueLleva(ANDRE)).Select(b => b.Codigo).ToList());
+            Assert.AreEqual(2, r.Contenido.BultosEntregados);
+            Assert.AreEqual(0, (await LoQueLleva(ANDRE)).Count);
             Assert.AreEqual(filas, furgoneta.Filas.Count, "Misma clave de entrega: no se apunta otra vez");
+            Assert.AreEqual(1, furgoneta.Rastros.Count, "Un solo rastro aunque se reintente");
         }
 
         [TestMethod]
@@ -831,6 +833,16 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public async Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario)
             {
                 int n = await Registrar(new[] { movimiento });
+                if (n > 0)
+                {
+                    Rastros.Add((tabla, anterior, nuevo, usuario));
+                }
+                return n;
+            }
+
+            public async Task<int> RegistrarConRastro(IReadOnlyList<MovimientoBultoReparto> movimientos, string tabla, string anterior, string nuevo, string usuario)
+            {
+                int n = await Registrar(movimientos);
                 if (n > 0)
                 {
                     Rastros.Add((tabla, anterior, nuevo, usuario));

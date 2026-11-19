@@ -274,6 +274,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   apunta su Cargado (salió sin leer). Descargar admite el papel `NE{pedido}` (todos los RP de su envío en furgoneta) y con una NR cierra
   el RP sin bulto de su recogida. `SinLeer` = true en Descargar: quita de SU furgoneta un bulto de GET Furgoneta (409 `EN_OTRA_FURGONETA`
   si es de otro), rastro en Modificaciones (`FurgonetaDescargaSinLeer`) y campana a Almacén. La respuesta trae `Descargados`.
+- **Entregado cierra el envío (caso 251099, Carlos 19/11/26)**: Entregar un ENVÍO apunta Entregado a los leídos y también a los demás RP
+  de ese envío que lleve encima QUIEN ENTREGA (`CierreEntregaFurgoneta`): Descripcion con « (entregado sin leer)» y UNA fila en Modificaciones
+  `FurgonetaEntregaSinLeer` (también al no leer ninguno). Los que lleve otro repartidor y las paradas de reposición no cambian. Lectura
+  obligatoria = como hoy, al menos uno. Job de las 22:00: antes de avisar, los RP de envíos de la 14 ya en Estado 2 que sigan en una furgoneta
+  se cierran igual (Origen Almacen, usuario el repartidor, rastro por envío) y no cuentan para el aviso; si no puede mirar el estado, avisa como siempre.
 
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).

@@ -201,6 +201,74 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
     }
 
+    /// <summary>
+    /// Caso 251099 (Carlos 19/11/26): un envío ENTREGADO ya no está en ninguna furgoneta. Al entregarlo, sus bultos que lleve encima quien
+    /// entrega y no haya leído se dan por entregados (marcados «sin leer» en la Descripcion del movimiento y con UNA fila de rastro en
+    /// Modificaciones, Tabla <see cref="TABLA_MODIFICACIONES"/>); y la red de las 22:00 cierra los que sigan en una furgoneta de un envío
+    /// que ya consta entregado. Solo bultos RP (las reposiciones y las recogidas no). PURA.
+    /// </summary>
+    public static class CierreEntregaFurgoneta
+    {
+        public const string TABLA_MODIFICACIONES = "FurgonetaEntregaSinLeer";
+        public const string MARCA = " (entregado sin leer)";
+        public const int LONGITUD_DESCRIPCION = 150;
+
+        /// <summary>De los últimos movimientos de la parada, los RP de ESE envío que lleva <paramref name="usuario"/> y no ha leído.</summary>
+        public static List<MovimientoBultoReparto> SinLeerDelEnvio(IEnumerable<MovimientoBultoReparto> ultimosDeLaParada, ICollection<string> leidos,
+            int envioId, string usuario)
+        {
+            if (envioId <= 0)
+            {
+                return new List<MovimientoBultoReparto>();
+            }
+            return NucleoFurgoneta.Ultimos(ultimosDeLaParada)
+                .Where(m => m.TipoCodigo == CodigoBultoFurgoneta.RP && m.EnvioId == envioId)
+                .Where(m => NucleoFurgoneta.LoLleva(m, usuario))
+                .Where(m => leidos == null || !leidos.Contains(m.Codigo))
+                .OrderBy(m => m.Bulto).ThenBy(m => m.Codigo)
+                .ToList();
+        }
+
+        /// <summary>Los bultos RP en alguna furgoneta cuyo envío ya consta entregado (para la red de las 22:00).</summary>
+        public static List<MovimientoBultoReparto> DeEnviosEntregados(IEnumerable<MovimientoBultoReparto> enFurgoneta, ICollection<int> enviosEntregados)
+            => (enFurgoneta ?? Enumerable.Empty<MovimientoBultoReparto>())
+                .Where(m => m != null && m.TipoCodigo == CodigoBultoFurgoneta.RP && m.EnvioId.HasValue && TiposMovimientoBulto.DejaEnFurgoneta(m.Tipo))
+                .Where(m => enviosEntregados != null && enviosEntregados.Contains(m.EnvioId.Value))
+                .ToList();
+
+        /// <summary>«PELUQUERÍA ANA (MADRID) (entregado sin leer)», sin pasar de la columna (se recorta lo de delante, no la marca).</summary>
+        public static string Marcar(string descripcion)
+        {
+            string base_ = descripcion?.Trim() ?? string.Empty;
+            if (base_.EndsWith(MARCA.Trim(), StringComparison.Ordinal))
+            {
+                return base_;
+            }
+            int cabe = LONGITUD_DESCRIPCION - MARCA.Length;
+            if (base_.Length > cabe)
+            {
+                base_ = base_.Substring(0, cabe).TrimEnd();
+            }
+            return base_.Length == 0 ? MARCA.Trim() : base_ + MARCA;
+        }
+
+        public static string RastroAnterior(int envioId, IEnumerable<MovimientoBultoReparto> ultimos) => Newtonsoft.Json.JsonConvert.SerializeObject(new
+        {
+            EnvioId = envioId,
+            EnFurgoneta = (ultimos ?? Enumerable.Empty<MovimientoBultoReparto>()).Select(m => new { m.Codigo, m.Tipo, m.Usuario, m.FechaHora })
+        });
+
+        /// <param name="redDeSeguridad">True: lo ha cerrado el job de las 22:00 (el envío ya constaba entregado).</param>
+        public static string RastroNuevo(int envioId, IEnumerable<string> leidos, IEnumerable<MovimientoBultoReparto> cerrados, bool redDeSeguridad)
+            => Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                EnvioId = envioId,
+                Motivo = redDeSeguridad ? "Envío ya entregado y bultos aún en la furgoneta (aviso de las 22:00)" : "Envío entregado sin leer todos sus bultos",
+                Leidos = (leidos ?? Enumerable.Empty<string>()).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList(),
+                SinLeer = (cerrados ?? Enumerable.Empty<MovimientoBultoReparto>()).Select(m => m.Codigo).ToList()
+            });
+    }
+
     /// <summary>NestoAPI#772: qué movimientos leer (cualquiera de las condiciones: OR). Vacía: ninguno.</summary>
     public class ConsultaMovimientosBulto
     {
@@ -236,6 +304,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// (Tabla = <paramref name="tabla"/>). Devuelve 1 si se ha insertado, 0 si ya estaba (y entonces no deja otro rastro).
         /// </summary>
         Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario);
+        /// <summary>
+        /// Caso 251099: lo mismo con varios movimientos: en UNA transacción los que no estén ya y, solo si se ha insertado alguno, UNA fila
+        /// de rastro. Devuelve cuántos ha insertado.
+        /// </summary>
+        Task<int> RegistrarConRastro(IReadOnlyList<MovimientoBultoReparto> movimientos, string tabla, string anterior, string nuevo, string usuario);
         Task<JornadaReparto> LeerJornadaPorClave(Guid clave);
         /// <summary>Las jornadas terminadas ese día (Fecha).</summary>
         Task<List<JornadaReparto>> LeerJornadas(DateTime dia);
@@ -359,9 +432,12 @@ SELECT {COLUMNAS} FROM (
 
         private const string SQL_RASTRO = "INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@Tabla, @Anterior, @Nuevo, @UsuarioRastro)";
 
-        public async Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario)
+        public Task<int> RegistrarConRastro(MovimientoBultoReparto movimiento, string tabla, string anterior, string nuevo, string usuario)
+            => movimiento == null ? Task.FromResult(0) : RegistrarConRastro(new[] { movimiento }, tabla, anterior, nuevo, usuario);
+
+        public async Task<int> RegistrarConRastro(IReadOnlyList<MovimientoBultoReparto> movimientos, string tabla, string anterior, string nuevo, string usuario)
         {
-            if (movimiento == null)
+            if (movimientos == null || movimientos.Count == 0)
             {
                 return 0;
             }
@@ -369,14 +445,17 @@ SELECT {COLUMNAS} FROM (
             {
                 try
                 {
-                    int insertado;
-                    try
+                    int insertado = 0;
+                    foreach (MovimientoBultoReparto movimiento in movimientos.Where(m => m != null))
                     {
-                        insertado = await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR, Parametros(movimiento)).ConfigureAwait(false);
-                    }
-                    catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
-                    {
-                        insertado = 0; // otra petición con la misma clave a la vez: ya está (y ya dejó su rastro)
+                        try
+                        {
+                            insertado += await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR, Parametros(movimiento)).ConfigureAwait(false);
+                        }
+                        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+                        {
+                            // otra petición con la misma clave a la vez: ya está (y ya dejó su rastro)
+                        }
                     }
                     if (insertado > 0)
                     {

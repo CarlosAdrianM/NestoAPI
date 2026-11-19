@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Notificaciones;
@@ -185,7 +186,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
     /// <summary>
     /// NestoAPI#772: red de seguridad de las 22:00 (L-V). Cada repartidor con bultos encima y SIN jornada terminada hoy recibe el
-    /// mismo aviso que al terminar con bultos (Almacén, Dirección y él). Sin el script, nada.
+    /// mismo aviso que al terminar con bultos (Almacén, Dirección y él). Sin el script, nada. Antes (caso 251099, 19/11/26), los bultos RP
+    /// de un envío que ya consta ENTREGADO se dan por entregados (<see cref="CierreEntregaFurgoneta"/>) y no cuentan para el aviso.
     /// </summary>
     public class FurgonetaSinDescargarJobsService
     {
@@ -202,14 +204,89 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         internal const string USUARIO_SISTEMA = "Sistema (furgoneta sin descargar)";
 
         /// <param name="esFestivo">NestoAPI#780: sin él (null), no se miran los festivos.</param>
+        /// <param name="enviosEntregados">Caso 251099: de esos envíos, los que ya constan entregados (EnviosAgencia.Estado 2). Sin él (null), no se cierra nada.</param>
         internal FurgonetaSinDescargarJobsService(IRepositorioFurgoneta repositorio, IAvisosFurgoneta avisos, Func<DateTime> ahora = null,
-            Func<DateTime, bool> esFestivo = null, Action<Exception, string> trazar = null)
+            Func<DateTime, bool> esFestivo = null, Action<Exception, string> trazar = null,
+            Func<IReadOnlyCollection<int>, Task<HashSet<int>>> enviosEntregados = null)
         {
             this.repositorio = repositorio;
             this.avisos = avisos;
             this.ahora = ahora ?? (() => DateTime.Now);
             this.esFestivo = esFestivo;
             this.trazar = trazar;
+            this.enviosEntregados = enviosEntregados;
+        }
+
+        private readonly Func<IReadOnlyCollection<int>, Task<HashSet<int>>> enviosEntregados;
+
+        /// <summary>Caso 251099: los envíos de reparto propio (agencia 14) de la lista que ya están entregados.</summary>
+        internal static async Task<HashSet<int>> EnviosEntregados(NVEntities db, IReadOnlyCollection<int> envios)
+        {
+            var resultado = new HashSet<int>();
+            List<int> lista = (envios ?? new List<int>()).Distinct().ToList();
+            for (int i = 0; i < lista.Count; i += 500)
+            {
+                List<int> tanda = lista.Skip(i).Take(500).ToList();
+                foreach (int numero in await db.EnviosAgencias
+                    .Where(e => tanda.Contains(e.Numero) && e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && e.Estado == Constantes.Agencias.ESTADO_ENTREGADO)
+                    .Select(e => e.Numero).ToListAsync().ConfigureAwait(false))
+                {
+                    _ = resultado.Add(numero);
+                }
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// Caso 251099 (Carlos 19/11/26): los bultos que siguen en una furgoneta de un envío que ya consta ENTREGADO se dan por entregados
+        /// (Origen Almacen, marcados «sin leer», un rastro por envío en Modificaciones). Devuelve los que se han cerrado; si algo falla, ninguno
+        /// (y se avisa de ellos como siempre).
+        /// </summary>
+        internal async Task<List<MovimientoBultoReparto>> CerrarDeEnviosEntregados(List<MovimientoBultoReparto> encima, DateTime momento)
+        {
+            var cerrados = new List<MovimientoBultoReparto>();
+            if (enviosEntregados == null)
+            {
+                return cerrados;
+            }
+            List<int> envios = encima.Where(m => m.TipoCodigo == CodigoBultoFurgoneta.RP && m.EnvioId.HasValue).Select(m => m.EnvioId.Value).Distinct().ToList();
+            if (envios.Count == 0)
+            {
+                return cerrados;
+            }
+            HashSet<int> entregados;
+            try
+            {
+                entregados = await enviosEntregados(envios).ConfigureAwait(false) ?? new HashSet<int>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Furgoneta] No se ha podido mirar qué envíos ya están entregados: se avisa de todo lo que sigue en las furgonetas. {ex.Message}", ex));
+                return cerrados;
+            }
+            foreach (IGrouping<int, MovimientoBultoReparto> envio in CierreEntregaFurgoneta.DeEnviosEntregados(encima, entregados).GroupBy(m => m.EnvioId.Value))
+            {
+                List<MovimientoBultoReparto> ultimos = envio.ToList();
+                List<MovimientoBultoReparto> nuevos = ultimos.Select(u =>
+                {
+                    MovimientoBultoReparto n = ServicioRepartoPropio.Copia(u, TiposMovimientoBulto.ENTREGADO, u.Usuario?.Trim(), momento, momento,
+                        OrigenesMovimientoBulto.ALMACEN, NucleoFurgoneta.ClaveDerivada(u.ClaveIdempotencia, u.Codigo, TiposMovimientoBulto.ENTREGADO + "|" + CierreEntregaFurgoneta.TABLA_MODIFICACIONES));
+                    n.Descripcion = CierreEntregaFurgoneta.Marcar(n.Descripcion);
+                    return n;
+                }).ToList();
+                try
+                {
+                    _ = await repositorio.RegistrarConRastro(nuevos, CierreEntregaFurgoneta.TABLA_MODIFICACIONES,
+                        CierreEntregaFurgoneta.RastroAnterior(envio.Key, ultimos), CierreEntregaFurgoneta.RastroNuevo(envio.Key, null, nuevos, true),
+                        USUARIO_SISTEMA).ConfigureAwait(false);
+                    cerrados.AddRange(ultimos);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Furgoneta] El envío {envio.Key} está entregado, pero no se han podido quitar sus bultos de la furgoneta: {ex.Message}", ex));
+                }
+            }
+            return cerrados;
         }
 
         /// <summary>Punto de entrada de Hangfire.</summary>
@@ -218,7 +295,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             using (var db = new NVEntities())
             {
                 _ = await new FurgonetaSinDescargarJobsService(new RepositorioFurgoneta(db), new AvisosFurgonetaSinDescargar(),
-                    esFestivo: FechaRepartoPropio.EsDiaSinReparto).AvisarSinDescargar().ConfigureAwait(false);
+                    esFestivo: FechaRepartoPropio.EsDiaSinReparto, enviosEntregados: envios => EnviosEntregados(db, envios)).AvisarSinDescargar().ConfigureAwait(false);
             }
         }
 
@@ -240,6 +317,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 DateTime hoy = ahora().Date;
                 List<MovimientoBultoReparto> encima = NucleoFurgoneta.EnFurgoneta(
                     await repositorio.LeerUltimos(hoy.AddDays(-ServicioRepartoPropio.DIAS_FURGONETA)).ConfigureAwait(false));
+                // Caso 251099: lo de un envío ya entregado no está en la furgoneta: se cierra y no se avisa de ello
+                List<MovimientoBultoReparto> cerrados = await CerrarDeEnviosEntregados(encima, ahora()).ConfigureAwait(false);
+                encima = encima.Where(m => !cerrados.Contains(m)).ToList();
                 List<JornadaReparto> jornadas = await repositorio.LeerJornadas(hoy).ConfigureAwait(false) ?? new List<JornadaReparto>();
                 int avisados = 0;
                 foreach (IGrouping<string, MovimientoBultoReparto> furgoneta in encima.GroupBy(m => ServicioRepartoPropio.NombreRepartidor(m.Usuario), StringComparer.OrdinalIgnoreCase))

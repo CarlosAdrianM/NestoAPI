@@ -18,8 +18,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// <item><b>Cargado</b>: lo apunta «Cargar» además de lo de siempre (<see cref="AnotarCarga"/>), con la misma clave.</item>
     /// <item><b>Recogido</b>: <see cref="Recoger"/> (NR de una nota de recogida y R de una reposición de una tienda a Algete). Con el
     /// último bulto de la reposición, queda «Recogida» sola (como POST api/Reposiciones/Recogida).</item>
-    /// <item><b>Entregado</b>: al entregar la parada (<see cref="AnotarEntrega"/>): los leídos o, sin leer ninguno, todos los de esa
-    /// parada que llevaba (leer es opcional mientras <see cref="PARAMETRO_ESCANEO_ENTREGA_OBLIGATORIO"/> esté apagado).</item>
+    /// <item><b>Entregado</b>: al entregar la parada (<see cref="AnotarEntrega"/>): los leídos y, de un envío (no de una reposición),
+    /// también los suyos que llevaba encima sin leer (caso 251099, 19/11/26: <see cref="CierreEntregaFurgoneta"/>, con rastro); sin leer
+    /// ninguno, todos los de esa parada que llevaba (leer es opcional mientras <see cref="PARAMETRO_ESCANEO_ENTREGA_OBLIGATORIO"/> esté
+    /// apagado; encendido, hay que leer al menos uno).</item>
     /// <item><b>Descargado</b>: <see cref="Descargar"/> (el repartidor por la tarde) o el almacén al leerlo
     /// (<see cref="RedSeguridadFurgoneta"/>).</item>
     /// </list>
@@ -874,7 +876,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         /// <summary>
-        /// Después de una entrega que ha ido bien: Entregado los leídos o, sin leer ninguno, los de esa parada que llevaba encima. En
+        /// Después de una entrega que ha ido bien: Entregado los leídos y, en un envío, los demás suyos que llevaba encima (marcados «sin
+        /// leer» y con rastro en Modificaciones, <see cref="CierreEntregaFurgoneta"/>); sin leer ninguno, los de esa parada que llevaba encima. En
         /// una nota de RECOGIDA no sale nada: si al recoger no se leyó ninguna NR, se apuntan Recogido NR{pedido}-1..BultosRecogidos
         /// (para que se sepa que vienen en la furgoneta). Las claves salen de la de la entrega (un reintento no duplica). Nunca rompe.
         /// </summary>
@@ -937,17 +940,37 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         });
                     }
                 }
-                List<MovimientoBultoReparto> nuevos = aEntregar
-                    .Select(m => Copia(m, TiposMovimientoBulto.ENTREGADO, usuario.Trim(), fechaHora, momento, OrigenesMovimientoBulto.REPARTIDOR,
-                        NucleoFurgoneta.ClaveDerivada(peticion.ClaveIdempotencia, m.Codigo, TiposMovimientoBulto.ENTREGADO)))
-                    .ToList();
-                foreach (MovimientoBultoReparto nuevo in nuevos)
+                // Caso 251099 (Carlos 19/11/26): entregado el ENVÍO, sus bultos que siguen en la furgoneta de quien entrega se dan por
+                // entregados aunque no se hayan leído (antes, leyendo 5 de 25, los otros 20 se quedaban «en la furgoneta»). Las paradas de
+                // reposición no cambian: cada bulto R es de un traspaso y se entrega el que se lee.
+                var codigosLeidos = new HashSet<string>(leidos.Count == 0 ? Enumerable.Empty<string>() : aEntregar.Select(m => m.Codigo), StringComparer.OrdinalIgnoreCase);
+                List<MovimientoBultoReparto> sinLeer = leidos.Count == 0
+                    ? aEntregar.ToList()
+                    : CierreEntregaFurgoneta.SinLeerDelEnvio(deLaParada, codigosLeidos, envioId, usuario);
+                var nuevos = new List<MovimientoBultoReparto>();
+                foreach (MovimientoBultoReparto m in aEntregar.Concat(sinLeer.Where(s => !codigosLeidos.Contains(s.Codigo) && !aEntregar.Contains(s))))
                 {
+                    MovimientoBultoReparto nuevo = Copia(m, TiposMovimientoBulto.ENTREGADO, usuario.Trim(), fechaHora, momento, OrigenesMovimientoBulto.REPARTIDOR,
+                        NucleoFurgoneta.ClaveDerivada(peticion.ClaveIdempotencia, m.Codigo, TiposMovimientoBulto.ENTREGADO));
                     nuevo.EnvioId = nuevo.EnvioId ?? envioId;
                     nuevo.Latitud = peticion.Latitud;
                     nuevo.Longitud = peticion.Longitud;
+                    if (!codigosLeidos.Contains(m.Codigo))
+                    {
+                        nuevo.Descripcion = CierreEntregaFurgoneta.Marcar(nuevo.Descripcion);
+                    }
+                    nuevos.Add(nuevo);
                 }
-                _ = await paradas.Furgoneta.Registrar(nuevos).ConfigureAwait(false);
+                List<MovimientoBultoReparto> leidosNuevos = nuevos.Where(n => codigosLeidos.Contains(n.Codigo)).ToList();
+                List<MovimientoBultoReparto> sinLeerNuevos = nuevos.Where(n => !codigosLeidos.Contains(n.Codigo)).ToList();
+                _ = await paradas.Furgoneta.Registrar(leidosNuevos).ConfigureAwait(false);
+                if (sinLeerNuevos.Any())
+                {
+                    // En UNA transacción con su rastro en Modificaciones; un reintento (misma clave) ni apunta ni deja otro rastro
+                    _ = await paradas.Furgoneta.RegistrarConRastro(sinLeerNuevos, CierreEntregaFurgoneta.TABLA_MODIFICACIONES,
+                        CierreEntregaFurgoneta.RastroAnterior(envioId, sinLeer),
+                        CierreEntregaFurgoneta.RastroNuevo(envioId, codigosLeidos, sinLeerNuevos, false), usuario.Trim()).ConfigureAwait(false);
+                }
                 if (estado != null)
                 {
                     estado.BultosEntregados = nuevos.Count;
