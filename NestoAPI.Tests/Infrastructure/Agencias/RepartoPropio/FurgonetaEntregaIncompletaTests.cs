@@ -222,6 +222,21 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             StringAssert.Contains(alPedido[0].Cuerpo, "Falta RP251099-2: no se cargó.");
         }
 
+        [TestMethod]
+        public async Task Novedad1366_AlEntregar_SeMiraSiSobraElReenvio_UnaVez()
+        {
+            Envio(ENVIO_INCOMPLETO, bultos: 1);
+            var mirados = new List<(int Envio, string Motivo)>();
+            servicio.ResolverReenvioSobrante = (e, u, m) => { mirados.Add((e.Numero, m)); return Task.FromResult(NestoAPI.Infraestructure.Agencias.ResultadoReenvioEntregado.SinReenvio); };
+            Guid clave = Guid.NewGuid();
+
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, Entrega(clave), MIGUEL);
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, Entrega(clave), MIGUEL);
+
+            Assert.AreEqual(1, mirados.Count, "El reintento no vuelve a mirar");
+            Assert.AreEqual((ENVIO_INCOMPLETO, "Ya está entregado"), mirados[0]);
+        }
+
         private static MovimientoBultoReparto MovRp(int id, int bulto, string tipo, string usuario, DateTime fechaHora)
             => new MovimientoBultoReparto
             {

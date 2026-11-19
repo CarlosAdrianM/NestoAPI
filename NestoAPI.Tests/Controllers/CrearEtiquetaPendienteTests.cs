@@ -303,6 +303,46 @@ namespace NestoAPI.Tests.Controllers
             {
                 return Task.FromResult(Papel);
             }
+            public EnviosAgencia Original { get; set; }
+            internal override Task<EnviosAgencia> LeerOrigenDelReenvio(int id) => Task.FromResult(Original);
+        }
+
+        // Novedad 1366 (250953 -> 251026): borrar el reenvío cuando el original ya está entregado o cerrado a mano lo anula en vez de dar 409.
+        [TestMethod]
+        public async Task DeleteEnviosAgencia_ReenvioQueSobraPorqueElOriginalEstaCerrado_LoAnula()
+        {
+            var envio = new EnviosAgencia { Numero = 251026, Estado = -1, Empresa = "1  " };
+            A.CallTo(() => fakeEnvios.FindAsync(251026)).Returns(Task.FromResult(envio));
+            var anulados = new List<int>();
+            var sut = new ControllerSinHistoria(db)
+            {
+                Papel = EnviosAgenciasController.PAPEL_REENVIO_NUEVO,
+                Original = new EnviosAgencia { Numero = 250953, Estado = Constantes.Agencias.ESTADO_CERRADO_A_MANO },
+                ResolverReenvioSobrante = (o, u, m) => { anulados.Add(o.Numero); return Task.FromResult(NestoAPI.Infraestructure.Agencias.ResultadoReenvioEntregado.ReenvioAnulado); }
+            };
+
+            var resultado = await sut.DeleteEnviosAgencia(251026);
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.OkNegotiatedContentResult<EnviosAgencia>));
+            CollectionAssert.AreEqual(new[] { 250953 }, anulados);
+            A.CallTo(() => fakeEnvios.Remove(A<EnviosAgencia>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DeleteEnviosAgencia_ReenvioConElOriginalVivo_Sigue409()
+        {
+            var envio = new EnviosAgencia { Numero = 251026, Estado = -1, Empresa = "1  " };
+            A.CallTo(() => fakeEnvios.FindAsync(251026)).Returns(Task.FromResult(envio));
+            var sut = new ControllerSinHistoria(db)
+            {
+                Papel = EnviosAgenciasController.PAPEL_REENVIO_NUEVO,
+                Original = new EnviosAgencia { Numero = 250953, Estado = Constantes.Agencias.ESTADO_DEVUELTO },
+                ResolverReenvioSobrante = (o, u, m) => throw new System.InvalidOperationException("no debe llamarse")
+            };
+
+            var resultado = await sut.DeleteEnviosAgencia(251026);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, (System.Net.HttpStatusCode)resultado.GetType().GetProperty("StatusCode").GetValue(resultado));
         }
 
         // Incidencia 1191: un envío de EnviosAgenciaReenvios no se puede borrar (FK); 409 con un mensaje claro en vez del genérico de EF.

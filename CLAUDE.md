@@ -1103,6 +1103,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `IPerfilConEstadosPropios` (el reparto propio 14: el repartidor cierra los envíos desde Ariadna). `GET api/EnviosAgencias/Retrasados`
   solo lista las de esa regla: Canteras (11), la GLS de la espejo (5), Glovo, Sending, CEX… no salen (se quedaban 60 días en Tramitado).
   Ninguna agencia escrita a mano: la que tenga perfil con seguimiento entra sola.
+- **Reenvío que sobra (novedad 1366, 19/11/26; «cerrado a mano = entregado»)**: la anulación de #699 (borra el reenvío sin tramitar, Estado < 1,
+  y la decisión pasa a EntregadoPorLaAgencia) también cuando el original queda Entregado o Cerrado a mano por una persona: entrega del repartidor
+  (`ServicioRepartoPropio.ResolverReenvioSobrante`), «Dar por cerrado», PUT de estado y «Borrar envío» del reenvío (si el original ya está terminado,
+  anula en vez de dar 409). LA REGLA: `ReenvioEntregadoPorLaAgencia.EstaTerminado`/`PasaATerminado` (el seguimiento sigue con `PasaAEntregado`).
+  Campana `ReenvioAnulado` a quien pidió el reenvío.
 - **Devueltos: quién decide (Carlos 19/11/26)**: `POST {id}/Reenviar` y `{id}/Abonar` solo quien hizo el pedido, su vendedor (claim «Vendedor» o
   usuario del vendedor) y Almacén, Dirección e Informática (Administración NO): `PermisosDevueltos` (mismo núcleo que RetencionPorFalta/Decidir), 403
   de usted. «Ya está aquí» (`HaVuelto`, las dos rutas): Almacén, Dirección e Informática. El GET de Devueltos sigue abierto a empleados y vendedores.

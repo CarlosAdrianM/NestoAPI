@@ -282,6 +282,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         // ---------------------------------------------------------------- entregar
 
+        /// <summary>
+        /// Novedad 1366: al entregar, el reenvío sin tramitar de este envío sobra y se anula (envío, usuario, motivo). Null: no se mira
+        /// (los tests); el controlador pone <see cref="ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync(EnviosAgencia, string, string)"/>.
+        /// </summary>
+        public Func<EnviosAgencia, string, string, Task<ResultadoReenvioEntregado>> ResolverReenvioSobrante { get; set; }
+
         public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Entregar(int envioId, EntregaRepartoDTO peticion, string usuario,
             OrigenPeticionReparto origen = null)
         {
@@ -300,6 +306,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 await AnotarEntrega(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
                 // NestoAPI#880: qué bultos faltan (y, si es la primera vez, el aviso). Nunca rompe la entrega.
                 await CompletarEntregaIncompleta(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
+                // Novedad 1366: entregado el original, su reenvío sin tramitar sobra (la misma anulación que el seguimiento). Nunca rompe.
+                if (resultado.Contenido?.EsNueva == true && resultado.Contenido.EnvioEntregado != null && ResolverReenvioSobrante != null)
+                {
+                    try
+                    {
+                        _ = await ResolverReenvioSobrante(resultado.Contenido.EnvioEntregado, usuario,
+                            ReenvioEntregadoPorLaAgencia.MotivoPorEstado(resultado.Contenido.EnvioEntregado.Estado)).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Reparto propio] El envío {envioId} está entregado, pero no se pudo anular su reenvío: {ex.Message}", ex));
+                    }
+                }
             }
             Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_ENTREGA, origen);
             return resultado;

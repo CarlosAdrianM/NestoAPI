@@ -352,6 +352,31 @@ namespace NestoAPI.Controllers
         /// (null = no se mira).</summary>
         internal Func<EnviosAgencia, Task> ResolverReenvioEntregado { get; set; } = ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync;
 
+        /// <summary>
+        /// Novedad 1366: el original terminado (entregado o cerrado a mano) por una persona («Dar por cerrado», PUT, borrar el reenvío que
+        /// sobra) anula su reenvío sin tramitar (envío, usuario, motivo de la historia). Sustituible en tests (null = no se mira).
+        /// </summary>
+        internal Func<EnviosAgencia, string, string, Task<ResultadoReenvioEntregado>> ResolverReenvioSobrante { get; set; }
+            = ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync;
+
+        /// <summary>Novedad 1366: nunca rompe lo que ya se ha guardado.</summary>
+        private async Task<ResultadoReenvioEntregado> AnularReenvioSobrante(EnviosAgencia original, string usuario)
+        {
+            if (original == null || ResolverReenvioSobrante == null || !ReenvioEntregadoPorLaAgencia.EstaTerminado(original.Estado))
+            {
+                return ResultadoReenvioEntregado.SinReenvio;
+            }
+            try
+            {
+                return await ResolverReenvioSobrante(original, usuario, ReenvioEntregadoPorLaAgencia.MotivoPorEstado(original.Estado));
+            }
+            catch (System.Exception ex)
+            {
+                ElmahHelper.Log(new System.Exception($"[Reenvío] No se pudo anular el reenvío del envío {original.Numero}, ya terminado: {ex.Message}", ex));
+                return ResultadoReenvioEntregado.SinReenvio;
+            }
+        }
+
         // NestoAPI#513: el reembolso de la etiqueta mira los efectos manuales del pedido. Perezoso
         // (ServicioPedidosVenta abre su propia conexión al construirse) e inyectable para los tests.
         private IServicioPedidosVenta servicioPedidosVenta;
@@ -1182,6 +1207,12 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
+            }
+
+            // Novedad 1366: un PUT que lo deja entregado o cerrado a mano anula su reenvío sin tramitar (nunca hace fallar el PUT)
+            if (registrado != null && ReenvioEntregadoPorLaAgencia.PasaATerminado(registrado.Estado, enviosAgencia.Estado))
+            {
+                _ = await AnularReenvioSobrante(enviosAgencia, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
             }
 
             // Incidencia 1328: al registrar o tocar un envío que aún está en el almacén, sus pickings (unión; nunca hace fallar el PUT).
@@ -2676,12 +2707,18 @@ namespace NestoAPI.Controllers
             }
 
             string usuario = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            short estadoAntesDeCerrar = envio.Estado;
             List<EnvioHistoria> historia = CierreManualEnvio.Aplicar(envio, datos.Motivo, usuario, DateTime.Now);
             foreach (EnvioHistoria fila in historia)
             {
                 _ = db.EnviosHistorias.Add(fila);
             }
             _ = await db.SaveChangesAsync();
+            // Novedad 1366: cerrado a mano = entregado: su reenvío sin tramitar ya no hace falta
+            if (ReenvioEntregadoPorLaAgencia.PasaATerminado(estadoAntesDeCerrar, envio.Estado))
+            {
+                _ = await AnularReenvioSobrante(envio, usuario);
+            }
 
             return Ok(new EnvioCerradoDTO
             {
@@ -3789,7 +3826,19 @@ namespace NestoAPI.Controllers
             }
 
             // Incidencia 1191: la BD lo impide con FK_EnviosAgenciaReenvios y al usuario le llegaba el genérico de EF en inglés.
-            string mensajeReenvio = MensajeBorradoConReenvio(await LeerPapelEnReenvio(id));
+            string papel = await LeerPapelEnReenvio(id);
+            if (papel == PAPEL_REENVIO_NUEVO)
+            {
+                // Novedad 1366 (envíos 250953 y 251026): el reenvío que sobra porque el original ya está entregado o cerrado a mano se
+                // anula con la misma anulación que el seguimiento (borra el envío y su historia y deja la decisión en EntregadoPorLaAgencia).
+                EnviosAgencia original = await LeerOrigenDelReenvio(id);
+                if (original != null && ReenvioEntregadoPorLaAgencia.EstaTerminado(original.Estado)
+                    && await AnularReenvioSobrante(original, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")) == ResultadoReenvioEntregado.ReenvioAnulado)
+                {
+                    return Ok(enviosAgencia);
+                }
+            }
+            string mensajeReenvio = MensajeBorradoConReenvio(papel);
             if (mensajeReenvio != null)
             {
                 return Content(HttpStatusCode.Conflict, new { Message = mensajeReenvio });
@@ -3840,6 +3889,25 @@ namespace NestoAPI.Controllers
                 $"SELECT CASE WHEN EnvioNuevo = @p0 THEN '{PAPEL_REENVIO_NUEVO}' ELSE '{PAPEL_REENVIO_ORIGEN}' END " +
                 $"FROM dbo.{RepositorioReenviosEnvio.TABLA} WHERE EnvioNuevo = @p0 OR EnvioOrigen = @p0", id).ToListAsync();
             return papeles.Contains(PAPEL_REENVIO_NUEVO) ? PAPEL_REENVIO_NUEVO : papeles.FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Novedad 1366: el envío original de un reenvío (decisión Reenviar con EnvioNuevo = <paramref name="id"/>). Null si no hay o no se
+        /// puede leer. internal virtual para los tests.
+        /// </summary>
+        internal virtual async Task<EnviosAgencia> LeerOrigenDelReenvio(int id)
+        {
+            try
+            {
+                List<int> origenes = await db.Database.SqlQuery<int>(
+                    $"SELECT EnvioOrigen FROM dbo.{RepositorioReenviosEnvio.TABLA} WHERE EnvioNuevo = @p0 AND Decision = @p1", id, DecisionesReenvio.REENVIAR)
+                    .ToListAsync();
+                return origenes == null || origenes.Count == 0 ? null : await db.EnviosAgencias.FindAsync(origenes[0]);
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
         }
 
         // internal virtual para interceptarlo en los tests (db.Database no es fakeable).

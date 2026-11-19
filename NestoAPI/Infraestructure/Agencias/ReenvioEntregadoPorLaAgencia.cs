@@ -52,12 +52,31 @@ namespace NestoAPI.Infraestructure.Agencias
             && estadoAnterior != Constantes.Agencias.ESTADO_DEVUELTO
             && envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO;
 
-        /// <summary>La línea de la historia del envío viejo.</summary>
-        public static string TextoHistoria(int envioNuevo) => $"La agencia acabó entregándolo: se anula el reenvío {envioNuevo}.";
+        /// <summary>
+        /// Novedad 1366 (Carlos 18/11/26, «cerrado a mano = entregado»): LA REGLA de cuándo sobra el reenvío pendiente. El original está
+        /// terminado si está Entregado (2) o Cerrado a mano (5), llegue como llegue (seguimiento, repartidor, «Dar por cerrado», PUT).
+        /// </summary>
+        public static bool EstaTerminado(short estado) => estado == Constantes.Agencias.ESTADO_ENTREGADO || estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO;
 
-        public async Task<ResultadoReenvioEntregado> ResolverAsync(EnviosAgencia origen)
+        /// <summary>
+        /// Novedad 1366: la transición de una PERSONA (repartidor, «Dar por cerrado», PUT) a terminado. Desde Devuelto también cuenta (lo
+        /// cierra alguien a sabiendas); el seguimiento de la agencia sigue con <see cref="PasaAEntregado"/>.
+        /// </summary>
+        public static bool PasaATerminado(short estadoAnterior, short estadoNuevo) => EstaTerminado(estadoNuevo) && !EstaTerminado(estadoAnterior);
+
+        /// <summary>La línea de la historia del envío viejo. Sin <paramref name="motivo"/>, la del seguimiento de la agencia.</summary>
+        public static string TextoHistoria(int envioNuevo, string motivo = null)
+            => $"{(string.IsNullOrWhiteSpace(motivo) ? "La agencia acabó entregándolo" : motivo.Trim())}: se anula el reenvío {envioNuevo}.";
+
+        /// <summary>El motivo de la historia según cómo quedó el original (para los caminos que no son el seguimiento).</summary>
+        public static string MotivoPorEstado(short estado)
+            => estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO ? "Se dio por cerrado" : "Ya está entregado";
+
+        /// <param name="usuario">Quién lo hace (sin él, <see cref="USUARIO"/>, el seguimiento).</param>
+        /// <param name="motivo">Para la historia (sin él, «La agencia acabó entregándolo»).</param>
+        public async Task<ResultadoReenvioEntregado> ResolverAsync(EnviosAgencia origen, string usuario = null, string motivo = null)
         {
-            if (origen == null || !datos.Reenvios.TablaDisponible())
+            if (origen == null || !EstaTerminado(origen.Estado) || !datos.Reenvios.TablaDisponible())
             {
                 return ResultadoReenvioEntregado.SinReenvio;
             }
@@ -77,7 +96,7 @@ namespace NestoAPI.Infraestructure.Agencias
             if (nuevo.Estado < Constantes.Agencias.ESTADO_TRAMITADO)
             {
                 ResultadoAnulacionReenvio anulacion = await datos.Reenvios
-                    .AnularPorEntregaAsync(origen.Numero, numeroNuevo, USUARIO, TextoHistoria(numeroNuevo)).ConfigureAwait(false);
+                    .AnularPorEntregaAsync(origen.Numero, numeroNuevo, string.IsNullOrWhiteSpace(usuario) ? USUARIO : usuario, TextoHistoria(numeroNuevo, motivo)).ConfigureAwait(false);
                 if (anulacion == ResultadoAnulacionReenvio.SinReenvioPendiente)
                 {
                     // Otra pasada (o la consulta a demanda) se ha adelantado: ya está hecho y avisado.
@@ -114,7 +133,13 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>Punto de entrada del seguimiento: con su propio contexto, para no mezclarse con el de la pasada. Nunca lanza.</summary>
-        public static async Task ResolverConContextoPropioAsync(EnviosAgencia envio)
+        public static Task ResolverConContextoPropioAsync(EnviosAgencia envio) => ResolverConContextoPropioAsync(envio, null, null);
+
+        /// <summary>
+        /// Novedad 1366: lo mismo desde los caminos de una persona (repartidor, «Dar por cerrado», PUT, borrar el reenvío que sobra), con
+        /// quién y el motivo de la historia. Nunca lanza (si falla, SinReenvio y ELMAH).
+        /// </summary>
+        public static async Task<ResultadoReenvioEntregado> ResolverConContextoPropioAsync(EnviosAgencia envio, string usuario, string motivo)
         {
             try
             {
@@ -122,13 +147,14 @@ namespace NestoAPI.Infraestructure.Agencias
                 {
                     db.Configuration.LazyLoadingEnabled = false;
                     var avisador = new AvisadorIncidenciasEnvio(db);
-                    _ = await new ReenvioEntregadoPorLaAgencia(new DatosReenviosEnvioEF(db), avisador.AvisarReenvioEntregadoAsync)
-                        .ResolverAsync(envio).ConfigureAwait(false);
+                    return await new ReenvioEntregadoPorLaAgencia(new DatosReenviosEnvioEF(db), avisador.AvisarReenvioEntregadoAsync)
+                        .ResolverAsync(envio, usuario, motivo).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
                 Registrar(envio, ex);
+                return ResultadoReenvioEntregado.SinReenvio;
             }
         }
 

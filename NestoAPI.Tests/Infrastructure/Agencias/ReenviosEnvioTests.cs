@@ -815,6 +815,62 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(0, avisosEntrega.Count);
         }
 
+        // ===== Novedad 1366: el reenvío que sobra cuando el original acaba entregado o cerrado a mano por cualquier camino =====
+
+        [DataTestMethod]
+        [DataRow(Constantes.Agencias.ESTADO_TRAMITADO, Constantes.Agencias.ESTADO_ENTREGADO, true, DisplayName = "Repartidor: entregado")]
+        [DataRow(Constantes.Agencias.ESTADO_INCIDENTADO, Constantes.Agencias.ESTADO_CERRADO_A_MANO, true, DisplayName = "Dar por cerrado")]
+        [DataRow(Constantes.Agencias.ESTADO_DEVUELTO, Constantes.Agencias.ESTADO_CERRADO_A_MANO, true, DisplayName = "Devuelto cerrado a mano (250953)")]
+        [DataRow(Constantes.Agencias.ESTADO_ENTREGADO, Constantes.Agencias.ESTADO_CERRADO_A_MANO, false, DisplayName = "Ya estaba terminado")]
+        [DataRow(Constantes.Agencias.ESTADO_INCIDENTADO, Constantes.Agencias.ESTADO_DEVUELTO, false, DisplayName = "Sigue vivo")]
+        public void Novedad1366_PasaATerminado(short anterior, short nuevo, bool esperado)
+        {
+            Assert.AreEqual(esperado, ReenvioEntregadoPorLaAgencia.PasaATerminado(anterior, nuevo));
+        }
+
+        [TestMethod]
+        public async Task Novedad1366_Caso250953_CerradoAMano_AnulaElReenvio251026Pendiente()
+        {
+            EnviosAgencia original = Devuelto(estado: Constantes.Agencias.ESTADO_CERRADO_A_MANO);
+            original.Numero = 250953;
+            datos.Envios[250953] = original;
+            datos.Envios[251026] = new EnviosAgencia { Numero = 251026, Estado = Constantes.Agencias.ESTADO_PENDIENTE, Pedido = 925137 };
+            datos.Repo.Filas[250953] = new RegistroReenvioEnvio { EnvioOrigen = 250953, Decision = DecisionesReenvio.REENVIAR, EnvioNuevo = 251026, Usuario = "Alfredo", Fecha = HOY };
+
+            ResultadoReenvioEntregado r = await Entrega().ResolverAsync(original, "Laura", ReenvioEntregadoPorLaAgencia.MotivoPorEstado(original.Estado));
+
+            Assert.AreEqual(ResultadoReenvioEntregado.ReenvioAnulado, r);
+            Assert.IsFalse(datos.Envios.ContainsKey(251026), "El reenvío que sobra se borra");
+            Assert.AreEqual(DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA, datos.Repo.Filas[250953].Decision);
+            Assert.AreEqual(251026, datos.Repo.Filas[250953].EnvioAnulado);
+            Assert.AreEqual("Se dio por cerrado: se anula el reenvío 251026.", datos.Repo.HistoriaAnulacion);
+            Assert.AreEqual("Laura", datos.Repo.UsuarioAnulacion);
+            Assert.IsTrue(avisosEntrega.Single().Anulado);
+        }
+
+        [TestMethod]
+        public async Task Novedad1366_OriginalSinTerminar_NoAnulaNada()
+        {
+            EnviosAgencia viejo = EntregadoConReenvio(Constantes.Agencias.ESTADO_PENDIENTE);
+            viejo.Estado = Constantes.Agencias.ESTADO_DEVUELTO;
+
+            Assert.AreEqual(ResultadoReenvioEntregado.SinReenvio, await Entrega().ResolverAsync(viejo, "Laura", "Ya está entregado"));
+            Assert.IsTrue(datos.Envios.ContainsKey(300000));
+        }
+
+        [TestMethod]
+        public void Novedad1366_CampanaAQuienPidioElReenvio()
+        {
+            var origen = new EnviosAgencia { Numero = 250953, Pedido = 930500, Estado = Constantes.Agencias.ESTADO_CERRADO_A_MANO };
+            var fila = new RegistroReenvioEnvio { EnvioOrigen = 250953, EnvioAnulado = 251026, Usuario = "Alfredo" };
+
+            NotificacionPushDTO n = AvisadorIncidenciasEnvio.ComponerNotificacionReenvioAnulado(origen, fila, null);
+
+            Assert.AreEqual(AvisadorIncidenciasEnvio.TIPO_NOTIFICACION_REENVIO_ANULADO, n.Tipo);
+            StringAssert.StartsWith(n.Cuerpo, "El envío 250953 del pedido 930500 se dio por cerrado: se ha anulado el reenvío 251026 que pidió");
+            Assert.IsNull(AvisadorIncidenciasEnvio.ComponerNotificacionReenvioAnulado(origen, new RegistroReenvioEnvio(), null));
+        }
+
         [TestMethod]
         public async Task EntregadoConReenvio_SiFallaElAviso_NoSeCae()
         {

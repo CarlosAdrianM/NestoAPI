@@ -45,6 +45,8 @@ namespace NestoAPI.Controllers
             servicio.CobrosDeuda = new ServicioCobrosReparto(new RepositorioCobrosReparto(db));
             // NestoAPI#844: la caja sin cerrar bloquea terminar la jornada y empezar el día siguiente (cargar, recoger, cobrar)
             servicio.ControlCaja = NuevoControlCaja(db);
+            // Novedad 1366: entregado el original, su reenvío sin tramitar sobra
+            servicio.ResolverReenvioSobrante = ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync;
         }
 
         private static ControlCajaReparto NuevoControlCaja(NVEntities db)

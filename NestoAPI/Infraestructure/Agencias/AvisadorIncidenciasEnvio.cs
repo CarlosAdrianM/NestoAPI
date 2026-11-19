@@ -178,7 +178,7 @@ namespace NestoAPI.Infraestructure.Agencias
         /// pedido con copia a Logística (los mismos destinatarios que la devolución): si el reenvío se ha anulado, para que lo
         /// sepan; si ya estaba tramitado, para que lo resuelvan a mano. Nunca lanza.
         /// </summary>
-        public Task AvisarReenvioEntregadoAsync(EnviosAgencia origen, RegistroReenvioEnvio fila, EnviosAgencia nuevo, bool anulado)
+        public async Task AvisarReenvioEntregadoAsync(EnviosAgencia origen, RegistroReenvioEnvio fila, EnviosAgencia nuevo, bool anulado)
         {
             try
             {
@@ -187,12 +187,54 @@ namespace NestoAPI.Infraestructure.Agencias
                     .Where(a => a.Numero == origen.Agencia)
                     .Select(a => a.Nombre).FirstOrDefault()?.Trim();
                 _ = servicioCorreo.EnviarCorreoSMTP(ComponerCorreoReenvioEntregado(origen, fila, nuevo, anulado, comerciales, agencia));
+                // Novedad 1366: la campana a quien pidió el reenvío (ya no hace falta)
+                NotificacionPushDTO campana = anulado ? ComponerNotificacionReenvioAnulado(origen, fila, nuevo) : null;
+                if (campana != null)
+                {
+                    string quien = fila.Usuario.Trim();
+                    await notificaciones.GuardarEnBuzonDeUsuario(quien.Contains("\\") ? quien : "NUEVAVISION\\" + quien, Constantes.Aplicaciones.NESTO, campana)
+                        .ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
                 Registrar(origen, ex);
             }
-            return Task.CompletedTask;
+        }
+
+        public const string TIPO_NOTIFICACION_REENVIO_ANULADO = "ReenvioAnulado";
+
+        /// <summary>
+        /// Novedad 1366: «El envío 250953 del pedido 930500 ya está entregado: se ha anulado el reenvío 251026, que ya no hace falta.» Null sin
+        /// quién lo pidió.
+        /// </summary>
+        internal static NotificacionPushDTO ComponerNotificacionReenvioAnulado(EnviosAgencia origen, RegistroReenvioEnvio fila, EnviosAgencia nuevo)
+        {
+            if (origen == null || string.IsNullOrWhiteSpace(fila?.Usuario))
+            {
+                return null;
+            }
+            int numeroNuevo = nuevo?.Numero ?? fila.EnvioNuevo ?? fila.EnvioAnulado ?? 0;
+            string pedido = origen.Pedido.HasValue ? $" del pedido {origen.Pedido}" : string.Empty;
+            string como = origen.Estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO ? "se dio por cerrado" : "ya está entregado";
+            var datos = new Dictionary<string, string>
+            {
+                ["tipo"] = TIPO_NOTIFICACION_REENVIO_ANULADO,
+                ["envio"] = origen.Numero.ToString(),
+                ["envioAnulado"] = numeroNuevo.ToString()
+            };
+            if (origen.Pedido.HasValue)
+            {
+                datos["pedido"] = origen.Pedido.Value.ToString();
+            }
+            return new NotificacionPushDTO
+            {
+                Titulo = $"Reenvío {numeroNuevo} anulado: ya no hace falta",
+                Cuerpo = $"El envío {origen.Numero}{pedido} {como}: se ha anulado el reenvío {numeroNuevo} que pidió, porque ya no hace falta. " +
+                    "Si la caja ya estaba preparada para salir, no le pegue la etiqueta y devuelva la mercancía a su ubicación.",
+                Tipo = TIPO_NOTIFICACION_REENVIO_ANULADO,
+                Datos = datos
+            };
         }
 
         /// <summary>NestoAPI#699: el correo de <see cref="AvisarReenvioEntregadoAsync"/>.</summary>
