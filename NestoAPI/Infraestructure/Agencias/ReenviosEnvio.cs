@@ -275,7 +275,8 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<AgenciaTransporte> LeerAgenciaAsync(int agencia);
         /// <summary>El reembolso que el seguimiento le quitó al envío al pasar a devuelto (Sugerencia 544), o null.</summary>
         Task<decimal?> ReembolsoQuitadoPorDevueltoAsync(int envio);
-        Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde);
+        /// <param name="pedido">Sugerencia 1356 (19/11/26): solo los de ese pedido (null = todos los de la empresa).</param>
+        Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde, int? pedido);
         Task<Dictionary<int, short>> LeerEstadosAsync(IEnumerable<int> envios);
         void Anadir(EnviosAgencia envio);
         Task GuardarCambios();
@@ -311,7 +312,8 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<ResultadoReenvio> ReenviarAsync(int envioOrigen, ReenviarEnvioDTO datos, string usuario);
         Task<ResultadoReenvio> AbonarAsync(int envioOrigen, string usuario);
         /// <summary>Null si no está la tabla.</summary>
-        Task<List<EnvioDevueltoDTO>> LeerDevueltosAsync(string empresa);
+        /// <param name="pedido">Sugerencia 1356 (19/11/26): solo los de ese pedido (Nesto, pestaña Entrega); null = todos, como siempre.</param>
+        Task<List<EnvioDevueltoDTO>> LeerDevueltosAsync(string empresa, int? pedido = null);
     }
 
     /// <summary>
@@ -597,13 +599,13 @@ namespace NestoAPI.Infraestructure.Agencias
             });
         }
 
-        public async Task<List<EnvioDevueltoDTO>> LeerDevueltosAsync(string empresa)
+        public async Task<List<EnvioDevueltoDTO>> LeerDevueltosAsync(string empresa, int? pedido = null)
         {
             if (!datos.Reenvios.TablaDisponible())
             {
                 return null;
             }
-            List<EnvioAgenciaListadoDTO> envios = await datos.LeerDevueltosEIncidentadosAsync(empresa, hoy().Date.AddDays(-DIAS_LISTADO));
+            List<EnvioAgenciaListadoDTO> envios = await datos.LeerDevueltosEIncidentadosAsync(empresa, hoy().Date.AddDays(-DIAS_LISTADO), pedido);
             Dictionary<int, RegistroReenvioEnvio> decisiones = await datos.Reenvios.LeerAsync(envios.Select(e => e.Numero));
             Dictionary<int, short> estadosNuevos = await datos.LeerEstadosAsync(
                 decisiones.Values.Where(d => d.EnvioNuevo.HasValue).Select(d => d.EnvioNuevo.Value));
@@ -819,16 +821,22 @@ namespace NestoAPI.Infraestructure.Agencias
             return ServicioReenviosEnvio.LeerImporteHistoria(filas.FirstOrDefault()?.ValorAnterior);
         }
 
-        public async Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde)
+        public async Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde, int? pedido)
         {
             // Más los que la agencia acabó entregando tras decidir reenviarlos: ya no están devueltos ni incidentados, pero el
             // almacén tiene que ver que su reenvío se anuló.
             List<int> entregados = await Reenvios.LeerOrigenesConDecisionAsync(DecisionesReenvio.ENTREGADO_POR_LA_AGENCIA);
-            return await EnviosAgenciasController.ProyectarListado(db.EnviosAgencias
+            IQueryable<EnviosAgencia> consulta = db.EnviosAgencias
                 .Where(e => e.Empresa == empresa && e.Fecha >= desde
                     && (e.Estado == Constantes.Agencias.ESTADO_DEVUELTO || e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO
-                        || entregados.Contains(e.Numero))))
-                .ToListAsync();
+                        || entregados.Contains(e.Numero)));
+            if (pedido.HasValue)
+            {
+                // Sugerencia 1356: desde el pedido, solo los suyos (antes Nesto bajaba los 60 días y filtraba).
+                int numeroPedido = pedido.Value;
+                consulta = consulta.Where(e => e.Pedido == numeroPedido);
+            }
+            return await EnviosAgenciasController.ProyectarListado(consulta).ToListAsync();
         }
 
         public async Task<Dictionary<int, short>> LeerEstadosAsync(IEnumerable<int> envios)

@@ -1053,6 +1053,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - **Devueltos: `Resuelto` (sugerencia 1329)**: `EnvioDevueltoDTO.Resuelto` (solo lectura, `ReglaDevueltoResuelto`) = la caja ha vuelto
   (#870) + decisión tomada + (si es Reenviar) el reenvío ya tramitado; y siempre los `EntregadoPorLaAgencia` (Carlos 18/11/26: si la agencia acabó entregando, ya no se espera caja). La API devuelve todos; Nesto oculta los resueltos por defecto
   (casilla «Ver también los resueltos») y tiene una caja de lectura que llama a `POST api/EnviosAgencias/HaVuelto` {Codigo}.
+- **Devueltos por pedido (sugerencia 1356, 19/11/26)**: `GET api/EnviosAgencias/Devueltos?empresa=&pedido=` filtra en la consulta (misma
+  ventana de 60 días); sin `pedido`, como siempre. Lo usa la pestaña «Entrega» del pedido en Nesto. Reenviar/Abonar siguen con solo `[Authorize]`.
 
 ## Testing Notes
 

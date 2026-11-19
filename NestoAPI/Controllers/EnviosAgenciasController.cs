@@ -2648,18 +2648,19 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// NestoAPI#699: los envíos DEVUELTOS (4) e INCIDENTADOS (3) de los últimos 60 días con la decisión de cada uno:
         /// SinDecidir (primero), Reenviar (con el envío nuevo y si ya tiene etiqueta) o Abonar. Pestaña Devueltos de Agencias.
-        /// 400 si falta el script de la tabla.
+        /// 400 si falta el script de la tabla. Sugerencia 1356 (19/11/26): con <paramref name="pedido"/>, solo los de ese pedido (la
+        /// pestaña Entrega del pedido en Nesto); sin él, como siempre.
         /// </summary>
         [HttpGet]
         [Route("api/EnviosAgencias/Devueltos")]
         [ResponseType(typeof(List<EnvioDevueltoDTO>))]
-        public async Task<IHttpActionResult> GetEnviosDevueltos(string empresa)
+        public async Task<IHttpActionResult> GetEnviosDevueltos(string empresa, int? pedido = null)
         {
             if (string.IsNullOrWhiteSpace(empresa))
             {
                 return BadRequest("Indique la empresa.");
             }
-            List<EnvioDevueltoDTO> envios = await ServicioReenvios.LeerDevueltosAsync(empresa);
+            List<EnvioDevueltoDTO> envios = await ServicioReenvios.LeerDevueltosAsync(empresa.Trim(), pedido);
             if (envios == null)
             {
                 return BadRequest(ServicioReenviosEnvio.MENSAJE_SIN_TABLA);

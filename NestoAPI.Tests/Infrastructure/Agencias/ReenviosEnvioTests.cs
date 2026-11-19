@@ -376,6 +376,33 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task Devueltos_PorPedido_SoloLosDeEsePedido_ConSuDecision_Sugerencia1356()
+        {
+            datos.Listado = new List<EnvioAgenciaListadoDTO>
+            {
+                new EnvioAgenciaListadoDTO { Numero = 1, Fecha = new DateTime(2026, 11, 3), Estado = 4, Pedido = 11 },
+                new EnvioAgenciaListadoDTO { Numero = 2, Fecha = new DateTime(2026, 11, 1), Estado = 4, Pedido = 22 }
+            };
+            datos.Repo.Filas[2] = new RegistroReenvioEnvio { EnvioOrigen = 2, Decision = DecisionesReenvio.ABONAR, Usuario = "Santi" };
+
+            List<EnvioDevueltoDTO> lista = await servicio.LeerDevueltosAsync("1", 22);
+
+            Assert.AreEqual(22, datos.PedidoLeido, "el filtro va a la consulta, no se filtra después");
+            Assert.AreEqual(2, lista.Single().Numero);
+            Assert.AreEqual(DecisionesReenvio.ABONAR, lista.Single().Decision);
+            Assert.AreEqual(HOY.AddDays(-ServicioReenviosEnvio.DIAS_LISTADO), datos.DesdeLeido, "la misma ventana de 60 días");
+        }
+
+        [TestMethod]
+        public async Task Devueltos_SinPedido_ComoSiempre()
+        {
+            datos.Listado = new List<EnvioAgenciaListadoDTO> { new EnvioAgenciaListadoDTO { Numero = 1, Fecha = new DateTime(2026, 11, 3), Estado = 4, Pedido = 11 } };
+
+            Assert.AreEqual(1, (await servicio.LeerDevueltosAsync("1")).Count);
+            Assert.IsNull(datos.PedidoLeido);
+        }
+
+        [TestMethod]
         public async Task Devueltos_SinTabla_Null()
         {
             datos.Repo.Tabla = false;
@@ -804,10 +831,13 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             public Task<decimal?> ReembolsoQuitadoPorDevueltoAsync(int envio) => Task.FromResult(ReembolsoQuitado);
 
-            public Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde)
+            public int? PedidoLeido { get; private set; }
+
+            public Task<List<EnvioAgenciaListadoDTO>> LeerDevueltosEIncidentadosAsync(string empresa, DateTime desde, int? pedido)
             {
                 DesdeLeido = desde;
-                return Task.FromResult(Listado);
+                PedidoLeido = pedido;
+                return Task.FromResult(pedido.HasValue ? Listado.Where(e => e.Pedido == pedido).ToList() : Listado);
             }
 
             public Task<Dictionary<int, short>> LeerEstadosAsync(IEnumerable<int> envios)
