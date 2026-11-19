@@ -217,6 +217,10 @@ The `GestorPrecios.calcularDescuentoProducto()` method:
 ## Key Business Rules
 
 ### Sales Order Validation
+- **Nota de entrega: cambios solo de cabecera (novedad 1365, 19/11/26)**: el PUT de una nota ya no da «No se puede ampliar una nota de entrega»
+  si solo toca la cabecera («Recoger producto», aviso con importe, comentarios…): regla pura `PedidosVentaController.EsCambioSoloCabeceraEnNotaEntrega`
+  (ni cliente, contacto, IVA ni DescuentoPP; ni líneas nuevas o que faltan; ni producto, texto, precio, cantidad, descuentos o fecha; fecha default y
+  almacén vacío no cuentan). También en una nota ya procesada (líneas -2) sin nada facturado (`PuedeModificarsePedido`).
 - El Edén client (`Constantes.ClientesEspeciales.EL_EDEN`) bypasses all validations
 - Orders validate through denial then acceptance validator pipeline
 - Each product line validated individually with specific product ID tracking

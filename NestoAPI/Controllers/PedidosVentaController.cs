@@ -1777,8 +1777,9 @@ namespace NestoAPI.Controllers
                 errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
 
-            // Carlos 15/03/18: no se puede ampliar una nota de entrega
-            if (cabPedidoVta.NotaEntrega)
+            // Carlos 15/03/18: no se puede ampliar una nota de entrega. Novedad 1365 (Carlos 19/11/26): sí los cambios SOLO de
+            // cabecera («Recoger producto», el aviso con importe, comentarios…); añadir, quitar o cambiar líneas sigue prohibido.
+            if (cabPedidoVta.NotaEntrega && !EsCambioSoloCabeceraEnNotaEntrega(cabPedidoVta, pedido))
             {
                 errorPersonalizado("No se puede ampliar una nota de entrega");
             }
@@ -4622,7 +4623,62 @@ namespace NestoAPI.Controllers
         internal static bool PuedeModificarsePedido(CabPedidoVta cabPedidoVta, PedidoVentaDTO pedido)
         {
             return PedidoTieneLineasPendientes(cabPedidoVta.LinPedidoVtas)
-                || EsCambioSoloCabeceraEnAlbaran(cabPedidoVta, pedido);
+                || EsCambioSoloCabeceraEnAlbaran(cabPedidoVta, pedido)
+                // Novedad 1365: una nota de entrega ya procesada (líneas -2) admite cambios solo de cabecera (nunca si hay algo facturado)
+                || (cabPedidoVta.NotaEntrega
+                    && cabPedidoVta.LinPedidoVtas.All(l => l.Estado < Constantes.EstadosLineaVenta.FACTURA)
+                    && EsCambioSoloCabeceraEnNotaEntrega(cabPedidoVta, pedido));
+        }
+
+        /// <summary>
+        /// Novedad 1365 (Carlos 19/11/26): ¿el PUT de una NOTA DE ENTREGA solo toca la cabecera? Ni cliente, contacto, IVA ni DescuentoPP
+        /// (se propagan a las líneas), ni líneas nuevas, ni líneas que faltan (las de albarán o factura que no vienen se conservan, como
+        /// siempre), ni cambios de producto, texto, precio, cantidad, descuentos, aplicar descuento o fecha de entrega. Lo que un cliente
+        /// viejo manda vacío no cuenta como cambio: la fecha sin informar (default) ni el almacén vacío. PURA.
+        /// </summary>
+        internal static bool EsCambioSoloCabeceraEnNotaEntrega(CabPedidoVta cabPedidoVta, PedidoVentaDTO pedido)
+        {
+            if (cabPedidoVta == null || pedido == null || pedido.Lineas == null)
+            {
+                return false;
+            }
+            List<LinPedidoVta> lineas = (cabPedidoVta.LinPedidoVtas ?? new List<LinPedidoVta>()).ToList();
+            if ((cabPedidoVta.Nº_Cliente ?? "").Trim() != (pedido.cliente ?? "").Trim()
+                || (cabPedidoVta.Contacto ?? "").Trim() != (pedido.contacto ?? "").Trim()
+                || IvaCambia(cabPedidoVta.IVA, pedido.iva))
+            {
+                return false;
+            }
+            if (pedido.Lineas.Any(l => l.id == 0 || !lineas.Any(x => x.Nº_Orden == l.id)))
+            {
+                return false;
+            }
+            foreach (LinPedidoVta linea in lineas)
+            {
+                LineaPedidoVentaDTO dto = pedido.Lineas.FirstOrDefault(l => l.id == linea.Nº_Orden);
+                if (dto == null)
+                {
+                    if (linea.Estado < Constantes.EstadosLineaVenta.ALBARAN)
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                if ((linea.Producto ?? "").Trim() != (dto.Producto ?? "").Trim()
+                    || (linea.Texto ?? "").Trim() != (dto.texto ?? "").Trim()
+                    || linea.Precio != dto.PrecioUnitario
+                    || linea.Cantidad != dto.Cantidad
+                    || linea.DescuentoProducto != dto.DescuentoProducto
+                    || linea.Descuento != dto.DescuentoLinea
+                    || linea.Aplicar_Dto != dto.AplicarDescuento
+                    || linea.DescuentoPP != pedido.DescuentoPP
+                    || (dto.fechaEntrega != default(DateTime) && linea.Fecha_Entrega != dto.fechaEntrega)
+                    || (!string.IsNullOrWhiteSpace(dto.almacen) && !string.Equals((linea.Almacén ?? "").Trim(), dto.almacen.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// <summary>
