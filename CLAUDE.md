@@ -1079,6 +1079,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   error en `RevisarAntesDelCorreo` (`PedidosRevisados`) o lo detectado después de empezar (`ReglaCorreoPromesaRiesgo.PuedeIr`); lo demás
   espera al siguiente correo, nunca sale el porqué de hace horas.
 
+### Qué modos de servicio se ofrecen: por plan de entregas (Carlos 19/11/26)
+- En Algete ya no por colores: `SugeridorModoServicio` saca los hechos de cada grupo (unidades que salen AHORA, que traen las TIENDAS y sin cubrir) con
+  la misma lectura (ColorStock con distintas cantidades, en memoria con el gestor precargado) y `ModosServicioPermitidos.CalcularPorPlanes` compara el
+  plan de entregas de cada modo (`PlanEntregasModoServicio`: 1 una con todo; 2 lo de ahora y una por llegada; 3 espera a TODO lo de tiendas y sale con lo
+  de ahora; 4 lo de ahora y una más con el resto). Una llegada de más de una unidad puede llegar partida («*»); las tiendas van en un solo suceso (sin
+  desglose por tienda). Mismo plan → se ofrece uno (1 > 4 > 3 > 2), motivo «Con este pedido es lo mismo que «X»». El 3 necesita algo de tiendas, el 4
+  algo ahora; #561 sigue (nada ahora ni en tiendas → solo 1). Caso A (verde + entera en Reina): 3 = 1, no se ofrece. Caso B (2 uds., 1 en Reina): 3 sí.
+  Una sola unidad sin cubrir: 2 = 4, solo el 4. El sugerido (regla de siempre, `Decidir`) se cambia a su equivalente ofrecido (`Ofrecido`). Tienda,
+  otros almacenes, modo 6 y picking no cambian; al modificar, la comprobación tolerante de siempre (sin cambio de modo no se mira).
+
 ### Modo de servicio 6, «Junto con lo pendiente del cliente» (sugerencia 1340, 18/11/26; Nesto gemelo)
 - `ModosServicio.JUNTO_CON_LO_PENDIENTE` = 6: un «todo junto» (ServirJunto = 1, `EsTodoJunto`/`EsEntregaUnica` true, facturación como el 1) que
   además no sale hasta que pueda salir lo pendiente del MISMO empresa+cliente+contacto. `Efectivo(6, true)` = 6; ServirJunto desmarcado → 2.

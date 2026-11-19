@@ -27,6 +27,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// almacén, porque el pedido aún no está grabado. Los recuentos (LineasVerdes/Rosas/Rojas) son, por
     /// tanto, de grupos producto+almacén, no de líneas sueltas.</item>
     /// </list>
+    /// Carlos 19/11/26: los modos que se OFRECEN ya no salen de los colores sino de comparar el plan de entregas de cada modo
+    /// (<see cref="ModosServicioPermitidos.CalcularPorPlanes"/>); si el modo de esta regla no se ofrece (p. ej. «verde + rosa»: el 3 hace lo
+    /// mismo que el 1), se sugiere su equivalente ofrecido.
     /// Es la única fuente: la usan <c>PostPedidoVenta</c> cuando el cliente no manda modo, la estimación de
     /// portes del carrito de la app y el endpoint <c>POST api/PedidosVenta/ModoServicioSugerido</c> con el
     /// que las plantillas de Nesto y NestoApp preseleccionan el modo antes de confirmar.
@@ -52,6 +55,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public List<byte> ModosPermitidos { get; set; } = new List<byte>();
             /// <summary>NestoAPI#518: los cuatro modos con su permiso y, si no se puede, el motivo para enseñarlo.</summary>
             public List<ModoServicioPermitidoDTO> Modos { get; set; } = new List<ModoServicioPermitidoDTO>();
+            /// <summary>Carlos 19/11/26: los hechos con los que se comparan los planes de los modos (null fuera de Algete). No viaja.</summary>
+            [Newtonsoft.Json.JsonIgnore]
+            public HechosModoServicio Hechos { get; set; }
         }
 
         public static Sugerencia Sugerir(PedidoVentaDTO pedido, IGestorStocks stocks) => Sugerir(pedido, stocks, null);
@@ -140,6 +146,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 decidida.Motivo = decidida.Motivo.TrimEnd('.') + " " + MOTIVO_CON_KITS;
             }
+            // Carlos 19/11/26: en Algete los modos se ofrecen comparando sus planes de entregas con los hechos del pedido
+            decidida.Hechos = Hechos(grupos, stocks, hayAlgoQueServirAhora);
             return ConModos(decidida, tipo, hayLineasProducto: true);
         }
 
@@ -152,6 +160,62 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public string Almacen { get; set; }
             public int Cantidad { get; set; }
             public string Color { get; set; }
+            /// <summary>NestoAPI#606: las unidades que salen desmontando kits en Algete.</summary>
+            public int DeKits { get; set; }
+        }
+
+        /// <summary>
+        /// Carlos 19/11/26: los hechos de cada grupo con la MISMA lectura de stock que el color (ColorStock con distintas cantidades: en
+        /// memoria con el gestor precargado, sin consultas nuevas): cuántas salen ahora (verde) y cuántas cubre el conjunto (no roja).
+        /// </summary>
+        private static HechosModoServicio Hechos(List<GrupoColor> grupos, IGestorStocks stocks, bool hayAlgoQueServirAhora)
+        {
+            var hechos = new HechosModoServicio { HayAlgoAhora = hayAlgoQueServirAhora };
+            foreach (GrupoColor g in grupos)
+            {
+                int cantidad = Math.Max(0, g.Cantidad);
+                if (g.Color == VERDE)
+                {
+                    hechos.Lineas.Add(new HechosModoServicio.Linea { Producto = g.Producto, Cantidad = cantidad, Ahora = cantidad });
+                    continue;
+                }
+                int sinKits = Math.Max(0, cantidad - g.DeKits);
+                int ahora = Math.Min(cantidad, g.DeKits + Math.Max(0, Mayor(sinKits, c => stocks.ColorStock(g.Producto, g.Almacen, c) == VERDE)));
+                int cubre = g.Color == ROSA
+                    ? cantidad
+                    : Math.Min(cantidad, g.DeKits + Math.Max(0, Mayor(sinKits, c => stocks.ColorStock(g.Producto, g.Almacen, c) != ROJO)));
+                hechos.Lineas.Add(new HechosModoServicio.Linea
+                {
+                    Producto = g.Producto,
+                    Cantidad = cantidad,
+                    Ahora = ahora,
+                    DeTiendas = Math.Max(0, cubre - ahora)
+                });
+            }
+            return hechos;
+        }
+
+        /// <summary>La mayor cantidad entre 0 y <paramref name="maximo"/> que cumple <paramref name="cumple"/> (que se cumple para las pequeñas); -1 si ni 0.</summary>
+        private static int Mayor(int maximo, Func<int, bool> cumple)
+        {
+            if (!cumple(0))
+            {
+                return -1;
+            }
+            int bajo = 0, alto = maximo;
+            while (bajo < alto)
+            {
+                int medio = (bajo + alto + 1) / 2;
+                if (cumple(medio))
+                {
+                    bajo = medio;
+                }
+                else
+                {
+                    alto = medio - 1;
+                }
+            }
+            return bajo;
         }
 
         /// <summary>
@@ -209,6 +273,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     continue;
                 }
                 alguno = true;
+                grupo.DeKits = deKits;
                 grupo.Color = stocks.ColorStock(grupo.Producto, grupo.Almacen, grupo.Cantidad - deKits);
             }
             return alguno;
@@ -217,9 +282,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>NestoAPI#518: rellena los modos permitidos con los recuentos ya calculados.</summary>
         private static Sugerencia ConModos(Sugerencia sugerencia, ModosServicioPermitidos.TipoAlmacen tipo, bool hayLineasProducto)
         {
-            sugerencia.Modos = ModosServicioPermitidos.Calcular(tipo, sugerencia.LineasVerdes, sugerencia.LineasRosas, sugerencia.LineasRojas, hayLineasProducto,
-                sugerencia.HayAlgoQueServirAhora);
+            sugerencia.Modos = sugerencia.Hechos != null
+                ? ModosServicioPermitidos.CalcularPorPlanes(tipo, sugerencia.Hechos, hayLineasProducto)
+                : ModosServicioPermitidos.Calcular(tipo, sugerencia.LineasVerdes, sugerencia.LineasRosas, sugerencia.LineasRojas, hayLineasProducto,
+                    sugerencia.HayAlgoQueServirAhora);
             sugerencia.ModosPermitidos = ModosServicioPermitidos.Permitidos(sugerencia.Modos);
+            // Carlos 19/11/26: el sugerido siempre es uno de los ofrecidos (si el de la regla de siempre no se ofrece, su equivalente)
+            byte ofrecido = ModosServicioPermitidos.Ofrecido(sugerencia.Modo, sugerencia.Modos, sugerencia.Hechos);
+            if (ofrecido != sugerencia.Modo)
+            {
+                string porQue = sugerencia.Modos.FirstOrDefault(m => m.Modo == sugerencia.Modo)?.Motivo;
+                sugerencia.Modo = ofrecido;
+                sugerencia.Nombre = Constantes.Pedidos.ModosServicio.Nombre(ofrecido);
+                sugerencia.Motivo = string.IsNullOrWhiteSpace(porQue) ? sugerencia.Motivo : porQue;
+            }
             return sugerencia;
         }
 

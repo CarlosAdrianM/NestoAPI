@@ -20,9 +20,90 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     }
 
     /// <summary>
+    /// Carlos 19/11/26 («quizá sea un error equipararlo a colores; mejor verlo como casos individuales»): los hechos de un pedido de
+    /// Algete con los que se compara lo que haría cada modo. Por grupo producto+almacén: unidades que salen AHORA de Algete (libres o
+    /// desmontando kits), unidades que pueden traer las tiendas y unidades sin cubrir.
+    /// </summary>
+    public class HechosModoServicio
+    {
+        public class Linea
+        {
+            public string Producto { get; set; }
+            public int Cantidad { get; set; }
+            public int Ahora { get; set; }
+            public int DeTiendas { get; set; }
+            public int SinCubrir => System.Math.Max(0, Cantidad - Ahora - DeTiendas);
+        }
+
+        public List<Linea> Lineas { get; set; } = new List<Linea>();
+        /// <summary>Alguna unidad sale ya (aunque no se sepa de qué línea: la regla #561 de siempre, con el stock de la línea).</summary>
+        public bool HayAlgoAhora { get; set; }
+
+        public int UnidadesAhora => Lineas.Sum(l => l.Ahora);
+        public int UnidadesDeTiendas => Lineas.Sum(l => l.DeTiendas);
+        public bool HayAhora => HayAlgoAhora || UnidadesAhora > 0;
+        public bool HayDeTiendas => UnidadesDeTiendas > 0;
+        public List<Linea> ConSinCubrir => Lineas.Where(l => l.SinCubrir > 0).ToList();
+    }
+
+    /// <summary>
+    /// Carlos 19/11/26: el PLAN DE ENTREGAS de cada modo con los hechos del pedido (en cuántas entregas sale y qué va en cada una).
+    /// Sucesos: «A» lo que hay ahora; «T» lo que traen las tiendas; «P1», «P2»… lo sin cubrir de cada línea (cada una su llegada).
+    /// Un suceso de más de una unidad puede llegar en VARIAS veces (dos tiendas en días distintos, una compra que llega partida): en los
+    /// modos que salen según va llegando se marca con «*». Las tiendas van juntas en un suceso (sin desglose por tienda: no está en la
+    /// lectura del sugeridor), así que con más de una unidad se tratan como posible llegada partida. PURA.
+    /// <list type="bullet">
+    /// <item>1 «Todo junto»: una entrega con todo.</item>
+    /// <item>2 «Según vaya entrando»: lo de ahora y una entrega por cada llegada.</item>
+    /// <item>3 «Tras reponer de tiendas»: espera a TODO lo de las tiendas y sale con lo de ahora; lo demás, una por llegada.</item>
+    /// <item>4 «Ahora lo que hay y el resto de una vez»: lo de ahora y una entrega más con todo lo demás.</item>
+    /// </list>
+    /// </summary>
+    public static class PlanEntregasModoServicio
+    {
+        public static string Plan(byte modo, HechosModoServicio h)
+        {
+            bool a = h.HayAhora;
+            int t = h.UnidadesDeTiendas;
+            List<HechosModoServicio.Linea> sinCubrir = h.ConSinCubrir;
+            var sucesosP = sinCubrir.Select((l, i) => new { Id = "P" + (i + 1), Partible = l.SinCubrir > 1 }).ToList();
+            var entregas = new List<string>();
+            string Junto(IEnumerable<string> ids) => string.Join("+", ids.OrderBy(x => x, System.StringComparer.Ordinal));
+            IEnumerable<string> Todos() => (a ? new[] { "A" } : new string[0]).Concat(t > 0 ? new[] { "T" } : new string[0]).Concat(sucesosP.Select(p => p.Id));
+            void PorLlegada() => entregas.AddRange(sucesosP.Select(p => p.Id + (p.Partible ? "*" : string.Empty)));
+            switch (modo)
+            {
+                case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
+                    entregas.Add(Junto(Todos()));
+                    break;
+                case Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO:
+                    if (a) entregas.Add("A");
+                    if (t > 0) entregas.Add(t > 1 ? "T*" : "T");
+                    PorLlegada();
+                    break;
+                case Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS:
+                    if (t > 0) entregas.Add(a ? "A+T" : "T");
+                    else if (a) entregas.Add("A");
+                    PorLlegada();
+                    break;
+                case Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ:
+                    if (a) entregas.Add("A");
+                    List<string> resto = Todos().Where(x => x != "A").ToList();
+                    if (resto.Any()) entregas.Add(Junto(resto));
+                    break;
+            }
+            return string.Join("|", entregas.OrderBy(x => x, System.StringComparer.Ordinal));
+        }
+    }
+
+    /// <summary>
     /// NestoAPI#518 (Carlos, 23/09/26): qué modos de servicio tienen sentido para un pedido, para que Nesto y
     /// NestoApp no dejen elegir los que no (los usuarios elegían «Tras reponer de tiendas» en pedidos que salen
-    /// enteros de Algete). Regla, con los colores de <see cref="SugeridorModoServicio"/>:
+    /// enteros de Algete). Desde el 19/11/26 (Carlos) en Algete se decide comparando el PLAN de cada modo
+    /// (<see cref="PlanEntregasModoServicio"/>, <see cref="CalcularPorPlanes"/>): de cada grupo de modos que hacen exactamente lo mismo con
+    /// este pedido se ofrece UNO (preferencia 1 &gt; 4 &gt; 3 &gt; 2), el 3 nunca sin nada que traer de las tiendas, el 4 nunca sin nada que
+    /// servir ahora y sigue la excepción #561. Así «verde + rosa» (caso A) ya no ofrece el 3 (= «Todo junto») y una roja con parte en
+    /// tiendas (caso B) sí. La regla por colores de abajo queda para la comprobación tolerante al modificar:
     /// <list type="bullet">
     /// <item>Pedido de TIENDA (todas sus líneas de producto en Alcobendas o Reina): solo «Según vaya entrando»;
     /// el cliente se lleva lo que hay.</item>
@@ -53,6 +134,126 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal const string MOTIVO_TODO_VERDE = "Todo el pedido tiene stock en Algete: sale todo junto.";
         internal const string MOTIVO_SIN_ROSAS = "No hay nada que traer de las tiendas: esperar a la reposición no cambiaría nada.";
         internal const string MOTIVO_NADA_CON_STOCK = "No hay ninguna unidad del pedido en stock: sale todo junto cuando llegue.";
+        internal const string MOTIVO_NADA_AHORA = "No hay nada que servir ahora: es lo mismo que «Todo junto».";
+        internal const string MOTIVO_TIENDAS_COMPLETAN = "Todo lo que falta viene de las tiendas: es lo mismo que «Todo junto».";
+
+        /// <summary>De los modos que hacen lo mismo con el pedido, el que se ofrece (Carlos 19/11/26).</summary>
+        internal static readonly byte[] PREFERENCIA =
+        {
+            Constantes.Pedidos.ModosServicio.TODO_JUNTO,
+            Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ,
+            Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+            Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO
+        };
+
+        /// <summary>
+        /// Carlos 19/11/26: los cuatro modos de un pedido con sus hechos. Fuera de Algete (tienda, otro almacén) o sin líneas de producto,
+        /// como siempre. En Algete: todo en Algete → solo «Todo junto»; nada ahora y nada en tiendas → solo «Todo junto» (#561, excepción
+        /// que se mantiene aunque el 2 hiciera algo distinto con varias líneas); si no, el 3 necesita algo de las tiendas, el 4 algo que
+        /// servir ahora, y de los que tienen el mismo plan se ofrece el primero de <see cref="PREFERENCIA"/>. «Todo junto» siempre se ofrece.
+        /// </summary>
+        public static List<ModoServicioPermitidoDTO> CalcularPorPlanes(TipoAlmacen tipo, HechosModoServicio hechos, bool hayLineasProducto)
+        {
+            if (!hayLineasProducto || tipo != TipoAlmacen.Central || hechos == null)
+            {
+                return Calcular(tipo, 0, 1, 0, hayLineasProducto);
+            }
+            var motivos = new Dictionary<byte, string>();
+            bool ahora = hechos.HayAhora;
+            bool tiendas = hechos.HayDeTiendas;
+            bool sinCubrir = hechos.ConSinCubrir.Any();
+            if (!tiendas && !sinCubrir)
+            {
+                foreach (byte m in TODOS.Where(m => m != Constantes.Pedidos.ModosServicio.TODO_JUNTO))
+                {
+                    motivos[m] = MOTIVO_TODO_VERDE;
+                }
+            }
+            else if (!ahora && !tiendas)
+            {
+                // NestoAPI#561: ninguna unidad que servir ahora ni en las tiendas: todo junto (si no, salían solo los portes)
+                motivos[Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS] = MOTIVO_SIN_ROSAS;
+                motivos[Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO] = MOTIVO_NADA_CON_STOCK;
+                motivos[Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ] = MOTIVO_NADA_CON_STOCK;
+            }
+            else
+            {
+                if (!tiendas)
+                {
+                    motivos[Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS] = MOTIVO_SIN_ROSAS;
+                }
+                if (!ahora)
+                {
+                    motivos[Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ] = MOTIVO_NADA_AHORA;
+                }
+                var ofrecidos = new List<byte>();
+                foreach (byte m in PREFERENCIA)
+                {
+                    if (motivos.ContainsKey(m))
+                    {
+                        continue;
+                    }
+                    string plan = PlanEntregasModoServicio.Plan(m, hechos);
+                    byte? igual = ofrecidos.Cast<byte?>().FirstOrDefault(o => PlanEntregasModoServicio.Plan(o.Value, hechos) == plan);
+                    if (igual.HasValue)
+                    {
+                        motivos[m] = MotivoEquivalente(m, igual.Value, hechos);
+                    }
+                    else
+                    {
+                        ofrecidos.Add(m);
+                    }
+                }
+            }
+            return TODOS.Select(modo => new ModoServicioPermitidoDTO
+            {
+                Modo = modo,
+                Nombre = Constantes.Pedidos.ModosServicio.Nombre(modo),
+                Motivo = motivos.TryGetValue(modo, out string motivo) ? motivo : null
+            })
+            .Select(m => { m.Permitido = m.Motivo == null; return m; })
+            .ToList();
+        }
+
+        private static string MotivoEquivalente(byte modo, byte equivalente, HechosModoServicio hechos)
+        {
+            if (modo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS && equivalente == Constantes.Pedidos.ModosServicio.TODO_JUNTO
+                && !hechos.ConSinCubrir.Any())
+            {
+                return MOTIVO_TIENDAS_COMPLETAN;
+            }
+            if (modo == Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO && hechos.ConSinCubrir.Count == 1 && hechos.ConSinCubrir[0].SinCubrir == 1
+                && !hechos.HayDeTiendas)
+            {
+                return $"Solo falta una unidad: es lo mismo que «{Constantes.Pedidos.ModosServicio.Nombre(equivalente)}».";
+            }
+            return $"Con este pedido es lo mismo que «{Constantes.Pedidos.ModosServicio.Nombre(equivalente)}».";
+        }
+
+        /// <summary>
+        /// Carlos 19/11/26: el modo que se ofrece en lugar de <paramref name="modo"/> si este no se ofrece (el de su mismo plan o, si no hay,
+        /// el primero que se ofrezca). Así el sugerido siempre es uno de los ofrecidos.
+        /// </summary>
+        public static byte Ofrecido(byte modo, List<ModoServicioPermitidoDTO> modos, HechosModoServicio hechos)
+        {
+            List<byte> permitidos = Permitidos(modos);
+            if (permitidos.Count == 0 || permitidos.Contains(modo))
+            {
+                return modo;
+            }
+            if (hechos != null && TODOS.Contains(modo))
+            {
+                string plan = PlanEntregasModoServicio.Plan(modo, hechos);
+                foreach (byte m in PREFERENCIA.Where(permitidos.Contains))
+                {
+                    if (PlanEntregasModoServicio.Plan(m, hechos) == plan)
+                    {
+                        return m;
+                    }
+                }
+            }
+            return PREFERENCIA.FirstOrDefault(permitidos.Contains) is byte primero && primero != 0 ? primero : permitidos.First();
+        }
 
         private static readonly byte[] TODOS =
         {

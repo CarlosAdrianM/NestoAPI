@@ -177,8 +177,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             StringAssert.Contains(forzado3.Motivo, "ModoServicioPorDefecto");
             Assert.AreEqual(M.TODO_JUNTO, todoVerde.Modo, "No se toca la sugerencia de la caché");
 
-            var conRosa = SugeridorModoServicio.Sugerir(Pedido("ALG", "ROSA1"), stocks);
-            Assert.AreEqual(M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, SugeridorModoServicio.AplicarForzado(conRosa, M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Modo);
+            var conRosaYRoja = SugeridorModoServicio.Sugerir(Pedido("ALG", "VERDE1", "ROSA1", "ROJO1"), stocks);
+            Assert.AreEqual(M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, SugeridorModoServicio.AplicarForzado(conRosaYRoja, M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Modo);
         }
 
         // ---- Al guardar ----

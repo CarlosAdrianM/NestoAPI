@@ -71,10 +71,12 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void AlgunaRosa_TrasReponerDeTiendas_HayaLoQueHaya()
+        public void AlgunaRosa_TrasReponerDeTiendas_SoloSiNoEsLoMismoQueTodoJunto()
         {
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, SugeridorModoServicio.Sugerir(Pedido("ROSA"), stocks).Modo);
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, SugeridorModoServicio.Sugerir(Pedido("VERDE", "ROSA"), stocks).Modo);
+            // Carlos 19/11/26: si las tiendas completan el pedido (nada sin cubrir), «Tras reponer» hace lo mismo que «Todo junto»: se sugiere
+            // «Todo junto» (caso A). Con algo sin cubrir, sigue el 3.
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, SugeridorModoServicio.Sugerir(Pedido("ROSA"), stocks).Modo);
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, SugeridorModoServicio.Sugerir(Pedido("VERDE", "ROSA"), stocks).Modo);
             // Decisión 22/09/26: rosa + rojo → 3, aunque la parte roja pueda llegar luego en más de una entrega.
             Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, SugeridorModoServicio.Sugerir(Pedido("VERDE", "ROSA", "ROJO"), stocks).Modo);
         }
@@ -111,7 +113,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             var s = SugeridorModoServicio.Sugerir(pedido, stocks);
 
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, s.Modo);
+            // Carlos 19/11/26: verde + rosa (las tiendas lo completan) = «Todo junto»
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, s.Modo);
+            Assert.AreEqual(1, s.LineasRosas, "El regalo cuenta");
             Assert.AreEqual(0, s.LineasRojas, "La línea con cantidad 0 no cuenta");
         }
 
@@ -208,7 +212,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             SugeridorModoServicio.Sugerencia sinKits = SugeridorModoServicio.Sugerir(Pedido928288(), colores);
             SugeridorModoServicio.Sugerencia conKits = SugeridorModoServicio.Sugerir(Pedido928288(), colores, Fuente(datos));
 
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, sinKits.Modo, "Sin kits, lo de siempre");
+            // Carlos 19/11/26: sin kits, lo de Algete y lo que trae Reina completan el pedido: lo mismo que «Todo junto»
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, sinKits.Modo, "Sin kits: tiendas completan");
+            Assert.AreEqual(1, sinKits.LineasRosas);
             Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, conKits.Modo);
             Assert.AreEqual(1, conKits.LineasVerdes);
             Assert.AreEqual(0, conKits.LineasRosas);
@@ -224,7 +230,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             SugeridorModoServicio.Sugerencia s = SugeridorModoServicio.Sugerir(Pedido928288(), new GestorStocksSombra(datos.Resumen), Fuente(datos));
 
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, s.Modo);
+            Assert.AreEqual(1, s.LineasRosas, "Sigue rosa: los kits los deben otros");
             Assert.IsFalse(s.Motivo.Contains(SugeridorModoServicio.MOTIVO_CON_KITS));
         }
 
@@ -237,7 +243,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             SugeridorModoServicio.Sugerencia s = SugeridorModoServicio.Sugerir(Pedido928288(), new GestorStocksSombra(datos.Resumen), fuente);
 
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, s.Modo);
+            Assert.AreEqual(1, s.LineasRosas, "La de siempre (sin kits)");
         }
 
         [TestMethod]
@@ -302,7 +308,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 Stocks = () => new GestorStocksSombra(datos.Resumen)
             };
 
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, controller.ModoServicioAlCrear(Pedido928288()));
+            // Carlos 19/11/26: sin kits, tiendas completan → «Todo junto» (antes «Tras reponer»); lo que se mira es que no va a la BD
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, controller.ModoServicioAlCrear(Pedido928288()));
         }
     }
 }
