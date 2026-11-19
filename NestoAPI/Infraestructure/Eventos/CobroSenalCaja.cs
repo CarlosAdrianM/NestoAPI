@@ -135,7 +135,10 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>La forma de pago de los apuntes (la de Cajas).</summary>
         public static string CodigoFormaPago(FormaPagoInscripcionEvento forma) => ReglasFacturacionCurso.FormaPagoPedido(forma.ToString());
 
-        /// <summary>Se enseña en Cajas: sin pagar (Reservada o Caducada), de pago, con señal y de un evento de hoy en adelante.</summary>
+        /// <summary>
+        /// Se enseña en Cajas: sin pagar (Reservada o Caducada), de pago, con señal y de un evento de hoy en adelante. Por FECHA, no por
+        /// fecha y hora (Carlos 19/11/26): el día del evento vale entero aunque la hora ya haya pasado.
+        /// </summary>
         public static bool EsReservaSinPagar(EventoInscripcion inscripcion, Evento evento, DateTime hoy)
         {
             if (inscripcion == null || evento == null)

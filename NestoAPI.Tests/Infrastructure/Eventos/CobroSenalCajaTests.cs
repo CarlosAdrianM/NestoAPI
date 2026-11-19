@@ -150,6 +150,19 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
+        public void Reglas_ElDiaDelEventoValeEntero_AunquePaseLaHora()
+        {
+            // Carlos 19/11/26: compara por fecha, no por fecha y hora: un evento de hoy a las 10:00 se cobra en Cajas a las 20:00
+            var deHoyPorLaManana = new Evento { Id = 10, Titulo = "Masterclass de hoy", Fecha = HOY.Date.AddHours(10), ImporteSenal = 100 };
+            DateTime estaTarde = HOY.Date.AddHours(20);
+
+            Assert.IsTrue(ReglasCobroSenalCaja.EsReservaSinPagar(new EventoInscripcion { Estado = "Reservada" }, deHoyPorLaManana, estaTarde));
+            Assert.IsTrue(ReglasCobroSenalCaja.EsReservaSinPagar(new EventoInscripcion { Estado = "Reservada" }, deHoyPorLaManana, HOY.Date.AddHours(23).AddMinutes(59)));
+            Assert.IsFalse(ReglasCobroSenalCaja.EsReservaSinPagar(new EventoInscripcion { Estado = "Reservada" }, deHoyPorLaManana, HOY.Date.AddDays(1).AddMinutes(1)),
+                "Al día siguiente ya no");
+        }
+
+        [TestMethod]
         public void Reglas_Importe_LaSenalEnteraONada()
         {
             Assert.IsNull(ReglasCobroSenalCaja.MotivoImporte(100M, 100M, eventos[0]));
