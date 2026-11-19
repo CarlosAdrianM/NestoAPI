@@ -82,6 +82,20 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         private readonly IRepositorioNotasEntregaCabecera repositorio;
         private readonly Action<Exception> registrar;
 
+        /// <summary>
+        /// NestoAPI#881: el servicio técnico de la nota al crearla (tipoServicioTecnicoId/Nombre y minutosServicio del POST). Null: se
+        /// ignoran (como antes).
+        /// </summary>
+        public Agencias.RepartoPropio.ServicioServicioTecnicoReparto ServicioTecnico { get; set; }
+
+        internal static global::NestoAPI.Models.Agencias.PeticionServicioTecnicoNotaDTO PeticionServicioTecnico(PedidoVentaDTO pedido)
+            => pedido == null ? null : new global::NestoAPI.Models.Agencias.PeticionServicioTecnicoNotaDTO
+            {
+                TipoServicioTecnicoId = pedido.tipoServicioTecnicoId,
+                TipoServicioTecnicoNombre = pedido.tipoServicioTecnicoNombre,
+                MinutosServicio = pedido.minutosServicio
+            };
+
         public ServicioNotasEntregaCabecera(IRepositorioNotasEntregaCabecera repositorio) : this(repositorio, null)
         {
         }
@@ -175,6 +189,13 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 return null;
             }
 
+            // NestoAPI#881: el servicio técnico (opcional) se valida ANTES de crear nada; se guarda en GuardarAlCrear.
+            string motivoServicioTecnico = Agencias.RepartoPropio.ReglaServicioTecnico.Motivo(PeticionServicioTecnico(pedido));
+            if (motivoServicioTecnico != null)
+            {
+                return motivoServicioTecnico;
+            }
+
             LineaPedidoVentaDTO otraLinea = pedido.Lineas?.FirstOrDefault(l => l != null
                 && l.tipoLinea != Constantes.TiposLineaVenta.TEXTO && l.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO);
             if (otraLinea != null)
@@ -233,6 +254,15 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 registrar(new Exception($"[Notas de entrega #757] La nota {pedido.numero} se ha creado pero no se ha podido guardar su tipo " +
                     $"({pedido.tipoNotaEntrega}, {pedido.bultosNota} bultos): {ex.Message}", ex));
             }
+            // NestoAPI#881: el servicio técnico, después de la fila de la nota. Nunca lanza.
+            if (ServicioTecnico != null && !Agencias.RepartoPropio.ReglaServicioTecnico.SinTipo(PeticionServicioTecnico(pedido)))
+            {
+                string motivo = await ServicioTecnico.PonerAlCrear(pedido.empresa?.Trim(), pedido.numero, PeticionServicioTecnico(pedido), usuario).ConfigureAwait(false);
+                if (motivo != null)
+                {
+                    registrar(new Exception($"[Reparto #881] La nota {pedido.numero} se ha creado pero no se ha podido guardar su servicio técnico: {motivo}"));
+                }
+            }
         }
 
         /// <summary>
@@ -270,6 +300,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             pedido.tipoNotaEntrega = null;
             pedido.bultosNota = null;
             pedido.facturaOriginalNota = null;
+            pedido.tipoServicioTecnicoId = null;
+            pedido.tipoServicioTecnicoNombre = null;
+            pedido.minutosServicio = null;
         }
 
         private async Task<NotaEntregaCabeceraDTO> Construir(string empresa, int pedido)

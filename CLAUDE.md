@@ -315,6 +315,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `CalculoFinRuta`; servicio `ServicioRepartoPropio.FinRuta.cs`. Destino personalizado (casa) → solo se compara con el cierre si lleva algo para
   Algete (recogida pendiente en su ruta o NR/R «Recogido» en su furgoneta; la caja NO se mira) y entonces pasa por Algete. Sin coordenadas: centro
   del CP (`dbo.CentrosCodigosPostales`); sin OSRM: línea recta × 1,3 a 30 km/h. Nunca falla: sale `Aproximada`.
+- **Servicio técnico (corte 2)**: `dbo.RepartoTiposServicioTecnico` (empieza vacía) y `NotasEntregaCabecera.TipoServicioTecnicoId`/`MinutosServicio`
+  (`Scripts/Issue881_RepartoFinRutaYTiempos.sql`; sin él: tipos vacíos, POST/PUT 503, paradas sin servicio técnico). `GET/POST api/RepartoPropio/TiposServicioTecnico`
+  (nombre repetido → el que hay), `GET/PUT api/NotasEntrega/{empresa}/{pedido}/ServicioTecnico` {TipoServicioTecnicoId | TipoServicioTecnicoNombre (crea el
+  tipo), MinutosServicio 1..600; sin tipo = quitar; rastro `NotaServicioTecnico` en Modificaciones}. Al crear: `PedidoVentaDTO.tipoServicioTecnicoId/
+  tipoServicioTecnicoNombre/minutosServicio` (solo POST; se valida antes y se guarda después) y los mismos campos en Confirmar una recogida solicitada.
+  `GET Envios`: `ServicioTecnico` y `MinutosServicio` (tecleados, del tipo o 60) en las notas; entran en el fin de ruta. `ServicioServicioTecnicoReparto`.
 
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).

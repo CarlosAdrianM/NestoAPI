@@ -181,6 +181,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .ToList();
             await CompletarEmpresaCobro(lista, envios).ConfigureAwait(false);
             await CompletarNotas(lista).ConfigureAwait(false);
+            if (paradas.ServicioTecnico != null)
+            {
+                await paradas.ServicioTecnico.Completar(lista).ConfigureAwait(false); // NestoAPI#881: nunca lanza
+            }
             if (CargaDisponible())
             {
                 await CompletarCarga(lista).ConfigureAwait(false);

@@ -48,6 +48,16 @@ namespace NestoAPI.Models.PedidosVenta
         public short? bultosNota { get; set; }
         /// <summary>NestoAPI#757: la factura que se devuelve en una nota de recogida, o null. Como tipoNotaEntrega.</summary>
         public string facturaOriginalNota { get; set; }
+        /// <summary>
+        /// NestoAPI#881: SOLO al crear (POST) una nota de entrega o de recogida: el tipo de servicio técnico (por Id, o por nombre: si no
+        /// existe se crea) y, opcional, los minutos tecleados. Al leer van a null: se leen y se cambian con GET/PUT
+        /// api/NotasEntrega/{empresa}/{pedido}/ServicioTecnico.
+        /// </summary>
+        public int? tipoServicioTecnicoId { get; set; }
+        /// <summary>NestoAPI#881: ver <see cref="tipoServicioTecnicoId"/>.</summary>
+        public string tipoServicioTecnicoNombre { get; set; }
+        /// <summary>NestoAPI#881: ver <see cref="tipoServicioTecnicoId"/> (1..600).</summary>
+        public int? minutosServicio { get; set; }
         public int numero { get; set; }
         public string origen { get; set; }
         public string periodoFacturacion { get; set; }

@@ -3063,7 +3063,11 @@ namespace NestoAPI.Controllers
         internal Infraestructure.NotasEntrega.IServicioNotasEntregaCabecera ServicioNotasEntregaCabecera
         {
             get => servicioNotasEntregaCabecera ?? (servicioNotasEntregaCabecera = new Infraestructure.NotasEntrega.ServicioNotasEntregaCabecera(
-                new Infraestructure.NotasEntrega.RepositorioNotasEntregaCabecera(db)));
+                new Infraestructure.NotasEntrega.RepositorioNotasEntregaCabecera(db))
+            {
+                // NestoAPI#881: el servicio técnico de la nota al crearla
+                ServicioTecnico = Infraestructure.Agencias.RepartoPropio.ServicioServicioTecnicoReparto.DeLaBaseDeDatos(db)
+            });
             set => servicioNotasEntregaCabecera = value;
         }
 

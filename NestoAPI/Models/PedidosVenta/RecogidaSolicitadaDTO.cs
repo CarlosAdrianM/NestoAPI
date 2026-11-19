@@ -74,6 +74,11 @@ namespace NestoAPI.Models.PedidosVenta
     {
         public short? Bultos { get; set; }
         public string Texto { get; set; }
+        /// <summary>NestoAPI#881: opcional, el servicio técnico de la nota que se crea (por Id o por nombre; si no existe, se crea el tipo).</summary>
+        public int? TipoServicioTecnicoId { get; set; }
+        public string TipoServicioTecnicoNombre { get; set; }
+        /// <summary>NestoAPI#881: opcional, los minutos tecleados (1..600).</summary>
+        public int? MinutosServicio { get; set; }
     }
 
     /// <summary>NestoAPI#855: POST api/NotasEntrega/Recogidas/Solicitudes/{id}/Rechazar.</summary>

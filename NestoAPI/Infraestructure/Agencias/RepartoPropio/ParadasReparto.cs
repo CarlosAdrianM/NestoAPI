@@ -431,6 +431,8 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public ICentrosCodigosPostales Centros { get; set; }
         /// <summary>NestoAPI#881: día sin reparto propio (festivo de Algete o sin reparto): sin cierre que comparar. Null: solo fines de semana.</summary>
         public Func<DateTime, bool> EsDiaSinReparto { get; set; }
+        /// <summary>NestoAPI#881 (corte 2): el servicio técnico de las paradas que son notas. Null: sin servicio técnico (como antes).</summary>
+        public ServicioServicioTecnicoReparto ServicioTecnico { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
@@ -448,6 +450,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 ConfiguracionTiempos = new ConfiguracionTiemposRepartoParametros(),
                 Centros = new CentrosCodigosPostalesSql(db),
                 EsDiaSinReparto = global::NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio,
+                ServicioTecnico = ServicioServicioTecnicoReparto.DeLaBaseDeDatos(db),
                 Notas = new ServicioParadasNotaEntrega(db),
                 NotasParada = new RepositorioNotasParadaReparto(db),
                 Orden = new RepositorioOrdenReparto(db),

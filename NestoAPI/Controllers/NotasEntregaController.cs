@@ -393,7 +393,39 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido();
             }
-            return Responder(await RecogidasSolicitadas.Confirmar(id, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+            // NestoAPI#881: el servicio técnico (opcional) se valida antes de confirmar y se guarda en la nota recién creada.
+            var servicioTecnico = new Models.Agencias.PeticionServicioTecnicoNotaDTO
+            {
+                TipoServicioTecnicoId = peticion?.TipoServicioTecnicoId,
+                TipoServicioTecnicoNombre = peticion?.TipoServicioTecnicoNombre,
+                MinutosServicio = peticion?.MinutosServicio
+            };
+            string motivo = ReglaServicioTecnico.Motivo(servicioTecnico);
+            if (motivo != null)
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = motivo });
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ResultadoRecogidaSolicitada<RecogidaSolicitadaDTO> resultado = await RecogidasSolicitadas.Confirmar(id, peticion, usuario);
+            if (resultado.EsOk && resultado.Contenido?.PedidoNota != null && !ReglaServicioTecnico.SinTipo(servicioTecnico) && ServicioTecnico != null)
+            {
+                string noGuardado = await ServicioTecnico.PonerAlCrear(resultado.Contenido.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    resultado.Contenido.PedidoNota.Value, servicioTecnico, usuario);
+                if (noGuardado != null)
+                {
+                    ElmahHelper.Log(new Exception($"[Reparto #881] La recogida {id} está confirmada (nota {resultado.Contenido.PedidoNota}), pero no se pudo guardar su servicio técnico: {noGuardado}"));
+                }
+            }
+            return Responder(resultado);
+        }
+
+        private ServicioServicioTecnicoReparto servicioTecnico;
+
+        /// <summary>NestoAPI#881: el servicio técnico de las notas (sustituible en los tests).</summary>
+        internal ServicioServicioTecnicoReparto ServicioTecnico
+        {
+            get => servicioTecnico ?? (db == null ? null : servicioTecnico = ServicioServicioTecnicoReparto.DeLaBaseDeDatos(db));
+            set => servicioTecnico = value;
         }
 
         // POST api/NotasEntrega/Recogidas/Solicitudes/12/Rechazar { Motivo }

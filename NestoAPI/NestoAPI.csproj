@@ -875,6 +875,8 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FinRutaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.FinRuta.cs" />
     <Compile Include="Models\Agencias\FinRutaRepartoDTO.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioTecnicoReparto.cs" />
+    <Compile Include="Controllers\ServicioTecnicoRepartoController.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AgenciaRemotaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AnulacionEnvioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EtiquetaRepartoPropio.cs" />
