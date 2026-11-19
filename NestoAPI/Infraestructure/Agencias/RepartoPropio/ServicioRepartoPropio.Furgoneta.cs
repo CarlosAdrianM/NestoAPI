@@ -944,8 +944,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 // entregados aunque no se hayan leído (antes, leyendo 5 de 25, los otros 20 se quedaban «en la furgoneta»). Las paradas de
                 // reposición no cambian: cada bulto R es de un traspaso y se entrega el que se lee.
                 var codigosLeidos = new HashSet<string>(leidos.Count == 0 ? Enumerable.Empty<string>() : aEntregar.Select(m => m.Codigo), StringComparer.OrdinalIgnoreCase);
+                // NestoAPI#880: con «Solo entrego los leídos» (y alguno leído), los no leídos siguen en su furgoneta.
                 List<MovimientoBultoReparto> sinLeer = leidos.Count == 0
                     ? aEntregar.ToList()
+                    : peticion.SoloLeidos == true
+                    ? new List<MovimientoBultoReparto>()
                     : CierreEntregaFurgoneta.SinLeerDelEnvio(deLaParada, codigosLeidos, envioId, usuario);
                 var nuevos = new List<MovimientoBultoReparto>();
                 foreach (MovimientoBultoReparto m in aEntregar.Concat(sinLeer.Where(s => !codigosLeidos.Contains(s.Codigo) && !aEntregar.Contains(s))))
@@ -979,6 +982,81 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Furgoneta #772] La entrega de la parada {envioId} está hecha, pero no se pudo apuntar en la furgoneta: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#880: la foto de los bultos del envío al entregarlo (<see cref="EntregaIncompletaReparto"/>). Null sin la furgoneta, en
+        /// las paradas de reposición o si no se puede leer (entonces la entrega sigue como siempre, sin marca de incompleta).
+        /// </summary>
+        private async Task<EvaluacionBultosEntrega> EvaluarBultosEntrega(EnviosAgencia envio, EntregaRepartoDTO peticion, string usuario)
+        {
+            if (envio == null || peticion == null || NucleoParadasReparto.EsReposicion(envio.Numero) || !FurgonetaDisponible())
+            {
+                return null;
+            }
+            try
+            {
+                List<MovimientoBultoReparto> historia = await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto { Envios = new[] { envio.Numero } }).ConfigureAwait(false)
+                    ?? new List<MovimientoBultoReparto>();
+                List<CargaBultoReparto> cargas = CargaDisponible()
+                    ? CargasVigentes(await carga.LeerCargas(new[] { envio.Numero }).ConfigureAwait(false), historia)
+                    : new List<CargaBultoReparto>();
+                List<string> leidos = (peticion.BultosEntregados ?? new List<string>())
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .Select(l => CodigoDeEntrega(l, envio.Numero))
+                    .Where(c => c != null && c.TipoCodigo == CodigoBultoFurgoneta.RP && c.EnvioId == envio.Numero)
+                    .Select(c => c.Codigo)
+                    .ToList();
+                return EntregaIncompletaReparto.Evaluar(envio.Numero, envio.Bultos, historia, cargas, leidos, usuario, peticion.SoloLeidos == true);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto #880] No se han podido mirar los bultos del envío {envio.Numero} al entregarlo: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#880: después de una entrega que ha ido bien, la respuesta con lo que falta (también en un reintento con la misma clave,
+        /// recalculado) y, solo la primera vez y si es incompleta, el aviso (Almacén, quien hizo el pedido y su vendedor). Nunca rompe.
+        /// </summary>
+        private async Task CompletarEntregaIncompleta(int envioId, EntregaRepartoDTO peticion, string usuario, EstadoEnvioRepartoDTO estado)
+        {
+            if (estado == null || NucleoParadasReparto.EsReposicion(envioId))
+            {
+                return;
+            }
+            try
+            {
+                EvaluacionBultosEntrega evaluacion = estado.Evaluacion;
+                if (!estado.EsNueva)
+                {
+                    EnviosAgencia envio = await repositorio.LeerEnvio(envioId).ConfigureAwait(false);
+                    NotaParadaReparto nota = await NotaDe(envio?.Pedido).ConfigureAwait(false);
+                    evaluacion = nota?.EsRecogida == true || nota?.EsCobro == true ? null : await EvaluarBultosEntrega(envio, peticion, usuario).ConfigureAwait(false);
+                }
+                if (evaluacion == null || !evaluacion.Incompleta)
+                {
+                    return;
+                }
+                estado.BultosSinEntregar = evaluacion.Faltan.Select(b => b.Codigo).ToList();
+                estado.BultosQueFaltan = evaluacion.Faltan.Select(b => new BultoSinEntregarDTO
+                {
+                    Codigo = b.Codigo,
+                    Bulto = b.Bulto,
+                    Situacion = b.Situacion.ToString(),
+                    Motivo = b.Motivo
+                }).ToList();
+                estado.ResumenEntregaIncompleta = EntregaIncompletaReparto.Resumen(evaluacion);
+                if (estado.EsNueva && estado.EnvioEntregado != null && paradas.EntregaIncompleta != null)
+                {
+                    await paradas.EntregaIncompleta.Avisar(estado.EnvioEntregado, evaluacion, usuario).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto #880] La entrega del envío {envioId} está hecha, pero no se ha podido avisar de lo que falta: {ex.Message}", ex));
             }
         }
 

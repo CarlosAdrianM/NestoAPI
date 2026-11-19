@@ -185,6 +185,79 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     }
 
     /// <summary>
+    /// NestoAPI#880: entrega incompleta. Campana a Almacén (como <see cref="AvisosFurgonetaSinDescargar.BultoQuitadoSinLeer"/>) y,
+    /// con su propio contexto, a quien hizo el pedido y a su vendedor (campana + push NestoApp, <see cref="AvisadorIncidenciasEnvio"/>).
+    /// Nunca lanza.
+    /// </summary>
+    public class AvisosEntregaIncompleta : IAvisosEntregaIncompleta
+    {
+        private readonly Func<IServicioNotificacionesPush> notificaciones;
+        private readonly Func<string, List<string>> miembros;
+        private readonly Func<EnviosAgencia, NotificacionPushDTO, Task> avisarPedido;
+
+        public AvisosEntregaIncompleta() : this(() => new ServicioNotificacionesPush(), MiembrosGrupoDominio.Leer, AvisarPedidoConContextoPropio)
+        {
+        }
+
+        internal AvisosEntregaIncompleta(Func<IServicioNotificacionesPush> notificaciones, Func<string, List<string>> miembros,
+            Func<EnviosAgencia, NotificacionPushDTO, Task> avisarPedido)
+        {
+            this.notificaciones = notificaciones;
+            this.miembros = miembros;
+            this.avisarPedido = avisarPedido;
+        }
+
+        private static async Task AvisarPedidoConContextoPropio(EnviosAgencia envio, NotificacionPushDTO notificacion)
+        {
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                await new AvisadorIncidenciasEnvio(db).AvisarPedidoYVendedorAsync(envio, notificacion).ConfigureAwait(false);
+            }
+        }
+
+        public async Task Avisar(EnviosAgencia envio, EvaluacionBultosEntrega evaluacion, string repartidor)
+        {
+            if (envio == null || evaluacion == null || !evaluacion.Incompleta)
+            {
+                return;
+            }
+            NotificacionPushDTO notificacion = EntregaIncompletaReparto.Notificacion(envio, evaluacion, ServicioRepartoPropio.NombreRepartidor(repartidor));
+            try
+            {
+                List<string> deAlmacen = miembros(Constantes.GruposSeguridad.ALMACEN) ?? new List<string>();
+                IServicioNotificacionesPush servicio = notificaciones();
+                foreach (string usuario in new HashSet<string>(deAlmacen.Select(AvisosFurgonetaSinDescargar.ConDominio), StringComparer.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        await servicio.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Reparto #880] No se pudo avisar a {usuario} de la entrega incompleta del envío {envio.Numero}: {ex.Message}", ex));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto #880] No se pudo avisar a Almacén de la entrega incompleta del envío {envio.Numero}: {ex.Message}", ex));
+            }
+            try
+            {
+                if (avisarPedido != null)
+                {
+                    await avisarPedido(envio, notificacion).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto #880] No se pudo avisar al vendedor de la entrega incompleta del envío {envio.Numero}: {ex.Message}", ex));
+            }
+        }
+    }
+
+    /// <summary>
     /// NestoAPI#772: red de seguridad de las 22:00 (L-V). Cada repartidor con bultos encima y SIN jornada terminada hoy recibe el
     /// mismo aviso que al terminar con bultos (Almacén, Dirección y él). Sin el script, nada. Antes (caso 251099, 19/11/26), los bultos RP
     /// de un envío que ya consta ENTREGADO se dan por entregados (<see cref="CierreEntregaFurgoneta"/>) y no cuentan para el aviso.
@@ -227,9 +300,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             for (int i = 0; i < lista.Count; i += 500)
             {
                 List<int> tanda = lista.Skip(i).Take(500).ToList();
-                foreach (int numero in await db.EnviosAgencias
+                var filas = await db.EnviosAgencias
                     .Where(e => tanda.Contains(e.Numero) && e.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && e.Estado == Constantes.Agencias.ESTADO_ENTREGADO)
-                    .Select(e => e.Numero).ToListAsync().ConfigureAwait(false))
+                    .Select(e => new { e.Numero, e.DetalleEstado }).ToListAsync().ConfigureAwait(false);
+                // NestoAPI#880: los de una entrega INCOMPLETA no: lo que sigue en la furgoneta es justo lo que falta por entregar
+                foreach (int numero in filas.Where(f => !EntregaIncompletaReparto.EsIncompleta(f.DetalleEstado)).Select(f => f.Numero))
                 {
                     _ = resultado.Add(numero);
                 }

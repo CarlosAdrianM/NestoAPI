@@ -136,6 +136,44 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
+        /// NestoAPI#880: una notificación ya compuesta a quien hizo el pedido y a sus comerciales (campana de Nesto) y a los
+        /// vendedores con NestoApp (push), con el mismo núcleo que el aviso de incidencia. Nunca lanza.
+        /// </summary>
+        public async Task AvisarPedidoYVendedorAsync(EnviosAgencia envio, NotificacionPushDTO notificacion)
+        {
+            if (envio == null || notificacion == null)
+            {
+                return;
+            }
+            try
+            {
+                ComercialesPedido comerciales = LeerComerciales(envio);
+                var usuarios = new List<string>(comerciales?.UsuariosBuzon() ?? new List<string>());
+                if (!string.IsNullOrWhiteSpace(comerciales?.UsuarioPedido))
+                {
+                    string quien = comerciales.UsuarioPedido.Trim();
+                    quien = "NUEVAVISION\\" + (quien.Contains("\\") ? quien.Substring(quien.LastIndexOf('\\') + 1) : quien);
+                    if (!usuarios.Contains(quien, StringComparer.OrdinalIgnoreCase))
+                    {
+                        usuarios.Add(quien);
+                    }
+                }
+                foreach (string usuario in usuarios)
+                {
+                    await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                }
+                foreach (string vendedor in VendedoresNestoApp(comerciales))
+                {
+                    _ = await notificaciones.EnviarAVendedor(envio.Empresa?.Trim(), vendedor, notificacion).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(envio, ex);
+            }
+        }
+
+        /// <summary>
         /// NestoAPI#699: la agencia ha entregado un envío que se había decidido volver a enviar. Correo a los comerciales del
         /// pedido con copia a Logística (los mismos destinatarios que la devolución): si el reenvío se ha anulado, para que lo
         /// sepan; si ya estaba tramitado, para que lo resuelvan a mano. Nunca lanza.

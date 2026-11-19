@@ -49,6 +49,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         private FurgonetaFalsa furgoneta;
         private MarcadorFalso marcador;
         private AvisosFurgonetaFalsos avisosFurgoneta;
+        private AvisosEntregaIncompletaFalsos avisosIncompleta;
         private ParametrosFurgoneta parametros;
         private DateTime ahora;
         private ServicioRepartoPropio servicio;
@@ -67,6 +68,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             furgoneta = new FurgonetaFalsa();
             marcador = new MarcadorFalso();
             avisosFurgoneta = new AvisosFurgonetaFalsos();
+            avisosIncompleta = new AvisosEntregaIncompletaFalsos();
             parametros = new ParametrosFurgoneta();
             resolutor = A.Fake<IServicioParadasNotaEntrega>();
             A.CallTo(() => resolutor.Resolver(A<string>._)).ReturnsLazily((string codigo) => Task.FromResult(Resolver(codigo)));
@@ -96,7 +98,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     Furgoneta = repo,
                     RecogidaReposiciones = marcador,
                     AvisosAlmacen = avisosAlmacen,
-                    AvisosFurgoneta = avisosFurgoneta
+                    AvisosFurgoneta = avisosFurgoneta,
+                    EntregaIncompleta = avisosIncompleta
                 });
 
         private ResolucionCodigoNota Resolver(string codigo)

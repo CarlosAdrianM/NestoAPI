@@ -256,6 +256,12 @@ namespace NestoAPI.Models.Agencias
         /// Se acepta, queda como autorización «Telefonica» y se avisa a Administración para revisarla.
         /// </summary>
         public string AutorizacionTelefonica { get; set; }
+        /// <summary>
+        /// NestoAPI#880: «Solo entrego los leídos». True y algún bulto leído: los bultos del envío que lleva quien entrega y NO ha leído
+        /// NO se dan por entregados (siguen en su furgoneta) y vuelven en <see cref="EstadoEnvioRepartoDTO.BultosSinEntregar"/>. Sin él,
+        /// como antes: se cierran «sin leer».
+        /// </summary>
+        public bool? SoloLeidos { get; set; }
     }
 
     /// <summary>NestoAPI#759: PUT api/RepartoPropio/Orden. El orden de las paradas del repartidor, tal como lo deja en la PDA.</summary>
@@ -400,6 +406,34 @@ namespace NestoAPI.Models.Agencias
         public string UrlPago { get; set; }
         /// <summary>NestoAPI#772: los bultos que han salido de la furgoneta con esta entrega. Null sin la tabla de la furgoneta.</summary>
         public int? BultosEntregados { get; set; }
+        /// <summary>
+        /// NestoAPI#880: los bultos RP del envío que NO se han dado por entregados (RP251099-5…): los no leídos con SoloLeidos, los que
+        /// no se cargaron, los que volvieron al almacén y los que lleva otro repartidor. Null si no falta ninguno (o sin datos).
+        /// </summary>
+        public System.Collections.Generic.List<string> BultosSinEntregar { get; set; }
+        /// <summary>NestoAPI#880: lo mismo con el motivo de cada uno. Null si no falta ninguno.</summary>
+        public System.Collections.Generic.List<BultoSinEntregarDTO> BultosQueFaltan { get; set; }
+        /// <summary>NestoAPI#880: «Entregado con 4 de 5 bultos. Falta RP251099-5: no se cargó.» Null si no falta ninguno.</summary>
+        public string ResumenEntregaIncompleta { get; set; }
+
+        /// <summary>NestoAPI#880: la entrega se acaba de registrar (no es un reintento con la misma clave). No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool EsNueva { get; set; }
+        [Newtonsoft.Json.JsonIgnore]
+        internal global::NestoAPI.Infraestructure.Agencias.RepartoPropio.EvaluacionBultosEntrega Evaluacion { get; set; }
+        [Newtonsoft.Json.JsonIgnore]
+        internal EnviosAgencia EnvioEntregado { get; set; }
+    }
+
+    /// <summary>NestoAPI#880: un bulto que no se ha entregado y por qué.</summary>
+    public class BultoSinEntregarDTO
+    {
+        public string Codigo { get; set; }
+        public int Bulto { get; set; }
+        /// <summary>NoLeidoSeQueda, NoSeCargo, VolvioAlAlmacen o LoLlevaOtro.</summary>
+        public string Situacion { get; set; }
+        /// <summary>«no se cargó», «no se ha leído al entregar», «lo lleva Miguel»…</summary>
+        public string Motivo { get; set; }
     }
 
     /// <summary>

@@ -269,6 +269,225 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             });
     }
 
+    /// <summary>NestoAPI#880: qué ha pasado con un bulto RP del envío al entregarlo.</summary>
+    public enum SituacionBultoEntrega
+    {
+        /// <summary>Leído al entregar.</summary>
+        Leido,
+        /// <summary>Lo llevaba quien entrega y no lo leyó: se da por entregado (caso 251099).</summary>
+        EntregadoSinLeer,
+        /// <summary>Lo llevaba quien entrega, no lo leyó y eligió «Solo entrego los leídos»: sigue en su furgoneta. FALTA.</summary>
+        NoLeidoSeQueda,
+        /// <summary>Sin carga vigente ni movimiento: se quedó en el almacén. FALTA.</summary>
+        NoSeCargo,
+        /// <summary>Se cargó y se descargó antes de entregar. FALTA.</summary>
+        VolvioAlAlmacen,
+        /// <summary>Lo lleva otro repartidor. FALTA.</summary>
+        LoLlevaOtro
+    }
+
+    /// <summary>NestoAPI#880: un bulto del envío y su situación al entregar.</summary>
+    public class BultoEntregaEvaluado
+    {
+        public int Bulto { get; set; }
+        public string Codigo { get; set; }
+        public SituacionBultoEntrega Situacion { get; set; }
+        /// <summary>Con <see cref="SituacionBultoEntrega.LoLlevaOtro"/>, el nombre de quien lo lleva.</summary>
+        public string Repartidor { get; set; }
+        /// <summary>El movimiento que lo dejó como está (null si no tiene).</summary>
+        public MovimientoBultoReparto Ultimo { get; set; }
+        public bool Entregado => Situacion == SituacionBultoEntrega.Leido || Situacion == SituacionBultoEntrega.EntregadoSinLeer;
+        /// <summary>«no se cargó», «no se ha leído al entregar», «volvió al almacén», «lo lleva Miguel»; null si se ha entregado.</summary>
+        public string Motivo => EntregaIncompletaReparto.Motivo(this);
+    }
+
+    /// <summary>NestoAPI#880: la foto de los bultos de un envío al entregarlo.</summary>
+    public class EvaluacionBultosEntrega
+    {
+        public int EnvioId { get; set; }
+        public int Total { get; set; }
+        public List<BultoEntregaEvaluado> Bultos { get; set; } = new List<BultoEntregaEvaluado>();
+        /// <summary>Algún bulto del envío se leyó al entregar o se cargó (si no, no se sabe qué se dejó: no cuenta como incompleta).</summary>
+        public bool HayDatos { get; set; }
+        public List<BultoEntregaEvaluado> Faltan => Bultos.Where(b => !b.Entregado).ToList();
+        public int Entregados => Bultos.Count(b => b.Entregado);
+        /// <summary>Falta alguno y hay datos (decisión de Carlos 19/11/26: sin leer nada al cargar ni al entregar, no se avisa).</summary>
+        public bool Incompleta => HayDatos && Bultos.Any(b => !b.Entregado);
+        /// <summary>Los que siguen en la furgoneta de quien entrega por «Solo entrego los leídos».</summary>
+        public List<string> SeQuedanEnLaFurgoneta => Bultos.Where(b => b.Situacion == SituacionBultoEntrega.NoLeidoSeQueda).Select(b => b.Codigo).ToList();
+    }
+
+    /// <summary>
+    /// NestoAPI#880 (corte 1, Carlos 19/11/26): entrega incompleta del reparto propio. Para cada bulto 1..Bultos del envío dice si se
+    /// entrega o falta y por qué (ver <see cref="SituacionBultoEntrega"/>). El envío sigue Entregado (Estado 2) pero con
+    /// <see cref="Detalle"/> en DetalleEstado («Entregado (reparto propio): 4 de 5 bultos. Falta RP251099-5»); el job de las 22:00 no
+    /// cierra sus bultos (<see cref="EsIncompleta"/>). Solo envíos y notas de entrega. PURA.
+    /// </summary>
+    public static class EntregaIncompletaReparto
+    {
+        /// <summary>Lo que distingue el DetalleEstado de una entrega incompleta (el de una completa es «Entregado (reparto propio)», sin dos puntos).</summary>
+        public const string PREFIJO_DETALLE = ServicioRepartoPropio.DETALLE_ENTREGADO + ": ";
+        public const int LONGITUD_DETALLE = 100;
+        public const string TABLA_MODIFICACIONES = "FurgonetaEntregaIncompleta";
+
+        /// <param name="historiaEnvio">Los movimientos de los bultos del envío (de cualquier orden).</param>
+        /// <param name="cargasVigentes">Las filas de EnviosAgenciaCargaBultos del envío que siguen valiendo (sin las descargadas).</param>
+        /// <param name="leidos">Los códigos RP leídos al entregar (normalizados).</param>
+        /// <param name="usuario">Quien entrega.</param>
+        /// <param name="soloLeidos">«Solo entrego los leídos» (solo cuenta con algún leído).</param>
+        public static EvaluacionBultosEntrega Evaluar(int envioId, int bultos, IEnumerable<MovimientoBultoReparto> historiaEnvio,
+            IEnumerable<CargaBultoReparto> cargasVigentes, ICollection<string> leidos, string usuario, bool soloLeidos)
+        {
+            var leidosSet = new HashSet<string>((leidos ?? new List<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+            bool quedarse = soloLeidos && leidosSet.Count > 0;
+            List<MovimientoBultoReparto> ultimos = NucleoFurgoneta.Ultimos((historiaEnvio ?? Enumerable.Empty<MovimientoBultoReparto>())
+                .Where(m => m != null && m.TipoCodigo == CodigoBultoFurgoneta.RP));
+            List<CargaBultoReparto> cargas = (cargasVigentes ?? Enumerable.Empty<CargaBultoReparto>()).Where(c => c != null && c.EnvioId == envioId).ToList();
+            var evaluacion = new EvaluacionBultosEntrega { EnvioId = envioId, Total = Math.Max(bultos, 1) };
+            evaluacion.HayDatos = leidosSet.Count > 0 || cargas.Count > 0 || ultimos.Count > 0;
+            for (int n = 1; n <= evaluacion.Total; n++)
+            {
+                string codigo = CodigoBultoFurgoneta.CodigoRp(envioId, n);
+                MovimientoBultoReparto ultimo = ultimos.FirstOrDefault(u => string.Equals(u.Codigo?.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
+                var bulto = new BultoEntregaEvaluado { Bulto = n, Codigo = codigo, Ultimo = ultimo };
+                if (leidosSet.Contains(codigo))
+                {
+                    bulto.Situacion = SituacionBultoEntrega.Leido;
+                }
+                else if (ultimo != null && ultimo.Tipo == TiposMovimientoBulto.ENTREGADO)
+                {
+                    bulto.Situacion = (ultimo.Descripcion ?? string.Empty).TrimEnd().EndsWith(CierreEntregaFurgoneta.MARCA.Trim(), StringComparison.Ordinal)
+                        ? SituacionBultoEntrega.EntregadoSinLeer
+                        : SituacionBultoEntrega.Leido;
+                }
+                else if (ultimo != null && ultimo.Tipo == TiposMovimientoBulto.DESCARGADO)
+                {
+                    bulto.Situacion = SituacionBultoEntrega.VolvioAlAlmacen;
+                }
+                else
+                {
+                    // En una furgoneta (último movimiento) o, sin movimiento, por la carga vigente de ese bulto
+                    string quien = ultimo != null && TiposMovimientoBulto.DejaEnFurgoneta(ultimo.Tipo)
+                        ? ultimo.Usuario
+                        : cargas.Where(c => c.Bulto == n).OrderBy(c => c.Id).LastOrDefault()?.Usuario;
+                    if (string.IsNullOrWhiteSpace(quien))
+                    {
+                        bulto.Situacion = SituacionBultoEntrega.NoSeCargo;
+                    }
+                    else if (ServicioRepartoPropio.MismoUsuario(quien, usuario))
+                    {
+                        bulto.Situacion = quedarse ? SituacionBultoEntrega.NoLeidoSeQueda : SituacionBultoEntrega.EntregadoSinLeer;
+                    }
+                    else
+                    {
+                        bulto.Situacion = SituacionBultoEntrega.LoLlevaOtro;
+                        bulto.Repartidor = ServicioRepartoPropio.NombreRepartidor(quien);
+                    }
+                }
+                evaluacion.Bultos.Add(bulto);
+            }
+            return evaluacion;
+        }
+
+        public static string Motivo(BultoEntregaEvaluado bulto)
+        {
+            switch (bulto?.Situacion)
+            {
+                case SituacionBultoEntrega.NoLeidoSeQueda: return "no se ha leído al entregar";
+                case SituacionBultoEntrega.NoSeCargo: return "no se cargó";
+                case SituacionBultoEntrega.VolvioAlAlmacen: return "se descargó en el almacén antes de entregar";
+                case SituacionBultoEntrega.LoLlevaOtro: return string.IsNullOrWhiteSpace(bulto.Repartidor) ? "lo lleva otro repartidor" : $"lo lleva {bulto.Repartidor}";
+                default: return null;
+            }
+        }
+
+        /// <summary>«Entregado (reparto propio): 4 de 5 bultos. Falta RP251099-5» (sin pasar de la columna, 100).</summary>
+        public static string Detalle(EvaluacionBultosEntrega evaluacion)
+        {
+            List<string> faltan = evaluacion.Faltan.Select(b => b.Codigo).ToList();
+            string inicio = $"{PREFIJO_DETALLE}{evaluacion.Entregados} de {evaluacion.Total} bultos. {(faltan.Count == 1 ? "Falta" : "Faltan")} ";
+            string lista = NucleoFurgoneta.ListaCorta(faltan, 4);
+            string detalle = inicio + lista;
+            if (detalle.Length > LONGITUD_DETALLE)
+            {
+                detalle = inicio + $"{faltan.Count} bultos";
+            }
+            return detalle.Length > LONGITUD_DETALLE ? detalle.Substring(0, LONGITUD_DETALLE) : detalle;
+        }
+
+        /// <summary>¿Ese DetalleEstado es el de una entrega incompleta?</summary>
+        public static bool EsIncompleta(string detalleEstado)
+            => detalleEstado != null && detalleEstado.TrimStart().StartsWith(PREFIJO_DETALLE, StringComparison.Ordinal);
+
+        /// <summary>«Falta RP251099-5: no se cargó.» / «Faltan RP251099-4: no se cargó; RP251099-5: lo lleva Miguel.»</summary>
+        public static string TextoFaltan(EvaluacionBultosEntrega evaluacion)
+        {
+            List<BultoEntregaEvaluado> faltan = evaluacion.Faltan;
+            if (faltan.Count == 0)
+            {
+                return string.Empty;
+            }
+            IEnumerable<BultoEntregaEvaluado> mostrados = faltan.Take(10);
+            string resto = faltan.Count > 10 ? $" y {faltan.Count - 10} más" : string.Empty;
+            return (faltan.Count == 1 ? "Falta " : "Faltan ") + string.Join("; ", mostrados.Select(b => $"{b.Codigo}: {b.Motivo}")) + resto + ".";
+        }
+
+        /// <summary>«Entregado con 4 de 5 bultos. Falta RP251099-5: no se cargó.»</summary>
+        public static string Resumen(EvaluacionBultosEntrega evaluacion)
+            => $"Entregado con {evaluacion.Entregados} de {evaluacion.Total} bultos. {TextoFaltan(evaluacion)}";
+
+        /// <summary>La línea de EnviosHistoria (Campo «Bultos», el número de bultos del envío; el resumen en Observaciones).</summary>
+        public static EnvioHistoria Historia(EnviosAgencia envio, EvaluacionBultosEntrega evaluacion, string usuario, DateTime momento)
+            => new EnvioHistoria
+            {
+                NumeroEnvio = envio.Numero,
+                Campo = "Bultos",
+                ValorAnterior = envio.Bultos.ToString(CultureInfo.InvariantCulture),
+                Observaciones = "Reparto propio: entrega incompleta. " + Resumen(evaluacion),
+                Usuario = usuario,
+                FechaModificacion = momento
+            };
+
+        /// <summary>La campana y la push: de usted, con el código exacto y la causa de cada bulto que falta.</summary>
+        public static NotificacionPushDTO Notificacion(EnviosAgencia envio, EvaluacionBultosEntrega evaluacion, string repartidor)
+        {
+            string cliente = envio.Cliente?.Trim() + (string.IsNullOrWhiteSpace(envio.Contacto) ? string.Empty : "/" + envio.Contacto.Trim())
+                + (string.IsNullOrWhiteSpace(envio.Nombre) ? string.Empty : " - " + envio.Nombre.Trim());
+            string documento = envio.Pedido.HasValue ? $"del pedido {envio.Pedido.Value}" : $"del envío {envio.Numero}";
+            string quien = string.IsNullOrWhiteSpace(repartidor) ? string.Empty : $" ({repartidor})";
+            var datos = new Dictionary<string, string>
+            {
+                ["tipo"] = TIPO_NOTIFICACION,
+                ["empresa"] = envio.Empresa?.Trim(),
+                ["envio"] = envio.Numero.ToString(CultureInfo.InvariantCulture),
+                ["cliente"] = envio.Cliente?.Trim(),
+                ["bultos"] = evaluacion.Total.ToString(CultureInfo.InvariantCulture),
+                ["entregados"] = evaluacion.Entregados.ToString(CultureInfo.InvariantCulture),
+                ["faltan"] = string.Join(",", evaluacion.Faltan.Select(b => b.Codigo))
+            };
+            if (envio.Pedido.HasValue)
+            {
+                datos["pedido"] = envio.Pedido.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            return new NotificacionPushDTO
+            {
+                Titulo = $"Entrega incompleta {documento}",
+                Cuerpo = $"El envío {envio.Numero} de {cliente} se ha entregado{quien} con {evaluacion.Entregados} de {evaluacion.Total} bultos. " +
+                    TextoFaltan(evaluacion) + " Compruebe dónde está lo que falta y cómo hacérselo llegar al cliente.",
+                Tipo = TIPO_NOTIFICACION,
+                Datos = datos
+            };
+        }
+
+        public const string TIPO_NOTIFICACION = "EntregaIncompletaReparto";
+    }
+
+    /// <summary>NestoAPI#880: los avisos de una entrega incompleta (campana a Almacén; campana y push a quien hizo el pedido y a su vendedor). Nunca lanza.</summary>
+    public interface IAvisosEntregaIncompleta
+    {
+        Task Avisar(EnviosAgencia envio, EvaluacionBultosEntrega evaluacion, string repartidor);
+    }
+
     /// <summary>NestoAPI#772: qué movimientos leer (cualquiera de las condiciones: OR). Vacía: ninguno.</summary>
     public class ConsultaMovimientosBulto
     {

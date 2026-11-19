@@ -298,6 +298,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 // NestoAPI#772: salen de la furgoneta (los leídos o los de la parada que llevaba). Nunca rompe la entrega.
                 await AnotarEntrega(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
+                // NestoAPI#880: qué bultos faltan (y, si es la primera vez, el aviso). Nunca rompe la entrega.
+                await CompletarEntregaIncompleta(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
             }
             Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_ENTREGA, origen);
             return resultado;
@@ -534,17 +536,24 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 FechaRegistro = ahora(),
                 TieneFirma = firma != null
             };
+            // NestoAPI#880: qué bultos faltan. El envío queda Entregado igual, pero «incompleto» (DetalleEstado + historia, en la misma transacción).
+            EvaluacionBultosEntrega evaluacion = recogida || notaCobro ? null : await EvaluarBultosEntrega(envio, peticion, usuario).ConfigureAwait(false);
+            bool incompleta = evaluacion?.Incompleta == true;
             string observacionesHistoria = recogida
                 ? "Reparto propio: recogido" + (bultosRecogidos.HasValue ? $" ({bultosRecogidos.Value} {(bultosRecogidos.Value == 1 ? "bulto" : "bultos")})" : string.Empty)
                 : notaCobro
                 ? "Reparto propio: nota de cobro" + (cobro == null ? string.Empty : $" ({TextoCobro(cobro, importeCobrado)})")
                 : "Reparto propio: entregado" + (cobro == null ? string.Empty : $" (reembolso: {TextoCobro(cobro, importeCobrado)})");
             List<EnvioHistoria> historia = Historia(envio, observacionesHistoria, usuario);
+            if (incompleta)
+            {
+                historia.Add(EntregaIncompletaReparto.Historia(envio, evaluacion, usuario, ahora()));
+            }
             SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
             {
                 Estado = EstadoEnvioSeguimiento.Entregado,
                 FechaEntrega = fechaHora,
-                Detalle = DETALLE_ENTREGADO
+                Detalle = incompleta ? EntregaIncompletaReparto.Detalle(evaluacion) : DETALLE_ENTREGADO
             });
             envio.Usuario = usuario;
 
@@ -562,6 +571,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
 
             ResultadoReparto<EstadoEnvioRepartoDTO> resultado = await Registrar(prueba, firma, envio, historia, aContabilizar, usuario, EnvioRepartoDTO.ESTADO_ENTREGADO).ConfigureAwait(false);
+            if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido != null && resultado.Contenido.EsNueva)
+            {
+                resultado.Contenido.Evaluacion = evaluacion;
+                resultado.Contenido.EnvioEntregado = envio;
+            }
             if (firma != null && sellada && resultado.Tipo == TipoResultadoReparto.Ok)
             {
                 await GuardarFirmaEnBlob(prueba, envio, firma).ConfigureAwait(false);
@@ -746,7 +760,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 // La contabilización del reembolso (sin cuenta, sin diario...): nada se ha guardado.
                 return Invalido($"No se ha registrado {(prueba.Tipo == PruebaEntregaReparto.TIPO_ENTREGA ? "la entrega" : "la incidencia")} del envío {envio.Numero}: {ex.Message}");
             }
-            return ResultadoReparto<EstadoEnvioRepartoDTO>.Bien(new EstadoEnvioRepartoDTO { EnvioId = envio.Numero, Estado = estado, UrlPago = prueba.UrlPago });
+            return ResultadoReparto<EstadoEnvioRepartoDTO>.Bien(new EstadoEnvioRepartoDTO { EnvioId = envio.Numero, Estado = estado, UrlPago = prueba.UrlPago, EsNueva = true });
         }
 
         /// <summary>Misma clave = misma respuesta; la clave de otro envío o de otra operación, 409. Null si la clave es nueva.</summary>

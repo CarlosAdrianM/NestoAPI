@@ -289,6 +289,12 @@ namespace NestoAPI.Controllers
         /// Se deriva de DetalleEstado; no es un estado nuevo ni lo cambia de pestaña.
         /// </summary>
         public bool EnReparto => Infraestructure.Agencias.ReglasEnReparto.EstaEnReparto(Estado, DetalleEstado);
+        /// <summary>
+        /// NestoAPI#880: reparto propio entregado con algún bulto de menos («Entregado (reparto propio): 4 de 5 bultos. Falta RP…-5»).
+        /// Se deriva de DetalleEstado; el envío sigue Entregado.
+        /// </summary>
+        public bool EntregaIncompleta => Estado == Constantes.Agencias.ESTADO_ENTREGADO
+            && Infraestructure.Agencias.RepartoPropio.EntregaIncompletaReparto.EsIncompleta(DetalleEstado);
     }
 
     // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
@@ -877,7 +883,8 @@ namespace NestoAPI.Controllers
                 CodigoBarras = e.CodigoBarras,
                 CodigoPostal = e.CodPostal,
                 Cliente = e.Cliente,
-                Pedido = (int)e.Pedido
+                Pedido = (int)e.Pedido,
+                DetalleEstado = e.DetalleEstado // NestoAPI#880: de aquí sale EntregaIncompleta
             }).ToListAsync();
             return Ok(enviosAgencia);
         }

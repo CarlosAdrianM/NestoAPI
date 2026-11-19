@@ -41,6 +41,14 @@ namespace NestoAPI.Models
         public DateTime Fecha { get; set; }
         public string CodigoBarras { get; set; }
         public string CodigoPostal { get; set; }
+        /// <summary>NestoAPI#880: el DetalleEstado del envío (no viaja: solo para <see cref="EntregaIncompleta"/>).</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string DetalleEstado { get; set; }
+        /// <summary>NestoAPI#880: reparto propio entregado con algún bulto de menos.</summary>
+        public bool EntregaIncompleta => Estado == Constantes.Agencias.ESTADO_ENTREGADO
+            && global::NestoAPI.Infraestructure.Agencias.RepartoPropio.EntregaIncompletaReparto.EsIncompleta(DetalleEstado);
+        /// <summary>NestoAPI#880: «Entregado (reparto propio): 4 de 5 bultos. Falta RP251099-5»; null si no es una entrega incompleta.</summary>
+        public string DetalleEntregaIncompleta => EntregaIncompleta ? DetalleEstado?.Trim() : null;
         public string EnlaceSeguimiento
         {
             get

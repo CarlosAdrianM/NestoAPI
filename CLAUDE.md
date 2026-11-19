@@ -267,6 +267,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - **Sin etiqueta RP para recogidas y cobros (NestoAPI#847, 11/11/26)**: `ImprimirEtiqueta` y la reimpresión de `Tramitar` (la de Nesto)
   dan 409 con el motivo si el envío de la 14 es la parada de una nota de Recogida o de Cobro (`EtiquetaRepartoPropioDeNota`); sus
   bultos son NR{pedido}-{N}. Reimprimir la RP de una recogida dejó un bulto fantasma en la furgoneta. Si no se sabe el tipo, se imprime.
+- **Entrega incompleta (NestoAPI#880 corte 1, 19/11/26)**: `EntregaIncompletaReparto.Evaluar` (pura, `FurgonetaBultos.cs`) clasifica cada bulto
+  1..Bultos al entregar: Leido, EntregadoSinLeer (lo llevaba quien entrega), NoLeidoSeQueda (`EntregaRepartoDTO.SoloLeidos` = true con algún leído:
+  NO se cierra, sigue en su furgoneta), NoSeCargo (sin carga vigente ni movimiento), VolvioAlAlmacen (Descargado), LoLlevaOtro. Si falta alguno y hay
+  datos (algo cargado o leído; sin leer nada al cargar ni al entregar NO cuenta), el envío queda Entregado con DetalleEstado «Entregado (reparto propio):
+  4 de 5 bultos. Falta RP…-5» (`PREFIJO_DETALLE`, `EsIncompleta`) + historia «Bultos» en la misma transacción; respuesta `BultosSinEntregar`,
+  `BultosQueFaltan` {Codigo, Bulto, Situacion, Motivo}, `ResumenEntregaIncompleta` (también en el reintento); UN aviso tras el OK
+  (`IAvisosEntregaIncompleta`: campana a Almacén + campana/push a quien hizo el pedido y su vendedor, tipo `EntregaIncompletaReparto`). El job de las
+  22:00 no cierra los bultos de un envío incompleto. Ni recogidas, ni NC, ni reposiciones. `EntregaIncompleta` (+ `DetalleEntregaIncompleta`) en los
+  DTO de envío: Nesto lo marca en Agencias › Tramitados («Incompleto», cabecera) y en la pestaña Entrega del pedido.
 - **Packing entre dos PDA (incidencia 1169, Ariadna)**: F8 en la lista no vale para una entrega que ha terminado OTRA PDA y solo está
   resaltada (se reimprimía el envío del compañero y la propia no salía); vale al entrar en ella o elegirla con las flechas.
 - **Incidencias 1189/1190 (11/11/26)**: cargar la parada de una RECOGIDA (o de una NC) ya no apunta Cargado RP (no hay bulto; la carga en

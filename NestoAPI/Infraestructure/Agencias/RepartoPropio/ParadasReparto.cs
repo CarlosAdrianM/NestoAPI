@@ -423,6 +423,8 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public Notificaciones.IAvisosAlmacen AvisosAlmacen { get; set; }
         /// <summary>NestoAPI#772: la campana de Nesto cuando un repartidor termina con bultos en la furgoneta. Null: sin aviso.</summary>
         public IAvisosFurgoneta AvisosFurgoneta { get; set; }
+        /// <summary>NestoAPI#880: los avisos de una entrega incompleta. Null: sin aviso.</summary>
+        public IAvisosEntregaIncompleta EntregaIncompleta { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
@@ -431,6 +433,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 RecogidaReposiciones = new RecogidaReposicionesReparto(db),
                 AvisosAlmacen = avisos as Notificaciones.IAvisosAlmacen,
                 AvisosFurgoneta = new AvisosFurgonetaSinDescargar(),
+                EntregaIncompleta = new AvisosEntregaIncompleta(),
                 Horarios = new HorariosParadas(new global::NestoAPI.Infraestructure.Clientes.ServicioHorarioPreferible(
                     new global::NestoAPI.Infraestructure.Clientes.RepositorioHorarioPreferible(db))),
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),
