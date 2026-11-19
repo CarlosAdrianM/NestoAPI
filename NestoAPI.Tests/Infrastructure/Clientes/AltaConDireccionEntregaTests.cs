@@ -374,9 +374,72 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                 {
                     DireccionesGoogle = direccionesGoogle,
                     LectorParametros = lector,
-                    AbrirTransaccionAlta = db => { TransaccionesAbiertas++; return transaccion; }
+                    AbrirTransaccionAlta = db => { TransaccionesAbiertas++; return transaccion; },
+                    PonerDireccion2EnSesion = (db, entradas) =>
+                    {
+                        if (FallarSesion)
+                        {
+                            throw new InvalidOperationException("sp_set_session_context no está");
+                        }
+                        Sesiones.Add(entradas);
+                        GuardadosAlPonerSesion = Guardados;
+                        IDisposable fin = A.Fake<IDisposable>();
+                        A.CallTo(() => fin.Dispose()).Invokes(() => GuardadosAlQuitarSesion = Guardados);
+                        return fin;
+                    }
                 };
             }
+
+            /// <summary>NestoAPI#874: lo que se deja en la sesión de SQL y cuántos guardados había al ponerlo y al quitarlo.</summary>
+            public readonly List<IReadOnlyList<KeyValuePair<string, string>>> Sesiones = new List<IReadOnlyList<KeyValuePair<string, string>>>();
+            public int GuardadosAlPonerSesion = -1, GuardadosAlQuitarSesion = -1;
+            public bool FallarSesion;
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#874: la Dirección 2 en el correo del alta
+
+        [TestMethod]
+        public async Task CrearCliente_ConDireccionDeEntrega_DejaLasDosDirecciones2EnLaSesionAntesDeLosInsert()
+        {
+            Escenario s = new Escenario();
+
+            _ = await s.Gestor.CrearCliente(Alta(), s.Db);
+
+            IReadOnlyList<KeyValuePair<string, string>> entradas = s.Sesiones.Single();
+            Assert.AreEqual(2, entradas.Count);
+            Assert.AreEqual(Direccion2EnSesion.Clave("1", "42200", "0"), entradas[0].Key);
+            Assert.AreEqual("1º D", entradas[0].Value);
+            StringAssert.StartsWith(entradas[1].Value, "LOCAL 6");
+            Assert.AreEqual(0, s.GuardadosAlPonerSesion, "Antes del primer INSERT");
+            Assert.IsTrue(s.GuardadosAlQuitarSesion >= 2, "Se quita después de los INSERT de las dos fichas");
+        }
+
+        [TestMethod]
+        public async Task CrearCliente_SinDireccionDeEntrega_DejaLaDireccion2EnLaSesion()
+        {
+            Escenario s = new Escenario();
+            ClienteCrear alta = Alta();
+            alta.DireccionEntrega = null;
+
+            _ = await s.Gestor.CrearCliente(alta, s.Db);
+
+            KeyValuePair<string, string> entrada = s.Sesiones.Single().Single();
+            Assert.AreEqual("1º D", entrada.Value);
+            Assert.AreEqual(0, s.GuardadosAlPonerSesion);
+            Assert.IsTrue(s.GuardadosAlQuitarSesion >= 1);
+        }
+
+        [TestMethod]
+        public async Task CrearCliente_SiFallaLaSesion_ElAltaSigue()
+        {
+            Direccion2EnSesion.ReiniciarAvisoParaTests();
+            Escenario s = new Escenario { FallarSesion = true };
+
+            Cliente creado = await s.Gestor.CrearCliente(Alta(), s.Db);
+
+            Assert.IsNotNull(creado);
+            Assert.AreEqual(1, s.Commits);
+            Assert.AreEqual(2, s.Publicados.Count);
         }
 
         [TestCleanup]

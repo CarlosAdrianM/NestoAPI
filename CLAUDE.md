@@ -895,6 +895,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   cliente para sus contactos seguidos y la publicación suelta las vuelve a leer). Cuándo viajan: en cualquier publicación del cliente; el alta
   escribe la Dirección 2 ANTES de publicar, así que su mensaje ya la lleva. `trgClientesUpd` NO encola por Direccion2/TipoLugar (hoy solo las
   escribe el alta). De Odoo a Nesto se ignoran: ni `ClienteChangeDetector` ni `BarreraClientesExternos` las miran.
+- **En los correos del disparador (19/11/26, caso 42154/0)**: «Cambio de Vendedor» y «Cambio de Dirección» pintan «Dirección, Dirección 2»
+  (`Scripts/Issue874_trgClientesUpd_Direccion2.sql`, vuelta atrás `…_ROLLBACK.sql`). En el alta la columna aún es NULL en el INSERT: antes de
+  guardar la ficha, `Clientes.Direccion2EnSesion.Poner` (vía `GestorClientes.PonerDireccion2EnSesion`) deja la Dirección 2 en el contexto de la
+  sesión (`sp_set_session_context`, clave `Direccion2Alta:{empresa}|{cliente}|{contacto}`) con la conexión abierta a mano (misma sesión que el
+  INSERT; en el alta con entrega, la de la transacción) y la borra al acabar; el disparador usa esa clave antes que `i.Direccion2`. Nunca
+  rompe el alta (ELMAH una vez). Para la modificación (corte 2) vale el mismo mecanismo: poner la nueva antes del SaveChanges.
 - **Dirección de entrega distinta en la misma alta (19/11/26, Carlos)**: `ClienteCrear.DireccionEntrega` (`DireccionEntregaCrear`, opcional; sin
   él, el alta de siempre): Direccion, DireccionVerificada, Numero, NumeroConfirmadoSinGoogle, TipoLugar + sus campos, CodigoPostal, Poblacion,
   Provincia, Ruta, Telefono, ComentariosRuta, ComentariosPicking. Solo en un cliente NUEVO con dirección fiscal (`AltaConDireccionEntrega.MotivoNoAdmitida`:
@@ -961,12 +967,6 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Columnas opcionales `CausaOriginal` (JSON de lo que faltaba; se suma, nunca se pierde), `TodoListoDesde` y `EnObservacion`
   (`Scripts/PromesaRiesgo_CausaOriginal.sql`; la API las usa solo si están las tres; caché + ELMAH una vez). Sin ellas: textos nuevos, buena
   noticia «Ya está todo en Algete: sale en el próximo picking.» y sin aviso de los que lo tienen todo en Algete (como antes).
-
-### Modo de servicio 6, «Junto con lo pendiente del cliente» (sugerencia 1340, 18/11/26; Nesto gemelo)
-- `ModosServicio.JUNTO_CON_LO_PENDIENTE` = 6: un «todo junto» (ServirJunto = 1, `EsTodoJunto`/`EsEntregaUnica` true, facturación como el 1) que
-  además no sale hasta que pueda salir lo pendiente del MISMO empresa+cliente+contacto. `Efectivo(6, true)` = 6; ServirJunto desmarcado → 2.
-  `EsValido` sigue siendo 1..4 (parámetro ModoServicioPorDefecto); `EsElegible` = 1..4 + 6. Nunca se sugiere.
-- LA REGLA (`Infraestructure/PedidosVenta/JuntoConPendiente/ReglaJuntoConPendiente`): cuenta lo que tenga alguna línea de producto en ALG,
 - **Lo que ya viene de camino va antes que lo libre de las tiendas (pedido 930942, 19/11/26)**: el repartidor del motor #606 daba lo que
   falta a lo LIBRE de una tienda antes que a la reposición ya terminada que viene a Algete (Alcobendas mandó la unidad en la 81463 y el aviso
   dijo «tiene que venir de Reina… lunes 23/11»). Ahora `RepartidorStockFechaEntregaAgencia.TomarEnCaminoAAlgete` (puro) coge primero lo de
@@ -976,6 +976,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   camino en la reposición 81463 de Alcobendas» (`CalculadoraFechaEntregaAgencia.DeCamino`). Correo resumen: solo va lo recalculado sin
   error en `RevisarAntesDelCorreo` (`PedidosRevisados`) o lo detectado después de empezar (`ReglaCorreoPromesaRiesgo.PuedeIr`); lo demás
   espera al siguiente correo, nunca sale el porqué de hace horas.
+
+### Modo de servicio 6, «Junto con lo pendiente del cliente» (sugerencia 1340, 18/11/26; Nesto gemelo)
+- `ModosServicio.JUNTO_CON_LO_PENDIENTE` = 6: un «todo junto» (ServirJunto = 1, `EsTodoJunto`/`EsEntregaUnica` true, facturación como el 1) que
+  además no sale hasta que pueda salir lo pendiente del MISMO empresa+cliente+contacto. `Efectivo(6, true)` = 6; ServirJunto desmarcado → 2.
+  `EsValido` sigue siendo 1..4 (parámetro ModoServicioPorDefecto); `EsElegible` = 1..4 + 6. Nunca se sugiere.
+- LA REGLA (`Infraestructure/PedidosVenta/JuntoConPendiente/ReglaJuntoConPendiente`): cuenta lo que tenga alguna línea de producto en ALG,
   -1/1, con cantidad y SIN picking (también 31/12/2099: las notas nacen así). No cuentan el propio, presupuestos, cursos (van en la tienda),
   notas de cobro/recogida (sin producto), retenidos (5) ni otros 6 (dos 6 no se esperan). Lectura en UNA consulta (`RepositorioJuntoConPendiente`).
 - Script `Scripts/Sugerencia1340_ModoJuntoConLoPendiente.sql`: amplía CK_CabPedidoVta_ModoServicio a 1..6 (lección #698) y crea

@@ -1036,6 +1036,7 @@
     <Compile Include="Infraestructure\Clientes\DatosAltaCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2Cliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2ClienteSql.cs" />
+    <Compile Include="Infraestructure\Clientes\Direccion2EnSesion.cs" />
     <Compile Include="Infraestructure\Clientes\DireccionCompletaCliente.cs" />
     <Compile Include="Infraestructure\Clientes\ContactoDefectoCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NumeroPropioDireccion.cs" />

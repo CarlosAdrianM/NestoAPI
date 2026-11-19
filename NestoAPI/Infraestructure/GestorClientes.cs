@@ -2164,7 +2164,11 @@ namespace NestoAPI.Infraestructure
 
                 _ = db.Clientes.Add(cliente);
 
-                await GuardarFichaNueva(cliente, db).ConfigureAwait(false);
+                // NestoAPI#874 (42154/0): la Dirección 2 en la sesión de SQL para el correo que manda trgClientesUpd en el INSERT
+                using (Clientes.Direccion2EnSesion.Seguro(() => PonerDireccion2EnSesion(db, Clientes.Direccion2EnSesion.Entradas(new[] { (cliente, direccionValidada?.Direccion2) }))))
+                {
+                    await GuardarFichaNueva(cliente, db).ConfigureAwait(false);
+                }
                 GuardarDatosDelAlta(db, cliente, clienteCrear, direccionValidada);
 
                 await PublicarClienteSincronizar(cliente);
@@ -2247,6 +2251,13 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        /// <summary>
+        /// NestoAPI#874 (42154/0): cómo se deja la Dirección 2 en la sesión de SQL antes del INSERT (para el correo de trgClientesUpd). Los tests
+        /// lo cambian; por defecto, <see cref="Clientes.Direccion2EnSesion.Poner"/>.
+        /// </summary>
+        internal Func<NVEntities, IReadOnlyList<KeyValuePair<string, string>>, IDisposable> PonerDireccion2EnSesion { get; set; }
+            = Clientes.Direccion2EnSesion.Poner;
+
         /// <summary>Para los tests (no tienen BD): cómo se abre la transacción del alta con dirección de entrega.</summary>
         internal Func<NVEntities, Clientes.ITransaccionAltaCliente> AbrirTransaccionAlta { get; set; }
             = db => new Clientes.TransaccionAltaClienteEf(db.Database.BeginTransaction());
@@ -2271,10 +2282,15 @@ namespace NestoAPI.Infraestructure
 
             using (Clientes.ITransaccionAltaCliente transaccion = AbrirTransaccionAlta(db))
             {
-                _ = db.Clientes.Add(principal);
-                await GuardarFichaNueva(principal, db).ConfigureAwait(false);
-                _ = db.Clientes.Add(entrega);
-                await GuardarFichaNueva(entrega, db).ConfigureAwait(false);
+                // NestoAPI#874: las Direcciones 2 en la sesión (la de la transacción) para el correo del disparador en los INSERT
+                using (Clientes.Direccion2EnSesion.Seguro(() => PonerDireccion2EnSesion(db, Clientes.Direccion2EnSesion.Entradas(new[]
+                    { (principal, direccionPrincipal?.Direccion2), (entrega, direccionEntrega?.Direccion2) }))))
+                {
+                    _ = db.Clientes.Add(principal);
+                    await GuardarFichaNueva(principal, db).ConfigureAwait(false);
+                    _ = db.Clientes.Add(entrega);
+                    await GuardarFichaNueva(entrega, db).ConfigureAwait(false);
+                }
 
                 // Con las dos fichas ya guardadas (FK_Clientes_Clientes: el ContactoDefecto tiene que existir).
                 principal.ContactoDefecto = entrega.Contacto;
