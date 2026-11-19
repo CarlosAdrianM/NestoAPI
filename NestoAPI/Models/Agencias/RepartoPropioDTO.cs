@@ -176,6 +176,10 @@ namespace NestoAPI.Models.Agencias
         public Guid ClaveIdempotencia { get; set; }
         /// <summary>La hora de la PDA. Null: la del servidor.</summary>
         public DateTime? FechaHora { get; set; }
+        /// <summary>NestoAPI#881 (opcional): dónde estaba la PDA al cargar (va al movimiento Cargado de RepartoBultosMovimientos).</summary>
+        public decimal? Latitud { get; set; }
+        /// <summary>NestoAPI#881: ver <see cref="Latitud"/>.</summary>
+        public decimal? Longitud { get; set; }
         /// <summary>
         /// La parada es de otro repartidor (409 ENVIO_DE_OTRO_REPARTIDOR, «Este bulto no es suyo: es de la parada de X») y este
         /// confirma que se la lleva él (queda la traza en EnviosHistoria).
@@ -250,6 +254,13 @@ namespace NestoAPI.Models.Agencias
         public string CorreoEnlace { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
+        /// <summary>
+        /// NestoAPI#881 (opcional): la hora del aparato en que se ABRIÓ o se LEYÓ por primera vez esta parada (la llegada). Solo se guarda
+        /// para medir los tiempos reales (RepartoParadasTiempos); no cambia nada de la entrega.
+        /// </summary>
+        public DateTime? FechaHoraLlegada { get; set; }
+        /// <summary>NestoAPI#881 (opcional): la hora del aparato en que se pulsó «Ir» hacia esta parada. Solo para medir.</summary>
+        public DateTime? FechaHoraIr { get; set; }
         public string Observaciones { get; set; }
         /// <summary>
         /// NestoAPI#759: solo en las notas de RECOGIDA, los bultos que se trae (0..999). Va a EnviosAgenciaPruebasEntrega.BultosRecogidos
@@ -426,6 +437,10 @@ namespace NestoAPI.Models.Agencias
         public string Texto { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
+        /// <summary>NestoAPI#881 (opcional): ver <see cref="EntregaRepartoDTO.FechaHoraLlegada"/>.</summary>
+        public DateTime? FechaHoraLlegada { get; set; }
+        /// <summary>NestoAPI#881 (opcional): ver <see cref="EntregaRepartoDTO.FechaHoraIr"/>.</summary>
+        public DateTime? FechaHoraIr { get; set; }
     }
 
     /// <summary>Respuesta de Entregar e Incidencia.</summary>

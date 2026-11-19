@@ -944,6 +944,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(15, fin.MinutosDescarga);
             Assert.AreEqual(AHORA.Date.AddHours(11).AddMinutes(30), fin.FinEstimado);
             Assert.AreEqual(AHORA.Date.AddHours(15), fin.HoraCierre, "Viernes: 15:00");
+            Assert.AreEqual("15:00", fin.HoraCierreDelDia);
+            Assert.AreEqual(AHORA, fin.CalculadoEl);
+            Assert.AreEqual(210, fin.MinutosRestantes, "De las 8:00 a las 11:30: ahora + MinutosRestantes = FinEstimado");
             Assert.IsTrue(fin.SeComparaConCierre);
             Assert.IsFalse(fin.PasaDelCierre);
             Assert.AreEqual("Fin previsto 11:30", fin.Aviso);
@@ -973,6 +976,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(tarde.AddMinutes(233), fin.FinEstimado);
             Assert.IsTrue(fin.PasaDelCierre);
             Assert.AreEqual(113, fin.MinutosDeMas);
+            Assert.AreEqual(233, fin.MinutosRestantes);
             Assert.AreEqual("Fin previsto 16:53 · 1 h 53 min después del cierre", fin.Aviso);
             Assert.AreEqual(tarde.AddMinutes(51), fin.Paradas[0].LlegadaEstimada, "45 × 1,15 = 51,75 → 13:51");
             Assert.AreEqual(filas, orden.Filas.Count, "No guarda nada");

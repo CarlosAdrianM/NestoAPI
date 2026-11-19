@@ -313,6 +313,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 await AnotarEntrega(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
                 // NestoAPI#880: qué bultos faltan (y, si es la primera vez, el aviso). Nunca rompe la entrega.
                 await CompletarEntregaIncompleta(envioId, peticion, usuario, resultado.Contenido).ConfigureAwait(false);
+                // NestoAPI#881 (corte 3): el tiempo real de la parada (idempotente por la clave). Nunca rompe la entrega.
+                await ApuntarTiempoParada(envioId, new DatosTiempoParada
+                {
+                    Clave = peticion.ClaveIdempotencia,
+                    Resultado = TiempoParadaReparto.RESULTADO_ENTREGADA,
+                    Fin = peticion.FechaHora ?? ahora(),
+                    Ir = peticion.FechaHoraIr,
+                    Llegada = peticion.FechaHoraLlegada,
+                    Latitud = peticion.Latitud,
+                    Longitud = peticion.Longitud,
+                    FormaCobro = peticion.CobroReembolso,
+                    ImporteCobrado = peticion.ImporteCobrado,
+                    BultosRecogidos = peticion.BultosRecogidos
+                }, usuario).ConfigureAwait(false);
                 // Novedad 1366: entregado el original, su reenvío sin tramitar sobra (la misma anulación que el seguimiento). Nunca rompe.
                 if (resultado.Contenido?.EsNueva == true && resultado.Contenido.EnvioEntregado != null && ResolverReenvioSobrante != null)
                 {
@@ -626,6 +640,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 // Incidencia 1190: el envío que salió sin cargar queda en su furgoneta (para poder descargarlo). Nunca rompe.
                 await AnotarSalidaSinCargar(envioId, peticion, usuario).ConfigureAwait(false);
+                // NestoAPI#881 (corte 3): también la visita con incidencia («ausente») tiene su tiempo. Nunca rompe.
+                await ApuntarTiempoParada(envioId, new DatosTiempoParada
+                {
+                    Clave = peticion.ClaveIdempotencia,
+                    Resultado = TiempoParadaReparto.RESULTADO_INCIDENCIA,
+                    Fin = peticion.FechaHora ?? ahora(),
+                    Ir = peticion.FechaHoraIr,
+                    Llegada = peticion.FechaHoraLlegada,
+                    Latitud = peticion.Latitud,
+                    Longitud = peticion.Longitud
+                }, usuario).ConfigureAwait(false);
             }
             Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_INCIDENCIA, origen);
             return resultado;

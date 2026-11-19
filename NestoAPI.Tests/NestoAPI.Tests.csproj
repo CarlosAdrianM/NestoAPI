@@ -509,6 +509,7 @@
     <Compile Include="Infrastructure\Agencias\ReembolsoEtiquetaPendienteTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FinRutaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ServicioTecnicoRepartoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\TiemposRealesRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\AgenciaRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ReembolsoRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ServicioRepartoPropioTests.cs" />

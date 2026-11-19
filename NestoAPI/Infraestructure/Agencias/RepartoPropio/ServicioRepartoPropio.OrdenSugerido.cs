@@ -140,6 +140,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             try
             {
                 respuesta.FinRuta = await EstimarFin(pendientesEnOrden, salida, final, conDestino, horaSalida ?? ahoraPda, usuario).ConfigureAwait(false);
+                await FotoEstimacion(respuesta.FinRuta, usuario, respuesta.Origen, FotoEstimacionReparto.CALCULO_ORDEN_SUGERIDO).ConfigureAwait(false);
                 foreach (ParadaEstimadaDTO estimada in respuesta.FinRuta.Paradas)
                 {
                     EnvioRepartoDTO parada = pendientesEnOrden.FirstOrDefault(p => p.EnvioId == estimada.EnvioId);

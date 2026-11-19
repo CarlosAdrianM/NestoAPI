@@ -26,11 +26,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public const string CLAVE_CIERRE_LUNES_JUEVES = "Reparto.CierreLunesAJueves";
         /// <summary>«15:00».</summary>
         public const string CLAVE_CIERRE_VIERNES = "Reparto.CierreViernes";
+        /// <summary>NestoAPI#881 (corte 3): «Regla» (por defecto) o «Modelo»: quién da los minutos de cada parada en el fin de ruta.</summary>
+        public const string CLAVE_QUIEN_MANDA = "Reparto.TiempoParadaQuienManda";
+        public const string QUIEN_MANDA_REGLA = "Regla";
+        public const string QUIEN_MANDA_MODELO = "Modelo";
 
         public static readonly IReadOnlyList<string> CLAVES = new[]
         {
             CLAVE_ENVIO, CLAVE_NOTA_ENTREGA, CLAVE_NOTA_COBRO, CLAVE_NOTA_RECOGIDA, CLAVE_REPOSICION, CLAVE_SERVICIO_TECNICO, CLAVE_COLCHON,
-            CLAVE_DESCARGA_ALGETE, CLAVE_CIERRE_LUNES_JUEVES, CLAVE_CIERRE_VIERNES
+            CLAVE_DESCARGA_ALGETE, CLAVE_CIERRE_LUNES_JUEVES, CLAVE_CIERRE_VIERNES, CLAVE_QUIEN_MANDA
         };
 
         public double MinutosEnvio { get; set; } = 15;
@@ -46,6 +50,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public double MinutosDescargaAlgete { get; set; } = 15;
         public TimeSpan CierreLunesAJueves { get; set; } = new TimeSpan(17, 0, 0);
         public TimeSpan CierreViernes { get; set; } = new TimeSpan(15, 0, 0);
+        /// <summary>
+        /// NestoAPI#881 (corte 3): «Modelo» = los minutos de cada parada los da el modelo en sombra (si hay modelo guardado; si no, o si falla,
+        /// la regla). Cualquier otro valor, o sin fila: «Regla».
+        /// </summary>
+        public string QuienManda { get; set; } = QUIEN_MANDA_REGLA;
+        public bool MandaElModelo => string.Equals(QuienManda, QUIEN_MANDA_MODELO, StringComparison.OrdinalIgnoreCase);
 
         public double FactorConduccion => 1 + ColchonConduccion;
 
@@ -76,6 +86,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             c.CierreLunesAJueves = Hora(valor(CLAVE_CIERRE_LUNES_JUEVES)) ?? c.CierreLunesAJueves;
             c.CierreViernes = Hora(valor(CLAVE_CIERRE_VIERNES)) ?? c.CierreViernes;
+            c.QuienManda = string.Equals(valor(CLAVE_QUIEN_MANDA)?.Trim(), QUIEN_MANDA_MODELO, StringComparison.OrdinalIgnoreCase)
+                ? QUIEN_MANDA_MODELO : QUIEN_MANDA_REGLA;
             return c;
         }
 

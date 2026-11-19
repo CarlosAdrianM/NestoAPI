@@ -67,6 +67,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public string Pendientes { get; set; }
         public Guid ClaveIdempotencia { get; set; }
         public DateTime FechaRegistro { get; set; }
+        /// <summary>NestoAPI#881: dónde terminó (columnas opcionales de Scripts/Issue881_RepartoFinRutaYTiempos.sql). No se leen.</summary>
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
     }
 
     /// <summary>NestoAPI#772: un código leído ya entendido: qué etiqueta es y su forma normalizada.</summary>
@@ -756,11 +759,17 @@ SELECT {COLUMNAS} FROM (
 
         public async Task RegistrarJornada(JornadaReparto jornada)
         {
+            // NestoAPI#881: la posición, solo si están las columnas (sin el script, como antes)
+            bool conPosicion = ColumnasOpcionales.Existen(db, TABLA_JORNADAS, "Latitud", "Longitud");
             try
             {
                 _ = await db.Database.ExecuteSqlCommandAsync(
-                    $"INSERT INTO dbo.{TABLA_JORNADAS} (Usuario, Fecha, FechaFin, BultosPendientes, Pendientes, ClaveIdempotencia, FechaRegistro) " +
-                    "VALUES (@Usuario, @Fecha, @FechaFin, @Bultos, @Pendientes, @Clave, @FechaRegistro)",
+                    $"INSERT INTO dbo.{TABLA_JORNADAS} (Usuario, Fecha, FechaFin, BultosPendientes, Pendientes, ClaveIdempotencia, FechaRegistro" +
+                    (conPosicion ? ", Latitud, Longitud" : string.Empty) + ") " +
+                    "VALUES (@Usuario, @Fecha, @FechaFin, @Bultos, @Pendientes, @Clave, @FechaRegistro" +
+                    (conPosicion ? ", @Latitud, @Longitud" : string.Empty) + ")",
+                    Decimal("@Latitud", jornada.Latitud),
+                    Decimal("@Longitud", jornada.Longitud),
                     new SqlParameter("@Usuario", SqlDbType.VarChar, 50) { Value = Recortar(jornada.Usuario, 50) ?? string.Empty },
                     new SqlParameter("@Fecha", SqlDbType.Date) { Value = jornada.Fecha.Date },
                     new SqlParameter("@FechaFin", SqlDbType.DateTime) { Value = jornada.FechaFin },

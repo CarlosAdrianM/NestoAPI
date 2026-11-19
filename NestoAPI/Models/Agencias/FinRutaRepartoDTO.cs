@@ -20,6 +20,18 @@ namespace NestoAPI.Models.Agencias
         /// dejar en Algete), la hora a la que termina de descargar en Algete; si no, la de llegada al destino.
         /// </summary>
         public DateTime FinEstimado { get; set; }
+        /// <summary>
+        /// Los minutos que quedan de ruta desde <see cref="CalculadoEl"/> hasta <see cref="FinEstimado"/> (conducción con colchón + paradas +
+        /// descarga). La PDA pinta «ahora + MinutosRestantes» y lo repinta en local cada minuto: si no sale, el fin se va retrasando solo.
+        /// </summary>
+        public int MinutosRestantes { get; set; }
+        /// <summary>
+        /// Desde cuándo se cuentan <see cref="MinutosRestantes"/>: hoy, la hora de la PDA (FechaHora de la petición, o la del servidor); un día
+        /// futuro, las 9:00 de ese día (= <see cref="HoraSalida"/>).
+        /// </summary>
+        public DateTime CalculadoEl { get; set; }
+        /// <summary>El cierre como hora del día («17:00», «15:00»); null si ese día no hay cierre (como <see cref="HoraCierre"/>).</summary>
+        public string HoraCierreDelDia { get; set; }
         /// <summary>La hora de llegada al destino elegido (casa u otro punto). Igual que <see cref="FinEstimado"/> si acaba en Algete.</summary>
         public DateTime LlegadaDestino { get; set; }
         /// <summary>Minutos de conducción de toda la ruta (vuelta incluida) CON el colchón (+15 % sobre el motor de rutas).</summary>
@@ -54,6 +66,11 @@ namespace NestoAPI.Models.Agencias
         public DateTime HoraSalida { get; set; }
         /// <summary>Paradas pendientes que entran en el cálculo.</summary>
         public int NumeroParadas { get; set; }
+        /// <summary>
+        /// NestoAPI#881 (corte 3): «Regla» (las constantes) o «Modelo» (el modelo en sombra, solo con ParametrosUsuario «(defecto)»
+        /// Reparto.TiempoParadaQuienManda = «Modelo» y modelo guardado): de dónde salen los minutos de las paradas.
+        /// </summary>
+        public string MinutosDe { get; set; } = "Regla";
         /// <summary>Cada parada pendiente, en el orden en que se recorren.</summary>
         public List<ParadaEstimadaDTO> Paradas { get; set; } = new List<ParadaEstimadaDTO>();
     }

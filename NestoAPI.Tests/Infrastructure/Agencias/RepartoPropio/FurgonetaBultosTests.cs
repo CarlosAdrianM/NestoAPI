@@ -207,6 +207,33 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         }
 
         [TestMethod]
+        public async Task Cargar_881_ConLaPosicionDeLaPda_LaGuardaEnElMovimiento_YSinSenalNo()
+        {
+            Envio();
+            CargaBultoRepartoDTO carga = Carga("RP251300-1", Guid.NewGuid());
+            carga.Latitud = 40.598m;
+            carga.Longitud = -3.521m;
+            _ = await servicio.Cargar(carga, ANDRE);
+            CargaBultoRepartoDTO sinSenal = Carga("RP251300-2", Guid.NewGuid());
+            sinSenal.Latitud = 0m;
+            sinSenal.Longitud = 0m;
+            _ = await servicio.Cargar(sinSenal, ANDRE);
+
+            Assert.AreEqual(40.598m, furgoneta.Filas.Single(f => f.Bulto == 1).Latitud);
+            Assert.AreEqual(-3.521m, furgoneta.Filas.Single(f => f.Bulto == 1).Longitud);
+            Assert.IsNull(furgoneta.Filas.Single(f => f.Bulto == 2).Latitud, "0,0 es un GPS sin señal");
+        }
+
+        [TestMethod]
+        public async Task TerminarJornada_881_GuardaDondeTermina()
+        {
+            _ = await servicio.TerminarJornada(new TerminarJornadaRepartoDTO { ClaveIdempotencia = Guid.NewGuid(), Latitud = 40.5m, Longitud = -3.6m }, ANDRE);
+
+            Assert.AreEqual(40.5m, furgoneta.Jornadas.Single().Latitud);
+            Assert.AreEqual(-3.6m, furgoneta.Jornadas.Single().Longitud);
+        }
+
+        [TestMethod]
         public async Task Cargar_ElMismoBultoOtraVez_NoDuplica_YReintentoConLaMismaClaveTampoco()
         {
             Envio();

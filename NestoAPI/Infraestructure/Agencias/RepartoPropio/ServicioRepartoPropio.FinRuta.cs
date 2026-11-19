@@ -137,6 +137,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             DateTime ahoraPda = peticion.FechaHora ?? ahora();
             DateTime horaSalida = HoraSalida((peticion.Fecha ?? ahoraPda).Date, ahoraPda) ?? ahoraPda;
             EstimacionFinRutaDTO estimacion = await EstimarFin(pendientes, inicio ?? SedesReparto.ALGETE, final, conDestino, horaSalida, usuario).ConfigureAwait(false);
+            // NestoAPI#881 (corte 3): la foto de la previsión (una cada 10 min por repartidor). Nunca la rompe.
+            await FotoEstimacion(estimacion, usuario, inicio != null ? OrdenSugeridoRepartoDTO.ORIGEN_POSICION : OrdenSugeridoRepartoDTO.ORIGEN_ALMACEN,
+                FotoEstimacionReparto.CALCULO_ESTIMACION).ConfigureAwait(false);
             return ResultadoReparto<EstimacionFinRutaDTO>.Bien(estimacion);
         }
 
@@ -231,7 +234,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             minutosTramos.Add(matriz.Minutos[anterior, puntoFinal]);
             kmTramos.Add(KmEntre(matriz, puntos, anterior, puntoFinal));
 
-            List<double> minutosParada = MinutosParadaReparto.Recorrido(lista, constantes);
+            List<double> minutosParada = MinutosConModeloSiManda(lista, MinutosParadaReparto.Recorrido(lista, constantes), constantes, usuario, horaSalida,
+                out bool minutosDelModelo);
             DateTime? cierre = HorarioCierreReparto.De(horaSalida.Date, constantes, paradas.EsDiaSinReparto);
             ResultadoFinRuta calculo = CalculoFinRuta.Calcular(new EntradaFinRuta
             {
@@ -256,6 +260,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 MinutosDescarga = Entero(calculo.MinutosDescarga),
                 Km = Math.Round((decimal)calculo.Km, 1),
                 HoraCierre = cierre,
+                HoraCierreDelDia = cierre.HasValue ? cierre.Value.ToString("H:mm", System.Globalization.CultureInfo.InvariantCulture) : null,
+                CalculadoEl = horaSalida,
+                MinutosRestantes = Math.Max(0, Entero((calculo.FinEstimado - horaSalida).TotalMinutes)),
                 SeComparaConCierre = calculo.SeComparaConCierre,
                 PasaDelCierre = calculo.PasaDelCierre,
                 MinutosDeMas = calculo.MinutosDeMas,
@@ -265,7 +272,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Destino = destinoPersonalizado ? EstimacionFinRutaDTO.DESTINO_PERSONALIZADO : EstimacionFinRutaDTO.DESTINO_ALMACEN,
                 PasaPorAlgete = pasaPorAlgete,
                 HoraSalida = horaSalida,
-                NumeroParadas = lista.Count
+                NumeroParadas = lista.Count,
+                MinutosDe = minutosDelModelo ? ConstantesTiemposReparto.QUIEN_MANDA_MODELO : ConstantesTiemposReparto.QUIEN_MANDA_REGLA
             };
             for (int i = 0; i < lista.Count; i++)
             {

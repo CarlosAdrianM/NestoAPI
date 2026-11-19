@@ -433,6 +433,23 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public Func<DateTime, bool> EsDiaSinReparto { get; set; }
         /// <summary>NestoAPI#881 (corte 2): el servicio técnico de las paradas que son notas. Null: sin servicio técnico (como antes).</summary>
         public ServicioServicioTecnicoReparto ServicioTecnico { get; set; }
+        /// <summary>NestoAPI#881 (corte 3): los tiempos reales y las fotos de la previsión. Null: no se guardan.</summary>
+        public IRepositorioTiemposReparto TiemposReales { get; set; }
+        /// <summary>NestoAPI#881 (corte 3): el modelo en sombra (solo con Reparto.TiempoParadaQuienManda = «Modelo»). Null: siempre la regla.</summary>
+        public ModeloTiemposParada.IMinutosParadaModelo MinutosModelo { get; set; }
+
+        /// <summary>Sin la cadena de conexión (los tests), null: no se guardan los tiempos.</summary>
+        private static IRepositorioTiemposReparto TiemposRealesDeLaConfiguracion()
+        {
+            try
+            {
+                return RepositorioTiemposReparto.DesdeConfiguracion();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
@@ -451,6 +468,8 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 Centros = new CentrosCodigosPostalesSql(db),
                 EsDiaSinReparto = global::NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio,
                 ServicioTecnico = ServicioServicioTecnicoReparto.DeLaBaseDeDatos(db),
+                TiemposReales = TiemposRealesDeLaConfiguracion(),
+                MinutosModelo = new ModeloTiemposParada.PredictorTiemposParada(),
                 Notas = new ServicioParadasNotaEntrega(db),
                 NotasParada = new RepositorioNotasParadaReparto(db),
                 Orden = new RepositorioOrdenReparto(db),

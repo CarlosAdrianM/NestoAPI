@@ -877,6 +877,12 @@
     <Compile Include="Models\Agencias\FinRutaRepartoDTO.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioTecnicoReparto.cs" />
     <Compile Include="Controllers\ServicioTecnicoRepartoController.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\TiemposRealesReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Tiempos.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ModeloTiemposParada\RasgosTiemposParada.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ModeloTiemposParada\EntrenadorModeloTiemposParada.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ModeloTiemposParada\ModeloTiemposParadaJobsService.cs" />
+    <Compile Include="Controllers\TiemposRepartoController.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AgenciaRemotaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AnulacionEnvioRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\EtiquetaRepartoPropio.cs" />

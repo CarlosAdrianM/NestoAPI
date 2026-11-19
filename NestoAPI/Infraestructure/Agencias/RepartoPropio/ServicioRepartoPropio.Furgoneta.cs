@@ -102,6 +102,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 Avisar(resultado.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_FURGONETA, origen);
             }
+            // NestoAPI#881 (corte 3): el último bulto de la reposición de una tienda cierra esa parada: su tiempo real. Nunca rompe.
+            if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido?.ReposicionRecogida == true && peticion != null)
+            {
+                await ApuntarTiempoParada(0, new DatosTiempoParada
+                {
+                    Clave = peticion.ClaveIdempotencia,
+                    Resultado = TiempoParadaReparto.RESULTADO_RECOGIDA,
+                    Fin = peticion.FechaHora ?? ahora(),
+                    Ir = peticion.FechaHoraIr,
+                    Llegada = peticion.FechaHoraLlegada,
+                    Latitud = peticion.Latitud,
+                    Longitud = peticion.Longitud
+                }, usuario, resultado.Contenido.Traspaso, resultado.Contenido.Total).ConfigureAwait(false);
+            }
             return resultado;
         }
 
@@ -666,7 +680,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 BultosPendientes = pendientes.Count,
                 Pendientes = pendientes.Count == 0 ? null : string.Join(",", pendientes.Select(p => p.Codigo)),
                 ClaveIdempotencia = peticion.ClaveIdempotencia,
-                FechaRegistro = momento
+                FechaRegistro = momento,
+                // NestoAPI#881: dónde terminó (opcional; se guarda si existen las columnas)
+                Latitud = CoordenadasGeo.Validas(peticion.Latitud, peticion.Longitud) ? peticion.Latitud : null,
+                Longitud = CoordenadasGeo.Validas(peticion.Latitud, peticion.Longitud) ? peticion.Longitud : null
             };
             try
             {
@@ -783,6 +800,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 nuevo.FechaRegistro = momento;
                 nuevo.Origen = OrigenesMovimientoBulto.REPARTIDOR;
                 nuevo.ClaveIdempotencia = peticion.ClaveIdempotencia;
+                // NestoAPI#881: la posición de la PDA al cargar (opcional; 0,0 = sin señal)
+                if (CoordenadasGeo.Validas(peticion.Latitud, peticion.Longitud))
+                {
+                    nuevo.Latitud = peticion.Latitud;
+                    nuevo.Longitud = peticion.Longitud;
+                }
                 _ = await paradas.Furgoneta.Registrar(new[] { nuevo }).ConfigureAwait(false);
             }
             catch (Exception ex)

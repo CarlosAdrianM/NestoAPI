@@ -1043,6 +1043,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'plazos-proveedores-modelo' configurado (todos los días a las 4:10)");
 
+            // NestoAPI#881 (corte 3): el modelo de los minutos reales de cada parada del reparto propio, EN SOMBRA: apunta siempre en
+            // dbo.RepartoTiemposModeloEntrenamientos el error de la regla y del modelo (o «sin datos suficientes»). Cola «entrenamiento»,
+            // fuera de horario. El fin de ruta no lo usa salvo Reparto.TiempoParadaQuienManda = «Modelo». Sin el script no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Agencias.RepartoPropio.ModeloTiemposParada.ModeloTiemposParadaJobsService.JOB_ID,
+                () => Infraestructure.Agencias.RepartoPropio.ModeloTiemposParada.ModeloTiemposParadaJobsService.EntrenarProgramado(),
+                Infraestructure.Agencias.RepartoPropio.ModeloTiemposParada.ModeloTiemposParadaJobsService.CRON, // Cron: todos los días a las 4:25
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reparto-tiempos-parada-modelo' configurado (todos los días a las 4:25)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

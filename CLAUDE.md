@@ -311,7 +311,7 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `POST api/RepartoPropio/Estimacion` (misma petición que OrdenSugerido): evalúa el orden VIGENTE de las pendientes del repartidor, sin
   reordenar ni guardar → `EstimacionFinRutaDTO` (FinEstimado, LlegadaDestino, MinutosConduccion con colchón, MinutosParadas, MinutosDescarga, Km,
   HoraCierre, SeComparaConCierre, PasaDelCierre, MinutosDeMas, Aviso «Fin previsto 17:40 · 40 min después del cierre», Aproximada, Paradas[]
-  con LlegadaEstimada y MinutosParada). OrdenSugerido trae lo mismo en `FinRuta` (aditivo) y `MinutosParada` en cada parada. Cálculo puro
+  con LlegadaEstimada y MinutosParada; además `MinutosRestantes` desde `CalculadoEl` y `HoraCierreDelDia` «17:00»: la PDA pinta ahora + MinutosRestantes). OrdenSugerido trae lo mismo en `FinRuta` (aditivo) y `MinutosParada` en cada parada. Cálculo puro
   `CalculoFinRuta`; servicio `ServicioRepartoPropio.FinRuta.cs`. Destino personalizado (casa) → solo se compara con el cierre si lleva algo para
   Algete (recogida pendiente en su ruta o NR/R «Recogido» en su furgoneta; la caja NO se mira) y entonces pasa por Algete. Sin coordenadas: centro
   del CP (`dbo.CentrosCodigosPostales`); sin OSRM: línea recta × 1,3 a 30 km/h. Nunca falla: sale `Aproximada`.
@@ -321,6 +321,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   tipo), MinutosServicio 1..600; sin tipo = quitar; rastro `NotaServicioTecnico` en Modificaciones}. Al crear: `PedidoVentaDTO.tipoServicioTecnicoId/
   tipoServicioTecnicoNombre/minutosServicio` (solo POST; se valida antes y se guarda después) y los mismos campos en Confirmar una recogida solicitada.
   `GET Envios`: `ServicioTecnico` y `MinutosServicio` (tecleados, del tipo o 60) en las notas; entran en el fin de ruta. `ServicioServicioTecnicoReparto`.
+- **Tiempos reales y modelo en sombra (corte 3)**: campos opcionales de la PDA: `FechaHoraLlegada` y `FechaHoraIr` en Entregar, Incidencia y Recoger
+  (cuando cierra la reposición de una tienda); `Latitud`/`Longitud` en Cargar (al movimiento Cargado) y en Jornada/Terminar (`RepartoJornadas`, columnas
+  opcionales). Tras cada OK, `dbo.RepartoParadasTiempos` (una fila por parada cerrada, idempotente por la clave; la inserción pone la parada ANTERIOR
+  del repartidor ese día y su posición; `MinutosPrevistos` = la regla) y cada Estimacion/OrdenSugerido deja una foto en `dbo.RepartoEstimaciones`
+  (una por repartidor cada 10 min; si no, actualiza). Nunca rompen (ELMAH). `ServicioRepartoPropio.Tiempos.cs`, `TiemposRealesReparto.cs` (ADO).
+  Modelo (`RepartoPropio/ModeloTiemposParada/`, patrón ModeloPlazos): objetivo = (fin − fin anterior) − conducción en línea recta con colchón (fuera
+  la primera del día y los intervalos > 120 min); segundo registro fin − llegada. Rasgos: tipo de parada, servicio técnico, bultos, cobro y forma, CP3,
+  hora, día, repartidor, minutos tecleados. < 200 ejemplos → «sin datos suficientes». Job `reparto-tiempos-parada-modelo` 4:25 Madrid (cola
+  «entrenamiento», nunca en horario): valida las últimas 4 semanas contra la REGLA y apunta SIEMPRE en `dbo.RepartoTiemposModeloEntrenamientos`;
+  guarda `tiempos_parada.zip` en ModeloLlamadas:Carpeta si no empeora. Interruptor «(defecto)» `Reparto.TiempoParadaQuienManda` = «Regla» | «Modelo»
+  (con «Modelo» el fin de ruta usa el modelo; `MinutosDe` en la respuesta). `GET api/RepartoPropio/TiemposParada/Comparacion` (Dirección/Informática).
 
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).

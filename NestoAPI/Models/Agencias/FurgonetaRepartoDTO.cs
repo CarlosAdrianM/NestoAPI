@@ -46,6 +46,13 @@ namespace NestoAPI.Models.Agencias
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
         /// <summary>
+        /// NestoAPI#881 (opcional, solo Recoger): cuando el bulto cierra la parada (el último R de la reposición de una tienda), la hora
+        /// del aparato en que se abrió o se leyó por primera vez esa parada. Solo para medir los tiempos reales.
+        /// </summary>
+        public DateTime? FechaHoraLlegada { get; set; }
+        /// <summary>NestoAPI#881 (opcional, solo Recoger): la hora en que se pulsó «Ir» hacia esa parada. Solo para medir.</summary>
+        public DateTime? FechaHoraIr { get; set; }
+        /// <summary>
         /// Solo en Descargar (incidencias 1189/1190, 11/11/26): true = el repartidor quita de SU furgoneta un bulto que no puede
         /// leer. <see cref="Codigo"/> es el código exacto de un bulto de GET api/RepartoPropio/Furgoneta. Queda rastro en
         /// Modificaciones y aviso en la campana a Almacén. Sin el campo (clientes viejos), false: como siempre.
@@ -92,6 +99,10 @@ namespace NestoAPI.Models.Agencias
         public DateTime? FechaHora { get; set; }
         /// <summary>Terminar aunque queden bultos en la furgoneta (avisa a Almacén, Dirección y al repartidor).</summary>
         public bool Confirmar { get; set; }
+        /// <summary>NestoAPI#881 (opcional): dónde estaba la PDA al terminar (RepartoJornadas.Latitud/Longitud, si existen).</summary>
+        public decimal? Latitud { get; set; }
+        /// <summary>NestoAPI#881: ver <see cref="Latitud"/>.</summary>
+        public decimal? Longitud { get; set; }
     }
 
     public class ResultadoJornadaRepartoDTO
