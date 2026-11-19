@@ -755,6 +755,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (prometida, correo, promesa en riesgo, fotos: un pack que se monta ya «sale del stock»; el que espera, se mide como su componente). El modo de servicio
   sugerido (`SugeridorModoServicio`) no lo usa aún; el aviso de Nesto antes del picking solo pregunta por los kits que DESMONTAR.
 
+### «Dónde está lo que falta» (pedido 930942, 19/11/26)
+- `GET api/PedidosVenta/{empresa}/{pedido}/DondeEstaLoQueFalta` (`DondeEstaLoQueFaltaController`, aparte de PedidosVentaController; `[Authorize]`, el
+  cliente de la tienda con claim «cliente» → 403; 404 sin pedido). Por cada producto NO listo en Algete (la regla de la promesa en riesgo: todo lo
+  que no es Picking ni Algete) su frase y datos (`DondeEstaLoQueFaltaDTO` → `Productos[].Texto/Situaciones[]`). Sale del motor #606
+  (`CalcularPedido`, una sola verdad) y, para lo EnCamino, del seguimiento #772 por TANDA (`ServicioSeguimientoReposiciones.SeguimientosTanda`:
+  cabeceras, bultos y movimientos en tres consultas para todos los traspasos; sin las cargas antiguas de las paradas). Si el seguimiento falla:
+  ELMAH y la frase sin el detalle del repartidor. Todo en Algete: lista vacía y `Mensaje` con el picking. Textos puros en
+  `ReglasDondeEstaLoQueFalta` («… (1 ud.): viene en la reposición 81463 de Alcobendas, recogida por Miguel el miércoles 18/11 a las 12:53; pendiente
+  de recibir en Algete.»). Nesto: sección plegable en el detalle del pedido y «Dónde está» en «Pedidos con la fecha en riesgo».
+
 ### Color de las líneas del correo del pedido: el mismo motor que el pie (pedido 925901, 18/11/26)
 - El correo pintaba cada línea con `GestorStocks.ColorStock` (stock − TODOS los pendientes) y el pie con el motor #606: un pedido a 31/12/2099
   ponía en rojo una línea que el pie daba «con stock en Algete». LA REGLA (pura): `ReglaColorLineaCorreo` (`Infraestructure/PedidosVenta/`): de

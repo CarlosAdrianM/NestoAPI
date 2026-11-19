@@ -102,8 +102,24 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Receptor { get; set; }
     }
 
+    /// <summary>«Dónde está lo que falta» (19/11/26): la cabecera de un traspaso, leída por tanda.</summary>
+    public class CabeceraSeguimientoReposicionTraspaso : CabeceraSeguimientoReposicion
+    {
+        public int NumTraspaso { get; set; }
+    }
+
+    /// <summary>«Dónde está lo que falta» (19/11/26): una fila de ReposicionesBultos de una tanda de traspasos.</summary>
+    public class FilaBultoSeguimientoTraspaso : FilaBultoSeguimiento
+    {
+        public int NumTraspaso { get; set; }
+    }
+
     public interface IRepositorioSeguimientoReposiciones
     {
+        /// <summary>«Dónde está lo que falta»: las cabeceras de varios traspasos en UNA consulta. Vacía sin la tabla.</summary>
+        Task<List<CabeceraSeguimientoReposicionTraspaso>> LeerCabeceras(string empresa, IReadOnlyCollection<int> traspasos);
+        /// <summary>«Dónde está lo que falta»: los bultos (con quién los etiquetó y leyó) de varios traspasos en UNA consulta. Vacía sin la tabla.</summary>
+        Task<List<FilaBultoSeguimientoTraspaso>> LeerBultosSeguimiento(string empresa, IReadOnlyCollection<int> traspasos);
         /// <summary>Null si el traspaso no tiene cabecera de la API.</summary>
         Task<CabeceraSeguimientoReposicion> LeerCabecera(string empresa, int traspaso);
         /// <summary>Null si no existe ReposicionesBultos.</summary>
@@ -147,6 +163,50 @@ namespace NestoAPI.Infraestructure.Reposiciones
             List<MovimientoBultoReparto> movimientos = (await repositorio.LeerMovimientos(new[] { traspaso }).ConfigureAwait(false) ?? new List<MovimientoBultoReparto>())
                 .Where(m => m.TipoCodigo == CodigoBultoFurgoneta.R && m.NumTraspaso == traspaso).ToList();
             List<CargaAntiguaSeguimiento> cargas = await repositorio.LeerCargasParadas(empresa, traspaso).ConfigureAwait(false) ?? new List<CargaAntiguaSeguimiento>();
+            return Componer(empresa, traspaso, cabecera, bultos, movimientos, cargas);
+        }
+
+        /// <summary>
+        /// «Dónde está lo que falta» (19/11/26): el seguimiento de VARIOS traspasos con tres consultas en total (cabeceras, bultos y
+        /// movimientos de la furgoneta), no unas cuantas por traspaso. Sin las cargas de las paradas de antes del script de la furgoneta
+        /// (31/10/26): lo de esos días ya está recibido. Los que no tienen nada no salen en el diccionario. Puede lanzar (quien llama degrada).
+        /// </summary>
+        public async Task<Dictionary<int, SeguimientoReposicionDTO>> SeguimientosTanda(string empresa, IEnumerable<int> traspasos)
+        {
+            empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            List<int> lista = (traspasos ?? Enumerable.Empty<int>()).Where(t => t > 0).Distinct().ToList();
+            var resultado = new Dictionary<int, SeguimientoReposicionDTO>();
+            if (lista.Count == 0)
+            {
+                return resultado;
+            }
+            List<CabeceraSeguimientoReposicionTraspaso> cabeceras = await repositorio.LeerCabeceras(empresa, lista).ConfigureAwait(false)
+                ?? new List<CabeceraSeguimientoReposicionTraspaso>();
+            List<FilaBultoSeguimientoTraspaso> bultos = await repositorio.LeerBultosSeguimiento(empresa, lista).ConfigureAwait(false)
+                ?? new List<FilaBultoSeguimientoTraspaso>();
+            List<MovimientoBultoReparto> movimientos = await repositorio.LeerMovimientos(lista).ConfigureAwait(false) ?? new List<MovimientoBultoReparto>();
+            foreach (int traspaso in lista)
+            {
+                SeguimientoReposicionDTO dto = Componer(empresa, traspaso,
+                    cabeceras.FirstOrDefault(c => c.NumTraspaso == traspaso),
+                    bultos.Where(b => b.NumTraspaso == traspaso).Cast<FilaBultoSeguimiento>().ToList(),
+                    movimientos.Where(m => m.TipoCodigo == CodigoBultoFurgoneta.R && m.NumTraspaso == traspaso).ToList(),
+                    new List<CargaAntiguaSeguimiento>());
+                if (dto != null)
+                {
+                    resultado[traspaso] = dto;
+                }
+            }
+            return resultado;
+        }
+
+        /// <summary>El seguimiento de un traspaso con lo ya leído. Null si no hay nada.</summary>
+        internal static SeguimientoReposicionDTO Componer(string empresa, int traspaso, CabeceraSeguimientoReposicion cabecera, List<FilaBultoSeguimiento> bultos,
+            List<MovimientoBultoReparto> movimientos, List<CargaAntiguaSeguimiento> cargas)
+        {
+            bultos = bultos ?? new List<FilaBultoSeguimiento>();
+            movimientos = movimientos ?? new List<MovimientoBultoReparto>();
+            cargas = cargas ?? new List<CargaAntiguaSeguimiento>();
             if (cabecera == null && bultos.Count == 0 && movimientos.Count == 0 && cargas.Count == 0)
             {
                 return null;
@@ -362,6 +422,38 @@ SELECT TOP 1 RTRIM(Origen) AS Origen, RTRIM(Destino) AS Destino, RTRIM(Herramien
 FROM dbo.ReposicionesTraspasos WHERE Empresa = @e AND NumTraspaso = @t",
                 new SqlParameter("@e", SqlDbType.Char, 3) { Value = empresa }, new SqlParameter("@t", SqlDbType.Int) { Value = traspaso })
                 .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
+
+        public async Task<List<CabeceraSeguimientoReposicionTraspaso>> LeerCabeceras(string empresa, IReadOnlyCollection<int> traspasos)
+        {
+            if (db == null || traspasos == null || traspasos.Count == 0 || !ColumnasOpcionales.ExisteTabla(db, "ReposicionesTraspasos"))
+            {
+                return new List<CabeceraSeguimientoReposicionTraspaso>();
+            }
+            bool conRecogida = ColumnasOpcionales.Existen(db, "ReposicionesTraspasos", "FechaRecogida", "UsuarioRecogida");
+            string recogida = conRecogida ? "FechaRecogida, RTRIM(UsuarioRecogida) AS UsuarioRecogida" : "CAST(NULL AS datetime) AS FechaRecogida, CAST(NULL AS varchar(30)) AS UsuarioRecogida";
+            recogida += ColumnasOpcionales.Existen(db, "ReposicionesTraspasos", "LaLleva") ? ", RTRIM(LaLleva) AS LaLleva" : ", CAST(NULL AS varchar(50)) AS LaLleva";
+            // Enteros en el texto (sin inyección posible)
+            string lista = string.Join(", ", traspasos.Distinct().Select(t => t.ToString(CultureInfo.InvariantCulture)));
+            return await db.Database.SqlQuery<CabeceraSeguimientoReposicionTraspaso>($@"
+SELECT NumTraspaso, RTRIM(Origen) AS Origen, RTRIM(Destino) AS Destino, RTRIM(Herramienta) AS Herramienta, RTRIM(UsuarioCreacion) AS UsuarioCreacion,
+       FechaCreacion, RTRIM(UsuarioPreparacion) AS UsuarioPreparacion, FechaPreparada, RTRIM(UsuarioRecepcion) AS UsuarioRecepcion, FechaRecibida, {recogida}
+FROM dbo.ReposicionesTraspasos WHERE Empresa = @e AND NumTraspaso IN ({lista})",
+                new SqlParameter("@e", SqlDbType.Char, 3) { Value = empresa }).ToListAsync().ConfigureAwait(false);
+        }
+
+        public async Task<List<FilaBultoSeguimientoTraspaso>> LeerBultosSeguimiento(string empresa, IReadOnlyCollection<int> traspasos)
+        {
+            if (db == null || traspasos == null || traspasos.Count == 0 || !ColumnasOpcionales.ExisteTabla(db, "ReposicionesBultos"))
+            {
+                return new List<FilaBultoSeguimientoTraspaso>();
+            }
+            string lista = string.Join(", ", traspasos.Distinct().Select(t => t.ToString(CultureInfo.InvariantCulture)));
+            return await db.Database.SqlQuery<FilaBultoSeguimientoTraspaso>($@"
+SELECT NumTraspaso, RTRIM(Codigo) AS Codigo, CAST(Bulto AS int) AS Bulto, CAST(Total AS int) AS Total, FechaCreacion, RTRIM(UsuarioCreacion) AS UsuarioCreacion,
+       FechaLectura, RTRIM(UsuarioLectura) AS UsuarioLectura
+FROM dbo.ReposicionesBultos WHERE Empresa = @e AND NumTraspaso IN ({lista}) ORDER BY NumTraspaso, Bulto",
+                new SqlParameter("@e", SqlDbType.Char, 3) { Value = empresa }).ToListAsync().ConfigureAwait(false);
         }
 
         public async Task<List<FilaBultoSeguimiento>> LeerBultos(string empresa, int traspaso)

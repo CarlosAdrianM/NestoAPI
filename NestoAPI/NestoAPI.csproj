@@ -1227,6 +1227,7 @@
     <Compile Include="Infraestructure\PedidosVenta\FechasFuturasPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AvisoClienteCierraDiaReparto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\MontajeKitsAlgete.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\DondeEstaLoQueFalta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ReglaColorLineaCorreo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioFechaEntregaAgencia.cs" />
@@ -2416,6 +2417,7 @@
     <Compile Include="Controllers\ComprasAgenciasEntradaController.cs" />
     <Compile Include="Controllers\ComprasPlazosProveedoresController.cs" />
     <Compile Include="Controllers\ProximaEntradaProductoController.cs" />
+    <Compile Include="Controllers\DondeEstaLoQueFaltaController.cs" />
     <Compile Include="Controllers\FestivosController.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
     <Compile Include="Models\RecursosHumanos\IDiaNoLaborable.cs" />

@@ -69,6 +69,28 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         }
 
         [TestMethod]
+        public async Task SeguimientosTanda_VariosTraspasos_UnaLecturaDeCadaCosa_YLosQueNoTienenNadaNoSalen()
+        {
+            // «Dónde está lo que falta» (19/11/26): una consulta para todos los traspasos, no una por línea
+            repositorio.Cabeceras.Add(new CabeceraSeguimientoReposicionTraspaso
+            {
+                NumTraspaso = 81463, Origen = "ALC", Destino = "ALG", FechaPreparada = HOY.AddHours(9).AddMinutes(37), UsuarioPreparacion = @"NUEVAVISION\Paloma",
+                FechaRecogida = HOY.AddHours(12).AddMinutes(53), UsuarioRecogida = @"NUEVAVISION\Miguel"
+            });
+            repositorio.Cabeceras.Add(new CabeceraSeguimientoReposicionTraspaso { NumTraspaso = 81470, Origen = "REI", Destino = "ALG", FechaPreparada = HOY.AddHours(10) });
+            repositorio.BultosTanda.Add(new FilaBultoSeguimientoTraspaso { NumTraspaso = 81463, Codigo = "R81463-1", Bulto = 1, Total = 1, FechaCreacion = HOY.AddHours(9) });
+            repositorio.Movimientos.Add(Mov(81463, 1, TiposMovimientoBulto.RECOGIDO, @"NUEVAVISION\Miguel", HOY.AddHours(12).AddMinutes(53)));
+
+            Dictionary<int, SeguimientoReposicionDTO> tanda = await servicio.SeguimientosTanda("1", new[] { 81463, 81470, 99999, 81463 });
+
+            Assert.AreEqual(1, repositorio.LecturasTanda);
+            CollectionAssert.AreEquivalent(new[] { 81463, 81470 }, tanda.Keys.ToList());
+            Assert.AreEqual("En la furgoneta de Miguel", tanda[81463].Bultos.Single().Estado);
+            Assert.AreEqual("Miguel", tanda[81463].Eventos.Single(e => e.Tipo == EventoSeguimientoReposicionDTO.RECOGIDA).Usuario);
+            Assert.AreEqual(0, tanda[81470].Bultos.Count);
+        }
+
+        [TestMethod]
         public async Task Seguimiento_PuntualQueLlevaUnCompanero_EntregadaASinBultosNiFurgoneta()
         {
             // NestoAPI#814: Paloma se la da a Manuel a las 13:10; él no lee nada
@@ -183,6 +205,16 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             public DateTime? DiaCortePedido;
 
             public Task<CabeceraSeguimientoReposicion> LeerCabecera(string empresa, int traspaso) => Task.FromResult(Cabecera);
+            public readonly List<CabeceraSeguimientoReposicionTraspaso> Cabeceras = new List<CabeceraSeguimientoReposicionTraspaso>();
+            public readonly List<FilaBultoSeguimientoTraspaso> BultosTanda = new List<FilaBultoSeguimientoTraspaso>();
+            public int LecturasTanda;
+            public Task<List<CabeceraSeguimientoReposicionTraspaso>> LeerCabeceras(string empresa, IReadOnlyCollection<int> traspasos)
+            {
+                LecturasTanda++;
+                return Task.FromResult(Cabeceras.Where(c => traspasos.Contains(c.NumTraspaso)).ToList());
+            }
+            public Task<List<FilaBultoSeguimientoTraspaso>> LeerBultosSeguimiento(string empresa, IReadOnlyCollection<int> traspasos)
+                => Task.FromResult(BultosTanda.Where(b => traspasos.Contains(b.NumTraspaso)).ToList());
             public Task<List<FilaBultoSeguimiento>> LeerBultos(string empresa, int traspaso) => Task.FromResult(Bultos.ToList());
             public Task<List<MovimientoBultoReparto>> LeerMovimientos(IReadOnlyCollection<int> traspasos)
                 => Task.FromResult(Movimientos.Where(m => traspasos.Contains(m.NumTraspaso ?? 0)).ToList());
