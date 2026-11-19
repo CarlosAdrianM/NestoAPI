@@ -387,6 +387,24 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.OrdenSugerido(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
+        // POST api/RepartoPropio/Estimacion { FechaHora, Fecha, Latitud, Longitud, DestinoLatitud, DestinoLongitud }
+        /// <summary>
+        /// NestoAPI#881: el fin previsto de la ruta con el orden VIGENTE de las paradas pendientes del repartidor (la misma petición que
+        /// OrdenSugerido). No reordena ni guarda nada. Siempre da un dato (sin coordenadas o sin OSRM, aproximado). 400 con una posición o
+        /// un destino no válidos.
+        /// </summary>
+        [HttpPost]
+        [Route("Estimacion")]
+        [ResponseType(typeof(EstimacionFinRutaDTO))]
+        public async Task<IHttpActionResult> PostEstimacion([FromBody] PeticionOrdenSugeridoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.Estimacion(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
         // POST api/RepartoPropio/Envios/123456/Entregar (las de reposición, con su EnvioId negativo: Envios/-12/Entregar)
         [HttpPost]
         [Route("Envios/{envioId:int}/Entregar")]

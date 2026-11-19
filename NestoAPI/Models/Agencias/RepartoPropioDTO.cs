@@ -120,6 +120,32 @@ namespace NestoAPI.Models.Agencias
         public DateTime? LlegadaEstimada { get; set; }
         /// <summary>NestoAPI#763: solo en POST OrdenSugerido. True si tiene horario preferible y la llegada estimada cae fuera de él.</summary>
         public bool FueraDeHorario { get; set; }
+        /// <summary>
+        /// NestoAPI#881: solo en POST OrdenSugerido (y en <see cref="EstimacionFinRutaDTO.Paradas"/>). Los minutos que se cuentan en esta
+        /// parada (<see cref="global::NestoAPI.Infraestructure.Agencias.RepartoPropio.MinutosParadaReparto"/>); 0 si está en la misma
+        /// dirección que otra que ya cuenta. Null fuera del orden sugerido.
+        /// </summary>
+        public int? MinutosParada { get; set; }
+        /// <summary>
+        /// NestoAPI#881 (corte 2): el tipo de servicio técnico de la nota de entrega o de recogida («Instalación de un sillón»), o null si
+        /// no lleva (o no es una nota).
+        /// </summary>
+        public string ServicioTecnico { get; set; }
+        /// <summary>
+        /// NestoAPI#881 (corte 2): con servicio técnico, los minutos que se calculan para él: los tecleados en la nota, si no los del tipo,
+        /// si no los de por defecto (60). Null sin servicio técnico.
+        /// </summary>
+        public int? MinutosServicio { get; set; }
+
+        /// <summary>NestoAPI#881: las coordenadas son del centro del código postal (no de la dirección). No sale en el JSON.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool CoordenadasAproximadas { get; set; }
+        /// <summary>NestoAPI#881: el Id del tipo de servicio técnico (para los tiempos reales). No sale en el JSON.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal int? TipoServicioTecnicoId { get; set; }
+        /// <summary>NestoAPI#881: los minutos tecleados en la nota (para los tiempos reales). No sale en el JSON.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal int? MinutosServicioTecleados { get; set; }
 
         /// <summary>Para ordenar la lista (no sale en el JSON): la fecha del envío o de la parada de reposición.</summary>
         internal DateTime FechaParada { get; set; }
@@ -338,6 +364,11 @@ namespace NestoAPI.Models.Agencias
         public int MinutosExtra { get; set; }
         public int Guardados { get; set; }
         public int Ignorados { get; set; }
+        /// <summary>
+        /// NestoAPI#881: el fin previsto de la ruta con el orden nuevo (lo mismo que POST api/RepartoPropio/Estimacion). Null si no se
+        /// ha podido calcular (nunca debería: se estima con lo que haya).
+        /// </summary>
+        public EstimacionFinRutaDTO FinRuta { get; set; }
     }
 
     /// <summary>NestoAPI#759: la respuesta de PUT api/RepartoPropio/Orden.</summary>

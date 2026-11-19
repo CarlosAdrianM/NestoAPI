@@ -35,8 +35,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// </summary>
     public partial class ServicioRepartoPropio
     {
-        /// <summary>Lo que se calcula que se tarda en cada parada (aparcar, descargar, firmar).</summary>
-        public const int MINUTOS_POR_PARADA = 5;
+        // NestoAPI#881: los minutos de cada parada ya no son 5 fijos: salen de MinutosParadaReparto (por tipo, servicio técnico y misma
+        // dirección) y la conducción lleva el colchón de ConstantesTiemposReparto.ColchonConduccion.
+
         /// <summary>Velocidad media en ciudad para estimar con la línea recta cuando el motor no da los tramos.</summary>
         public const double VELOCIDAD_MEDIA_KMH = 30;
         /// <summary>Si se pide el orden de un día futuro, se supone que sale a esta hora.</summary>
@@ -81,11 +82,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>
         /// NestoAPI#763: la hora de llegada a cada parada del recorrido (en su orden) y si cae fuera de su horario. Sale de
         /// <paramref name="salida"/> a la hora <paramref name="horaSalida"/>; los tramos son los del motor (OSRM) o, si no los da,
-        /// la línea recta a <see cref="VELOCIDAD_MEDIA_KMH"/>, más <see cref="MINUTOS_POR_PARADA"/> en cada parada.
+        /// la línea recta a <see cref="VELOCIDAD_MEDIA_KMH"/>, por <paramref name="factorConduccion"/> (NestoAPI#881: el colchón), más los
+        /// minutos de cada parada (<paramref name="minutosParada"/>, en el orden del recorrido; sin ellos, los de un envío).
         /// Devuelve cuántas caen fuera.
         /// </summary>
         internal static int EstimarLlegadas(IReadOnlyList<EnvioRepartoDTO> recorrido, CoordenadasGeo salida, DateTime horaSalida,
-            IReadOnlyList<double> minutosTramos)
+            IReadOnlyList<double> minutosTramos, IReadOnlyList<double> minutosParada = null, double factorConduccion = 1)
         {
             bool tramosDelMotor = minutosTramos != null && minutosTramos.Count >= recorrido.Count;
             DateTime reloj = horaSalida;
@@ -102,7 +104,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 double minutos = tramosDelMotor
                     ? minutosTramos[i]
                     : HeuristicaRutas.DistanciaKm(anterior, aqui) * HeuristicaRutas.FACTOR_CARRETERA / VELOCIDAD_MEDIA_KMH * 60d;
-                reloj = reloj.AddMinutes(Math.Max(0, minutos));
+                reloj = reloj.AddMinutes(Math.Max(0, minutos) * (factorConduccion > 0 ? factorConduccion : 1));
                 // Sin espera: aquí solo se dice qué pasaría con este orden (la espera es cosa de la segunda pasada, #769).
                 LlegadaParada llegada = VentanaHorario.Llegar(reloj, FranjasDe(parada), 0);
                 parada.LlegadaEstimada = VentanaHorario.Minuto(llegada.Hora);
@@ -114,7 +116,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                         fuera++;
                     }
                 }
-                reloj = reloj.AddMinutes(MINUTOS_POR_PARADA);
+                reloj = reloj.AddMinutes(minutosParada != null && i < minutosParada.Count ? Math.Max(0, minutosParada[i]) : OrdenConHorarios.MinutosParadaPorDefecto);
                 anterior = aqui;
             }
             return fuera;
@@ -170,7 +172,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// fuera, kilómetros, minutos y el aviso). Cualquier fallo: el recorrido de antes, tal cual.
         /// </summary>
         private async Task<List<EnvioRepartoDTO>> ReordenarPorHorario(List<EnvioRepartoDTO> recorrido, CoordenadasGeo salida, CoordenadasGeo final,
-            DateTime horaSalida, OrdenSugeridoRepartoDTO respuesta)
+            DateTime horaSalida, OrdenSugeridoRepartoDTO respuesta, ConstantesTiemposReparto constantes)
         {
             if (paradas.Tiempos == null || respuesta.FueraDeHorario == 0 || recorrido.Count < 2)
             {
@@ -201,10 +203,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     matriz = MatrizTiempos.Heuristica(puntos);
                 }
+                // NestoAPI#881: con el colchón de la conducción y los minutos de cada parada (los de la misma dirección, una vez: la mayor
+                // en la primera del recorrido más corto).
+                constantes = constantes ?? ConstantesTiemposReparto.PorDefecto();
+                MatrizTiempos conColchon = matriz.ConFactor(constantes.FactorConduccion);
+                List<double> minutosParada = MinutosParadaReparto.Recorrido(recorrido, constantes);
 
                 List<int> masCorto = Enumerable.Range(0, recorrido.Count).ToList();
-                EvaluacionOrden antes = OrdenConHorarios.Evaluar(matriz, franjas, horaSalida, masCorto);
-                EvaluacionOrden mejor = OrdenConHorarios.Mejorar(matriz, franjas, horaSalida, masCorto);
+                EvaluacionOrden antes = OrdenConHorarios.Evaluar(conColchon, franjas, horaSalida, masCorto, minutosParada);
+                EvaluacionOrden mejor = OrdenConHorarios.Mejorar(conColchon, franjas, horaSalida, masCorto, minutosParada);
                 if (mejor.Fuera >= antes.Fuera || mejor.Orden.SequenceEqual(masCorto))
                 {
                     return recorrido;
@@ -220,8 +227,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 respuesta.ReordenadoPorHorario = true;
                 respuesta.MinutosExtra = minutosExtra;
                 respuesta.FueraDeHorario = mejor.Fuera;
+                // Los minutos del motor, sin el colchón (como los de /trip).
                 respuesta.Minutos = matriz.Motor == OrdenSugeridoRepartoDTO.MOTOR_OSRM || respuesta.Minutos.HasValue
-                    ? (int)Math.Round(mejor.MinutosConduccion, MidpointRounding.AwayFromZero)
+                    ? (int)Math.Round(mejor.MinutosConduccion / constantes.FactorConduccion, MidpointRounding.AwayFromZero)
                     : (int?)null;
                 respuesta.Kilometros = Kilometros(matriz, puntos, mejor.Orden);
                 respuesta.AvisoHorario = AvisoReordenado(nuevo.Where(p => p.FueraDeHorario), antes.Fuera - mejor.Fuera, minutosExtra);

@@ -27,6 +27,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         public decimal Latitud { get; }
         public decimal Longitud { get; }
+        /// <summary>
+        /// NestoAPI#881: es el centro del código postal (Nominatim no encontró la calle, o sale de dbo.CentrosCodigosPostales), no la
+        /// dirección: el fin de ruta que lo use es aproximado.
+        /// </summary>
+        public bool PorCodigoPostal { get; set; }
 
         public static bool Validas(decimal? latitud, decimal? longitud)
             => latitud.HasValue && longitud.HasValue && latitud.Value >= -90m && latitud.Value <= 90m && longitud.Value >= -180m && longitud.Value <= 180m
@@ -395,7 +400,10 @@ IF @@ROWCOUNT = 0
                 ?? new List<CoordenadasEnCache>();
             foreach (CoordenadasEnCache fila in filas.Where(f => CoordenadasGeo.Validas(f.Latitud, f.Longitud)))
             {
-                resultado[fila.Clave] = new CoordenadasGeo(fila.Latitud.Value, fila.Longitud.Value);
+                resultado[fila.Clave] = new CoordenadasGeo(fila.Latitud.Value, fila.Longitud.Value)
+                {
+                    PorCodigoPostal = string.Equals(fila.Precision?.Trim(), ResultadoGeocodificacion.PRECISION_CODIGO_POSTAL, StringComparison.OrdinalIgnoreCase)
+                };
             }
             return resultado;
         }

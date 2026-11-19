@@ -425,6 +425,12 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public IAvisosFurgoneta AvisosFurgoneta { get; set; }
         /// <summary>NestoAPI#880: los avisos de una entrega incompleta. Null: sin aviso.</summary>
         public IAvisosEntregaIncompleta EntregaIncompleta { get; set; }
+        /// <summary>NestoAPI#881: las constantes del fin de ruta (ParametrosUsuario «(defecto)»). Null: las del código.</summary>
+        public IConfiguracionTiemposReparto ConfiguracionTiempos { get; set; }
+        /// <summary>NestoAPI#881: el centro de cada código postal (paradas sin coordenadas). Null: esas paradas sin posición.</summary>
+        public ICentrosCodigosPostales Centros { get; set; }
+        /// <summary>NestoAPI#881: día sin reparto propio (festivo de Algete o sin reparto): sin cierre que comparar. Null: solo fines de semana.</summary>
+        public Func<DateTime, bool> EsDiaSinReparto { get; set; }
 
         public static DependenciasParadasReparto DeLaBaseDeDatos(NVEntities db, IAvisosReparto avisos)
             => new DependenciasParadasReparto
@@ -439,6 +445,9 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),
                 Recorrido = new PlanificadorRecorrido(new MotorRutasOsrm()),
                 Tiempos = new MatrizTiemposOsrm(),
+                ConfiguracionTiempos = new ConfiguracionTiemposRepartoParametros(),
+                Centros = new CentrosCodigosPostalesSql(db),
+                EsDiaSinReparto = global::NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivoRepartoPropio,
                 Notas = new ServicioParadasNotaEntrega(db),
                 NotasParada = new RepositorioNotasParadaReparto(db),
                 Orden = new RepositorioOrdenReparto(db),

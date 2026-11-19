@@ -300,6 +300,22 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   obligatoria = como hoy, al menos uno. Job de las 22:00: antes de avisar, los RP de envíos de la 14 ya en Estado 2 que sigan en una furgoneta
   se cierran igual (Origen Almacen, usuario el repartidor, rastro por envío) y no cuentan para el aviso; si no puede mirar el estado, avisa como siempre.
 
+### Fin previsto de ruta del reparto propio (NestoAPI#881, 19/11/26)
+- LA REGLA de los minutos por parada: `MinutosParadaReparto` (pura, `TiemposParadaReparto.cs`): envío y nota de entrega 15, nota de cobro 10,
+  recogida 15, reposición 25; con servicio técnico, los tecleados en la nota, si no los del tipo, si no 60. Misma dirección (mismo cliente+contacto
+  o mismas coordenadas a 4 decimales) = una vez (la mayor, en la primera). Colchón +15 % sobre los minutos del motor; descarga en Algete 15.
+  Cierre: `HorarioCierreReparto` (L-J 17:00, V 15:00; sábado, domingo y `EsFestivoRepartoPropio` = sin cierre). Todo cambiable con
+  ParametrosUsuario «(defecto)» `Reparto.MinutosParada*`, `Reparto.MinutosServicioTecnico`, `Reparto.ColchonConduccion` («15»),
+  `Reparto.MinutosDescargaAlgete`, `Reparto.CierreLunesAJueves`/`CierreViernes` («17:00»), sin script (sin fila = el código; caché 5 min).
+  Sustituye a los 5 min fijos: las llegadas y el «fuera de horario preferible» de OrdenSugerido (#763/#769) usan la misma regla y el colchón.
+- `POST api/RepartoPropio/Estimacion` (misma petición que OrdenSugerido): evalúa el orden VIGENTE de las pendientes del repartidor, sin
+  reordenar ni guardar → `EstimacionFinRutaDTO` (FinEstimado, LlegadaDestino, MinutosConduccion con colchón, MinutosParadas, MinutosDescarga, Km,
+  HoraCierre, SeComparaConCierre, PasaDelCierre, MinutosDeMas, Aviso «Fin previsto 17:40 · 40 min después del cierre», Aproximada, Paradas[]
+  con LlegadaEstimada y MinutosParada). OrdenSugerido trae lo mismo en `FinRuta` (aditivo) y `MinutosParada` en cada parada. Cálculo puro
+  `CalculoFinRuta`; servicio `ServicioRepartoPropio.FinRuta.cs`. Destino personalizado (casa) → solo se compara con el cierre si lleva algo para
+  Algete (recogida pendiente en su ruta o NR/R «Recogido» en su furgoneta; la caja NO se mira) y entonces pasa por Algete. Sin coordenadas: centro
+  del CP (`dbo.CentrosCodigosPostales`); sin OSRM: línea recta × 1,3 a 30 km/h. Nunca falla: sale `Aproximada`.
+
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).
   Hoy solo `AutorizacionReembolsoReparto` (#773). Al guardarse en el buzón de Nesto, además de `hayNotificacionesNuevas` se manda

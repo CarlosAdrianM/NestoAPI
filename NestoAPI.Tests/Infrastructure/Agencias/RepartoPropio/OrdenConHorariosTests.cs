@@ -40,6 +40,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Franjas("L-V 10:00-14:00"), Franjas("L-V 09:00-13:00"), null
         };
 
+        /// <summary>El escenario de #769 (5 min por parada); NestoAPI#881 los pasa por parada.</summary>
+        private static readonly double[] CINCO = { 5, 5, 5 };
+
+        [TestMethod]
+        public void Evaluar_881_ConLosMinutosDeCadaParada_YSinEllosLosDeUnEnvio()
+        {
+            EvaluacionOrden distintos = OrdenConHorarios.Evaluar(Matriz(), new List<List<FranjaHorario>> { null, null, null }, SALIDA, new[] { 0, 1, 2 },
+                new double[] { 60, 0, 25 });
+            Assert.AreEqual(130d + 85d, distintos.MinutosTotales, "Conducción 130 + 60 + 0 + 25");
+            Assert.AreEqual(SALIDA.AddMinutes(30 + 60 + 30), distintos.Llegadas[1]);
+
+            EvaluacionOrden porDefecto = OrdenConHorarios.Evaluar(Matriz(), new List<List<FranjaHorario>> { null, null, null }, SALIDA, new[] { 0, 1, 2 });
+            Assert.AreEqual(130d + 3 * 15d, porDefecto.MinutosTotales, "Sin minutos, 15 por parada (los de un envío)");
+            Assert.AreEqual(15d, OrdenConHorarios.MinutosParadaPorDefecto);
+        }
+
         [TestMethod]
         public void Llegar_DentroSinEspera_AntesDeAbrirEsperaHastaElTope_YMasAllaFuera()
         {
@@ -67,13 +83,13 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         [TestMethod]
         public void Evaluar_SumaConduccionParadaYEspera_YCuentaLasDeFuera()
         {
-            EvaluacionOrden corto = OrdenConHorarios.Evaluar(Matriz(), FRANJAS, SALIDA, new[] { 0, 1, 2 });
+            EvaluacionOrden corto = OrdenConHorarios.Evaluar(Matriz(), FRANJAS, SALIDA, new[] { 0, 1, 2 }, CINCO);
             Assert.AreEqual(1, corto.Fuera);
             CollectionAssert.AreEqual(new[] { true, false, false }, corto.FueraPorParada);
             Assert.AreEqual(145d, corto.MinutosTotales, "30 + 5 + 30 + 5 + 50 + 5 + 20");
             Assert.AreEqual(130d, corto.MinutosConduccion);
 
-            EvaluacionOrden alReves = OrdenConHorarios.Evaluar(Matriz(), FRANJAS, SALIDA, new[] { 2, 1, 0 });
+            EvaluacionOrden alReves = OrdenConHorarios.Evaluar(Matriz(), FRANJAS, SALIDA, new[] { 2, 1, 0 }, CINCO);
             Assert.AreEqual(0, alReves.Fuera);
             Assert.AreEqual(SALIDA.Date.AddHours(10), alReves.Llegadas[2], "A espera de 09:50 a 10:00");
             Assert.AreEqual(155d, alReves.MinutosTotales);
@@ -83,7 +99,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         [TestMethod]
         public void Mejorar_ReordenaParaQueNingunaLlegueFuera_ConLosMinimosMinutos()
         {
-            EvaluacionOrden mejor = OrdenConHorarios.Mejorar(Matriz(), FRANJAS, SALIDA, new[] { 0, 1, 2 });
+            EvaluacionOrden mejor = OrdenConHorarios.Mejorar(Matriz(), FRANJAS, SALIDA, new[] { 0, 1, 2 }, CINCO);
 
             CollectionAssert.AreEqual(new[] { 2, 1, 0 }, mejor.Orden);
             Assert.AreEqual(0, mejor.Fuera);

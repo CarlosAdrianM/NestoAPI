@@ -32,6 +32,28 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public int Puntos => Minutos.GetLength(0);
 
         /// <summary>
+        /// NestoAPI#881: la misma matriz con los minutos multiplicados por <paramref name="factor"/> (el colchón de la conducción: el
+        /// servicio gratuito no sabe de tráfico). Los kilómetros no cambian.
+        /// </summary>
+        public MatrizTiempos ConFactor(double factor)
+        {
+            if (factor <= 0 || Math.Abs(factor - 1) < 1e-12)
+            {
+                return this;
+            }
+            int total = Puntos;
+            var minutos = new double[total, total];
+            for (int i = 0; i < total; i++)
+            {
+                for (int j = 0; j < total; j++)
+                {
+                    minutos[i, j] = Minutos[i, j] * factor;
+                }
+            }
+            return new MatrizTiempos(minutos, Kilometros, Motor);
+        }
+
+        /// <summary>
         /// El respaldo: línea recta × <see cref="HeuristicaRutas.FACTOR_CARRETERA"/> a <see cref="ServicioRepartoPropio.VELOCIDAD_MEDIA_KMH"/>
         /// (lo mismo que usa <see cref="ServicioRepartoPropio.EstimarLlegadas"/> cuando el motor no da los tramos).
         /// </summary>
@@ -233,7 +255,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public List<DateTime> Llegadas { get; set; } = new List<DateTime>();
         public List<bool> FueraPorParada { get; set; } = new List<bool>();
         public int Fuera { get; set; }
-        /// <summary>Del origen al destino: conducción + <see cref="ServicioRepartoPropio.MINUTOS_POR_PARADA"/> en cada parada + esperas.</summary>
+        /// <summary>Del origen al destino: conducción + los minutos de cada parada (NestoAPI#881, <see cref="MinutosParadaReparto"/>) + esperas.</summary>
         public double MinutosTotales { get; set; }
         public double MinutosConduccion { get; set; }
         /// <summary>Lo que minimiza la búsqueda: minutos totales + <see cref="OrdenConHorarios.PENALIZACION_FUERA_MINUTOS"/> por parada fuera.</summary>
@@ -256,13 +278,26 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         private const int MAXIMO_TRAMO_OR_OPT = 3;
         private const double EPSILON = 1e-6;
 
+        /// <summary>
+        /// NestoAPI#881: sin los minutos de cada parada, los de un envío (<see cref="MinutosParadaReparto.DeTipo"/> con las constantes del
+        /// código).
+        /// </summary>
+        public static double MinutosParadaPorDefecto => MinutosParadaReparto.DeTipo(Models.Agencias.TiposParadaReparto.ENVIO, null);
+
         /// <param name="franjas">Las de cada parada (índice 0..n-1); null o vacía si no tiene horario.</param>
         /// <param name="orden">Paradas a visitar, en orden (puede ser solo una parte, para la inserción).</param>
-        public static EvaluacionOrden Evaluar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> orden)
-            => Evaluar(matriz, franjas, salida, orden, detalle: true);
+        /// <param name="minutosParada">NestoAPI#881: los minutos de cada parada (índice 0..n-1, como <paramref name="franjas"/>); null =
+        /// <see cref="MinutosParadaPorDefecto"/> en todas.</param>
+        public static EvaluacionOrden Evaluar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> orden,
+            IReadOnlyList<double> minutosParada = null)
+            => Evaluar(matriz, franjas, salida, orden, minutosParada, detalle: true);
+
+        private static double MinutosDe(IReadOnlyList<double> minutosParada, int parada)
+            => minutosParada != null && parada < minutosParada.Count ? Math.Max(0, minutosParada[parada]) : MinutosParadaPorDefecto;
 
         /// <summary>Sin <paramref name="detalle"/>, solo los totales (para la búsqueda: sin copiar el orden ni guardar las llegadas).</summary>
-        private static EvaluacionOrden Evaluar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> orden, bool detalle)
+        private static EvaluacionOrden Evaluar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> orden,
+            IReadOnlyList<double> minutosParada, bool detalle)
         {
             int destino = franjas.Count + 1;
             var evaluacion = new EvaluacionOrden { Orden = detalle || !(orden is List<int> lista) ? orden.ToList() : lista };
@@ -284,7 +319,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     evaluacion.Fuera++;
                 }
-                reloj = llegada.Hora.AddMinutes(ServicioRepartoPropio.MINUTOS_POR_PARADA);
+                reloj = llegada.Hora.AddMinutes(MinutosDe(minutosParada, parada));
                 anterior = parada + 1;
             }
             double vuelta = matriz.Minutos[anterior, destino];
@@ -296,14 +331,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         /// <summary>El mejor orden que encuentra (puede ser <paramref name="ordenInicial"/>): menos paradas fuera y, a igualdad, menor coste.</summary>
-        public static EvaluacionOrden Mejorar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> ordenInicial)
+        public static EvaluacionOrden Mejorar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> ordenInicial,
+            IReadOnlyList<double> minutosParada = null)
         {
-            EvaluacionOrden inicial = Evaluar(matriz, franjas, salida, ordenInicial);
+            EvaluacionOrden inicial = Evaluar(matriz, franjas, salida, ordenInicial, minutosParada);
             var candidatos = new List<EvaluacionOrden>
             {
                 inicial,
-                Pulir(matriz, franjas, salida, inicial),
-                Pulir(matriz, franjas, salida, Insercion(matriz, franjas, salida, ordenInicial))
+                Pulir(matriz, franjas, salida, inicial, minutosParada),
+                Pulir(matriz, franjas, salida, Insercion(matriz, franjas, salida, ordenInicial, minutosParada), minutosParada)
             };
             EvaluacionOrden mejor = candidatos[0];
             foreach (EvaluacionOrden candidato in candidatos.Skip(1))
@@ -313,11 +349,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     mejor = candidato;
                 }
             }
-            return Evaluar(matriz, franjas, salida, mejor.Orden);
+            return Evaluar(matriz, franjas, salida, mejor.Orden, minutosParada);
         }
 
         /// <summary>Inserción más barata: las paradas en el orden de entrada, cada una en el hueco que deja el menor coste.</summary>
-        private static EvaluacionOrden Insercion(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> ordenInicial)
+        private static EvaluacionOrden Insercion(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, IReadOnlyList<int> ordenInicial,
+            IReadOnlyList<double> minutosParada)
         {
             var camino = new List<int>();
             foreach (int parada in ordenInicial)
@@ -327,7 +364,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 for (int hueco = 0; hueco <= camino.Count; hueco++)
                 {
                     camino.Insert(hueco, parada);
-                    double coste = Evaluar(matriz, franjas, salida, camino, detalle: false).Coste;
+                    double coste = Evaluar(matriz, franjas, salida, camino, minutosParada, detalle: false).Coste;
                     camino.RemoveAt(hueco);
                     if (coste < mejorCoste - EPSILON)
                     {
@@ -337,11 +374,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 }
                 camino.Insert(mejorHueco, parada);
             }
-            return Evaluar(matriz, franjas, salida, camino);
+            return Evaluar(matriz, franjas, salida, camino, minutosParada);
         }
 
         /// <summary>Mejora local por coste: 2-opt (invertir un tramo) y or-opt (mover un tramo de 1 a 3 paradas a otro hueco).</summary>
-        private static EvaluacionOrden Pulir(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, EvaluacionOrden desde)
+        private static EvaluacionOrden Pulir(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, EvaluacionOrden desde,
+            IReadOnlyList<double> minutosParada)
         {
             EvaluacionOrden actual = desde;
             int n = actual.Orden.Count;
@@ -355,7 +393,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     {
                         var candidato = new List<int>(actual.Orden);
                         candidato.Reverse(i, k - i + 1);
-                        if (Aceptar(matriz, franjas, salida, candidato, ref actual))
+                        if (Aceptar(matriz, franjas, salida, candidato, minutosParada, ref actual))
                         {
                             mejora = true;
                         }
@@ -375,7 +413,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                             List<int> tramo = resto.GetRange(i, largo);
                             resto.RemoveRange(i, largo);
                             resto.InsertRange(hueco, tramo);
-                            if (Aceptar(matriz, franjas, salida, resto, ref actual))
+                            if (Aceptar(matriz, franjas, salida, resto, minutosParada, ref actual))
                             {
                                 mejora = true;
                             }
@@ -386,9 +424,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return actual;
         }
 
-        private static bool Aceptar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, List<int> candidato, ref EvaluacionOrden actual)
+        private static bool Aceptar(MatrizTiempos matriz, IReadOnlyList<List<FranjaHorario>> franjas, DateTime salida, List<int> candidato,
+            IReadOnlyList<double> minutosParada, ref EvaluacionOrden actual)
         {
-            EvaluacionOrden evaluado = Evaluar(matriz, franjas, salida, candidato, detalle: false);
+            EvaluacionOrden evaluado = Evaluar(matriz, franjas, salida, candidato, minutosParada, detalle: false);
             if (evaluado.Coste < actual.Coste - EPSILON)
             {
                 actual = evaluado;

@@ -48,6 +48,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
         private MotorFalso motor;
         private HorariosFalsos horarios;
         private ServicioRepartoPropio servicio;
+        /// <summary>
+        /// NestoAPI#881: las pruebas de #763/#769 siguen con su escenario de 5 min por parada y sin colchón (prueban el algoritmo); las
+        /// del fin de ruta ponen las constantes de verdad (<see cref="ConstantesTiemposReparto.PorDefecto"/>).
+        /// </summary>
+        private ConfiguracionFija configuracion;
 
         [TestInitialize]
         public void Preparar()
@@ -61,6 +66,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             coordenadas = new CoordenadasFalsas();
             motor = new MotorFalso();
             horarios = new HorariosFalsos();
+            configuracion = new ConfiguracionFija(new ConstantesTiemposReparto { MinutosEnvio = 5, ColchonConduccion = 0 });
             servicio = new ServicioRepartoPropio(repositorio, () => AHORA, null, new ServicioRepartoPropioTests.ParametrosFalsos(),
                 () => A.Fake<IServicioPagos>(), () => A.Fake<IInformesService>(), cargas, new DependenciasParadasReparto
                 {
@@ -71,7 +77,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     Avisos = avisos,
                     Coordenadas = coordenadas,
                     Recorrido = new PlanificadorRecorrido(motor),
-                    Horarios = horarios
+                    Horarios = horarios,
+                    ConfiguracionTiempos = configuracion
                 });
         }
 
@@ -689,7 +696,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     Coordenadas = coordenadas,
                     Recorrido = new PlanificadorRecorrido(motor),
                     Horarios = horarios,
-                    Tiempos = tiempos
+                    Tiempos = tiempos,
+                    ConfiguracionTiempos = configuracion
                 });
         }
 
@@ -761,7 +769,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.IsTrue(r.Kilometros > 0m);
             Assert.AreEqual("Orden cambiado para intentar llegar dentro del horario preferible de 1 cliente (10 min más).", r.AvisoHorario);
             CollectionAssert.AreEqual(new[] { 251302, 251301, 251300 }, orden.Filas.OrderBy(f => f.Value.Orden).Select(f => f.Key).ToList(), "Se guarda el orden final");
-            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>.That.Matches(p => p.Count == 5))).MustHaveHappenedOnceExactly();
+            // La de la segunda pasada y (NestoAPI#881) la del fin de ruta con el orden final.
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>.That.Matches(p => p.Count == 5))).MustHaveHappenedTwiceExactly();
         }
 
         [TestMethod]
@@ -832,7 +841,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(0, r.FueraDeHorario);
             Assert.IsNull(r.Minutos, "Con la línea recta no se dan minutos de conducción");
             StringAssert.StartsWith(r.AvisoHorario, "Orden cambiado para intentar llegar dentro del horario preferible de 1 cliente");
-            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).MustHaveHappenedTwiceExactly(); // + la del fin de ruta (#881)
+            Assert.AreEqual(OrdenSugeridoRepartoDTO.MOTOR_HEURISTICA, r.FinRuta.Motor);
+            Assert.IsTrue(r.FinRuta.Aproximada, "Sin OSRM, el fin de ruta es aproximado");
         }
 
         [TestMethod]
@@ -875,7 +886,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
             Assert.AreEqual(2, r.FueraDeHorario);
             Assert.IsFalse(r.ReordenadoPorHorario);
-            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).MustNotHaveHappened();
+            // NestoAPI#881: solo la del fin de ruta (una por petición); la segunda pasada no se intenta.
+            A.CallTo(() => tiempos.Calcular(A<IReadOnlyList<CoordenadasGeo>>._)).MustHaveHappenedTwiceExactly();
         }
 
         [TestMethod]
@@ -898,6 +910,141 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             public Task<Dictionary<string, List<FranjaHorario>>> HorariosDe(IReadOnlyCollection<(string Empresa, string Cliente, string Contacto)> contactos)
                 => Task.FromResult(contactos.Select(c => RepositorioHorarioPreferible.Clave(c.Empresa, c.Cliente, c.Contacto)).Distinct()
                     .Where(filas.ContainsKey).ToDictionary(c => c, c => filas[c]));
+        }
+
+        // ================================================================ NestoAPI#881: fin previsto de ruta
+
+        /// <summary>Las constantes de verdad: 15 min por envío, +15 % de conducción, descarga de 15 en Algete; cierre del viernes 15:00.</summary>
+        private void ConLasConstantesDeVerdad() => configuracion.Constantes = ConstantesTiemposReparto.PorDefecto();
+
+        [TestMethod]
+        public async Task OrdenSugerido_881_LlegadasConLosMinutosDeCadaParadaYElColchon_YTraeElFinDeRuta()
+        {
+            ConLasConstantesDeVerdad();
+            ConTiempos(TiemposDeOsrm());
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, null);
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, null);
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            TripAlcobendasMadridAlgete();
+
+            OrdenSugeridoRepartoDTO r = (await servicio.OrdenSugerido(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            // Tramos 30, 60, 20 (×1,15 = 34,5; 69; 23) y 15 min por parada.
+            Assert.AreEqual(AHORA.AddMinutes(34), r.Paradas[0].LlegadaEstimada, "08:34:30 → 08:34");
+            Assert.AreEqual(AHORA.AddMinutes(118), r.Paradas[1].LlegadaEstimada, "34,5 + 15 + 69 = 118,5");
+            Assert.AreEqual(AHORA.AddMinutes(156), r.Paradas[2].LlegadaEstimada, "118,5 + 15 + 23 = 156,5");
+            Assert.IsTrue(r.Paradas.All(p => p.MinutosParada == 15));
+            Assert.AreEqual(120, r.Minutos, "Los minutos de OSRM, sin colchón");
+
+            EstimacionFinRutaDTO fin = r.FinRuta;
+            Assert.IsNotNull(fin);
+            // Con la matriz: 30 + 30 + 50 + 20 (vuelta) = 130 × 1,15 = 149,5; paradas 45; descarga 15 → 209,5 min → 11:30.
+            Assert.AreEqual(150, fin.MinutosConduccion);
+            Assert.AreEqual(45, fin.MinutosParadas);
+            Assert.AreEqual(15, fin.MinutosDescarga);
+            Assert.AreEqual(AHORA.Date.AddHours(11).AddMinutes(30), fin.FinEstimado);
+            Assert.AreEqual(AHORA.Date.AddHours(15), fin.HoraCierre, "Viernes: 15:00");
+            Assert.IsTrue(fin.SeComparaConCierre);
+            Assert.IsFalse(fin.PasaDelCierre);
+            Assert.AreEqual("Fin previsto 11:30", fin.Aviso);
+            Assert.IsFalse(fin.Aproximada);
+            CollectionAssert.AreEqual(new[] { 251300, 251301, 251302 }, fin.Paradas.Select(p => p.EnvioId).ToList());
+        }
+
+        [TestMethod]
+        public async Task Estimacion_881_EvaluaElOrdenVigente_SinReordenarNiGuardar_YAvisaSiPasaDelCierre()
+        {
+            ConLasConstantesDeVerdad();
+            ConTiempos(TiemposDeOsrm());
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, null);
+            await ParadaDe(251301, "1002", "ESTÉTICA DOS", EN_MADRID, null);
+            await ParadaDe(251302, "1003", "ESTÉTICA TRES", CERCA_ALGETE, null);
+            // Orden vigente: Madrid, cerca de Algete, Alcobendas (el que dejó el repartidor).
+            _ = await servicio.GuardarOrden(new OrdenRepartoDTO { FechaHora = AHORA, Envios = new List<int> { 251301, 251302, 251300 } }, ANDRE);
+            int filas = orden.Filas.Count;
+            DateTime tarde = AHORA.Date.AddHours(13);
+
+            ResultadoReparto<EstimacionFinRutaDTO> resultado = await servicio.Estimacion(new PeticionOrdenSugeridoDTO { FechaHora = tarde }, ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            EstimacionFinRutaDTO fin = resultado.Contenido;
+            CollectionAssert.AreEqual(new[] { 251301, 251302, 251300 }, fin.Paradas.Select(p => p.EnvioId).ToList(), "El orden vigente, tal cual");
+            // 45 + 50 + 25 + 30 (vuelta) = 150 × 1,15 = 172,5; + 45 + 15 = 232,5 → 13:00 + 232,5 = 16:52:30 → 16:53.
+            Assert.AreEqual(tarde.AddMinutes(233), fin.FinEstimado);
+            Assert.IsTrue(fin.PasaDelCierre);
+            Assert.AreEqual(113, fin.MinutosDeMas);
+            Assert.AreEqual("Fin previsto 16:53 · 1 h 53 min después del cierre", fin.Aviso);
+            Assert.AreEqual(tarde.AddMinutes(51), fin.Paradas[0].LlegadaEstimada, "45 × 1,15 = 51,75 → 13:51");
+            Assert.AreEqual(filas, orden.Filas.Count, "No guarda nada");
+            Assert.AreEqual(0, motor.Llamadas, "No reordena");
+        }
+
+        [TestMethod]
+        public async Task Estimacion_881_AcabaEnCasa_SinNadaParaAlgete_NoSeComparaConElCierre_YConUnaRecogidaPasaPorAlgete()
+        {
+            ConLasConstantesDeVerdad();
+            ConTiempos(TiemposDeOsrm());
+            await ParadaDe(251300, "1001", "ESTÉTICA UNO", EN_ALCOBENDAS, null);
+            var casa = new PeticionOrdenSugeridoDTO { FechaHora = AHORA.Date.AddHours(14), DestinoLatitud = 40.30m, DestinoLongitud = -3.80m };
+
+            EstimacionFinRutaDTO sinNada = (await servicio.Estimacion(casa, ANDRE)).Contenido;
+
+            Assert.AreEqual(EstimacionFinRutaDTO.DESTINO_PERSONALIZADO, sinNada.Destino);
+            Assert.IsFalse(sinNada.PasaPorAlgete);
+            Assert.IsFalse(sinNada.SeComparaConCierre, "Acaba en casa sin nada que dejar en Algete");
+            Assert.IsFalse(sinNada.PasaDelCierre);
+            Assert.AreEqual(0, sinNada.MinutosDescarga);
+            Assert.AreEqual(sinNada.FinEstimado, sinNada.LlegadaDestino);
+
+            Assert.IsTrue(await servicio.LlevaAlgoParaAlgete(new[] { new EnvioRepartoDTO { TipoParada = TiposParadaReparto.NOTA_RECOGIDA } }, ANDRE),
+                "Una recogida pendiente en su ruta: vuelve con ella a Algete");
+            Assert.IsFalse(await servicio.LlevaAlgoParaAlgete(new[] { new EnvioRepartoDTO { TipoParada = TiposParadaReparto.ENVIO } }, ANDRE));
+        }
+
+        [TestMethod]
+        public async Task Estimacion_881_SinCoordenadasNiCentroDelCp_SoloCuentanSusMinutos_YEsAproximada()
+        {
+            ConLasConstantesDeVerdad();
+            await Parada(251300, "Calle sin coordenadas 1", null);
+
+            EstimacionFinRutaDTO fin = (await servicio.Estimacion(new PeticionOrdenSugeridoDTO { FechaHora = AHORA }, ANDRE)).Contenido;
+
+            Assert.AreEqual(1, fin.NumeroParadas);
+            Assert.IsTrue(fin.Aproximada);
+            Assert.IsTrue(fin.Paradas[0].Aproximada);
+            Assert.AreEqual(15, fin.MinutosParadas);
+            Assert.AreEqual(OrdenSugeridoRepartoDTO.MOTOR_HEURISTICA, fin.Motor, "Sin matriz de tiempos, la línea recta");
+            Assert.AreEqual(AHORA.AddMinutes(30), fin.FinEstimado, "Sale de Algete y vuelve: 15 de parada + 15 de descarga");
+        }
+
+        [TestMethod]
+        public async Task Estimacion_881_PosicionNoValida_400_YSinUsuario_400()
+        {
+            var mal = await servicio.Estimacion(new PeticionOrdenSugeridoDTO { Latitud = 95m, Longitud = 3m }, ANDRE);
+            Assert.AreEqual(TipoResultadoReparto.Invalido, mal.Tipo);
+            Assert.AreEqual(TipoResultadoReparto.Invalido, (await servicio.Estimacion(null, " ")).Tipo);
+        }
+
+        [TestMethod]
+        public void Controlador_Estimacion_SinPermiso_403()
+        {
+            var controlador = new RepartoPropioController(null, servicio)
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "Otro") }, "Prueba"))
+            };
+
+            var respuesta = controlador.PostEstimacion(new PeticionOrdenSugeridoDTO()).Result.ExecuteAsync(CancellationToken.None).Result;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, respuesta.StatusCode);
+        }
+
+        private class ConfiguracionFija : IConfiguracionTiemposReparto
+        {
+            public ConfiguracionFija(ConstantesTiemposReparto constantes) => Constantes = constantes;
+            public ConstantesTiemposReparto Constantes { get; set; }
+            public ConstantesTiemposReparto Leer() => Constantes;
         }
 
         // ================================================================ dobles

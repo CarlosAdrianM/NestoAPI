@@ -48,6 +48,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 {
                     par.Key.Latitud = geo.Latitud;
                     par.Key.Longitud = geo.Longitud;
+                    par.Key.CoordenadasAproximadas = geo.PorCodigoPostal; // NestoAPI#881
                 }
                 else if (par.Value.Geocodificable)
                 {
@@ -76,25 +77,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return ResultadoReparto<OrdenSugeridoRepartoDTO>.Mal(TipoResultadoReparto.Invalido, "No se sabe quién pide el orden de las paradas.");
             }
             peticion = peticion ?? new PeticionOrdenSugeridoDTO();
-            bool conPosicion = peticion.Latitud.HasValue || peticion.Longitud.HasValue;
-            if (conPosicion && !CoordenadasGeo.Validas(peticion.Latitud, peticion.Longitud)
-                && !(peticion.Latitud == 0m && peticion.Longitud == 0m))
+            string error = LeerExtremos(peticion, out CoordenadasGeo inicio, out CoordenadasGeo final, out bool conDestino);
+            if (error != null)
             {
-                return ResultadoReparto<OrdenSugeridoRepartoDTO>.Mal(TipoResultadoReparto.Invalido,
-                    "La posición no es válida: mande Latitud y Longitud juntas, en grados, o ninguna de las dos.");
+                return ResultadoReparto<OrdenSugeridoRepartoDTO>.Mal(TipoResultadoReparto.Invalido, error);
             }
-            bool conDestino = peticion.DestinoLatitud.HasValue || peticion.DestinoLongitud.HasValue;
-            if (conDestino && !CoordenadasGeo.Validas(peticion.DestinoLatitud, peticion.DestinoLongitud))
-            {
-                return ResultadoReparto<OrdenSugeridoRepartoDTO>.Mal(TipoResultadoReparto.Invalido,
-                    "El destino no es válido: mande DestinoLatitud y DestinoLongitud juntas, en grados, o ninguna de las dos para acabar en Algete.");
-            }
-            // La casa del repartidor (u otro punto) no se guarda: solo se usa para este cálculo.
-            CoordenadasGeo final = conDestino ? new CoordenadasGeo(peticion.DestinoLatitud.Value, peticion.DestinoLongitud.Value) : SedesReparto.ALGETE;
-            // 0,0 es lo que manda un GPS sin señal: como si no viniera.
-            CoordenadasGeo inicio = CoordenadasGeo.Validas(peticion.Latitud, peticion.Longitud)
-                ? new CoordenadasGeo(peticion.Latitud.Value, peticion.Longitud.Value)
-                : null;
+            ConstantesTiemposReparto constantes = ConstantesTiempos(); // NestoAPI#881
 
             ResultadoReparto<List<EnvioRepartoDTO>> lista = await Envios(peticion.Fecha, soloMios: true, usuario: usuario).ConfigureAwait(false);
             if (lista.Tipo != TipoResultadoReparto.Ok)
@@ -123,6 +111,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             };
 
             List<EnvioRepartoDTO> recorrido = conCoordenadas;
+            DateTime ahoraPda = peticion.FechaHora ?? ahora();
+            DateTime? horaSalida = HoraSalida((peticion.Fecha ?? ahoraPda).Date, ahoraPda);
             if (conCoordenadas.Count > 0)
             {
                 IPlanificadorRecorrido planificador = paradas.Recorrido ?? new PlanificadorRecorrido(null);
@@ -133,15 +123,35 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 respuesta.Kilometros = calculado.Kilometros;
                 respuesta.Minutos = calculado.Minutos;
 
-                // NestoAPI#763: a qué hora se llega a cada una y cuáles caen fuera de su horario preferible (solo se avisa).
-                DateTime? horaSalida = HoraSalida((peticion.Fecha ?? ahora()).Date, peticion.FechaHora ?? ahora());
+                // NestoAPI#763: a qué hora se llega a cada una y cuáles caen fuera de su horario preferible (solo se avisa). NestoAPI#881:
+                // con los minutos de cada parada y el colchón de la conducción.
                 if (horaSalida.HasValue)
                 {
-                    respuesta.FueraDeHorario = EstimarLlegadas(recorrido, salida, horaSalida.Value, calculado.MinutosTramos);
+                    respuesta.FueraDeHorario = EstimarLlegadas(recorrido, salida, horaSalida.Value, calculado.MinutosTramos,
+                        MinutosParadaReparto.Recorrido(recorrido, constantes), constantes.FactorConduccion);
                     respuesta.AvisoHorario = AvisoHorario(recorrido.Where(p => p.FueraDeHorario));
                     // NestoAPI#769: si alguna llega fuera, se intenta otro orden (sin compromiso).
-                    recorrido = await ReordenarPorHorario(recorrido, salida, final, horaSalida.Value, respuesta).ConfigureAwait(false);
+                    recorrido = await ReordenarPorHorario(recorrido, salida, final, horaSalida.Value, respuesta, constantes).ConfigureAwait(false);
                 }
+            }
+
+            // NestoAPI#881: el fin previsto con el orden nuevo (las pendientes; las visitadas no cuentan). Nunca lo rompe.
+            List<EnvioRepartoDTO> pendientesEnOrden = recorrido.Concat(sinCoordenadas).ToList();
+            try
+            {
+                respuesta.FinRuta = await EstimarFin(pendientesEnOrden, salida, final, conDestino, horaSalida ?? ahoraPda, usuario).ConfigureAwait(false);
+                foreach (ParadaEstimadaDTO estimada in respuesta.FinRuta.Paradas)
+                {
+                    EnvioRepartoDTO parada = pendientesEnOrden.FirstOrDefault(p => p.EnvioId == estimada.EnvioId);
+                    if (parada != null)
+                    {
+                        parada.MinutosParada = estimada.MinutosParada;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto #881] El orden sugerido está hecho, pero no se pudo calcular el fin de ruta: {ex.Message}", ex));
             }
 
             List<EnvioRepartoDTO> ordenadas = recorrido.Concat(sinCoordenadas).Concat(visitadas).ToList();
