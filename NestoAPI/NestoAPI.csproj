@@ -1032,6 +1032,7 @@
     <Compile Include="Infraestructure\Clientes\DatosAltaCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2Cliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2ClienteSql.cs" />
+    <Compile Include="Infraestructure\Clientes\DireccionCompletaCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NumeroPropioDireccion.cs" />
     <Compile Include="Infraestructure\Clientes\MensajesValidacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NormalizadorClienteCrear.cs" />

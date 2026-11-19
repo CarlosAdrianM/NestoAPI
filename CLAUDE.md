@@ -894,6 +894,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Nesto: casilla «La entrega es en otra dirección» en «Datos generales» (`BloqueDireccionAlta`, el mismo bloque que la fiscal). NestoApp: issue gemela.
 - **CP del alta solo de Google (19/11/26)**: en Nesto, al CREAR, el código postal no se teclea nunca salvo que Google no lo dé (novedad 482); en la
   modificación sigue como estaba. La API NO comprueba en el POST que el CP case con la dirección de Google (solo la pantalla; NestoApp sin cambios).
+- **Dirección completa visible (NestoAPI#879, novedad 1320, 19/11/26)**: LA REGLA (pura) `DireccionCompletaCliente.Componer` = Dirección + «, » +
+  Dirección 2 (sin ella, la Dirección; SIN truncar: es para pantalla; la de la etiqueta sigue siendo `DireccionEnvioCliente`). Campo aditivo
+  `direccionCompleta` (solo lectura, el PUT lo ignora; `direccion` no cambia) en `ClienteDTO` de GET api/Clientes (las tres búsquedas y el cliente
+  por empresa/cliente/contacto) y en `DireccionesEntregaClienteDTO` de GET PlantillaVentas/DireccionesEntrega. Las listas leen la Dirección 2 en
+  UNA consulta por empresa (`Direccion2ClienteSql.LeerDeClientes`, IN por lotes de 500); sin columnas o si falla, = Dirección. Nesto la pinta en
+  el selector de clientes (y su selector de entrega), la cabecera del detalle del pedido y la lista de la ficha (`DireccionParaMostrar`).
 
 ### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
 - `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática

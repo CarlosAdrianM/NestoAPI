@@ -18,6 +18,12 @@ namespace NestoAPI.Models
         public bool clientePrincipal { get; set; }
         public string nombre { get; set; }
         public string direccion { get; set; }
+        /// <summary>
+        /// NestoAPI#879: lo que se ENSEÑA de la dirección = Dirección + «, » + Dirección 2 (#874), sin truncar
+        /// (<see cref="Infraestructure.Clientes.DireccionCompletaCliente"/>). Solo lectura: en el PUT se ignora. Sin Dirección 2 (o sin
+        /// las columnas), la Dirección tal cual. <c>direccion</c> sigue siendo solo la calle y el número.
+        /// </summary>
+        public string direccionCompleta { get; set; }
         public string poblacion { get; set; }
         public string telefono { get; set; }
         public string vendedor { get; set; }
@@ -179,6 +185,8 @@ namespace NestoAPI.Models
         public bool clientePrincipal { get; set; }
         public string nombre { get; set; }
         public string direccion { get; set; }
+        /// <summary>NestoAPI#879: Dirección + «, » + Dirección 2, para pantalla (ver <see cref="ClienteDTO.direccionCompleta"/>).</summary>
+        public string direccionCompleta { get; set; }
         public bool esDireccionPorDefecto { get; set; }
         public string poblacion { get; set; }
         public string comentarios { get; set; }

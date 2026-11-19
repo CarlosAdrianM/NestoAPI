@@ -92,26 +92,57 @@ namespace NestoAPI.Infraestructure.Clientes
         /// (ELMAH; el mensaje sale sin ellos). Nunca lanza.
         /// </summary>
         public static Dictionary<string, Direccion2Contacto> LeerDeClientes(NVEntities db, string empresa, IEnumerable<string> clientes)
+            => LeerDeClientes(db, empresa, clientes, PARA_ODOO);
+
+        /// <summary>Para qué se lee (va en el texto de ELMAH si falla).</summary>
+        internal const string PARA_ODOO = "para Odoo; el mensaje sale sin ella";
+        /// <summary>NestoAPI#879: la dirección completa de las pantallas (búsqueda de clientes, direcciones de entrega).</summary>
+        internal const string PARA_PANTALLA = "para la dirección completa de la pantalla; se enseña la dirección sin ella";
+        /// <summary>NestoAPI#879: una búsqueda puede devolver muchos clientes; el IN va por lotes (SQL Server admite 2100 parámetros).</summary>
+        internal const int CLIENTES_POR_CONSULTA = 500;
+
+        /// <summary>Para los tests: lo que devuelve <see cref="LeerDeClientes(NVEntities, string, IEnumerable{string}, string)"/> sin ir a la BD (null = ir a la BD).</summary>
+        internal static Func<string, IReadOnlyList<string>, Dictionary<string, Direccion2Contacto>> LectorClientesParaTests { get; set; }
+
+        /// <summary>
+        /// Como <see cref="LeerDeClientes(NVEntities, string, IEnumerable{string})"/>, diciendo para qué se lee. Una consulta por cada
+        /// <see cref="CLIENTES_POR_CONSULTA"/> clientes. Null si no hay columnas o falla. Nunca lanza.
+        /// </summary>
+        public static Dictionary<string, Direccion2Contacto> LeerDeClientes(NVEntities db, string empresa, IEnumerable<string> clientes, string paraQue)
         {
             List<string> numeros = (clientes ?? Enumerable.Empty<string>())
                 .Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (db == null || !numeros.Any() || !HayColumnas(db, "la dirección 2 de los clientes no viaja a Odoo"))
+            if (LectorClientesParaTests != null)
+            {
+                return numeros.Any() ? LectorClientesParaTests(empresa, numeros) : null;
+            }
+            if (db == null || !numeros.Any() || !HayColumnas(db, $"la dirección 2 de los clientes no se lee ({paraQue})"))
             {
                 return null;
             }
             try
             {
-                var parametros = new List<object> { (empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO).Trim() };
-                parametros.AddRange(numeros);
-                string enLista = string.Join(", ", numeros.Select((n, i) => "@p" + (i + 1)));
-                return db.Database.SqlQuery<Direccion2Contacto>(string.Format(SQL_LEER_CLIENTES, enLista), parametros.ToArray())
-                    .ToList()
-                    .GroupBy(f => ClaveContacto(f.Cliente, f.Contacto))
-                    .ToDictionary(g => g.Key, g => g.First());
+                var resultado = new Dictionary<string, Direccion2Contacto>();
+                for (int desde = 0; desde < numeros.Count; desde += CLIENTES_POR_CONSULTA)
+                {
+                    List<string> lote = numeros.Skip(desde).Take(CLIENTES_POR_CONSULTA).ToList();
+                    var parametros = new List<object> { (empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO).Trim() };
+                    parametros.AddRange(lote);
+                    string enLista = string.Join(", ", lote.Select((n, i) => "@p" + (i + 1)));
+                    foreach (Direccion2Contacto fila in db.Database.SqlQuery<Direccion2Contacto>(string.Format(SQL_LEER_CLIENTES, enLista), parametros.ToArray()).ToList())
+                    {
+                        string clave = ClaveContacto(fila.Cliente, fila.Contacto);
+                        if (!resultado.ContainsKey(clave))
+                        {
+                            resultado.Add(clave, fila);
+                        }
+                    }
+                }
+                return resultado;
             }
             catch (Exception ex)
             {
-                ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido leer la dirección 2 de los clientes {string.Join(", ", numeros)} para Odoo; el mensaje sale sin ella: {ex.Message}", ex));
+                ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido leer la dirección 2 de los clientes {string.Join(", ", numeros.Take(20))}{(numeros.Count > 20 ? "…" : string.Empty)} {paraQue}: {ex.Message}", ex));
                 return null;
             }
         }

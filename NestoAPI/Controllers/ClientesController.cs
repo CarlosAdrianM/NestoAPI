@@ -276,6 +276,8 @@ namespace NestoAPI.Controllers
             {
                 lista = ContactoTelefonicoPrimero.Ordenar(lista);
             }
+            // NestoAPI#879: la dirección completa (con la Dirección 2) de toda la lista, en una consulta
+            DireccionCompletaCliente.Rellenar(db, lista);
             return lista.AsQueryable();
         }
 
@@ -340,8 +342,9 @@ namespace NestoAPI.Controllers
                 // NestoAPI#566: el índice se reconstruye por las noches, así que un cliente creado
                 // (o recuperado, o al que le han cambiado el nombre) hoy no está en él. Antes, si el
                 // índice devolvía CUALQUIER otra cosa, el nuevo no salía ni buscando su número.
-                return MezclarConLosQueNoConoceElIndice(porIndice, BuscarTocadosDesdeElIndice(empresa, filtro), filtro)
-                    .AsQueryable();
+                List<ClienteDTO> mezclados = MezclarConLosQueNoConoceElIndice(porIndice, BuscarTocadosDesdeElIndice(empresa, filtro), filtro);
+                DireccionCompletaCliente.Rellenar(db, mezclados); // NestoAPI#879
+                return mezclados.AsQueryable();
             }
 
             List<ClienteDTO> clientes = db.Clientes
@@ -362,6 +365,7 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            DireccionCompletaCliente.Rellenar(db, clientes); // NestoAPI#879
             return clientes.AsQueryable();
         }
 
@@ -554,6 +558,7 @@ namespace NestoAPI.Controllers
                     empleadosFecha = clienteEncontrado.EmpleadosFecha
                 }).ToList();
 
+            DireccionCompletaCliente.Rellenar(db, clientes); // NestoAPI#879 (puede mezclar empresas: una consulta por empresa)
             return clientes.AsQueryable();
         }
 
@@ -715,6 +720,8 @@ namespace NestoAPI.Controllers
             Infraestructure.Clientes.Origenes.OrigenAsignadoCliente origenCliente = await LeerOrigenSeguro(clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente);
             clienteDTO.Origen = origenCliente?.Origen?.Trim();
             clienteDTO.OrigenDescripcion = origenCliente?.Descripcion;
+            // NestoAPI#879: lo que pintan la ficha, el selector de clientes y la cabecera del pedido (Dirección + Dirección 2)
+            DireccionCompletaCliente.Rellenar(db, clienteDTO);
 
             return Ok(clienteDTO);
         }

@@ -1,0 +1,90 @@
+using NestoAPI.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace NestoAPI.Infraestructure.Clientes
+{
+    /// <summary>
+    /// NestoAPI#879 (novedad 1320, Carlos 19/11/26): la «dirección completa» que se ENSEÑA de un contacto = Dirección + «, » + Dirección 2
+    /// (#874). Es para pantalla (ficha, selector de clientes, cabecera del pedido): no se trunca. NO es la de la etiqueta de la agencia
+    /// (<see cref="Agencias.DireccionEnvioCliente.Componer"/>, con su tope de 80), que no cambia. Lo que se guarda tampoco cambia.
+    /// </summary>
+    public static class DireccionCompletaCliente
+    {
+        internal const string SEPARADOR = ", ";
+
+        /// <summary>LA REGLA (pura): sin Dirección 2, la Dirección tal cual (recortada); sin Dirección, la Dirección 2.</summary>
+        public static string Componer(string direccion, string direccion2)
+        {
+            string calle = direccion?.Trim();
+            string d2 = direccion2?.Trim();
+            if (string.IsNullOrEmpty(d2))
+            {
+                return calle;
+            }
+            return string.IsNullOrEmpty(calle) ? d2 : calle + SEPARADOR + d2;
+        }
+
+        /// <summary>
+        /// Pone <c>direccionCompleta</c> a cada contacto de la lista con las filas de <see cref="Direccion2ClienteSql.LeerDeClientes"/>
+        /// (null = sin columnas o la lectura falló: la Dirección tal cual). Pura.
+        /// </summary>
+        internal static void Rellenar<T>(IEnumerable<T> contactos, IReadOnlyDictionary<string, Direccion2Contacto> filas,
+            Func<T, string> cliente, Func<T, string> contacto, Func<T, string> direccion, Action<T, string> poner)
+        {
+            if (contactos == null)
+            {
+                return;
+            }
+            foreach (T c in contactos.Where(c => c != null))
+            {
+                string d2 = null;
+                if (filas != null && filas.TryGetValue(Direccion2ClienteSql.ClaveContacto(cliente(c), contacto(c)), out Direccion2Contacto fila))
+                {
+                    d2 = fila?.Direccion2;
+                }
+                poner(c, Componer(direccion(c), d2));
+            }
+        }
+
+        /// <summary>
+        /// La lista de clientes de una búsqueda (puede mezclar empresas en <c>GET api/Clientes?filtro=</c>): UNA consulta por empresa
+        /// (en lotes, <see cref="Direccion2ClienteSql.LeerDeClientes"/>), nunca una por fila. Nunca lanza.
+        /// </summary>
+        public static void Rellenar(NVEntities db, IList<ClienteDTO> clientes)
+        {
+            if (clientes == null || clientes.Count == 0)
+            {
+                return;
+            }
+            foreach (IGrouping<string, ClienteDTO> porEmpresa in clientes.Where(c => c != null).GroupBy(c => c.empresa?.Trim()))
+            {
+                Dictionary<string, Direccion2Contacto> filas = Direccion2ClienteSql.LeerDeClientes(db, porEmpresa.Key,
+                    porEmpresa.Select(c => c.cliente), Direccion2ClienteSql.PARA_PANTALLA);
+                Rellenar(porEmpresa, filas, c => c.cliente, c => c.contacto, c => c.direccion, (c, d) => c.direccionCompleta = d);
+            }
+        }
+
+        /// <summary>Las direcciones de entrega de UN cliente (selector de entrega, plantilla): una consulta. Nunca lanza.</summary>
+        public static void Rellenar(NVEntities db, string empresa, string cliente, IList<DireccionesEntregaClienteDTO> direcciones)
+        {
+            if (direcciones == null || direcciones.Count == 0)
+            {
+                return;
+            }
+            Dictionary<string, Direccion2Contacto> filas = Direccion2ClienteSql.LeerDeClientes(db, empresa, new[] { cliente }, Direccion2ClienteSql.PARA_PANTALLA);
+            Rellenar(direcciones, filas, d => cliente, d => d.contacto, d => d.direccion, (d, valor) => d.direccionCompleta = valor);
+        }
+
+        /// <summary>Un solo contacto (ficha, cliente elegido en el selector): la Dirección 2 de ese contacto. Nunca lanza.</summary>
+        public static void Rellenar(NVEntities db, ClienteDTO cliente)
+        {
+            if (cliente == null)
+            {
+                return;
+            }
+            cliente.direccionCompleta = Componer(cliente.direccion, Direccion2ClienteSql.Leer(db, cliente.empresa, cliente.cliente, cliente.contacto));
+        }
+    }
+}

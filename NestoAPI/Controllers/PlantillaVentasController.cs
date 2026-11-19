@@ -252,15 +252,16 @@ namespace NestoAPI.Controllers
                     tieneFacturacionElectronica = clienteEncontrado.PersonasContactoClientes.Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
                     nif = clienteEncontrado.CIF_NIF != null ? clienteEncontrado.CIF_NIF.Trim() : string.Empty,
                 });
+            List<DireccionesEntregaClienteDTO> direcciones = clientes.OrderBy(c => c.contacto).ToList();
             // NestoAPI#830: fuera de la empresa 1, la ruta que se propone para el pedido es la que vale (la de la ficha de la empresa 1)
             if (!Infraestructure.PedidosVenta.RutaQueVale.EsEmpresaQueManda(empresa))
             {
-                List<DireccionesEntregaClienteDTO> direcciones = clientes.OrderBy(c => c.contacto).ToList();
                 AplicarRutaQueVale(empresa, clienteDirecciones, direcciones);
-                return direcciones.AsQueryable();
             }
+            // NestoAPI#879: Dirección + Dirección 2 de todos los contactos, en una consulta (selector de entrega y ficha del cliente)
+            Infraestructure.Clientes.DireccionCompletaCliente.Rellenar(db, empresa, clienteDirecciones, direcciones);
 
-            return clientes.OrderBy(c => c.contacto);
+            return direcciones.AsQueryable();
         }
 
         /// <summary>NestoAPI#830: pone en cada dirección de entrega la ruta que vale. Nunca lanza (sin la ficha de la 1, la de siempre).</summary>
