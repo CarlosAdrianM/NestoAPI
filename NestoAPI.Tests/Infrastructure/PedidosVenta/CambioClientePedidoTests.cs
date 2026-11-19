@@ -29,10 +29,10 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             };
         }
 
-        private static string Motivo(IEnumerable<LinPedidoVta> lineas, bool notaEntrega = false, int prepagos = 0,
+        private static string Motivo(IEnumerable<LinPedidoVta> lineas, bool notaEntrega = false, int pagosAPlazos = 0,
             int efectos = 0, IEnumerable<int> envios = null, int pagosTarjeta = 0)
         {
-            return CambioClientePedido.MotivoNoSePuede(926000, notaEntrega, lineas, prepagos, efectos, envios ?? new int[0], pagosTarjeta);
+            return CambioClientePedido.MotivoNoSePuede(926000, notaEntrega, lineas, pagosAPlazos, efectos, envios ?? new int[0], pagosTarjeta);
         }
 
         #region MotivoNoSePuede
@@ -108,9 +108,10 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void MotivoNoSePuede_ConPrepagoVivo_NoSePuede()
+        public void MotivoNoSePuede_ConPagoAPlazosVivo_NoSePuede()
         {
-            StringAssert.Contains(Motivo(new[] { Linea(1) }, prepagos: 1), "prepagos");
+            // Incidencia 1360 (19/11/26): un prepago a mano ya no bloquea (es del pedido y se va con él); la financiación, sí
+            StringAssert.Contains(Motivo(new[] { Linea(1) }, pagosAPlazos: 1), "pago a plazos");
         }
 
         [TestMethod]

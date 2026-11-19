@@ -340,8 +340,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             string empresa = cab.Empresa;
             int numero = cab.Número;
-            int prepagosVivos = await db.Prepagos
-                .CountAsync(p => p.Empresa == empresa && p.Pedido == numero && p.Factura == null).ConfigureAwait(false);
+            int pagosAPlazosVivos = await PagosAPlazosVivos(empresa, numero).ConfigureAwait(false);
             int efectos = await db.EfectosPedidosVentas
                 .CountAsync(e => e.Empresa == empresa && e.Pedido == numero).ConfigureAwait(false);
             List<int> envios = await db.EnviosAgencias
@@ -353,7 +352,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .CountAsync(p => p.Empresa == empresa && p.Documento == documento
                     && (p.Estado == Constantes.EstadosPagoTPV.PENDIENTE || p.Estado == Constantes.EstadosPagoTPV.AUTORIZADO)).ConfigureAwait(false);
             return CambioClientePedido.MotivoNoSePuede(numero, cab.NotaEntrega, cab.LinPedidoVtas,
-                prepagosVivos, efectos, envios, pagosTarjeta);
+                pagosAPlazosVivos, efectos, envios, pagosTarjeta);
+        }
+
+        /// <summary>
+        /// Incidencia 1360 (19/11/26): los prepagos a mano ya no bloquean (son del pedido); la financiación (#864) sí, que va a
+        /// nombre del cliente. La tabla está fuera del EDMX: sin ella (o si falla la consulta) no hay ninguna.
+        /// </summary>
+        private async Task<int> PagosAPlazosVivos(string empresa, int numero)
+        {
+            try
+            {
+                return await db.Database.SqlQuery<int>(
+                    "SELECT COUNT(*) FROM dbo.SolicitudesPagoAPlazos WHERE Empresa = @p0 AND Pedido = @p1 AND Estado IN ('Pendiente', 'Aprobado', 'Capturado')",
+                    empresa, numero).FirstAsync().ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
         }
 
         /// <summary>Lo que se guarda en Modificaciones: lo que depende del cliente, antes y después.</summary>

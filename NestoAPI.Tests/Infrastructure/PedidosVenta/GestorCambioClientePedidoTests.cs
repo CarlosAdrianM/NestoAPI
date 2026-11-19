@@ -142,13 +142,14 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public async Task CambiarCliente_ConPrepagoVivo_Rechaza()
+        public async Task CambiarCliente_ConPrepagoVivo_NoLoRechazaPorElPrepago()
         {
+            // Incidencia 1360 (19/11/26): el prepago a mano es del pedido y se va con él al cliente nuevo
             prepagos.Add(new Prepago { Empresa = EMPRESA, Pedido = NUMERO, Importe = 10, Factura = null });
 
             ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO, new CambiarClientePedidoRequest { Cliente = "20000" }, "u");
 
-            StringAssert.Contains(resultado.Error, "prepago");
+            Assert.IsFalse((resultado.Error ?? string.Empty).ToLower().Contains("prepago"), resultado.Error);
         }
 
         [TestMethod]

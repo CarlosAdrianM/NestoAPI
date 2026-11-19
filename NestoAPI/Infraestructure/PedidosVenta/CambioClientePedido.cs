@@ -32,12 +32,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <param name="numero">Número del pedido, para el mensaje.</param>
         /// <param name="notaEntrega">Si la cabecera es una nota de entrega.</param>
         /// <param name="lineas">TODAS las líneas del pedido.</param>
-        /// <param name="prepagosVivos">Prepagos sin factura del pedido.</param>
+        /// <param name="pagosAPlazosVivos">Financiaciones del pedido (#864) pendientes, aprobadas o capturadas: van a nombre del cliente.
+        /// Un prepago a mano (transferencia, efectivo…) NO bloquea (Carlos 19/11/26, incidencia 1360): la tabla Prepagos no guarda
+        /// cliente, es del PEDIDO y se va con él. Lo cobrado con tarjeta lo para <paramref name="pagosTarjetaVivos"/>.</param>
         /// <param name="efectos">Efectos creados a mano en el pedido.</param>
         /// <param name="enviosAgencia">Números de los envíos de agencia del pedido (cualquier estado).</param>
         /// <param name="pagosTarjetaVivos">Cobros con tarjeta del pedido pendientes o autorizados.</param>
         internal static string MotivoNoSePuede(int numero, bool notaEntrega, IEnumerable<LinPedidoVta> lineas,
-            int prepagosVivos, int efectos, IEnumerable<int> enviosAgencia, int pagosTarjetaVivos)
+            int pagosAPlazosVivos, int efectos, IEnumerable<int> enviosAgencia, int pagosTarjetaVivos)
         {
             string prefijo = $"No se puede cambiar el cliente del pedido {numero}: ";
             if (notaEntrega)
@@ -70,9 +72,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return prefijo + $"tiene {(envios.Count == 1 ? "el envío de agencia" : "los envíos de agencia")} " +
                     $"{string.Join(", ", envios)} a nombre del cliente actual. Hay que borrarlo antes de cambiar el cliente.";
             }
-            if (prepagosVivos > 0)
+            if (pagosAPlazosVivos > 0)
             {
-                return prefijo + "tiene prepagos del cliente actual. Hay que quitarlos (o devolverlos) antes de cambiar el cliente.";
+                return prefijo + "tiene un pago a plazos a nombre del cliente actual. Hay que cancelarlo antes de cambiar el cliente.";
             }
             if (pagosTarjetaVivos > 0)
             {
