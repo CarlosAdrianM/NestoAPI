@@ -124,6 +124,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
                 int libres = causas.Libres;
                 int paraTiendas = causas.Tiendas;
+                // Promesa en riesgo, pedido 930942 (19/11/26): lo que YA viene de camino a Algete en una reposición terminada va antes que lo
+                // libre de las tiendas (llega antes que cualquier reposición nueva: «ya vienen de camino y salen el laborable siguiente»,
+                // Carlos 13/10/26). Antes se cogía primero lo libre de las tiendas y la unidad que Alcobendas acababa de mandar se daba por
+                // «tiene que venir de Reina» con la siguiente reposición de Reina.
+                List<ReposicionEnCaminoAlgete> porReposicion = TomarEnCaminoAAlgete(datos, producto, causas.Libres, ref paraTiendas);
                 var porTienda = new List<KeyValuePair<string, int>>();
                 foreach (string tienda in tiendas)
                 {
@@ -195,6 +200,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         }
                     }
                     repartida.Montaje = Tomar(ref montados);
+                    int deReposiciones = 0;
+                    for (int i = 0; i < porReposicion.Count && resto > 0; i++)
+                    {
+                        int bolsa = porReposicion[i].Unidades;
+                        int unidades = Tomar(ref bolsa);
+                        porReposicion[i].Unidades = bolsa;
+                        if (unidades > 0)
+                        {
+                            repartida.EnCaminoReposiciones.Add(new ReposicionEnCaminoAlgete
+                            {
+                                Producto = producto,
+                                Traspaso = porReposicion[i].Traspaso,
+                                Tienda = porReposicion[i].Tienda,
+                                Unidades = unidades
+                            });
+                            deReposiciones += unidades;
+                        }
+                    }
                     for (int i = 0; i < porTienda.Count && resto > 0; i++)
                     {
                         int bolsa = porTienda[i].Value;
@@ -205,7 +228,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                             repartida.EnTiendas[porTienda[i].Key] = unidades;
                         }
                     }
-                    repartida.EnCaminoDeTiendas = Tomar(ref enCamino);
+                    repartida.EnCaminoDeTiendas = deReposiciones + Tomar(ref enCamino);
                     repartida.DelProveedor = Tomar(ref delProveedor);
                     repartida.MontajeConComponentes = Tomar(ref conComponentes);
                     if (repartida.MontajeConComponentes > 0)
@@ -355,6 +378,54 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 componente.Nombre = datos.Nombres.TryGetValue(ResumenStocksProductos.Clave(componente.Producto), out string nombre) ? nombre?.Trim() : null;
             }
             return repartidas;
+        }
+
+        /// <summary>
+        /// Promesa en riesgo (pedido 930942, 19/11/26): de lo que hay que traer de fuera de Algete (<paramref name="paraTiendas"/>, que ya
+        /// cuenta lo de camino en el disponible de todas las sedes), lo que cubren las reposiciones terminadas que vienen de camino a Algete,
+        /// por traspaso (la más antigua primero) y con su tienda. Antes se lo llevan los demás pedidos que ya deben en Algete más de lo que hay
+        /// (lo pendiente de los demás − lo que queda en Algete tras las libres de este pedido): para ellos se generaron las reposiciones más
+        /// antiguas. Descuenta lo cubierto de <paramref name="paraTiendas"/>. Puro: no toca <paramref name="datos"/>.
+        /// </summary>
+        internal static List<ReposicionEnCaminoAlgete> TomarEnCaminoAAlgete(DatosSombraModoServicio datos, string producto, int libresDelPedido,
+            ref int paraTiendas)
+        {
+            var tomadas = new List<ReposicionEnCaminoAlgete>();
+            if (paraTiendas <= 0 || datos?.EnCaminoAAlgete == null || !datos.EnCaminoAAlgete.Any())
+            {
+                return tomadas;
+            }
+            string claveProducto = ResumenStocksProductos.Clave(producto);
+            string claveAlgete = ResumenStocksProductos.Clave(producto, Constantes.Almacenes.ALGETE);
+            int quedaEnAlgete = Math.Max(0, ResumenStocksProductos.Valor(datos.Resumen.StockAlmacen, claveAlgete) - Math.Max(0, libresDelPedido));
+            int deudaOtros = Math.Max(0, ResumenStocksProductos.Valor(datos.Resumen.PendienteEntregarAlmacen, claveAlgete) - quedaEnAlgete);
+            foreach (ReposicionEnCaminoAlgete reposicion in datos.EnCaminoAAlgete
+                .Where(r => r != null && r.Unidades > 0 && ResumenStocksProductos.Clave(r.Producto) == claveProducto)
+                .OrderBy(r => r.Traspaso))
+            {
+                if (paraTiendas <= 0)
+                {
+                    break;
+                }
+                int unidades = reposicion.Unidades;
+                int deOtros = Math.Min(unidades, deudaOtros);
+                deudaOtros -= deOtros;
+                unidades -= deOtros;
+                int paraEste = Math.Min(unidades, paraTiendas);
+                if (paraEste <= 0)
+                {
+                    continue;
+                }
+                paraTiendas -= paraEste;
+                tomadas.Add(new ReposicionEnCaminoAlgete
+                {
+                    Producto = reposicion.Producto?.Trim(),
+                    Traspaso = reposicion.Traspaso,
+                    Tienda = reposicion.Tienda?.Trim(),
+                    Unidades = paraEste
+                });
+            }
+            return tomadas;
         }
 
         private static DatosStockCausaModoServicio ConDisponibleTodos(DatosStockCausaModoServicio datos, int disponibleTodos)

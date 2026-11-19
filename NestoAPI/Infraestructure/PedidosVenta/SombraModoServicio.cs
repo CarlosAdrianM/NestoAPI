@@ -39,6 +39,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public List<ComponenteKitFechaEntregaAgencia> KitsMontaje { get; } = new List<ComponenteKitFechaEntregaAgencia>();
         /// <summary>NestoAPI#606 (packs montables): Productos.Nombre (clave producto), para nombrar el componente que falta.</summary>
         public Dictionary<string, string> Nombres { get; } = new Dictionary<string, string>();
+        /// <summary>
+        /// Promesa en riesgo, pedido 930942 (19/11/26): las reposiciones de tienda YA TERMINADAS que vienen de camino a Algete (PreExtrProducto con
+        /// NºTraspaso, neto por traspaso y producto &gt; 0, entrada en ALG), con la tienda de la que salen. Lo que la tienda sigue teniendo en el
+        /// extracto (salida sin contabilizar) suma cero y no está aquí. Solo con <see cref="RepositorioSombraModoServicioSql.LeerDatosConKits"/>.
+        /// </summary>
+        public List<ReposicionEnCaminoAlgete> EnCaminoAAlgete { get; } = new List<ReposicionEnCaminoAlgete>();
+    }
+
+    /// <summary>Promesa en riesgo (pedido 930942): unidades de un producto que vienen de camino a Algete en una reposición ya terminada.</summary>
+    public class ReposicionEnCaminoAlgete
+    {
+        public string Producto { get; set; }
+        public int Traspaso { get; set; }
+        /// <summary>La tienda de la que sale (PreExtrProducto.Delegación de la entrada en Algete: REI, ALC). Null si no se sabe.</summary>
+        public string Tienda { get; set; }
+        public int Unidades { get; set; }
     }
 
     /// <summary>NestoAPI#606 (kits): una fila de la tabla Kits: <see cref="Cantidad"/> unidades de <see cref="Componente"/> por cada <see cref="Kit"/>.</summary>

@@ -24,6 +24,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Observados que pasan a aviso: un día laborable completo con todo en Algete y sin salir.</summary>
         public int SiguenSinSalir { get; set; }
         public List<int> PedidosAvisados { get; set; } = new List<int>();
+        /// <summary>
+        /// Pedido 930942 (19/11/26): solo en <see cref="ServicioPromesaRiesgo.RevisarAntesDelCorreo"/>, los pedidos recalculados sin error.
+        /// El correo solo lleva estos (y lo detectado después de empezar la revisión): nunca un porqué guardado horas antes sin recalcular.
+        /// </summary>
+        public HashSet<int> PedidosRevisados { get; } = new HashSet<int>();
     }
 
     /// <summary>
@@ -110,6 +115,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     resultado.Recalculados++;
                     await Aplicar(empresa, registrado.Pedido, prometida, calculo, quedaPendiente, registrado, EVENTO_ANTES_DEL_CORREO, ahora,
                         resultado, avisar, rehacerMotivo: true).ConfigureAwait(false);
+                    _ = resultado.PedidosRevisados.Add(registrado.Pedido);
                 }
                 catch (Exception ex)
                 {

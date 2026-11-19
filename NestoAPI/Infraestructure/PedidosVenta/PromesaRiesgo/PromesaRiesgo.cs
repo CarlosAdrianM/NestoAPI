@@ -154,6 +154,27 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public bool EnObservacion { get; set; }
     }
 
+    /// <summary>
+    /// Pedido 930942 (19/11/26): el correo resumen no puede contar un porqué guardado horas antes sin recalcular el pedido en ese momento.
+    /// Puro.
+    /// </summary>
+    public static class ReglaCorreoPromesaRiesgo
+    {
+        /// <summary>
+        /// True si el riesgo puede ir en el correo: se ha recalculado sin error en la revisión de justo antes
+        /// (<paramref name="revisados"/>; vacío si la revisión entera falló) o se ha detectado o cambiado después de empezar esa revisión
+        /// (<paramref name="inicioRevision"/>: un evento que llega en medio ya trae el porqué de ese momento). Lo que no, espera al siguiente correo.
+        /// </summary>
+        public static bool PuedeIr(RiesgoPromesa riesgo, ICollection<int> revisados, DateTime inicioRevision)
+        {
+            if (riesgo == null)
+            {
+                return false;
+            }
+            return (revisados != null && revisados.Contains(riesgo.Pedido)) || riesgo.Actualizado >= inicioRevision || riesgo.Detectado >= inicioRevision;
+        }
+    }
+
     /// <summary>Un producto que faltaba (para la causa original y la buena noticia).</summary>
     public class FaltaPromesaRiesgo
     {

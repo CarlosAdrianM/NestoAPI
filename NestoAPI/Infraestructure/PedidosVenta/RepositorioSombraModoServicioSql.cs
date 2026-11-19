@@ -42,6 +42,19 @@ FROM PreExtrProducto p WITH (NOLOCK)
 WHERE p.Empresa IN (@empresa, @espejo) AND p.Número IN ({0}) AND p.NºTraspaso > 0
 GROUP BY p.Número";
 
+        /// <summary>
+        /// Promesa en riesgo (pedido 930942, 19/11/26): lo que ya viene de camino A ALGETE en una reposición terminada, por traspaso y con la
+        /// tienda de la que sale (la Delegación de la entrada). Neto por empresa, traspaso y producto (como SQL_REPOSICIONES_EN_CAMINO de #865):
+        /// mientras la salida de la tienda sigue en PreExtrProducto suma cero (la unidad sigue en el extracto de la tienda); terminada, queda la
+        /// entrada en Algete (diario PendRepo2) hasta que se recibe.
+        /// </summary>
+        internal const string SQL_EN_CAMINO_A_ALGETE = @"
+SELECT RTRIM(p.Número), p.NºTraspaso, RTRIM(MAX(CASE WHEN p.Cantidad > 0 THEN p.[Delegación] END)), SUM(CAST(p.Cantidad AS int))
+FROM PreExtrProducto p WITH (NOLOCK)
+WHERE p.Empresa IN (@empresa, @espejo) AND p.Número IN ({0}) AND p.NºTraspaso > 0
+GROUP BY p.Empresa, p.Número, p.NºTraspaso
+HAVING SUM(CAST(p.Cantidad AS int)) > 0 AND MAX(CASE WHEN p.Cantidad > 0 THEN p.[Almacén] END) = '" + Constantes.Almacenes.ALGETE + @"'";
+
         internal const string SQL_ESTADOS = @"
 SELECT RTRIM(p.Número), p.Estado, RTRIM(p.Nombre)
 FROM Productos p WITH (NOLOCK)
@@ -198,6 +211,23 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
                 });
                 Leer(conexion, SQL_REPOSICIONES, lista, enLista, empresa, pedidoExcluir, lector =>
                     ResumenStocksProductos.Sumar(datos.Resumen.PendienteReposicion, ResumenStocksProductos.Clave(Cadena(lector, 0)), lector.GetInt32(1)));
+                if (conKits)
+                {
+                    // Promesa en riesgo (pedido 930942): de qué reposición y de qué tienda viene lo que está de camino a Algete
+                    Leer(conexion, SQL_EN_CAMINO_A_ALGETE, lista, enLista, empresa, pedidoExcluir, lector =>
+                    {
+                        if (!lector.IsDBNull(1))
+                        {
+                            datos.EnCaminoAAlgete.Add(new ReposicionEnCaminoAlgete
+                            {
+                                Producto = Cadena(lector, 0),
+                                Traspaso = Convert.ToInt32(lector.GetValue(1)),
+                                Tienda = Cadena(lector, 2),
+                                Unidades = lector.GetInt32(3)
+                            });
+                        }
+                    });
+                }
                 Leer(conexion, SQL_ESTADOS, lista, enLista, empresa, pedidoExcluir, lector =>
                 {
                     if (!lector.IsDBNull(1))

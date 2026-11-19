@@ -36,6 +36,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public Dictionary<string, int> EnTiendas { get; set; } = new Dictionary<string, int>();
         /// <summary>Unidades que ya vienen de camino a Algete en una reposición generada y sin recibir.</summary>
         public int EnCaminoDeTiendas { get; set; }
+        /// <summary>
+        /// Promesa en riesgo (pedido 930942, 19/11/26): de <see cref="EnCaminoDeTiendas"/>, las que se sabe en qué reposición y de qué tienda
+        /// vienen (para decir «viene de camino en la reposición 81463 de Alcobendas»). El resto de <see cref="EnCaminoDeTiendas"/>, sin dato.
+        /// </summary>
+        public List<ReposicionEnCaminoAlgete> EnCaminoReposiciones { get; set; } = new List<ReposicionEnCaminoAlgete>();
         /// <summary>Unidades de un pedido a proveedor enviado (LinPedidoCmp) con su fecha prevista.</summary>
         public int DelProveedor { get; set; }
         public DateTime? FechaProveedor { get; set; }
@@ -393,7 +398,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta,
                     x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha, x.Lote.ANota, x.Lote.ConSeguimientoAgencia, x.Lote.AgenciaSeguimiento, x.Lote.FechaOrientativa,
-                    x.Lote.PedidoProveedorOrientativo, x.Lote.FechaPrevistaOrientativa, x.Lote.ComponenteQueFalta, x.Lote.NombreComponente, x.Lote.OrigenComponente
+                    x.Lote.PedidoProveedorOrientativo, x.Lote.FechaPrevistaOrientativa, x.Lote.ComponenteQueFalta, x.Lote.NombreComponente, x.Lote.OrigenComponente,
+                    x.Lote.TraspasoEnCamino, x.Lote.TiendaEnCamino
                 })
                 .Select(g => new PartidaFechaEntregaAgenciaDTO
                 {
@@ -416,7 +422,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     FechaPrevistaProveedorOrientativo = g.Key.FechaPrevistaOrientativa,
                     ComponenteQueFalta = g.Key.ComponenteQueFalta,
                     NombreComponente = g.Key.NombreComponente,
-                    OrigenComponente = g.Key.OrigenComponente
+                    OrigenComponente = g.Key.OrigenComponente,
+                    TraspasoEnCamino = g.Key.TraspasoEnCamino,
+                    TiendaEnCamino = g.Key.TiendaEnCamino
                 })
                 .Select(p =>
                 {
@@ -532,7 +540,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     lote.LlegaAAlgete = reposicion?.LlegaEl;
                     lotes.Add(lote);
                 }
-                int enCamino = Tomar(linea.EnCaminoDeTiendas);
+                // Promesa en riesgo (pedido 930942): lo que se sabe en qué reposición viene, con su número y su tienda; el resto, sin dato.
+                int enCaminoConDato = 0;
+                foreach (ReposicionEnCaminoAlgete reposicion in (linea.EnCaminoReposiciones ?? new List<ReposicionEnCaminoAlgete>())
+                    .Where(r => r != null && r.Unidades > 0))
+                {
+                    int unidades = Tomar(Math.Min(reposicion.Unidades, linea.EnCaminoDeTiendas - enCaminoConDato));
+                    if (unidades <= 0)
+                    {
+                        continue;
+                    }
+                    enCaminoConDato += unidades;
+                    Lote lote = Nuevo(unidades, SiguienteLaborable(hoy), ORIGEN_EN_CAMINO);
+                    lote.DeTienda = true;
+                    lote.TraspasoEnCamino = reposicion.Traspaso;
+                    lote.TiendaEnCamino = reposicion.Tienda?.Trim().ToUpperInvariant();
+                    lotes.Add(lote);
+                }
+                int enCamino = Tomar(linea.EnCaminoDeTiendas - enCaminoConDato);
                 if (enCamino > 0)
                 {
                     Lote lote = Nuevo(enCamino, SiguienteLaborable(hoy), ORIGEN_EN_CAMINO);
@@ -756,7 +781,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     l.Origen, l.Producto, l.Tienda, l.Kit, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha, l.PedidoProveedor,
                     l.ConSeguimientoAgencia, l.AgenciaSeguimiento, l.FechaOrientativa, l.PedidoProveedorOrientativo, l.FechaPrevistaOrientativa,
-                    l.ComponenteQueFalta, l.NombreComponente, l.OrigenComponente, l.LlegaAAlgete
+                    l.ComponenteQueFalta, l.NombreComponente, l.OrigenComponente, l.LlegaAAlgete, l.TraspasoEnCamino, l.TiendaEnCamino
                 })
                 .Select(g => new
                 {
@@ -782,7 +807,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         LlegaAAlgete = g.Key.LlegaAAlgete,
                         ComponenteQueFalta = g.Key.ComponenteQueFalta,
                         NombreComponente = g.Key.NombreComponente,
-                        OrigenComponente = g.Key.OrigenComponente
+                        OrigenComponente = g.Key.OrigenComponente,
+                        TraspasoEnCamino = g.Key.TraspasoEnCamino,
+                        TiendaEnCamino = g.Key.TiendaEnCamino
                     }
                 })
                 .ToList();
@@ -812,7 +839,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                             $"({TextosCertezaFechaEntrega.Calificativo(g.Partida)}).");
                         break;
                     case ORIGEN_EN_CAMINO:
-                        frases.Add($"{cuantas} ya viene{n} de camino desde una tienda: puede{n} salir el {Dia(g.Disponible.Value, hoy)} " +
+                        frases.Add($"{cuantas} ya viene{n} de camino {DeCamino(g.Partida)}: puede{n} salir el {Dia(g.Disponible.Value, hoy)} " +
                             $"({TextosCertezaFechaEntrega.Calificativo(g.Partida)}).");
                         break;
                     case ORIGEN_PROVEEDOR when g.LlegadaSupuesta.HasValue:
@@ -887,6 +914,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private static string DelPedido(PartidaFechaEntregaAgenciaDTO p) =>
             p.PedidoProveedor.HasValue ? $"del pedido a proveedor {p.PedidoProveedor.Value}" : "del proveedor";
 
+        /// <summary>
+        /// Promesa en riesgo (pedido 930942): de dónde viene lo que está de camino: «en la reposición 81463 de Alcobendas», «en la reposición
+        /// 81463» (sin tienda), «desde Alcobendas» (sin número) o «desde una tienda» (sin dato).
+        /// </summary>
+        internal static string DeCamino(PartidaFechaEntregaAgenciaDTO p)
+        {
+            string tienda = string.IsNullOrWhiteSpace(p?.TiendaEnCamino) ? null : NombreAlmacen(p.TiendaEnCamino);
+            if (p?.TraspasoEnCamino != null)
+            {
+                return tienda == null ? $"en la reposición {p.TraspasoEnCamino.Value}" : $"en la reposición {p.TraspasoEnCamino.Value} de {tienda}";
+            }
+            return tienda == null ? "desde una tienda" : $"desde {tienda}";
+        }
+
         internal static string NombreAlmacen(string codigo)
         {
             switch (codigo?.Trim().ToUpperInvariant())
@@ -957,6 +998,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public int? PedidoProveedor { get; set; }
             /// <summary>Solo de una tienda: día y hora a la que suele llegar a Algete su próxima reposición.</summary>
             public DateTime? LlegaAAlgete { get; set; }
+            /// <summary>Solo <see cref="ORIGEN_EN_CAMINO"/> (pedido 930942): la reposición en la que viene y la tienda de la que salió.</summary>
+            public int? TraspasoEnCamino { get; set; }
+            public string TiendaEnCamino { get; set; }
             public string MotivoSinFecha { get; set; }
             /// <summary>NestoAPI#853: solo del proveedor: su pedido tiene seguimiento de la agencia vigente.</summary>
             public bool ConSeguimientoAgencia { get; set; }

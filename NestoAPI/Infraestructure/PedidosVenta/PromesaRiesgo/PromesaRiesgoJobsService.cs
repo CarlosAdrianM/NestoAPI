@@ -84,19 +84,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     db.Configuration.LazyLoadingEnabled = false;
                     db.Configuration.ProxyCreationEnabled = false;
-                    // NestoAPI#730 (853): antes de mandarlo, se recalcula lo que va a salir (no se manda lo guardado). Si falla, el
-                    // correo sale igual con lo que había.
+                    // NestoAPI#730 (853): antes de mandarlo, se recalcula lo que va a salir (no se manda lo guardado). Pedido 930942
+                    // (19/11/26): solo va lo que se ha recalculado sin error (o lo detectado después de empezar); si la revisión falla, esos
+                    // riesgos esperan al siguiente correo en vez de salir con el porqué de hace horas (las buenas noticias salen igual).
+                    DateTime inicioRevision = DateTime.Now;
+                    ICollection<int> revisados = new HashSet<int>();
                     try
                     {
-                        _ = await CrearServicio(db).RevisarAntesDelCorreo(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
+                        ResultadoPromesaRiesgo revision = await CrearServicio(db).RevisarAntesDelCorreo(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
+                        revisados = revision?.PedidosRevisados ?? new HashSet<int>();
                     }
                     catch (Exception ex)
                     {
-                        ElmahHelper.Log(new Exception($"[Promesa en riesgo #730] No se ha podido revisar antes del correo resumen: {ex.Message}", ex),
+                        ElmahHelper.Log(new Exception($"[Promesa en riesgo #730] No se ha podido revisar antes del correo resumen (los riesgos sin revisar esperan al siguiente correo): {ex.Message}", ex),
                             "Sistema (promesa en riesgo)");
                     }
                     _ = await CorreoResumen(new RepositorioPromesaRiesgo(), CrearAvisador(db), () => DateTime.Now,
-                        () => InterruptorAvisoPromesaRiesgo.Modo, Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
+                        () => InterruptorAvisoPromesaRiesgo.Modo, Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        r => ReglaCorreoPromesaRiesgo.PuedeIr(r, revisados, inicioRevision)).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -111,7 +116,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// riesgos han ido.
         /// </summary>
         internal static async Task<int> CorreoResumen(IRepositorioPromesaRiesgo repositorio, IAvisadorPromesaRiesgo avisador,
-            Func<DateTime> reloj, Func<ModoAvisoPromesaRiesgo> modo, string empresa)
+            Func<DateTime> reloj, Func<ModoAvisoPromesaRiesgo> modo, string empresa, Func<RiesgoPromesa, bool> revisado = null)
         {
             ModoAvisoPromesaRiesgo modoActual = modo();
             if (modoActual == ModoAvisoPromesaRiesgo.Apagado || !repositorio.TablaExiste())
@@ -119,6 +124,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return 0;
             }
             List<RiesgoPromesa> nuevos = await repositorio.LeerSinCorreo(empresa).ConfigureAwait(false) ?? new List<RiesgoPromesa>();
+            if (revisado != null)
+            {
+                // Pedido 930942: lo que no se ha podido recalcular justo antes no se manda (ni se marca: sale en el siguiente).
+                nuevos = nuevos.Where(revisado).ToList();
+            }
             // Carlos (18/11/26): y, en una línea cada uno, los que ya salen porque les llegó lo que faltaba (solo si la mala noticia salió
             // en un correo; los de hace más de DIAS_YA_SALEN días ya no se cuentan).
             List<RiesgoPromesa> yaSalen = await repositorio.LeerYaSalenSinCorreo(empresa, reloj().Date.AddDays(-DIAS_YA_SALEN)).ConfigureAwait(false)

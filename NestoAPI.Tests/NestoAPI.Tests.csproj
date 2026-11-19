@@ -923,6 +923,7 @@
     <Compile Include="Infrastructure\PedidosVenta\CorreoFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\PromesaRiesgoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoExtraccionTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\PromesaRiesgoEnCaminoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAsignacionTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\PlazosProveedoresTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ModeloPlazosProveedoresTests.cs" />

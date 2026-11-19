@@ -967,6 +967,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   además no sale hasta que pueda salir lo pendiente del MISMO empresa+cliente+contacto. `Efectivo(6, true)` = 6; ServirJunto desmarcado → 2.
   `EsValido` sigue siendo 1..4 (parámetro ModoServicioPorDefecto); `EsElegible` = 1..4 + 6. Nunca se sugiere.
 - LA REGLA (`Infraestructure/PedidosVenta/JuntoConPendiente/ReglaJuntoConPendiente`): cuenta lo que tenga alguna línea de producto en ALG,
+- **Lo que ya viene de camino va antes que lo libre de las tiendas (pedido 930942, 19/11/26)**: el repartidor del motor #606 daba lo que
+  falta a lo LIBRE de una tienda antes que a la reposición ya terminada que viene a Algete (Alcobendas mandó la unidad en la 81463 y el aviso
+  dijo «tiene que venir de Reina… lunes 23/11»). Ahora `RepartidorStockFechaEntregaAgencia.TomarEnCaminoAAlgete` (puro) coge primero lo de
+  camino (`DatosSombraModoServicio.EnCaminoAAlgete`, `SQL_EN_CAMINO_A_ALGETE`: PreExtrProducto neto por empresa+traspaso+producto > 0 con la
+  entrada en ALG y la tienda de su Delegación), descontando lo que ya deben en Algete los demás pedidos (la reposición más antigua es suya).
+  La partida `EnCamino` lleva `TraspasoEnCamino`/`TiendaEnCamino` (NO `Tienda`: no se reserva nada en ella) y los textos dicen «viene de
+  camino en la reposición 81463 de Alcobendas» (`CalculadoraFechaEntregaAgencia.DeCamino`). Correo resumen: solo va lo recalculado sin
+  error en `RevisarAntesDelCorreo` (`PedidosRevisados`) o lo detectado después de empezar (`ReglaCorreoPromesaRiesgo.PuedeIr`); lo demás
+  espera al siguiente correo, nunca sale el porqué de hace horas.
   -1/1, con cantidad y SIN picking (también 31/12/2099: las notas nacen así). No cuentan el propio, presupuestos, cursos (van en la tienda),
   notas de cobro/recogida (sin producto), retenidos (5) ni otros 6 (dos 6 no se esperan). Lectura en UNA consulta (`RepositorioJuntoConPendiente`).
 - Script `Scripts/Sugerencia1340_ModoJuntoConLoPendiente.sql`: amplía CK_CabPedidoVta_ModoServicio a 1..6 (lección #698) y crea

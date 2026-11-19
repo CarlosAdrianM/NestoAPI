@@ -99,6 +99,13 @@ namespace NestoAPI.Models.PedidosVenta
         public string OrigenComponente { get; set; }
         /// <summary>Solo <see cref="ORIGEN_TIENDA"/>: día y hora a la que suele llegar a Algete la reposición que lo trae.</summary>
         public DateTime? LlegaAAlgete { get; set; }
+        /// <summary>
+        /// Solo <see cref="ORIGEN_EN_CAMINO"/> (promesa en riesgo, pedido 930942, 19/11/26): el número de la reposición (NºTraspaso) en la que
+        /// viene. Null si no se sabe. Aditivo.
+        /// </summary>
+        public int? TraspasoEnCamino { get; set; }
+        /// <summary>Solo <see cref="ORIGEN_EN_CAMINO"/>: la tienda de la que salió (REI, ALC). No es <see cref="Tienda"/>: no se reserva nada en ella.</summary>
+        public string TiendaEnCamino { get; set; }
         /// <summary>Primer día en que puede salir a la agencia. Null = sin fecha.</summary>
         public DateTime? PuedeSalirEl { get; set; }
         /// <summary>Solo <see cref="ORIGEN_PROVEEDOR"/>: la fecha prevista del pedido a proveedor.</summary>

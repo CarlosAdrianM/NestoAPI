@@ -267,7 +267,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 string clave = string.Join("|", p.Origen, p.Tienda?.Trim(), D(p.PuedeSalirEl), D(p.FechaPrevistaProveedor), p.LlegadaSupuesta.HasValue,
                     D(p.FechaOrientativa), D(p.FechaPrevistaProveedorOrientativo), p.PedidoProveedorOrientativo.HasValue, D(p.LlegaAAlgete), p.Kit?.Trim(),
-                    p.ComponenteQueFalta?.Trim(), p.OrigenComponente);
+                    p.ComponenteQueFalta?.Trim(), p.OrigenComponente, p.TraspasoEnCamino, p.TiendaEnCamino?.Trim());
                 if (!grupos.TryGetValue(clave, out Grupo g))
                 {
                     g = new Grupo { Primera = p, Orden = p.PuedeSalirEl ?? p.FechaOrientativa ?? DateTime.MaxValue };
@@ -342,7 +342,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     string tienda = CalculadoraFechaEntregaAgencia.NombreAlmacen(p.Tienda?.Trim());
                     return p.PuedeSalirEl.HasValue ? $"viene{n} de {tienda}" : $"está{n} en {tienda}, sin fecha de reposición";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO:
-                    return $"viene{n} de camino desde una tienda";
+                    // Pedido 930942: la tienda y la reposición REALES («viene de camino en la reposición 81463 de Alcobendas»)
+                    return $"viene{n} de camino {CalculadoraFechaEntregaAgencia.DeCamino(p)}";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR:
                     if (!p.FechaPrevistaProveedor.HasValue)
                     {
@@ -388,7 +389,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     string tienda = CalculadoraFechaEntregaAgencia.NombreAlmacen(p.Tienda?.Trim());
                     return p.PuedeSalirEl.HasValue ? Con($"viene{n} de {tienda}", p.LlegaAAlgete ?? p.PuedeSalirEl) : $"está{n} en {tienda}, sin fecha";
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO:
-                    return Con($"viene{n} de camino", p.PuedeSalirEl);
+                    return Con(p.TraspasoEnCamino.HasValue || !string.IsNullOrWhiteSpace(p.TiendaEnCamino)
+                        ? $"viene{n} de camino {CalculadoraFechaEntregaAgencia.DeCamino(p)}"
+                        : $"viene{n} de camino", p.PuedeSalirEl);
                 case PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR:
                     if (!p.FechaPrevistaProveedor.HasValue)
                     {
