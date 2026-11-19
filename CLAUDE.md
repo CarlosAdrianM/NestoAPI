@@ -900,6 +900,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   por empresa/cliente/contacto) y en `DireccionesEntregaClienteDTO` de GET PlantillaVentas/DireccionesEntrega. Las listas leen la Dirección 2 en
   UNA consulta por empresa (`Direccion2ClienteSql.LeerDeClientes`, IN por lotes de 500); sin columnas o si falla, = Dirección. Nesto la pinta en
   el selector de clientes (y su selector de entrega), la cabecera del detalle del pedido y la lista de la ficha (`DireccionParaMostrar`).
+- **Entrega por defecto de un cliente que ya existe (NestoAPI#879 corte 3)**: facturación = ficha con ClientePrincipal; entrega por defecto =
+  `ContactoDefecto` de la principal (`ReglaContactoDefecto`, pura). `GET api/Clientes/ContactoDefecto?empresa=&cliente=` → { Empresa, Cliente,
+  ContactoFacturacion, ContactoDefecto } (404 sin cliente). `PUT api/Clientes/ContactoDefecto` { Empresa, Cliente, Contacto } (`[Authorize]`, sin
+  grupo, como PUT api/Clientes): contacto del cliente y activo (400 de usted si no; 404 sin cliente), escribe ContactoDefecto (+Usuario) en las
+  principales ACTIVAS y una fila en Modificaciones (Tabla `ClienteContactoDefecto`) en una transacción; si ya lo era, 200 con `Cambiado` false y
+  nada escrito. No cambia la principal. Nesto: pestaña «Direcciones» de la ficha (ClienteComercial). OJO: hoy Nesto NO propone ese contacto al
+  elegir cliente para un pedido (el selector pide el principal); cambiarlo está pendiente de decisión.
 
 ### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
 - `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática

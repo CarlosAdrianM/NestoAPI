@@ -526,6 +526,7 @@
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
+    <Compile Include="Controllers\ClientesController.ContactoDefecto.cs" />
     <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
     <Compile Include="Controllers\ClientesController.Origen.cs" />
     <Compile Include="Controllers\ClientesController.ImportarLeads.cs" />
@@ -1033,6 +1034,7 @@
     <Compile Include="Infraestructure\Clientes\Direccion2Cliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2ClienteSql.cs" />
     <Compile Include="Infraestructure\Clientes\DireccionCompletaCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\ContactoDefectoCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NumeroPropioDireccion.cs" />
     <Compile Include="Infraestructure\Clientes\MensajesValidacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\NormalizadorClienteCrear.cs" />

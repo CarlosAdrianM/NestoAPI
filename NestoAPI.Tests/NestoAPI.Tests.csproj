@@ -389,6 +389,7 @@
     <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2ClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\DireccionCompletaClienteTests.cs" />
+    <Compile Include="Controllers\ClientesControllerContactoDefectoTests.cs" />
     <Compile Include="Infrastructure\Clientes\AltaConDireccionEntregaTests.cs" />
     <Compile Include="Infrastructure\Clientes\SuPedidoObligatorioTests.cs" />
     <Compile Include="Infrastructure\Clientes\OrigenesClienteTests.cs" />
