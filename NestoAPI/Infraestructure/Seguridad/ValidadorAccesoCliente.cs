@@ -24,6 +24,16 @@ namespace NestoAPI.Infraestructure.Seguridad
         }
 
         /// <summary>
+        /// Un cliente de la tienda online (TiendasNuevaVision: JWT con claim "cliente" con valor). Empleados (Nesto) y vendedores
+        /// (NestoApp) no lo llevan. Para cerrar a los clientes los endpoints internos sin tocar los permisos de los demás.
+        /// </summary>
+        public static bool EsClienteTienda(System.Security.Principal.IPrincipal usuario)
+            => !string.IsNullOrWhiteSpace((usuario?.Identity as ClaimsIdentity)?.FindFirst("cliente")?.Value);
+
+        /// <summary>Mensaje del 403 de un endpoint interno pedido con un token de cliente de la tienda.</summary>
+        public const string MENSAJE_SOLO_INTERNO = "Esta consulta no está disponible para clientes de la tienda.";
+
+        /// <summary>
         /// Valida si el usuario puede acceder a recursos del cliente especificado.
         ///
         /// Reglas de acceso:

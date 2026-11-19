@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -470,6 +470,49 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsInstanceOfType(await c.Reenviar(251300, new ReenviarEnvioDTO()), typeof(BadRequestErrorMessageResult));
             Assert.IsInstanceOfType(await c.Abonar(251300), typeof(BadRequestErrorMessageResult));
             Assert.IsInstanceOfType(await c.GetEnviosDevueltos("1"), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task Controlador_TokenDeClienteDeLaTienda_403EnDevueltosYSusDecisiones()
+        {
+            // Seguridad 19/11/26: Devueltos lleva nombres, direcciones y teléfonos de toda la empresa; un cliente de la tienda
+            // (claim «cliente») no lo lee ni decide. Ni se llega al servicio.
+            datos.Envios[251300] = Devuelto();
+            var c = new EnviosAgenciasController(A.Fake<NVEntities>())
+            {
+                ServicioReenvios = servicio,
+                ServicioHaVuelto = A.Fake<IServicioEnviosHaVuelto>(),
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("cliente", "15191") }, "Bearer"))
+            };
+
+            var resultados = new[]
+            {
+                await c.GetEnviosDevueltos("1"),
+                await c.Reenviar(251300, new ReenviarEnvioDTO()),
+                await c.Abonar(251300),
+                await c.HaVuelto(251300),
+                await c.HaVueltoPorLectura(new LecturaHaVueltoDTO { Codigo = "251300" })
+            };
+
+            foreach (var r in resultados)
+            {
+                Assert.AreEqual(HttpStatusCode.Forbidden, r.GetType().GetProperty("StatusCode").GetValue(r));
+            }
+            Assert.IsFalse(datos.Repo.Filas.ContainsKey(251300), "No debe haber decisión");
+            A.CallTo(c.ServicioHaVuelto).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Controlador_EmpleadoOVendedor_SinClaimCliente_SigueEntrando()
+        {
+            datos.Envios[251300] = Devuelto();
+            var vendedor = new EnviosAgenciasController(A.Fake<NVEntities>())
+            {
+                ServicioReenvios = servicio,
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, USUARIO), new Claim("IsVendedor", "true") }, "Bearer"))
+            };
+
+            Assert.IsInstanceOfType(await vendedor.Reenviar(251300, new ReenviarEnvioDTO()), typeof(OkNegotiatedContentResult<DecisionReenvioDTO>));
         }
 
         [TestMethod]

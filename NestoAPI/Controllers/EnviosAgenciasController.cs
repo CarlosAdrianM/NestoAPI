@@ -2656,6 +2656,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EnvioDevueltoDTO>))]
         public async Task<IHttpActionResult> GetEnviosDevueltos(string empresa, int? pedido = null)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno();
+            }
             if (string.IsNullOrWhiteSpace(empresa))
             {
                 return BadRequest("Indique la empresa.");
@@ -2681,6 +2685,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(DecisionReenvioDTO))]
         public async Task<IHttpActionResult> Reenviar(int id, ReenviarEnvioDTO datos)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno();
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaReenvio(await ServicioReenvios.ReenviarAsync(id, datos, usuario));
         }
@@ -2695,9 +2703,17 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(DecisionReenvioDTO))]
         public async Task<IHttpActionResult> Abonar(int id)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno();
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaReenvio(await ServicioReenvios.AbonarAsync(id, usuario));
         }
+
+        /// <summary>403 para un token de cliente de la tienda online en los endpoints de Devueltos (datos de otros clientes).</summary>
+        private IHttpActionResult SoloInterno()
+            => Content(HttpStatusCode.Forbidden, new { Message = ValidadorAccesoCliente.MENSAJE_SOLO_INTERNO });
 
         private IHttpActionResult RespuestaReenvio(ResultadoReenvio resultado)
         {
@@ -2735,6 +2751,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EnvioHaVueltoDTO))]
         public async Task<IHttpActionResult> HaVuelto(int id)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno();
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaHaVuelto(await ServicioHaVuelto.MarcarAsync(id, ComoHaVuelto.YA_ESTA_AQUI, null, usuario));
         }
@@ -2749,6 +2769,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EnvioHaVueltoDTO))]
         public async Task<IHttpActionResult> HaVueltoPorLectura(LecturaHaVueltoDTO lectura)
         {
+            if (ValidadorAccesoCliente.EsClienteTienda(User))
+            {
+                return SoloInterno();
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             return RespuestaHaVuelto(await ServicioHaVuelto.MarcarPorLecturaAsync(lectura?.Codigo, usuario));
         }
