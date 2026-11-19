@@ -31,6 +31,37 @@ namespace NestoAPI.Infraestructure.Clientes
         }
     }
 
+    /// <summary>NestoAPI#874 (corte 2): la Dirección 2 guardada, descompuesta en los campos del formulario (<see cref="Direccion2Cliente.Descomponer"/>).</summary>
+    public sealed class CamposDireccion2
+    {
+        public string TipoLugar { get; set; }
+        public string Piso { get; set; }
+        public string Puerta { get; set; }
+        public string NumeroLocal { get; set; }
+        public string Rotulo { get; set; }
+        public string NumeroNave { get; set; }
+        public string OtroTexto { get; set; }
+        /// <summary>El texto guardado tal cual (null sin Dirección 2).</summary>
+        public string Direccion2 { get; set; }
+    }
+
+    /// <summary>NestoAPI#874 (corte 2): qué hacer con la Dirección 2 al modificar (<see cref="Direccion2Cliente.ParaModificar"/>).</summary>
+    public sealed class DecisionDireccion2Modificar
+    {
+        public enum Acciones { NoTocar, Guardar, Quitar }
+        public Acciones Accion { get; private set; }
+        /// <summary>Lo que se guarda (solo con Guardar).</summary>
+        public ResultadoDireccion2 Direccion2 { get; private set; }
+        /// <summary>El motivo del 400 (de usted); null si vale.</summary>
+        public string Motivo { get; private set; }
+        public bool Valida => Motivo == null;
+
+        public static readonly DecisionDireccion2Modificar NoTocar = new DecisionDireccion2Modificar { Accion = Acciones.NoTocar };
+        public static readonly DecisionDireccion2Modificar Quitar = new DecisionDireccion2Modificar { Accion = Acciones.Quitar };
+        internal static DecisionDireccion2Modificar Guardar(ResultadoDireccion2 d) => new DecisionDireccion2Modificar { Accion = Acciones.Guardar, Direccion2 = d };
+        internal static DecisionDireccion2Modificar Mal(string motivo) => new DecisionDireccion2Modificar { Accion = Acciones.NoTocar, Motivo = motivo };
+    }
+
     /// <summary>NestoAPI#874: el resultado de componer la Dirección 2 del alta.</summary>
     public sealed class ResultadoDireccion2
     {
@@ -170,6 +201,101 @@ namespace NestoAPI.Infraestructure.Clientes
                 return ResultadoDireccion2.Nada;
             }
             return Componer(c);
+        }
+
+        // ------------------------------------------------------------------ NestoAPI#874 corte 2: modificar
+
+        private static readonly Regex LOCAL_GUARDADO = new Regex(@"^LOCAL(?:\s+(?<local>.+?))?\s*·\s*RÓTULO:\s*(?<rotulo>.+)$", RegexOptions.Compiled);
+        private static readonly Regex NAVE_GUARDADA = new Regex(@"^NAVE\s+(?<nave>.+)$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// La regla INVERSA de <see cref="Componer(string, string, string, string, string, string, string)"/> (pura): de lo guardado
+        /// (TipoLugar + Direccion2) a los campos del formulario. Si el texto no casa con su tipo (o no hay tipo), «Otro» con el texto
+        /// entero (así nada se pierde al volver a guardar). Sin Dirección 2, todo null. Garantía: Componer(Descomponer(x)) = x.
+        /// </summary>
+        public static CamposDireccion2 Descomponer(string tipoLugar, string direccion2)
+        {
+            string texto = direccion2?.Trim();
+            if (string.IsNullOrEmpty(texto))
+            {
+                return new CamposDireccion2();
+            }
+            string tipo = TiposLugar.Normalizar(tipoLugar);
+            CamposDireccion2 campos = null;
+            switch (tipo)
+            {
+                case TiposLugar.PISO:
+                    int espacio = texto.IndexOf(' ');
+                    if (espacio > 0 && espacio < texto.Length - 1)
+                    {
+                        campos = new CamposDireccion2 { TipoLugar = tipo, Piso = texto.Substring(0, espacio), Puerta = texto.Substring(espacio + 1).Trim() };
+                    }
+                    break;
+                case TiposLugar.LOCAL:
+                    Match local = LOCAL_GUARDADO.Match(texto);
+                    if (local.Success)
+                    {
+                        campos = new CamposDireccion2
+                        {
+                            TipoLugar = tipo,
+                            NumeroLocal = local.Groups["local"].Success ? local.Groups["local"].Value.Trim() : null,
+                            Rotulo = local.Groups["rotulo"].Value.Trim()
+                        };
+                    }
+                    break;
+                case TiposLugar.CASA:
+                    if (texto == "CASA")
+                    {
+                        campos = new CamposDireccion2 { TipoLugar = tipo };
+                    }
+                    break;
+                case TiposLugar.NAVE:
+                    Match nave = NAVE_GUARDADA.Match(texto);
+                    if (nave.Success)
+                    {
+                        campos = new CamposDireccion2 { TipoLugar = tipo, NumeroNave = nave.Groups["nave"].Value.Trim() };
+                    }
+                    break;
+            }
+            campos = campos ?? new CamposDireccion2 { TipoLugar = TiposLugar.OTRO, OtroTexto = texto };
+            // Garantía: si al recomponer no sale lo mismo, «Otro» con el texto tal cual
+            ResultadoDireccion2 vuelta = Componer(campos.TipoLugar, campos.Piso, campos.Puerta, campos.NumeroLocal, campos.Rotulo, campos.NumeroNave, campos.OtroTexto);
+            if (!vuelta.Valida || vuelta.Direccion2 != Limpiar(texto))
+            {
+                campos = new CamposDireccion2 { TipoLugar = TiposLugar.OTRO, OtroTexto = texto };
+            }
+            campos.Direccion2 = texto;
+            return campos;
+        }
+
+        /// <summary>
+        /// Al MODIFICAR un contacto (Carlos 17/11/26), qué se hace con la Dirección 2 (pura):
+        /// <list type="bullet">
+        /// <item>Con tipo de lugar: se compone y valida con la MISMA regla que el alta → Guardar (o el motivo del 400).</item>
+        /// <item>Con <c>QuitarDireccion2</c>: Quitar.</item>
+        /// <item>Sin nada (NestoApp, Nesto anterior): NoTocar; lo guardado se conserva.</item>
+        /// <item>Se EXIGE solo si la dirección CAMBIA (y no queda vacía) y <paramref name="exigir"/> (ExigirDireccion2Alta = 1): entonces
+        /// sin tipo, o quitándola, 400 con <see cref="MOTIVO_SIN_TIPO"/>.</item>
+        /// </list>
+        /// </summary>
+        public static DecisionDireccion2Modificar ParaModificar(ClienteCrear c, string direccionAnterior, bool exigir)
+        {
+            if (c == null)
+            {
+                return DecisionDireccion2Modificar.NoTocar;
+            }
+            bool cambia = !string.Equals(direccionAnterior?.Trim() ?? string.Empty, c.Direccion?.Trim() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            bool exigida = exigir && cambia && !string.IsNullOrWhiteSpace(c.Direccion);
+            if (!string.IsNullOrWhiteSpace(c.TipoLugar))
+            {
+                ResultadoDireccion2 resultado = Componer(c);
+                return resultado.Valida ? DecisionDireccion2Modificar.Guardar(resultado) : DecisionDireccion2Modificar.Mal(resultado.Motivo);
+            }
+            if (exigida)
+            {
+                return DecisionDireccion2Modificar.Mal(MOTIVO_SIN_TIPO);
+            }
+            return c.QuitarDireccion2 ? DecisionDireccion2Modificar.Quitar : DecisionDireccion2Modificar.NoTocar;
         }
 
         private static string Limpiar(string texto)

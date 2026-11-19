@@ -981,6 +981,20 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   principales ACTIVAS y una fila en Modificaciones (Tabla `ClienteContactoDefecto`) en una transacción; si ya lo era, 200 con `Cambiado` false y
   nada escrito. No cambia la principal. Nesto: pestaña «Direcciones» de la ficha (ClienteComercial). OJO: hoy Nesto NO propone ese contacto al
   elegir cliente para un pedido (el selector pide el principal); cambiarlo está pendiente de decisión.
+- **Dirección 2 en todos los destinos (19/11/26, Carlos «adelante con todo»)**: etiquetas y envíos = `DireccionEnvioCliente` (paradas de notas
+  de entrega y de cobro de la 14 —`ServicioParadasNotaEntrega.ConstruirEnvio`, `DestinoNotaEntrega.Direccion2`—, etiqueta de recogida sin parada);
+  pantallas, correos y PDF = `DireccionCompletaCliente` (packing de Ariadna y en PDF —el SP no se toca: la API completa por empresa del pedido—,
+  correo de pedido/presupuesto, dirección de ENTREGA de factura/albarán/pedido/nota/ticket vía `IServicioFacturas.LeerDireccion2Cliente`, inscritos,
+  correo de clientes nuevos, facturación de tienda, aviso de cambio de contacto). Aditivos: `RecogidaSolicitadaDTO.Direccion2/DireccionCompleta`,
+  `ComprobacionRecogidaImprevistaDTO.DireccionCompleta`, `AlquilerCabeceraDTO.Direccion2Cliente`, `ResumenPedidoVentaDTO.direccionCompleta` (+contacto).
+  Listas: `DireccionCompletaCliente.RellenarPorEmpresa` (una lectura por empresa). Sin columnas o sin Dirección 2, lo de siempre.
+- **Corte 2: al MODIFICAR (19/11/26)**: GET GetClienteCrear trae `TipoLugar` y sus campos descompuestos (`Direccion2Cliente.Descomponer`, la inversa
+  de Componer; lo que no casa, «Otro» con el texto) + `Direccion2` (solo lectura). PUT: `Direccion2Cliente.ParaModificar` —con tipo, Componer (la
+  regla del alta, se valida siempre); `QuitarDireccion2` = borrar; sin nada = NO TOCAR (NestoApp y Nesto viejos); se exige solo si la Dirección
+  CAMBIA y `ExigirDireccion2Alta` = 1—. La nueva va a la sesión (`Direccion2EnSesion`) antes del SaveChanges (correo del disparador) y se escribe
+  antes de publicar a Odoo (la modificación publica siempre). Nesto: «¿Qué es?» también al modificar (sin tipo elegido, ni aviso ni envío).
+- **Devueltos (seguridad, 19/11/26)**: GET Devueltos, Reenviar, Abonar y HaVuelto dan 403 a un token de cliente de la tienda
+  (`ValidadorAccesoCliente.EsClienteTienda`). Empleados y vendedores, como antes.
 
 ### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
 - `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática

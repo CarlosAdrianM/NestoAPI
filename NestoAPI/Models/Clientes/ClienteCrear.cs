@@ -56,6 +56,13 @@ namespace NestoAPI.Models.Clientes
         public string NumeroNave { get; set; }
         /// <summary>NestoAPI#874, Otro: el texto (obligatorio).</summary>
         public string OtroTexto { get; set; }
+        /// <summary>
+        /// NestoAPI#874 (corte 2), solo al MODIFICAR: borrar la Dirección 2 guardada. Sin tipo de lugar y sin esto, la que hay se
+        /// conserva (NestoApp y Nesto anteriores no mandan los campos).
+        /// </summary>
+        public bool QuitarDireccion2 { get; set; }
+        /// <summary>NestoAPI#874 (corte 2): solo lectura (GET GetClienteCrear): la Dirección 2 guardada tal cual. El PUT la ignora.</summary>
+        public string Direccion2 { get; set; }
         public bool EsContacto {get;set;}
         public short? Estado { get; set; }
         public bool Estetica { get; set; }

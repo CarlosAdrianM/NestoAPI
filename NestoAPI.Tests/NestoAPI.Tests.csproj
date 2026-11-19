@@ -390,6 +390,7 @@
     <Compile Include="Infrastructure\Clientes\Direccion2ClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\DireccionCompletaClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2DestinosTests.cs" />
+    <Compile Include="Infrastructure\Clientes\Direccion2ModificarTests.cs" />
     <Compile Include="Controllers\ClientesControllerContactoDefectoTests.cs" />
     <Compile Include="Infrastructure\Clientes\AltaConDireccionEntregaTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2EnSesionTests.cs" />

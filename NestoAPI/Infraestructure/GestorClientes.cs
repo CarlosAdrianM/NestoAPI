@@ -915,7 +915,37 @@ namespace NestoAPI.Infraestructure
 
             clienteCrear.PersonasContacto = await LeerPersonasContacto(empresa, cliente, contacto);
 
+            // NestoAPI#874 (corte 2): la Dirección 2 guardada, descompuesta en «¿Qué es?» y sus campos para que la modificación la enseñe
+            // y deje cambiarla. Sin columnas o si falla, sin ella (el PUT sin campos no la toca).
+            await RellenarDireccion2Guardada(clienteCrear).ConfigureAwait(false);
+
             return clienteCrear;
+        }
+
+        /// <summary>NestoAPI#874 (corte 2): pone en el formulario la Dirección 2 guardada (Direccion2Cliente.Descomponer). Nunca lanza.</summary>
+        internal async Task RellenarDireccion2Guardada(ClienteCrear clienteCrear)
+        {
+            try
+            {
+                Dictionary<string, Clientes.Direccion2Contacto> filas = await servicio.LeerDireccion2Clientes(clienteCrear.Empresa, new[] { clienteCrear.Cliente }).ConfigureAwait(false);
+                if (filas == null || !filas.TryGetValue(Clientes.Direccion2ClienteSql.ClaveContacto(clienteCrear.Cliente, clienteCrear.Contacto), out Clientes.Direccion2Contacto fila) || fila == null)
+                {
+                    return;
+                }
+                Clientes.CamposDireccion2 campos = Clientes.Direccion2Cliente.Descomponer(fila.TipoLugar, fila.Direccion2);
+                clienteCrear.Direccion2 = campos.Direccion2;
+                clienteCrear.TipoLugar = campos.TipoLugar;
+                clienteCrear.Piso = campos.Piso;
+                clienteCrear.Puerta = campos.Puerta;
+                clienteCrear.NumeroLocal = campos.NumeroLocal;
+                clienteCrear.Rotulo = campos.Rotulo;
+                clienteCrear.NumeroNave = campos.NumeroNave;
+                clienteCrear.OtroTexto = campos.OtroTexto;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido leer la dirección 2 de {clienteCrear.Cliente}/{clienteCrear.Contacto} para modificarla: {ex.Message}", ex));
+            }
         }
 
         // Nesto#340 (1C.8, slice 4): personas de contacto en DTO con Cargo y su descripción, para
@@ -1418,6 +1448,7 @@ namespace NestoAPI.Infraestructure
                 clienteDB.Pais = clienteModificar.Pais.Trim().ToUpper();
             }
             clienteDB.Nombre = clienteModificar.Nombre;
+            direccionAnteriorPendiente = clienteDB.Dirección; // NestoAPI#874: para saber si la dirección cambia
             clienteDB.Dirección = clienteModificar.Direccion;
             // NestoAPI#596: si el CP cambia, se graba canónico («4480 670» -> «4480-670», «8850» en
             // España -> «08850»). Si el usuario no lo ha tocado se deja como está: lo que ya hay en la
@@ -2008,6 +2039,15 @@ namespace NestoAPI.Infraestructure
             {
                 cliente = await PrepararClienteModificar(clienteCrear, db);
 
+                // NestoAPI#874 (corte 2): la Dirección 2 con la MISMA regla que el alta; se exige solo si cambia la dirección (y con
+                // ExigirDireccion2Alta = 1). Antes de guardar nada: si no vale, 400 y la BD no se toca.
+                Clientes.DecisionDireccion2Modificar direccion2 = Clientes.Direccion2Cliente.ParaModificar(clienteCrear, direccionAnteriorPendiente,
+                    ExigirDireccion2Alta(clienteCrear.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO));
+                if (!direccion2.Valida)
+                {
+                    throw new ValidationException(direccion2.Motivo);
+                }
+
                 // NestoAPI#544 (a): transferencia a plazo exige correo de cobros (detrás de interruptor).
                 // Va ANTES de marcar nada como modificado y de guardar: si se rechaza, no se toca la BD.
                 string motivoCobros = MotivoRechazoSinCorreoCobros(clienteCrear.FormaPago, clienteCrear.PlazosPago,
@@ -2019,12 +2059,20 @@ namespace NestoAPI.Infraestructure
 
                 db.Entry(cliente).State = EntityState.Modified;
 
-                _ = await db.SaveChangesAsync();
+                // NestoAPI#874: la Dirección 2 NUEVA en la sesión de SQL para el correo «Cambios de Dirección» de trgClientesUpd
+                using (Clientes.Direccion2EnSesion.Seguro(() => direccion2.Accion == Clientes.DecisionDireccion2Modificar.Acciones.Guardar
+                    ? PonerDireccion2EnSesion(db, Clientes.Direccion2EnSesion.Entradas(new[] { (cliente, direccion2.Direccion2) }))
+                    : null))
+                {
+                    _ = await db.SaveChangesAsync();
+                }
                 if (cliente.CCCs.Count != 0 && cliente.CCC == null)
                 {
                     cliente.CCC1 = cliente.CCCs.FirstOrDefault();
                     _ = await db.SaveChangesAsync();
                 }
+                // NestoAPI#874: se escribe DESPUÉS de guardar la ficha y ANTES de publicar a Odoo (el mensaje la lleva)
+                GuardarDireccion2Modificada(db, cliente, direccion2);
 
                 // NestoAPI#716 (2.2): si PrepararClienteModificar cambió el estado (alta que completa el NIF), su porqué.
                 if (motivoCambioEstadoPendiente != null && cliente.Estado.HasValue)
@@ -2055,8 +2103,25 @@ namespace NestoAPI.Infraestructure
             {
                 avisoAlmacenPendiente = null;
                 motivoCambioEstadoPendiente = null;
+                direccionAnteriorPendiente = null;
             }
         }
+
+        /// <summary>NestoAPI#874 (corte 2): la dirección que tenía la ficha antes de modificarla (la deja PrepararClienteModificar).</summary>
+        private string direccionAnteriorPendiente;
+
+        /// <summary>Para los tests (no tienen BD): cómo se escribe la Dirección 2 al modificar. Por defecto, Direccion2ClienteSql.</summary>
+        internal Action<NVEntities, Cliente, Clientes.DecisionDireccion2Modificar> GuardarDireccion2Modificada { get; set; } = (db, cliente, decision) =>
+        {
+            if (decision.Accion == Clientes.DecisionDireccion2Modificar.Acciones.Guardar)
+            {
+                _ = Clientes.Direccion2ClienteSql.Guardar(db, cliente, decision.Direccion2);
+            }
+            else if (decision.Accion == Clientes.DecisionDireccion2Modificar.Acciones.Quitar)
+            {
+                _ = Clientes.Direccion2ClienteSql.Quitar(db, cliente);
+            }
+        };
 
         /// <summary>NestoAPI#541: el cambio ya está guardado; que falle el correo no lo deshace, pero se registra.</summary>
         internal void EnviarAvisoAlmacenPendiente(Cliente cliente)

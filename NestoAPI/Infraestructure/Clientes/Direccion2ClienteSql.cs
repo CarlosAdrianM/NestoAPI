@@ -56,6 +56,30 @@ namespace NestoAPI.Infraestructure.Clientes
             }
         }
 
+        internal const string SQL_QUITAR = @"
+            UPDATE dbo.Clientes SET Direccion2 = NULL, TipoLugar = NULL
+            WHERE Empresa = @p0 AND [Nº Cliente] = @p1 AND Contacto = @p2";
+
+        /// <summary>NestoAPI#874 (corte 2): borra la Dirección 2 y el tipo de lugar (al modificar, «Quitar»). Llamar DESPUÉS de SaveChanges. Nunca lanza.</summary>
+        public static bool Quitar(NVEntities db, Cliente cliente)
+        {
+            if (db == null || cliente == null || string.IsNullOrWhiteSpace(cliente.Nº_Cliente)
+                || !HayColumnas(db, $"no se ha quitado la dirección 2 del cliente {cliente.Nº_Cliente.Trim()}/{cliente.Contacto?.Trim()}"))
+            {
+                return false;
+            }
+            try
+            {
+                return db.Database.ExecuteSqlCommand(SQL_QUITAR,
+                    (cliente.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO).Trim(), cliente.Nº_Cliente.Trim(), (cliente.Contacto ?? "0").Trim()) > 0;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Clientes #874] No se ha podido quitar la dirección 2 del cliente {cliente.Nº_Cliente.Trim()}/{cliente.Contacto?.Trim()}: {ex.Message}", ex));
+                return false;
+            }
+        }
+
         /// <summary>La Dirección 2 del contacto (recortada), o null si no tiene, no existen las columnas o falla la lectura.</summary>
         public static string Leer(NVEntities db, string empresa, string cliente, string contacto)
         {
