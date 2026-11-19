@@ -237,6 +237,47 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual((ENVIO_INCOMPLETO, "Ya está entregado"), mirados[0]);
         }
 
+        [TestMethod]
+        public async Task Punto6_PruebaEntrega_Leidos6De7_SinLeerElSeptimo()
+        {
+            Envio(ENVIO_INCOMPLETO, bultos: 7);
+            await CargarTodos(ENVIO_INCOMPLETO, 7, MIGUEL);
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, Entrega(null, Rp(ENVIO_INCOMPLETO, 1, 2, 3, 4, 5, 6)), MIGUEL);
+
+            var prueba = await servicio.PruebaEntrega(ENVIO_INCOMPLETO);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, prueba.Tipo, prueba.Mensaje);
+            Assert.AreEqual("Leídos 6 de 7. Sin leer: RP251099-7.", prueba.Contenido.ResumenBultos);
+            Assert.AreEqual(7, prueba.Contenido.Bultos.Count);
+            Assert.AreEqual("entregado sin leer", prueba.Contenido.Bultos.Last().Texto);
+            Assert.AreEqual("leído al entregar", prueba.Contenido.Bultos.First().Texto);
+        }
+
+        [TestMethod]
+        public async Task Punto6_PruebaEntrega_SoloLeidos_ElQueSeQuedaSaleComoNoEntregado()
+        {
+            Envio(ENVIO_INCOMPLETO, bultos: 5);
+            await CargarTodos(ENVIO_INCOMPLETO, 5, MIGUEL);
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, EntregaSoloLeidos(null, Rp(ENVIO_INCOMPLETO, 1, 2, 3, 4)), MIGUEL);
+
+            var prueba = await servicio.PruebaEntrega(ENVIO_INCOMPLETO);
+
+            Assert.AreEqual("Leídos 4 de 5. No entregado: RP251099-5 (no se ha leído al entregar).", prueba.Contenido.ResumenBultos);
+            Assert.IsFalse(prueba.Contenido.Bultos.Last().Entregado);
+        }
+
+        [TestMethod]
+        public async Task Punto6_PruebaEntrega_SinDatosDeLaFurgoneta_NoSePinta()
+        {
+            Envio(ENVIO_INCOMPLETO, bultos: 2);
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, Entrega(), MIGUEL);
+
+            var prueba = await servicio.PruebaEntrega(ENVIO_INCOMPLETO);
+
+            Assert.IsNull(prueba.Contenido.Bultos);
+            Assert.IsNull(prueba.Contenido.ResumenBultos);
+        }
+
         private static MovimientoBultoReparto MovRp(int id, int bulto, string tipo, string usuario, DateTime fechaHora)
             => new MovimientoBultoReparto
             {

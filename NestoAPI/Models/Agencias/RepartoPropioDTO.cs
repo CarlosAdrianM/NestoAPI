@@ -492,6 +492,22 @@ namespace NestoAPI.Models.Agencias
         public bool TieneFirma { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
+        /// <summary>Punto 6 (19/11/26): los bultos del envío y qué pasó con cada uno al entregar. Null sin datos de la furgoneta.</summary>
+        public System.Collections.Generic.List<BultoPruebaEntregaDTO> Bultos { get; set; }
+        /// <summary>«Leídos 6 de 7. Sin leer: RP251099-7.» Null sin datos de la furgoneta.</summary>
+        public string ResumenBultos { get; set; }
+    }
+
+    /// <summary>Un bulto en la prueba de entrega (reparto propio).</summary>
+    public class BultoPruebaEntregaDTO
+    {
+        public string Codigo { get; set; }
+        public int Bulto { get; set; }
+        /// <summary>Leido, EntregadoSinLeer, NoLeidoSeQueda, NoSeCargo, VolvioAlAlmacen o LoLlevaOtro.</summary>
+        public string Situacion { get; set; }
+        public bool Entregado { get; set; }
+        /// <summary>«leído al entregar», «entregado sin leer», «no entregado: no se cargó»…</summary>
+        public string Texto { get; set; }
     }
 
     /// <summary>Una fila de EnviosAgenciaPruebasEntrega (entrega o incidencia), sin la firma.</summary>

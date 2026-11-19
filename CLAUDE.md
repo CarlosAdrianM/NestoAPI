@@ -284,6 +284,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   autorización que para no cobrar (Autorizada o Telefonica, #773; vale para cualquier importe); sin ella, 409 `Codigo` REEMBOLSO_PARCIAL (en la raíz
   y en error.code), regla pura `ReglaReembolsoEntero`. Cobrar de más no cambia. Las notas de cobro NO (lo de menos queda a cuenta). La petición de
   autorización admite `ImporteCobrado` opcional (sin columna: va en el Motivo; si Ariadna ya lo escribe, no se repite).
+- **Bultos en la prueba de entrega (19/11/26)**: `PruebaEntregaDTO`/`PruebaEntregaEnvioDTO` traen (aditivo, solo reparto propio) `Bultos`
+  [{Codigo, Bulto, Situacion, Entregado, Texto}] y `ResumenBultos` («Leídos 6 de 7. Sin leer: RP…-7.»), con la misma regla de #880 sobre el envío ya
+  entregado (`EntregaIncompletaReparto.EvaluarEntregado`). Sin movimientos RP del envío (antiguos, otras agencias), null. Nesto lo pinta en una línea.
 - **Packing entre dos PDA (incidencia 1169, Ariadna)**: F8 en la lista no vale para una entrega que ha terminado OTRA PDA y solo está
   resaltada (se reimprimía el envío del compañero y la propia no salía); vale al entrar en ella o elegirla con las flechas.
 - **Incidencias 1189/1190 (11/11/26)**: cargar la parada de una RECOGIDA (o de una NC) ya no apunta Cargado RP (no hay bulto; la carga en

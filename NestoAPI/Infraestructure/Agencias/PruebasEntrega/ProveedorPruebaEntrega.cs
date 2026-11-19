@@ -26,6 +26,9 @@ namespace NestoAPI.Infraestructure.Agencias.PruebasEntrega
         public string CobroReembolso { get; set; }
         public decimal? ImporteCobrado { get; set; }
         public string Usuario { get; set; }
+        /// <summary>Solo el reparto propio: los bultos y su resumen (null sin datos).</summary>
+        public System.Collections.Generic.List<Models.Agencias.BultoPruebaEntregaDTO> Bultos { get; set; }
+        public string ResumenBultos { get; set; }
 
         public static PruebaEntregaAgencia NoDisponible(string mensaje) => new PruebaEntregaAgencia { Disponible = false, Mensaje = mensaje };
     }

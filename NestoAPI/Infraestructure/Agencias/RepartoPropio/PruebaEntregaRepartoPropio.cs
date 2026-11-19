@@ -44,7 +44,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 DniReceptor = prueba.DniReceptor,
                 CobroReembolso = prueba.CobroReembolso,
                 ImporteCobrado = prueba.ImporteCobrado,
-                Usuario = prueba.Usuario
+                Usuario = prueba.Usuario,
+                Bultos = prueba.Bultos,
+                ResumenBultos = prueba.ResumenBultos
             };
             if (!prueba.TieneFirma)
             {

@@ -1018,6 +1018,41 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         }
 
         /// <summary>
+        /// Punto 6 (19/11/26): los bultos de un envío YA entregado, para la prueba de entrega. Null sin furgoneta, sin movimientos RP del
+        /// envío (envíos antiguos o que salieron sin leer nada) o si no se puede leer. Nunca lanza.
+        /// </summary>
+        private async Task<EvaluacionBultosEntrega> BultosDeLaEntrega(int envioId, string repartidor)
+        {
+            if (envioId <= 0 || !FurgonetaDisponible())
+            {
+                return null;
+            }
+            try
+            {
+                EnviosAgencia envio = await repositorio.LeerEnvio(envioId).ConfigureAwait(false);
+                if (envio == null)
+                {
+                    return null;
+                }
+                List<MovimientoBultoReparto> historia = await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto { Envios = new[] { envioId } }).ConfigureAwait(false)
+                    ?? new List<MovimientoBultoReparto>();
+                if (!historia.Any(m => m.TipoCodigo == CodigoBultoFurgoneta.RP))
+                {
+                    return null;
+                }
+                List<CargaBultoReparto> cargas = CargaDisponible()
+                    ? CargasVigentes(await carga.LeerCargas(new[] { envioId }).ConfigureAwait(false), historia)
+                    : new List<CargaBultoReparto>();
+                return EntregaIncompletaReparto.EvaluarEntregado(envioId, envio.Bultos, historia, cargas, repartidor);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Prueba de entrega] No se han podido leer los bultos del envío {envioId}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>
         /// NestoAPI#880: después de una entrega que ha ido bien, la respuesta con lo que falta (también en un reintento con la misma clave,
         /// recalculado) y, solo la primera vez y si es incompleta, el aviso (Almacén, quien hizo el pedido y su vendedor). Nunca rompe.
         /// </summary>

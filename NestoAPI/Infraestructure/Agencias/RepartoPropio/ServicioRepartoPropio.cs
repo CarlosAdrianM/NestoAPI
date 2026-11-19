@@ -263,8 +263,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return ResultadoReparto<PruebaEntregaDTO>.Vacio();
             }
+            EvaluacionBultosEntrega bultos = await BultosDeLaEntrega(envioId, prueba.Usuario).ConfigureAwait(false);
             return ResultadoReparto<PruebaEntregaDTO>.Bien(new PruebaEntregaDTO
             {
+                Bultos = bultos == null ? null : EntregaIncompletaReparto.BultosPrueba(bultos),
+                ResumenBultos = bultos == null ? null : EntregaIncompletaReparto.ResumenBultos(bultos),
                 EnvioId = prueba.EnvioId,
                 FechaHora = prueba.FechaHora,
                 Receptor = prueba.Receptor,

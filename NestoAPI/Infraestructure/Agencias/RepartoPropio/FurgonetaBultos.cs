@@ -389,6 +389,57 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             return evaluacion;
         }
 
+        /// <summary>
+        /// Punto 6: la misma regla con el envío YA entregado (la prueba de entrega). Lo que quien entregó sigue llevando encima no se
+        /// entregó («Solo entrego los leídos»); los Entregado con la marca «(entregado sin leer)» son sin leer y los demás, leídos.
+        /// </summary>
+        public static EvaluacionBultosEntrega EvaluarEntregado(int envioId, int bultos, IEnumerable<MovimientoBultoReparto> historiaEnvio,
+            IEnumerable<CargaBultoReparto> cargasVigentes, string repartidor)
+        {
+            EvaluacionBultosEntrega evaluacion = Evaluar(envioId, bultos, historiaEnvio, cargasVigentes, null, repartidor, false);
+            foreach (BultoEntregaEvaluado b in evaluacion.Bultos.Where(b => b.Situacion == SituacionBultoEntrega.EntregadoSinLeer
+                && (b.Ultimo == null || b.Ultimo.Tipo != TiposMovimientoBulto.ENTREGADO)))
+            {
+                b.Situacion = SituacionBultoEntrega.NoLeidoSeQueda;
+            }
+            return evaluacion;
+        }
+
+        /// <summary>«leído al entregar», «entregado sin leer», «no entregado: no se cargó»…</summary>
+        public static string TextoBulto(BultoEntregaEvaluado bulto)
+            => bulto.Situacion == SituacionBultoEntrega.Leido ? "leído al entregar"
+            : bulto.Situacion == SituacionBultoEntrega.EntregadoSinLeer ? "entregado sin leer"
+            : "no entregado: " + Motivo(bulto);
+
+        public static List<Models.Agencias.BultoPruebaEntregaDTO> BultosPrueba(EvaluacionBultosEntrega evaluacion)
+            => evaluacion.Bultos.Select(b => new Models.Agencias.BultoPruebaEntregaDTO
+            {
+                Codigo = b.Codigo,
+                Bulto = b.Bulto,
+                Situacion = b.Situacion.ToString(),
+                Entregado = b.Entregado,
+                Texto = TextoBulto(b)
+            }).ToList();
+
+        /// <summary>«Leídos 6 de 7. Sin leer: RP251099-7.» (+ «No entregados: RP251099-5 (no se cargó).»)</summary>
+        public static string ResumenBultos(EvaluacionBultosEntrega evaluacion)
+        {
+            int leidos = evaluacion.Bultos.Count(b => b.Situacion == SituacionBultoEntrega.Leido);
+            List<string> sinLeer = evaluacion.Bultos.Where(b => b.Situacion == SituacionBultoEntrega.EntregadoSinLeer).Select(b => b.Codigo).ToList();
+            List<BultoEntregaEvaluado> faltan = evaluacion.Faltan;
+            string texto = $"Leídos {leidos} de {evaluacion.Total}.";
+            if (sinLeer.Count > 0)
+            {
+                texto += $" Sin leer: {NucleoFurgoneta.ListaCorta(sinLeer)}.";
+            }
+            if (faltan.Count > 0)
+            {
+                texto += $" {(faltan.Count == 1 ? "No entregado" : "No entregados")}: " + string.Join("; ", faltan.Take(10).Select(b => $"{b.Codigo} ({b.Motivo})"))
+                    + (faltan.Count > 10 ? $" y {faltan.Count - 10} más" : string.Empty) + ".";
+            }
+            return texto;
+        }
+
         public static string Motivo(BultoEntregaEvaluado bulto)
         {
             switch (bulto?.Situacion)

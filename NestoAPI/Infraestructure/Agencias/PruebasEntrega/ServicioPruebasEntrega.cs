@@ -99,6 +99,8 @@ namespace NestoAPI.Infraestructure.Agencias.PruebasEntrega
             dto.CobroReembolso = prueba.CobroReembolso;
             dto.ImporteCobrado = prueba.ImporteCobrado;
             dto.Usuario = prueba.Usuario;
+            dto.Bultos = prueba.Bultos;
+            dto.ResumenBultos = prueba.ResumenBultos;
             return dto;
         }
 

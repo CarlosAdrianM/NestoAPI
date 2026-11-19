@@ -26,5 +26,9 @@ namespace NestoAPI.Models.Agencias
         public string CobroReembolso { get; set; }
         public decimal? ImporteCobrado { get; set; }
         public string Usuario { get; set; }
+        /// <summary>Solo el reparto propio (19/11/26): los bultos y qué pasó con cada uno. Null si no hay datos.</summary>
+        public System.Collections.Generic.List<BultoPruebaEntregaDTO> Bultos { get; set; }
+        /// <summary>Solo el reparto propio: «Leídos 6 de 7. Sin leer: RP251099-7.» Null si no hay datos.</summary>
+        public string ResumenBultos { get; set; }
     }
 }
