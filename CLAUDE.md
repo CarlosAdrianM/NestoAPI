@@ -276,6 +276,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`IAvisosEntregaIncompleta`: campana a Almacén + campana/push a quien hizo el pedido y su vendedor, tipo `EntregaIncompletaReparto`). El job de las
   22:00 no cierra los bultos de un envío incompleto. Ni recogidas, ni NC, ni reposiciones. `EntregaIncompleta` (+ `DetalleEntregaIncompleta`) en los
   DTO de envío: Nesto lo marca en Agencias › Tramitados («Incompleto», cabecera) y en la pestaña Entrega del pedido.
+- **Reembolso entero o autorizado (Carlos 19/11/26)**: en `Entregar` con Efectivo e `ImporteCobrado` < reembolso − 0,01 € hace falta la MISMA
+  autorización que para no cobrar (Autorizada o Telefonica, #773; vale para cualquier importe); sin ella, 409 `Codigo` REEMBOLSO_PARCIAL (en la raíz
+  y en error.code), regla pura `ReglaReembolsoEntero`. Cobrar de más no cambia. Las notas de cobro NO (lo de menos queda a cuenta). La petición de
+  autorización admite `ImporteCobrado` opcional (sin columna: va en el Motivo; si Ariadna ya lo escribe, no se repite).
 - **Packing entre dos PDA (incidencia 1169, Ariadna)**: F8 en la lista no vale para una entrega que ha terminado OTRA PDA y solo está
   resaltada (se reimprimía el envío del compañero y la propia no salía); vale al entrar en ella o elegirla con las flechas.
 - **Incidencias 1189/1190 (11/11/26)**: cargar la parada de una RECOGIDA (o de una NC) ya no apunta Cargado RP (no hay bulto; la carga en

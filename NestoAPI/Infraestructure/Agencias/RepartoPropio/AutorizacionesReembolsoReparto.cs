@@ -29,6 +29,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     {
         /// <summary>Por qué no se cobra (obligatorio): «El cliente dice que paga por transferencia», «No tiene dinero»…</summary>
         public string Motivo { get; set; }
+        /// <summary>
+        /// Opcional (19/11/26, reembolso entero o autorizado): lo que se va a cobrar en efectivo si es MENOS que el reembolso. Va delante del
+        /// motivo («Cobra 100,00 € de 120,00 €. …») para que Administración lo vea; la autorización es la misma.
+        /// </summary>
+        public decimal? ImporteCobrado { get; set; }
     }
 
     /// <summary>POST api/RepartoPropio/Autorizaciones/{id}/Responder (solo Administración y Dirección).</summary>
@@ -350,6 +355,16 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return Invalido($"El envío {envio.Numero} no lleva reembolso: no hace falta autorización.");
             }
+            // Ariadna (3c8ab06) ya manda el motivo con «Cobra 40,00 € en efectivo de…»: solo se antepone si no lo trae
+            if (ReglaReembolsoEntero.EsParcial(envio.Reembolso, peticion.ImporteCobrado)
+                && !motivo.StartsWith("Cobra ", StringComparison.OrdinalIgnoreCase))
+            {
+                motivo = $"Cobra {TextosAutorizacionReembolso.Euros(peticion.ImporteCobrado.Value)} de {TextosAutorizacionReembolso.Euros(envio.Reembolso)}. {motivo}";
+                if (motivo.Length > TextosAutorizacionReembolso.MAXIMO_TEXTO)
+                {
+                    motivo = motivo.Substring(0, TextosAutorizacionReembolso.MAXIMO_TEXTO);
+                }
+            }
             if (envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO)
             {
                 return ResultadoReparto<AutorizacionReembolsoDTO>.Mal(TipoResultadoReparto.Conflicto, $"El envío {envio.Numero} ya está entregado.");
@@ -595,7 +610,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public bool ScriptAplicado() => tarjetas.ScriptAplicado() && autorizaciones.ScriptAplicado();
 
         /// <param name="cobro">El cobro ya normalizado (con reembolso y sin decir nada, «NoCobrado»).</param>
-        public async Task<ComprobacionCobroEntrega> Comprobar(EnviosAgencia envio, string cobro, EntregaRepartoDTO peticion, string usuario)
+        /// <param name="notaCobro">Una nota de cobro (NestoAPI#786): cobrar menos en efectivo queda a cuenta, sin autorización.</param>
+        public async Task<ComprobacionCobroEntrega> Comprobar(EnviosAgencia envio, string cobro, EntregaRepartoDTO peticion, string usuario, bool notaCobro = false)
         {
             decimal reembolso = envio.Reembolso > 0 ? envio.Reembolso : 0m;
             if (reembolso <= 0 || cobro == null)
@@ -636,12 +652,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return ComprobacionCobroEntrega.Fallo($"Este envío ya está pagado con tarjeta ({TextosAutorizacionReembolso.Euros(enlace.Importe)}): " +
                     "entréguelo como «Tarjeta (enlace pagado)», sin cobrar nada más.");
             }
+            bool parcial = false;
             if (cobro == PruebaEntregaReparto.COBRO_EFECTIVO)
             {
-                return new ComprobacionCobroEntrega();
+                // Carlos 19/11/26: «si lleva reembolso debe ser entero o autorizado». Cobrar MENOS en efectivo pide la misma autorización que no cobrar.
+                if (notaCobro || !ReglaReembolsoEntero.EsParcial(reembolso, peticion.ImporteCobrado))
+                {
+                    return new ComprobacionCobroEntrega();
+                }
+                parcial = true;
             }
 
-            // Sin cobrar (NoCobrado o el Enlace de antes): hace falta autorización (sin el script de #773, como antes)
+            // Sin cobrar (NoCobrado o el Enlace de antes) o cobrando menos: hace falta autorización (sin el script de #773, como antes)
             if (!autorizaciones.ScriptAplicado())
             {
                 return new ComprobacionCobroEntrega();
@@ -661,6 +683,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return new ComprobacionCobroEntrega { Autorizacion = ultima, Telefonica = telefonica };
             }
             string importe = TextosAutorizacionReembolso.Euros(reembolso);
+            if (parcial)
+            {
+                return ComprobacionCobroEntrega.Fallo(ReglaReembolsoEntero.Mensaje(reembolso, peticion.ImporteCobrado.Value, ultima?.Estado), ReglaReembolsoEntero.CODIGO);
+            }
             if (ultima?.Estado == EstadosAutorizacionReembolso.PENDIENTE)
             {
                 return ComprobacionCobroEntrega.Fallo($"La autorización para no cobrar {importe} está pendiente de Administración: espere la respuesta " +
@@ -763,7 +789,41 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>«Autoriza Pepe por teléfono»: se apunta al entregar.</summary>
         public string Telefonica { get; set; }
 
-        public static ComprobacionCobroEntrega Fallo(string error) => new ComprobacionCobroEntrega { Error = error };
+        /// <summary>Con él, la entrega da 409 con este código (REEMBOLSO_PARCIAL) en vez de 400.</summary>
+        public string Codigo { get; set; }
+
+        public static ComprobacionCobroEntrega Fallo(string error, string codigo = null) => new ComprobacionCobroEntrega { Error = error, Codigo = codigo };
+    }
+
+    /// <summary>
+    /// Carlos 19/11/26: un reembolso se cobra ENTERO o con autorización (la misma que para no cobrar: Autorizada o Telefonica, #773). Cobrar en
+    /// efectivo menos del reembolso (tolerancia de 1 céntimo) sin autorización: 409 REEMBOLSO_PARCIAL. Cobrar más no cambia (se contabiliza lo
+    /// cobrado, como hasta ahora). PURA.
+    /// </summary>
+    public static class ReglaReembolsoEntero
+    {
+        public const string CODIGO = "REEMBOLSO_PARCIAL";
+        public const decimal TOLERANCIA = 0.01m;
+
+        /// <param name="importeCobrado">Sin él, se cobra el reembolso entero.</param>
+        public static bool EsParcial(decimal reembolso, decimal? importeCobrado)
+            => reembolso > 0 && importeCobrado.HasValue && importeCobrado.Value < reembolso - TOLERANCIA;
+
+        /// <summary>«El reembolso es de 120,00 € y ha cobrado 100,00 €: hace falta autorización para cobrar menos.»</summary>
+        public static string Mensaje(decimal reembolso, decimal cobrado, string estadoUltima)
+        {
+            string texto = $"El reembolso es de {TextosAutorizacionReembolso.Euros(reembolso)} y ha cobrado {TextosAutorizacionReembolso.Euros(cobrado)}: " +
+                "hace falta autorización para cobrar menos.";
+            if (estadoUltima == EstadosAutorizacionReembolso.PENDIENTE)
+            {
+                return texto + " La autorización está pendiente de Administración: espere la respuesta o, si se la dan por teléfono, escriba quién.";
+            }
+            if (estadoUltima == EstadosAutorizacionReembolso.DENEGADA)
+            {
+                return texto + " Administración la ha denegado: cobre el reembolso entero.";
+            }
+            return texto + " Pídala a Administración o cobre el reembolso entero.";
+        }
     }
     /// <summary>
     /// NestoAPI#775: el escalado a Dirección con Hangfire (sin temporizadores en los clientes): al pedir la autorización se programa

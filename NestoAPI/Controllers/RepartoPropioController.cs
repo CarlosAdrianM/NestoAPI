@@ -480,7 +480,8 @@ namespace NestoAPI.Controllers
                         return Content(HttpStatusCode.Conflict, new
                         {
                             error = new { code = resultado.Codigo, message = resultado.Mensaje, details = resultado.Detalles },
-                            Message = resultado.Mensaje
+                            Message = resultado.Mensaje,
+                            Codigo = resultado.Codigo // REEMBOLSO_PARCIAL (19/11/26): también arriba, como lo lee Ariadna
                         });
                     }
                     return Content(HttpStatusCode.Conflict, new { Message = resultado.Mensaje });

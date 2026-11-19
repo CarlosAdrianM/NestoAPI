@@ -410,16 +410,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             // NestoAPI#773: «Tarjeta» solo con el enlace del envío pagado; sin cobrar, con autorización; ni efectivo con el enlace pagado.
             ComprobacionCobroEntrega comprobacion = null;
-            if (CobroEntrega != null)
-            {
-                comprobacion = await CobroEntrega.Comprobar(envio, cobro, peticion, usuario).ConfigureAwait(false);
-                if (comprobacion.Error != null)
-                {
-                    return Invalido(comprobacion.Error);
-                }
-            }
             // NestoAPI#759: en las notas de recogida, los bultos que se trae. NestoAPI#786: una nota de cobro liquida sus efectos.
             NotaParadaReparto nota = await NotaDe(envio.Pedido).ConfigureAwait(false);
+            if (CobroEntrega != null)
+            {
+                // 19/11/26: el reembolso entero o autorizado no se aplica a las notas de cobro (lo que se cobre de menos queda a cuenta)
+                comprobacion = await CobroEntrega.Comprobar(envio, cobro, peticion, usuario, nota?.EsCobro == true).ConfigureAwait(false);
+                if (comprobacion.Error != null)
+                {
+                    return comprobacion.Codigo == null
+                        ? Invalido(comprobacion.Error)
+                        : new ResultadoReparto<EstadoEnvioRepartoDTO> { Tipo = TipoResultadoReparto.Conflicto, Mensaje = comprobacion.Error, Codigo = comprobacion.Codigo };
+                }
+            }
             bool recogida = nota?.EsRecogida == true;
             bool notaCobro = nota?.EsCobro == true;
             bool efectivo = cobro == PruebaEntregaReparto.COBRO_EFECTIVO;
