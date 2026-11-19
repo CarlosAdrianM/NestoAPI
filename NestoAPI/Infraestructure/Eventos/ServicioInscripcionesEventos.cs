@@ -235,6 +235,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>NestoAPI#731: solo lectura, de la ficha del contacto (no se guarda): «Calle, CP Población (Provincia)».</summary>
         public string Direccion { get; set; }
         /// <summary>
+        /// Sugerencia 1362 (fleco, 19/11/26): solo lectura, el teléfono de la ficha del cliente/contacto de la inscripción (Clientes.Teléfono,
+        /// tal cual). Null si no tiene. Lo usa la hoja «Imprimir lista» de Nesto cuando no hay persona que asiste con teléfono.
+        /// </summary>
+        public string Telefono { get; set; }
+        /// <summary>
         /// NestoAPI#732: en un evento «gratuito por compra», el pedido de venta que justifica la inscripción (el que tiene el
         /// producto requerido). Null en el resto. Si se borra ese pedido o se le quita la línea, la inscripción se anula.
         /// </summary>
@@ -817,7 +822,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             dto.Asistentes = asistentes;
             // NestoAPI#731: lo de la ficha (solo lectura) y la persona que asiste
             personasCliente = personasCliente ?? await LeerPersonasSinFallar(empresa, cliente).ConfigureAwait(false);
-            RellenarFicha(dto, ficha.Dirección, ficha.CodPostal, ficha.Población, ficha.Provincia,
+            RellenarFicha(dto, ficha.Dirección, ficha.CodPostal, ficha.Población, ficha.Provincia, ficha.Teléfono,
                 personasCliente.Where(p => p.Key == cliente).Select(p => p.Value), personaGuardada ? personaAsiste : null);
             dto.PedidoJustificante = justificanteGuardado ? justificante?.Pedido : null;
             if (origen != OrigenInscripcionEvento.TNV)
@@ -1312,10 +1317,12 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
         /// <summary>NestoAPI#731: dirección y correo de la ficha (solo lectura) y la persona que asiste.</summary>
         private static void RellenarFicha(InscripcionEventoDTO dto, string direccion, string codigoPostal, string poblacion, string provincia,
-            IEnumerable<PersonaContactoEventoDTO> personasDelCliente, string personaAsiste)
+            string telefono, IEnumerable<PersonaContactoEventoDTO> personasDelCliente, string personaAsiste)
         {
             List<PersonaContactoEventoDTO> personas = (personasDelCliente ?? Enumerable.Empty<PersonaContactoEventoDTO>()).ToList();
             dto.Direccion = FichaInscripcionEvento.Direccion(direccion, codigoPostal, poblacion, provincia);
+            // Sugerencia 1362 (fleco): el de la ficha del cliente/contacto, de la misma consulta que la dirección (sin otra por inscrito).
+            dto.Telefono = string.IsNullOrWhiteSpace(telefono) ? null : telefono.Trim();
             dto.Correo = FichaInscripcionEvento.Correo(dto.Contacto, personaAsiste, personas);
             if (personaAsiste != null)
             {
@@ -2622,7 +2629,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             List<string> clientes = inscripciones.Select(i => Limpiar(i.Cliente)).Distinct().ToList();
             var fichas = (await db.Clientes
                 .Where(c => empresas.Contains(c.Empresa) && clientes.Contains(c.Nº_Cliente))
-                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre, c.Dirección, c.CodPostal, c.Población, c.Provincia })
+                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre, c.Dirección, c.CodPostal, c.Población, c.Provincia, c.Teléfono })
                 .ToListAsync().ConfigureAwait(false))
                 .GroupBy(c => Limpiar(c.Nº_Cliente) + "/" + Limpiar(c.Contacto))
                 .ToDictionary(g => g.Key, g => g.First());
@@ -2676,7 +2683,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 dto.Asistentes = ReglasAsistentesEvento.De(i.Id, cuantos);
                 dto.FormaAsistencia = ReglasFormaAsistenciaEvento.De(i.Id, formas);
                 asistentes.TryGetValue(i.Id, out string asiste);
-                RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia,
+                RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia, ficha?.Teléfono,
                     personasPorCliente[Limpiar(i.Cliente) ?? ""], asiste);
                 if (justificantes.TryGetValue(i.Id, out int pedidoJustificante))
                 {

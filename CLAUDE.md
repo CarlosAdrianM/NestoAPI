@@ -671,6 +671,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   pedido pasan a «pendiente de ubicar» (el mozo las ubica con la PDA) y Picking = 0. Job `pedidos-retenidos-por-falta` (L-V cada 15 min 8-18):
   vencidas → Esperar + aviso `PedidoRetenidoPorFaltaEsperar`. El aviso `PickingConFaltas` lleva Datos `retenido`="true" y `plazo`.
 
+### Teléfono de la ficha en los inscritos (fleco de la sugerencia 1362, 19/11/26)
+- `InscripcionEventoDTO.Telefono` (solo lectura): `Clientes.Teléfono` del cliente/contacto de la inscripción, de la misma consulta por tanda que
+  la dirección (`Completar`). La hoja «Imprimir lista» de Nesto usa el de la persona que asiste y, si no, este.
+
 ### Evento de pago que pasa a gratuito (Novedades 1233, 12/11/26)
 - `PUT api/Eventos/{id}` que deja las dos señales a 0: las Reservadas sin dinero ni documentos pasan a Inscrita / Gratuita (FechaLimitePago
   y FormaPago a NULL, rastro en Modificaciones) y sus enlaces de pago pendientes (cadena de reintentos incluida) se anulan con el UPDATE de

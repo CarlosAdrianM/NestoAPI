@@ -274,6 +274,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             InscripcionEventoDTO sinPersona = lista.Single(i => i.Id == 8);
             Assert.IsNull(sinPersona.PersonaContacto);
             Assert.AreEqual("lola@luna.es", sinPersona.Correo);
+            // Sugerencia 1362 (fleco): el teléfono de la ficha de cada inscripción (su contacto), para la hoja de asistencia.
+            Assert.AreEqual("915555555", conPersona.Telefono);
+            Assert.IsNull(sinPersona.Telefono, "el contacto 1 no tiene teléfono en la ficha");
         }
 
         [TestMethod]
