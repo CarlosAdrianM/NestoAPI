@@ -260,6 +260,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         limpio = '\n';
                         break;
                     default:
+                        // NestoAPI#857f: un emoji (par sustituto: «🚚 ¡tu envío…!» de SEUR) no se puede normalizar suelto: espacio
+                        if (char.IsSurrogate(c))
+                        {
+                            limpio = ' ';
+                            break;
+                        }
                         string d = c.ToString().Normalize(NormalizationForm.FormD);
                         limpio = char.ToLowerInvariant(d.Length > 0 ? d[0] : c);
                         break;

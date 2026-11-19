@@ -56,6 +56,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public IAgenciaEntrada Agencia { get; set; }
         /// <summary>La entrega que anuncia tras su etiqueta (<see cref="ExtractorEntregaEstimada"/>), o null.</summary>
         public EntregaEstimada Entrega { get; set; }
+        /// <summary>NestoAPI#857f: el formato que lo ha leído y los números de envío que da (solo un formato concreto; el genérico, ninguno).</summary>
+        public string Formato { get; set; }
+        public List<string> Codigos { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -75,9 +78,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 return aviso;
             }
-            aviso.Pedido = Pedido(texto, delProveedor, enAire);
-            aviso.Agencia = AgenciaPorNombreEnTexto.Buscar(texto, agencias ?? AgenciasEntradaRegistradas.Todas);
-            aviso.Entrega = ExtractorEntregaEstimada.Extraer(texto, recibido);
+            // NestoAPI#857f (nivel 1): lo lee su formato (el de su ERP) o, si no lo reconoce ninguno, el genérico (lo de antes)
+            IFormatoAvisoSalida formato = FormatosAvisoSalida.Para(texto);
+            aviso.Formato = formato.Nombre;
+            aviso.Pedido = formato.Pedido(texto, delProveedor, enAire);
+            aviso.Agencia = formato.Agencia(texto, agencias ?? AgenciasEntradaRegistradas.Todas);
+            aviso.Entrega = formato.Entrega(texto, recibido);
+            // Del genérico no se toman códigos del PDF (como antes): un número con «expedición» delante puede ser cualquier cosa
+            aviso.Codigos = FormatosAvisoSalida.EsGenerico(formato) ? new List<string>() : formato.Codigos(texto);
             return aviso;
         }
 
@@ -145,10 +153,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 analisis.HorasHastaEntrega = pdf.Agencia.HorasHastaEntrega;
                 analisis.AgenciaPorNombreEnTexto = true;
             }
-            if (analisis.EntregaEstimada == null && pdf.Entrega != null)
+            if (analisis.EntregaEstimada == null && pdf.Entrega != null && analisis.EstadoEnvio != EstadoEnvioAgencia.Entregado)
             {
                 analisis.EntregaEstimada = pdf.Entrega;
+                analisis.OrigenEntrega = OrigenEntregaCorreo.PROVEEDOR;
             }
+            // NestoAPI#857f: el número de envío del PDF (solo un formato concreto) si el correo no traía ninguno; con el enlace de su agencia
+            foreach (string codigo in pdf.Codigos ?? new List<string>())
+            {
+                if (!analisis.Seguimientos.Any(s => string.Equals(s.Codigo, codigo, StringComparison.OrdinalIgnoreCase)))
+                {
+                    analisis.Seguimientos.Add(new SeguimientoCorreo { Codigo = codigo });
+                }
+            }
+            AnalizadorCorreoSeguimiento.CompletarEnlaces(analisis, pdf.Agencia != null ? new[] { pdf.Agencia } : null);
             if (pdf.Pedido == null || analisis.EsSalidaNuestra)
             {
                 return asignacion;

@@ -37,6 +37,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string Codigo { get; set; }
         /// <summary>Asignado a mano: si se eligió el pedido sugerido (null = no había sugerido, o automático).</summary>
         public bool? EligioSugerido { get; set; }
+        /// <summary>
+        /// NestoAPI#857f: corregir la fecha de un correo YA aplicado a este mismo pedido (la agencia ha dicho otra cosa: su correo o su
+        /// consulta). Sin esto, un correo aplicado al mismo pedido no toca nada.
+        /// </summary>
+        public bool Corregir { get; set; }
+        /// <summary>NestoAPI#857f: de dónde sale la fecha (<see cref="ReglaFechaRecepcionPorCorreo.Origen"/>), para el rastro.</summary>
+        public string OrigenFecha { get; set; }
     }
 
     public enum EstadoAplicacionFecha
@@ -142,8 +149,26 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             return LlegadaDelEnvio(correos) ?? ultimo.Recibido.AddHours(HorasDe(ultimo.Agencia) ?? HORAS_SIN_AGENCIA).Date;
         }
 
+        public const string ORIGEN_ENTREGADO = "Entregado";
+        public const string ORIGEN_HORAS = "Horas";
+
+        /// <summary>
+        /// NestoAPI#857f: de dónde sale la fecha del envío, para el rastro: «Entregado» (algún bulto entregado manda), «Agencia»/«Consulta» (lo
+        /// dice la agencia), «Proveedor» (su aviso), o «Horas» (recibido + 24/48 h). Las mismas reglas que <see cref="DiaDeLlegada"/>.
+        /// </summary>
+        public static string Origen(IEnumerable<CorreoSeguimientoFila> envio)
+        {
+            List<CorreoSeguimientoFila> correos = (envio ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f != null).ToList();
+            List<(DateTime Dia, string Origen)> bultos = Bultos(correos).Select(LlegadaYOrigenDelBulto).Where(b => b.HasValue).Select(b => b.Value).ToList();
+            return bultos.Any() ? bultos.OrderByDescending(b => b.Dia).First().Origen : ORIGEN_HORAS;
+        }
+
         /// <summary>El día que llega el último bulto con fecha, o null si ningún bulto la tiene. PURA.</summary>
-        internal static DateTime? LlegadaDelEnvio(IEnumerable<CorreoSeguimientoFila> correos)
+        internal static DateTime? LlegadaDelEnvio(IEnumerable<CorreoSeguimientoFila> correos) =>
+            Bultos(correos).Select(LlegadaYOrigenDelBulto).Where(d => d.HasValue).Select(d => (DateTime?)d.Value.Dia).Max();
+
+        /// <summary>Los correos por bulto (código); un correo sin código es su propio bulto.</summary>
+        private static IEnumerable<List<CorreoSeguimientoFila>> Bultos(IEnumerable<CorreoSeguimientoFila> correos)
         {
             var porBulto = new Dictionary<string, List<CorreoSeguimientoFila>>(StringComparer.OrdinalIgnoreCase);
             foreach (CorreoSeguimientoFila correo in correos.Where(f => f != null))
@@ -162,20 +187,31 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     lista.Add(correo);
                 }
             }
-            return porBulto.Values.Select(LlegadaDelBulto).Where(d => d.HasValue).Max();
+            return porBulto.Values;
         }
 
-        /// <summary>Entregado → el día de la entrega; si no, la entrega estimada de su último correo que la dé; si no, null.</summary>
-        private static DateTime? LlegadaDelBulto(List<CorreoSeguimientoFila> correos)
+        /// <summary>
+        /// Un bulto: entregado → el día de la entrega; si no, NestoAPI#857f, la entrega estimada del último correo DE LA AGENCIA que la dé
+        /// (su correo o su consulta: <see cref="OrigenEntregaCorreo.Prioridad"/>) y, si la agencia no ha dicho ninguna, la del último que la dé
+        /// (el aviso del proveedor, o correos de antes de #857f sin origen); si ninguno, null.
+        /// </summary>
+        private static (DateTime Dia, string Origen)? LlegadaYOrigenDelBulto(List<CorreoSeguimientoFila> correos)
         {
             CorreoSeguimientoFila entregado = correos.Where(EntregaConfirmadaCorreo.Es).OrderBy(f => f.Recibido).FirstOrDefault();
             if (entregado != null)
             {
-                return entregado.Recibido.Date;
+                return (entregado.Recibido.Date, ORIGEN_ENTREGADO);
             }
-            return correos.Where(f => f.EntregaEstimadaDia.HasValue)
-                .OrderByDescending(f => f.Recibido).ThenByDescending(f => f.Id)
-                .Select(f => (DateTime?)f.EntregaEstimadaDia.Value.Date).FirstOrDefault();
+            CorreoSeguimientoFila mejor = correos.Where(f => f.EntregaEstimadaDia.HasValue)
+                .OrderByDescending(f => OrigenEntregaCorreo.Prioridad(f.OrigenEntrega))
+                .ThenByDescending(f => f.EntregaConsultadaEl.HasValue && f.EntregaConsultadaEl > f.Recibido ? f.EntregaConsultadaEl.Value : f.Recibido)
+                .ThenByDescending(f => f.Id)
+                .FirstOrDefault();
+            if (mejor == null)
+            {
+                return null;
+            }
+            return (mejor.EntregaEstimadaDia.Value.Date, string.IsNullOrWhiteSpace(mejor.OrigenEntrega) ? OrigenEntregaCorreo.PROVEEDOR : mejor.OrigenEntrega);
         }
 
         /// <summary>¿Lo bastante reciente para que el job escriba (o avise) solo?</summary>
@@ -193,14 +229,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             @"\b(se\s+ha\s+entregado|ha\s+sido\s+entregad[oa]|(paquete|env[ií]o|pedido|bulto)\s+entregado|has\s+been\s+delivered|was\s+delivered)\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+        /// <remarks>NestoAPI#857f: también si la agencia lo ha dicho como estado (EstadoEnvio «Entregado»: su correo o su consulta).</remarks>
         public static bool Es(CorreoSeguimientoFila fila) =>
-            fila != null && (PATRON.IsMatch(fila.Asunto ?? string.Empty) || PATRON.IsMatch(fila.Extracto ?? string.Empty));
+            fila != null && (string.Equals(fila.EstadoEnvio, nameof(EstadoEnvioAgencia.Entregado), StringComparison.OrdinalIgnoreCase)
+                || PATRON.IsMatch(fila.Asunto ?? string.Empty) || PATRON.IsMatch(fila.Extracto ?? string.Empty));
     }
 
     /// <summary>NestoAPI#857 (fase 3): qué hacer con un correo según a qué pedido está ya aplicado. PURA.</summary>
     public static class ReglaAplicacionCorreo
     {
-        public static EstadoAplicacionFecha? Bloqueo(string empresaAplicada, int? pedidoAplicado, string empresa, int pedido, bool reasignar)
+        /// <param name="corregir">NestoAPI#857f: aplicado al MISMO pedido no bloquea (se corrige su fecha).</param>
+        public static EstadoAplicacionFecha? Bloqueo(string empresaAplicada, int? pedidoAplicado, string empresa, int pedido, bool reasignar, bool corregir = false)
         {
             if (!pedidoAplicado.HasValue)
             {
@@ -208,7 +247,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             if (AsignadorPedidosCompra.Clave(empresaAplicada, pedidoAplicado.Value) == AsignadorPedidosCompra.Clave(empresa, pedido))
             {
-                return EstadoAplicacionFecha.YaAplicadoAlMismo;
+                return corregir ? (EstadoAplicacionFecha?)null : EstadoAplicacionFecha.YaAplicadoAlMismo;
             }
             return reasignar ? (EstadoAplicacionFecha?)null : EstadoAplicacionFecha.AplicadoAOtro;
         }
@@ -249,6 +288,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             peticion.Automatico,
             peticion.AplicadoPor,
             peticion.EligioSugerido,
+            peticion.OrigenFecha,
+            Corregida = peticion.Corregir ? true : (bool?)null,
             ReasignadoDe = pedidoAnterior.HasValue ? AsignadorPedidosCompra.Clave(empresaAnterior, pedidoAnterior.Value) : null
         });
     }

@@ -989,6 +989,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'compras-correos-seguimiento' configurado (cada 30 min, L-V 8:00-18:30)");
 
+            // NestoAPI#857f: vuelve a preguntar a las agencias que saben (IConsultaEntregaAgencia; hoy ninguna) por los envíos aplicados a
+            // pedidos en el aire y corrige la fecha. Apagado salvo ParametrosUsuario «(defecto)» Compras.CorreosSeguimientoConsultarAgencia = «1».
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosCompra.CorreosSeguimiento.ConsultaEntregaAgenciasJobsService.JOB_ID,
+                () => Infraestructure.PedidosCompra.CorreosSeguimiento.ConsultaEntregaAgenciasJobsService.Pasada(),
+                Infraestructure.PedidosCompra.CorreosSeguimiento.ConsultaEntregaAgenciasJobsService.CRON, // Cron: L-V a las 7:30
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'compras-consulta-entrega-agencias' configurado (L-V 7:30)");
+
             // NestoAPI#853 (corte 2): lo que suele tardar cada proveedor (mediana y P80 de 24 meses de recepciones de producto, cadencia de
             // pedidos del último año) en dbo.ProveedoresPlazosEntrega. Sin Scripts/Issue853_PlazosProveedoresYEnvios.sql no hace nada.
             RecurringJob.AddOrUpdate(

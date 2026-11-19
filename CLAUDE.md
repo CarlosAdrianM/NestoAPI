@@ -523,6 +523,20 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   registrada saca su seguimiento o es de un remitente marcado). Marca `Ignorar` del remitente (columna del mismo Issue857e): sus correos ni se
   guardan, ni se reenvían, ni avisan. `POST …/Remitentes` con `Ignorar`; `POST …/Correos/{id}/Descartar?ignorarRemitente=true` deja la dirección
   exacta como ignorada (rastro `CompraCorreoRemitenteIgnorado` en Modificaciones; respuesta con `RemitenteIgnorado`). Nesto: botón pendiente.
+- **Dos niveles (#857f, Carlos 19/11/26)**: NIVEL 1 = el FORMATO del aviso del proveedor (su ERP; `IFormatoAvisoSalida` en `FormatosAvisoSalida.cs`,
+  núcleo `FormatoAvisoSalidaBase`; hoy `FormatoAvisoSalidaDduueett` y el genérico de respaldo): agencia, número de envío, pedido y su entrega. Formato
+  nuevo = una clase + una línea en `FormatosAvisoSalida.Registrados`. NIVEL 2 = la AGENCIA (`IAgenciaEntrada`): además de reconocer y sacar el código,
+  `EsCorreoPropio`, `LeerEntrega` (día, tramo y `EstadoEnvioAgencia` EnCamino/EnReparto/Reprogramada/Entregado de SUS correos; por defecto el extractor
+  común; propias SEUR —«Entrega prevista Jueves 19 de Noviembre», «Se entregará HOY de 13:45 a 14:45»— y UPS) y `UrlSeguimiento` (UPS y DB Schenker/DSV).
+  TODO lo de cada agencia vive en su clase (Carlos 19/11/26: nada de «si es Schenker…» fuera). Un correo de la propia agencia SIN código (SEUR, enlaces
+  opacos) se guarda si dice entrega o estado; SEUR toma como código la referencia del remitente («Tu envío PV26-56989 de Postquam»).
+  Precedencia (`ReglaFechaRecepcionPorCorreo`, por bulto): entregado > lo que dice la agencia (correo o consulta, `OrigenEntrega` Agencia/Consulta) >
+  el aviso del proveedor (Proveedor; también filas de antes sin origen) > recibido + 24/48 h; nunca antes de hoy. Un correo «Entregado» no aplica
+  fecha (desenlace `Entregado`). Consulta (marco, sin ninguna agencia hoy): `IConsultaEntregaAgencia` (se implementa SOLO en la clase de la agencia) +
+  job `compras-consulta-entrega-agencias` L-V 7:30 Madrid (`ServicioConsultaEntregaAgencias`: aplicados con pedido en el aire, `ConsultaEntregaSegura`
+  8 s y nunca lanza, `Corregir` con `PeticionAplicacionFecha.Corregir`), interruptor `Compras.CorreosSeguimientoConsultarAgencia` (solo «1»; escribir exige
+  además el de aplicar). `Scripts/Issue857f_ComprasCorreosEstadoEnvio.sql`: `EstadoEnvio`, `OrigenEntrega`, `EntregaConsultadaEl` (opcionales, mismo trato).
+  Reanalizar ahora también INSERTA lo que antes no se guardaba (`Insertados`). La DSV pública da 429: PROHIBIDO intentar leerla.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

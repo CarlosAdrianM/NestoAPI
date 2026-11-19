@@ -140,7 +140,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
                 NumeroOrden = x.NumeroOrden, Producto = x.Producto, Estado = x.Estado, Enviado = x.Enviado, Cantidad = x.Cantidad, FechaRecepcion = x.FechaRecepcion, Proveedor = x.Proveedor
             }).ToList();
             resultado.Proveedor = lineas.Select(x => x.Proveedor).FirstOrDefault();
-            EstadoAplicacionFecha? bloqueo = ReglaAplicacionCorreo.Bloqueo(correo.EmpresaAplicada, correo.PedidoAplicado, peticion.Empresa, peticion.Pedido, peticion.Reasignar);
+            EstadoAplicacionFecha? bloqueo = ReglaAplicacionCorreo.Bloqueo(correo.EmpresaAplicada, correo.PedidoAplicado, peticion.Empresa, peticion.Pedido, peticion.Reasignar, peticion.Corregir);
             if (bloqueo.HasValue)
             {
                 resultado.Estado = bloqueo.Value;
@@ -226,6 +226,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             correo.AvisoProveedor = fila.AvisoProveedor;
             correo.PedidoEnAdjunto = fila.PedidoEnAdjunto;
             correo.AdjuntoLeido = fila.AdjuntoLeido;
+            correo.EstadoEnvio = fila.EstadoEnvio;
+            correo.OrigenEntrega = fila.OrigenEntrega;
             return Task.FromResult(true);
         }
 
@@ -244,6 +246,26 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         public Task MarcarAvisado(int id)
         {
             Correos.Single(c => c.Id == id).AvisadoPorAsignar = DateTime.Now;
+            return Task.CompletedTask;
+        }
+
+        /// <summary>NestoAPI#857f: con las columnas de Issue857f (por defecto, sí).</summary>
+        public bool ConEstado { get; set; } = true;
+        public bool EstadoEnvioDisponible() => ConEstado;
+
+        public Task GuardarConsulta(int id, EntregaAgencia respuesta, DateTime consultadaEl)
+        {
+            CorreoSeguimientoFila correo = Correos.Single(c => c.Id == id);
+            correo.EstadoEnvio = respuesta?.Estado?.ToString() ?? correo.EstadoEnvio;
+            correo.EntregaConsultadaEl = consultadaEl;
+            EntregaEstimada entrega = respuesta?.Estado == EstadoEnvioAgencia.Entregado ? null : respuesta?.Entrega;
+            if (entrega != null)
+            {
+                correo.EntregaEstimadaDia = entrega.Dia.Date;
+                correo.EntregaEstimadaDesde = entrega.Desde;
+                correo.EntregaEstimadaHasta = entrega.Hasta;
+                correo.OrigenEntrega = OrigenEntregaCorreo.CONSULTA;
+            }
             return Task.CompletedTask;
         }
     }

@@ -297,6 +297,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.YaRecibido, Pedido = decision.Llegado?.PedidoReal });
                 return heredados;
             }
+            // NestoAPI#857f: un correo «entregado» de la agencia no pone fecha (la recepción de verdad la marca el albarán); se guarda su estado
+            if (nuevas.Any() && nuevas.All(EntregaConfirmadaCorreo.Es))
+            {
+                Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.Entregado, Pedido = decision.Unico?.Pedido });
+                return heredados;
+            }
             CandidatoPedidoCompra unico = decision.Unico;
             if (unico != null)
             {
@@ -306,10 +312,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     return heredados; // inequívoco con el interruptor apagado: ni se escribe ni se avisa (queda en la lista por asignar)
                 }
                 DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(decision.Correos, momento.Date);
+                string origen = ReglaFechaRecepcionPorCorreo.Origen(decision.Correos);
                 foreach (CorreoSeguimientoFila fila in pendientes)
                 {
                     ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, unico.Empresa, unico.Pedido, false, APLICADO_POR_AUTOMATICO,
-                        USUARIO_LINEAS_AUTOMATICO, true, fecha).ConfigureAwait(false);
+                        USUARIO_LINEAS_AUTOMATICO, true, fecha, origenFecha: origen).ConfigureAwait(false);
                     if (resultado.Codigo != CodigoOperacionCorreoCompra.Ok)
                     {
                         registrar(new Exception($"[Correos de seguimiento de compras #857] (informativo) No se ha aplicado el correo {fila.Id} al pedido {unico.Pedido}: {resultado.Mensaje}"));
@@ -414,7 +421,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>El núcleo común (job y asignación a mano): la fecha del correo en las líneas en el aire del pedido, en una transacción.</summary>
         internal async Task<ResultadoOperacionCorreoCompra> Aplicar(CorreoSeguimientoFila fila, string empresa, int pedido, bool reasignar,
-            string aplicadoPor, string usuarioLineas, bool automatico, DateTime fecha, bool? eligioSugerido = null)
+            string aplicadoPor, string usuarioLineas, bool automatico, DateTime fecha, bool? eligioSugerido = null, bool corregir = false,
+            string origenFecha = null)
         {
             empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             var peticion = new PeticionAplicacionFecha
@@ -429,7 +437,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 AplicadoPor = aplicadoPor,
                 UsuarioLineas = usuarioLineas,
                 Agencia = fila.Agencia,
-                Codigo = fila.Codigo
+                Codigo = fila.Codigo,
+                Corregir = corregir,
+                OrigenFecha = origenFecha
             };
             ResultadoAplicacionFecha r = await repositorio.AplicarFecha(peticion).ConfigureAwait(false)
                 ?? new ResultadoAplicacionFecha { Estado = EstadoAplicacionFecha.NoExisteCorreo };
@@ -485,6 +495,35 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 AnotarPromesaRiesgo(empresa, pedido, r.LineasAntes, fecha);
             }
             return Ok(respuesta);
+        }
+
+        /// <summary>
+        /// NestoAPI#857f: vuelve a poner la fecha del envío de un correo YA aplicado (la agencia ha contestado otra cosa al consultarla), al mismo
+        /// pedido y por el mismo camino (rastro, promesa en riesgo; nunca antes de hoy). Solo con el interruptor de aplicar encendido. Nunca lanza.
+        /// </summary>
+        public async Task<ResultadoCorreoGuardado> Corregir(CorreoSeguimientoFila fila)
+        {
+            try
+            {
+                if (fila?.PedidoAplicado == null || !Disponible)
+                {
+                    return new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.SinAplicar };
+                }
+                if (!interruptor())
+                {
+                    return new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.AplicarApagado, Empresa = fila.EmpresaAplicada, Pedido = fila.PedidoAplicado };
+                }
+                List<CorreoSeguimientoFila> envio = await EnvioDe(fila).ConfigureAwait(false);
+                DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date);
+                ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, fila.EmpresaAplicada, fila.PedidoAplicado.Value, false, APLICADO_POR_AUTOMATICO,
+                    USUARIO_LINEAS_AUTOMATICO, true, fecha, corregir: true, origenFecha: ReglaFechaRecepcionPorCorreo.Origen(envio)).ConfigureAwait(false);
+                return DesenlaceAplicacion(resultado, new CandidatoPedidoCompra { Empresa = fila.EmpresaAplicada, Pedido = fila.PedidoAplicado.Value }, fecha);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857f] No se ha podido corregir la fecha del correo {fila?.Id}: {ex.Message}", ex));
+                return new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.Error, Detalle = ex.Message };
+            }
         }
 
         /// <summary>NestoAPI#693: si la nueva fecha retrasa líneas con las que contaban pedidos de venta, se recalculan (como el PUT de PedidosCompra).</summary>

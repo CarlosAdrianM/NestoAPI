@@ -82,6 +82,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public bool Ignorado { get; set; }
         /// <summary>NestoAPI#857e: lo había captado solo el genérico, pero es un boletín comercial: no se guarda.</summary>
         public bool DescartadoPorBoletin { get; set; }
+        /// <summary>NestoAPI#857f: el estado del envío según la propia agencia (solo en sus correos); null si no lo dice.</summary>
+        public EstadoEnvioAgencia? EstadoEnvio { get; set; }
+        /// <summary>NestoAPI#857f: de dónde sale <see cref="EntregaEstimada"/> (<see cref="OrigenEntregaCorreo"/>); null sin entrega.</summary>
+        public string OrigenEntrega { get; set; }
+        /// <summary>NestoAPI#857f (nivel 1): el formato de aviso del proveedor que lo ha leído (null si es de una agencia). No se guarda.</summary>
+        public string FormatoAviso { get; set; }
+        /// <summary>NestoAPI#857f: se guarda por ser un correo de la propia agencia que dice la entrega o el estado, aunque no traiga código.</summary>
+        public bool GuardadoPorNoticiaDeAgencia { get; set; }
     }
 
     /// <summary>
@@ -124,7 +132,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 .FirstOrDefault(m => FiltroRemitente.Casa(m.FiltroTexto, correo.Asunto, correo.Texto));
             analisis.AvisoProveedor = analisis.RemitenteMarcado != null && string.IsNullOrWhiteSpace(analisis.RemitenteMarcado.Agencia);
 
-            foreach (IAgenciaEntrada agencia in agencias ?? Enumerable.Empty<IAgenciaEntrada>())
+            List<IAgenciaEntrada> lista = (agencias ?? Enumerable.Empty<IAgenciaEntrada>()).ToList();
+            foreach (IAgenciaEntrada agencia in lista)
             {
                 List<SeguimientoCorreo> seguimientos = agencia.ExtraerSeguimientos(correo) ?? new List<SeguimientoCorreo>();
                 if (seguimientos.Any())
@@ -135,11 +144,44 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     break;
                 }
             }
+            // NestoAPI#857f: un correo de la PROPIA agencia sin código (SEUR: enlaces opacos) se guarda si dice la entrega o el estado del
+            // envío; su publicidad o sus boletines (no dicen nada de un envío) no
+            EntregaAgencia noticiaSinCodigo = null;
             if (!analisis.Seguimientos.Any())
             {
+                foreach (IAgenciaEntrada agencia in lista.Where(a => a.EsCorreoPropio(correo)))
+                {
+                    EntregaAgencia noticia = agencia.LeerEntrega(correo);
+                    if (noticia != null && noticia.DiceAlgo)
+                    {
+                        analisis.Agencia = agencia.Nombre;
+                        analisis.HorasHastaEntrega = agencia.HorasHastaEntrega;
+                        analisis.GuardadoPorNoticiaDeAgencia = true;
+                        noticiaSinCodigo = noticia;
+                        break;
+                    }
+                }
+            }
+            IFormatoAvisoSalida formato = null;
+            if (!analisis.Seguimientos.Any() && !analisis.GuardadoPorNoticiaDeAgencia)
+            {
                 analisis.Seguimientos = generica.ExtraerSeguimientos(correo) ?? new List<SeguimientoCorreo>();
+                // NestoAPI#857f (nivel 1): el formato de aviso del proveedor (el de su ERP); sin uno concreto, el genérico (lo de antes)
+                formato = FormatosAvisoSalida.Para((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+                if (!FormatosAvisoSalida.EsGenerico(formato))
+                {
+                    analisis.FormatoAviso = formato.Nombre;
+                    var codigos = formato.Codigos((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+                    var delFormato = new List<SeguimientoCorreo>();
+                    foreach (string codigo in codigos)
+                    {
+                        AgenciaEntradaPorPatrones.Anadir(delFormato, codigo, null);
+                    }
+                    delFormato.AddRange(analisis.Seguimientos.Where(s => !codigos.Contains(s.Codigo ?? string.Empty, StringComparer.OrdinalIgnoreCase)));
+                    analisis.Seguimientos = delFormato;
+                }
                 // NestoAPI#857e: lo que solo capta el genérico en un boletín comercial no es un envío (salvo remitente marcado)
-                if (analisis.Seguimientos.Any() && analisis.RemitenteMarcado == null && BoletinComercial.Es(correo))
+                else if (analisis.Seguimientos.Any() && analisis.RemitenteMarcado == null && BoletinComercial.Es(correo))
                 {
                     analisis.Seguimientos = new List<SeguimientoCorreo>();
                     analisis.DescartadoPorBoletin = true;
@@ -153,7 +195,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 {
                     // Correo de un proveedor que nombra la agencia tras una etiqueta («Transportista: SCHENKER STANDARD»); también un aviso
                     // de salida de un remitente marcado sin agencia (#857e), aunque no traiga código
-                    IAgenciaEntrada porNombre = AgenciaPorNombreEnTexto.Buscar(correo, agencias);
+                    IAgenciaEntrada porNombre = formato.Agencia((correo.Asunto ?? string.Empty) + "\n" + correo.Texto, lista);
                     if (porNombre != null)
                     {
                         analisis.Agencia = porNombre.Nombre;
@@ -162,15 +204,61 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     }
                 }
             }
-            analisis.Guardar = analisis.Seguimientos.Any() || analisis.RemitenteMarcado != null;
+            analisis.Guardar = analisis.Seguimientos.Any() || analisis.RemitenteMarcado != null || analisis.GuardadoPorNoticiaDeAgencia;
             if (analisis.Guardar)
             {
                 analisis.Extracto = Extracto(correo, analisis.Seguimientos.FirstOrDefault());
-                analisis.EntregaEstimada = ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+                LeerEntrega(correo, analisis, lista, noticiaSinCodigo, formato);
                 analisis.EsSalidaNuestra = EnvioNuestroDeSalida.Es((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
-                analisis.RemitentePaquete = ExtractorRemitentePaquete.Extraer(correo.Texto);
+                analisis.RemitentePaquete = ExtractorRemitentePaquete.Extraer(correo.Texto, correo.Asunto);
+                CompletarEnlaces(analisis, lista);
             }
             return analisis;
+        }
+
+        /// <summary>
+        /// NestoAPI#857f: la entrega y el estado. Un correo de la PROPIA agencia: lo que ella dice (<see cref="IAgenciaEntrada.LeerEntrega"/>,
+        /// origen Agencia). Si no es suyo: lo que dice el aviso (<see cref="IFormatoAvisoSalida.Entrega"/>; sin formato concreto, el extractor
+        /// común), origen Proveedor. Un «entregado» no lleva entrega estimada.
+        /// </summary>
+        private static void LeerEntrega(CorreoCompras correo, AnalisisCorreoSeguimiento analisis, List<IAgenciaEntrada> agencias,
+            EntregaAgencia noticia, IFormatoAvisoSalida formato)
+        {
+            IAgenciaEntrada agencia = Agencia(analisis.Agencia, agencias);
+            bool propio = noticia != null || (agencia != null && agencia.EsCorreoPropio(correo));
+            if (propio)
+            {
+                noticia = noticia ?? agencia.LeerEntrega(correo);
+                analisis.EstadoEnvio = noticia?.Estado;
+                analisis.EntregaEstimada = noticia?.Estado == EstadoEnvioAgencia.Entregado ? null : noticia?.Entrega;
+                analisis.OrigenEntrega = analisis.EntregaEstimada != null ? OrigenEntregaCorreo.AGENCIA : null;
+                return;
+            }
+            string texto = formato == null || FormatosAvisoSalida.EsGenerico(formato) ? correo.Texto : (correo.Asunto ?? string.Empty) + "\n" + correo.Texto;
+            analisis.EntregaEstimada = (formato ?? FormatosAvisoSalida.Generico).Entrega(texto, correo.Recibido);
+            analisis.OrigenEntrega = analisis.EntregaEstimada != null ? OrigenEntregaCorreo.PROVEEDOR : null;
+        }
+
+        private static IAgenciaEntrada Agencia(string nombre, IEnumerable<IAgenciaEntrada> agencias) =>
+            string.IsNullOrWhiteSpace(nombre) ? null
+                : (agencias ?? Enumerable.Empty<IAgenciaEntrada>()).FirstOrDefault(a => string.Equals(a.Nombre, nombre.Trim(), StringComparison.OrdinalIgnoreCase))
+                    ?? AgenciasEntradaRegistradas.PorNombre(nombre);
+
+        /// <summary>
+        /// NestoAPI#857f: a cada código sin enlace, el enlace público de seguimiento que sepa componer SU agencia
+        /// (<see cref="IAgenciaEntrada.UrlSeguimiento"/>). Sin agencia o si no sabe, sin enlace.
+        /// </summary>
+        internal static void CompletarEnlaces(AnalisisCorreoSeguimiento analisis, IEnumerable<IAgenciaEntrada> agencias)
+        {
+            IAgenciaEntrada agencia = Agencia(analisis?.Agencia, agencias);
+            if (agencia == null)
+            {
+                return;
+            }
+            foreach (SeguimientoCorreo s in analisis.Seguimientos.Where(s => string.IsNullOrWhiteSpace(s.Url) && !string.IsNullOrWhiteSpace(s.Codigo)))
+            {
+                s.Url = agencia.UrlSeguimiento(s.Codigo);
+            }
         }
 
         /// <summary>

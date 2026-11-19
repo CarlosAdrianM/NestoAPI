@@ -85,6 +85,12 @@ namespace NestoAPI.Controllers
         public int? PedidoEnAdjunto { get; set; }
         /// <summary>NestoAPI#857e: SinPdf, Leido, SinTexto, Ilegible, Grande o NoDescargado; null = no se pidió leer el PDF.</summary>
         public string AdjuntoLeido { get; set; }
+        /// <summary>NestoAPI#857f: EnCamino, EnReparto, Reprogramada o Entregado según la propia agencia; null = no lo dice (o sin Issue857f).</summary>
+        public string EstadoEnvio { get; set; }
+        /// <summary>NestoAPI#857f: de dónde sale la entrega estimada: Agencia, Proveedor o Consulta; null = sin apuntar.</summary>
+        public string OrigenEntrega { get; set; }
+        /// <summary>NestoAPI#857f: cuándo se preguntó por última vez a la agencia; null = nunca.</summary>
+        public DateTime? EntregaConsultadaEl { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): un pedido candidato de un envío por asignar, con lo que hace falta para elegir.</summary>
@@ -710,7 +716,8 @@ namespace NestoAPI.Controllers
                 Asunto = fila.Asunto,
                 Agencia = fila.Agencia,
                 Codigo = fila.Codigo,
-                Url = fila.Url,
+                // NestoAPI#857f: sin enlace guardado (correos de antes), el que compone su agencia a partir del código
+                Url = !string.IsNullOrWhiteSpace(fila.Url) ? fila.Url : EnlaceSeguimientoAgencia.De(fila.Agencia, fila.Codigo),
                 Extracto = fila.Extracto,
                 ProveedorPropuesto = fila.ProveedorPropuesto,
                 PedidosCandidatos = AsignadorPedidosCompra.Deserializar(fila.PedidosCandidatos),
@@ -734,7 +741,10 @@ namespace NestoAPI.Controllers
                 EligioSugerido = fila.EligioSugerido,
                 AvisoProveedor = fila.AvisoProveedor,
                 PedidoEnAdjunto = fila.PedidoEnAdjunto,
-                AdjuntoLeido = fila.AdjuntoLeido
+                AdjuntoLeido = fila.AdjuntoLeido,
+                EstadoEnvio = fila.EstadoEnvio,
+                OrigenEntrega = fila.OrigenEntrega,
+                EntregaConsultadaEl = fila.EntregaConsultadaEl
             };
             if (!string.IsNullOrWhiteSpace(fila.Adjuntos))
             {
@@ -758,9 +768,9 @@ namespace NestoAPI.Controllers
                     dto.Seguimientos = new List<SeguimientoCorreo>();
                 }
             }
-            if (!dto.Seguimientos.Any() && (fila.Codigo != null || fila.Url != null))
+            if (!dto.Seguimientos.Any() && (fila.Codigo != null || dto.Url != null))
             {
-                dto.Seguimientos.Add(new SeguimientoCorreo { Codigo = fila.Codigo, Url = fila.Url });
+                dto.Seguimientos.Add(new SeguimientoCorreo { Codigo = fila.Codigo, Url = dto.Url });
             }
             return dto;
         }

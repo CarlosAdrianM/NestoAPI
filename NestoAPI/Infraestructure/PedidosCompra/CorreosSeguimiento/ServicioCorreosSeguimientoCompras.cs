@@ -406,7 +406,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 EntregaEstimadaDesde = analisis.EntregaEstimada?.Desde,
                 EntregaEstimadaHasta = analisis.EntregaEstimada?.Hasta,
                 EsSalidaNuestra = analisis.EsSalidaNuestra,
-                RemitentePaquete = TextoCorreo.Recortar(analisis.RemitentePaquete, ExtractorRemitentePaquete.LONGITUD)
+                RemitentePaquete = TextoCorreo.Recortar(analisis.RemitentePaquete, ExtractorRemitentePaquete.LONGITUD),
+                EstadoEnvio = analisis.EstadoEnvio?.ToString(),
+                OrigenEntrega = analisis.EntregaEstimada != null ? analisis.OrigenEntrega : null
             };
         }
 
@@ -437,8 +439,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>
         /// Fase 3: vuelve a analizar lo YA guardado de los últimos <paramref name="dias"/> días, releyendo el buzón por fechas (el mismo
         /// <see cref="ILectorBuzonCompras.LeerPagina"/> del histórico, sin tocar el delta). Solo actualiza lo derivado del análisis de los
-        /// correos sin aplicar ni descartar (con los pedidos en el aire de AHORA) y rehace los enlaces por mismo envío; no inserta, no
-        /// aplica fechas ni avisa. NestoAPI#857e: SÍ lee los PDF de los remitentes con «leer el PDF» (son pocos días y pocos correos).
+        /// correos sin aplicar ni descartar (con los pedidos en el aire de AHORA) y rehace los enlaces por mismo envío; no aplica fechas ni
+        /// avisa. NestoAPI#857f: INSERTA los que ahora sí se guardan y antes no (los avisos de SEUR sin código de estos días), sin aplicar,
+        /// reenviar ni avisar. NestoAPI#857e: SÍ lee los PDF de los remitentes con «leer el PDF» (son pocos días y pocos correos).
         /// </summary>
         public async Task<ResultadoReanalisisCorreos> Reanalizar(int dias, DateTime ahora)
         {
@@ -478,6 +481,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         if (fila != null && await repositorio.ActualizarAnalisis(fila).ConfigureAwait(false))
                         {
                             resultado.Actualizados++;
+                        }
+                        else if (fila != null && await repositorio.IdDe(fila.MensajeId).ConfigureAwait(false) == null
+                            && await repositorio.Insertar(fila).ConfigureAwait(false))
+                        {
+                            resultado.Insertados++;
                         }
                     }
                     catch (Exception ex)
@@ -552,6 +560,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int Actualizados { get; set; }
         /// <summary>Correos a los que se han puesto los candidatos de otro del mismo envío.</summary>
         public int Enlazados { get; set; }
+        /// <summary>NestoAPI#857f: correos que antes no se guardaban y ahora sí (se insertan sin aplicar, reenviar ni avisar).</summary>
+        public int Insertados { get; set; }
         public int Fallidos { get; set; }
         public string Error { get; set; }
     }

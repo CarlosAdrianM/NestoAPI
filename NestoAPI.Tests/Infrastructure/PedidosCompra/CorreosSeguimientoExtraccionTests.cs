@@ -177,7 +177,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
 
             Assert.AreEqual("UPS", analisis.Agencia);
             Assert.AreEqual("1Z999AA10123456784", analisis.Seguimientos.Single().Codigo);
-            Assert.IsNull(analisis.Seguimientos.Single().Url);
+            // NestoAPI#857f: sin enlace en el correo, el que compone la clase de UPS a partir del código
+            Assert.AreEqual("https://www.ups.com/track?tracknum=1Z999AA10123456784", analisis.Seguimientos.Single().Url);
         }
 
         [TestMethod]
@@ -321,7 +322,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(48, analisis.HorasHastaEntrega);
             Assert.IsTrue(analisis.AgenciaPorNombreEnTexto);
             Assert.AreEqual("ESMNR264647742", analisis.Seguimientos.Single().Codigo);
-            Assert.IsNull(analisis.Seguimientos.Single().Url);
+            // NestoAPI#857f: el enlace público lo compone la clase de Schenker (DSV) a partir del código
+            Assert.AreEqual("https://www.dsv.com/mydsv/tracking-public/?language_region=es-ES_ES&refNumber=ESMNR264647742", analisis.Seguimientos.Single().Url);
         }
 
         [DataTestMethod]

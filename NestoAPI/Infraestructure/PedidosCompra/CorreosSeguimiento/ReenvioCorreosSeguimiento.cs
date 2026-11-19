@@ -34,7 +34,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>El pedido ya no tiene líneas enviadas y sin recibir.</summary>
         NoEnElAire,
         /// <summary>No se ha podido aplicar (queda apuntado).</summary>
-        Error
+        Error,
+        /// <summary>NestoAPI#857f: la agencia dice que ya está entregado: no se pone fecha (la recepción la marca el albarán).</summary>
+        Entregado
     }
 
     /// <summary>NestoAPI#865 (corte 3): el desenlace de un correo recién guardado, para la cabecera del reenvío.</summary>
@@ -102,6 +104,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     return $"Es del {pedido}, que ya no tiene nada enviado y sin recibir: no se ha cambiado.";
                 case DesenlaceCorreoSeguimiento.Error:
                     return "No se ha podido aplicar por un error (queda apuntado).";
+                case DesenlaceCorreoSeguimiento.Entregado:
+                    return "La agencia dice que ya está entregado: no se pone ninguna fecha (la recepción la marca el albarán).";
                 default:
                     return "Guardado; no se ha aplicado a ningún pedido.";
             }
@@ -159,7 +163,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             if (fila?.EntregaEstimadaDia != null)
             {
-                datos.Add("Entrega que anuncia: " + Dia(fila.EntregaEstimadaDia));
+                datos.Add("Entrega que anuncia" + DeQuien(fila.OrigenEntrega) + ": " + Dia(fila.EntregaEstimadaDia));
+            }
+            string estado = TextoEstadoEnvio(fila?.EstadoEnvio);
+            if (estado != null)
+            {
+                datos.Add("Estado según la agencia: " + estado);
             }
             if (!string.IsNullOrWhiteSpace(fila?.RemitentePaquete))
             {
@@ -172,6 +181,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             if (datos.Any())
             {
                 sb.Append($"<p style='margin:0 0 6px 0'>{Html(string.Join(" · ", datos))}</p>");
+            }
+            // NestoAPI#857f: el enlace de seguimiento (el del correo o el que compone su agencia a partir del código)
+            string enlace = !string.IsNullOrWhiteSpace(fila?.Url) ? fila.Url.Trim() : EnlaceSeguimientoAgencia.De(fila?.Agencia, fila?.Codigo);
+            if (enlace != null && Uri.TryCreate(enlace, UriKind.Absolute, out Uri uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+            {
+                sb.Append($"<p style='margin:0 0 6px 0'>Seguimiento en la web de la agencia: <a href='{Html(enlace)}'>{Html(enlace)}</a></p>");
             }
             sb.Append($"<p style='margin:0; color:#555'>Correo original de {Html(remitente)}, recibido el {recibido.ToString("dd/MM/yyyy HH:mm", es)}. " +
                 "Este reenvío es temporal, para revisar lo que hace Nesto con los correos de seguimiento; no hace falta contestarlo.</p>");
@@ -192,6 +207,40 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             Match m = CUERPO_HTML.Match(cuerpo);
             return m.Success ? m.Groups["c"].Value : cuerpo;
+        }
+
+        /// <summary>NestoAPI#857f: « (la agencia)» o « (el proveedor)» según de dónde sale la entrega; vacío si no se sabe.</summary>
+        internal static string DeQuien(string origen)
+        {
+            if (string.IsNullOrWhiteSpace(origen))
+            {
+                return string.Empty;
+            }
+            if (string.Equals(origen, OrigenEntregaCorreo.CONSULTA, StringComparison.OrdinalIgnoreCase))
+            {
+                return " (consultada a la agencia)";
+            }
+            return OrigenEntregaCorreo.EsDeLaAgencia(origen) ? " (la agencia)" : " (el proveedor)";
+        }
+
+        /// <summary>NestoAPI#857f: el estado del envío en palabras; null si no hay.</summary>
+        public static string TextoEstadoEnvio(string estado)
+        {
+            if (!Enum.TryParse(estado ?? string.Empty, true, out EstadoEnvioAgencia e))
+            {
+                return null;
+            }
+            switch (e)
+            {
+                case EstadoEnvioAgencia.EnCamino:
+                    return "en camino";
+                case EstadoEnvioAgencia.EnReparto:
+                    return "en reparto";
+                case EstadoEnvioAgencia.Reprogramada:
+                    return "entrega reprogramada";
+                default:
+                    return "entregado";
+            }
         }
 
         private static string Dia(DateTime? fecha) => fecha?.ToString("dd/MM/yyyy", es) ?? "sin fecha";

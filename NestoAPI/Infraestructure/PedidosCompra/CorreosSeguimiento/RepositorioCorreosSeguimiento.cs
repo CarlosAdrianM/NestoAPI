@@ -68,6 +68,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int? PedidoEnAdjunto { get; set; }
         /// <summary>NestoAPI#857e: cómo fue la lectura de los PDF (<see cref="EstadoPdfAdjunto"/>); null = no se pidió leerlos.</summary>
         public string AdjuntoLeido { get; set; }
+        /// <summary>
+        /// NestoAPI#857f (Scripts/Issue857f): el estado del envío según la propia agencia (<see cref="EstadoEnvioAgencia"/>: EnCamino,
+        /// EnReparto, Reprogramada, Entregado); null = no lo dice o sin la columna.
+        /// </summary>
+        public string EstadoEnvio { get; set; }
+        /// <summary>NestoAPI#857f: de dónde sale la entrega estimada (<see cref="OrigenEntregaCorreo"/>: Agencia, Proveedor, Consulta); null = sin apuntar.</summary>
+        public string OrigenEntrega { get; set; }
+        /// <summary>NestoAPI#857f: cuándo se preguntó por última vez a la agencia (job «compras-consulta-entrega-agencias»); null = nunca.</summary>
+        public DateTime? EntregaConsultadaEl { get; set; }
     }
 
     public interface IRepositorioCorreosSeguimiento
@@ -136,6 +145,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         Task<bool> ActualizarAsignacion(int id, string proveedor, string candidatos);
         /// <summary>Apunta que ya se ha avisado a Compras de este envío por asignar (un aviso por envío).</summary>
         Task MarcarAvisado(int id);
+
+        // NestoAPI#857f (Scripts/Issue857f_ComprasCorreosEstadoEnvio.sql)
+        /// <summary>¿Tiene ComprasCorreosSeguimiento EstadoEnvio, OrigenEntrega y EntregaConsultadaEl? Con caché. Sin ellas, como antes.</summary>
+        bool EstadoEnvioDisponible();
+        /// <summary>
+        /// Lo que ha contestado la agencia al consultarla: la entrega (si la da; origen Consulta), el estado y cuándo. También en un correo ya
+        /// aplicado (es lo que se corrige). Solo con <see cref="EstadoEnvioDisponible"/>.
+        /// </summary>
+        Task GuardarConsulta(int id, EntregaAgencia respuesta, DateTime consultadaEl);
     }
 
     public class RepositorioCorreosSeguimiento : IRepositorioCorreosSeguimiento
@@ -161,13 +179,15 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOL
         /// El INSERT con las columnas opcionales que existan (adjuntos de Issue857b, entrega estimada de Issue857c, remitente del
         /// paquete de Issue857d).
         /// </summary>
-        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega, bool conAplicacion = false, bool conAvisos = false) => string.Format(SQL_INSERTAR_BASE,
+        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega, bool conAplicacion = false, bool conAvisos = false, bool conEstado = false) => string.Format(SQL_INSERTAR_BASE,
             (conAdjuntos ? ", " + COLUMNAS_ADJUNTOS : string.Empty) + (conEntrega ? ", " + COLUMNAS_ENTREGA : string.Empty)
-                + (conAplicacion ? ", RemitentePaquete" : string.Empty) + (conAvisos ? ", " + COLUMNAS_AVISOS : string.Empty),
+                + (conAplicacion ? ", RemitentePaquete" : string.Empty) + (conAvisos ? ", " + COLUMNAS_AVISOS : string.Empty)
+                + (conEstado ? ", EstadoEnvio, OrigenEntrega" : string.Empty),
             (conAdjuntos ? ", @numAdjuntos, @adjuntos" : string.Empty)
                 + (conEntrega ? ", @entregaDia, @entregaDesde, @entregaHasta, @disponible, @esSalida" : string.Empty)
                 + (conAplicacion ? ", @remitentePaquete" : string.Empty)
-                + (conAvisos ? ", @avisoProveedor, @pedidoEnAdjunto, @adjuntoLeido" : string.Empty));
+                + (conAvisos ? ", @avisoProveedor, @pedidoEnAdjunto, @adjuntoLeido" : string.Empty)
+                + (conEstado ? ", @estadoEnvio, @origenEntrega" : string.Empty));
 
         // Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql: remitentes de proveedor (Agencia opcional), filtro de texto y PDF, todo junto
         internal const string SQL_EXISTEN_AVISOS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.AgenciasEntradaRemitentes', 'FiltroTexto') IS NULL " +
@@ -179,6 +199,24 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOL
         internal const string COLUMNAS_AVISOS_NULAS = "CAST(NULL AS bit) AS AvisoProveedor, CAST(NULL AS int) AS PedidoEnAdjunto, CAST(NULL AS nvarchar(20)) AS AdjuntoLeido";
         internal const string SET_AVISOS = ", AvisoProveedor = @avisoProveedor, PedidoEnAdjunto = @pedidoEnAdjunto, AdjuntoLeido = @adjuntoLeido";
         internal const int LONGITUD_ADJUNTO_LEIDO = 20;
+
+        // NestoAPI#857f: Scripts/Issue857f_ComprasCorreosEstadoEnvio.sql (las tres van juntas)
+        internal const string SQL_EXISTE_ESTADO = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EstadoEnvio') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'OrigenEntrega') IS NULL OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'EntregaConsultadaEl') IS NULL " +
+            "THEN 0 ELSE 1 END AS bit)";
+        internal const string COLUMNAS_ESTADO = "EstadoEnvio, OrigenEntrega, EntregaConsultadaEl";
+        internal const string COLUMNAS_ESTADO_NULAS = "CAST(NULL AS nvarchar(20)) AS EstadoEnvio, CAST(NULL AS nvarchar(20)) AS OrigenEntrega, " +
+            "CAST(NULL AS datetime) AS EntregaConsultadaEl";
+        internal const string SET_ESTADO = ", EstadoEnvio = @estadoEnvio, OrigenEntrega = @origenEntrega";
+        internal const int LONGITUD_ESTADO_ENVIO = 20;
+        // La consulta escribe aunque el correo esté aplicado (es lo que se corrige); la entrega, solo si la agencia la da
+        internal const string SQL_GUARDAR_CONSULTA = @"
+UPDATE dbo.ComprasCorreosSeguimiento SET EstadoEnvio = ISNULL(@estadoEnvio, EstadoEnvio), EntregaConsultadaEl = @consultadaEl,
+    EntregaEstimadaDia = CASE WHEN @entregaDia IS NULL THEN EntregaEstimadaDia ELSE @entregaDia END,
+    EntregaEstimadaDesde = CASE WHEN @entregaDia IS NULL THEN EntregaEstimadaDesde ELSE @entregaDesde END,
+    EntregaEstimadaHasta = CASE WHEN @entregaDia IS NULL THEN EntregaEstimadaHasta ELSE @entregaHasta END,
+    OrigenEntrega = CASE WHEN @entregaDia IS NULL THEN OrigenEntrega ELSE @origenEntrega END
+WHERE Id = @id";
 
         // Scripts/Issue857d_ComprasCorreosAplicarFecha.sql (fase 3): siete columnas y la tabla de remitentes del paquete, todo junto
         internal const string SQL_EXISTE_APLICACION = "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ComprasRemitentesPaquete', 'U') IS NULL " +
@@ -282,6 +320,7 @@ WHERE MensajeId = @mensajeId AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0
         private static readonly ColumnasOpcionales columnasEntrega = new ColumnasOpcionales(SQL_EXISTEN_ENTREGA);
         private static readonly ColumnasOpcionales columnasAplicacion = new ColumnasOpcionales(SQL_EXISTE_APLICACION);
         private static readonly ColumnasOpcionales columnasAvisos = new ColumnasOpcionales(SQL_EXISTEN_AVISOS);
+        private static readonly ColumnasOpcionales columnasEstado = new ColumnasOpcionales(SQL_EXISTE_ESTADO);
 
         /// <summary>Si existen unas columnas opcionales, con caché de <see cref="CACHE_ADJUNTOS"/>. Ante cualquier fallo, que no.</summary>
         private sealed class ColumnasOpcionales
@@ -423,14 +462,14 @@ WHERE pc.Empresa IN (@empresa, @espejo) AND pc.CorreoElectrónico IS NOT NULL AN
             "Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal";
 
         internal const string SQL_PENDIENTES_MEDIR = @"
-SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + @"
+SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + ", " + COLUMNAS_ESTADO_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Recibido";
 
         // Por la clave (Id, el índice agrupado), de @cuantos en @cuantos
         internal const string SQL_PENDIENTES_MEDIR_POR_ID = @"
-SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + @"
+SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + ", " + COLUMNAS_ESTADO_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE Id > @despues AND PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Id";
@@ -560,7 +599,12 @@ ORDER BY Recibido DESC";
                 {
                     parametros.AddRange(ParametrosAvisos(fila));
                 }
-                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega, conAplicacion, conAvisos), parametros.ToArray())
+                bool conEstado = EstadoEnvioDisponible();
+                if (conEstado)
+                {
+                    parametros.AddRange(ParametrosEstado(fila));
+                }
+                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega, conAplicacion, conAvisos, conEstado), parametros.ToArray())
                     .ConfigureAwait(false);
                 return filas > 0;
             }
@@ -574,6 +618,30 @@ ORDER BY Recibido DESC";
         };
 
         public bool AvisosProveedorDisponibles() => columnasAvisos.Existen(crearContexto);
+
+        public bool EstadoEnvioDisponible() => columnasEstado.Existen(crearContexto);
+
+        private static IEnumerable<SqlParameter> ParametrosEstado(CorreoSeguimientoFila fila) => new[]
+        {
+            Texto("@estadoEnvio", fila.EstadoEnvio, LONGITUD_ESTADO_ENVIO),
+            Texto("@origenEntrega", fila.OrigenEntrega, OrigenEntregaCorreo.LONGITUD)
+        };
+
+        public async Task GuardarConsulta(int id, EntregaAgencia respuesta, DateTime consultadaEl)
+        {
+            EntregaEstimada entrega = respuesta?.Estado == EstadoEnvioAgencia.Entregado ? null : respuesta?.Entrega;
+            using (NVEntities db = crearContexto())
+            {
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_CONSULTA,
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id },
+                    Texto("@estadoEnvio", respuesta?.Estado?.ToString(), LONGITUD_ESTADO_ENVIO),
+                    new SqlParameter("@consultadaEl", SqlDbType.DateTime) { Value = consultadaEl },
+                    new SqlParameter("@entregaDia", SqlDbType.Date) { Value = (object)entrega?.Dia.Date ?? DBNull.Value },
+                    new SqlParameter("@entregaDesde", SqlDbType.Time) { Scale = 0, Value = (object)entrega?.Desde ?? DBNull.Value },
+                    new SqlParameter("@entregaHasta", SqlDbType.Time) { Scale = 0, Value = (object)entrega?.Hasta ?? DBNull.Value },
+                    Texto("@origenEntrega", OrigenEntregaCorreo.CONSULTA, OrigenEntregaCorreo.LONGITUD)).ConfigureAwait(false);
+            }
+        }
 
         private static IEnumerable<SqlParameter> ParametrosEntrega(CorreoSeguimientoFila fila) => new[]
         {
@@ -648,7 +716,7 @@ ORDER BY Recibido DESC";
                 resultado.Proveedor = resultado.LineasAntes.Select(l => l.Proveedor).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
 
                 // Ya aplicado (a ese pedido, o a otro sin pedir reasignar): no se toca nada
-                EstadoAplicacionFecha? bloqueo = ReglaAplicacionCorreo.Bloqueo(correo.EmpresaAplicada, correo.PedidoAplicado, peticion.Empresa, peticion.Pedido, peticion.Reasignar);
+                EstadoAplicacionFecha? bloqueo = ReglaAplicacionCorreo.Bloqueo(correo.EmpresaAplicada, correo.PedidoAplicado, peticion.Empresa, peticion.Pedido, peticion.Reasignar, peticion.Corregir);
                 if (bloqueo.HasValue)
                 {
                     resultado.Estado = bloqueo.Value;
@@ -790,8 +858,13 @@ ORDER BY Recibido DESC";
                 {
                     parametros.AddRange(ParametrosAvisos(fila));
                 }
+                bool conEstado = EstadoEnvioDisponible();
+                if (conEstado)
+                {
+                    parametros.AddRange(ParametrosEstado(fila));
+                }
                 return await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_ACTUALIZAR_ANALISIS,
-                        (conEntrega ? SET_ENTREGA : string.Empty) + (conAvisos ? SET_AVISOS : string.Empty)),
+                        (conEntrega ? SET_ENTREGA : string.Empty) + (conAvisos ? SET_AVISOS : string.Empty) + (conEstado ? SET_ESTADO : string.Empty)),
                     parametros.ToArray()).ConfigureAwait(false) > 0;
             }
         }
@@ -801,7 +874,8 @@ ORDER BY Recibido DESC";
             (AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS) + ", "
             + (EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS) + ", "
             + (AplicacionDisponible() ? COLUMNAS_APLICACION : COLUMNAS_APLICACION_NULAS) + ", "
-            + (AvisosProveedorDisponibles() ? COLUMNAS_AVISOS : COLUMNAS_AVISOS_NULAS);
+            + (AvisosProveedorDisponibles() ? COLUMNAS_AVISOS : COLUMNAS_AVISOS_NULAS) + ", "
+            + (EstadoEnvioDisponible() ? COLUMNAS_ESTADO : COLUMNAS_ESTADO_NULAS);
 
         public async Task<List<RemitenteMarcado>> LeerRemitentes()
         {
@@ -965,7 +1039,8 @@ ORDER BY Recibido DESC";
                     string.Format(SQL_CORREOS, AdjuntosDisponibles() ? COLUMNAS_ADJUNTOS : COLUMNAS_ADJUNTOS_NULAS,
                         (EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS) + ", "
                         + (AplicacionDisponible() ? COLUMNAS_APLICACION : COLUMNAS_APLICACION_NULAS) + ", "
-                        + (AvisosProveedorDisponibles() ? COLUMNAS_AVISOS : COLUMNAS_AVISOS_NULAS)),
+                        + (AvisosProveedorDisponibles() ? COLUMNAS_AVISOS : COLUMNAS_AVISOS_NULAS) + ", "
+                        + (EstadoEnvioDisponible() ? COLUMNAS_ESTADO : COLUMNAS_ESTADO_NULAS)),
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
             }
         }

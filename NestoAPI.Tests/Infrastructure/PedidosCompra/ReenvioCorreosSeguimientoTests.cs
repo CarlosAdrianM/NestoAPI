@@ -90,7 +90,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             string texto = Texto(reenvio);
             StringAssert.Contains(texto, "Fecha del pedido de compra 912001: sin fecha y 20/11/2026 → 16/11/2026 (2 líneas).");
             StringAssert.Contains(texto, "Correo original de pkginfo@ups.com, recibido el 12/11/2026 20:15.");
-            StringAssert.Contains(texto, "Entrega que anuncia: 16/11/2026");
+            StringAssert.Contains(texto, "Entrega que anuncia (la agencia): 16/11/2026"); // NestoAPI#857f: dice de quién es
             StringAssert.Contains(texto, "Lunes 16/11/2026", "El cuerpo original va debajo");
             Assert.IsTrue(texto.IndexOf("Fecha del pedido", StringComparison.Ordinal) < texto.IndexOf("Lunes 16/11/2026", StringComparison.Ordinal));
             Assert.AreEqual(0, errores.Count, string.Join(" | ", errores.Select(e => e.Message)));

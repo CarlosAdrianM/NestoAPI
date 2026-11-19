@@ -19,12 +19,26 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// clase por agencia, registrada en <see cref="AgenciasEntradaRegistradas"/>. La predicción de la fase 3 es una constante por
     /// agencia (<see cref="HorasHastaEntrega"/>) desde que consta que la mercancía está en ella.
     /// </summary>
+    /// <remarks>
+    /// NestoAPI#857f (nivel 2, Carlos 19/11/26): todo lo propio de una agencia (dominios, formato de su código, enlace de seguimiento, cómo
+    /// dice la entrega en SUS correos y, si sabe, cómo se le pregunta: <see cref="IConsultaEntregaAgencia"/>) vive en su clase; el resto del
+    /// código solo habla con esta interfaz. Los proveedores que mandan por la misma agencia usan la misma clase.
+    /// </remarks>
     public interface IAgenciaEntrada
     {
         string Nombre { get; }
         int HorasHastaEntrega { get; }
         bool Reconoce(CorreoCompras correo);
         List<SeguimientoCorreo> ExtraerSeguimientos(CorreoCompras correo);
+        /// <summary>NestoAPI#857f: ¿lo manda la propia agencia (remitente, o remitente original de un reenvío, de sus dominios)?</summary>
+        bool EsCorreoPropio(CorreoCompras correo);
+        /// <summary>
+        /// NestoAPI#857f: la entrega estimada y el estado que dice un correo DE LA PROPIA AGENCIA (<see cref="EsCorreoPropio"/>); null si no es
+        /// suyo o no dice nada del envío. Por defecto, el extractor común (<see cref="ExtractorEntregaEstimada"/>) sin estado.
+        /// </summary>
+        EntregaAgencia LeerEntrega(CorreoCompras correo);
+        /// <summary>NestoAPI#857f: el enlace público de seguimiento a partir del código; null si no se sabe.</summary>
+        string UrlSeguimiento(string codigo);
     }
 
     /// <summary>
@@ -86,7 +100,39 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// </summary>
         public virtual string[] NombresEnTexto => new[] { Nombre };
 
-        public bool EsDominio(string host) => !string.IsNullOrEmpty(host) && Dominios.Any(d => TextoCorreo.HostDe(host, d));
+        public bool EsDominio(string host) => !string.IsNullOrEmpty(host) && Dominios.Concat(DominiosRemitente).Any(d => TextoCorreo.HostDe(host, d));
+
+        /// <summary>NestoAPI#857f: dominios desde los que manda sus correos, si no son ya de <see cref="Dominios"/> (p. ej. su plataforma de envíos).</summary>
+        protected virtual string[] DominiosRemitente => new string[0];
+
+        public virtual bool EsCorreoPropio(CorreoCompras correo)
+        {
+            if (correo == null)
+            {
+                return false;
+            }
+            return EsDominio(correo.RemitenteDominio)
+                || TextoCorreo.RemitentesOriginales(correo.Texto).Any(r => EsDominio(TextoCorreo.Dominio(r)));
+        }
+
+        public virtual EntregaAgencia LeerEntrega(CorreoCompras correo)
+        {
+            if (!EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            EntregaEstimada entrega = ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+            return entrega == null ? null : new EntregaAgencia { Entrega = entrega };
+        }
+
+        public virtual string UrlSeguimiento(string codigo) => null;
+
+        /// <summary>Para las clases de agencia: el código listo para ir en una URL (null si no es un código).</summary>
+        protected static string CodigoParaUrl(string codigo)
+        {
+            string limpio = codigo?.Replace(" ", string.Empty).Trim();
+            return EsCodigo(limpio) ? Uri.EscapeDataString(limpio) : null;
+        }
 
         public virtual bool Reconoce(CorreoCompras correo)
         {
@@ -375,6 +421,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             var sb = new System.Text.StringBuilder(texto.Length);
             foreach (char c in texto)
             {
+                // NestoAPI#857f: un emoji (par sustituto) no se puede normalizar suelto: espacio (misma longitud)
+                if (char.IsSurrogate(c))
+                {
+                    sb.Append(' ');
+                    continue;
+                }
                 string d = c.ToString().Normalize(System.Text.NormalizationForm.FormD);
                 sb.Append(d.Length > 0 ? d[0] : c);
             }
@@ -392,11 +444,112 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected override Regex[] PatronesRuta => new[] { new Regex(@"/track/([A-Za-z0-9\-]+)", RegexOptions.IgnoreCase) };
     }
 
+    /// <summary>
+    /// SEUR. NestoAPI#857f (19/11/26): sus avisos (infoenvios@mail.seur.info) NO traen el código: todos los enlaces son redirecciones
+    /// opacas (click.mail.seur.info/?qs=…). La identidad del envío es la referencia del remitente («Tu envío PV26-56989 de Postquam en…»),
+    /// que se toma como código. Entrega: «Entrega prevista Jueves 19 de Noviembre» (sin año) o «Se entregará HOY de 13:45 a 14:45 horas».
+    /// El cuerpo pinta la barra de estados entera («En camino En reparto Entregado»): el estado sale del asunto y de frases, no de esa barra.
+    /// </summary>
     public class AgenciaEntradaSeur : AgenciaEntradaPorPatrones
     {
+        private const string MESES = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+        private static readonly string[] NombresMeses = { "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre" };
+
+        // Sobre el texto normalizado (minúsculas y sin tildes: ExtractorEntregaEstimada.Normalizar)
+        private static readonly Regex Prevista = new Regex(
+            @"entrega\s+prevista\s*:?\s*(?:(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s*,?\s*)?(\d{1,2})\s+de\s+(" + MESES + @")(?:\s+(?:de\s+)?(\d{4}))?(?!\d)",
+            RegexOptions.Compiled);
+        private static readonly Regex HoyOManana = new Regex(
+            @"se\s+entregara\s+(hoy|manana)(?:\s*,?\s*(?:de|entre)(?:\s+las)?\s+(\d{1,2})[:.h](\d{2})\s*(?:a|y|-|hasta)(?:\s+las)?\s*(\d{1,2})[:.h](\d{2}))?",
+            RegexOptions.Compiled);
+        private static readonly Regex EnReparto = new Regex(@"(?<![a-z])(?:esta|va)\s+en\s+reparto(?![a-z])|se\s+entregara\s+(?:hoy|manana)", RegexOptions.Compiled);
+        private static readonly Regex Entregado = new Regex(@"(?<![a-z])(?:ha\s+sido\s+entregad[oa]|se\s+ha\s+entregado|(?:envio|paquete)\s+entregad[oa])(?![a-z])", RegexOptions.Compiled);
+        private static readonly Regex Reprogramado = new Regex(@"(?<![a-z])(?:reprogramad[oa]|nueva\s+fecha\s+de\s+entrega)(?![a-z])", RegexOptions.Compiled);
+        /// <summary>«Tu envío PV26-56989 de Postquam»: la referencia del remitente, delante del «de».</summary>
+        private static readonly Regex Referencia = new Regex(@"(?<![\p{L}\p{N}])(?:tu|su)\s+env[ií]o\s+([A-Za-z0-9][A-Za-z0-9\-]{5,39})\s+de\s", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         public override string Nombre => "SEUR";
         protected override string[] Dominios => new[] { "seur.com", "seur.es", "seur.info" };
+        protected override string[] DominiosRemitente => new[] { "mail.seur.info" };
         protected override string[] ParametrosCodigo => new[] { "segonlineidentificador", "identificador", "expedicion", "id" };
+
+        public override List<SeguimientoCorreo> ExtraerSeguimientos(CorreoCompras correo)
+        {
+            List<SeguimientoCorreo> resultado = base.ExtraerSeguimientos(correo);
+            if (resultado.Any() || !EsCorreoPropio(correo))
+            {
+                return resultado;
+            }
+            foreach (Match m in Referencia.Matches((correo.Asunto ?? string.Empty) + "\n" + correo.Texto))
+            {
+                if (EsCodigo(m.Groups[1].Value))
+                {
+                    Anadir(resultado, m.Groups[1].Value, null);
+                }
+            }
+            return resultado;
+        }
+
+        public override EntregaAgencia LeerEntrega(CorreoCompras correo)
+        {
+            if (!EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            string asunto = ExtractorEntregaEstimada.Normalizar(correo.Asunto ?? string.Empty);
+            string texto = ExtractorEntregaEstimada.Normalizar(correo.Texto ?? string.Empty);
+            if (Entregado.IsMatch(asunto) || Entregado.IsMatch(texto))
+            {
+                return new EntregaAgencia { Estado = EstadoEnvioAgencia.Entregado };
+            }
+            EntregaEstimada entrega = EntregaHoyOManana(texto, correo.Recibido) ?? EntregaPrevista(texto, correo.Recibido)
+                ?? ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+            EstadoEnvioAgencia? estado = Reprogramado.IsMatch(asunto) || Reprogramado.IsMatch(texto) ? EstadoEnvioAgencia.Reprogramada
+                : EnReparto.IsMatch(asunto) || EnReparto.IsMatch(texto) ? EstadoEnvioAgencia.EnReparto
+                : entrega != null ? EstadoEnvioAgencia.EnCamino
+                : (EstadoEnvioAgencia?)null;
+            return estado.HasValue || entrega != null ? new EntregaAgencia { Entrega = entrega, Estado = estado } : null;
+        }
+
+        /// <summary>«Se entregará HOY de 13:45 a 14:45 horas»: HOY = el día del correo (MAÑANA, el siguiente).</summary>
+        private static EntregaEstimada EntregaHoyOManana(string texto, DateTime recibido)
+        {
+            Match m = HoyOManana.Match(texto);
+            if (!m.Success)
+            {
+                return null;
+            }
+            var entrega = new EntregaEstimada { Dia = recibido.Date.AddDays(m.Groups[1].Value == "hoy" ? 0 : 1) };
+            if (m.Groups[2].Success)
+            {
+                TimeSpan? desde = Hora(m.Groups[2].Value, m.Groups[3].Value);
+                TimeSpan? hasta = Hora(m.Groups[4].Value, m.Groups[5].Value);
+                if (desde.HasValue && hasta.HasValue && desde <= hasta)
+                {
+                    entrega.Desde = desde;
+                    entrega.Hasta = hasta;
+                }
+            }
+            return entrega;
+        }
+
+        /// <summary>«Entrega prevista Jueves 19 de Noviembre»: sin año, el del correo (o el siguiente si cae antes del día del correo).</summary>
+        private static EntregaEstimada EntregaPrevista(string texto, DateTime recibido)
+        {
+            Match m = Prevista.Match(texto);
+            if (!m.Success)
+            {
+                return null;
+            }
+            string mes = m.Groups[2].Value == "setiembre" ? "septiembre" : m.Groups[2].Value;
+            int? anio = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : (int?)null;
+            DateTime? dia = ReglaAnioEntregaAgencia.Resolver(int.Parse(m.Groups[1].Value), Array.IndexOf(NombresMeses, mes) + 1, anio, recibido);
+            return dia.HasValue && ExtractorEntregaEstimada.EnRango(dia.Value, recibido) ? new EntregaEstimada { Dia = dia.Value } : null;
+        }
+
+        private static TimeSpan? Hora(string horas, string minutos) =>
+            int.TryParse(horas, out int h) && int.TryParse(minutos, out int mi) && h >= 0 && h <= 23 && mi >= 0 && mi <= 59
+                ? new TimeSpan(h, mi, 0) : (TimeSpan?)null;
     }
 
     public class AgenciaEntradaMrw : AgenciaEntradaPorPatrones
@@ -421,6 +574,37 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected override string[] Dominios => new[] { "ups.com" };
         protected override string[] ParametrosCodigo => new[] { "tracknum", "tracknums", "inquirynumber1", "trackingnumber" };
         protected override Regex PatronInconfundible => Ups1Z;
+
+        // NestoAPI#857f: sus avisos («Entrega estimada / Lunes 16/11/2026 / entre 10:45 - 14:45», «Entrega reprogramada …», «Tu paquete se ha
+        // entregado. … Entregado Viernes 13/11/2026 10:45»). Sobre el texto normalizado.
+        private static readonly Regex Entregado = new Regex(@"(?<![a-z])(?:se\s+ha\s+entregado|paquete\s+entregado|has\s+been\s+delivered|was\s+delivered)(?![a-z])", RegexOptions.Compiled);
+        private static readonly Regex Reprogramada = new Regex(@"(?<![a-z])(?:entrega\s+reprogramada|reprogramad[oa]|rescheduled)(?![a-z])", RegexOptions.Compiled);
+        private static readonly Regex EnReparto = new Regex(@"(?<![a-z])(?:en\s+reparto|out\s+for\s+delivery)(?![a-z])", RegexOptions.Compiled);
+
+        public override EntregaAgencia LeerEntrega(CorreoCompras correo)
+        {
+            if (!EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            string t = ExtractorEntregaEstimada.Normalizar((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+            if (Entregado.IsMatch(t))
+            {
+                return new EntregaAgencia { Estado = EstadoEnvioAgencia.Entregado };
+            }
+            EntregaEstimada entrega = ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+            EstadoEnvioAgencia? estado = Reprogramada.IsMatch(t) ? EstadoEnvioAgencia.Reprogramada
+                : EnReparto.IsMatch(t) ? EstadoEnvioAgencia.EnReparto
+                : entrega != null ? EstadoEnvioAgencia.EnCamino
+                : (EstadoEnvioAgencia?)null;
+            return estado.HasValue ? new EntregaAgencia { Entrega = entrega, Estado = estado } : null;
+        }
+
+        public override string UrlSeguimiento(string codigo)
+        {
+            string c = CodigoParaUrl(codigo);
+            return c == null ? null : "https://www.ups.com/track?tracknum=" + c;
+        }
     }
 
     public class AgenciaEntradaCorreosExpress : AgenciaEntradaPorPatrones
@@ -523,6 +707,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected override string[] Dominios => new[] { "dbschenker.com", "schenker.es", "dbschenker.es" };
         protected override string[] ParametrosCodigo => new[] { "refnumber", "reference" };
         public override string[] NombresEnTexto => new[] { "DB Schenker", "DBSchenker", "Schenker" };
+
+        /// <summary>
+        /// NestoAPI#857f: el seguimiento público (Schenker es ya DSV). Su web NO se deja leer desde el servidor (429) y no se intenta: aquí
+        /// solo se compone el enlace para Compras. Si se da de alta en la API oficial de DSV, la consulta va AQUÍ, implementando
+        /// <see cref="IConsultaEntregaAgencia"/> en esta clase (clave en secretos.config); nada de fuera cambia.
+        /// </summary>
+        public override string UrlSeguimiento(string codigo)
+        {
+            string c = CodigoParaUrl(codigo);
+            return c == null ? null : "https://www.dsv.com/mydsv/tracking-public/?language_region=es-ES_ES&refNumber=" + c;
+        }
     }
 
     public class AgenciaEntradaDpd : AgenciaEntradaPorPatrones

@@ -49,9 +49,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// ese final no cuenta. No se corta en comas ni puntos: son parte del nombre («COSMÉTICOS, S.L.»).
         /// </summary>
         private static readonly Regex FraseEnvioDe = new Regex(
-            @"(?<![\p{L}\p{N}])(?:tu|su|vuestro)\s+(?:env[ií]o|paquete)\s+de\s+(\p{L}.{1,100}?)"
+            // NestoAPI#857f (SEUR): con la referencia del remitente delante del «de» («tu envío PV26-56989 de Postquam en C/ Rio Tietar 11…»)
+            // y terminando en la dirección de entrega («en C/», «en Calle»…)
+            @"(?<![\p{L}\p{N}])(?:tu|su|vuestro)\s+(?:env[ií]o|paquete)\s+(?:(?=[A-Za-z0-9\-]*\d)[A-Za-z0-9][A-Za-z0-9\-]{3,39}\s+)?de\s+(\p{L}.{1,100}?)"
             + @",?\s+(?:(?:y\s+)?(?:ya\s+)?(?:est[aá]|ha|llegar[aá])(?![\p{L}\p{N}])"
-            + @"|con\s+(?:el\s+)?(?:n[uú]mero|n[ºo°](?![\p{L}\p{N}])|seguimiento|c[oó]digo|localizador))",
+            + @"|con\s+(?:el\s+)?(?:n[uú]mero|n[ºo°](?![\p{L}\p{N}])|seguimiento|c[oó]digo|localizador)"
+            + @"|en\s+(?:c\s*/|calle|avda|avenida|av\.|plaza|pza|paseo|camino|carretera|ctra|pol[ií]gono|pol\.)(?![\p{L}]))",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>Lo que viene detrás en la misma línea («… Destinatario: NUEVA VISION»): se corta antes de la siguiente etiqueta.</summary>
@@ -59,6 +62,21 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         private static readonly Regex Direccion = new Regex(@"<?[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}>?", RegexOptions.Compiled);
         private static readonly Regex Espacios = new Regex(@"\s+", RegexOptions.Compiled);
+
+        /// <summary>
+        /// NestoAPI#857f: lo mismo y, si el cuerpo no lo dice, la frase del ASUNTO («🚚 ¡Nueva Vision, tu envío de IBEROCEL - PARAISO está en
+        /// reparto!», SEUR).
+        /// </summary>
+        public static string Extraer(string texto, string asunto)
+        {
+            string delTexto = Extraer(texto);
+            if (delTexto != null || string.IsNullOrWhiteSpace(asunto))
+            {
+                return delTexto;
+            }
+            Match m = FraseEnvioDe.Match(asunto);
+            return m.Success ? Valido(m.Groups[1].Value) : null;
+        }
 
         public static string Extraer(string texto)
         {
