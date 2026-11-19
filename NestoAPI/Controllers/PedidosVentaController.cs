@@ -449,6 +449,7 @@ namespace NestoAPI.Controllers
                     empresa = g.Empresa?.Trim(),
                     numero = g.Número,
                     cliente = g.Nº_Cliente?.Trim(),
+                    contacto = g.Contacto?.Trim(),
                     nombre = g.Nombre?.Trim(),
                     direccion = g.Dirección?.Trim(),
                     codPostal = g.CodPostal?.Trim(),
@@ -469,6 +470,9 @@ namespace NestoAPI.Controllers
 
             // Sugerencia 1184: «Retenido» (etiqueta y casilla de la lista de Nesto), con una consulta de las retenciones vivas.
             Infraestructure.PedidosVenta.Retencion.RetenidosListaPedidos.Marcar(resumenes, GestorPedidosVenta.RepositorioRetenciones);
+            // NestoAPI#874: la dirección completa (con la Dirección 2) de los clientes de la lista, UNA consulta por empresa
+            Infraestructure.Clientes.DireccionCompletaCliente.RellenarPorEmpresa(db, resumenes, r => r.empresa, r => r.cliente, r => r.contacto,
+                r => r.direccion, (r, d) => r.direccionCompleta = d);
             return resumenes;
         }
 

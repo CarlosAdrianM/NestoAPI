@@ -94,6 +94,58 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.AreEqual("POL. IND. 2", GestorPresupuestos.DireccionEntregaCorreo(null, pedido, new Cliente { Dirección = "POL. IND. 2   " }));
         }
 
+        // ---- Bloque 2: listas de pantalla (pedidos, clientes nuevos, facturación de tienda) ----
+
+        [TestMethod]
+        public void ListaPedidos_DireccionCompleta_UnaLecturaPorEmpresa_YSinColumnasLaDireccion()
+        {
+            var lecturas = new List<string>();
+            Direccion2ClienteSql.LectorClientesParaTests = (empresa, clientes) =>
+            {
+                lecturas.Add(empresa + ":" + string.Join(",", clientes));
+                return empresa == "1" ? Filas(("15191", "0", "1º D")) : null;
+            };
+            var pedidos = new List<ResumenPedidoVentaDTO>
+            {
+                new ResumenPedidoVentaDTO { empresa = "1", numero = 1, cliente = "15191", contacto = "0", direccion = "CALLE MAYOR, 3" },
+                new ResumenPedidoVentaDTO { empresa = "1", numero = 2, cliente = "15191", contacto = "0", direccion = "CALLE MAYOR, 3" },
+                new ResumenPedidoVentaDTO { empresa = "1", numero = 3, cliente = "20000", contacto = "0", direccion = "AVDA. SOL, 9" },
+                new ResumenPedidoVentaDTO { empresa = "3", numero = 4, cliente = "15191", contacto = "0", direccion = "CALLE MAYOR, 3" }
+            };
+
+            DireccionCompletaCliente.RellenarPorEmpresa(null, pedidos, p => p.empresa, p => p.cliente, p => p.contacto, p => p.direccion,
+                (p, d) => p.direccionCompleta = d);
+
+            CollectionAssert.AreEquivalent(new[] { "1:15191,20000", "3:15191" }, lecturas, "una por empresa, clientes sin repetir");
+            Assert.AreEqual("CALLE MAYOR, 3, 1º D", pedidos[0].direccionCompleta);
+            Assert.AreEqual("CALLE MAYOR, 3, 1º D", pedidos[1].direccionCompleta);
+            Assert.AreEqual("AVDA. SOL, 9", pedidos[2].direccionCompleta);
+            Assert.AreEqual("CALLE MAYOR, 3", pedidos[3].direccionCompleta);
+            Assert.AreEqual("CALLE MAYOR, 3", pedidos[0].direccion, "direccion no cambia");
+        }
+
+        [TestMethod]
+        public void ClientesNuevos_CorreoConDireccion2_YSinFilasComoEstaba()
+        {
+            var resultado = new Dictionary<string, List<ClienteNuevoVendedorDTO>>
+            {
+                ["JE"] = new List<ClienteNuevoVendedorDTO> { new ClienteNuevoVendedorDTO { Cliente = "15191", Contacto = "0", Direccion = "CALLE MAYOR, 3" } },
+                ["NV"] = new List<ClienteNuevoVendedorDTO> { new ClienteNuevoVendedorDTO { Cliente = "15191", Contacto = "0", Direccion = "CALLE MAYOR, 3" } }
+            };
+
+            InformeClientesNuevosJobsService.CompletarDireccion2(resultado, Filas(("15191", "0", "NAVE 4")));
+
+            Assert.AreEqual("CALLE MAYOR, 3, NAVE 4", resultado["JE"][0].Direccion);
+            Assert.AreEqual("CALLE MAYOR, 3, NAVE 4", resultado["NV"][0].Direccion);
+
+            var sin = new Dictionary<string, List<ClienteNuevoVendedorDTO>>
+            {
+                ["JE"] = new List<ClienteNuevoVendedorDTO> { new ClienteNuevoVendedorDTO { Cliente = "15191", Contacto = "0", Direccion = "CALLE MAYOR, 3" } }
+            };
+            InformeClientesNuevosJobsService.CompletarDireccion2(sin, null);
+            Assert.AreEqual("CALLE MAYOR, 3", sin["JE"][0].Direccion);
+        }
+
         // ---- Documentos: dirección de ENTREGA sí, FISCAL no ----
 
         private static IServicioFacturas ServicioConPedido(string direccion2)

@@ -42,6 +42,10 @@ namespace NestoAPI.Infraestructure.Informes
                 .SqlQuery<FacturaTiendaDTO>(GestorFacturacionTienda.SQL_FACTURACION_TIENDA, GestorFacturacionTienda.Parametros(tienda, desde, hasta))
                 .ToListAsync()
                 .ConfigureAwait(false);
+            // NestoAPI#874: la dirección (de la ficha, empresa 1, como en la consulta) con la Dirección 2, UNA consulta. Si la consulta
+            // cayó a la dirección fiscal de la factura (sin ficha), no hay fila y queda como estaba.
+            Clientes.DireccionCompletaCliente.RellenarPorEmpresa(db, filas, f => Constantes.Empresas.EMPRESA_POR_DEFECTO, f => f.Cliente,
+                f => f.Contacto, f => f.Direccion, (f, d) => f.Direccion = d);
             return GestorFacturacionTienda.Construir(filas, tienda, desde, hasta);
         }
 

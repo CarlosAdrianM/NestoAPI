@@ -53,16 +53,24 @@ namespace NestoAPI.Infraestructure.Clientes
         /// (en lotes, <see cref="Direccion2ClienteSql.LeerDeClientes"/>), nunca una por fila. Nunca lanza.
         /// </summary>
         public static void Rellenar(NVEntities db, IList<ClienteDTO> clientes)
+            => RellenarPorEmpresa(db, clientes, c => c.empresa, c => c.cliente, c => c.contacto, c => c.direccion, (c, d) => c.direccionCompleta = d);
+
+        /// <summary>
+        /// NestoAPI#874: cualquier lista (pedidos, inscritos, clientes nuevos…) que lleve empresa, cliente, contacto y Dirección: UNA
+        /// consulta por empresa (en lotes), nunca una por fila. Sin columnas o si falla, la Dirección tal cual. Nunca lanza.
+        /// </summary>
+        public static void RellenarPorEmpresa<T>(NVEntities db, IEnumerable<T> filas, Func<T, string> empresa, Func<T, string> cliente,
+            Func<T, string> contacto, Func<T, string> direccion, Action<T, string> poner)
         {
-            if (clientes == null || clientes.Count == 0)
+            if (filas == null)
             {
                 return;
             }
-            foreach (IGrouping<string, ClienteDTO> porEmpresa in clientes.Where(c => c != null).GroupBy(c => c.empresa?.Trim()))
+            foreach (IGrouping<string, T> porEmpresa in filas.Where(f => f != null).GroupBy(f => empresa(f)?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO))
             {
-                Dictionary<string, Direccion2Contacto> filas = Direccion2ClienteSql.LeerDeClientes(db, porEmpresa.Key,
-                    porEmpresa.Select(c => c.cliente), Direccion2ClienteSql.PARA_PANTALLA);
-                Rellenar(porEmpresa, filas, c => c.cliente, c => c.contacto, c => c.direccion, (c, d) => c.direccionCompleta = d);
+                Dictionary<string, Direccion2Contacto> direcciones2 = Direccion2ClienteSql.LeerDeClientes(db, porEmpresa.Key,
+                    porEmpresa.Select(cliente), Direccion2ClienteSql.PARA_PANTALLA);
+                Rellenar(porEmpresa, direcciones2, cliente, contacto, direccion, poner);
             }
         }
 

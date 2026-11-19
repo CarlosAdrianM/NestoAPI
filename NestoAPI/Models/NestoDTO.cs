@@ -543,6 +543,8 @@ namespace NestoAPI.Models
         public string contacto { get; set; }
         public string nombre { get; set; }
         public string direccion { get; set; }
+        /// <summary>NestoAPI#874: Dirección + «, » + Dirección 2 del contacto del pedido, para enseñar (solo lectura; sin Dirección 2, la Dirección).</summary>
+        public string direccionCompleta { get; set; }
         public string codPostal { get; set; }
         public string poblacion { get; set; }
         public string provincia { get; set; }

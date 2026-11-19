@@ -115,6 +115,9 @@ namespace NestoAPI.Infraestructure.Informes
                         AgregarClienteAVendedor(resultado, grupoVcgp.Key, cliente, estadoVcgp, "VendedoresClienteGrupoProducto");
                     }
                 }
+
+                // NestoAPI#874: la dirección del correo con la Dirección 2 (piso, rótulo, nave), UNA consulta para todos
+                CompletarDireccion2(resultado, Clientes.Direccion2ClienteSql.LeerDeClientes(db, EMPRESA, clienteIds, Clientes.Direccion2ClienteSql.PARA_PANTALLA));
             }
 
             // Ordenar cada lista por código postal y dirección
@@ -128,6 +131,12 @@ namespace NestoAPI.Infraestructure.Informes
 
             return resultado;
         }
+
+        /// <summary>NestoAPI#874 (pura): Direccion = Dirección + «, » + Dirección 2 de cada cliente de los correos. Null = como estaba.</summary>
+        internal static void CompletarDireccion2(Dictionary<string, List<ClienteNuevoVendedorDTO>> resultado,
+            IReadOnlyDictionary<string, Clientes.Direccion2Contacto> filas)
+            => Clientes.DireccionCompletaCliente.Rellenar(resultado.Values.SelectMany(l => l), filas, c => c.Cliente, c => c.Contacto,
+                c => c.Direccion, (c, d) => c.Direccion = d);
 
         private static void AgregarClienteAVendedor(
             Dictionary<string, List<ClienteNuevoVendedorDTO>> resultado,

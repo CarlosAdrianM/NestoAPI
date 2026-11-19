@@ -822,7 +822,9 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             dto.Asistentes = asistentes;
             // NestoAPI#731: lo de la ficha (solo lectura) y la persona que asiste
             personasCliente = personasCliente ?? await LeerPersonasSinFallar(empresa, cliente).ConfigureAwait(false);
-            RellenarFicha(dto, ficha.Dirección, ficha.CodPostal, ficha.Población, ficha.Provincia, ficha.Teléfono,
+            RellenarFicha(dto, Clientes.DireccionCompletaCliente.Componer(ficha.Dirección,
+                    Clientes.Direccion2ClienteSql.Leer(db, ficha.Empresa, ficha.Nº_Cliente, ficha.Contacto)), // NestoAPI#874
+                ficha.CodPostal, ficha.Población, ficha.Provincia, ficha.Teléfono,
                 personasCliente.Where(p => p.Key == cliente).Select(p => p.Value), personaGuardada ? personaAsiste : null);
             dto.PedidoJustificante = justificanteGuardado ? justificante?.Pedido : null;
             if (origen != OrigenInscripcionEvento.TNV)
@@ -2633,6 +2635,19 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 .ToListAsync().ConfigureAwait(false))
                 .GroupBy(c => Limpiar(c.Nº_Cliente) + "/" + Limpiar(c.Contacto))
                 .ToDictionary(g => g.Key, g => g.First());
+            // NestoAPI#874: la Dirección 2 de los inscritos (piso, rótulo, nave), UNA consulta por empresa; sin columnas, como antes
+            var direcciones2 = new Dictionary<string, Clientes.Direccion2Contacto>();
+            foreach (string empresaInscritos in empresas)
+            {
+                foreach (var fila in Clientes.Direccion2ClienteSql.LeerDeClientes(db, empresaInscritos, clientes, Clientes.Direccion2ClienteSql.PARA_PANTALLA)
+                    ?? new Dictionary<string, Clientes.Direccion2Contacto>())
+                {
+                    if (!direcciones2.ContainsKey(fila.Key))
+                    {
+                        direcciones2.Add(fila.Key, fila.Value);
+                    }
+                }
+            }
 
             // NestoAPI#731: la persona que asiste y las personas de contacto (correo). Si algo falla, la lista sale igual sin ello.
             Dictionary<int, string> asistentes = await LeerAsistentesSinFallar(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false);
@@ -2683,7 +2698,9 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 dto.Asistentes = ReglasAsistentesEvento.De(i.Id, cuantos);
                 dto.FormaAsistencia = ReglasFormaAsistenciaEvento.De(i.Id, formas);
                 asistentes.TryGetValue(i.Id, out string asiste);
-                RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia, ficha?.Teléfono,
+                RellenarFicha(dto, Clientes.DireccionCompletaCliente.Componer(ficha?.Dirección,
+                        Clientes.Direccion2ClienteSql.ParaPublicar(direcciones2, i.Cliente, i.Contacto).Direccion2),
+                    ficha?.CodPostal, ficha?.Población, ficha?.Provincia, ficha?.Teléfono,
                     personasPorCliente[Limpiar(i.Cliente) ?? ""], asiste);
                 if (justificantes.TryGetValue(i.Id, out int pedidoJustificante))
                 {
