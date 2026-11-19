@@ -496,12 +496,24 @@ WHERE l.Número = @p0 AND l.Estado IN (-1, 1)
             }
             else
             {
-                return new LiquidacionSenalCurso
+                // 19/11/26: la señal cobrada en Cajas (efectivo, datáfono o transferencia) es un cobro a cuenta con el mismo
+                // documento que el del enlace («INS{id}», ServicioInscripcionesEventos.CobrarSenalEnCaja). Sin él (pagada a mano con
+                // «Marcar pagada», que no contabiliza), la factura queda pendiente de cobro como siempre.
+                string documentoCaja = ServicioInscripcionesEventos.DocumentoPago(inscripcion.Id);
+                cobro = await db.ExtractosCliente
+                    .Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == documentoCaja
+                        && e.TipoApunte == Constantes.TiposExtractoCliente.PAGO && e.ImportePdte < 0)
+                    .OrderByDescending(e => e.Nº_Orden).Select(e => (int?)e.Nº_Orden).FirstOrDefaultAsync().ConfigureAwait(false);
+                if (cobro == null)
                 {
-                    Estado = EstadosLiquidacionCurso.SIN_COBRO,
-                    Mensaje = $"Pagado {DescribirForma(inscripcion)}: no hay cobro en el extracto que liquidar. La factura {factura} " +
-                        "queda pendiente de cobro y se cobra como cualquier otra."
-                };
+                    return new LiquidacionSenalCurso
+                    {
+                        Estado = EstadosLiquidacionCurso.SIN_COBRO,
+                        Mensaje = $"Pagado {DescribirForma(inscripcion)}: no hay cobro en el extracto que liquidar. La factura {factura} " +
+                            "queda pendiente de cobro y se cobra como cualquier otra."
+                    };
+                }
+                deDonde = $"el cobro de la caja ({documentoCaja})";
             }
 
             if (cobro == null)

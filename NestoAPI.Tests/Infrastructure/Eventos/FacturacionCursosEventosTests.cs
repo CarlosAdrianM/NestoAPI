@@ -218,13 +218,13 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 .Returns(Task.FromResult(new LiquidacionSenalCurso { Estado = EstadosLiquidacionCurso.SIN_COBRO, Mensaje = "Pagado en efectivo: no hay cobro en el extracto que liquidar." }));
             EventoInscripcion i = Inscripcion(EstadoInscripcionEvento.Reservada, "Efectivo");
 
-            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, ADMINISTRACION);
 
             Assert.AreEqual("Facturada", i.Estado);
             FacturacionCursoInscripcion fila = repositorio.Filas[i.Id];
             Assert.AreEqual(EstadosLiquidacionCurso.SIN_COBRO, fila.EstadoLiquidacion);
             StringAssert.Contains(fila.Mensaje, "efectivo");
-            A.CallTo(() => creador.Crear(i, A<Evento>._, "NUEVAVISION\\Reina")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => creador.Crear(i, A<Evento>._, "NUEVAVISION\\Alfredo")).MustHaveHappenedOnceExactly();
             A.CallTo(() => avisador.Avisar(A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
@@ -805,7 +805,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => facturador.FacturarLinea(A<string>._, A<int>._, A<int>._, A<string>._))
                 .Returns(Task.FromResult(new FacturaCursoCreada { EmpresaPedido = "1", EmpresaFactura = "1", Factura = "CV2600800" }));
 
-            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, ADMINISTRACION);
 
             Assert.AreEqual("Facturada", i.Estado);
             Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[i.Id].Estado);
@@ -821,7 +821,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             encendido = false;
             EventoInscripcion i = CursoDePlantilla(linea: 1);
 
-            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, ADMINISTRACION);
 
             Assert.AreEqual("Facturada", i.Estado);
             A.CallTo(() => facturador.FacturarLinea("1", PEDIDO_PLANTILLA, 1, A<string>._)).MustHaveHappenedOnceExactly();
@@ -833,7 +833,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             plantillaEncendido = false;
             EventoInscripcion i = CursoDePlantilla(linea: 1);
 
-            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, ADMINISTRACION);
 
             Assert.AreEqual("Pagada", i.Estado);
             Assert.AreEqual(EstadosFacturacionCurso.EN_CURSO, repositorio.Filas[i.Id].Estado);
@@ -877,7 +877,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             EventoInscripcion otro = CursoDePlantilla(linea: 2, evento: EVENTO_2);
             List<LinPedidoVta> lineas = PedidoDeCursosEnMemoria(out IServicioFacturas facturas);
 
-            await Servicio().MarcarPagada(cejas.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+            await Servicio().MarcarPagada(cejas.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, ADMINISTRACION);
 
             Assert.AreEqual("Facturada", cejas.Estado);
             Assert.AreEqual("Reservada", otro.Estado);
@@ -885,7 +885,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(-1, lineas.Single(l => l.Nº_Orden == 2).Estado, "la sin pagar se queda pendiente, fuera del albarán");
             Assert.AreEqual("CV2600800", repositorio.Filas[cejas.Id].Factura);
 
-            await Servicio().MarcarPagada(otro.Id, new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, REINA);
+            await Servicio().MarcarPagada(otro.Id, new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, ADMINISTRACION);
 
             Assert.AreEqual("Facturada", otro.Estado);
             Assert.AreEqual("CV2600801", repositorio.Filas[otro.Id].Factura, "su propia factura");

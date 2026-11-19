@@ -247,7 +247,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 Cliente = "30000",
                 Origen = "Nesto",
                 Pago = new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }
-            }, REINA);
+            }, Usuario("NUEVAVISION\\Aida", "Administración"));
 
             Assert.AreEqual(EstadoInscripcionEvento.Pagada, dto.Estado);
             Assert.AreEqual(50, inscripciones.Single(i => i.Cliente == "30000").ImportePagado);

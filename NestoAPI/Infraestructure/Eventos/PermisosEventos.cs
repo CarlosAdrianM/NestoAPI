@@ -75,6 +75,45 @@ namespace NestoAPI.Infraestructure.Eventos
             PuedeMantener(usuario, almacenUsuario, almacenEvento)
             || (usuario != null && ClienteDelToken(usuario) == null && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
 
+        public const string MENSAJE_MARCAR_PAGADA_SOLO_ADMINISTRACION =
+            "La señal de un evento ya no se marca como pagada desde el evento: cóbrela en Cajas (pestaña Cobros, al elegir la " +
+            "clienta sale su reserva). Así el dinero entra en su caja, se factura el curso y se emite el cupón. «Marcar pagada» " +
+            "queda solo para Administración.";
+
+        /// <summary>
+        /// Carlos (19/11/26): «Marcar pagada» a mano (POST api/Eventos/Inscripciones/{id}/Pago e inscribir ya pagada) es la salida
+        /// de emergencia: solo Administración y Dirección (e Informática). Las tiendas cobran la señal en Cajas
+        /// (<see cref="PuedeCobrarSenalEnCaja"/>). Facturar a mano y apuntar la asistencia siguen con <see cref="PuedeMarcarPagada"/>.
+        /// </summary>
+        public static bool PuedeMarcarPagadaAMano(IPrincipal usuario) =>
+            usuario != null && ClienteDelToken(usuario) == null
+            && (EsDireccion(usuario) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
+
+        public const string MENSAJE_SIN_PERMISO_COBRAR_SENAL =
+            "La señal de un evento la cobran en Cajas las tiendas (en efectivo o con tarjeta) y Administración.";
+
+        public const string MENSAJE_TRANSFERENCIA_SOLO_ADMINISTRACION =
+            "La señal por transferencia la cobra Administración. En la tienda, cóbrela en efectivo o con tarjeta.";
+
+        /// <summary>
+        /// Carlos (19/11/26): quién cobra la señal de un evento en la ventana de Cajas. Las tiendas (de cualquier evento: el dinero
+        /// entra en SU caja) en efectivo o con tarjeta; Administración y Dirección (e Informática), también por transferencia.
+        /// Sin forma de pago (para leer las reservas cobrables): cualquiera de ellos.
+        /// </summary>
+        public static bool PuedeCobrarSenalEnCaja(IPrincipal usuario, FormaPagoInscripcionEvento? forma = null)
+        {
+            if (usuario == null || ClienteDelToken(usuario) != null)
+            {
+                return false;
+            }
+            if (EsDireccion(usuario) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION))
+            {
+                return true;
+            }
+            return usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
+                && forma != FormaPagoInscripcionEvento.Transferencia;
+        }
+
         public const string MENSAJE_SIN_PERMISO_INSCRIBIR =
             "Solo puede inscribir a sus clientes (si es jefe de equipo, también a los de su equipo). Para inscribir a este " +
             "cliente, pídaselo a su comercial o a Administración.";

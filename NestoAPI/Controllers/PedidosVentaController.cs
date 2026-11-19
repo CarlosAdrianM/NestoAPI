@@ -1607,6 +1607,9 @@ namespace NestoAPI.Controllers
             // NestoAPI#335: avisos que además del canal de respuesta deben llegar por correo
             // (el correo de modificación es el único canal que los clientes muestran seguro hoy).
             var avisosCorreoModificacion = new List<string>();
+            // 19/11/26 (caso 33895): las líneas nuevas, para avisar si alguna es el curso de un evento vendido a mano
+            List<LineaPedidoVentaDTO> lineasNuevasCurso = pedido?.Lineas?.Where(l => l != null && l.EsLineaNueva).ToList()
+                ?? new List<LineaPedidoVentaDTO>();
 
             // NestoAPI#684 (pedido 928623): 19/10/2027 llegó como 19/10/1926 y se sirvió al día siguiente. Una fecha de
             // entrega anterior al 01/01/2000 es un 400 con el producto y la fecha, antes de tocar nada.
@@ -2942,6 +2945,13 @@ namespace NestoAPI.Controllers
                 avisos.Add(avisoChequeSinUsar);
             }
 
+            // 19/11/26 (caso 33895): una línea nueva es el curso de un evento vivo vendido a mano (no bloquea; nunca lanza)
+            AvisoPedidoDTO avisoCurso = await Infraestructure.Eventos.AvisoCursoVendidoAMano.Calcular(db, pedido.empresa, lineasNuevasCurso, DateTime.Today).ConfigureAwait(true);
+            if (avisoCurso != null)
+            {
+                avisos.Add(avisoCurso);
+            }
+
             // Nesto#588: «fechas futuras» del pedido tal como ha quedado, con la regla de la lista. Si no se ha podido calcular
             // y no hay avisos, el 204 de siempre.
             bool? tieneFechasFuturas = TieneFechasFuturasGrabado(pedido, codigoPostalRutaInterna);
@@ -3762,6 +3772,14 @@ namespace NestoAPI.Controllers
             {
                 pedido.AvisosGrabacion = pedido.AvisosGrabacion ?? new List<AvisoPedidoDTO>();
                 pedido.AvisosGrabacion.Add(avisoChequeSinUsar);
+            }
+
+            // 19/11/26 (caso 33895): el curso de un evento vivo vendido a mano en un pedido normal (no bloquea; nunca lanza)
+            AvisoPedidoDTO avisoCurso = await Infraestructure.Eventos.AvisoCursoVendidoAMano.Calcular(db, pedido.empresa, pedido.Lineas, DateTime.Today).ConfigureAwait(true);
+            if (avisoCurso != null)
+            {
+                pedido.AvisosGrabacion = pedido.AvisosGrabacion ?? new List<AvisoPedidoDTO>();
+                pedido.AvisosGrabacion.Add(avisoCurso);
             }
 
             // Nesto#588: «fechas futuras» del pedido tal como se ha grabado, con la regla de la lista

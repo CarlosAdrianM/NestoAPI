@@ -317,6 +317,10 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<InscripcionEventoDTO> CambiarAsistentes(int id, CambiarAsistentesInscripcionDTO peticion, IPrincipal usuario);
         /// <summary>NestoAPI#829: en un evento mixto, si viene presencial u online (null lo quita). Quien mantiene el evento.</summary>
         Task<InscripcionEventoDTO> CambiarFormaAsistencia(int id, CambiarFormaAsistenciaInscripcionDTO peticion, IPrincipal usuario);
+        /// <summary>19/11/26: las reservas de eventos sin pagar de un cliente, para cobrarlas en Cajas.</summary>
+        Task<List<ReservaEventoSinPagarDTO>> LeerReservasSinPagar(string empresa, string cliente, IPrincipal usuario);
+        /// <summary>19/11/26: cobra la señal en Cajas (cobro, pagada, factura del curso y cupón, como el enlace pagado).</summary>
+        Task<ResultadoCobroSenalCajaDTO> CobrarSenalEnCaja(int id, CobrarSenalCajaDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -434,6 +438,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             EncolarPlazasLlenas = PlazasLlenasEventosJobsService.Encolar;
             AvisarPagoFueraDePlazo = PlazasLlenasEventosJobsService.AvisarPagoFueraDePlazo;
             EncolarAvisosInscripcion = AvisosInscripcionEventosJobs.Encolar;
+            // 19/11/26: el cupón recién emitido, para el mensaje del cobro de la señal en Cajas
+            CuponDeInscripcion = id => new Cupones.RepositorioCupones(db).LeerDeInscripcion(id);
         }
 
         /// <summary>
@@ -596,7 +602,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 {
                     throw Prohibido("El pago de la inscripción lo apunta la tienda.");
                 }
-                ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
+                // Carlos (19/11/26): inscribir ya pagada es «Marcar pagada»: solo Administración (las tiendas cobran en Cajas)
+                ComprobarPuedeMarcarPagadaAMano(usuario);
                 formaPagada = ReglasInscripcionEvento.FormaPago(peticion.Pago.FormaPago)
                     ?? throw new NestoBusinessException("Indique cómo ha pagado: Tarjeta, Transferencia o Efectivo.");
                 if (peticion.Pago.Importe.HasValue && peticion.Pago.Importe.Value < 0)
@@ -1443,16 +1450,16 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
         /// <summary>
         /// Carlos (14/10/26): marcar a mano que la inscripción está pagada (transferencia, tarjeta en el datáfono o efectivo en la
-        /// tienda). Quien mantiene el evento, Administración (cualquier evento) y Dirección. NO apunta nada en contabilidad.
-        /// <para>Efectivo (Carlos, 15/10/26): el cobro en efectivo no se automatiza; lo mete cada usuario en su caja, como
-        /// cualquier cobro en efectivo. La inscripción en efectivo se queda Reservada hasta que alguien (la tienda o
-        /// Administración) la marca aquí como pagada, igual que las demás formas de pago.</para>
+        /// tienda). NO apunta nada en contabilidad: la factura del curso queda pendiente de cobro.
+        /// <para>Carlos (19/11/26): es la salida de emergencia y solo la usa Administración (y Dirección e Informática). Las
+        /// tiendas, y Administración en lo normal, cobran la señal en Cajas (<see cref="CobrarSenalEnCaja"/>), que contabiliza el
+        /// cobro, factura el curso y emite el cupón como el enlace pagado. 403 para los demás.</para>
         /// </summary>
         public async Task<InscripcionEventoDTO> MarcarPagada(int id, MarcarPagoInscripcionDTO peticion, IPrincipal usuario)
         {
+            ComprobarPuedeMarcarPagadaAMano(usuario);
             EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
             Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
-            ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
             ComprobarQueNoEsGratuita(inscripcion, evento);
 
             FormaPagoInscripcionEvento forma = ReglasInscripcionEvento.FormaPago(peticion?.FormaPago)
@@ -1900,6 +1907,16 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             }
             AnotarPago(inscripcion, forma, importe, fecha, usuario, eventoSenalId);
             await db.SaveChangesAsync().ConfigureAwait(false);
+            await TrasPagar(inscripcion, evento, estado).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Lo que viene después de guardar la inscripción como Pagada (el núcleo común de <see cref="Pagar"/> y del cobro en Cajas):
+        /// el corte 2 (pedido, factura, liquidación, cupón; sus fallos van a ELMAH), los avisos que ya le tocaban y, si estaba
+        /// caducada, el aviso de pago fuera de plazo.
+        /// </summary>
+        private async Task TrasPagar(EventoInscripcion inscripcion, Evento evento, EstadoInscripcionEvento estado)
+        {
             await ProcesarPagada(inscripcion, evento).ConfigureAwait(false);
             // NestoAPI#875: pagada ya espera al evento: si su recordatorio ya habría salido, el suyo ahora
             EncolarAvisos(inscripcion);
@@ -2512,6 +2529,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             if (ReglasModalidadEvento.DeInscripcion(inscripcion) == ModalidadInscripcionEvento.Gratuita)
             {
                 throw new NestoBusinessException($"La inscripción {inscripcion.Id} es gratuita («{evento?.Titulo?.Trim()}»): no se paga ni se factura.");
+            }
+        }
+
+        private static void ComprobarPuedeMarcarPagadaAMano(IPrincipal usuario)
+        {
+            if (!PermisosEventos.PuedeMarcarPagadaAMano(usuario))
+            {
+                throw Prohibido(PermisosEventos.MENSAJE_MARCAR_PAGADA_SOLO_ADMINISTRACION);
             }
         }
 

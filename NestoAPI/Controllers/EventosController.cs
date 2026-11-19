@@ -527,9 +527,9 @@ namespace NestoAPI.Controllers
 
         // POST api/Eventos/Inscripciones/7/Pago   { FormaPago, Importe?, Fecha? }
         /// <summary>
-        /// Marca la inscripción como pagada a mano (transferencia, tarjeta o efectivo). Quien mantiene el evento, Administración
-        /// o Dirección. Pasa por el mismo enganche del corte 2 que el cobro por enlace. La API no contabiliza nada: el efectivo
-        /// lo mete cada usuario en su caja (Carlos, 15/10/26).
+        /// Marca la inscripción como pagada a mano (transferencia, tarjeta o efectivo). Pasa por el mismo enganche del corte 2 que
+        /// el cobro por enlace. La API no contabiliza nada. Carlos (19/11/26): es la salida de emergencia, solo Administración y
+        /// Dirección (e Informática); las tiendas reciben 403 y cobran la señal en Cajas (POST Inscripciones/{id}/CobroCaja).
         /// </summary>
         [HttpPost]
         [Route("Inscripciones/{id:int}/Pago")]
@@ -537,6 +537,35 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostPagoInscripcion(int id, [FromBody] MarcarPagoInscripcionDTO peticion)
         {
             return Ok(await inscripciones.MarcarPagada(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // GET api/Eventos/Inscripciones/SinPagar?empresa=1&cliente=33895
+        /// <summary>
+        /// 19/11/26: las reservas de eventos sin pagar del cliente (todos sus contactos) para cobrarlas en Cajas: Reservada o
+        /// Caducada, de pago y de un evento de hoy en adelante. Cada una con su señal, si se puede cobrar (Cobrable) y, si no, el
+        /// Motivo. Tiendas, Administración y Dirección; el resto recibe la lista vacía y el cliente de la tienda online, 403.
+        /// </summary>
+        [HttpGet]
+        [Route("Inscripciones/SinPagar")]
+        [ResponseType(typeof(List<ReservaEventoSinPagarDTO>))]
+        public async Task<IHttpActionResult> GetReservasSinPagar(string cliente, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await inscripciones.LeerReservasSinPagar(empresa, cliente, User).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Inscripciones/7/CobroCaja   { FormaPago, Importe, CuentaCobro?, Fecha?, Diario?, Delegacion?, FormaVenta?, ConceptoAdicional? }
+        /// <summary>
+        /// 19/11/26: cobra la señal de la reserva en Cajas y deja todo como cuando llega el enlace pagado: cobro contra la caja (o el
+        /// banco), inscripción Pagada, pedido y factura exenta del curso con el cobro liquidado, y cupón. El importe tiene que ser la
+        /// señal exacta (400). Tiendas en efectivo o tarjeta; Administración y Dirección, también transferencia (403). 409 si ya no
+        /// está pendiente o hay señal por transferencia, propuesta de señal o enlace cobrado. Repetirlo no cobra dos veces.
+        /// </summary>
+        [HttpPost]
+        [Route("Inscripciones/{id:int}/CobroCaja")]
+        [ResponseType(typeof(ResultadoCobroSenalCajaDTO))]
+        public async Task<IHttpActionResult> PostCobroCaja(int id, [FromBody] CobrarSenalCajaDTO peticion)
+        {
+            return Ok(await inscripciones.CobrarSenalEnCaja(id, peticion, User).ConfigureAwait(false));
         }
 
         // POST api/Eventos/5/Asistencia   { Asistentes: [7, 9] }

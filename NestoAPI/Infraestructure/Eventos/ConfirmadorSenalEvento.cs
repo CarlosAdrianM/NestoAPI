@@ -267,6 +267,13 @@ namespace NestoAPI.Infraestructure.Eventos
     public interface IConfirmadorSenalEvento : IProcesadorInscripcionPagada
     {
         Task<ResultadoConfirmacionSenal> ConfirmarSenal(EventoInscripcion inscripcion, Evento evento, bool aMano);
+
+        /// <summary>
+        /// Cobro de la señal en Cajas (19/11/26): null si, pagada por su señal exacta, la inscripción saldría facturada sola
+        /// (interruptor encendido y automatizable); si no, el motivo (de usted). Se mira ANTES de cobrar: en Cajas no se cobra
+        /// una señal cuyo curso no se va a facturar solo.
+        /// </summary>
+        string MotivoNoFacturaSolo(EventoInscripcion inscripcion, Evento evento, FacturacionCursoInscripcion previa);
     }
 
     /// <summary>NestoAPI#612: las reglas que deciden si se automatiza (sin base de datos).</summary>
@@ -416,6 +423,25 @@ namespace NestoAPI.Infraestructure.Eventos
             fila?.Pedido != null && (fila.LineaPedido.HasValue || fila.Estado == ESTADO_PLANTILLA_ANTIGUO);
 
         private const string ESTADO_PLANTILLA_ANTIGUO = "PendienteEvento";
+
+        public string MotivoNoFacturaSolo(EventoInscripcion inscripcion, Evento evento, FacturacionCursoInscripcion previa)
+        {
+            bool dePlantilla = EsDePlantilla(previa);
+            if (!(dePlantilla ? interruptorPlantilla() : interruptor()))
+            {
+                return "La facturación automática de los cursos está apagada " +
+                    $"({(dePlantilla ? InterruptoresEventos.CLAVE_FACTURAR_CURSOS_PLANTILLA : InterruptoresEventos.CLAVE_FACTURAR_CURSO)}): " +
+                    "la señal no se puede cobrar en Cajas. Avise a Administración.";
+            }
+            // Como si ya estuviera pagada por la señal exacta de su modalidad (lo único que se cobra en Cajas)
+            var pagadaPorLaSenal = new EventoInscripcion
+            {
+                Id = inscripcion?.Id ?? 0,
+                Modalidad = inscripcion?.Modalidad,
+                ImportePagado = inscripcion == null || evento == null ? 0 : ReglasModalidadEvento.ImporteDe(inscripcion, evento)
+            };
+            return ReglasFacturacionCurso.MotivoNoAutomatizable(pagadaPorLaSenal, evento);
+        }
 
         /// <summary>El enganche del corte 1. Con los dos interruptores apagados no hace nada (la inscripción se queda Pagada).</summary>
         public async Task Procesar(EventoInscripcion inscripcion, Evento evento)

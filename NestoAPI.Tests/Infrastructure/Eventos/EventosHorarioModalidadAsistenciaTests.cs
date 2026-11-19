@@ -506,7 +506,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             _ = Inscripcion(7, EVENTO_GRATIS, "15191", EstadoInscripcionEvento.Inscrita, "Gratuita");
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
-                Servicio().MarcarPagada(7, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, PALOMA));
+                Servicio().MarcarPagada(7, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, Usuario("NUEVAVISION\\Aida", "Administración")));
 
             StringAssert.Contains(ex.Message, "gratuita");
         }
@@ -516,7 +516,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             _ = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Reservada, "NoReembolsable");
 
-            await Servicio().MarcarPagada(7, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+            await Servicio().MarcarPagada(7, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, Usuario("NUEVAVISION\\Aida", "Administración"));
 
             Assert.AreEqual(60, inscripciones.Single().ImportePagado);
             Assert.AreEqual("Pagada", inscripciones.Single().Estado);

@@ -658,6 +658,21 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Un cobro tardío del enlace de una Inscrita no la paga ni factura: ELMAH + aviso de pago fuera de plazo a Administración. Los jobs de aviso,
   liberación y caducidad se saltan los eventos que hoy son gratuitos. `CrearEvento` con productos requeridos y sin importes nace 0/0.
 
+### La señal de un evento se cobra en Cajas (caso del cliente 33895, Carlos 19/11/26)
+- `GET api/Eventos/Inscripciones/SinPagar?cliente=&empresa=1`: reservas (Reservada/Caducada, de pago, evento de hoy en adelante) con `Importe`
+  (la señal), `Documento` INS{id}, `Cobrable`/`Motivo` (`ReglasCobroSenalCaja.MotivoNoCobrable`: señal de #591, propuesta de #615 sin confirmar,
+  enlace cobrado, pedido de cursos #691, o `IConfirmadorSenalEvento.MotivoNoFacturaSolo`: interruptor apagado / no automatizable) y `CobroYaApuntado`.
+- `POST api/Eventos/Inscripciones/{id}/CobroCaja` {FormaPago EFC|TAR|TRN, Importe, CuentaCobro?, Fecha?, Diario?, Delegacion?, FormaVenta?,
+  ConceptoAdicional?} (`ServicioInscripcionesEventos.CobrarSenalEnCaja`, `Infraestructure/Eventos/CobroSenalCaja.cs`): importe ≠ señal → 400 (entera o
+  nada); tiendas efectivo/tarjeta, Administración/Dirección también transferencia (`PermisosEventos.PuedeCobrarSenalEnCaja`). En UNA transacción
+  (`RepositorioCobroSenalCaja.Registrar`, applock por inscripción, estado releído): cobro a cuenta «INS{id}» = los apuntes de un cobro a cuenta de Cajas
+  (`ConstructorApuntesCobroSenalCaja`, prdContabilizar por el núcleo de siempre), anula el enlace pendiente y deja la inscripción Pagada; si ya hay cobro
+  INS{id} no lo repite. Después, `TrasPagar` (el corte 2 de siempre): pedido + factura exenta, `LiquidadorSenalCurso` liquida el cobro INS{id} contra el
+  efecto (LIQUIDADA) y cupón. Relanzar = terminar sin cobrar otra vez. Rastro en Modificaciones (Tabla `CobroSenalCaja`).
+- «Marcar pagada» (y inscribir ya pagada): solo Administración/Dirección/Informática (`PuedeMarcarPagadaAMano`, 403 de usted). Facturar a mano y la
+  asistencia siguen con `PuedeMarcarPagada`. POST/PUT PedidosVenta con la referencia del curso de un evento vivo (sin EventoId; en el PUT, líneas nuevas):
+  aviso `CursoVendidoAMano` (POST en `AvisosGrabacion`), se guarda igual. Nesto: Cajas › Cobros enseña las reservas; Marcar pagada oculto a las tiendas.
+
 ### Fechas de recepción y certeza (NestoAPI#853, 12/11/26)
 - Plazo real por proveedor en `dbo.ProveedoresPlazosEntrega` (fuera del EDMX, `Scripts/Issue853_PlazosProveedoresYEnvios.sql`): mediana y P80
   de días (CabPedidoCmp.[Fecha Modificación] → FechaAlbarán, líneas TipoLínea '1', 24 meses, empresas 1+3, negativos fuera), cadencia de
