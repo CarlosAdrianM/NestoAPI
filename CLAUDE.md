@@ -892,6 +892,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   principal = el de entrega (ContactoCobro/Bonificacion siguen en el principal). Se publican los dos a Odoo (primero el principal), cada uno con su
   Dirección 2. Respuesta: la ficha del principal + `ContactoEntrega` (solo si se creó). Un CP nuevo compartido por las dos se crea una vez.
   Nesto: casilla «La entrega es en otra dirección» en «Datos generales» (`BloqueDireccionAlta`, el mismo bloque que la fiscal). NestoApp: issue gemela.
+- **CP del alta solo de Google (19/11/26)**: en Nesto, al CREAR, el código postal no se teclea nunca salvo que Google no lo dé (novedad 482); en la
+  modificación sigue como estaba. La API NO comprueba en el POST que el CP case con la dirección de Google (solo la pantalla; NestoApp sin cambios).
 
 ### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
 - `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática
