@@ -797,6 +797,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   producto que no está en el desglose, origen desconocido, o el motor falló (FechaEntregaAgencia null). El «antes» del «✓ LIBERAR» y su copia a
   tiendas siguen con la cuenta de siempre (no hay motor del pedido anterior). Sugeridor de modo de servicio y portes no cambian.
 
+### Pie del correo: cuando manda la fecha de entrega del pedido (pedido 931105, 19/11/26)
+- Si la fecha que se da es posterior a la que daría la mercancía SOLO por la fecha de entrega de las líneas, el motor lo dice: el mismo cálculo con las
+  fechas de las líneas a «hoy» (en memoria, se restauran) sale antes → `ResultadoFechaEntregaAgencia.NoAntesDeFechaEntrega` / `FechaEntregaAgenciaDTO.NoAntesDeFechaEntrega`
+  y la frase única `TextosCertezaFechaEntrega.FechaEntregaDelPedido` («No sale antes del jueves 26/11/2026, que es la fecha de entrega del pedido.») en el
+  Motivo, en el pie del correo y en el Mensaje de «Dónde está lo que falta». Ninguna fecha cambia. La promesa en riesgo no la usa.
+
 ### Pago a plazos de un pedido ya creado, con cualquier financiera (NestoAPI#864, 13/11/26; continuación de #663)
 - Un empleado (Nesto) o un vendedor (NestoApp) pasa el pedido y el CLIENTE termina la financiación de ese pedido en la app (push) o con
   un enlace. TODO NEUTRO (Carlos 13/11/26): el núcleo `ServicioPagoAPlazos` (`Infraestructure/Pagos/PagoAPlazos/`: pedido, prepago, estados,

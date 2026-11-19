@@ -1580,6 +1580,11 @@ namespace NestoAPI.Infraestructure
                 }
                 _ = s.Append("</ul>");
             }
+            // Pedido 931105: lo que retrasa la fecha es la fecha de entrega del pedido (la misma frase que el motivo del motor)
+            if (fecha.NoAntesDeFechaEntrega.HasValue)
+            {
+                _ = s.Append(EscaparHtml(Infraestructure.PedidosVenta.TextosCertezaFechaEntrega.FechaEntregaDelPedido(fecha.NoAntesDeFechaEntrega.Value, DiaCorreo)) + "<br>");
+            }
             if (!string.IsNullOrWhiteSpace(fecha.Aviso))
             {
                 _ = s.Append("<i>" + EscaparHtml(fecha.Aviso.Trim()) + "</i>");

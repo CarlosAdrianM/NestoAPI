@@ -44,6 +44,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public JuntoConPendienteFechaDTO JuntoConPendiente { get; set; }
 
+        /// <summary>
+        /// Pedido 931105 (19/11/26): la fecha que se da, cuando es posterior a la que daría la mercancía solo porque el pedido tiene una
+        /// fecha de entrega posterior (el motivo ya lo dice: «No sale antes del jueves 26/11, que es la fecha de entrega del pedido.»).
+        /// Null en los demás casos.
+        /// </summary>
+        public DateTime? NoAntesDeFechaEntrega { get; set; }
+
         public const string APLICA_PRIMERA = "Primera";
         public const string APLICA_COMPLETA = "Completa";
     }

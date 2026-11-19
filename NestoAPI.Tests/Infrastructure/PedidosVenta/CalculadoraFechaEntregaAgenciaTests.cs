@@ -555,6 +555,48 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void Pedido931105_LaFechaLaMarcaLaFechaDeEntrega_ElMotivoLoDiceUnaVez_YLaFechaNoCambia()
+        {
+            // Caso 931105: todo podía salir antes (B llega de Reina el miércoles 14 y saldría el jueves 15), pero las líneas tienen
+            // fecha de entrega el lunes 19: la fecha es el 19 y hay que decir por qué.
+            var a = LineaA();
+            var b = BEnReina();
+            a.FechaEntrega = new DateTime(2026, 10, 19);
+            b.FechaEntrega = new DateTime(2026, 10, 19);
+
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, a, b);
+
+            Assert.AreEqual(new DateTime(2026, 10, 19), resultado.FechaQueAplica, "La fecha no cambia");
+            Assert.AreEqual(new DateTime(2026, 10, 19), resultado.NoAntesDeFechaEntrega);
+            string frase = "No sale antes del lunes 19/10, que es la fecha de entrega del pedido.";
+            StringAssert.Contains(resultado.Motivo, frase);
+            Assert.AreEqual(resultado.Motivo.IndexOf(frase, StringComparison.Ordinal), resultado.Motivo.LastIndexOf(frase, StringComparison.Ordinal), "Una sola vez");
+            Assert.AreEqual(new DateTime(2026, 10, 19), a.FechaEntrega, "Las líneas se quedan como estaban");
+        }
+
+        [TestMethod]
+        public void Pedido931105_SiLaMercanciaLlegaDespuesDeLaFechaDeEntrega_NoSeDice()
+        {
+            var a = LineaA();
+            var b = BDelProveedor("2026-10-21");
+            a.FechaEntrega = new DateTime(2026, 10, 15);
+            b.FechaEntrega = new DateTime(2026, 10, 15);
+
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, a, b);
+
+            Assert.IsNull(resultado.NoAntesDeFechaEntrega, resultado.Motivo);
+            Assert.IsFalse(resultado.Motivo.Contains("que es la fecha de entrega del pedido"));
+        }
+
+        [TestMethod]
+        public void Pedido931105_SinFechaDeEntregaFutura_NoSeDice()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, LineaA(), BEnReina());
+
+            Assert.IsNull(resultado.NoAntesDeFechaEntrega);
+        }
+
+        [TestMethod]
         public void LineaConFechaDeEntregaDeOtroAno_ElMotivoLlevaElAno()
         {
             // NestoAPI#708: «Tiene fecha de entrega el martes 05/01» parecía de este año; con el año no hay duda.

@@ -131,6 +131,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// fecha), agrupado como las frases de <see cref="Motivo"/>, para que quien lo enseñe no tenga que recalcular nada.
         /// </summary>
         public List<PartidaFechaEntregaAgenciaDTO> Desglose { get; set; } = new List<PartidaFechaEntregaAgenciaDTO>();
+        /// <summary>
+        /// Pedido 931105: la fecha que se da (<see cref="FechaQueAplica"/>) cuando es posterior a la que daría la mercancía solo porque el pedido
+        /// tiene una fecha de entrega posterior. Null en los demás casos.
+        /// </summary>
+        public DateTime? NoAntesDeFechaEntrega { get; set; }
     }
 
     /// <summary>NestoAPI#606 (08/10): un producto que espera un pedido a proveedor con la fecha prevista ya pasada.</summary>
@@ -349,7 +354,46 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 resultado.Aviso = AvisoTodoJuntoYTodoAhora(entrada);
             }
+            // Pedido 931105: si lo que retrasa la fecha es la fecha de entrega del pedido, se dice (una vez). Solo el texto: la fecha no cambia.
+            resultado.NoAntesDeFechaEntrega = FechaPorLaFechaDeEntrega(entrada, resultado);
+            if (resultado.NoAntesDeFechaEntrega.HasValue)
+            {
+                string frase = TextosCertezaFechaEntrega.FechaEntregaDelPedido(resultado.NoAntesDeFechaEntrega.Value, d => Dia(d, hoy));
+                resultado.Motivo = string.IsNullOrWhiteSpace(resultado.Motivo) ? frase : resultado.Motivo.TrimEnd() + " " + frase;
+            }
             return resultado;
+        }
+
+        /// <summary>
+        /// Pedido 931105: la fecha que se da, si sin las fechas de entrega de las líneas (todas «hoy») saldría antes. El mismo cálculo sin BD
+        /// (como <see cref="AvisoTodoJuntoYTodoAhora"/>); las fechas de las líneas se restauran siempre.
+        /// </summary>
+        private DateTime? FechaPorLaFechaDeEntrega(EntradaFechaEntregaAgencia entrada, ResultadoFechaEntregaAgencia resultado)
+        {
+            DateTime hoy = entrada.Ahora.Date;
+            List<LineaFechaEntregaAgencia> conFecha = (entrada.Lineas ?? new List<LineaFechaEntregaAgencia>())
+                .Where(l => l != null && l.Cantidad > 0 && l.FechaEntrega.HasValue && l.FechaEntrega.Value.Date > hoy)
+                .ToList();
+            if (!resultado.FechaQueAplica.HasValue || conFecha.Count == 0)
+            {
+                return null;
+            }
+            var originales = conFecha.Select(l => l.FechaEntrega).ToList();
+            try
+            {
+                conFecha.ForEach(l => l.FechaEntrega = null);
+                ResultadoFechaEntregaAgencia sinFechas = Calcular(entrada);
+                return sinFechas.FechaQueAplica.HasValue && sinFechas.FechaQueAplica.Value.Date < resultado.FechaQueAplica.Value.Date
+                    ? resultado.FechaQueAplica.Value.Date
+                    : (DateTime?)null;
+            }
+            finally
+            {
+                for (int i = 0; i < conFecha.Count; i++)
+                {
+                    conFecha[i].FechaEntrega = originales[i];
+                }
+            }
         }
 
         /// <summary>

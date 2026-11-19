@@ -246,6 +246,12 @@ WHERE l.Empresa = @p0 AND l.Número = @p1";
 
             resultado.TodoEnAlgete = resultado.Productos.Count == 0;
             resultado.Mensaje = Mensaje(resultado, pendientes.Any());
+            // Pedido 931105: si lo que retrasa la fecha es la fecha de entrega del pedido, se dice
+            if (calculo?.NoAntesDeFechaEntrega.HasValue == true && !string.IsNullOrWhiteSpace(resultado.Mensaje))
+            {
+                resultado.Mensaje = resultado.Mensaje.TrimEnd() + " " + TextosCertezaFechaEntrega.FechaEntregaDelPedido(calculo.NoAntesDeFechaEntrega.Value,
+                    d => CalculadoraFechaEntregaAgencia.Dia(d, hoy));
+            }
             return resultado;
         }
 

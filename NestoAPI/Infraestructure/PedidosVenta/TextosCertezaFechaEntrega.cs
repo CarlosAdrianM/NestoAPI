@@ -27,6 +27,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public const string TEXTO_APROXIMADA = "fecha aproximada, aún sin seguimiento de la agencia";
         public const string TEXTO_ORIENTATIVA = "orientativo, no es un compromiso";
 
+        /// <summary>
+        /// Pedido 931105 (19/11/26): la fecha que se da es posterior a la que daría la mercancía PORQUE el pedido tiene una fecha de
+        /// entrega posterior: «No sale antes del jueves 26/11/2026, que es la fecha de entrega del pedido.» La misma frase para el motivo
+        /// del motor, el pie del correo y «Dónde está lo que falta» (cada uno con su formato de día).
+        /// </summary>
+        public static string FechaEntregaDelPedido(DateTime fecha, Func<DateTime, string> dia)
+            => $"No sale antes del {(dia ?? (d => d.ToString("dd/MM/yyyy")))(fecha)}, que es la fecha de entrega del pedido.";
+
         /// <summary>El grado de certeza de la partida (<see cref="PartidaFechaEntregaAgenciaDTO"/>.CERTEZA_*), o null si no hay nada que decir.</summary>
         public static string Certeza(PartidaFechaEntregaAgenciaDTO p)
         {

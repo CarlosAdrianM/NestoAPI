@@ -510,7 +510,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Entregas = resultado.Entregas,
                 Motivo = resultado.Motivo,
                 Aviso = resultado.Aviso,
-                Desglose = resultado.Desglose
+                Desglose = resultado.Desglose,
+                NoAntesDeFechaEntrega = resultado.NoAntesDeFechaEntrega
             };
         }
 

@@ -133,6 +133,27 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 partidas.Select(p => new LineaPedidoVentaDTO { Producto = p.Producto, texto = "Producto " + p.Producto, tipoLinea = 1 }), 6);
 
         [TestMethod]
+        public void Pedido931105_ElPieDiceQueLaFechaEsLaDeEntregaDelPedido()
+        {
+            var fecha = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = new DateTime(2026, 11, 26),
+                Aplica = FechaEntregaAgenciaDTO.APLICA_COMPLETA,
+                NoAntesDeFechaEntrega = new DateTime(2026, 11, 26),
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE, Producto = "A", Unidades = 1, PuedeSalirEl = new DateTime(2026, 11, 26) }
+                }
+            };
+
+            string html = Html(fecha);
+
+            StringAssert.Contains(html, "No sale antes del jueves 26/11/2026, que es la fecha de entrega del pedido.");
+            Assert.IsFalse(Html(new FechaEntregaAgenciaDTO { FechaEntregaAgencia = new DateTime(2026, 11, 26), Aplica = FechaEntregaAgenciaDTO.APLICA_COMPLETA })
+                .Contains("que es la fecha de entrega del pedido"));
+        }
+
+        [TestMethod]
         public void Desglose_TodoConStockEnAlgete_NoListaLosProductos()
         {
             string html = HtmlDesglose(MARTES, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), EnAlgete("P4"), EnAlgete("P5"), EnAlgete("P6"));
