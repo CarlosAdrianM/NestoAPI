@@ -21,6 +21,45 @@ namespace NestoAPI.Infraestructure.Inventarios
         Task<int> LibreEnHueco(string almacen, string producto, string pasillo, string fila, string columna);
     }
 
+    /// <summary>
+    /// Novedad 1364 (19/11/26): PUT api/Inventarios/{id} cambiando la Fecha daba 500. En el EDMX la clave de Inventarios es NºOrden +
+    /// Empresa + Almacén + Fecha + Número, y EF pone esas columnas en el WHERE del UPDATE con el valor nuevo: 0 filas, concurrencia.
+    /// Esas columnas no se cambian por PUT (la fila es de un día, un almacén y un producto): 400 con el motivo. Lo que no viene (null o
+    /// fecha vacía), lo que solo difiere en el relleno o en mayúsculas y una fecha del mismo día con otra hora se toman de la guardada.
+    /// </summary>
+    public static class ReglaClaveFilaInventario
+    {
+        public const string MENSAJE_HA_CAMBIADO = "La fila del inventario ha cambiado mientras tanto (puede que la hayan contabilizado o borrado). " +
+            "Vuelva a cargar el inventario y repita el cambio.";
+
+        /// <summary>null si no cambia nada de la clave; si no, el motivo (400).</summary>
+        public static string MotivoCambio(string empresaGuardada, string almacenGuardado, DateTime fechaGuardada, string numeroGuardado,
+            string empresa, string almacen, DateTime fecha, string numero)
+        {
+            if (fecha != default && fecha.Date != fechaGuardada.Date)
+            {
+                return $"No se puede cambiar la fecha de una fila del inventario (es del {fechaGuardada:dd/MM/yyyy} y viene con el {fecha:dd/MM/yyyy}). " +
+                    "Si se contó otro día, bórrela y cuéntela en el día que corresponda.";
+            }
+            if (Cambia(almacenGuardado, almacen))
+            {
+                return $"No se puede cambiar el almacén de una fila del inventario (es de {almacenGuardado?.Trim()}). Cuéntela en el almacén que corresponda.";
+            }
+            if (Cambia(empresaGuardada, empresa))
+            {
+                return $"No se puede cambiar la empresa de una fila del inventario (es de la empresa {empresaGuardada?.Trim()}).";
+            }
+            if (Cambia(numeroGuardado, numero))
+            {
+                return $"No se puede cambiar el producto de una fila del inventario (es del {numeroGuardado?.Trim()}). Cuente el otro producto en su propia fila.";
+            }
+            return null;
+        }
+
+        private static bool Cambia(string guardado, string nuevo) =>
+            !string.IsNullOrWhiteSpace(nuevo) && !string.Equals(guardado?.Trim(), nuevo.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     public static class ReglasHuecoInventario
     {
         /// <summary>En un almacén con ubicaciones, un producto que se ubica va por huecos (la condición del comprobador: Pasillo null y Ubicar).</summary>

@@ -55,32 +55,69 @@ namespace NestoAPI.Infraestructure.Inventarios
     /// </summary>
     public static class ComprobadorInventario
     {
+        /// <summary>
+        /// Novedad 1364: el título de OtraFecha dice qué salida tiene. Solo de días anteriores: contabilizarlas también (o borrarlas);
+        /// con alguna de un día posterior: contabilizar en la fecha más reciente (el SP las contabiliza todas las del usuario).
+        /// </summary>
+        internal static string TituloOtraFecha(IEnumerable<FilaInventarioPendiente> otraFecha, DateTime dia)
+        {
+            List<DateTime> dias = (otraFecha ?? Enumerable.Empty<FilaInventarioPendiente>()).Select(f => f.Fecha.Date).Distinct().ToList();
+            const string inicio = "Filas pendientes de este almacén con otra fecha (el procedimiento contabiliza todas las del usuario, sean del día que sean)";
+            if (dias.Count == 0)
+            {
+                return inicio;
+            }
+            if (dias.All(d => d < dia))
+            {
+                return inicio + ": puede contabilizarlas junto con las de este día o borrarlas (el producto se queda sin contar)";
+            }
+            return inicio + $": hay filas del {dias.Max().ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture)}, posterior a este día. " +
+                "Elija esa fecha para contabilizarlas todas juntas, o borre las de días anteriores a hoy";
+        }
+
         /// <summary>Más que esto no se cuenta de un producto en un sitio: es un código leído en la cantidad.</summary>
         public const int STOCK_REAL_MAXIMO = 9999;
         public const int LONGITUD_UBICACION = 3;
         public const int ESTADO_PRODUCTO_ANULADO = -1;
 
         /// <param name="contabilizadas">NestoAPI#784: las filas ya contabilizadas ese día en el almacén (solo hacen falta en las tiendas).</param>
+        /// <param name="incluirDiasAnteriores">
+        /// Novedad 1364 (19/11/26, ALC): las filas pendientes de días ANTERIORES a <paramref name="fecha"/> cuentan como del día (se
+        /// comprueban con él y entran en el recuento) en vez de ir al bloqueante OtraFecha. Es lo que hace el SP de todos modos (contabiliza
+        /// todas las del usuario): así se contabilizan a la vez, a sabiendas y comprobadas. Las de días posteriores siguen bloqueando.
+        /// </param>
         public static ComprobacionesInventarioDTO Comprobar(string almacen, DateTime fecha, bool controlUbicaciones,
             IEnumerable<FilaInventarioPendiente> pendientes, IEnumerable<UbicacionAlmacenInventario> ubicaciones,
-            IEnumerable<FilaInventarioContabilizada> contabilizadas = null, IEnumerable<PickingSinAlbaranarInventario> picking = null)
+            IEnumerable<FilaInventarioContabilizada> contabilizadas = null, IEnumerable<PickingSinAlbaranarInventario> picking = null,
+            bool incluirDiasAnteriores = false)
         {
             DateTime dia = fecha.Date;
             List<FilaInventarioPendiente> todas = (pendientes ?? Enumerable.Empty<FilaInventarioPendiente>()).ToList();
-            List<FilaInventarioPendiente> delDia = todas.Where(f => f.Fecha.Date == dia).ToList();
+            bool EntraEnElDia(FilaInventarioPendiente f) => f.Fecha.Date == dia || (incluirDiasAnteriores && f.Fecha.Date < dia);
+            List<FilaInventarioPendiente> delDia = todas.Where(EntraEnElDia).ToList();
             var resultado = new ComprobacionesInventarioDTO
             {
                 Almacen = almacen,
                 Fecha = dia,
-                ControlUbicaciones = controlUbicaciones
+                ControlUbicaciones = controlUbicaciones,
+                IncluyeDiasAnteriores = incluirDiasAnteriores,
+                DiasAnterioresIncluidos = incluirDiasAnteriores
+                    ? delDia.Select(f => f.Fecha.Date).Where(d => d < dia).Distinct().OrderBy(d => d).ToList()
+                    : new List<DateTime>()
             };
 
             // ---- Bloqueantes ----
+            List<FilaInventarioPendiente> otraFecha = todas.Where(f => !EntraEnElDia(f)).ToList();
             Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.OTRA_FECHA,
                 // 12/11/26 (incidencias 1227 y 1057): las de días anteriores a hoy ya se pueden borrar (DELETE api/Inventarios/Filas).
-                "Filas pendientes de este almacén con otra fecha (el procedimiento contabiliza todas las del usuario): las de días anteriores " +
-                "a hoy se pueden borrar; las demás, contabilícelas en su día",
-                todas.Where(f => f.Fecha.Date != dia));
+                // Novedad 1364 (19/11/26): y las de días anteriores al del inventario se pueden contabilizar con él (IncluirDiasAnteriores).
+                TituloOtraFecha(otraFecha, dia),
+                otraFecha);
+            ComprobacionInventarioDTO bloqueOtraFecha = resultado.Bloqueantes.FirstOrDefault(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA);
+            if (bloqueOtraFecha != null)
+            {
+                bloqueOtraFecha.SePuedeIncluir = otraFecha.All(f => f.Fecha.Date < dia);
+            }
             Anadir(resultado.Bloqueantes, CodigosComprobacionInventario.CANTIDAD_DISPARATADA,
                 "Cantidades disparatadas: más de 9.999 o una referencia leída como cantidad",
                 delDia.Where(EsCantidadDisparatada));
@@ -203,7 +240,12 @@ namespace NestoAPI.Infraestructure.Inventarios
 
             resultado.Recuento = delDia
                 .GroupBy(f => f.Usuario?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .Select(g => new RecuentoUsuarioInventarioDTO { Usuario = g.First().Usuario?.Trim() ?? string.Empty, Filas = g.Count() })
+                .Select(g => new RecuentoUsuarioInventarioDTO
+                {
+                    Usuario = g.First().Usuario?.Trim() ?? string.Empty,
+                    Filas = g.Count(),
+                    Dias = g.Select(f => f.Fecha.Date).Distinct().OrderBy(d => d).ToList()
+                })
                 .OrderBy(r => r.Usuario, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             return resultado;

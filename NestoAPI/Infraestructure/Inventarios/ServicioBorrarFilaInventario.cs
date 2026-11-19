@@ -113,6 +113,33 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// </summary>
         public static bool EsDeDiaAnterior(DateTime fecha, DateTime hoy) => fecha.Date < hoy.Date;
 
+        /// <summary>
+        /// Novedad 1364 (19/11/26, ALC): la fila es de quien pregunta (Inventarios.Usuario, sin dominio ni mayúsculas). Paloma no tenía
+        /// «InventarioBorrarFilas» y su fila del 18/11 salía sin botón: ni podía borrarla ni contabilizar ningún día. Su PROPIA fila
+        /// pendiente de un día anterior la puede borrar quien puede contar en ese almacén, sin el parámetro.
+        /// </summary>
+        public static bool EsDelUsuario(string usuarioFila, string quienPregunta)
+        {
+            string fila = SinDominio(usuarioFila);
+            string quien = SinDominio(quienPregunta);
+            return !string.IsNullOrEmpty(fila) && string.Equals(fila, quien, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Novedad 1364: quién puede borrar ESTA fila (además de tener permiso de contar en el almacén).</summary>
+        public static bool PuedeBorrarEsta(bool puedeBorrar, DateTime fechaFila, string usuarioFila, string quienPregunta, DateTime hoy) =>
+            puedeBorrar || (EsDeDiaAnterior(fechaFila, hoy) && EsDelUsuario(usuarioFila, quienPregunta));
+
+        private static string SinDominio(string usuario)
+        {
+            string limpio = usuario?.Trim();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return null;
+            }
+            int barra = limpio.LastIndexOf('\\');
+            return barra >= 0 ? limpio.Substring(barra + 1) : limpio;
+        }
+
         /// <summary>La fila está ahora mismo en un bloqueante de los que se pueden borrar (y, si es duplicada, su grupo tiene otra).</summary>
         public static bool EsBorrable(ComprobacionesInventarioDTO comprobaciones, int numeroOrden)
         {
@@ -145,12 +172,21 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// en las del bloqueante <see cref="CodigosComprobacionInventario.OTRA_FECHA"/> de días anteriores a hoy, si quien pregunta puede
         /// borrar. Las demás, false (también las de hoy que salen en OtraFecha cuando se comprueba otro día).
         /// </summary>
-        public static void Marcar(ComprobacionesInventarioDTO comprobaciones, bool puedeBorrar, DateTime hoy)
+        public static void Marcar(ComprobacionesInventarioDTO comprobaciones, bool puedeBorrar, DateTime hoy) =>
+            Marcar(comprobaciones, puedeBorrar, hoy, puedeBorrar, null);
+
+        /// <summary>
+        /// Novedad 1364 (19/11/26): además, con <paramref name="puedeContar"/> (permiso de contar en el almacén), las filas PROPIAS de
+        /// <paramref name="quienPregunta"/> de días anteriores a hoy que están en cualquier bloqueante (OtraFecha o, si se incluyen los
+        /// días anteriores, el que les toque) se pueden borrar aunque no tenga <paramref name="puedeBorrar"/>.
+        /// </summary>
+        public static void Marcar(ComprobacionesInventarioDTO comprobaciones, bool puedeBorrar, DateTime hoy, bool puedeContar, string quienPregunta)
         {
             if (comprobaciones == null)
             {
                 return;
             }
+            puedeBorrar = puedeBorrar && puedeContar;
             List<ComprobacionInventarioDTO> bloqueantes = comprobaciones.Bloqueantes ?? new List<ComprobacionInventarioDTO>();
             foreach (FilaComprobacionInventarioDTO fila in bloqueantes.Concat(comprobaciones.Avisos ?? new List<ComprobacionInventarioDTO>())
                 .Where(c => c?.Filas != null)
@@ -158,6 +194,17 @@ namespace NestoAPI.Infraestructure.Inventarios
                 .Where(f => f != null))
             {
                 fila.SePuedeBorrar = false;
+            }
+            if (puedeContar && !puedeBorrar)
+            {
+                foreach (FilaComprobacionInventarioDTO fila in bloqueantes
+                    .Where(c => c?.Filas != null)
+                    .SelectMany(c => c.Filas)
+                    .Where(f => f != null && f.NºOrden.HasValue && f.Fecha.HasValue
+                        && PuedeBorrarEsta(false, f.Fecha.Value, f.Usuario, quienPregunta, hoy)))
+                {
+                    fila.SePuedeBorrar = true;
+                }
             }
             if (!puedeBorrar)
             {
@@ -170,8 +217,9 @@ namespace NestoAPI.Infraestructure.Inventarios
             {
                 fila.SePuedeBorrar = EsBorrable(comprobaciones, fila.NºOrden.Value);
             }
+            // Novedad 1364: en cualquier bloqueante (con los días anteriores incluidos, una de ayer puede estar en FilasDuplicadas…).
             foreach (FilaComprobacionInventarioDTO fila in bloqueantes
-                .Where(c => c?.Filas != null && c.Codigo == CodigosComprobacionInventario.OTRA_FECHA)
+                .Where(c => c?.Filas != null)
                 .SelectMany(c => c.Filas)
                 .Where(f => f != null && f.NºOrden.HasValue && f.Fecha.HasValue && EsDeDiaAnterior(f.Fecha.Value, hoy)))
             {
@@ -258,7 +306,8 @@ namespace NestoAPI.Infraestructure.Inventarios
             {
                 return Resultado(EstadoBorrarFilaInventario.SinPermiso, motivo, fila);
             }
-            if (!puedeBorrar)
+            // Novedad 1364: su propia fila de un día anterior la borra quien puede contar en el almacén, sin el parámetro.
+            if (!ReglaBorrarFilaInventario.PuedeBorrarEsta(puedeBorrar, fila.Fecha, fila.Usuario, usuario, hoy))
             {
                 return Resultado(EstadoBorrarFilaInventario.SinPermiso, ReglaBorrarFilaInventario.MENSAJE_SIN_PERMISO, fila);
             }

@@ -260,6 +260,25 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.BadRequest, (await resultado.ExecuteAsync(System.Threading.CancellationToken.None)).StatusCode);
         }
 
+        [TestMethod]
+        public async Task PutInventario_CambiandoSoloLaFecha_400ConMotivo_No500_Novedad1364()
+        {
+            // La fecha es parte de la clave en el EDMX: EF hacía UPDATE … WHERE Fecha = <la nueva> → 0 filas → 500.
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario> { Pendiente(5, 2) }.AsQueryable());
+            controller.Request = new System.Net.Http.HttpRequestMessage();
+            controller.Configuration = new System.Web.Http.HttpConfiguration();
+
+            var resultado = await controller.PutInventario(5, new Inventario
+            {
+                NºOrden = 5, Empresa = "1", Almacén = "ALC", Fecha = new DateTime(2026, 10, 1), Número = "45487", StockReal = 2, Estado = 1
+            });
+
+            var respuesta = await resultado.ExecuteAsync(System.Threading.CancellationToken.None);
+            Assert.AreEqual(HttpStatusCode.BadRequest, respuesta.StatusCode);
+            StringAssert.Contains(await respuesta.Content.ReadAsStringAsync(), "No se puede cambiar la fecha");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

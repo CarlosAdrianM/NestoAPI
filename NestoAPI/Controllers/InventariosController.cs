@@ -186,7 +186,8 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
-            var guardada = (await db.Inventarios.Where(i => i.NºOrden == id).Select(i => new { i.PorCodigoBarras, i.Pasillo, i.Fila, i.Columna })
+            var guardada = (await db.Inventarios.Where(i => i.NºOrden == id)
+                .Select(i => new { i.PorCodigoBarras, i.Pasillo, i.Fila, i.Columna, i.Empresa, i.Almacén, i.Fecha, i.Número })
                 .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
             bool? marcaGuardada = guardada?.PorCodigoBarras;
             // Incidencia 1227: una fila que tenía hueco no se queda sin él por un PUT (sería «sin ubicación» y bloquearía el contabilizar)
@@ -194,6 +195,22 @@ namespace NestoAPI.Controllers
                 && !Infraestructure.Inventarios.ReglasHuecoInventario.TraeHueco(inventario.Pasillo, inventario.Fila, inventario.Columna))
             {
                 return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.Inventarios.ReglasHuecoInventario.MensajeSinHueco(inventario.Almacén) });
+            }
+            // Novedad 1364 (19/11/26): Empresa, Almacén, Fecha y Número forman la clave de Inventarios en el EDMX (con NºOrden). EF las
+            // pone en el WHERE del UPDATE con el valor NUEVO: cambiar la fecha daba 0 filas → DbUpdateConcurrencyException → 500. Ahora
+            // 400 con el motivo; lo que no viene (o solo cambia de hora o de relleno) se toma de la guardada.
+            if (guardada != null)
+            {
+                string motivoClave = Infraestructure.Inventarios.ReglaClaveFilaInventario.MotivoCambio(guardada.Empresa, guardada.Almacén, guardada.Fecha, guardada.Número,
+                    inventario.Empresa, inventario.Almacén, inventario.Fecha, inventario.Número);
+                if (motivoClave != null)
+                {
+                    return Content(HttpStatusCode.BadRequest, new { Message = motivoClave });
+                }
+                inventario.Empresa = guardada.Empresa;
+                inventario.Almacén = guardada.Almacén;
+                inventario.Fecha = guardada.Fecha;
+                inventario.Número = guardada.Número;
             }
             inventario.PorCodigoBarras = MarcaTrasSumar(marcaGuardada, porCodigoBarras);
 
@@ -209,10 +226,8 @@ namespace NestoAPI.Controllers
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
+                // Novedad 1364: nunca 500 por esto (la fila ha cambiado mientras: contabilizada, borrada y vuelta a crear…).
+                return Content(HttpStatusCode.Conflict, new { Message = Infraestructure.Inventarios.ReglaClaveFilaInventario.MENSAJE_HA_CAMBIADO });
             }
 
             return StatusCode(HttpStatusCode.NoContent);

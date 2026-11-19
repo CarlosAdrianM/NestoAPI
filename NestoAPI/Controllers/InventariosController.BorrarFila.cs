@@ -69,8 +69,9 @@ namespace NestoAPI.Controllers
                 return;
             }
             DateTime hoy = Hoy();
-            bool puede = PermisosInventario.MotivoNoPuedeContar(User, AlmacenDeQuienPide(empresa), almacen) == null && PuedeBorrarFilas();
-            ReglaBorrarFilaInventario.Marcar(comprobaciones, puede, hoy);
+            bool puedeContar = PermisosInventario.MotivoNoPuedeContar(User, AlmacenDeQuienPide(empresa), almacen) == null;
+            // Novedad 1364: sin el permiso de borrar, sus propias filas de días anteriores sí (ReglaBorrarFilaInventario.PuedeBorrarEsta).
+            ReglaBorrarFilaInventario.Marcar(comprobaciones, puedeContar && PuedeBorrarFilas(), hoy, puedeContar, User?.Identity?.Name);
             try
             {
                 ComprobacionInventarioDTO borradas = ReglaBorrarFilaInventario.AvisoBorradas(

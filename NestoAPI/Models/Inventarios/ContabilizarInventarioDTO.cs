@@ -13,6 +13,13 @@ namespace NestoAPI.Models.Inventarios
         public string Almacen { get; set; }
         public DateTime Fecha { get; set; }
         public bool ControlUbicaciones { get; set; }
+        /// <summary>
+        /// Novedad 1364 (19/11/26): estas comprobaciones cuentan las filas pendientes de días anteriores a <see cref="Fecha"/> como del
+        /// día (se pidieron con incluirDiasAnteriores). Para contabilizarlas así, POST Contabilizar con IncluirDiasAnteriores = true.
+        /// </summary>
+        public bool IncluyeDiasAnteriores { get; set; }
+        /// <summary>Novedad 1364: los días anteriores que se han incluido (vacío si no se incluye ninguno).</summary>
+        public List<DateTime> DiasAnterioresIncluidos { get; set; } = new List<DateTime>();
         public List<ComprobacionInventarioDTO> Bloqueantes { get; set; } = new List<ComprobacionInventarioDTO>();
         public List<ComprobacionInventarioDTO> Avisos { get; set; } = new List<ComprobacionInventarioDTO>();
         /// <summary>Quién ha metido inventario ese día en ese almacén (filas pendientes de cada uno).</summary>
@@ -31,6 +38,12 @@ namespace NestoAPI.Models.Inventarios
         /// ConfirmarContadoCero = true lo deja pasar. Los demás bloqueantes no se saltan nunca.
         /// </summary>
         public bool SeConfirma { get; set; }
+        /// <summary>
+        /// Novedad 1364 (19/11/26): solo en OtraFecha, todas sus filas son de días ANTERIORES al del inventario: se pueden contabilizar
+        /// junto con las del día (GET Comprobaciones y POST Contabilizar con incluirDiasAnteriores = true). Con alguna de un día
+        /// posterior, false: hay que elegir esa fecha.
+        /// </summary>
+        public bool SePuedeIncluir { get; set; }
         public List<FilaComprobacionInventarioDTO> Filas { get; set; } = new List<FilaComprobacionInventarioDTO>();
     }
 
@@ -61,6 +74,8 @@ namespace NestoAPI.Models.Inventarios
     {
         public string Usuario { get; set; }
         public int Filas { get; set; }
+        /// <summary>Novedad 1364: los días de sus filas (más de uno solo si se incluyen días anteriores).</summary>
+        public List<DateTime> Dias { get; set; } = new List<DateTime>();
     }
 
     /// <summary>NestoAPI#790: el cuerpo de POST api/Inventarios/Contabilizar.</summary>
@@ -74,6 +89,11 @@ namespace NestoAPI.Models.Inventarios
         /// a abrir y siguen con contado 0) de verdad tienen 0. Sin él, ese bloqueante da 409 como los demás.
         /// </summary>
         public bool ConfirmarContadoCero { get; set; }
+        /// <summary>
+        /// Novedad 1364 (19/11/26): contabiliza también las filas pendientes de días anteriores a <see cref="Fecha"/> (comprobadas con las
+        /// del día). Sin él, esas filas son el bloqueante OtraFecha.
+        /// </summary>
+        public bool IncluirDiasAnteriores { get; set; }
     }
 
     /// <summary>NestoAPI#790: lo contabilizado (un traspaso por usuario) y los usuarios en los que el procedimiento ha fallado.</summary>

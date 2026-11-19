@@ -44,7 +44,9 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/Inventarios/Comprobaciones")]
         [ResponseType(typeof(ComprobacionesInventarioDTO))]
-        public async Task<IHttpActionResult> GetComprobaciones(string almacen, DateTime fecha, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        /// <param name="incluirDiasAnteriores">Novedad 1364: las filas pendientes de días anteriores cuentan como del día (para contabilizarlas con él).</param>
+        public async Task<IHttpActionResult> GetComprobaciones(string almacen, DateTime fecha, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            bool incluirDiasAnteriores = false)
         {
             empresa = EmpresaONula(empresa);
             if (string.IsNullOrWhiteSpace(almacen))
@@ -58,7 +60,9 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, new HttpError(motivo));
             }
 
-            ComprobacionesInventarioDTO comprobaciones = await ServicioContabilizar.Comprobar(empresa, almacen, fecha.Date).ConfigureAwait(false);
+            ComprobacionesInventarioDTO comprobaciones = incluirDiasAnteriores
+                ? await ServicioContabilizar.Comprobar(empresa, almacen, fecha.Date, true).ConfigureAwait(false)
+                : await ServicioContabilizar.Comprobar(empresa, almacen, fecha.Date).ConfigureAwait(false);
             if (comprobaciones == null)
             {
                 return Content(HttpStatusCode.NotFound, new HttpError(AlmacenNoExiste(empresa, almacen)));
@@ -96,7 +100,9 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, new HttpError(motivo));
             }
 
-            ResultadoContabilizarInventario resultado = await ServicioContabilizar.Contabilizar(empresa, almacen, fecha, parametros.ConfirmarContadoCero).ConfigureAwait(false);
+            ResultadoContabilizarInventario resultado = parametros.IncluirDiasAnteriores
+                ? await ServicioContabilizar.Contabilizar(empresa, almacen, fecha, parametros.ConfirmarContadoCero, true).ConfigureAwait(false)
+                : await ServicioContabilizar.Contabilizar(empresa, almacen, fecha, parametros.ConfirmarContadoCero).ConfigureAwait(false);
             if (resultado == null)
             {
                 return Content(HttpStatusCode.NotFound, new HttpError(AlmacenNoExiste(empresa, almacen)));

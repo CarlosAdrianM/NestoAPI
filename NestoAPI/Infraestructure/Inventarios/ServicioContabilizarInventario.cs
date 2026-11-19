@@ -22,6 +22,10 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// <summary>null si el almacén no existe en la empresa.</summary>
         /// <param name="confirmarContadoCero">NestoAPI#784: deja pasar los bloqueantes que se confirman (RecontadaSinContar).</param>
         Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero);
+        /// <summary>Novedad 1364: como <see cref="Comprobar(string, string, DateTime)"/>, contando las filas de días anteriores como del día.</summary>
+        Task<ComprobacionesInventarioDTO> Comprobar(string empresa, string almacen, DateTime fecha, bool incluirDiasAnteriores);
+        /// <summary>Novedad 1364: como <see cref="Contabilizar(string, string, DateTime, bool)"/>, contabilizando también las de días anteriores.</summary>
+        Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero, bool incluirDiasAnteriores);
         /// <param name="valoracion"><see cref="PermisosInventario.VALORACION_PVP"/> o <see cref="PermisosInventario.VALORACION_COSTE"/>.</param>
         Task<DiferenciasInventarioDTO> Diferencias(string empresa, string almacen, DateTime? fecha, IList<int> traspasos, string valoracion);
     }
@@ -41,7 +45,12 @@ namespace NestoAPI.Infraestructure.Inventarios
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
         }
 
-        public async Task<ComprobacionesInventarioDTO> Comprobar(string empresa, string almacen, DateTime fecha)
+        public Task<ComprobacionesInventarioDTO> Comprobar(string empresa, string almacen, DateTime fecha) => Comprobar(empresa, almacen, fecha, false);
+
+        public Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero = false) =>
+            Contabilizar(empresa, almacen, fecha, confirmarContadoCero, false);
+
+        public async Task<ComprobacionesInventarioDTO> Comprobar(string empresa, string almacen, DateTime fecha, bool incluirDiasAnteriores)
         {
             bool? controlUbicaciones = await repositorio.LeerControlUbicaciones(empresa, almacen).ConfigureAwait(false);
             if (controlUbicaciones == null)
@@ -60,12 +69,20 @@ namespace NestoAPI.Infraestructure.Inventarios
             List<PickingSinAlbaranarInventario> picking = controlUbicaciones.Value
                 ? new List<PickingSinAlbaranarInventario>()
                 : await repositorio.LeerPickingSinAlbaranar(empresa, almacen).ConfigureAwait(false);
-            return ComprobadorInventario.Comprobar(almacen, fecha, controlUbicaciones.Value, pendientes, ubicaciones, contabilizadas, picking);
+            return ComprobadorInventario.Comprobar(almacen, fecha, controlUbicaciones.Value, pendientes, ubicaciones, contabilizadas, picking,
+                incluirDiasAnteriores);
         }
 
-        public async Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero = false)
+        /// <param name="incluirDiasAnteriores">
+        /// Novedad 1364 (19/11/26): las filas de días anteriores entran en las comprobaciones y en el recuento. El SP sigue siendo UNO por
+        /// usuario (contabiliza todas las suyas, sean del día que sean: lo hacía ya, por eso OtraFecha bloqueaba); lo nuevo es que se hace
+        /// a sabiendas y con esas filas comprobadas. Los disparadores del inventario paran la venta y los movimientos de esos productos
+        /// mientras la fila está pendiente, así que su teórico sigue valiendo.
+        /// </param>
+        public async Task<ResultadoContabilizarInventario> Contabilizar(string empresa, string almacen, DateTime fecha, bool confirmarContadoCero,
+            bool incluirDiasAnteriores)
         {
-            ComprobacionesInventarioDTO comprobaciones = await Comprobar(empresa, almacen, fecha).ConfigureAwait(false);
+            ComprobacionesInventarioDTO comprobaciones = await Comprobar(empresa, almacen, fecha, incluirDiasAnteriores).ConfigureAwait(false);
             if (comprobaciones == null)
             {
                 return null;
@@ -91,7 +108,10 @@ namespace NestoAPI.Infraestructure.Inventarios
                         });
                         continue;
                     }
-                    int? traspaso = await repositorio.LeerTraspaso(empresa, almacen, recuento.Usuario, fecha).ConfigureAwait(false);
+                    // Novedad 1364: un usuario que solo tenía filas de días anteriores tiene el traspaso en el último de esos días.
+                    List<DateTime> dias = recuento.Dias ?? new List<DateTime>();
+                    DateTime diaTraspaso = dias.Count == 0 || dias.Any(d => d.Date == fecha.Date) ? fecha : dias.Max();
+                    int? traspaso = await repositorio.LeerTraspaso(empresa, almacen, recuento.Usuario, diaTraspaso).ConfigureAwait(false);
                     contabilizacion.Contabilizados.Add(new UsuarioContabilizadoInventarioDTO
                     {
                         Usuario = recuento.Usuario,

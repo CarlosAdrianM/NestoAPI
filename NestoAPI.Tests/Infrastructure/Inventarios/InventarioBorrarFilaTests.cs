@@ -240,9 +240,12 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         }
 
         [TestMethod]
-        public async Task PendienteDeAyer_SinPermiso_403()
+        public async Task PendienteDeAyer_DeOtro_SinPermiso_403()
         {
-            A.CallTo(() => repositorio.Leer(948787)).Returns(Fila(fecha: HOY.AddDays(-1)));
+            // Novedad 1364: la suya de ayer sí la puede borrar (sin parámetro); la de otro, no.
+            FilaInventarioBorrar deOtro = Fila(fecha: HOY.AddDays(-1));
+            deOtro.Usuario = "NUEVAVISION\\Alfredo";
+            A.CallTo(() => repositorio.Leer(948787)).Returns(deOtro);
 
             var resultado = await BorrarConError(948787, "Andre", "Almacén");
 
@@ -538,6 +541,223 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
 
             Assert.IsFalse(resultado.Respuesta[0].YaRellenadaHoy);
             Assert.IsTrue(resultado.Respuesta[1].YaRellenadaHoy);
+        }
+    }
+
+    /// <summary>
+    /// Novedad 1364 (19/11/26, tienda de Alcobendas): Paloma tenía una fila pendiente del 18/11 (954605, 44365, 1/0) y otra del 19/11
+    /// (954609, 38676, 0/2). Con fecha 19/11 bloqueaba la del 18 SIN botón «Borrar» (no tenía «InventarioBorrarFilas»); con fecha 18/11,
+    /// la del 19 (de hoy, no borrable). No podía contabilizar ningún día ni vender el producto. Ahora: su propia fila de ayer se puede
+    /// borrar y, además, contabilizar junto con la de hoy (IncluirDiasAnteriores).
+    /// </summary>
+    [TestClass]
+    public class InventarioDosDiasNovedad1364Tests
+    {
+        private static readonly DateTime AYER = new DateTime(2026, 11, 18);
+        private static readonly DateTime HOY = new DateTime(2026, 11, 19);
+
+        private IRepositorioContabilizarInventario repoContabilizar;
+        private IRepositorioBorrarFilaInventario repoBorrar;
+        private IUnidadBorrarFilaInventario unidad;
+        private List<FilaInventarioPendiente> pendientes;
+
+        [TestInitialize]
+        public void Inicializar()
+        {
+            repoContabilizar = A.Fake<IRepositorioContabilizarInventario>();
+            A.CallTo(() => repoContabilizar.LeerControlUbicaciones("1", "ALC")).Returns(Task.FromResult<bool?>(false));
+            pendientes = new List<FilaInventarioPendiente>
+            {
+                new FilaInventarioPendiente { NumeroOrden = 954605, Producto = "44365", Descripcion = "Producto 44365", StockCalculado = 1, StockReal = 0,
+                    Usuario = "NUEVAVISION\\Paloma", Fecha = AYER.AddHours(18), Grupo = "COS", PrecioMedio = 1 },
+                new FilaInventarioPendiente { NumeroOrden = 954609, Producto = "38676", Descripcion = "Producto 38676", StockCalculado = 0, StockReal = 2,
+                    Usuario = "NUEVAVISION\\Paloma", Fecha = HOY.AddHours(10), Grupo = "COS", PrecioMedio = 1 }
+            };
+            A.CallTo(() => repoContabilizar.LeerPendientes("1", "ALC")).ReturnsLazily(() => Task.FromResult(pendientes.ToList()));
+            A.CallTo(() => repoContabilizar.Contabilizar(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(1));
+            A.CallTo(() => repoContabilizar.LeerTraspaso("1", "ALC", "NUEVAVISION\\Paloma", HOY)).Returns(Task.FromResult<int?>(81500));
+
+            repoBorrar = A.Fake<IRepositorioBorrarFilaInventario>();
+            unidad = A.Fake<IUnidadBorrarFilaInventario>();
+            A.CallTo(() => repoBorrar.Empezar(A<string>._)).Returns(unidad);
+            A.CallTo(() => unidad.BorrarSiPendiente(A<int>._)).Returns(1);
+            A.CallTo(() => repoBorrar.Borradas(A<DateTime>._)).Returns(new List<FilaInventarioBorrada>());
+        }
+
+        private InventariosController Controlador(string nombre = "Paloma", params string[] grupos)
+        {
+            var claims = new List<Claim> { new Claim(ClaimTypes.Name, "NUEVAVISION\\" + nombre) };
+            claims.AddRange((grupos.Length == 0 ? new[] { "Tiendas" } : grupos).Select(g => new Claim(ClaimTypes.Role, "NUEVAVISION\\" + g)));
+            return new InventariosController(A.Fake<NVEntities>(), A.Fake<IRepositorioCodigosBarras>())
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                ServicioBorrarFila = new ServicioBorrarFilaInventario(repoBorrar),
+                ServicioContabilizar = new ServicioContabilizarInventario(repoContabilizar),
+                ParametroBorrarFilas = usuario => null, // Paloma NO tiene «InventarioBorrarFilas»
+                AlmacenDelUsuario = (empresa, usuario) => "ALC",
+                Hoy = () => HOY,
+                User = new ClaimsPrincipal(new ClaimsIdentity(claims, "prueba"))
+            };
+        }
+
+        private async Task<ComprobacionesInventarioDTO> Comprobaciones(DateTime fecha, bool incluir = false) =>
+            ((OkNegotiatedContentResult<ComprobacionesInventarioDTO>)await Controlador().GetComprobaciones("ALC", fecha, "1", incluir)).Content;
+
+        [TestMethod]
+        public async Task ConFechaDeHoy_LaFilaDeAyerDePaloma_SePuedeBorrarYSePuedeIncluir()
+        {
+            ComprobacionesInventarioDTO c = await Comprobaciones(HOY);
+
+            ComprobacionInventarioDTO otraFecha = c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA);
+            FilaComprobacionInventarioDTO fila = otraFecha.Filas.Single();
+            Assert.AreEqual(954605, fila.NumeroOrden);
+            Assert.IsTrue(fila.SePuedeBorrar, "era la causa: sin el parámetro no salía el botón, ni siendo su propia fila");
+            Assert.IsTrue(otraFecha.SePuedeIncluir);
+            StringAssert.Contains(otraFecha.Titulo, "junto con las de este día");
+        }
+
+        [TestMethod]
+        public async Task ConFechaDeAyer_LaDeHoyBloquea_NoSeBorraNiSeIncluye_YElTituloDiceQueFechaElegir()
+        {
+            ComprobacionesInventarioDTO c = await Comprobaciones(AYER);
+
+            ComprobacionInventarioDTO otraFecha = c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA);
+            Assert.AreEqual(954609, otraFecha.Filas.Single().NumeroOrden);
+            Assert.IsFalse(otraFecha.Filas.Single().SePuedeBorrar);
+            Assert.IsFalse(otraFecha.SePuedeIncluir);
+            StringAssert.Contains(otraFecha.Titulo, "19/11/2026");
+        }
+
+        [TestMethod]
+        public async Task IncluyendoDiasAnteriores_SinBloqueantes_RecuentoConLasDosFilasYLosDosDias()
+        {
+            ComprobacionesInventarioDTO c = await Comprobaciones(HOY, incluir: true);
+
+            Assert.AreEqual(0, c.Bloqueantes.Count);
+            Assert.IsTrue(c.IncluyeDiasAnteriores);
+            CollectionAssert.AreEqual(new[] { AYER }, c.DiasAnterioresIncluidos);
+            RecuentoUsuarioInventarioDTO paloma = c.Recuento.Single();
+            Assert.AreEqual(2, paloma.Filas);
+            CollectionAssert.AreEqual(new[] { AYER, HOY }, paloma.Dias);
+        }
+
+        [TestMethod]
+        public async Task Contabilizar_SinIncluir_409ConOtraFecha_YNoLlamaAlProcedimiento()
+        {
+            IHttpActionResult r = await Controlador().PostContabilizar(new ContabilizarInventarioParametrosDTO { Empresa = "1", Almacen = "ALC", Fecha = HOY });
+
+            Assert.IsInstanceOfType(r, typeof(NegotiatedContentResult<ComprobacionesInventarioDTO>));
+            A.CallTo(() => repoContabilizar.Contabilizar(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Contabilizar_IncluyendoLaDeAyer_UnaSolaLlamadaAlProcedimientoConLasDosFilas()
+        {
+            IHttpActionResult r = await Controlador().PostContabilizar(new ContabilizarInventarioParametrosDTO
+            {
+                Empresa = "1", Almacen = "ALC", Fecha = HOY, IncluirDiasAnteriores = true
+            });
+
+            ContabilizacionInventarioDTO contabilizacion = ((OkNegotiatedContentResult<ContabilizacionInventarioDTO>)r).Content;
+            A.CallTo(() => repoContabilizar.Contabilizar("1", "NUEVAVISION\\Paloma", "ALC")).MustHaveHappenedOnceExactly();
+            UsuarioContabilizadoInventarioDTO paloma = contabilizacion.Contabilizados.Single();
+            Assert.AreEqual(2, paloma.Filas);
+            Assert.AreEqual(81500, paloma.Traspaso);
+        }
+
+        [TestMethod]
+        public async Task Contabilizar_IncluyendoDiasAnteriores_UnaDeOtroDiaDelMismoProducto_SigueBloqueandoComoDuplicada()
+        {
+            pendientes.Add(new FilaInventarioPendiente { NumeroOrden = 954610, Producto = "44365", StockCalculado = 1, StockReal = 1,
+                Usuario = "NUEVAVISION\\Paloma", Fecha = HOY.AddHours(11), PrecioMedio = 1 });
+
+            ComprobacionesInventarioDTO c = await Comprobaciones(HOY, incluir: true);
+
+            ComprobacionInventarioDTO duplicadas = c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.FILAS_DUPLICADAS);
+            Assert.IsTrue(duplicadas.Filas.Single(f => f.NumeroOrden == 954605).SePuedeBorrar, "la de ayer, suya: se borra");
+            Assert.IsFalse(duplicadas.Filas.Single(f => f.NumeroOrden == 954610).SePuedeBorrar, "la de hoy: sin el parámetro, no");
+        }
+
+        [TestMethod]
+        public async Task SoloDeDiaPosteriorAlElegido_NoIncluye_LaDeHoySigueEnOtraFecha()
+        {
+            ComprobacionesInventarioDTO c = await Comprobaciones(AYER, incluir: true);
+
+            Assert.AreEqual(954609, c.Bloqueantes.Single(b => b.Codigo == CodigosComprobacionInventario.OTRA_FECHA).Filas.Single().NumeroOrden);
+            Assert.AreEqual(0, c.DiasAnterioresIncluidos.Count);
+        }
+
+        [TestMethod]
+        public async Task Borrar_SuPropiaFilaDeAyer_SinElParametro_204()
+        {
+            A.CallTo(() => repoBorrar.Leer(954605)).Returns(new FilaInventarioBorrar
+            {
+                NumeroOrden = 954605, Empresa = "1", Almacen = "ALC", Fecha = AYER.AddHours(18), Producto = "44365",
+                StockCalculado = 1, StockReal = 0, Estado = 1, Usuario = "NUEVAVISION\\Paloma"
+            });
+
+            IHttpActionResult r = await Controlador().DeleteFila(954605);
+
+            Assert.AreEqual(HttpStatusCode.NoContent, ((StatusCodeResult)r).StatusCode);
+            A.CallTo(() => unidad.BorrarSiPendiente(954605)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.Confirmar()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Borrar_FilaDeAyerDeOtraUsuaria_SinElParametro_403()
+        {
+            A.CallTo(() => repoBorrar.Leer(954605)).Returns(new FilaInventarioBorrar
+            {
+                NumeroOrden = 954605, Empresa = "1", Almacen = "ALC", Fecha = AYER, Producto = "44365", Estado = 1, Usuario = "NUEVAVISION\\Javier"
+            });
+
+            IHttpActionResult r = await Controlador().DeleteFila(954605);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<HttpError>)r).StatusCode);
+            A.CallTo(() => unidad.BorrarSiPendiente(A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Borrar_SuPropiaFilaDeHoy_SinElParametro_403()
+        {
+            A.CallTo(() => repoBorrar.Leer(954609)).Returns(new FilaInventarioBorrar
+            {
+                NumeroOrden = 954609, Empresa = "1", Almacen = "ALC", Fecha = HOY, Producto = "38676", Estado = 1, Usuario = "NUEVAVISION\\Paloma"
+            });
+
+            IHttpActionResult r = await Controlador().DeleteFila(954609);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<HttpError>)r).StatusCode);
+        }
+
+        [TestMethod]
+        public void EsDelUsuario_SinDominioNiMayusculas()
+        {
+            Assert.IsTrue(ReglaBorrarFilaInventario.EsDelUsuario("NUEVAVISION\\Paloma ", "nuevavision\\paloma"));
+            Assert.IsTrue(ReglaBorrarFilaInventario.EsDelUsuario("Paloma", "NUEVAVISION\\Paloma"));
+            Assert.IsFalse(ReglaBorrarFilaInventario.EsDelUsuario(null, "NUEVAVISION\\Paloma"));
+            Assert.IsFalse(ReglaBorrarFilaInventario.EsDelUsuario("NUEVAVISION\\Javier", "NUEVAVISION\\Paloma"));
+        }
+
+        // ---------- PUT cambiando la fecha: 400, no 500 ----------
+
+        [TestMethod]
+        public void ClaveFila_CambiarLaFecha_Motivo()
+        {
+            string motivo = ReglaClaveFilaInventario.MotivoCambio("1", "ALC", AYER.AddHours(18), "44365", "1", "ALC", HOY, "44365");
+
+            StringAssert.Contains(motivo, "No se puede cambiar la fecha");
+            StringAssert.Contains(motivo, "18/11/2026");
+        }
+
+        [TestMethod]
+        public void ClaveFila_MismoDiaOtraHora_RellenoOVacio_NoEsCambio()
+        {
+            Assert.IsNull(ReglaClaveFilaInventario.MotivoCambio("1  ", "ALC", AYER.AddHours(18), "44365          ", "1", "alc", AYER, "44365"));
+            Assert.IsNull(ReglaClaveFilaInventario.MotivoCambio("1", "ALC", AYER, "44365", null, null, default, null));
+            Assert.IsNotNull(ReglaClaveFilaInventario.MotivoCambio("1", "ALC", AYER, "44365", "1", "REI", AYER, "44365"));
+            Assert.IsNotNull(ReglaClaveFilaInventario.MotivoCambio("1", "ALC", AYER, "44365", "1", "ALC", AYER, "38676"));
         }
     }
 }

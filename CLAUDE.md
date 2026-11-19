@@ -559,6 +559,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   sin mirar si sobra; mismos permisos, applocks y rastro); las de hoy, solo las que sobran; las de días posteriores y las contabilizadas, nunca.
   `Marcar` pone `SePuedeBorrar` en las de `OtraFecha` anteriores a hoy (no en las de hoy al comprobar otro día). El aviso `FilasBorradas` saca las
   borradas ese día aunque la fila fuera de otro, con «(fila del dd/MM/yyyy)». Nesto y Ariadna pintan el botón solo por `SePuedeBorrar`.
+- **Dos filas de días distintos se bloqueaban entre sí (novedad 1364, ALC, 19/11/26)**: la fila de ayer salía sin «Borrar» porque la usuaria
+  de tienda no tenía «InventarioBorrarFilas». Ahora su PROPIA fila pendiente de un día anterior la borra quien puede contar en el almacén
+  (`ReglaBorrarFilaInventario.PuedeBorrarEsta`/`EsDelUsuario`; Marcar y DELETE). Y «Contabilizar también la del dd/MM»: GET Comprobaciones y POST
+  Contabilizar con `incluirDiasAnteriores` cuentan las pendientes de días ANTERIORES a la fecha como del día (se comprueban con él, entran en el
+  recuento, `Dias` por usuario; `IncluyeDiasAnteriores`, `DiasAnterioresIncluidos`). El SP sigue siendo uno por usuario (ya contabilizaba todas
+  las suyas: por eso OtraFecha bloquea). OtraFecha trae `SePuedeIncluir` (todas anteriores); con una de un día posterior, elegir esa fecha.
+- `PUT api/Inventarios/{id}` cambiando Fecha (o Almacén, Empresa, Número) daba 500: son parte de la clave en el EDMX y EF las pone en el WHERE
+  del UPDATE con el valor nuevo (0 filas → DbUpdateConcurrencyException). Ahora 400 (`ReglaClaveFilaInventario`); lo que no viene, misma fecha
+  con otra hora o relleno se toman de la guardada; una concurrencia de verdad, 409.
 - Picking cortado por los disparadores del inventario («Se esta realizando el inventario del producto[1]»): `GestorPicking.EnExclusiva` lo
   traduce (`ErrorInventarioPendientePicking`, pura) a un mensaje con las filas pendientes (fuera de REI) de los productos del picking (o todas si
   no casa ninguna; 10 y «… y N más»). Es un `Exception` (INTERNAL_ERROR, sin «[CÓDIGO]» en Nesto) con el original dentro; si la consulta falla, el original.
