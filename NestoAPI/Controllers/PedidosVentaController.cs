@@ -1930,7 +1930,9 @@ namespace NestoAPI.Controllers
                             {
                                 Contacto = pedido.contacto?.Trim(),
                                 Nombre = direccionNuevoContacto.Nombre?.Trim(),
-                                Direccion = direccionNuevoContacto.Dirección?.Trim(),
+                                // NestoAPI#874: con la Dirección 2 (la que llevará la etiqueta al actualizarla)
+                                Direccion = Infraestructure.Clientes.DireccionCompletaCliente.Componer(direccionNuevoContacto.Dirección,
+                                    Infraestructure.Clientes.Direccion2ClienteSql.Leer(db, pedido.empresa, pedido.cliente, pedido.contacto)),
                                 CodPostal = direccionNuevoContacto.CodPostal?.Trim(),
                                 Poblacion = direccionNuevoContacto.Población?.Trim(),
                                 Provincia = direccionNuevoContacto.Provincia?.Trim(),

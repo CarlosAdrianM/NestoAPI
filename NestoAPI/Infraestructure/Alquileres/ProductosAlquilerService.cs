@@ -273,6 +273,11 @@ namespace NestoAPI.Infraestructure.Alquileres
                 }
             }
 
+            // NestoAPI#874: la Dirección 2 de los contactos de la lista, en UNA consulta (sin columnas o si falla, null)
+            Dictionary<string, Clientes.Direccion2Contacto> direcciones2 = numerosCliente.Any()
+                ? Clientes.Direccion2ClienteSql.LeerDeClientes(db, empresa, numerosCliente, Clientes.Direccion2ClienteSql.PARA_PANTALLA)
+                : null;
+
             return cabeceras.Select(c =>
             {
                 Cliente cli = null;
@@ -293,6 +298,10 @@ namespace NestoAPI.Infraestructure.Alquileres
                     nombrePorCliente.TryGetValue(c.Cliente.Trim(), out nombreCliente);
                 }
                 dto.ClienteNombre = nombreCliente;
+                if (cli != null)
+                {
+                    dto.Direccion2Cliente = Clientes.Direccion2ClienteSql.ParaPublicar(direcciones2, cli.Nº_Cliente, cli.Contacto).Direccion2;
+                }
                 return dto;
             }).ToList();
         }

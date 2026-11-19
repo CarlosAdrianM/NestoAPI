@@ -37,6 +37,8 @@ namespace NestoAPI.Models.Alquileres
         public string Familia { get; set; }
         public string NombreCliente { get; set; }
         public string DireccionCliente { get; set; }
+        /// <summary>NestoAPI#874: la Dirección 2 del contacto (piso, rótulo, nave), o null. Solo lectura (etiqueta del pedido en Nesto).</summary>
+        public string Direccion2Cliente { get; set; }
         public string CodPostalCliente { get; set; }
         public string PoblacionCliente { get; set; }
         public string ProvinciaCliente { get; set; }

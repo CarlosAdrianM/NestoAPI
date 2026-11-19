@@ -921,14 +921,28 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
-        private static DireccionFactura CargarDireccionEntrega(Cliente clienteEntrega)
+        /// <summary>
+        /// La dirección de ENTREGA del documento (factura, albarán, pedido, nota de entrega, ticket). NestoAPI#874: con la Dirección 2 del
+        /// contacto (piso, rótulo, nave), como la ve el repartidor. La FISCAL (<see cref="CargarDireccionRazonSocial"/>) NO la lleva:
+        /// está pendiente de decidir (Verifactu, 347, mandato).
+        /// </summary>
+        private DireccionFactura CargarDireccionEntrega(Cliente clienteEntrega)
         {
+            string direccion2 = null;
+            try
+            {
+                direccion2 = servicio.LeerDireccion2Cliente(clienteEntrega.Empresa?.Trim(), clienteEntrega.Nº_Cliente?.Trim(), clienteEntrega.Contacto?.Trim());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Documentos #874] No se ha podido leer la dirección 2 de {clienteEntrega.Nº_Cliente?.Trim()}/{clienteEntrega.Contacto?.Trim()}: {ex.Message}", ex));
+            }
             return new DireccionFactura
             {
                 Tipo = "Entrega",
                 Nombre = clienteEntrega.Nombre?.Trim(),
                 CodigoPostal = clienteEntrega.CodPostal?.Trim(),
-                Direccion = clienteEntrega.Dirección?.Trim(),
+                Direccion = Clientes.DireccionCompletaCliente.Componer(clienteEntrega.Dirección, direccion2),
                 Poblacion = clienteEntrega.Población?.Trim(),
                 Provincia = clienteEntrega.Provincia?.Trim(),
                 Telefonos = clienteEntrega.Teléfono?.Trim()

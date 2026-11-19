@@ -18,6 +18,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     {
         public string Nombre { get; set; }
         public string Direccion { get; set; }
+        /// <summary>NestoAPI#874: la Dirección 2 del contacto, o null.</summary>
+        public string Direccion2 { get; set; }
         public string CodPostal { get; set; }
         public string Poblacion { get; set; }
         public string Provincia { get; set; }
@@ -222,6 +224,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Contacto = contacto,
                 Nombre = ficha.Nombre,
                 Direccion = ficha.Direccion,
+                Direccion2 = ficha.Direccion2,
                 CodPostal = ficha.CodPostal,
                 Poblacion = ficha.Poblacion,
                 Provincia = ficha.Provincia,
@@ -424,6 +427,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             {
                 Nombre = ficha.Nombre?.Trim(),
                 Direccion = ficha.Dirección?.Trim(),
+                Direccion2 = Clientes.Direccion2ClienteSql.Leer(db, empresa, cliente, contacto),
                 CodPostal = ficha.CodPostal?.Trim(),
                 Poblacion = ficha.Población?.Trim(),
                 Provincia = ficha.Provincia?.Trim(),

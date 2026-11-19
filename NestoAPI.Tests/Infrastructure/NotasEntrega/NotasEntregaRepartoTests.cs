@@ -351,6 +351,61 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         }
 
         [TestMethod]
+        public async Task Etiquetas_RecogidaSinParada_LlevaLaDireccion2DelCliente()
+        {
+            // NestoAPI#874: la etiqueta de la recogida (sin parada) lleva el rótulo/piso como el resto de envíos.
+            cabeceras.Filas[NOTA] = Fila("Recogida", 1);
+            paradas.Destinos[NOTA].Direccion2 = "LOCAL · RÓTULO: MARCO ALDANY";
+            var impresora = new ImpresoraFalsa();
+            var servicio = new ServicioEtiquetasRecogida(cabeceras, paradas, A.Fake<ILectorParametrosUsuario>(), impresora, () => new DateTime(2026, 10, 30));
+
+            ResultadoEtiquetasRecogida r = await servicio.Imprimir(EMPRESA, NOTA, "Zebra", "alfredo");
+
+            Assert.AreEqual(TipoResultadoNotaEntrega.Ok, r.Tipo);
+            StringAssert.Contains(impresora.Contenido, "C/ MAYOR, 1, LOCAL");
+            StringAssert.Contains(impresora.Contenido, "MARCO ALDANY");
+        }
+
+        [TestMethod]
+        public void Parada_ConstruirEnvio_ConDireccion2_VaEnLaDireccionYSinEllaComoSiempre()
+        {
+            var pedido = new CabPedidoVta { Empresa = "1", Número = NOTA, Nº_Cliente = CLIENTE, Contacto = "0", Vendedor = "NV" };
+            DestinoNotaEntrega destino = paradas.Destinos[NOTA];
+
+            EnviosAgencia sin = ServicioParadasNotaEntrega.ConstruirEnvio(pedido, destino, "1", 1, "alfredo", new DateTime(2026, 10, 30));
+            destino.Direccion2 = "1º D";
+            EnviosAgencia con = ServicioParadasNotaEntrega.ConstruirEnvio(pedido, destino, "1", 1, "alfredo", new DateTime(2026, 10, 30));
+
+            Assert.AreEqual("C/ MAYOR, 1", sin.Direccion);
+            Assert.AreEqual("Recoger el sillón - y la lámpara", sin.Observaciones);
+            Assert.AreEqual("C/ MAYOR, 1, 1º D", con.Direccion);
+            Assert.AreEqual("Recoger el sillón - y la lámpara", con.Observaciones);
+        }
+
+        [TestMethod]
+        public void Parada_ConstruirEnvio_Direccion2QueNoCabe_VaALasObservacionesOAvisa()
+        {
+            var pedido = new CabPedidoVta { Empresa = "1", Número = NOTA, Nº_Cliente = CLIENTE, Contacto = "0", Vendedor = "NV" };
+            DestinoNotaEntrega destino = paradas.Destinos[NOTA];
+            destino.Direccion = new string('A', 50);
+            destino.Direccion2 = "LOCAL 6 · RÓTULO: " + new string('B', 20); // 50 + 2 + 38 > 80; 38 + 3 + 32 de la nota <= 80
+            var avisos = new List<string>();
+
+            EnviosAgencia envio = ServicioParadasNotaEntrega.ConstruirEnvio(pedido, destino, "1", 1, "alfredo", new DateTime(2026, 10, 30),
+                alNoCaberDireccion2: avisos.Add);
+
+            Assert.AreEqual(new string('A', 50), envio.Direccion);
+            StringAssert.StartsWith(envio.Observaciones, "LOCAL 6 · RÓTULO: ");
+            Assert.AreEqual(0, avisos.Count);
+
+            destino.Texto = new string('C', 80);
+            EnviosAgencia lleno = ServicioParadasNotaEntrega.ConstruirEnvio(pedido, destino, "1", 1, "alfredo", new DateTime(2026, 10, 30),
+                alNoCaberDireccion2: avisos.Add);
+            Assert.AreEqual(new string('C', 80), lleno.Observaciones, "No se quita nada de la nota");
+            Assert.AreEqual(1, avisos.Count);
+        }
+
+        [TestMethod]
         public async Task Etiquetas_NotaDeEntrega_400SinImprimir()
         {
             var impresora = new ImpresoraFalsa();

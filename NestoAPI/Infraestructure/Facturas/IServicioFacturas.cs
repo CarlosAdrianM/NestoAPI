@@ -11,6 +11,8 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         Cliente CargarCliente(string empresa, string numeroCliente, string contacto);
         Cliente CargarClientePrincipal(string empresa, string numeroCliente);
+        /// <summary>NestoAPI#874: la Dirección 2 del contacto (piso, rótulo, nave), o null/vacío. Solo para la dirección de ENTREGA.</summary>
+        string LeerDireccion2Cliente(string empresa, string numeroCliente, string contacto);
         CabFacturaVta CargarCabFactura(string empresa, string numeroFactura);
         CabPedidoVta CargarCabPedido(string empresa, int numeroPedido);
         CabPedidoVta CargarCabPedidoPorAlbaran(string empresa, int numeroAlbaran);

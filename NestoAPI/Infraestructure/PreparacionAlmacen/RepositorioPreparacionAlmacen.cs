@@ -204,9 +204,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class RepositorioPreparacionAlmacen : IRepositorioPreparacionAlmacen
     {
         private readonly Database baseDeDatos;
+        /// <summary>NestoAPI#874: para leer la Dirección 2 (null con el constructor de solo SQL: sin ella, como antes).</summary>
+        private readonly NVEntities db;
 
         public RepositorioPreparacionAlmacen(NVEntities db) : this(db.Database)
         {
+            this.db = db;
         }
 
         // Solo necesita ejecutar SQL: así la prueba de integración puede darle cualquier conexión
@@ -929,11 +932,21 @@ WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado >= 2"
                 new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)pedido ?? DBNull.Value }).ToListAsync();
         }
 
-        public Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido)
+        public async Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido)
         {
-            return baseDeDatos.SqlQuery<FilaPackingAlmacen>(SQL_LINEAS_PACKING,
+            List<FilaPackingAlmacen> filas = await baseDeDatos.SqlQuery<FilaPackingAlmacen>(SQL_LINEAS_PACKING,
                 new SqlParameter("@p0", empresa), new SqlParameter("@p1", picking),
-                new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)pedido ?? DBNull.Value }).ToListAsync();
+                new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)pedido ?? DBNull.Value }).ToListAsync().ConfigureAwait(false);
+            // NestoAPI#874: el mozo ve la dirección completa (Dirección + Dirección 2) de cada entrega. Las columnas pueden no existir:
+            // se leen aparte, en UNA consulta para todos los clientes del picking (sin ellas o si falla, la dirección de siempre).
+            if (db != null && filas.Count > 0)
+            {
+                Dictionary<string, Clientes.Direccion2Contacto> direcciones2 = Clientes.Direccion2ClienteSql.LeerDeClientes(db, empresa,
+                    filas.Select(f => f.Cliente), Clientes.Direccion2ClienteSql.PARA_PANTALLA);
+                Clientes.DireccionCompletaCliente.Rellenar(filas, direcciones2, f => f.Cliente, f => f.Contacto, f => f.Direccion,
+                    (f, d) => f.Direccion = d);
+            }
+            return filas;
         }
 
         public Task<List<FaltaPickingAlmacen>> LeerFaltasDelPicking(string empresa, int picking)

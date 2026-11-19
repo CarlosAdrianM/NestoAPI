@@ -174,16 +174,18 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 return null;
             }
             var telefono = new Telefono(ficha.Telefonos);
+            // NestoAPI#874: la Dirección 2 con la regla de las etiquetas (en la dirección si cabe; si no, en las observaciones)
+            DireccionEnvioCompuesta direccion = DireccionEnvioCliente.Componer(ficha.Direccion, ficha.Direccion2, ficha.Texto);
             return new DatosEnvioRemoto
             {
                 Referencia = pedido.ToString(CultureInfo.InvariantCulture),
                 Nombre = ficha.Nombre,
-                Direccion = ficha.Direccion,
+                Direccion = direccion.Direccion,
                 CodigoPostal = ficha.CodPostal,
                 Poblacion = ficha.Poblacion,
                 Telefono = telefono.FijoUnico(),
                 Movil = telefono.MovilUnico(),
-                Observaciones = ficha.Texto
+                Observaciones = direccion.Observaciones
             };
         }
     }

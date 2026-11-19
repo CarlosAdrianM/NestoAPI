@@ -138,12 +138,16 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.CabPedidoVta c WITH (NOLOCK) WHE
             List<Cliente> fichas = await db.Clientes.AsNoTracking()
                 .Where(c => c.Empresa == empresa && lista.Contains(c.Nº_Cliente))
                 .ToListAsync().ConfigureAwait(false);
+            // NestoAPI#874: la Dirección 2 de todos esos clientes en UNA consulta (sin columnas o si falla, null: como antes)
+            Dictionary<string, Clientes.Direccion2Contacto> direcciones2 = Clientes.Direccion2ClienteSql.LeerDeClientes(db, empresa, lista,
+                Clientes.Direccion2ClienteSql.PARA_PANTALLA);
             foreach (Cliente c in fichas)
             {
                 resultado[ServicioRecogidasSolicitadas.Clave(c.Nº_Cliente, c.Contacto)] = new FichaNotaCobro
                 {
                     Nombre = c.Nombre?.Trim(),
                     Direccion = c.Dirección?.Trim(),
+                    Direccion2 = Clientes.Direccion2ClienteSql.ParaPublicar(direcciones2, c.Nº_Cliente, c.Contacto).Direccion2,
                     CodPostal = c.CodPostal?.Trim(),
                     Poblacion = c.Población?.Trim(),
                     Provincia = c.Provincia?.Trim(),

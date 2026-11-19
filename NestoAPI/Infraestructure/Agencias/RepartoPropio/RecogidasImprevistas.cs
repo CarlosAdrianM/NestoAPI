@@ -64,6 +64,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public string Contacto { get; set; }
         public string NombreCliente { get; set; }
         public string Direccion { get; set; }
+        /// <summary>NestoAPI#874: Dirección + «, » + Dirección 2 del contacto, para enseñar (sin Dirección 2, la Dirección).</summary>
+        public string DireccionCompleta { get; set; }
         public string Poblacion { get; set; }
         public bool HayRetornoVivo { get; set; }
         public List<RetornoVivoDTO> RetornosVivos { get; set; } = new List<RetornoVivoDTO>();
@@ -304,6 +306,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Contacto = destino.Contacto,
                 NombreCliente = Limpiar(destino.Ficha.Nombre),
                 Direccion = Limpiar(destino.Ficha.Direccion),
+                DireccionCompleta = Limpiar(Clientes.DireccionCompletaCliente.Componer(destino.Ficha.Direccion, destino.Ficha.Direccion2)),
                 Poblacion = Limpiar(destino.Ficha.Poblacion),
                 HayRetornoVivo = retornos.Any(),
                 RetornosVivos = retornos,

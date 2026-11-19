@@ -216,7 +216,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 .Where(l => l != null && l.Picking > 0).Select(l => (DateTime?)l.Fecha_Entrega).Min();
             DateTime fechaReparto = FechaRepartoPropio.Calcular(fechaPicking, hoy().Date, pedido.Ruta, destino.CodPostal, empresa,
                 pedido.Nº_Cliente, pedido.Contacto, esFestivo);
-            EnviosAgencia envio = ConstruirEnvio(pedido, destino, empresaAgencia, bultos, usuario, hoy().Date, fechaEntrega: fechaReparto);
+            EnviosAgencia envio = ConstruirEnvio(pedido, destino, empresaAgencia, bultos, usuario, hoy().Date, fechaEntrega: fechaReparto,
+                alNoCaberDireccion2: aviso => Registrar(new Exception($"[Notas de entrega #874] Parada de la nota {numero}: {aviso}")));
             int creado = await repositorio.CrearEnvioTramitado(envio, resultado.EsRecogida ? HISTORIA_RECOGIDA : HISTORIA_ENTREGA_SIN_PACKING)
                 .ConfigureAwait(false);
             resultado.Accion = AccionParadaNotaEntrega.Creada;
@@ -266,11 +267,22 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// <param name="reembolso">NestoAPI#786: lo que hay que cobrar (notas de cobro); 0 en las demás.</param>
         /// <param name="sinBultos">NestoAPI#786: la parada no lleva bultos (nota de cobro): Bultos 0 en vez del mínimo de 1.</param>
         internal static EnviosAgencia ConstruirEnvio(CabPedidoVta pedido, DestinoNotaEntrega destino, string empresaAgencia, short bultos,
-            string usuario, DateTime fecha, decimal reembolso = 0m, bool sinBultos = false, DateTime? fechaEntrega = null)
+            string usuario, DateTime fecha, decimal reembolso = 0m, bool sinBultos = false, DateTime? fechaEntrega = null,
+            Action<string> alNoCaberDireccion2 = null)
         {
             var defectos = PropuestaEnvioService.DefaultsDe(Constantes.Agencias.AGENCIA_REPARTO_PROPIO, destino.CodPostal);
             var telefono = new Telefono(destino.Telefonos);
             string nombre = (destino.Nombre ?? string.Empty).Replace("\"", string.Empty);
+            // NestoAPI#874: la Dirección 2 (piso, rótulo, nave) llega al repartidor por la MISMA regla que el resto de envíos: con
+            // la dirección si cabe en 80; si no, delante de las observaciones; si tampoco, aviso (y queda como antes).
+            DireccionEnvioCompuesta direccion = DireccionEnvioCliente.Componer(
+                (destino.Direccion ?? string.Empty).Replace("\"", string.Empty),
+                destino.Direccion2?.Replace("\"", string.Empty),
+                Recortar((destino.Texto ?? string.Empty).Replace("\"", string.Empty), LONGITUD_OBSERVACIONES));
+            if (direccion.Aviso != null)
+            {
+                alNoCaberDireccion2?.Invoke(direccion.Aviso);
+            }
             var envio = new EnviosAgencia
             {
                 Empresa = string.IsNullOrWhiteSpace(empresaAgencia) ? pedido.Empresa?.Trim() : empresaAgencia,
@@ -286,7 +298,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Retorno = 0,
                 Bultos = sinBultos ? (short)0 : bultos < 1 ? (short)1 : bultos,
                 Nombre = nombre,
-                Direccion = (destino.Direccion ?? string.Empty).Replace("\"", string.Empty),
+                Direccion = direccion.Direccion,
                 CodPostal = destino.CodPostal ?? string.Empty,
                 Poblacion = destino.Poblacion ?? string.Empty,
                 Provincia = destino.Provincia ?? string.Empty,
@@ -295,7 +307,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Movil = telefono.MovilUnico(),
                 Email = string.Empty,
                 Atencion = nombre,
-                Observaciones = Recortar((destino.Texto ?? string.Empty).Replace("\"", string.Empty), LONGITUD_OBSERVACIONES),
+                Observaciones = direccion.Observaciones,
                 Reembolso = reembolso > 0 ? reembolso : 0m,
                 Vendedor = string.IsNullOrWhiteSpace(pedido.Vendedor) ? (string.IsNullOrWhiteSpace(destino.Vendedor) ? "NV" : destino.Vendedor) : pedido.Vendedor.Trim(),
                 Peso = 0m,

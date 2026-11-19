@@ -58,6 +58,23 @@ namespace NestoAPI.Tests.Infrastructure.NotasEntrega
         public void Limpiar() => RutasPropiasConfiguradas.Reiniciar();
 
         private static UsuarioRecogidas Vendedora() => new UsuarioRecogidas { Nombre = VENDEDORA, Vendedor = "JE" };
+
+        [TestMethod]
+        public void ADto_LlevaLaDireccion2YLaDireccionCompleta_SinTocarLaDireccion()
+        {
+            // NestoAPI#874: aditivo; Direccion sigue siendo la calle (NestoApp la usa así).
+            var fila = new FilaRecogidaSolicitada { Id = 1, Empresa = "1", Cliente = CLIENTE, Contacto = "0", Estado = EstadosRecogidaSolicitada.SOLICITADA };
+            var conD2 = new FichaNotaCobro { Nombre = "X", Direccion = "CALLE MAYOR, 3", Direccion2 = "LOCAL · RÓTULO: LOHÉ" };
+
+            RecogidaSolicitadaDTO dto = servicio.ADto(fila, conD2, null);
+            RecogidaSolicitadaDTO sin = servicio.ADto(fila, new FichaNotaCobro { Direccion = "CALLE MAYOR, 3" }, null);
+
+            Assert.AreEqual("CALLE MAYOR, 3", dto.Direccion);
+            Assert.AreEqual("LOCAL · RÓTULO: LOHÉ", dto.Direccion2);
+            Assert.AreEqual("CALLE MAYOR, 3, LOCAL · RÓTULO: LOHÉ", dto.DireccionCompleta);
+            Assert.AreEqual("CALLE MAYOR, 3", sin.DireccionCompleta);
+            Assert.IsNull(sin.Direccion2);
+        }
         private static UsuarioRecogidas OtroVendedor() => new UsuarioRecogidas { Nombre = "otro.vendedor", Vendedor = "PA" };
         private static UsuarioRecogidas Almacen() => new UsuarioRecogidas { Nombre = ALMACEN, PuedeGestionar = true, PuedeAnularEnReparto = true };
         private static UsuarioRecogidas Informatica() => new UsuarioRecogidas { Nombre = "NUEVAVISION\\Carlos", PuedeGestionar = true };

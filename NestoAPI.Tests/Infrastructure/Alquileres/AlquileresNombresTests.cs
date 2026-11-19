@@ -81,6 +81,36 @@ namespace NestoAPI.Tests.Infrastructure.Alquileres
         private AlquileresController Controlador() => new AlquileresController(new ProductosAlquilerService(db));
 
         [TestMethod]
+        public async Task Direccion2Cliente_DeSuContacto_EnUnaSolaLectura_YSinColumnasNull()
+        {
+            // NestoAPI#874: la etiqueta del pedido de alquiler (Nesto) lleva la Dirección 2; DireccionCliente no cambia.
+            int lecturas = 0;
+            NestoAPI.Infraestructure.Clientes.Direccion2ClienteSql.LectorClientesParaTests = (empresa, numeros) =>
+            {
+                lecturas++;
+                return new Dictionary<string, NestoAPI.Infraestructure.Clientes.Direccion2Contacto>
+                {
+                    ["15191|0"] = new NestoAPI.Infraestructure.Clientes.Direccion2Contacto { Cliente = "15191", Contacto = "0", Direccion2 = "1º D", TipoLugar = "Piso" }
+                };
+            };
+            try
+            {
+                var resultado = await Controlador().GetCabecerasAlquilerPorCliente("1", "15191") as OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>;
+
+                Assert.AreEqual("1º D", resultado.Content.Single(c => c.Numero == 1).Direccion2Cliente);
+                Assert.AreEqual(1, lecturas);
+
+                NestoAPI.Infraestructure.Clientes.Direccion2ClienteSql.LectorClientesParaTests = (empresa, numeros) => null;
+                var sin = await Controlador().GetCabecerasAlquilerPorCliente("1", "15191") as OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>;
+                Assert.IsNull(sin.Content.Single(c => c.Numero == 1).Direccion2Cliente);
+            }
+            finally
+            {
+                NestoAPI.Infraestructure.Clientes.Direccion2ClienteSql.LectorClientesParaTests = null;
+            }
+        }
+
+        [TestMethod]
         public async Task PorCliente_TraeElNombreDelEquipoYElDelCliente()
         {
             var resultado = await Controlador().GetCabecerasAlquilerPorCliente("1", " 15191 ")

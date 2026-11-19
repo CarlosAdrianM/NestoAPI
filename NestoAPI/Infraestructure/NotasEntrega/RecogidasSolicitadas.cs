@@ -851,6 +851,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Contacto = fila.Contacto?.Trim(),
                 NombreCliente = ficha?.Nombre,
                 Direccion = ficha?.Direccion,
+                Direccion2 = ficha?.Direccion2,
+                DireccionCompleta = Clientes.DireccionCompletaCliente.Componer(ficha?.Direccion, ficha?.Direccion2),
                 CodPostal = ficha?.CodPostal,
                 Poblacion = ficha?.Poblacion,
                 Telefono = ficha?.Telefonos,

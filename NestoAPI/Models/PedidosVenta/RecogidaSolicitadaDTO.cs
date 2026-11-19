@@ -15,6 +15,10 @@ namespace NestoAPI.Models.PedidosVenta
         public string Contacto { get; set; }
         public string NombreCliente { get; set; }
         public string Direccion { get; set; }
+        /// <summary>NestoAPI#874: la Dirección 2 del contacto (piso, rótulo, nave…), o null. Solo lectura.</summary>
+        public string Direccion2 { get; set; }
+        /// <summary>NestoAPI#874: Dirección + «, » + Dirección 2 (<c>DireccionCompletaCliente</c>), para enseñar. Solo lectura.</summary>
+        public string DireccionCompleta { get; set; }
         public string CodPostal { get; set; }
         public string Poblacion { get; set; }
         public string Telefono { get; set; }

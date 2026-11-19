@@ -381,7 +381,56 @@ namespace NestoAPI.Infraestructure.Informes
                 item.Poblacion = item.Poblacion?.Trim();
                 item.Telefono = item.Telefono?.Trim();
             }
+            CompletarDireccion2Packing(picking, lista);
             return lista;
+        }
+
+        internal const string SQL_EMPRESAS_PEDIDOS_PICKING = @"
+            SELECT DISTINCT RTRIM(Empresa) AS Empresa, [Número] AS Pedido FROM LinPedidoVta WITH (NOLOCK) WHERE Picking = @p0";
+
+        private class EmpresaPedidoPicking
+        {
+            public string Empresa { get; set; }
+            public int Pedido { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#874: el packing en PDF sale de prdInformePicking, que trae la Dirección de la ficha sin la Dirección 2 (columnas fuera
+        /// del EDMX; el SP no se toca). Se completa aquí: la empresa de cada pedido en UNA consulta y la Dirección 2 de los clientes en
+        /// otra por empresa. Si algo falla, la dirección de siempre (nunca rompe el packing).
+        /// </summary>
+        private void CompletarDireccion2Packing(int picking, List<PackingDTO> lista)
+        {
+            if (lista == null || lista.Count == 0)
+            {
+                return;
+            }
+            Dictionary<int, string> empresas;
+            try
+            {
+                empresas = db.Database.SqlQuery<EmpresaPedidoPicking>(SQL_EMPRESAS_PEDIDOS_PICKING, picking).ToList()
+                    .GroupBy(e => e.Pedido).ToDictionary(g => g.Key, g => g.First().Empresa);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Packing #874] Picking {picking}: no se han podido leer las empresas de los pedidos; el packing sale sin la dirección 2. {ex.Message}", ex));
+                return;
+            }
+            CompletarDireccion2Packing(lista, p => empresas.TryGetValue(p, out string e) ? e : null,
+                (empresa, clientes) => Clientes.Direccion2ClienteSql.LeerDeClientes(db, empresa, clientes, Clientes.Direccion2ClienteSql.PARA_PANTALLA));
+        }
+
+        /// <summary>NestoAPI#874 (pura con sus lectores): Direccion = Dirección + «, » + Dirección 2 de cada línea, por empresa del pedido.</summary>
+        internal static void CompletarDireccion2Packing(List<PackingDTO> lista, Func<int, string> empresaDelPedido,
+            Func<string, IEnumerable<string>, Dictionary<string, Clientes.Direccion2Contacto>> leer)
+        {
+            foreach (IGrouping<string, PackingDTO> porEmpresa in lista.Where(l => l != null)
+                .GroupBy(l => empresaDelPedido(l.Número) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO))
+            {
+                Dictionary<string, Clientes.Direccion2Contacto> filas = leer(porEmpresa.Key, porEmpresa.Select(l => l.NºCliente));
+                Clientes.DireccionCompletaCliente.Rellenar(porEmpresa, filas, l => l.NºCliente, l => l.Contacto, l => l.Direccion,
+                    (l, d) => l.Direccion = d);
+            }
         }
 
         private class PickingAntiguoDTO

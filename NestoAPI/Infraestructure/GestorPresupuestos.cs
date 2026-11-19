@@ -597,6 +597,11 @@ namespace NestoAPI.Infraestructure
             return "P.O.: " + WebUtility.HtmlEncode(suPedido.Trim()) + "<br>";
         }
 
+        /// <summary>NestoAPI#874: la dirección del bloque «DIRECCIÓN DE ENTREGA» del correo, con la Dirección 2 (piso, rótulo, nave).</summary>
+        internal static string DireccionEntregaCorreo(NVEntities db, PedidoVentaDTO pedido, Cliente cliente)
+            => Clientes.DireccionCompletaCliente.Componer(cliente?.Dirección,
+                Clientes.Direccion2ClienteSql.Leer(db, pedido?.empresa, pedido?.cliente, pedido?.contacto));
+
         private async Task<(StringBuilder tabla, bool faltaFoto)> GenerarTablaHTML(
             PedidoVentaDTO pedido, string tipoCorreo)
         {
@@ -663,7 +668,7 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">" +
                 "<b>DIRECCIÓN DE ENTREGA</b><br>" +
                 cliente.Nombre + "<br>" +
-                cliente.Dirección + "<br>" +
+                DireccionEntregaCorreo(db, pedido, cliente) + "<br>" +
                 cliente.CodPostal + " " + cliente.Población + "<br>" +
                 cliente.Provincia + "<br>" +
                 "Tel. " + cliente.Teléfono + "<br>" +

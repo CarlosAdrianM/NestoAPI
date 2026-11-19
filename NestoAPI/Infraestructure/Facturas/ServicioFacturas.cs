@@ -147,6 +147,9 @@ namespace NestoAPI.Infraestructure.Facturas
             return db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == numeroCliente && c.Contacto == contacto);
         }
 
+        public string LeerDireccion2Cliente(string empresa, string numeroCliente, string contacto)
+            => Clientes.Direccion2ClienteSql.Leer(db, empresa, numeroCliente, contacto);
+
         public Cliente CargarClientePrincipal(string empresa, string numeroCliente)
         {
             // NestoAPI#500: con dos fichas principales, Single tiraba la factura entera (la razón
