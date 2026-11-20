@@ -151,7 +151,10 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             string empresa = string.IsNullOrWhiteSpace(lead.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : lead.Empresa.Trim();
             // Vendedor + jefe (o Dirección si no tiene); en Madrid, Toledo y Guadalajara, además Alberto y Dirección (Carlos 09/11/26).
             DestinatariosAvisoLead a = ReglasAvisosLeads.Destinatarios(destinatarios, empresa, lead.Vendedor, lead.CodigoPostal, conJefes: true);
-            await ReglasAvisosLeads.Enviar(notificaciones, empresa, a, CrearNotificacion(lead)).ConfigureAwait(false);
+            // Carlos 20/11/26: los del equipo de Alberto los gestiona él; al vendedor del cliente y a Dirección se les dice.
+            NotificacionPushDTO informar = CrearNotificacion(lead);
+            informar.Cuerpo = (informar.Cuerpo ?? string.Empty).TrimEnd() + " " + ReglasAvisosLeads.TEXTO_LO_GESTIONA;
+            await ReglasAvisosLeads.Enviar(notificaciones, empresa, a, CrearNotificacion(lead), informar).ConfigureAwait(false);
         }
 
         internal static NotificacionPushDTO CrearNotificacion(LeadCampana lead) => new NotificacionPushDTO

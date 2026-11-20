@@ -19,7 +19,38 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         public static readonly IReadOnlyList<string> ProvinciasConJefeYDireccion = new[] { "28", "45", "19" };
         /// <summary>Alberto Sancho, jefe de la zona centro.</summary>
         public const string VENDEDOR_JEFE_ZONA_CENTRO = "ASH";
+        /// <summary>Su nombre, para decirle al vendedor del cliente quién gestiona el lead.</summary>
+        public const string NOMBRE_JEFE_ZONA_CENTRO = "Alberto Sancho";
         internal const string DOMINIO = "NUEVAVISION\\";
+
+        /// <summary>Lo que se añade al aviso de quien NO gestiona el lead.</summary>
+        public const string TEXTO_LO_GESTIONA = "Lo gestiona " + NOMBRE_JEFE_ZONA_CENTRO + ": no hace falta que usted le llame.";
+
+        /// <summary>
+        /// Carlos 20/11/26 (lead 42157, vendedor JE): los leads cuyo vendedor es del equipo de Alberto Sancho (EquiposVenta vigente
+        /// con Superior ASH, o el propio ASH) los GESTIONA Alberto: a él se le pide llamar y al vendedor del cliente (y a Dirección)
+        /// se le dice que lo gestiona él. La misma regla que el responsable del embudo (ReglasResponsableEmbudo).
+        /// </summary>
+        public static bool LoGestionaElJefeDeZonaCentro(string vendedor, IEnumerable<string> jefesDelVendedor) =>
+            string.Equals(vendedor?.Trim(), VENDEDOR_JEFE_ZONA_CENTRO, StringComparison.OrdinalIgnoreCase)
+            || (jefesDelVendedor ?? Enumerable.Empty<string>()).Any(j => string.Equals(j?.Trim(), VENDEDOR_JEFE_ZONA_CENTRO, StringComparison.OrdinalIgnoreCase));
+
+        private static List<string> JefesVigentes(IDestinatariosLeadsSinLlamar destinatarios, string empresa, string vendedor)
+        {
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                return new List<string>();
+            }
+            try
+            {
+                return destinatarios.JefesDe(empresa, vendedor) ?? new List<string>();
+            }
+            catch (Exception)
+            {
+                // Sin poder leer el equipo, el aviso sale como siempre (no se pierde un lead por esto)
+                return new List<string>();
+            }
+        }
 
         /// <summary>Código postal de 5 cifras de Madrid, Toledo o Guadalajara.</summary>
         public static bool EsZonaConJefeYDireccion(string codigoPostal)
@@ -42,12 +73,12 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             {
                 vendedores.Add(vendedor);
             }
-            List<string> jefes = conJefes && !string.IsNullOrWhiteSpace(vendedor)
-                ? destinatarios.JefesDe(empresa, vendedor) ?? new List<string>()
-                : new List<string>();
+            List<string> jefesVigentes = JefesVigentes(destinatarios, empresa, vendedor);
+            List<string> jefes = conJefes ? jefesVigentes : new List<string>();
             Anadir(vendedores, jefes);
             bool zonaCentro = EsZonaConJefeYDireccion(codigoPostal);
-            if (zonaCentro)
+            bool loGestionaAlberto = LoGestionaElJefeDeZonaCentro(vendedor, jefesVigentes);
+            if (zonaCentro || loGestionaAlberto)
             {
                 Anadir(vendedores, new[] { VENDEDOR_JEFE_ZONA_CENTRO });
             }
@@ -61,13 +92,19 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             return new DestinatariosAvisoLead
             {
                 Vendedores = vendedores,
-                Usuarios = usuarios
-                    .Where(u => !string.IsNullOrWhiteSpace(u))
-                    .Select(u => u.Trim().Contains("\\") ? u.Trim() : DOMINIO + u.Trim())
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList()
+                Usuarios = ConDominio(usuarios),
+                Gestor = loGestionaAlberto ? VENDEDOR_JEFE_ZONA_CENTRO : null,
+                UsuariosGestor = loGestionaAlberto
+                    ? ConDominio(destinatarios.UsuariosDeVendedores(new[] { VENDEDOR_JEFE_ZONA_CENTRO }) ?? new List<string>())
+                    : new List<string>()
             };
         }
+
+        private static List<string> ConDominio(IEnumerable<string> usuarios) => usuarios
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u.Trim().Contains("\\") ? u.Trim() : DOMINIO + u.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         private static void Anadir(List<string> vendedores, IEnumerable<string> nuevos)
         {
@@ -81,15 +118,20 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         }
 
         /// <summary>Buzón de Nesto a cada usuario y push de NestoApp a cada vendedor (los vendedores casi no usan Nesto).</summary>
-        public static async Task Enviar(IServicioNotificacionesPush notificaciones, string empresa, DestinatariosAvisoLead a, NotificacionPushDTO notificacion)
+        /// <param name="siNoGestiona">Con gestor (<see cref="DestinatariosAvisoLead.Gestor"/>), lo que reciben los demás: «Lo gestiona Alberto Sancho…».</param>
+        public static async Task Enviar(IServicioNotificacionesPush notificaciones, string empresa, DestinatariosAvisoLead a, NotificacionPushDTO notificacion,
+            NotificacionPushDTO siNoGestiona = null)
         {
+            bool hayGestor = !string.IsNullOrWhiteSpace(a.Gestor) && siNoGestiona != null;
             foreach (string usuario in a.Usuarios)
             {
-                await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                bool gestiona = !hayGestor || (a.UsuariosGestor ?? new List<string>()).Contains(usuario, StringComparer.OrdinalIgnoreCase);
+                await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, gestiona ? notificacion : siNoGestiona).ConfigureAwait(false);
             }
             foreach (string codigo in a.Vendedores)
             {
-                _ = await notificaciones.EnviarAVendedor(empresa, codigo, notificacion).ConfigureAwait(false);
+                bool gestiona = !hayGestor || string.Equals(codigo?.Trim(), a.Gestor.Trim(), StringComparison.OrdinalIgnoreCase);
+                _ = await notificaciones.EnviarAVendedor(empresa, codigo, gestiona ? notificacion : siNoGestiona).ConfigureAwait(false);
             }
         }
     }
@@ -100,6 +142,10 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         public List<string> Vendedores { get; set; } = new List<string>();
         /// <summary>Usuarios con dominio, sin repetir (buzón de Nesto).</summary>
         public List<string> Usuarios { get; set; } = new List<string>();
+        /// <summary>El vendedor que GESTIONA el lead cuando no es el del cliente (hoy, Alberto Sancho para su equipo); null = el del cliente.</summary>
+        public string Gestor { get; set; }
+        /// <summary>Los usuarios de Nesto de ese gestor (con dominio): a ellos se les pide llamar; a los demás se les informa.</summary>
+        public List<string> UsuariosGestor { get; set; } = new List<string>();
     }
 
     /// <summary>NestoAPI#623: el lead que acaba de entrar (cliente creado o cliente que ya existía y se queda con el origen).</summary>
@@ -153,7 +199,9 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             string empresa = string.IsNullOrWhiteSpace(lead.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : lead.Empresa.Trim();
             string campana = await Campana(lead.Origen).ConfigureAwait(false);
             DestinatariosAvisoLead a = ReglasAvisosLeads.Destinatarios(destinatarios, empresa, lead.Vendedor, lead.CodigoPostal, conJefes: false);
-            await ReglasAvisosLeads.Enviar(notificaciones, empresa, a, CrearNotificacion(lead, empresa, campana)).ConfigureAwait(false);
+            NotificacionPushDTO informar = CrearNotificacion(lead, empresa, campana);
+            informar.Cuerpo = TextoSiNoGestiona(lead, campana);
+            await ReglasAvisosLeads.Enviar(notificaciones, empresa, a, CrearNotificacion(lead, empresa, campana), informar).ConfigureAwait(false);
         }
 
         /// <summary>El nombre de la campaña del catálogo (Campana; si no, Descripcion; si no, el código).</summary>
@@ -172,6 +220,13 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
         {
             string poblacion = string.IsNullOrWhiteSpace(lead.Poblacion) ? "" : $" ({lead.Poblacion.Trim()})";
             return $"Nuevo lead de {campana}: {lead.Nombre?.Trim()}{poblacion}, cliente {lead.Cliente?.Trim()}. Llámele hoy.";
+        }
+
+        /// <summary>«Nuevo lead de Harmonia 09/26: CENTRO X (MADRID), cliente 12345. Lo gestiona Alberto Sancho: no hace falta que usted le llame.»</summary>
+        public static string TextoSiNoGestiona(LeadNuevoAviso lead, string campana)
+        {
+            string poblacion = string.IsNullOrWhiteSpace(lead.Poblacion) ? "" : $" ({lead.Poblacion.Trim()})";
+            return $"Nuevo lead de {campana}: {lead.Nombre?.Trim()}{poblacion}, cliente {lead.Cliente?.Trim()}. {ReglasAvisosLeads.TEXTO_LO_GESTIONA}";
         }
 
         /// <summary>Los mismos Datos que el recordatorio de las 24 h (LeadSinLlamar), para que al pulsarlo se abra el cliente.</summary>

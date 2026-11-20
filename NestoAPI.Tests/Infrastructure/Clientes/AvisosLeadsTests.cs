@@ -89,7 +89,55 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
 
             CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Jesus", "NUEVAVISION\\Manuel", "NUEVAVISION\\Sancho" }, Buzones());
             CollectionAssert.AreEqual(new[] { "ASH", "JE" }, PushVendedores());
-            A.CallTo(() => destinatarios.JefesDe(A<string>._, A<string>._)).MustNotHaveHappened();
+            // El jefe del vendedor (JV) no recibe el aviso de lead nuevo (solo el recordatorio); el equipo sí se lee desde el
+            // 20/11/26, para saber si lo gestiona Alberto.
+        }
+
+        private Dictionary<string, string> CuerposPorBuzon() => Fake.GetCalls(push)
+            .Where(c => c.Method.Name == nameof(IServicioNotificacionesPush.GuardarEnBuzonDeUsuario))
+            .ToDictionary(c => (string)c.Arguments[0], c => ((NotificacionPushDTO)c.Arguments[2]).Cuerpo);
+
+        private Dictionary<string, string> CuerposPorVendedor() => Fake.GetCalls(push)
+            .Where(c => c.Method.Name == nameof(IServicioNotificacionesPush.EnviarAVendedor))
+            .ToDictionary(c => (string)c.Arguments[1], c => ((NotificacionPushDTO)c.Arguments[2]).Cuerpo);
+
+        [TestMethod]
+        public async Task LeadNuevo_VendedorDelEquipoDeAlberto_LoGestionaAlberto_AlVendedorSeLeDice()
+        {
+            // Carlos 20/11/26 (lead 42157, vendedor JE, Alcorcón): a Alberto «Llámele hoy»; a Jesús y a Dirección, que lo gestiona Alberto.
+            _ = A.CallTo(() => destinatarios.JefesDe("1", "JE")).Returns(new List<string> { ReglasAvisosLeads.VENDEDOR_JEFE_ZONA_CENTRO });
+
+            await Avisador().Avisar(Aviso("JE", "28921", "ALCORCÓN"));
+
+            Dictionary<string, string> buzones = CuerposPorBuzon();
+            StringAssert.EndsWith(buzones["NUEVAVISION\\Sancho"], "Llámele hoy.");
+            StringAssert.EndsWith(buzones["NUEVAVISION\\Jesus"], ReglasAvisosLeads.TEXTO_LO_GESTIONA);
+            StringAssert.EndsWith(buzones["NUEVAVISION\\Manuel"], ReglasAvisosLeads.TEXTO_LO_GESTIONA);
+            Dictionary<string, string> pushes = CuerposPorVendedor();
+            StringAssert.EndsWith(pushes["ASH"], "Llámele hoy.");
+            StringAssert.EndsWith(pushes["JE"], ReglasAvisosLeads.TEXTO_LO_GESTIONA);
+        }
+
+        [TestMethod]
+        public async Task LeadNuevo_VendedorDelEquipoDeAlberto_FueraDeLaZonaCentro_TambienVaAAlberto()
+        {
+            _ = A.CallTo(() => destinatarios.JefesDe("1", "JE")).Returns(new List<string> { ReglasAvisosLeads.VENDEDOR_JEFE_ZONA_CENTRO });
+
+            await Avisador().Avisar(Aviso("JE", "40001", "SEGOVIA"));
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Jesus", "NUEVAVISION\\Sancho" }, Buzones());
+            StringAssert.EndsWith(CuerposPorBuzon()["NUEVAVISION\\Sancho"], "Llámele hoy.");
+            StringAssert.EndsWith(CuerposPorBuzon()["NUEVAVISION\\Jesus"], ReglasAvisosLeads.TEXTO_LO_GESTIONA);
+        }
+
+        [TestMethod]
+        public async Task LeadNuevo_VendedorQueNoEsDelEquipoDeAlberto_LlamaElVendedor()
+        {
+            // JE con otro jefe (JV): en Madrid Alberto y Dirección siguen en copia, y todos reciben el «Llámele hoy» de siempre.
+            await Avisador().Avisar(Aviso("JE", "28001"));
+
+            Assert.IsTrue(CuerposPorBuzon().Values.All(c => c.EndsWith("Llámele hoy.")));
+            Assert.IsTrue(CuerposPorVendedor().Values.All(c => c.EndsWith("Llámele hoy.")));
         }
 
         [TestMethod]
