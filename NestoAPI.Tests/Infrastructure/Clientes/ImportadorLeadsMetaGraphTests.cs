@@ -506,6 +506,92 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
             Assert.IsFalse(elmah[0].Message.Contains("Ana"));
         }
 
+        // ================================================================ punto 2 (20/11/26): lead inválido, aviso y reintento
+
+        [TestMethod]
+        public void ReglaLeidoHasta_ElInvalidoRecienteFrenaLaLectura_ElViejoNo()
+        {
+            DateTime inicio = AHORA_UTC;
+            DateTime reciente = AHORA_UTC.AddDays(-2);
+            DateTime viejo = AHORA_UTC.AddDays(-ReglaLeidoHastaLeadsMeta.DIAS_REINTENTO_INVALIDOS);
+
+            Assert.AreEqual(inicio, ReglaLeidoHastaLeadsMeta.Hasta(inicio, null, null));
+            Assert.AreEqual(reciente.AddSeconds(-1), ReglaLeidoHastaLeadsMeta.Hasta(inicio, null, new[] { reciente }));
+            Assert.AreEqual(inicio, ReglaLeidoHastaLeadsMeta.Hasta(inicio, null, new[] { viejo }), "A los 7 días se deja atrás");
+            Assert.AreEqual(viejo.AddSeconds(-1), ReglaLeidoHastaLeadsMeta.Hasta(inicio, new[] { viejo }, new[] { reciente }),
+                "El que falla por una excepción frena siempre (como antes)");
+            Assert.IsTrue(ReglaLeidoHastaLeadsMeta.SeReintenta(viejo.AddSeconds(1), inicio));
+            Assert.IsFalse(ReglaLeidoHastaLeadsMeta.SeReintenta(viejo, inicio));
+        }
+
+        [TestMethod]
+        public async Task Job_LeadInvalido_CampanaADireccionEInformaticaSinDatosPersonales_YSeReintenta()
+        {
+            Responder(Pagina(null, Lead("1664139908444939", fecha: "2026-11-09T09:30:00+0000", nombre: null)));
+
+            _ = await Crear().EjecutarJob();
+
+            A.CallTo(() => formularios.GuardarLeidoHasta(ORIGEN, new DateTime(2026, 11, 9, 9, 29, 59, DateTimeKind.Utc))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.That.Matches(n =>
+                n.Tipo == ReglaLeidoHastaLeadsMeta.TIPO_NOTIFICACION && n.Cuerpo.Contains("1664139908444939") && n.Cuerpo.Contains(ORIGEN)
+                && n.Cuerpo.Contains("Falta el nombre") && !n.Cuerpo.Contains("Ejemplo") && !n.Cuerpo.Contains("600111222"))))
+                .MustHaveHappenedTwiceExactly(); // carlos (Informática) y direccion1 (Dirección)
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(@"NUEVAVISION\carlos", A<string>._, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Job_LeadInvalido_LaSegundaPasadaDelDiaNoVuelveAAvisar()
+        {
+            Responder(Pagina(null, Lead("1664139908444939", nombre: null)), Pagina(null, Lead("1664139908444939", nombre: null)));
+
+            _ = await Crear().EjecutarJob();
+            _ = await Crear().EjecutarJob();
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustHaveHappenedTwiceExactly();
+            Assert.AreEqual(1, elmah.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_LeadInvalidoDeHaceMasDe7Dias_SeDejaAtrasYSeDiceEnElmah()
+        {
+            Responder(Pagina(null, Lead("888", fecha: "2026-11-01T09:30:00+0000", nombre: null)));
+
+            _ = await Crear().EjecutarJob();
+
+            A.CallTo(() => formularios.GuardarLeidoHasta(ORIGEN, AHORA_UTC)).MustHaveHappenedOnceExactly();
+            Assert.IsTrue(elmah.Any(e => e.Message.Contains("888") && e.Message.Contains("se deja de reintentar")));
+        }
+
+        [TestMethod]
+        public async Task Job_AlReintentar_LoYaImportadoNoSeDuplicaNiAvisa_YElInvalidoSigueFrenando()
+        {
+            var avisador = A.Fake<IAvisadorLeadsNuevos>();
+            _ = A.CallTo(() => repositorio.ClienteDelLead("1", "2000000000000002")).Returns(Task.FromResult("42113"));
+            Responder(Pagina(null, Lead("1664139908444939", fecha: "2026-11-09T09:00:00+0000", nombre: null),
+                Lead("2000000000000002", fecha: "2026-11-09T09:30:00+0000")));
+            var importador = new ImportadorLeadsMetaGraph(http, formularios, repositorio, alta, configuracion, avisos, () => notificaciones,
+                grupo => new List<string> { "carlos" }, ex => elmah.Add(ex), () => AHORA_UTC, avisador);
+
+            ResultadoImportacionLeadsMetaGraph resultado = await importador.EjecutarJob();
+
+            Assert.AreEqual(ImportadorLeadsMeta.CODIGO_YA_EXISTIA, resultado.Resultado.Leads.Single(l => l.Codigo != ImportadorLeadsMeta.CODIGO_ERROR).Codigo);
+            A.CallTo(() => alta.Crear(A<ClienteCrear>._)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(A<LeadNuevoAviso>._)).MustNotHaveHappened();
+            A.CallTo(() => formularios.GuardarLeidoHasta(ORIGEN, new DateTime(2026, 11, 9, 8, 59, 59, DateTimeKind.Utc))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Job_LeadInvalido_SiLaCampanaFallaLaPasadaSigue()
+        {
+            _ = A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).Throws(new InvalidOperationException("sin buzón"));
+            Responder(Pagina(null, Lead("1664139908444939", nombre: null)));
+
+            ResultadoImportacionLeadsMetaGraph resultado = await Crear().EjecutarJob();
+
+            Assert.IsNotNull(resultado);
+            A.CallTo(() => formularios.GuardarLeidoHasta(A<string>._, A<DateTime>._)).MustHaveHappenedOnceExactly();
+        }
+
         [TestMethod]
         public async Task Importar_SoloOrigenesActivosYDeCampana()
         {

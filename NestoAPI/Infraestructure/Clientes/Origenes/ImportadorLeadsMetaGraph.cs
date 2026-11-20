@@ -168,6 +168,42 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
     }
 
     /// <summary>
+    /// Punto 2 (20/11/26, lead 1664139908444939 del 19/11 perdido sin que nadie se enterase): LA REGLA de hasta dónde se da por leído un
+    /// formulario. No pasa del lead que ha fallado por una excepción (como siempre) ni del lead INVÁLIDO más antiguo que tenga menos de
+    /// <see cref="DIAS_REINTENTO_INVALIDOS"/> días: así se reintenta en cada pasada (lo ya importado no se repite: LeadExternoId). Pasado
+    /// ese plazo se deja atrás.
+    /// </summary>
+    public static class ReglaLeidoHastaLeadsMeta
+    {
+        public const int DIAS_REINTENTO_INVALIDOS = 7;
+        /// <summary>La campana a Dirección e Informática de un lead que no se puede importar.</summary>
+        public const string TIPO_NOTIFICACION = "LeadNoImportado";
+
+        public static bool SeReintenta(DateTime fechaLeadUtc, DateTime ahoraUtc)
+            => ahoraUtc - fechaLeadUtc < TimeSpan.FromDays(DIAS_REINTENTO_INVALIDOS);
+
+        /// <summary>Un segundo antes del más antiguo que hay que volver a leer; sin ninguno, <paramref name="inicioUtc"/>.</summary>
+        public static DateTime Hasta(DateTime inicioUtc, IEnumerable<DateTime> fechasFallidos, IEnumerable<DateTime> fechasInvalidos)
+        {
+            List<DateTime> pendientes = (fechasFallidos ?? Enumerable.Empty<DateTime>())
+                .Concat((fechasInvalidos ?? Enumerable.Empty<DateTime>()).Where(f => SeReintenta(f, inicioUtc)))
+                .ToList();
+            if (pendientes.Count == 0)
+            {
+                return inicioUtc;
+            }
+            DateTime antes = pendientes.Min().AddSeconds(-1);
+            return antes < inicioUtc ? antes : inicioUtc;
+        }
+
+        /// <summary>De usted y sin datos personales (ni nombre, ni teléfono, ni correo): el id, la campaña y el motivo.</summary>
+        public static string TextoAviso(string lead, string origen, string formulario, string motivo)
+            => $"El lead {lead} de la campaña {origen} (formulario {formulario}) no se ha podido importar: {motivo?.Trim()} " +
+               $"Se volverá a intentar en cada pasada durante {DIAS_REINTENTO_INVALIDOS} días desde que entró. Revíselo en Meta y, si hace falta, " +
+               "dé de alta el cliente a mano.";
+    }
+
+    /// <summary>
     /// NestoAPI#623 corte 5c (Carlos 09/11/26: «API de Meta + tarea»): trae los leads de los formularios de Meta por la API Graph y los
     /// pasa al MISMO importador que el fichero (<see cref="ImportadorLeadsMeta"/>: cliente en estado 5, vendedor por CP, origen con la
     /// fecha del lead, consentimiento, sin repetir por LeadExternoId, a Odoo, y luego el control de leads sin llamar).
@@ -314,6 +350,7 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
                 }
 
                 var fallidos = new List<string>();
+                var invalidos = new List<string>();
                 var importador = new ImportadorLeadsMeta(repositorio, alta, ex => RegistrarErrorLead(ex), () => HoraEspana(ahoraUtc()), avisadorLeads);
                 List<LeadMeta> leads = LectorGraphLeadsMeta.Leer(crudos);
                 ResultadoImportacionLeadsDTO parcial = await importador.Importar(leads, origen, ensayo, usuario).ConfigureAwait(false);
@@ -331,10 +368,19 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
                         // Ha fallado por una excepción (ya en ELMAH): se reintenta.
                         fallidos.Add(leads[i].Id);
                     }
-                    else if (!ensayo && avisos.Primera("invalido:" + leads[i].Id, inicio))
+                    else
                     {
-                        // Solo el id y el motivo: nada de nombre, teléfono ni correo.
-                        elmah(new Exception($"[Leads Meta #623] El lead {leads[i].Id} del formulario {formulario.MetaFormId.Trim()} ({origen}) no se puede importar: {motivoInvalido}"));
+                        // Punto 2 (20/11/26): el inválido se reintenta en las pasadas siguientes (ReglaLeidoHastaLeadsMeta)
+                        invalidos.Add(leads[i].Id);
+                        if (!ensayo && avisos.Primera("invalido:" + leads[i].Id, inicio))
+                        {
+                            // Solo el id y el motivo: nada de nombre, teléfono ni correo.
+                            elmah(new Exception($"[Leads Meta #623] El lead {leads[i].Id} del formulario {formulario.MetaFormId.Trim()} ({origen}) no se puede importar: {motivoInvalido}"));
+                            await AvisarCampana("Lead de Meta sin importar",
+                                ReglaLeidoHastaLeadsMeta.TextoAviso(leads[i].Id, origen, formulario.MetaFormId.Trim(), motivoInvalido),
+                                ReglaLeidoHastaLeadsMeta.TIPO_NOTIFICACION,
+                                new Dictionary<string, string> { ["lead"] = leads[i].Id, ["origen"] = origen }).ConfigureAwait(false);
+                        }
                     }
                 }
 
@@ -351,19 +397,25 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
 
                 if (!ensayo)
                 {
-                    DateTime hasta = inicio;
-                    List<DateTime> fechasFallidos = crudos.Where(c => fallidos.Contains((string)c["id"]))
-                        .Select(c => LectorGraphLeadsMeta.FechaUtc(c["created_time"]))
-                        .Where(f => f.HasValue).Select(f => f.Value).ToList();
-                    if (fechasFallidos.Any())
-                    {
-                        hasta = fechasFallidos.Min().AddSeconds(-1);
-                    }
-                    else if (fallidos.Any())
+                    List<DateTime?> fechasFallidos = crudos.Where(c => fallidos.Contains((string)c["id"]))
+                        .Select(c => LectorGraphLeadsMeta.FechaUtc(c["created_time"])).ToList();
+                    if (fallidos.Any() && !fechasFallidos.Any(f => f.HasValue))
                     {
                         // Sin fecha del lead fallido: la lectura se queda donde estaba.
                         continue;
                     }
+                    var fechasInvalidos = crudos.Where(c => invalidos.Contains((string)c["id"]))
+                        .Select(c => new { Id = (string)c["id"], Fecha = LectorGraphLeadsMeta.FechaUtc(c["created_time"]) }).ToList();
+                    foreach (var atras in fechasInvalidos.Where(f => f.Fecha.HasValue && !ReglaLeidoHastaLeadsMeta.SeReintenta(f.Fecha.Value, inicio)))
+                    {
+                        if (avisos.Primera("invalido-atras:" + atras.Id, inicio))
+                        {
+                            elmah(new Exception($"[Leads Meta #623] El lead {atras.Id} del formulario {formulario.MetaFormId.Trim()} ({origen}) lleva más de " +
+                                $"{ReglaLeidoHastaLeadsMeta.DIAS_REINTENTO_INVALIDOS} días sin poderse importar: se deja de reintentar."));
+                        }
+                    }
+                    DateTime hasta = ReglaLeidoHastaLeadsMeta.Hasta(inicio, fechasFallidos.Where(f => f.HasValue).Select(f => f.Value),
+                        fechasInvalidos.Where(f => f.Fecha.HasValue).Select(f => f.Fecha.Value));
                     await formularios.GuardarLeidoHasta(origen, DateTime.SpecifyKind(hasta, DateTimeKind.Utc)).ConfigureAwait(false);
                 }
             }
@@ -502,7 +554,7 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
             }
         }
 
-        private async Task AvisarCampana(string titulo, string texto)
+        private async Task AvisarCampana(string titulo, string texto, string tipo = TIPO_NOTIFICACION, Dictionary<string, string> datos = null)
         {
             var usuarios = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string grupo in new[] { Constantes.GruposSeguridad.INFORMATICA, Constantes.GruposSeguridad.DIRECCION })
@@ -519,14 +571,24 @@ IF COL_LENGTH(N'dbo.OrigenesCliente', N'MetaLeadsLeidosHasta') IS NOT NULL
                     elmah(new Exception($"[Leads Meta #623] No se pudieron leer los miembros de {grupo}: {ex.Message}", ex));
                 }
             }
+            var todosLosDatos = new Dictionary<string, string>(datos ?? new Dictionary<string, string>()) { ["tipo"] = tipo };
             var notificacion = new NotificacionPushDTO
             {
                 Titulo = titulo,
                 Cuerpo = texto,
-                Tipo = TIPO_NOTIFICACION,
-                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_NOTIFICACION }
+                Tipo = tipo,
+                Datos = todosLosDatos
             };
-            IServicioNotificacionesPush servicio = notificaciones();
+            IServicioNotificacionesPush servicio;
+            try
+            {
+                servicio = notificaciones();
+            }
+            catch (Exception ex)
+            {
+                elmah(new Exception($"[Leads Meta #623] No se pudo avisar en la campana: {ex.Message}", ex));
+                return;
+            }
             foreach (string usuario in usuarios)
             {
                 try
