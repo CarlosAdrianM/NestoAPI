@@ -162,9 +162,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// Los envíos en reparto (Tramitado o Incidentado) con día de reparto (NestoAPI#831: FechaEntrega) hasta <paramref name="fecha"/> (hoy por defecto) y desde
         /// 30 días antes: un incidentado de ayer sigue en la lista para reintentarlo. Ariadna#63: con quién lo lleva y cuántos
         /// bultos ha cargado; con <paramref name="soloMios"/>, solo los que lleva <paramref name="usuario"/> (sin el script de la
-        /// carga no hay repartidores y se ignora: la lista de siempre).
+        /// carga no hay repartidores y se ignora: la lista de siempre). Punto 6 (20/11/26): con soloMios y <paramref name="soloCargados"/>,
+        /// solo las que lleva el usuario (sin las de nadie).
         /// </summary>
-        public async Task<ResultadoReparto<List<EnvioRepartoDTO>>> Envios(DateTime? fecha, bool soloMios = false, string usuario = null)
+        public async Task<ResultadoReparto<List<EnvioRepartoDTO>>> Envios(DateTime? fecha, bool soloMios = false, string usuario = null, bool soloCargados = false)
         {
             if (!repositorio.ScriptAplicado())
             {
@@ -190,12 +191,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 await CompletarCarga(lista).ConfigureAwait(false);
                 if (soloMios)
                 {
-                    // NestoAPI#759: las suyas y las que no ha cargado nadie (para poder cargarlas).
-                    lista = lista.Where(e => NucleoParadasReparto.Visible(e.Repartidor, usuario, true)).ToList();
+                    // NestoAPI#759: las suyas y las que no ha cargado nadie (para poder cargarlas). Punto 6: con soloCargados, solo las suyas.
+                    lista = lista.Where(e => NucleoParadasReparto.Visible(e.Repartidor, usuario, true, soloCargados)).ToList();
                 }
             }
             lista.AddRange((await ParadasReposicionEnReparto(dia).ConfigureAwait(false))
-                .Where(p => NucleoParadasReparto.Visible(p.Repartidor, usuario, soloMios)));
+                .Where(p => NucleoParadasReparto.Visible(p.Repartidor, usuario, soloMios, soloCargados)));
             await CompletarOrden(lista).ConfigureAwait(false);
             await CompletarCoordenadas(lista).ConfigureAwait(false);
             await CompletarHorarios(lista, dia).ConfigureAwait(false);
@@ -303,6 +304,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (bultosMal != null)
             {
                 return bultosMal;
+            }
+            // Punto 6 (20/11/26): con Reparto.CargaObligatoria, lo que no ha cargado quien entrega no se entrega sin leer algo suyo.
+            ResultadoReparto<EstadoEnvioRepartoDTO> noCargada = await ComprobarCargaObligatoria(envioId, peticion, usuario).ConfigureAwait(false);
+            if (noCargada != null)
+            {
+                return noCargada;
             }
             ResultadoReparto<EstadoEnvioRepartoDTO> resultado = NucleoParadasReparto.EsReposicion(envioId)
                 ? await EntregarReposicion(NucleoParadasReparto.IdReposicion(envioId), peticion, usuario).ConfigureAwait(false)

@@ -299,6 +299,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   `FurgonetaEntregaSinLeer` (también al no leer ninguno). Los que lleve otro repartidor y las paradas de reposición no cambian. Lectura
   obligatoria = como hoy, al menos uno. Job de las 22:00: antes de avisar, los RP de envíos de la 14 ya en Estado 2 que sigan en una furgoneta
   se cierran igual (Origen Almacen, usuario el repartidor, rastro por envío) y no cuentan para el aviso; si no puede mirar el estado, avisa como siempre.
+- **Solo lo cargado y carga obligatoria (punto 6, Carlos 20/11/26)**: una parada es de un repartidor solo cuando ha leído algo suyo (RP, o el papel
+  NE/NR; las NC nacen asignadas). `GET Envios?soloMios=true&soloCargados=true` = SOLO las suyas (LA REGLA `NucleoParadasReparto.Visible(…, soloCargados)`;
+  sin el parámetro, las suyas + las de nadie, como siempre). `SoloCargados` (opcional) en OrdenSugerido/Estimacion (ya eran solo las suyas).
+  `POST Carga/Terminar` {Fecha?} → {SinCargar[{EnvioId, CodigoDocumento, Nombre, Poblacion, Bultos, BultosSinCargar}], Total, Mensaje}: lo de «Sin cargar»
+  que no lleva NADIE; campana `RepartoSinCargar` a Almacén, una vez cada 30 min por conjunto (en memoria, `MemoriaAvisosSinCargar`). Interruptor «(defecto)»
+  `Reparto.CargaObligatoria` (solo «1»): Entregar un envío o nota de entrega/recogida que no lleva quien entrega → 409 `NO_CARGADA`, salvo que en
+  BultosEntregados venga algo de ESA parada: se carga a su nombre (`CargarEnvio` con Reasignar, clave derivada, mismo rastro) y sigue
+  (`ReglaCargaObligatoria.Decidir`, `CargaObligatoriaReparto.cs`). Ni NC ni reposiciones; un reintento con la misma clave, tampoco.
 
 ### Fin previsto de ruta del reparto propio (NestoAPI#881, 19/11/26)
 - LA REGLA de los minutos por parada: `MinutosParadaReparto` (pura, `TiemposParadaReparto.cs`): envío y nota de entrega 15, nota de cobro 10,

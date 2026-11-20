@@ -46,6 +46,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public static bool Visible(string repartidor, string usuario, bool soloMios)
             => !soloMios || string.IsNullOrWhiteSpace(repartidor) || ServicioRepartoPropio.MismoUsuario(repartidor, usuario);
 
+        /// <summary>
+        /// Punto 6 (Carlos 20/11/26): con soloMios y <paramref name="soloCargados"/>, SOLO las que lleva el usuario (las de nadie no: la
+        /// pantalla de entregar no enseña lo que no se ha cargado). Sin soloCargados, <see cref="Visible(string, string, bool)"/> de siempre.
+        /// </summary>
+        public static bool Visible(string repartidor, string usuario, bool soloMios, bool soloCargados)
+            => soloMios && soloCargados ? ServicioRepartoPropio.MismoUsuario(repartidor, usuario) : Visible(repartidor, usuario, soloMios);
+
         public static string MensajeDeOtro(string propietario)
             => $"Este bulto no es suyo: es de la parada de {ServicioRepartoPropio.NombreRepartidor(propietario)}. Si se la lleva usted, confírmelo para reasignársela.";
 
@@ -437,6 +444,10 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public IRepositorioTiemposReparto TiemposReales { get; set; }
         /// <summary>NestoAPI#881 (corte 3): el modelo en sombra (solo con Reparto.TiempoParadaQuienManda = «Modelo»). Null: siempre la regla.</summary>
         public ModeloTiemposParada.IMinutosParadaModelo MinutosModelo { get; set; }
+        /// <summary>Punto 6 (20/11/26): la campana a Almacén al terminar de cargar con paradas de nadie. Null: sin aviso.</summary>
+        public IAvisosRepartoSinCargar AvisosSinCargar { get; set; }
+        /// <summary>Punto 6: cuándo se avisó de cada conjunto de paradas sin cargar. Null: la compartida de la aplicación.</summary>
+        public MemoriaAvisosSinCargar MemoriaSinCargar { get; set; }
 
         /// <summary>Sin la cadena de conexión (los tests), null: no se guardan los tiempos.</summary>
         private static IRepositorioTiemposReparto TiemposRealesDeLaConfiguracion()
@@ -459,6 +470,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 AvisosAlmacen = avisos as Notificaciones.IAvisosAlmacen,
                 AvisosFurgoneta = new AvisosFurgonetaSinDescargar(),
                 EntregaIncompleta = new AvisosEntregaIncompleta(),
+                AvisosSinCargar = new AvisosRepartoSinCargar(),
                 Horarios = new HorariosParadas(new global::NestoAPI.Infraestructure.Clientes.ServicioHorarioPreferible(
                     new global::NestoAPI.Infraestructure.Clientes.RepositorioHorarioPreferible(db))),
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),

@@ -328,6 +328,39 @@ namespace NestoAPI.Models.Agencias
         /// </summary>
         public decimal? DestinoLatitud { get; set; }
         public decimal? DestinoLongitud { get; set; }
+        /// <summary>
+        /// Punto 6 (20/11/26, opcional): true = el orden y el fin de ruta solo con las paradas que lleva el usuario (como GET Envios con
+        /// soloCargados). Sin él, como siempre (que ya eran solo las suyas).
+        /// </summary>
+        public bool SoloCargados { get; set; }
+    }
+
+    /// <summary>Punto 6 (20/11/26): POST api/RepartoPropio/Carga/Terminar. Todo opcional.</summary>
+    public class TerminarCargaRepartoDTO
+    {
+        /// <summary>El día de reparto (como GET SinCargar?fecha=). Sin él, hoy.</summary>
+        public DateTime? Fecha { get; set; }
+    }
+
+    /// <summary>Punto 6: una parada de ese día que no ha cargado nadie.</summary>
+    public class ParadaSinCargarDTO
+    {
+        public int EnvioId { get; set; }
+        /// <summary>«NE…»/«NR…» en las notas; null en los envíos.</summary>
+        public string CodigoDocumento { get; set; }
+        public string Nombre { get; set; }
+        public string Poblacion { get; set; }
+        public int Bultos { get; set; }
+        public int BultosSinCargar { get; set; }
+    }
+
+    /// <summary>Punto 6: la respuesta de POST api/RepartoPropio/Carga/Terminar.</summary>
+    public class ResultadoTerminarCargaDTO
+    {
+        public System.Collections.Generic.List<ParadaSinCargarDTO> SinCargar { get; set; } = new System.Collections.Generic.List<ParadaSinCargarDTO>();
+        public int Total { get; set; }
+        /// <summary>«Quedan N paradas sin cargar por nadie: no sabemos quién las lleva.»; null si no queda ninguna.</summary>
+        public string Mensaje { get; set; }
     }
 
     /// <summary>NestoAPI#767: la respuesta de POST api/RepartoPropio/OrdenSugerido.</summary>

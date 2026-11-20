@@ -132,18 +132,36 @@ namespace NestoAPI.Controllers
         // GET api/RepartoPropio/Envios?fecha=2026-10-29&soloMios=true
         /// <summary>
         /// Ariadna#63: con Repartidor y BultosCargados. NestoAPI#759: las paradas (envíos, notas y reposiciones) por Orden; con
-        /// soloMios, las del usuario y las que no ha cargado nadie.
+        /// soloMios, las del usuario y las que no ha cargado nadie. Punto 6 (20/11/26): con soloMios y soloCargados, SOLO las del usuario.
         /// </summary>
         [HttpGet]
         [Route("Envios")]
         [ResponseType(typeof(List<EnvioRepartoDTO>))]
-        public async Task<IHttpActionResult> GetEnvios(DateTime? fecha = null, bool soloMios = false)
+        public async Task<IHttpActionResult> GetEnvios(DateTime? fecha = null, bool soloMios = false, bool soloCargados = false)
         {
             if (!PermisosRepartoPropio.PuedeRepartir(User))
             {
                 return Prohibido();
             }
-            return Responder(await servicio.Envios(fecha, soloMios, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+            return Responder(await servicio.Envios(fecha, soloMios, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), soloCargados));
+        }
+
+        // POST api/RepartoPropio/Carga/Terminar { Fecha? }
+        /// <summary>
+        /// Punto 6 (Carlos 20/11/26): el repartidor ha terminado de cargar. Devuelve las paradas de ese día que no ha cargado NADIE
+        /// { SinCargar: [{ EnvioId, CodigoDocumento, Nombre, Poblacion, Bultos, BultosSinCargar }], Total, Mensaje } y, si hay alguna,
+        /// avisa a Almacén en la campana (tipo RepartoSinCargar; como mucho cada 30 min por el mismo conjunto). No guarda nada.
+        /// </summary>
+        [HttpPost]
+        [Route("Carga/Terminar")]
+        [ResponseType(typeof(ResultadoTerminarCargaDTO))]
+        public async Task<IHttpActionResult> TerminarCarga([FromBody] TerminarCargaRepartoDTO peticion = null)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.TerminarCarga(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
         }
 
         private ServicioRepartidores repartidores;

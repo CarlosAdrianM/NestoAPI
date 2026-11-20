@@ -84,7 +84,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             ConstantesTiemposReparto constantes = ConstantesTiempos(); // NestoAPI#881
 
-            ResultadoReparto<List<EnvioRepartoDTO>> lista = await Envios(peticion.Fecha, soloMios: true, usuario: usuario).ConfigureAwait(false);
+            ResultadoReparto<List<EnvioRepartoDTO>> lista = await Envios(peticion.Fecha, soloMios: true, usuario: usuario, soloCargados: peticion.SoloCargados).ConfigureAwait(false);
             if (lista.Tipo != TipoResultadoReparto.Ok)
             {
                 return new ResultadoReparto<OrdenSugeridoRepartoDTO> { Tipo = lista.Tipo, Mensaje = lista.Mensaje, Codigo = lista.Codigo, Detalles = lista.Detalles };
