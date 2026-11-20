@@ -112,12 +112,45 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void Regla561_NadaAhoraNiEnTiendas_SoloTodoJunto_AunqueSeanVariasLineas()
+        public void NadaEnNingunSitio_VariasLineas_TodoJuntoYSegunVayaEntrando()
         {
+            // Carlos 19/11/26: cada línea puede llegar un día distinto; el 3 y el 4 siguen sin sentido
             SugeridorModoServicio.Sugerencia s = Sugerir(Pedido("ALG", ("X", 1), ("Y", 2)), Resumen());
 
+            CollectionAssert.AreEquivalent(new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO }, s.ModosPermitidos);
+            Assert.AreEqual(M.TODO_JUNTO, s.Modo, "El sugerido no cambia");
+            Assert.AreEqual(ModosServicioPermitidos.MOTIVO_SIN_ROSAS, s.Modos.Single(m => m.Modo == M.TRAS_REPONER_DE_TIENDAS).Motivo);
+            Assert.AreEqual(ModosServicioPermitidos.MOTIVO_NADA_CON_STOCK, s.Modos.Single(m => m.Modo == M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Motivo);
+        }
+
+        [TestMethod]
+        public void Regla561_NadaEnNingunSitio_UnaSolaLinea_SoloTodoJunto_AunqueSeanVariasUnidades()
+        {
+            SugeridorModoServicio.Sugerencia s = Sugerir(Pedido("ALG", ("Y", 3)), Resumen());
+
             CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO }, s.ModosPermitidos);
-            Assert.AreEqual(M.TODO_JUNTO, s.Modo);
+            Assert.AreEqual(ModosServicioPermitidos.MOTIVO_NADA_CON_STOCK, s.Modos.Single(m => m.Modo == M.SEGUN_VAYA_ENTRANDO).Motivo);
+        }
+
+        [TestMethod]
+        public void ReglaSegunVayaEntrandoSinNadaDisponible_SoloConVariasLineasSinCubrirYNadaAhoraNiEnTiendas()
+        {
+            HechosModoServicio Hechos(int ahora, int tiendas, params int[] sinCubrir)
+            {
+                var h = new HechosModoServicio { HayAlgoAhora = ahora > 0 };
+                h.Lineas.Add(new HechosModoServicio.Linea { Producto = "A", Cantidad = ahora + tiendas, Ahora = ahora, DeTiendas = tiendas });
+                for (int i = 0; i < sinCubrir.Length; i++)
+                {
+                    h.Lineas.Add(new HechosModoServicio.Linea { Producto = "P" + i, Cantidad = sinCubrir[i] });
+                }
+                return h;
+            }
+
+            Assert.IsTrue(ModosServicioPermitidos.OfreceSegunVayaEntrandoSinNadaDisponible(Hechos(0, 0, 1, 1)));
+            Assert.IsFalse(ModosServicioPermitidos.OfreceSegunVayaEntrandoSinNadaDisponible(Hechos(0, 0, 5)));
+            Assert.IsFalse(ModosServicioPermitidos.OfreceSegunVayaEntrandoSinNadaDisponible(Hechos(1, 0, 1, 1)), "Con algo ahora manda la comparación de planes");
+            Assert.IsFalse(ModosServicioPermitidos.OfreceSegunVayaEntrandoSinNadaDisponible(Hechos(0, 1, 1, 1)));
+            Assert.IsFalse(ModosServicioPermitidos.OfreceSegunVayaEntrandoSinNadaDisponible(null));
         }
 
         [TestMethod]
@@ -162,7 +195,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 }
                 if (ahora == 0 && tiendas == 0)
                 {
-                    CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO }, ofrecidos, "#561: " + caso);
+                    // #561, con el matiz de Carlos del 19/11/26: varias líneas sin cubrir → también «Según vaya entrando»
+                    CollectionAssert.AreEquivalent(p.Length >= 2 ? new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO } : new List<byte> { M.TODO_JUNTO },
+                        ofrecidos, "#561: " + caso);
                 }
                 if (ahora > 0 && tiendas > 0 && p.Length == 0)
                 {

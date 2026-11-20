@@ -134,7 +134,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal const string MOTIVO_TODO_VERDE = "Todo el pedido tiene stock en Algete: sale todo junto.";
         internal const string MOTIVO_SIN_ROSAS = "No hay nada que traer de las tiendas: esperar a la reposición no cambiaría nada.";
         internal const string MOTIVO_NADA_CON_STOCK = "No hay ninguna unidad del pedido en stock: sale todo junto cuando llegue.";
-        internal const string MOTIVO_NADA_AHORA = "No hay nada que servir ahora: es lo mismo que «Todo junto».";
+        internal const string MOTIVO_NADA_AHORA ="No hay nada que servir ahora: es lo mismo que «Todo junto».";
         internal const string MOTIVO_TIENDAS_COMPLETAN = "Todo lo que falta viene de las tiendas: es lo mismo que «Todo junto».";
 
         /// <summary>De los modos que hacen lo mismo con el pedido, el que se ofrece (Carlos 19/11/26).</summary>
@@ -148,8 +148,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         /// <summary>
         /// Carlos 19/11/26: los cuatro modos de un pedido con sus hechos. Fuera de Algete (tienda, otro almacén) o sin líneas de producto,
-        /// como siempre. En Algete: todo en Algete → solo «Todo junto»; nada ahora y nada en tiendas → solo «Todo junto» (#561, excepción
-        /// que se mantiene aunque el 2 hiciera algo distinto con varias líneas); si no, el 3 necesita algo de las tiendas, el 4 algo que
+        /// como siempre. En Algete: todo en Algete → solo «Todo junto»; nada ahora y nada en tiendas → «Todo junto» (#561) y, desde el
+        /// 19/11/26 (Carlos), también «Según vaya entrando» si quedan varias líneas sin cubrir (<see cref="OfreceSegunVayaEntrandoSinNadaDisponible"/>); si no, el 3 necesita algo de las tiendas, el 4 algo que
         /// servir ahora, y de los que tienen el mismo plan se ofrece el primero de <see cref="PREFERENCIA"/>. «Todo junto» siempre se ofrece.
         /// </summary>
         public static List<ModoServicioPermitidoDTO> CalcularPorPlanes(TipoAlmacen tipo, HechosModoServicio hechos, bool hayLineasProducto)
@@ -171,9 +171,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             else if (!ahora && !tiendas)
             {
-                // NestoAPI#561: ninguna unidad que servir ahora ni en las tiendas: todo junto (si no, salían solo los portes)
+                // NestoAPI#561: ninguna unidad que servir ahora ni en las tiendas: todo junto (si no, salían solo los portes).
+                // Carlos 19/11/26: con VARIAS líneas que pueden llegar en fechas distintas, también «Según vaya entrando».
                 motivos[Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS] = MOTIVO_SIN_ROSAS;
-                motivos[Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO] = MOTIVO_NADA_CON_STOCK;
+                if (!OfreceSegunVayaEntrandoSinNadaDisponible(hechos))
+                {
+                    motivos[Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO] = MOTIVO_NADA_CON_STOCK;
+                }
                 motivos[Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ] = MOTIVO_NADA_CON_STOCK;
             }
             else
@@ -214,6 +218,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             .Select(m => { m.Permitido = m.Motivo == null; return m; })
             .ToList();
         }
+
+        /// <summary>
+        /// LA REGLA (Carlos 19/11/26): sin nada ahora ni en las tiendas, «Según vaya entrando» se ofrece solo si quedan VARIAS líneas (grupos
+        /// producto+almacén) sin cubrir, que pueden llegar en fechas distintas: cada una sale cuando llega. Con una sola, es «Todo junto».
+        /// </summary>
+        public static bool OfreceSegunVayaEntrandoSinNadaDisponible(HechosModoServicio hechos)
+            => hechos != null && !hechos.HayAhora && !hechos.HayDeTiendas && hechos.ConSinCubrir.Count >= 2;
 
         private static string MotivoEquivalente(byte modo, byte equivalente, HechosModoServicio hechos)
         {

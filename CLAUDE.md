@@ -1134,7 +1134,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   plan de entregas de cada modo (`PlanEntregasModoServicio`: 1 una con todo; 2 lo de ahora y una por llegada; 3 espera a TODO lo de tiendas y sale con lo
   de ahora; 4 lo de ahora y una más con el resto). Una llegada de más de una unidad puede llegar partida («*»); las tiendas van en un solo suceso (sin
   desglose por tienda). Mismo plan → se ofrece uno (1 > 4 > 3 > 2), motivo «Con este pedido es lo mismo que «X»». El 3 necesita algo de tiendas, el 4
-  algo ahora; #561 sigue (nada ahora ni en tiendas → solo 1). Caso A (verde + entera en Reina): 3 = 1, no se ofrece. Caso B (2 uds., 1 en Reina): 3 sí.
+  algo ahora; #561 sigue (nada ahora ni en tiendas → 1), con un matiz (Carlos 19/11/26): si quedan VARIAS líneas sin cubrir (pueden llegar en
+  fechas distintas) se ofrece también el 2 (`ModosServicioPermitidos.OfreceSegunVayaEntrandoSinNadaDisponible`); con una sola, solo el 1. Caso A (verde + entera en Reina): 3 = 1, no se ofrece. Caso B (2 uds., 1 en Reina): 3 sí.
   Una sola unidad sin cubrir: 2 = 4, solo el 4. El sugerido (regla de siempre, `Decidir`) se cambia a su equivalente ofrecido (`Ofrecido`). Tienda,
   otros almacenes, modo 6 y picking no cambian; al modificar, la comprobación tolerante de siempre (sin cambio de modo no se mira).
 
