@@ -614,6 +614,12 @@ namespace NestoAPI.Tests.Controllers
             {
                 return Task.FromResult<string>(null);
             }
+            // Carlos 20/11/26: el borrado deja rastro en una transacción (db.Database no es fakeable)
+            public List<string> Rastros { get; } = new List<string>();
+            public List<EnvioHistoria> HistoriaDelEnvio { get; set; } = new List<EnvioHistoria>();
+            internal override Task EnTransaccionBorrado(System.Func<Task> trabajo) => trabajo();
+            internal override Task<List<EnvioHistoria>> LeerHistoriaParaRastro(int id) => Task.FromResult(HistoriaDelEnvio);
+            internal override Task ApuntarRastroBorrado(string json, string usuario) { Rastros.Add(json); return Task.CompletedTask; }
         }
 
         private ControllerConHistoriaInterceptada CrearControllerDelete()

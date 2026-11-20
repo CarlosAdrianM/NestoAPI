@@ -305,6 +305,11 @@ namespace NestoAPI.Tests.Controllers
             }
             public EnviosAgencia Original { get; set; }
             internal override Task<EnviosAgencia> LeerOrigenDelReenvio(int id) => Task.FromResult(Original);
+            // Carlos 20/11/26: el borrado deja rastro en una transacción (db.Database no es fakeable)
+            public List<string> Rastros { get; } = new List<string>();
+            internal override Task EnTransaccionBorrado(System.Func<Task> trabajo) => trabajo();
+            internal override Task<List<EnvioHistoria>> LeerHistoriaParaRastro(int id) => Task.FromResult(new List<EnvioHistoria>());
+            internal override Task ApuntarRastroBorrado(string json, string usuario) { Rastros.Add(json); return Task.CompletedTask; }
         }
 
         // Novedad 1366 (250953 -> 251026): borrar el reenvío cuando el original ya está entregado o cerrado a mano lo anula en vez de dar 409.

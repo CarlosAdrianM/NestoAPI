@@ -1039,6 +1039,16 @@ namespace NestoAPI.Controllers
                 .ToListAsync())
                 .FirstOrDefault();
 
+            // Carlos 20/11/26: cambiar la agencia o pasar a un estado terminal un envío del reparto propio con bultos en una furgoneta, no.
+            if (registrado != null && Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.CambioQueFrena(registrado, enviosAgencia.Agencia, enviosAgencia.Estado))
+            {
+                IHttpActionResult candadoPut = await CandadoFurgoneta(registrado);
+                if (candadoPut != null)
+                {
+                    return candadoPut;
+                }
+            }
+
             // NestoAPI#870: registrar («Insertar e Imprimir») o tramitar un reenvío cuya caja original no ha vuelto: 409
             // ESPERANDO_CAJA (?yaEstaAqui=true lo fuerza y marca que ha vuelto).
             if (registrado != null && ReglasHaVuelto.PutLoHaceSalir(registrado.Estado, enviosAgencia.Estado))
@@ -2191,6 +2201,13 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
+            // Carlos 20/11/26: con un bulto en una furgoneta, nada de oficina lo toca.
+            IHttpActionResult candadoAnular = await CandadoFurgoneta(envio);
+            if (candadoAnular != null)
+            {
+                return candadoAnular;
+            }
+
             // NestoAPI#552 (fase 3): la anulación, no la gestión remota completa. Innovatrans y CTT, su propia estrategia;
             // GLS, la suya solo con Agencias:GlsAnularPorApi encendido (apagado: null y el 400 de siempre).
             IAnulacionAgenciaRemota agencia = fabricaAgenciasRemotas.CrearAnulacion(envio.Agencia);
@@ -2631,6 +2648,16 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Faltan los datos a modificar.");
             }
+            // Carlos 20/11/26: pasar a un estado terminal un envío del reparto propio con bultos en una furgoneta, no.
+            EnviosAgencia antesDeModificar = await LeerEnvioParaCandado(id);
+            if (antesDeModificar != null && Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.CambioQueFrena(antesDeModificar, antesDeModificar.Agencia, datos.Estado))
+            {
+                IHttpActionResult candadoModificar = await CandadoFurgoneta(antesDeModificar);
+                if (candadoModificar != null)
+                {
+                    return candadoModificar;
+                }
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             // NestoAPI#597: con la fábrica de agencias remotas, para reenviar a Innovatrans/CTT los cambios
             // de retorno, reembolso o servicio de una etiqueta viva; auditado como /Modificar.
@@ -2708,6 +2735,18 @@ namespace NestoAPI.Controllers
             if (envio == null)
             {
                 return NotFound();
+            }
+
+            // Carlos 20/11/26: un envío del reparto propio no se da por cerrado (se entrega en Ariadna, o se anula con sus bultos en el
+            // almacén). Con algún bulto en una furgoneta, además, quién lo lleva.
+            if (Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.Aplica(envio))
+            {
+                IHttpActionResult enFurgoneta = await CandadoFurgoneta(envio);
+                if (enFurgoneta != null)
+                {
+                    return enFurgoneta;
+                }
+                return Content(HttpStatusCode.Conflict, Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.CuerpoCierreNoPermitido());
             }
 
             string error = CierreManualEnvio.Validar(envio, datos?.Motivo);
@@ -3835,6 +3874,13 @@ namespace NestoAPI.Controllers
                 return BadRequest("Solo se pueden eliminar etiquetas pendientes (Estado < 0)");
             }
 
+            // Carlos 20/11/26 (envío 251227): con un bulto en una furgoneta no se borra.
+            IHttpActionResult candadoBorrar = await CandadoFurgoneta(enviosAgencia);
+            if (candadoBorrar != null)
+            {
+                return candadoBorrar;
+            }
+
             // Incidencia 1191: la BD lo impide con FK_EnviosAgenciaReenvios y al usuario le llegaba el genérico de EF en inglés.
             string papel = await LeerPapelEnReenvio(id);
             if (papel == PAPEL_REENVIO_NUEVO)
@@ -3854,11 +3900,165 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Conflict, new { Message = mensajeReenvio });
             }
 
-            _ = await BorrarHistoriaEnvio(id);
-            db.EnviosAgencias.Remove(enviosAgencia);
-            await db.SaveChangesAsync();
+            // Carlos 20/11/26: borrar deja SIEMPRE rastro (Modificaciones, Tabla «EnvioAgenciaBorrado», el envío entero y su historia), en
+            // la misma transacción que el borrado, de cualquier agencia y estado.
+            string usuarioBorrado = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            await EnTransaccionBorrado(async () =>
+            {
+                List<EnvioHistoria> historiaBorrada = await LeerHistoriaParaRastro(id);
+                await ApuntarRastroBorrado(RastroBorradoEnvio.Json(enviosAgencia, historiaBorrada, usuarioBorrado, DateTime.Now), usuarioBorrado);
+                _ = await BorrarHistoriaEnvio(id);
+                db.EnviosAgencias.Remove(enviosAgencia);
+                await db.SaveChangesAsync();
+            });
 
             return Ok(enviosAgencia);
+        }
+
+        /// <summary>Carlos 20/11/26: el borrado y su rastro, juntos. internal virtual para los tests (db.Database no es fakeable).</summary>
+        internal virtual async Task EnTransaccionBorrado(Func<Task> trabajo)
+        {
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    await trabajo();
+                    transaccion.Commit();
+                }
+                catch (Exception)
+                {
+                    transaccion.RollbackSeguro();
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>La historia del envío antes de borrarla (para el rastro). internal virtual para los tests.</summary>
+        internal virtual Task<List<EnvioHistoria>> LeerHistoriaParaRastro(int id)
+            => db.Database.SqlQuery<EnvioHistoria>(
+                "SELECT Numero, NumeroEnvio, Campo, ValorAnterior, Observaciones, Usuario, FechaModificacion FROM EnviosHistoria " +
+                "WHERE NumeroEnvio = @p0 ORDER BY FechaModificacion, Numero", id).ToListAsync();
+
+        /// <summary>La fila de Modificaciones del borrado. internal virtual para los tests.</summary>
+        internal virtual Task ApuntarRastroBorrado(string json, string usuario)
+            => db.Database.ExecuteSqlCommandAsync(
+                "INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@p0, @p1, NULL, @p2)",
+                RastroBorradoEnvio.TABLA, json, RastroBorradoEnvio.Recortar(usuario, 50));
+
+        private Infraestructure.Agencias.RepartoPropio.ILectorFurgonetaEnvio lectorFurgoneta;
+        /// <summary>Carlos 20/11/26: si algún bulto del envío va en una furgoneta. Sustituible en los tests.</summary>
+        internal Infraestructure.Agencias.RepartoPropio.ILectorFurgonetaEnvio LectorFurgoneta
+        {
+            get => lectorFurgoneta ?? (lectorFurgoneta = new Infraestructure.Agencias.RepartoPropio.LectorFurgonetaEnvioSql(db));
+            set => lectorFurgoneta = value;
+        }
+
+        /// <summary>
+        /// Carlos 20/11/26: el 409 EN_FURGONETA si el envío es de la 14 y algún bulto suyo va en una furgoneta; null si se puede seguir
+        /// (otra agencia, ninguno en furgoneta, sin el script o si no se puede leer: ELMAH y se sigue, como antes).
+        /// </summary>
+        private async Task<IHttpActionResult> CandadoFurgoneta(EnviosAgencia envio)
+        {
+            if (!Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.Aplica(envio))
+            {
+                return null;
+            }
+            Infraestructure.Agencias.RepartoPropio.BultosEnFurgoneta furgoneta;
+            try
+            {
+                furgoneta = await LectorFurgoneta.Leer(envio);
+            }
+            catch (Exception ex)
+            {
+                RegistrarEnElmah?.Invoke(new Exception($"[Reparto propio] No se ha podido saber si el envío {envio.Numero} va en una furgoneta: se sigue. {ex.Message}", ex));
+                return null;
+            }
+            if (furgoneta == null)
+            {
+                return null;
+            }
+            string mensaje = Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.MensajeEnvio(envio.Numero, furgoneta, DateTime.Now);
+            return Content(HttpStatusCode.Conflict, Infraestructure.Agencias.RepartoPropio.CandadoFurgonetaEnvio.Cuerpo409(mensaje, furgoneta));
+        }
+
+        /// <summary>El envío tal como está (sin seguimiento de EF), para el candado de ModificarDatos. Null si no se puede leer.</summary>
+        internal virtual async Task<EnviosAgencia> LeerEnvioParaCandado(int id)
+        {
+            try
+            {
+                return (await db.EnviosAgencias.AsNoTracking().Where(e => e.Numero == id).ToListAsync()).FirstOrDefault();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        public class NotaEnvioDTO
+        {
+            public string Texto { get; set; }
+        }
+
+        public class NotaEnvioAnotadaDTO
+        {
+            public int Numero { get; set; }
+            public string Texto { get; set; }
+            public string Usuario { get; set; }
+            public DateTime Fecha { get; set; }
+        }
+
+        public const int LONGITUD_MAXIMA_NOTA_ENVIO = 500;
+
+        /// <summary>Quién puede apuntar una nota en un envío: Almacén, Administración, Dirección e Informática.</summary>
+        internal static bool PuedeAnotarEnvio(System.Security.Principal.IPrincipal usuario)
+            => usuario != null && new[]
+            {
+                Constantes.GruposSeguridad.ALMACEN, Constantes.GruposSeguridad.ADMINISTRACION,
+                Constantes.GruposSeguridad.DIRECCION, Constantes.GruposSeguridad.INFORMATICA
+            }.Any(g => NestoAPI.Infrastructure.PrincipalExtensions.IsInRoleSinDominio(usuario, g));
+
+        // POST: api/EnviosAgencias/5/Nota { Texto }
+        /// <summary>
+        /// Carlos 20/11/26: una nota en la historia del envío (Campo «Nota», Observaciones = el texto), sin cambiar nada del envío.
+        /// 200 { Numero, Texto, Usuario, Fecha }; 400 sin texto o de más de 500; 403; 404 si no existe.
+        /// </summary>
+        [HttpPost]
+        [Route("api/EnviosAgencias/{id:int}/Nota")]
+        [ResponseType(typeof(NotaEnvioAnotadaDTO))]
+        public async Task<IHttpActionResult> AnotarEnvio(int id, [FromBody] NotaEnvioDTO peticion)
+        {
+            if (!PuedeAnotarEnvio(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = "Solo Almacén, Administración, Dirección e Informática pueden apuntar notas en un envío." });
+            }
+            string texto = peticion?.Texto?.Trim();
+            if (string.IsNullOrEmpty(texto))
+            {
+                return BadRequest("Escriba la nota.");
+            }
+            if (texto.Length > LONGITUD_MAXIMA_NOTA_ENVIO)
+            {
+                return BadRequest($"La nota no puede pasar de {LONGITUD_MAXIMA_NOTA_ENVIO} caracteres.");
+            }
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+            string usuario = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            var fila = new EnvioHistoria
+            {
+                NumeroEnvio = id,
+                Campo = "Nota",
+                ValorAnterior = string.Empty,
+                Observaciones = texto,
+                Usuario = usuario,
+                FechaModificacion = DateTime.Now
+            };
+            NVEntities.AcotarHistoriaEnvio(fila);
+            _ = db.EnviosHistorias.Add(fila);
+            _ = await db.SaveChangesAsync();
+            return Ok(new NotaEnvioAnotadaDTO { Numero = id, Texto = texto, Usuario = fila.Usuario, Fecha = fila.FechaModificacion });
         }
 
         public const string PAPEL_REENVIO_NUEVO = "EnvioNuevo";

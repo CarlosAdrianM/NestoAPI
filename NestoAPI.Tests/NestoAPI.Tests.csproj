@@ -515,6 +515,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ServicioRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FirmaSelladaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CargaFurgonetaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\CandadoFurgonetaEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CargaObligatoriaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\RecogidasParadaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FechaRepartoPropioTests.cs" />
