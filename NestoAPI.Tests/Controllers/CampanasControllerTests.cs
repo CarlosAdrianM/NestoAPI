@@ -1,6 +1,7 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.Campanas;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
 using System;
@@ -28,6 +29,7 @@ namespace NestoAPI.Tests.Controllers
         private DbSet<Familia> fakeFamilias;
         private DbSet<SubGruposProducto> fakeSubGrupos;
         private CampanasController controller;
+        private IRepositorioCampanaBloque repositorioBloque;
 
         [TestInitialize]
         public void Inicializar()
@@ -58,7 +60,10 @@ namespace NestoAPI.Tests.Controllers
                 new Familia { Empresa = "1", Número = "Ufaes", Descripción = "Ufaes" }
             }.AsQueryable());
 
-            controller = new CampanasController(db);
+            repositorioBloque = A.Fake<IRepositorioCampanaBloque>();
+            A.CallTo(() => repositorioBloque.Retirar(A<RetiradaCampanaBloque>._))
+                .ReturnsLazily((RetiradaCampanaBloque r) => Task.FromResult(new ResultadoRetiradaCampanaBloque { FilasDescuento = r.Ids.Count }));
+            controller = new CampanasController(db, repositorioBloque);
         }
 
         private static CampanaDTO CampanaDeProducto(decimal descuento = 0.20M)
@@ -664,7 +669,9 @@ namespace NestoAPI.Tests.Controllers
             var resultado = await controller.CerrarCampana("Black Friday 2026", new DateTime(2026, 12, 1))
                 as OkNegotiatedContentResult<ResultadoOperacionCampanaDTO>;
 
-            Assert.AreEqual(new DateTime(2026, 12, 1), viaja.FechaHasta);
+            A.CallTo(() => repositorioBloque.Retirar(A<RetiradaCampanaBloque>.That.Matches(r =>
+                    r.FechaFin == new DateTime(2026, 12, 1) && r.Campana == "Black Friday 2026" && r.Ids.Single() == 500)))
+                .MustHaveHappenedOnceExactly();
             Assert.AreEqual(1, resultado.Content.ProductosEncolados);
         }
 
@@ -677,7 +684,8 @@ namespace NestoAPI.Tests.Controllers
 
             _ = await controller.CerrarCampana("Black Friday 2026");
 
-            Assert.AreEqual(DateTime.Today.AddDays(-1), fila.FechaHasta);
+            A.CallTo(() => repositorioBloque.Retirar(A<RetiradaCampanaBloque>.That.Matches(r => r.FechaFin == DateTime.Today.AddDays(-1))))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -732,6 +740,122 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsTrue(CampanasController.SeSolapan(
                 new DateTime(2026, 8, 1), new DateTime(2026, 9, 1),
                 new DateTime(2026, 9, 1), new DateTime(2026, 9, 30)));
+        }
+
+        // ---------------------------------------------------------------------------
+        // Black Friday 2026: la baja por nombre deshace entera un alta en bloque
+        // ---------------------------------------------------------------------------
+
+        [TestMethod]
+        public async Task DeleteCampanaPorNombre_BorraEnUnaSentenciaPorElRepositorioConSusIds()
+        {
+            ConfigurarFakeDbSet(fakeDescuentos, new List<DescuentosProducto>
+            {
+                FilaDeCampana(500, "44166", "Black Friday 2026", audiencia: 2),
+                FilaDeCampana(501, "44167", "Black Friday 2026", audiencia: 2)
+            }.AsQueryable());
+            A.CallTo(() => repositorioBloque.Retirar(A<RetiradaCampanaBloque>._))
+                .Returns(Task.FromResult(new ResultadoRetiradaCampanaBloque { FilasDescuento = 2, FilasAplicarDto = 1, FilasCondicionContado = 2 }));
+
+            var resultado = await controller.DeleteCampanaPorNombre("Black Friday 2026")
+                as OkNegotiatedContentResult<ResultadoOperacionCampanaDTO>;
+
+            A.CallTo(() => repositorioBloque.Retirar(A<RetiradaCampanaBloque>.That.Matches(r =>
+                    r.FechaFin == null && r.Ids.Count == 2 && r.Ids.Contains(500) && r.Ids.Contains(501) && r.Empresa == "1")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => fakeDescuentos.RemoveRange(A<IEnumerable<DescuentosProducto>>._)).MustNotHaveHappened();
+            Assert.AreEqual(2, resultado.Content.FilasAfectadas);
+            Assert.AreEqual(1, resultado.Content.FilasAplicarDto);
+            Assert.AreEqual(2, resultado.Content.FilasCondicionContado);
+        }
+
+        // Una campaña que aún no ha empezado no está en la tienda: borrarla no encola nada.
+        [TestMethod]
+        public async Task DeleteCampanaPorNombre_CampanaQueAunNoHaEmpezado_NoEncolaNada()
+        {
+            DescuentosProducto futura = FilaDeCampana(500, "44166", "Black Friday 2026", audiencia: 2);
+            futura.FechaDesde = DateTime.Today.AddDays(5);
+            futura.FechaHasta = DateTime.Today.AddDays(10);
+            ConfigurarFakeDbSet(fakeDescuentos, new List<DescuentosProducto> { futura }.AsQueryable());
+
+            var resultado = await controller.DeleteCampanaPorNombre("Black Friday 2026")
+                as OkNegotiatedContentResult<ResultadoOperacionCampanaDTO>;
+
+            Assert.AreEqual(0, resultado.Content.ProductosEncolados);
+            A.CallTo(() => db.EncolarProductosSync(A<IEnumerable<string>>.That.Matches(l => l.Any()), A<string>._)).MustNotHaveHappened();
+        }
+
+        // Lo que acabó anteayer puede seguir en la tienda (el job no lo ha retirado aún): se republica.
+        [TestMethod]
+        public async Task DeleteCampanaPorNombre_CampanaRecienAcabada_SiEncola()
+        {
+            DescuentosProducto acabada = FilaDeCampana(500, "44166", "Black Friday 2026", audiencia: 2);
+            acabada.FechaDesde = DateTime.Today.AddDays(-10);
+            acabada.FechaHasta = DateTime.Today.AddDays(-1);
+            ConfigurarFakeDbSet(fakeDescuentos, new List<DescuentosProducto> { acabada }.AsQueryable());
+
+            var resultado = await controller.DeleteCampanaPorNombre("Black Friday 2026")
+                as OkNegotiatedContentResult<ResultadoOperacionCampanaDTO>;
+
+            Assert.AreEqual(1, resultado.Content.ProductosEncolados);
+        }
+
+        [TestMethod]
+        public async Task PostCampanaBloque_PeticionSinNombre_DevuelveBadRequestSinTocarNada()
+        {
+            System.Web.Http.IHttpActionResult resultado = await controller.PostCampanaBloque(new PeticionCampanaBloqueDTO
+            {
+                FechaDesde = DateTime.Today.AddDays(5), FechaHasta = DateTime.Today.AddDays(10),
+                Reglas = new List<ReglaCampanaBloqueDTO> { new ReglaCampanaBloqueDTO { Familia = "Ufaes", Descuento = 0.2M, Audiencia = 2 } }
+            });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => repositorioBloque.Leer(A<ConsultaCampanaBloque>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorioBloque.Empezar(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostCampanaBloque_PorDefectoEsEnsayo_SoloLee()
+        {
+            A.CallTo(() => repositorioBloque.Leer(A<ConsultaCampanaBloque>._)).Returns(Task.FromResult(new DatosCampanaBloque
+            {
+                Candidatos = new List<ProductoCandidatoCampana>
+                {
+                    new ProductoCandidatoCampana { Numero = "44166", Nombre = "CREMA", Familia = "Ufaes", Grupo = "COS", SubGrupo = "CRE", PVP = 10M, AplicarDto = true, Estado = 0 }
+                }
+            }));
+
+            var resultado = await controller.PostCampanaBloque(new PeticionCampanaBloqueDTO
+            {
+                Nombre = "BF", FechaDesde = DateTime.Today.AddDays(5), FechaHasta = DateTime.Today.AddDays(10),
+                Reglas = new List<ReglaCampanaBloqueDTO> { new ReglaCampanaBloqueDTO { Familia = "Ufaes", Descuento = 0.2M, Audiencia = 2 } }
+            }) as OkNegotiatedContentResult<RespuestaCampanaBloqueDTO>;
+
+            Assert.IsTrue(resultado.Content.Ensayo);
+            Assert.AreEqual(1, resultado.Content.Total.Entran);
+            A.CallTo(() => repositorioBloque.Empezar(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostCampanaBloqueExcel_DevuelveUnXlsx()
+        {
+            A.CallTo(() => repositorioBloque.Leer(A<ConsultaCampanaBloque>._)).Returns(Task.FromResult(new DatosCampanaBloque
+            {
+                Candidatos = new List<ProductoCandidatoCampana>
+                {
+                    new ProductoCandidatoCampana { Numero = "44166", Nombre = "CREMA", Familia = "Ufaes", Grupo = "COS", PVP = 10M, AplicarDto = true, Estado = 0 }
+                }
+            }));
+
+            System.Net.Http.HttpResponseMessage respuesta = await controller.PostCampanaBloqueExcel(new PeticionCampanaBloqueDTO
+            {
+                Nombre = "BF", FechaDesde = DateTime.Today.AddDays(5), FechaHasta = DateTime.Today.AddDays(10),
+                Reglas = new List<ReglaCampanaBloqueDTO> { new ReglaCampanaBloqueDTO { Familia = "Ufaes", Descuento = 0.2M, Audiencia = 2 } }
+            });
+
+            Assert.AreEqual(System.Net.HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual(GeneradorExcelCampanaBloque.CONTENT_TYPE, respuesta.Content.Headers.ContentType.MediaType);
+            A.CallTo(() => repositorioBloque.Empezar(A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class

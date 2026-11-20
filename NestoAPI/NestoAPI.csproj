@@ -1250,6 +1250,10 @@
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\AvisoCondicionesCampana.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasAplicarDto.cs" />
+    <Compile Include="Infraestructure\Campanas\CampanaBloque.cs" />
+    <Compile Include="Infraestructure\Campanas\ServicioCampanaBloque.cs" />
+    <Compile Include="Infraestructure\Campanas\RepositorioCampanaBloqueSql.cs" />
+    <Compile Include="Infraestructure\Campanas\GeneradorExcelCampanaBloque.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\PlazosProntoPago.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoClientes.cs" />

@@ -550,6 +550,28 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   marcada, devuelve el precio especial sin descuento (`AplicarPrecioEspecialQueAcumulaConLaOferta`). Nesto y NestoApp solo mandan ese dato.
   Las sugerencias de N+M siguen exigiendo precio de ficha (no proponen el 6+1 en un producto con precio especial).
 
+### Campaña en bloque (Black Friday 2026, 20/11/26)
+- `POST api/Campanas/Bloque?ensayo=true&incluirLineas=false` (`[Authorize]`, como crear campañas; ensayo por defecto: no escribe nada) y
+  `POST api/Campanas/Bloque/Excel` (siempre ensayo; hojas «Productos» con TODAS las líneas y «Resumen»). Cuerpo `PeticionCampanaBloqueDTO`
+  {Nombre ≤50, FechaDesde, FechaHasta (las dos obligatorias), Empresa (solo 1), Audiencia (0/1/2, por defecto de reglas y excepciones),
+  Reglas [{Familia, Descuento, Audiencia?, ProductosExcluidos, TextosExcluidos, GruposExcluidos, SubgruposExcluidos («OUT» o «COS/OUT»),
+  CondicionContado?}], Excepciones [{Producto, Descuento, Audiencia?, CondicionContado?}], ProductosExcluidos, DesbloquearAplicarDto,
+  CondicionContado, TextoAvisoContado}. Descuentos en TANTO POR UNO (0 < d < 1). Crea filas POR PRODUCTO de DescuentosProducto con Campana.
+- LA REGLA (pura) `ReglaCampanaBloque.Calcular` (`Infraestructure/Campanas/CampanaBloque.cs`): ya estaba (fila de ESTA campaña) · NoExiste ·
+  EstadoNoVivo (null o < 0) · MateriaPrima (MTP) · Muestra (MMP) · ExcluidoPorReferencia · (solo por regla, no excepción) ExcluidoPorGrupo /
+  Subgrupo / Texto (sin mayúsculas ni tildes, palabra entera) · SinPvp · FichaBloqueada («Aplicar Dto» = 0 sin desbloqueo) · solape. La
+  excepción manda sobre su regla. Solape = otra fila de tarifa de producto (sin cliente/proveedor, desde 1 ud.) que se solapa en fechas:
+  mejor o igual (precio efectivo) → fuera `YaTieneDescuentoMejorOIgual`; peor → se crea (Carlos 20/11/26, «queda el mejor de los dos»),
+  `Solape` = true; nunca se borra nada. OJO: el motor no desempata dos filas de producto de la misma CantidadMínima (FirstOrDefault de SQL).
+- De verdad: UNA transacción (`RepositorioCampanaBloqueSql`, applock `CampanaBloque:{empresa}:{campaña}`): SqlBulkCopy a una temporal + un
+  INSERT … NOT EXISTS por tabla (DescuentosProducto, `CampanasAplicarDto` con las fichas a desbloquear, `CampanasCondicionContado`) y UNA
+  fila en Modificaciones (Tabla `CampanaBloque`). Idempotente. Tienda: si aún no ha empezado no encola nada (lo hace `vigencia-campanas` el
+  día que empieza); si ya corre, una vez los productos creados con audiencia > 0. Sin las tablas que hagan falta → 503.
+- Baja por nombre (`DELETE api/Campanas/PorNombre/{n}` y `…/Cerrar`): por Nº Orden en una sentencia (ya no EF fila a fila), en la misma
+  transacción el desbloqueo (lo no activado se borra; lo activado se cierra ayer y el job devuelve la ficha) y el contado; rastro
+  `CampanaBorrada`/`CampanaCerrada`; solo encola lo que puede estar en la tienda (`ReglaCampanaBloque.PuedeEstarEnLaTienda`: ya empezada
+  y acabada hace ≤ 2 días). Script `Scripts/BlackFriday2026_CampanasBloque.sql` (GRANT INSERT/DELETE/UPDATE en las dos tablas).
+
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid
   (`EmbudoBloqueDiarioJobsService`): el siguiente bloque NV-AAAA-MM-NN (NN vuelve a 01 cada mes) de 50 por `ServicioEmbudoClientes.Republicar`

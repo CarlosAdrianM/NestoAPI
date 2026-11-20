@@ -1,10 +1,14 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Campanas;
+using NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -34,15 +38,22 @@ namespace NestoAPI.Controllers
     public class CampanasController : ApiController
     {
         private readonly NVEntities db;
+        private readonly IRepositorioCampanaBloque repositorioBloque;
 
         public CampanasController()
         {
             db = new NVEntities();
+            repositorioBloque = new RepositorioCampanaBloqueSql(db);
         }
 
-        public CampanasController(NVEntities db)
+        public CampanasController(NVEntities db) : this(db, new RepositorioCampanaBloqueSql(db))
+        {
+        }
+
+        public CampanasController(NVEntities db, IRepositorioCampanaBloque repositorioBloque)
         {
             this.db = db;
+            this.repositorioBloque = repositorioBloque;
         }
 
         /// <summary>
@@ -249,20 +260,22 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            DateTime fin = fechaFin ?? DateTime.Today.AddDays(-1);
+            DateTime hoy = DateTime.Today;
+            DateTime fin = (fechaFin ?? hoy.AddDays(-1)).Date;
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
 
             // Se calcula ANTES de tocar nada: después de cerrarlas, las filas ya no viajan y el
-            // alcance saldría vacío — la tienda se quedaría con la oferta puesta.
-            List<string> aRepublicar = await ProductosQueCambianDeMensaje(filas).ConfigureAwait(false);
+            // alcance saldría vacío — la tienda se quedaría con la oferta puesta. Solo lo que puede
+            // estar en la tienda antes o después del cierre (una campaña que aún no ha empezado no está).
+            List<string> aRepublicar = await ProductosQueCambianDeMensaje(filas.Where(f =>
+                    ReglaCampanaBloque.PuedeEstarEnLaTienda(f.FechaDesde, f.FechaHasta, hoy, VigenciaCampanasJobsService.DIAS_VENTANA)
+                    || ReglaCampanaBloque.PuedeEstarEnLaTienda(f.FechaDesde, fin, hoy, VigenciaCampanasJobsService.DIAS_VENTANA)).ToList())
+                .ConfigureAwait(false);
 
-            foreach (DescuentosProducto fila in filas)
-            {
-                fila.FechaHasta = fin;
-                fila.Usuario = usuario;
-                fila.Fecha_Modificación = DateTime.Now;
-            }
-            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            // Black Friday 2026: una sentencia por tabla, no fila a fila por EF; también cierra el desbloqueo de fichas y la
+            // condición de contado de la campaña, en una transacción con una fila de rastro.
+            ResultadoRetiradaCampanaBloque hecho = await repositorioBloque.Retirar(Retirada(nombre, filas, hoy, usuario, fin)).ConfigureAwait(false);
+            CampanasCondicionContado.Invalidar();
 
             // NestoAPI#433: la lista entera en una sentencia
             _ = await db.EncolarProductosSync(aRepublicar, usuario).ConfigureAwait(false);
@@ -270,8 +283,10 @@ namespace NestoAPI.Controllers
             return Ok(new ResultadoOperacionCampanaDTO
             {
                 Campana = nombre?.Trim(),
-                FilasAfectadas = filas.Count,
-                ProductosEncolados = aRepublicar.Count
+                FilasAfectadas = hecho.FilasDescuento,
+                ProductosEncolados = aRepublicar.Count,
+                FilasAplicarDto = hecho.FilasAplicarDto,
+                FilasCondicionContado = hecho.FilasCondicionContado
             });
         }
 
@@ -282,7 +297,12 @@ namespace NestoAPI.Controllers
         /// Lo importante aquí es lo que NO hace: solo encola los productos cuyo mensaje cambia de
         /// verdad. Las 2.017 filas de las rebajas de verano son todas de audiencia 0, así que
         /// borrarlas encola CERO productos — sin ese filtro serían dos mil republicaciones inútiles
-        /// contra PrestaShop para no cambiar ningún precio.
+        /// contra PrestaShop para no cambiar ningún precio. Por lo mismo, una campaña que aún no ha
+        /// empezado (el Black Friday creado el lunes para el miércoles) tampoco encola nada.
+        ///
+        /// Deshace entera un alta en bloque (POST api/Campanas/Bloque): sus filas de DescuentosProducto en
+        /// una sentencia, su desbloqueo de fichas (lo no activado se borra; lo activado se cierra ayer para
+        /// que el job devuelva la ficha) y su condición de contado, en UNA transacción con una fila de rastro.
         /// </summary>
         [HttpDelete]
         [Route("api/Campanas/PorNombre/{nombre}")]
@@ -295,11 +315,14 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
+            DateTime hoy = DateTime.Today;
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
-            List<string> aRepublicar = await ProductosQueCambianDeMensaje(filas).ConfigureAwait(false);
+            List<string> aRepublicar = await ProductosQueCambianDeMensaje(filas.Where(f =>
+                    ReglaCampanaBloque.PuedeEstarEnLaTienda(f.FechaDesde, f.FechaHasta, hoy, VigenciaCampanasJobsService.DIAS_VENTANA)).ToList())
+                .ConfigureAwait(false);
 
-            db.DescuentosProductoes.RemoveRange(filas);
-            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            ResultadoRetiradaCampanaBloque hecho = await repositorioBloque.Retirar(Retirada(nombre, filas, hoy, usuario, null)).ConfigureAwait(false);
+            CampanasCondicionContado.Invalidar();
 
             // NestoAPI#433: la lista entera en una sentencia
             _ = await db.EncolarProductosSync(aRepublicar, usuario).ConfigureAwait(false);
@@ -307,9 +330,61 @@ namespace NestoAPI.Controllers
             return Ok(new ResultadoOperacionCampanaDTO
             {
                 Campana = nombre?.Trim(),
-                FilasAfectadas = filas.Count,
-                ProductosEncolados = aRepublicar.Count
+                FilasAfectadas = hecho.FilasDescuento,
+                ProductosEncolados = aRepublicar.Count,
+                FilasAplicarDto = hecho.FilasAplicarDto,
+                FilasCondicionContado = hecho.FilasCondicionContado
             });
+        }
+
+        private static RetiradaCampanaBloque Retirada(string nombre, List<DescuentosProducto> filas, DateTime hoy, string usuario, DateTime? fin)
+        {
+            return new RetiradaCampanaBloque
+            {
+                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Campana = nombre.Trim(),
+                Ids = filas.Select(f => f.Nº_Orden).ToList(),
+                FechaFin = fin,
+                Hoy = hoy,
+                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario)
+            };
+        }
+
+        /// <summary>
+        /// Black Friday 2026: alta EN BLOQUE de una campaña por familias (con exclusiones) y excepciones por producto, como filas
+        /// POR PRODUCTO de DescuentosProducto. Con <paramref name="ensayo"/> (por defecto) no escribe nada: devuelve los totales
+        /// por familia, una muestra y (con <paramref name="incluirLineas"/>) todas las líneas. Ver <see cref="ReglaCampanaBloque"/>.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Campanas/Bloque")]
+        [ResponseType(typeof(RespuestaCampanaBloqueDTO))]
+        public async Task<IHttpActionResult> PostCampanaBloque([FromBody] PeticionCampanaBloqueDTO peticion, bool ensayo = true, bool incluirLineas = false)
+        {
+            ResultadoCampanaBloque resultado = await new ServicioCampanaBloque(repositorioBloque)
+                .Ejecutar(peticion, ensayo, incluirLineas, DateTime.Today, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoCampanaBloque.PeticionIncorrecta:
+                    return BadRequest(resultado.Mensaje);
+                case EstadoCampanaBloque.SinTabla:
+                    return Content(HttpStatusCode.ServiceUnavailable, resultado.Mensaje);
+                default:
+                    return Ok(resultado.Respuesta);
+            }
+        }
+
+        /// <summary>El ensayo de <see cref="PostCampanaBloque"/> con TODAS las líneas en un Excel (nunca escribe nada).</summary>
+        [HttpPost]
+        [Route("api/Campanas/Bloque/Excel")]
+        public async Task<HttpResponseMessage> PostCampanaBloqueExcel([FromBody] PeticionCampanaBloqueDTO peticion)
+        {
+            ResultadoCampanaBloque resultado = await new ServicioCampanaBloque(repositorioBloque)
+                .Ejecutar(peticion, true, true, DateTime.Today, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+            if (resultado.Estado != EstadoCampanaBloque.Ok)
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent(resultado.Mensaje ?? string.Empty) };
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new GeneradorExcelCampanaBloque().GenerarExcel(resultado.Respuesta) };
         }
 
         // -----------------------------------------------------------------------------------
@@ -670,5 +745,9 @@ namespace NestoAPI.Controllers
         public string Campana { get; set; }
         public int FilasAfectadas { get; set; }
         public int ProductosEncolados { get; set; }
+        /// <summary>Filas de dbo.CampanasAplicarDto de la campaña borradas (sin activar) o cerradas (el job devuelve la ficha).</summary>
+        public int FilasAplicarDto { get; set; }
+        /// <summary>Filas de dbo.CampanasCondicionContado de la campaña borradas o cerradas.</summary>
+        public int FilasCondicionContado { get; set; }
     }
 }
