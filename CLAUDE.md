@@ -226,6 +226,28 @@ The `GestorPrecios.calcularDescuentoProducto()` method:
 - Each product line validated individually with specific product ID tracking
 - Material promocional (subgroup = "Muestras") always gets 100% discount
 
+### Pedir autorización de un pedido que no pasa la validación (Novedades 1258, 20/11/26; Nesto gemelo)
+- LA REGLA de quién puede «crearlo de todos modos» = quién puede AUTORIZAR el de otro: `ReglaOmitirValidacionPedido` (`Infraestructure/PedidosVenta/
+  Autorizaciones/`), sacada tal cual del POST de PedidosVenta (que ya la usa): Dirección, Almacén o ParametrosUsuario `PermitirCrearPedidoConErroresValidacion`;
+  Tiendas si TODAS las líneas son de su `AlmacénPedidoVta`; y el `PermisoNecesario` de la denegación (#501) si lo pide. Los parámetros se leen solo si hace
+  falta (la fila «(defecto)» crea la del usuario). El PUT y `UsuarioPuedeOmitirValidacion` siguen con su copia de siempre (no se han tocado).
+- `dbo.PedidosAutorizacionesSolicitadas` (fuera del EDMX, `Scripts/PedidosAutorizacionesSolicitadas.sql`; sin ella los seis endpoints dan 503): PedidoJson
+  (el DTO tal como se iba a guardar; `RecogeEnTienda` se guarda como lo mandó el cliente, no calculado), Motivos (JSON {Motivos, Errores}), Estado
+  Pendiente/Autorizada/Denegada/Anulada (CHECK) y, además del contrato, Huella, PermisoNecesario, Importe, NumeroLineas, Vendedor y Almacenes.
+- `PedidosVentaAutorizacionesController`: `POST api/PedidosVenta/Autorizaciones` {Pedido, Comentario?} (la API VUELVE a validar con `GestorPrecios.EsPedidoValido`:
+  si pasa, 400 «no necesita autorización»; Pendiente idéntica del mismo solicitante —`ReglasAutorizacionPedido.Huella`: cliente, contacto y líneas sin
+  orden— en 24 h → 409 {Message, Codigo YA_SOLICITADA, Id}) → 201 {Id, Estado, Motivos, Errores, Destinatarios}; `GET …?pendientes=true&mias=false` (30 días;
+  ve las suyas y las que LA REGLA le deja autorizar), `GET …/{id}` (+ Pedido; 403), `POST …/{id}/Autorizar` {Comentario?}, `POST …/{id}/Denegar` {Motivo 1..500},
+  `DELETE …/{id}` (solo quien la pidió). 409 si ya no está Pendiente.
+- Autorizar: bloqueo `sp_getapplock` de sesión `PedidoAutorizacion:{id}` (otro a la vez → 409), y el pedido se crea por `PedidosVentaController.PostPedidoVenta`
+  (el MISMO camino, con el principal de quien autoriza) con Usuario = solicitante y `CreadoSinPasarValidacion`; `PedidosVentaController.UsuarioPermisosValidacion`
+  = quien autoriza (sus parámetros, no los del solicitante). Si el alta falla, su respuesta tal cual y la solicitud sigue Pendiente. Rastro en Modificaciones
+  (Tabla `PedidoAutorizado`).
+- Avisos (`AvisosAutorizacionPedido`, nunca rompen): campana de Nesto NO urgente `AutorizacionPedidoPedida` {tipo, id, referencia, empresa, cliente, contacto} a los
+  que pueden autorizar (`ReglasAutorizacionPedido.Destinatarios`: grupos del dominio + filas PROPIAS de ParametrosUsuario, sin «(defecto)» ni el solicitante);
+  al resolver, `AutorizacionPedidoResuelta` {…, estado, pedido} al solicitante (campana) y push de NestoApp al vendedor del pedido, y `notificacionResuelta`
+  (Tipo `AutorizacionPedidoPedida`, Referencia = Id) a los demás; al anular, solo `notificacionResuelta`.
+
 ### Commission System
 Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Handles annual commissions by vendor

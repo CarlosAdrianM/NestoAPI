@@ -3261,28 +3261,25 @@ namespace NestoAPI.Controllers
             }
 
             // Carlos 12/01/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas"
+            // Novedades 1258: LA REGLA es ReglaOmitirValidacionPedido (la misma que decide quién autoriza el pedido de otro). Al
+            // crear el de una autorización, cuentan los parámetros de quien la autoriza (UsuarioPermisosValidacion), no los del solicitante.
             bool grupoPermitidoSinValidacion;
             bool grupoTiendasConAlmacenCorrecto = false;
             // NestoAPI#324: mismo principal efectivo que en el PUT (User puede ser null en llamadas internas)
             IPrincipal usuarioValidacion = PrincipalParaValidacion();
+            string usuarioPermisosValidacion = UsuarioPermisosValidacion ?? pedido.Usuario;
             try
             {
-                // Dirección y Almacén pueden crear sin validación sin importar el almacén
-                grupoPermitidoSinValidacion = usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
-                                             usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
-                                             TieneParametroPermitirOmitirValidacion(pedido.empresa, pedido.Usuario);
-
+                // Dirección y Almacén pueden crear sin validación sin importar el almacén;
                 // Tiendas puede crear sin validación solo si todas las líneas están en su almacén
-                if (!grupoPermitidoSinValidacion && usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
-                {
-                    string usuarioParam = UsuarioSinDominio(pedido.Usuario);
-                    string almacenUsuario = ParametrosUsuarioController.LeerParametro(pedido.empresa, usuarioParam, "AlmacénPedidoVta");
-
-                    if (!string.IsNullOrWhiteSpace(almacenUsuario) && pedido.Lineas.Any())
-                    {
-                        grupoTiendasConAlmacenCorrecto = pedido.Lineas.All(l => l.almacen?.Trim() == almacenUsuario.Trim());
-                    }
-                }
+                grupoPermitidoSinValidacion = Infraestructure.PedidosVenta.Autorizaciones.ReglaOmitirValidacionPedido.GrupoPermite(
+                    usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION),
+                    usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN),
+                    () => TieneParametroPermitirOmitirValidacion(pedido.empresa, usuarioPermisosValidacion),
+                    usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS),
+                    () => ParametrosUsuarioController.LeerParametro(pedido.empresa, UsuarioSinDominio(usuarioPermisosValidacion),
+                        Infraestructure.PedidosVenta.Autorizaciones.ReglaOmitirValidacionPedido.PARAMETRO_ALMACEN),
+                    pedido.Lineas.Select(l => l.almacen).ToList());
             }
             catch
             {
@@ -3639,9 +3636,10 @@ namespace NestoAPI.Controllers
             // Carlos 12/01/25: Permitir omitir validación si:
             // - Tiene rol Dirección o Almacén (sin importar almacenes), O
             // - Tiene rol Tiendas Y todas las líneas están en su almacén
-            bool puedeOmitirValidacion = (grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto)
-                // NestoAPI#501: y, si la denegación exige un permiso propio, tenerlo también.
-                && PuedeSaltarseEstaDenegacion(respuestaValidacion, pedido.empresa, pedido.Usuario);
+            // NestoAPI#501: y, si la denegación exige un permiso propio, tenerlo también.
+            bool puedeOmitirValidacion = Infraestructure.PedidosVenta.Autorizaciones.ReglaOmitirValidacionPedido.PuedeOmitir(
+                grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto, respuestaValidacion?.PermisoNecesario,
+                () => PuedeSaltarseEstaDenegacion(respuestaValidacion, pedido.empresa, usuarioPermisosValidacion));
 
             if (!pedido.CreadoSinPasarValidacion || !puedeOmitirValidacion)
             {
@@ -5164,16 +5162,16 @@ namespace NestoAPI.Controllers
 
         private bool TieneParametroActivado(string empresa, string usuario, string clave)
         {
-            string valor = ParametrosUsuarioController.LeerParametro(empresa, usuario, clave);
-
-            if (!string.IsNullOrWhiteSpace(valor))
-            {
-                valor = valor.Trim().ToUpperInvariant();
-                return valor == "1" || valor == "TRUE" || valor == "SI" || valor == "SÍ";
-            }
-
-            return false;
+            return Infraestructure.PedidosVenta.Autorizaciones.ReglaOmitirValidacionPedido.ValorActivado(
+                ParametrosUsuarioController.LeerParametro(empresa, usuario, clave));
         }
+
+        /// <summary>
+        /// Novedades 1258: al crear el pedido de una autorización (POST api/PedidosVenta/Autorizaciones/{id}/Autorizar), el pedido va a
+        /// nombre del SOLICITANTE (pedido.Usuario) pero los parámetros que permiten crearlo de todos modos son los de quien lo autoriza
+        /// (el principal de la petición). Null (siempre, salvo ahí) = los de pedido.Usuario, como hasta ahora.
+        /// </summary>
+        internal string UsuarioPermisosValidacion { get; set; }
 
         // Carlos 28/01/26: Issue #85 - Endpoint para copiar facturas y crear rectificativas
         // POST: api/PedidosVenta/CopiarFactura

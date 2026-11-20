@@ -740,6 +740,12 @@
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\ServicioFotosFechaEntrega.cs" />
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />
     <Compile Include="Controllers\PedidosVentaAmpliacionesController.cs" />
+    <Compile Include="Controllers\PedidosVentaAutorizacionesController.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\AutorizacionesPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\AvisosAutorizacionPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\ReglaOmitirValidacionPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\RepositorioAutorizacionesPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\ServicioAutorizacionesPedido.cs" />
     <Compile Include="Controllers\PedidosVentaRetencionPorFaltaController.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
     <Compile Include="Controllers\PedidosVentaAnomaliasController.cs" />
