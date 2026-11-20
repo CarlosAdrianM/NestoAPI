@@ -34,6 +34,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public bool CondicionContado { get; set; }
         /// <summary>Texto propio del aviso de contado (500 como mucho); null = el de siempre.</summary>
         public string TextoAvisoContado { get; set; }
+        /// <summary>A los distribuidores el descuento de la campaña se les suma ENCIMA del suyo (dbo.CampanasAcumulanDistribuidores, mismas fechas).</summary>
+        public bool AcumulaParaDistribuidores { get; set; }
     }
 
     public class ReglaCampanaBloqueDTO

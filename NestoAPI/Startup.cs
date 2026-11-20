@@ -63,6 +63,9 @@ namespace NestoAPI
                 Infraestructure.PedidosVenta.DiasRepartoClientes.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // Feria online 12-16/11/26: productos de campaña con condición de contado (tabla CampanasCondicionContado).
                 Infraestructure.PedidosVenta.CondicionesCampana.CampanasCondicionContado.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // Black Friday 2026: campañas cuyo descuento se suma al del distribuidor (tabla CampanasAcumulanDistribuidores) y quién lo es.
+                Infraestructure.Campanas.CampanasAcumulanDistribuidores.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                Infraestructure.Clientes.ClientesDistribuidores.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // Y los plazos de pago con pronto pago, que cuentan como contado (Carlos 11/11/26).
                 Infraestructure.PedidosVenta.CondicionesCampana.PlazosProntoPago.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // NestoAPI#779: los festivos salen de la tabla Festivos (si no existe o le falta el año, de la lista de GestorFestivos).

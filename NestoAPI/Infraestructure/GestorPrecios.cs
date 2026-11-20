@@ -85,9 +85,12 @@ namespace NestoAPI.Infraestructure
 
                 dtoProducto = BuscarDescuentoUnico(db, d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == datos.contacto && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad,
                     datos, $"el precio especial del producto {datos.producto.Número?.Trim()} del cliente {datos.cliente?.Trim()} (contacto {datos.contacto?.Trim()})");
+                // Distribuidores (Carlos 20/11/26): con precio especial PROPIO del producto no se compone la campaña.
+                bool precioEspecialPropio = false;
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
+                    precioEspecialPropio = true;
                 }
                 //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     '  and [nº producto]= '29487' and empresa='1  ' AND CantidadMínima<=1
                 //select recargopvp from clientes with (nolock) where empresa='1  ' and [nº cliente]='15191     ' and contacto='0  '
@@ -98,6 +101,7 @@ namespace NestoAPI.Infraestructure
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
+                    precioEspecialPropio = true;
                 }
                 //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
                 dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
@@ -179,7 +183,10 @@ namespace NestoAPI.Infraestructure
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
 
+                // Distribuidores (Carlos 20/11/26): lo que lleva el cliente SIN la fila de tarifa del producto (su «propio»).
+                decimal propioSinCampana = datos.descuentoCalculado;
                 dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Producto.Número == datos.producto.Número && d.Nº_Cliente == null && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                DescuentosProducto filaTarifaProducto = dtoProducto;
                 if (dtoProducto != null && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
@@ -191,7 +198,12 @@ namespace NestoAPI.Infraestructure
                 if (dtoProducto != null)// && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
+                    propioSinCampana = dtoProducto.Descuento;
                 }
+
+                // Distribuidores: con una campaña marcada (dbo.CampanasAcumulanDistribuidores), la campaña ENCIMA del suyo.
+                // Sin marca, o si no es distribuidor, no cambia nada.
+                datos.descuentoCalculado = ConCampanaDeDistribuidor(datos, filaTarifaProducto, propioSinCampana, precioEspecialPropio);
 
                 // Carlos 25/04/19: si es material promocional va con el 100% de descuento
                 if (datos.producto.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS)
@@ -211,6 +223,24 @@ namespace NestoAPI.Infraestructure
                 // Si quisiéramos comprobar también las condiciones que tiene en ficha, descomentar la siguiente línea
                 // comprobarCondiciones(datos);
             }
+        }
+
+        /// <summary>
+        /// Distribuidores (Carlos 20/11/26): si la fila de tarifa del producto que ha elegido el motor es de una campaña marcada
+        /// para distribuidores y el cliente lo es, el descuento compuesto (<see cref="Campanas.DescuentoDistribuidorCampana"/>).
+        /// Primero la marca (caché en memoria): sin campaña marcada no se pregunta nada más y el resultado es el de siempre.
+        /// </summary>
+        private static decimal ConCampanaDeDistribuidor(PrecioDescuentoProducto datos, DescuentosProducto filaTarifaProducto, decimal propioSinCampana,
+            bool precioEspecialPropio)
+        {
+            if (filaTarifaProducto == null || string.IsNullOrWhiteSpace(filaTarifaProducto.Campana)
+                || !Campanas.CampanasAcumulanDistribuidores.EstaMarcada(filaTarifaProducto.Campana, DateTime.Today))
+            {
+                return datos.descuentoCalculado;
+            }
+            bool esDistribuidor = Clientes.ClientesDistribuidores.EsDistribuidor(datos.producto.Empresa, datos.cliente);
+            return Campanas.DescuentoDistribuidorCampana.Aplicar(datos.descuentoCalculado, propioSinCampana, filaTarifaProducto.Descuento,
+                true, esDistribuidor, precioEspecialPropio);
         }
 
         /// <summary>

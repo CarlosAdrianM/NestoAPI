@@ -130,6 +130,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             // Validación de descuentos
             IEnumerable<DescuentosProducto> descuentos = servicio.BuscarDescuentosPermitidos(oferta.producto.Número, pedido.cliente, pedido.contacto);
+            List<DescuentosProducto> todosLosDescuentos = descuentos?.ToList() ?? new List<DescuentosProducto>();
+            descuentos = todosLosDescuentos;
 
             IEnumerable<DescuentosProducto> descuentosEspecificosProducto = descuentos.Where(d => d.Nº_Producto?.Trim() == oferta.producto.Número.Trim());
             // Si hay un descuento específico para el producto, éste prevale sobre el de la familia o grupo
@@ -162,6 +164,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 };
             }
 
+            // Distribuidores (Carlos 20/11/26): con una campaña marcada, el suyo y el de la campaña uno sobre otro.
+            decimal? compuesto = DescuentoCompuestoDistribuidor(todosLosDescuentos, producto, oferta, pedido);
+            if (compuesto.HasValue && Math.Round((decimal)oferta.descuentoReal, 3) <= compuesto.Value)
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = true,
+                    Motivo = "Hay un descuento de distribuidor sobre la campaña del " + compuesto.Value.ToString("P2")
+                };
+            }
+
             return new RespuestaValidacion
             {
                 ValidacionSuperada = false,
@@ -169,6 +182,29 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     + " para el producto " + producto.Número.Trim(),
                 ProductoId = producto.Número.Trim()
             };
+        }
+
+        /// <summary>
+        /// El compuesto que se autoriza a un distribuidor (<see cref="Campanas.DescuentoDistribuidorCampana.MaximoAutorizado"/>), o null
+        /// si no hay campaña marcada vigente para el producto o el cliente no es distribuidor. Primero la marca (en memoria).
+        /// </summary>
+        internal static decimal? DescuentoCompuestoDistribuidor(List<DescuentosProducto> descuentos, Producto producto, PrecioDescuentoProducto oferta, PedidoVentaDTO pedido)
+        {
+            DateTime hoy = DateTime.Today;
+            int cantidad = oferta.cantidad + oferta.cantidadOferta;
+            List<DescuentosProducto> aplicables = descuentos.Where(d => d.CantidadMínima <= cantidad
+                && (d.FiltroProducto == null || string.IsNullOrEmpty(d.FiltroProducto.Trim()) || producto.Nombre.StartsWith(d.FiltroProducto))).ToList();
+            if (!aplicables.Any(d => Campanas.DescuentoDistribuidorCampana.EsFilaDeCampanaDeProducto(d, producto.Número)
+                && Campanas.CampanasAcumulanDistribuidores.EstaMarcada(d.Campana, hoy)))
+            {
+                return null;
+            }
+            if (!Clientes.ClientesDistribuidores.EsDistribuidor(pedido.empresa, pedido.cliente))
+            {
+                return null;
+            }
+            return Campanas.DescuentoDistribuidorCampana.MaximoAutorizado(aplicables, producto.Número,
+                c => Campanas.CampanasAcumulanDistribuidores.EstaMarcada(c, hoy));
         }
     }
 }

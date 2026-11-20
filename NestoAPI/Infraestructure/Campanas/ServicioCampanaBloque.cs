@@ -34,6 +34,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public int FichasDesbloqueoCreadas { get; set; }
         /// <summary>De verdad: filas nuevas en dbo.CampanasCondicionContado.</summary>
         public int CondicionContadoCreadas { get; set; }
+        /// <summary>De verdad: se ha marcado la campaña en dbo.CampanasAcumulanDistribuidores (false si ya lo estaba o no se pidió).</summary>
+        public bool MarcaDistribuidoresCreada { get; set; }
         /// <summary>Productos encolados para la tienda (solo si la campaña ya está corriendo; si no, lo hace el job el día que empieza).</summary>
         public int ProductosEncolados { get; set; }
         public string Mensaje { get; set; }
@@ -71,6 +73,7 @@ namespace NestoAPI.Infraestructure.Campanas
         public List<FilaExistenteCampana> Existentes { get; set; } = new List<FilaExistenteCampana>();
         public bool TablaAplicarDto { get; set; }
         public bool TablaCondicionContado { get; set; }
+        public bool TablaAcumulaDistribuidores { get; set; }
     }
 
     public class FilaAltaCampanaBloque
@@ -92,6 +95,7 @@ namespace NestoAPI.Infraestructure.Campanas
         public DateTime Hasta { get; set; }
         public string Usuario { get; set; }
         public string TextoAvisoContado { get; set; }
+        public bool AcumulaParaDistribuidores { get; set; }
         public List<FilaAltaCampanaBloque> Filas { get; set; } = new List<FilaAltaCampanaBloque>();
     }
 
@@ -101,6 +105,7 @@ namespace NestoAPI.Infraestructure.Campanas
         public List<string> ProductosCreados { get; set; } = new List<string>();
         public int AplicarDtoCreadas { get; set; }
         public int CondicionContadoCreadas { get; set; }
+        public bool MarcaDistribuidoresCreada { get; set; }
     }
 
     /// <summary>Borrar (sin <see cref="FechaFin"/>) o cerrar una campaña entera por nombre.</summary>
@@ -122,6 +127,8 @@ namespace NestoAPI.Infraestructure.Campanas
         /// <summary>dbo.CampanasAplicarDto: borradas (aún sin activar) o con la fecha de fin cambiada (el job devuelve la ficha).</summary>
         public int FilasAplicarDto { get; set; }
         public int FilasCondicionContado { get; set; }
+        /// <summary>dbo.CampanasAcumulanDistribuidores: la marca borrada o cerrada.</summary>
+        public int FilasAcumulaDistribuidores { get; set; }
     }
 
     public interface IRepositorioCampanaBloque
@@ -191,7 +198,7 @@ namespace NestoAPI.Infraestructure.Campanas
             {
                 DatosCampanaBloque datos = await repositorio.Leer(consulta).ConfigureAwait(false) ?? new DatosCampanaBloque();
                 RespuestaCampanaBloqueDTO respuesta = Responder(peticion, consulta, datos, true, incluirLineas, hoy, out _);
-                respuesta.Avisos.AddRange(AvisosTablas(TablasQueFaltan(respuesta, datos)));
+                respuesta.Avisos.AddRange(AvisosTablas(TablasQueFaltan(peticion, respuesta, datos)));
                 respuesta.Mensaje = "Ensayo: no se ha escrito nada.";
                 return new ResultadoCampanaBloque { Estado = EstadoCampanaBloque.Ok, Respuesta = respuesta };
             }
@@ -204,19 +211,20 @@ namespace NestoAPI.Infraestructure.Campanas
             {
                 DatosCampanaBloque datos = await unidad.Leer(consulta).ConfigureAwait(false) ?? new DatosCampanaBloque();
                 hecha = Responder(peticion, consulta, datos, false, incluirLineas, hoy, out lineas);
-                List<string> faltan = TablasQueFaltan(hecha, datos);
+                List<string> faltan = TablasQueFaltan(peticion, hecha, datos);
                 if (faltan.Any())
                 {
                     return new ResultadoCampanaBloque { Estado = EstadoCampanaBloque.SinTabla, Mensaje = string.Join(" ", AvisosTablas(faltan)) };
                 }
                 AltaCampanaBloque alta = Alta(peticion, consulta, usuarioAuditoria, lineas);
-                insercion = alta.Filas.Any()
+                insercion = alta.Filas.Any() || alta.AcumulaParaDistribuidores
                     ? await unidad.Insertar(alta, datos).ConfigureAwait(false) ?? new ResultadoInsercionCampanaBloque()
                     : new ResultadoInsercionCampanaBloque();
                 hecha.FilasCreadas = insercion.ProductosCreados.Count;
                 hecha.FichasDesbloqueoCreadas = insercion.AplicarDtoCreadas;
                 hecha.CondicionContadoCreadas = insercion.CondicionContadoCreadas;
-                if (hecha.FilasCreadas + hecha.FichasDesbloqueoCreadas + hecha.CondicionContadoCreadas > 0)
+                hecha.MarcaDistribuidoresCreada = insercion.MarcaDistribuidoresCreada;
+                if (hecha.FilasCreadas + hecha.FichasDesbloqueoCreadas + hecha.CondicionContadoCreadas > 0 || hecha.MarcaDistribuidoresCreada)
                 {
                     await unidad.Anotar(TABLA_MODIFICACIONES, RastroAlta(peticion, hecha), DescripcionAlta(hecha, usuarioAuditoria), usuarioAuditoria).ConfigureAwait(false);
                 }
@@ -226,6 +234,10 @@ namespace NestoAPI.Infraestructure.Campanas
             if (hecha.CondicionContadoCreadas > 0)
             {
                 CampanasCondicionContado.Invalidar();
+            }
+            if (hecha.MarcaDistribuidoresCreada)
+            {
+                CampanasAcumulanDistribuidores.Invalidar();
             }
             hecha.ProductosEncolados = await EncolarSiYaCorre(hecha, insercion, lineas).ConfigureAwait(false);
             hecha.Mensaje = MensajeAlta(hecha);
@@ -254,9 +266,13 @@ namespace NestoAPI.Infraestructure.Campanas
             };
         }
 
-        private static List<string> TablasQueFaltan(RespuestaCampanaBloqueDTO r, DatosCampanaBloque datos)
+        private static List<string> TablasQueFaltan(PeticionCampanaBloqueDTO p, RespuestaCampanaBloqueDTO r, DatosCampanaBloque datos)
         {
             var faltan = new List<string>();
+            if (p.AcumulaParaDistribuidores && !datos.TablaAcumulaDistribuidores)
+            {
+                faltan.Add("CampanasAcumulanDistribuidores");
+            }
             if (r.Total.FichasDesbloqueadas > 0 && !datos.TablaAplicarDto)
             {
                 faltan.Add("CampanasAplicarDto");
@@ -269,7 +285,9 @@ namespace NestoAPI.Infraestructure.Campanas
         }
 
         private static IEnumerable<string> AvisosTablas(IEnumerable<string> faltan) =>
-            faltan.Select(t => $"Falta la tabla dbo.{t}: lance Scripts/FeriaOnline_CampanasCondicionContado.sql y Scripts/BlackFriday2026_CampanasBloque.sql antes de crearla de verdad.");
+            faltan.Select(t => t == "CampanasAcumulanDistribuidores"
+                ? "Falta la tabla dbo.CampanasAcumulanDistribuidores: lance Scripts/BlackFriday2026_CampanasAcumulanDistribuidores.sql antes de crearla de verdad."
+                : $"Falta la tabla dbo.{t}: lance Scripts/FeriaOnline_CampanasCondicionContado.sql y Scripts/BlackFriday2026_CampanasBloque.sql antes de crearla de verdad.");
 
         private static AltaCampanaBloque Alta(PeticionCampanaBloqueDTO peticion, ConsultaCampanaBloque consulta, string usuario, List<LineaCampanaBloqueDTO> lineas)
         {
@@ -281,6 +299,7 @@ namespace NestoAPI.Infraestructure.Campanas
                 Hasta = consulta.Hasta,
                 Usuario = usuario,
                 TextoAvisoContado = string.IsNullOrWhiteSpace(peticion.TextoAvisoContado) ? null : peticion.TextoAvisoContado.Trim(),
+                AcumulaParaDistribuidores = peticion.AcumulaParaDistribuidores,
                 Filas = lineas
                     .Where(l => l.Estado == EstadoLineaCampanaBloque.Entra
                         || (l.Estado == EstadoLineaCampanaBloque.YaEstaba && (l.DesbloquearFicha || l.CondicionContado)))
@@ -350,7 +369,8 @@ namespace NestoAPI.Infraestructure.Campanas
         internal static string DescripcionAlta(RespuestaCampanaBloqueDTO r, string usuario) =>
             $"Campaña «{r.Nombre}» ({r.FechaDesde.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}-{r.FechaHasta.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}) " +
             $"dada de alta en bloque: {N(r.FilasCreadas)} filas nuevas, {N(r.Total.YaEstaban)} ya estaban, {N(r.Total.Fuera)} fuera " +
-            $"({N(r.Total.Solapes)} por solape), {N(r.FichasDesbloqueoCreadas)} fichas a desbloquear, {N(r.CondicionContadoCreadas)} con condición de contado. Por {usuario}";
+            $"({N(r.Total.Solapes)} con solape), {N(r.FichasDesbloqueoCreadas)} fichas a desbloquear, {N(r.CondicionContadoCreadas)} con condición de contado" +
+            (r.MarcaDistribuidoresCreada ? ", y a los distribuidores se les suma encima del suyo" : string.Empty) + $". Por {usuario}";
 
         private static string RastroAlta(PeticionCampanaBloqueDTO p, RespuestaCampanaBloqueDTO r) =>
             JsonConvert.SerializeObject(new
@@ -362,6 +382,7 @@ namespace NestoAPI.Infraestructure.Campanas
                 p.Audiencia,
                 p.DesbloquearAplicarDto,
                 p.CondicionContado,
+                p.AcumulaParaDistribuidores,
                 Reglas = (p.Reglas ?? new List<ReglaCampanaBloqueDTO>()).Select(x => new
                 {
                     Familia = x.Familia?.Trim(), x.Descuento, x.Audiencia, x.CondicionContado,
@@ -380,7 +401,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public static string DescripcionRetirada(RetiradaCampanaBloque r, ResultadoRetiradaCampanaBloque hecho) =>
             $"Campaña «{r.Campana}» " +
             (r.FechaFin.HasValue ? $"cerrada con fin el {r.FechaFin.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}" : "borrada") +
-            $": {N(hecho.FilasDescuento)} filas de descuento, {N(hecho.FilasAplicarDto)} de desbloqueo de ficha y {N(hecho.FilasCondicionContado)} de contado. Por {r.Usuario}";
+            $": {N(hecho.FilasDescuento)} filas de descuento, {N(hecho.FilasAplicarDto)} de desbloqueo de ficha y {N(hecho.FilasCondicionContado)} de contado" +
+            (hecho.FilasAcumulaDistribuidores > 0 ? " (y su marca de distribuidores)" : string.Empty) + $". Por {r.Usuario}";
 
         private static string N(int n) => n.ToString("N0", CultureInfo.GetCultureInfo("es-ES"));
     }

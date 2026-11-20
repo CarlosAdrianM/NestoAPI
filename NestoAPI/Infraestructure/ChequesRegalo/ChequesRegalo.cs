@@ -404,8 +404,8 @@ GROUP BY f.Empresa, f.[Número], l.TipoLinea, l.Producto, p.Nombre, p.Grupo, p.F
         internal const string SQL_CLIENTE_FIN_DE_MES = @"
 SELECT COUNT(*) FROM Clientes WHERE Empresa = @p0 AND [Nº Cliente] = @p1 AND PeriodoFacturación = @p2";
 
-        internal const string SQL_CLIENTE_DISTRIBUIDOR = @"
-SELECT COUNT(*) FROM Clientes WHERE Empresa = @p0 AND [Nº Cliente] = @p1 AND Estado IN (@p2, @p3)";
+        // LA REGLA de quién es distribuidor vive en Clientes.ClientesDistribuidores (la comparte el descuento de campaña).
+        internal const string SQL_CLIENTE_DISTRIBUIDOR = Clientes.ClientesDistribuidores.SQL_ES_DISTRIBUIDOR;
 
         internal const string SQL_TIENE_CHEQUE = @"
 SELECT COUNT(*) FROM dbo.ChequesRegalo WHERE Campana = @p0 AND Empresa = @p1 AND Cliente = @p2";
@@ -480,10 +480,7 @@ WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3
 
         public async Task<bool> EsDistribuidor(string cliente)
             => await db.Database.SqlQuery<int>(SQL_CLIENTE_DISTRIBUIDOR,
-                new SqlParameter("@p0", Constantes.Empresas.EMPRESA_POR_DEFECTO),
-                new SqlParameter("@p1", cliente),
-                new SqlParameter("@p2", Constantes.Clientes.Estados.DISTRIBUIDOR),
-                new SqlParameter("@p3", Constantes.Clientes.Estados.CONTACTO_DE_DISTRIBUIDOR)).FirstAsync().ConfigureAwait(false) > 0;
+                Clientes.ClientesDistribuidores.Parametros(Constantes.Empresas.EMPRESA_POR_DEFECTO, cliente)).FirstAsync().ConfigureAwait(false) > 0;
 
         public async Task<bool> TieneCheque(string campana, string empresa, string cliente)
             => await db.Database.SqlQuery<int>(SQL_TIENE_CHEQUE,

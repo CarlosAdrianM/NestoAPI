@@ -1254,6 +1254,8 @@
     <Compile Include="Infraestructure\Campanas\ServicioCampanaBloque.cs" />
     <Compile Include="Infraestructure\Campanas\RepositorioCampanaBloqueSql.cs" />
     <Compile Include="Infraestructure\Campanas\GeneradorExcelCampanaBloque.cs" />
+    <Compile Include="Infraestructure\Campanas\DescuentoDistribuidorCampana.cs" />
+    <Compile Include="Infraestructure\Clientes\ClientesDistribuidores.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\PlazosProntoPago.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoClientes.cs" />

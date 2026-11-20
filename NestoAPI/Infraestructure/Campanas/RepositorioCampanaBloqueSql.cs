@@ -19,7 +19,31 @@ namespace NestoAPI.Infraestructure.Campanas
     {
         internal const string SQL_TABLAS =
             "SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasAplicarDto', N'U') IS NULL THEN 0 ELSE 1 END AS bit), " +
-            "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasCondicionContado', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+            "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasCondicionContado', N'U') IS NULL THEN 0 ELSE 1 END AS bit), " +
+            "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasAcumulanDistribuidores', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        // La marca de distribuidores: una fila por campaña; si ya estaba, se le ponen las fechas de la campaña (no se duplica).
+        internal const string SQL_MARCAR_DISTRIBUIDORES = @"IF EXISTS (SELECT 1 FROM dbo.CampanasAcumulanDistribuidores WITH (UPDLOCK, HOLDLOCK) WHERE Campana = @campana)
+BEGIN
+    UPDATE dbo.CampanasAcumulanDistribuidores SET FechaDesde = @desde, FechaHasta = @hasta, Usuario = @usuario, FechaModificacion = GETDATE()
+    WHERE Campana = @campana AND (FechaDesde <> @desde OR FechaHasta <> @hasta);
+    SELECT 0;
+END
+ELSE
+BEGIN
+    INSERT INTO dbo.CampanasAcumulanDistribuidores (Campana, FechaDesde, FechaHasta, Usuario) VALUES (@campana, @desde, @hasta, @usuario);
+    SELECT 1;
+END";
+
+        internal const string SQL_BORRAR_DISTRIBUIDORES = @"IF OBJECT_ID(N'dbo.CampanasAcumulanDistribuidores', N'U') IS NULL BEGIN SELECT 0; RETURN; END
+DELETE FROM dbo.CampanasAcumulanDistribuidores WHERE Campana = @campana;
+SELECT @@ROWCOUNT;";
+
+        internal const string SQL_CERRAR_DISTRIBUIDORES = @"IF OBJECT_ID(N'dbo.CampanasAcumulanDistribuidores', N'U') IS NULL BEGIN SELECT 0; RETURN; END
+UPDATE dbo.CampanasAcumulanDistribuidores SET FechaHasta = @fin, FechaDesde = CASE WHEN FechaDesde > @fin THEN @fin ELSE FechaDesde END,
+    Usuario = @usuario, FechaModificacion = GETDATE()
+WHERE Campana = @campana;
+SELECT @@ROWCOUNT;";
 
         internal const string SQL_CANDIDATOS =
             "SELECT RTRIM(p.Número), RTRIM(p.Nombre), RTRIM(p.Familia), RTRIM(p.Grupo), RTRIM(p.SubGrupo), p.PVP, p.[Aplicar Dto], p.Estado " +
@@ -153,12 +177,13 @@ SELECT @@ROWCOUNT;";
                 {
                     FilasDescuento = await Escalar(u, cerrar ? SQL_CERRAR_DESCUENTOS : SQL_BORRAR_DESCUENTOS, r, fin).ConfigureAwait(false),
                     FilasAplicarDto = await Escalar(u, cerrar ? SQL_CERRAR_APLICAR_DTO : SQL_BORRAR_APLICAR_DTO, r, fin).ConfigureAwait(false),
-                    FilasCondicionContado = await Escalar(u, cerrar ? SQL_CERRAR_CONTADO : SQL_BORRAR_CONTADO, r, fin).ConfigureAwait(false)
+                    FilasCondicionContado = await Escalar(u, cerrar ? SQL_CERRAR_CONTADO : SQL_BORRAR_CONTADO, r, fin).ConfigureAwait(false),
+                    FilasAcumulaDistribuidores = await Escalar(u, cerrar ? SQL_CERRAR_DISTRIBUIDORES : SQL_BORRAR_DISTRIBUIDORES, r, fin).ConfigureAwait(false)
                 };
                 string anterior = Newtonsoft.Json.JsonConvert.SerializeObject(new
                 {
                     r.Campana, r.Empresa, Accion = cerrar ? "Cerrar" : "Borrar", FechaFin = cerrar ? fin.ToString("yyyy-MM-dd") : null,
-                    hecho.FilasDescuento, hecho.FilasAplicarDto, hecho.FilasCondicionContado, Ids = r.Ids
+                    hecho.FilasDescuento, hecho.FilasAplicarDto, hecho.FilasCondicionContado, hecho.FilasAcumulaDistribuidores, Ids = r.Ids
                 });
                 await unidad.Anotar(cerrar ? ServicioCampanaBloque.TABLA_CERRADA : ServicioCampanaBloque.TABLA_BORRADA, anterior,
                     ServicioCampanaBloque.DescripcionRetirada(r, hecho), r.Usuario).ConfigureAwait(false);
@@ -265,6 +290,7 @@ IF @r < 0 THROW 50001, 'Otra persona está dando de alta o borrando esta campañ
                 {
                     datos.TablaAplicarDto = lector.GetBoolean(0);
                     datos.TablaCondicionContado = lector.GetBoolean(1);
+                    datos.TablaAcumulaDistribuidores = lector.GetBoolean(2);
                 }
             }
 
@@ -382,6 +408,13 @@ IF @r < 0 THROW 50001, 'Otra persona está dando de alta o borrando esta campañ
                     {
                         comando.Parameters.Add("@texto", SqlDbType.NVarChar, 500).Value = (object)alta.TextoAvisoContado ?? DBNull.Value;
                         resultado.CondicionContadoCreadas = Convert.ToInt32(await comando.ExecuteScalarAsync().ConfigureAwait(false));
+                    }
+                }
+                if (tablas.TablaAcumulaDistribuidores && alta.AcumulaParaDistribuidores)
+                {
+                    using (SqlCommand comando = Comando(SQL_MARCAR_DISTRIBUIDORES, alta, 50))
+                    {
+                        resultado.MarcaDistribuidoresCreada = Convert.ToInt32(await comando.ExecuteScalarAsync().ConfigureAwait(false)) > 0;
                     }
                 }
                 return resultado;

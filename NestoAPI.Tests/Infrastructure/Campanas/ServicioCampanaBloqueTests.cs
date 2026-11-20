@@ -234,6 +234,35 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
         }
 
         [TestMethod]
+        public async Task DeVerdad_AcumulaParaDistribuidores_LaMarcaEnLaMismaTransaccion()
+        {
+            datos.TablaAcumulaDistribuidores = true;
+            A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>._, A<DatosCampanaBloque>._))
+                .Returns(Task.FromResult(new ResultadoInsercionCampanaBloque { ProductosCreados = new List<string> { "1" }, MarcaDistribuidoresCreada = true }));
+            PeticionCampanaBloqueDTO p = Peticion();
+            p.AcumulaParaDistribuidores = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(p, false, false, HOY, "x");
+
+            Assert.IsTrue(r.Respuesta.MarcaDistribuidoresCreada);
+            A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>.That.Matches(a => a.AcumulaParaDistribuidores), A<DatosCampanaBloque>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.Anotar(A<string>._, A<string>._, A<string>.That.Contains("distribuidores"), A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task DeVerdad_AcumulaParaDistribuidoresSinLaTabla_SinTabla()
+        {
+            datos.TablaAcumulaDistribuidores = false;
+            PeticionCampanaBloqueDTO p = Peticion();
+            p.AcumulaParaDistribuidores = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(p, false, false, HOY, "x");
+
+            Assert.AreEqual(EstadoCampanaBloque.SinTabla, r.Estado);
+            StringAssert.Contains(r.Mensaje, "CampanasAcumulanDistribuidores");
+        }
+
+        [TestMethod]
         public void DescripcionRetirada_DiceQueHaHecho()
         {
             string texto = ServicioCampanaBloque.DescripcionRetirada(

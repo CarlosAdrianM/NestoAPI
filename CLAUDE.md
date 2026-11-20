@@ -571,6 +571,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   transacción el desbloqueo (lo no activado se borra; lo activado se cierra ayer y el job devuelve la ficha) y el contado; rastro
   `CampanaBorrada`/`CampanaCerrada`; solo encola lo que puede estar en la tienda (`ReglaCampanaBloque.PuedeEstarEnLaTienda`: ya empezada
   y acabada hace ≤ 2 días). Script `Scripts/BlackFriday2026_CampanasBloque.sql` (GRANT INSERT/DELETE/UPDATE en las dos tablas).
+- **Distribuidores: la campaña ENCIMA del suyo (Carlos 20/11/26)**: marca por DATO `dbo.CampanasAcumulanDistribuidores` (Campana, FechaDesde,
+  FechaHasta; `Scripts/BlackFriday2026_CampanasAcumulanDistribuidores.sql`; caché 5 min; sin ella, nada cambia). La rellena el alta en bloque con
+  `AcumulaParaDistribuidores` (misma transacción) y la quitan la baja (borra) y el cierre (FechaHasta). LA REGLA `DescuentoDistribuidorCampana`
+  (pura): `1 − (1 − propio) × (1 − campaña)` a 4 decimales (30+20 → 44 %; 50+25 → 62,5 %); propio = lo que el motor da SIN la fila de tarifa del
+  producto (si el cliente tiene descuento propio del producto, ese); con PRECIO ESPECIAL propio no se compone; nunca peor que hoy (máximo). Solo
+  la fila de campaña de PRODUCTO. Distribuidor = LA REGLA `ClientesDistribuidores` (algún contacto con estado 6 o 67; la usan también los cheques
+  regalo; caché 10 min por cliente). Motor: `GestorPrecios.ConCampanaDeDistribuidor` tras el descuento propio del producto (primero la marca, sin
+  ella ni consulta); validación: `ValidadorDescuentosPermitidos.DescuentoCompuestoDistribuidor` autoriza hasta el compuesto (propio = la mayor
+  de las demás filas autorizadas). La tienda no cambia (no viaja nada de esto).
 
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid

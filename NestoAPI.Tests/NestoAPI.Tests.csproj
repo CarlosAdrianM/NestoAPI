@@ -305,6 +305,7 @@
     <Compile Include="Controllers\CampanasControllerTests.cs" />
     <Compile Include="Infrastructure\Campanas\ReglaCampanaBloqueTests.cs" />
     <Compile Include="Infrastructure\Campanas\ServicioCampanaBloqueTests.cs" />
+    <Compile Include="Infrastructure\Campanas\DescuentoDistribuidorCampanaTests.cs" />
     <Compile Include="Controllers\AgenciasTarifasControllerTests.cs" />
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
