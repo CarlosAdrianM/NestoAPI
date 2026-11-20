@@ -148,7 +148,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private Task<bool> Guardar(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado)
         {
             List<PedidoCompraEnAire> pedidos = null;
-            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), aplicar: true, leerPdf: true);
+            return GuardarCorreos(correos, resultado, async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), aplicar: true, leerPdf: true,
+                casarLineas: true);
         }
 
         /// <summary>
@@ -160,8 +161,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// NestoAPI#857e: con <paramref name="leerPdf"/> (el job; el histórico no, por coste) se leen los PDF de los remitentes marcados con «leer el PDF».
         /// </summary>
         internal async Task<bool> GuardarCorreos(List<CorreoCompras> correos, ResultadoPasadaCorreosSeguimiento resultado,
-            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool aplicar = false, bool leerPdf = false)
+            Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool aplicar = false, bool leerPdf = false, bool casarLineas = false)
         {
+            // 20/11/26: las líneas en el aire y las referencias de los proveedores, solo si algún aviso trae líneas (el histórico no: casaría con lo de hoy)
+            Func<List<string>, Task<DatosLineasAviso>> lineasDe = casarLineas ? CacheLineasAviso() : null;
             List<RemitenteMarcado> marcados;
             try
             {
@@ -186,7 +189,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 try
                 {
-                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf, confirmaciones).ConfigureAwait(false);
+                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf, confirmaciones, lineasDe).ConfigureAwait(false);
                     if (fila == null)
                     {
                         continue;
@@ -277,7 +280,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <param name="confirmaciones">NestoAPI#857g: las confirmaciones de pedido del proveedor (las nuevas de la tanda se añaden).</param>
         private async Task<CorreoSeguimientoFila> FilaAnalizada(CorreoCompras correo, List<RemitenteMarcado> marcados,
             List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool leerPdf,
-            List<ConfirmacionPedidoProveedorFila> confirmaciones = null)
+            List<ConfirmacionPedidoProveedorFila> confirmaciones = null, Func<List<string>, Task<DatosLineasAviso>> lineasDe = null)
         {
             AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(correo, agencias, marcados);
             if (analisis.Confirmacion != null)
@@ -317,7 +320,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 asignacion = ReglaPedidoProveedor.CompletarPorFechaCompra(asignacion, analisis.FechaCompraProveedor, correo.RemitenteDireccion,
                     confirmaciones, pedidos);
             }
+            // 20/11/26: los productos del aviso casan con las líneas en el aire de los pedidos de su proveedor: el pedido (si es uno) y sus líneas
+            ResultadoLineasAviso lineas = null;
+            if (lineasDe != null && !analisis.EsSalidaNuestra && analisis.LineasAviso.Any())
+            {
+                List<string> proveedores = ReglaLineasAvisoSalida.Proveedores(asignacion);
+                if (proveedores.Any())
+                {
+                    DatosLineasAviso datos = await lineasDe(proveedores).ConfigureAwait(false) ?? new DatosLineasAviso();
+                    var suyos = new HashSet<string>(proveedores, StringComparer.OrdinalIgnoreCase);
+                    lineas = ReglaLineasAvisoSalida.Casar(analisis.LineasAviso, datos.Referencias.Where(r => suyos.Contains(r.Proveedor?.Trim() ?? string.Empty)),
+                        datos.Lineas.Where(l => suyos.Contains(l.Proveedor?.Trim() ?? string.Empty)));
+                    asignacion = ReglaLineasAvisoSalida.Completar(asignacion, lineas);
+                }
+            }
             CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
+            fila.LineasAviso = LineasAvisoCorreo.Serializar(analisis.LineasAviso, lineas);
             fila.DisponibleEstimado = DisponibleEstimado(analisis);
             fila.AvisoProveedor = analisis.AvisoProveedor;
             fila.PedidoEnAdjunto = aviso?.Pedido?.Pedido;
@@ -415,6 +433,39 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 registrar(new Exception($"[Correos de seguimiento de compras #857g] No se ha podido guardar la confirmación del pedido {analisis?.Confirmacion?.PedidoProveedor} " +
                     $"del {correo?.Recibido:dd/MM/yyyy HH:mm}: {ex.Message}", ex));
             }
+        }
+
+        /// <summary>
+        /// 20/11/26: las líneas en el aire y las referencias de ProveedoresProducto de los proveedores que se piden, leídas una vez por proveedor
+        /// y tanda (normalmente, una consulta por tanda). Si falla, nada (se apunta): el correo se asigna y aplica como antes.
+        /// </summary>
+        private Func<List<string>, Task<DatosLineasAviso>> CacheLineasAviso()
+        {
+            var leidos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var datos = new DatosLineasAviso();
+            return async proveedores =>
+            {
+                List<string> faltan = (proveedores ?? new List<string>()).Where(p => !string.IsNullOrWhiteSpace(p) && !leidos.Contains(p.Trim()))
+                    .Select(p => p.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (faltan.Any())
+                {
+                    foreach (string p in faltan)
+                    {
+                        _ = leidos.Add(p);
+                    }
+                    try
+                    {
+                        DatosLineasAviso nuevos = await repositorio.LeerLineasAviso(faltan).ConfigureAwait(false) ?? new DatosLineasAviso();
+                        datos.Lineas.AddRange(nuevos.Lineas ?? new List<LineaEnAireAviso>());
+                        datos.Referencias.AddRange(nuevos.Referencias ?? new List<ReferenciaProductoProveedor>());
+                    }
+                    catch (Exception ex)
+                    {
+                        registrar(new Exception("[Correos de seguimiento de compras #857] No se han podido leer las líneas en el aire para casar el aviso: " + ex.Message, ex));
+                    }
+                }
+                return datos;
+            };
         }
 
         /// <summary>NestoAPI#857g: las confirmaciones desde ese día. Sin Scripts/Issue857g o si falla, ninguna (se guarda igual, sin enlazar).</summary>
@@ -540,6 +591,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             List<RemitentePaqueteRecordado> recordados = await LeerRecordados().ConfigureAwait(false);
             List<ConfirmacionPedidoProveedorFila> confirmaciones = await LeerConfirmaciones(ahora.AddDays(-dias - ReglaPedidoProveedor.DIAS_CONFIRMACIONES)).ConfigureAwait(false);
             List<PedidoCompraEnAire> pedidos = null;
+            Func<List<string>, Task<DatosLineasAviso>> lineasDe = CacheLineasAviso();
             string enlace = null;
             for (int pagina = 0; pagina < MAXIMO_PAGINAS_REANALISIS; pagina++)
             {
@@ -558,7 +610,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     try
                     {
                         CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados,
-                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true, confirmaciones).ConfigureAwait(false);
+                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true, confirmaciones, lineasDe).ConfigureAwait(false);
                         if (fila != null && await repositorio.ActualizarAnalisis(fila).ConfigureAwait(false))
                         {
                             resultado.Actualizados++;

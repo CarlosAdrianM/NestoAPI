@@ -57,6 +57,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// Sirve para enlazar el aviso con la CONFIRMACIÓN de ese pedido cuando el aviso no trae su número (<see cref="ReglaPedidoProveedor"/>).
         /// </summary>
         DateTime? FechaCompra(string texto);
+        /// <summary>
+        /// 20/11/26 (Carlos): los productos y unidades que van en ESTE envío, si el aviso los dice (referencia del proveedor, descripción y
+        /// cantidad). Vacía si no. Con ellas se sabe el pedido y en qué líneas poner la fecha (<see cref="ReglaLineasAvisoSalida"/>).
+        /// </summary>
+        List<LineaAvisoSalida> Lineas(string texto);
     }
 
     /// <summary>
@@ -90,6 +95,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public virtual ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias) => null;
 
         public virtual DateTime? FechaCompra(string texto) => null;
+
+        public virtual List<LineaAvisoSalida> Lineas(string texto) => new List<LineaAvisoSalida>();
 
         protected static void Anadir(List<string> codigos, string codigo)
         {
@@ -212,6 +219,39 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 return null;
             }
+        }
+
+        // 20/11/26: «Resumen del pedido: Producto Cantidad [F806.N] UTECH HIGH FREQUENCY … 2,00 [WKB001] HIGHTECH AIR … 1,00 TXT 2026.V2: Servicio
+        // de transporte 1,00». Cada producto empieza por su referencia entre corchetes y acaba en la cantidad con coma decimal (Odoo: «2,00»);
+        // la línea del transporte no lleva corchetes: no es un producto.
+        private static readonly Regex LineaResumen = new Regex(
+            @"\[(?<ref>[^\[\]\s]{1,40})\]\s*(?<desc>[^\[\]]*?)\s+(?<cant>\d{1,6},\d{1,3})(?![\p{L}\p{N}])",
+            RegexOptions.Compiled);
+
+        /// <summary>Las líneas de su «Resumen del pedido» (solo en el aviso de salida; la confirmación no pone fecha).</summary>
+        public override List<LineaAvisoSalida> Lineas(string texto)
+        {
+            var lineas = new List<LineaAvisoSalida>();
+            string t = texto ?? string.Empty;
+            Match resumen = Resumen.Match(t);
+            if (!resumen.Success || !Reconoce(t))
+            {
+                return lineas;
+            }
+            foreach (Match m in LineaResumen.Matches(t.Substring(resumen.Index)))
+            {
+                if (decimal.TryParse(m.Groups["cant"].Value.Replace(",", "."), System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture, out decimal cantidad) && cantidad > 0)
+                {
+                    lineas.Add(new LineaAvisoSalida
+                    {
+                        ReferenciaProveedor = m.Groups["ref"].Value.Trim(),
+                        Descripcion = Regex.Replace(m.Groups["desc"].Value, @"\s+", " ").Trim(),
+                        Cantidad = cantidad
+                    });
+                }
+            }
+            return lineas;
         }
 
         public override ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias)

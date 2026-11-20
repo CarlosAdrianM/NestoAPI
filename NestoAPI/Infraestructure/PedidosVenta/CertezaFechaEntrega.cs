@@ -22,6 +22,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// que ha salido, pero ninguna agencia lo está siguiendo. No cuenta como seguimiento (la fecha queda Aproximada, no CasiSegura).
         /// </summary>
         public bool SinSeguimientoAgencia { get; set; }
+        /// <summary>
+        /// 20/11/26 (Scripts/Issue857h): el correo puso la fecha SOLO a las líneas de estos productos (las del aviso del proveedor). Null = a todo
+        /// el pedido (como antes): cuenta para cualquier producto.
+        /// </summary>
+        public List<string> ProductosAplicados { get; set; }
     }
 
     /// <summary>NestoAPI#853: lo que lee el cálculo de la fecha de entrega para la certeza (sustituible en los tests). Por tanda, sin N+1.</summary>
@@ -44,10 +49,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     public static class ReglaSeguimientoAgencia
     {
         /// <summary>El correo vigente (el último aplicado), o null.</summary>
-        public static CorreoAplicadoPedidoCompra Vigente(IEnumerable<CorreoAplicadoPedidoCompra> correos, string empresa, int pedido, DateTime fechaRecepcion)
+        /// <param name="producto">
+        /// 20/11/26: el producto de la línea. Un correo que puso la fecha solo a unas líneas (<see cref="CorreoAplicadoPedidoCompra.ProductosAplicados"/>)
+        /// no da por «con seguimiento» las de otros productos del pedido. Null = no se mira (como antes).
+        /// </param>
+        public static CorreoAplicadoPedidoCompra Vigente(IEnumerable<CorreoAplicadoPedidoCompra> correos, string empresa, int pedido, DateTime fechaRecepcion,
+            string producto = null)
         {
             List<CorreoAplicadoPedidoCompra> suyos = (correos ?? Enumerable.Empty<CorreoAplicadoPedidoCompra>())
                 .Where(c => c != null && !c.SinSeguimientoAgencia && c.Pedido == pedido
+                    && AplicadoAlProducto(c, producto)
                     && (string.IsNullOrWhiteSpace(empresa) || string.Equals(c.Empresa?.Trim(), empresa.Trim(), StringComparison.OrdinalIgnoreCase))
                     && c.FechaRecepcionAplicada.Date == fechaRecepcion.Date)
                 .OrderByDescending(c => c.AplicadoEl ?? DateTime.MinValue)
@@ -68,6 +79,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Agencia = agencia
             };
         }
+
+        /// <summary>¿Puso ese correo la fecha a las líneas de ese producto? Sin líneas del aviso (todo el pedido) o sin producto, sí.</summary>
+        public static bool AplicadoAlProducto(CorreoAplicadoPedidoCompra correo, string producto) =>
+            correo?.ProductosAplicados == null || string.IsNullOrWhiteSpace(producto)
+                || correo.ProductosAplicados.Any(p => string.Equals(p?.Trim(), producto.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -98,7 +114,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     ?? new List<CorreoAplicadoPedidoCompra>();
                 foreach (LineaFechaEntregaAgencia linea in conPedido)
                 {
-                    CorreoAplicadoPedidoCompra vigente = ReglaSeguimientoAgencia.Vigente(correos, linea.EmpresaProveedor, linea.PedidoProveedor.Value, linea.FechaProveedor.Value);
+                    CorreoAplicadoPedidoCompra vigente = ReglaSeguimientoAgencia.Vigente(correos, linea.EmpresaProveedor, linea.PedidoProveedor.Value, linea.FechaProveedor.Value,
+                        linea.Producto);
                     linea.ConSeguimientoAgencia = vigente != null;
                     linea.AgenciaSeguimiento = vigente?.Agencia;
                 }
@@ -153,12 +170,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         // {0} = los pedidos; {1} = si es un aviso del proveedor sin seguimiento (con Scripts/Issue857e) o 0
         internal const string SQL_CORREOS_APLICADOS = @"
-SELECT RTRIM(c.EmpresaAplicada), c.PedidoAplicado, CAST(c.FechaRecepcionAplicada AS datetime), RTRIM(c.Agencia), c.AplicadoEl, {1}
+SELECT RTRIM(c.EmpresaAplicada), c.PedidoAplicado, CAST(c.FechaRecepcionAplicada AS datetime), RTRIM(c.Agencia), c.AplicadoEl, {1}, {2}
 FROM dbo.ComprasCorreosSeguimiento c WITH (NOLOCK)
 WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecepcionAplicada IS NOT NULL";
         internal const string SIN_SEGUIMIENTO_AVISO = "CAST(CASE WHEN ISNULL(c.AvisoProveedor, 0) = 1 AND c.Codigo IS NULL AND c.Url IS NULL THEN 1 ELSE 0 END AS bit)";
         internal const string SIN_SEGUIMIENTO_NUNCA = "CAST(0 AS bit)";
         internal const string SQL_EXISTE_AVISO = "SELECT CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'AvisoProveedor') IS NULL THEN 0 ELSE 1 END";
+        // 20/11/26: Scripts/Issue857h (las líneas a las que el correo puso la fecha) o NULL
+        internal const string LINEAS_APLICADAS = "c.LineasAplicadas";
+        internal const string LINEAS_APLICADAS_NULAS = "CAST(NULL AS nvarchar(max))";
+        internal const string SQL_EXISTEN_LINEAS = "SELECT CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'LineasAplicadas') IS NULL THEN 0 ELSE 1 END";
 
         private const int TIMEOUT = 15;
         private static readonly object cerrojo = new object();
@@ -166,6 +187,8 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
         private static DateTime columnasComprobadasUtc;
         private static bool? columnaAviso;
         private static DateTime columnaAvisoComprobadaUtc;
+        private static bool? columnaLineas;
+        private static DateTime columnaLineasComprobadaUtc;
 
         private readonly string cadenaConexion;
         private readonly Func<IRepositorioPlazosProveedores> plazos;
@@ -199,7 +222,8 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
             {
                 conexion.Open();
                 string sql = string.Format(SQL_CORREOS_APLICADOS, string.Join(", ", lista.Select((p, i) => "@p" + i)),
-                    Comprobar(SQL_EXISTE_AVISO, ref columnaAviso, ref columnaAvisoComprobadaUtc) ? SIN_SEGUIMIENTO_AVISO : SIN_SEGUIMIENTO_NUNCA);
+                    Comprobar(SQL_EXISTE_AVISO, ref columnaAviso, ref columnaAvisoComprobadaUtc) ? SIN_SEGUIMIENTO_AVISO : SIN_SEGUIMIENTO_NUNCA,
+                    Comprobar(SQL_EXISTEN_LINEAS, ref columnaLineas, ref columnaLineasComprobadaUtc) ? LINEAS_APLICADAS : LINEAS_APLICADAS_NULAS);
                 using (var comando = new SqlCommand(sql, conexion) { CommandTimeout = TIMEOUT })
                 {
                     for (int i = 0; i < lista.Count; i++)
@@ -217,13 +241,23 @@ WHERE c.PedidoAplicado IN ({0}) AND ISNULL(c.Descartado, 0) = 0 AND c.FechaRecep
                                 FechaRecepcionAplicada = lector.GetDateTime(2),
                                 Agencia = lector.IsDBNull(3) ? null : Convert.ToString(lector.GetValue(3)),
                                 AplicadoEl = lector.IsDBNull(4) ? (DateTime?)null : lector.GetDateTime(4),
-                                SinSeguimientoAgencia = !lector.IsDBNull(5) && lector.GetBoolean(5)
+                                SinSeguimientoAgencia = !lector.IsDBNull(5) && lector.GetBoolean(5),
+                                ProductosAplicados = lector.IsDBNull(6) ? null : ProductosAplicados(lector.GetString(6))
                             });
                         }
                     }
                 }
             }
             return resultado;
+        }
+
+        /// <summary>Los productos de LineasAplicadas (JSON de las líneas del aviso); null si no hay o no se entiende (todo el pedido).</summary>
+        internal static List<string> ProductosAplicados(string json)
+        {
+            List<NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento.LineaCasadaAviso> lineas =
+                NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento.LineasAvisoCorreo.LeerAplicadas(json);
+            return lineas == null || !lineas.Any() ? null
+                : lineas.Select(l => l.Producto?.Trim()).Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         public PlazosProveedores Plazos(string empresa) => CachePlazosProveedores.Obtener(plazos, empresa, registrar);

@@ -102,6 +102,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// guarda: enlaza el aviso con la confirmación de ese pedido (<see cref="ReglaPedidoProveedor.CompletarPorFechaCompra"/>).
         /// </summary>
         public DateTime? FechaCompraProveedor { get; set; }
+        /// <summary>
+        /// 20/11/26: los productos y unidades que dice el aviso de salida (<see cref="IFormatoAvisoSalida.Lineas"/>); vacía si no los dice. Con
+        /// ellas se sabe el pedido y las líneas a las que poner la fecha (<see cref="ReglaLineasAvisoSalida"/>).
+        /// </summary>
+        public List<LineaAvisoSalida> LineasAviso { get; set; } = new List<LineaAvisoSalida>();
     }
 
     /// <summary>
@@ -194,6 +199,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     // proveedor aunque no traiga código ni enlace de agencia y su remitente no esté marcado: se guarda.
                     analisis.AvisoProveedor = true;
                     analisis.FechaCompraProveedor = formato.FechaCompra((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+                    analisis.LineasAviso = formato.Lineas((correo.Asunto ?? string.Empty) + "\n" + correo.Texto) ?? new List<LineaAvisoSalida>();
                     var codigos = formato.Codigos((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
                     var delFormato = new List<SeguimientoCorreo>();
                     foreach (string codigo in codigos)

@@ -91,6 +91,12 @@ namespace NestoAPI.Controllers
         public string OrigenEntrega { get; set; }
         /// <summary>NestoAPI#857f: cuándo se preguntó por última vez a la agencia; null = nunca.</summary>
         public DateTime? EntregaConsultadaEl { get; set; }
+        /// <summary>20/11/26 (Scripts/Issue857h): los productos y unidades que dice el aviso del proveedor; null si no los dice (o sin el script).</summary>
+        public List<LineaAvisoSalida> LineasAviso { get; set; }
+        /// <summary>20/11/26: las líneas nuestras en el aire que casaron con el aviso al analizarlo (de uno o varios pedidos); null si ninguna.</summary>
+        public List<LineaCasadaAviso> LineasCasadas { get; set; }
+        /// <summary>20/11/26: las líneas a las que se puso la fecha; null = a todo el pedido (o sin aplicar).</summary>
+        public List<LineaCasadaAviso> LineasAplicadas { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): un pedido candidato de un envío por asignar, con lo que hace falta para elegir.</summary>
@@ -744,8 +750,15 @@ namespace NestoAPI.Controllers
                 AdjuntoLeido = fila.AdjuntoLeido,
                 EstadoEnvio = fila.EstadoEnvio,
                 OrigenEntrega = fila.OrigenEntrega,
-                EntregaConsultadaEl = fila.EntregaConsultadaEl
+                EntregaConsultadaEl = fila.EntregaConsultadaEl,
+                LineasAplicadas = LineasAvisoCorreo.LeerAplicadas(fila.LineasAplicadas)
             };
+            LineasAvisoCorreo aviso = LineasAvisoCorreo.Leer(fila.LineasAviso);
+            if (aviso?.Lineas != null && aviso.Lineas.Any())
+            {
+                dto.LineasAviso = aviso.Lineas;
+                dto.LineasCasadas = aviso.Casadas != null && aviso.Casadas.Any() ? aviso.Casadas : null;
+            }
             if (!string.IsNullOrWhiteSpace(fila.Adjuntos))
             {
                 try

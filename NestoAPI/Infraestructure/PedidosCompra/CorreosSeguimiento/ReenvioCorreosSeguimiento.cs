@@ -52,6 +52,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>Por asignar: cuántos pedidos posibles.</summary>
         public int Candidatos { get; set; }
         public string Detalle { get; set; }
+        /// <summary>20/11/26: las líneas del aviso a las que se ha puesto la fecha (null = a todo el pedido).</summary>
+        public List<LineaCasadaAviso> Lineas { get; set; }
     }
 
     /// <summary>
@@ -83,6 +85,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     string antes = r.FechasAntes == null || !r.FechasAntes.Any()
                         ? "sin fecha"
                         : string.Join(" y ", r.FechasAntes.Select(f => f.HasValue ? Dia(f.Value) : "sin fecha"));
+                    if (r.Lineas != null && r.Lineas.Any())
+                    {
+                        // 20/11/26: solo las líneas del aviso del proveedor
+                        bool sinNinguna = r.FechasAntes == null || !r.FechasAntes.Any(f => f.HasValue);
+                        string cambio = sinNinguna
+                            ? $"{DiaCorto(r.FechaNueva)} (antes sin fecha)"
+                            : $"del {string.Join(" y ", r.FechasAntes.Select(f => f.HasValue ? DiaCorto(f.Value) : "sin fecha"))} al {DiaCorto(r.FechaNueva)}";
+                        string parcial = TextosLineasAviso.Parcial(r.Lineas);
+                        return $"Fecha de recepción {cambio} en {r.LineasCambiadas} {(r.LineasCambiadas == 1 ? "línea" : "líneas")} del {pedido}: "
+                            + $"{TextosLineasAviso.Lista(r.Lineas)}." + (parcial == null ? string.Empty : " " + parcial);
+                    }
                     return $"Fecha del {pedido}: {antes} → {Dia(r.FechaNueva)} ({r.LineasCambiadas} {(r.LineasCambiadas == 1 ? "línea" : "líneas")}).";
                 case DesenlaceCorreoSeguimiento.MismaFecha:
                     return $"Es del {pedido}, que ya tenía la fecha {Dia(r.FechaNueva)}: misma fecha, nada que cambiar.";
@@ -244,6 +257,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         }
 
         private static string Dia(DateTime? fecha) => fecha?.ToString("dd/MM/yyyy", es) ?? "sin fecha";
+
+        private static string DiaCorto(DateTime? fecha) => fecha?.ToString("dd/MM", es) ?? "sin fecha";
 
         private static string Html(string texto) => WebUtility.HtmlEncode(texto ?? string.Empty);
     }

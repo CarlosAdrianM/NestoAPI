@@ -58,6 +58,10 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             {
                 copia.RemitentePaquete = null;
             }
+            if (!ConLineas)
+            {
+                copia.LineasAviso = null;
+            }
             Correos.Add(copia);
             return Task.FromResult(true);
         }
@@ -134,7 +138,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             }
             resultado.EmpresaAnterior = correo.EmpresaAplicada;
             resultado.PedidoAnterior = correo.PedidoAplicado;
-            List<LineaCompraCorreo> lineas = Lineas.TryGetValue(peticion.Pedido, out var l) ? l : new List<LineaCompraCorreo>();
+            List<LineaCompraCorreo> lineas = ReglaAplicacionCorreo.DelAviso(Lineas.TryGetValue(peticion.Pedido, out var l) ? l : new List<LineaCompraCorreo>(),
+                peticion.Ordenes);
             resultado.LineasAntes = lineas.Select(x => new LineaCompraCorreo
             {
                 NumeroOrden = x.NumeroOrden, Producto = x.Producto, Estado = x.Estado, Enviado = x.Enviado, Cantidad = x.Cantidad, FechaRecepcion = x.FechaRecepcion, Proveedor = x.Proveedor
@@ -168,6 +173,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             correo.AplicadoPor = peticion.AplicadoPor;
             correo.Descartado = false;
             correo.EligioSugerido = peticion.EligioSugerido;
+            correo.LineasAplicadas = ConLineas && peticion.Ordenes != null ? LineasAvisoCorreo.SerializarAplicadas(peticion.LineasCasadas) : null;
             resultado.Estado = EstadoAplicacionFecha.Aplicada;
             return Task.FromResult(resultado);
         }
@@ -228,6 +234,10 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             correo.AdjuntoLeido = fila.AdjuntoLeido;
             correo.EstadoEnvio = fila.EstadoEnvio;
             correo.OrigenEntrega = fila.OrigenEntrega;
+            if (ConLineas)
+            {
+                correo.LineasAviso = fila.LineasAviso;
+            }
             return Task.FromResult(true);
         }
 
@@ -292,5 +302,36 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
 
         public Task<List<ConfirmacionPedidoProveedorFila>> LeerConfirmaciones(DateTime desde) =>
             Task.FromResult(Confirmaciones.Where(c => c.Recibido >= desde).ToList());
+
+        /// <summary>20/11/26: con las columnas de Issue857h (por defecto, sí).</summary>
+        public bool ConLineas { get; set; } = true;
+        /// <summary>ProveedoresProducto de las pruebas.</summary>
+        public List<ReferenciaProductoProveedor> Referencias { get; } = new List<ReferenciaProductoProveedor>();
+        public int LecturasLineasAviso { get; private set; }
+        public bool LineasAvisoDisponibles() => ConLineas;
+
+        public Task<DatosLineasAviso> LeerLineasAviso(IEnumerable<string> proveedores)
+        {
+            LecturasLineasAviso++;
+            var suyos = new HashSet<string>(proveedores ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            return Task.FromResult(Datos(Pedidos.Where(p => suyos.Contains(p.Proveedor))));
+        }
+
+        public Task<DatosLineasAviso> LeerLineasAvisoDelPedido(string empresa, int pedido) =>
+            Task.FromResult(Datos(Pedidos.Where(p => p.Pedido == pedido)));
+
+        private DatosLineasAviso Datos(IEnumerable<PedidoCompraEnAire> pedidos)
+        {
+            List<PedidoCompraEnAire> lista = pedidos.ToList();
+            var proveedores = new HashSet<string>(lista.Select(p => p.Proveedor), StringComparer.OrdinalIgnoreCase);
+            return new DatosLineasAviso
+            {
+                Lineas = lista.SelectMany(p => (Lineas.TryGetValue(p.Pedido, out var l) ? l : new List<LineaCompraCorreo>()).Select(x => new LineaEnAireAviso
+                {
+                    Empresa = p.Empresa, Pedido = p.Pedido, NumeroOrden = x.NumeroOrden, Producto = x.Producto, Cantidad = x.Cantidad, Proveedor = p.Proveedor
+                })).ToList(),
+                Referencias = Referencias.Where(r => proveedores.Contains(r.Proveedor)).ToList()
+            };
+        }
     }
 }

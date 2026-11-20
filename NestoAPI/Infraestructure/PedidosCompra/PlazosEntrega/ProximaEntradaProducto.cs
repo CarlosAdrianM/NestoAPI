@@ -145,7 +145,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.PlazosEntrega
                 {
                     DateTime fecha = primera.FechaRecepcion.Value.Date;
                     resultado.Fecha = fecha;
-                    CorreoAplicadoPedidoCompra vigente = ReglaSeguimientoAgencia.Vigente(correos, primera.Empresa, primera.Pedido, fecha);
+                    CorreoAplicadoPedidoCompra vigente = ReglaSeguimientoAgencia.Vigente(correos, primera.Empresa, primera.Pedido, fecha, producto);
                     resultado.PorCorreoSeguimiento = vigente != null;
                     resultado.AgenciaSeguimiento = vigente?.Agencia;
                     resultado.Recalculada = delPedido.Any(l => string.Equals(l.Usuario?.Trim(), RastroFechaRecalculada.USUARIO, StringComparison.OrdinalIgnoreCase));

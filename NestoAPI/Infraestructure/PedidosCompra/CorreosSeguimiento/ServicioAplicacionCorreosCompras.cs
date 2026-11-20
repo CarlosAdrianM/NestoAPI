@@ -45,6 +45,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int CorreosDelMismoEnvio { get; set; }
         /// <summary>Si el pedido elegido era el sugerido (null = no había sugerido).</summary>
         public bool? EligioSugerido { get; set; }
+        /// <summary>20/11/26: las líneas del aviso a las que se ha puesto la fecha (null = a todo el pedido, como antes).</summary>
+        public List<LineaCasadaAviso> LineasAviso { get; set; }
+        /// <summary>20/11/26: alguna línea del aviso trae menos unidades de las pendientes.</summary>
+        public bool EnvioParcial { get; set; }
         public string Mensaje { get; set; }
     }
 
@@ -226,7 +230,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     desenlaces[fila.MensajeId] = new ResultadoCorreoGuardado
                     {
                         Desenlace = resultado.Desenlace, Empresa = resultado.Empresa, Pedido = resultado.Pedido, FechasAntes = resultado.FechasAntes.ToList(),
-                        FechaNueva = resultado.FechaNueva, LineasCambiadas = resultado.LineasCambiadas, Candidatos = resultado.Candidatos, Detalle = resultado.Detalle
+                        FechaNueva = resultado.FechaNueva, LineasCambiadas = resultado.LineasCambiadas, Candidatos = resultado.Candidatos, Detalle = resultado.Detalle,
+                        Lineas = resultado.Lineas
                     };
                 }
             }
@@ -316,10 +321,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 }
                 DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(decision.Correos, momento.Date, esFestivo);
                 string origen = ReglaFechaRecepcionPorCorreo.Origen(decision.Correos);
+                // 20/11/26: los correos de la agencia heredan las líneas del aviso del proveedor de su mismo envío
+                List<LineaAvisoSalida> lineasAviso = LineasAvisoCorreo.DelEnvio(decision.Correos);
                 foreach (CorreoSeguimientoFila fila in pendientes)
                 {
                     ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, unico.Empresa, unico.Pedido, false, APLICADO_POR_AUTOMATICO,
-                        USUARIO_LINEAS_AUTOMATICO, true, fecha, origenFecha: origen).ConfigureAwait(false);
+                        USUARIO_LINEAS_AUTOMATICO, true, fecha, origenFecha: origen, lineasAviso: lineasAviso).ConfigureAwait(false);
                     if (resultado.Codigo != CodigoOperacionCorreoCompra.Ok)
                     {
                         registrar(new Exception($"[Correos de seguimiento de compras #857] (informativo) No se ha aplicado el correo {fila.Id} al pedido {unico.Pedido}: {resultado.Mensaje}"));
@@ -347,6 +354,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 case CodigoOperacionCorreoCompra.Ok:
                     desenlace.LineasCambiadas = r?.LineasCambiadas ?? 0;
                     desenlace.FechasAntes = r?.FechasAnteriores?.ToList() ?? new List<DateTime?>();
+                    desenlace.Lineas = r?.LineasAviso;
                     desenlace.Desenlace = desenlace.LineasCambiadas > 0 ? DesenlaceCorreoSeguimiento.FechaCambiada : DesenlaceCorreoSeguimiento.MismaFecha;
                     break;
                 case CodigoOperacionCorreoCompra.NoEnElAire:
@@ -425,9 +433,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>El núcleo común (job y asignación a mano): la fecha del correo en las líneas en el aire del pedido, en una transacción.</summary>
         internal async Task<ResultadoOperacionCorreoCompra> Aplicar(CorreoSeguimientoFila fila, string empresa, int pedido, bool reasignar,
             string aplicadoPor, string usuarioLineas, bool automatico, DateTime fecha, bool? eligioSugerido = null, bool corregir = false,
-            string origenFecha = null)
+            string origenFecha = null, List<LineaAvisoSalida> lineasAviso = null)
         {
             empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            List<LineaCasadaAviso> casadas = await CasadasDelPedido(lineasAviso, empresa, pedido).ConfigureAwait(false);
             var peticion = new PeticionAplicacionFecha
             {
                 EligioSugerido = eligioSugerido,
@@ -442,7 +451,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 Agencia = fila.Agencia,
                 Codigo = fila.Codigo,
                 Corregir = corregir,
-                OrigenFecha = origenFecha
+                OrigenFecha = origenFecha,
+                Ordenes = casadas?.Select(c => c.NumeroOrden).Distinct().ToList(),
+                LineasCasadas = casadas
             };
             ResultadoAplicacionFecha r = await repositorio.AplicarFecha(peticion).ConfigureAwait(false)
                 ?? new ResultadoAplicacionFecha { Estado = EstadoAplicacionFecha.NoExisteCorreo };
@@ -486,9 +497,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 respuesta.PedidoAnterior = r.PedidoAnterior;
             }
             string dia = fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+            respuesta.LineasAviso = casadas;
+            respuesta.EnvioParcial = casadas?.Any(c => c.Parcial) == true;
             respuesta.Mensaje = r.LineasCambiadas > 0
                 ? $"Puesta la fecha de recepción {dia} en {r.LineasCambiadas} línea(s) del pedido de compra {pedido}."
                 : $"Las líneas del pedido de compra {pedido} ya tenían la fecha {dia}: no se ha cambiado nada.";
+            if (casadas != null)
+            {
+                respuesta.Mensaje += $" Solo las del aviso del proveedor: {TextosLineasAviso.Lista(casadas)}.";
+                string parcial = TextosLineasAviso.Parcial(casadas);
+                if (parcial != null)
+                {
+                    respuesta.Mensaje += " " + parcial;
+                }
+            }
             if (respuesta.PedidoAnterior.HasValue)
             {
                 respuesta.Mensaje += $" Estaba aplicado al pedido {respuesta.PedidoAnterior}: su fecha no se ha deshecho.";
@@ -498,6 +520,29 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 AnotarPromesaRiesgo(empresa, pedido, r.LineasAntes, fecha);
             }
             return Ok(respuesta);
+        }
+
+        /// <summary>
+        /// 20/11/26: las líneas de ESE pedido que casan con las del aviso (<see cref="ReglaLineasAvisoSalida"/>), leídas en una consulta; null si el
+        /// envío no trae líneas, si no casa ninguna, sin Scripts/Issue857h o si falla la lectura (entonces, todo el pedido, como antes).
+        /// </summary>
+        private async Task<List<LineaCasadaAviso>> CasadasDelPedido(List<LineaAvisoSalida> lineasAviso, string empresa, int pedido)
+        {
+            if (lineasAviso == null || !lineasAviso.Any() || !repositorio.LineasAvisoDisponibles())
+            {
+                return null;
+            }
+            try
+            {
+                DatosLineasAviso datos = await repositorio.LeerLineasAvisoDelPedido(empresa, pedido).ConfigureAwait(false) ?? new DatosLineasAviso();
+                List<LineaCasadaAviso> casadas = ReglaLineasAvisoSalida.DelPedido(ReglaLineasAvisoSalida.Casar(lineasAviso, datos.Referencias, datos.Lineas), empresa, pedido);
+                return casadas.Any() ? casadas : null;
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857] No se han podido leer las líneas del pedido {pedido} para el aviso: se pone la fecha a todo el pedido. {ex.Message}", ex));
+                return null;
+            }
         }
 
         /// <summary>
@@ -519,7 +564,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 List<CorreoSeguimientoFila> envio = await EnvioDe(fila).ConfigureAwait(false);
                 DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date, esFestivo);
                 ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, fila.EmpresaAplicada, fila.PedidoAplicado.Value, false, APLICADO_POR_AUTOMATICO,
-                    USUARIO_LINEAS_AUTOMATICO, true, fecha, corregir: true, origenFecha: ReglaFechaRecepcionPorCorreo.Origen(envio)).ConfigureAwait(false);
+                    USUARIO_LINEAS_AUTOMATICO, true, fecha, corregir: true, origenFecha: ReglaFechaRecepcionPorCorreo.Origen(envio),
+                    lineasAviso: LineasAvisoCorreo.DelEnvio(envio)).ConfigureAwait(false);
                 return DesenlaceAplicacion(resultado, new CandidatoPedidoCompra { Empresa = fila.EmpresaAplicada, Pedido = fila.PedidoAplicado.Value }, fecha);
             }
             catch (Exception ex)
@@ -577,9 +623,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             DateTime fecha = ReglaFechaRecepcionPorCorreo.Calcular(envio, ahora().Date, esFestivo);
             bool? eligioSugerido = await EligioSugerido(envio, decision, empresa, peticion.Pedido).ConfigureAwait(false);
             string auditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            // 20/11/26: con líneas del aviso (del correo o de su envío), solo las que casan con ESTE pedido; si ninguna, todo el pedido
+            List<LineaAvisoSalida> lineasAviso = LineasAvisoCorreo.DelEnvio(envio);
 
             ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, empresa, peticion.Pedido, reasignar, usuario, auditoria, false, fecha,
-                eligioSugerido).ConfigureAwait(false);
+                eligioSugerido, lineasAviso: lineasAviso).ConfigureAwait(false);
             if (resultado.Codigo != CodigoOperacionCorreoCompra.Ok)
             {
                 return resultado;
@@ -589,7 +637,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             foreach (CorreoSeguimientoFila otro in envio.Where(f => f.Id != fila.Id && !f.PedidoAplicado.HasValue && f.Descartado != true))
             {
                 ResultadoOperacionCorreoCompra delEnvio = await Aplicar(otro, empresa, peticion.Pedido, false, usuario, auditoria, false, fecha,
-                    eligioSugerido).ConfigureAwait(false);
+                    eligioSugerido, lineasAviso: lineasAviso).ConfigureAwait(false);
                 if (delEnvio.Codigo == CodigoOperacionCorreoCompra.Ok)
                 {
                     respuesta.CorreosDelMismoEnvio++;

@@ -690,6 +690,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`Scripts/Issue857g_ComprasConfirmacionesProveedor.sql`, opcional) con nuestros candidatos (`ReglaPedidoConfirmado`: la referencia, el único o el
   único enviado 48 h antes). Un correo con «Ref.: SO253360…» se asigna a esos candidatos (`ReglaPedidoProveedor`, motivo `PedidoProveedor`; no
   pisa número ni PDF). DB Schenker: 72 h LABORABLES (`PlazoAgenciaEntrada`, festivos de Algete); las demás, horas naturales como antes.
+- **Fecha línea a línea por los productos del aviso (#857h, Carlos 20/11/26; caso Weelko WK/OUT/78316 → 220931)**: `IFormatoAvisoSalida.Lineas` (vacía en la
+  base; Weelko lee su «Resumen del pedido»: «[REF] descripción … 2,00», el transporte sin corchetes no cuenta). LA REGLA (pura) `ReglaLineasAvisoSalida.Casar`
+  (`LineasAvisoSalida.cs`): referencia → producto por ProveedoresProducto del proveedor de cada pedido; por producto, las unidades se reparten por nº de orden
+  (como mucho lo pendiente); menos que lo pendiente = PARCIAL: la fecha se pone igual (no se parte la línea) y lo dice el rastro. Un pedido casa → inequívoco
+  (motivo `LineasAviso`: solo nuestro número y el PDF mandan sobre él; va por delante del dominio, el nombre y las confirmaciones); dos → por asignar con
+  los dos; ninguno → como antes. Lectura: `LeerLineasAviso` (una consulta por tanda, solo si el aviso trae líneas; ni el histórico). Al aplicar (job, a mano,
+  mismo envío —los correos de la agencia heredan las líneas, `LineasAvisoCorreo.DelEnvio`—, Corregir) se vuelve a casar con ESE pedido
+  (`LeerLineasAvisoDelPedido`) y `PeticionAplicacionFecha.Ordenes` limita el UPDATE, la promesa en riesgo y el rastro (`LineasAviso`, `EnvioParcial`); sin
+  casar ninguna, todo el pedido. Columnas `LineasAviso`/`LineasAplicadas` (`Scripts/Issue857h_ComprasCorreosLineasAplicadas.sql`; sin ellas, la fecha a todo
+  el pedido). Certeza (#853/#869): un correo con `LineasAplicadas` solo da seguimiento a las líneas de esos PRODUCTOS (`ReglaSeguimientoAgencia.Vigente(…, producto)`).
+  GET …/Correos y …/PorAsignar: `LineasAviso`, `LineasCasadas`, `LineasAplicadas`. Reenvío: «Fecha de recepción del 26/11 al 24/11 en 2 líneas del pedido…: 32831 (2 uds.) y 40695 (1 ud.).»
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

@@ -77,6 +77,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string OrigenEntrega { get; set; }
         /// <summary>NestoAPI#857f: cuándo se preguntó por última vez a la agencia (job «compras-consulta-entrega-agencias»); null = nunca.</summary>
         public DateTime? EntregaConsultadaEl { get; set; }
+        /// <summary>
+        /// 20/11/26 (Scripts/Issue857h): las líneas del aviso de salida del proveedor y las que casaron al analizarlo (JSON de
+        /// <see cref="LineasAvisoCorreo"/>); null = el aviso no las da, correo de antes o sin la columna.
+        /// </summary>
+        public string LineasAviso { get; set; }
+        /// <summary>20/11/26 (Scripts/Issue857h): las líneas a las que se puso la fecha (JSON de <see cref="LineaCasadaAviso"/>); null = todo el pedido.</summary>
+        public string LineasAplicadas { get; set; }
     }
 
     public interface IRepositorioCorreosSeguimiento
@@ -162,6 +169,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         Task<bool> GuardarConfirmacion(ConfirmacionPedidoProveedorFila fila);
         /// <summary>Las confirmaciones recibidas desde <paramref name="desde"/>.</summary>
         Task<List<ConfirmacionPedidoProveedorFila>> LeerConfirmaciones(DateTime desde);
+
+        // 20/11/26 (Scripts/Issue857h_ComprasCorreosLineasAplicadas.sql)
+        /// <summary>¿Tiene ComprasCorreosSeguimiento LineasAviso y LineasAplicadas? Con caché. Sin ellas, la fecha va a todo el pedido (como antes).</summary>
+        bool LineasAvisoDisponibles();
+        /// <summary>
+        /// En UNA consulta: las líneas en el aire de los pedidos de esos proveedores (empresas 1 y espejo) y sus referencias de ProveedoresProducto.
+        /// </summary>
+        Task<DatosLineasAviso> LeerLineasAviso(IEnumerable<string> proveedores);
+        /// <summary>En UNA consulta: las líneas en el aire de ese pedido y las referencias de su proveedor.</summary>
+        Task<DatosLineasAviso> LeerLineasAvisoDelPedido(string empresa, int pedido);
     }
 
     public class RepositorioCorreosSeguimiento : IRepositorioCorreosSeguimiento
@@ -187,15 +204,40 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.ComprasCorreosSeguimiento WITH (UPDLOCK, HOL
         /// El INSERT con las columnas opcionales que existan (adjuntos de Issue857b, entrega estimada de Issue857c, remitente del
         /// paquete de Issue857d).
         /// </summary>
-        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega, bool conAplicacion = false, bool conAvisos = false, bool conEstado = false) => string.Format(SQL_INSERTAR_BASE,
+        internal static string SqlInsertar(bool conAdjuntos, bool conEntrega, bool conAplicacion = false, bool conAvisos = false, bool conEstado = false,
+            bool conLineas = false) => string.Format(SQL_INSERTAR_BASE,
             (conAdjuntos ? ", " + COLUMNAS_ADJUNTOS : string.Empty) + (conEntrega ? ", " + COLUMNAS_ENTREGA : string.Empty)
                 + (conAplicacion ? ", RemitentePaquete" : string.Empty) + (conAvisos ? ", " + COLUMNAS_AVISOS : string.Empty)
-                + (conEstado ? ", EstadoEnvio, OrigenEntrega" : string.Empty),
+                + (conEstado ? ", EstadoEnvio, OrigenEntrega" : string.Empty) + (conLineas ? ", LineasAviso" : string.Empty),
             (conAdjuntos ? ", @numAdjuntos, @adjuntos" : string.Empty)
                 + (conEntrega ? ", @entregaDia, @entregaDesde, @entregaHasta, @disponible, @esSalida" : string.Empty)
                 + (conAplicacion ? ", @remitentePaquete" : string.Empty)
                 + (conAvisos ? ", @avisoProveedor, @pedidoEnAdjunto, @adjuntoLeido" : string.Empty)
-                + (conEstado ? ", @estadoEnvio, @origenEntrega" : string.Empty));
+                + (conEstado ? ", @estadoEnvio, @origenEntrega" : string.Empty) + (conLineas ? ", @lineasAviso" : string.Empty));
+
+        // 20/11/26: Scripts/Issue857h_ComprasCorreosLineasAplicadas.sql (las dos van juntas)
+        internal const string SQL_EXISTEN_LINEAS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'LineasAviso') IS NULL " +
+            "OR COL_LENGTH('dbo.ComprasCorreosSeguimiento', 'LineasAplicadas') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string COLUMNAS_LINEAS = "LineasAviso, LineasAplicadas";
+        internal const string COLUMNAS_LINEAS_NULAS = "CAST(NULL AS nvarchar(max)) AS LineasAviso, CAST(NULL AS nvarchar(max)) AS LineasAplicadas";
+        internal const string SET_LINEAS = ", LineasAviso = @lineasAviso";
+        internal const string SET_LINEAS_APLICADAS = ", LineasAplicadas = @lineasAplicadas";
+
+        // Las líneas en el aire (de producto) y las referencias del proveedor, en una consulta. {0} = filtro de las líneas; {1} = de las referencias
+        internal const string SQL_LINEAS_AVISO = @"
+SELECT CAST('L' AS char(1)) AS Tipo, RTRIM(c.Empresa) AS Empresa, c.[Número] AS Pedido, c.[NºOrden] AS NumeroOrden, RTRIM(c.Producto) AS Producto,
+    CAST(ISNULL(c.Cantidad, 0) AS int) AS Cantidad, RTRIM(c.[NºProveedor]) AS Proveedor, CAST(NULL AS nvarchar(40)) AS Referencia
+FROM dbo.LinPedidoCmp c WITH (NOLOCK)
+WHERE c.Producto IS NOT NULL AND {0}
+UNION ALL
+SELECT CAST('R' AS char(1)), RTRIM(pp.Empresa), 0, 0, RTRIM(pp.[Nº Producto]), 0, RTRIM(pp.[Nº Proveedor]), CAST(RTRIM(pp.ReferenciaProv) AS nvarchar(40))
+FROM dbo.ProveedoresProducto pp WITH (NOLOCK)
+WHERE pp.ReferenciaProv IS NOT NULL AND RTRIM(pp.ReferenciaProv) <> '' AND {1}";
+        internal const string FILTRO_LINEAS_AVISO_PROVEEDORES = "c.Empresa IN (@empresa, @espejo) AND " + LINEAS_EN_AIRE + " AND c.[NºProveedor] IN ({0})";
+        internal const string FILTRO_REFERENCIAS_PROVEEDORES = "pp.Empresa IN (@empresa, @espejo) AND pp.[Nº Proveedor] IN ({0})";
+        internal const string FILTRO_LINEAS_AVISO_PEDIDO = "c.Empresa = @empresaPedido AND c.[Número] = @pedido AND " + LINEAS_EN_AIRE;
+        internal const string FILTRO_REFERENCIAS_PEDIDO = "pp.Empresa IN (@empresa, @espejo) AND pp.[Nº Proveedor] IN " +
+            "(SELECT c.[NºProveedor] FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE c.Empresa = @empresaPedido AND c.[Número] = @pedido)";
 
         // Scripts/Issue857e_ComprasCorreosRemitentesPdf.sql: remitentes de proveedor (Agencia opcional), filtro de texto y PDF, todo junto
         internal const string SQL_EXISTEN_AVISOS = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.AgenciasEntradaRemitentes', 'FiltroTexto') IS NULL " +
@@ -259,9 +301,11 @@ UPDATE c SET [FechaRecepción] = @fecha, Usuario = @usuario, [Fecha Modificació
 FROM dbo.LinPedidoCmp c
 WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND " + LINEAS_EN_AIRE + @"
   AND (c.[FechaRecepción] IS NULL OR CAST(c.[FechaRecepción] AS date) <> CAST(@fecha AS date))";
+        /// <summary>20/11/26: solo las líneas del aviso (por su nº de orden). {0} = los parámetros.</summary>
+        internal const string FILTRO_ORDENES = " AND c.[NºOrden] IN ({0})";
 
         internal const string SQL_MARCAR_APLICADO = "UPDATE dbo.ComprasCorreosSeguimiento SET EmpresaAplicada = @empresa, PedidoAplicado = @pedido, " +
-            "FechaRecepcionAplicada = @fecha, AplicadoEl = GETDATE(), AplicadoPor = @aplicadoPor, Descartado = 0, EligioSugerido = @eligioSugerido WHERE Id = @id";
+            "FechaRecepcionAplicada = @fecha, AplicadoEl = GETDATE(), AplicadoPor = @aplicadoPor, Descartado = 0, EligioSugerido = @eligioSugerido{0} WHERE Id = @id";
 
         internal const string SQL_ACTUALIZAR_ASIGNACION = "UPDATE dbo.ComprasCorreosSeguimiento SET ProveedorPropuesto = @proveedor, PedidosCandidatos = @candidatos " +
             "WHERE Id = @id AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0) = 0";
@@ -330,6 +374,7 @@ WHERE MensajeId = @mensajeId AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0
         private static readonly ColumnasOpcionales columnasAvisos = new ColumnasOpcionales(SQL_EXISTEN_AVISOS);
         private static readonly ColumnasOpcionales columnasEstado = new ColumnasOpcionales(SQL_EXISTE_ESTADO);
         private static readonly ColumnasOpcionales tablaConfirmaciones = new ColumnasOpcionales(SQL_EXISTEN_CONFIRMACIONES);
+        private static readonly ColumnasOpcionales columnasLineas = new ColumnasOpcionales(SQL_EXISTEN_LINEAS);
 
         // NestoAPI#857g: Scripts/Issue857g_ComprasConfirmacionesProveedor.sql
         internal const string SQL_EXISTEN_CONFIRMACIONES = "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ComprasConfirmacionesProveedor', 'U') IS NULL THEN 0 ELSE 1 END AS bit)";
@@ -485,14 +530,14 @@ WHERE pc.Empresa IN (@empresa, @espejo) AND pc.CorreoElectrónico IS NOT NULL AN
             "Extracto, ProveedorPropuesto, PedidosCandidatos, FechaCaptura, EmpresaReal, PedidoReal, FechaAlbaranReal";
 
         internal const string SQL_PENDIENTES_MEDIR = @"
-SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + ", " + COLUMNAS_ESTADO_NULAS + @"
+SELECT TOP 500 " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + ", " + COLUMNAS_ESTADO_NULAS + ", " + COLUMNAS_LINEAS_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Recibido";
 
         // Por la clave (Id, el índice agrupado), de @cuantos en @cuantos
         internal const string SQL_PENDIENTES_MEDIR_POR_ID = @"
-SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + ", " + COLUMNAS_ESTADO_NULAS + @"
+SELECT TOP (@cuantos) " + COLUMNAS_FILA + ", " + COLUMNAS_ADJUNTOS_NULAS + ", " + COLUMNAS_ENTREGA_NULAS + ", " + COLUMNAS_APLICACION_NULAS + ", " + COLUMNAS_AVISOS_NULAS + ", " + COLUMNAS_ESTADO_NULAS + ", " + COLUMNAS_LINEAS_NULAS + @"
 FROM dbo.ComprasCorreosSeguimiento WITH (NOLOCK)
 WHERE Id > @despues AND PedidoReal IS NULL AND PedidosCandidatos IS NOT NULL AND Recibido >= @desde
 ORDER BY Id";
@@ -627,7 +672,12 @@ ORDER BY Recibido DESC";
                 {
                     parametros.AddRange(ParametrosEstado(fila));
                 }
-                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega, conAplicacion, conAvisos, conEstado), parametros.ToArray())
+                bool conLineas = LineasAvisoDisponibles();
+                if (conLineas)
+                {
+                    parametros.Add(Texto("@lineasAviso", fila.LineasAviso, -1));
+                }
+                int filas = await db.Database.ExecuteSqlCommandAsync(SqlInsertar(conAdjuntos, conEntrega, conAplicacion, conAvisos, conEstado, conLineas), parametros.ToArray())
                     .ConfigureAwait(false);
                 return filas > 0;
             }
@@ -645,6 +695,69 @@ ORDER BY Recibido DESC";
         public bool EstadoEnvioDisponible() => columnasEstado.Existen(crearContexto);
 
         public bool ConfirmacionesDisponibles() => tablaConfirmaciones.Existen(crearContexto);
+
+        public bool LineasAvisoDisponibles() => columnasLineas.Existen(crearContexto);
+
+        private class FilaLineaAviso
+        {
+            public string Tipo { get; set; }
+            public string Empresa { get; set; }
+            public int Pedido { get; set; }
+            public int NumeroOrden { get; set; }
+            public string Producto { get; set; }
+            public int Cantidad { get; set; }
+            public string Proveedor { get; set; }
+            public string Referencia { get; set; }
+        }
+
+        public async Task<DatosLineasAviso> LeerLineasAviso(IEnumerable<string> proveedores)
+        {
+            List<string> lista = (proveedores ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(TAMANO_LOTE_IN).ToList();
+            if (!lista.Any())
+            {
+                return new DatosLineasAviso();
+            }
+            var parametros = new List<SqlParameter>(Empresas(Constantes.Empresas.EMPRESA_POR_DEFECTO));
+            var nombres = new List<string>();
+            for (int i = 0; i < lista.Count; i++)
+            {
+                nombres.Add("@pv" + i);
+                parametros.Add(new SqlParameter("@pv" + i, SqlDbType.Char, 10) { Value = lista[i] });
+            }
+            string enLista = string.Join(", ", nombres);
+            string sql = string.Format(SQL_LINEAS_AVISO, string.Format(FILTRO_LINEAS_AVISO_PROVEEDORES, enLista), string.Format(FILTRO_REFERENCIAS_PROVEEDORES, enLista));
+            return await LeerFilasLineasAviso(sql, parametros.ToArray()).ConfigureAwait(false);
+        }
+
+        public Task<DatosLineasAviso> LeerLineasAvisoDelPedido(string empresa, int pedido)
+        {
+            var parametros = new List<SqlParameter>(Empresas(Constantes.Empresas.EMPRESA_POR_DEFECTO))
+            {
+                new SqlParameter("@empresaPedido", SqlDbType.Char, 3) { Value = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim() },
+                new SqlParameter("@pedido", SqlDbType.Int) { Value = pedido }
+            };
+            return LeerFilasLineasAviso(string.Format(SQL_LINEAS_AVISO, FILTRO_LINEAS_AVISO_PEDIDO, FILTRO_REFERENCIAS_PEDIDO), parametros.ToArray());
+        }
+
+        private async Task<DatosLineasAviso> LeerFilasLineasAviso(string sql, SqlParameter[] parametros)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                List<FilaLineaAviso> filas = await db.Database.SqlQuery<FilaLineaAviso>(sql, parametros).ToListAsync().ConfigureAwait(false);
+                return new DatosLineasAviso
+                {
+                    Lineas = filas.Where(f => f.Tipo == "L").Select(f => new LineaEnAireAviso
+                    {
+                        Empresa = f.Empresa, Pedido = f.Pedido, NumeroOrden = f.NumeroOrden, Producto = f.Producto, Cantidad = f.Cantidad, Proveedor = f.Proveedor
+                    }).ToList(),
+                    Referencias = filas.Where(f => f.Tipo == "R").Select(f => new ReferenciaProductoProveedor
+                    {
+                        Proveedor = f.Proveedor, Producto = f.Producto, ReferenciaProveedor = f.Referencia
+                    }).ToList()
+                };
+            }
+        }
 
         public async Task<bool> GuardarConfirmacion(ConfirmacionPedidoProveedorFila fila)
         {
@@ -769,6 +882,8 @@ ORDER BY Recibido DESC";
                 resultado.EmpresaAnterior = correo.EmpresaAplicada;
                 resultado.PedidoAnterior = correo.PedidoAplicado;
                 resultado.LineasAntes = await db.Database.SqlQuery<LineaCompraCorreo>(SQL_LINEAS_PEDIDO_EN_AIRE, Pedido()).ToListAsync().ConfigureAwait(false);
+                // 20/11/26: con líneas del aviso, solo esas (por su nº de orden); sin ellas, todo el pedido (como antes)
+                resultado.LineasAntes = ReglaAplicacionCorreo.DelAviso(resultado.LineasAntes, peticion.Ordenes);
                 resultado.Proveedor = resultado.LineasAntes.Select(l => l.Proveedor).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
 
                 // Ya aplicado (a ese pedido, o a otro sin pedir reasignar): no se toca nada
@@ -787,26 +902,40 @@ ORDER BY Recibido DESC";
                 List<LineaCompraCorreo> cambian = ReglaAplicacionCorreo.QueCambian(resultado.LineasAntes, peticion.Fecha);
                 if (cambian.Any())
                 {
-                    resultado.LineasCambiadas = await db.Database.ExecuteSqlCommandAsync(SQL_CAMBIAR_FECHA, Pedido()
-                        .Concat(new[]
-                        {
-                            new SqlParameter("@fecha", SqlDbType.DateTime) { Value = peticion.Fecha.Date },
-                            new SqlParameter("@usuario", SqlDbType.VarChar, 30) { Value = TextoCorreo.Recortar(peticion.UsuarioLineas, 30) ?? "DESCONOCIDO" }
-                        }).ToArray()).ConfigureAwait(false);
+                    var parametrosCambio = Pedido().Concat(new[]
+                    {
+                        new SqlParameter("@fecha", SqlDbType.DateTime) { Value = peticion.Fecha.Date },
+                        new SqlParameter("@usuario", SqlDbType.VarChar, 30) { Value = TextoCorreo.Recortar(peticion.UsuarioLineas, 30) ?? "DESCONOCIDO" }
+                    }).ToList();
+                    string sqlCambio = SQL_CAMBIAR_FECHA;
+                    if (peticion.Ordenes != null)
+                    {
+                        List<int> ordenes = peticion.Ordenes.Distinct().ToList();
+                        sqlCambio += string.Format(FILTRO_ORDENES, string.Join(", ", ordenes.Select((o, i) => "@o" + i)));
+                        parametrosCambio.AddRange(ordenes.Select((o, i) => new SqlParameter("@o" + i, SqlDbType.Int) { Value = o }));
+                    }
+                    resultado.LineasCambiadas = await db.Database.ExecuteSqlCommandAsync(sqlCambio, parametrosCambio.ToArray()).ConfigureAwait(false);
                     _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
                         Texto("@tabla", RastroAplicacionFecha.TABLA, 100),
                         Texto("@anterior", RastroAplicacionFecha.Anterior(peticion, cambian), -1),
                         Texto("@nuevo", RastroAplicacionFecha.Nuevo(peticion, resultado.LineasCambiadas, correo.EmpresaAplicada, correo.PedidoAplicado), -1),
                         Texto("@usuarioRastro", peticion.AplicadoPor, 100)).ConfigureAwait(false);
                 }
-                _ = await db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_APLICADO, Pedido()
-                    .Concat(new[]
-                    {
-                        Id(),
-                        new SqlParameter("@fecha", SqlDbType.Date) { Value = peticion.Fecha.Date },
-                        Texto("@aplicadoPor", peticion.AplicadoPor, 50),
-                        new SqlParameter("@eligioSugerido", SqlDbType.Bit) { Value = (object)peticion.EligioSugerido ?? DBNull.Value }
-                    }).ToArray()).ConfigureAwait(false);
+                bool conLineas = LineasAvisoDisponibles();
+                var parametrosMarca = Pedido().Concat(new[]
+                {
+                    Id(),
+                    new SqlParameter("@fecha", SqlDbType.Date) { Value = peticion.Fecha.Date },
+                    Texto("@aplicadoPor", peticion.AplicadoPor, 50),
+                    new SqlParameter("@eligioSugerido", SqlDbType.Bit) { Value = (object)peticion.EligioSugerido ?? DBNull.Value }
+                }).ToList();
+                if (conLineas)
+                {
+                    // Sin líneas del aviso, NULL (todo el pedido; también al reasignar a un pedido con el que no casa)
+                    parametrosMarca.Add(Texto("@lineasAplicadas", peticion.Ordenes == null ? null : LineasAvisoCorreo.SerializarAplicadas(peticion.LineasCasadas), -1));
+                }
+                _ = await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_MARCAR_APLICADO, conLineas ? SET_LINEAS_APLICADAS : string.Empty),
+                    parametrosMarca.ToArray()).ConfigureAwait(false);
                 transaccion.Commit();
                 resultado.Estado = EstadoAplicacionFecha.Aplicada;
                 return resultado;
@@ -919,8 +1048,14 @@ ORDER BY Recibido DESC";
                 {
                     parametros.AddRange(ParametrosEstado(fila));
                 }
+                bool conLineas = LineasAvisoDisponibles();
+                if (conLineas)
+                {
+                    parametros.Add(Texto("@lineasAviso", fila.LineasAviso, -1));
+                }
                 return await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_ACTUALIZAR_ANALISIS,
-                        (conEntrega ? SET_ENTREGA : string.Empty) + (conAvisos ? SET_AVISOS : string.Empty) + (conEstado ? SET_ESTADO : string.Empty)),
+                        (conEntrega ? SET_ENTREGA : string.Empty) + (conAvisos ? SET_AVISOS : string.Empty) + (conEstado ? SET_ESTADO : string.Empty)
+                        + (conLineas ? SET_LINEAS : string.Empty)),
                     parametros.ToArray()).ConfigureAwait(false) > 0;
             }
         }
@@ -931,7 +1066,8 @@ ORDER BY Recibido DESC";
             + (EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS) + ", "
             + (AplicacionDisponible() ? COLUMNAS_APLICACION : COLUMNAS_APLICACION_NULAS) + ", "
             + (AvisosProveedorDisponibles() ? COLUMNAS_AVISOS : COLUMNAS_AVISOS_NULAS) + ", "
-            + (EstadoEnvioDisponible() ? COLUMNAS_ESTADO : COLUMNAS_ESTADO_NULAS);
+            + (EstadoEnvioDisponible() ? COLUMNAS_ESTADO : COLUMNAS_ESTADO_NULAS) + ", "
+            + (LineasAvisoDisponibles() ? COLUMNAS_LINEAS : COLUMNAS_LINEAS_NULAS);
 
         public async Task<List<RemitenteMarcado>> LeerRemitentes()
         {
@@ -1096,7 +1232,8 @@ ORDER BY Recibido DESC";
                         (EntregaEstimadaDisponible() ? COLUMNAS_ENTREGA : COLUMNAS_ENTREGA_NULAS) + ", "
                         + (AplicacionDisponible() ? COLUMNAS_APLICACION : COLUMNAS_APLICACION_NULAS) + ", "
                         + (AvisosProveedorDisponibles() ? COLUMNAS_AVISOS : COLUMNAS_AVISOS_NULAS) + ", "
-                        + (EstadoEnvioDisponible() ? COLUMNAS_ESTADO : COLUMNAS_ESTADO_NULAS)),
+                        + (EstadoEnvioDisponible() ? COLUMNAS_ESTADO : COLUMNAS_ESTADO_NULAS) + ", "
+                        + (LineasAvisoDisponibles() ? COLUMNAS_LINEAS : COLUMNAS_LINEAS_NULAS)),
                     new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde }).ToListAsync().ConfigureAwait(false);
             }
         }

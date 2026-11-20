@@ -44,6 +44,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public bool Corregir { get; set; }
         /// <summary>NestoAPI#857f: de dónde sale la fecha (<see cref="ReglaFechaRecepcionPorCorreo.Origen"/>), para el rastro.</summary>
         public string OrigenFecha { get; set; }
+        /// <summary>
+        /// 20/11/26: los nº de orden de las líneas del aviso que casan con este pedido (<see cref="ReglaLineasAvisoSalida"/>): la fecha va SOLO a
+        /// esas. Null = sin líneas del aviso (o ninguna casa): a todas las líneas en el aire del pedido, como antes.
+        /// </summary>
+        public List<int> Ordenes { get; set; }
+        /// <summary>Las líneas casadas (con las unidades del envío y si es parcial), para el rastro y la marca del correo.</summary>
+        public List<LineaCasadaAviso> LineasCasadas { get; set; }
     }
 
     public enum EstadoAplicacionFecha
@@ -292,6 +299,18 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             return reasignar ? (EstadoAplicacionFecha?)null : EstadoAplicacionFecha.AplicadoAOtro;
         }
 
+        /// <summary>20/11/26: con <paramref name="ordenes"/> (las líneas del aviso), solo esas; con null, todas. PURA.</summary>
+        public static List<LineaCompraCorreo> DelAviso(IEnumerable<LineaCompraCorreo> lineas, IEnumerable<int> ordenes)
+        {
+            List<LineaCompraCorreo> todas = (lineas ?? Enumerable.Empty<LineaCompraCorreo>()).Where(l => l != null).ToList();
+            if (ordenes == null)
+            {
+                return todas;
+            }
+            var elegidas = new HashSet<int>(ordenes);
+            return todas.Where(l => elegidas.Contains(l.NumeroOrden)).ToList();
+        }
+
         /// <summary>Las líneas a las que hay que cambiar la fecha (las que no tienen ya ese día).</summary>
         public static List<LineaCompraCorreo> QueCambian(IEnumerable<LineaCompraCorreo> lineas, DateTime fecha) =>
             (lineas ?? Enumerable.Empty<LineaCompraCorreo>())
@@ -330,6 +349,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             peticion.EligioSugerido,
             peticion.OrigenFecha,
             Corregida = peticion.Corregir ? true : (bool?)null,
+            // 20/11/26: solo las líneas del aviso (con las unidades del envío y si es parcial); sin ellas, todo el pedido
+            LineasAviso = peticion.Ordenes == null ? null : (peticion.LineasCasadas ?? new List<LineaCasadaAviso>())
+                .Select(l => new { l.NumeroOrden, l.Producto, l.ReferenciaProveedor, l.Unidades, Pendiente = l.Cantidad, Parcial = l.Parcial ? true : (bool?)null }),
+            EnvioParcial = peticion.Ordenes != null && (peticion.LineasCasadas ?? new List<LineaCasadaAviso>()).Any(l => l.Parcial) ? true : (bool?)null,
             ReasignadoDe = pedidoAnterior.HasValue ? AsignadorPedidosCompra.Clave(empresaAnterior, pedidoAnterior.Value) : null
         });
     }

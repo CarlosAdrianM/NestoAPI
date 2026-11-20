@@ -734,6 +734,7 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\BoletinesCorreo.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\EntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\FormatosAvisoSalida.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\LineasAvisoSalida.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ConsultaEntregaAgencias.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ConfirmacionesPedidoProveedor.cs" />
     <Compile Include="Infraestructure\PedidosVenta\FotosFechaEntrega\FotosFechaEntrega.cs" />
