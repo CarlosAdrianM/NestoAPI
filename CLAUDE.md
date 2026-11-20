@@ -308,6 +308,26 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   BultosEntregados venga algo de ESA parada: se carga a su nombre (`CargarEnvio` con Reasignar, clave derivada, mismo rastro) y sigue
   (`ReglaCargaObligatoria.Decidir`, `CargaObligatoriaReparto.cs`). Ni NC ni reposiciones; un reintento con la misma clave, tampoco.
 
+### Manda el bulto: el candado de oficina y las lecturas rechazadas (Carlos 20/11/26)
+- Un bulto del reparto propio está siempre en uno de: almacén sin cargar · furgoneta de un repartidor · entregado · de vuelta en el almacén. LA REGLA
+  (pura) `CandadoFurgonetaEnvio.QuienLoLleva` (`CandadoFurgonetaEnvio.cs`): algún RP del envío (o el papel NR de su nota) cuyo último movimiento es
+  Cargado o Recogido → quién y desde cuándo (núcleo `EnFurgoneta`, que usan también los envíos internos). Envíos 251169 (cargado 9:42, «cerrado a mano»
+  9:43) y 251227 (borrado con la etiqueta pegada).
+- En la 14, desde oficina, 409 `{ error, Message, Codigo: "EN_FURGONETA", Repartidor, Desde }` («No se puede: el envío 251169 lo lleva Andre en la
+  furgoneta desde las 9:42. Que lo descargue o lo entregue primero.»): DarPorCerrado, Anular, DELETE y el PUT / ModificarDatos que cambie la agencia o
+  pase a 2, 4 o 5 (`CambioQueFrena`). Sin el script de la furgoneta o si no se puede leer, se sigue (ELMAH). Lo del repartidor (Entregar, Incidencia,
+  Descargar, Recoger) y los jobs no pasan por aquí. «Dar por cerrado» en la 14: SIEMPRE 409 `CIERRE_NO_PERMITIDO` (las recogidas «no recogidas» y
+  «anuladas» van por RecogidasParadaReparto y no cambian). Modificar (dirección) no cambia agencia ni estado: sin candado.
+- DELETE api/EnviosAgencias/{id} deja SIEMPRE rastro (Modificaciones, Tabla `EnvioAgenciaBorrado`: las columnas del envío y la historia que se borra con
+  él, `RastroBorradoEnvio`) en la MISMA transacción, de cualquier agencia y estado. (El borrado de un reenvío que sobra, `AnularPorEntregaAsync`, y el de
+  las etiquetas pendientes al borrar un pedido no pasan por aquí.)
+- `POST api/EnviosAgencias/{id}/Nota` {Texto 1..500} (Almacén, Administración, Dirección, Informática; 403 de usted): una línea en EnviosHistoria (Campo
+  «Nota») sin tocar el envío. 200 {Numero, Texto, Usuario, Fecha}; 404.
+- Lecturas rechazadas: `dbo.RepartoLecturasRechazadas` (`Scripts/RepartoLecturasRechazadas.sql`). Punto ÚNICO: el filtro `[ApuntarLecturasRechazadas]` de
+  RepartoPropioController apunta en segundo plano (nunca rompe ni retrasa) todo 4xx de GetBulto, Cargar, Entregar, Incidencia, Recoger, Descargar y
+  NoRecogida (`ReglaLecturasRechazadas`: código leído o EnvioId, Status, Codigo del 409, Mensaje 500, X-Dispositivo, X-Ariadna-Version). Sin la tabla, nada
+  (ELMAH una vez). `GET api/RepartoPropio/LecturasRechazadas?dias=2&usuario=` (Almacén, Dirección, Informática; 500 como mucho; 503 sin el script).
+
 ### Envíos internos entre sedes (sugerencia 1277, Alfredo, 20/11/26)
 - Lo que va de una sede a otra y NO es stock (café, folios, aparatos de demostración o de clientes): ni almacenes, ni ExtractoProducto, ni
   cliente/pedido ficticio. `dbo.RepartoEnviosInternos` (`Scripts/RepartoEnviosInternos.sql`, que además amplía la CHECK de TipoCodigo de
