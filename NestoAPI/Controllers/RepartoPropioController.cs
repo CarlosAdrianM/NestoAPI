@@ -157,7 +157,7 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("Carga/Terminar")]
         [ResponseType(typeof(ResultadoTerminarCargaDTO))]
-        public async Task<IHttpActionResult> TerminarCarga([FromBody] TerminarCargaRepartoDTO peticion = null)
+        public async Task<IHttpActionResult> TerminarCarga([FromBody] TerminarCargaRepartoDTO peticion)
         {
             if (!PermisosRepartoPropio.PuedeRepartir(User))
             {
