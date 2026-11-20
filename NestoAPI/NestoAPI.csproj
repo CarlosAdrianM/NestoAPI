@@ -911,6 +911,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CandadoFurgonetaEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaObligatoriaReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\LecturasRechazadasReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RecogidasParadaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FechaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RepartidoresReparto.cs" />

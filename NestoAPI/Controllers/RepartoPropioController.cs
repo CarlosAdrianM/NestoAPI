@@ -24,6 +24,7 @@ namespace NestoAPI.Controllers
     /// </summary>
     [Authorize]
     [RoutePrefix("api/RepartoPropio")]
+    [ApuntarLecturasRechazadas] // Carlos 20/11/26: los 4xx de las lecturas del repartidor se guardan (punto único)
     public class RepartoPropioController : ApiController
     {
         private readonly NVEntities db;
@@ -541,6 +542,32 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.MigrarFirmas(aplicar, maximo));
         }
 
+        /// <summary>Carlos 20/11/26: las lecturas rechazadas (sustituible en los tests).</summary>
+        internal IRepositorioLecturasRechazadas LecturasRechazadas { get; set; }
+
+        // GET api/RepartoPropio/LecturasRechazadas?dias=2&usuario=
+        /// <summary>
+        /// Carlos 20/11/26: lo que Ariadna leyó y la API rechazó (4xx de GET Bulto, Cargar, Entregar, Incidencia, Recoger, Descargar y
+        /// NoRecogida), lo más reciente primero, como mucho 500. Almacén, Dirección e Informática. 503 sin Scripts/RepartoLecturasRechazadas.sql.
+        /// </summary>
+        [HttpGet]
+        [Route("LecturasRechazadas")]
+        [ResponseType(typeof(List<LecturaRechazadaReparto>))]
+        public async Task<IHttpActionResult> GetLecturasRechazadas(int dias = 2, string usuario = null)
+        {
+            if (!PermisosRepartoPropio.PuedeVerLecturasRechazadas(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = "Solo Almacén, Dirección e Informática pueden ver las lecturas rechazadas del reparto." });
+            }
+            IRepositorioLecturasRechazadas repositorio = LecturasRechazadas ?? new RepositorioLecturasRechazadasSql(db);
+            if (!repositorio.ScriptAplicado())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, new { Message = "Falta lanzar Scripts/RepartoLecturasRechazadas.sql. Avise a Informática." });
+            }
+            int d = Math.Max(1, Math.Min(dias, 60));
+            return Ok(await repositorio.Leer(DateTime.Today.AddDays(1 - d), usuario, ReglaLecturasRechazadas.MAXIMO_FILAS));
+        }
+
         private IHttpActionResult Responder<T>(ResultadoReparto<T> resultado)
         {
             switch (resultado.Tipo)
@@ -632,6 +659,14 @@ namespace NestoAPI.Controllers
         };
 
         public static bool PuedeVerOtrasFurgonetas(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_OTRAS_FURGONETAS);
+
+        /// <summary>Carlos 20/11/26: las lecturas rechazadas del reparto: Almacén, Dirección e Informática.</summary>
+        public static readonly IReadOnlyList<string> GRUPOS_LECTURAS_RECHAZADAS = new[]
+        {
+            Constantes.GruposSeguridad.ALMACEN, Constantes.GruposSeguridad.DIRECCION, Constantes.GruposSeguridad.INFORMATICA
+        };
+
+        public static bool PuedeVerLecturasRechazadas(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_LECTURAS_RECHAZADAS);
 
         private static bool EnAlguno(System.Security.Principal.IPrincipal usuario, IEnumerable<string> grupos)
             => usuario != null && grupos.Any(g => usuario.IsInRoleSinDominio(g));
