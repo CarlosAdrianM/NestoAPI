@@ -212,7 +212,9 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             int plataforma = Columna(cabecera, c => c == "platform");
             int situacion = Columna(cabecera, c => c.Contains("situaci"));
             int solicita = Columna(cabecera, c => c.Contains("solicitar"));
-            int nombre = Columna(cabecera, c => c == "full_name" || c == "nombre_completo");
+            // 20/11/26: el formulario en español de Meta llama al campo «nombre_y_apellidos» (lead 1664139908444939, «Falta el
+            // nombre»). «nombre_de_la_empresa» y similares NO son el nombre de la persona.
+            int nombre = Columna(cabecera, EsColumnaNombre);
             int email = Columna(cabecera, c => c == "email" || c.StartsWith("correo"));
             int telefono = Columna(cabecera, c => c == "phone_number" || c.StartsWith("telefono") || c.StartsWith("numero_de_telefono"));
             int codigoPostal = Columna(cabecera, c => c == "post_code" || c == "zip_code" || c == "zip" || c.StartsWith("codigo_postal"));
@@ -242,6 +244,11 @@ namespace NestoAPI.Infraestructure.Clientes.Origenes
             }
             return leads;
         }
+
+        /// <summary>La columna del nombre de la persona, en inglés o en español (cabecera ya normalizada).</summary>
+        internal static bool EsColumnaNombre(string cabecera) =>
+            cabecera == "full_name" || cabecera == "nombre_completo" || cabecera == "nombre"
+            || cabecera == "nombre_y_apellido" || cabecera == "nombre_y_apellidos" || cabecera == "nombre_y_apellidos_";
 
         private static int Columna(List<string> cabecera, Func<string, bool> criterio)
         {

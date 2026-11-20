@@ -159,6 +159,45 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         }
 
         [TestMethod]
+        public void LectorGraph_FormularioEnEspanol_LeeNombreCorreoTelefonoYCodigoPostal()
+        {
+            // Regresión 20/11/26: el formulario nuevo de Harmonia (1673002117567675) está en español y sus campos se llaman
+            // «nombre_y_apellidos», «correo_electrónico», «número_de_teléfono» y «código_postal». El lead se quedó sin importar
+            // por «Falta el nombre».
+            const string lead = @"{
+                ""id"": ""1664139908444939"", ""created_time"": ""2026-11-19T16:48:03+01:00"", ""platform"": ""ig"",
+                ""field_data"": [
+                    { ""name"": ""¿cuál_es_tu_situación_profesional?_"", ""values"": [""otra_situación.__""] },
+                    { ""name"": ""¿qué_te_gustaría_solicitar?"", ""values"": [""-_más_información_sobre_el_equipo.""] },
+                    { ""name"": ""nombre_y_apellidos"", ""values"": [""Ana Pérez""] },
+                    { ""name"": ""correo_electrónico"", ""values"": [""Ana@Ejemplo.es""] },
+                    { ""name"": ""número_de_teléfono"", ""values"": [""600111222""] },
+                    { ""name"": ""código_postal"", ""values"": [""28921""] }
+                ],
+                ""custom_disclaimer_responses"": [
+                    { ""checkbox_key"": ""además_de_atender_mi_solicitud,_quiero_recibir_por_email_novedades"", ""is_checked"": """" }
+                ]
+            }";
+
+            LeadMeta leido = LectorGraphLeadsMeta.Leer(new[] { JObject.Parse(lead) }).Single();
+
+            Assert.AreEqual("Ana Pérez", leido.Nombre);
+            Assert.AreEqual("ana@ejemplo.es", leido.Email);
+            Assert.AreEqual("600111222", leido.TelefonoParaBuscar);
+            Assert.AreEqual("28921", leido.CodigoPostal);
+            Assert.IsFalse(leido.AceptaComunicaciones);
+            Assert.IsNull(ImportadorLeadsMeta.MotivoInvalido(leido));
+        }
+
+        [TestMethod]
+        public void LectorGraph_NombreDeLaEmpresa_NoEsElNombreDeLaPersona()
+        {
+            Assert.IsTrue(LectorLeadsMeta.EsColumnaNombre("nombre_y_apellidos"));
+            Assert.IsTrue(LectorLeadsMeta.EsColumnaNombre("full_name"));
+            Assert.IsFalse(LectorLeadsMeta.EsColumnaNombre("nombre_de_la_empresa"));
+        }
+
+        [TestMethod]
         public void LectorGraph_CasillaDeComunicacionesSinMarcar_NoAcepta()
         {
             // La de privacidad (obligatoria) va marcada: no cuenta como consentimiento.
