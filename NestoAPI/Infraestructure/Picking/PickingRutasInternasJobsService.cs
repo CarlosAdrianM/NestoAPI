@@ -130,7 +130,7 @@ namespace NestoAPI.Infraestructure.Picking
             catch (Exception ex)
             {
                 avisar(ex, reloj());
-                if (AvisadorPickingAutomatico.EsPickingSinTrabajo(ex) || AvisadorPickingAutomatico.EsSoloClientesCerrados(ex))
+                if (AvisadorPickingAutomatico.NoEsUnFallo(ex))
                 {
                     return ResultadoPickingRutasInternas.Lanzado;
                 }

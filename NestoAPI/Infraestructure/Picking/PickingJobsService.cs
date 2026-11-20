@@ -96,7 +96,8 @@ namespace NestoAPI.Infraestructure.Picking
                 // avisado y el job no debe quedarse en rojo por ello (si no, el dashboard mentiría
                 // justo los días tranquilos). Cualquier otra cosa sí se relanza, para que Hangfire
                 // la registre y se vea en el dashboard.
-                if (AvisadorPickingAutomatico.EsPickingSinTrabajo(ex))
+                // 20/11/26: también si los únicos candidatos son de clientes que cierran el día de la entrega (PICKING_CLIENTE_CERRADO).
+                if (AvisadorPickingAutomatico.NoEsUnFallo(ex))
                 {
                     return new List<PedidoPicking>();
                 }

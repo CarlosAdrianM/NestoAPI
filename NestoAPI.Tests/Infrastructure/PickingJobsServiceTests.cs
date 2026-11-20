@@ -92,5 +92,30 @@ namespace NestoAPI.Tests.Infrastructure
                 typeof(System.Collections.Generic.List<NestoAPI.Models.Picking.PedidoPicking>),
                 MetodoEndpoint().ReturnType);
         }
+
+        // Regresión (viernes 23/10, 13/11 y 20/11/26): el picking de cierre quedaba Failed cuando los únicos candidatos no salían porque el
+        // cliente cierra el día de la entrega. Es un resultado normal (como «no había nada que sacar»), por el CÓDIGO, no por el texto.
+        [TestMethod]
+        public void NoEsUnFallo_SoloClientesQueCierranElDiaDeLaEntrega_ComoNoHaberNadaQueSacar()
+        {
+            var retirados = new System.Collections.Generic.List<NestoAPI.Models.Picking.PedidoPicking>
+            {
+                new NestoAPI.Models.Picking.PedidoPicking { Id = 931001, Cliente = "5057", DiasEnServir = "01111" },
+                new NestoAPI.Models.Picking.PedidoPicking { Id = 931002, Cliente = "5057", DiasEnServir = "01111" }
+            };
+            Exception cerrados = NestoAPI.Models.Picking.GestorDiasEnServir.ErrorSinPicking(retirados, new DateTime(2026, 11, 20));
+            Exception sinStock = NestoAPI.Models.Picking.GestorDiasEnServir.ErrorSinPicking(
+                new System.Collections.Generic.List<NestoAPI.Models.Picking.PedidoPicking>(), new DateTime(2026, 11, 20));
+
+            StringAssert.Contains(cerrados.Message, "no salen");
+            Assert.IsTrue(NestoAPI.Models.Picking.AvisadorPickingAutomatico.NoEsUnFallo(cerrados), "El job no se queda en rojo");
+            Assert.IsTrue(NestoAPI.Models.Picking.AvisadorPickingAutomatico.NoEsUnFallo(sinStock));
+            Assert.IsFalse(NestoAPI.Models.Picking.AvisadorPickingAutomatico.NoEsUnFallo(new InvalidOperationException("La BD no responde")));
+            Assert.IsFalse(NestoAPI.Models.Picking.AvisadorPickingAutomatico.NoEsUnFallo(
+                new NestoAPI.Infraestructure.Exceptions.NestoBusinessException("Los pedidos 1 no salen: … y el cliente cierra ese día")),
+                "Un texto parecido sin el código no cuenta: el criterio es el código");
+            // Y el aviso al almacén sigue saliendo, con el asunto de los clientes cerrados
+            StringAssert.Contains(NestoAPI.Models.Picking.AvisadorPickingAutomatico.AsuntoPara(cerrados), "clientes que cierran");
+        }
     }
 }

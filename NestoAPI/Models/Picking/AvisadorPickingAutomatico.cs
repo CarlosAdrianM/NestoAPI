@@ -66,6 +66,14 @@ namespace NestoAPI.Models.Picking
                 && negocio.Context?.ErrorCode == Constantes.Picking.ERROR_CLIENTE_CERRADO;
         }
 
+        /// <summary>
+        /// LA REGLA de los jobs de picking automático: ¿se da el job por bueno (sin quedarse en rojo en Hangfire) aunque no haya salido
+        /// picking? Sí si no había nada que sacar (<see cref="EsPickingSinTrabajo"/>) o si los únicos candidatos no salen porque el cliente
+        /// cierra el día de la entrega (<see cref="EsSoloClientesCerrados"/>: el código PICKING_CLIENTE_CERRADO de la excepción, no el
+        /// texto). El job quedó Failed los viernes 23/10, 13/11 y 20/11/26 por la segunda. El aviso al almacén sale igual en los dos casos.
+        /// </summary>
+        internal static bool NoEsUnFallo(Exception excepcion) => EsPickingSinTrabajo(excepcion) || EsSoloClientesCerrados(excepcion);
+
         internal static string AsuntoPara(Exception excepcion)
         {
             if (EsSoloClientesCerrados(excepcion))
