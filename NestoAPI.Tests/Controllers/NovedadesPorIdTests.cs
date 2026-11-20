@@ -35,22 +35,45 @@ namespace NestoAPI.Tests.Controllers
             {
                 new SugerenciaPrivadaFila { Id = 900, SugeridaPor = "NUEVAVISION\\Manuel", SugeridaNombre = "Manuel" }
             });
-            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            var novedades = new List<NovedadDTO>
             {
                 new NovedadDTO { Id = 10, Version = "2.30", Ambito = "Ariadna", Titulo = "Inventario en la PDA", Categoria = "Nuevo" },
                 new NovedadDTO { Id = 11, Version = "1.10.56.0", Ambito = "Nesto", Titulo = "Otra", Categoria = "Nuevo" }
-            });
-            A.CallTo(() => servicio.LeerSugerencias(true)).Returns(new List<NovedadConSugerenciaFila>
+            };
+            var sugerencias = new List<NovedadConSugerenciaFila>
             {
                 Sugerencia(1053, "Ariadna", ReglasSugerenciasNovedades.ESTADO_PENDIENTE, "NUEVAVISION\\Paloma"),
                 Sugerencia(1054, "NestoApp", "Descartada", "NUEVAVISION\\Alfredo"),
                 Sugerencia(900, "Nesto", ReglasSugerenciasNovedades.ESTADO_PENDIENTE, "NUEVAVISION\\Manuel")
-            });
+            };
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(novedades);
+            A.CallTo(() => servicio.LeerSugerencias(true)).Returns(sugerencias);
+            // Punto 1 (20/11/26): GET por Id lee solo esa fila (las mismas de las listas)
+            A.CallTo(() => servicio.LeerNovedadPublicada(A<int>._)).ReturnsLazily((int id) => novedades.FirstOrDefault(n => n.Id == id));
+            A.CallTo(() => servicio.LeerSugerencia(A<int>._)).ReturnsLazily((int id) => sugerencias.FirstOrDefault(n => n.Id == id));
             controller = new NovedadesController(servicio, feedback)
             {
                 Request = new HttpRequestMessage()
             };
             ComoUsuario("NUEVAVISION\\Alfredo");
+        }
+
+        [TestMethod]
+        public void GetNovedad_LeeSoloEsaFila_NuncaLasListasEnteras()
+        {
+            Fake.ClearRecordedCalls(servicio);
+
+            _ = controller.GetNovedad(10);
+            _ = controller.GetNovedad(1053);
+            _ = controller.GetNovedad(424242);
+
+            A.CallTo(() => servicio.LeerNovedadPublicada(10)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicio.LeerSugerencia(1053)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicio.LeerSugerencia(10)).MustNotHaveHappened();
+            A.CallTo(() => servicio.LeerNovedadPublicada(424242)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicio.LeerSugerencia(424242)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).MustNotHaveHappened();
+            A.CallTo(() => servicio.LeerSugerencias(A<bool>._)).MustNotHaveHappened();
         }
 
         private void ComoUsuario(string usuario)
@@ -99,7 +122,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(resultado);
             Assert.AreEqual("NestoApp", resultado.Content.Ambito);
             Assert.AreEqual("Descartada", resultado.Content.Estado);
-            A.CallTo(() => servicio.LeerSugerencias(true)).MustHaveHappened();
+            A.CallTo(() => servicio.LeerSugerencia(1054)).MustHaveHappened();
         }
 
         [TestMethod]
@@ -111,7 +134,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("Ariadna", resultado.Content.Ambito);
             Assert.AreEqual("2.30", resultado.Content.Version);
             Assert.IsFalse(resultado.Content.EsSugerencia);
-            A.CallTo(() => servicio.LeerSugerencias(A<bool>._)).MustNotHaveHappened();
+            A.CallTo(() => servicio.LeerSugerencia(A<int>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

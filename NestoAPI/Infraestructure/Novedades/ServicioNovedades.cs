@@ -40,6 +40,28 @@ namespace NestoAPI.Infraestructure.Novedades
             }
         }
 
+        public NovedadDTO LeerNovedadPublicada(int id)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<NovedadFila>(
+                    "SELECT Id, Version, Fecha, Categoria, Titulo, Descripcion, Ambito " +
+                    "FROM Novedades WHERE Id = @id AND Publicada = 1 AND Version IS NOT NULL",
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id }).ToList()
+                    .Select(f => f.ADto()).FirstOrDefault();
+            }
+        }
+
+        public NovedadConSugerenciaFila LeerSugerencia(int id)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<NovedadConSugerenciaFila>(
+                    "SELECT " + COLUMNAS_SUGERENCIA + " FROM Novedades WHERE Id = @id AND Publicada = 1 AND Version IS NULL",
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id }).ToList().FirstOrDefault();
+            }
+        }
+
         public Dictionary<int, string> LeerPerfiles()
         {
             // Sugerencia 551: consulta aparte (y no una columna más en la de arriba) para que, mientras no se

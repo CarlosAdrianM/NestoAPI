@@ -366,7 +366,8 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            NovedadDTO novedad = servicio.LeerNovedadesPublicadas()?.FirstOrDefault(n => n.Id == id);
+            // Punto 1 (20/11/26): solo esa fila (antes se leían todas para quedarse con una)
+            NovedadDTO novedad = servicio.LeerNovedadPublicada(id);
             if (novedad != null)
             {
                 var una = new List<NovedadDTO> { novedad };
@@ -377,7 +378,7 @@ namespace NestoAPI.Controllers
                 return Ok(resultado[0]);
             }
 
-            NovedadConSugerenciaFila fila = servicio.LeerSugerencias(true)?.FirstOrDefault(n => n.Id == id);
+            NovedadConSugerenciaFila fila = servicio.LeerSugerencia(id);
             if (fila == null)
             {
                 return NotFound();

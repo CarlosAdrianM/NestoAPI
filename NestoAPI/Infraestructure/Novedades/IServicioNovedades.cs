@@ -9,6 +9,12 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>Las del changelog: publicadas y con versión (las sugerencias no, #526).</summary>
         List<NovedadDTO> LeerNovedadesPublicadas();
 
+        /// <summary>Punto 1 (20/11/26): la novedad publicada (con versión) de ese Id, leyendo solo esa fila. Null si no existe.</summary>
+        NovedadDTO LeerNovedadPublicada(int id);
+
+        /// <summary>Punto 1 (20/11/26): la sugerencia (publicada, sin versión, en cualquier estado) de ese Id, leyendo solo esa fila. Null si no existe.</summary>
+        NovedadConSugerenciaFila LeerSugerencia(int id);
+
         /// <summary>
         /// Sugerencia 551: el valor de la columna Perfiles de las novedades que lo tienen (Id → «Almacén,Tiendas»).
         /// Lanza si la columna aún no existe (Scripts/Sugerencia551_NovedadesPerfiles.sql): el controlador lo
