@@ -141,6 +141,14 @@ namespace NestoAPI.Controllers
                 .ToList();
         }
 
+        // Novedades 1283: lo que impide borrar un pedido (picking, albarán, envíos, prepagos…). Sustituible en tests.
+        private ILectorBorrarPedidoVenta lectorBorrar;
+        internal ILectorBorrarPedidoVenta LectorBorrar
+        {
+            get => lectorBorrar ?? (lectorBorrar = new LectorBorrarPedidoVentaSql(db));
+            set => lectorBorrar = value;
+        }
+
         // NestoAPI#864: el pago a plazos del pedido (para cancelarlo al borrar el pedido). Sustituible en tests.
         private Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos servicioPagoAPlazos;
         internal Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos ServicioPagoAPlazos
@@ -3897,6 +3905,25 @@ namespace NestoAPI.Controllers
             if (cabPedidoVta == null)
             {
                 return NotFound();
+            }
+
+            // Novedades 1283: primero «no se puede» (mercancía o dinero en marcha), luego el «¿seguro?» de las inscripciones. Antes de tocar nada.
+            DatosBorrarPedidoVenta datosBorrar;
+            try
+            {
+                datosBorrar = await LectorBorrar.Leer(empresa, numero).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Borrar pedido] No se ha podido comprobar si el pedido {numero} se puede borrar: {ex.Message}", ex));
+                throw new NestoBusinessException($"No se ha podido comprobar si el pedido {numero} se puede borrar: no se ha borrado nada. Inténtelo de nuevo.",
+                    new ErrorContext { ErrorCode = ReglaBorrarPedidoVenta.ERROR_SIN_COMPROBAR, Empresa = empresa?.Trim(), Pedido = numero }, ex)
+                { StatusCode = HttpStatusCode.ServiceUnavailable };
+            }
+            NestoBusinessException noSePuedeBorrar = ReglaBorrarPedidoVenta.Error(empresa, numero, datosBorrar);
+            if (noSePuedeBorrar != null)
+            {
+                throw noSePuedeBorrar;
             }
 
             // NestoAPI#732: el pedido justifica inscripciones gratuitas por compra: se pregunta antes de borrar

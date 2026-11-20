@@ -221,6 +221,11 @@ The `GestorPrecios.calcularDescuentoProducto()` method:
   si solo toca la cabecera («Recoger producto», aviso con importe, comentarios…): regla pura `PedidosVentaController.EsCambioSoloCabeceraEnNotaEntrega`
   (ni cliente, contacto, IVA ni DescuentoPP; ni líneas nuevas o que faltan; ni producto, texto, precio, cantidad, descuentos o fecha; fecha default y
   almacén vacío no cuentan). También en una nota ya procesada (líneas -2) sin nada facturado (`PuedeModificarsePedido`).
+- **Borrar un pedido (Novedades 1283, Carlos 20/11/26: «nada puede desaparecer mientras haya mercancía o dinero en marcha»; sin excepciones por grupo)**:
+  `DELETE api/PedidosVenta` comprueba ANTES de tocar nada LA REGLA (pura) `ReglaBorrarPedidoVenta.MotivoNoSePuedeBorrar`: líneas con picking, en albarán o
+  factura o procesadas (-2), envíos en curso o más (las etiquetas pendientes se siguen borrando), prepagos (suma ≠ 0) o lo cobrado con enlaces (`LectorEnlacesPagoPedido`).
+  409 `PEDIDO_NO_SE_PUEDE_BORRAR` con todos los motivos en una frase y qué hacer; si no se puede leer (`LectorBorrarPedidoVentaSql`, una consulta + enlaces), 503 y nada
+  borrado. Va ANTES del 409 de las inscripciones (#732). Los borrados internos (anular recogida #855, traspaso entre empresas) no pasan por aquí.
 - El Edén client (`Constantes.ClientesEspeciales.EL_EDEN`) bypasses all validations
 - Orders validate through denial then acceptance validator pipeline
 - Each product line validated individually with specific product ID tracking

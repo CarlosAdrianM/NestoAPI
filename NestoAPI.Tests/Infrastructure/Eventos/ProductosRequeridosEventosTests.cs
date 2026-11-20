@@ -368,8 +368,11 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
         // ---------------- DELETE api/PedidosVenta ----------------
 
-        private PedidosVentaController ControllerBorrar(IInscripcionesPorCompraEventos guardian)
+        private PedidosVentaController ControllerBorrar(IInscripcionesPorCompraEventos guardian, NestoAPI.Infraestructure.PedidosVenta.DatosBorrarPedidoVenta datosBorrar = null)
         {
+            // Novedades 1283: lo que impide borrar (por defecto, pedido limpio)
+            var lectorBorrar = A.Fake<NestoAPI.Infraestructure.PedidosVenta.ILectorBorrarPedidoVenta>();
+            A.CallTo(() => lectorBorrar.Leer(A<string>._, A<int>._)).Returns(Task.FromResult(datosBorrar ?? new NestoAPI.Infraestructure.PedidosVenta.DatosBorrarPedidoVenta()));
             A.CallTo(() => db.CabPedidoVtas).Returns(Crear(new List<CabPedidoVta> { new CabPedidoVta { Empresa = "1", Número = PEDIDO, Nº_Cliente = "15191", Contacto = "0" } }));
             A.CallTo(() => db.EnviosAgencias).Returns(Crear(new List<EnviosAgencia>()));
             A.CallTo(() => db.LinPedidoVtas).Returns(Crear(new List<LinPedidoVta>()));
@@ -380,8 +383,60 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 ServicioCupones = A.Fake<IServicioCanjeCupones>(),
                 // NestoAPI#864: al borrar el pedido se cancela su pago a plazos; aquí no pinta nada
                 ServicioPagoAPlazos = A.Fake<NestoAPI.Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos>(),
+                LectorBorrar = lectorBorrar,
                 RequestContext = new HttpRequestContext { Principal = VENDEDOR }
             };
+        }
+
+        [TestMethod]
+        public async Task BorrarPedido_ConPickingYPrepago_409SinBorrarNiPreguntarPorLasInscripciones()
+        {
+            IInscripcionesPorCompraEventos guardian = A.Fake<IInscripcionesPorCompraEventos>();
+            PedidosVentaController controller = ControllerBorrar(guardian, new NestoAPI.Infraestructure.PedidosVenta.DatosBorrarPedidoVenta
+            {
+                Pickings = new List<int> { 100139 }, NumeroPrepagos = 1, ImportePrepagos = 84.80M
+            });
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => controller.DeleteCabPedidoVta("1", PEDIDO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(NestoAPI.Infraestructure.PedidosVenta.ReglaBorrarPedidoVenta.ERROR_CODE, ex.GetErrorCode());
+            Assert.AreEqual($"El pedido {PEDIDO} no se puede borrar: tiene líneas en el picking 100139 y tiene un prepago de 84,80 €. " +
+                "Anule antes el picking. Devuélvalo o páselo a otro pedido antes.", ex.Message);
+            A.CallTo(() => db.CabPedidoVtas.Remove(A<CabPedidoVta>._)).MustNotHaveHappened();
+            A.CallTo(() => guardian.AfectadasAlBorrar(A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => controller.ServicioPagoAPlazos.CancelarPorPedidoBorrado(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task BorrarPedido_SiNoSePuedeComprobar_NoSeBorraNada()
+        {
+            IInscripcionesPorCompraEventos guardian = A.Fake<IInscripcionesPorCompraEventos>();
+            PedidosVentaController controller = ControllerBorrar(guardian);
+            A.CallTo(() => controller.LectorBorrar.Leer(A<string>._, A<int>._)).Throws(new InvalidOperationException("BD"));
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => controller.DeleteCabPedidoVta("1", PEDIDO));
+
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
+            A.CallTo(() => db.CabPedidoVtas.Remove(A<CabPedidoVta>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task BorrarPedido_ConEtiquetaPendienteYPagoAPlazosSoloSolicitado_SeBorraComoSiempre()
+        {
+            IInscripcionesPorCompraEventos guardian = A.Fake<IInscripcionesPorCompraEventos>();
+            A.CallTo(() => guardian.AfectadasAlBorrar(A<string>._, A<int>._)).Returns(Task.FromResult(new List<InscripcionAfectadaPedidoDTO>()));
+            // El lector solo trae envíos en curso o más: una etiqueta pendiente no llega a la regla (y aunque llegara, no cuenta)
+            PedidosVentaController controller = ControllerBorrar(guardian, new NestoAPI.Infraestructure.PedidosVenta.DatosBorrarPedidoVenta
+            {
+                Envios = new List<NestoAPI.Infraestructure.PedidosVenta.EnvioBorrarPedidoVenta> { new NestoAPI.Infraestructure.PedidosVenta.EnvioBorrarPedidoVenta { Numero = 251237, Estado = -1 } }
+            });
+
+            IHttpActionResult resultado = await controller.DeleteCabPedidoVta("1", PEDIDO);
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.OkNegotiatedContentResult<CabPedidoVta>));
+            A.CallTo(() => db.CabPedidoVtas.Remove(A<CabPedidoVta>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => controller.ServicioPagoAPlazos.CancelarPorPedidoBorrado("1", PEDIDO, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

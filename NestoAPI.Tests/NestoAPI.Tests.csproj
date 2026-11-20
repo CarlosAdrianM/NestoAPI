@@ -308,6 +308,7 @@
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\NotaEntregaSoloCabeceraTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ModosServicioPlanesTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\ReglaBorrarPedidoVentaTests.cs" />
     <Compile Include="Controllers\PedidosClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosClienteMetodoPagoTests.cs" />
     <Compile Include="Controllers\PedidosClienteOrigenPushTests.cs" />
