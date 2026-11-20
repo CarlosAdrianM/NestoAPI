@@ -144,10 +144,12 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         {
             Assert.AreEqual(AgenciasEntradaRegistradas.Todas.Count, AgenciasEntradaRegistradas.Todas.Select(a => a.Nombre).Distinct().Count());
             Assert.IsTrue(AgenciasEntradaRegistradas.Todas.All(a => a.PlazoEnLaborables
-                ? a.HorasHastaEntrega == 72
+                ? a.HorasHastaEntrega == 72 || a.HorasHastaEntrega == 48
                 : a.HorasHastaEntrega == 24 || a.HorasHastaEntrega == 48));
-            CollectionAssert.AreEqual(new[] { "DB Schenker" }, AgenciasEntradaRegistradas.Todas.Where(a => a.PlazoEnLaborables).Select(a => a.Nombre).ToList(),
-                "#857g: solo Schenker cuenta en laborables");
+            CollectionAssert.AreEquivalent(new[] { "DB Schenker", "TXT" }, AgenciasEntradaRegistradas.Todas.Where(a => a.PlazoEnLaborables).Select(a => a.Nombre).ToList(),
+                "#857g: Schenker (72 h) y, desde el 20/11/26, TXT (48 h) cuentan en laborables");
+            Assert.AreEqual(new DateTime(2026, 11, 24), PlazoAgenciaEntrada.DiaDeLlegada(new DateTime(2026, 11, 20, 13, 3, 0), "TXT"),
+                "caso Weelko: el aviso del viernes 20 a las 13:03 daba el domingo 22; en laborables, el martes 24");
         }
 
         [TestMethod]

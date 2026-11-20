@@ -324,6 +324,49 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreSame(porDominio, ReglaPedidoProveedor.CompletarPorFechaCompra(porDominio, new DateTime(2026, 11, 19, 7, 32, 59), "otro@proveedor.es", confirmaciones, enAire));
         }
 
+        private const string TXT_EXPEDICION = "Grupo TXT le efectuará en breve la entrega de la expedición 300-8518521 Enviado por: Nombre: WEELKO BARCELONA SL "
+            + "Dirección: P.I. LA VALLDAN CAMI DE LA GARRETA 92 Referencia: SO253169WKOUT78316 Destinatario: Nombre: NUEVA VISION, SA Dirección: Rio Tietar, 11 nave 22 "
+            + "Población: Algete Para más información, no dude en contactar con nosotros al 902 02 06 16. También puede ver los datos de la expedición en el enlace: "
+            + "https://Tracking.txt.es?TOKEN=ngclgmbfhfhhjhhhhhhhlkfhjmcfh Por favor no conteste a este mensaje, se ha generado de forma automática";
+
+        [TestMethod]
+        public void Txt_SuCorreo_CasoReal_ExpedicionRemitenteYReferenciasQueEnlazanConLaConfirmacion()
+        {
+            // Carlos 20/11/26: «¿Visto el correo de compras de TXT? Es el mismo pedido que el de Weelko»
+            AnalisisCorreoSeguimiento a = Analizar(Correo("info@txt.es", "Grupo TXT - Expedición 300-8518521", TXT_EXPEDICION, new DateTime(2026, 11, 20, 15, 8, 0)));
+
+            Assert.IsTrue(a.Guardar);
+            Assert.AreEqual("TXT", a.Agencia);
+            Assert.IsTrue(a.Seguimientos.Any(s => s.Codigo == "300-8518521"), "el código es la expedición");
+            Assert.AreEqual(EstadoEnvioAgencia.EnCamino, a.EstadoEnvio);
+            Assert.IsFalse(a.EsSalidaNuestra);
+            CollectionAssert.Contains(a.ReferenciasRemitente, "SO253169");
+            CollectionAssert.Contains(a.ReferenciasRemitente, "WKOUT78316");
+            StringAssert.Contains(a.RemitentePaquete ?? string.Empty, "weelko");
+            Assert.IsTrue(new AgenciaEntradaTxt().PlazoEnLaborables, "48 h laborables: el aviso de un viernes no puede dar un domingo");
+
+            var enAire = new List<PedidoCompraEnAire>
+            {
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 220181, Proveedor = "413" },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 220931, Proveedor = "413" }
+            };
+            var confirmaciones = new List<ConfirmacionPedidoProveedorFila>
+            {
+                new ConfirmacionPedidoProveedorFila { RemitenteDireccion = "noreply@weelko.com", PedidoProveedor = "SO253169", Recibido = new DateTime(2026, 11, 19, 7, 36, 0),
+                    PedidosCandidatos = AsignadorPedidosCompra.Serializar(new List<CandidatoPedidoCompra> { new CandidatoPedidoCompra { Empresa = "1", Pedido = 220931, Proveedor = "413" } }) }
+            };
+            var porNombre = new AsignacionPedidoCompra
+            {
+                ProveedorPropuesto = "413",
+                Candidatos = enAire.Select(p => new CandidatoPedidoCompra { Empresa = "1", Pedido = p.Pedido, Proveedor = "413", Motivo = AsignadorPedidosCompra.MOTIVO_NOMBRE }).ToList()
+            };
+
+            AsignacionPedidoCompra r = ReglaPedidoProveedor.Completar(porNombre, a.ReferenciasRemitente, confirmaciones, enAire);
+
+            Assert.AreEqual(1, r.Candidatos.Count, "por la referencia SO253169 de la confirmación, solo el 220931");
+            Assert.AreEqual(220931, r.Candidatos[0].Pedido);
+        }
+
         [TestMethod]
         public void Weelko_SuConfirmacionDePedido_SigueSinSerUnAvisoDeSalida()
         {

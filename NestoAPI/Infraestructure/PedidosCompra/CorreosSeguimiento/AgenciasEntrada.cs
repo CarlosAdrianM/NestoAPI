@@ -797,14 +797,86 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
     /// <summary>
     /// TXT (TXT e-solutions), la que usa Weelko («El pedido será enviado por: TXT 2026.V2»). 20/11/26 (Carlos): 48 h «mientras no tengamos
-    /// algo más exacto». Aún no se ha visto ningún correo suyo: solo se reconoce por su nombre tras una etiqueta o por su dominio.
+    /// algo más exacto». Las 48 h son LABORABLES (un aviso del viernes a mediodía daba el domingo). Su correo (info@txt.es, caso real del
+    /// 20/11/26): «Grupo TXT le efectuará en breve la entrega de la expedición 300-8518521 Enviado por: Nombre: WEELKO BARCELONA SL
+    /// Dirección: … Referencia: SO253169WKOUT78316 Destinatario: …»: el código es la expedición; el remitente y sus referencias (la
+    /// referencia entera y cada trozo de letras + cifras: «SO253169», «WKOUT78316») enlazan con la confirmación del proveedor.
     /// </summary>
     public class AgenciaEntradaTxt : AgenciaEntradaPorPatrones
     {
         public override string Nombre => "TXT";
         public override int HorasHastaEntrega => HORAS_GRUPAJE;
+        public override bool PlazoEnLaborables => true;
         protected override string[] Dominios => new[] { "txt.es" };
-        public override string[] NombresEnTexto => new[] { "TXT e-solutions", "TXT" };
+        public override string[] NombresEnTexto => new[] { "TXT e-solutions", "Grupo TXT", "TXT" };
+
+        private static readonly Regex Expedicion = new Regex(@"expedici[oó]n\s+(\d{2,4}-\d{5,10})(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex EnviadoPor = new Regex(@"enviado\s+por\s*:\s*nombre\s*:\s*(.+?)\s+direcci[oó]n\s*:", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+        private static readonly Regex ReferenciaRemitente = new Regex(@"(?<![\p{L}])referencia\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.\-]{3,40})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex TrozoReferencia = new Regex(@"[A-Za-z]{2,}\d{3,}", RegexOptions.Compiled);
+        private static readonly Regex EnBreve = new Regex(@"le\s+efectuara\s+en\s+breve\s+la\s+entrega", RegexOptions.Compiled);
+
+        public override List<SeguimientoCorreo> ExtraerSeguimientos(CorreoCompras correo)
+        {
+            List<SeguimientoCorreo> resultado = base.ExtraerSeguimientos(correo);
+            if (correo == null || resultado.Any(s => !string.IsNullOrEmpty(s.Codigo)) || !EsCorreoPropio(correo))
+            {
+                return resultado;
+            }
+            foreach (Match m in Expedicion.Matches((correo.Asunto ?? string.Empty) + "\n" + correo.Texto))
+            {
+                Anadir(resultado, m.Groups[1].Value, null);
+            }
+            return resultado;
+        }
+
+        public override EntregaAgencia LeerEntrega(CorreoCompras correo)
+        {
+            if (!EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            EntregaAgencia comun = base.LeerEntrega(correo);
+            if (comun != null)
+            {
+                return comun;
+            }
+            string t = ExtractorEntregaEstimada.Normalizar((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+            return EnBreve.IsMatch(t) ? new EntregaAgencia { Estado = EstadoEnvioAgencia.EnCamino } : null;
+        }
+
+        public override DatosEnvioAgencia LeerDatosEnvio(CorreoCompras correo)
+        {
+            if (correo == null || !EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            string texto = correo.Texto ?? string.Empty;
+            Match remitente = EnviadoPor.Match(texto);
+            Match referencia = ReferenciaRemitente.Match(texto);
+            if (!remitente.Success && !referencia.Success)
+            {
+                return null;
+            }
+            var datos = new DatosEnvioAgencia();
+            if (remitente.Success)
+            {
+                datos.RemitentePaquete = ExtractorRemitentePaquete.Normalizar(remitente.Groups[1].Value);
+            }
+            if (referencia.Success)
+            {
+                string entera = referencia.Groups[1].Value.TrimEnd('-', '/', '_', '.');
+                datos.ReferenciasRemitente.Add(entera);
+                foreach (Match trozo in TrozoReferencia.Matches(entera))
+                {
+                    if (!datos.ReferenciasRemitente.Contains(trozo.Value, StringComparer.OrdinalIgnoreCase))
+                    {
+                        datos.ReferenciasRemitente.Add(trozo.Value);
+                    }
+                }
+            }
+            return datos;
+        }
     }
 
     public class AgenciaEntradaSchenker : AgenciaEntradaPorPatrones
