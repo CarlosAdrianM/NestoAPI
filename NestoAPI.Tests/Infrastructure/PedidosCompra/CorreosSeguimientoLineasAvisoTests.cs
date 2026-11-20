@@ -146,17 +146,46 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
-        public void Regla_CasanLineasDeDosPedidos_NoSeEligeANingunoAciegas()
+        public void Regla_CasanLineasDeDosPedidos_GanaElUnicoQueCasaElAvisoEntero()
         {
+            // Carlos 20/11/26: «dentro de una seguridad razonable, cuanto más automático mejor». El 220931 casa las dos líneas con todas
+            // sus unidades; el 220181 solo tiene una unidad de uno de los dos productos.
             List<LineaEnAireAviso> lineas = LineasReales();
             lineas.Add(L(220181, 6, "32831", 1));
 
             ResultadoLineasAviso r = ReglaLineasAvisoSalida.Casar(Aviso(), Referencias(), lineas);
 
-            Assert.IsNull(r.Pedido);
+            Assert.AreEqual(220931, r.Pedido?.Pedido);
             CollectionAssert.AreEquivalent(new[] { 220181, 220931 }, r.PedidosQueCasan.Select(p => p.Pedido).ToArray());
             AsignacionPedidoCompra a = ReglaLineasAvisoSalida.Completar(new AsignacionPedidoCompra(), r);
+            Assert.AreEqual(1, a.Candidatos.Count, "inequívoco: solo el que casa entero");
+            Assert.AreEqual(220931, a.Candidatos[0].Pedido);
+        }
+
+        [TestMethod]
+        public void Regla_DosPedidosCasanElAvisoEntero_NoSeEligeANingunoAciegas()
+        {
+            List<LineaEnAireAviso> lineas = LineasReales();
+            lineas.Add(L(220181, 6, "32831", 2));
+            lineas.Add(L(220181, 7, "40695", 1));
+
+            ResultadoLineasAviso r = ReglaLineasAvisoSalida.Casar(Aviso(), Referencias(), lineas);
+
+            Assert.IsNull(r.Pedido);
+            AsignacionPedidoCompra a = ReglaLineasAvisoSalida.Completar(new AsignacionPedidoCompra(), r);
             Assert.AreEqual(2, a.Candidatos.Count, "se deja por asignar con los dos");
+        }
+
+        [TestMethod]
+        public void Regla_NingunoCasaElAvisoEntero_NoSeEligeANingunoAciegas()
+        {
+            // Cada pedido tiene solo uno de los dos productos del aviso
+            var lineas = new List<LineaEnAireAviso> { L(220181, 6, "32831", 2), L(220931, 1, "40695", 1) };
+
+            ResultadoLineasAviso r = ReglaLineasAvisoSalida.Casar(Aviso(), Referencias(), lineas);
+
+            Assert.IsNull(r.Pedido);
+            Assert.AreEqual(2, r.PedidosQueCasan.Count);
         }
 
         [TestMethod]
@@ -321,9 +350,23 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
-        public async Task Job_LineasDeDosPedidos_QuedaPorAsignarConLosDos()
+        public async Task Job_LineasDeDosPedidos_GanaElQueCasaElAvisoEntero()
         {
+            // El 220181 solo tiene una unidad de uno de los dos productos: el 220931 casa el aviso entero y queda inequívoco
             repositorio.Lineas[220181].Add(new LineaCompraCorreo { NumeroOrden = 6, Producto = "32831", Estado = 1, Enviado = true, Cantidad = 1, FechaRecepcion = ANTES, Proveedor = "413" });
+
+            await Pasada(Correo(WEELKO_SALIDA));
+
+            CorreoSeguimientoFila fila = repositorio.Correos.Single();
+            Assert.AreEqual(220931, fila.PedidoAplicado);
+            Assert.IsTrue(repositorio.Lineas[220181].All(l => l.FechaRecepcion == ANTES), "el otro pedido no se toca");
+        }
+
+        [TestMethod]
+        public async Task Job_DosPedidosCasanElAvisoEntero_QuedaPorAsignarConLosDos()
+        {
+            repositorio.Lineas[220181].Add(new LineaCompraCorreo { NumeroOrden = 6, Producto = "32831", Estado = 1, Enviado = true, Cantidad = 2, FechaRecepcion = ANTES, Proveedor = "413" });
+            repositorio.Lineas[220181].Add(new LineaCompraCorreo { NumeroOrden = 7, Producto = "40695", Estado = 1, Enviado = true, Cantidad = 1, FechaRecepcion = ANTES, Proveedor = "413" });
 
             await Pasada(Correo(WEELKO_SALIDA));
 
@@ -336,17 +379,19 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         public async Task AMano_SoloLasLineasQueCasanConEsePedido_YSiNingunaTodoElPedido()
         {
             repositorio.Lineas[220181].Add(new LineaCompraCorreo { NumeroOrden = 6, Producto = "32831", Estado = 1, Enviado = true, Cantidad = 3, FechaRecepcion = ANTES, Proveedor = "413" });
+            repositorio.Lineas[220181].Add(new LineaCompraCorreo { NumeroOrden = 7, Producto = "40695", Estado = 1, Enviado = true, Cantidad = 1, FechaRecepcion = ANTES, Proveedor = "413" });
             await Pasada(Correo(WEELKO_SALIDA));
             CorreoSeguimientoFila fila = repositorio.Correos.Single();
-            Assert.IsNull(fila.PedidoAplicado, "dos pedidos casan: por asignar");
+            Assert.IsNull(fila.PedidoAplicado, "dos pedidos casan el aviso entero: por asignar");
 
             ResultadoOperacionCorreoCompra r = await Aplicacion().Asignar(fila.Id, new PeticionAsignarCorreoCompraDTO { Pedido = 220181 }, false, "compras");
 
             Assert.AreEqual(CodigoOperacionCorreoCompra.Ok, r.Codigo, r.Mensaje);
-            Assert.AreEqual(1, r.Respuesta.LineasCambiadas, "solo la del 32831");
+            Assert.AreEqual(2, r.Respuesta.LineasCambiadas, "solo las del 32831 y el 40695");
             Assert.IsTrue(r.Respuesta.EnvioParcial, "vienen 2 de las 3 pendientes");
             Assert.AreEqual(ANTES, repositorio.Lineas[220181][0].FechaRecepcion);
             Assert.AreNotEqual(ANTES, repositorio.Lineas[220181][5].FechaRecepcion);
+            Assert.AreNotEqual(ANTES, repositorio.Lineas[220181][6].FechaRecepcion);
             StringAssert.Contains(r.Mensaje, "Envío parcial: de 32831 vienen 2 de 3 uds.");
 
             // Reasignado a un pedido con el que no casa nada: todo el pedido

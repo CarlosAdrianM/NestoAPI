@@ -699,7 +699,7 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   base; Weelko lee su «Resumen del pedido»: «[REF] descripción … 2,00», el transporte sin corchetes no cuenta). LA REGLA (pura) `ReglaLineasAvisoSalida.Casar`
   (`LineasAvisoSalida.cs`): referencia → producto por ProveedoresProducto del proveedor de cada pedido; por producto, las unidades se reparten por nº de orden
   (como mucho lo pendiente); menos que lo pendiente = PARCIAL: la fecha se pone igual (no se parte la línea) y lo dice el rastro. Un pedido casa → inequívoco
-  (motivo `LineasAviso`: solo nuestro número y el PDF mandan sobre él; va por delante del dominio, el nombre y las confirmaciones); dos → por asignar con
+  (motivo `LineasAviso`: solo nuestro número y el PDF mandan sobre él; va por delante del dominio, el nombre y las confirmaciones); varios → gana el ÚNICO que casa el aviso entero (todas sus líneas y unidades) y, si no lo hay o hay dos, por asignar con
   los dos; ninguno → como antes. Lectura: `LeerLineasAviso` (una consulta por tanda, solo si el aviso trae líneas; ni el histórico). Al aplicar (job, a mano,
   mismo envío —los correos de la agencia heredan las líneas, `LineasAvisoCorreo.DelEnvio`—, Corregir) se vuelve a casar con ESE pedido
   (`LeerLineasAvisoDelPedido`) y `PeticionAplicacionFecha.Ordenes` limita el UPDATE, la promesa en riesgo y el rastro (`LineasAviso`, `EnvioParcial`); sin

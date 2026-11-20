@@ -80,7 +80,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// ProveedoresProducto del proveedor de CADA pedido (una referencia puede ser de varios productos: vale cualquiera). Por pedido y producto,
     /// las unidades del aviso se reparten entre sus líneas por nº de orden (cada una, como mucho lo pendiente); una línea que recibe menos que lo
     /// pendiente es un envío PARCIAL: se le pone igual la fecha (es cuando empieza a llegar; no se parte la línea) y queda dicho en el rastro;
-    /// las líneas que no reciben nada no son de este envío. Si casa un solo pedido, ese; con varios, no se elige (se deja por asignar con ellos);
+    /// las líneas que no reciben nada no son de este envío. Si casa un solo pedido, ese; con varios, el ÚNICO que casa el aviso entero (todas sus
+    /// líneas y unidades), y si no lo hay no se elige (se deja por asignar con ellos);
     /// sin ninguno, la regla no decide nada (todo como antes). PURA.
     /// </summary>
     public static class ReglaLineasAvisoSalida
@@ -115,16 +116,19 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
             List<LineaEnAireAviso> todas = (lineas ?? Enumerable.Empty<LineaEnAireAviso>()).Where(l => l != null && l.Pedido > 0).ToList();
             var traducidas = new HashSet<LineaAvisoSalida>();
+            var enteros = new List<CandidatoPedidoCompra>();
             foreach (IGrouping<string, LineaEnAireAviso> pedido in todas.GroupBy(l => AsignadorPedidosCompra.Clave(l.Empresa, l.Pedido)).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
                 string proveedor = pedido.Select(l => l.Proveedor?.Trim()).FirstOrDefault(p => !string.IsNullOrEmpty(p)) ?? string.Empty;
                 mapa.TryGetValue(proveedor, out Dictionary<string, HashSet<string>> delProveedor);
                 // Unidades del aviso por producto de este pedido (dos líneas del aviso pueden ser del mismo producto)
                 var unidades = new Dictionary<string, (decimal Unidades, string Referencia)>(StringComparer.OrdinalIgnoreCase);
+                bool entero = true; // todas las líneas del aviso tienen su producto en este pedido y caben en lo pendiente
                 foreach (LineaAvisoSalida linea in delAviso)
                 {
                     if (delProveedor == null || !delProveedor.TryGetValue(Normalizar(linea.ReferenciaProveedor), out HashSet<string> productos))
                     {
+                        entero = false;
                         continue;
                     }
                     _ = traducidas.Add(linea);
@@ -133,6 +137,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         .Select(l => l.Producto.Trim()).FirstOrDefault();
                     if (producto == null)
                     {
+                        entero = false;
                         continue;
                     }
                     unidades[producto] = unidades.TryGetValue(producto, out var ya)
@@ -163,6 +168,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                             Parcial = nuestra.Cantidad > 0 && le < nuestra.Cantidad
                         });
                     }
+                    if (quedan > 0)
+                    {
+                        entero = false; // el aviso trae más unidades de las que este pedido espera
+                    }
                 }
                 if (casadasPedido.Any())
                 {
@@ -172,10 +181,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         Empresa = primera.Empresa?.Trim(), Pedido = primera.Pedido, Proveedor = proveedor, Motivo = AsignadorPedidosCompra.MOTIVO_LINEAS_AVISO
                     });
                     resultado.Casadas.AddRange(casadasPedido.OrderBy(c => c.NumeroOrden));
+                    if (entero)
+                    {
+                        enteros.Add(resultado.PedidosQueCasan.Last());
+                    }
                 }
             }
             resultado.SinTraducir = delAviso.Count(l => !traducidas.Contains(l));
-            resultado.Pedido = resultado.PedidosQueCasan.Count == 1 ? resultado.PedidosQueCasan[0] : null;
+            // Carlos 20/11/26 («dentro de una seguridad razonable, cuanto más automático mejor»): con varios pedidos que casan, gana el ÚNICO
+            // que casa el aviso ENTERO (todas sus líneas, con todas sus unidades); si son varios los enteros, o ninguno, no se elige.
+            resultado.Pedido = resultado.PedidosQueCasan.Count == 1 ? resultado.PedidosQueCasan[0]
+                : enteros.Count == 1 ? enteros[0] : null;
             return resultado;
         }
 
@@ -186,7 +202,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>
         /// La asignación con lo que dicen las líneas: si casan con algún pedido, esos pedidos (motivo <see cref="AsignadorPedidosCompra.MOTIVO_LINEAS_AVISO"/>);
-        /// mandan sobre todo menos sobre nuestro número en el texto y el PDF. Sin ninguna, la asignación tal cual.
+        /// mandan sobre todo menos sobre nuestro número en el texto y el PDF. Si la regla decide un pedido, solo ese. Sin ninguna, la asignación tal cual.
         /// </summary>
         public static AsignacionPedidoCompra Completar(AsignacionPedidoCompra asignacion, ResultadoLineasAviso resultado)
         {
@@ -198,7 +214,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             return new AsignacionPedidoCompra
             {
                 ProveedorPropuesto = proveedores.Count == 1 ? proveedores[0] : null,
-                Candidatos = resultado.PedidosQueCasan.Take(AsignadorPedidosCompra.MAXIMO_CANDIDATOS).ToList()
+                // Con pedido decidido (el único que casa, o el único que casa el aviso entero), solo ese: queda inequívoco
+                Candidatos = resultado.Pedido != null
+                    ? new List<CandidatoPedidoCompra> { resultado.Pedido }
+                    : resultado.PedidosQueCasan.Take(AsignadorPedidosCompra.MAXIMO_CANDIDATOS).ToList()
             };
         }
 
