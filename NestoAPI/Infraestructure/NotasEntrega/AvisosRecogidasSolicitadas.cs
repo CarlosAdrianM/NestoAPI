@@ -14,7 +14,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     /// campana de Nesto si la pidió desde Nesto y «haCambiado» al grupo <see cref="AvisosAlmacen.GRUPO_RECOGIDAS_SOLICITADAS"/> del
     /// AlmacenHub para que la pantalla de Nesto se refresque sola (sin sondeo). En segundo plano y sin lanzar nunca (ELMAH).
     /// </summary>
-    public class AvisosRecogidasSolicitadas : IAvisosRecogidasSolicitadas
+    public class AvisosRecogidasSolicitadas : IAvisosRecogidasSolicitadas, IAvisosParadaRecogida
     {
         public const string TIPO_SOLICITADA = "RecogidaSolicitada";
         public const string TIPO_RESUELTA = "RecogidaSolicitadaResuelta";
@@ -147,6 +147,35 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// Push de NestoApp a su usuario (sin dominio; se guarda en su buzón) y, si la pidió desde Nesto (usuario con dominio), la campana
         /// de Nesto.
         /// </summary>
+        public const string TIPO_NO_RECOGIDA = "RecogidaSolicitadaNoRecogida";
+        public const string TIPO_COMENTARIO = "RecogidaSolicitadaComentario";
+
+        /// <summary>
+        /// Punto 5 (Carlos 19/11/26): el repartidor ha pasado por la parada. Recogida con comentario («recogido, pero sin el manípulo») o
+        /// «No se ha recogido» con su motivo: push de NestoApp y campana a quien la pidió. En segundo plano: nunca rompe la entrega.
+        /// </summary>
+        public void ParadaRepartidor(RecogidaSolicitadaDTO recogida, bool recogidaHecha, string texto, string usuario)
+        {
+            if (recogida == null)
+            {
+                return;
+            }
+            Refrescar(usuario);
+            string nota = recogida.CodigoDocumento != null ? $" (nota {recogida.CodigoDocumento})" : string.Empty;
+            NotificacionPushDTO notificacion = recogidaHecha
+                ? Componer(TIPO_COMENTARIO, recogida, $"Recogida hecha: {Cliente(recogida)}",
+                    $"El repartidor ha recogido en {Cliente(recogida)}{nota}. Comentario: {texto}")
+                : Componer(TIPO_NO_RECOGIDA, recogida, $"Recogida no hecha: {Cliente(recogida)}",
+                    $"El repartidor no ha podido recoger en {Cliente(recogida)}{nota}. Motivo: {texto}");
+            notificacion.Datos["estado"] = recogidaHecha ? EstadosRecogidaSolicitada.RECOGIDA : recogida.Estado;
+            notificacion.Datos["texto"] = texto;
+            if (recogida.CodigoDocumento != null)
+            {
+                notificacion.Datos["codigoDocumento"] = recogida.CodigoDocumento;
+            }
+            Lanzar(() => AQuienLaPidio(recogida, notificacion), "a quien la pidió de lo que ha pasado en la parada");
+        }
+
         internal async Task AQuienLaPidio(RecogidaSolicitadaDTO recogida, NotificacionPushDTO notificacion)
         {
             string usuario = recogida.UsuarioSolicita?.Trim();

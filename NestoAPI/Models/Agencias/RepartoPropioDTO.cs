@@ -299,6 +299,12 @@ namespace NestoAPI.Models.Agencias
         /// como antes: se cierran «sin leer».
         /// </summary>
         public bool? SoloLeidos { get; set; }
+        /// <summary>
+        /// Punto 5 (20/11/26, opcional, hasta 500): solo en las notas de RECOGIDA, un comentario de lo recogido («recogido, pero sin el
+        /// manípulo»). Va a EnviosHistoria, a DetalleEstado («Recogido (reparto propio): …», recortado a 100), a la prueba de entrega
+        /// (Observaciones) y, si la recogida viene de una solicitud, a quien la pidió. En las demás paradas se ignora.
+        /// </summary>
+        public string Comentario { get; set; }
     }
 
     /// <summary>NestoAPI#759: PUT api/RepartoPropio/Orden. El orden de las paradas del repartidor, tal como lo deja en la PDA.</summary>
@@ -575,6 +581,48 @@ namespace NestoAPI.Models.Agencias
         public System.Collections.Generic.List<BultoPruebaEntregaDTO> Bultos { get; set; }
         /// <summary>«Leídos 6 de 7. Sin leer: RP251099-7.» Null sin datos de la furgoneta.</summary>
         public string ResumenBultos { get; set; }
+        /// <summary>
+        /// Punto 5 (20/11/26, aditivo): lo que escribió el repartidor al entregar (Observaciones) y, en una nota de recogida, su comentario
+        /// («Comentario: recogido, pero sin el manípulo»). Null si no escribió nada.
+        /// </summary>
+        public string Observaciones { get; set; }
+    }
+
+    /// <summary>
+    /// Punto 5 (Carlos 19/11/26): POST api/RepartoPropio/Envios/{envioId}/NoRecogida. Solo la parada de una NOTA DE RECOGIDA: el repartidor
+    /// no ha podido recogerla. La parada sale del reparto (Cerrado a mano, «No recogido (reparto propio): motivo») y no se crean bultos NR.
+    /// </summary>
+    public class NoRecogidaRepartoDTO
+    {
+        public Guid ClaveIdempotencia { get; set; }
+        public DateTime? FechaHora { get; set; }
+        /// <summary>Obligatorio, hasta 500 caracteres.</summary>
+        public string Motivo { get; set; }
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
+        /// <summary>NestoAPI#881 (opcional): solo para medir los tiempos.</summary>
+        public DateTime? FechaHoraLlegada { get; set; }
+        public DateTime? FechaHoraIr { get; set; }
+    }
+
+    /// <summary>Punto 5: POST api/RepartoPropio/Recogidas/{pedido}/Anular.</summary>
+    public class AnularRecogidaRepartoDTO
+    {
+        /// <summary>Obligatorio, hasta 500 caracteres.</summary>
+        public string Motivo { get; set; }
+    }
+
+    /// <summary>Punto 5: la respuesta de POST api/RepartoPropio/Recogidas/{pedido}/Anular.</summary>
+    public class ResultadoAnularRecogidaDTO
+    {
+        public int Pedido { get; set; }
+        /// <summary>«NR930553».</summary>
+        public string CodigoDocumento { get; set; }
+        /// <summary>El envío de la parada que se ha quitado del reparto.</summary>
+        public int EnvioId { get; set; }
+        /// <summary>«Anulada».</summary>
+        public string Estado { get; set; }
+        public string Mensaje { get; set; }
     }
 
     /// <summary>Un bulto en la prueba de entrega (reparto propio).</summary>

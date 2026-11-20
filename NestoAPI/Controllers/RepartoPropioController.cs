@@ -47,6 +47,8 @@ namespace NestoAPI.Controllers
             servicio.ControlCaja = NuevoControlCaja(db);
             // Novedad 1366: entregado el original, su reenvío sin tramitar sobra
             servicio.ResolverReenvioSobrante = ReenvioEntregadoPorLaAgencia.ResolverConContextoPropioAsync;
+            // Punto 5 (20/11/26): «No se ha recogido», comentario de la recogida y «Anular recogida»
+            servicio.Recogidas = new RecogidasParadaRepartoSql();
         }
 
         private static ControlCajaReparto NuevoControlCaja(NVEntities db)
@@ -447,6 +449,44 @@ namespace NestoAPI.Controllers
                 return Prohibido();
             }
             return Responder(await servicio.Incidencia(envioId, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
+        // POST api/RepartoPropio/Envios/123456/NoRecogida { ClaveIdempotencia, FechaHora?, Motivo, Latitud?, Longitud?, FechaHoraLlegada?, FechaHoraIr? }
+        /// <summary>
+        /// Punto 5 (Carlos 19/11/26): la parada de una NOTA DE RECOGIDA que no se ha podido recoger (motivo obligatorio, hasta 500). Sale del
+        /// reparto (Cerrado a mano, DetalleEstado «No recogido (reparto propio): motivo»), sin bultos NR; aviso a quien pidió la recogida si
+        /// viene de una solicitud. 200 { EnvioId, Estado: "NoRecogido" } (misma clave = misma respuesta); 400; 404; 409 (ya recogida,
+        /// no en reparto, o RECOGIDA_YA_RECOGIDA si hay bultos NR en una furgoneta o está abonada).
+        /// </summary>
+        [HttpPost]
+        [Route("Envios/{envioId:int}/NoRecogida")]
+        [ResponseType(typeof(EstadoEnvioRepartoDTO))]
+        public async Task<IHttpActionResult> NoRecogida(int envioId, [FromBody] NoRecogidaRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.NoRecogida(envioId, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
+        // POST api/RepartoPropio/Recogidas/930553/Anular { Motivo }
+        /// <summary>
+        /// Punto 5 (Carlos 19/11/26): anular una nota de recogida YA en reparto que ya no hace falta (Almacén, Administración, Dirección e
+        /// Informática; motivo obligatorio). La parada sale del reparto (Cerrado a mano, «Recogida anulada: motivo») con historia y rastro en
+        /// Modificaciones (RecogidaAnulada); si viene de una solicitud, queda Anulada. 200 ResultadoAnularRecogidaDTO; 400; 403; 404 si no es una
+        /// nota de recogida; 409 si no tiene parada en reparto, ya está hecha, o RECOGIDA_YA_RECOGIDA (bultos NR en una furgoneta o abonada).
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{pedido:int}/Anular")]
+        [ResponseType(typeof(ResultadoAnularRecogidaDTO))]
+        public async Task<IHttpActionResult> AnularRecogida(int pedido, [FromBody] AnularRecogidaRepartoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.AnularRecogida(pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
         // GET api/RepartoPropio/Envios/123456/PruebaEntrega

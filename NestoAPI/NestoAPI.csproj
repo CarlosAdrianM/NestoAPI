@@ -909,6 +909,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisoParadasReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaFurgoneta.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\CargaObligatoriaReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\RecogidasParadaReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FechaRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\RepartidoresReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\FurgonetaBultos.cs" />

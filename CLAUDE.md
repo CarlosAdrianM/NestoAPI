@@ -727,6 +727,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Avisos: campana `RecogidaImprevista` a Almacén, haCambiado a Reparto y RecogidasSolicitadas; con retorno aceptado, urgente
   `RecogidaConRetornoEnCamino` (referencia = el envío; suena mientras siga vivo) y línea en EnviosHistoria. Nunca se toca la agencia.
 
+### Parada de una nota de recogida: «No se ha recogido», comentario y «Anular recogida» (punto 5, Carlos 19/11/26)
+- `POST api/RepartoPropio/Envios/{id}/NoRecogida` {ClaveIdempotencia, FechaHora?, Motivo (obligatorio, ≤500), Latitud?, Longitud?, FechaHoraLlegada?,
+  FechaHoraIr?}: solo notas de recogida; la parada sale del reparto como Cerrado a mano (5), DetalleEstado «No recogido (reparto propio): motivo»,
+  prueba Incidencia (Motivo Otro, la CHECK no cambia), sin bultos NR; 200 {EnvioId, Estado «NoRecogido»}; 409 `RECOGIDA_YA_RECOGIDA` con bultos NR en
+  una furgoneta o abonada. `EntregaRepartoDTO.Comentario` (≤500, solo recogidas): historia, DetalleEstado «Recogido (reparto propio): …» y prueba
+  (`PruebaEntregaDTO.Observaciones`). Con solicitud (#855): aviso a quien la pidió (`RecogidaSolicitadaNoRecogida`/`RecogidaSolicitadaComentario`).
+- `POST api/RepartoPropio/Recogidas/{pedido}/Anular` {Motivo} (grupos del reparto): parada en reparto → Cerrado a mano «Recogida anulada: motivo», historia y
+  Modificaciones `RecogidaAnulada` en UNA transacción (`RecogidasParadaRepartoSql.CerrarParada`, solo si sigue 1/3); la solicitud, Anulada. Las líneas de
+  la nota no se tocan. Reglas puras `ReglasParadaRecogida` (`RecogidasParadaReparto.cs`).
+
 ### «Todo junto» con falta de pago: pedido retenido por falta (NestoAPI#858 punto 4, 12/11/26)
 - En `OrigenSalidaPicking.QuitarFaltasDeLosPedidos` (Terminar y falta definitiva del «No está»), dentro de su transacción
   (`ReglasRetencionTodoJunto.RetenerSiHaceFalta`, solo si la tx implementa `IRetencionTodoJuntoSalida`, como `TransaccionSalidaSql`): una falta

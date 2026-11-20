@@ -166,6 +166,16 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     }
 
     /// <summary>
+    /// Punto 5 (Carlos 19/11/26): lo que el repartidor dice en la parada de una recogida que viene de una solicitud. Aparte de
+    /// <see cref="IAvisosRecogidasSolicitadas"/> para no obligar a los dobles que ya la implementan.
+    /// </summary>
+    public interface IAvisosParadaRecogida
+    {
+        /// <param name="recogidaHecha">True: recogida con comentario. False: «No se ha recogido» (texto = motivo).</param>
+        void ParadaRepartidor(RecogidaSolicitadaDTO recogida, bool recogidaHecha, string texto, string usuario);
+    }
+
+    /// <summary>
     /// NestoAPI#855: quién puede qué. Pedir, ver las de un cliente y anular las suyas: los vendedores de NestoApp (solo sus clientes,
     /// <see cref="Seguridad.ClientesDelVendedor"/>) y los empleados (Nesto); nunca los clientes de la tienda. Confirmar, rechazar y ver
     /// las pendientes: los cuatro grupos de las notas (<see cref="PermisosNotasEntrega"/>). Anular una que ya está en reparto: Almacén
@@ -660,6 +670,59 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Recogidas solicitadas #855] Abono de la nota {pedidoNota}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// Punto 5 (Carlos 19/11/26): el repartidor ha pasado por la parada de la nota (recogida con comentario o «No se ha recogido»). Si
+        /// la nota viene de una solicitud confirmada, aviso a quien la pidió con el texto. Nunca lanza.
+        /// </summary>
+        public async Task AlPasarPorLaParada(string empresa, int pedidoNota, bool recogidaHecha, string texto, string usuario)
+        {
+            try
+            {
+                if (!repositorio.ScriptAplicado() || string.IsNullOrWhiteSpace(texto) || !(avisos is IAvisosParadaRecogida aviso))
+                {
+                    return;
+                }
+                FilaRecogidaSolicitada fila = await repositorio.LeerPorNota(empresa, pedidoNota).ConfigureAwait(false);
+                if (fila == null)
+                {
+                    return;
+                }
+                List<RecogidaSolicitadaDTO> lista = await Construir(fila.Empresa, new List<FilaRecogidaSolicitada> { fila }).ConfigureAwait(false);
+                aviso.ParadaRepartidor(lista[0], recogidaHecha, texto.Trim(), usuario);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recogidas solicitadas] Parada de la nota {pedidoNota}: no se ha podido avisar a quien la pidió: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// Punto 5 (Carlos 19/11/26): Almacén ha anulado la recogida YA en reparto (la parada se ha quitado). Si viene de una solicitud
+        /// confirmada, la solicitud queda Anulada (con el motivo) y se avisa como cualquier anulación. Nunca lanza.
+        /// </summary>
+        public async Task AlAnularRecogidaEnReparto(string empresa, int pedidoNota, string motivo, string usuario)
+        {
+            try
+            {
+                if (!repositorio.ScriptAplicado())
+                {
+                    return;
+                }
+                FilaRecogidaSolicitada fila = await repositorio.LeerPorNota(empresa, pedidoNota).ConfigureAwait(false);
+                if (fila == null || !await repositorio.Anular(fila.Id, EstadosRecogidaSolicitada.CONFIRMADA, motivo, usuario).ConfigureAwait(false))
+                {
+                    return;
+                }
+                FilaRecogidaSolicitada anulada = await repositorio.Leer(fila.Id).ConfigureAwait(false) ?? fila;
+                List<RecogidaSolicitadaDTO> lista = await Construir(anulada.Empresa, new List<FilaRecogidaSolicitada> { anulada }).ConfigureAwait(false);
+                avisos?.Anulada(lista[0], usuario, false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recogidas solicitadas] La recogida {pedidoNota} se ha anulado en el reparto, pero no se ha podido anular su solicitud: {ex.Message}", ex));
             }
         }
 

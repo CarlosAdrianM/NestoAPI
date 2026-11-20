@@ -284,7 +284,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Usuario = prueba.Usuario,
                 TieneFirma = prueba.TieneFirma,
                 Latitud = prueba.Latitud,
-                Longitud = prueba.Longitud
+                Longitud = prueba.Longitud,
+                Observaciones = string.IsNullOrWhiteSpace(prueba.Texto) ? null : prueba.Texto.Trim()
             });
         }
 
@@ -381,6 +382,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return Invalido($"Las observaciones no pueden pasar de {MAXIMO_TEXTO} caracteres.");
             }
+            // Punto 5 (20/11/26): el comentario de una recogida
+            string comentario = Limpio(peticion.Comentario);
+            string comentarioMal = ReglasParadaRecogida.ValidarTexto(comentario, false, "El comentario");
+            if (comentarioMal != null)
+            {
+                return Invalido(comentarioMal);
+            }
             string cobro = null;
             if (!string.IsNullOrWhiteSpace(peticion.CobroReembolso))
             {
@@ -472,6 +480,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             bool recogida = nota?.EsRecogida == true;
             bool notaCobro = nota?.EsCobro == true;
+            string comentarioRecogida = recogida ? comentario : null;
             bool efectivo = cobro == PruebaEntregaReparto.COBRO_EFECTIVO;
             bool enlace = cobro == PruebaEntregaReparto.COBRO_ENLACE;
             // Con enlace, ImporteCobrado es el importe del enlace (aún no cobrado: entra por la notificación de Redsys).
@@ -579,7 +588,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Asiento = asientoNota,
                 PagoTPVId = pago?.IdPago ?? comprobacion?.PagoTPVId,
                 UrlPago = pago?.UrlPaginaPago ?? comprobacion?.UrlPago,
-                Texto = observaciones,
+                Texto = ReglasParadaRecogida.TextoPrueba(observaciones, comentarioRecogida),
                 Latitud = peticion.Latitud,
                 Longitud = peticion.Longitud,
                 Usuario = usuario,
@@ -591,6 +600,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             bool incompleta = evaluacion?.Incompleta == true;
             string observacionesHistoria = recogida
                 ? "Reparto propio: recogido" + (bultosRecogidos.HasValue ? $" ({bultosRecogidos.Value} {(bultosRecogidos.Value == 1 ? "bulto" : "bultos")})" : string.Empty)
+                    + (comentarioRecogida == null ? string.Empty : $". Comentario: {comentarioRecogida}")
                 : notaCobro
                 ? "Reparto propio: nota de cobro" + (cobro == null ? string.Empty : $" ({TextoCobro(cobro, importeCobrado)})")
                 : "Reparto propio: entregado" + (cobro == null ? string.Empty : $" (reembolso: {TextoCobro(cobro, importeCobrado)})");
@@ -603,7 +613,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 Estado = EstadoEnvioSeguimiento.Entregado,
                 FechaEntrega = fechaHora,
-                Detalle = incompleta ? EntregaIncompletaReparto.Detalle(evaluacion) : DETALLE_ENTREGADO
+                Detalle = incompleta ? EntregaIncompletaReparto.Detalle(evaluacion)
+                    : comentarioRecogida != null ? ReglasParadaRecogida.Detalle(ReglasParadaRecogida.PREFIJO_RECOGIDO, comentarioRecogida)
+                    : DETALLE_ENTREGADO
             });
             envio.Usuario = usuario;
 
@@ -633,6 +645,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (resultado.Tipo == TipoResultadoReparto.Ok && comprobacion != null)
             {
                 await CobroEntrega.Confirmar(comprobacion, envio, usuario).ConfigureAwait(false); // NestoAPI#773: la autorización por teléfono
+            }
+            if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido?.EsNueva == true && comentarioRecogida != null)
+            {
+                await AvisarSolicitudRecogida(envio.Pedido, true, comentarioRecogida, usuario).ConfigureAwait(false); // Punto 5: nunca lanza
             }
             return resultado;
         }
