@@ -3121,6 +3121,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(cursos.Error);
             }
+            if (cursos.HayFormacionQueSeparar)
+            {
+                // Incidencia 1398: la formación sin evento va sola a un pedido aparte (CV); los productos, a este
+                return await Infraestructure.Eventos.OrquestadorPedidoConFormacion.Crear(pedido, cursos.Formacion, CrearPedidoVenta, CopiaParaFormacion)
+                    .ConfigureAwait(true);
+            }
             if (!cursos.HayCursos)
             {
                 return await CrearPedidoVenta(pedido).ConfigureAwait(true);
@@ -3135,6 +3141,38 @@ namespace NestoAPI.Controllers
                 return resultado.NoCreado;
             }
             return CreatedAtRoute("DefaultApi", new { id = resultado.Respuesta.numero }, resultado.Respuesta);
+        }
+
+        /// <summary>
+        /// Incidencia 1398: la cabecera del pedido de la formación: la misma que la del pedido (cliente, contacto, forma y plazos de pago,
+        /// vendedor, ruta…), sin líneas, prepagos, efectos manuales ni sesión de sugerencias (son del pedido de productos).
+        /// </summary>
+        internal static PedidoVentaDTO CopiaParaFormacion(PedidoVentaDTO pedido)
+        {
+            List<LineaPedidoVentaDTO> lineas = pedido.Lineas.ToList();
+            pedido.Lineas.Clear();
+            PedidoVentaDTO copia;
+            try
+            {
+                copia = Newtonsoft.Json.JsonConvert.DeserializeObject<PedidoVentaDTO>(Newtonsoft.Json.JsonConvert.SerializeObject(pedido));
+            }
+            finally
+            {
+                foreach (LineaPedidoVentaDTO linea in lineas)
+                {
+                    pedido.Lineas.Add(linea);
+                }
+            }
+            copia.numero = 0;
+            copia.Lineas.Clear();
+            copia.Prepagos = new List<PrepagoDTO>();
+            copia.Efectos = new List<EfectoPedidoVentaDTO>();
+            copia.crearEfectosManualmente = false;
+            copia.IdSesionSugerencias = null;
+            copia.PedidosAdicionales = null;
+            copia.AvisosCursos = null;
+            copia.AvisosGrabacion = null;
+            return copia;
         }
 
         private async Task<IHttpActionResult> CrearPedidoVenta(PedidoVentaDTO pedido)

@@ -326,6 +326,12 @@ namespace NestoAPI.Models
         /// plantilla pide el evento y la modalidad (GET api/Eventos/PorProducto).
         /// </summary>
         public bool EsCurso { get; set; }
+        /// <summary>
+        /// Incidencia 1398 (Pilar, Carlos 20/11/26): formación sin evento (grupo CUR que no es de ningún evento: 90324 «PRÁCTICAS DE
+        /// TRABAJOS DE ESTÉTICA», las MF…). Se vende como una línea normal (sin evento, inscripción ni señal); al guardar va sola a un
+        /// pedido aparte de la serie CV. Con EsFormacion, EsCurso es false (no se pide evento).
+        /// </summary>
+        public bool EsFormacion { get; set; }
     }
     public class PersonaContactoDTO
     {

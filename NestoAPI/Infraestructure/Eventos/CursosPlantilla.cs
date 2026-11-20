@@ -80,6 +80,9 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>La ficha del contacto del pedido (para la cabecera de los pedidos de curso).</summary>
         public Cliente Ficha { get; set; }
         public bool HayCursos => Cursos.Any();
+        /// <summary>Incidencia 1398: las líneas de formación sin evento que van a su propio pedido (CV) porque el pedido lleva productos.</summary>
+        public List<LineaPedidoVentaDTO> Formacion { get; set; } = new List<LineaPedidoVentaDTO>();
+        public bool HayFormacionQueSeparar => Formacion.Any();
 
         internal static PreparacionCursos ConError(string error) => new PreparacionCursos { Error = error };
     }
@@ -427,20 +430,16 @@ namespace NestoAPI.Infraestructure.Eventos
         public async Task<List<LineaPlantillaVenta>> LineasCursos(string empresa, string filtro, ICollection<string> referencias = null)
         {
             HashSet<string> vendibles = await ProductosVendibles(empresa).ConfigureAwait(false);
-            if (!vendibles.Any())
-            {
-                return new List<LineaPlantillaVenta>();
-            }
             string empresaLimpia = ReglasCursosPlantilla.Limpiar(empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
-            List<string> lista = vendibles.ToList();
+            // Incidencia 1398: también la formación sin evento (grupo CUR que no es de ningún evento), marcada EsFormacion
             var productos = await db.Productos
-                .Where(p => p.Empresa == empresaLimpia && lista.Contains(p.Número) && p.Grupo == Constantes.Productos.GRUPO_CURSOS)
+                .Where(p => p.Empresa == empresaLimpia && p.Grupo == Constantes.Productos.GRUPO_CURSOS)
                 .Select(p => new { p.Número, p.Nombre, p.Estado, p.IVA_Repercutido, p.PVP, p.Grupo })
                 .ToListAsync().ConfigureAwait(false);
             string texto = filtro?.Trim();
             HashSet<string> refs = referencias == null ? null : new HashSet<string>(referencias.Select(r => r?.Trim()), StringComparer.OrdinalIgnoreCase);
             return productos
-                .Where(p => vendibles.Contains(p.Número?.Trim() ?? string.Empty))
+                .Where(p => vendibles.Contains(p.Número?.Trim() ?? string.Empty) || (p.Estado >= 0 && ReglasFormacionPlantilla.EsFormacion(p.Número, p.Grupo)))
                 .Where(p => refs != null
                     ? refs.Contains(p.Número.Trim())
                     : !string.IsNullOrEmpty(texto) && ((p.Número?.IndexOf(texto, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0
@@ -458,10 +457,86 @@ namespace NestoAPI.Infraestructure.Eventos
                     aplicarDescuento = false,
                     iva = p.IVA_Repercutido,
                     precio = p.PVP ?? 0,
-                    EsCurso = true
+                    EsCurso = vendibles.Contains(p.Número.Trim()),
+                    EsFormacion = !vendibles.Contains(p.Número.Trim())
                 })
                 .ToList();
         }
+    }
+
+    /// <summary>
+    /// Incidencia 1398 (Pilar, Carlos 20/11/26): la FORMACIÓN sin evento (90324 «PRÁCTICAS DE TRABAJOS DE ESTÉTICA», 90047, 90424, 90001, las
+    /// MF…, IMPE…): productos del grupo CUR que no son la referencia propia de un evento (EVENTO00123[NR]) ni la plantilla de los cursos
+    /// (ReglasProductoCurso.Plantilla). LA REGLA, pura. Se vende como una línea normal (precio y descuento de quien la vende, sin inscripción
+    /// ni señal) y, al guardar con productos, va sola a un pedido aparte (la serie CV la pone SerieSegunLineas, como a un pedido de solo
+    /// cursos de siempre).
+    /// </summary>
+    public static class ReglasFormacionPlantilla
+    {
+        public const string MOTIVO_FORMACION = "Formación";
+
+        public static bool EsFormacion(string producto, string grupo)
+        {
+            string limpio = producto?.Trim();
+            return !string.IsNullOrEmpty(limpio)
+                && string.Equals(grupo?.Trim(), Constantes.Productos.GRUPO_CURSOS, StringComparison.OrdinalIgnoreCase)
+                && ReglasProductoCurso.Interpretar(limpio) == null
+                && !string.Equals(limpio, ReglasProductoCurso.Plantilla, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Incidencia 1398: un pedido de la plantilla con productos y formación sin evento sale en DOS pedidos: los productos por su cauce de
+    /// siempre (NV) y la formación, sola, por el MISMO cauce (así SerieSegunLineas lo pone en CV, como hoy un pedido de solo formación),
+    /// sin prepagos ni efectos del original. La respuesta es la del de productos con PedidosAdicionales (Motivo «Formación»). Si la
+    /// formación falla después de crear los productos, no se deshace nada: aviso en AvisosCursos.
+    /// </summary>
+    public static class OrquestadorPedidoConFormacion
+    {
+        public static async Task<IHttpActionResult> Crear(PedidoVentaDTO pedido, IReadOnlyList<LineaPedidoVentaDTO> formacion,
+            Func<PedidoVentaDTO, Task<IHttpActionResult>> crearPedido, Func<PedidoVentaDTO, PedidoVentaDTO> copiaSinLineas)
+        {
+            PedidoVentaDTO pedidoFormacion = copiaSinLineas(pedido);
+            foreach (LineaPedidoVentaDTO linea in formacion)
+            {
+                _ = pedido.Lineas.Remove(linea);
+                pedidoFormacion.Lineas.Add(linea);
+            }
+            IHttpActionResult productos = await crearPedido(pedido).ConfigureAwait(false);
+            if (!(productos is CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO> creado))
+            {
+                return productos;
+            }
+            PedidoVentaDTO respuesta = creado.Content ?? pedido;
+            try
+            {
+                IHttpActionResult resultado = await crearPedido(pedidoFormacion).ConfigureAwait(false);
+                if (resultado is CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO> formacionCreada)
+                {
+                    respuesta.PedidosAdicionales = (respuesta.PedidosAdicionales ?? new List<PedidoAdicionalDTO>());
+                    respuesta.PedidosAdicionales.Add(new PedidoAdicionalDTO { Numero = formacionCreada.Content.numero, Motivo = ReglasFormacionPlantilla.MOTIVO_FORMACION });
+                }
+                else
+                {
+                    Avisar(respuesta, $"No se ha podido crear el pedido de la formación ({Motivo(resultado)}). Créelo aparte, por favor.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Avisar(respuesta, $"No se ha podido crear el pedido de la formación ({ex.Message}). Créelo aparte, por favor.");
+                ElmahHelper.Log(new Exception($"[Formación 1398] Pedido {respuesta.numero} de {pedido.cliente?.Trim()}: {ex.Message}", ex));
+            }
+            return productos;
+        }
+
+        private static void Avisar(PedidoVentaDTO respuesta, string aviso)
+        {
+            respuesta.AvisosCursos = respuesta.AvisosCursos ?? new List<string>();
+            respuesta.AvisosCursos.Add(aviso);
+        }
+
+        private static string Motivo(IHttpActionResult resultado)
+            => resultado is BadRequestErrorMessageResult malo ? malo.Message : resultado?.GetType().Name;
     }
 
     /// <summary>
@@ -552,6 +627,12 @@ namespace NestoAPI.Infraestructure.Eventos
                     Dictionary<string, string> grupos = await LeerGrupos(empresa, productosSinEvento.Select(l => l.Producto.Trim())).ConfigureAwait(false);
                     List<LineaPedidoVentaDTO> curSinEvento = productosSinEvento
                         .Where(l => grupos.TryGetValue(l.Producto.Trim(), out string g) && g == Constantes.Productos.GRUPO_CURSOS).ToList();
+                    // Incidencia 1398: formación sin evento con productos (no en un presupuesto ni con cursos de evento): se separa sola
+                    if (curSinEvento.Any() && !conEvento.Any() && !pedido.EsPresupuesto && productosSinEvento.Count > curSinEvento.Count
+                        && curSinEvento.All(l => ReglasFormacionPlantilla.EsFormacion(l.Producto, Constantes.Productos.GRUPO_CURSOS)))
+                    {
+                        return new PreparacionCursos { Formacion = curSinEvento };
+                    }
                     if (curSinEvento.Any() && (conEvento.Any() || productosSinEvento.Count > curSinEvento.Count))
                     {
                         return PreparacionCursos.ConError(

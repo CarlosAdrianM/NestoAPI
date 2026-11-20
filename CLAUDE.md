@@ -795,6 +795,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Un cobro tardío del enlace de una Inscrita no la paga ni factura: ELMAH + aviso de pago fuera de plazo a Administración. Los jobs de aviso,
   liberación y caducidad se saltan los eventos que hoy son gratuitos. `CrearEvento` con productos requeridos y sin importes nace 0/0.
 
+### Formación sin evento en la plantilla de venta (incidencia 1398, Pilar, Carlos 20/11/26)
+- LA REGLA (pura) `ReglasFormacionPlantilla.EsFormacion` (`CursosPlantilla.cs`): grupo CUR que no es la referencia de un evento (EVENTO00123[NR]) ni la
+  plantilla de los cursos (`ReglasProductoCurso.Plantilla`, 90077): 90324, 90047, MF…, IMPE…. La búsqueda de la plantilla (`BuscarProducto` y `Buscar`,
+  vía `CatalogoCursosPlantilla.LineasCursos`) la saca (Estado ≥ 0) con `LineaPlantillaVenta.EsFormacion` = true y `EsCurso` = false (no se pide evento);
+  los cursos de evento, como siempre (EsCurso).
+- Al guardar (POST PedidosVenta): formación + productos (no presupuesto, sin cursos de evento) → `PreparacionCursos.Formacion` y
+  `OrquestadorPedidoConFormacion`: los productos por el cauce de siempre y la formación, sola, por el MISMO cauce (`CopiaParaFormacion`: la cabecera
+  sin prepagos, efectos ni sesión de sugerencias), que `SerieSegunLineas` pone en CV como hoy un pedido de solo formación. Respuesta: la del de
+  productos con `PedidosAdicionales` [{Numero, Motivo «Formación»}]; si la formación falla, los productos se quedan y va en `AvisosCursos`. Solo
+  formación: UN pedido (como antes). Sin inscripción, señal ni enlace: precio y descuento de quien la vende, con las validaciones de siempre.
+  Formación en un presupuesto o con un curso de evento: el 400 de antes.
+
 ### La señal de un evento se cobra en Cajas (caso del cliente 33895, Carlos 19/11/26)
 - `GET api/Eventos/Inscripciones/SinPagar?cliente=&empresa=1`: reservas (Reservada/Caducada, de pago, evento de hoy en adelante) con `Importe`
   (la señal), `Documento` INS{id}, `Cobrable`/`Motivo` (`ReglasCobroSenalCaja.MotivoNoCobrable`: señal de #591, propuesta de #615 sin confirmar,

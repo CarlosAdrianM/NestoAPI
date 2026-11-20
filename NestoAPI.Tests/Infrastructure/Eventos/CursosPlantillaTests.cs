@@ -879,6 +879,130 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
         // ---------------- Ayudantes ----------------
 
+
+        // ---------------- Incidencia 1398: formación sin evento ----------------
+
+        private void ConFormacion() =>
+            productos.Add(new Producto { Empresa = "1", Número = "90324", Nombre = "PRÁCTICAS DE TRABAJOS DE ESTÉTICA", Grupo = "CUR", Ficticio = true, PVP = 80, IVA_Repercutido = "EX", Estado = 0 });
+
+        private static LineaPedidoVentaDTO Formacion(decimal precio = 80) => new LineaPedidoVentaDTO
+        {
+            tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+            Producto = "90324",
+            Cantidad = 1,
+            PrecioUnitario = precio,
+            almacen = "ALG",
+            formaVenta = "DIR"
+        };
+
+        [TestMethod]
+        public void EsFormacion_CURQueNoEsDeUnEventoNiLaPlantilla()
+        {
+            Assert.IsTrue(ReglasFormacionPlantilla.EsFormacion("90324", "CUR "));
+            Assert.IsTrue(ReglasFormacionPlantilla.EsFormacion("MF0001", "CUR"));
+            Assert.IsFalse(ReglasFormacionPlantilla.EsFormacion("EVENTO00123", "CUR"), "la referencia propia de un evento");
+            Assert.IsFalse(ReglasFormacionPlantilla.EsFormacion("EVENTO00123NR", "CUR"));
+            Assert.IsFalse(ReglasFormacionPlantilla.EsFormacion(ReglasProductoCurso.Plantilla, "CUR"), "la plantilla de los cursos");
+            Assert.IsFalse(ReglasFormacionPlantilla.EsFormacion("12345", "COS"));
+        }
+
+        [TestMethod]
+        public async Task LineasCursos_LaFormacionSinEventoSaleMarcadaEsFormacion_YLosDeEventoComoHoy()
+        {
+            ConFormacion();
+            var catalogo = new CatalogoCursosPlantilla(db, () => HOY);
+
+            LineaPlantillaVenta formacion = (await catalogo.LineasCursos("1", "prácticas")).Single();
+            LineaPlantillaVenta curso = (await catalogo.LineasCursos("1", "CURSO FORMACIÓN")).Single();
+
+            Assert.AreEqual("90324", formacion.producto);
+            Assert.IsTrue(formacion.EsFormacion);
+            Assert.IsFalse(formacion.EsCurso, "Nesto no pide evento");
+            Assert.AreEqual("90077", curso.producto);
+            Assert.IsTrue(curso.EsCurso);
+            Assert.IsFalse(curso.EsFormacion);
+        }
+
+        [TestMethod]
+        public async Task Preparar_FormacionConProductos_SeSepara_SinError()
+        {
+            ConFormacion();
+            LineaPedidoVentaDTO formacion = Formacion();
+
+            PreparacionCursos preparacion = await Servicio().Preparar(Pedido(Producto("12345", 10), formacion));
+
+            Assert.IsNull(preparacion.Error);
+            Assert.IsFalse(preparacion.HayCursos);
+            Assert.AreSame(formacion, preparacion.Formacion.Single());
+        }
+
+        [TestMethod]
+        public async Task Preparar_SoloFormacion_UnPedidoComoHastaAhora_YSinFormacionNoCambia()
+        {
+            ConFormacion();
+            PreparacionCursos solo = await Servicio().Preparar(Pedido(Formacion()));
+            Assert.IsNull(solo.Error);
+            Assert.IsFalse(solo.HayFormacionQueSeparar, "Un solo pedido: SerieSegunLineas lo pone en CV");
+
+            PreparacionCursos sinFormacion = await Servicio().Preparar(Pedido(Producto("12345", 10)));
+            Assert.IsNull(sinFormacion.Error);
+            Assert.IsFalse(sinFormacion.HayFormacionQueSeparar);
+            Assert.IsFalse(sinFormacion.HayCursos);
+        }
+
+        [TestMethod]
+        public async Task Preparar_FormacionEnPresupuestoOConCursoDeEvento_400ComoAntes()
+        {
+            ConFormacion();
+            PedidoVentaDTO presupuesto = Pedido(Producto("12345", 10), Formacion());
+            presupuesto.EsPresupuesto = true;
+            Assert.IsNotNull((await Servicio().Preparar(presupuesto)).Error);
+            Assert.IsNotNull((await Servicio().Preparar(Pedido(Formacion(), Curso()))).Error);
+        }
+
+        [TestMethod]
+        public async Task OrquestadorFormacion_DosPedidos_LaFormacionSolaSinPrepagos()
+        {
+            ConFormacion();
+            PedidoVentaDTO pedido = Pedido(Producto("12345", 10), Formacion(95));
+            pedido.Prepagos = new List<PrepagoDTO> { new PrepagoDTO() };
+            PreparacionCursos preparacion = await Servicio().Preparar(pedido);
+            var creados = new List<PedidoVentaDTO>();
+
+            IHttpActionResult resultado = await OrquestadorPedidoConFormacion.Crear(pedido, preparacion.Formacion,
+                p => { creados.Add(p); p.numero = 930500 + creados.Count; return Task.FromResult<IHttpActionResult>(Creado(p)); },
+                NestoAPI.Controllers.PedidosVentaController.CopiaParaFormacion);
+
+            Assert.AreEqual(2, creados.Count);
+            Assert.AreEqual("12345", creados[0].Lineas.Single().Producto, "Los productos, sin la formación");
+            Assert.AreEqual(1, creados[0].Prepagos.Count, "El prepago se queda en el de productos");
+            Assert.AreEqual("90324", creados[1].Lineas.Single().Producto);
+            Assert.AreEqual(95M, creados[1].Lineas.Single().PrecioUnitario, "El precio de quien la vende");
+            Assert.AreEqual(0, creados[1].Prepagos.Count);
+            Assert.AreEqual("15191", creados[1].cliente);
+            PedidoVentaDTO respuesta = ((CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>)resultado).Content;
+            Assert.AreEqual(930501, respuesta.numero);
+            Assert.AreEqual(930502, respuesta.PedidosAdicionales.Single().Numero);
+            Assert.AreEqual("Formación", respuesta.PedidosAdicionales.Single().Motivo);
+        }
+
+        [TestMethod]
+        public async Task OrquestadorFormacion_SiLaFormacionFalla_SeQuedanLosProductosConAviso()
+        {
+            ConFormacion();
+            PedidoVentaDTO pedido = Pedido(Producto("12345", 10), Formacion());
+            PreparacionCursos preparacion = await Servicio().Preparar(pedido);
+            int llamadas = 0;
+
+            IHttpActionResult resultado = await OrquestadorPedidoConFormacion.Crear(pedido, preparacion.Formacion,
+                p => { llamadas++; p.numero = 930600; return Task.FromResult<IHttpActionResult>(llamadas == 1 ? (IHttpActionResult)Creado(p) : new BadRequestErrorMessageResult("sin IVA", new System.Net.Http.Formatting.DefaultContentNegotiator(), new System.Net.Http.HttpRequestMessage(), new List<System.Net.Http.Formatting.MediaTypeFormatter>())); },
+                NestoAPI.Controllers.PedidosVentaController.CopiaParaFormacion);
+
+            PedidoVentaDTO respuesta = ((CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>)resultado).Content;
+            Assert.IsNull(respuesta.PedidosAdicionales);
+            StringAssert.Contains(respuesta.AvisosCursos.Single(), "sin IVA");
+        }
+
         private static CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO> Creado(PedidoVentaDTO pedido) =>
             new CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>("DefaultApi", new Dictionary<string, object> { ["id"] = pedido.numero }, pedido, new FakeController());
 
