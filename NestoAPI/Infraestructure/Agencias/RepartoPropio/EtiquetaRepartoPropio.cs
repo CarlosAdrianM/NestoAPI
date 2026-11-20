@@ -61,7 +61,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Linea(zpl, "^FO20,15" + LogoZplNuevaVision.GRAFICO + "^FS");
                 Linea(zpl, "^FO300,25^A0N," + plantilla.AltoTitulo.ToString(CultureInfo.InvariantCulture) + "," +
                     (plantilla.AltoTitulo * 11 / 12).ToString(CultureInfo.InvariantCulture) + "^FD" + Texto(plantilla.Titulo) + "^FS");
-                Linea(zpl, "^FO300,85^A0N,32,30^FDPedido: " + Texto(plantilla.Referencia) + "^FS");
+                Linea(zpl, "^FO300,85^A0N,32,30^FD" + (plantilla.EtiquetaReferencia ?? "Pedido: ") + Texto(plantilla.Referencia) + "^FS");
                 Linea(zpl, "^FO300,125^A0N,32,30^FDFecha: " + fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) + "^FS");
                 Linea(zpl, "^FO20,165^GB772,3,3^FS");
                 Linea(zpl, "^FO20,180^A0N,24,24^FDDESTINATARIO^FS");
@@ -114,6 +114,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>Alto de la letra del título en puntos (48 en la del envío; la de recogida la quiere grande).</summary>
         public int AltoTitulo { get; set; } = 48;
         public string Referencia { get; set; }
+        /// <summary>Lo que va delante de la referencia («Pedido: » si no se dice; sugerencia 1277: «Envío: »).</summary>
+        public string EtiquetaReferencia { get; set; }
         public int Bultos { get; set; }
         /// <summary>El Code128 del bulto N (1..Bultos).</summary>
         public Func<int, string> CodigoBulto { get; set; }

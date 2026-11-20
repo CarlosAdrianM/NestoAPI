@@ -116,7 +116,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     duenos[envio] = Repartidor(cargas.Where(c => c.EnvioId == envio));
                 }
             }
-            List<int> reposiciones = ids.Where(NucleoParadasReparto.EsReposicion).Select(NucleoParadasReparto.IdReposicion).ToList();
+            // Sugerencia 1277: las de los envíos internos, por sus bultos
+            foreach (KeyValuePair<int, string> interna in await DuenosParadasEnviosInternos(ids).ConfigureAwait(false))
+            {
+                duenos[interna.Key] = interna.Value;
+            }
+            List<int> reposiciones = ids.Where(i => NucleoParadasReparto.EsReposicion(i) && !ReglasEnviosInternos.EsParadaEnvioInterno(i))
+                .Select(NucleoParadasReparto.IdReposicion).ToList();
             if (reposiciones.Count > 0 && ReposicionesDisponibles())
             {
                 List<ParadaReposicion> abiertas = (await paradas.Reposiciones.LeerParadas(reposiciones).ConfigureAwait(false) ?? new List<ParadaReposicion>())

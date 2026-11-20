@@ -199,6 +199,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             lista.AddRange((await ParadasReposicionEnReparto(dia).ConfigureAwait(false))
                 .Where(p => NucleoParadasReparto.Visible(p.Repartidor, usuario, soloMios, soloCargados)));
+            // Sugerencia 1277: los envíos internos entre sedes (recogida en el origen si no es Algete, entrega en el destino)
+            lista.AddRange((await ParadasEnviosInternos(dia).ConfigureAwait(false))
+                .Where(p => NucleoParadasReparto.Visible(p.Repartidor, usuario, soloMios, soloCargados)));
             await CompletarOrden(lista).ConfigureAwait(false);
             await CompletarCoordenadas(lista).ConfigureAwait(false);
             await CompletarHorarios(lista, dia).ConfigureAwait(false);
@@ -214,6 +217,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             if (!repositorio.ScriptAplicado())
             {
                 return ResultadoReparto<EnvioRepartoBultoDTO>.Mal(TipoResultadoReparto.Invalido, MENSAJE_FALTA_SCRIPT);
+            }
+            if (ReglasEnviosInternos.TryLeer(codigo, out int envioInterno, out int bultoInterno))
+            {
+                return await BultoEnvioInterno(envioInterno, bultoInterno).ConfigureAwait(false);
             }
             if (EsCodigoReposicion(codigo, out int traspaso, out int bultoReposicion))
             {
@@ -302,6 +309,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> Entregar(int envioId, EntregaRepartoDTO peticion, string usuario,
             OrigenPeticionReparto origen = null)
         {
+            // Sugerencia 1277: la parada de un envío interno tiene su propio camino (sin cobro, firma ni DNI), con las mismas reglas.
+            if (ReglasEnviosInternos.EsParadaEnvioInterno(envioId))
+            {
+                return await EntregarEnvioInterno(envioId, peticion, usuario, origen).ConfigureAwait(false);
+            }
             // NestoAPI#772: los bultos leídos tienen que ser de la parada (y, con el interruptor, hay que leerlos).
             ResultadoReparto<EstadoEnvioRepartoDTO> bultosMal = await ValidarBultosEntrega(envioId, peticion).ConfigureAwait(false);
             if (bultosMal != null)
@@ -683,6 +695,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
         private async Task<ResultadoReparto<EstadoEnvioRepartoDTO>> IncidenciaEnvio(int envioId, IncidenciaRepartoDTO peticion, string usuario)
         {
+            if (ReglasEnviosInternos.EsParadaEnvioInterno(envioId))
+            {
+                return Invalido("Un envío interno no lleva incidencias: si no puede dejarlo, vuelva con él al almacén y descárguelo.");
+            }
             if (NucleoParadasReparto.EsReposicion(envioId))
             {
                 return Invalido("Una parada de reposición no lleva incidencias: si no puede dejarla en la tienda, vuelva con ella al almacén y avise a la tienda.");

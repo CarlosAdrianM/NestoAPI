@@ -448,6 +448,8 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public IAvisosRepartoSinCargar AvisosSinCargar { get; set; }
         /// <summary>Punto 6: cuándo se avisó de cada conjunto de paradas sin cargar. Null: la compartida de la aplicación.</summary>
         public MemoriaAvisosSinCargar MemoriaSinCargar { get; set; }
+        /// <summary>Sugerencia 1277: los envíos internos entre sedes (Scripts/RepartoEnviosInternos.sql). Null: sin envíos internos.</summary>
+        public IRepositorioEnviosInternos EnviosInternos { get; set; }
 
         /// <summary>Sin la cadena de conexión (los tests), null: no se guardan los tiempos.</summary>
         private static IRepositorioTiemposReparto TiemposRealesDeLaConfiguracion()
@@ -471,6 +473,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 AvisosFurgoneta = new AvisosFurgonetaSinDescargar(),
                 EntregaIncompleta = new AvisosEntregaIncompleta(),
                 AvisosSinCargar = new AvisosRepartoSinCargar(),
+                EnviosInternos = new RepositorioEnviosInternosSql(db),
                 Horarios = new HorariosParadas(new global::NestoAPI.Infraestructure.Clientes.ServicioHorarioPreferible(
                     new global::NestoAPI.Infraestructure.Clientes.RepositorioHorarioPreferible(db))),
                 Coordenadas = new ServicioGeocodificacion(new RepositorioCoordenadas(db), pedir: GeocodificacionRepartoJobsService.EncolarParadas),

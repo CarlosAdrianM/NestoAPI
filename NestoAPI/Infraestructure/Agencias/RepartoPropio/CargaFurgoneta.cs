@@ -136,6 +136,13 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return ReglaCajaSinCerrar.Conflicto<ResultadoCargaBultoDTO>(motivo);
             }
+            // Sugerencia 1277: un bulto de un envío interno (su movimiento Cargado es la carga)
+            if (ReglasEnviosInternos.TryLeer(peticion?.Codigo, out int envioInterno, out int bultoInterno))
+            {
+                ResultadoReparto<ResultadoCargaBultoDTO> cargaInterno = await CargarEnvioInterno(peticion, envioInterno, bultoInterno, usuario).ConfigureAwait(false);
+                Avisar(cargaInterno.Tipo, usuario, RepartoCambiadoDTO.MOTIVO_CARGA, origen);
+                return cargaInterno;
+            }
             ResultadoReparto<ResultadoCargaBultoDTO> resultado = EsCodigoReposicion(peticion?.Codigo, out int traspaso, out int bultoReposicion)
                 && peticion.ClaveIdempotencia != Guid.Empty && !string.IsNullOrWhiteSpace(usuario)
                 ? await CargarReposicion(peticion, traspaso, bultoReposicion, usuario).ConfigureAwait(false)

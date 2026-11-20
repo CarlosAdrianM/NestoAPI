@@ -78,6 +78,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public const string RP = "RP";
         public const string NR = "NR";
         public const string R = "R";
+        /// <summary>Sugerencia 1277: EI{id}-{N}, un bulto de un envío interno entre sedes.</summary>
+        public const string EI = "EI";
 
         /// <summary>«RP251300-1», «NR929554-2», «R81010-3».</summary>
         public string Codigo { get; set; }
@@ -88,6 +90,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public int? Pedido { get; set; }
         /// <summary>R: el traspaso.</summary>
         public int? Traspaso { get; set; }
+        /// <summary>EI: el envío interno.</summary>
+        public int? EnvioInterno { get; set; }
         public int Bulto { get; set; }
         /// <summary>«NR929554» sin «-N» (el documento: bulto 1, o todos los de la nota al leerla en el almacén).</summary>
         public bool SinBulto { get; set; }
@@ -119,6 +123,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return new CodigoBultoFurgoneta
                 {
                     Codigo = CodigoNotaEntrega.BultoRecogida(pedido, n), TipoCodigo = NR, Pedido = pedido, Bulto = n, SinBulto = !bultoNota.HasValue
+                };
+            }
+            if (ReglasEnviosInternos.TryLeer(limpio, out int envioInterno, out int bultoEi))
+            {
+                return new CodigoBultoFurgoneta
+                {
+                    Codigo = ReglasEnviosInternos.Codigo(envioInterno, bultoEi), TipoCodigo = EI, EnvioInterno = envioInterno, Bulto = bultoEi,
+                    EnvioId = ReglasEnviosInternos.EnvioIdEntrega(envioInterno)
                 };
             }
             if (CodigosBultoReposicion.Leer(limpio, out int traspaso, out int bultoR))
@@ -341,16 +353,27 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public static EvaluacionBultosEntrega Evaluar(int envioId, int bultos, IEnumerable<MovimientoBultoReparto> historiaEnvio,
             IEnumerable<CargaBultoReparto> cargasVigentes, ICollection<string> leidos, string usuario, bool soloLeidos)
         {
+            List<CargaBultoReparto> cargas = (cargasVigentes ?? Enumerable.Empty<CargaBultoReparto>()).Where(c => c != null && c.EnvioId == envioId).ToList();
+            return EvaluarCodigos(envioId, Math.Max(bultos, 1), n => CodigoBultoFurgoneta.CodigoRp(envioId, n), CodigoBultoFurgoneta.RP, historiaEnvio,
+                n => cargas.Where(c => c.Bulto == n).OrderBy(c => c.Id).LastOrDefault()?.Usuario, cargas.Count > 0, leidos, usuario, soloLeidos);
+        }
+
+        /// <summary>
+        /// El núcleo de <see cref="Evaluar"/> para cualquier tipo de bulto (RP de un envío, EI de un envío interno): el código de cada bulto
+        /// 1..<paramref name="total"/>, los movimientos de ese tipo y, si los hay, quién lo tenía cargado fuera de los movimientos.
+        /// </summary>
+        public static EvaluacionBultosEntrega EvaluarCodigos(int envioId, int total, Func<int, string> codigoDe, string tipoCodigo,
+            IEnumerable<MovimientoBultoReparto> historia, Func<int, string> cargaDe, bool hayCargas, ICollection<string> leidos, string usuario, bool soloLeidos)
+        {
             var leidosSet = new HashSet<string>((leidos ?? new List<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
             bool quedarse = soloLeidos && leidosSet.Count > 0;
-            List<MovimientoBultoReparto> ultimos = NucleoFurgoneta.Ultimos((historiaEnvio ?? Enumerable.Empty<MovimientoBultoReparto>())
-                .Where(m => m != null && m.TipoCodigo == CodigoBultoFurgoneta.RP));
-            List<CargaBultoReparto> cargas = (cargasVigentes ?? Enumerable.Empty<CargaBultoReparto>()).Where(c => c != null && c.EnvioId == envioId).ToList();
-            var evaluacion = new EvaluacionBultosEntrega { EnvioId = envioId, Total = Math.Max(bultos, 1) };
-            evaluacion.HayDatos = leidosSet.Count > 0 || cargas.Count > 0 || ultimos.Count > 0;
+            List<MovimientoBultoReparto> ultimos = NucleoFurgoneta.Ultimos((historia ?? Enumerable.Empty<MovimientoBultoReparto>())
+                .Where(m => m != null && m.TipoCodigo == tipoCodigo));
+            var evaluacion = new EvaluacionBultosEntrega { EnvioId = envioId, Total = Math.Max(total, 1) };
+            evaluacion.HayDatos = leidosSet.Count > 0 || hayCargas || ultimos.Count > 0;
             for (int n = 1; n <= evaluacion.Total; n++)
             {
-                string codigo = CodigoBultoFurgoneta.CodigoRp(envioId, n);
+                string codigo = codigoDe(n);
                 MovimientoBultoReparto ultimo = ultimos.FirstOrDefault(u => string.Equals(u.Codigo?.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
                 var bulto = new BultoEntregaEvaluado { Bulto = n, Codigo = codigo, Ultimo = ultimo };
                 if (leidosSet.Contains(codigo))
@@ -372,7 +395,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     // En una furgoneta (último movimiento) o, sin movimiento, por la carga vigente de ese bulto
                     string quien = ultimo != null && TiposMovimientoBulto.DejaEnFurgoneta(ultimo.Tipo)
                         ? ultimo.Usuario
-                        : cargas.Where(c => c.Bulto == n).OrderBy(c => c.Id).LastOrDefault()?.Usuario;
+                        : cargaDe?.Invoke(n);
                     if (string.IsNullOrWhiteSpace(quien))
                     {
                         bulto.Situacion = SituacionBultoEntrega.NoSeCargo;

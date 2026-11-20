@@ -231,6 +231,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 case TiposParadaReparto.NOTA_COBRO: return c.MinutosNotaCobro;
                 case TiposParadaReparto.NOTA_RECOGIDA: return c.MinutosNotaRecogida;
                 case TiposParadaReparto.REPOSICION: return c.MinutosReposicion;
+                case TiposParadaReparto.ENVIO_INTERNO: return c.MinutosReposicion; // sugerencia 1277: como una reposición
                 default: return c.MinutosEnvio;
             }
         }

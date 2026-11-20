@@ -308,6 +308,25 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   BultosEntregados venga algo de ESA parada: se carga a su nombre (`CargarEnvio` con Reasignar, clave derivada, mismo rastro) y sigue
   (`ReglaCargaObligatoria.Decidir`, `CargaObligatoriaReparto.cs`). Ni NC ni reposiciones; un reintento con la misma clave, tampoco.
 
+### Envíos internos entre sedes (sugerencia 1277, Alfredo, 20/11/26)
+- Lo que va de una sede a otra y NO es stock (café, folios, aparatos de demostración o de clientes): ni almacenes, ni ExtractoProducto, ni
+  cliente/pedido ficticio. `dbo.RepartoEnviosInternos` (`Scripts/RepartoEnviosInternos.sql`, que además amplía la CHECK de TipoCodigo de
+  RepartoBultosMovimientos con 'EI'; sin él, endpoints 503 y el reparto como antes). Bultos `EI{id}-{n}` con su historia en RepartoBultosMovimientos
+  (TipoCodigo EI, EnvioId = la parada de entrega). Estado guardado Pendiente/Entregado/Anulado; EnCamino se deduce (algún bulto movido).
+- LAS REGLAS (puras) `ReglasEnviosInternos` (`EnviosInternosReparto.cs`): sedes ALG/REI/ALC distintas, 1..50 bultos, descripción ≤200; paradas con EnvioId
+  ≤ −1.000.000.000 (entrega −(1e9+2·id), recogida −(1e9+2·id+1); las de reposición, −Id, quedan por encima): RECOGIDA en el origen si no es Algete mientras
+  quede algún bulto allí (de nadie hasta que alguien recoge uno), ENTREGA en el destino mientras esté vivo; `DondeEsta` por bulto; minutos de parada = reposición.
+- Oficina (`ServicioEnviosInternos`): `POST api/RepartoPropio/EnviosInternos` {Origen, Destino, Descripcion, Bultos, Impresora?} → 201 {Id, Origen, Destino,
+  Descripcion, Bultos, Estado, Codigos, EtiquetasImpresas} (etiqueta 4x6 de la plantilla del reparto propio, «ENVÍO INTERNO», en la impresora pedida o la
+  ImpresoraAgencia del usuario; si no se puede, se crea igual); `POST …/{id}/ImprimirEtiquetas` {Impresora?}; `DELETE …/{id}?motivo=` (409 EN_FURGONETA
+  con el cuerpo del candado; rastro `EnvioInternoAnulado`). Alta, impresión y anulación: Almacén, Dirección, Informática. `GET …/EnviosInternos?dias=7&soloVivos=true`
+  (grupos del reparto) con `BultosDetalle` (Situacion SinCargar/EnFurgoneta/Entregado/Descargado y Texto).
+- Reparto (`ServicioRepartoPropio.EnviosInternos.cs`): GET Envios las saca con `TipoParada` «EnvioInterno», `EsEnvioInterno`, `CodigoDocumento` EI{id},
+  `FaseEnvioInterno` Recogida/Entrega, `SedeOrigen`, `SedeDestino`, `SedeParada`, `DescripcionEnvioInterno` y la dirección/coordenadas de la sede. GET Bulto/EI…:
+  la de recogida si el bulto sigue en el origen, si no la de entrega. Cargar (origen Algete o bulto descargado), Recoger (origen tienda), Descargar y Entregar
+  los de siempre con el código EI; Entregar exige el nombre de quien lo recibe (sin cobro, firma ni DNI), BultosEntregados opcional, «solo lo cargado»
+  (`ReglaCargaObligatoria`) y entrega incompleta con el núcleo común `EntregaIncompletaReparto.EvaluarCodigos`. Sin Incidencia (400).
+
 ### Fin previsto de ruta del reparto propio (NestoAPI#881, 19/11/26)
 - LA REGLA de los minutos por parada: `MinutosParadaReparto` (pura, `TiemposParadaReparto.cs`): envío y nota de entrega 15, nota de cobro 10,
   recogida 15, reposición 25; con servicio técnico, los tecleados en la nota, si no los del tipo, si no 60. Misma dirección (mismo cliente+contacto

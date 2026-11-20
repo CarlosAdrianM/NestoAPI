@@ -157,7 +157,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 Tipo = TiposMovimientoBulto.RECOGIDO,
                 Origen = OrigenesMovimientoBulto.REPARTIDOR
             };
-            if (codigo.TipoCodigo == CodigoBultoFurgoneta.NR)
+            if (codigo.TipoCodigo == CodigoBultoFurgoneta.EI)
+            {
+                ResultadoReparto<ResultadoMovimientoBultoDTO> malInterno = await PrepararRecogidaEnvioInterno(codigo, nuevo).ConfigureAwait(false);
+                if (malInterno != null)
+                {
+                    return malInterno;
+                }
+            }
+            else if (codigo.TipoCodigo == CodigoBultoFurgoneta.NR)
             {
                 ResolucionCodigoNota nota = paradas.Notas == null ? null : await paradas.Notas.Resolver(codigo.Codigo).ConfigureAwait(false);
                 if (nota == null || !nota.EsNota || !nota.EsRecogida)

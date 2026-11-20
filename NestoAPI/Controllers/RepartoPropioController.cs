@@ -527,6 +527,81 @@ namespace NestoAPI.Controllers
             return Responder(await servicio.ReprogramarRecogida(pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
+        // ---------------------------------------------------------------- sugerencia 1277: envíos internos entre sedes
+
+        /// <summary>Sugerencia 1277: el servicio de los envíos internos (sustituible en los tests).</summary>
+        internal ServicioEnviosInternos ServicioEnviosInternos { get; set; }
+
+        private ServicioEnviosInternos EnviosInternos()
+            => ServicioEnviosInternos ?? new ServicioEnviosInternos(new RepositorioEnviosInternosSql(db), new RepositorioFurgoneta(db),
+                new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows(),
+                usuario => Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco.ImpresoraDelUsuario(new LectorParametrosUsuario(),
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, ImpresorasAgencia.Parametro(Constantes.Agencias.AGENCIA_REPARTO_PROPIO)));
+
+        private IHttpActionResult ProhibidoEnviosInternos()
+            => Content(HttpStatusCode.Forbidden, new { Message = ReglasEnviosInternos.MENSAJE_SIN_PERMISO });
+
+        // POST api/RepartoPropio/EnviosInternos { Origen, Destino, Descripcion, Bultos, Impresora? }
+        /// <summary>
+        /// Sugerencia 1277: un envío interno entre sedes (no es stock: ni almacenes ni ExtractoProducto). Imprime una etiqueta por bulto
+        /// (EI{id}-{n}) en la impresora pedida o la de agencia del usuario; si no se puede, se crea igual y EtiquetasImpresas = false.
+        /// 201 { Id, Origen, Destino, Descripcion, Bultos, Estado, Codigos, EtiquetasImpresas }; 400; 403 (Almacén, Dirección, Informática);
+        /// 503 sin Scripts/RepartoEnviosInternos.sql.
+        /// </summary>
+        [HttpPost]
+        [Route("EnviosInternos")]
+        [ResponseType(typeof(EnvioInternoCreadoDTO))]
+        public async Task<IHttpActionResult> CrearEnvioInterno([FromBody] CrearEnvioInternoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeGestionarEnviosInternos(User))
+            {
+                return ProhibidoEnviosInternos();
+            }
+            ResultadoReparto<EnvioInternoCreadoDTO> resultado = await EnviosInternos().Crear(peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            return resultado.Tipo == TipoResultadoReparto.Ok ? Content(HttpStatusCode.Created, resultado.Contenido) : Responder(resultado);
+        }
+
+        // POST api/RepartoPropio/EnviosInternos/12/ImprimirEtiquetas { Impresora? }
+        [HttpPost]
+        [Route("EnviosInternos/{id:int}/ImprimirEtiquetas")]
+        [ResponseType(typeof(EtiquetasEnvioInternoDTO))]
+        public async Task<IHttpActionResult> ImprimirEtiquetasEnvioInterno(int id, [FromBody] ImprimirEtiquetasEnvioInternoDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeGestionarEnviosInternos(User))
+            {
+                return ProhibidoEnviosInternos();
+            }
+            return Responder(await EnviosInternos().ImprimirEtiquetas(id, peticion?.Impresora, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
+        // GET api/RepartoPropio/EnviosInternos?dias=7&soloVivos=true
+        /// <summary>Sugerencia 1277: los envíos internos con su estado y, por bulto, dónde está. Grupos del reparto.</summary>
+        [HttpGet]
+        [Route("EnviosInternos")]
+        [ResponseType(typeof(List<EnvioInternoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosInternos(int dias = 7, bool soloVivos = true)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await EnviosInternos().Lista(dias, soloVivos));
+        }
+
+        // DELETE api/RepartoPropio/EnviosInternos/12?motivo=
+        /// <summary>Sugerencia 1277: anula un envío interno vivo. 409 EN_FURGONETA si algún bulto va en una furgoneta; 409 si ya está entregado.</summary>
+        [HttpDelete]
+        [Route("EnviosInternos/{id:int}")]
+        [ResponseType(typeof(EnvioInternoDTO))]
+        public async Task<IHttpActionResult> AnularEnvioInterno(int id, string motivo = null)
+        {
+            if (!PermisosRepartoPropio.PuedeGestionarEnviosInternos(User))
+            {
+                return ProhibidoEnviosInternos();
+            }
+            return Responder(await EnviosInternos().Anular(id, motivo, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI")));
+        }
+
         // GET api/RepartoPropio/Envios/123456/PruebaEntrega
         [HttpGet]
         [Route("Envios/{envioId:int}/PruebaEntrega")]
@@ -616,6 +691,11 @@ namespace NestoAPI.Controllers
                 case TipoResultadoReparto.NoEncontrado:
                     return Content(HttpStatusCode.NotFound, new { Message = resultado.Mensaje });
                 case TipoResultadoReparto.Conflicto:
+                    if (resultado.Codigo == CandadoFurgonetaEnvio.CODIGO_EN_FURGONETA && resultado.Detalles is BultosEnFurgoneta furgoneta)
+                    {
+                        // El mismo cuerpo que el candado de los envíos (punto 1): { error, Message, Codigo, Repartidor, Desde }
+                        return Content(HttpStatusCode.Conflict, CandadoFurgonetaEnvio.Cuerpo409(resultado.Mensaje, furgoneta));
+                    }
                     if (resultado.Codigo != null)
                     {
                         // Ariadna#63: el formato de GlobalExceptionFilter ({ error: { code, message, details } }), y Message como siempre.
@@ -706,6 +786,9 @@ namespace NestoAPI.Controllers
         };
 
         public static bool PuedeVerLecturasRechazadas(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_LECTURAS_RECHAZADAS);
+
+        /// <summary>Sugerencia 1277: dar de alta, imprimir y anular envíos internos: Almacén, Dirección e Informática.</summary>
+        public static bool PuedeGestionarEnviosInternos(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_LECTURAS_RECHAZADAS);
 
         private static bool EnAlguno(System.Security.Principal.IPrincipal usuario, IEnumerable<string> grupos)
             => usuario != null && grupos.Any(g => usuario.IsInRoleSinDominio(g));

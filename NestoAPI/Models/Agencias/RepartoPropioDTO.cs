@@ -75,6 +75,16 @@ namespace NestoAPI.Models.Agencias
         /// al entregarla no se leen bultos; el cobro liquida <see cref="EfectosCobro"/>.
         /// </summary>
         public bool EsNotaCobro => TipoParada == TiposParadaReparto.NOTA_COBRO;
+        /// <summary>Sugerencia 1277: la parada es de un envío interno entre sedes (EI{id}).</summary>
+        public bool EsEnvioInterno => TipoParada == TiposParadaReparto.ENVIO_INTERNO;
+        /// <summary>Sugerencia 1277 (solo envíos internos): «Recogida» (en el origen, si no es Algete) o «Entrega» (en el destino).</summary>
+        public string FaseEnvioInterno { get; set; }
+        /// <summary>Sugerencia 1277 (solo envíos internos): ALG, REI o ALC.</summary>
+        public string SedeOrigen { get; set; }
+        public string SedeDestino { get; set; }
+        /// <summary>Sugerencia 1277: la sede de ESTA parada (el origen en la recogida, el destino en la entrega).</summary>
+        public string SedeParada { get; set; }
+        public string DescripcionEnvioInterno { get; set; }
         /// <summary>
         /// NestoAPI#786: en las de cobro, los efectos (ExtractoCliente) que liquida el cobro, en su orden y con lo pendiente de ahora; vacía
         /// si la nota es solo por importe. Null en las demás paradas.
@@ -160,6 +170,87 @@ namespace NestoAPI.Models.Agencias
         /// <summary>NestoAPI#786: nota de solo cobro (NC{pedido}).</summary>
         public const string NOTA_COBRO = "NotaCobro";
         public const string REPOSICION = "Reposicion";
+        /// <summary>Sugerencia 1277: envío interno entre sedes (EI{id}).</summary>
+        public const string ENVIO_INTERNO = "EnvioInterno";
+    }
+
+    /// <summary>Sugerencia 1277: las fases de una parada de envío interno.</summary>
+    public static class FasesEnvioInterno
+    {
+        public const string RECOGIDA = "Recogida";
+        public const string ENTREGA = "Entrega";
+    }
+
+    /// <summary>Sugerencia 1277: POST api/RepartoPropio/EnviosInternos.</summary>
+    public class CrearEnvioInternoDTO
+    {
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        public string Descripcion { get; set; }
+        public int Bultos { get; set; }
+        /// <summary>Opcional: sin ella, la de etiquetas de agencia del usuario (ImpresoraAgencia).</summary>
+        public string Impresora { get; set; }
+    }
+
+    /// <summary>Sugerencia 1277: POST api/RepartoPropio/EnviosInternos/{id}/ImprimirEtiquetas.</summary>
+    public class ImprimirEtiquetasEnvioInternoDTO
+    {
+        public string Impresora { get; set; }
+    }
+
+    /// <summary>Sugerencia 1277: la respuesta del alta (201).</summary>
+    public class EnvioInternoCreadoDTO
+    {
+        public int Id { get; set; }
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        public string Descripcion { get; set; }
+        public int Bultos { get; set; }
+        public string Estado { get; set; }
+        public System.Collections.Generic.List<string> Codigos { get; set; }
+        public bool EtiquetasImpresas { get; set; }
+    }
+
+    /// <summary>Sugerencia 1277: la respuesta de ImprimirEtiquetas.</summary>
+    public class EtiquetasEnvioInternoDTO
+    {
+        public int Id { get; set; }
+        public System.Collections.Generic.List<string> Codigos { get; set; }
+        public bool EtiquetasImpresas { get; set; }
+    }
+
+    /// <summary>Sugerencia 1277: un bulto de un envío interno y dónde está.</summary>
+    public class BultoEnvioInternoDTO
+    {
+        public string Codigo { get; set; }
+        public int Bulto { get; set; }
+        /// <summary>SinCargar, EnFurgoneta, Entregado o Descargado.</summary>
+        public string Situacion { get; set; }
+        public string Repartidor { get; set; }
+        /// <summary>«En Reina, sin cargar», «En la furgoneta de Andre»…</summary>
+        public string Texto { get; set; }
+        public DateTime? Desde { get; set; }
+    }
+
+    /// <summary>Sugerencia 1277: un envío interno de GET api/RepartoPropio/EnviosInternos (y la respuesta del DELETE).</summary>
+    public class EnvioInternoDTO
+    {
+        public int Id { get; set; }
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        public string Descripcion { get; set; }
+        public int Bultos { get; set; }
+        /// <summary>Pendiente, EnCamino, Entregado o Anulado.</summary>
+        public string Estado { get; set; }
+        public string Usuario { get; set; }
+        public DateTime FechaAlta { get; set; }
+        public string NombreReceptor { get; set; }
+        public string UsuarioRecepcion { get; set; }
+        public DateTime? FechaRecepcion { get; set; }
+        /// <summary>Con una entrega incompleta, qué faltó.</summary>
+        public string DetalleEntrega { get; set; }
+        public System.Collections.Generic.List<string> Codigos { get; set; }
+        public System.Collections.Generic.List<BultoEnvioInternoDTO> BultosDetalle { get; set; }
     }
 
     /// <summary>
