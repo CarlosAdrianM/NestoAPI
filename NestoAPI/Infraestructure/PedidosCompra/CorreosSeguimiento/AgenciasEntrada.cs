@@ -357,7 +357,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         {
             new AgenciaEntradaGls(), new AgenciaEntradaSeur(), new AgenciaEntradaMrw(), new AgenciaEntradaDhl(), new AgenciaEntradaUps(),
             new AgenciaEntradaCorreosExpress(), new AgenciaEntradaCorreos(), new AgenciaEntradaCttExpress(), new AgenciaEntradaNacex(),
-            new AgenciaEntradaTntFedex(), new AgenciaEntradaDachser(), new AgenciaEntradaDsv(), new AgenciaEntradaTipsa(),
+            new AgenciaEntradaTntFedex(), new AgenciaEntradaDachser(), new AgenciaEntradaTipsa(),
             new AgenciaEntradaEnvialia(), new AgenciaEntradaZeleris(), new AgenciaEntradaRedurRhenus(), new AgenciaEntradaXpoGxo(),
             new AgenciaEntradaSchenker(), new AgenciaEntradaDpd(), new AgenciaEntradaSending(), new AgenciaEntradaPaack(),
             new AgenciaEntradaPalletways(), new AgenciaEntradaMbe()
@@ -757,14 +757,6 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected override string[] ParametrosCodigo => new[] { "q", "search", "trackingnumber", "reference" };
     }
 
-    public class AgenciaEntradaDsv : AgenciaEntradaPorPatrones
-    {
-        public override string Nombre => "DSV";
-        public override int HorasHastaEntrega => HORAS_GRUPAJE;
-        protected override string[] Dominios => new[] { "dsv.com", "mydsv.com" };
-        protected override string[] ParametrosCodigo => new[] { "trackingnumber", "ref", "reference", "shipmentid" };
-    }
-
     public class AgenciaEntradaTipsa : AgenciaEntradaPorPatrones
     {
         public override string Nombre => "TIPSA";
@@ -809,9 +801,94 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>NestoAPI#857g (Carlos 19/11/26): 3 días LABORABLES (el aviso del 18/11 llegó el 23/11), no 48 h naturales.</summary>
         public override int HorasHastaEntrega => HORAS_GRUPAJE_LABORABLES;
         public override bool PlazoEnLaborables => true;
-        protected override string[] Dominios => new[] { "dbschenker.com", "schenker.es", "dbschenker.es" };
-        protected override string[] ParametrosCodigo => new[] { "refnumber", "reference" };
-        public override string[] NombresEnTexto => new[] { "DB Schenker", "DBSchenker", "Schenker" };
+        // 20/11/26 (Carlos 19/11: «unir DSV con DB Schenker»): Schenker es ya DSV y un mismo envío manda correos desde los dos
+        // (el aviso «ha generado un nuevo envío» de dbschenker y los de estado de noreply@mydsv.dsv.com). Una sola agencia: así
+        // comparten código y caen en el mismo envío. No hay clase DSV aparte.
+        protected override string[] Dominios => new[] { "dbschenker.com", "schenker.es", "dbschenker.es", "dsv.com", "mydsv.com" };
+        protected override string[] ParametrosCodigo => new[] { "refnumber", "reference", "trackingnumber", "ref", "shipmentid" };
+        public override string[] NombresEnTexto => new[] { "DB Schenker", "DBSchenker", "Schenker", "DSV" };
+
+        /// <summary>
+        /// Su número de envío en España: «ES» + las tres letras de la delegación de salida + 9 cifras (ESMNR264773770, ESVIC262013536).
+        /// Va en el texto («con número ESVIC262013536») o en el asunto («Nº deTracking Stt : ESMNR264773770»), no siempre en un enlace.
+        /// </summary>
+        private static readonly Regex NumeroEnvio = new Regex(@"(?<![A-Za-z0-9])(ES[A-Z]{3}\d{9})(?![A-Za-z0-9])", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Solo en un correo que ya se sabe que es suyo (remitente o enlace de sus dominios): el formato no se usa para RECONOCER la
+        /// agencia, porque el aviso de salida de un proveedor que lleva ese número sigue su propio camino (formato del proveedor).
+        /// </summary>
+        protected override IEnumerable<string> CodigosEnTexto(CorreoCompras correo)
+        {
+            string texto = (correo.Asunto ?? string.Empty) + "\n" + correo.Texto;
+            var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match m in NumeroEnvio.Matches(texto))
+            {
+                if (vistos.Add(m.Groups[1].Value))
+                {
+                    yield return m.Groups[1].Value;
+                }
+            }
+            if (vistos.Count > 0)
+            {
+                yield break; // con su número, lo demás del texto («el número: …») no es otro código
+            }
+            foreach (string codigo in base.CodigosEnTexto(correo))
+            {
+                yield return codigo;
+            }
+        }
+
+        // Sobre el texto normalizado (minúsculas y sin tildes): «Estado del Envío: DOT (Salido a reparto)»
+        private static readonly Regex EstadoDelEnvio = new Regex(@"estado\s+del\s+envio\s*:?\s*([a-z]{3})\s*\(", RegexOptions.Compiled);
+        private static readonly Regex NuevoEnvio = new Regex(@"ha\s+generado\s+un\s+nuevo\s+envio|has\s+created\s+a\s+new\s+order", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Lo que dicen SUS correos. Los de estado de DSV traen una sigla: ENM (llegado a la delegación) → en camino; DOT (salido a
+        /// reparto) → en reparto; DLV (entregado) y POD (prueba de entrega) → entregado; otra sigla → en camino. El aviso «el remitente
+        /// ha generado un nuevo envío» → en camino. Ninguno trae fecha: la pone el plazo (72 h laborables).
+        /// </summary>
+        public override EntregaAgencia LeerEntrega(CorreoCompras correo)
+        {
+            if (!EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            string t = ExtractorEntregaEstimada.Normalizar((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
+            EstadoEnvioAgencia? estado = null;
+            foreach (Match m in EstadoDelEnvio.Matches(t))
+            {
+                EstadoEnvioAgencia este = EstadoDeLaSigla(m.Groups[1].Value);
+                if (!estado.HasValue || este > estado.Value)
+                {
+                    estado = este; // si un correo trae varios, el más avanzado
+                }
+            }
+            if (!estado.HasValue && NuevoEnvio.IsMatch(t))
+            {
+                estado = EstadoEnvioAgencia.EnCamino;
+            }
+            if (estado == EstadoEnvioAgencia.Entregado)
+            {
+                return new EntregaAgencia { Estado = estado };
+            }
+            EntregaEstimada entrega = ExtractorEntregaEstimada.Extraer(correo.Texto, correo.Recibido);
+            return estado.HasValue || entrega != null ? new EntregaAgencia { Entrega = entrega, Estado = estado } : null;
+        }
+
+        internal static EstadoEnvioAgencia EstadoDeLaSigla(string sigla)
+        {
+            switch ((sigla ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "DLV":
+                case "POD":
+                    return EstadoEnvioAgencia.Entregado;
+                case "DOT":
+                    return EstadoEnvioAgencia.EnReparto;
+                default:
+                    return EstadoEnvioAgencia.EnCamino;
+            }
+        }
 
         /// <summary>
         /// NestoAPI#857f: el seguimiento público (Schenker es ya DSV). Su web NO se deja leer desde el servidor (429) y no se intenta: aquí

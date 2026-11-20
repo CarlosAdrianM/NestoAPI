@@ -111,7 +111,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         [DataRow("https://www.fedex.com/fedextrack/?trknbr=771234567890", "TNT/FedEx", "771234567890")]
         [DataRow("https://www.tnt.com/express/es_es/site/herramientas-envio/seguimiento.html?searchType=con&cons=323456789", "TNT/FedEx", "323456789")]
         [DataRow("https://elogistics.dachser.com/shp2/?l=es&q=DE1234567890", "Dachser", "DE1234567890")]
-        [DataRow("https://www.dsv.com/es-es/herramientas/rastreo-de-envios?trackingNumber=DSV7712345", "DSV", "DSV7712345")]
+        [DataRow("https://www.dsv.com/es-es/herramientas/rastreo-de-envios?trackingNumber=DSV7712345", "DB Schenker", "DSV7712345")]
         [DataRow("https://www.tip-sa.com/es/seguimiento?ref=280012345678", "TIPSA", "280012345678")]
         [DataRow("https://www.envialia.com/seguimiento/?nexp=0012345678", "Envialia", "0012345678")]
         [DataRow("https://www.zeleris.com/seguimiento_envio.aspx?id_seguimiento=ZL1234567", "Zeleris", "ZL1234567")]

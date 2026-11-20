@@ -268,6 +268,54 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
+        public void Schenker_NuevoEnvio_CasoReal_ElNumeroEstaEnElTexto()
+        {
+            // Carlos 20/11/26: el aviso de Schenker no trae el código en ningún enlace y el remitente del paquete viene en blanco.
+            const string cuerpo = "Apreciado cliente,\nEl remitente\nha generado un nuevo envío para usted con número ESVIC262013536 Puede seguir el estado del envio en el siguiente link:\n"
+                + "http://www.dbschenker.es/log-es-es/start/\nIntroduciendo en la casilla de Quick Tracking el número: ESVIC262013536\n\n"
+                + "Dear customer,\nThe shipper\nhas created a new order for you with number ESVIC262013536 You can follow the status of the shipment on the following link:\n"
+                + "https://www.dbschenker.com/global\nEntering the number ESVIC262013536 in the box Tracking ID";
+
+            AnalisisCorreoSeguimiento a = Analizar(Correo("noreply@dbschenker.com", "Nuevo envío", cuerpo, new DateTime(2026, 11, 20, 8, 0, 0), html: false));
+
+            Assert.IsTrue(a.Guardar);
+            Assert.AreEqual("DB Schenker", a.Agencia);
+            Assert.AreEqual("ESVIC262013536", a.Seguimientos.First().Codigo);
+            Assert.AreEqual(EstadoEnvioAgencia.EnCamino, a.EstadoEnvio);
+        }
+
+        [DataTestMethod]
+        [DataRow("ENM (Llegado)", EstadoEnvioAgencia.EnCamino)]
+        [DataRow("DOT (Salido a reparto)", EstadoEnvioAgencia.EnReparto)]
+        [DataRow("DLV (Entregado)", EstadoEnvioAgencia.Entregado)]
+        [DataRow("POD (ePOD disponible)", EstadoEnvioAgencia.Entregado)]
+        public void Schenker_CorreosDeEstadoDeDsv_CasoReal_MismaAgenciaCodigoYEstado(string estado, EstadoEnvioAgencia esperado)
+        {
+            // Los de noreply@mydsv.dsv.com del 19/11/26 se guardaron como «DSV», sin código ni estado, y no se unieron al aviso
+            // del proveedor (DB Schenker, ESMNR264773770).
+            string cuerpo = "Estimado Cliente,\nA continuación encontrará el estado de sus envíos\nEstado del Envío:\n" + estado
+                + "\nPara obtener información general, haga clic en el siguiente enlace\n"
+                + "https://mydsv.dsv.com/app/tracking-public/?refNumber=ESMNR264773770&refType=Stt\nSaludos,\nSu Equipo de eServices";
+
+            AnalisisCorreoSeguimiento a = Analizar(Correo("noreply@mydsv.dsv.com", "Nº deTracking Stt : ESMNR264773770 (Notificación) - Current Status",
+                cuerpo, new DateTime(2026, 11, 19, 16, 40, 0), html: false));
+
+            Assert.IsTrue(a.Guardar);
+            Assert.AreEqual("DB Schenker", a.Agencia);
+            Assert.AreEqual("ESMNR264773770", a.Seguimientos.First().Codigo);
+            Assert.AreEqual(esperado, a.EstadoEnvio);
+        }
+
+        [TestMethod]
+        public void Schenker_UnIbanOUnaPalabra_NoSonSuNumeroDeEnvio()
+        {
+            AnalisisCorreoSeguimiento a = Analizar(Correo("administracion@ejemplo-proveedor.es", "Factura",
+                "Puede pagar en la cuenta ES7621000418401234567891. Referencia ESPECIAL123456789.", new DateTime(2026, 11, 20, 8, 0, 0), html: false));
+
+            Assert.AreNotEqual("DB Schenker", a.Agencia);
+        }
+
+        [TestMethod]
         public void Enlace_LoComponeSoloLaClaseDeSuAgencia()
         {
             Assert.AreEqual(URL_DSV, EnlaceSeguimientoAgencia.De("DB Schenker", "ESMNR264773770"));
