@@ -276,7 +276,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
                 + "Dear customer,\nThe shipper\nhas created a new order for you with number ESVIC262013536 You can follow the status of the shipment on the following link:\n"
                 + "https://www.dbschenker.com/global\nEntering the number ESVIC262013536 in the box Tracking ID";
 
-            AnalisisCorreoSeguimiento a = Analizar(Correo("noreply@dbschenker.com", "Nuevo envío", cuerpo, new DateTime(2026, 11, 20, 8, 0, 0), html: false));
+            AnalisisCorreoSeguimiento a = Analizar(Correo("gestor_aut@schenker.com", "Nuevo envío DB Schenker/New order DB Schenker", cuerpo, new DateTime(2026, 11, 20, 8, 0, 0), html: false));
 
             Assert.IsTrue(a.Guardar);
             Assert.AreEqual("DB Schenker", a.Agencia);

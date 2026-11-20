@@ -804,7 +804,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         // 20/11/26 (Carlos 19/11: «unir DSV con DB Schenker»): Schenker es ya DSV y un mismo envío manda correos desde los dos
         // (el aviso «ha generado un nuevo envío» de dbschenker y los de estado de noreply@mydsv.dsv.com). Una sola agencia: así
         // comparten código y caen en el mismo envío. No hay clase DSV aparte.
-        protected override string[] Dominios => new[] { "dbschenker.com", "schenker.es", "dbschenker.es", "dsv.com", "mydsv.com" };
+        protected override string[] Dominios => new[] { "dbschenker.com", "schenker.com", "schenker.es", "dbschenker.es", "dsv.com", "mydsv.com" };
         protected override string[] ParametrosCodigo => new[] { "refnumber", "reference", "trackingnumber", "ref", "shipmentid" };
         public override string[] NombresEnTexto => new[] { "DB Schenker", "DBSchenker", "Schenker", "DSV" };
 
