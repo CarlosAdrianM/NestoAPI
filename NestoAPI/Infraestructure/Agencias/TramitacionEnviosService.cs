@@ -819,7 +819,8 @@ namespace NestoAPI.Infraestructure.Agencias
             }
 
             // Lo que más falla al contabilizar se mira ANTES de llamar: con la agencia ya cambiada no hay vuelta atrás.
-            if (datos.Reembolso != envio.Reembolso && string.IsNullOrWhiteSpace(envio.AgenciasTransporte?.CuentaReembolsos))
+            if (datos.Reembolso != envio.Reembolso && !RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(envio.Agencia)
+                && string.IsNullOrWhiteSpace(envio.AgenciasTransporte?.CuentaReembolsos))
             {
                 throw new NestoBusinessException("Esta agencia no tiene establecida una cuenta de reembolsos. No se puede contabilizar.");
             }
@@ -1144,12 +1145,19 @@ namespace NestoAPI.Infraestructure.Agencias
         /// anterior si estaba liquidado, se deshace (debe, asiento 1) y se rehace (haber, asiento 2)
         /// en el diario _Reembolso. Devuelve el asiento (0 si no había nada que apuntar).
         /// </summary>
-        private async Task<int> ContabilizarModificacionReembolsoAsync(EnviosAgencia envio, decimal importeAnterior, decimal importeNuevo, string usuario)
+        internal async Task<int> ContabilizarModificacionReembolsoAsync(EnviosAgencia envio, decimal importeAnterior, decimal importeNuevo, string usuario)
         {
             // NestoAPI#742: si el reembolso está diferido y aún sin contabilizar, no hay nada que deshacer ni rehacer: basta con
             // el campo, y al entregarse se contabiliza el importe nuevo. Así un devuelto (Sugerencia 544) se queda sin reembolso
             // sin un solo apunte (decisión 2 de Carlos: los devueltos no se contabilizan nunca).
             if (await ReembolsoPendienteDeContabilizarAsync(envio.Numero).ConfigureAwait(false))
+            {
+                return 0;
+            }
+            // 20/11/26 (envío 251237, Alfredo): el reembolso del reparto propio no se contabiliza ni al tramitar ni al cambiarlo; lo
+            // cobra nuestro repartidor y se apunta al entregar contra su caja (#739). La agencia 14 no tiene CuentaReembolsos y
+            // cambiar el reembolso de un envío suyo ya tramitado daba 400 «no tiene establecida una cuenta de reembolsos».
+            if (RepartoPropio.ReembolsoRepartoPropio.EsAgenciaRepartoPropio(envio.Agencia))
             {
                 return 0;
             }

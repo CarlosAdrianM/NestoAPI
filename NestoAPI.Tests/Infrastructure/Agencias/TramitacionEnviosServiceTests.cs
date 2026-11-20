@@ -300,6 +300,37 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>._, A<List<PreContabilidad>>._)).MustNotHaveHappened();
         }
 
+        [TestMethod]
+        public async Task ContabilizarModificacionReembolso_RepartoPropioSinCuentaDeReembolsos_NoApuntaNiFalla()
+        {
+            // Regresión 20/11/26 (envío 251237, Alfredo): cambiar el reembolso de un envío del reparto propio ya tramitado daba 400
+            // «Esta agencia no tiene establecida una cuenta de reembolsos». El de la 14 se apunta al entregar, contra la caja.
+            NVEntities db = A.Fake<NVEntities>();
+            IContabilidadService contabilidad = A.Fake<IContabilidadService>();
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, contabilidad, () => HOY);
+            EnviosAgencia envio = EnvioConReembolso();
+            envio.Agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = 14, Nombre = "Reparto propio", CuentaReembolsos = null };
+
+            int asiento = await servicio.ContabilizarModificacionReembolsoAsync(envio, 0M, 84.80M, USUARIO);
+
+            Assert.AreEqual(0, asiento);
+            A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>._, A<List<PreContabilidad>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ContabilizarModificacionReembolso_AgenciaDeFueraSinCuentaDeReembolsos_SigueDandoElError()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, A.Fake<IContabilidadService>(), () => HOY);
+            EnviosAgencia envio = EnvioConReembolso();
+            envio.Agencia = 1;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = 1, Nombre = "ASM", CuentaReembolsos = null };
+
+            _ = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => servicio.ContabilizarModificacionReembolsoAsync(envio, 0M, 84.80M, USUARIO));
+        }
+
         // ===== Elección del movimiento a liquidar =====
 
         [TestMethod]
