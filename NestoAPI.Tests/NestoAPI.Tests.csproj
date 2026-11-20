@@ -329,6 +329,7 @@
     <Compile Include="Infraestructure\PedidosVenta\VersionPedidoVentaTests.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AmpliacionPedidoEnPreparacionTests.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AutorizacionesPedidoTests.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\InformeRepartoTests.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorFechaEntregaTests.cs" />
     <Compile Include="Controllers\PedidosVentaPortesTests.cs" />
     <Compile Include="Controllers\PlantillaVentasControllerTests.cs" />

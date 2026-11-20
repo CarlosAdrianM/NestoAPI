@@ -409,6 +409,13 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   EnviosAgencias (adjunta la entidad: compara con lo registrado); también el PUT del servicio técnico de una nota. Punto único
   `AvisoParadasReparto.Avisar` → `AgrupadorAvisosParadas`: UN aviso tras 3 s sin más (máx. 20 s), en segundo plano, nunca lanza. Las paradas de
   reposición solo las crea/cierra el repartidor (Carga/Entrega): sin aviso nuevo. Lo que Nesto escriba en EnviosAgencia por su cuenta no avisa.
+- **Informe por repartidor (corte 4, 20/11/26)**: `GET api/RepartoPropio/Informe?desde=&hasta=&repartidor=&soloMio=` (`InformeRepartoController`; Almacén,
+  Dirección e Informática; sin fechas, los 7 últimos días; ≤ 366 días; sin `RepartoParadasTiempos`, 503). Solo lectura en CUATRO consultas (`RepositorioInformeReparto`:
+  paradas del corte 3, movimientos de bultos agregados por usuario y día, «Terminar jornada» y la PRIMERA estimación del día; las tres últimas opcionales → `Aviso`).
+  LA REGLA pura `CalculoInformeReparto` (`InformeReparto.cs`): paradas hechas = entregadas + recogidas; incidencias aparte; horas = primera carga (o primer
+  movimiento) → último movimiento (bultos, paradas, jornada), sin descontar la comida; horas en ruta = primera → última parada cerrada; dinero = efectivo y
+  tarjeta (enlace/tarjeta) de los reembolsos + otros cobros (notas de cobro); minutos de parada reales = fin − llegada (0..120) frente a `MinutosPrevistos`.
+  Totales y medias por día de la semana (por repartidor y de todos) y desglose por CP y día. Km null (corte 5). Sin PDF/Excel, ni cobros de deuda (POST Cobros: no están en estas tablas).
 
 ### Notificaciones urgentes (NestoAPI#775, 31/10/26)
 - La urgencia va **por tipo**, en código: lista blanca `NotificacionesUrgentes.TIPOS` (`Infraestructure/Notificaciones/NotificacionesUrgentes.cs`).

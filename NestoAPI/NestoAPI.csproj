@@ -741,6 +741,8 @@
     <Compile Include="Controllers\PedidosVentaConsultaReembolsoController.cs" />
     <Compile Include="Controllers\PedidosVentaAmpliacionesController.cs" />
     <Compile Include="Controllers\PedidosVentaAutorizacionesController.cs" />
+    <Compile Include="Controllers\InformeRepartoController.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\InformeReparto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\AutorizacionesPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\AvisosAutorizacionPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\ReglaOmitirValidacionPedido.cs" />
