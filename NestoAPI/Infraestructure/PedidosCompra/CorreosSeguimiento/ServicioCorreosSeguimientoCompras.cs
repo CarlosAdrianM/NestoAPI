@@ -311,6 +311,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 asignacion = ReglaPedidoProveedor.Completar(asignacion, analisis.ReferenciasRemitente, confirmaciones, pedidos);
             }
+            // 20/11/26: el aviso de salida del proveedor sin su número de pedido (Weelko) se enlaza por la fecha de la compra
+            if (!analisis.EsSalidaNuestra && analisis.FechaCompraProveedor.HasValue)
+            {
+                asignacion = ReglaPedidoProveedor.CompletarPorFechaCompra(asignacion, analisis.FechaCompraProveedor, correo.RemitenteDireccion,
+                    confirmaciones, pedidos);
+            }
             CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
             fila.DisponibleEstimado = DisponibleEstimado(analisis);
             fila.AvisoProveedor = analisis.AvisoProveedor;

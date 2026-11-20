@@ -97,6 +97,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public ConfirmacionPedidoProveedor Confirmacion { get; set; }
         /// <summary>NestoAPI#857g: las referencias del remitente que da la agencia («Ref.: SO252231WKOUT77626», MBE). No se guardan.</summary>
         public List<string> ReferenciasRemitente { get; set; } = new List<string>();
+        /// <summary>
+        /// 20/11/26: cuándo se hizo la compra en el proveedor, según su aviso de salida (<see cref="IFormatoAvisoSalida.FechaCompra"/>). No se
+        /// guarda: enlaza el aviso con la confirmación de ese pedido (<see cref="ReglaPedidoProveedor.CompletarPorFechaCompra"/>).
+        /// </summary>
+        public DateTime? FechaCompraProveedor { get; set; }
     }
 
     /// <summary>
@@ -185,6 +190,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 if (!FormatosAvisoSalida.EsGenerico(formato))
                 {
                     analisis.FormatoAviso = formato.Nombre;
+                    // 20/11/26 (Weelko, «Albarán WK/OUT/78316»): un aviso de salida que reconoce un formato PROPIO es un aviso del
+                    // proveedor aunque no traiga código ni enlace de agencia y su remitente no esté marcado: se guarda.
+                    analisis.AvisoProveedor = true;
+                    analisis.FechaCompraProveedor = formato.FechaCompra((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
                     var codigos = formato.Codigos((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
                     var delFormato = new List<SeguimientoCorreo>();
                     foreach (string codigo in codigos)
@@ -218,7 +227,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     }
                 }
             }
-            analisis.Guardar = analisis.Seguimientos.Any() || analisis.RemitenteMarcado != null || analisis.GuardadoPorNoticiaDeAgencia;
+            analisis.Guardar = analisis.Seguimientos.Any() || analisis.RemitenteMarcado != null || analisis.GuardadoPorNoticiaDeAgencia
+                || analisis.FormatoAviso != null;
             if (analisis.Guardar)
             {
                 analisis.Extracto = Extracto(correo, analisis.Seguimientos.FirstOrDefault());

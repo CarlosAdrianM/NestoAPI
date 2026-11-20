@@ -267,6 +267,70 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(EstadoEnvioAgencia.EnCamino, a.EstadoEnvio, "#857g: Nacex lee su estado («está en camino»)");
         }
 
+        private const string WEELKO_SALIDA = "Hola NUEVA VISION, SA ¡Su pedido está preparado y ha salido de nuestro almacén! Podrá seguir el estado de la entrega a través "
+            + "del siguiente enlace: Tracking https://b2b.weelko.com/my/orders/488740 Le informamos que en su espacio personal de la B2B ya puede consultar y descargar su "
+            + "factura electrónica. Dirección de entrega Fecha de la compra Número de pedido Referencia cliente NUEVA VISION, SA 19/11/2026 07:32:59 WK/OUT/78316 29636 "
+            + "El pedido será enviado por: TXT 2026.V2 Resumen del pedido: Producto Cantidad [F806.N] UTECH HIGH FREQUENCY UTECH HIGH FREQUENCY - HIGH FREQUENCY 2,00 "
+            + "[WKB001] HIGHTECH AIR HIGHTECH AIR - PRESSOTHERAPY MACHINE 1,00 TXT 2026.V2: Servicio de transporte 1,00 ¡Quedamos a su disposición! WEELKO BARCELONA, S.L.";
+
+        [TestMethod]
+        public void Weelko_AvisoDeSalida_CasoReal_SeGuardaSinCodigoConTxtYLaFechaDeLaCompra()
+        {
+            // Carlos 20/11/26: «Albarán WK/OUT/78316» no se guardó (ni código ni enlace de agencia) y no llegó el correo de «procesado».
+            AnalisisCorreoSeguimiento a = Analizar(Correo("noreply@weelko.com", "Albarán WK/OUT/78316", WEELKO_SALIDA, new DateTime(2026, 11, 20, 13, 3, 0)));
+
+            Assert.IsTrue(a.Guardar, "un aviso de salida con formato propio se guarda aunque no traiga código");
+            Assert.AreEqual(FormatoAvisoSalidaWeelko.NOMBRE, a.FormatoAviso);
+            Assert.IsTrue(a.AvisoProveedor);
+            Assert.IsNull(a.Confirmacion, "no es la confirmación del pedido");
+            Assert.AreEqual("TXT", a.Agencia);
+            Assert.AreEqual(48, a.HorasHastaEntrega);
+            Assert.IsFalse(a.Seguimientos.Any(s => !string.IsNullOrEmpty(s.Codigo)), "su albarán WK/OUT no es un número de seguimiento");
+            Assert.AreEqual(new DateTime(2026, 11, 19, 7, 32, 59), a.FechaCompraProveedor);
+            Assert.IsFalse(a.EsSalidaNuestra);
+        }
+
+        [TestMethod]
+        public void Weelko_AvisoDeSalida_SeEnlazaConLaConfirmacionPorLaFechaDeLaCompra()
+        {
+            var enAire = new List<PedidoCompraEnAire>
+            {
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 220181, Proveedor = "413" },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 220931, Proveedor = "413" }
+            };
+            string candidatos220931 = AsignadorPedidosCompra.Serializar(new List<CandidatoPedidoCompra>
+            {
+                new CandidatoPedidoCompra { Empresa = "1", Pedido = 220931, Proveedor = "413", Motivo = AsignadorPedidosCompra.MOTIVO_DOMINIO }
+            });
+            var confirmaciones = new List<ConfirmacionPedidoProveedorFila>
+            {
+                new ConfirmacionPedidoProveedorFila { RemitenteDireccion = "noreply@weelko.com", PedidoProveedor = "SO253360", Recibido = new DateTime(2026, 11, 19, 7, 36, 27), PedidosCandidatos = candidatos220931 },
+                // Otra compra de otro día al mismo proveedor: no cuenta
+                new ConfirmacionPedidoProveedorFila { RemitenteDireccion = "noreply@weelko.com", PedidoProveedor = "SO250001", Recibido = new DateTime(2026, 9, 7, 10, 30, 0),
+                    PedidosCandidatos = AsignadorPedidosCompra.Serializar(new List<CandidatoPedidoCompra> { new CandidatoPedidoCompra { Empresa = "1", Pedido = 220181, Proveedor = "413" } }) }
+            };
+            var porDominio = new AsignacionPedidoCompra
+            {
+                ProveedorPropuesto = "413",
+                Candidatos = enAire.Select(p => new CandidatoPedidoCompra { Empresa = "1", Pedido = p.Pedido, Proveedor = "413", Motivo = AsignadorPedidosCompra.MOTIVO_DOMINIO }).ToList()
+            };
+
+            AsignacionPedidoCompra r = ReglaPedidoProveedor.CompletarPorFechaCompra(porDominio, new DateTime(2026, 11, 19, 7, 32, 59), "noreply@weelko.com", confirmaciones, enAire);
+
+            Assert.AreEqual(1, r.Candidatos.Count, "de dos pedidos en el aire, el de la confirmación de esa compra");
+            Assert.AreEqual(220931, r.Candidatos[0].Pedido);
+            Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_PEDIDO_PROVEEDOR, r.Candidatos[0].Motivo);
+            Assert.AreSame(porDominio, ReglaPedidoProveedor.CompletarPorFechaCompra(porDominio, null, "noreply@weelko.com", confirmaciones, enAire), "sin fecha de compra, como estaba");
+            Assert.AreSame(porDominio, ReglaPedidoProveedor.CompletarPorFechaCompra(porDominio, new DateTime(2026, 11, 19, 7, 32, 59), "otro@proveedor.es", confirmaciones, enAire));
+        }
+
+        [TestMethod]
+        public void Weelko_SuConfirmacionDePedido_SigueSinSerUnAvisoDeSalida()
+        {
+            Assert.IsFalse(new FormatoAvisoSalidaWeelko().Reconoce("Pedido SO253360\nHola NUEVA VISION, S.A. Hemos recibido su pedido correctamente y lo estamos tramitando. "
+                + "Cuando su pedido salga de nuestros almacenes, recibirá un correo electrónico."));
+        }
+
         [TestMethod]
         public void Schenker_NuevoEnvio_CasoReal_ElNumeroEstaEnElTexto()
         {

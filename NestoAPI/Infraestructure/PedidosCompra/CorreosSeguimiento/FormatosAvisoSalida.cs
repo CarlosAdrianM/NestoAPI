@@ -52,6 +52,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         PedidoCompraEnAire Pedido(string texto, IEnumerable<PedidoCompraEnAire> delProveedor, IEnumerable<PedidoCompraEnAire> enAire);
         /// <summary>NestoAPI#857g: ¿es la CONFIRMACIÓN de un pedido (no una salida) con este formato? Null si no.</summary>
         ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias);
+        /// <summary>
+        /// 20/11/26: el momento en que se hizo la compra en el proveedor, si el aviso lo dice («Fecha de la compra 19/11/2026 07:32:59»).
+        /// Sirve para enlazar el aviso con la CONFIRMACIÓN de ese pedido cuando el aviso no trae su número (<see cref="ReglaPedidoProveedor"/>).
+        /// </summary>
+        DateTime? FechaCompra(string texto);
     }
 
     /// <summary>
@@ -83,6 +88,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             ExtractorAvisoSalida.Pedido(texto, delProveedor, enAire);
 
         public virtual ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias) => null;
+
+        public virtual DateTime? FechaCompra(string texto) => null;
 
         protected static void Anadir(List<string> codigos, string codigo)
         {
@@ -154,7 +161,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// NestoAPI#857g: Weelko (noreply@weelko.com; su tienda parece Odoo, pero el texto es propio: no se ha visto en otro proveedor). Hoy solo su
     /// CONFIRMACIÓN de pedido («Pedido SO253360»: «Hemos recibido su pedido correctamente y lo estamos tramitando… Número del pedidor / Referencia
     /// del cliente … SO253360 21325 … El pedido será enviado por: MAILBOXES … Resumen del pedido»): el pedido del proveedor (SO…), nuestra
-    /// referencia (si la da) y la agencia que anuncia. Su aviso de «ha salido» aún no se ha visto: no lo reconoce (lo lee el genérico). Ni su
+    /// referencia (si la da) y la agencia que anuncia. Desde el 20/11/26 también su aviso de salida («Albarán WK/OUT/…»). Ni su
     /// factura («Factura BCN/2026/27757 (con referencia SO252231)») ni su publicidad (info@weelko.com) son confirmaciones.
     /// </summary>
     public class FormatoAvisoSalidaWeelko : FormatoAvisoSalidaBase
@@ -169,8 +176,43 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         public override string Nombre => NOMBRE;
 
-        /// <summary>Su aviso de salida aún no se conoce.</summary>
-        public override bool Reconoce(string texto) => false;
+        // 20/11/26 (correo real «Albarán WK/OUT/78316»): «¡Su pedido está preparado y ha salido de nuestro almacén! … Fecha de la compra |
+        // Número de pedido | Referencia cliente … 19/11/2026 07:32:59 WK/OUT/78316 29636 … El pedido será enviado por: TXT 2026.V2 … Resumen
+        // del pedido». No trae número de seguimiento (el enlace «Tracking» es su portal b2b) ni nuestro número: se enlaza con la
+        // confirmación del mismo pedido por la fecha de la compra.
+        private static readonly Regex HaSalido = new Regex(@"ha\s+salido\s+de\s+nuestro\s+almac[eé]n", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AlbaranSalida = new Regex(@"(?<![\p{L}\p{N}])WK\s*[/\-]\s*OUT\s*[/\-]\s*\d{3,10}(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex FechaDeLaCompra = new Regex(
+            @"fecha\s+de\s+(?:la\s+)?compra[\s\S]{0,160}?(?<![\d/])(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>Su aviso de salida: «ha salido de nuestro almacén» + su albarán «WK/OUT/…».</summary>
+        public override bool Reconoce(string texto)
+        {
+            string t = texto ?? string.Empty;
+            return HaSalido.IsMatch(t) && AlbaranSalida.IsMatch(t);
+        }
+
+        /// <summary>No da número de seguimiento: su albarán (WK/OUT/78316) no es un código de la agencia.</summary>
+        public override List<string> Codigos(string texto) => new List<string>();
+
+        public override DateTime? FechaCompra(string texto)
+        {
+            Match m = FechaDeLaCompra.Match(texto ?? string.Empty);
+            if (!m.Success)
+            {
+                return null;
+            }
+            try
+            {
+                return new DateTime(int.Parse(m.Groups[3].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[1].Value),
+                    int.Parse(m.Groups[4].Value), int.Parse(m.Groups[5].Value), m.Groups[6].Success ? int.Parse(m.Groups[6].Value) : 0);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return null;
+            }
+        }
 
         public override ConfirmacionPedidoProveedor Confirmacion(string asunto, string texto, IEnumerable<IAgenciaEntrada> agencias)
         {

@@ -116,6 +116,49 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             return new AsignacionPedidoCompra { ProveedorPropuesto = proveedores.Count == 1 ? proveedores[0] : null, Candidatos = candidatos };
         }
 
+        /// <summary>La confirmación llega al poco de hacerse la compra: hasta estos minutos después (y 5 antes, por los relojes).</summary>
+        public const int MINUTOS_TRAS_LA_COMPRA = 60;
+
+        /// <summary>
+        /// 20/11/26 (Weelko, «Albarán WK/OUT/78316»): el aviso de salida no trae el pedido del proveedor (SO…) ni el nuestro, pero sí cuándo se
+        /// hizo la compra. Las confirmaciones del MISMO remitente recibidas justo después de ese momento son las de ese pedido: sus candidatos
+        /// que sigan en el aire (motivo <see cref="AsignadorPedidosCompra.MOTIVO_PEDIDO_PROVEEDOR"/>). No pisa nuestro número ni el PDF. PURA.
+        /// </summary>
+        public static AsignacionPedidoCompra CompletarPorFechaCompra(AsignacionPedidoCompra asignacion, DateTime? fechaCompra, string remitente,
+            IEnumerable<ConfirmacionPedidoProveedorFila> confirmaciones, IEnumerable<PedidoCompraEnAire> enAire)
+        {
+            if (!fechaCompra.HasValue || string.IsNullOrWhiteSpace(remitente) || confirmaciones == null)
+            {
+                return asignacion;
+            }
+            if ((asignacion?.Candidatos ?? new List<CandidatoPedidoCompra>()).Any(c => c.Motivo == AsignadorPedidosCompra.MOTIVO_NUMERO
+                || c.Motivo == AsignadorPedidosCompra.MOTIVO_PDF_ADJUNTO || c.Motivo == AsignadorPedidosCompra.MOTIVO_PEDIDO_PROVEEDOR))
+            {
+                return asignacion;
+            }
+            DateTime desde = fechaCompra.Value.AddMinutes(-5);
+            DateTime hasta = fechaCompra.Value.AddMinutes(MINUTOS_TRAS_LA_COMPRA);
+            var enElAire = (enAire ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null)
+                .GroupBy(p => AsignadorPedidosCompra.Clave(p.Empresa, p.Pedido)).ToDictionary(g => g.Key, g => g.First());
+            List<CandidatoPedidoCompra> candidatos = confirmaciones
+                .Where(c => c != null && string.Equals(c.RemitenteDireccion?.Trim(), remitente.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && c.Recibido >= desde && c.Recibido <= hasta)
+                .SelectMany(c => AsignadorPedidosCompra.Deserializar(c.PedidosCandidatos))
+                .Where(c => enElAire.ContainsKey(AsignadorPedidosCompra.Clave(c.Empresa, c.Pedido)))
+                .GroupBy(c => AsignadorPedidosCompra.Clave(c.Empresa, c.Pedido)).Select(g => g.First())
+                .Select(c => new CandidatoPedidoCompra
+                {
+                    Empresa = c.Empresa?.Trim(), Pedido = c.Pedido, Proveedor = c.Proveedor?.Trim(), Motivo = AsignadorPedidosCompra.MOTIVO_PEDIDO_PROVEEDOR
+                })
+                .ToList();
+            if (!candidatos.Any())
+            {
+                return asignacion;
+            }
+            List<string> proveedores = candidatos.Select(c => c.Proveedor).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return new AsignacionPedidoCompra { ProveedorPropuesto = proveedores.Count == 1 ? proveedores[0] : null, Candidatos = candidatos };
+        }
+
         private static string Limpio(string texto) => (texto ?? string.Empty).Replace(" ", string.Empty).Trim().ToUpperInvariant();
     }
 }

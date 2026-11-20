@@ -359,7 +359,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             new AgenciaEntradaCorreosExpress(), new AgenciaEntradaCorreos(), new AgenciaEntradaCttExpress(), new AgenciaEntradaNacex(),
             new AgenciaEntradaTntFedex(), new AgenciaEntradaDachser(), new AgenciaEntradaTipsa(),
             new AgenciaEntradaEnvialia(), new AgenciaEntradaZeleris(), new AgenciaEntradaRedurRhenus(), new AgenciaEntradaXpoGxo(),
-            new AgenciaEntradaSchenker(), new AgenciaEntradaDpd(), new AgenciaEntradaSending(), new AgenciaEntradaPaack(),
+            new AgenciaEntradaSchenker(), new AgenciaEntradaTxt(), new AgenciaEntradaDpd(), new AgenciaEntradaSending(), new AgenciaEntradaPaack(),
             new AgenciaEntradaPalletways(), new AgenciaEntradaMbe()
         }.AsReadOnly();
 
@@ -793,6 +793,18 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public override int HorasHastaEntrega => HORAS_GRUPAJE;
         protected override string[] Dominios => new[] { "xpo.com", "gxo.com", "xpoeurope.com" };
         public override string[] NombresEnTexto => new[] { "XPO/GXO", "XPO", "GXO" };
+    }
+
+    /// <summary>
+    /// TXT (TXT e-solutions), la que usa Weelko («El pedido será enviado por: TXT 2026.V2»). 20/11/26 (Carlos): 48 h «mientras no tengamos
+    /// algo más exacto». Aún no se ha visto ningún correo suyo: solo se reconoce por su nombre tras una etiqueta o por su dominio.
+    /// </summary>
+    public class AgenciaEntradaTxt : AgenciaEntradaPorPatrones
+    {
+        public override string Nombre => "TXT";
+        public override int HorasHastaEntrega => HORAS_GRUPAJE;
+        protected override string[] Dominios => new[] { "txt.es" };
+        public override string[] NombresEnTexto => new[] { "TXT e-solutions", "TXT" };
     }
 
     public class AgenciaEntradaSchenker : AgenciaEntradaPorPatrones
