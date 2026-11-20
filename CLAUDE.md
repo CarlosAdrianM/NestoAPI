@@ -736,6 +736,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - `POST api/RepartoPropio/Recogidas/{pedido}/Anular` {Motivo} (grupos del reparto): parada en reparto → Cerrado a mano «Recogida anulada: motivo», historia y
   Modificaciones `RecogidaAnulada` en UNA transacción (`RecogidasParadaRepartoSql.CerrarParada`, solo si sigue 1/3); la solicitud, Anulada. Las líneas de
   la nota no se tocan. Reglas puras `ReglasParadaRecogida` (`RecogidasParadaReparto.cs`).
+- **«No se ha recogido» pasa a Almacén, que decide (Carlos 20/11/26)**: con `dbo.RepartoRecogidasNoRecogidas` (`Scripts/RepartoRecogidasNoRecogidas.sql`;
+  sin él, NoRecogida cierra como arriba y los endpoints nuevos dan 503) la recogida NO se cierra: el envío queda Incidentado (3) con el mismo DetalleEstado y
+  FechaEntrega = `FechaRepartoPropio.FECHA_PENDIENTE_DECIDIR` (31/12/2099: no sale en ningún día, ni en SinCargar; leer su papel da «pendiente de que
+  Almacén decida»), fila Pendiente (escrita ANTES que el envío; la lista exige el envío Incidentado de la 14) y campana `RecogidaNoRecogida` a Almacén.
+  Contrato de NoRecogida igual. `GET api/RepartoPropio/Recogidas/NoRecogidas` → [{Pedido, CodigoDocumento, EnvioId, Cliente, Contacto, Nombre, Direccion,
+  Poblacion, Motivo, Repartidor, FechaHora}]. `POST …/Recogidas/{pedido}/Reprogramar` {Fecha?} → {Pedido, CodigoDocumento, EnvioId, FechaEntrega, Mensaje}:
+  la MISMA nota y parada vuelven a Tramitado ese día o, sin él, LA REGLA `ReglasParadaRecogida.FechaReprogramada` (desde mañana, su día de ruta interna
+  `DiaRutaInterna` o el siguiente sin `EsFestivoRepartoPropio`); sin repartidor (sus cargas vigentes reciben un Descargado RP Origen Almacen), historia,
+  Modificaciones `RecogidaReprogramada` en UNA transacción y `repartoCambiado` «Parada»; fecha pasada 400; no pendiente 409. `Anular` también la cierra
+  (fila Anulada). Grupos del reparto (Almacén, Administración, Dirección, Informática).
 
 ### «Todo junto» con falta de pago: pedido retenido por falta (NestoAPI#858 punto 4, 12/11/26)
 - En `OrigenSalidaPicking.QuitarFaltasDeLosPedidos` (Terminar y falta definitiva del «No está»), dentro de su transacción

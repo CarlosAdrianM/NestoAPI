@@ -455,8 +455,9 @@ namespace NestoAPI.Controllers
         // POST api/RepartoPropio/Envios/123456/NoRecogida { ClaveIdempotencia, FechaHora?, Motivo, Latitud?, Longitud?, FechaHoraLlegada?, FechaHoraIr? }
         /// <summary>
         /// Punto 5 (Carlos 19/11/26): la parada de una NOTA DE RECOGIDA que no se ha podido recoger (motivo obligatorio, hasta 500). Sale del
-        /// reparto (Cerrado a mano, DetalleEstado «No recogido (reparto propio): motivo»), sin bultos NR; aviso a quien pidió la recogida si
-        /// viene de una solicitud. 200 { EnvioId, Estado: "NoRecogido" } (misma clave = misma respuesta); 400; 404; 409 (ya recogida,
+        /// reparto del repartidor, sin bultos NR; aviso a quien pidió la recogida si viene de una solicitud. Carlos 20/11/26: con
+        /// Scripts/RepartoRecogidasNoRecogidas.sql NO se cierra: queda Incidentada, fuera de todos los días, pendiente de que Almacén decida
+        /// (Recogidas/NoRecogidas, Reprogramar o Anular) y con campana a Almacén (RecogidaNoRecogida); sin él, Cerrado a mano como antes. 200 { EnvioId, Estado: "NoRecogido" } (misma clave = misma respuesta); 400; 404; 409 (ya recogida,
         /// no en reparto, o RECOGIDA_YA_RECOGIDA si hay bultos NR en una furgoneta o está abonada).
         /// </summary>
         [HttpPost]
@@ -488,6 +489,42 @@ namespace NestoAPI.Controllers
                 return Prohibido();
             }
             return Responder(await servicio.AnularRecogida(pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+        }
+
+        // GET api/RepartoPropio/Recogidas/NoRecogidas
+        /// <summary>
+        /// Carlos 20/11/26: las recogidas que el repartidor no ha podido hacer («No se ha recogido») y esperan a que Almacén decida si vuelven
+        /// al reparto (Reprogramar) o se cierran (Anular). [{ Pedido, CodigoDocumento, EnvioId, Cliente, Contacto, Nombre, Direccion, Poblacion,
+        /// Motivo, Repartidor, FechaHora }]. 503 sin Scripts/RepartoRecogidasNoRecogidas.sql.
+        /// </summary>
+        [HttpGet]
+        [Route("Recogidas/NoRecogidas")]
+        [ResponseType(typeof(List<RecogidaNoRecogidaDTO>))]
+        public async Task<IHttpActionResult> GetRecogidasNoRecogidas()
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.RecogidasNoRecogidas());
+        }
+
+        // POST api/RepartoPropio/Recogidas/930553/Reprogramar { Fecha? }
+        /// <summary>
+        /// Carlos 20/11/26: la MISMA nota y la misma parada vuelven al reparto el día pedido o, sin él, el siguiente día de reparto propio del
+        /// cliente, sin repartidor (hay que leer el papel al cargar). 200 { Pedido, CodigoDocumento, EnvioId, FechaEntrega, Mensaje }; 400 con una
+        /// fecha pasada; 409 si no está pendiente de decidir; 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{pedido:int}/Reprogramar")]
+        [ResponseType(typeof(ResultadoReprogramarRecogidaDTO))]
+        public async Task<IHttpActionResult> ReprogramarRecogida(int pedido, [FromBody] ReprogramarRecogidaDTO peticion)
+        {
+            if (!PermisosRepartoPropio.PuedeRepartir(User))
+            {
+                return Prohibido();
+            }
+            return Responder(await servicio.ReprogramarRecogida(pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
         }
 
         // GET api/RepartoPropio/Envios/123456/PruebaEntrega
@@ -590,6 +627,8 @@ namespace NestoAPI.Controllers
                         });
                     }
                     return Content(HttpStatusCode.Conflict, new { Message = resultado.Mensaje });
+                case TipoResultadoReparto.NoDisponible:
+                    return Content(HttpStatusCode.ServiceUnavailable, new { Message = resultado.Mensaje });
                 default:
                     return Content(HttpStatusCode.BadRequest, new { Message = resultado.Mensaje });
             }

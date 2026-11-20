@@ -625,6 +625,40 @@ namespace NestoAPI.Models.Agencias
         public string Mensaje { get; set; }
     }
 
+    /// <summary>Carlos 20/11/26: una recogida que el repartidor no ha podido hacer y espera a que Almacén decida (GET Recogidas/NoRecogidas).</summary>
+    public class RecogidaNoRecogidaDTO
+    {
+        public int Pedido { get; set; }
+        /// <summary>«NR930553».</summary>
+        public string CodigoDocumento { get; set; }
+        public int EnvioId { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string Poblacion { get; set; }
+        public string Motivo { get; set; }
+        /// <summary>«Andre».</summary>
+        public string Repartidor { get; set; }
+        public DateTime FechaHora { get; set; }
+    }
+
+    /// <summary>Carlos 20/11/26: POST api/RepartoPropio/Recogidas/{pedido}/Reprogramar. Sin Fecha, el siguiente día de reparto propio del cliente.</summary>
+    public class ReprogramarRecogidaDTO
+    {
+        public DateTime? Fecha { get; set; }
+    }
+
+    /// <summary>Carlos 20/11/26: la respuesta de POST api/RepartoPropio/Recogidas/{pedido}/Reprogramar.</summary>
+    public class ResultadoReprogramarRecogidaDTO
+    {
+        public int Pedido { get; set; }
+        public string CodigoDocumento { get; set; }
+        public int EnvioId { get; set; }
+        public DateTime FechaEntrega { get; set; }
+        public string Mensaje { get; set; }
+    }
+
     /// <summary>Un bulto en la prueba de entrega (reparto propio).</summary>
     public class BultoPruebaEntregaDTO
     {

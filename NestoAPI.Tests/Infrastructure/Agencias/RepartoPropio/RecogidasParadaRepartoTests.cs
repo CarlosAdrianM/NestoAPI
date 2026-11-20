@@ -308,5 +308,139 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
             StringAssert.Contains(await respuesta.Content.ReadAsStringAsync(), "\"Codigo\":\"RECOGIDA_YA_RECOGIDA\"");
         }
+
+        // ================================================================ Carlos 20/11/26: «No se ha recogido» pasa a Almacén, que decide
+
+        private void ConTablaNoRecogidas() => A.CallTo(() => recogidas.PendientesDisponibles()).Returns(true);
+
+        private RecogidaNoRecogidaPendiente Pendiente() => new RecogidaNoRecogidaPendiente
+        {
+            Id = 3, Pedido = PEDIDO, EnvioId = 251104, Motivo = "Cerrado", Repartidor = ANDRE, ClaveIdempotencia = Guid.NewGuid(),
+            Empresa = "1", Cliente = "15191", Contacto = "0", CodPostal = "28110", Ruta = "AT"
+        };
+
+        private void ReprogramarDevuelve(bool valor)
+            => A.CallTo(() => recogidas.Reprogramar(A<RecogidaNoRecogidaPendiente>._, A<DateTime>._, A<IList<EnvioHistoria>>._, A<IReadOnlyList<MovimientoBultoReparto>>._,
+                A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(valor));
+
+        [TestMethod]
+        public async Task NoRecogida_ConLaTabla_NoSeCierra_QuedaIncidentadaFueraDeTodosLosDiasYAvisaAAlmacen()
+        {
+            ConTablaNoRecogidas();
+            EnviosAgencia envio = Envio();
+            envio.FechaEntrega = AHORA.Date;
+            NoRecogidaRepartoDTO peticion = NoRecogida("Cerrado por vacaciones");
+
+            var resultado = await servicio.NoRecogida(251104, peticion, ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual("NoRecogido", resultado.Contenido.Estado, "Mismo contrato que hoy");
+            Assert.AreEqual(Constantes.Agencias.ESTADO_INCIDENTADO, envio.Estado, "No se cierra");
+            Assert.AreEqual(FechaRepartoPropio.FECHA_PENDIENTE_DECIDIR, envio.FechaEntrega, "No vuelve sola al reparto");
+            Assert.IsTrue(FechaRepartoPropio.EsDeOtroDia(envio, AHORA), "No sale en la lista de hoy ni se carga");
+            StringAssert.Contains(FechaRepartoPropio.MensajeNoSeCargaHoy(envio), "pendiente de que Almacén decida");
+            A.CallTo(() => recogidas.ApuntarNoRecogida(A<RecogidaNoRecogidaPendiente>.That.Matches(f => f.Pedido == PEDIDO && f.EnvioId == 251104
+                && f.Motivo == "Cerrado por vacaciones" && f.ClaveIdempotencia == peticion.ClaveIdempotencia && f.FechaEntregaAnterior == AHORA.Date)))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => recogidas.AvisarAlmacen(A<NotificacionPushDTO>.That.Matches(n => n.Tipo == "RecogidaNoRecogida"
+                && n.Cuerpo.Contains("NR" + PEDIDO) && n.Cuerpo.Contains("Cerrado por vacaciones") && n.Cuerpo.Contains("Decida")))).MustHaveHappenedOnceExactly();
+            StringAssert.Contains(repositorio.Registros.Single().Historia[0].Observaciones, "Pendiente de que Almacén decida");
+
+            var lista = await servicio.Envios(AHORA, false, ANDRE);
+            Assert.IsFalse(lista.Contenido.Any(e => e.EnvioId == 251104), "No sale en el reparto del día");
+        }
+
+        [TestMethod]
+        public async Task NoRecogidas_SinLaTabla503_ConElla_LaLista()
+        {
+            Assert.AreEqual(TipoResultadoReparto.NoDisponible, (await servicio.RecogidasNoRecogidas()).Tipo);
+            ConTablaNoRecogidas();
+            A.CallTo(() => recogidas.LeerNoRecogidas()).Returns(Task.FromResult(new List<RecogidaNoRecogidaDTO> { new RecogidaNoRecogidaDTO { Pedido = PEDIDO } }));
+
+            var resultado = await servicio.RecogidasNoRecogidas();
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo);
+            Assert.AreEqual(PEDIDO, resultado.Contenido.Single().Pedido);
+        }
+
+        [TestMethod]
+        public void FechaReprogramada_SiguienteDiaDeRutaDesdeManana_OSiguienteNoFestivo()
+        {
+            DateTime viernes = new DateTime(2026, 11, 20);
+            Assert.AreEqual(new DateTime(2026, 11, 24), ReglasParadaRecogida.FechaReprogramada(viernes, DayOfWeek.Tuesday, d => false), "Su día de ruta: el martes");
+            Assert.AreEqual(new DateTime(2026, 11, 23), ReglasParadaRecogida.FechaReprogramada(viernes, null,
+                d => d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday), "Sin día de ruta: el siguiente con reparto");
+            Assert.AreEqual(new DateTime(2026, 11, 27), ReglasParadaRecogida.FechaReprogramada(viernes, DayOfWeek.Friday, d => false), "Nunca hoy");
+            Assert.IsNotNull(ReglasParadaRecogida.ValidarFechaReprogramar(viernes.AddDays(-1), viernes));
+            Assert.IsNull(ReglasParadaRecogida.ValidarFechaReprogramar(viernes, viernes));
+        }
+
+        [TestMethod]
+        public async Task Reprogramar_LaMismaParadaVuelveAlSiguienteDiaDeRuta_SinRepartidor()
+        {
+            ConTablaNoRecogidas();
+            EnviosAgencia envio = Envio();
+            envio.Estado = Constantes.Agencias.ESTADO_INCIDENTADO;
+            envio.FechaEntrega = FechaRepartoPropio.FECHA_PENDIENTE_DECIDIR;
+            A.CallTo(() => recogidas.LeerPendiente(PEDIDO)).Returns(Task.FromResult(Pendiente()));
+            ReprogramarDevuelve(true);
+            servicio.DiaRutaInternaCliente = (ruta, cp, empresa, cliente, contacto) => ruta == "AT" && cliente == "15191" ? DayOfWeek.Tuesday : (DayOfWeek?)null;
+
+            var resultado = await servicio.ReprogramarRecogida(PEDIDO, null, "Alfredo");
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual(new DateTime(2026, 11, 24), resultado.Contenido.FechaEntrega, "El martes siguiente (su día de ruta)");
+            Assert.AreEqual("NR" + PEDIDO, resultado.Contenido.CodigoDocumento);
+            Assert.AreEqual(251104, resultado.Contenido.EnvioId);
+            StringAssert.Contains(resultado.Contenido.Mensaje, "sin repartidor");
+            A.CallTo(() => recogidas.Reprogramar(A<RecogidaNoRecogidaPendiente>.That.Matches(p => p.Id == 3), new DateTime(2026, 11, 24),
+                A<IList<EnvioHistoria>>.That.Matches(h => h.Any(x => x.Campo == "FechaEntrega") && h[0].Observaciones.Contains("vuelve al reparto")),
+                A<IReadOnlyList<MovimientoBultoReparto>>._, A<string>._, A<string>._, "Alfredo")).MustHaveHappenedOnceExactly();
+
+            ReprogramarDevuelve(false);
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, (await servicio.ReprogramarRecogida(PEDIDO, null, "Alfredo")).Tipo, "Carrera: 409");
+        }
+
+        [TestMethod]
+        public async Task Reprogramar_ConFecha_LaFecha_FechaPasada400_NoPendiente409_SinTabla503()
+        {
+            Assert.AreEqual(TipoResultadoReparto.NoDisponible, (await servicio.ReprogramarRecogida(PEDIDO, null, ANDRE)).Tipo);
+            ConTablaNoRecogidas();
+            Envio();
+            Assert.AreEqual(TipoResultadoReparto.Invalido, (await servicio.ReprogramarRecogida(PEDIDO, new ReprogramarRecogidaDTO { Fecha = AHORA.AddDays(-1) }, ANDRE)).Tipo);
+            A.CallTo(() => recogidas.LeerPendiente(PEDIDO)).Returns(Task.FromResult<RecogidaNoRecogidaPendiente>(null));
+            var noPendiente = await servicio.ReprogramarRecogida(PEDIDO, null, ANDRE);
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, noPendiente.Tipo);
+            StringAssert.Contains(noPendiente.Mensaje, "no está pendiente de decidir");
+
+            A.CallTo(() => recogidas.LeerPendiente(PEDIDO)).Returns(Task.FromResult(Pendiente()));
+            ReprogramarDevuelve(true);
+            var conFecha = await servicio.ReprogramarRecogida(PEDIDO, new ReprogramarRecogidaDTO { Fecha = new DateTime(2026, 11, 26) }, ANDRE);
+            Assert.AreEqual(new DateTime(2026, 11, 26), conFecha.Contenido.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task Anular_UnaPendienteDeDecidir_LaCierraDelTodo()
+        {
+            ConTablaNoRecogidas();
+            EnviosAgencia envio = Envio();
+            envio.Estado = Constantes.Agencias.ESTADO_INCIDENTADO;
+
+            var resultado = await servicio.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "No hace falta" }, ANDRE);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            A.CallTo(() => recogidas.CerrarPendiente(PEDIDO, ANDRE)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Controlador_NoRecogidasYReprogramar_SinTabla503_SinPermiso403()
+        {
+            HttpResponseMessage lista = await (await Controlador(Constantes.GruposSeguridad.ALMACEN).GetRecogidasNoRecogidas()).ExecuteAsync(CancellationToken.None);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, lista.StatusCode);
+            HttpResponseMessage reprogramar = await (await Controlador(Constantes.GruposSeguridad.ALMACEN).ReprogramarRecogida(PEDIDO, null)).ExecuteAsync(CancellationToken.None);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, reprogramar.StatusCode);
+            HttpResponseMessage prohibido = await (await Controlador(null).GetRecogidasNoRecogidas()).ExecuteAsync(CancellationToken.None);
+            Assert.AreEqual(HttpStatusCode.Forbidden, prohibido.StatusCode);
+        }
     }
 }

@@ -74,8 +74,18 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             => envio != null && envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO && DeEnvio(envio) > hoy.Date;
 
         /// <summary>«Este bulto es del reparto del 09/11: no se carga hoy.»</summary>
+        /// <summary>
+        /// Carlos 20/11/26: la parada de una recogida «No se ha recogido» que espera a que Almacén decida queda con este día de reparto: así
+        /// no sale en ningún día hasta que se reprograme (o se anule).
+        /// </summary>
+        public static readonly DateTime FECHA_PENDIENTE_DECIDIR = new DateTime(2099, 12, 31);
+
+        public static bool EsPendienteDeDecidir(EnviosAgencia envio) => envio != null && DeEnvio(envio) == FECHA_PENDIENTE_DECIDIR;
+
         public static string MensajeNoSeCargaHoy(EnviosAgencia envio)
-            => $"Este bulto es del reparto del {DeEnvio(envio).ToString("dd/MM", CultureInfo.InvariantCulture)}: no se carga hoy.";
+            => EsPendienteDeDecidir(envio)
+                ? "Esta recogida no se pudo hacer y está pendiente de que Almacén decida si vuelve al reparto: no se carga."
+                : $"Este bulto es del reparto del {DeEnvio(envio).ToString("dd/MM", CultureInfo.InvariantCulture)}: no se carga hoy.";
 
         /// <summary>La MIN fecha de entrega de las líneas en picking (Estado 1, Picking &gt; 0) del pedido, o null.</summary>
         public static async Task<DateTime?> FechaEntregaPickingAsync(NVEntities db, string empresa, int pedido)

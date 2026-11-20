@@ -64,7 +64,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         SinContenido,
         Invalido,
         NoEncontrado,
-        Conflicto
+        Conflicto,
+        /// <summary>Carlos 20/11/26: falta un script (los endpoints nuevos dan 503).</summary>
+        NoDisponible
     }
 
     public class ResultadoReparto<T>
