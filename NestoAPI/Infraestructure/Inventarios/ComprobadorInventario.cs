@@ -255,15 +255,24 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// Más de 9.999, o la referencia de un producto leída en la cantidad. Si coincide con el stock calculado no es un error de
         /// lectura (en ALG hay un producto con 17.686 unidades de verdad).
         /// </summary>
+        /// <remarks>
+        /// Inventario del 21/11/26: el 11979 tenía 17.681 de teórico y se contaron 17.700; no coincidía y bloqueaba todo Algete. Tampoco
+        /// es un error de lectura lo que queda CERCA de un teórico grande (<see cref="EstaCercaDelCalculado"/>).
+        /// </remarks>
         internal static bool EsCantidadDisparatada(FilaInventarioPendiente fila)
         {
             int real = fila.StockReal ?? 0;
-            if (real == (fila.StockCalculado ?? 0))
+            int calculado = fila.StockCalculado ?? 0;
+            if (real == calculado || EstaCercaDelCalculado(real, calculado))
             {
                 return false;
             }
             return real > STOCK_REAL_MAXIMO || fila.StockRealEsReferencia;
         }
+
+        /// <summary>El teórico ya era grande (≥ 100) y lo contado se separa de él como mucho un 10 %: es un recuento, no un código leído.</summary>
+        internal static bool EstaCercaDelCalculado(int real, int calculado) =>
+            calculado >= 100 && Math.Abs((long)real - calculado) * 10 <= calculado;
 
         internal static bool EstaBienFormada(FilaInventarioPendiente fila) =>
             Longitud(fila.Pasillo) == LONGITUD_UBICACION && Longitud(fila.Fila) == LONGITUD_UBICACION && Longitud(fila.Columna) == LONGITUD_UBICACION;

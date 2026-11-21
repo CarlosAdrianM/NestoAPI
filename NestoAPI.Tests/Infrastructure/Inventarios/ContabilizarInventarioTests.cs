@@ -116,6 +116,32 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         }
 
         [TestMethod]
+        public void CantidadDisparatada_CercaDeUnCalculadoGrande_NoBloquea()
+        {
+            // Inventario del 21/11/26: el 11979 (teórico 17.681, contado 17.700) bloqueaba todo Algete
+            ComprobacionesInventarioDTO r = Comprobar(false, Fila(f => { f.StockReal = 17700; f.StockCalculado = 17681; f.StockRealEsReferencia = true; }));
+
+            Assert.IsFalse(Tiene(r.Bloqueantes, CodigosComprobacionInventario.CANTIDAD_DISPARATADA));
+        }
+
+        [TestMethod]
+        public void CantidadDisparatada_LejosDeUnCalculadoGrande_SigueBloqueando()
+        {
+            ComprobacionesInventarioDTO r = Comprobar(false, Fila(f => { f.StockReal = 40945; f.StockCalculado = 17681; }));
+
+            Assert.IsTrue(Tiene(r.Bloqueantes, CodigosComprobacionInventario.CANTIDAD_DISPARATADA));
+        }
+
+        [TestMethod]
+        public void CantidadDisparatada_ReferenciaParecidaAUnCalculadoPequeno_SigueBloqueando()
+        {
+            // Con un teórico pequeño no hay «cerca» que valga: 12 de teórico y la referencia 13 leída como cantidad
+            ComprobacionesInventarioDTO r = Comprobar(false, Fila(f => { f.StockReal = 13; f.StockCalculado = 12; f.StockRealEsReferencia = true; }));
+
+            Assert.IsTrue(Tiene(r.Bloqueantes, CodigosComprobacionInventario.CANTIDAD_DISPARATADA));
+        }
+
+        [TestMethod]
         public void Ficticio_ConStockReal_Bloquea()
         {
             ComprobacionesInventarioDTO r = Comprobar(false, Fila(f => { f.Ficticio = true; f.StockReal = 1; }));
