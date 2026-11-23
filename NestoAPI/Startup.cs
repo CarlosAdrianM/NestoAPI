@@ -926,6 +926,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'festivos-sin-cargar' configurado (día 1 de cada mes a las 9:00)");
 
+            // NestoAPI#886: el día 1 de cada mes a las 8:15 de Madrid, a cada tienda (REI, ALC) lo dado de alta y de baja en su stock el
+            // mes anterior (inventarios y «No está» al enviar una reposición), a PVP, con copia a Compras. Sin movimientos, nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Informes.AltasBajasTiendaJobsService.JOB_ID,
+                () => Infraestructure.Informes.AltasBajasTiendaJobsService.Enviar(),
+                Infraestructure.Informes.AltasBajasTiendaJobsService.CRON, // Cron: el día 1 de cada mes a las 8:15
+                new RecurringJobOptions
+                {
+                    TimeZone = ZonaHorariaPeninsular()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'tiendas-altas-bajas-mensual' configurado (día 1 de cada mes a las 8:15 de Madrid)");
+
             // Embudo de Odoo (Carlos 11/11/26): TODOS los días a las 7:00 de Madrid, el siguiente bloque de 50 (NV-AAAA-MM-NN), por el
             // mismo camino que el lanzamiento a mano. Solo con ParametrosUsuario «(defecto)» EmbudoBloqueDiario = 1.
             RecurringJob.AddOrUpdate(

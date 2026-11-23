@@ -483,6 +483,7 @@
     <Compile Include="Controllers\InformesControllerTests.cs" />
     <Compile Include="Controllers\InformesControllerCorreoFacturacionTiendaTests.cs" />
     <Compile Include="Controllers\InformesControllerFacturacionTiendaTests.cs" />
+    <Compile Include="Controllers\InformesControllerAltasBajasTiendaTests.cs" />
     <Compile Include="Controllers\InformesControllerFacturacionTiendaAnualTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\EscanerRemotoControllerTests.cs" />
@@ -504,6 +505,7 @@
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
     <Compile Include="Infraestructure\Informes\GestorFacturacionTiendaTests.cs" />
+    <Compile Include="Infraestructure\Informes\GestorAltasBajasTiendaTests.cs" />
     <Compile Include="Infraestructure\Informes\GestorFacturacionTiendaAnualTests.cs" />
     <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CatalogoServiciosAgenciasTests.cs" />

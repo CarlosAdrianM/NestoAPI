@@ -800,6 +800,19 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   del año de `hasta` respecto a cada año). Una consulta agregada por año y mes (`SQL_FACTURACION_TIENDA_ANUAL`), del 1 de enero al mismo
   día y mes de cada año. Excel: hoja «Acumulado» y, en el comparativo, también «Comparativo». El correo (POST …/Correo) sigue siendo de la semana.
 
+### Altas y bajas de stock de las tiendas: correo mensual (NestoAPI#886, 23/11/26)
+- Al enviar una reposición, lo que no está se da de baja («No está») y, si aparece, de alta (sugerencia 1419). Para controlarlo, cada tienda
+  (REI, ALC) recibe una vez al mes lo dado de alta y de baja en su stock: ExtractoProducto de las empresas 1 y 3, su almacén, diarios
+  `_RegInvent` (motivo «Inventario») y `_ErrRepo` («No está» al enviar la reposición N / Diferencia de la reposición N, por el Texto; si no casa,
+  el texto). UNA consulta de solo lectura (NOLOCK) por almacén y periodo; LA REGLA (pura) `GestorAltasBajasTienda.Construir`: líneas por fecha y
+  hora, usuario sin dominio, valor SIEMPRE a PVP (`Productos.PVP` empresa 1; nulo = 0; NUNCA coste: lo ven las tiendas), totales de altas, bajas
+  y neto, y «Aparece y desaparece» (productos con alguna alta Y alguna baja, con su neto).
+- `GET api/Informes/AltasBajasTienda?almacen=&desde=&hasta=` y `/Excel` (hojas «Movimientos», «Aparece y desaparece», «Resumen»): permisos y
+  tienda de FacturacionTienda (`ValidarTiendaFacturacion`); sin fechas, el mes natural anterior; ≤ 366 días. `POST …/AltasBajasTienda/Correo?almacen=&desde=&hasta=`
+  (Dirección, Informática, Compras; 403 de usted) y el job `tiendas-altas-bajas-mensual` (día 1 a las 8:15 de Madrid, mes anterior, REI y ALC;
+  un fallo por tienda a ELMAH) van por el MISMO `EnviadorAltasBajasTienda`: a `Constantes.Correos.TIENDA_REINA`/`TIENDA_ALCOBENDAS` con CC a
+  `Correos.COMPRAS`, HTML (300 líneas como mucho; el resto en el Excel adjunto). Sin movimientos, no se manda nada. Sin tabla ni script.
+
 ### Mantenimiento de calles del recorrido (NestoAPI#642, corte 4 de #639, para Nesto#528, 12/11/26)
 - `GET api/Almacen/Recorrido?almacen=ALG&empresa=1` → `RecorridoAlmacenDTO`: calles (Orden, Sentido A/D, pasillos con Posicion, Nombre y
   Huecos), `PasillosSinCalle` (con huecos en uso o con nombre) y `Tramos` (pasillo+columna+nivel AMano/Escalera de los huecos en uso, con la

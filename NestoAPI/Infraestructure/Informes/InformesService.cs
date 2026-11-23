@@ -60,6 +60,16 @@ namespace NestoAPI.Infraestructure.Informes
             return GestorFacturacionTienda.ConstruirAnual(filas, tienda, hasta, aniosAnteriores);
         }
 
+        // NestoAPI#886: una sola consulta por almacén y periodo (ExtractoProducto + la ficha del producto); la regla, en GestorAltasBajasTienda.
+        public async Task<AltasBajasTiendaDTO> LeerAltasBajasTiendaAsync(string almacen, DateTime desde, DateTime hasta)
+        {
+            List<FilaAltaBajaTiendaDTO> filas = await db.Database
+                .SqlQuery<FilaAltaBajaTiendaDTO>(GestorAltasBajasTienda.SQL_ALTAS_BAJAS_TIENDA, GestorAltasBajasTienda.Parametros(almacen, desde, hasta))
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return GestorAltasBajasTienda.Construir(filas, almacen, desde, hasta);
+        }
+
         public async Task<List<ResumenVentasDTO>> LeerResumenVentasAsync(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
         {
             SqlParameter fechaDesdeParam = new SqlParameter("@FechaDesde", SqlDbType.DateTime)

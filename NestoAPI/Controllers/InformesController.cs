@@ -259,6 +259,107 @@ namespace NestoAPI.Controllers
             });
         }
 
+        public const string MENSAJE_SIN_PERMISO_CORREO_ALTAS_BAJAS =
+            "El correo de altas y bajas de las tiendas solo lo pueden mandar a mano Dirección, Informática y Compras.";
+
+        /// <summary>
+        /// NestoAPI#886: lo dado de alta y de baja en el stock de una tienda (REI, ALC): inventarios y «No está» o diferencias al enviar
+        /// una reposición, valorado a PVP (nunca coste). Sin fechas, el mes natural anterior; máximo 366 días. Permisos y tienda: los
+        /// MISMOS que <see cref="GetFacturacionTienda"/> (Dirección, Administración e Informática, cualquiera; cada tienda, la suya).
+        /// GET api/Informes/AltasBajasTienda?almacen=REI&amp;desde=2026-11-01&amp;hasta=2026-11-30
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/AltasBajasTienda")]
+        [ResponseType(typeof(AltasBajasTiendaDTO))]
+        public async Task<IHttpActionResult> GetAltasBajasTienda(string almacen = null, DateTime? desde = null, DateTime? hasta = null)
+        {
+            HttpStatusCode? codigo = ValidarAltasBajasTienda(almacen, desde, hasta, out string error, out string tienda,
+                out DateTime fechaDesde, out DateTime fechaHasta);
+            if (codigo.HasValue)
+            {
+                return codigo == HttpStatusCode.Forbidden ? Content(HttpStatusCode.Forbidden, error) : (IHttpActionResult)BadRequest(error);
+            }
+            AltasBajasTiendaDTO informe = await _servicio.LeerAltasBajasTiendaAsync(tienda, fechaDesde, fechaHasta).ConfigureAwait(false);
+            return Ok(informe);
+        }
+
+        /// <summary>NestoAPI#886: el mismo informe en Excel (hojas «Movimientos», «Aparece y desaparece» y «Resumen»).</summary>
+        [HttpGet]
+        [Route("api/Informes/AltasBajasTienda/Excel")]
+        public async Task<HttpResponseMessage> GetAltasBajasTiendaExcel(string almacen = null, DateTime? desde = null, DateTime? hasta = null)
+        {
+            HttpStatusCode? codigo = ValidarAltasBajasTienda(almacen, desde, hasta, out string error, out string tienda,
+                out DateTime fechaDesde, out DateTime fechaHasta);
+            if (codigo.HasValue)
+            {
+                return new HttpResponseMessage(codigo.Value) { Content = new StringContent(error) };
+            }
+            AltasBajasTiendaDTO informe = await _servicio.LeerAltasBajasTiendaAsync(tienda, fechaDesde, fechaHasta).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new GeneradorExcelAltasBajasTienda().GenerarExcel(informe)
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#886: manda a mano el correo de altas y bajas de una tienda (el mismo que el job mensual: a la tienda con copia a
+        /// Compras). Solo Dirección, Informática y Compras. Sin movimientos no se manda nada (Enviado false y el porqué).
+        /// POST api/Informes/AltasBajasTienda/Correo?almacen=REI&amp;desde=2026-11-01&amp;hasta=2026-11-30
+        /// </summary>
+        [HttpPost]
+        [Route("api/Informes/AltasBajasTienda/Correo")]
+        [ResponseType(typeof(CorreoAltasBajasTiendaDTO))]
+        public async Task<IHttpActionResult> PostCorreoAltasBajasTienda(string almacen = null, DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (!PuedeMandarCorreoAltasBajas())
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_CORREO_ALTAS_BAJAS);
+            }
+            string tienda = GestorFacturacionTienda.NormalizarTienda(almacen);
+            if (tienda == null)
+            {
+                return BadRequest(string.IsNullOrWhiteSpace(almacen)
+                    ? $"Diga la tienda: {string.Join(" o ", GestorFacturacionTienda.TIENDAS)}."
+                    : $"«{almacen}» no es una tienda: tiene que ser {string.Join(" o ", GestorFacturacionTienda.TIENDAS)}.");
+            }
+            string error = GestorAltasBajasTienda.ResolverPeriodo(desde, hasta, Ahora(), out DateTime fechaDesde, out DateTime fechaHasta);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            CorreoAltasBajasTiendaDTO resultado = await new EnviadorAltasBajasTienda(_servicio, _servicioCorreo)
+                .EnviarAsync(tienda, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+            if (resultado.NumeroMovimientos > 0 && !resultado.Enviado)
+            {
+                ElmahHelper.Log(new Exception($"[Altas y bajas tienda #886] {tienda} {fechaDesde:dd/MM/yyyy}-{fechaHasta:dd/MM/yyyy}: {resultado.Mensaje}"));
+                return Content(HttpStatusCode.InternalServerError, resultado.Mensaje);
+            }
+            return Ok(resultado);
+        }
+
+        private bool PuedeMandarCorreoAltasBajas()
+        {
+            return User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
+                || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.COMPRAS));
+        }
+
+        /// <summary>NestoAPI#886: permisos y tienda como FacturacionTienda; periodo por defecto el mes anterior.</summary>
+        private HttpStatusCode? ValidarAltasBajasTienda(string almacen, DateTime? desde, DateTime? hasta, out string error,
+            out string tienda, out DateTime fechaDesde, out DateTime fechaHasta)
+        {
+            fechaDesde = fechaHasta = default;
+            HttpStatusCode? codigo = ValidarTiendaFacturacion(almacen, out error, out tienda);
+            if (codigo.HasValue)
+            {
+                return codigo;
+            }
+            error = GestorAltasBajasTienda.ResolverPeriodo(desde, hasta, Ahora(), out fechaDesde, out fechaHasta);
+            return error == null ? (HttpStatusCode?)null : HttpStatusCode.BadRequest;
+        }
+
         private string UsuarioSinDominio()
         {
             string nombre = User?.Identity?.IsAuthenticated == true ? User.Identity.Name : null;

@@ -1580,6 +1580,10 @@
     <Compile Include="Infraestructure\TransaccionesSeguras.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
     <Compile Include="Infraestructure\Informes\CorreoFacturacionTienda.cs" />
+    <Compile Include="Infraestructure\Informes\AltasBajasTiendaJobsService.cs" />
+    <Compile Include="Infraestructure\Informes\CorreoAltasBajasTienda.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorExcelAltasBajasTienda.cs" />
+    <Compile Include="Infraestructure\Informes\GestorAltasBajasTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorExcelFacturacionTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfDetalleRapports.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfExtractoContable.cs" />
@@ -2400,6 +2404,7 @@
     <Compile Include="Models\Informes\ExtractoContableDTO.cs" />
     <Compile Include="Models\Informes\ExtractoProveedorDTO.cs" />
     <Compile Include="Models\Informes\FacturacionTiendaDTO.cs" />
+    <Compile Include="Models\Informes\AltasBajasTiendaDTO.cs" />
     <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
     <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
     <Compile Include="Models\Informes\BalanceInformeDTO.cs" />
