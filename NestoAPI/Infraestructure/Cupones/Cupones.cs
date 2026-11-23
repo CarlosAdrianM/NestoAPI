@@ -129,6 +129,11 @@ namespace NestoAPI.Infraestructure.Cupones
         public string PedidoCanal { get; set; }
         /// <summary>NestoAPI#694: lo que descontó la tienda (IVA incluido), si lo mandó al usarlo. Solo en GET por código.</summary>
         public decimal? ImporteDescontado { get; set; }
+        /// <summary>
+        /// NestoAPI#885: el cupón es de evento, todavía no vale (Emitido) y quien pregunta puede adelantarlo (POST
+        /// api/Cupones/{codigo}/Adelantar). Solo en GET por código y en los del cliente; con la X-API-KEY de la tienda o un cliente, false.
+        /// </summary>
+        public bool SePuedeAdelantar { get; set; }
     }
 
     /// <summary>NestoAPI#694: lo que guarda dbo.Cupones del uso en la tienda (columnas del script Issue694, fuera de la lectura común).</summary>

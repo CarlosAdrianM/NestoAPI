@@ -99,7 +99,9 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 if (espejo == EstadosEspejo.ACTIVO)
                 {
-                    return false;
+                    // NestoAPI#885: activo allí pero marcado pendiente (un cupón adelantado: hay que mandar la fecha nueva; o un fallo
+                    // anterior): se vuelve a mandar entero. El PUT es idempotente.
+                    return cupon.EspejoPendienteDesde.HasValue;
                 }
                 return espejo != EstadosEspejo.SIN_CLIENTE || cupon.FechaEspejo == null
                     || cupon.FechaEspejo.Value.AddHours(HORAS_REINTENTO_SIN_CLIENTE) <= ahora;
@@ -258,6 +260,7 @@ CROSS APPLY (SELECT CASE WHEN c.Caducidad >= CAST(GETDATE() AS date)
 WHERE (d.Activo = 1 AND ISNULL(c.EstadoEspejo, '') <> 'Activo'
        AND (ISNULL(c.EstadoEspejo, '') <> 'SinCliente' OR c.FechaEspejo IS NULL OR c.FechaEspejo <= DATEADD(hour, -24, GETDATE())))
    OR (d.Activo = 0 AND c.EstadoEspejo = 'Activo')
+   OR (d.Activo = 1 AND c.EstadoEspejo = 'Activo' AND c.EspejoPendienteDesde IS NOT NULL)
 ORDER BY c.Id";
 
         internal const string SQL_RETRASADOS = "SELECT " + RepositorioCupones.LISTA_COLUMNAS + COLUMNAS_ESPEJO + RepositorioCupones.ORIGEN + @"

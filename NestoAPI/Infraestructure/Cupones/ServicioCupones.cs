@@ -32,6 +32,11 @@ namespace NestoAPI.Infraestructure.Cupones
         /// validar el pedido en la tienda. <paramref name="conApiKey"/>: la petición trae la X-API-KEY de PrestaShop (sin JWT).
         /// </summary>
         Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario, bool conApiKey = false);
+        /// <summary>
+        /// NestoAPI#885: el cupón de evento vale desde hoy en vez de desde el día del evento (por excepción, con motivo). Dirección o
+        /// ParametrosUsuario «Cupones.PuedeAdelantar» («1» o «Equipo»); 409 si no está Emitido o no es de evento.
+        /// </summary>
+        Task<CuponDTO> Adelantar(string codigo, AdelantarCuponDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -99,10 +104,13 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly Func<IServicioCorreoElectronico> correo;
         private readonly Func<bool> usoEnTiendaEncendido;
         private readonly Func<Task<List<string>>> productosCheque;
+        private readonly IAutorizadorAdelantarCupon autorizadorAdelantar;
+        private readonly IAvisadorCuponAdelantado avisadorAdelantado;
 
         public ServicioCupones(NVEntities db) : this(new RepositorioCupones(db), db, null, null, new ServicioEspejoCuponesPrestashop(db),
             () => new ServicioCorreoElectronico(), () => ReglasEspejoPrestashop.Encendido,
-            new ChequesRegalo.ServicioCanjeChequesRegalo(new ChequesRegalo.RepositorioCanjeChequesRegalo(db)).ProductosCheque)
+            new ChequesRegalo.ServicioCanjeChequesRegalo(new ChequesRegalo.RepositorioCanjeChequesRegalo(db)).ProductosCheque,
+            new AutorizadorAdelantarCupon(new LectorPermisoAdelantarCupon(db)), new AvisadorCuponAdelantado())
         {
         }
 
@@ -111,9 +119,12 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <param name="usoEnTiendaEncendido">NestoAPI#614: Cupones:EspejoPrestashop. Null: apagado.</param>
         /// <param name="productosCheque">NestoAPI#696: los productos de cheque regalo, para no dar por usado el cupón en un pedido que ya
         /// lleva el cheque (no son acumulables). Null: no se mira.</param>
+        /// <param name="autorizadorAdelantar">NestoAPI#885: quién puede adelantar un cupón. Null: solo Dirección, sin leer nada.</param>
+        /// <param name="avisadorAdelantado">NestoAPI#885: la campana a Administración de un cupón adelantado. Null: sin aviso.</param>
         internal ServicioCupones(IRepositorioCupones repositorio, NVEntities db, Func<DateTime> ahora, string productoCupon,
             IEspejoCupones espejo = null, Func<IServicioCorreoElectronico> correo = null, Func<bool> usoEnTiendaEncendido = null,
-            Func<Task<List<string>>> productosCheque = null)
+            Func<Task<List<string>>> productosCheque = null, IAutorizadorAdelantarCupon autorizadorAdelantar = null,
+            IAvisadorCuponAdelantado avisadorAdelantado = null)
         {
             this.repositorio = repositorio;
             this.db = db;
@@ -123,6 +134,8 @@ namespace NestoAPI.Infraestructure.Cupones
             this.correo = correo;
             this.usoEnTiendaEncendido = usoEnTiendaEncendido ?? (() => false);
             this.productosCheque = productosCheque;
+            this.autorizadorAdelantar = autorizadorAdelantar ?? new AutorizadorAdelantarCupon(null);
+            this.avisadorAdelantado = avisadorAdelantado;
         }
 
         public async Task<List<CuponDTO>> LeerDelCliente(string empresa, string cliente, bool todos, IPrincipal usuario)
@@ -144,7 +157,44 @@ namespace NestoAPI.Infraestructure.Cupones
                 .Select(c => ReglasCupon.ADTO(c, hoy, productoCupon))
                 .Where(c => todos || c.Estado == EstadosCupon.ACTIVO || c.Estado == EstadosCupon.EMITIDO));
             await CompletarGanavisiones(lista).ConfigureAwait(false);
+            await CompletarSePuedeAdelantar(cupones, lista, hoy, usuario).ConfigureAwait(false);
             return lista;
+        }
+
+        /// <summary>
+        /// NestoAPI#885: <see cref="CuponDTO.SePuedeAdelantar"/>. Solo se miran permisos si en la respuesta hay algún cupón de evento
+        /// Emitido; una comprobación por petición (y, con «Equipo», una lectura de los vendedores de los clientes).
+        /// </summary>
+        private async Task CompletarSePuedeAdelantar(IEnumerable<CuponLeido> leidos, List<CuponDTO> dtos, DateTime hoy, IPrincipal usuario)
+        {
+            if (dtos == null || !dtos.Any())
+            {
+                return;
+            }
+            var ids = new HashSet<int>(dtos.Select(d => d.Id));
+            List<CuponLeido> adelantables = (leidos ?? Enumerable.Empty<CuponLeido>())
+                .Where(c => c != null && ids.Contains(c.Id) && ReglaAdelantarCupon.EsAdelantable(c, hoy))
+                .ToList();
+            if (!adelantables.Any())
+            {
+                return;
+            }
+            HashSet<int> puede;
+            try
+            {
+                puede = await autorizadorAdelantar.QuePuedeAdelantar(usuario, adelantables).ConfigureAwait(false) ?? new HashSet<int>();
+            }
+            catch (Exception ex)
+            {
+                // Es solo para pintar el botón: si no se puede leer el permiso, no sale (el POST lo vuelve a comprobar)
+                ElmahHelper.Log(new Exception($"[Cupones #885] No se ha podido comprobar quién puede adelantar los cupones: {ex.Message}", ex));
+                return;
+            }
+            var adelantablesIds = new HashSet<int>(adelantables.Select(c => c.Id));
+            foreach (CuponDTO dto in dtos)
+            {
+                dto.SePuedeAdelantar = adelantablesIds.Contains(dto.Id) && puede.Contains(dto.Id);
+            }
         }
 
         /// <summary>NestoAPI#614 (Nesto#518): lo que resta cada cupón de la base de Ganavisiones, como el cheque regalo.</summary>
@@ -175,11 +225,88 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
             }
-            CuponDTO dto = ReglasCupon.ADTO(cupon, ahora(), productoCupon);
+            DateTime hoy = ahora();
+            CuponDTO dto = ReglasCupon.ADTO(cupon, hoy, productoCupon);
             await CompletarGanavisiones(new List<CuponDTO> { dto }).ConfigureAwait(false);
             await CompletarUsoTienda(cupon, dto).ConfigureAwait(false);
+            await CompletarSePuedeAdelantar(new[] { cupon }, new List<CuponDTO> { dto }, hoy, usuario).ConfigureAwait(false);
             return dto;
         }
+
+        /// <summary>
+        /// NestoAPI#885 (corte 1): un cupón de evento vale desde el día del evento; por excepción se adelanta a hoy. Solo los de evento
+        /// Emitidos (409 si no); Dirección o ParametrosUsuario «Cupones.PuedeAdelantar» (403 si no). En una transacción: ValidoDesde = hoy y
+        /// la fila «CuponAdelantado» en Modificaciones. Después (nunca rompe la respuesta): el espejo de PrestaShop y la campana a
+        /// Administración. No toca importe, caducidad, inscripción ni factura de origen.
+        /// </summary>
+        public async Task<CuponDTO> Adelantar(string codigo, AdelantarCuponDTO peticion, IPrincipal usuario)
+        {
+            if (usuario?.Identity?.IsAuthenticated != true || PermisosEventos.ClienteDelToken(usuario) != null)
+            {
+                throw new NestoBusinessException(ReglaAdelantarCupon.MENSAJE_CLIENTE_TIENDA) { StatusCode = HttpStatusCode.Forbidden };
+            }
+            string motivoNoValido = ReglaAdelantarCupon.MotivoNoValido(peticion?.Motivo);
+            if (motivoNoValido != null)
+            {
+                throw new NestoBusinessException(motivoNoValido);
+            }
+            string motivo = peticion.Motivo.Trim();
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            HashSet<int> puede = await autorizadorAdelantar.QuePuedeAdelantar(usuario, new[] { cupon }).ConfigureAwait(false) ?? new HashSet<int>();
+            if (!puede.Contains(cupon.Id))
+            {
+                throw new NestoBusinessException(ReglaAdelantarCupon.MENSAJE_SIN_PERMISO) { StatusCode = HttpStatusCode.Forbidden };
+            }
+            DateTime hoy = ahora().Date;
+            string noAdelantable = ReglaAdelantarCupon.MotivoNoAdelantable(cupon, hoy);
+            if (noAdelantable != null)
+            {
+                throw ConflictoAdelantar(cupon, noAdelantable);
+            }
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
+            DateTime anterior = cupon.ValidoDesde.Date;
+            bool hecho = await repositorio.Adelantar(cupon.Id, hoy, usuarioAuditoria, ReglaAdelantarCupon.RastroAnterior(cupon),
+                ReglaAdelantarCupon.RastroNuevo(cupon, hoy, usuarioAuditoria, motivo)).ConfigureAwait(false);
+            if (!hecho)
+            {
+                // Ha cambiado entre la lectura y el UPDATE (se ha usado, anulado...): se dice cómo está ahora
+                CuponLeido actual = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
+                throw ConflictoAdelantar(actual, ReglaAdelantarCupon.MotivoNoAdelantable(actual, hoy)
+                    ?? $"El cupón {cupon.Codigo?.Trim()} ha cambiado mientras se adelantaba. Vuelva a abrirlo e inténtelo otra vez.");
+            }
+            await espejo.Sincronizar(cupon.Id).ConfigureAwait(false);
+            if (avisadorAdelantado != null)
+            {
+                try
+                {
+                    await avisadorAdelantado.Avisar(ReglaAdelantarCupon.Notificacion(cupon, anterior, usuarioAuditoria, motivo)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cupones #885] No se ha podido avisar a Administración del cupón adelantado {cupon.Codigo?.Trim()}: {ex.Message}", ex));
+                }
+            }
+            CuponLeido adelantado = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false);
+            if (adelantado == null)
+            {
+                adelantado = cupon;
+                adelantado.ValidoDesde = hoy;
+                adelantado.Estado = EstadosCupon.ACTIVO;
+            }
+            CuponDTO dto = ReglasCupon.ADTO(adelantado, ahora(), productoCupon);
+            await CompletarGanavisiones(new List<CuponDTO> { dto }).ConfigureAwait(false);
+            return dto;
+        }
+
+        private static NestoBusinessException ConflictoAdelantar(CuponLeido cupon, string mensaje) =>
+            new NestoBusinessException(mensaje, new ErrorContext
+            {
+                ErrorCode = ReglaAdelantarCupon.ERROR_NO_SE_PUEDE_ADELANTAR,
+                Empresa = cupon?.Empresa?.Trim(),
+                Cliente = cupon?.Cliente?.Trim()
+            })
+            { StatusCode = HttpStatusCode.Conflict };
 
         /// <summary>
         /// NestoAPI#694: si se gastó en la tienda, la referencia de su pedido y lo descontado (CanalesExternos lo necesita para

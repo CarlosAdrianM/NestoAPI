@@ -98,6 +98,21 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.Anular(codigo, peticion, User).ConfigureAwait(false));
         }
 
+        // POST api/Cupones/EV-2610-7K3Q/Adelantar   { Motivo }
+        /// <summary>
+        /// NestoAPI#885: por excepción, el cupón de evento vale desde hoy en vez de desde el día del evento. Motivo obligatorio (1..500;
+        /// 400). Dirección, o ParametrosUsuario «Cupones.PuedeAdelantar» = «1» (cualquier cliente) o «Equipo» (clientes de su equipo); si
+        /// no, 403. 404 si no existe; 409 si no es de evento o ya no está Emitido (ya vale, usado, anulado, caducado). 200 con el cupón.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Cupones/{codigo}/Adelantar")]
+        [ResponseType(typeof(CuponDTO))]
+        public async Task<IHttpActionResult> PostAdelantarCupon(string codigo, [FromBody] AdelantarCuponDTO peticion)
+        {
+            return Ok(await servicio.Adelantar(codigo, peticion, User).ConfigureAwait(false));
+        }
+
         // POST api/Cupones/EV-2610-7K3Q/Usar   { Empresa, Pedido?, PedidoCanal?, ImporteDescontado?, Canal? }
         /// <summary>
         /// El cupón se ha gastado en la tienda PrestaShop. Resultado Usado o YaEnEstePedido (idempotente); si ya estaba usado en otro

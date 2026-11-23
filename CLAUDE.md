@@ -918,6 +918,22 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   asistencia siguen con `PuedeMarcarPagada`. POST/PUT PedidosVenta con la referencia del curso de un evento vivo (sin EventoId; en el PUT, líneas nuevas):
   aviso `CursoVendidoAMano` (POST en `AvisosGrabacion`), se guarda igual. Nesto: Cajas › Cobros enseña las reservas; Marcar pagada oculto a las tiendas.
 
+### Cupón de evento adelantado por excepción (NestoAPI#885, 23/11/26)
+- `POST api/Cupones/{codigo}/Adelantar` {Motivo 1..500} → 200 `CuponDTO`: un cupón de Origen «Evento» que hoy está Emitido (vale desde el día
+  del evento) pasa a valer desde HOY (`ValidoDesde` = hoy y Estado Activo; ni importe, ni caducidad, ni inscripción ni factura). 400 sin motivo,
+  404, 409 `CUPON_NO_SE_PUEDE_ADELANTAR` si ya vale, está usado, anulado, caducado o no es de evento (`ReglaAdelantarCupon.MotivoNoAdelantable`).
+  UN lote con transacción (`RepositorioCupones.SQL_ADELANTAR`, UPDATE condicionado): el cupón y la fila de Modificaciones (Tabla `CuponAdelantado`,
+  JSON con código, empresa, cliente, contacto, importe, ValidoDesde anterior y nuevo, usuario y motivo). Después, campana de Nesto a Administración
+  (`AvisadorCuponAdelantado`, tipo `CuponAdelantado`; nunca rompe). Sin cambios de esquema.
+- LA REGLA de permisos (pura, `ReglaAdelantarCupon` en `Infraestructure/Cupones/AdelantarCupon.cs`): Dirección siempre (sin leer nada); si no,
+  la fila PROPIA de ParametrosUsuario empresa 1 `Cupones.PuedeAdelantar` (sin «(defecto)», no se crea al leer): «1» = cualquier cliente,
+  «Equipo» = solo si `Clientes.Vendedor` del cliente/contacto del cupón (sin contacto, el principal) es él o de su equipo (`VendedoresEquipoString`;
+  su vendedor = claim «Vendedor» o parámetro «Vendedor»). Sin permiso, 403; cliente de la tienda, 403.
+- `CuponDTO.SePuedeAdelantar` en GET por código y en los del cliente: solo se miran permisos si hay algún Emitido de evento (una comprobación por
+  petición; con «Equipo», una lectura de vendedores por empresa). X-API-KEY o cliente: false.
+- Espejo de PrestaShop (#614): si el cart_rule está Activo allí, el adelanto pone `EspejoPendienteDesde` y `HayQueSincronizar`/`SQL_PENDIENTES`
+  vuelven a mandar entero (PUT con el date_from nuevo) un Activo marcado pendiente; se intenta en el acto y, si falla, el job de cada 15 min.
+
 ### Fechas de recepción y certeza (NestoAPI#853, 12/11/26)
 - Plazo real por proveedor en `dbo.ProveedoresPlazosEntrega` (fuera del EDMX, `Scripts/Issue853_PlazosProveedoresYEnvios.sql`): mediana y P80
   de días (CabPedidoCmp.[Fecha Modificación] → FechaAlbarán, líneas TipoLínea '1', 24 meses, empresas 1+3, negativos fuera), cadencia de

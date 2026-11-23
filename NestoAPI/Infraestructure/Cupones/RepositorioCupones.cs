@@ -89,6 +89,13 @@ namespace NestoAPI.Infraestructure.Cupones
         /// Issue613_CuponPedidoMinimoPorEvento.sql sin lanzar) o el evento.
         /// </summary>
         Task<decimal?> LeerPedidoMinimoCuponEvento(int eventoId);
+        /// <summary>
+        /// NestoAPI#885: adelanta el cupón de evento a <paramref name="validoDesde"/> (hoy) y deja la fila de rastro en Modificaciones
+        /// (Tabla «CuponAdelantado») en la MISMA transacción. UPDATE condicionado: solo si sigue siendo de evento, libre y con ValidoDesde
+        /// posterior. Si su cart_rule está activo en PrestaShop, lo marca pendiente (EspejoPendienteDesde) para que la fecha nueva viaje
+        /// por el espejo de siempre. False si no se ha tocado nada.
+        /// </summary>
+        Task<bool> Adelantar(int id, DateTime validoDesde, string usuario, string rastroAnterior, string rastroNuevo);
     }
 
     /// <summary>
@@ -282,6 +289,31 @@ BEGIN
     WHERE UsadoEnPedido = @p1 AND Estado = 'Usado' AND FacturaUso IS NULL;
     SELECT @@ROWCOUNT;
 END";
+
+        // NestoAPI#885: un solo lote, con su transacción: el UPDATE condicionado (libre: Emitido o Activo, o Usado en un pedido que ya no
+        // tiene la línea; el Estado guardado Emitido pasa a Activo, como al crear uno que ya vale), el rastro y, si ya están las columnas del
+        // espejo (#614) y el cart_rule está activo en la tienda, la marca de pendiente para que el job lo vuelva a mandar con la fecha nueva.
+        internal const string SQL_ADELANTAR = @"
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+UPDATE c
+SET ValidoDesde = @p1, Estado = CASE WHEN c.Estado = 'Emitido' THEN 'Activo' ELSE c.Estado END, Usuario = @p2, FechaModificacion = GETDATE()
+FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
+WHERE c.Id = @p0 AND c.Origen = 'Evento' AND c.ValidoDesde > @p1 AND c.Caducidad >= @p1
+      AND (c.Estado IN ('Emitido', 'Activo')
+           OR (c.Estado = 'Usado' AND c.UsadoEnPedido IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p6)));
+DECLARE @n int = @@ROWCOUNT;
+IF @n > 0
+BEGIN
+    INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (@p3, @p4, @p5, @p2);
+    IF COL_LENGTH('dbo.Cupones', 'EspejoPendienteDesde') IS NOT NULL
+        EXEC sp_executesql N'UPDATE dbo.Cupones SET EspejoPendienteDesde = ISNULL(EspejoPendienteDesde, GETDATE()) WHERE Id = @i AND EstadoEspejo = ''Activo''',
+            N'@i int', @i = @p0;
+END
+COMMIT TRANSACTION;
+SELECT @n;";
 
         private readonly NVEntities db;
         private readonly string productoCupon;
@@ -489,6 +521,16 @@ END";
                 .OrderByDescending(f => f.ClientePrincipal).Select(f => f.IVA).FirstOrDefaultAsync().ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(iva) ? null : iva.Trim();
         }
+
+        public async Task<bool> Adelantar(int id, DateTime validoDesde, string usuario, string rastroAnterior, string rastroNuevo) =>
+            (await db.Database.SqlQuery<int>(SQL_ADELANTAR,
+                new SqlParameter("@p0", id),
+                new SqlParameter("@p1", System.Data.SqlDbType.Date) { Value = validoDesde.Date },
+                new SqlParameter("@p2", Usuario(usuario)),
+                new SqlParameter("@p3", ReglaAdelantarCupon.TABLA_MODIFICACIONES),
+                new SqlParameter("@p4", System.Data.SqlDbType.NVarChar, -1) { Value = (object)rastroAnterior ?? DBNull.Value },
+                new SqlParameter("@p5", System.Data.SqlDbType.NVarChar, -1) { Value = (object)rastroNuevo ?? DBNull.Value },
+                new SqlParameter("@p6", productoCupon)).ToListAsync().ConfigureAwait(false)).FirstOrDefault() > 0;
 
         internal static string Usuario(string usuario)
         {
