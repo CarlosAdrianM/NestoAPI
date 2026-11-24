@@ -1367,6 +1367,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Job `pedidos-junto-con-pendiente-esperando` (L-V 9:30): 15 días en 6 (desde PedidosModoServicioOrigen #704; si no, la fecha del pedido) y
   aún esperando → campana/push a quien lo hizo y push a su vendedor, una vez (`PedidosJuntoConPendienteAvisos`).
 
+### Rectificativa de una rectificativa (NestoAPI#892, caso RV2600189, Carlos 24/11/26: se permite y se declara bien)
+- Invertir una RV con destino en serie rectificativa (añadir a su propio pedido RV) = `ReglaRectificativaDeRectificativa.EsRectificarRectificativa`
+  (`Infraestructure/Rectificativas/RectificativaDeRectificativa.cs`): se vinculan las líneas POSITIVAS a la línea de la RV de origen (`SeVincula`), al facturar
+  en el acto (`GuardarVinculacionesRectificativa`) o en `RectificativaPendiente`; se envía como R por diferencias de esa RV (el mapeador no mira el signo).
+  Con pedido nuevo sigue siendo deshacer el abono en NV (`EsDeshacerAbono`, 11/11/26). Lo de siempre (vincular las negativas) no cambia.
+- Auto-curado del job (`ServicioFacturas.GenerarVinculacionesRectificativaDeRectificativa`, tras el LIFO de #38 si este no hace nada): RV/RC sin
+  vinculaciones, sin ninguna línea negativa, todas las positivas con producto. LA REGLA (pura) `Casar`: todas casan una a una (producto, cantidad exactamente
+  contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo
+  pedido, si no la más reciente; dos del mismo día sin la del mismo pedido → no cura. Si no cura, el correo del job dice «rectificativa en positivo» (no «devolución»).
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

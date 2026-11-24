@@ -355,6 +355,15 @@ namespace NestoAPI.Infraestructure.Verifactu
                     return TextoNoProcesable(false, null, null, factura.Fecha, factura.VerifactuUltimoError);
                 }
 
+                // NestoAPI#892 (RV2600189): una rectificativa con todo en positivo no es una devolución: corrige un abono anterior
+                List<short?> cantidades = await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa && l.Nº_Factura.Trim() == numero)
+                    .Select(l => l.Cantidad).ToListAsync().ConfigureAwait(false);
+                if (EsRectificativaEnPositivo(cantidades))
+                {
+                    return TextoRectificativaEnPositivoSinOrigen(factura.Fecha);
+                }
+
                 List<string> productos = await db.LinPedidoVtas
                     .Where(l => l.Empresa == empresa && l.Nº_Factura.Trim() == numero && l.Cantidad < 0)
                     .Select(l => l.Producto).Distinct().ToListAsync().ConfigureAwait(false);
@@ -374,6 +383,25 @@ namespace NestoAPI.Infraestructure.Verifactu
                     $"[Verifactu job] No se pudo averiguar por qué no se declara {factura.Número?.Trim()}: {ex.Message}", ex));
                 return TextoNoProcesable(false, null, null, factura.Fecha, null);
             }
+        }
+
+        /// <summary>NestoAPI#892: ¿las líneas de la rectificativa son todas positivas (ninguna negativa y alguna positiva)?</summary>
+        internal static bool EsRectificativaEnPositivo(IEnumerable<short?> cantidades)
+        {
+            List<short> conCantidad = (cantidades ?? Enumerable.Empty<short?>())
+                .Where(c => c.HasValue && c.Value != 0).Select(c => c.Value).ToList();
+            return conCantidad.Any() && conCantidad.All(c => c > 0);
+        }
+
+        /// <summary>
+        /// NestoAPI#892: una rectificativa en positivo corrige un abono anterior (lo deshace); no es una devolución. Si no se ha
+        /// podido saber qué abono corrige, se dice así a administración.
+        /// </summary>
+        internal static string TextoRectificativaEnPositivoSinOrigen(DateTime fechaFactura)
+        {
+            return "es una rectificativa en positivo, que corrige o deshace un abono anterior, y no hemos podido saber qué abono corrige " +
+                "(no hay ninguno del cliente con esos mismos productos y cantidades sin corregir). Hay que indicar a qué abono corresponde: " +
+                $"avise a Informática. Como tiene fecha {fechaFactura:dd/MM/yyyy}, solo se puede declarar hasta el {fechaFactura.AddDays(1):dd/MM/yyyy}.";
         }
 
         /// <summary>

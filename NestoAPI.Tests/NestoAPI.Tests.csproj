@@ -1015,6 +1015,7 @@
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
     <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />
+    <Compile Include="Infrastructure\Rectificativas\RectificativaDeRectificativaTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\ReglasAbonoCopiaFacturaTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ClaimsVendedorHelperTests.cs" />
     <Compile Include="Infrastructure\Seguridad\CredencialPlazosYFormasPagoTests.cs" />
