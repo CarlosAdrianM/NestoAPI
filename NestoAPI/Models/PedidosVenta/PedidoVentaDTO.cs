@@ -134,6 +134,14 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public string Version { get; set; }
         /// <summary>
+        /// NestoAPI#889 (Black Friday 2026, Carlos 24/11/26): qué ha contestado el vendedor a la pregunta de
+        /// <c>POST api/PedidosVenta/AvisoCampanaSoloEnStock</c>. Solo de entrada (POST y PUT; al leer va null). Null o vacío = como
+        /// siempre (se guarda y el aviso sale después). «QuitarDescuento» = lo que no hay en stock va sin el descuento de la campaña (la
+        /// línea se parte si hace falta). «MantenerDescuento» = se guarda tal cual y no se vuelve a avisar.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CampanaSoloEnStock { get; set; }
+        /// <summary>
         /// NestoAPI#873 (ampliación): solo en la respuesta del POST con «?devolverPedido=true»: el pedido tal como ha quedado en la
         /// BD (el del GET, con los Nº de orden de sus líneas) y su Version, leídos de forma coherente. Null en lo demás (no viaja).
         /// </summary>

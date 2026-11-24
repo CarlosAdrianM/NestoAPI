@@ -944,6 +944,7 @@
     <Compile Include="Infrastructure\PedidosVenta\JuntoConPendienteTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RutaInternaDiaRepartoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AvisoCampanaSoloEnStockTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\CampanaSoloEnStockPreguntaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\AvisoCondicionesCampanaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CampanasAplicarDtoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\DiasRepartoClientesTests.cs" />

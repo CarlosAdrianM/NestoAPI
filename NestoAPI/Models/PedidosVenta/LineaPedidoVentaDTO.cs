@@ -86,6 +86,24 @@ namespace NestoAPI.Models.PedidosVenta
         public string ProductoAnterior { get; set; }
         [JsonIgnore]
         public bool EsLineaNueva => id == 0;
+
+        /// <summary>
+        /// NestoAPI#889: una línea NUEVA (id 0) copia de esta (mismo producto, texto, almacén, fecha de entrega, IVA…) para partirla;
+        /// sin picking, albarán, factura ni lo que traía de antes.
+        /// </summary>
+        public LineaPedidoVentaDTO CopiaParaPartir()
+        {
+            var copia = (LineaPedidoVentaDTO)MemberwiseClone();
+            copia.id = 0;
+            copia.picking = 0;
+            copia.Albaran = null;
+            copia.Factura = null;
+            copia.yaFacturado = false;
+            copia.CantidadAnterior = null;
+            copia.ProductoAnterior = null;
+            copia.NoRevalidarDescuento = false;
+            return copia;
+        }
         [JsonIgnore]
         public bool CambioProducto => !EsLineaNueva && ProductoAnterior != null && ProductoAnterior.Trim() != Producto?.Trim();
 
