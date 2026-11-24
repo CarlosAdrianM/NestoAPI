@@ -190,5 +190,33 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
                 Lineas = new List<LineaPedidoVentaDTO> { new LineaPedidoVentaDTO { Producto = PRODUCTO_KINETICS, Cantidad = 1 } }
             }, servicio).ValidacionSuperada);
         }
+
+        // Carlos 24/11/26 (pedido 931379, cliente 38715): hecha la primera excepción, el cliente ya tiene Kinetics
+        // y la norma de Faby y Greenik deja de aplicársele, para siempre.
+        [TestMethod]
+        public void SiElClienteYaTieneLaFamiliaRestringida_LaNormaYaNoSeLeAplica()
+        {
+            KineticsCondicionadaA(FABY);
+            A.CallTo(() => servicio.UltimaCompraDeFamilia(CLIENTE, FABY, 24)).Returns(DateTime.Today.AddDays(-10));
+            A.CallTo(() => servicio.UltimaCompraDeFamilia(CLIENTE, KINETICS, ValidadorFamiliasIncompatibles.SIN_LIMITE_DE_MESES))
+                .Returns(DateTime.Today.AddYears(-5));
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(PedidoCon(PRODUCTO_KINETICS), servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            A.CallTo(() => servicio.UltimaCompraDeFamilia(CLIENTE, FABY, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void SiElClienteNoTieneLaFamiliaRestringida_LaNormaSigueIgual()
+        {
+            KineticsCondicionadaA(FABY);
+            A.CallTo(() => servicio.UltimaCompraDeFamilia(CLIENTE, FABY, 24)).Returns(DateTime.Today.AddDays(-10));
+            A.CallTo(() => servicio.UltimaCompraDeFamilia(CLIENTE, KINETICS, A<int>._)).Returns(null);
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(PedidoCon(PRODUCTO_KINETICS), servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+        }
     }
 }

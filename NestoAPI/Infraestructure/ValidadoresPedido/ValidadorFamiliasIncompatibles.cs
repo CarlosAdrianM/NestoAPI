@@ -13,6 +13,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     /// últimos 24 meses, pero el mecanismo es genérico: las parejas y la ventana viven en la tabla
     /// <c>FamiliasIncompatibles</c>, así que ampliarlo no toca código.
     ///
+    /// <para>Carlos 24/11/26: la norma deja de aplicarse al cliente que YA tiene la familia restringida (alguna línea suya
+    /// de esa familia que no sea presupuesto, sin límite de tiempo): hecha la primera excepción, ya la compra siempre.</para>
+    ///
     /// <para>Denegar no es la última palabra: quien tenga el parámetro
     /// <c>PermitirVenderFamiliasRestringidas</c> (Carlos y Manuel hoy; Alberto Sancho NO) recibe el
     /// motivo, confirma el "¿desea crearlo de todos modos?" que ya existe en Nesto y en NestoApp, y
@@ -24,6 +27,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     /// </summary>
     public class ValidadorFamiliasIncompatibles : IValidadorDenegacion
     {
+        /// <summary>Para <c>UltimaCompraDeFamilia</c>: 0 meses = sin ventana, cualquier fecha.</summary>
+        internal const int SIN_LIMITE_DE_MESES = 0;
+
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
             RespuestaValidacion respuesta = new RespuestaValidacion
@@ -54,6 +60,14 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 List<FamiliaIncompatibilidad> incompatibilidades = servicio.BuscarIncompatibilidadesFamilia(familia);
                 if (incompatibilidades == null || !incompatibilidades.Any())
+                {
+                    continue;
+                }
+
+                // Carlos 24/11/26 (pedido 931379, cliente 38715): la norma es para quien NO tiene la familia. En cuanto el
+                // cliente ya la tiene (una línea suya que no sea presupuesto: Manuel hizo la primera excepción, o la compraba
+                // de antes), puede seguir comprándola siempre, haya comprado lo que haya comprado de las incompatibles.
+                if (servicio.UltimaCompraDeFamilia(pedido.cliente, familia, SIN_LIMITE_DE_MESES) != null)
                 {
                     continue;
                 }
