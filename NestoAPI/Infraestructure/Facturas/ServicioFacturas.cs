@@ -2043,7 +2043,7 @@ namespace NestoAPI.Infraestructure.Facturas
         /// vinculaciones por línea de LinFacturaVtaRectificacion (una entrada por factura original
         /// distinta, con su serie/número/fecha reales de CabFacturaVta).
         /// </summary>
-        private async Task<List<Verifactu.VerifactuFacturaRectificada>> CargarFacturasRectificadas(string empresa, string numeroFacturaRectificativa)
+        internal async Task<List<Verifactu.VerifactuFacturaRectificada>> CargarFacturasRectificadas(string empresa, string numeroFacturaRectificativa)
         {
             string numeroRectificativa = numeroFacturaRectificativa?.Trim();
             List<string> numerosOriginales = await db.LinFacturaVtaRectificaciones
