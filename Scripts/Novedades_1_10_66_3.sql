@@ -15,10 +15,10 @@ DECLARE @version VARCHAR(23) = '1.10.66.3';
 DECLARE @fecha DATE = '2026-11-24';
 
 INSERT INTO dbo.Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
-SELECT @version, @fecha, 'Nuevo', N'Black Friday (25 al 30 de noviembre): aviso si no hay stock suficiente',
-       N'Los descuentos de Black Friday son solo para lo que haya en stock. Al guardar un pedido con un producto de la campaña del que no hay bastante entre Algete, Reina y Alcobendas (descontando lo que ya tienen pedido otros clientes), Nesto avisa de cuántas unidades hay. El aviso no bloquea ni quita el descuento: decide quien pasa el pedido. También sale en el correo del pedido.',
+SELECT @version, @fecha, 'Nuevo', N'Black Friday (25 al 30 de noviembre): al contado y con descuento solo lo que hay en stock',
+       N'Por defecto, los pedidos con descuento de Black Friday son al contado y el descuento es solo para lo que haya en stock. Al guardar un pedido (nuevo o al modificarlo añadiendo productos o subiendo cantidades), Nesto pregunta dos cosas si hace falta: si lo cambia a contado, y si quita el descuento de la campaña a lo que no hay en stock entre Algete, Reina y Alcobendas. Si responde que sí (lo normal), Nesto parte la línea: lo que hay en stock va con el descuento de Black Friday y el resto en otra línea con el precio que ese cliente tendría sin la campaña. Si responde que no, es una excepción que acepta usted: irá todo con descuento. No vuelve a preguntar al guardar si no cambia nada de eso.',
        'Nesto', 1, 'sa', NULL
-WHERE NOT EXISTS (SELECT 1 FROM dbo.Novedades x WHERE x.Version = @version AND x.Titulo = N'Black Friday (25 al 30 de noviembre): aviso si no hay stock suficiente');
+WHERE NOT EXISTS (SELECT 1 FROM dbo.Novedades x WHERE x.Version = @version AND x.Titulo = N'Black Friday (25 al 30 de noviembre): al contado y con descuento solo lo que hay en stock');
 
 INSERT INTO dbo.Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT @version, @fecha, 'Mejorado', N'Precios: con dos descuentos del mismo producto, sale el mejor para el cliente',
