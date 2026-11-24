@@ -1659,6 +1659,10 @@ namespace NestoAPI.Controllers
                 }
                 versionComprobada = versionActual != null;
             }
+            // NestoAPI#889 (Carlos 24/11/26): con «QuitarDescuento», lo que no hay en stock de una campaña «solo en stock» va sin su
+            // descuento. Solo se tocan (o parten) líneas pendientes sin picking. ANTES de la ampliación en preparación y de validar.
+            AvisoPedidoDTO avisoSoloEnStockAplicado = await Infraestructure.PedidosVenta.CondicionesCampana.ServicioCampanaSoloEnStock
+                .AlGuardar(pedido, DateTime.Today, l => l.picking == 0 && l.estado == Constantes.EstadosLineaVenta.PENDIENTE).ConfigureAwait(true);
             // Caso 931007: añadir líneas a un pedido en preparación no pasa en silencio (409 PEDIDO_EN_PREPARACION, pedido nuevo o pedir a
             // Almacén). Antes de tocar nada; con «PedidoNuevo» este mismo PUT (sin lo añadido) y el POST del pedido nuevo van en una transacción.
             Infraestructure.PedidosVenta.ComprobacionAmpliacion ampliacion = await ServicioAmpliacionEnPreparacion.Comprobar(pedido).ConfigureAwait(true);
@@ -2919,8 +2923,11 @@ namespace NestoAPI.Controllers
             await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarPedidoSinFallar(pedido);
 
             // NestoAPI#889 (Black Friday 2026): líneas con el descuento de una campaña «solo en stock» que hoy no se pueden servir
-            // con lo que hay. Solo avisa (respuesta y correo): ni bloquea ni quita el descuento; nunca lanza.
-            AvisoPedidoDTO avisoSoloEnStock = await Infraestructure.PedidosVenta.CondicionesCampana.AvisoCampanaSoloEnStock.Calcular(pedido, DateTime.Today).ConfigureAwait(true);
+            // con lo que hay. Solo avisa (respuesta y correo): ni bloquea ni quita el descuento; nunca lanza. Si ya se le preguntó
+            // (CampanaSoloEnStock), no se vuelve a avisar; con «QuitarDescuento», lo hecho.
+            AvisoPedidoDTO avisoSoloEnStock = Infraestructure.PedidosVenta.CondicionesCampana.OpcionesCampanaSoloEnStock.YaContestada(pedido.CampanaSoloEnStock)
+                ? avisoSoloEnStockAplicado
+                : await Infraestructure.PedidosVenta.CondicionesCampana.AvisoCampanaSoloEnStock.Calcular(pedido, DateTime.Today).ConfigureAwait(true);
             if (avisoSoloEnStock != null)
             {
                 avisos.Add(avisoSoloEnStock);
@@ -3235,6 +3242,10 @@ namespace NestoAPI.Controllers
             await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
             // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / (1 + IVA + RE del cliente), sin descuentos.
             await ServicioCupones.NormalizarLineas(pedido).ConfigureAwait(true);
+            // NestoAPI#889 (Carlos 24/11/26): con «QuitarDescuento», lo que no hay en stock de una campaña «solo en stock» va sin su
+            // descuento (la línea se parte si hace falta). ANTES de modo de servicio, portes y validación. Sin el campo, nada.
+            AvisoPedidoDTO avisoSoloEnStockAplicado = await Infraestructure.PedidosVenta.CondicionesCampana.ServicioCampanaSoloEnStock
+                .AlGuardar(pedido, DateTime.Today, l => l.picking == 0).ConfigureAwait(true);
 
             // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto, no en el ServirJunto
             // de la ficha del cliente. NestoAPI#506: ese defecto es el que fuerce el parámetro
@@ -3752,8 +3763,11 @@ namespace NestoAPI.Controllers
             await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarPedidoSinFallar(pedido);
 
             // NestoAPI#889 (Black Friday 2026): líneas con el descuento de una campaña «solo en stock» que hoy no se pueden servir
-            // con lo que hay. Solo avisa (respuesta y correo): ni bloquea ni quita el descuento; nunca lanza.
-            AvisoPedidoDTO avisoSoloEnStock = await Infraestructure.PedidosVenta.CondicionesCampana.AvisoCampanaSoloEnStock.Calcular(pedido, DateTime.Today).ConfigureAwait(true);
+            // con lo que hay. Solo avisa (respuesta y correo): ni bloquea ni quita el descuento; nunca lanza. Si ya se le preguntó
+            // (CampanaSoloEnStock «QuitarDescuento»/«MantenerDescuento»), no se vuelve a avisar; con «QuitarDescuento», lo hecho.
+            AvisoPedidoDTO avisoSoloEnStock = Infraestructure.PedidosVenta.CondicionesCampana.OpcionesCampanaSoloEnStock.YaContestada(pedido.CampanaSoloEnStock)
+                ? avisoSoloEnStockAplicado
+                : await Infraestructure.PedidosVenta.CondicionesCampana.AvisoCampanaSoloEnStock.Calcular(pedido, DateTime.Today).ConfigureAwait(true);
 
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {

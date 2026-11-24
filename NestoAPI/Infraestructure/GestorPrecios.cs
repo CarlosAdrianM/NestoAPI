@@ -107,7 +107,7 @@ namespace NestoAPI.Infraestructure
                 // Black Friday 2026 (Carlos 24/11/26): con dos filas de tarifa del mismo producto y la misma CantidadMínima
                 // (un precio fijo de siempre y la fila de una campaña) gana lo mejor para el cliente: la de menor precio.
                 // Antes salía la que SQL devolviera primero.
-                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes)
+                dtoProducto = TarifaSinCampanaExcluida(Vigencia.Vigentes(db.DescuentosProductoes), datos)
                     .Where(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null)
                     .OrderByDescending(d => d.CantidadMínima)
                     .ThenBy(d => d.Precio == null || d.Precio <= 0 ? 1 : 0)
@@ -194,7 +194,7 @@ namespace NestoAPI.Infraestructure
                 // Distribuidores (Carlos 20/11/26): lo que lleva el cliente SIN la fila de tarifa del producto (su «propio»).
                 decimal propioSinCampana = datos.descuentoCalculado;
                 // Mismo desempate (Carlos 24/11/26): a igual CantidadMínima, la fila de mayor descuento.
-                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes)
+                dtoProducto = TarifaSinCampanaExcluida(Vigencia.Vigentes(db.DescuentosProductoes), datos)
                     .Where(d => d.Empresa == datos.producto.Empresa && d.Producto.Número == datos.producto.Número && d.Nº_Cliente == null && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null)
                     .OrderByDescending(d => d.CantidadMínima)
                     .ThenByDescending(d => d.Descuento)
@@ -236,6 +236,20 @@ namespace NestoAPI.Infraestructure
                 // Si quisiéramos comprobar también las condiciones que tiene en ficha, descomentar la siguiente línea
                 // comprobarCondiciones(datos);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#889 (Black Friday 2026, Carlos 24/11/26): «sin la campaña». Solo si se pide (<see cref="PrecioDescuentoProducto.campanaExcluida"/>):
+        /// las filas de tarifa del producto (sin cliente ni proveedor) de esa campaña no cuentan. Sin el dato, la consulta es la de siempre.
+        /// </summary>
+        private static IQueryable<DescuentosProducto> TarifaSinCampanaExcluida(IQueryable<DescuentosProducto> filas, PrecioDescuentoProducto datos)
+        {
+            if (string.IsNullOrWhiteSpace(datos.campanaExcluida))
+            {
+                return filas;
+            }
+            string campana = datos.campanaExcluida.Trim();
+            return filas.Where(d => d.Campana == null || d.Campana.Trim() != campana);
         }
 
         /// <summary>
@@ -743,6 +757,8 @@ namespace NestoAPI.Infraestructure
         }
         public bool descuentosRellenos;
         public List<DescuentosProducto> descuentosProducto;
+        /// <summary>NestoAPI#889: opcional; el precio y el descuento «sin la campaña» (sus filas de tarifa del producto no cuentan). Null = como siempre.</summary>
+        public string campanaExcluida;
     }
 
     public class RespuestaValidacion

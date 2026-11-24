@@ -609,6 +609,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`LectorDisponibleCampanaStockSql`, solo si alguna línea es de la campaña). No llega → aviso `CampanaSoloEnStock` («El descuento de Black Friday
   del 45929 (NOMBRE) es solo para lo que haya en stock: hoy hay 2 de 5.») en `AvisosGrabacion` (POST), `Avisos` (PUT) y el correo. Nunca
   bloquea, quita el descuento ni rompe el guardado. Ni presupuestos ni la tienda online.
+  **Pregunta antes de guardar (Carlos 24/11/26, como el contado)**: `POST api/PedidosVenta/AvisoCampanaSoloEnStock` (`PedidosVentaCondicionesCampanaController`,
+  cuerpo = el `PedidoVentaDTO` que se va a guardar; solo lectura, siempre 200, nunca lanza) → {HayAviso, Campana, Mensaje (de usted, sin la pregunta final),
+  Productos [{Producto, Nombre, Pedidas, Disponibles, ConDescuento, SinDescuento, DescuentoCampana, DescuentoSinCampana, PrecioSinCampana, Texto}]}.
+  Al guardar, `PedidoVentaDTO.CampanaSoloEnStock` (solo de entrada, POST y PUT): null = como antes (aviso después); «QuitarDescuento» = ANTES de validar,
+  LA REGLA pura `ReglaCampanaSoloEnStock.Ajustar` (`CampanaSoloEnStockPregunta.cs`): por producto, las unidades con descuento se limitan a lo disponible
+  (por orden de línea; las intocables primero) y el resto va «sin campaña» en una línea NUEVA (`LineaPedidoVentaDTO.CopiaParaPartir`) o en la propia si
+  no queda ninguna con descuento (Precio, DescuentoProducto, AplicarDescuento del motor y DescuentoLinea a 0); aviso `CampanaSoloEnStockAplicado` y no el de
+  después; en el PUT solo líneas pendientes (-1) sin picking. «MantenerDescuento» = tal cual, sin aviso. «Sin campaña» = el motor con
+  `PrecioDescuentoProducto.campanaExcluida` (las filas de tarifa del producto de esa campaña no cuentan; sin el dato, la consulta de siempre); un
+  distribuidor sale con su descuento propio, sin componer. Una línea que ya va a precio «sin campaña» o peor no cuenta (lo partido no se vuelve a preguntar).
 
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid
