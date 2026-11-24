@@ -73,8 +73,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
     /// <summary>Calcula el precio «sin la campaña» de un producto para un cliente.</summary>
     public interface ICalculadorPrecioSinCampana
     {
-        /// <summary>Null si no se puede (producto que no existe…).</summary>
-        PrecioSinCampana Calcular(string empresa, string cliente, string contacto, string producto, string campana, int cantidad);
+        /// <summary>
+        /// Null si no se puede (producto que no existe…). <paramref name="fichaDesbloqueadaPorLaCampana"/>: la ficha tiene «Aplicar Dto» = 1
+        /// solo por la campaña (<see cref="CampanasAplicarDto"/>): sin ella no admite descuento.
+        /// </summary>
+        PrecioSinCampana Calcular(string empresa, string cliente, string contacto, string producto, string campana, int cantidad,
+            bool fichaDesbloqueadaPorLaCampana);
     }
 
     /// <summary>
@@ -84,7 +88,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
     /// </summary>
     public class CalculadorPrecioSinCampanaMotor : ICalculadorPrecioSinCampana
     {
-        public PrecioSinCampana Calcular(string empresa, string cliente, string contacto, string producto, string campana, int cantidad)
+        public PrecioSinCampana Calcular(string empresa, string cliente, string contacto, string producto, string campana, int cantidad,
+            bool fichaDesbloqueadaPorLaCampana)
         {
             string laEmpresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             string elProducto = producto?.Trim();
@@ -103,7 +108,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
                     cliente = cliente,
                     contacto = contacto,
                     cantidad = (short)Math.Max(1, Math.Min(cantidad, short.MaxValue)),
-                    aplicarDescuento = ficha.Aplicar_Dto,
+                    // Fuera de la campaña una ficha que ella desbloquea no admite descuento (como una bloqueada: el motor da la tarifa).
+                    aplicarDescuento = ficha.Aplicar_Dto && !fichaDesbloqueadaPorLaCampana,
                     campanaExcluida = campana
                 };
                 GestorPrecios.calcularDescuentoProducto(datos, db);
@@ -153,6 +159,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
         public static bool LineaConCampana(LineaPedidoVentaDTO l, PrecioSinCampana sinCampana) =>
             AvisoCampanaSoloEnStock.LineaCuenta(l) && l.oferta == null && !l.EsBonificadoGanavisiones && !l.EsFicticio && !l.EsCupon && !l.EsChequeRegalo
             && !YaVaSinCampana(l, sinCampana);
+
+        /// <summary>
+        /// LA REGLA (pura): la ficha tiene «Aplicar Dto» = 1 solo por ESTA campaña: fila de <c>dbo.CampanasAplicarDto</c> sin restaurar,
+        /// vigente hoy o ya activada, y que no tuviera ya «Aplicar Dto» = 1 antes de activarla.
+        /// </summary>
+        public static bool FichaDesbloqueadaPorLaCampana(IEnumerable<FilaCampanaAplicarDto> filas, string campana, string empresa, string producto, DateTime hoy)
+        {
+            if (filas == null || string.IsNullOrWhiteSpace(campana) || string.IsNullOrWhiteSpace(producto))
+            {
+                return false;
+            }
+            string laEmpresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            return filas.Any(f => f != null && f.FechaRestaurado == null && f.AplicarDtoAnterior != true
+                && string.Equals(f.Campana?.Trim(), campana.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(string.IsNullOrWhiteSpace(f.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : f.Empresa.Trim(), laEmpresa, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(f.Producto?.Trim(), producto.Trim(), StringComparison.OrdinalIgnoreCase)
+                && (f.FechaActivado != null || (f.FechaDesde.Date <= hoy.Date && hoy.Date <= f.FechaHasta.Date)));
+        }
 
         /// <summary>La campaña de cada producto (la vigente que empezó antes).</summary>
         public static Dictionary<string, string> CampanaDe(IEnumerable<ProductoCampanaStock> filas, string empresa, DateTime hoy)
@@ -415,7 +439,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
         }
 
         internal static async Task<Analisis> Analizar(PedidoVentaDTO pedido, DateTime hoy, ILectorDisponibleCampanaStock lector,
-            IEnumerable<ProductoCampanaStock> filas, ICalculadorPrecioSinCampana calculador, Action<Exception> registrar)
+            IEnumerable<ProductoCampanaStock> filas, ICalculadorPrecioSinCampana calculador, Action<Exception> registrar,
+            Func<Task<List<FilaCampanaAplicarDto>>> leerDesbloqueos = null)
         {
             var analisis = new Analisis();
             IEnumerable<ProductoCampanaStock> lasFilas = filas ?? CampanasCondicionStock.Actuales;
@@ -428,14 +453,30 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
             List<DisponibleProductoCampana> disponibles = await elLector.Leer(pedido.empresa, pedido.numero, productos).ConfigureAwait(false);
             Dictionary<string, string> campanaDe = ReglaCampanaSoloEnStock.CampanaDe(lasFilas, pedido.empresa, hoy);
             ICalculadorPrecioSinCampana elCalculador = calculador ?? new CalculadorPrecioSinCampanaMotor();
+            // Las fichas que la campaña desbloquea (una lectura por tanda; si falla, como si no hubiera ninguna y ELMAH).
+            List<FilaCampanaAplicarDto> desbloqueos = new List<FilaCampanaAplicarDto>();
+            try
+            {
+                Func<Task<List<FilaCampanaAplicarDto>>> leer = leerDesbloqueos
+                    ?? (calculador == null ? () => new RepositorioCampanasAplicarDto().LeerPendientes() : (Func<Task<List<FilaCampanaAplicarDto>>>)null);
+                if (leer != null)
+                {
+                    desbloqueos = await leer().ConfigureAwait(false) ?? new List<FilaCampanaAplicarDto>();
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(registrar, new Exception($"[Campaña solo en stock #889] No se han podido leer las fichas desbloqueadas por la campaña: {ex.Message}", ex));
+            }
             foreach (string producto in productos)
             {
                 try
                 {
                     int cantidad = pedido.Lineas.Where(l => AvisoCampanaSoloEnStock.LineaCuenta(l)
                         && string.Equals(l.Producto.Trim(), producto, StringComparison.OrdinalIgnoreCase)).Sum(l => l.Cantidad);
-                    PrecioSinCampana precio = elCalculador.Calcular(pedido.empresa, pedido.cliente, pedido.contacto, producto,
-                        campanaDe.TryGetValue(producto, out string c) ? c : null, cantidad);
+                    string campana = campanaDe.TryGetValue(producto, out string c) ? c : null;
+                    PrecioSinCampana precio = elCalculador.Calcular(pedido.empresa, pedido.cliente, pedido.contacto, producto, campana, cantidad,
+                        ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana(desbloqueos, campana, pedido.empresa, producto, hoy));
                     if (precio != null)
                     {
                         analisis.SinCampana[producto] = precio;
@@ -452,7 +493,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
 
         /// <summary><c>POST api/PedidosVenta/AvisoCampanaSoloEnStock</c>: la pregunta. Nunca lanza (HayAviso false).</summary>
         public static async Task<AvisoCampanaSoloEnStockRespuesta> Consultar(PedidoVentaDTO pedido, DateTime hoy, ILectorDisponibleCampanaStock lector = null,
-            IEnumerable<ProductoCampanaStock> filas = null, ICalculadorPrecioSinCampana calculador = null, Action<Exception> registrar = null)
+            IEnumerable<ProductoCampanaStock> filas = null, ICalculadorPrecioSinCampana calculador = null, Action<Exception> registrar = null,
+            Func<Task<List<FilaCampanaAplicarDto>>> leerDesbloqueos = null)
         {
             try
             {
@@ -460,7 +502,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
                 {
                     return new AvisoCampanaSoloEnStockRespuesta { HayAviso = false };
                 }
-                Analisis analisis = await Analizar(pedido, hoy, lector, filas, calculador, registrar).ConfigureAwait(false);
+                Analisis analisis = await Analizar(pedido, hoy, lector, filas, calculador, registrar, leerDesbloqueos).ConfigureAwait(false);
                 return ReglaCampanaSoloEnStock.Respuesta(analisis.Faltas, analisis.SinCampana);
             }
             catch (Exception ex)
@@ -476,7 +518,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
         /// </summary>
         public static async Task<AvisoPedidoDTO> AlGuardar(PedidoVentaDTO pedido, DateTime hoy, Func<LineaPedidoVentaDTO, bool> sePuedeTocar,
             ILectorDisponibleCampanaStock lector = null, IEnumerable<ProductoCampanaStock> filas = null, ICalculadorPrecioSinCampana calculador = null,
-            Action<Exception> registrar = null)
+            Action<Exception> registrar = null, Func<Task<List<FilaCampanaAplicarDto>>> leerDesbloqueos = null)
         {
             if (pedido?.Lineas == null || !OpcionesCampanaSoloEnStock.EsQuitar(pedido.CampanaSoloEnStock))
             {
@@ -484,7 +526,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.CondicionesCampana
             }
             try
             {
-                Analisis analisis = await Analizar(pedido, hoy, lector, filas, calculador, registrar).ConfigureAwait(false);
+                Analisis analisis = await Analizar(pedido, hoy, lector, filas, calculador, registrar, leerDesbloqueos).ConfigureAwait(false);
                 if (!analisis.Faltas.Any())
                 {
                     return null;

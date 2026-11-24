@@ -618,7 +618,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   no queda ninguna con descuento (Precio, DescuentoProducto, AplicarDescuento del motor y DescuentoLinea a 0); aviso `CampanaSoloEnStockAplicado` y no el de
   después; en el PUT solo líneas pendientes (-1) sin picking. «MantenerDescuento» = tal cual, sin aviso. «Sin campaña» = el motor con
   `PrecioDescuentoProducto.campanaExcluida` (las filas de tarifa del producto de esa campaña no cuentan; sin el dato, la consulta de siempre); un
-  distribuidor sale con su descuento propio, sin componer. Una línea que ya va a precio «sin campaña» o peor no cuenta (lo partido no se vuelve a preguntar).
+  distribuidor sale con su descuento propio, sin componer. Una ficha que la campaña desbloquea (`CampanasAplicarDto` sin restaurar, vigente o activada, sin «Aplicar Dto» = 1 de antes;
+  `ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana`, una lectura por tanda) va «sin campaña» sin descuento (`aplicarDescuento` false). Una línea que ya va a precio «sin campaña» o peor no cuenta (lo partido no se vuelve a preguntar).
 
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid

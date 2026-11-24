@@ -70,7 +70,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         private static ICalculadorPrecioSinCampana Calculador(decimal descuento = 0.10M, decimal precio = 10M)
         {
             var calculador = A.Fake<ICalculadorPrecioSinCampana>();
-            A.CallTo(() => calculador.Calcular(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<int>._))
+            A.CallTo(() => calculador.Calcular(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<int>._, A<bool>._))
                 .Returns(new PrecioSinCampana { Precio = precio, Descuento = descuento, Pvp = 10M, AplicarDescuento = true });
             return calculador;
         }
@@ -203,6 +203,79 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             AvisoCampanaSoloEnStockRespuesta respuesta = ReglaCampanaSoloEnStock.Respuesta(Faltas(lineas, ("45929", 0)), Sin(0M));
 
             StringAssert.Contains(respuesta.Mensaje, "Del 45929 (CHAMPU LISAP) hoy no hay: la que pide iría sin el descuento de la campaña (a precio de tarifa).");
+        }
+
+        // ---------------------------------------------------------------- Fichas desbloqueadas por la campaña
+
+        private static List<FilaCampanaAplicarDto> Desbloqueo(string producto = "45929", bool? anterior = false, DateTime? activado = null) =>
+            new List<FilaCampanaAplicarDto>
+            {
+                new FilaCampanaAplicarDto { Campana = "Black Friday ", Empresa = "1  ", Producto = producto + "   ",
+                    FechaDesde = new DateTime(2026, 11, 25), FechaHasta = new DateTime(2026, 11, 30), AplicarDtoAnterior = anterior, FechaActivado = activado }
+            };
+
+        [TestMethod]
+        public void FichaDesbloqueada_PorEstaCampanaVigente_Si()
+        {
+            Assert.IsTrue(ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana(Desbloqueo(anterior: null), "Black Friday", "1", "45929", HOY));
+            Assert.IsTrue(ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana(Desbloqueo(activado: HOY), "Black Friday", "1", "45929", HOY));
+        }
+
+        [TestMethod]
+        public void FichaDesbloqueada_OtraCampanaOtroProductoOYaTeniaAplicarDto_No()
+        {
+            Assert.IsFalse(ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana(Desbloqueo(), "Navidad", "1", "45929", HOY));
+            Assert.IsFalse(ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana(Desbloqueo(), "Black Friday", "1", "17404", HOY));
+            Assert.IsFalse(ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana(Desbloqueo(anterior: true, activado: HOY), "Black Friday", "1", "45929", HOY));
+        }
+
+        private static ICalculadorPrecioSinCampana CalculadorQueMiraElDesbloqueo()
+        {
+            var calculador = A.Fake<ICalculadorPrecioSinCampana>();
+            A.CallTo(() => calculador.Calcular(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<int>._, A<bool>._))
+                .ReturnsLazily(call => call.GetArgument<bool>(6)
+                    ? new PrecioSinCampana { Precio = 10M, Descuento = 0M, Pvp = 10M, AplicarDescuento = false }
+                    : new PrecioSinCampana { Precio = 10M, Descuento = 0.10M, Pvp = 10M, AplicarDescuento = true });
+            return calculador;
+        }
+
+        [TestMethod]
+        public async Task AlGuardar_FichaDesbloqueadaPorLaCampana_VaSinDescuento()
+        {
+            PedidoVentaDTO pedido = Pedido("QuitarDescuento", Linea("45929", 5));
+
+            await ServicioCampanaSoloEnStock.AlGuardar(pedido, HOY, null, Lector(("45929", 0)), BlackFriday(), CalculadorQueMiraElDesbloqueo(),
+                e => { }, () => Task.FromResult(Desbloqueo()));
+
+            LineaPedidoVentaDTO linea = pedido.Lineas.Single();
+            Assert.AreEqual(0M, linea.DescuentoProducto);
+            Assert.IsFalse(linea.AplicarDescuento);
+        }
+
+        [TestMethod]
+        public async Task AlGuardar_FichaNormal_SuDescuentoHabitual()
+        {
+            PedidoVentaDTO pedido = Pedido("QuitarDescuento", Linea("17404", 5));
+
+            await ServicioCampanaSoloEnStock.AlGuardar(pedido, HOY, null, Lector(("17404", 0)), BlackFriday(), CalculadorQueMiraElDesbloqueo(),
+                e => { }, () => Task.FromResult(Desbloqueo()));
+
+            LineaPedidoVentaDTO linea = pedido.Lineas.Single();
+            Assert.AreEqual(0.10M, linea.DescuentoProducto);
+            Assert.IsTrue(linea.AplicarDescuento);
+        }
+
+        [TestMethod]
+        public async Task AlGuardar_SiFallaLaLecturaDeDesbloqueos_SigueComoFichaNormal()
+        {
+            PedidoVentaDTO pedido = Pedido("QuitarDescuento", Linea("45929", 5));
+            Exception registrada = null;
+
+            await ServicioCampanaSoloEnStock.AlGuardar(pedido, HOY, null, Lector(("45929", 0)), BlackFriday(), CalculadorQueMiraElDesbloqueo(),
+                e => registrada = e, () => throw new Exception("caída"));
+
+            Assert.AreEqual(0.10M, pedido.Lineas.Single().DescuentoProducto);
+            Assert.IsNotNull(registrada);
         }
 
         // ---------------------------------------------------------------- Servicio y endpoint
@@ -351,6 +424,18 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             GestorPrecios.calcularDescuentoProducto(datos, db);
 
             Assert.AreEqual(0.10m, datos.descuentoCalculado);
+            Assert.AreEqual(100m, datos.precioCalculado);
+        }
+
+        [TestMethod]
+        public void FichaDesbloqueada_SinAplicarDescuento_TarifaSinDescuento()
+        {
+            PrecioDescuentoProducto datos = Datos("Black Friday");
+            datos.aplicarDescuento = false;
+
+            GestorPrecios.calcularDescuentoProducto(datos, db);
+
+            Assert.AreEqual(0m, datos.descuentoCalculado);
             Assert.AreEqual(100m, datos.precioCalculado);
         }
 
