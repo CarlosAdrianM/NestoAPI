@@ -62,6 +62,8 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         EntradaDeReposicion,
         /// <summary>NestoAPI#634: el ajuste del stock por una diferencia entre lo enviado y lo recibido (y su resolución).</summary>
         DiferenciaDeReposicion,
+        /// <summary>NestoAPI#894: lo que se entrega a un almacén ficticio (sale de un hueco) o se recoge de él (pendiente de ubicar).</summary>
+        TraspasoAlmacenFicticio,
         // Kits
         MontarKit,
         DesmontarKit,
@@ -302,6 +304,21 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         Task<ResumenUbicaciones> SalidaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso,
             bool primeroPendienteDeUbicar, string usuario);
 
+        // ---------------------------------------------------------------- Almacenes ficticios (NestoAPI#894)
+        /// <summary>
+        /// NestoAPI#894: lo que sale de un almacén con control de ubicaciones hacia un almacén ficticio, del hueco que se ha elegido. Todo
+        /// o nada: se quita de lo LIBRE del hueco (estado 0, sin pedido, albarán ni reserva; empresa o espejo), lo más antiguo primero; si
+        /// el hueco no tiene <paramref name="cantidad"/> libres, NestoBusinessException (409) sin haber escrito nada.
+        /// </summary>
+        Task<ResumenUbicaciones> SalidaDeHuecoAFicticio(string empresa, string almacen, string producto, HuecoUbicacion hueco, int cantidad,
+            int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// NestoAPI#894: lo que vuelve de un almacén ficticio a un almacén con control de ubicaciones: «pendiente de ubicar» (estado 2,
+        /// sin hueco), como cualquier entrada, para que el mozo lo ubique con la PDA.
+        /// </summary>
+        Task<ResumenUbicaciones> EntradaDeFicticio(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario);
+
         // ---------------------------------------------------------------- Kits
         /// <summary>Montar un kit: reservar los componentes (estado 5) y dar entrada al kit. Hoy: prdUbicarReposicion tipo 2, Kits/UbicacionService.</summary>
         Task<ResumenUbicaciones> MontarKit(string empresa, string almacen, string kit, int cantidad, string usuario);
@@ -318,6 +335,42 @@ namespace NestoAPI.Infraestructure.Ubicaciones
 
         /// <summary>Lo que no está en su hueco al recoger: pasa a «pendiente de ubicar». Hoy: EscriturasSalida (faltas de Ariadna).</summary>
         Task<ResumenUbicaciones> Falta(string empresa, int numeroOrdenUbicacion, int cantidad, string usuario);
+    }
+
+    /// <summary>
+    /// NestoAPI#894: de qué filas libres de UN hueco sale lo que se entrega a un almacén ficticio. Puro. Solo las de estado 0 con hueco
+    /// (las lee la puerta sin pedido, albarán ni reserva), de la más antigua a la más nueva. Todo o nada: null si entre todas no llegan.
+    /// </summary>
+    public static class PlanificadorSalidaHueco
+    {
+        public static List<TomaDeHueco> Repartir(IEnumerable<FilaUbicacionLibre> libres, int cantidad)
+        {
+            if (cantidad <= 0)
+            {
+                return new List<TomaDeHueco>();
+            }
+            List<FilaUbicacionLibre> validas = (libres ?? Enumerable.Empty<FilaUbicacionLibre>())
+                .Where(f => f != null && f.Cantidad > 0 && f.Estado == EstadosUbicacion.LIBRE && f.Hueco.TieneHueco)
+                .OrderBy(f => f.FechaCreacion).ThenBy(f => f.NumeroOrden)
+                .ToList();
+            if (validas.Sum(f => f.Cantidad) < cantidad)
+            {
+                return null;
+            }
+            var tomas = new List<TomaDeHueco>();
+            int queda = cantidad;
+            foreach (FilaUbicacionLibre fila in validas)
+            {
+                if (queda == 0)
+                {
+                    break;
+                }
+                int coger = Math.Min(queda, fila.Cantidad);
+                tomas.Add(new TomaDeHueco { Libre = fila, Cantidad = coger });
+                queda -= coger;
+            }
+            return tomas;
+        }
     }
 
     /// <summary>Una fila libre de Ubicaciones candidata a una salida por diferencia: si está en el hueco del que salió el traspaso.</summary>

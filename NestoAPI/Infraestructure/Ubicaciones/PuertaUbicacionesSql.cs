@@ -464,8 +464,13 @@ ELSE
 
         // ---------------------------------------------------------------- Diferencias de reposición (NestoAPI#634)
 
-        public async Task<ResumenUbicaciones> EntradaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad,
-            int numeroTraspaso, string usuario)
+        public Task<ResumenUbicaciones> EntradaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad,
+            int numeroTraspaso, string usuario) =>
+            EntradaPendienteDeUbicar(empresa, almacen, producto, cantidad, numeroTraspaso, usuario, TipoMovimientoUbicacion.DiferenciaDeReposicion);
+
+        /// <summary>El núcleo de las entradas «pendiente de ubicar» sin NºTraspasoRepo (diferencias de reposición, almacenes ficticios).</summary>
+        private async Task<ResumenUbicaciones> EntradaPendienteDeUbicar(string empresa, string almacen, string producto, int cantidad,
+            int numeroTraspaso, string usuario, TipoMovimientoUbicacion tipo)
         {
             var resumen = new ResumenUbicaciones();
             if (cantidad <= 0)
@@ -480,7 +485,7 @@ ELSE
             resumen.FilasTocadas = 1;
             Apuntar(resumen, new MovimientoUbicacion
             {
-                Tipo = TipoMovimientoUbicacion.DiferenciaDeReposicion,
+                Tipo = tipo,
                 Empresa = empresa, Almacen = almacen, Producto = producto?.Trim(), NumeroOrdenUbicacion = nueva,
                 Cantidad = cantidad, EstadoNuevo = EstadosUbicacion.PENDIENTE_DE_UBICAR,
                 Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
@@ -522,6 +527,70 @@ ELSE
             }
             return resumen;
         }
+
+        // ---------------------------------------------------------------- Almacenes ficticios (NestoAPI#894)
+
+        // Lo libre del hueco elegido, de la empresa o de su espejo (el stock de Algete es de las dos), bloqueado hasta el final
+        internal const string SQL_LIBRES_DEL_HUECO_CON_ESPEJO = @"
+SELECT [NºOrden] AS NumeroOrden, RTRIM(Empresa) AS Empresa, RTRIM([Almacén]) AS Almacen, RTRIM([Número]) AS Producto,
+       RTRIM(Pasillo) AS Pasillo, RTRIM(Fila) AS Fila, RTRIM(Columna) AS Columna, Cantidad, ISNULL(Estado, 0) AS Estado,
+       FechaCreación AS FechaCreacion
+FROM Ubicaciones WITH (UPDLOCK, HOLDLOCK)
+WHERE (Empresa = @p0 OR Empresa = @p1) AND [Almacén] = @p2 AND [Número] = @p3 AND Estado = 0 AND Cantidad > 0
+  AND PedidoVta IS NULL AND [AlbaránVta] IS NULL AND [NºOrdenVta] IS NULL AND [NºOrdenRepo] IS NULL
+  AND RTRIM(Pasillo) + RTRIM(Fila) + RTRIM(Columna) = @p4
+ORDER BY FechaCreación, [NºOrden]";
+
+        public async Task<ResumenUbicaciones> SalidaDeHuecoAFicticio(string empresa, string almacen, string producto, HuecoUbicacion hueco,
+            int cantidad, int numeroTraspaso, string usuario)
+        {
+            var resumen = new ResumenUbicaciones();
+            if (cantidad <= 0)
+            {
+                return resumen;
+            }
+            if (hueco?.TieneHueco != true)
+            {
+                throw new NestoBusinessException($"Diga de qué hueco sale {producto?.Trim()}.");
+            }
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string articulo = producto?.Trim();
+            List<FilaUbicacionLibre> libres = await db.Database.SqlQuery<FilaUbicacionLibre>(SQL_LIBRES_DEL_HUECO_CON_ESPEJO,
+                Char("@p0", empresa, 3), Char("@p1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, 3), Char("@p2", almacen, 3),
+                Char("@p3", articulo, 15), new SqlParameter("@p4", SqlDbType.VarChar, 9) { Value = hueco.Codigo })
+                .ToListAsync().ConfigureAwait(false);
+            List<TomaDeHueco> tomas = PlanificadorSalidaHueco.Repartir(libres, cantidad);
+            if (tomas == null)
+            {
+                int hay = libres.Where(l => l.Estado == EstadosUbicacion.LIBRE).Sum(l => l.Cantidad);
+                throw new NestoBusinessException($"En el hueco {hueco} solo hay {hay} libres de {articulo}, no {cantidad}. No se ha hecho nada.")
+                {
+                    StatusCode = System.Net.HttpStatusCode.Conflict
+                };
+            }
+            foreach (TomaDeHueco toma in tomas)
+            {
+                int tocadas = toma.Entera
+                    ? await db.Database.ExecuteSqlCommandAsync(SQL_QUITAR_FILA_ENTERA, Orden(toma.Libre.NumeroOrden),
+                        new SqlParameter("@p1", SqlDbType.Int) { Value = toma.Cantidad }).ConfigureAwait(false)
+                    : await db.Database.ExecuteSqlCommandAsync(SQL_RESTAR_DE_LIBRE, Orden(toma.Libre.NumeroOrden),
+                        new SqlParameter("@p1", SqlDbType.Int) { Value = toma.Cantidad },
+                        new SqlParameter("@p2", SqlDbType.VarChar, 30) { Value = quien }).ConfigureAwait(false);
+                Comprobar(tocadas, toma);
+                resumen.FilasTocadas += 1;
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.TraspasoAlmacenFicticio,
+                    Empresa = toma.Libre.Empresa, Almacen = almacen, Producto = articulo, NumeroOrdenUbicacion = toma.Libre.NumeroOrden,
+                    HuecoOrigen = toma.Libre.Hueco, Cantidad = toma.Cantidad, EstadoAnterior = EstadosUbicacion.LIBRE,
+                    Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
+                });
+            }
+            return resumen;
+        }
+
+        public Task<ResumenUbicaciones> EntradaDeFicticio(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario) =>
+            EntradaPendienteDeUbicar(empresa, almacen, producto, cantidad, numeroTraspaso, usuario, TipoMovimientoUbicacion.TraspasoAlmacenFicticio);
 
         // ---------------------------------------------------------------- Aún no pasan por la puerta (corte 3 de #594)
 

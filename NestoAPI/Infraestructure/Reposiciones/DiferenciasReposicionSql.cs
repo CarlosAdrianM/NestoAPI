@@ -254,17 +254,10 @@ WHERE Id = @p0 AND Estado = 'Pendiente'";
         /// <summary>«Cuadre de errores de reposicion» (Sistema = 1), el de David para esto, sin uso desde 2012.</summary>
         public const string DIARIO = "_ErrRepo";
 
-        internal const string SQL_GRUPO = @"
-SELECT RTRIM(Grupo) FROM Productos WHERE Empresa = @p0 AND [Número] = @p1";
-
         internal const string SQL_CON_UBICACIONES = @"
 SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM Almacenes a INNER JOIN Productos pr ON pr.Empresa = a.Empresa AND pr.[Número] = @p2
                               WHERE a.Empresa = @p0 AND a.[Número] = @p1 AND a.ControlUbicaciones = 1 AND pr.Ubicar = 1)
             THEN 1 ELSE 0 END AS bit)";
-
-        internal const string SQL_APUNTE = @"
-SELECT MAX([Nº Orden]) FROM ExtractoProducto
-WHERE Empresa = @p0 AND Diario = @p1 AND [NºTraspaso] = @p2 AND [Número] = @p3 AND [Almacén] = @p4 AND Cantidad = @p5";
 
         private readonly NVEntities db;
         private readonly IServicioExtractoProducto extractos;
@@ -290,59 +283,19 @@ WHERE Empresa = @p0 AND Diario = @p1 AND [NºTraspaso] = @p2 AND [Número] = @p3
             {
                 return new ResultadoMovimientoStock();
             }
-            if (Math.Abs(movimiento.Cantidad) > short.MaxValue)
-            {
-                throw new NestoBusinessException($"No se pueden mover {movimiento.Cantidad} unidades de {movimiento.Producto} en una línea.");
-            }
             string empresa = movimiento.Empresa;
             string usuario = UsuarioAuditoriaHelper.ParaAuditoria(movimiento.Usuario);
-            string grupo = await db.Database.SqlQuery<string>(SQL_GRUPO,
-                DiferenciasReposicionSql.Char("@p0", empresa, 3), DiferenciasReposicionSql.Char("@p1", movimiento.Producto, 15))
-                .FirstOrDefaultAsync().ConfigureAwait(false);
-            if (grupo == null)
-            {
-                throw new NestoBusinessException($"El producto {movimiento.Producto} no existe: no se puede ajustar su stock.");
-            }
+            // El núcleo común de los movimientos con traspaso (también los almacenes ficticios, NestoAPI#894)
+            List<int?> apuntes = await MovimientoTraspasoStockSql.Contabilizar(db, extractos, empresa, DIARIO, movimiento.Traspaso,
+                new List<LineaMovimientoTraspaso>
+                {
+                    new LineaMovimientoTraspaso
+                    {
+                        Almacen = movimiento.Almacen, Producto = movimiento.Producto, Cantidad = movimiento.Cantidad, Texto = movimiento.Texto
+                    }
+                }, usuario).ConfigureAwait(false);
 
-            // prdExtrProducto contabiliza el diario ENTERO: lo que haya de otros traspasos se aparta y se devuelve (NestoAPI#553)
-            List<int> apartadas = await ApartadoTraspasosSql.Apartar(db, empresa, DIARIO, movimiento.Traspaso).ConfigureAwait(false);
-            var linea = new PreExtrProducto
-            {
-                Empresa = empresa,
-                Diario = DIARIO,
-                Número = movimiento.Producto?.Trim(),
-                Fecha = DateTime.Now,
-                Texto = movimiento.Texto,
-                Almacén = movimiento.Almacen?.Trim(),
-                Grupo = grupo,
-                Cantidad = (short)movimiento.Cantidad,
-                // Como los apuntes de _ErrRepo de siempre: delegación ALG y forma de venta VAR
-                Delegación = Constantes.Empresas.DELEGACION_POR_DEFECTO,
-                Forma_Venta = Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
-                Asiento_Automático = true,
-                Estado = 0,
-                NºTraspaso = movimiento.Traspaso,
-                Usuario = usuario,
-                Fecha_Modificación = DateTime.Now
-            };
-            _ = await extractos.CrearLineas(db, new List<PreExtrProducto> { linea }).ConfigureAwait(false);
-            _ = await db.SaveChangesAsync().ConfigureAwait(false);
-            int resultado = await extractos.ContabilizarDiario(db, empresa, DIARIO, usuario).ConfigureAwait(false);
-            if (resultado <= 0)
-            {
-                throw new NestoBusinessException($"prdExtrProducto no ha contabilizado el diario {DIARIO} (devuelve {resultado}).");
-            }
-            db.Entry(linea).State = EntityState.Detached; // el procedimiento ya la ha borrado de PreExtrProducto
-            await ApartadoTraspasosSql.Devolver(db, empresa, DIARIO, apartadas).ConfigureAwait(false);
-
-            int? apunte = await db.Database.SqlQuery<int?>(SQL_APUNTE,
-                DiferenciasReposicionSql.Char("@p0", empresa, 3), DiferenciasReposicionSql.Char("@p1", DIARIO, 10),
-                new SqlParameter("@p2", SqlDbType.Int) { Value = movimiento.Traspaso },
-                DiferenciasReposicionSql.Char("@p3", movimiento.Producto, 15), DiferenciasReposicionSql.Char("@p4", movimiento.Almacen, 3),
-                new SqlParameter("@p5", SqlDbType.SmallInt) { Value = (short)movimiento.Cantidad })
-                .FirstOrDefaultAsync().ConfigureAwait(false);
-
-            var respuesta = new ResultadoMovimientoStock { NumeroOrdenExtracto = apunte };
+            var respuesta = new ResultadoMovimientoStock { NumeroOrdenExtracto = apuntes.FirstOrDefault() };
             bool conUbicaciones = await db.Database.SqlQuery<bool>(SQL_CON_UBICACIONES,
                 DiferenciasReposicionSql.Char("@p0", empresa, 3), DiferenciasReposicionSql.Char("@p1", movimiento.Almacen, 3),
                 DiferenciasReposicionSql.Char("@p2", movimiento.Producto, 15)).SingleAsync().ConfigureAwait(false);
