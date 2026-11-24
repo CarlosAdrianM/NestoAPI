@@ -299,5 +299,22 @@ namespace NestoAPI.Tests.Models
 
             Assert.AreEqual(30M, resultado.Profesional);
         }
+
+        // Black Friday 2026 (Carlos 24/11/26): dos filas de producto con la misma CantidadMínima (el descuento
+        // de siempre y el de la campaña). La tienda anuncia la mejor, igual que cobra el motor.
+        [TestMethod]
+        public void DosFilasDeProductoConLaMismaCantidad_GanaLaMejorVengaEnElOrdenQueVenga()
+        {
+            Assert.AreEqual(20M, Calcular(DeProducto(0.10M), DeProducto(0.20M)).Profesional);
+            Assert.AreEqual(20M, Calcular(DeProducto(0.20M), DeProducto(0.10M)).Profesional);
+        }
+
+        [TestMethod]
+        public void PrecioFijoYDescuentoDeProductoConLaMismaCantidad_GanaElQueMasBaja()
+        {
+            // PVP 100: un precio fijo de 70 es un 30 %, mejor que el 20 % de la campaña.
+            Assert.AreEqual(30M, Calcular(DeProducto(0.20M), DeProducto(0M, precio: 70M)).Profesional);
+            Assert.AreEqual(30M, Calcular(DeProducto(0M, precio: 70M), DeProducto(0.20M)).Profesional);
+        }
     }
 }

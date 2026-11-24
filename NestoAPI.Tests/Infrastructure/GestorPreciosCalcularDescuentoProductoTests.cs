@@ -155,6 +155,55 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, datos.descuentoCalculado);
         }
 
+        // Black Friday 2026 (Carlos 24/11/26): un producto con un descuento fijo de siempre y, además, la fila
+        // de la campaña (misma CantidadMínima). Antes salía la que SQL devolviera primero; ahora, la mejor
+        // para el cliente, venga en el orden que venga.
+        [DataTestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void CalcularDescuentoProducto_DosFilasDeTarifaDelProductoConLaMismaCantidad_GanaElMayorDescuento(bool laPeorPrimero)
+        {
+            var producto = CrearProducto();
+            producto.PVP = 100;
+            var deSiempre = new DescuentosProducto { Empresa = "1", Nº_Producto = "44166", CantidadMínima = 1, Descuento = 0.10m, Producto = new Producto { Número = "44166" } };
+            var deCampana = new DescuentosProducto { Empresa = "1", Nº_Producto = "44166", CantidadMínima = 1, Descuento = 0.20m, Producto = new Producto { Número = "44166" } };
+            var descuentos = laPeorPrimero ? new List<DescuentosProducto> { deSiempre, deCampana } : new List<DescuentosProducto> { deCampana, deSiempre };
+            ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
+            var datos = CrearDatos(producto, 1);
+
+            GestorPrecios.calcularDescuentoProducto(datos, db);
+
+            Assert.AreEqual(100, datos.precioCalculado);
+            Assert.AreEqual(0.20m, datos.descuentoCalculado);
+        }
+
+        // Precio fijo de siempre + fila de campaña con la misma CantidadMínima: de los precios, el más bajo; y entre
+        // ese precio y el descuento de la campaña, lo que deje el producto más barato (el final del motor de siempre).
+        [DataTestMethod]
+        [DataRow(true, 80, 80, 0)]      // 80 € es mejor que el 15 % (85 €): precio especial, sin descuento
+        [DataRow(false, 80, 80, 0)]
+        [DataRow(true, 88, 100, 15)]    // el 15 % (85 €) es mejor que 88 €: PVP con el descuento de la campaña
+        [DataRow(false, 88, 100, 15)]
+        public void CalcularDescuentoProducto_PrecioFijoYFilaDeCampanaConLaMismaCantidad_GanaLoMejorParaElCliente(bool laDeCampanaPrimero,
+            int precioBaratoFijo, int precioEsperado, int porcentajeEsperado)
+        {
+            var producto = CrearProducto();
+            producto.PVP = 100;
+            var precioCaro = new DescuentosProducto { Empresa = "1", Nº_Producto = "44166", CantidadMínima = 1, Precio = 90, Producto = new Producto { Número = "44166" } };
+            var precioBarato = new DescuentosProducto { Empresa = "1", Nº_Producto = "44166", CantidadMínima = 1, Precio = precioBaratoFijo, Producto = new Producto { Número = "44166" } };
+            var deCampana = new DescuentosProducto { Empresa = "1", Nº_Producto = "44166", CantidadMínima = 1, Descuento = 0.15m, Producto = new Producto { Número = "44166" } };
+            var descuentos = laDeCampanaPrimero
+                ? new List<DescuentosProducto> { deCampana, precioCaro, precioBarato }
+                : new List<DescuentosProducto> { precioCaro, precioBarato, deCampana };
+            ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
+            var datos = CrearDatos(producto, 1);
+
+            GestorPrecios.calcularDescuentoProducto(datos, db);
+
+            Assert.AreEqual((decimal)precioEsperado, datos.precioCalculado);
+            Assert.AreEqual(porcentajeEsperado / 100m, datos.descuentoCalculado);
+        }
+
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

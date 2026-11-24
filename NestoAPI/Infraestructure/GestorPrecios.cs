@@ -104,7 +104,15 @@ namespace NestoAPI.Infraestructure
                     precioEspecialPropio = true;
                 }
                 //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
-                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
+                // Black Friday 2026 (Carlos 24/11/26): con dos filas de tarifa del mismo producto y la misma CantidadMínima
+                // (un precio fijo de siempre y la fila de una campaña) gana lo mejor para el cliente: la de menor precio.
+                // Antes salía la que SQL devolviera primero.
+                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes)
+                    .Where(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null)
+                    .OrderByDescending(d => d.CantidadMínima)
+                    .ThenBy(d => d.Precio == null || d.Precio <= 0 ? 1 : 0)
+                    .ThenBy(d => d.Precio)
+                    .FirstOrDefault();
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
@@ -185,7 +193,12 @@ namespace NestoAPI.Infraestructure
 
                 // Distribuidores (Carlos 20/11/26): lo que lleva el cliente SIN la fila de tarifa del producto (su «propio»).
                 decimal propioSinCampana = datos.descuentoCalculado;
-                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Producto.Número == datos.producto.Número && d.Nº_Cliente == null && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                // Mismo desempate (Carlos 24/11/26): a igual CantidadMínima, la fila de mayor descuento.
+                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes)
+                    .Where(d => d.Empresa == datos.producto.Empresa && d.Producto.Número == datos.producto.Número && d.Nº_Cliente == null && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null)
+                    .OrderByDescending(d => d.CantidadMínima)
+                    .ThenByDescending(d => d.Descuento)
+                    .FirstOrDefault();
                 DescuentosProducto filaTarifaProducto = dtoProducto;
                 if (dtoProducto != null && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
@@ -394,7 +407,13 @@ namespace NestoAPI.Infraestructure
                 // Issue #423: la vigencia se comprueba también aquí, en memoria, porque la lista se
                 // puede rellenar desde fuera (descuentosRellenos) y entonces no ha pasado por el
                 // filtro de la consulta.
-                DescuentosProducto dtoProducto = datos.descuentosProducto.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.CantidadMínima <= datos.cantidad && Vigencia.EsVigente(d));
+                // A igual CantidadMínima (Carlos 24/11/26), la fila que más barato deja el producto: la más favorable al cliente.
+                DescuentosProducto dtoProducto = datos.descuentosProducto
+                    .Where(d => d.CantidadMínima <= datos.cantidad && Vigencia.EsVigente(d))
+                    .OrderByDescending(d => d.CantidadMínima)
+                    .ThenBy(d => d.Precio == null ? 1 : 0)
+                    .ThenBy(d => d.Precio * (1 - d.Descuento))
+                    .FirstOrDefault();
                 if (dtoProducto != null && dtoProducto.Precio * (1 - dtoProducto.Descuento) <= datos.producto.PVP * (1 - datos.descuentoReal))
                 {
                     return true;

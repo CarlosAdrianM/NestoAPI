@@ -699,7 +699,7 @@ namespace NestoAPI.Models
                 .OrderByDescending(f => f.CantidadMínima)
                 .ThenByDescending(f => f.Descuento)
                 .FirstOrDefault();
-            DescuentosProducto deProducto = MejorDelNivel(suyas.Where(f => f.Familia == null && f.GrupoProducto == null));
+            DescuentosProducto deProducto = MejorDeProducto(suyas.Where(f => f.Familia == null && f.GrupoProducto == null), pvp, usarDescuentoPublico);
 
             // Se acumula en decimal (no en decimal?) para que un nivel con Descuento 0 pueda
             // ANULAR al anterior, igual que en el motor: "toda la marca al 20 %, menos su línea de
@@ -738,6 +738,19 @@ namespace NestoAPI.Models
         private static DescuentosProducto MejorDelNivel(System.Collections.Generic.IEnumerable<DescuentosProducto> delNivel)
         {
             return delNivel.OrderByDescending(f => f.CantidadMínima).FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Nivel de producto (Black Friday 2026, Carlos 24/11/26): con dos filas de la misma CantidadMínima
+        /// (un descuento o precio fijo de siempre y la fila de una campaña) gana la mejor para el cliente,
+        /// igual que en el motor (GestorPrecios.calcularDescuentoProducto).
+        /// </summary>
+        private static DescuentosProducto MejorDeProducto(System.Collections.Generic.IEnumerable<DescuentosProducto> delNivel, decimal? pvp, bool usarDescuentoPublico)
+        {
+            return delNivel
+                .OrderByDescending(f => f.CantidadMínima)
+                .ThenByDescending(f => PorcentajeDe(f, pvp, derivarDePrecio: true, usarDescuentoPublico))
+                .FirstOrDefault();
         }
 
         private static decimal PorcentajeDe(DescuentosProducto fila, decimal? pvp, bool derivarDePrecio, bool usarDescuentoPublico)
