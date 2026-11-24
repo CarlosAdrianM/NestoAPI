@@ -1157,6 +1157,30 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (AlImprimir). TramitarTodos (GLS) lo salta (`Resultado` EsperandoCaja). La propuesta de envío no reutiliza ese pendiente. Sin las tablas o si
   falla la comprobación: no actúa (ELMAH). EntregadoPorLaAgencia sigue igual. Devueltos trae HaVuelto/FechaHaVuelto/UsuarioHaVuelto/ComoHaVuelto/ReenvioEsperandoCaja.
 
+### Facturae para FACe por B2Brouter (NestoAPI#903, 24/11/26; gemela Nesto)
+- Cinco o seis facturas al año a organismos públicos: la API genera el fichero Facturae 3.2.2 SIN firmar de una factura YA emitida y Carlos lo
+  importa en b2brouter.net («importar factura emitida»), que lo firma y lo manda a FACe. Nada de certificados, firma ni envío. Solo LECTURA.
+- `GET api/Facturas/Facturae?empresa=1&factura=NV26…` (`FacturaeController`; Administración, Dirección, Informática; cliente de la tienda 403) →
+  `application/xml` UTF-8 «Facturae_{número}.xml»; 404 sin factura; 400 de usted con TODO lo que falta. Opcionales que GANAN sobre lo guardado:
+  `oficinaContable`, `organoGestor`, `unidadTramitadora`, `organoProponente`, `suPedido`, `expediente`, `contrato`. `comprobar=true` → JSON
+  `ComprobacionFacturaeDTO` (Listo, Faltas, Avisos, centros, referencias, base, impuestos, total, vencimientos con PaymentMeans e IBAN).
+- Datos (`ServicioFacturae`, sin lecturas nuevas de facturación): la factura del PDF (`GestorFacturas.LeerFactura`: datos fiscales guardados, NIF,
+  totales, vencimientos e IBAN de la empresa), sus líneas (`CargarCabFactura`: IVA y RE por línea), el NIF de la empresa (`CargarEmpresa`), las
+  originales de una rectificativa (`ServicioFacturas.CargarFacturasRectificadas`, la de Verifactu, ahora internal) y los DIR3. Emisor = dirección
+  «Empresa» del PDF; receptor = la «Fiscal»; los centros llevan la dirección fiscal del cliente. «Su pedido» = `CabFacturaVta.SuPedido` (#723)
+  como ReceiverTransactionReference en cada línea; expediente (FileReference) y contrato solo por parámetro (TextMax20: más largo = falta).
+- LA REGLA (pura) `ConstructorModeloFacturae` + escritor `GeneradorFacturae` (`Infraestructure/Facturas/Facturae/`): cabecera por (IVA, RE) como el
+  PDF y Verifactu (base = suma; cuota = ROUND(suma ImporteIVA, 2); RE = ROUND(suma RE × base, 2)); línea: TotalCost = Bruto, Discount = ImporteDto
+  (con DiscountRate), el redondeo ROUND(Bruto,2) − Bruto como Charge (sube) o Discount (baja) «Redondeo a céntimos», GrossAmount = la base; cuotas de
+  línea a 2 y la línea mayor de cada tipo se lleva el céntimo. Si el total no es el de la factura o los vencimientos no lo suman: falta. Número SIN serie
+  (`NumeroSinSerie`) + InvoiceSeriesCode; BatchIdentifier = NIF + número + serie. Rectificativa: OR + Corrective (ReasonCode 16, CorrectionMethod 02
+  «por diferencias», la «I» de Verifactu; varias originales: la primera y las demás en el texto adicional; sin vinculación: falta). Pago: TRN y CNF →
+  04 con el PRIMER IBAN de la empresa (aviso si hay varios), RCB 02, EFC 01, TAR 19; otra (CHC…) → falta. Hijos sin espacio de nombres (unqualified).
+- DIR3: `dbo.ClientesFacturaElectronica` (Empresa, Cliente, Contacto; OficinaContable, OrganoGestor, UnidadTramitadora, OrganoProponente NULL y
+  sus nombres; fuera del EDMX, `Scripts/Issue903_ClientesFacturaElectronica.sql`). `GET/PUT api/Clientes/FacturaElectronica` (mismos grupos; PUT: los
+  tres obligatorios, `ReglasDir3`: 9, letra + al menos 5 cifras; los tres vacíos = quitar; rastro en Modificaciones; sin tabla 503, el GET vacío).
+  Lectura: la del contacto o, si el cliente tiene UNA sola fila, esa. Siguiente corte (si hace falta): subirlo por la API de B2Brouter.
+
 ### Prepago y saldo a favor (Novedades 1302, 17/11/26)
 - Un pago es de UN documento (Carlos 17/11/26): cada saldo a favor (ImportePdte < 0) se clasifica por los números de su Concepto (y, solo
   como pedido, su Nº Documento) contra los pedidos y facturas DEL MISMO cliente (`ClasificadorSaldoAFavor`, puro; el rellenador lee esos

@@ -572,6 +572,7 @@
     <Compile Include="Infraestructure\Agencias\GestionEnTransitoEnvio.cs" />
     <Compile Include="Controllers\ExtractoProveedoresController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
+    <Compile Include="Controllers\FacturaeController.cs" />
     <Compile Include="Controllers\FacturasController.cs" />
     <Compile Include="Controllers\FamiliasController.cs" />
     <Compile Include="Controllers\FacturacionRutasController.cs" />
@@ -1130,6 +1131,12 @@
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />
     <Compile Include="Infraestructure\Filters\GlobalExceptionFilter.cs" />
     <Compile Include="Infraestructure\Facturas\DiagnosticoGastoSinCentroCoste.cs" />
+    <Compile Include="Infraestructure\Facturas\Facturae\ConstructorModeloFacturae.cs" />
+    <Compile Include="Infraestructure\Facturas\Facturae\GeneradorFacturae.cs" />
+    <Compile Include="Infraestructure\Facturas\Facturae\ModeloFacturae.cs" />
+    <Compile Include="Infraestructure\Facturas\Facturae\ReglasDir3.cs" />
+    <Compile Include="Infraestructure\Facturas\Facturae\RepositorioClientesFacturaElectronica.cs" />
+    <Compile Include="Infraestructure\Facturas\Facturae\ServicioFacturae.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasQuestPdf.cs" />
     <Compile Include="Infraestructure\Facturas\IGeneradorPdfFacturas.cs" />

@@ -1142,7 +1142,9 @@
     <Compile Include="Models\RecursosHumanos\GestorFestivosAutonomicasTests.cs" />
     <Compile Include="Models\RecursosHumanos\CalendarioFestivosTests.cs" />
     <Compile Include="Controllers\ComprasAgenciasEntradaControllerTests.cs" />
+    <Compile Include="Controllers\FacturaeControllerTests.cs" />
     <Compile Include="Controllers\FestivosControllerTests.cs" />
+    <Compile Include="Infrastructure\Facturas\FacturaeTests.cs" />
     <Compile Include="Infrastructure\AvisoFestivosSinCargarJobsServiceTests.cs" />
     <Compile Include="Infrastructure\UbicacionesHuerfanasJobsServiceTests.cs" />
     <Compile Include="Models\RecursosHumanos\GestorFestivosPrimerLaborableTests.cs" />
