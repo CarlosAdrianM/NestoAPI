@@ -80,6 +80,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// Nunca true con código. Ver <see cref="MuestrasSinCodigo"/>.
         /// </summary>
         public bool SinCodigoAdmitido { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): una lectura de su código (la etiqueta de su cajón o gaveta, o el envase) NO es una
+        /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
         public int Cantidad { get; set; }
         /// <summary>Stock actual del producto en el almacén de origen (lo que la tienda tiene para mandar).</summary>
         public int StockOrigen { get; set; }
@@ -1779,6 +1784,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     };
                     // NestoAPI#797: la muestra sin código se envía sin etiqueta
                     linea.SinCodigoAdmitido = MuestrasSinCodigo.Admitido(linea.CodigoBarras == null, f.SubGrupo);
+                    linea.PideCantidad = MuestrasSinCodigo.PideCantidad(f.SubGrupo); // NestoAPI#884
                     if (reservas != null)
                     {
                         porLinea.TryGetValue(f.NumeroOrden, out ReservaLineaReposicion reserva);

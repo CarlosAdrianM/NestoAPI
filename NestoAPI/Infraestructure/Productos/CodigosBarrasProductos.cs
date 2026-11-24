@@ -68,6 +68,14 @@ namespace NestoAPI.Infraestructure.Productos
         public string Nombre { get; set; }
         public int Cantidad { get; set; }
         public bool Principal { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): lo leído es casi siempre la etiqueta de su cajón o gaveta (una por referencia), no
+        /// una unidad: la app pide SIEMPRE la cantidad. Ver <see cref="PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
+        /// <summary>NestoAPI#884: Productos.SubGrupo (el código), para <see cref="PideCantidad"/>. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string SubGrupo { get; set; }
     }
 
     /// <summary>NestoAPI#605: el producto que ya tiene el código (en el 409).</summary>
@@ -576,7 +584,10 @@ namespace NestoAPI.Infraestructure.Productos
                     Producto = g.Key,
                     Nombre = g.Select(p => p.Nombre?.Trim()).FirstOrDefault(n => !string.IsNullOrEmpty(n)),
                     Cantidad = g.OrderByDescending(p => p.Principal).First().Cantidad,
-                    Principal = g.Any(p => p.Principal)
+                    Principal = g.Any(p => p.Principal),
+                    // NestoAPI#884: la muestra leída (por la etiqueta de su cajón o gaveta) pide la cantidad
+                    SubGrupo = g.Select(p => p.SubGrupo?.Trim()).FirstOrDefault(s => !string.IsNullOrEmpty(s)),
+                    PideCantidad = g.Any(p => p.PideCantidad || PreparacionAlmacen.MuestrasSinCodigo.PideCantidad(p.SubGrupo))
                 })
                 .OrderByDescending(p => p.Principal)
                 .ThenBy(p => p.Producto, StringComparer.OrdinalIgnoreCase)
@@ -647,12 +658,13 @@ namespace NestoAPI.Infraestructure.Productos
 
         // Los productos activos con ese código activo en la tabla, y los que lo llevan en la ficha (por si aún no está en ella)
         internal const string SQL_PRODUCTOS_CON_CODIGO = @"
-SELECT RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Nombre, c.Cantidad AS Cantidad, c.Principal AS Principal
+SELECT RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Nombre, c.Cantidad AS Cantidad, c.Principal AS Principal,
+       RTRIM(p.SubGrupo) AS SubGrupo, CAST(0 AS bit) AS PideCantidad
 FROM ProductosCodigosBarras c
      JOIN Productos p ON p.Empresa = c.Empresa AND p.[Número] = c.Producto
 WHERE c.Empresa = @empresa AND c.Codigo = @codigo AND c.Activo = 1 AND p.Estado >= 0
 UNION
-SELECT RTRIM(p.[Número]), RTRIM(p.Nombre), 1, CAST(1 AS bit)
+SELECT RTRIM(p.[Número]), RTRIM(p.Nombre), 1, CAST(1 AS bit), RTRIM(p.SubGrupo), CAST(0 AS bit)
 FROM Productos p
 WHERE p.Empresa = @empresa AND p.CodBarras = @codigo AND p.Estado >= 0
   AND NOT EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = p.Empresa AND c.Producto = p.[Número] AND c.Codigo = @codigo)";

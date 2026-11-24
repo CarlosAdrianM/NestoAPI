@@ -594,6 +594,8 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\MuestrasSinCodigo.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\MuestrasContenedor.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\HojaMuestras.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\PedidosQueVanSolos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CorreccionLecturasSalida.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FichaProductoCompletaAlmacen.cs" />
@@ -641,6 +643,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasProductoAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SinEtiquetaRecepcion.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasProductoDTO.cs" />
+    <Compile Include="Models\PreparacionAlmacen\MuestrasContenedorDTO.cs" />
     <Compile Include="Controllers\EtiquetasProductoController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\LecturasAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\LecturasAlmacenDTO.cs" />
@@ -1412,6 +1415,7 @@
     <Compile Include="Infraestructure\NotasEntrega\ServicioEtiquetasRecogida.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioDocumentoNotaEntrega.cs" />
     <Compile Include="Infraestructure\Code128.cs" />
+    <Compile Include="Infraestructure\Ean13.cs" />
     <Compile Include="Models\Facturas\RutasPropiasConfiguradas.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntregaCabecera.cs" />
     <Compile Include="Controllers\NotasEntregaController.cs" />
@@ -1539,6 +1543,7 @@
     <Compile Include="Infraestructure\Productos\ValidadorGtin.cs" />
     <Compile Include="Infraestructure\Productos\LimpiezaCodigosBarras.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />
+    <Compile Include="Controllers\MuestrasController.cs" />
     <Compile Include="Infraestructure\Productos\SustitucionesProducto.cs" />
     <Compile Include="Controllers\ProductosSustitucionesController.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalendarioReposiciones.cs" />
@@ -2513,6 +2518,7 @@
     </Compile>
     <Compile Include="Models\SyncMessageRetry.Partial.cs" />
     <Compile Include="Models\Cliente.Partial.cs" />
+    <Compile Include="Models\Inventario.Partial.cs" />
     <Compile Include="Models\Clientes\DireccionEntregaCrear.cs" />
     <Compile Include="Models\Ubicacion.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

@@ -98,6 +98,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
         /// </summary>
         public bool SinCodigoAdmitido { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): una lectura de su código (la etiqueta de su cajón o gaveta, o el envase) NO es una
+        /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
         /// <summary>Otro producto de este mismo picking comparte el código: hay que elegir a mano.</summary>
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
@@ -320,6 +325,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
         /// </summary>
         public bool SinCodigoAdmitido { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): una lectura de su código (la etiqueta de su cajón o gaveta, o el envase) NO es una
+        /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
         /// <summary>Otro producto del mismo grupo de pedidos comparte el código.</summary>
         public bool CodigoDuplicado { get; set; }
         /// <summary>Lo que va en la caja: la cantidad de la línea menos lo que el cliente recoge.</summary>
@@ -705,6 +715,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
         /// </summary>
         public bool SinCodigoAdmitido { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): una lectura de su código (la etiqueta de su cajón o gaveta, o el envase) NO es una
+        /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
         /// <summary>Unidades recibidas que todavía no tienen hueco.</summary>
         public int Cantidad { get; set; }
         public DateTime? DesdeCuando { get; set; }
@@ -834,6 +849,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
         /// </summary>
         public bool SinCodigoAdmitido { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): una lectura de su código (la etiqueta de su cajón o gaveta, o el envase) NO es una
+        /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
     }
@@ -909,6 +929,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// Nunca true con código. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo"/>.
         /// </summary>
         public bool SinCodigoAdmitido { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): una lectura de su código (la etiqueta de su cajón o gaveta, o el envase) NO es una
+        /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
     }

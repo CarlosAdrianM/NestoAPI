@@ -328,6 +328,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                         CodigoBarras = codigo,
                         SinCodigo = codigo == null,
                         SinCodigoAdmitido = MuestrasSinCodigo.Admitido(codigo == null, g.Select(f => f.SubGrupo).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))), // NestoAPI#797
+                        PideCantidad = MuestrasSinCodigo.PideCantidad(g.Select(f => f.SubGrupo).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))), // NestoAPI#884
                         Cantidad = g.Sum(f => f.Cantidad),
                         DesdeCuando = g.Min(f => f.DesdeCuando),
                         Origenes = g.Select(f => new OrigenPendienteDeUbicarDTO

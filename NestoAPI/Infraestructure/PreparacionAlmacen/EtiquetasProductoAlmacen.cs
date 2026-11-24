@@ -229,6 +229,124 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Sin caracteres de control ni espacios de más (ZPL escapa lo suyo en <see cref="ComandosZpl.Escapar"/>).</summary>
         private static string Limpio(string texto)
             => Compactar(new string((texto ?? string.Empty).Where(c => !char.IsControl(c)).ToArray()));
+
+        // ---------------------------------------------------------------- NestoAPI#884: la etiqueta del CONTENEDOR de una muestra
+
+        /// <summary>
+        /// NestoAPI#884: la etiqueta del cajón (tiendas) o la gaveta / el hueco (Algete) de una muestra, en la MISMA 3×2 y la misma
+        /// impresora que la de producto, pero se distingue a simple vista: arriba en pequeño «MUESTRA · Ref. 17404» y el NOMBRE en
+        /// grande (dos líneas con la letra de la referencia), para no confundir sobres parecidos; debajo, el EAN-13 un poco más
+        /// bajo (<see cref="CONTENEDOR_EAN_ALTO"/>). Constantes para ajustarlas tras la etiqueta de prueba.
+        /// </summary>
+        public const string CONTENEDOR_CABECERA = "MUESTRA";
+        public const int CONTENEDOR_CABECERA_Y = 4;
+        public const int CONTENEDOR_NOMBRE_Y = 18;
+        public const int CONTENEDOR_NOMBRE_INTERLINEA = 26;
+        public const int CONTENEDOR_NOMBRE_LINEAS = 2;
+        /// <summary>18 + 2 × 26 = 70; 4 puntos de aire.</summary>
+        public const int CONTENEDOR_EAN_Y = 74;
+        /// <summary>54 puntos (6,75 mm) de barras y las cifras debajo (~22): acaba hacia el 150 de 160.</summary>
+        public const int CONTENEDOR_EAN_ALTO = 54;
+
+        private static readonly System.Text.RegularExpressions.Regex prefijoMuestra =
+            new System.Text.RegularExpressions.Regex(@"^MUESTRAS?:?\s+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// NestoAPI#884: el nombre sin la palabra «MUESTRA» del principio (ya va en la cabecera), partido en las líneas grandes;
+        /// lo que no cabe en la última se pierde. Si el nombre solo era «MUESTRA», se queda tal cual.
+        /// </summary>
+        internal static List<string> NombreContenedor(string nombre)
+        {
+            string compacto = Compactar(nombre);
+            string sinPrefijo = prefijoMuestra.Replace(compacto, string.Empty);
+            return Partir(string.IsNullOrWhiteSpace(sinPrefijo) ? compacto : sinPrefijo, CARACTERES_REFERENCIA)
+                .Take(CONTENEDOR_NOMBRE_LINEAS).ToList();
+        }
+
+        /// <summary>NestoAPI#884: la etiqueta de contenedor de una muestra con su EAN-13 (el del fabricante o el interno del 29).</summary>
+        public static EtiquetaContenedorMuestra ComponerContenedor(string producto, string nombre, string codigo)
+        {
+            string limpio = codigo?.Trim();
+            if (limpio == null || limpio.Length != 13 || !Productos.ValidadorGtin.EsCodigoValido(limpio))
+            {
+                throw new ArgumentException($"«{codigo}» no es un EAN-13 válido.", nameof(codigo));
+            }
+            string referencia = producto?.Trim() ?? string.Empty;
+            string cabecera = $"{CONTENEDOR_CABECERA} · Ref. {referencia}";
+            if (cabecera.Length > CARACTERES_PEQUENA)
+            {
+                cabecera = cabecera.Substring(0, CARACTERES_PEQUENA).TrimEnd();
+            }
+            return new EtiquetaContenedorMuestra
+            {
+                Producto = referencia,
+                Cabecera = cabecera,
+                Nombre = NombreContenedor(nombre),
+                CodigoBarras = limpio
+            };
+        }
+
+        /// <summary>NestoAPI#884: en EPL2, un solo trabajo con una etiqueta por contenedor (la cabecera del trabajo una vez, como las de hueco).</summary>
+        public static string EplContenedores(IEnumerable<EtiquetaContenedorMuestra> etiquetas)
+        {
+            var epl = new StringBuilder();
+            epl.Append("I8,A,034\r\n");
+            epl.Append("q").Append(GeneradorEtiquetasHueco.ANCHO).Append("\r\n");
+            epl.Append("Q").Append(GeneradorEtiquetasHueco.ALTO).Append(",").Append(GeneradorEtiquetasHueco.SEPARACION).Append("\r\n");
+            foreach (EtiquetaContenedorMuestra etiqueta in etiquetas ?? Enumerable.Empty<EtiquetaContenedorMuestra>())
+            {
+                epl.Append("N\r\n");
+                epl.Append(string.Format(CultureInfo.InvariantCulture, "A{0},{1},0,{2},1,1,N,\"{3}\"\r\n",
+                    MARGEN_X, CONTENEDOR_CABECERA_Y, FUENTE_PEQUENA, Texto(etiqueta.Cabecera)));
+                for (int i = 0; i < etiqueta.Nombre.Count; i++)
+                {
+                    epl.Append(string.Format(CultureInfo.InvariantCulture, "A{0},{1},0,{2},1,1,N,\"{3}\"\r\n",
+                        MARGEN_X, CONTENEDOR_NOMBRE_Y + i * CONTENEDOR_NOMBRE_INTERLINEA, FUENTE_REFERENCIA_EPL, Texto(etiqueta.Nombre[i])));
+                }
+                epl.Append(string.Format(CultureInfo.InvariantCulture, "B{0},{1},0,E30,{2},{2},{3},B,\"{4}\"\r\n",
+                    EanX, CONTENEDOR_EAN_Y, EAN_MODULO, CONTENEDOR_EAN_ALTO, etiqueta.CodigoBarras.Substring(0, 12)));
+                epl.Append("P1\r\n");
+            }
+            return epl.ToString();
+        }
+
+        /// <summary>NestoAPI#884: lo mismo en ZPL (un ^XA…^XZ por etiqueta).</summary>
+        public static string ZplContenedores(IEnumerable<EtiquetaContenedorMuestra> etiquetas)
+        {
+            var zpl = new StringBuilder();
+            foreach (EtiquetaContenedorMuestra etiqueta in etiquetas ?? Enumerable.Empty<EtiquetaContenedorMuestra>())
+            {
+                zpl.Append(ComandosZpl.Inicio());
+                zpl.Append(ComandosZpl.Texto(MARGEN_X, CONTENEDOR_CABECERA_Y, FUENTE_PEQUENA, Limpio(etiqueta.Cabecera)));
+                for (int i = 0; i < etiqueta.Nombre.Count; i++)
+                {
+                    zpl.Append(ComandosZpl.TextoEscalable(MARGEN_X, CONTENEDOR_NOMBRE_Y + i * CONTENEDOR_NOMBRE_INTERLINEA,
+                        REFERENCIA_ALTO, REFERENCIA_ANCHO, Limpio(etiqueta.Nombre[i])));
+                }
+                zpl.Append(ComandosZpl.Ean13(EanX, CONTENEDOR_EAN_Y, EAN_MODULO, CONTENEDOR_EAN_ALTO, etiqueta.CodigoBarras));
+                zpl.Append(ComandosZpl.Fin(1));
+            }
+            return zpl.ToString();
+        }
+
+        /// <summary>NestoAPI#884: el trabajo de las etiquetas de contenedor en los dos idiomas.</summary>
+        public static TrabajoEtiquetas TrabajoContenedores(IReadOnlyCollection<EtiquetaContenedorMuestra> etiquetas)
+            => new TrabajoEtiquetas(EplContenedores(etiquetas), ZplContenedores(etiquetas),
+                $"Etiquetas de cajón de muestras ({(etiquetas?.Count ?? 0).ToString(CultureInfo.InvariantCulture)})");
+    }
+
+    /// <summary>NestoAPI#884: lo que lleva la etiqueta del cajón o la gaveta de una muestra.</summary>
+    public class EtiquetaContenedorMuestra
+    {
+        public string Producto { get; set; }
+        /// <summary>La línea pequeña de arriba: «MUESTRA · Ref. 17404».</summary>
+        public string Cabecera { get; set; }
+        /// <summary>El nombre en grande (una o dos líneas).</summary>
+        public List<string> Nombre { get; set; } = new List<string>();
+        /// <summary>El EAN-13 (13 cifras).</summary>
+        public string CodigoBarras { get; set; }
+        /// <summary>Todas las líneas de texto, en el orden en que salen.</summary>
+        public List<string> Lineas => new[] { Cabecera }.Concat(Nombre ?? new List<string>()).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
     }
 
     public interface IServicioEtiquetasProducto
@@ -269,7 +387,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// (el principal primero); si no, el interno que ya tenga. Null si no tiene ninguno de los dos (hay que darle el interno).
         /// Un código de caja (Cantidad 100) nunca: cada lectura contaría 100.
         /// </summary>
-        internal static Productos.CodigoBarrasProductoDTO CodigoDeLaUnidad(IEnumerable<Productos.CodigoBarrasProductoDTO> lista)
+        public static Productos.CodigoBarrasProductoDTO CodigoDeLaUnidad(IEnumerable<Productos.CodigoBarrasProductoDTO> lista)
         {
             List<Productos.CodigoBarrasProductoDTO> validos = (lista ?? Enumerable.Empty<Productos.CodigoBarrasProductoDTO>())
                 .Where(c => c != null && c.Activo && c.Cantidad == 1 && c.Codigo?.Trim().Length == 13 && Productos.ValidadorGtin.EsCodigoValido(c.Codigo))

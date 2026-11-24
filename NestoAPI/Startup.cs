@@ -348,6 +348,20 @@ namespace NestoAPI
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows(),
                 sp.GetRequiredService<Infraestructure.Productos.IServicioCodigosBarras>()));
+            // NestoAPI#884: muestras sin código de fabricante: código interno en bloque, etiquetas de cajón/gaveta por lotes y hoja en PDF
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioMuestras>(_ => Infraestructure.PreparacionAlmacen.RepositorioMuestrasSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCodigoInternoMuestras>(sp => new Infraestructure.PreparacionAlmacen.ServicioCodigoInternoMuestras(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioMuestras>(),
+                sp.GetRequiredService<Infraestructure.Productos.IServicioCodigosBarras>()));
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasMuestras>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasMuestras(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioMuestras>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.ILectorOrdenRecorrido>(),
+                sp.GetRequiredService<ILectorParametrosUsuario>(),
+                Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows(),
+                sp.GetRequiredService<Infraestructure.Productos.IServicioCodigosBarras>()));
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioHojaMuestras>(sp => new Infraestructure.PreparacionAlmacen.ServicioHojaMuestras(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioMuestras>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen>()));
 
             // NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing (DesdePedido + Tramitar + ImprimirEtiqueta
             // y, si el usuario lo tiene, facturar), con los mismos endpoints que Agencias de Nesto

@@ -248,7 +248,7 @@ WITH Lineas AS (
          LEFT JOIN Reservas r ON r.Pedido = x.Pedido AND r.Linea = x.Linea
     GROUP BY x.Producto, r.Pasillo, r.Fila, r.Columna
 )
-SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS SinCodigoAdmitido, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
+SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS SinCodigoAdmitido, CAST(0 AS bit) AS PideCantidad, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
        RTRIM(t.Producto) AS Producto,
        RTRIM(p.Nombre) AS Descripcion,
        RTRIM(p.CodBarras) AS CodigoBarras,
@@ -384,7 +384,7 @@ WITH Salida AS (
     SELECT x.[Número], x.Cantidad - ISNULL((SELECT SUM(h.Cantidad) FROM Huecos h WHERE h.[Número] = x.[Número]), 0), NULL, NULL, NULL, NULL
     FROM Salida x
 )
-SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS SinCodigoAdmitido, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
+SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS SinCodigoAdmitido, CAST(0 AS bit) AS PideCantidad, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
        RTRIM(t.[Número]) AS Producto,
        RTRIM(MAX(p.Nombre)) AS Descripcion,
        RTRIM(MAX(p.CodBarras)) AS CodigoBarras,

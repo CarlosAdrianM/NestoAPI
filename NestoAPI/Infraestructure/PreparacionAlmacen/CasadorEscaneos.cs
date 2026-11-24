@@ -81,6 +81,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     CodigosBarras = parada.CodigosBarras ?? new List<string>(),
                     SinCodigo = parada.SinCodigo,
                     SinCodigoAdmitido = parada.SinCodigoAdmitido,
+                    PideCantidad = parada.PideCantidad, // NestoAPI#884
                     SubGrupoProducto = parada.SubGrupoProducto,
                     CodigoDuplicado = parada.CodigoDuplicado,
                     Cantidad = parada.Cantidad,
@@ -298,6 +299,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 linea.CodigoBarras = Productos.ValidadorGtin.SoloSiValido(linea.CodigoBarras);
                 linea.SinCodigo = linea.CodigoBarras == null;
                 linea.SinCodigoAdmitido = MuestrasSinCodigo.Admitido(linea.SinCodigo, linea.SubGrupoProducto); // NestoAPI#797
+                linea.PideCantidad = MuestrasSinCodigo.PideCantidad(linea.SubGrupoProducto); // NestoAPI#884
                 linea.CodigoDuplicado = linea.CodigoBarras != null && duplicados.Contains(linea.CodigoBarras);
                 linea.Ubicacion = TextoUbicacion(linea.Pasillo, linea.Fila, linea.Columna);
             }

@@ -283,6 +283,25 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (recorrido, packing, Ubicar, Recibir COMP/REPO, y Enviar reposición) lleva `SinCodigoAdmitido` = sin código Y MMP (regla única
   `MuestrasSinCodigo.Admitido`; cada consulta trae `Productos.SubGrupo`): se teclea, sin aviso. `SinEtiqueta` de una línea admitida
   cuenta y no llama a `IAvisadorSinEtiqueta`; `RepuestosSinCodigoBarras` y su script excluyen MMP. Imprimir etiqueta de una muestra sigue valiendo.
+- **Muestras: etiqueta en el cajón o la gaveta (NestoAPI#884, Carlos 24/11/26)**: la muestra sin código de fabricante NO se etiqueta
+  unidad a unidad: UNA etiqueta por referencia en el cajón del mostrador (REI, ALC) o en la gaveta / el hueco (ALG), con el interno del 29.
+  Leerla es la vía cómoda, NO obligatoria: `MuestrasSinCodigo.Admitido` mira la ficha (`CodBarras`, donde el interno nunca va), así que
+  la muestra cuyo único código es el interno sigue «admitida» (se teclea sin aviso). Todo en `MuestrasContenedor.cs` (reglas puras
+  `ReglasMuestras`, lectura en 3 consultas `RepositorioMuestrasSql`) y `MuestrasController`: (a) `POST api/Productos/Muestras/CodigoInterno?ensayo=true`
+  (por defecto ensayo: cuántas y cuáles; de verdad, cada una por `AsignarInterno` → `GuardarInternoEnExclusiva`, idempotente, una que
+  falla no para las demás; una fila en Modificaciones Tabla `CodigoInternoMuestras`): muestras activas sin NINGÚN GTIN válido activo
+  (ficha o tabla, el interno incluido); Almacén, Compras, Dirección, Informática. (b) `POST api/Almacen/EtiquetasProducto/Muestras?ensayo=true`
+  {Almacen (ALG/REI/ALC), Familia (código o nombre), SoloConStock, Productos[]}: la MISMA 3×2 y la misma impresora que la de producto,
+  con «MUESTRA · Ref. X» en pequeño y el nombre en grande (sin la palabra «MUESTRA»), EAN-13 a 54 puntos (`CONTENEDOR_*`); el código, el
+  de la unidad (`CodigoDeLaUnidad`: fabricante, si no el interno); en ALG una por hueco con existencias (Ubicaciones 0/3/4) por
+  `OrdenRecorrido` y detrás las sin hueco; en tiendas por familia y nombre; UN trabajo, 500 como mucho; de verdad, a la que no tiene se le
+  da el interno DESPUÉS de mirar la impresora. (d) `GET api/Productos/Muestras/Hoja?almacen=&familia=&soloConStock=&conFotos=true` →
+  PDF (QuestPDF, `HojaMuestras.cs`): por familia, 3 por fila, foto de la tienda (`IFotosProductoAlmacen` + descarga en paralelo, la que
+  no llega no sale), nombre, referencia y EAN-13 dibujado (`Ean13`, como `Code128`); 404 sin muestras. (b) y (d): los permisos de las
+  etiquetas de producto (también Tiendas). (c) `PideCantidad` (aditivo, = MMP, `MuestrasSinCodigo.PideCantidad`): un bip de una muestra
+  NO es una unidad, la app pide la cantidad. Va en `ProductoPorCodigoBarrasDTO` (PorCodigoBarras y los 409 de candidatos), `Inventario`
+  (GET/POST/PUT, `Inventario.Partial.cs`), líneas de recorrido/picking y salida de reposición, packing, Ubicar, Recibir COMP/REPO, Enviar
+  reposición y reposición puntual. No en Productos/Buscar ni en la Ficha de Ariadna. Gemelas: Nesto#650, Ariadna#108.
 
 ### Furgoneta bulto a bulto (NestoAPI#772, 31/10/26)
 - Cada bulto del reparto propio (`RP{envío}-{N}`, `NR{pedido}-{N}`, `R{traspaso}-{N}`) tiene su historia en `RepartoBultosMovimientos`

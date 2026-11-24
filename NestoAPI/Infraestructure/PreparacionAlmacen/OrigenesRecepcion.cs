@@ -207,6 +207,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     CodigoBarras = p.Codigo,
                     SinCodigo = p.Codigo == null,
                     SinCodigoAdmitido = MuestrasSinCodigo.Admitido(p.Codigo == null, p.SubGrupo), // NestoAPI#797
+                    PideCantidad = MuestrasSinCodigo.PideCantidad(p.SubGrupo), // NestoAPI#884
                     CodigoDuplicado = p.Codigo != null && duplicados.Contains(p.Codigo),
                     Cantidad = p.Cantidad,
                     Recuperables = p.Recuperables
@@ -596,6 +597,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     CodigoBarras = l.CodigoBarras,
                     SinCodigo = l.SinCodigo,
                     SinCodigoAdmitido = l.SinCodigoAdmitido, // NestoAPI#797
+                    PideCantidad = l.PideCantidad, // NestoAPI#884
                     CodigoDuplicado = l.CodigoDuplicado,
                     Cantidad = l.Cantidad
                 }).ToList()

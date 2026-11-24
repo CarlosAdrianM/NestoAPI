@@ -35,6 +35,14 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Comprometido { get; set; }
         /// <summary>Sugerencia 581: lo que de verdad se puede mandar: StockOrigen − Comprometido (nunca negativo).</summary>
         public int Disponible { get; set; }
+        /// <summary>
+        /// NestoAPI#884: es una muestra (MMP): lo leído es casi siempre la etiqueta de su cajón, no una unidad: la app pide
+        /// SIEMPRE la cantidad. Ver <see cref="PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
+        /// </summary>
+        public bool PideCantidad { get; set; }
+        /// <summary>NestoAPI#884: Productos.SubGrupo (el código), para <see cref="PideCantidad"/>. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string SubGrupo { get; set; }
     }
 
     public interface IProductosReposicionPuntual
@@ -55,6 +63,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         // queda libre para mandar. Comprobada contra NV el 13/10/26 (94 ms).
         internal const string SQL_FICHA = @"
 SELECT RTRIM(pr.[Número]) AS Producto, RTRIM(pr.Nombre) AS Nombre, RTRIM(pr.CodBarras) AS CodigoBarras, 1 AS UnidadesPorLectura,
+       RTRIM(pr.SubGrupo) AS SubGrupo, CAST(0 AS bit) AS PideCantidad,
        s.StockOrigen, c.Comprometido,
        CASE WHEN s.StockOrigen - c.Comprometido > 0 THEN s.StockOrigen - c.Comprometido ELSE 0 END AS Disponible
 FROM Productos pr WITH (NOLOCK)
@@ -103,6 +112,7 @@ WHERE pr.Empresa = @p0 AND pr.[Número] = @p2 AND pr.Estado >= 0";
                 ProductoReposicionPuntualDTO porReferencia = await leerFicha(empresa, origen, limpio).ConfigureAwait(false);
                 if (porReferencia != null)
                 {
+                    porReferencia.PideCantidad = PreparacionAlmacen.MuestrasSinCodigo.PideCantidad(porReferencia.SubGrupo); // NestoAPI#884
                     encontrados.Add(porReferencia);
                     return encontrados;
                 }
@@ -113,6 +123,7 @@ WHERE pr.Empresa = @p0 AND pr.[Número] = @p2 AND pr.Estado >= 0";
                 if (ficha != null)
                 {
                     ficha.UnidadesPorLectura = Math.Max(1, conCodigo.Cantidad);
+                    ficha.PideCantidad = conCodigo.PideCantidad || PreparacionAlmacen.MuestrasSinCodigo.PideCantidad(ficha.SubGrupo); // NestoAPI#884
                     encontrados.Add(ficha);
                 }
             }

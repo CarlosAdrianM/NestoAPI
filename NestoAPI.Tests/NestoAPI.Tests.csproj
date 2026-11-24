@@ -672,9 +672,11 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasProductoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetaEan13Tests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\MuestrasSinCodigoTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\MuestrasContenedorTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\PedidosQueVanSolosTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SinEtiquetaRecepcionTests.cs" />
     <Compile Include="Controllers\EtiquetasProductoControllerTests.cs" />
+    <Compile Include="Controllers\MuestrasControllerTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\LecturasAlmacenTests.cs" />
     <Compile Include="Controllers\LecturasAlmacenControllerTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AjusteImpresorasEtiquetasTests.cs" />

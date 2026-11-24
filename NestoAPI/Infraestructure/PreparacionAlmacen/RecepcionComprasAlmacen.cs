@@ -297,6 +297,7 @@ ORDER BY l.[Número], l.[NºOrden]";
                         CodigoBarras = codigo,
                         SinCodigo = codigo == null,
                         SinCodigoAdmitido = MuestrasSinCodigo.Admitido(codigo == null, f.SubGrupo), // NestoAPI#797
+                        PideCantidad = MuestrasSinCodigo.PideCantidad(f.SubGrupo), // NestoAPI#884
                         CodigoDuplicado = codigo != null && duplicados.Contains(codigo),
                         Cantidad = f.Cantidad
                     };
