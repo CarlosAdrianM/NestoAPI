@@ -842,6 +842,33 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   un fallo por tienda a ELMAH) van por el MISMO `EnviadorAltasBajasTienda`: a `Constantes.Correos.TIENDA_REINA`/`TIENDA_ALCOBENDAS` con CC a
   `Correos.COMPRAS`, HTML (300 líneas como mucho; el resto en el Excel adjunto). Sin movimientos, no se manda nada. Sin tabla ni script.
 
+### Almacenes ficticios de vendedores (NestoAPI#894, 24/11/26)
+- Sustituye a «Altas y bajas de almacén ficticio» de Nesto viejo: Almacenes.AlmacénFicticio = 1 (IF, AB, IM… de vendedores; PRV, AMZ, EXT, SDC,
+  PAC…). Saldo = SUM(ExtractoProducto.Cantidad) empresas 1+3 por producto. Dueño = ParametrosUsuario empresa 1 `AlmacenFicticio` PROPIO (fila
+  «(defecto)» vacía, `Scripts/Issue894_AlmacenesFicticios.sql`; nunca se crea al leer); «es suyo» = ese usuario o su `Vendedor` = el del que pregunta
+  (claim «Vendedor» de NestoApp o su parámetro).
+- LA REGLA (pura) `ReglasAlmacenesFicticios.Decidir` (`Infraestructure/AlmacenesFicticios/`): ver = Dirección, Informática, Almacén y Tiendas todos;
+  cada vendedor el suyo; el jefe de equipo los de su equipo (`VendedoresEquipoString`); la tienda online, AMZ; un cliente de la tienda nada (403).
+  Meter y sacar, SIEMPRE contra el almacén propio: de vendedor (tipo `Vendedor` = tiene dueño), Almacén (ALG) y Tiendas (su AlmacénPedidoVta REI/ALC,
+  `GestorFacturacionTienda.NormalizarTienda`; la tienda va antes que Almacén); PRV y EXT solo Almacén; AMZ Almacén y `TiendaOnline` (ALG); los demás
+  solo Almacén. Dirección e Informática consultan (no traspasan si no son de Almacén o Tiendas). Sin dueño todavía = `Otro`.
+- `GET api/AlmacenesFicticios` → [{Codigo, Descripcion, Tipo, EsDeVendedor, Vendedores, EsSuyo, PuedeTraspasar, AlmacenContra, MotivoNoPuedeTraspasar,
+  PermiteNegativo}]; `GET …/{almacen}/Existencias` → {Almacen, Descripcion, Productos[{Producto, Nombre, Familia, NombreFamilia, Unidades}],
+  NumeroProductos, TotalUnidades} (saldo ≠ 0; sin costes ni precios; 403/404). `POST …/Traspasos?ensayo=` {AlmacenFicticio, Sentido Entregar|Recoger,
+  Lineas[{Producto, Cantidad > 0, Pasillo?, Fila?, Columna?}], Comentario ≤500, Clave?} → {Ensayo, NumeroTraspaso, AlmacenFicticio, AlmacenPropio,
+  Sentido, Lineas[{…, Hueco, HuecoPropuesto, PendienteDeUbicar}], Saldos, UnidadesPendientesDeUbicar, Mensaje}. 400 producto que no existe o ficticio
+  (anulado solo al entregar: recoger lo anulado vale), stock del origen insuficiente (salvo `Almacenes.PermitirNegativo` del origen); 403; 404; 409 si
+  el stock o el hueco cambian al guardar. Misma Clave → la misma respuesta (Modificaciones, Anterior = la clave).
+- Algete (ControlUbicaciones + Productos.Ubicar): al ENTREGAR, el hueco de cada línea (el pedido o el que propone la API: FIFO con libre para la línea
+  entera; lo libre = estado 0 sin pedido, albarán ni reserva, empresas 1+3) y se quita por la puerta (`SalidaDeHuecoAFicticio`, todo o nada); al
+  RECOGER, «pendiente de ubicar» (`EntradaDeFicticio`, estado 2) para la PDA. Tiendas sin huecos.
+- Escritura en UNA transacción: applock `TraspasoAlmacenFicticio:1`, stock releído con UPDLOCK, NºTraspaso de `NumeradorTraspasos`, por producto −N
+  en el origen y +N en el destino (Texto = nombre del producto, delegación ALG y forma de venta VAR) en el diario de sistema `_Ficticio` por el NÚCLEO
+  `MovimientoTraspasoStockSql` (PreExtrProducto + prdExtrProducto por `ServicioExtractoProducto`, apartando otros traspasos del diario; lo usa también
+  el ajuste de #634), los huecos y UNA fila en Modificaciones (Tabla `TraspasoAlmacenFicticio`, Nuevo = el resultado + usuario y comentario). Después,
+  campana de Nesto (`TraspasoAlmacenFicticio`) a los dueños que no son quien lo hace (nunca rompe). Gemelas NestoApp#292 (consulta) y Nesto#651
+  (consulta y pantalla de meter/sacar).
+
 ### Mantenimiento de calles del recorrido (NestoAPI#642, corte 4 de #639, para Nesto#528, 12/11/26)
 - `GET api/Almacen/Recorrido?almacen=ALG&empresa=1` → `RecorridoAlmacenDTO`: calles (Orden, Sentido A/D, pasillos con Posicion, Nombre y
   Huecos), `PasillosSinCalle` (con huecos en uso o con nombre) y `Tramos` (pasillo+columna+nivel AMano/Escalera de los huecos en uso, con la
