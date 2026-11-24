@@ -34,6 +34,11 @@ namespace NestoAPI.Infraestructure.Campanas
         public bool CondicionContado { get; set; }
         /// <summary>Texto propio del aviso de contado (500 como mucho); null = el de siempre.</summary>
         public string TextoAvisoContado { get; set; }
+        /// <summary>
+        /// NestoAPI#889: el descuento de los que entren es solo para lo que haya en stock (dbo.CampanasCondicionStock, mismas fechas),
+        /// salvo que su regla o excepción diga otra cosa. No bloquea nada: al grabar el pedido se avisa si no hay stock para servirlo.
+        /// </summary>
+        public bool CondicionStock { get; set; }
         /// <summary>A los distribuidores el descuento de la campaña se les suma ENCIMA del suyo (dbo.CampanasAcumulanDistribuidores, mismas fechas).</summary>
         public bool AcumulaParaDistribuidores { get; set; }
     }
@@ -53,6 +58,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public List<string> SubgruposExcluidos { get; set; }
         /// <summary>Null = la de la petición.</summary>
         public bool? CondicionContado { get; set; }
+        /// <summary>NestoAPI#889. Null = la de la petición.</summary>
+        public bool? CondicionStock { get; set; }
     }
 
     public class ExcepcionCampanaBloqueDTO
@@ -62,6 +69,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public decimal Descuento { get; set; }
         public byte? Audiencia { get; set; }
         public bool? CondicionContado { get; set; }
+        /// <summary>NestoAPI#889. Null = la de la petición.</summary>
+        public bool? CondicionStock { get; set; }
     }
 
     /// <summary>Lo que hace falta de la ficha (una consulta para todas).</summary>
@@ -143,6 +152,8 @@ namespace NestoAPI.Infraestructure.Campanas
         /// <summary>Su ficha tiene «Aplicar Dto» = 0 y se desbloquea por las fechas de la campaña.</summary>
         public bool DesbloquearFicha { get; set; }
         public bool CondicionContado { get; set; }
+        /// <summary>NestoAPI#889: su descuento es solo para lo que haya en stock (dbo.CampanasCondicionStock).</summary>
+        public bool CondicionStock { get; set; }
         /// <summary>Nº Orden de la fila de DescuentosProducto que ya había (ya estaba o solape).</summary>
         public int? FilaExistente { get; set; }
         /// <summary>Tiene otra fila de tarifa de producto vigente esas fechas: fuera si es mejor o igual, dentro (y la otra se queda) si es peor.</summary>
@@ -164,6 +175,8 @@ namespace NestoAPI.Infraestructure.Campanas
         /// <summary>Productos con otra fila de tarifa de producto vigente esas fechas (fuera si es mejor o igual; dentro si es peor).</summary>
         public int Solapes { get; set; }
         public int CondicionContado { get; set; }
+        /// <summary>NestoAPI#889: de los que entran o ya estaban, cuántos van «solo en stock».</summary>
+        public int CondicionStock { get; set; }
     }
 
     public class ResultadoCalculoCampanaBloque
@@ -358,7 +371,7 @@ namespace NestoAPI.Infraestructure.Campanas
                 _ = fichas.TryGetValue(numero, out ProductoCandidatoCampana ficha);
                 // La excepción manda sobre la regla de su familia: de esa regla no se mira nada.
                 resultado.Lineas.Add(Evaluar(numero, ficha, ORIGEN_EXCEPCION, e.Descuento, e.Audiencia ?? p.Audiencia ?? 0,
-                    e.CondicionContado ?? p.CondicionContado, null, excluidosGlobales, p, campana, desde, hasta, filasPorProducto[numero]));
+                    e.CondicionContado ?? p.CondicionContado, e.CondicionStock ?? p.CondicionStock, null, excluidosGlobales, p, campana, desde, hasta, filasPorProducto[numero]));
             }
 
             foreach (ReglaCampanaBloqueDTO r in p.Reglas ?? new List<ReglaCampanaBloqueDTO>())
@@ -377,14 +390,14 @@ namespace NestoAPI.Infraestructure.Campanas
                 {
                     string numero = ficha.Numero.Trim();
                     resultado.Lineas.Add(Evaluar(numero, ficha, ORIGEN_REGLA, r.Descuento, r.Audiencia ?? p.Audiencia ?? 0,
-                        r.CondicionContado ?? p.CondicionContado, r, excluidosGlobales, p, campana, desde, hasta, filasPorProducto[numero]));
+                        r.CondicionContado ?? p.CondicionContado, r.CondicionStock ?? p.CondicionStock, r, excluidosGlobales, p, campana, desde, hasta, filasPorProducto[numero]));
                 }
             }
             return resultado;
         }
 
         private static LineaCampanaBloqueDTO Evaluar(string numero, ProductoCandidatoCampana ficha, string origen, decimal descuento, byte audiencia,
-            bool contado, ReglaCampanaBloqueDTO regla, HashSet<string> excluidosGlobales, PeticionCampanaBloqueDTO p, string campana,
+            bool contado, bool stock, ReglaCampanaBloqueDTO regla, HashSet<string> excluidosGlobales, PeticionCampanaBloqueDTO p, string campana,
             DateTime desde, DateTime hasta, IEnumerable<FilaExistenteCampana> filasDelProducto)
         {
             var linea = new LineaCampanaBloqueDTO
@@ -410,6 +423,7 @@ namespace NestoAPI.Infraestructure.Campanas
                 linea.Detalle = $"Ya tiene su fila de esta campaña (nº {suya.Id}, {Porcentaje(suya.Descuento)}): no se duplica.";
                 linea.DesbloquearFicha = ficha != null && !ficha.AplicarDto && p.DesbloquearAplicarDto;
                 linea.CondicionContado = contado;
+                linea.CondicionStock = stock;
                 return linea;
             }
 
@@ -488,6 +502,7 @@ namespace NestoAPI.Infraestructure.Campanas
             linea.Estado = EstadoLineaCampanaBloque.Entra;
             linea.DesbloquearFicha = !ficha.AplicarDto;
             linea.CondicionContado = contado;
+            linea.CondicionStock = stock;
             return linea;
         }
 
@@ -538,7 +553,8 @@ namespace NestoAPI.Infraestructure.Campanas
                     .GroupBy(x => x.Motivo).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
                 FichasDesbloqueadas = l.Count(x => x.Estado != EstadoLineaCampanaBloque.Fuera && x.DesbloquearFicha),
                 Solapes = l.Count(x => x.Solape),
-                CondicionContado = l.Count(x => x.Estado != EstadoLineaCampanaBloque.Fuera && x.CondicionContado)
+                CondicionContado = l.Count(x => x.Estado != EstadoLineaCampanaBloque.Fuera && x.CondicionContado),
+                CondicionStock = l.Count(x => x.Estado != EstadoLineaCampanaBloque.Fuera && x.CondicionStock)
             };
         }
 

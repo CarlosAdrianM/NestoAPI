@@ -42,6 +42,37 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
             return ReglaCampanaBloque.Calcular(p, fichas, existentes ?? new List<FilaExistenteCampana>());
         }
 
+        // ---------------------------------------------------------------- solo en stock (NestoAPI#889)
+
+        [TestMethod]
+        public void Calcular_CondicionStock_LaPeticionManda_YLaReglaOLaExcepcionLaCambian()
+        {
+            PeticionCampanaBloqueDTO p = Peticion(Regla(), new ReglaCampanaBloqueDTO { Familia = "Otra", Descuento = 0.10M, CondicionStock = false });
+            p.CondicionStock = true;
+            p.Excepciones = new List<ExcepcionCampanaBloqueDTO> { new ExcepcionCampanaBloqueDTO { Producto = "2", Descuento = 0.30M, CondicionStock = false } };
+
+            ResultadoCalculoCampanaBloque r = Calcular(p, new[] { Ficha("1"), Ficha("2"), Ficha("3", familia: "Otra"), Ficha("4", grupo: "MTP") });
+
+            Assert.IsTrue(Linea(r, "1").CondicionStock, "La de la petición");
+            Assert.IsFalse(Linea(r, "2").CondicionStock, "La excepción dice que no");
+            Assert.IsFalse(Linea(r, "3").CondicionStock, "Su regla dice que no");
+            Assert.IsFalse(Linea(r, "4").CondicionStock, "La que queda fuera no lleva marca");
+            Assert.AreEqual(1, ReglaCampanaBloque.Totales(r.Lineas).Total.CondicionStock);
+        }
+
+        [TestMethod]
+        public void Calcular_CondicionStock_YaEstaba_LlevaLaMarca()
+        {
+            PeticionCampanaBloqueDTO p = Peticion(Regla());
+            p.CondicionStock = true;
+
+            ResultadoCalculoCampanaBloque r = Calcular(p, new[] { Ficha("1") },
+                new[] { new FilaExistenteCampana { Id = 7, Producto = "1", Descuento = 0.20M, Campana = "Black Friday 2026" } });
+
+            Assert.AreEqual(EstadoLineaCampanaBloque.YaEstaba, Linea(r, "1").Estado);
+            Assert.IsTrue(Linea(r, "1").CondicionStock);
+        }
+
         // ---------------------------------------------------------------- regla por familia
 
         [TestMethod]

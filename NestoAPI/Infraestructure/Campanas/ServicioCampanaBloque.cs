@@ -34,6 +34,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public int FichasDesbloqueoCreadas { get; set; }
         /// <summary>De verdad: filas nuevas en dbo.CampanasCondicionContado.</summary>
         public int CondicionContadoCreadas { get; set; }
+        /// <summary>NestoAPI#889. De verdad: filas nuevas en dbo.CampanasCondicionStock.</summary>
+        public int CondicionStockCreadas { get; set; }
         /// <summary>De verdad: se ha marcado la campaña en dbo.CampanasAcumulanDistribuidores (false si ya lo estaba o no se pidió).</summary>
         public bool MarcaDistribuidoresCreada { get; set; }
         /// <summary>Productos encolados para la tienda (solo si la campaña ya está corriendo; si no, lo hace el job el día que empieza).</summary>
@@ -74,6 +76,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public bool TablaAplicarDto { get; set; }
         public bool TablaCondicionContado { get; set; }
         public bool TablaAcumulaDistribuidores { get; set; }
+        /// <summary>NestoAPI#889: existe dbo.CampanasCondicionStock.</summary>
+        public bool TablaCondicionStock { get; set; }
     }
 
     public class FilaAltaCampanaBloque
@@ -85,6 +89,8 @@ namespace NestoAPI.Infraestructure.Campanas
         public bool CrearDescuento { get; set; }
         public bool Desbloquear { get; set; }
         public bool Contado { get; set; }
+        /// <summary>NestoAPI#889: va a dbo.CampanasCondicionStock.</summary>
+        public bool Stock { get; set; }
     }
 
     public class AltaCampanaBloque
@@ -105,6 +111,7 @@ namespace NestoAPI.Infraestructure.Campanas
         public List<string> ProductosCreados { get; set; } = new List<string>();
         public int AplicarDtoCreadas { get; set; }
         public int CondicionContadoCreadas { get; set; }
+        public int CondicionStockCreadas { get; set; }
         public bool MarcaDistribuidoresCreada { get; set; }
     }
 
@@ -127,6 +134,8 @@ namespace NestoAPI.Infraestructure.Campanas
         /// <summary>dbo.CampanasAplicarDto: borradas (aún sin activar) o con la fecha de fin cambiada (el job devuelve la ficha).</summary>
         public int FilasAplicarDto { get; set; }
         public int FilasCondicionContado { get; set; }
+        /// <summary>NestoAPI#889: dbo.CampanasCondicionStock, borradas o cerradas.</summary>
+        public int FilasCondicionStock { get; set; }
         /// <summary>dbo.CampanasAcumulanDistribuidores: la marca borrada o cerrada.</summary>
         public int FilasAcumulaDistribuidores { get; set; }
     }
@@ -223,8 +232,9 @@ namespace NestoAPI.Infraestructure.Campanas
                 hecha.FilasCreadas = insercion.ProductosCreados.Count;
                 hecha.FichasDesbloqueoCreadas = insercion.AplicarDtoCreadas;
                 hecha.CondicionContadoCreadas = insercion.CondicionContadoCreadas;
+                hecha.CondicionStockCreadas = insercion.CondicionStockCreadas;
                 hecha.MarcaDistribuidoresCreada = insercion.MarcaDistribuidoresCreada;
-                if (hecha.FilasCreadas + hecha.FichasDesbloqueoCreadas + hecha.CondicionContadoCreadas > 0 || hecha.MarcaDistribuidoresCreada)
+                if (hecha.FilasCreadas + hecha.FichasDesbloqueoCreadas + hecha.CondicionContadoCreadas + hecha.CondicionStockCreadas > 0 || hecha.MarcaDistribuidoresCreada)
                 {
                     await unidad.Anotar(TABLA_MODIFICACIONES, RastroAlta(peticion, hecha), DescripcionAlta(hecha, usuarioAuditoria), usuarioAuditoria).ConfigureAwait(false);
                 }
@@ -234,6 +244,10 @@ namespace NestoAPI.Infraestructure.Campanas
             if (hecha.CondicionContadoCreadas > 0)
             {
                 CampanasCondicionContado.Invalidar();
+            }
+            if (hecha.CondicionStockCreadas > 0)
+            {
+                CampanasCondicionStock.Invalidar();
             }
             if (hecha.MarcaDistribuidoresCreada)
             {
@@ -281,12 +295,18 @@ namespace NestoAPI.Infraestructure.Campanas
             {
                 faltan.Add("CampanasCondicionContado");
             }
+            if (r.Total.CondicionStock > 0 && !datos.TablaCondicionStock)
+            {
+                faltan.Add("CampanasCondicionStock");
+            }
             return faltan;
         }
 
         private static IEnumerable<string> AvisosTablas(IEnumerable<string> faltan) =>
             faltan.Select(t => t == "CampanasAcumulanDistribuidores"
                 ? "Falta la tabla dbo.CampanasAcumulanDistribuidores: lance Scripts/BlackFriday2026_CampanasAcumulanDistribuidores.sql antes de crearla de verdad."
+                : t == "CampanasCondicionStock"
+                ? "Falta la tabla dbo.CampanasCondicionStock: lance Scripts/BlackFriday2026_CampanasCondicionStock.sql antes de crearla de verdad."
                 : $"Falta la tabla dbo.{t}: lance Scripts/FeriaOnline_CampanasCondicionContado.sql y Scripts/BlackFriday2026_CampanasBloque.sql antes de crearla de verdad.");
 
         private static AltaCampanaBloque Alta(PeticionCampanaBloqueDTO peticion, ConsultaCampanaBloque consulta, string usuario, List<LineaCampanaBloqueDTO> lineas)
@@ -302,7 +322,7 @@ namespace NestoAPI.Infraestructure.Campanas
                 AcumulaParaDistribuidores = peticion.AcumulaParaDistribuidores,
                 Filas = lineas
                     .Where(l => l.Estado == EstadoLineaCampanaBloque.Entra
-                        || (l.Estado == EstadoLineaCampanaBloque.YaEstaba && (l.DesbloquearFicha || l.CondicionContado)))
+                        || (l.Estado == EstadoLineaCampanaBloque.YaEstaba && (l.DesbloquearFicha || l.CondicionContado || l.CondicionStock)))
                     .GroupBy(l => l.Producto, StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.First())
                     .Select(l => new FilaAltaCampanaBloque
@@ -312,7 +332,8 @@ namespace NestoAPI.Infraestructure.Campanas
                         Audiencia = l.Audiencia,
                         CrearDescuento = l.Estado == EstadoLineaCampanaBloque.Entra,
                         Desbloquear = l.DesbloquearFicha,
-                        Contado = l.CondicionContado
+                        Contado = l.CondicionContado,
+                        Stock = l.CondicionStock
                     })
                     .ToList()
             };
@@ -370,6 +391,7 @@ namespace NestoAPI.Infraestructure.Campanas
             $"Campaña «{r.Nombre}» ({r.FechaDesde.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}-{r.FechaHasta.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}) " +
             $"dada de alta en bloque: {N(r.FilasCreadas)} filas nuevas, {N(r.Total.YaEstaban)} ya estaban, {N(r.Total.Fuera)} fuera " +
             $"({N(r.Total.Solapes)} con solape), {N(r.FichasDesbloqueoCreadas)} fichas a desbloquear, {N(r.CondicionContadoCreadas)} con condición de contado" +
+            (r.CondicionStockCreadas > 0 ? $", {N(r.CondicionStockCreadas)} solo en stock" : string.Empty) +
             (r.MarcaDistribuidoresCreada ? ", y a los distribuidores se les suma encima del suyo" : string.Empty) + $". Por {usuario}";
 
         private static string RastroAlta(PeticionCampanaBloqueDTO p, RespuestaCampanaBloqueDTO r) =>
@@ -382,17 +404,19 @@ namespace NestoAPI.Infraestructure.Campanas
                 p.Audiencia,
                 p.DesbloquearAplicarDto,
                 p.CondicionContado,
+                p.CondicionStock,
                 p.AcumulaParaDistribuidores,
                 Reglas = (p.Reglas ?? new List<ReglaCampanaBloqueDTO>()).Select(x => new
                 {
-                    Familia = x.Familia?.Trim(), x.Descuento, x.Audiencia, x.CondicionContado,
+                    Familia = x.Familia?.Trim(), x.Descuento, x.Audiencia, x.CondicionContado, x.CondicionStock,
                     x.ProductosExcluidos, x.TextosExcluidos, x.GruposExcluidos, x.SubgruposExcluidos
                 }),
-                Excepciones = (p.Excepciones ?? new List<ExcepcionCampanaBloqueDTO>()).Select(x => new { Producto = x.Producto?.Trim(), x.Descuento, x.Audiencia, x.CondicionContado }),
+                Excepciones = (p.Excepciones ?? new List<ExcepcionCampanaBloqueDTO>()).Select(x => new { Producto = x.Producto?.Trim(), x.Descuento, x.Audiencia, x.CondicionContado, x.CondicionStock }),
                 p.ProductosExcluidos,
                 r.FilasCreadas,
                 r.FichasDesbloqueoCreadas,
                 r.CondicionContadoCreadas,
+                r.CondicionStockCreadas,
                 r.Total,
                 r.PorFamilia
             });
@@ -402,6 +426,7 @@ namespace NestoAPI.Infraestructure.Campanas
             $"Campaña «{r.Campana}» " +
             (r.FechaFin.HasValue ? $"cerrada con fin el {r.FechaFin.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}" : "borrada") +
             $": {N(hecho.FilasDescuento)} filas de descuento, {N(hecho.FilasAplicarDto)} de desbloqueo de ficha y {N(hecho.FilasCondicionContado)} de contado" +
+            (hecho.FilasCondicionStock > 0 ? $" ({N(hecho.FilasCondicionStock)} de solo en stock)" : string.Empty) +
             (hecho.FilasAcumulaDistribuidores > 0 ? " (y su marca de distribuidores)" : string.Empty) + $". Por {r.Usuario}";
 
         private static string N(int n) => n.ToString("N0", CultureInfo.GetCultureInfo("es-ES"));

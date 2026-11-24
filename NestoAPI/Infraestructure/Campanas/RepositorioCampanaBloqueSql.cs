@@ -20,7 +20,8 @@ namespace NestoAPI.Infraestructure.Campanas
         internal const string SQL_TABLAS =
             "SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasAplicarDto', N'U') IS NULL THEN 0 ELSE 1 END AS bit), " +
             "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasCondicionContado', N'U') IS NULL THEN 0 ELSE 1 END AS bit), " +
-            "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasAcumulanDistribuidores', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+            "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasAcumulanDistribuidores', N'U') IS NULL THEN 0 ELSE 1 END AS bit), " +
+            "CAST(CASE WHEN OBJECT_ID(N'dbo.CampanasCondicionStock', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
 
         // La marca de distribuidores: una fila por campaña; si ya estaba, se le ponen las fechas de la campaña (no se duplica).
         internal const string SQL_MARCAR_DISTRIBUIDORES = @"IF EXISTS (SELECT 1 FROM dbo.CampanasAcumulanDistribuidores WITH (UPDLOCK, HOLDLOCK) WHERE Campana = @campana)
@@ -62,7 +63,7 @@ SELECT @@ROWCOUNT;";
 
         internal const string SQL_CREAR_TEMPORAL =
             "CREATE TABLE #CampanaBloqueFilas (Producto char(15) NOT NULL PRIMARY KEY, Descuento decimal(5,4) NOT NULL, Audiencia tinyint NOT NULL, " +
-            "CrearDescuento bit NOT NULL, Desbloquear bit NOT NULL, Contado bit NOT NULL)";
+            "CrearDescuento bit NOT NULL, Desbloquear bit NOT NULL, Contado bit NOT NULL, Stock bit NOT NULL)";
 
         internal const string SQL_INSERTAR_DESCUENTOS = @"DECLARE @creados TABLE (Producto char(15) NOT NULL);
 INSERT INTO dbo.DescuentosProducto (Empresa, [Nº Producto], CantidadMínima, Descuento, AudienciaOferta, FechaDesde, FechaHasta, Campana, Usuario, [Fecha Modificación])
@@ -88,6 +89,15 @@ SELECT @campana, @empresa, f.Producto, @desde, @hasta, @texto, @usuario
 FROM #CampanaBloqueFilas f
 WHERE f.Contado = 1
   AND NOT EXISTS (SELECT 1 FROM dbo.CampanasCondicionContado c WITH (UPDLOCK, HOLDLOCK)
+                  WHERE c.Campana = @campana AND c.Empresa = @empresa AND c.Producto = f.Producto);
+SELECT @@ROWCOUNT;";
+
+        // NestoAPI#889: «solo en stock», una fila por producto como la de contado.
+        internal const string SQL_INSERTAR_STOCK = @"INSERT INTO dbo.CampanasCondicionStock (Campana, Empresa, Producto, FechaDesde, FechaHasta, Usuario)
+SELECT @campana, @empresa, f.Producto, @desde, @hasta, @usuario
+FROM #CampanaBloqueFilas f
+WHERE f.Stock = 1
+  AND NOT EXISTS (SELECT 1 FROM dbo.CampanasCondicionStock c WITH (UPDLOCK, HOLDLOCK)
                   WHERE c.Campana = @campana AND c.Empresa = @empresa AND c.Producto = f.Producto);
 SELECT @@ROWCOUNT;";
 
@@ -122,6 +132,15 @@ SELECT @@ROWCOUNT;";
 
         internal const string SQL_CERRAR_CONTADO = @"IF OBJECT_ID(N'dbo.CampanasCondicionContado', N'U') IS NULL BEGIN SELECT 0; RETURN; END
 UPDATE dbo.CampanasCondicionContado SET FechaHasta = @fin, FechaDesde = CASE WHEN FechaDesde > @fin THEN @fin ELSE FechaDesde END
+WHERE Campana = @campana AND Empresa = @empresa;
+SELECT @@ROWCOUNT;";
+
+        internal const string SQL_BORRAR_STOCK = @"IF OBJECT_ID(N'dbo.CampanasCondicionStock', N'U') IS NULL BEGIN SELECT 0; RETURN; END
+DELETE FROM dbo.CampanasCondicionStock WHERE Campana = @campana AND Empresa = @empresa;
+SELECT @@ROWCOUNT;";
+
+        internal const string SQL_CERRAR_STOCK = @"IF OBJECT_ID(N'dbo.CampanasCondicionStock', N'U') IS NULL BEGIN SELECT 0; RETURN; END
+UPDATE dbo.CampanasCondicionStock SET FechaHasta = @fin, FechaDesde = CASE WHEN FechaDesde > @fin THEN @fin ELSE FechaDesde END
 WHERE Campana = @campana AND Empresa = @empresa;
 SELECT @@ROWCOUNT;";
 
@@ -178,12 +197,13 @@ SELECT @@ROWCOUNT;";
                     FilasDescuento = await Escalar(u, cerrar ? SQL_CERRAR_DESCUENTOS : SQL_BORRAR_DESCUENTOS, r, fin).ConfigureAwait(false),
                     FilasAplicarDto = await Escalar(u, cerrar ? SQL_CERRAR_APLICAR_DTO : SQL_BORRAR_APLICAR_DTO, r, fin).ConfigureAwait(false),
                     FilasCondicionContado = await Escalar(u, cerrar ? SQL_CERRAR_CONTADO : SQL_BORRAR_CONTADO, r, fin).ConfigureAwait(false),
+                    FilasCondicionStock = await Escalar(u, cerrar ? SQL_CERRAR_STOCK : SQL_BORRAR_STOCK, r, fin).ConfigureAwait(false),
                     FilasAcumulaDistribuidores = await Escalar(u, cerrar ? SQL_CERRAR_DISTRIBUIDORES : SQL_BORRAR_DISTRIBUIDORES, r, fin).ConfigureAwait(false)
                 };
                 string anterior = Newtonsoft.Json.JsonConvert.SerializeObject(new
                 {
                     r.Campana, r.Empresa, Accion = cerrar ? "Cerrar" : "Borrar", FechaFin = cerrar ? fin.ToString("yyyy-MM-dd") : null,
-                    hecho.FilasDescuento, hecho.FilasAplicarDto, hecho.FilasCondicionContado, hecho.FilasAcumulaDistribuidores, Ids = r.Ids
+                    hecho.FilasDescuento, hecho.FilasAplicarDto, hecho.FilasCondicionContado, hecho.FilasCondicionStock, hecho.FilasAcumulaDistribuidores, Ids = r.Ids
                 });
                 await unidad.Anotar(cerrar ? ServicioCampanaBloque.TABLA_CERRADA : ServicioCampanaBloque.TABLA_BORRADA, anterior,
                     ServicioCampanaBloque.DescripcionRetirada(r, hecho), r.Usuario).ConfigureAwait(false);
@@ -291,6 +311,7 @@ IF @r < 0 THROW 50001, 'Otra persona está dando de alta o borrando esta campañ
                     datos.TablaAplicarDto = lector.GetBoolean(0);
                     datos.TablaCondicionContado = lector.GetBoolean(1);
                     datos.TablaAcumulaDistribuidores = lector.GetBoolean(2);
+                    datos.TablaCondicionStock = lector.GetBoolean(3);
                 }
             }
 
@@ -381,9 +402,10 @@ IF @r < 0 THROW 50001, 'Otra persona está dando de alta o borrando esta campañ
                 _ = tabla.Columns.Add("CrearDescuento", typeof(bool));
                 _ = tabla.Columns.Add("Desbloquear", typeof(bool));
                 _ = tabla.Columns.Add("Contado", typeof(bool));
+                _ = tabla.Columns.Add("Stock", typeof(bool));
                 foreach (FilaAltaCampanaBloque f in alta.Filas)
                 {
-                    _ = tabla.Rows.Add(f.Producto.Trim(), f.Descuento, f.Audiencia, f.CrearDescuento, f.Desbloquear, f.Contado);
+                    _ = tabla.Rows.Add(f.Producto.Trim(), f.Descuento, f.Audiencia, f.CrearDescuento, f.Desbloquear, f.Contado, f.Stock);
                 }
                 await Copiar(Conexion, Transaccion, "#CampanaBloqueFilas", tabla).ConfigureAwait(false);
 
@@ -408,6 +430,13 @@ IF @r < 0 THROW 50001, 'Otra persona está dando de alta o borrando esta campañ
                     {
                         comando.Parameters.Add("@texto", SqlDbType.NVarChar, 500).Value = (object)alta.TextoAvisoContado ?? DBNull.Value;
                         resultado.CondicionContadoCreadas = Convert.ToInt32(await comando.ExecuteScalarAsync().ConfigureAwait(false));
+                    }
+                }
+                if (tablas.TablaCondicionStock && alta.Filas.Any(f => f.Stock))
+                {
+                    using (SqlCommand comando = Comando(SQL_INSERTAR_STOCK, alta, 50))
+                    {
+                        resultado.CondicionStockCreadas = Convert.ToInt32(await comando.ExecuteScalarAsync().ConfigureAwait(false));
                     }
                 }
                 if (tablas.TablaAcumulaDistribuidores && alta.AcumulaParaDistribuidores)

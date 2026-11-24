@@ -16,7 +16,7 @@ namespace NestoAPI.Infraestructure.Campanas
     {
         public const string CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
         internal static readonly string[] COLUMNAS = { "Producto", "Nombre", "Familia", "Grupo", "Subgrupo", "PVP", "Descuento", "Precio resultante",
-            "Audiencia", "Origen", "Estado", "Motivo", "Detalle", "Desbloquear ficha", "Condición de contado", "Fila existente" };
+            "Audiencia", "Origen", "Estado", "Motivo", "Detalle", "Desbloquear ficha", "Condición de contado", "Fila existente", "Solo en stock" };
         internal static readonly string[] COLUMNAS_RESUMEN = { "Familia", "Productos", "Entran", "Ya estaban", "Fuera", "Solapes",
             "Fichas desbloqueadas", "Condición de contado", "Fuera por motivo" };
 
@@ -75,6 +75,7 @@ namespace NestoAPI.Infraestructure.Campanas
                     {
                         ws.Cell(fila, 16).Value = l.FilaExistente.Value;
                     }
+                    ws.Cell(fila, 17).Value = l.CondicionStock ? "Sí" : string.Empty;
                     fila++;
                 }
                 ws.SheetView.FreezeRows(1);

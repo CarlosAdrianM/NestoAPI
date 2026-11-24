@@ -1248,6 +1248,7 @@
     <Compile Include="Infraestructure\PedidosVenta\TextosCertezaFechaEntrega.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalendarioRutasDia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoCodigosPostales.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\AvisoCampanaSoloEnStock.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\AvisoCondicionesCampana.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasAplicarDto.cs" />
     <Compile Include="Infraestructure\Campanas\CampanaBloque.cs" />
@@ -1257,6 +1258,7 @@
     <Compile Include="Infraestructure\Campanas\DescuentoDistribuidorCampana.cs" />
     <Compile Include="Infraestructure\Clientes\ClientesDistribuidores.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionStock.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\PlazosProntoPago.cs" />
     <Compile Include="Infraestructure\PedidosVenta\DiasRepartoClientes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioDiasRepartoClientes.cs" />

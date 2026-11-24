@@ -580,6 +580,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   regalo; caché 10 min por cliente). Motor: `GestorPrecios.ConCampanaDeDistribuidor` tras el descuento propio del producto (primero la marca, sin
   ella ni consulta); validación: `ValidadorDescuentosPermitidos.DescuentoCompuestoDistribuidor` autoriza hasta el compuesto (propio = la mayor
   de las demás filas autorizadas). La tienda no cambia (no viaja nada de esto).
+- **Solo en stock (NestoAPI#889, Manuel 23/11/26; aviso NO estricto, como el del contado)**: `CondicionStock` en la petición (y `bool?` en regla y
+  excepción) → una fila por producto en `dbo.CampanasCondicionStock` (Campana, Empresa, Producto, FechaDesde, FechaHasta; `Scripts/BlackFriday2026_CampanasCondicionStock.sql`;
+  sin ella, ni aviso y el alta con la marca da 503), en la misma transacción; relanzar el alta con la marca sobre una campaña ya creada solo
+  añade estas filas; la baja y el cierre por nombre también las quitan/cierran. Caché `CampanasCondicionStock` (10 min, ELMAH una vez). LA REGLA
+  (pura) `AvisoCampanaSoloEnStock.Avisar` (`CondicionesCampana/`): líneas de producto -1..1 con DescuentoProducto o DescuentoLinea > 0 de un producto
+  con fila vigente hoy, sumadas por producto; disponible (Carlos 24/11/26) = ExtractoProducto ALG+REI+ALC de las empresas 1 y 3 + lo que va de
+  camino entre sedes (PreExtrProducto con traspaso) − LinPedidoVta -1..1 de OTROS pedidos (1 y 3) en esos almacenes, en UNA consulta
+  (`LectorDisponibleCampanaStockSql`, solo si alguna línea es de la campaña). No llega → aviso `CampanaSoloEnStock` («El descuento de Black Friday
+  del 45929 (NOMBRE) es solo para lo que haya en stock: hoy hay 2 de 5.») en `AvisosGrabacion` (POST), `Avisos` (PUT) y el correo. Nunca
+  bloquea, quita el descuento ni rompe el guardado. Ni presupuestos ni la tienda online.
 
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid

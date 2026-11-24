@@ -2918,6 +2918,15 @@ namespace NestoAPI.Controllers
             // IdSesionSugerencias no hace nada; nunca lanza.
             await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarPedidoSinFallar(pedido);
 
+            // NestoAPI#889 (Black Friday 2026): líneas con el descuento de una campaña «solo en stock» que hoy no se pueden servir
+            // con lo que hay. Solo avisa (respuesta y correo): ni bloquea ni quita el descuento; nunca lanza.
+            AvisoPedidoDTO avisoSoloEnStock = await Infraestructure.PedidosVenta.CondicionesCampana.AvisoCampanaSoloEnStock.Calcular(pedido, DateTime.Today).ConfigureAwait(true);
+            if (avisoSoloEnStock != null)
+            {
+                avisos.Add(avisoSoloEnStock);
+                avisosCorreoModificacion.Add(avisoSoloEnStock.Mensaje);
+            }
+
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {
@@ -3742,11 +3751,19 @@ namespace NestoAPI.Controllers
             // IdSesionSugerencias no hace nada; nunca lanza.
             await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarPedidoSinFallar(pedido);
 
+            // NestoAPI#889 (Black Friday 2026): líneas con el descuento de una campaña «solo en stock» que hoy no se pueden servir
+            // con lo que hay. Solo avisa (respuesta y correo): ni bloquea ni quita el descuento; nunca lanza.
+            AvisoPedidoDTO avisoSoloEnStock = await Infraestructure.PedidosVenta.CondicionesCampana.AvisoCampanaSoloEnStock.Calcular(pedido, DateTime.Today).ConfigureAwait(true);
+
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {
                 FechaEntregaAgencia = fechaEntregaAgencia,
                 FechaEntregaAgenciaRecienPrometida = true
             };
+            if (avisoSoloEnStock != null)
+            {
+                gestor.Avisos.Add(avisoSoloEnStock.Mensaje);
+            }
             await gestor.EnviarCorreo();
 
             // NestoAPI#327: al meter un pedido de un cliente sin validar, se valida su NIF
@@ -3819,6 +3836,13 @@ namespace NestoAPI.Controllers
             if (avisoCierreDiaReparto != null)
             {
                 pedido.AvisosGrabacion = new List<AvisoPedidoDTO> { avisoCierreDiaReparto };
+            }
+
+            // NestoAPI#889: el aviso «solo en stock» calculado antes del correo, también en la respuesta
+            if (avisoSoloEnStock != null)
+            {
+                pedido.AvisosGrabacion = pedido.AvisosGrabacion ?? new List<AvisoPedidoDTO>();
+                pedido.AvisosGrabacion.Add(avisoSoloEnStock);
             }
 
             // NestoAPI#808: cheque regalo disponible que el pedido podría usar y no lleva (no bloquea; nunca lanza)

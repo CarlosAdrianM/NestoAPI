@@ -42,7 +42,8 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
                 {
                     ProductosCreados = alta.Filas.Where(f => f.CrearDescuento).Select(f => f.Producto).ToList(),
                     AplicarDtoCreadas = alta.Filas.Count(f => f.Desbloquear),
-                    CondicionContadoCreadas = alta.Filas.Count(f => f.Contado)
+                    CondicionContadoCreadas = alta.Filas.Count(f => f.Contado),
+                    CondicionStockCreadas = alta.Filas.Count(f => f.Stock)
                 }));
             registrados = new List<Exception>();
             servicio = new ServicioCampanaBloque(repositorio, ex => registrados.Add(ex));
@@ -231,6 +232,103 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
             Assert.AreEqual(2, r.Respuesta.CondicionContadoCreadas);
             A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>.That.Matches(a => a.TextoAvisoContado == "Solo al contado" && a.Filas.All(f => f.Contado)),
                 A<DatosCampanaBloque>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task DeVerdad_CondicionStock_VaEnLasQueEntranYSeAnota()
+        {
+            datos.TablaCondicionStock = true;
+            PeticionCampanaBloqueDTO p = Peticion();
+            p.CondicionStock = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(p, false, false, HOY, "x");
+
+            Assert.AreEqual(EstadoCampanaBloque.Ok, r.Estado);
+            Assert.AreEqual(2, r.Respuesta.CondicionStockCreadas);
+            Assert.AreEqual(2, r.Respuesta.Total.CondicionStock);
+            A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>.That.Matches(a => a.Filas.Count == 2 && a.Filas.All(f => f.Stock && !f.Contado)),
+                A<DatosCampanaBloque>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => unidad.Anotar(A<string>._, A<string>.That.Contains("\"CondicionStock\":true"), A<string>.That.Contains("2 solo en stock"), A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task DeVerdad_SinCondicionStock_NingunaFilaVaAStock()
+        {
+            datos.TablaCondicionStock = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(Peticion(), false, false, HOY, "x");
+
+            Assert.AreEqual(0, r.Respuesta.CondicionStockCreadas);
+            A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>.That.Matches(a => a.Filas.All(f => !f.Stock)), A<DatosCampanaBloque>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task DeVerdad_CondicionStockSinLaTabla_SinTablaYNoEscribe()
+        {
+            datos.TablaCondicionStock = false;
+            PeticionCampanaBloqueDTO p = Peticion();
+            p.CondicionStock = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(p, false, false, HOY, "x");
+
+            Assert.AreEqual(EstadoCampanaBloque.SinTabla, r.Estado);
+            StringAssert.Contains(r.Mensaje, "BlackFriday2026_CampanasCondicionStock.sql");
+            A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>._, A<DatosCampanaBloque>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Ensayo_CondicionStockSinLaTabla_LoAvisa()
+        {
+            PeticionCampanaBloqueDTO p = Peticion();
+            p.CondicionStock = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(p, true, false, HOY, "x");
+
+            Assert.AreEqual(EstadoCampanaBloque.Ok, r.Estado);
+            Assert.IsTrue(r.Respuesta.Avisos.Any(a => a.Contains("dbo.CampanasCondicionStock")));
+        }
+
+        [TestMethod]
+        public async Task DeVerdad_CampanaYaCreada_RelanzarConCondicionStockSoloCompletaElStock()
+        {
+            // La campaña se creó sin la marca: relanzarla con CondicionStock no duplica descuentos y rellena solo dbo.CampanasCondicionStock.
+            datos.TablaCondicionStock = true;
+            datos.Existentes = new List<FilaExistenteCampana>
+            {
+                new FilaExistenteCampana { Id = 10, Producto = "1", Descuento = 0.20M, Campana = "Black Friday 2026" },
+                new FilaExistenteCampana { Id = 11, Producto = "2", Descuento = 0.20M, Campana = "Black Friday 2026" }
+            };
+            PeticionCampanaBloqueDTO p = Peticion();
+            p.DesbloquearAplicarDto = false;
+            p.CondicionStock = true;
+
+            ResultadoCampanaBloque r = await servicio.Ejecutar(p, false, false, HOY, "x");
+
+            Assert.AreEqual(0, r.Respuesta.FilasCreadas);
+            Assert.AreEqual(2, r.Respuesta.CondicionStockCreadas);
+            A.CallTo(() => unidad.Insertar(A<AltaCampanaBloque>.That.Matches(a => a.Filas.Count == 2 && a.Filas.All(f => f.Stock && !f.CrearDescuento)),
+                A<DatosCampanaBloque>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void DescripcionRetirada_ConSoloEnStock_LoDice()
+        {
+            string texto = ServicioCampanaBloque.DescripcionRetirada(
+                new RetiradaCampanaBloque { Campana = "BF", Usuario = "Carlos" },
+                new ResultadoRetiradaCampanaBloque { FilasDescuento = 10, FilasCondicionStock = 10 });
+
+            Assert.AreEqual("Campaña «BF» borrada: 10 filas de descuento, 0 de desbloqueo de ficha y 0 de contado (10 de solo en stock). Por Carlos", texto);
+        }
+
+        [TestMethod]
+        public void Sql_RetiradaYAlta_TocanLaTablaDeStockSoloSiExiste()
+        {
+            StringAssert.Contains(RepositorioCampanaBloqueSql.SQL_BORRAR_STOCK, "OBJECT_ID(N'dbo.CampanasCondicionStock', N'U') IS NULL");
+            StringAssert.Contains(RepositorioCampanaBloqueSql.SQL_CERRAR_STOCK, "OBJECT_ID(N'dbo.CampanasCondicionStock', N'U') IS NULL");
+            StringAssert.Contains(RepositorioCampanaBloqueSql.SQL_TABLAS, "dbo.CampanasCondicionStock");
+            StringAssert.Contains(RepositorioCampanaBloqueSql.SQL_INSERTAR_STOCK, "NOT EXISTS");
+            StringAssert.Contains(RepositorioCampanaBloqueSql.SQL_CREAR_TEMPORAL, "Stock bit NOT NULL");
         }
 
         [TestMethod]

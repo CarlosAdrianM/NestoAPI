@@ -276,6 +276,7 @@ namespace NestoAPI.Controllers
             // condición de contado de la campaña, en una transacción con una fila de rastro.
             ResultadoRetiradaCampanaBloque hecho = await repositorioBloque.Retirar(Retirada(nombre, filas, hoy, usuario, fin)).ConfigureAwait(false);
             CampanasCondicionContado.Invalidar();
+            CampanasCondicionStock.Invalidar();
             CampanasAcumulanDistribuidores.Invalidar();
 
             // NestoAPI#433: la lista entera en una sentencia
@@ -288,6 +289,7 @@ namespace NestoAPI.Controllers
                 ProductosEncolados = aRepublicar.Count,
                 FilasAplicarDto = hecho.FilasAplicarDto,
                 FilasCondicionContado = hecho.FilasCondicionContado,
+                FilasCondicionStock = hecho.FilasCondicionStock,
                 FilasAcumulaDistribuidores = hecho.FilasAcumulaDistribuidores
             });
         }
@@ -325,6 +327,7 @@ namespace NestoAPI.Controllers
 
             ResultadoRetiradaCampanaBloque hecho = await repositorioBloque.Retirar(Retirada(nombre, filas, hoy, usuario, null)).ConfigureAwait(false);
             CampanasCondicionContado.Invalidar();
+            CampanasCondicionStock.Invalidar();
             CampanasAcumulanDistribuidores.Invalidar();
 
             // NestoAPI#433: la lista entera en una sentencia
@@ -337,6 +340,7 @@ namespace NestoAPI.Controllers
                 ProductosEncolados = aRepublicar.Count,
                 FilasAplicarDto = hecho.FilasAplicarDto,
                 FilasCondicionContado = hecho.FilasCondicionContado,
+                FilasCondicionStock = hecho.FilasCondicionStock,
                 FilasAcumulaDistribuidores = hecho.FilasAcumulaDistribuidores
             });
         }
@@ -753,6 +757,8 @@ namespace NestoAPI.Controllers
         public int FilasAplicarDto { get; set; }
         /// <summary>Filas de dbo.CampanasCondicionContado de la campaña borradas o cerradas.</summary>
         public int FilasCondicionContado { get; set; }
+        /// <summary>NestoAPI#889: filas de dbo.CampanasCondicionStock de la campaña borradas o cerradas.</summary>
+        public int FilasCondicionStock { get; set; }
         /// <summary>La marca de dbo.CampanasAcumulanDistribuidores de la campaña, borrada o cerrada (0 o 1).</summary>
         public int FilasAcumulaDistribuidores { get; set; }
     }

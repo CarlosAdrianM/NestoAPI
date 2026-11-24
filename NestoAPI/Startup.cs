@@ -63,6 +63,8 @@ namespace NestoAPI
                 Infraestructure.PedidosVenta.DiasRepartoClientes.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // Feria online 12-16/11/26: productos de campaña con condición de contado (tabla CampanasCondicionContado).
                 Infraestructure.PedidosVenta.CondicionesCampana.CampanasCondicionContado.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
+                // NestoAPI#889: productos de campaña cuyo descuento es solo para lo que haya en stock (tabla CampanasCondicionStock).
+                Infraestructure.PedidosVenta.CondicionesCampana.CampanasCondicionStock.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 // Black Friday 2026: campañas cuyo descuento se suma al del distribuidor (tabla CampanasAcumulanDistribuidores) y quién lo es.
                 Infraestructure.Campanas.CampanasAcumulanDistribuidores.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
                 Infraestructure.Clientes.ClientesDistribuidores.UsarBaseDeDatos(ex => Infraestructure.ElmahHelper.Log(ex));
