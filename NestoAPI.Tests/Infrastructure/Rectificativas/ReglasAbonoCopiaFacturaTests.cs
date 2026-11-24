@@ -109,5 +109,60 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
 
             Assert.IsNull(ReglasAbonoCopiaFactura.MotivoYaAbonado(lineas, anteriores));
         }
+
+        #region NestoAPI#892b: un abono no se deshace dos veces
+
+        private static List<ReglasAbonoCopiaFactura.LineaVendida> RV2600186() => new List<ReglasAbonoCopiaFactura.LineaVendida>
+        {
+            new ReglasAbonoCopiaFactura.LineaVendida { Factura = "RV2600186", Linea = 1, Producto = "P1", Cantidad = -1 },
+            new ReglasAbonoCopiaFactura.LineaVendida { Factura = "RV2600186", Linea = 2, Producto = "P2", Cantidad = -2 }
+        };
+
+        [TestMethod]
+        public void RectificativaSinCorregir_SePuedeDeshacer()
+        {
+            Assert.IsNull(ReglasAbonoCopiaFactura.MotivoYaCorregida(RV2600186(), new List<ReglasAbonoCopiaFactura.AbonoAnterior>()));
+        }
+
+        [TestMethod]
+        public void RectificativaYaCorregidaEntera_NoSeDeshaceOtraVez_YDicePorQuien()
+        {
+            var anteriores = new List<ReglasAbonoCopiaFactura.AbonoAnterior>
+            {
+                new ReglasAbonoCopiaFactura.AbonoAnterior { FacturaOriginal = "RV2600186 ", LineaOriginal = 1, Cantidad = 1, Documento = "RV2600189" },
+                new ReglasAbonoCopiaFactura.AbonoAnterior { FacturaOriginal = "RV2600186", LineaOriginal = 2, Cantidad = 2, Documento = "RV2600189" }
+            };
+
+            string motivo = ReglasAbonoCopiaFactura.MotivoYaCorregida(RV2600186(), anteriores);
+
+            StringAssert.StartsWith(motivo, "La rectificativa RV2600186 ya está corregida por la RV2600189: no se puede deshacer otra vez.");
+        }
+
+        [TestMethod]
+        public void RectificativaCorregidaEnParteYPendienteDeFacturar_TampocoSeDeshace()
+        {
+            var anteriores = new List<ReglasAbonoCopiaFactura.AbonoAnterior>
+            {
+                new ReglasAbonoCopiaFactura.AbonoAnterior { FacturaOriginal = "RV2600186", LineaOriginal = 2, Cantidad = 1, Documento = "el pedido 931334 (sin facturar)", SinFacturar = true }
+            };
+
+            string motivo = ReglasAbonoCopiaFactura.MotivoYaCorregida(RV2600186(), anteriores);
+
+            StringAssert.StartsWith(motivo, "La rectificativa RV2600186 ya está corregida por el pedido 931334 (sin facturar) en parte (P2): no se puede deshacer otra vez.");
+        }
+
+        [TestMethod]
+        public void MotivoYaCorregida_LasLineasVendidasNoSeMiran()
+        {
+            // Lo vendido lo cuida MotivoYaAbonado (que no cambia): aquí solo cuentan las líneas negativas
+            var anteriores = new List<ReglasAbonoCopiaFactura.AbonoAnterior>
+            {
+                new ReglasAbonoCopiaFactura.AbonoAnterior { FacturaOriginal = "NV2617228", LineaOriginal = 328865100, Cantidad = 6, Documento = "RV2600152" }
+            };
+
+            Assert.IsNull(ReglasAbonoCopiaFactura.MotivoYaCorregida(NV2617228(), anteriores));
+        }
+
+        #endregion
     }
 }

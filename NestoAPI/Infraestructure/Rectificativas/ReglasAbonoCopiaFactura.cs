@@ -29,6 +29,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             public decimal Cantidad { get; set; }
             /// <summary>La rectificativa («RV2600152») o, si aún no se ha facturado, «el pedido 930081».</summary>
             public string Documento { get; set; }
+            /// <summary>Es una copia pendiente de facturar (RectificativaPendiente): <see cref="Documento"/> ya dice «el pedido…».</summary>
+            public bool SinFacturar { get; set; }
         }
 
         /// <summary>
@@ -92,6 +94,65 @@ namespace NestoAPI.Infraestructure.Rectificativas
             return $"{cuales}{donde}: " +
                 $"{string.Join(", ", pasadas)}. No se puede abonar dos veces lo mismo. Si el abono anterior estaba mal, " +
                 "avise a Informática antes de hacer otro.";
+        }
+
+        /// <summary>
+        /// NestoAPI#892 (Carlos 24/11/26): un abono no se deshace dos veces. Desde #892, deshacer una rectificativa dentro de un pedido
+        /// de serie rectificativa vincula sus líneas positivas a las líneas NEGATIVAS de la rectificativa (LinFacturaVtaRectificacion o
+        /// RectificativaPendiente, CantidadRectificada en positivo). Igual que <see cref="MotivoYaAbonado"/>, todo o nada: se deshace
+        /// la línea entera, así que cualquier corrección anterior de una línea negativa lo bloquea. El motivo, o null si se puede.
+        /// </summary>
+        /// <param name="lineas">Las líneas de la factura que se invierte; solo cuentan las negativas (las de la rectificativa).</param>
+        internal static string MotivoYaCorregida(IEnumerable<LineaVendida> lineas, IEnumerable<AbonoAnterior> correccionesAnteriores)
+        {
+            List<AbonoAnterior> anteriores = (correccionesAnteriores ?? Enumerable.Empty<AbonoAnterior>())
+                .Where(a => a != null && !string.IsNullOrWhiteSpace(a.FacturaOriginal) && a.Cantidad > 0)
+                .ToList();
+            List<LineaVendida> abonadas = (lineas ?? Enumerable.Empty<LineaVendida>())
+                .Where(l => l != null && l.Cantidad < 0 && !string.IsNullOrWhiteSpace(l.Factura))
+                .ToList();
+            var rectificativas = new List<string>();
+            var documentos = new List<string>();
+            var productosCorregidos = new List<string>();
+            bool enParte = false;
+            foreach (IGrouping<string, LineaVendida> rectificativa in abonadas.GroupBy(l => l.Factura.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                int corregidas = 0;
+                foreach (LineaVendida linea in rectificativa)
+                {
+                    List<AbonoAnterior> deLaLinea = anteriores
+                        .Where(a => a.LineaOriginal == linea.Linea
+                            && string.Equals(a.FacturaOriginal.Trim(), rectificativa.Key, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (!deLaLinea.Any())
+                    {
+                        continue;
+                    }
+                    corregidas++;
+                    productosCorregidos.Add(linea.Producto?.Trim());
+                    documentos.AddRange(deLaLinea
+                        .Where(a => !string.IsNullOrWhiteSpace(a.Documento))
+                        .Select(a => a.SinFacturar ? a.Documento.Trim() : $"la {a.Documento.Trim()}"));
+                }
+                if (corregidas > 0)
+                {
+                    rectificativas.Add(rectificativa.Key);
+                    enParte |= corregidas < rectificativa.Count();
+                }
+            }
+            if (!rectificativas.Any())
+            {
+                return null;
+            }
+            string cuales = rectificativas.Count == 1
+                ? $"La rectificativa {rectificativas[0]} ya está corregida"
+                : $"Las rectificativas {string.Join(", ", rectificativas)} ya están corregidas";
+            string porQuien = documentos.Any() ? $" por {string.Join(", ", documentos.Distinct(StringComparer.OrdinalIgnoreCase))}" : string.Empty;
+            string enQue = enParte
+                ? $" en parte ({string.Join(", ", productosCorregidos.Where(p => !string.IsNullOrEmpty(p)).Distinct())})"
+                : string.Empty;
+            string otraVez = rectificativas.Count == 1 ? "no se puede deshacer otra vez" : "no se pueden deshacer otra vez";
+            return $"{cuales}{porQuien}{enQue}: {otraVez}. Si la corrección anterior estaba mal, avise a Informática antes de hacer otra.";
         }
 
         private static string Cantidad(decimal cantidad) => cantidad.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-ES"));

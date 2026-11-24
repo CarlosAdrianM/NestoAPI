@@ -335,6 +335,73 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
         }
 
         [TestMethod]
+        public async Task CopiarFactura_DeshacerOtraVezLaRV2600186YaFacturadaLaRV2600189_NoSePuede()
+        {
+            // NestoAPI#892b (Carlos 24/11/26): un abono no se deshace dos veces
+            Escenario e = CrearEscenarioRV2600189();
+            CopiarFacturaResponse primera = await e.Gestor().CopiarFactura(RequestDeshacerDentroDelPedido(), "Alfredo");
+            Assert.IsTrue(primera.Exitoso, primera.Mensaje);
+            int lineasTrasLaPrimera = e.Lineas.Count;
+
+            CopiarFacturaResponse segunda = await e.Gestor().CopiarFactura(RequestDeshacerDentroDelPedido(), "Alfredo");
+
+            Assert.IsFalse(segunda.Exitoso);
+            StringAssert.StartsWith(segunda.Mensaje, $"La rectificativa {ABONO} ya está corregida por la {DESHACE}: no se puede deshacer otra vez.");
+            Assert.AreEqual(lineasTrasLaPrimera, e.Lineas.Count, "No se copia nada");
+            Assert.AreEqual(3, e.Vinculaciones.Count, "Ni se vincula otra vez");
+            A.CallTo(() => e.ServicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_DeshacerOtraVezLaRV2600186ConLaPrimeraSinFacturar_NoSePuede()
+        {
+            Escenario e = CrearEscenarioRV2600189();
+            var guardadas = new List<RectificativaPendienteDTO>();
+            A.CallTo(() => e.Pendientes.GuardarPendientes(EMPRESA, PEDIDO, A<List<RectificativaPendienteDTO>>._))
+                .Invokes((string emp, int pedido, List<RectificativaPendienteDTO> p) =>
+                {
+                    p.ForEach(x => x.NumeroPedido = pedido); // lo pone el almacén al guardar
+                    guardadas.AddRange(p);
+                });
+            A.CallTo(() => e.Pendientes.LeerPorFacturasOriginales(A<string>._, A<IList<string>>._))
+                .ReturnsLazily(() => Task.FromResult(guardadas.ToList()));
+            CopiarFacturaResponse primera = await e.Gestor().CopiarFactura(RequestDeshacerDentroDelPedido(crearAlbaranYFactura: false), "Alfredo");
+            Assert.IsTrue(primera.Exitoso, primera.Mensaje);
+            int lineasTrasLaPrimera = e.Lineas.Count;
+            // En SQL un Nº_Factura NULL no casa con la búsqueda por factura; en memoria, el Trim() de un null rompería
+            foreach (LinPedidoVta sinFacturar in e.Lineas.Where(l => l.Nº_Factura == null))
+            {
+                sinFacturar.Nº_Factura = string.Empty;
+            }
+
+            CopiarFacturaResponse segunda = await e.Gestor().CopiarFactura(RequestDeshacerDentroDelPedido(crearAlbaranYFactura: false), "Alfredo");
+
+            Assert.IsFalse(segunda.Exitoso);
+            StringAssert.StartsWith(segunda.Mensaje, $"La rectificativa {ABONO} ya está corregida por el pedido {PEDIDO} (sin facturar): no se puede deshacer otra vez.");
+            Assert.AreEqual(lineasTrasLaPrimera, e.Lineas.Count);
+            Assert.AreEqual(3, guardadas.Count, "Las pendientes de la primera, sin repetir");
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_DeshacerEnPedidoNuevoUnaRVYaCorregida_TampocoSePuede()
+        {
+            // El otro camino (11/11/26, pedido nuevo en NV) también se para si la RV ya está corregida por una de #892
+            Escenario e = CrearEscenarioRV2600189();
+            e.Vinculaciones.Add(new LinFacturaVtaRectificacion
+            {
+                Empresa = EMPRESA, NumeroFactura = DESHACE, NumeroLinea = 4, FacturaOriginalNumero = ABONO, FacturaOriginalLinea = 1, CantidadRectificada = 1
+            });
+            CopiarFacturaRequest request = RequestDeshacerDentroDelPedido();
+            request.AnadirAPedidoOriginal = false;
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(request, "Alfredo");
+
+            Assert.IsFalse(respuesta.Exitoso);
+            StringAssert.StartsWith(respuesta.Mensaje, $"La rectificativa {ABONO} ya está corregida por la {DESHACE} en parte (P1): no se puede deshacer otra vez.");
+            Assert.AreEqual(3, e.Lineas.Count, "No se crea nada");
+        }
+
+        [TestMethod]
         public async Task CopiarFactura_AbonoDeSiempreDentroDeUnPedidoNV_SoloVinculaLasNegativas()
         {
             // Lo de siempre no cambia: una NV con sus líneas positivas, abonada dentro de su pedido, vincula solo las negativas.

@@ -1423,6 +1423,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`Infraestructure/Rectificativas/RectificativaDeRectificativa.cs`): se vinculan las líneas POSITIVAS a la línea de la RV de origen (`SeVincula`), al facturar
   en el acto (`GuardarVinculacionesRectificativa`) o en `RectificativaPendiente`; se envía como R por diferencias de esa RV (el mapeador no mira el signo).
   Con pedido nuevo sigue siendo deshacer el abono en NV (`EsDeshacerAbono`, 11/11/26). Lo de siempre (vincular las negativas) no cambia.
+  Un abono no se deshace dos veces (Carlos 24/11/26): `MotivoNoSePuedeAbonar` + `ReglasAbonoCopiaFactura.MotivoYaCorregida` (todo o nada, como la de ventas)
+  paran invertir una RV con alguna línea negativa ya vinculada o pendiente («La rectificativa RV2600186 ya está corregida por la RV2600189…»), vaya a RV o a NV;
+  lo deshecho por el camino NV no deja rastro fiable (solo el comentario del pedido) y no se detecta.
 - Auto-curado del job (`ServicioFacturas.GenerarVinculacionesRectificativaDeRectificativa`, tras el LIFO de #38 si este no hace nada): RV/RC sin
   vinculaciones, sin ninguna línea negativa, todas las positivas con producto. LA REGLA (pura) `Casar`: todas casan una a una (producto, cantidad exactamente
   contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo
