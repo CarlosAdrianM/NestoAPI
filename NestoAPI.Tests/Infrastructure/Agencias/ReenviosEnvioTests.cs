@@ -492,6 +492,26 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             }
         }
 
+        // Incidencia 1431 (Aida, Carlos 24/11/26): «No lo quiere: abonar» también lo marca Administración; reenviar, no.
+        [TestMethod]
+        public async Task Devueltos_AdministracionPuedeMarcarAbonarPeroNoReenviar()
+        {
+            datos.Envios[251300] = Devuelto();
+            EnviosAgenciasController c = ControladorDe(Usuario("Aida", Constantes.GruposSeguridad.ADMINISTRACION));
+
+            Assert.AreEqual(403, Estado(await c.Reenviar(251300, new ReenviarEnvioDTO())), "Reenviar sigue sin poder");
+            Assert.AreEqual(200, Estado(await c.Abonar(251300)), "Abonar sí");
+            Assert.IsTrue(datos.Repo.Filas.ContainsKey(251300));
+        }
+
+        [TestMethod]
+        public async Task Devueltos_OtroVendedorTampocoPuedeAbonar()
+        {
+            datos.Envios[251300] = Devuelto();
+
+            Assert.AreEqual(403, Estado(await ControladorDe(Usuario("otro", null, "XX")).Abonar(251300)));
+        }
+
         [TestMethod]
         public async Task Seguridad_TokenDeClienteDeLaTienda_403EnLosListadosConDatosPersonales()
         {

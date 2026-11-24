@@ -50,6 +50,13 @@ namespace NestoAPI.Infraestructure.Agencias
         public static bool PuedeDecidir(System.Security.Principal.IPrincipal usuario, ComercialesPedido comerciales)
             => PreparacionAlmacen.ServicioRetencionesPorFalta.PuedeDecidir(usuario, comerciales, GRUPOS_DECIDEN);
 
+        /// <summary>
+        /// Incidencia 1431 (Carlos 24/11/26): marcar «No lo quiere: abonar» (solo deja la decisión; el abono lo sigue haciendo Almacén)
+        /// también lo puede Administración, que es quien avisa a la agencia de que el envío vuelva. Reenviar, NO.
+        /// </summary>
+        public static bool PuedeMarcarAbonar(System.Security.Principal.IPrincipal usuario)
+            => usuario != null && (EsDeLosGruposQueDeciden(usuario) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
+
         public static bool PuedeMarcarHaVuelto(System.Security.Principal.IPrincipal usuario)
             => usuario?.Identity?.IsAuthenticated == true && GRUPOS_HA_VUELTO.Any(g => usuario.IsInRoleSinDominio(g));
     }

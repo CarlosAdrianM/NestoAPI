@@ -2860,7 +2860,7 @@ namespace NestoAPI.Controllers
             {
                 return SoloInterno();
             }
-            if (await SinPermisoParaDecidirDevuelto(id) is IHttpActionResult prohibido)
+            if (await SinPermisoParaDecidirDevuelto(id, soloAbonar: true) is IHttpActionResult prohibido)
             {
                 return prohibido;
             }
@@ -2889,9 +2889,10 @@ namespace NestoAPI.Controllers
         /// Carlos 19/11/26: Reenviar y Abonar los deciden quien hizo el pedido, su vendedor, Almacén, Dirección e Informática (no
         /// Administración). Null si puede; 403 de usted si no. Envío que no existe: null (el servicio dará su 404).
         /// </summary>
-        private async Task<IHttpActionResult> SinPermisoParaDecidirDevuelto(int id)
+        private async Task<IHttpActionResult> SinPermisoParaDecidirDevuelto(int id, bool soloAbonar = false)
         {
-            if (PermisosDevueltos.EsDeLosGruposQueDeciden(User))
+            // Incidencia 1431 (Aida, Carlos 24/11/26): «No lo quiere: abonar» también Administración (avisa a la agencia de que vuelva)
+            if (PermisosDevueltos.EsDeLosGruposQueDeciden(User) || (soloAbonar && PermisosDevueltos.PuedeMarcarAbonar(User)))
             {
                 return null;
             }
