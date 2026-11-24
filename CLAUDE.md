@@ -869,6 +869,28 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   campana de Nesto (`TraspasoAlmacenFicticio`) a los dueños que no son quien lo hace (nunca rompe). Gemelas NestoApp#292 (consulta) y Nesto#651
   (consulta y pantalla de meter/sacar).
 
+### Productos incompletos: sacar una pieza sin que sea un inventario (NestoAPI#902, 24/11/26)
+- Caso: el cable 43415 se daba de alta por inventario sacándolo de un Depiblend 40252 nuevo, que seguía contando como disponible. NO son kits (ni la
+  tabla Kits ni lista de piezas): cualquier producto puede ser pieza; la API solo RECUERDA lo sacado (`GET …/PiezasSacadas?producto=`, para proponer).
+- `dbo.ProductosIncompletos` (fuera del EDMX, `Scripts/Issue902_ProductosIncompletos.sql`; sin ella, 503): donante, NumeroSerie, pieza, cantidad, pedido,
+  huecos, Estado Incompleto/Completado/Baja (CHECK), traspasos, Clave. Almacén de incompletos = ParametrosUsuario «(defecto)» `AlmacenIncompletos`
+  (un ficticio activo que NO sea ALG/REI/ALC y sin ControlUbicaciones, `MotivoAlmacenIncompletosNoValido`; si no, 503). No cuenta como disponible
+  porque stock (`ServicioGestorStocks`), motor de fechas (`StockSedes`) y tienda (#818) solo suman `Constantes.Sedes.ListaSedes`.
+- `api/Almacen/ProductosIncompletos` (`ProductosIncompletosController`, reglas puras `ReglasProductosIncompletos`): `POST SacarPieza?ensayo=` {Almacen,
+  ProductoDonante, Pasillo/Fila/Columna? (Algete; si no, propone `ReglasAlmacenesFicticios.AsignarHuecos`), NumeroSerie (OBLIGATORIO con
+  `Productos.NecesitaNumSerie`), Pieza, Cantidad, Pedido?, Comentario?, HuecoDestino?, Clave?}; `POST {id}/Completar?ensayo=` {hueco de la pieza?};
+  `POST {id}/Baja?ensayo=` {Motivo}; `POST {id}/Etiqueta`; `GET ?soloVivos=true&almacen=&producto=` (Fichas, UnidadesIncompletas, ValorPvp a PVP);
+  `GET {id}`. Operar: Almacén, Dirección, Informática (cualquier sede) y Tiendas (su AlmacénPedidoVta); consultar, además Compras.
+- Apuntes, en UNA transacción (applock `ProductoIncompleto:1`, releído con UPDLOCK, NºTraspaso de `NumeradorTraspasos`) por el núcleo
+  `MovimientoTraspasoStockSql`: SACAR (diario `_SacaPieza`) +N pieza en el almacén y, si la unidad no estaba ya apartada, −1 donante en el almacén
+  y +1 en el de incompletos; COMPLETAR (`_SacaPieza`) −N pieza y, si no le queda otra ficha viva, −1 incompletos +1 almacén; BAJA (`_BajaIncom`)
+  −1 donante en incompletos (cierra todas las fichas de la unidad). Misma unidad = mismo donante y nº de serie (sin serie, cada ficha es su unidad).
+  Algete por la puerta: `SalidaPorProductoIncompleto` (del hueco; sin hueco, pendiente de ubicar y luego el único hueco; todo o nada, 409) y
+  `EntradaPorProductoIncompleto` (pendiente de ubicar). Rastro en Modificaciones (Tabla `ProductoIncompleto`). Después, sin romper: etiqueta
+  «INCOMPLETO» 3×2 (`GeneradorEtiquetaIncompleto`, Code128 `INC{Id}`) por la `ImpresoraCodBarras` del usuario y campana a Compras («Se debe…»).
+- Pendiente: aviso al vender una serie incompleta, costes, apartado en el informe de pérdida desconocida (#893), regularizar los Depiblend 101268
+  y 101270. Gemelas Nesto#653 (pantalla) y Ariadna#109 (PDA).
+
 ### Mantenimiento de calles del recorrido (NestoAPI#642, corte 4 de #639, para Nesto#528, 12/11/26)
 - `GET api/Almacen/Recorrido?almacen=ALG&empresa=1` → `RecorridoAlmacenDTO`: calles (Orden, Sentido A/D, pasillos con Posicion, Nombre y
   Huecos), `PasillosSinCalle` (con huecos en uso o con nombre) y `Tramos` (pasillo+columna+nivel AMano/Escalera de los huecos en uso, con la
