@@ -906,7 +906,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
         /// <summary>
         /// 16/11/26 (RV2600152/153): al invertir cantidades, (1) el abono va al cliente de la factura y (2) lo vendido no se abona
         /// dos veces (rectificativas ya emitidas en LinFacturaVtaRectificacion + copias sin facturar en RectificativaPendiente).
-        /// Deshacer un abono (invertir una RV) solo mira el cliente: sus líneas son negativas. null = se puede.
+        /// Deshacer un abono (invertir una RV): sus líneas negativas no se deshacen dos veces (NestoAPI#892, las vinculaciones de las
+        /// positivas que lo deshicieron dentro de un pedido RV). null = se puede.
         /// </summary>
         private async Task<string> MotivoNoSePuedeAbonar(CopiarFacturaRequest request, List<LinPedidoVta> lineasOrigen)
         {
@@ -925,8 +926,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 return motivoCliente;
             }
 
-            List<ReglasAbonoCopiaFactura.LineaVendida> vendidas = lineasOrigen
-                .Where(l => (l.Cantidad ?? 0) > 0 && !string.IsNullOrWhiteSpace(l.Nº_Factura))
+            // Las positivas (lo vendido) y, NestoAPI#892, las negativas (lo abonado: deshacer una rectificativa ya corregida)
+            List<ReglasAbonoCopiaFactura.LineaVendida> lineas = lineasOrigen
+                .Where(l => (l.Cantidad ?? 0) != 0 && !string.IsNullOrWhiteSpace(l.Nº_Factura))
                 .Select(l => new ReglasAbonoCopiaFactura.LineaVendida
                 {
                     Factura = l.Nº_Factura.Trim(),
@@ -935,13 +937,13 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     Cantidad = l.Cantidad ?? 0
                 })
                 .ToList();
-            if (!vendidas.Any())
+            if (!lineas.Any())
             {
                 return null;
             }
 
             string empresa = request.Empresa?.Trim();
-            List<string> facturas = vendidas.Select(v => v.Factura).Distinct().ToList();
+            List<string> facturas = lineas.Select(v => v.Factura).Distinct().ToList();
             var anteriores = (await _db.LinFacturaVtaRectificaciones
                     .Where(r => r.Empresa == empresa && facturas.Contains(r.FacturaOriginalNumero.Trim()))
                     .Select(r => new { r.FacturaOriginalNumero, r.FacturaOriginalLinea, r.CantidadRectificada, r.NumeroFactura })
@@ -961,10 +963,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 FacturaOriginal = p.FacturaOriginalNumero,
                 LineaOriginal = p.FacturaOriginalLinea,
                 Cantidad = p.CantidadRectificada,
-                Documento = $"el pedido {p.NumeroPedido} (sin facturar)"
+                Documento = $"el pedido {p.NumeroPedido} (sin facturar)",
+                SinFacturar = true
             }));
 
-            return ReglasAbonoCopiaFactura.MotivoYaAbonado(vendidas, anteriores);
+            return ReglasAbonoCopiaFactura.MotivoYaAbonado(lineas.Where(l => l.Cantidad > 0).ToList(), anteriores)
+                ?? ReglasAbonoCopiaFactura.MotivoYaCorregida(lineas, anteriores);
         }
 
         private async Task<string> SerieDelPedido(string empresa, int pedido)
