@@ -203,7 +203,8 @@ namespace NestoAPI.Tests.Infrastructure
         {
             string html = ResumenRapportsDia.CabeceraHtml(FECHA, DiaDeInaki(), Fichas(), new[] { "IM" });
 
-            StringAssert.Contains(html, ">No contactado</th>");
+            StringAssert.Contains(html, ">No contactados</th>");
+            StringAssert.Contains(html, ">Contactados</th>");
             const string numero = "border:1px solid #ccc;padding:4px 10px;text-align:right;";
             // Vendedor | Rapports | No contactado | Visitas | Teléfono | WhatsApp | Con pedido | Sin comentario
             StringAssert.Contains(html, $">IM</td><td style=\"{numero}\">16</td><td style=\"{numero}\">9</td>" +

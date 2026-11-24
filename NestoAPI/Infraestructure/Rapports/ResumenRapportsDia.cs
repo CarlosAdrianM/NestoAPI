@@ -395,7 +395,7 @@ namespace NestoAPI.Infraestructure.Rapports
             _ = html.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;\">");
             _ = html.Append($"<h2>Actividad del día {fecha:dd/MM/yyyy}</h2>");
             _ = html.Append("<table style=\"border-collapse:collapse;\"><tr style=\"background:#eee;\">");
-            foreach (string titulo in new[] { "Vendedor", "Rapports", "No contactado", "Visitas", "Teléfono", "WhatsApp", "Con pedido", "Sin comentario" })
+            foreach (string titulo in new[] { "Vendedor", "Contactados", "No contactados", "Visitas", "Teléfono", "WhatsApp", "Con pedido", "Sin comentario" })
             {
                 _ = html.Append($"<th style=\"{celda}\">{titulo}</th>");
             }
@@ -411,8 +411,8 @@ namespace NestoAPI.Infraestructure.Rapports
                 _ = html.Append("</tr>");
             }
             _ = html.Append("</table>");
-            _ = html.Append("<p style=\"font-size:12px;color:#666;\">Rapports: se habló con la clienta (las columnas siguientes, " +
-                "salvo «No contactado», cuentan solo estos). No contactado: se llamó y no lo cogió.</p>");
+            _ = html.Append("<p style=\"font-size:12px;color:#666;\">Contactados: se habló con la clienta (las columnas siguientes, " +
+                "salvo «No contactados», cuentan solo estos). No contactados: se llamó y no lo cogió; van aparte, no están dentro de los contactados.</p>");
 
             List<string> sinRapports = SinRapports(esperados, lista);
             if (sinRapports.Any())
