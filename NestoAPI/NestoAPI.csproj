@@ -1699,6 +1699,7 @@
     <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\Rectificativas\IAlmacenRectificativasPendientes.cs" />
     <Compile Include="Infraestructure\Rectificativas\AlmacenRectificativasPendientes.cs" />
+    <Compile Include="Infraestructure\Rectificativas\RectificativaDeRectificativa.cs" />
     <Compile Include="Infraestructure\Rectificativas\ReglasAbonoCopiaFactura.cs" />
     <Compile Include="Infraestructure\Rectificativas\GestorFacturasRectificativas.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />

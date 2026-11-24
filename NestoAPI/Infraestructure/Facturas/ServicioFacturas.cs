@@ -1395,7 +1395,12 @@ namespace NestoAPI.Infraestructure.Facturas
                         // motivo queda en ELMAH y se sigue al aviso de siempre.
                         try
                         {
-                            _ = await GenerarVinculacionesLifo(empresa, numeroFactura, factura.Nº_Cliente);
+                            // NestoAPI#892: si no tiene líneas negativas (el LIFO no hace nada), puede ser la rectificativa en
+                            // positivo de otra rectificativa (RV2600189 deshacía la RV2600186 dentro del mismo pedido).
+                            if (!await GenerarVinculacionesLifo(empresa, numeroFactura, factura.Nº_Cliente))
+                            {
+                                _ = await GenerarVinculacionesRectificativaDeRectificativa(factura);
+                            }
                         }
                         catch (Exception exLifo)
                         {
@@ -2036,6 +2041,132 @@ namespace NestoAPI.Infraestructure.Facturas
             }
             _ = await db.SaveChangesAsync();
             return nuevas.Any();
+        }
+
+        /// <summary>
+        /// NestoAPI#892 (RV2600189, 24/11/26): auto-curado de una factura de serie rectificativa con líneas POSITIVAS, sin ninguna
+        /// negativa y sin vinculaciones: es la rectificativa de otra rectificativa (deshace un abono) y se vincula a la rectificativa
+        /// anterior del mismo cliente con esos productos en negativo (<see cref="Rectificativas.ReglaRectificativaDeRectificativa.Casar"/>:
+        /// todas las líneas, cantidad exactamente contraria, una sola rectificativa, la del mismo pedido o la más reciente; si hay
+        /// duda, no se cura). Lo ya corregido por otro documento (vinculaciones o copias pendientes) no cuenta. Devuelve true si las
+        /// ha CREADO ahora. Las de la copia (GestorCopiaPedidos) son exactas y van antes: aquí solo se llega sin vinculaciones.
+        /// </summary>
+        internal async Task<bool> GenerarVinculacionesRectificativaDeRectificativa(CabFacturaVta factura)
+        {
+            if (factura == null || !RegistroSeriesVerifactu.EsSerieRectificativa(factura.Serie))
+            {
+                return false;
+            }
+            string empresaLimpia = factura.Empresa?.Trim();
+            string numeroLimpio = factura.Número?.Trim();
+            string clienteLimpio = factura.Nº_Cliente?.Trim();
+            if (string.IsNullOrEmpty(clienteLimpio))
+            {
+                return false;
+            }
+            bool yaVinculada = await db.LinFacturaVtaRectificaciones
+                .AnyAsync(r => r.Empresa == empresaLimpia && r.NumeroFactura.Trim() == numeroLimpio);
+            if (yaVinculada)
+            {
+                return false;
+            }
+
+            List<LinPedidoVta> lineas = (factura.LinPedidoVtas ?? new List<LinPedidoVta>()).ToList();
+            if (lineas.Any(l => (l.Cantidad ?? 0) < 0))
+            {
+                return false; // con alguna negativa no es deshacer un abono (la negativa la vincula el LIFO de #38)
+            }
+            List<Rectificativas.ReglaRectificativaDeRectificativa.LineaPositiva> positivas = lineas
+                .Where(l => (l.Cantidad ?? 0) > 0 && !string.IsNullOrWhiteSpace(l.Producto))
+                .Select(l => new Rectificativas.ReglaRectificativaDeRectificativa.LineaPositiva
+                {
+                    NumeroLinea = l.Nº_Orden,
+                    Producto = l.Producto.Trim(),
+                    Cantidad = l.Cantidad ?? 0
+                })
+                .ToList();
+            if (!positivas.Any() || positivas.Count != lineas.Count(l => (l.Cantidad ?? 0) > 0))
+            {
+                return false; // una positiva sin producto no se sabe a qué corresponde
+            }
+
+            List<string> productos = positivas.Select(p => p.Producto).Distinct().ToList();
+            var candidatas = (await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresaLimpia && l.Nº_Cliente == clienteLimpio && productos.Contains(l.Producto)
+                        && l.Cantidad < 0 && l.Estado == Constantes.EstadosLineaVenta.FACTURA && l.Nº_Factura != null)
+                    .Select(l => new { l.Nº_Factura, l.Número, l.Nº_Orden, l.Producto, l.Cantidad })
+                    .ToListAsync())
+                .Where(l => !string.Equals(l.Nº_Factura.Trim(), numeroLimpio, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (!candidatas.Any())
+            {
+                return false;
+            }
+
+            // Solo rectificativas (no una venta con una línea negativa) y anteriores o del mismo día
+            List<string> numeros = candidatas.Select(c => c.Nº_Factura.Trim()).Distinct().ToList();
+            var cabeceras = (await db.CabsFacturasVtas
+                    .Where(f => f.Empresa == empresaLimpia && numeros.Contains(f.Número))
+                    .Select(f => new { f.Número, f.Serie, f.Fecha })
+                    .ToListAsync())
+                .Where(f => RegistroSeriesVerifactu.EsSerieRectificativa(f.Serie) && f.Fecha.Date <= factura.Fecha.Date)
+                .GroupBy(f => f.Número.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Fecha, StringComparer.OrdinalIgnoreCase);
+            if (!cabeceras.Any())
+            {
+                return false;
+            }
+            List<string> rectificativas = cabeceras.Keys.ToList();
+
+            // Lo que ya corrige otro documento no se vuelve a corregir
+            var yaCorregidas = new HashSet<string>(
+                (await db.LinFacturaVtaRectificaciones
+                    .Where(r => r.Empresa == empresaLimpia && rectificativas.Contains(r.FacturaOriginalNumero))
+                    .Select(r => new { r.FacturaOriginalNumero, r.FacturaOriginalLinea })
+                    .ToListAsync())
+                .Select(r => Rectificativas.ReglaRectificativaDeRectificativa.Clave(r.FacturaOriginalNumero, r.FacturaOriginalLinea)));
+            List<Models.Rectificativas.RectificativaPendienteDTO> pendientes =
+                await almacenRectificativasPendientes.LeerPorFacturasOriginales(empresaLimpia, rectificativas)
+                ?? new List<Models.Rectificativas.RectificativaPendienteDTO>();
+            foreach (Models.Rectificativas.RectificativaPendienteDTO pendiente in pendientes)
+            {
+                _ = yaCorregidas.Add(Rectificativas.ReglaRectificativaDeRectificativa.Clave(pendiente.FacturaOriginalNumero, pendiente.FacturaOriginalLinea));
+            }
+
+            List<Rectificativas.ReglaRectificativaDeRectificativa.Vinculacion> vinculaciones =
+                Rectificativas.ReglaRectificativaDeRectificativa.Casar(positivas,
+                    candidatas
+                        .Where(c => cabeceras.ContainsKey(c.Nº_Factura.Trim()))
+                        .Select(c => new Rectificativas.ReglaRectificativaDeRectificativa.LineaAbonoAnterior
+                        {
+                            Factura = c.Nº_Factura.Trim(),
+                            Fecha = cabeceras[c.Nº_Factura.Trim()],
+                            Pedido = c.Número,
+                            Linea = c.Nº_Orden,
+                            Producto = c.Producto,
+                            Cantidad = c.Cantidad ?? 0
+                        }),
+                    lineas.Select(l => (int?)l.Número).FirstOrDefault(),
+                    yaCorregidas);
+            if (vinculaciones == null || !vinculaciones.Any())
+            {
+                return false;
+            }
+
+            foreach (Rectificativas.ReglaRectificativaDeRectificativa.Vinculacion vinculacion in vinculaciones)
+            {
+                _ = db.LinFacturaVtaRectificaciones.Add(new LinFacturaVtaRectificacion
+                {
+                    Empresa = empresaLimpia,
+                    NumeroFactura = numeroLimpio,
+                    NumeroLinea = vinculacion.NumeroLinea,
+                    FacturaOriginalNumero = vinculacion.FacturaOriginal,
+                    FacturaOriginalLinea = vinculacion.LineaOriginal,
+                    CantidadRectificada = vinculacion.Cantidad
+                });
+            }
+            _ = await db.SaveChangesAsync();
+            return true;
         }
 
         /// <summary>

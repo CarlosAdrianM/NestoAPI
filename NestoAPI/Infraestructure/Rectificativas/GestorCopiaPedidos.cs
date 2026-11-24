@@ -179,14 +179,17 @@ namespace NestoAPI.Infraestructure.Rectificativas
             await _db.SaveChangesAsync();
 
             // Crear albarán y factura si se solicitó
-            bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, await SerieDelPedido(request.Empresa, todasLasLineas.First().Número), pedidoDestino.Serie);
+            string serieOrigen = request.InvertirCantidades ? await SerieDelPedido(request.Empresa, todasLasLineas.First().Número) : null;
+            bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, serieOrigen, pedidoDestino.Serie);
+            // NestoAPI#892: invertir una RV hacia otra RV es la rectificativa de la rectificativa: se vinculan las líneas positivas
+            bool rectificaRectificativa = ReglaRectificativaDeRectificativa.EsRectificarRectificativa(request, serieOrigen, pedidoDestino.Serie);
             if (request.CrearAlbaranYFactura)
             {
-                await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas, deshaceAbono);
+                await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas, deshaceAbono, rectificaRectificativa);
             }
 
             // Issues #36/#87: enviar a Verifactu (si se facturó) o guardar pendientes (si no)
-            await RematarRectificativa(request, response, pedidoDestino.Número, lineasCopiadas, deshaceAbono);
+            await RematarRectificativa(request, response, pedidoDestino.Número, lineasCopiadas, deshaceAbono, rectificaRectificativa);
 
             response.Exitoso = true;
             response.Mensaje = $"{(request.InvertirCantidades ? "Rectificativa" : "Copia")} creada: Pedido {response.NumeroPedido}" +
@@ -825,7 +828,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             int numeroPedido,
             string usuario,
             List<LineaCopiadaDTO> lineasCopiadas,
-            bool deshaceAbono = false)
+            bool deshaceAbono = false,
+            bool rectificaRectificativa = false)
         {
             bool esMismoCliente = !request.EsCambioCliente;
             bool esRectificativa = request.InvertirCantidades;
@@ -871,7 +875,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 await GuardarVinculacionesRectificativa(
                     request.Empresa,
                     response.NumeroFactura,
-                    lineasCopiadas);
+                    lineasCopiadas,
+                    rectificaRectificativa);
                 // Issue #36: el envío a Verifactu NO va aquí sino en RematarRectificativa, DESPUÉS
                 // de CopiarDatosFiscalesDesdeFacturaOriginal: hay que declarar los datos fiscales
                 // históricos de la factura original, no los de la ficha actual.
@@ -976,7 +981,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
         }
 
         private async Task RematarRectificativa(CopiarFacturaRequest request, CopiarFacturaResponse response, int numeroPedido, List<LineaCopiadaDTO> lineasCopiadas,
-            bool deshaceAbono = false)
+            bool deshaceAbono = false, bool rectificaRectificativa = false)
         {
             if (!request.InvertirCantidades || deshaceAbono)
             {
@@ -989,8 +994,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 return;
             }
 
+            // NestoAPI#892: al rectificar una rectificativa, las líneas positivas esperan su vinculación a la RV de origen
             List<RectificativaPendienteDTO> pendientes = lineasCopiadas
-                .Where(l => l.CantidadCopiada < 0)
+                .Where(l => ReglaRectificativaDeRectificativa.SeVincula(l, rectificaRectificativa))
                 .Select(l => new RectificativaPendienteDTO
                 {
                     NumeroLinea = l.NumeroLineaNueva,
@@ -1012,7 +1018,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
         private async Task GuardarVinculacionesRectificativa(
             string empresa,
             string numeroFacturaRectificativa,
-            List<LineaCopiadaDTO> lineasCopiadas)
+            List<LineaCopiadaDTO> lineasCopiadas,
+            bool rectificaRectificativa = false)
         {
             // Verifactu #38: si la factura ya tiene vinculaciones no se duplican. Hoy las copias
             // facturan en serie NV y este caso no se da, pero cuando el flujo pase a serie RV
@@ -1031,19 +1038,24 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     && l.Nº_Factura.Trim() == numeroFacturaRectificativa.Trim())
                 .ToListAsync();
 
-            foreach (var lineaCopiada in lineasCopiadas.Where(l => l.CantidadCopiada < 0))
+            // NestoAPI#892: al rectificar una rectificativa (RV2600189) se vinculan las positivas contra las líneas de la RV de origen.
+            // Cada línea facturada se usa una sola vez (con dos líneas del mismo producto y cantidad, la segunda iba a la primera).
+            var lineasUsadas = new HashSet<int>();
+            foreach (var lineaCopiada in lineasCopiadas.Where(l => ReglaRectificativaDeRectificativa.SeVincula(l, rectificaRectificativa)))
             {
                 // Buscar la línea facturada correspondiente
                 var lineaFacturada = lineasFacturadas
-                    .FirstOrDefault(l => l.Producto?.Trim() == lineaCopiada.Producto?.Trim()
+                    .FirstOrDefault(l => !lineasUsadas.Contains(l.Nº_Orden)
+                        && l.Producto?.Trim() == lineaCopiada.Producto?.Trim()
                         && l.Cantidad == lineaCopiada.CantidadCopiada);
 
                 if (lineaFacturada != null)
                 {
+                    _ = lineasUsadas.Add(lineaFacturada.Nº_Orden);
                     _db.LinFacturaVtaRectificaciones.Add(new LinFacturaVtaRectificacion
                     {
-                        Empresa = empresa,
-                        NumeroFactura = numeroFacturaRectificativa,
+                        Empresa = empresa?.Trim(),
+                        NumeroFactura = numeroLimpio,
                         NumeroLinea = lineaFacturada.Nº_Orden,
                         FacturaOriginalNumero = lineaCopiada.FacturaOrigen,
                         FacturaOriginalLinea = lineaCopiada.LineaOrigen,
@@ -1491,12 +1503,15 @@ namespace NestoAPI.Infraestructure.Rectificativas
             await _db.SaveChangesAsync();
 
             // 11/11/26 (RV2600154/155): invertir una rectificativa es rehacer la factura: no es otra rectificativa.
-            bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, await SerieDelPedido(request.Empresa, lineasOrigen.First().Número), pedidoDestino.Serie);
+            string serieOrigen = request.InvertirCantidades ? await SerieDelPedido(request.Empresa, lineasOrigen.First().Número) : null;
+            bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, serieOrigen, pedidoDestino.Serie);
+            // NestoAPI#892 (RV2600189): invertir una RV DENTRO de un pedido RV (el suyo) es la rectificativa de esa rectificativa.
+            bool rectificaRectificativa = ReglaRectificativaDeRectificativa.EsRectificarRectificativa(request, serieOrigen, pedidoDestino.Serie);
 
             // Crear albarán y factura si se solicitó
             if (request.CrearAlbaranYFactura)
             {
-                await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas, deshaceAbono);
+                await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas, deshaceAbono, rectificaRectificativa);
 
                 // NestoAPI#268: una rectificativa/abono es el espejo documental de la factura que anula,
                 // por lo que debe mostrar los datos fiscales que constaban en la factura original
@@ -1513,7 +1528,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             // Issues #36/#87: enviar a Verifactu (si se facturó, con los datos fiscales ya
             // definitivos) o guardar pendientes para la facturación manual (si no)
-            await RematarRectificativa(request, response, numeroPedido, lineasCopiadas, deshaceAbono);
+            await RematarRectificativa(request, response, numeroPedido, lineasCopiadas, deshaceAbono, rectificaRectificativa);
 
             response.Exitoso = true;
             response.Mensaje = GenerarMensajeExito(response, request);
