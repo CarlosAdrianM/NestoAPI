@@ -219,8 +219,11 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             public IAlmacenRectificativasPendientes Pendientes;
             public List<LinPedidoVta> Lineas;
             public List<LinFacturaVtaRectificacion> Vinculaciones = new List<LinFacturaVtaRectificacion>();
+            /// <summary>NestoAPI#907: el rastro de Modificaciones, en memoria (con las líneas vivas de <see cref="Lineas"/>).</summary>
+            public List<RastroAbonoDeshecho> Rastros = new List<RastroAbonoDeshecho>();
+            public IAlmacenAbonosDeshechos AbonosDeshechos;
 
-            public GestorCopiaPedidos Gestor() => new GestorCopiaPedidos(Db, ServicioPedidos, ServicioAlbaranes, ServicioFacturas, Pendientes);
+            public GestorCopiaPedidos Gestor() => new GestorCopiaPedidos(Db, ServicioPedidos, ServicioAlbaranes, ServicioFacturas, Pendientes, AbonosDeshechos);
             public IServicioPedidosVenta ServicioPedidos;
         }
 
@@ -252,6 +255,19 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             {
                 linea.Nº_Factura = facturaAbono;
             }
+            e.AbonosDeshechos = A.Fake<IAlmacenAbonosDeshechos>();
+            A.CallTo(() => e.AbonosDeshechos.Anotar(A<RastroAbonoDeshecho>._))
+                .Invokes((RastroAbonoDeshecho r) => e.Rastros.Add(Newtonsoft.Json.JsonConvert.DeserializeObject<RastroAbonoDeshecho>(Newtonsoft.Json.JsonConvert.SerializeObject(r))));
+            A.CallTo(() => e.AbonosDeshechos.Leer(A<string>._, A<IList<string>>._))
+                .ReturnsLazily((string emp, IList<string> rvs) =>
+                {
+                    List<RastroAbonoDeshecho> deEsas = e.Rastros.Where(r => rvs.Contains(r.Rectificativa)).ToList();
+                    ReglaAbonoDeshecho.CompletarConLineasVivas(deEsas, e.Lineas.Select(l => new LineaPedidoAbonoDeshecho
+                    {
+                        Pedido = l.Número, Linea = l.Nº_Orden, Factura = l.Nº_Factura
+                    }));
+                    return Task.FromResult(deEsas);
+                });
             A.CallTo(() => e.Db.LinPedidoVtas).Returns(SetVivo(e.Lineas));
             var pedido = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Nº_Cliente = CLIENTE, Contacto = "0", Serie = seriePedido, IVA = "G21" };
             A.CallTo(() => e.Db.CabPedidoVtas).Returns(SetVivo(new List<CabPedidoVta> { pedido }));
@@ -400,6 +416,152 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             StringAssert.StartsWith(respuesta.Mensaje, $"La rectificativa {ABONO} ya está corregida por la {DESHACE} en parte (P1): no se puede deshacer otra vez.");
             Assert.AreEqual(3, e.Lineas.Count, "No se crea nada");
         }
+
+        #region NestoAPI#907: deshacer con pedido nuevo en serie normal deja rastro
+
+        private const int PEDIDO_NUEVO = 931500;
+
+        /// <summary>Lo que hace falta para crear el pedido nuevo (cliente, plazos y número).</summary>
+        private static void PrepararPedidoNuevo(Escenario e, string facturaNueva = "NV2618700")
+        {
+            var cliente = new Cliente { Empresa = EMPRESA, Nº_Cliente = CLIENTE, Contacto = "0", IVA = "G21", Vendedor = "PA", Ruta = "AT", PeriodoFacturación = "NRM" };
+            var clientes = SetVivo(new List<Cliente> { cliente });
+            A.CallTo(() => clientes.Include(A<string>._)).Returns(clientes);
+            A.CallTo(() => e.Db.Clientes).Returns(clientes);
+            A.CallTo(() => e.Db.PlazosPago).Returns(SetVivo(new List<PlazoPago>()));
+            A.CallTo(() => e.Db.VendedoresPedidosGruposProductos).Returns(SetVivo(new List<VendedorPedidoGrupoProducto>()));
+            A.CallTo(() => e.Db.TomarSiguienteNumeroPedido()).ReturnsNextFromSequence(PEDIDO_NUEVO, PEDIDO_NUEVO + 1);
+            A.CallTo(() => e.ServicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._))
+                .ReturnsLazily((string emp, int numero, string u, string ua) =>
+                {
+                    foreach (LinPedidoVta linea in e.Lineas.Where(l => l.Número == numero && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO))
+                    {
+                        linea.Nº_Factura = facturaNueva;
+                        linea.Estado = Constantes.EstadosLineaVenta.FACTURA;
+                    }
+                    return Task.FromResult(new NestoAPI.Models.Facturas.CrearFacturaResponseDTO { NumeroFactura = facturaNueva });
+                });
+        }
+
+        private static CopiarFacturaRequest RequestDeshacerConPedidoNuevo(bool crearAlbaranYFactura = true)
+        {
+            CopiarFacturaRequest request = RequestDeshacerDentroDelPedido(crearAlbaranYFactura);
+            request.AnadirAPedidoOriginal = false;
+            return request;
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_DeshacerConPedidoNuevoEnNV_DejaRastroDeLaRVYSusLineas()
+        {
+            Escenario e = CrearEscenarioRV2600189();
+            PrepararPedidoNuevo(e);
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(), "Alfredo");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            Assert.AreEqual(PEDIDO_NUEVO, respuesta.NumeroPedido);
+            Assert.AreEqual(0, e.Vinculaciones.Count, "Deshacer en NV sigue sin vinculaciones (es una factura normal)");
+            Assert.AreEqual(1, e.Rastros.Count, "Antes no quedaba nada más que el comentario del pedido");
+            RastroAbonoDeshecho rastro = e.Rastros[0];
+            Assert.AreEqual(EMPRESA, rastro.Empresa);
+            Assert.AreEqual(ABONO, rastro.Rectificativa);
+            Assert.AreEqual(PEDIDO_NUEVO, rastro.Pedido);
+            Assert.AreEqual("Alfredo", rastro.Usuario);
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, rastro.Lineas.Select(l => l.LineaOriginal).ToList());
+            CollectionAssert.AreEqual(new[] { 1M, 2M, 1M }, rastro.Lineas.Select(l => l.Cantidad).ToList());
+            CollectionAssert.AreEqual(new[] { "P1", "P2", "P3" }, rastro.Lineas.Select(l => l.Producto).ToList());
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_DeshacerDosVecesConPedidoNuevoEnNV_LaSegundaNoSePuede()
+        {
+            // NestoAPI#907: la RV deshecha por el camino NV (11/11/26) se podía deshacer otra vez
+            Escenario e = CrearEscenarioRV2600189();
+            PrepararPedidoNuevo(e);
+            CopiarFacturaResponse primera = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(), "Alfredo");
+            Assert.IsTrue(primera.Exitoso, primera.Mensaje);
+            int lineasTrasLaPrimera = e.Lineas.Count;
+
+            CopiarFacturaResponse segunda = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(), "Alfredo");
+
+            Assert.IsFalse(segunda.Exitoso);
+            StringAssert.StartsWith(segunda.Mensaje, $"La rectificativa {ABONO} ya está corregida por la NV2618700: no se puede deshacer otra vez.");
+            Assert.AreEqual(lineasTrasLaPrimera, e.Lineas.Count, "No se copia nada");
+            A.CallTo(() => e.ServicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_DeshacerConPedidoNuevoSinFacturarYLuegoDentroDelPedidoRV_TampocoSePuede()
+        {
+            Escenario e = CrearEscenarioRV2600189();
+            PrepararPedidoNuevo(e);
+            CopiarFacturaResponse primera = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(crearAlbaranYFactura: false), "Alfredo");
+            Assert.IsTrue(primera.Exitoso, primera.Mensaje);
+            foreach (LinPedidoVta sinFacturar in e.Lineas.Where(l => l.Nº_Factura == null))
+            {
+                sinFacturar.Nº_Factura = string.Empty;
+            }
+
+            CopiarFacturaResponse segunda = await e.Gestor().CopiarFactura(RequestDeshacerDentroDelPedido(), "Alfredo");
+
+            Assert.IsFalse(segunda.Exitoso);
+            StringAssert.StartsWith(segunda.Mensaje, $"La rectificativa {ABONO} ya está corregida por el pedido {PEDIDO_NUEVO} (sin facturar): no se puede deshacer otra vez.");
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_PedidoNuevoBorrado_ElRastroYaNoBloquea()
+        {
+            Escenario e = CrearEscenarioRV2600189();
+            PrepararPedidoNuevo(e);
+            CopiarFacturaResponse primera = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(crearAlbaranYFactura: false), "Alfredo");
+            Assert.IsTrue(primera.Exitoso, primera.Mensaje);
+            _ = e.Lineas.RemoveAll(l => l.Número == PEDIDO_NUEVO); // se borró el pedido sin facturar
+
+            CopiarFacturaResponse segunda = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(crearAlbaranYFactura: false), "Alfredo");
+
+            Assert.IsTrue(segunda.Exitoso, segunda.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_SiNoSePuedeLeerElRastro_SigueComoAntes()
+        {
+            Escenario e = CrearEscenarioRV2600189();
+            PrepararPedidoNuevo(e);
+            A.CallTo(() => e.AbonosDeshechos.Leer(A<string>._, A<IList<string>>._)).Throws(new InvalidOperationException("sin BD"));
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestDeshacerConPedidoNuevo(), "Alfredo");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+        }
+
+        [TestMethod]
+        public void ReglaAbonoDeshecho_SoloLasLineasNegativasYLasVivasCuentan()
+        {
+            var copiadas = new List<LineaCopiadaDTO>
+            {
+                new LineaCopiadaDTO { FacturaOrigen = ABONO, LineaOrigen = 1, NumeroLineaNueva = 10, Producto = "P1", CantidadOriginal = -1, CantidadCopiada = 1 },
+                new LineaCopiadaDTO { FacturaOrigen = ABONO, LineaOrigen = 2, NumeroLineaNueva = 11, Producto = "P2", CantidadOriginal = -2, CantidadCopiada = 2 },
+                new LineaCopiadaDTO { FacturaOrigen = "NV2618549", LineaOrigen = 1, NumeroLineaNueva = 12, Producto = "P9", CantidadOriginal = 3, CantidadCopiada = -3 }
+            };
+
+            List<RastroAbonoDeshecho> rastros = ReglaAbonoDeshecho.Construir(EMPRESA, PEDIDO_NUEVO, copiadas, "Alfredo");
+
+            Assert.AreEqual(1, rastros.Count, "Solo lo que viene de una rectificativa (las negativas)");
+            Assert.AreEqual("1|RV2600186", ReglaAbonoDeshecho.Clave(EMPRESA, ABONO + " "));
+            ReglaAbonoDeshecho.CompletarConLineasVivas(rastros, new[]
+            {
+                new LineaPedidoAbonoDeshecho { Pedido = PEDIDO_NUEVO, Linea = 10, Factura = "NV2618700  " }
+            });
+            List<ReglasAbonoCopiaFactura.AbonoAnterior> correcciones = ReglaAbonoDeshecho.Correcciones(rastros);
+            Assert.AreEqual(1, correcciones.Count, "La línea 11 ya no existe");
+            Assert.AreEqual(ABONO, correcciones[0].FacturaOriginal);
+            Assert.AreEqual(1, correcciones[0].LineaOriginal);
+            Assert.AreEqual("NV2618700", correcciones[0].Documento);
+            Assert.IsFalse(correcciones[0].SinFacturar);
+            Assert.IsNull(ReglaAbonoDeshecho.Leer("no es json"));
+        }
+
+        #endregion
 
         [TestMethod]
         public async Task CopiarFactura_AbonoDeSiempreDentroDeUnPedidoNV_SoloVinculaLasNegativas()

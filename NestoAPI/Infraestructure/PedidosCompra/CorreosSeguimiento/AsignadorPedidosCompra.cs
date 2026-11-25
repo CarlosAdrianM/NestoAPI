@@ -27,6 +27,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int LineasPendientes { get; set; }
         /// <summary>Fase 3: líneas ya albaraneadas del pedido (si hay, lo pendiente es un resto).</summary>
         public int LineasYaRecibidas { get; set; }
+        /// <summary>NestoAPI#897: Proveedores.ControlPendientes (lo que no tienen se queda en el aire y lo mandan con otro pedido).</summary>
+        public bool ControlPendientes { get; set; }
+        /// <summary>NestoAPI#897: PedidosCompraEnvios.FechaEnvio (el primer envío; null sin Scripts/Issue853 o sin fila).</summary>
+        public DateTime? FechaPrimerEnvio { get; set; }
     }
 
     public class CandidatoPedidoCompra
@@ -36,6 +40,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string Proveedor { get; set; }
         /// <summary><see cref="AsignadorPedidosCompra.MOTIVO_NUMERO"/>, _CORREO, _DOMINIO o _NOMBRE.</summary>
         public string Motivo { get; set; }
+        /// <summary>NestoAPI#897: por qué se ha elegido este pedido (control de pendientes); solo viaja si lo hay.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Explicacion { get; set; }
     }
 
     public class AsignacionPedidoCompra
@@ -58,7 +65,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     /// expide el paquete está en la memoria de remitentes del paquete (todos los pedidos en el aire de su proveedor); (2) la dirección
     /// del remitente (directo u original de un reenvío) es la de un contacto del proveedor; (3) su dominio es el del proveedor (web o
     /// contactos; nunca uno de correo gratuito, nuestro o de una agencia); (4) el nombre del proveedor sale en el texto. Con (2)-(4)
-    /// TODOS los pedidos en el aire de ese proveedor son candidatos: no se elige uno a ciegas.
+    /// TODOS los pedidos en el aire de ese proveedor son candidatos: no se elige uno a ciegas. (5) NestoAPI#905: si nada de lo anterior da
+    /// proveedor, el remitente del paquete que nombra la agencia casa con el nombre de UN proveedor (<see cref="ReglaNombreRemitentePaquete"/>).
     /// </summary>
     public static class AsignadorPedidosCompra
     {
@@ -76,6 +84,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const string MOTIVO_PEDIDO_PROVEEDOR = "PedidoProveedor";
         /// <summary>20/11/26: los productos del aviso de salida casan con las líneas en el aire de ese pedido (<see cref="ReglaLineasAvisoSalida"/>).</summary>
         public const string MOTIVO_LINEAS_AVISO = "LineasAviso";
+        /// <summary>NestoAPI#905: el remitente del paquete que nombra la agencia casa con el nombre de UN proveedor (<see cref="ReglaNombreRemitentePaquete"/>).</summary>
+        public const string MOTIVO_NOMBRE_REMITENTE_PAQUETE = "NombreRemitentePaquete";
+        /// <summary>NestoAPI#897: proveedor con control de pendientes: el pedido en curso más antiguo (<see cref="ReglaControlPendientes"/>).</summary>
+        public const string MOTIVO_CONTROL_PENDIENTES = "ControlPendientes";
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 
@@ -135,6 +147,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 .Distinct().ToList();
             string textoNormalizado = " " + TextoCorreo.Normalizar((correo.RemitenteNombre ?? string.Empty) + " " + textoCompleto) + " ";
             List<PedidoCompraEnAire> porRemitente = PorRemitentePaquete(enAire, remitentePaquete, recordados);
+            // NestoAPI#905: el nombre del remitente del paquete contra el de los proveedores (solo si casa uno)
+            List<PedidoCompraEnAire> porNombreRemitente = ReglaNombreRemitentePaquete.Pedidos(enAire, remitentePaquete);
             var proveedores = enAire.GroupBy(p => (p.Empresa?.Trim() ?? string.Empty) + "|" + (p.Proveedor?.Trim() ?? string.Empty)).ToList();
 
             // (1) Número de pedido nuestro (NestoAPI#853, ahora se escribe en compras): con una etiqueta de pedido delante, o suelto si su
@@ -147,7 +161,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 var sueltos = new HashSet<int>(numeros.Where(n => !n.Etiquetado).Select(n => n.Numero));
                 porNumero = enAire.Where(p => sueltos.Contains(p.Pedido)
-                        && (porRemitente.Contains(p) || CRITERIOS_PROVEEDOR.Any(m => CasaProveedor(p, m, direcciones, dominios, textoNormalizado))))
+                        && (porRemitente.Contains(p) || porNombreRemitente.Contains(p) || CRITERIOS_PROVEEDOR.Any(m => CasaProveedor(p, m, direcciones, dominios, textoNormalizado))))
                     .ToList();
             }
             if (porNumero.Any())
@@ -172,6 +186,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 {
                     return Componer(casan, motivo);
                 }
+            }
+
+            // (5) NestoAPI#905: ningún criterio ha dado proveedor, pero la agencia nombra quién expide y casa con el nombre de UNO
+            if (porNombreRemitente.Any())
+            {
+                return Componer(porNombreRemitente, MOTIVO_NOMBRE_REMITENTE_PAQUETE);
             }
             return asignacion;
         }

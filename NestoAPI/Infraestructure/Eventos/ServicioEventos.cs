@@ -115,6 +115,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// </summary>
         public string Formato { get => formato; set { formato = value; recibidos.Add(nameof(Formato)); } }
 
+        /// <summary>NestoAPI#908 (solo lectura): en un evento online no se pasa lista (Nesto no ofrece «Pasar lista»).</summary>
+        public bool SePasaLista => !ReglasAnuncioEvento.EsOnline(this);
+
+        /// <summary>NestoAPI#908 (solo lectura): el texto para el evento online en lugar de «Marque quién ha venido…»; null si se pasa lista.</summary>
+        public string TextoListaAsistencia => SePasaLista ? null : ReglasListaAsistencia.TEXTO_ONLINE;
+
         private string enlaceOnline;
         /// <summary>
         /// NestoAPI#875: el enlace de la conexión online (Teams, Zoom…), aparte de «Lugar». Solo lo ven y lo cambian quienes

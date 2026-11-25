@@ -768,6 +768,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - **Mismo envío** (`MismoEnvio`, puro, sin columna): correos que comparten un código (Codigo + Seguimientos) con < 10 días; se deciden juntos al final
   de la tanda (caso UPS ×3 + MBE con el proveedor). Heredan los candidatos (motivo `MismoEnvio`); uno aplicado fija el pedido de los demás. Remitente del
   paquete (`ExtractorRemitentePaquete`, columna `RemitentePaquete`) y su memoria `ComprasRemitentesPaquete` (motivo `RemitentePaquete`, tras el número).
+  **Por el nombre del remitente (NestoAPI#905, caso Postquam/SEUR PV26-57984, 25/11/26)**: si ningún criterio da proveedor, LA REGLA (pura)
+  `ReglaNombreRemitentePaquete` (`RemitentePaquete.cs`) compara el remitente con el nombre de los proveedores con pedidos en el aire: palabra
+  DISTINTIVA entera (sin forma societaria, tildes ni mayúsculas; ≥ 5 letras; nunca las genéricas, `Genericas`: COSMETIC, DISTRIBUCIONES…) y solo
+  si casa UN proveedor (el falso amigo no da ninguno). Motivo `NombreRemitentePaquete`, el último (tras número, memoria, correo, dominio y nombre;
+  también sirve para dar por bueno un número suelto). Un pedido suyo → inequívoco; varios → por asignar. Aplicado el envío, el remitente pasa a
+  la memoria (`ReglaRecordarRemitentePaquete`, usuario «(automático)»; nunca rompe). Sin script.
   Por asignar: UNA campana `CompraSeguimientoPorAsignar` a Compras por envío (`AvisarPendientes`, 20 min después de su último correo).
 - `GET …/PorAsignar?dias=7` (por envío; candidatos con FechaEnvio, LineasPendientes/YaRecibidas y `Sugerido` = el enviado más reciente antes del primer
   correo, `ReglaPedidoSugerido`), `POST …/Correos/{id}/Asignar[?reasignar=true]` {Empresa, Pedido, RecordarRemitente} (también con el interruptor
@@ -826,6 +832,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   casar ninguna, todo el pedido. Columnas `LineasAviso`/`LineasAplicadas` (`Scripts/Issue857h_ComprasCorreosLineasAplicadas.sql`; sin ellas, la fecha a todo
   el pedido). Certeza (#853/#869): un correo con `LineasAplicadas` solo da seguimiento a las líneas de esos PRODUCTOS (`ReglaSeguimientoAgencia.Vigente(…, producto)`).
   GET …/Correos y …/PorAsignar: `LineasAviso`, `LineasCasadas`, `LineasAplicadas`. Reenvío: «Fecha de recepción del 26/11 al 24/11 en 2 líneas del pedido…: 32831 (2 uds.) y 40695 (1 ud.).»
+- **Control de pendientes (NestoAPI#897, regla de Carlos 25/11/26; caso Maystar 220093/220983/220993, DHL 4313144450)**: en un proveedor con
+  `Proveedores.ControlPendientes` (en `PedidoCompraEnAire`, con `FechaPrimerEnvio` de `PedidosCompraEnvios` si está la tabla) y varios candidatos de
+  ÉL, sin nuestro número, PDF, líneas del aviso ni confirmación, LA REGLA (pura) `ReglaControlPendientes` (`ControlPendientesCorreo.cs`): «de pendientes»
+  = alguna línea ya recibida o enviado (primer envío o [Fecha Modificación]) más de N días antes del correo (ParametrosUsuario «(defecto)»
+  `Compras.DiasPedidoDePendientes`, 30 sin fila; se lee solo si hay algo que decidir y nunca crea fila): nunca recibe la fecha por esta regla. De los
+  demás enviados ANTES del correo: uno → ese; varios → el MÁS ANTIGUO (el otro puede venir agrupado: no se toca); ninguno → por asignar. Un solo
+  candidato con motivo `ControlPendientes` y `Explicacion` en el JSON de candidatos («MAYSTAR, S.L. tiene control de pendientes: se asigna al pedido
+  en curso más antiguo, 220983; el 220093 es de pendientes y el 220993 puede venir en el mismo envío.»), que va al reenvío y al rastro (`PorQuePedido`).
+  Job y Reanalizar (el histórico no). `GET …/PorAsignar`: cada candidato con `DePendientes` y `MotivoDePendientes`. Bultos y kilos: los lee SOLO la
+  clase de la agencia (`IBultosKilosAgencia`, hoy DHL: «Bultos.....: 8», «Kilos.......: 123»), al vuelo del `Extracto`: `Bultos`/`Kilos` en GET
+  …/Correos y …/PorAsignar y «Bultos: 8 bultos, 123 kg» en el reenvío; nunca deciden. Sin script.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,
@@ -1038,6 +1055,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Un cobro tardío del enlace de una Inscrita no la paga ni factura: ELMAH + aviso de pago fuera de plazo a Administración. Los jobs de aviso,
   liberación y caducidad se saltan los eventos que hoy son gratuitos. `CrearEvento` con productos requeridos y sin importes nace 0/0.
 
+### Lista de asistencia: eventos online y lista sin nadie marcado (NestoAPI#908, Masterclass Rosácea 24/11/26)
+- LA REGLA (pura) `ReglasListaAsistencia` (`Infraestructure/Eventos/ListaAsistenciaEvento.cs`). Evento ONLINE (`FormatosEvento.EsOnline`; el Mixto
+  sí pasa lista): `POST api/Eventos/{id}/Asistencia` → 400 `LISTA_EVENTO_ONLINE` sin tocar nada; al día siguiente el job de siempre
+  (`DarPorAsistidosSinLista`) da por asistidas a las pagadas (las «No podré ir», No asistió, como siempre) y su correo a la tienda dice «Evento
+  online: no se pasa lista» (no «nadie ha pasado lista… pasen lista»). `EventoDTO.SePasaLista` y `TextoListaAsistencia` (solo lectura, «Evento
+  online: todas las inscritas pagadas se dan por asistidas.»). Cualquier evento: guardar la lista con inscritas pagadas y NINGUNA marcada → 409
+  `LISTA_SIN_ASISTENTES` (details `perderanElCupon`) salvo `AsistenciaEventoDTO.Confirmar` = true. «Muy pocas respecto a las inscritas»: sin umbral
+  decidido, no se pregunta. Gemela en Nesto.
+
 ### Formación sin evento en la plantilla de venta (incidencia 1398, Pilar, Carlos 20/11/26)
 - LA REGLA (pura) `ReglasFormacionPlantilla.EsFormacion` (`CursosPlantilla.cs`): grupo CUR que no es la referencia de un evento (EVENTO00123[NR]) ni la
   plantilla de los cursos (`ReglasProductoCurso.Plantilla`, 90077): 90324, 90047, MF…, IMPE…. La búsqueda de la plantilla (`BuscarProducto` y `Buscar`,
@@ -1208,6 +1234,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Se recalcula cada vez; desde el 2.º vencimiento (filas del rastro de esa línea en 365 días) el correo marca «Hay que llamar al proveedor».
   Correo: columna «Nueva fecha» con `TextosFechaVencida` (de usted). Interruptor ParametrosUsuario «(defecto)» `Compras.RecalcularFechasVencidas`
   (sin fila o «1» encendido; «0»/false/no/off/apagado → el correo de siempre). Script `Scripts/Issue865_ComprasFechasVencidasYReenvio.sql`.
+- **La agencia ya lo tiene en camino (caso 220983, Carlos 25/11/26)**: una línea NO está «sin noticias» si su pedido tiene un envío de seguimiento
+  VIVO (`CorreosDelPedidoCompra.Envios`, pura: aplicado a ese pedido, o sin aplicar ni descartar con él entre sus candidatos —en un proveedor con
+  control de pendientes, solo si no es «de pendientes», #897—; último correo de los últimos `ReglaFechaVencida.DIAS_CORREO_VIVO` (7) días; sin
+  llegar). Entonces, si un correo vivo trae entrega estimada futura, esa (origen `CorreoSeguimiento`); si no, origen `AgenciaEnCamino`: hoy si el job
+  corre en laborable antes de la hora de corte del picking, si no el siguiente laborable, «DHL lo tiene en camino (expedición 4313144450, aviso del
+  24/11): debería llegar hoy.»; NO cuenta para «hay que llamar» (ni esa vez ni en el rastro). Con un aviso de más de 7 días sin llegar, la estadística
+  de siempre y el texto empieza por «DHL avisó el 14/11 (expedición …) y no ha llegado; ». Los pedidos en el aire solo se leen si hay un envío por
+  asignar con varios candidatos. Sin script.
 - Corte 2: en «Clientes esperando», lo que trae una reposición de tienda en camino (PreExtrProducto con NºTraspaso, neto por traspaso y
   producto > 0, en el almacén de destino: lo mismo que el «en camino» del motor) sale aparte con su llegada (siguiente día de reparto
   propio, `GestorFestivos.EsFestivoRepartoPropio`) y NO cuenta como falta (`EsperaClientesProducto.CubiertoPorReposicion`; `Faltan` lo descuenta).
@@ -1507,7 +1541,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Con pedido nuevo sigue siendo deshacer el abono en NV (`EsDeshacerAbono`, 11/11/26). Lo de siempre (vincular las negativas) no cambia.
   Un abono no se deshace dos veces (Carlos 24/11/26): `MotivoNoSePuedeAbonar` + `ReglasAbonoCopiaFactura.MotivoYaCorregida` (todo o nada, como la de ventas)
   paran invertir una RV con alguna línea negativa ya vinculada o pendiente («La rectificativa RV2600186 ya está corregida por la RV2600189…»), vaya a RV o a NV;
-  lo deshecho por el camino NV no deja rastro fiable (solo el comentario del pedido) y no se detecta.
+  lo deshecho por el camino NV deja desde NestoAPI#907 (25/11/26) su rastro en Modificaciones (Tabla `AbonoDeshecho`, Anterior «empresa|RV», Nuevo = JSON
+  con el pedido nuevo y las líneas negativas deshechas; `AbonosDeshechos.cs`, sin script) y `MotivoNoSePuedeAbonar` lo suma a las correcciones: solo
+  las líneas que siguen en el pedido nuevo (borrado = ya no bloquea), con su factura o «el pedido N (sin facturar)». Si el rastro no se puede leer o
+  escribir, ELMAH y como antes. Lo deshecho por NV antes del 25/11/26 no tiene rastro.
 - Auto-curado del job (`ServicioFacturas.GenerarVinculacionesRectificativaDeRectificativa`, tras el LIFO de #38 si este no hace nada): RV/RC sin
   vinculaciones, sin ninguna línea negativa, todas las positivas con producto. LA REGLA (pura) `Casar`: todas casan una a una (producto, cantidad exactamente
   contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo

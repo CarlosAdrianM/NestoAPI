@@ -651,7 +651,7 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.[NºOrden] = @orden A
             {
                 try
                 {
-                    recalculos = deps.FechasVencidas.Recalcular(lineas, hoy);
+                    recalculos = deps.FechasVencidas.Recalcular(lineas, hoy, deps.Ahora);
                 }
                 catch (Exception ex)
                 {

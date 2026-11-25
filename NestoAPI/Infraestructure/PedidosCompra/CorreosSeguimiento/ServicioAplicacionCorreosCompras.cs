@@ -323,15 +323,23 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 string origen = ReglaFechaRecepcionPorCorreo.Origen(decision.Correos);
                 // 20/11/26: los correos de la agencia heredan las líneas del aviso del proveedor de su mismo envío
                 List<LineaAvisoSalida> lineasAviso = LineasAvisoCorreo.DelEnvio(decision.Correos);
+                // NestoAPI#897: si el pedido se eligió por el control de pendientes, el porqué va al rastro
+                string porQue = decision.Correos.Select(f => ReglaControlPendientes.ExplicacionDe(f, unico)).FirstOrDefault(t => t != null);
+                bool algunoAplicado = false;
                 foreach (CorreoSeguimientoFila fila in pendientes)
                 {
                     ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, unico.Empresa, unico.Pedido, false, APLICADO_POR_AUTOMATICO,
-                        USUARIO_LINEAS_AUTOMATICO, true, fecha, origenFecha: origen, lineasAviso: lineasAviso).ConfigureAwait(false);
+                        USUARIO_LINEAS_AUTOMATICO, true, fecha, origenFecha: origen, lineasAviso: lineasAviso, porQuePedido: porQue).ConfigureAwait(false);
                     if (resultado.Codigo != CodigoOperacionCorreoCompra.Ok)
                     {
                         registrar(new Exception($"[Correos de seguimiento de compras #857] (informativo) No se ha aplicado el correo {fila.Id} al pedido {unico.Pedido}: {resultado.Mensaje}"));
                     }
+                    algunoAplicado |= resultado.Codigo == CodigoOperacionCorreoCompra.Ok;
                     Anotar(desenlaces, new[] { fila }.Where(nuevas.Contains), DesenlaceAplicacion(resultado, unico, fecha));
+                }
+                if (algunoAplicado)
+                {
+                    await RecordarRemitenteAcertado(decision.Correos, unico).ConfigureAwait(false);
                 }
                 // Los nuevos que ya estaban aplicados (no pendientes): misma fecha
                 Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado
@@ -342,6 +350,29 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.PorAsignar, Candidatos = decision.Candidatos.Count });
             return heredados; // por asignar: el aviso lo da AvisarPendientes, cuando el envío lleva un rato sin correos nuevos
+        }
+
+        /// <summary>
+        /// NestoAPI#905: el envío se ha aplicado a un pedido del proveedor que se reconoció por el NOMBRE del remitente del paquete: ese remitente
+        /// pasa a la memoria (dbo.ComprasRemitentesPaquete), como si Compras lo hubiera asignado con «recordar». Nunca lanza.
+        /// </summary>
+        private async Task RecordarRemitenteAcertado(List<CorreoSeguimientoFila> correos, CandidatoPedidoCompra pedido)
+        {
+            string remitente = ReglaRecordarRemitentePaquete.QueRecordar(correos, pedido);
+            if (remitente == null)
+            {
+                return;
+            }
+            try
+            {
+                _ = await repositorio.GuardarRemitentePaquete(remitente, pedido.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    pedido.Proveedor.Trim(), APLICADO_POR_AUTOMATICO).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #905] No se ha podido recordar el remitente del paquete «{remitente}» " +
+                    $"para el proveedor {pedido.Proveedor}: {ex.Message}", ex));
+            }
         }
 
         /// <summary>NestoAPI#865: qué ha pasado al aplicar un correo nuevo, para la cabecera del reenvío. PURA.</summary>
@@ -433,7 +464,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>El núcleo común (job y asignación a mano): la fecha del correo en las líneas en el aire del pedido, en una transacción.</summary>
         internal async Task<ResultadoOperacionCorreoCompra> Aplicar(CorreoSeguimientoFila fila, string empresa, int pedido, bool reasignar,
             string aplicadoPor, string usuarioLineas, bool automatico, DateTime fecha, bool? eligioSugerido = null, bool corregir = false,
-            string origenFecha = null, List<LineaAvisoSalida> lineasAviso = null)
+            string origenFecha = null, List<LineaAvisoSalida> lineasAviso = null, string porQuePedido = null)
         {
             empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             List<LineaCasadaAviso> casadas = await CasadasDelPedido(lineasAviso, empresa, pedido).ConfigureAwait(false);
@@ -453,7 +484,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 Corregir = corregir,
                 OrigenFecha = origenFecha,
                 Ordenes = casadas?.Select(c => c.NumeroOrden).Distinct().ToList(),
-                LineasCasadas = casadas
+                LineasCasadas = casadas,
+                PorQuePedido = porQuePedido
             };
             ResultadoAplicacionFecha r = await repositorio.AplicarFecha(peticion).ConfigureAwait(false)
                 ?? new ResultadoAplicacionFecha { Estado = EstadoAplicacionFecha.NoExisteCorreo };

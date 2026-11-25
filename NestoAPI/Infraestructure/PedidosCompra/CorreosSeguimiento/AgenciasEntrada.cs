@@ -593,12 +593,32 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         protected override string[] ParametrosCodigo => new[] { "envio", "numeroenvio", "numenvio", "albaran" };
     }
 
-    public class AgenciaEntradaDhl : AgenciaEntradaPorPatrones
+    public class AgenciaEntradaDhl : AgenciaEntradaPorPatrones, IBultosKilosAgencia
     {
         public override string Nombre => "DHL";
         protected override string[] Dominios => new[] { "dhl.com", "dhl.es", "dhl.de", "dhlparcel.es", "dhlparcel.com", "dhl.at", "dhl.fr", "dhl.it" };
         protected override string[] ParametrosCodigo => new[] { "tracking-id", "trackingnumber", "awb", "idc", "piececode", "tracking" };
         public override string[] NombresEnTexto => new[] { "DHL", "DHL Express", "DHL Parcel" };
+
+        // NestoAPI#897: los avisos de DHL eCommerce traen «Bultos.....: 8» y «Kilos.......: 123» (puntos de relleno hasta los dos puntos)
+        private static readonly Regex BultosDhl = new Regex(@"(?<![\p{L}])bultos\s*\.*\s*:\s*(\d{1,4})(?![\d.,])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex KilosDhl = new Regex(@"(?<![\p{L}])kilos\s*\.*\s*:\s*(\d{1,6}(?:[.,]\d{1,3})?)(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        public BultosKilosEnvio LeerBultosKilos(string texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                return null;
+            }
+            Match b = BultosDhl.Match(texto);
+            Match k = KilosDhl.Match(texto);
+            var leido = new BultosKilosEnvio
+            {
+                Bultos = b.Success && int.TryParse(b.Groups[1].Value, out int bultos) && bultos > 0 ? bultos : (int?)null,
+                Kilos = k.Success ? BultosKilosCorreo.Decimal(k.Groups[1].Value) : null
+            };
+            return leido.Bultos.HasValue || leido.Kilos.HasValue ? leido : null;
+        }
     }
 
     public class AgenciaEntradaUps : AgenciaEntradaPorPatrones

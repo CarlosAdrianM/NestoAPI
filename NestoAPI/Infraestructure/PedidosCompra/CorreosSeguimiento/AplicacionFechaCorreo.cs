@@ -51,6 +51,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public List<int> Ordenes { get; set; }
         /// <summary>Las líneas casadas (con las unidades del envío y si es parcial), para el rastro y la marca del correo.</summary>
         public List<LineaCasadaAviso> LineasCasadas { get; set; }
+        /// <summary>NestoAPI#897: por qué se eligió el pedido (control de pendientes), para el rastro; null si no hay nada que decir.</summary>
+        public string PorQuePedido { get; set; }
     }
 
     public enum EstadoAplicacionFecha
@@ -353,7 +355,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             LineasAviso = peticion.Ordenes == null ? null : (peticion.LineasCasadas ?? new List<LineaCasadaAviso>())
                 .Select(l => new { l.NumeroOrden, l.Producto, l.ReferenciaProveedor, l.Unidades, Pendiente = l.Cantidad, Parcial = l.Parcial ? true : (bool?)null }),
             EnvioParcial = peticion.Ordenes != null && (peticion.LineasCasadas ?? new List<LineaCasadaAviso>()).Any(l => l.Parcial) ? true : (bool?)null,
-            ReasignadoDe = pedidoAnterior.HasValue ? AsignadorPedidosCompra.Clave(empresaAnterior, pedidoAnterior.Value) : null
+            ReasignadoDe = pedidoAnterior.HasValue ? AsignadorPedidosCompra.Clave(empresaAnterior, pedidoAnterior.Value) : null,
+            peticion.PorQuePedido
         });
     }
 

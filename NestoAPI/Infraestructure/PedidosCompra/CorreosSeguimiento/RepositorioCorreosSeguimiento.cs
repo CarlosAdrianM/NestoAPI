@@ -512,7 +512,8 @@ GROUP BY c.Empresa, c.Número";
         internal static readonly string SQL_PEDIDOS_DESDE = string.Format(SQL_PEDIDOS, FILTRO_DESDE, FECHAS_HISTORICO);
 
         internal const string SQL_PROVEEDORES = @"
-SELECT RTRIM(p.Empresa) AS Empresa, RTRIM(p.Número) AS Proveedor, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Web) AS Web, p.ProveedorPrincipal
+SELECT RTRIM(p.Empresa) AS Empresa, RTRIM(p.Número) AS Proveedor, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Web) AS Web, p.ProveedorPrincipal,
+    CAST(ISNULL(p.ControlPendientes, 0) AS bit) AS ControlPendientes
 FROM dbo.Proveedores p WITH (NOLOCK)
 WHERE p.Empresa IN (@empresa, @espejo)
   AND p.Número IN (SELECT DISTINCT c.NºProveedor FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE {0})";
@@ -524,6 +525,21 @@ WHERE pc.Empresa IN (@empresa, @espejo) AND pc.CorreoElectrónico IS NOT NULL AN
   AND pc.NºProveedor IN (SELECT DISTINCT c.NºProveedor FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE {0})";
 
         internal static readonly string SQL_PROVEEDORES_EN_AIRE = string.Format(SQL_PROVEEDORES, FILTRO_EN_AIRE);
+
+        /// <summary>
+        /// NestoAPI#897: el primer envío de cada pedido (dbo.PedidosCompraEnvios, Scripts/Issue853). Sin la tabla, ninguna fila (la sentencia que la
+        /// nombra no se compila si no se ejecuta). {0} = el filtro de los pedidos.
+        /// </summary>
+        internal const string SQL_PRIMEROS_ENVIOS = @"
+IF OBJECT_ID(N'dbo.PedidosCompraEnvios', N'U') IS NOT NULL
+    SELECT RTRIM(e.Empresa) AS Empresa, e.Pedido AS Pedido, e.FechaEnvio AS FechaEnvio
+    FROM dbo.PedidosCompraEnvios e WITH (NOLOCK)
+    WHERE e.Empresa IN (@empresa, @espejo)
+      AND e.Pedido IN (SELECT DISTINCT c.Número FROM dbo.LinPedidoCmp c WITH (NOLOCK) WHERE {0})
+ELSE
+    SELECT CAST(NULL AS varchar(3)) AS Empresa, CAST(0 AS int) AS Pedido, CAST(NULL AS datetime) AS FechaEnvio WHERE 1 = 0";
+
+        internal static readonly string SQL_PRIMEROS_ENVIOS_EN_AIRE = string.Format(SQL_PRIMEROS_ENVIOS, FILTRO_EN_AIRE);
         internal static readonly string SQL_CONTACTOS_EN_AIRE = string.Format(SQL_CONTACTOS, FILTRO_EN_AIRE);
 
         internal const string COLUMNAS_FILA = "Id, MensajeId, Recibido, RemitenteDireccion, RemitenteDominio, Asunto, Agencia, Codigo, Url, Seguimientos, " +
@@ -580,6 +596,14 @@ ORDER BY Recibido DESC";
             public string Nombre { get; set; }
             public string Web { get; set; }
             public bool ProveedorPrincipal { get; set; }
+            public bool ControlPendientes { get; set; }
+        }
+
+        private class FilaPrimerEnvio
+        {
+            public string Empresa { get; set; }
+            public int Pedido { get; set; }
+            public DateTime? FechaEnvio { get; set; }
         }
 
         private class FilaContacto
@@ -1124,13 +1148,14 @@ ORDER BY Recibido DESC";
         }
 
         public Task<List<PedidoCompraEnAire>> LeerPedidosEnAire(string empresa) =>
-            LeerPedidos(SQL_PEDIDOS_EN_AIRE, SQL_PROVEEDORES_EN_AIRE, SQL_CONTACTOS_EN_AIRE, () => Empresas(empresa));
+            LeerPedidos(SQL_PEDIDOS_EN_AIRE, SQL_PROVEEDORES_EN_AIRE, SQL_CONTACTOS_EN_AIRE, () => Empresas(empresa), SQL_PRIMEROS_ENVIOS_EN_AIRE);
 
         public Task<List<PedidoCompraEnAire>> LeerPedidosDesde(string empresa, DateTime desde) =>
             LeerPedidos(SQL_PEDIDOS_DESDE, string.Format(SQL_PROVEEDORES, FILTRO_DESDE), string.Format(SQL_CONTACTOS, FILTRO_DESDE),
                 () => Empresas(empresa).Concat(new[] { new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde } }).ToArray());
 
-        private async Task<List<PedidoCompraEnAire>> LeerPedidos(string sqlPedidos, string sqlProveedores, string sqlContactos, Func<SqlParameter[]> parametros)
+        private async Task<List<PedidoCompraEnAire>> LeerPedidos(string sqlPedidos, string sqlProveedores, string sqlContactos, Func<SqlParameter[]> parametros,
+            string sqlPrimerosEnvios = null)
         {
             using (NVEntities db = crearContexto())
             {
@@ -1158,12 +1183,40 @@ ORDER BY Recibido DESC";
                         .OrderByDescending(p => p.ProveedorPrincipal)
                         .FirstOrDefault();
                     pedido.NombreProveedor = ficha?.Nombre;
+                    pedido.ControlPendientes = ficha?.ControlPendientes ?? false;
                     pedido.Web = proveedores.Where(p => p.Empresa == pedido.Empresa && p.Proveedor == pedido.Proveedor)
                         .Select(p => p.Web).FirstOrDefault(w => !string.IsNullOrWhiteSpace(w));
                     pedido.Correos = contactos.Where(c => c.Empresa == pedido.Empresa && c.Proveedor == pedido.Proveedor)
                         .Select(c => c.Correo?.Trim()).Where(c => !string.IsNullOrEmpty(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 }
+                if (sqlPrimerosEnvios != null)
+                {
+                    await CompletarPrimerosEnvios(db, sqlPrimerosEnvios, parametros, pedidos).ConfigureAwait(false);
+                }
                 return pedidos;
+            }
+        }
+
+        /// <summary>NestoAPI#897: el primer envío de cada pedido. Si falla, sin él (se usa [Fecha Modificación], como antes).</summary>
+        private static async Task CompletarPrimerosEnvios(NVEntities db, string sql, Func<SqlParameter[]> parametros, List<PedidoCompraEnAire> pedidos)
+        {
+            try
+            {
+                List<FilaPrimerEnvio> envios = await db.Database.SqlQuery<FilaPrimerEnvio>(sql, parametros()).ToListAsync().ConfigureAwait(false);
+                var porPedido = envios.Where(e => e.FechaEnvio.HasValue)
+                    .GroupBy(e => AsignadorPedidosCompra.Clave(e.Empresa, e.Pedido))
+                    .ToDictionary(g => g.Key, g => g.Min(e => e.FechaEnvio));
+                foreach (PedidoCompraEnAire pedido in pedidos)
+                {
+                    if (porPedido.TryGetValue(AsignadorPedidosCompra.Clave(pedido.Empresa, pedido.Pedido), out DateTime? fecha))
+                    {
+                        pedido.FechaPrimerEnvio = fecha;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Sin el primer envío: la regla de #897 usa CabPedidoCmp.[Fecha Modificación]
             }
         }
 

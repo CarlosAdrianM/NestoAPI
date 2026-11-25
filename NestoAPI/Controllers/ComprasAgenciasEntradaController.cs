@@ -39,6 +39,10 @@ namespace NestoAPI.Controllers
     /// <summary>NestoAPI#857: un correo captado, con los candidatos ya leídos del JSON.</summary>
     public class CorreoSeguimientoCompraDTO
     {
+        /// <summary>NestoAPI#897: los bultos que dice el correo de la agencia (DHL eCommerce), del extracto guardado; null si no lo dice.</summary>
+        public int? Bultos { get; set; }
+        /// <summary>NestoAPI#897: los kilos que dice el correo de la agencia; null si no lo dice.</summary>
+        public decimal? Kilos { get; set; }
         public int Id { get; set; }
         public DateTime Recibido { get; set; }
         public string RemitenteDireccion { get; set; }
@@ -114,6 +118,10 @@ namespace NestoAPI.Controllers
         public int LineasYaRecibidas { get; set; }
         /// <summary>El enviado más recientemente antes del primer correo del envío (como mucho uno por envío). No se elige solo.</summary>
         public bool Sugerido { get; set; }
+        /// <summary>NestoAPI#897: proveedor con control de pendientes y este pedido es «de pendientes» (nunca recibe la fecha por esa regla).</summary>
+        public bool DePendientes { get; set; }
+        /// <summary>NestoAPI#897: por qué es «de pendientes» («ya tiene 2 líneas recibidas…», «se envió el 20/08/2026, hace más de 30 días»).</summary>
+        public string MotivoDePendientes { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): un envío por asignar (los correos que comparten código de seguimiento).</summary>
@@ -494,7 +502,7 @@ namespace NestoAPI.Controllers
             DateTime hoy = DateTime.Today;
             List<CorreoSeguimientoFila> correos = await repositorio.LeerCorreos(hoy.AddDays(-dias - MismoEnvio.DIAS)).ConfigureAwait(false);
             List<PedidoCompraEnAire> pedidos = await repositorio.LeerPedidosEnAire(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
-            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy));
+            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy, ReglaControlPendientes.LeerDias()));
         }
 
         /// <summary>
@@ -502,7 +510,7 @@ namespace NestoAPI.Controllers
         /// solo cuentan para agrupar), con los candidatos del envío y el sugerido; y los pedidos en el aire marcando de qué envíos son candidatos.
         /// </summary>
         internal static PorAsignarCorreosCompraDTO ComponerPorAsignar(IEnumerable<CorreoSeguimientoFila> correos, IEnumerable<PedidoCompraEnAire> pedidos,
-            DateTime desde, DateTime hoy)
+            DateTime desde, DateTime hoy, int diasPedidoDePendientes = ReglaControlPendientes.DIAS_POR_DEFECTO)
         {
             List<PedidoCompraEnAire> enAire = (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
             var resultado = new PorAsignarCorreosCompraDTO();
@@ -534,6 +542,8 @@ namespace NestoAPI.Controllers
                 foreach (CandidatoPedidoCompra candidato in decision.Candidatos)
                 {
                     PedidoCompraEnAire pedido = delEnvio.FirstOrDefault(p => AsignadorPedidosCompra.Clave(p.Empresa, p.Pedido) == AsignadorPedidosCompra.Clave(candidato.Empresa, candidato.Pedido));
+                    // NestoAPI#897: en un proveedor con control de pendientes, cuál es «de pendientes» respecto al envío
+                    string dePendientes = pedido?.ControlPendientes == true ? ReglaControlPendientes.MotivoDePendientes(pedido, primero, diasPedidoDePendientes) : null;
                     envio.Candidatos.Add(new CandidatoPorAsignarDTO
                     {
                         Empresa = candidato.Empresa,
@@ -545,7 +555,9 @@ namespace NestoAPI.Controllers
                         FechaEnvio = pedido?.FechaEnvio,
                         LineasPendientes = pedido?.LineasPendientes ?? 0,
                         LineasYaRecibidas = pedido?.LineasYaRecibidas ?? 0,
-                        Sugerido = sugerido != null && pedido == sugerido
+                        Sugerido = sugerido != null && pedido == sugerido,
+                        DePendientes = dePendientes != null,
+                        MotivoDePendientes = dePendientes
                     });
                 }
                 resultado.Envios.Add(envio);
@@ -753,6 +765,9 @@ namespace NestoAPI.Controllers
                 EntregaConsultadaEl = fila.EntregaConsultadaEl,
                 LineasAplicadas = LineasAvisoCorreo.LeerAplicadas(fila.LineasAplicadas)
             };
+            BultosKilosEnvio bultos = BultosKilosCorreo.De(fila.Agencia, fila.Extracto);
+            dto.Bultos = bultos?.Bultos;
+            dto.Kilos = bultos?.Kilos;
             LineasAvisoCorreo aviso = LineasAvisoCorreo.Leer(fila.LineasAviso);
             if (aviso?.Lineas != null && aviso.Lineas.Any())
             {

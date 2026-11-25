@@ -980,6 +980,7 @@
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAvisoSalidaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoBoletinesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoDosNivelesTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoControlPendientesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoLineasAvisoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoIntermediariosTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\HistoricoCorreosComprasTests.cs" />
@@ -1003,6 +1004,7 @@
     <Compile Include="Infrastructure\PedidosVenta\Issue687TransaccionAmbienteTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ProveedorVencidoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\FechasVencidasTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\FechasVencidasAgenciaEnCaminoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SombraModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RegistroOrigenModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CambioClientePedidoTests.cs" />

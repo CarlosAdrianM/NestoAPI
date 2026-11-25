@@ -23,13 +23,15 @@ namespace NestoAPI.Infraestructure.Rectificativas
         private readonly IServicioAlbaranesVenta _servicioAlbaranes;
         private readonly IServicioFacturas _servicioFacturas;
         private readonly IAlmacenRectificativasPendientes _almacenRectificativasPendientes;
+        private readonly IAlmacenAbonosDeshechos _almacenAbonosDeshechos;
 
         public GestorCopiaPedidos(
             NVEntities db,
             IServicioPedidosVenta servicioPedidos,
             IServicioAlbaranesVenta servicioAlbaranes,
             IServicioFacturas servicioFacturas,
-            IAlmacenRectificativasPendientes almacenRectificativasPendientes = null)
+            IAlmacenRectificativasPendientes almacenRectificativasPendientes = null,
+            IAlmacenAbonosDeshechos almacenAbonosDeshechos = null)
         {
             _db = db ?? throw new ArgumentNullException(nameof(db));
             _servicioPedidos = servicioPedidos ?? throw new ArgumentNullException(nameof(servicioPedidos));
@@ -37,6 +39,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             _servicioFacturas = servicioFacturas ?? throw new ArgumentNullException(nameof(servicioFacturas));
             // Issue #87: metadata de rectificación cuando la copia no factura automáticamente
             _almacenRectificativasPendientes = almacenRectificativasPendientes ?? new AlmacenRectificativasPendientes(_db);
+            // NestoAPI#907: rastro de los abonos deshechos con pedido nuevo en serie normal
+            _almacenAbonosDeshechos = almacenAbonosDeshechos ?? new AlmacenAbonosDeshechos(_db);
         }
 
         public async Task<CopiarFacturaResponse> CopiarFactura(CopiarFacturaRequest request, string usuario)
@@ -183,6 +187,10 @@ namespace NestoAPI.Infraestructure.Rectificativas
             bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, serieOrigen, pedidoDestino.Serie);
             // NestoAPI#892: invertir una RV hacia otra RV es la rectificativa de la rectificativa: se vinculan las líneas positivas
             bool rectificaRectificativa = ReglaRectificativaDeRectificativa.EsRectificarRectificativa(request, serieOrigen, pedidoDestino.Serie);
+            if (deshaceAbono)
+            {
+                await AnotarAbonoDeshecho(request.Empresa, pedidoDestino.Número, lineasCopiadas, usuario);
+            }
             if (request.CrearAlbaranYFactura)
             {
                 await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas, deshaceAbono, rectificaRectificativa);
@@ -967,8 +975,54 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 SinFacturar = true
             }));
 
+            // NestoAPI#907: lo deshecho con pedido nuevo en serie normal (no deja vinculaciones) también cuenta
+            List<string> rectificativas = lineas.Where(l => l.Cantidad < 0).Select(l => l.Factura).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (rectificativas.Any())
+            {
+                anteriores.AddRange(await CorreccionesPorPedidoNuevo(empresa, rectificativas));
+            }
+
             return ReglasAbonoCopiaFactura.MotivoYaAbonado(lineas.Where(l => l.Cantidad > 0).ToList(), anteriores)
                 ?? ReglasAbonoCopiaFactura.MotivoYaCorregida(lineas, anteriores);
+        }
+
+        /// <summary>
+        /// NestoAPI#907: las correcciones de esas rectificativas hechas con pedido nuevo en serie normal (rastro en Modificaciones).
+        /// Si no se puede leer, ELMAH y como antes (sin ellas): no se para un abono por no poder leer el rastro.
+        /// </summary>
+        private async Task<List<ReglasAbonoCopiaFactura.AbonoAnterior>> CorreccionesPorPedidoNuevo(string empresa, List<string> rectificativas)
+        {
+            try
+            {
+                List<RastroAbonoDeshecho> rastros = await _almacenAbonosDeshechos.Leer(empresa, rectificativas);
+                return ReglaAbonoDeshecho.Correcciones(rastros);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Copiar factura] No se ha podido leer el rastro de abonos deshechos de {string.Join(", ", rectificativas)}: {ex.Message}", ex),
+                    "Sistema (copiar factura)");
+                return new List<ReglasAbonoCopiaFactura.AbonoAnterior>();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#907: deshacer un abono con pedido nuevo en serie normal deja su rastro (una fila por rectificativa) para que no se
+        /// pueda deshacer otra vez. El pedido ya está creado: si el rastro no se puede guardar, ELMAH y sigue.
+        /// </summary>
+        private async Task AnotarAbonoDeshecho(string empresa, int pedido, List<LineaCopiadaDTO> lineasCopiadas, string usuario)
+        {
+            foreach (RastroAbonoDeshecho rastro in ReglaAbonoDeshecho.Construir(empresa, pedido, lineasCopiadas, usuario))
+            {
+                try
+                {
+                    await _almacenAbonosDeshechos.Anotar(rastro);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Copiar factura] No se ha podido guardar el rastro del abono {rastro.Rectificativa} deshecho por el pedido {pedido}: {ex.Message}", ex),
+                        "Sistema (copiar factura)");
+                }
+            }
         }
 
         private async Task<string> SerieDelPedido(string empresa, int pedido)
@@ -1511,6 +1565,10 @@ namespace NestoAPI.Infraestructure.Rectificativas
             bool deshaceAbono = request.InvertirCantidades && EsDeshacerAbono(request, serieOrigen, pedidoDestino.Serie);
             // NestoAPI#892 (RV2600189): invertir una RV DENTRO de un pedido RV (el suyo) es la rectificativa de esa rectificativa.
             bool rectificaRectificativa = ReglaRectificativaDeRectificativa.EsRectificarRectificativa(request, serieOrigen, pedidoDestino.Serie);
+            if (deshaceAbono)
+            {
+                await AnotarAbonoDeshecho(request.Empresa, numeroPedido, lineasCopiadas, usuario);
+            }
 
             // Crear albarán y factura si se solicitó
             if (request.CrearAlbaranYFactura)

@@ -187,6 +187,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 datos.Add("Lo envía: " + fila.RemitentePaquete.Trim());
             }
+            // NestoAPI#897: los bultos y kilos que dice la agencia (solo se enseñan) y por qué se ha elegido el pedido con control de pendientes
+            string bultos = BultosKilosCorreo.Texto(BultosKilosCorreo.De(fila?.Agencia, fila?.Extracto));
+            if (bultos != null)
+            {
+                datos.Add("Bultos: " + bultos);
+            }
+            string porQue = ReglaControlPendientes.ExplicacionDe(fila);
+            if (porQue != null)
+            {
+                datos.Add(porQue);
+            }
             if (!string.IsNullOrWhiteSpace(r?.Detalle))
             {
                 datos.Add(r.Detalle.Trim());

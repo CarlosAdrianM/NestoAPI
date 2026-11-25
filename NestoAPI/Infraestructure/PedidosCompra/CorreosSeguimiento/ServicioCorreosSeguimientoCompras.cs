@@ -65,8 +65,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public ServicioCorreosSeguimientoCompras(ILectorBuzonCompras lector, IRepositorioCorreosSeguimiento repositorio,
             Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null,
             Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null, ServicioAplicacionCorreosCompras aplicacion = null,
-            IReenviadorCorreosSeguimiento reenviador = null, ILectorTextoPdf lectorPdf = null)
+            IReenviadorCorreosSeguimiento reenviador = null, ILectorTextoPdf lectorPdf = null, Func<int> diasPedidoDePendientes = null)
         {
+            this.diasPedidoDePendientes = diasPedidoDePendientes;
             this.aplicacion = aplicacion;
             this.reenviador = reenviador;
             this.lectorPdf = lectorPdf ?? new LectorTextoPdfPig();
@@ -78,6 +79,19 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             string empresaCorte = this.empresa;
             this.horaCorte = horaCorte ?? (() => HoraCortePicking.Leer(empresaCorte));
             this.esFestivo = esFestivo ?? (d => GestorFestivos.EsFestivo(d, Constantes.Almacenes.ALGETE));
+        }
+
+        private readonly Func<int> diasPedidoDePendientes;
+        private int? diasPendientesLeidos;
+
+        /// <summary>NestoAPI#897: los días para que un pedido sea «de pendientes» (el parámetro se lee una vez por servicio, sin crear filas).</summary>
+        private int DiasPedidoDePendientes()
+        {
+            if (!diasPendientesLeidos.HasValue)
+            {
+                diasPendientesLeidos = diasPedidoDePendientes != null ? diasPedidoDePendientes() : ReglaControlPendientes.LeerDias(registrar);
+            }
+            return diasPendientesLeidos.Value;
         }
 
         /// <summary>Para los tests: que el «sin tabla» se vuelva a apuntar.</summary>
@@ -333,6 +347,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                         datos.Lineas.Where(l => suyos.Contains(l.Proveedor?.Trim() ?? string.Empty)));
                     asignacion = ReglaLineasAvisoSalida.Completar(asignacion, lineas);
                 }
+            }
+            // NestoAPI#897: proveedor con control de pendientes y varios candidatos: el pedido en curso más antiguo (job y reanálisis; el histórico
+            // no, que no tiene cómo estaban los pedidos el día del correo). Después de número, PDF y líneas, que mandan.
+            if (lineasDe != null && !analisis.EsSalidaNuestra && pedidos != null)
+            {
+                asignacion = ReglaControlPendientes.Completar(asignacion, pedidos, correo.Recibido, DiasPedidoDePendientes);
             }
             CorreoSeguimientoFila fila = Fila(correo, analisis, asignacion);
             fila.LineasAviso = LineasAvisoCorreo.Serializar(analisis.LineasAviso, lineas);

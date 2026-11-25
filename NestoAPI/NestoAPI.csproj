@@ -717,6 +717,7 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AgenciasEntrada.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AnalizadorCorreoSeguimiento.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AsignadorPedidosCompra.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ControlPendientesCorreo.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\PlazosProveedores.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\ProximaEntradaProducto.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\RepositorioPlazosProveedores.cs" />
@@ -1525,6 +1526,7 @@
     <Compile Include="Infraestructure\Eventos\FormaAsistenciaInscripcionEvento.cs" />
     <Compile Include="Infraestructure\Eventos\AvisosFichaInscripcion.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioInscripcionesEventos.cs" />
+    <Compile Include="Infraestructure\Eventos\ListaAsistenciaEvento.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioInscripcionesEventosPlazasLlenas.cs" />
     <Compile Include="Infraestructure\Eventos\PasoAGratuitoEventos.cs" />
     <Compile Include="Infraestructure\Eventos\PlazasLlenasEventos.cs" />
@@ -1721,6 +1723,7 @@
     <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\Rectificativas\IAlmacenRectificativasPendientes.cs" />
     <Compile Include="Infraestructure\Rectificativas\AlmacenRectificativasPendientes.cs" />
+    <Compile Include="Infraestructure\Rectificativas\AbonosDeshechos.cs" />
     <Compile Include="Infraestructure\Rectificativas\RectificativaDeRectificativa.cs" />
     <Compile Include="Infraestructure\Rectificativas\ReglasAbonoCopiaFactura.cs" />
     <Compile Include="Infraestructure\Rectificativas\GestorFacturasRectificativas.cs" />
