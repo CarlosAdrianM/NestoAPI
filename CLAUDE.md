@@ -401,6 +401,25 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   NoRecogida (`ReglaLecturasRechazadas`: código leído o EnvioId, Status, Codigo del 409, Mensaje 500, X-Dispositivo, X-Ariadna-Version). Sin la tabla, nada
   (ELMAH una vez). `GET api/RepartoPropio/LecturasRechazadas?dias=2&usuario=` (Almacén, Dirección, Informática; 500 como mucho; 503 sin el script).
 
+### Diferencias de reposición «En discusión» y quién pierde (NestoAPI#906, sugerencia 1433, Carlos 25/11/26: decide el sistema, no Dirección)
+- Solo FALTAS pendientes: el ORIGEN (permiso de resolver) abre `POST api/Reposiciones/Diferencias/{id}/Discusion` {Comentario obligatorio}; campana al
+  destino (tipo `DiscusionDiferenciaReposicion`); plazo ParametrosUsuario «(defecto)» `Reposiciones.DiscusionPlazoHoras` (48), recordatorio 24 h antes.
+  El destino (su gente, Almacén, Dirección) contesta `…/Discusion/Respuesta` {Respuesta LoHeEncontrado|NoEsta, Comentario?}: «Lo he encontrado» = la
+  resolución ErrorRecepcion de siempre (error RECONOCIDO del destino); «No está» o plazo vencido (job `reposiciones-discusiones-diferencias`, cada hora 8-21)
+  → decide LA REGLA (pura) `ReglaImputacionDesacuerdo` (`DesacuerdoDiferenciasReposicion.cs`), por unidad (nunca se parte): 1) prueba: lo no leído por
+  ESCÁNER al preparar (PreparacionEscaneos REPO PICK/PACK SCAN; lo tecleado no cuenta) → origen; lo leído con TODOS los bultos R{t}-{n} leídos al recibir
+  (ReposicionesBultos.FechaLectura) o «Entregado» (RepartoBultosMovimientos) → destino; 2) si no, peor indicador de errores demostrados (12 meses); 3)
+  empate o sin datos: alternancia por pareja (la primera, al origen). Resolución nueva «Desacuerdo» (no elegible en Resolver) y la baja por el cauce de
+  siempre (_ErrRepo, `PlanStockDesacuerdo`: textos «Desacuerdo de reposición N (pérdida|llegó|no vuelve|vuelve)») en el almacén imputado; interruptor de
+  ajuste apagado = no toca stock. Si el origen resuelve como siempre con la discusión abierta: Acordada (Confirmada/NoEstaba = error reconocido del origen).
+- Errores demostrados (`ReglaIndicadorErrores`): ErrorRecepcion y Sobraba → destino; Confirmada y NoEstaba → origen; en desacuerdos solo el paso Prueba o la
+  verdad. `GET …/Diferencias/Indicador?meses=12` (Dirección, Informática, Almacén; también por usuario). `GET …/Diferencias/Discusiones?almacen=&soloAbiertas=`.
+- Datos para un modelo (en sombra): `dbo.DiferenciasReposicionDiscusiones` + `dbo.DiferenciasReposicionImputaciones` (una fila por unidad con rasgos, decisión
+  y verdad; `Scripts/Issue906_DiferenciasReposicionDiscusiones.sql`, amplía la CHECK de Resolucion; sin él, 503 y todo como antes). Job `reposiciones-desacuerdos-verdad`
+  3:35 (cola «indicadores»): inventario contabilizado posterior con sobrante ≥ unidades en origen O destino (`ReglaVerdadInventario`: cada fila gasta una vez;
+  en los dos, no decide; no pisa) → ErrorDemostradoDe/Inventario, ReglaAcerto; si contradice, campana a Dirección, sin deshacer. `GET …/Diferencias/Verdad?meses=24`
+  (Dirección/Informática). Modelo preparado sin implementar (`ModeloImputacionDesacuerdo`, interruptor `Reposiciones.DesacuerdoQuienManda`, hoy siempre la regla).
+
 ### Envíos internos entre sedes (sugerencia 1277, Alfredo, 20/11/26)
 - Lo que va de una sede a otra y NO es stock (café, folios, aparatos de demostración o de clientes): ni almacenes, ni ExtractoProducto, ni
   cliente/pedido ficticio. `dbo.RepartoEnviosInternos` (`Scripts/RepartoEnviosInternos.sql`, que además amplía la CHECK de TipoCodigo de
@@ -1397,6 +1416,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   toca y se avisa). `notificacionResuelta` + campana/push a quien lo pidió. `GET …/AmpliacionesEnPreparacion[?pendientes=false]`, `GET …/{id}`.
 - Correo: lo añadido sin picking en un pedido con picking sale como «Añadido después de sacar el picking (pendiente de que Almacén diga…)» o, en
   «Todo junto», «(sale aparte; puede salir el…)» (`GestorPresupuestos.PartidasAnadidasTrasElPicking`).
+- **Cupón o cheque añadido con picking vivo (NestoAPI#900, pedido 930535, 25/11/26)**: en el PUT, la línea NUEVA de cupón de evento o de cheque regalo
+  (−1, ALG) de un pedido con UN picking vivo (líneas -1..1 con picking) toma ese picking (y pasa a en curso) si con lo ya entregado + ese picking llega a
+  su mínimo: LA REGLA (pura) `ReglaDescuentoAnadidoConPicking.Decidir` (`Models/Picking/DescuentoAnadidoConPicking.cs`), con la MISMA decisión del picking
+  (`CuponesPicking`/`ChequesRegaloPicking` + `ReservarCupones`/`ReservarChequesRegalo`). No lo toma (queda para la siguiente entrega, como antes): nota de
+  entrega, sin picking vivo o con varios, etiqueta en curso (cambiaría el reembolso), la agencia ya lo tiene (`YaLoTieneLaAgencia`), fecha posterior a la
+  del picking o no llega al mínimo. Otras líneas negativas no se tocan. Nunca rompe el PUT (ELMAH). Sin script.
 
 ### Dirección 2 y número propio en el alta (NestoAPI#874 corte 1, Nesto#643, 17/11/26)
 - `Clientes.Dirección` sigue siendo calle y número (50). Lo que necesita el repartidor va en `Clientes.Direccion2` (nvarchar(100)) +
@@ -1575,6 +1600,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   vinculaciones, sin ninguna línea negativa, todas las positivas con producto. LA REGLA (pura) `Casar`: todas casan una a una (producto, cantidad exactamente
   contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo
   pedido, si no la más reciente; dos del mismo día sin la del mismo pedido → no cura. Si no cura, el correo del job dice «rectificativa en positivo» (no «devolución»).
+
+### Abonar solo lo comprado (NestoAPI#891, Carlos 24/11/26; EN SOMBRA, no frena nada)
+- LA REGLA (pura, lo decidido) `ReglaAbonoSoloLoComprado` (`Infraestructure/PedidosVenta/AbonoSoloLoComprado.cs`): una línea de abono (producto, cantidad < 0,
+  -1..2; sin cupón ni cheque regalo, que son descuentos) cabe si facturadas − abonadas en factura − abonadas en OTROS pedidos sin facturar ≥ lo que abona, sin
+  límite de tiempo; texto «Del 41752 este cliente tiene facturadas 3 y ya abonadas 3: no se puede abonar 1 unidad.». Lectura en UNA consulta
+  (`LectorCompradoParaAbonoSql`, LinPedidoVta Estado 4, NOLOCK). Copiar factura ya frena por línea (`ReglasAbonoCopiaFactura`, #892/#907): no se toca.
+- Sombra: tras guardar (POST y PUT de PedidosVenta), si alguna no cabe, una línea en ELMAH «[Abono de lo no comprado #891, sombra]» (cliente entero,
+  empresas 1 y 3: solo lo que no cabría de ninguna manera). Sin líneas de abono no lee nada; nunca lanza. POR DECIDIR (issue): dónde frena, cliente o
+  contacto, empresas, otros caminos (recogidas #757, devueltos, Nesto viejo), descuentos en negativo y quién se la salta.
 
 ### Agency and Shipping
 - Multiple shipping agencies supported

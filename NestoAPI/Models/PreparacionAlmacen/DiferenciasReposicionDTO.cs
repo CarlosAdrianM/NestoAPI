@@ -58,6 +58,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool OrigenConControlUbicaciones { get; set; }
         /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#906: null (sin discusión), «Abierta», «Acordada» o «Decidida».</summary>
+        public string EstadoDiscusion { get; set; }
+        /// <summary>NestoAPI#906: hasta cuándo puede contestar el destino (si la discusión está abierta).</summary>
+        public DateTime? PlazoDiscusion { get; set; }
+        /// <summary>NestoAPI#906: qué se decidió (o cómo se pusieron de acuerdo).</summary>
+        public string ResumenDiscusion { get; set; }
+        /// <summary>NestoAPI#906: se puede abrir «En discusión» (falta pendiente sin discusión y con el script lanzado).</summary>
+        public bool PuedeAbrirDiscusion { get; set; }
         /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
         public string ReferenciaProveedor { get; set; }
     }

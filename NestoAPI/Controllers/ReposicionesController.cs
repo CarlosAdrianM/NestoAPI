@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Reposiciones;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -726,6 +727,7 @@ namespace NestoAPI.Controllers
             {
                 List<DiferenciaReposicionDTO> lista = await Diferencias.Listar(empresa, estado, almacen, User).ConfigureAwait(false);
                 await CompletarFotosYReferencias(empresa, lista).ConfigureAwait(false);
+                await Discusiones.Completar(empresa, lista).ConfigureAwait(false);
                 return Ok(lista);
             }
             catch (UnauthorizedAccessException ex)
@@ -762,6 +764,7 @@ namespace NestoAPI.Controllers
             {
                 DiferenciaReposicionDTO diferencia = await Diferencias.Leer(empresa, id, User).ConfigureAwait(false);
                 await CompletarFotosYReferencias(empresa, diferencia == null ? null : new[] { diferencia }).ConfigureAwait(false);
+                await Discusiones.Completar(empresa, diferencia == null ? null : new[] { diferencia }).ConfigureAwait(false);
                 return diferencia == null ? (IHttpActionResult)NotFound() : Ok(diferencia);
             }
             catch (UnauthorizedAccessException ex)
@@ -792,13 +795,122 @@ namespace NestoAPI.Controllers
             try
             {
                 ResultadoResolverDiferenciaReposicionDTO resuelta = await Diferencias.Resolver(empresa, id, peticion, User).ConfigureAwait(false);
+                // NestoAPI#906: si estaba en discusión, queda Acordada (nunca lanza)
+                await Discusiones.AlResolver(empresa, id, resuelta?.Diferencia?.Resolucion).ConfigureAwait(false);
                 await CompletarFotosYReferencias(empresa, resuelta?.Diferencia == null ? null : new[] { resuelta.Diferencia }).ConfigureAwait(false);
+                await Discusiones.Completar(empresa, resuelta?.Diferencia == null ? null : new[] { resuelta.Diferencia }).ConfigureAwait(false);
                 return Ok(resuelta);
             }
             catch (UnauthorizedAccessException ex)
             {
                 return Prohibido(ex);
             }
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#906: «En discusión»
+
+        private ServicioDiscusionesDiferencias discusiones;
+
+        internal ServicioDiscusionesDiferencias Discusiones
+        {
+            get => discusiones ?? (discusiones = ServicioDiscusionesDiferencias.Crear(db));
+            set => discusiones = value;
+        }
+
+        // POST api/Reposiciones/Diferencias/12/Discusion?empresa=1   { "Comentario": "Salió del 005/005/004, iba en el bulto 2" }
+        /// <summary>
+        /// NestoAPI#906: el ORIGEN de una falta pendiente dice que salió (mismo permiso que resolverla). Guarda los rasgos del momento y
+        /// avisa al destino, que tiene <c>Reposiciones.DiscusionPlazoHoras</c> (48 h) para contestar. 400 sin comentario o si no es una
+        /// falta; 403; 404; 409 si ya está en discusión o resuelta; 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("Diferencias/{id:int}/Discusion")]
+        [ResponseType(typeof(ResultadoDiscusionDiferenciaDTO))]
+        public async Task<IHttpActionResult> PostAbrirDiscusion(int id, [FromBody] AbrirDiscusionDiferenciaDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                return Ok(await Discusiones.Abrir(empresa, id, peticion, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // POST api/Reposiciones/Diferencias/12/Discusion/Respuesta?empresa=1   { "Respuesta": "NoEsta", "Comentario": "..." }
+        /// <summary>
+        /// NestoAPI#906: contesta el DESTINO (su gente, Almacén o Dirección). «LoHeEncontrado» = Error al recibir (como siempre); «NoEsta» =
+        /// decide la regla en el acto (la respuesta trae a quién se imputa cada unidad y por qué). 403; 404 si no está en discusión; 409 si ya
+        /// está cerrada; 503 sin el script.
+        /// </summary>
+        [HttpPost]
+        [Route("Diferencias/{id:int}/Discusion/Respuesta")]
+        [ResponseType(typeof(ResultadoDiscusionDiferenciaDTO))]
+        public async Task<IHttpActionResult> PostResponderDiscusion(int id, [FromBody] ResponderDiscusionDiferenciaDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                return Ok(await Discusiones.Responder(empresa, id, peticion, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // GET api/Reposiciones/Diferencias/Discusiones?almacen=REI&soloAbiertas=true&empresa=1
+        /// <summary>NestoAPI#906: las discusiones en que el almacén es origen o destino (Almacén y Dirección, todas). 403; 503 sin el script.</summary>
+        [HttpGet]
+        [Route("Diferencias/Discusiones")]
+        [ResponseType(typeof(List<DiscusionDiferenciaDTO>))]
+        public async Task<IHttpActionResult> GetDiscusiones(string almacen = null, bool soloAbiertas = true, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                return Ok(await Discusiones.Listar(empresa, almacen, soloAbiertas, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // GET api/Reposiciones/Diferencias/Indicador?meses=12&empresa=1
+        /// <summary>
+        /// NestoAPI#906: errores DEMOSTRADOS / discrepancias por almacén (y, solo para consulta, por usuario), de los últimos meses.
+        /// Dirección, Informática y Almacén (403). Funciona sin el script (solo con las resoluciones de siempre).
+        /// </summary>
+        [HttpGet]
+        [Route("Diferencias/Indicador")]
+        [ResponseType(typeof(IndicadorErroresDTO))]
+        public async Task<IHttpActionResult> GetIndicadorDiferencias(int meses = 12, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (!(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN)))
+            {
+                return Prohibido(new UnauthorizedAccessException("El indicador de errores de las reposiciones lo ven Dirección, Informática y Almacén."));
+            }
+            return Ok(await Discusiones.Indicador(empresa, meses).ConfigureAwait(false));
+        }
+
+        // GET api/Reposiciones/Diferencias/Verdad?meses=24
+        /// <summary>
+        /// NestoAPI#906: cuánto acierta la regla de los desacuerdos: casos, cuántos tienen ya verdad (reconocida o por inventario) y el %
+        /// de acierto por paso (prueba, indicador, alternancia). Dirección e Informática (403); 503 sin el script.
+        /// </summary>
+        [HttpGet]
+        [Route("Diferencias/Verdad")]
+        [ResponseType(typeof(ResumenVerdadDesacuerdoDTO))]
+        public async Task<IHttpActionResult> GetVerdadDiferencias(int meses = 24)
+        {
+            if (!(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA)))
+            {
+                return Prohibido(new UnauthorizedAccessException("El acierto de la regla de los desacuerdos lo ven Dirección e Informática."));
+            }
+            return Ok(await Discusiones.Verdad(meses).ConfigureAwait(false));
         }
 
         // ---------------------------------------------------------------- NestoAPI#645: etiquetas de bulto
