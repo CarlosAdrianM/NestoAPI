@@ -1048,6 +1048,79 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual("Pagada", inscripciones.Single().Estado);
         }
 
+        // ---------------- NestoAPI#908: evento online y lista sin nadie marcado ----------------
+
+        [TestMethod]
+        public async Task PasarLista_EventoOnline_400SinTocarNada()
+        {
+            // Masterclass Rosácea (24/11/26, online): nadie «viene»; el job da por asistidas a las pagadas
+            eventos.Single(e => e.Id == EVENTO_ALCOBENDAS).Formato = FormatosEvento.ONLINE;
+            Inscripcion(1, EVENTO_ALCOBENDAS, "15191", EstadoInscripcionEvento.Facturada);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio(new DateTime(2026, 10, 16, 19, 0, 0)).PasarLista(EVENTO_ALCOBENDAS,
+                new AsistenciaEventoDTO(), PALOMA));
+
+            Assert.AreEqual(ReglasListaAsistencia.ERROR_EVENTO_ONLINE, ex.Context.ErrorCode);
+            StringAssert.Contains(ex.Message, "es online: no se pasa lista");
+            Assert.AreEqual("Facturada", inscripciones.Single().Estado);
+            Assert.IsNull(eventos.Single(e => e.Id == EVENTO_ALCOBENDAS).FechaListaAsistencia);
+        }
+
+        [TestMethod]
+        public async Task PasarLista_SinNadieMarcado_409HastaQueSeConfirma()
+        {
+            Inscripcion(1, EVENTO_ALCOBENDAS, "15191", EstadoInscripcionEvento.Pagada);
+            Inscripcion(2, EVENTO_ALCOBENDAS, "20000", EstadoInscripcionEvento.Facturada);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio(new DateTime(2026, 10, 16, 19, 0, 0)).PasarLista(EVENTO_ALCOBENDAS,
+                new AsistenciaEventoDTO(), PALOMA));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(ReglasListaAsistencia.ERROR_SIN_ASISTENTES, ex.Context.ErrorCode);
+            Assert.AreEqual("No ha marcado a nadie: las 2 inscritas pagadas pasarán a «No asistió» y perderán el cupón. Si es así, vuelva a guardar " +
+                "la lista confirmándolo.", ex.Message);
+            Assert.IsTrue(inscripciones.All(i => i.Estado != "NoAsistio"), "Nada cambia sin confirmar");
+
+            await Servicio(new DateTime(2026, 10, 16, 19, 5, 0)).PasarLista(EVENTO_ALCOBENDAS, new AsistenciaEventoDTO { Confirmar = true }, PALOMA);
+
+            Assert.IsTrue(inscripciones.All(i => i.Estado == "NoAsistio"), "Con el «confirmo», como antes");
+        }
+
+        [TestMethod]
+        public void ReglasListaAsistencia_Textos()
+        {
+            Assert.IsNull(ReglasListaAsistencia.MotivoConfirmar(5, 1, false), "Con alguno marcado no se pregunta");
+            Assert.IsNull(ReglasListaAsistencia.MotivoConfirmar(0, 0, false), "Sin pagadas no hay cupones que perder");
+            Assert.IsNull(ReglasListaAsistencia.MotivoConfirmar(3, 0, true));
+            StringAssert.StartsWith(ReglasListaAsistencia.MotivoConfirmar(1, 0, false), "No ha marcado a nadie: la inscrita pagada pasará a «No asistió» y perderá el cupón.");
+            Assert.IsTrue(ReglasListaAsistencia.SePasaLista(new Evento { Formato = FormatosEvento.MIXTO }), "Mixto: sí (vienen las presenciales)");
+            Assert.IsFalse(ReglasListaAsistencia.SePasaLista(new Evento { Formato = "online " }));
+
+            var online = new EventoDTO { Formato = FormatosEvento.ONLINE };
+            Assert.IsFalse(online.SePasaLista);
+            Assert.AreEqual("Evento online: todas las inscritas pagadas se dan por asistidas.", online.TextoListaAsistencia);
+            Assert.IsTrue(new EventoDTO { Formato = FormatosEvento.PRESENCIAL }.SePasaLista);
+            Assert.IsNull(new EventoDTO().TextoListaAsistencia);
+        }
+
+        [TestMethod]
+        public async Task SinLista_EventoOnline_AlDiaSiguienteTodasLasPagadasAsisten_YElCorreoNoPideLista()
+        {
+            eventos.Single(e => e.Id == EVENTO_ALCOBENDAS).Formato = FormatosEvento.ONLINE;
+            Inscripcion(1, EVENTO_ALCOBENDAS, "15191", EstadoInscripcionEvento.Facturada);
+            Inscripcion(2, EVENTO_ALCOBENDAS, "20000", EstadoInscripcionEvento.Pagada);
+
+            var resultado = await Servicio(new DateTime(2026, 10, 17, 7, 55, 0)).DarPorAsistidosSinLista();
+
+            Assert.IsTrue(inscripciones.All(i => i.Estado == "Asistio"));
+            using (MailMessage correo = InscripcionesEventosJobsService.ConstruirCorreoSinLista(resultado.Single().Key, resultado.Single().Value, new List<string> { "paloma@nuevavision.es" }))
+            {
+                StringAssert.StartsWith(correo.Subject, "Evento online «");
+                StringAssert.Contains(correo.Body, "Evento online: no se pasa lista.");
+                Assert.IsFalse(correo.Body.Contains("pasen lista"), correo.Body);
+            }
+        }
+
         [TestMethod]
         public async Task SinLista_AlDiaSiguienteTodasLasPagadasAsisten()
         {

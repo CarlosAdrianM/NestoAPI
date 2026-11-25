@@ -152,6 +152,11 @@ namespace NestoAPI.Infraestructure.Eventos
     public class AsistenciaEventoDTO
     {
         public List<int> Asistentes { get; set; } = new List<int>();
+        /// <summary>
+        /// NestoAPI#908: «confirmo» expreso para guardar la lista sin nadie marcado (todas las pagadas pierden el cupón). Sin él, 409
+        /// <see cref="ReglasListaAsistencia.ERROR_SIN_ASISTENTES"/>.
+        /// </summary>
+        public bool Confirmar { get; set; }
     }
 
     /// <summary>NestoAPI#611: una inscripción con su evento y su cliente.</summary>
@@ -2376,6 +2381,12 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             Evento evento = await LeerEvento(eventoId).ConfigureAwait(false);
             ComprobarPuedeMantener(usuario, evento);
             DateTime ahora = reloj();
+            // NestoAPI#908: en un evento online nadie «viene»: no se pasa lista (el job da por asistidas a las pagadas)
+            string online = ReglasListaAsistencia.MotivoNoSePasaLista(evento);
+            if (online != null)
+            {
+                throw new NestoBusinessException(online, new ErrorContext { ErrorCode = ReglasListaAsistencia.ERROR_EVENTO_ONLINE });
+            }
             if (evento.Fecha.Date > ahora.Date)
             {
                 throw new NestoBusinessException($"El evento «{evento.Titulo?.Trim()}» es el {evento.Fecha:dd/MM/yyyy}: la lista se pasa desde ese día.");
@@ -2397,6 +2408,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 throw new NestoBusinessException("Estas inscripciones no están pagadas; márquelas como pagadas antes de pasar lista: " +
                     string.Join(", ", sinPagar.Select(i => $"{i.Id} ({Limpiar(i.Cliente)}, {ReglasInscripcionEvento.Texto(EstadoDe(i)).ToLowerInvariant()})")) + ".");
+            }
+            // NestoAPI#908: una lista sin nadie marcado deja a todas sin cupón: solo con un «confirmo» expreso
+            string confirmar = ReglasListaAsistencia.MotivoConfirmar(enLista.Count, enLista.Count(i => vinieron.Contains(i.Id)), peticion?.Confirmar == true);
+            if (confirmar != null)
+            {
+                throw new NestoBusinessException(confirmar, new ErrorContext { ErrorCode = ReglasListaAsistencia.ERROR_SIN_ASISTENTES }
+                    .WithData("perderanElCupon", enLista.Count))
+                { StatusCode = HttpStatusCode.Conflict, IsWarning = true };
             }
 
             string usuarioAuditoria = UsuarioDe(usuario);

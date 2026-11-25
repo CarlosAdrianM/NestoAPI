@@ -212,7 +212,10 @@ namespace NestoAPI.Infraestructure.Eventos
             var mail = new MailMessage
             {
                 From = new MailAddress("nesto@nuevavision.es", "Nesto - Nueva Visión"),
-                Subject = $"Nadie ha pasado lista en «{evento.Titulo}» ({Fecha(evento.Fecha)}): los {inscripciones.Count} inscritos se dan por asistidos",
+                // NestoAPI#908: en un evento online no se pasa lista: no se dice «nadie ha pasado lista»
+                Subject = ReglasAnuncioEvento.EsOnline(evento)
+                    ? $"Evento online «{evento.Titulo}» ({Fecha(evento.Fecha)}): los {inscripciones.Count} inscritos se dan por asistidos"
+                    : $"Nadie ha pasado lista en «{evento.Titulo}» ({Fecha(evento.Fecha)}): los {inscripciones.Count} inscritos se dan por asistidos",
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
                 SubjectEncoding = Encoding.UTF8
@@ -226,9 +229,12 @@ namespace NestoAPI.Infraestructure.Eventos
             sb.AppendLine("<!DOCTYPE html>");
             sb.AppendLine("<html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 13px;'>");
             sb.AppendLine($"<h2>{Html(evento.Titulo)} ({Fecha(evento.Fecha)}, {Html(PermisosEventos.NombreAlmacen(evento.Almacen))})</h2>");
-            sb.AppendLine("<p>Nadie ha pasado lista el día del evento, así que se ha dado por asistidos a todos los inscritos que habían pagado " +
-                "(para no dejar a nadie sin su cupón), salvo a quienes avisaron de que no podrían ir, que quedan como «No asistió». " +
-                "Si alguno no vino, pasen lista en Nesto: se puede corregir.</p>");
+            sb.AppendLine(ReglasAnuncioEvento.EsOnline(evento)
+                ? "<p>Evento online: no se pasa lista. Se ha dado por asistidos a todos los inscritos que habían pagado, salvo a quienes avisaron " +
+                  "de que no podrían ir, que quedan como «No asistió».</p>"
+                : "<p>Nadie ha pasado lista el día del evento, así que se ha dado por asistidos a todos los inscritos que habían pagado " +
+                  "(para no dejar a nadie sin su cupón), salvo a quienes avisaron de que no podrían ir, que quedan como «No asistió». " +
+                  "Si alguno no vino, pasen lista en Nesto: se puede corregir.</p>");
             sb.AppendLine("<table style='border-collapse: collapse;' cellpadding='4' border='1'>");
             sb.AppendLine("<tr style='background:#eee'><th>Cliente</th><th>Nombre</th><th>Pagado</th><th>Forma de pago</th><th>Queda</th></tr>");
             foreach (InscripcionEventoDTO i in inscripciones.OrderBy(i => i.Nombre))

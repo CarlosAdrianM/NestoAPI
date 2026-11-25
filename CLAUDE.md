@@ -1049,6 +1049,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Un cobro tardío del enlace de una Inscrita no la paga ni factura: ELMAH + aviso de pago fuera de plazo a Administración. Los jobs de aviso,
   liberación y caducidad se saltan los eventos que hoy son gratuitos. `CrearEvento` con productos requeridos y sin importes nace 0/0.
 
+### Lista de asistencia: eventos online y lista sin nadie marcado (NestoAPI#908, Masterclass Rosácea 24/11/26)
+- LA REGLA (pura) `ReglasListaAsistencia` (`Infraestructure/Eventos/ListaAsistenciaEvento.cs`). Evento ONLINE (`FormatosEvento.EsOnline`; el Mixto
+  sí pasa lista): `POST api/Eventos/{id}/Asistencia` → 400 `LISTA_EVENTO_ONLINE` sin tocar nada; al día siguiente el job de siempre
+  (`DarPorAsistidosSinLista`) da por asistidas a las pagadas (las «No podré ir», No asistió, como siempre) y su correo a la tienda dice «Evento
+  online: no se pasa lista» (no «nadie ha pasado lista… pasen lista»). `EventoDTO.SePasaLista` y `TextoListaAsistencia` (solo lectura, «Evento
+  online: todas las inscritas pagadas se dan por asistidas.»). Cualquier evento: guardar la lista con inscritas pagadas y NINGUNA marcada → 409
+  `LISTA_SIN_ASISTENTES` (details `perderanElCupon`) salvo `AsistenciaEventoDTO.Confirmar` = true. «Muy pocas respecto a las inscritas»: sin umbral
+  decidido, no se pregunta. Gemela en Nesto.
+
 ### Formación sin evento en la plantilla de venta (incidencia 1398, Pilar, Carlos 20/11/26)
 - LA REGLA (pura) `ReglasFormacionPlantilla.EsFormacion` (`CursosPlantilla.cs`): grupo CUR que no es la referencia de un evento (EVENTO00123[NR]) ni la
   plantilla de los cursos (`ReglasProductoCurso.Plantilla`, 90077): 90324, 90047, MF…, IMPE…. La búsqueda de la plantilla (`BuscarProducto` y `Buscar`,
