@@ -1687,6 +1687,28 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'reposiciones-recibidas-en-parte' configurado (de lunes a sábado a las 9:15)");
 
+            // NestoAPI#906: las diferencias de reposición «En discusión»: recordatorio al destino y, vencido el plazo, decide la regla.
+            // Y de noche (cola «indicadores»), la verdad a posteriori en los inventarios contabilizados. Sin el script, no hacen nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Reposiciones.DiscusionesDiferenciasJobsService.ID_JOB_REVISAR,
+                () => Infraestructure.Reposiciones.DiscusionesDiferenciasJobsService.Revisar(),
+                Infraestructure.Reposiciones.DiscusionesDiferenciasJobsService.CRON_REVISAR, // Cron: cada hora de 8:05 a 21:05
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Reposiciones.DiscusionesDiferenciasJobsService.ID_JOB_VERDAD,
+                () => Infraestructure.Reposiciones.DiscusionesDiferenciasJobsService.BuscarVerdad(),
+                Infraestructure.Reposiciones.DiscusionesDiferenciasJobsService.CRON_VERDAD, // Cron: todos los días a las 3:35
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Jobs recurrentes 'reposiciones-discusiones-diferencias' (cada hora 8-21) y 'reposiciones-desacuerdos-verdad' (3:35) configurados");
+
             // NestoAPI#693: pedidos con la fecha de entrega a la agencia prometida en riesgo. Lo de cada movimiento que pasa por
             // la API va por eventos (EventosPromesaRiesgo, un job un minuto después); esta pasada nocturna recalcula, fuera de
             // horario, todos los pedidos pendientes con promesa de hoy o futura (unas decenas) para lo que no pasa por la API

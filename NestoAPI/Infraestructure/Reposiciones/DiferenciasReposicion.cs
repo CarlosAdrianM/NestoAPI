@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
@@ -50,6 +50,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public const string ERROR_RECEPCION = "ErrorRecepcion";
 
         public static readonly string[] TODAS = { CONFIRMADA, NO_ESTABA, SOBRABA, ERROR_RECEPCION };
+
+        /// <summary>
+        /// NestoAPI#906: una falta en desacuerdo que ha decidido la regla (ReglaImputacionDesacuerdo). NO está en <see cref="TODAS"/>:
+        /// no se elige al resolver, la pone la discusión.
+        /// </summary>
+        public const string DESACUERDO = "Desacuerdo";
 
         /// <summary>Las que tienen sentido para una diferencia: «NoEstaba» solo en una falta y «Sobraba» solo en una sobra.</summary>
         public static List<string> Posibles(int diferencia)
@@ -363,6 +369,22 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 throw new NestoBusinessException($"El comentario no puede pasar de {LONGITUD_COMENTARIO} caracteres.");
             }
             string quien = UsuarioAuditoriaHelper.Resolver(usuario, null) ?? UsuarioAuditoriaHelper.DESCONOCIDO;
+            return await ResolverNucleo(empresa, id, resolucion, comentario, quien, fila => ComprobarPuedeResolver(usuario, empresa, fila), null)
+                .ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// El resolver de siempre (NestoAPI#634) sin la comprobación de permisos de quien resuelve: lo usa la discusión de NestoAPI#906
+        /// cuando el DESTINO contesta «Lo he encontrado» (ErrorRecepcion) y ya ha comprobado sus permisos. <paramref name="dentro"/>,
+        /// en la misma transacción.
+        /// </summary>
+        internal Task<ResultadoResolverDiferenciaReposicionDTO> ResolverSinComprobarPermiso(string empresa, int id, string resolucion, string comentario,
+            string quien, Func<DiferenciaReposicionDTO, Task> dentro)
+            => ResolverNucleo(empresa, id, ResolucionesDiferenciaReposicion.Normalizar(resolucion), comentario, quien, null, dentro);
+
+        private async Task<ResultadoResolverDiferenciaReposicionDTO> ResolverNucleo(string empresa, int id, string resolucion, string comentario,
+            string quien, Action<DiferenciaReposicionDTO> comprobarPermiso, Func<DiferenciaReposicionDTO, Task> dentro)
+        {
             bool activo = ajusteActivo();
 
             string mensaje = null;
@@ -374,7 +396,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 {
                     throw new NestoBusinessException($"No existe la diferencia de reposición {id}.") { StatusCode = HttpStatusCode.NotFound };
                 }
-                ComprobarPuedeResolver(usuario, empresa, fila);
+                comprobarPermiso?.Invoke(fila);
                 if (fila.Estado != EstadosDiferenciaReposicion.PENDIENTE)
                 {
                     throw new NestoBusinessException($"La diferencia de {fila.Producto} de la reposición {fila.Traspaso} ya está resuelta " +
@@ -421,6 +443,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     mensaje = string.Join(" ", new[] { "Stock corregido: " + plan.Descripcion(fila) }.Concat(avisos.Where(a => a != null)));
                 }
                 await t.GuardarResolucion(id, resolucion, quien, comentario, numeroOrigen, numeroDestino).ConfigureAwait(false);
+                if (dentro != null)
+                {
+                    await dentro(fila).ConfigureAwait(false);
+                }
                 return await t.Leer(empresa, id).ConfigureAwait(false);
             }).ConfigureAwait(false);
 
@@ -428,6 +454,69 @@ namespace NestoAPI.Infraestructure.Reposiciones
             {
                 await AvisarDevolucion(empresa, new List<StockDevueltoAlOrigen> { devuelto }).ConfigureAwait(false);
             }
+            Completar(resuelta);
+            return new ResultadoResolverDiferenciaReposicionDTO { Diferencia = resuelta, Mensaje = mensaje };
+        }
+
+        /// <summary>
+        /// NestoAPI#906: cierra una FALTA en desacuerdo con lo que ha decidido la regla. En UNA transacción: los movimientos de
+        /// <paramref name="planificar"/> (por el cauce de siempre, diario _ErrRepo; con el interruptor apagado no se toca el stock y se
+        /// dice), la resolución «Desacuerdo» y <paramref name="dentro"/> (la decisión de la discusión). 409 si ya no está pendiente.
+        /// </summary>
+        internal async Task<ResultadoResolverDiferenciaReposicionDTO> ResolverPorDesacuerdo(string empresa, int id, string quien, string comentario,
+            Func<DiferenciaReposicionDTO, List<MovimientoStockDiferencia>> planificar, Func<DiferenciaReposicionDTO, Task> dentro)
+        {
+            bool activo = ajusteActivo();
+            string mensaje = null;
+            DiferenciaReposicionDTO resuelta = await repositorio.EnTransaccion(async t =>
+            {
+                DiferenciaReposicionDTO fila = await t.Leer(empresa, id).ConfigureAwait(false);
+                if (fila == null)
+                {
+                    throw new NestoBusinessException($"No existe la diferencia de reposición {id}.") { StatusCode = HttpStatusCode.NotFound };
+                }
+                if (fila.Estado != EstadosDiferenciaReposicion.PENDIENTE)
+                {
+                    throw new NestoBusinessException($"La diferencia de {fila.Producto} de la reposición {fila.Traspaso} ya está resuelta " +
+                        $"({fila.Resolucion}, por {fila.UsuarioResolucion}).") { StatusCode = HttpStatusCode.Conflict };
+                }
+                List<MovimientoStockDiferencia> movimientos = planificar(fila) ?? new List<MovimientoStockDiferencia>();
+                int? numeroOrigen = null;
+                int? numeroDestino = null;
+                var avisos = new List<string>();
+                if (!movimientos.Any())
+                {
+                    mensaje = "No se ha tocado el stock.";
+                }
+                else if (!activo)
+                {
+                    mensaje = "No se ha tocado el stock porque el ajuste automático está apagado. Hágalo a mano si hace falta.";
+                }
+                else
+                {
+                    foreach (MovimientoStockDiferencia movimiento in movimientos)
+                    {
+                        ResultadoMovimientoStock hecho = await t.Mover(movimiento).ConfigureAwait(false);
+                        bool esOrigen = string.Equals(movimiento.Almacen?.Trim(), fila.Origen?.Trim(), StringComparison.OrdinalIgnoreCase);
+                        if (esOrigen)
+                        {
+                            numeroOrigen = hecho?.NumeroOrdenExtracto ?? numeroOrigen;
+                        }
+                        else
+                        {
+                            numeroDestino = hecho?.NumeroOrdenExtracto ?? numeroDestino;
+                        }
+                        avisos.Add(SinHueco(hecho, movimiento.Almacen));
+                    }
+                    mensaje = string.Join(" ", new[] { "Stock corregido: la baja queda en el almacén al que se ha imputado." }.Concat(avisos.Where(a => a != null)));
+                }
+                await t.GuardarResolucion(id, ResolucionesDiferenciaReposicion.DESACUERDO, quien, comentario, numeroOrigen, numeroDestino).ConfigureAwait(false);
+                if (dentro != null)
+                {
+                    await dentro(fila).ConfigureAwait(false);
+                }
+                return await t.Leer(empresa, id).ConfigureAwait(false);
+            }).ConfigureAwait(false);
             Completar(resuelta);
             return new ResultadoResolverDiferenciaReposicionDTO { Diferencia = resuelta, Mensaje = mensaje };
         }
@@ -555,13 +644,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
         // ---------------------------------------------------------------- permisos
 
-        private static bool EsDeAlmacenODireccion(IPrincipal usuario)
+        internal static bool EsDeAlmacenODireccion(IPrincipal usuario)
         {
             return usuario != null && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
                 usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION));
         }
 
-        private string AlmacenDe(IPrincipal usuario, string empresa)
+        internal string AlmacenDe(IPrincipal usuario, string empresa)
         {
             string nombre = usuario?.Identity?.IsAuthenticated == true ? usuario.Identity.Name : null;
             if (string.IsNullOrWhiteSpace(nombre))
@@ -592,7 +681,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         }
 
         /// <summary>Almacén y Dirección; o la gente del almacén de origen si no lleva control de ubicaciones (las tiendas).</summary>
-        private void ComprobarPuedeResolver(IPrincipal usuario, string empresa, DiferenciaReposicionDTO fila)
+        internal void ComprobarPuedeResolver(IPrincipal usuario, string empresa, DiferenciaReposicionDTO fila)
         {
             if (EsDeAlmacenODireccion(usuario))
             {

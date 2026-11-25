@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Ubicaciones;
@@ -44,6 +44,8 @@ SELECT {TOP} d.Id, RTRIM(d.Empresa) AS Empresa, d.NumTraspaso AS Traspaso, RTRIM
        d.Estado, d.Resolucion, d.UsuarioResolucion, d.FechaResolucion, d.Comentario, d.NumOrdenResolucion, d.NumOrdenResolucionDestino,
        CAST(ISNULL(a.ControlUbicaciones, 0) AS bit) AS OrigenConControlUbicaciones,
        CAST(NULL AS nvarchar(200)) AS QuePaso, CAST(NULL AS nvarchar(300)) AS QueComprobar, -- los pone el servicio (SqlQuery exige la columna)
+       CAST(NULL AS varchar(10)) AS EstadoDiscusion, CAST(NULL AS datetime) AS PlazoDiscusion, CAST(NULL AS nvarchar(1000)) AS ResumenDiscusion,
+       CAST(0 AS bit) AS PuedeAbrirDiscusion, -- NestoAPI#906: los pone la discusión
        (SELECT TOP 1 RTRIM(s.Pasillo) + '/' + RTRIM(s.Fila) + '/' + RTRIM(s.Columna) FROM Ubicaciones s
          WHERE s.[NºTraspasoRepo] = d.NumTraspaso AND s.Estado IN (4, -4) AND s.[Almacén] = d.Origen AND s.[Número] = d.Producto
            AND s.Pasillo IS NOT NULL
