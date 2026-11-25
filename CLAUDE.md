@@ -1618,6 +1618,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Una sola unidad sin cubrir: 2 = 4, solo el 4. El sugerido (regla de siempre, `Decidir`) se cambia a su equivalente ofrecido (`Ofrecido`). Tienda,
   otros almacenes, modo 6 y picking no cambian; al modificar, la comprobación tolerante de siempre (sin cambio de modo no se mira).
 
+### Muestras o regalos sin stock en un pedido de TIENDA: el mensaje (incidencia 1460, Sancho, 25/11/26)
+- En tienda solo vale el 2 y la API corrige en silencio «Todo junto» al 2 (`AplicarModoCorregido`, ahora marca `PedidoVentaDTO.ModoCorregidoPorTienda`,
+  JsonIgnore); luego `ValidadorMaterialPromocional`/`ValidadorDisponibilidadRegalos` frenan el 2 y decían «elija otro modo («Todo junto»…)»: sin salida.
+  Solo TEXTO (`TextosServirJuntoTienda`; tienda = `ModosServicioPermitidos.ClasificarAlmacen`): en tienda la salida es «bórrelas del pedido o páselo
+  desde Algete (ALG)» y, con el modo corregido (llega por `ValidarServirJuntoRequest.ModoCorregidoPorTienda`, JsonIgnore, POST y PUT), «El pedido es
+  de Alcobendas y allí solo puede salir «Según vaya entrando». No hay stock en Alcobendas de …: bórrelas del pedido (…) o páselo desde Algete (ALG).»
+  En Algete, el texto de siempre. Reglas, `ProductosProblematicos` y `ValidarServirJunto` de pantalla (solo cambia su texto en tienda), igual.
+
 ### Modo de servicio 6, «Junto con lo pendiente del cliente» (sugerencia 1340, 18/11/26; Nesto gemelo)
 - `ModosServicio.JUNTO_CON_LO_PENDIENTE` = 6: un «todo junto» (ServirJunto = 1, `EsTodoJunto`/`EsEntregaUnica` true, facturación como el 1) que
   además no sale hasta que pueda salir lo pendiente del MISMO empresa+cliente+contacto. `Efectivo(6, true)` = 6; ServirJunto desmarcado → 2.

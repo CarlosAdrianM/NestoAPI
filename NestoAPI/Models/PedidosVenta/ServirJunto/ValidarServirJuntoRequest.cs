@@ -19,6 +19,13 @@ namespace NestoAPI.Models.PedidosVenta.ServirJunto
         public byte? ModoServicio { get; set; }
 
         /// <summary>
+        /// Incidencia 1460: lo pone el POST/PUT de PedidosVenta cuando el usuario eligió otro modo y la API lo cambió a «Según vaya
+        /// entrando» por ser un pedido de tienda. Solo cambia el texto del mensaje. Nunca viaja (la pantalla no lo manda).
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public bool ModoCorregidoPorTienda { get; set; }
+
+        /// <summary>
         /// NestoAPI#262: número del pedido que se está validando. Permite excluir sus propias líneas
         /// del cálculo de stock disponible (si no, una línea del pedido cuenta su reserva contra sí
         /// misma y se deniega aunque haya stock libre). Opcional — si es null/0 no se excluye nada

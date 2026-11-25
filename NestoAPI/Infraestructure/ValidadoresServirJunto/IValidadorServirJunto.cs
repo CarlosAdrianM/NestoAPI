@@ -28,11 +28,16 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         /// NestoAPI#482: modo al que se quiere pasar el pedido, para que el mensaje lo nombre.
         /// null = «Según vaya entrando» (clientes que solo mandan el bool).
         /// </param>
+        /// <param name="modoCorregidoPorTienda">
+        /// Incidencia 1460: el usuario eligió otro modo y la API lo cambió a «Según vaya entrando» por ser de tienda;
+        /// solo cambia el texto del mensaje.
+        /// </param>
         Task<ValidarServirJuntoResponse> Validar(
             string almacen,
             List<ProductoBonificadoConCantidadRequest> productos,
             List<ProductoBonificadoConCantidadRequest> lineasPedido,
             int? pedido = null,
-            byte? modoServicio = null);
+            byte? modoServicio = null,
+            bool modoCorregidoPorTienda = false);
     }
 }

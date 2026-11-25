@@ -1762,6 +1762,7 @@
     <Compile Include="Infraestructure\ValidadoresServirJunto\IValidadorServirJunto.cs" />
     <Compile Include="Infraestructure\ValidadoresServirJunto\ValidadorDisponibilidadRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresServirJunto\ValidadorMaterialPromocional.cs" />
+    <Compile Include="Infraestructure\ValidadoresServirJunto\TextosServirJuntoTienda.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorSugerenciasOfertas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorSugerenciasOfertas.Combinadas.cs" />

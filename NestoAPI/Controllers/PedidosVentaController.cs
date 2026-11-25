@@ -5153,6 +5153,8 @@ namespace NestoAPI.Controllers
         {
             pedido.modoServicio = modo;
             pedido.servirJunto = Constantes.Pedidos.ModosServicio.EsTodoJunto(modo);
+            // Incidencia 1460: para que, si luego falla «Servir junto», el mensaje no hable como si el usuario hubiera elegido este modo.
+            pedido.ModoCorregidoPorTienda = true;
         }
 
         /// <summary>
@@ -5245,7 +5247,9 @@ namespace NestoAPI.Controllers
                 Pedido = pedido.numero != 0 ? pedido.numero : (int?)null,
                 LineasPedido = lineasRequest,
                 // NestoAPI#482: el mensaje nombra el modo al que se quiere pasar el pedido (ya normalizado)
-                ModoServicio = pedido.modoServicio
+                ModoServicio = pedido.modoServicio,
+                // Incidencia 1460: el modo lo cambió la API por ser de tienda; el mensaje lo dice.
+                ModoCorregidoPorTienda = pedido.ModoCorregidoPorTienda
             };
 
             var resultado = await servicioValidarServirJunto.Validar(request).ConfigureAwait(false);

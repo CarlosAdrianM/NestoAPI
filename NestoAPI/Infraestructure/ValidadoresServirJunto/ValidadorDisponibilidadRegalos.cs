@@ -28,7 +28,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             List<ProductoBonificadoConCantidadRequest> productos,
             List<ProductoBonificadoConCantidadRequest> lineasPedido,
             int? pedido = null,
-            byte? modoServicio = null)
+            byte? modoServicio = null,
+            bool modoCorregidoPorTienda = false)
         {
             // NestoAPI#175: además de los bonificados explícitos (productos), considerar
             // las líneas del pedido marcadas como EsBonificadoGanavisiones. Cierra el
@@ -80,20 +81,11 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
 
             if (productosProblematicos.Any())
             {
-                var listaProductos = string.Join(", ", productosProblematicos.Select(p =>
-                    string.IsNullOrEmpty(p.AlmacenConStock)
-                        ? p.ProductoNombre
-                        : $"{p.ProductoNombre} (stock en {p.AlmacenConStock})"));
-
                 return new ValidarServirJuntoResponse
                 {
                     PuedeDesmarcar = false,
                     ProductosProblematicos = productosProblematicos,
-                    // NestoAPI#482: se nombra el modo elegido; la casilla «Servir junto» ya no existe en Nesto.
-                    Mensaje = $"No se puede pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio)}» porque los siguientes productos bonificados " +
-                              $"no tienen stock suficiente en {almacen}: {listaProductos}. " +
-                              // NestoAPI#491: solo se deniega «Según vaya entrando»; cualquiera de los otros modos vale.
-                              $"Cambie los productos bonificados por otros con stock en {almacen} o elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()})."
+                    Mensaje = ConstruirMensaje(productosProblematicos, modoServicio, almacen, modoCorregidoPorTienda)
                 };
             }
 
@@ -103,6 +95,38 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                 ProductosProblematicos = new List<ProductoSinStockDTO>(),
                 Mensaje = null
             };
+        }
+
+        /// <summary>
+        /// El mensaje de los bonificados sin stock. Incidencia 1460 (25/11/26): en una tienda solo vale «Según vaya entrando», así que
+        /// la salida no es «elija otro modo» sino cambiarlos o pasar el pedido desde Algete; y si el modo lo cambió la API
+        /// (<paramref name="modoCorregidoPorTienda"/>), se dice.
+        /// </summary>
+        internal static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos, byte? modoServicio, string almacen,
+            bool modoCorregidoPorTienda = false)
+        {
+            var listaProductos = string.Join(", ", productosProblematicos.Select(p =>
+                string.IsNullOrEmpty(p.AlmacenConStock)
+                    ? p.ProductoNombre
+                    : $"{p.ProductoNombre} (stock en {p.AlmacenConStock})"));
+
+            if (TextosServirJuntoTienda.EsTienda(almacen))
+            {
+                string sede = TextosServirJuntoTienda.Sede(almacen);
+                return modoCorregidoPorTienda
+                    ? $"{TextosServirJuntoTienda.ArranqueModoCorregido(almacen)} Estos productos bonificados no tienen stock suficiente en {sede}: " +
+                      $"{listaProductos}. Cámbielos por otros con stock en {sede} o pase el pedido desde {TextosServirJuntoTienda.Algete()}."
+                    : $"No se puede pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio)}» porque los siguientes productos bonificados " +
+                      $"no tienen stock suficiente en {almacen}: {listaProductos}. " +
+                      $"En {sede} el pedido solo puede salir «{TextosServirJuntoTienda.ModoTienda()}»: cambie los productos bonificados por otros con stock " +
+                      $"en {almacen} o pase el pedido desde {TextosServirJuntoTienda.Algete()}.";
+            }
+
+            // NestoAPI#482: se nombra el modo elegido; la casilla «Servir junto» ya no existe en Nesto.
+            return $"No se puede pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio)}» porque los siguientes productos bonificados " +
+                   $"no tienen stock suficiente en {almacen}: {listaProductos}. " +
+                   // NestoAPI#491: solo se deniega «Según vaya entrando»; cualquiera de los otros modos vale.
+                   $"Cambie los productos bonificados por otros con stock en {almacen} o elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()}).";
         }
 
         private static List<ProductoBonificadoConCantidadRequest> UnificarConBonificadosDeLineasPedido(

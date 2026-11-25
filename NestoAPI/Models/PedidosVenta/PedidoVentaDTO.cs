@@ -164,6 +164,12 @@ namespace NestoAPI.Models.PedidosVenta
         [Newtonsoft.Json.JsonIgnore]
         internal bool AmpliacionResuelta { get; set; }
         /// <summary>
+        /// Incidencia 1460: el modo que eligió el usuario se ha cambiado a «Según vaya entrando» por ser un pedido de tienda
+        /// (<c>AplicarModoCorregido</c>). Solo para que el mensaje de «Servir junto» lo diga. Nunca viaja.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool ModoCorregidoPorTienda { get; set; }
+        /// <summary>
         /// Caso 931007: los Nº de orden de las líneas añadidas que salen hacia un pedido nuevo (el «No» de Almacén): el PUT las quita aunque
         /// el pedido tenga picking y sea después del corte. Nunca viaja.
         /// </summary>

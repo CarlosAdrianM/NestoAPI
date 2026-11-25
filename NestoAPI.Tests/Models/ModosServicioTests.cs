@@ -230,7 +230,9 @@ namespace NestoAPI.Tests.Models
 
             StringAssert.Contains(mensaje, "no hay stock en REI de estas muestras");
             StringAssert.Contains(mensaje, "Bórrelas del pedido: 42543 MUESTRA CONTORNO DE OJOS SPLENDORE, 43893 MUESTRA STARSUN FACIAL CREAM");
-            StringAssert.Contains(mensaje, "elija otro modo");
+            // Incidencia 1460: en tienda (REI) solo vale «Según vaya entrando»: la salida es Algete, no otro modo.
+            Assert.IsFalse(mensaje.Contains("elija otro modo"), mensaje);
+            StringAssert.Contains(mensaje, "páselo desde Algete (ALG)");
             Assert.IsFalse(mensaje.Contains("Bórralas") || mensaje.Contains("Bórrala"), "De usted, no de tú: " + mensaje);
         }
 

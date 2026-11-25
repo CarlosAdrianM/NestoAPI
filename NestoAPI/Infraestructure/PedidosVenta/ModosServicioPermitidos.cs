@@ -276,9 +276,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         /// <summary>El tipo de almacén del pedido a partir de sus líneas de producto.</summary>
         public static TipoAlmacen Clasificar(IEnumerable<LineaPedidoVentaDTO> lineasProducto)
+            => ClasificarAlmacenes((lineasProducto ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Select(l => l?.almacen));
+
+        /// <summary>Incidencia 1460: el tipo de UN almacén (el de los validadores de «Servir junto»), con la misma regla.</summary>
+        public static TipoAlmacen ClasificarAlmacen(string almacen) => ClasificarAlmacenes(new[] { almacen });
+
+        private static TipoAlmacen ClasificarAlmacenes(IEnumerable<string> codigos)
         {
-            List<string> almacenes = (lineasProducto ?? Enumerable.Empty<LineaPedidoVentaDTO>())
-                .Select(l => l?.almacen?.Trim())
+            List<string> almacenes = codigos
+                .Select(a => a?.Trim())
                 .Where(a => !string.IsNullOrWhiteSpace(a))
                 .Distinct(System.StringComparer.OrdinalIgnoreCase)
                 .ToList();

@@ -35,7 +35,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             List<ProductoBonificadoConCantidadRequest> productos,
             List<ProductoBonificadoConCantidadRequest> lineasPedido,
             int? pedido = null,
-            byte? modoServicio = null)
+            byte? modoServicio = null,
+            bool modoCorregidoPorTienda = false)
         {
             if (lineasPedido == null || !lineasPedido.Any())
             {
@@ -92,7 +93,7 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             {
                 PuedeDesmarcar = false,
                 ProductosProblematicos = productosProblematicos,
-                Mensaje = ConstruirMensaje(productosProblematicos, modoServicio, almacen)
+                Mensaje = ConstruirMensaje(productosProblematicos, modoServicio, almacen, modoCorregidoPorTienda)
             };
         }
 
@@ -111,21 +112,42 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         /// el validador). Sin eso parecía que el modo «no funcionaba»: una usuaria lo intentó 8 veces
         /// seguidas (15/10/26). De paso, de usted (mezclaba «Bórralas» con «elija»).
         /// </remarks>
-        internal static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos, byte? modoServicio = null, string almacen = null)
+        /// <remarks>
+        /// Incidencia 1460 (25/11/26): en una tienda solo vale «Según vaya entrando», así que la salida no puede ser «elija otro modo»:
+        /// es borrarlas o pasar el pedido desde Algete. Y si el modo lo cambió la API (el usuario eligió «Todo junto» en tienda,
+        /// <paramref name="modoCorregidoPorTienda"/>), el mensaje lo dice en vez de hablar como si hubiera elegido «Según vaya entrando».
+        /// </remarks>
+        internal static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos, byte? modoServicio = null, string almacen = null,
+            bool modoCorregidoPorTienda = false)
         {
             string listaProductos = string.Join(", ",
                 productosProblematicos.Select(p => $"{p.ProductoId} {p.ProductoNombre}"));
+            bool una = productosProblematicos.Count == 1;
+            bool tienda = TextosServirJuntoTienda.EsTienda(almacen);
+
+            if (tienda && modoCorregidoPorTienda)
+            {
+                return una
+                    ? $"{TextosServirJuntoTienda.ArranqueModoCorregido(almacen)} No hay stock en {TextosServirJuntoTienda.Sede(almacen)} de esta muestra " +
+                      $"(material promocional) y no puede quedarse pendiente: bórrela del pedido ({listaProductos}) o páselo desde {TextosServirJuntoTienda.Algete()}."
+                    : $"{TextosServirJuntoTienda.ArranqueModoCorregido(almacen)} No hay stock en {TextosServirJuntoTienda.Sede(almacen)} de estas muestras " +
+                      $"(material promocional) y no pueden quedarse pendientes: bórrelas del pedido ({listaProductos}) o páselo desde {TextosServirJuntoTienda.Algete()}.";
+            }
+
             // NestoAPI#482: se nombra el modo elegido; la casilla «Servir junto» ya no existe en Nesto.
             string destino = Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio);
 
             // "material promocional" se mantiene en el texto a propósito: explica al usuario POR QUÉ
             // no se puede, y es lo que distingue este mensaje del del validador de regalos.
-            // NestoAPI#491: solo se deniega «Según vaya entrando»; los otros modos son la otra salida.
-            string alternativa = $" O elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()}).";
+            // NestoAPI#491: solo se deniega «Según vaya entrando»; los otros modos son la otra salida (en Algete: en tienda no hay otros).
+            string alternativa = tienda
+                ? $" En {TextosServirJuntoTienda.Sede(almacen)} el pedido solo puede salir «{TextosServirJuntoTienda.ModoTienda()}»: " +
+                  $"{(una ? "bórrela" : "bórrelas")} del pedido o páselo desde {TextosServirJuntoTienda.Algete()}."
+                : $" O elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()}).";
 
             string enAlmacen = string.IsNullOrWhiteSpace(almacen) ? "" : $" en {almacen.Trim()}";
 
-            return productosProblematicos.Count == 1
+            return una
                 ? $"No se puede pasar el pedido a «{destino}»: no hay stock{enAlmacen} de esta muestra (material promocional) " +
                   $"y no puede quedarse pendiente. Bórrela del pedido: {listaProductos}.{alternativa}"
                 : $"No se puede pasar el pedido a «{destino}»: no hay stock{enAlmacen} de estas muestras (material promocional) " +

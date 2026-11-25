@@ -70,7 +70,8 @@ namespace NestoAPI.Infraestructure.ServirJunto
 
             foreach (var validador in validadores)
             {
-                var resultado = await validador.Validar(request.Almacen, productosUnificados, lineasPedido, request.Pedido, request.ModoServicio).ConfigureAwait(false);
+                var resultado = await validador.Validar(request.Almacen, productosUnificados, lineasPedido, request.Pedido, request.ModoServicio,
+                    request.ModoCorregidoPorTienda).ConfigureAwait(false);
                 if (!resultado.PuedeDesmarcar)
                 {
                     // NestoAPI#220: dejamos constancia en ELMAH del porqué se denegó desmarcar "servir
@@ -248,7 +249,8 @@ namespace NestoAPI.Infraestructure.ServirJunto
                     : "sin número (pedido nuevo o cliente que no lo envía)";
 
                 logService.LogError(
-                    $"[ServirJunto NestoAPI#220] Denegado pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(request.ModoServicio)}» en almacén {request.Almacen?.Trim()}. " +
+                    $"[ServirJunto NestoAPI#220] Denegado pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(request.ModoServicio)}» en almacén {request.Almacen?.Trim()}" +
+                    $"{(request.ModoCorregidoPorTienda ? " (el usuario eligió otro modo y se corrigió por ser de tienda)" : "")}. " +
                     $"Pedido: {pedido}. Motivo: {motivo}. Productos problemáticos: [{problematicos}]. " +
                     $"Bonificados enviados: [{bonificados}]. Líneas enviadas: [{lineas}].");
             }
