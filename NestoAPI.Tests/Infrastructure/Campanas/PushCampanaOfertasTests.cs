@@ -67,29 +67,33 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
         }
 
         [TestMethod]
-        public void Notificacion_ModoOfertas_TipoOfertasConCampanaProductosEImagen()
+        public void Notificacion_SiempreTipoOfertasConCampanaEImagen_NuncaProductos()
         {
-            NotificacionPushDTO n = TextosPushOfertas.Notificacion(ModosPushCampana.OFERTAS, BF, "Black Friday", "texto",
-                Cinco().Take(2).ToList(), "https://tienda.nuevavision.es/img/1.jpg");
+            NotificacionPushDTO n = TextosPushOfertas.Notificacion(BF, "Black Friday", "texto", "https://tienda.nuevavision.es/img/1.jpg");
             Assert.AreEqual("ofertas", n.Tipo);
             Assert.AreEqual("ofertas", n.Datos["tipo"]);
             Assert.AreEqual(BF, n.Datos["campana"]);
-            Assert.AreEqual("45929:1;100:1", n.Datos["productos"]);
             Assert.AreEqual("https://tienda.nuevavision.es/img/1.jpg", n.Datos["imagenUrl"]);
+            // Carlos 25/11/26: los push de campaña nunca tocan el carrito
+            Assert.IsFalse(n.Datos.ContainsKey("productos"));
+            CollectionAssert.AreEquivalent(new[] { "tipo", "campana", "imagenUrl" }, n.Datos.Keys.ToList());
         }
 
         [TestMethod]
-        public void Notificacion_ModoCarrito_TipoReposicionConCantidades_YSinProductosVuelveAOfertas()
+        public void Notificacion_SinFotoValida_SinImagen()
         {
-            NotificacionPushDTO n = TextosPushOfertas.Notificacion(ModosPushCampana.CARRITO, BF, "t", "c",
-                new List<OfertaElegida> { Oferta("1", "X", habitual: true, cantidad: 3) }, "https://");
-            Assert.AreEqual("reposicion", n.Datos["tipo"]);
-            Assert.AreEqual("1:3", n.Datos["productos"]);
+            NotificacionPushDTO n = TextosPushOfertas.Notificacion(BF, "t", "c", "https://");
+            Assert.AreEqual("ofertas", n.Datos["tipo"]);
             Assert.IsFalse(n.Datos.ContainsKey("imagenUrl"));
+            Assert.IsFalse(n.Datos.ContainsKey("productos"));
+        }
 
-            NotificacionPushDTO vacia = TextosPushOfertas.Notificacion(ModosPushCampana.CARRITO, BF, "t", "c", new List<OfertaElegida>(), null);
-            Assert.AreEqual("ofertas", vacia.Datos["tipo"]);
-            Assert.IsFalse(vacia.Datos.ContainsKey("productos"));
+        [TestMethod]
+        public void PeticionConModo_SeIgnoraSinError()
+        {
+            var peticion = Newtonsoft.Json.JsonConvert.DeserializeObject<PeticionCampanaPushDTO>("{\"Campana\":\"" + BF + "\",\"Modo\":\"Carrito\"}");
+            Assert.IsNull(ReglaPushCampana.Validar(peticion, out PeticionPushCampanaValida v));
+            Assert.AreEqual(BF, v.Campana);
         }
 
         // ---------------------------------------------------------------- reglas de la push
@@ -98,14 +102,12 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
         public void Validar_ValoresPorDefectoYErrores()
         {
             Assert.AreEqual(ReglaPushCampana.MENSAJE_SIN_CAMPANA, ReglaPushCampana.Validar(new PeticionCampanaPushDTO(), out _));
-            Assert.IsNotNull(ReglaPushCampana.Validar(new PeticionCampanaPushDTO { Campana = BF, Modo = "Otro" }, out _));
             Assert.IsNotNull(ReglaPushCampana.Validar(new PeticionCampanaPushDTO { Campana = BF, Maximo = 11 }, out _));
             Assert.IsNotNull(ReglaPushCampana.Validar(new PeticionCampanaPushDTO { Campana = BF, DiasSinRepetir = -1 }, out _));
             Assert.IsNotNull(ReglaPushCampana.Validar(new PeticionCampanaPushDTO { Campana = BF, ImagenUrl = "foto.jpg" }, out _));
 
-            Assert.IsNull(ReglaPushCampana.Validar(new PeticionCampanaPushDTO { Campana = " " + BF + " ", Modo = "carrito" }, out PeticionPushCampanaValida v));
+            Assert.IsNull(ReglaPushCampana.Validar(new PeticionCampanaPushDTO { Campana = " " + BF + " " }, out PeticionPushCampanaValida v));
             Assert.AreEqual(BF, v.Campana);
-            Assert.AreEqual(ModosPushCampana.CARRITO, v.Modo);
             Assert.AreEqual(5, v.Maximo);
             Assert.AreEqual(2, v.DiasSinRepetir);
             Assert.IsTrue(v.IncluirSinOfertas);
@@ -144,14 +146,6 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
             Assert.AreEqual(ReglaPushCampana.MOTIVO_DE_BAJA, r.Saltados.Single(s => s.Cliente == "3").Motivo);
             StringAssert.Contains(r.Saltados.Single(s => s.Cliente == "4").Motivo, "Ya recibió");
             Assert.IsFalse(r.Saltados.Any(s => s.Cliente == "5"));
-        }
-
-        [TestMethod]
-        public void ProductosDelModo_CarritoSoloHabituales()
-        {
-            var lista = new List<OfertaElegida> { Oferta("1", "A", habitual: true), Oferta("2", "B") };
-            CollectionAssert.AreEqual(new[] { "1" }, ReglaPushCampana.ProductosDelModo(ModosPushCampana.CARRITO, lista).Select(o => o.Candidata.Producto).ToList());
-            Assert.AreEqual(2, ReglaPushCampana.ProductosDelModo(ModosPushCampana.OFERTAS, lista).Count);
         }
 
         [TestMethod]

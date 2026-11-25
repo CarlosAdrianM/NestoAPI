@@ -16,7 +16,6 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public string Cuerpo { get; set; }
         public string ImagenUrl { get; set; }
         public int Maximo { get; set; }
-        public string Modo { get; set; }
         public ISet<string> SoloClientes { get; set; }
         public ISet<string> ExcluirClientes { get; set; }
         public int DiasSinRepetir { get; set; }
@@ -62,19 +61,6 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             {
                 return MENSAJE_SIN_CAMPANA;
             }
-            string modo = string.IsNullOrWhiteSpace(peticion.Modo) ? ModosPushCampana.OFERTAS : peticion.Modo.Trim();
-            if (string.Equals(modo, ModosPushCampana.OFERTAS, StringComparison.OrdinalIgnoreCase))
-            {
-                modo = ModosPushCampana.OFERTAS;
-            }
-            else if (string.Equals(modo, ModosPushCampana.CARRITO, StringComparison.OrdinalIgnoreCase))
-            {
-                modo = ModosPushCampana.CARRITO;
-            }
-            else
-            {
-                return $"El modo «{peticion.Modo}» no existe: use «{ModosPushCampana.OFERTAS}» o «{ModosPushCampana.CARRITO}».";
-            }
             if (peticion.Maximo.HasValue && (peticion.Maximo < 1 || peticion.Maximo > ReglaOfertasParaTi.MAXIMO_TOPE))
             {
                 return $"El máximo de productos tiene que estar entre 1 y {ReglaOfertasParaTi.MAXIMO_TOPE}.";
@@ -103,7 +89,6 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 Cuerpo = Limpio(peticion.Cuerpo),
                 ImagenUrl = Limpio(peticion.ImagenUrl),
                 Maximo = ReglaOfertasParaTi.Maximo(peticion.Maximo),
-                Modo = modo,
                 SoloClientes = Conjunto(peticion.SoloClientes),
                 ExcluirClientes = Conjunto(peticion.ExcluirClientes),
                 DiasSinRepetir = dias,
@@ -176,15 +161,6 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 }
             }
             return reparto;
-        }
-
-        /// <summary>En modo Carrito solo van los habituales del cliente (nunca sugerencias nuevas): la app ya publicada los mete al carrito.</summary>
-        public static List<OfertaElegida> ProductosDelModo(string modo, IEnumerable<OfertaElegida> ofertas)
-        {
-            List<OfertaElegida> lista = (ofertas ?? Enumerable.Empty<OfertaElegida>()).Where(o => o?.Candidata != null).ToList();
-            return string.Equals(modo, ModosPushCampana.CARRITO, StringComparison.OrdinalIgnoreCase)
-                ? lista.Where(o => o.Habitual).ToList()
-                : lista;
         }
 
         internal static ISet<string> Conjunto(IEnumerable<string> valores)

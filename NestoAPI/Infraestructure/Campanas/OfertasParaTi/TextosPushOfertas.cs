@@ -14,8 +14,6 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
     public static class TextosPushOfertas
     {
         public const string TIPO_OFERTAS = "ofertas";
-        /// <summary>El de la push de reposición (#662): la app ya publicada lo abre en el carrito con «productos».</summary>
-        public const string TIPO_REPOSICION = RecordatorioReposicionPushJobsService.TIPO;
         public const int LONGITUD_NOMBRE = 26;
         public const string MARCA_PRODUCTO = "{producto}";
         public const string MARCA_DESCUENTO = "{descuento}";
@@ -100,30 +98,18 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         private static string Reemplazar(string texto, string marca, string valor)
             => Regex.Replace(texto, Regex.Escape(marca), (valor ?? string.Empty).Replace("$", "$$"), RegexOptions.IgnoreCase);
 
-        /// <summary>«ref:cant;ref:cant» como la push de reposición (cantidad mínima 1).</summary>
-        public static string ListaProductos(IEnumerable<OfertaElegida> ofertas)
-            => string.Join(";", (ofertas ?? Enumerable.Empty<OfertaElegida>()).Where(o => o?.Candidata != null)
-                .Select(o => $"{o.Candidata.Producto.Trim()}:{Math.Max(1, o.CantidadSugerida)}"));
-
         /// <summary>
-        /// La push. Modo Ofertas: tipo «ofertas» (+ productos si hay). Modo Carrito: tipo «reposicion» con productos (el servicio ya
-        /// solo le pasa habituales). Siempre «campana»; «imagenUrl» si hay foto.
+        /// La push: SIEMPRE tipo «ofertas» (la app abre la pantalla de ofertas), «campana» e «imagenUrl» si hay foto. NUNCA «productos»
+        /// (Carlos 25/11/26: los push de campaña no tocan el carrito del cliente; las ofertas las pide la app a GET api/Pedidos/Cliente/Ofertas).
         /// </summary>
-        public static NotificacionPushDTO Notificacion(string modo, string campana, string titulo, string cuerpo, IReadOnlyList<OfertaElegida> ofertas,
-            string imagenUrl)
+        public static NotificacionPushDTO Notificacion(string campana, string titulo, string cuerpo, string imagenUrl)
         {
-            List<OfertaElegida> lista = (ofertas ?? new List<OfertaElegida>()).Where(o => o?.Candidata != null).ToList();
-            bool carrito = string.Equals(modo, ModosPushCampana.CARRITO, StringComparison.OrdinalIgnoreCase) && lista.Count > 0;
-            string tipo = carrito ? TIPO_REPOSICION : TIPO_OFERTAS;
+            string tipo = TIPO_OFERTAS;
             var datos = new Dictionary<string, string>
             {
                 { "tipo", tipo },
                 { "campana", campana?.Trim() }
             };
-            if (lista.Count > 0)
-            {
-                datos["productos"] = ListaProductos(lista);
-            }
             string foto = PlantillaRecordatorioReposicion.NormalizarUrlFoto(imagenUrl);
             if (foto != null)
             {

@@ -218,7 +218,7 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
             Assert.AreEqual("https://x.es/bf.jpg", r.Respuesta.Mensajes.Single().ImagenUrl);
             Assert.IsTrue(r.Respuesta.Saltados.Any(s => s.Cliente == "1000" && s.Motivo.StartsWith("Error")));
             A.CallTo(() => push.EnviarConsejoACliente("1", "2000", A<NotificacionPushDTO>.That.Matches(n =>
-                n.Datos["tipo"] == "ofertas" && n.Datos["campana"] == BF && n.Datos["productos"] == "1:1;3:1"))).MustHaveHappenedOnceExactly();
+                n.Datos["tipo"] == "ofertas" && n.Datos["campana"] == BF && !n.Datos.ContainsKey("productos")))).MustHaveHappenedOnceExactly();
             A.CallTo(() => fuente.Anotar(A<string>.That.Contains("\"ConOfertas\":2"), "Carlos")).MustHaveHappenedOnceExactly();
         }
 

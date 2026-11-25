@@ -148,14 +148,10 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
     // ------------------------------------------------------------------------------------------------
     // POST api/Campanas/Push
 
-    public static class ModosPushCampana
-    {
-        /// <summary>tipo «ofertas»: la versión nueva de la app abre la pantalla de ofertas.</summary>
-        public const string OFERTAS = "Ofertas";
-        /// <summary>tipo «reposicion» con productos: lo entiende la app ya publicada (al carrito). Solo habituales.</summary>
-        public const string CARRITO = "Carrito";
-    }
-
+    /// <summary>
+    /// La petición. Carlos 25/11/26: los push de campaña NUNCA tocan el carrito: ya no hay «Modo» (si llega en el JSON, se ignora: no es
+    /// una propiedad) y la push es siempre tipo «ofertas».
+    /// </summary>
     public class PeticionCampanaPushDTO
     {
         public string Campana { get; set; }
@@ -163,7 +159,6 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public string Cuerpo { get; set; }
         public string ImagenUrl { get; set; }
         public int? Maximo { get; set; }
-        public string Modo { get; set; }
         public List<string> SoloClientes { get; set; } = new List<string>();
         public List<string> ExcluirClientes { get; set; } = new List<string>();
         public int? DiasSinRepetir { get; set; }

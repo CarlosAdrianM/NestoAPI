@@ -44,8 +44,8 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 TiposNotificacionCliente.AVISOS_REPOSICION);
 
         /// <summary>
-        /// Por el buzón (NotificacionesBuzon, una fila por cliente con Datos = el JSON de la push), como la regla de los 7 días de la
-        /// push de reposición: cuenta aunque la hayan borrado (les llegó). Sin tabla nueva.
+        /// Por el buzón (NotificacionesBuzon, una fila por cliente con Datos = el JSON de la push, con su «campana»): cuenta aunque la
+        /// hayan borrado (les llegó). Sin tabla nueva.
         /// </summary>
         public async Task<ISet<string>> ClientesConPushDeCampana(string campana, IReadOnlyCollection<string> clientes, DateTime desde)
         {
@@ -156,7 +156,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             respuesta.Saltados.AddRange(reparto.Saltados);
             respuesta.Destinatarios = reparto.Destinatarios.Count;
 
-            // Enteras: en modo Carrito se quedan solo los habituales y luego se recorta al máximo
+            // Enteras y luego se recortan al máximo
             Dictionary<string, ResultadoOfertasCliente> listas = await nucleo.Calcular(contexto, reparto.Destinatarios, null).ConfigureAwait(false);
             var fotos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (string cliente in reparto.Destinatarios)
@@ -164,7 +164,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 try
                 {
                     List<OfertaElegida> todas = listas.TryGetValue(cliente, out ResultadoOfertasCliente r) ? r.Ofertas : new List<OfertaElegida>();
-                    List<OfertaElegida> ofertas = ReglaPushCampana.ProductosDelModo(p.Modo, todas).Take(p.Maximo).ToList();
+                    List<OfertaElegida> ofertas = todas.Where(o => o?.Candidata != null).Take(p.Maximo).ToList();
                     string cuerpo;
                     if (ofertas.Count > 0)
                     {
@@ -183,7 +183,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     }
                     string tituloPush = p.Titulo != null ? TextosPushOfertas.AplicarPlantilla(p.Titulo, ofertas, titulo) : titulo;
                     string imagen = p.ImagenUrl ?? (ofertas.Count > 0 ? await Foto(fotos, ofertas[0].Candidata.Producto).ConfigureAwait(false) : null);
-                    NotificacionPushDTO notificacion = TextosPushOfertas.Notificacion(p.Modo, p.Campana, tituloPush, cuerpo, ofertas, imagen);
+                    NotificacionPushDTO notificacion = TextosPushOfertas.Notificacion(p.Campana, tituloPush, cuerpo, imagen);
                     var mensaje = new MensajePushCampanaDTO
                     {
                         Cliente = cliente,

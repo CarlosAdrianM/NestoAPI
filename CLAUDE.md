@@ -663,8 +663,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   campaña en caché 10 min (`CacheContextoOfertasParaTi`).
 - `POST api/Campanas/Push?ensayo=true` (`CampanasPushController`, Dirección/Informática, 403 de usted; ensayo por defecto: solo lee): destinatarios = los
   del recordatorio de reposición (NestoTiendas activo con consejos, sin baja «Avisos de reposición»), SoloClientes/ExcluirClientes; sin repetir la campaña
-  en `DiasSinRepetir` días mirando el BUZÓN (Datos con `"campana":"…"`, sin tabla nueva). Datos: `tipo` «ofertas» (+productos) o, modo Carrito, «reposicion»
-  con «ref:cant» SOLO de habituales (OJO: cuenta para la regla de 7 días de la push de reposición). Cuerpo automático o plantilla {producto} {descuento} {n}
+  en `DiasSinRepetir` días mirando el BUZÓN (Datos con `"campana":"…"`, sin tabla nueva). Datos: SIEMPRE `tipo` «ofertas», `campana` e `imagenUrl` (si
+  hay foto); NUNCA `productos` (Carlos 25/11/26: los push de campaña no tocan el carrito; el modo «Carrito» se quitó y un `Modo` en la petición se
+  ignora). Cuerpo automático o plantilla {producto} {descuento} {n}
   {campana}; de verdad solo de 9 a 21, por `EnviarConsejoACliente` y una fila en Modificaciones (Tabla `CampanaPush`).
 
 ### Embudo de Odoo: bloque diario (11/11/26)
@@ -863,7 +864,6 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   {Codigo «CONFIRMACION_NECESARIA», Message «Para rellenar el inventario de Alcobendas escriba el nombre del almacén.»} y nada creado. (3) El DELETE
   también lo puede quien puede rellenar si TODAS las pendientes son suyas y ninguna contada (`ReglaDeshacerRellenadoPropio`, comprobado con UPDLOCK/HOLDLOCK
   en la transacción): si no, 403 «hay filas de otro usuario (…)» o 409 «ya hay N filas contadas: pídaselo a Dirección.». Dirección e Informática, como antes.
-
 ### Alquileres: equipo y nombre del cliente en la relación (Novedades 1181, 12/11/26)
 - `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de
   Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
