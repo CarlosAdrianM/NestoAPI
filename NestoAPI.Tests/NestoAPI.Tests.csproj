@@ -1060,6 +1060,7 @@
     <Compile Include="Infrastructure\Picking\ReglasRutaPropiaTests.cs" />
     <Compile Include="Infrastructure\Picking\GestorSugerenciasRutaTests.cs" />
     <Compile Include="Infrastructure\Picking\ErrorInventarioPendientePickingTests.cs" />
+    <Compile Include="Infrastructure\ErrorInventarioPendienteReposicionTests.cs" />
     <Compile Include="Controllers\PickingControllerRutasPropiasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PuertaPublicacionTiendaTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SincronizacionJobsServiceTests.cs" />

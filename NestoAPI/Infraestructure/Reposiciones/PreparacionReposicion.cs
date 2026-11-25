@@ -310,6 +310,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task<int> QuitarTraspasoDePedidosEspeciales(int numeroTraspaso);
         /// <summary>Todo lo de dentro va en una transacción: si algo falla, no queda nada a medias.</summary>
         Task<T> EnTransaccion<T>(Func<Task<T>> trabajo);
+        /// <summary>
+        /// Incidencia 1455: las filas de inventario pendientes (Estado 1, sin NºTraspaso) de esos almacenes, las que hacen saltar el
+        /// disparador al contabilizar. Solo lectura, para explicar el error.
+        /// </summary>
+        Task<List<Inventarios.FilaInventarioSinContabilizar>> LeerInventarioPendiente(IEnumerable<string> almacenes);
     }
 
     public class RepositorioPreparacionReposicionSql : IRepositorioPreparacionReposicion
@@ -615,6 +620,37 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     }
                     throw;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Incidencia 1455: con un contexto aparte (el de la reposición viene de una transacción deshecha), como el picking.
+        /// </summary>
+        public async Task<List<Inventarios.FilaInventarioSinContabilizar>> LeerInventarioPendiente(IEnumerable<string> almacenes)
+        {
+            List<string> lista = (almacenes ?? Enumerable.Empty<string>()).Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).Distinct().ToList();
+            if (lista.Count == 0)
+            {
+                return new List<Inventarios.FilaInventarioSinContabilizar>();
+            }
+            using (var contexto = new NVEntities())
+            {
+                return await contexto.Inventarios
+                    .Where(i => i.Estado == 1 && i.NºTraspaso == null && lista.Contains(i.Almacén))
+                    .Select(i => new Inventarios.FilaInventarioSinContabilizar
+                    {
+                        NumeroOrden = i.NºOrden,
+                        Empresa = i.Empresa,
+                        Almacen = i.Almacén,
+                        Fecha = i.Fecha,
+                        Producto = i.Número,
+                        Descripcion = i.Descripción,
+                        Pasillo = i.Pasillo,
+                        Fila = i.Fila,
+                        Columna = i.Columna,
+                        Usuario = i.Usuario
+                    })
+                    .ToListAsync().ConfigureAwait(false);
             }
         }
 
@@ -1145,14 +1181,15 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             // NestoAPI#693: el diario contabilizado y lo que manda la tienda van en UN solo evento de «promesa en riesgo»
             using (EventosPromesaRiesgo.Ambito())
             {
-                numeroTraspaso = await repositorio.EnTransaccion(async () =>
+                numeroTraspaso = await ExplicandoInventarioPendiente(origen, conCantidad.Select(f => f.Producto),
+                    ErrorInventarioPendienteReposicion.FINAL_ENVIAR, () => repositorio.EnTransaccion(async () =>
                 {
                     int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien,
                         contabilizar: true).ConfigureAwait(false);
                     // NestoAPI#577: el número va a la cabecera abierta de la reposición (si la creó la API; Nesto viejo no la tiene)
                     await registro.NumerarYMarcarPreparada(empresa, origen, destino, numero, quien).ConfigureAwait(false);
                     return numero;
-                }).ConfigureAwait(false);
+                })).ConfigureAwait(false);
                 AnotarPromesaRiesgo(empresa, origen, destino, numeroTraspaso, conCantidad);
             }
 
@@ -1405,7 +1442,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     }
                 }
                 await ComprobarQueNoFaltaParaSusPedidos(empresa, origen, lineas).ConfigureAwait(false);
-                numeroTraspaso = await repositorio.EnTransaccion(async () =>
+                numeroTraspaso = await ExplicandoInventarioPendiente(origen, lineas.Select(l => l.Producto),
+                    ErrorInventarioPendienteReposicion.FINAL_PUNTUAL, () => repositorio.EnTransaccion(async () =>
                 {
                     foreach (LineaCrearReposicionDTO linea in lineas)
                     {
@@ -1444,7 +1482,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                         await viajes.MarcarLlevadaPorCompanero(empresa, numero, laLleva, momento, quien).ConfigureAwait(false);
                     }
                     return numero;
-                }).ConfigureAwait(false);
+                })).ConfigureAwait(false);
             }
 
             return new ResultadoTerminarReposicionDTO
@@ -1617,6 +1655,38 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         }
 
         // ---- privados ----
+
+        /// <summary>
+        /// Incidencia 1455 (Paloma, 25/11/26): si el disparador del inventario corta el envío (prdExtrProducto de la salida), se
+        /// leen las filas pendientes del origen y se dice cuáles son y de quién, con el mismo código de estado. Si no hay filas o la
+        /// lectura falla, el error de siempre. La transacción ya está deshecha: la reposición sigue como estaba.
+        /// </summary>
+        private async Task<T> ExplicandoInventarioPendiente<T>(string origen, IEnumerable<string> productos, string final, Func<Task<T>> trabajo)
+        {
+            try
+            {
+                return await trabajo().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (Inventarios.ErrorInventarioPendiente.EsErrorDeInventario(ex))
+            {
+                List<Inventarios.FilaInventarioSinContabilizar> pendientes = null;
+                try
+                {
+                    pendientes = await repositorio.LeerInventarioPendiente(new[] { origen }).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Explicar es cortesía: sin poder leer, el error de siempre
+                }
+                Exception traducida = ErrorInventarioPendienteReposicion.Traducir(ex, pendientes, new[] { origen }, productos?.ToList(),
+                    ahora(), final);
+                if (traducida == null)
+                {
+                    throw;
+                }
+                throw traducida;
+            }
+        }
 
         /// <summary>
         /// Cerrar la preparación, los pasos de «Contabilizar» de Nesto viejo en su orden. Con <paramref name="contabilizar"/>

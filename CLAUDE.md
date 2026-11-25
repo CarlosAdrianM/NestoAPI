@@ -824,6 +824,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Picking cortado por los disparadores del inventario («Se esta realizando el inventario del producto[1]»): `GestorPicking.EnExclusiva` lo
   traduce (`ErrorInventarioPendientePicking`, pura) a un mensaje con las filas pendientes (fuera de REI) de los productos del picking (o todas si
   no casa ninguna; 10 y «… y N más»). Es un `Exception` (INTERNAL_ERROR, sin «[CÓDIGO]» en Nesto) con el original dentro; si la consulta falla, el original.
+- **Enviar una reposición (incidencia 1455, Paloma, 25/11/26)**: núcleo común `Inventarios/ErrorInventarioPendiente` (reconocer, acotar, listar, traducir;
+  el picking delega en él sin cambiar nada). Terminar y la puntual (`ServicioPreparacionReposicion.ExplicandoInventarioPendiente`) cambian el texto por LA REGLA
+  `ErrorInventarioPendienteReposicion` («No se puede enviar la reposición: en Alcobendas hay inventario sin contabilizar (24870 TANGA…, del 24/11, de Paloma).
+  Contabilícelo o borre esa fila en Inventario y vuelva a enviarla; lo leído sigue guardado.»): las pendientes del ORIGEN (cualquier producto, las suyas
+  primero), 10 como mucho; mismo código de estado (otra `NestoBusinessException` con el del original). Sin filas o sin lectura, el original. Sin traducir
+  todavía: recibir una reposición, terminar una salida REPO/PICK de Ariadna, traspasos de almacenes ficticios, «No está», diferencias de reposición.
 
 ### Deshacer el rellenado del inventario de una tienda (12/11/26)
 - `DELETE api/Inventarios/Rellenar?almacen=REI&fecha=2026-11-12[&empresa=1]` (`ServicioDeshacerRellenarInventario`, sin UI: a mano con el token): borra

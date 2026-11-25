@@ -703,6 +703,63 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(repositorio.Estado2.All(e => e.Diario == "RepoAlcAlg" && e.Traspaso == 0), "La reposición sigue en preparación");
         }
 
+        // ---------------------------------------------------------------- Incidencia 1455: el inventario pendiente bloquea el envío
+
+        private const string ERROR_DISPARADOR_INVENTARIO = "Error al contabilizar el diario: Se esta realizando el inventario del producto " +
+            "La transacción terminó en el desencadenador. Se anuló el lote.";
+
+        private static NestoAPI.Infraestructure.Inventarios.FilaInventarioSinContabilizar FilaInventario(int orden, string almacen, string producto,
+            string descripcion, DateTime fecha, string usuario)
+        {
+            return new NestoAPI.Infraestructure.Inventarios.FilaInventarioSinContabilizar
+            {
+                NumeroOrden = orden, Empresa = "1  ", Almacen = almacen, Producto = producto, Descripcion = descripcion, Fecha = fecha, Usuario = usuario
+            };
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConInventarioPendienteDeOtroProducto_DiceQueFilaEsYDeQuienConElMismoCodigo()
+        {
+            // Caso real (Paloma, 25/11/26): la reposición lleva el 41262 y la fila pendiente es del 24870, del día anterior
+            repositorio.Lineas.Add(Fila(561483500, "41262", 1));
+            repositorio.ErrorAlContabilizar = new NestoBusinessException(ERROR_DISPARADOR_INVENTARIO);
+            repositorio.InventarioPendiente.Add(FilaInventario(948900, "ALC", "24870", "TANGA CABALLERO NEGRO", AHORA.Date.AddDays(-1), "NUEVAVISION\\Paloma"));
+            repositorio.InventarioPendiente.Add(FilaInventario(948901, "ALG", "11111", "DE OTRO ALMACÉN", AHORA.Date, "NUEVAVISION\\Pedro"));
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Terminar("1", "ALC", Paloma));
+
+            Assert.AreEqual("No se puede enviar la reposición: en Alcobendas hay inventario sin contabilizar (24870 TANGA CABALLERO NEGRO, " +
+                "del 05/10, de Paloma). Contabilícelo o borre esa fila en Inventario y vuelva a enviarla; lo leído sigue guardado.", error.Message);
+            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode, "Mismo código que el error de siempre");
+            StringAssert.Contains(error.InnerException.Message, "realizando el inventario", "El original va dentro para ELMAH");
+            CollectionAssert.Contains(repositorio.Llamadas, "LEER inventario ALC");
+            Assert.IsTrue(repositorio.Estado2.All(e => e.Diario == "RepoAlcAlg" && e.Traspaso == 0), "La reposición sigue en preparación");
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConInventarioPendiente_SiLaLecturaFalla_ElErrorDeSiempre()
+        {
+            repositorio.Lineas.Add(Fila(561483500, "41262", 1));
+            var original = new NestoBusinessException(ERROR_DISPARADOR_INVENTARIO);
+            repositorio.ErrorAlContabilizar = original;
+            repositorio.ErrorAlLeerInventario = new InvalidOperationException("sin conexión");
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Terminar("1", "ALC", Paloma));
+
+            Assert.AreSame(original, error);
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConOtroError_NiSeLeeElInventario()
+        {
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+            repositorio.ErrorAlContabilizar = new NestoBusinessException("No se puede realizar la acción. Se quedaría un stock negativo.");
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Terminar("1", "ALC", Paloma));
+
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("LEER inventario")));
+        }
+
         // ---------------------------------------------------------------- Sugerencia 753: «No está» deja el stock a 0
 
         private ServicioPreparacionReposicion ServicioConStockACero(IServicioStockACeroNoEsta stockACero)
@@ -1246,6 +1303,25 @@ namespace NestoAPI.Tests.Infrastructure
             _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioPuntual().CrearPuntual(Peticion(("41980", 1)), Paloma));
 
             Assert.AreEqual(0, repositorio.Lineas.Count, "Si algo falla no queda una reposición a medias que bloquee el job");
+            Assert.AreEqual("SOLTAR", repositorio.Llamadas.Last());
+        }
+
+        [TestMethod]
+        public async Task Puntual_ConInventarioPendiente_DiceLasFilasYQueNoSeHaMandadoNada()
+        {
+            // Incidencia 1455: la del producto de la puntual va primero
+            repositorio.Stocks["41980"] = 5;
+            repositorio.ErrorAlContabilizar = new NestoBusinessException(ERROR_DISPARADOR_INVENTARIO);
+            repositorio.InventarioPendiente.Add(FilaInventario(948900, "ALC", "24870", "TANGA", AHORA.Date.AddDays(-1), "NUEVAVISION\\Paloma"));
+            repositorio.InventarioPendiente.Add(FilaInventario(948901, "ALC", "41980", "CREMA", AHORA.Date, "Reyes"));
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(Peticion(("41980", 1)), Paloma));
+
+            Assert.AreEqual("No se puede enviar la reposición: en Alcobendas hay inventario sin contabilizar (41980 CREMA, del 06/10, de Reyes; " +
+                "24870 TANGA, del 05/10, de Paloma). Contabilícelo o borre esas filas en Inventario y vuelva a mandarla; no se ha mandado nada.",
+                error.Message);
+            Assert.AreEqual(0, repositorio.Lineas.Count);
             Assert.AreEqual("SOLTAR", repositorio.Llamadas.Last());
         }
 
@@ -2382,6 +2458,22 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Llamadas.Add($"prdExtrProducto {empresa} {diario} {usuario}");
                 return ErrorAlContabilizar != null ? Task.FromException(ErrorAlContabilizar) : Task.CompletedTask;
+            }
+
+            /// <summary>Incidencia 1455: dbo.Inventarios pendientes (Estado 1, sin traspaso).</summary>
+            public readonly List<NestoAPI.Infraestructure.Inventarios.FilaInventarioSinContabilizar> InventarioPendiente =
+                new List<NestoAPI.Infraestructure.Inventarios.FilaInventarioSinContabilizar>();
+            public Exception ErrorAlLeerInventario;
+
+            public Task<List<NestoAPI.Infraestructure.Inventarios.FilaInventarioSinContabilizar>> LeerInventarioPendiente(IEnumerable<string> almacenes)
+            {
+                List<string> lista = almacenes.ToList();
+                Llamadas.Add("LEER inventario " + string.Join(",", lista));
+                if (ErrorAlLeerInventario != null)
+                {
+                    return Task.FromException<List<NestoAPI.Infraestructure.Inventarios.FilaInventarioSinContabilizar>>(ErrorAlLeerInventario);
+                }
+                return Task.FromResult(InventarioPendiente.Where(f => lista.Contains(f.Almacen)).ToList());
             }
 
             public Task<int> MarcarRestoEstado1(string empresa, string diario)

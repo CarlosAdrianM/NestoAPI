@@ -672,6 +672,7 @@
     <Compile Include="Infraestructure\Inventarios\ServicioRellenarInventario.cs" />
     <Compile Include="Controllers\InventariosController.Contabilizar.cs" />
     <Compile Include="Infraestructure\Inventarios\ComprobadorInventario.cs" />
+    <Compile Include="Infraestructure\Inventarios\ErrorInventarioPendiente.cs" />
     <Compile Include="Infraestructure\Inventarios\HuecoInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\PermisosInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioContabilizarInventario.cs" />
@@ -1443,6 +1444,7 @@
     <Compile Include="Models\PedidosVenta\RecogidaSolicitadaDTO.cs" />
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\ListadoReposicion.cs" />
+    <Compile Include="Infraestructure\Reposiciones\ErrorInventarioPendienteReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
