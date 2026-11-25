@@ -1801,6 +1801,12 @@ Ver `StartupJwtConfigurationTests.cs` para detalles del bug y su documentación.
 | Nesto (empleados) | `/api/auth/windows-token` | `DOMINIO\Usuario` |
 | TiendasNuevaVision (clientes) | `/api/auth/token` | `email` |
 
+**ELMAH sin credenciales (25/11/26)**: el `errorLog` del Web.config es `NestoAPI.Infraestructure.ErrorLogSinCredenciales, NestoAPI` (hereda de
+`SqlErrorLog`; volver atrás = `type="Elmah.SqlErrorLog, Elmah"`). Antes de guardar, LA REGLA (pura) `ReglaElmahSinCredenciales` (`Infraestructure/
+ElmahSinCredenciales.cs`) oculta en una COPIA del error las variables, campos del formulario y parámetros cuyo nombre contiene AUTHORIZATION, COOKIE, TOKEN,
+SECRET, PASSWORD o APIKEY («(oculto)»; Authorization conserva el esquema: «Bearer (oculto)»), esas líneas dentro de ALL_HTTP/ALL_RAW, los parámetros sensibles de
+QUERY_STRING y el Referer, y todas las cookies. Nunca lanza (si falla, se guarda tal cual). Los errores ya guardados no se tocan.
+
 Related files:
 - `Infraestructure/UserSyncHandler.cs` - DelegatingHandler para sincronizar usuario
 - `App_Start/WebApiConfig.cs` - Registro del handler
