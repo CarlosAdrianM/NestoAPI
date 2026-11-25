@@ -1049,6 +1049,7 @@
     <Compile Include="Infraestructure\Clientes\AltaClienteEspecial.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RutaQueVale.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ReglaIvaContacto.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\IvaLineasPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ReglaBorrarPedidoVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AdelantoFechaEntrega.cs" />
     <Compile Include="Infraestructure\Agencias\ImpresorasAgencia.cs" />

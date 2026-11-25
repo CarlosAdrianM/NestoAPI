@@ -2401,10 +2401,9 @@ namespace NestoAPI.Controllers
                         {
                             if (pedido.iva == null)
                             {
-                                // lineaPedido.IVA = pedido.iva;
-                                lineaPedido.ImporteIVA = 0;
-                                lineaPedido.ImporteRE = 0;
-                                lineaPedido.Total = lineaPedido.Base_Imponible;
+                                // Pedidos 929956, 931502, 931561, 931592 (25/11/26): ponía a 0 los importes pero dejaba PorcentajeIVA
+                                // (21) y PorcentajeRE: pedido a medias. LA REGLA: sin IVA, todo a 0 (el código de IVA de la línea se queda).
+                                Infraestructure.PedidosVenta.ReglaIvaLineasPedido.PonerSinIva(lineaPedido);
                             }
                             else
                             {
@@ -2814,6 +2813,10 @@ namespace NestoAPI.Controllers
                     $"Líneas afectadas: {detalle}. Indica un error al crear/modificar las líneas (CK_LinPedidoVta_1).");
             }
 
+            // Pedido 931479 (25/11/26): UNA verdad para el IVA de las líneas, la cabecera tal como se guarda. Sin IVA, ninguna línea
+            // viva (-1..1) se queda con IVA, venga de donde venga (líneas de antes, nuevas, partidas, portes…).
+            AplicarIvaCabeceraAlGuardar(cabPedidoVta.IVA, lineasVivasTrasElPut.ToList(), pedido.empresa, pedido.numero, "PUT", pedido.Usuario);
+
             // NestoAPI#722: la fecha nueva en la agencia (la misma lógica que POST api/EnviosAgencias/{id}/FechaEntrega), lo último
             // antes de guardar: si la agencia la rechaza o no responde, el pedido no se guarda.
             ResultadoCambioFechaEnAgencia fechaCambiadaEnAgencia = null;
@@ -3152,6 +3155,35 @@ namespace NestoAPI.Controllers
                 new Infraestructure.PedidosVenta.LectorAmpliacionPedido(db), new Infraestructure.PedidosVenta.RepositorioAmpliacionesPedido(),
                 new Infraestructure.PedidosVenta.AvisosAmpliacionPedido()));
             set => servicioAmpliacionEnPreparacion = value;
+        }
+
+        /// <summary>
+        /// Pedido 931479 (25/11/26): lo último antes de guardar (POST y PUT). Con la cabecera sin IVA, las líneas vivas que lleven
+        /// IVA se ponen a 0 en la misma transacción (<see cref="Infraestructure.PedidosVenta.ReglaIvaLineasPedido"/>) y se apunta en
+        /// ELMAH cuáles eran, para ver qué camino las había calculado con IVA. Con IVA en la cabecera y líneas del mismo código a 0 %
+        /// y con IVA, solo ELMAH «[Pedido con IVA mixto]», sin tocar nada. El registro nunca rompe el guardado.
+        /// </summary>
+        internal static List<LinPedidoVta> AplicarIvaCabeceraAlGuardar(string ivaCabecera, IList<LinPedidoVta> lineas, string empresa, int numero,
+            string operacion, string usuario)
+        {
+            List<LinPedidoVta> normalizadas = Infraestructure.PedidosVenta.ReglaIvaLineasPedido.NormalizarSiSinIva(ivaCabecera, lineas);
+            try
+            {
+                if (normalizadas.Any())
+                {
+                    ElmahHelper.Log(new Exception(Infraestructure.PedidosVenta.ReglaIvaLineasPedido.MensajeNormalizadas(empresa, numero, operacion, usuario, normalizadas)));
+                }
+                string mixto = Infraestructure.PedidosVenta.ReglaIvaLineasPedido.MotivoIvaMixto(ivaCabecera, lineas);
+                if (mixto != null)
+                {
+                    ElmahHelper.Log(new Exception(Infraestructure.PedidosVenta.ReglaIvaLineasPedido.MensajeMixto(empresa, numero, operacion, usuario, ivaCabecera, mixto)));
+                }
+            }
+            catch (Exception)
+            {
+                // el aviso no para el guardado
+            }
+            return normalizadas;
         }
 
         // NestoAPI#200: cuando un pedido llega con iva=null la cabecera se persiste con los
@@ -3790,6 +3822,9 @@ namespace NestoAPI.Controllers
                     $"No se puede crear el pedido {pedido.numero} porque tiene {lineasConTipoNull.Count} línea(s) con tipo de línea en blanco (NULL). " +
                     $"Esto indica un error en la creación de las líneas. Líneas afectadas: {errores}");
             }
+
+            // Pedido 931479 (25/11/26): UNA verdad para el IVA de las líneas, la cabecera tal como se guarda (sin IVA, todo a 0).
+            AplicarIvaCabeceraAlGuardar(cabecera.IVA, lineasPedidoInsertar, pedido.empresa, pedido.numero, "POST", pedido.Usuario);
 
             try
             {
