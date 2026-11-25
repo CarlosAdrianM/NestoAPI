@@ -1154,6 +1154,7 @@
     <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasQuestPdf.cs" />
     <Compile Include="Infraestructure\Facturas\IGeneradorPdfFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\DocumentoFacturaDetalle.cs" />
+    <Compile Include="Infraestructure\Facturas\DocumentoNoDescargable.cs" />
     <Compile Include="Infraestructure\Facturas\ImpresionDocumentosServidor.cs" />
     <Compile Include="Infraestructure\Facturas\ImpresoraDocumentosPdfium.cs" />
     <Compile Include="Infraestructure\Facturas\ReglaImpresionDocumentos.cs" />

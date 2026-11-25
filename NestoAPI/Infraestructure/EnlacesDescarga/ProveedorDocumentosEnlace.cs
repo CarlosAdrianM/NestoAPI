@@ -31,11 +31,16 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                     int pedido = int.Parse(numero);
                     var cab = await db.CabPedidoVtas
                         .Where(c => c.Empresa == empresa && c.Número == pedido)
-                        .Select(c => new { c.Nº_Cliente, c.Contacto })
+                        .Select(c => new { c.Nº_Cliente, c.Contacto, c.IVA })
                         .FirstOrDefaultAsync().ConfigureAwait(false);
                     if (cab == null)
                     {
                         return null;
+                    }
+                    // 25/11/26: ni se crea el enlace de un pedido que no sale (empresa espejo o IVA NULL)
+                    if (ReglaDocumentoNoDescargable.NoSeSirvePedido(empresa, cab.IVA))
+                    {
+                        throw ReglaDocumentoNoDescargable.Excepcion(numero);
                     }
                     cliente = cab.Nº_Cliente;
                     contacto = cab.Contacto;
@@ -45,7 +50,7 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                 }
                 else
                 {
-                    ComprobarSeriePermitida(numero);
+                    ComprobarFacturaPermitida(empresa, numero);
                     var cab = await db.CabsFacturasVtas
                         .Where(c => c.Empresa == empresa && c.Número == numero)
                         .Select(c => new { c.Nº_Cliente, c.Contacto })
@@ -96,11 +101,13 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
             Factura documento;
             if (tipo == TiposDocumentoDescarga.PEDIDO)
             {
+                // 25/11/26: un enlace antiguo de un pedido que ahora no sale (IVA NULL) da la página de «no encontrado» (403 → GestorEnlacesDescarga)
+                new ComprobadorDocumentoDescargable(new ServicioFacturas()).ComprobarPedido(empresa, int.Parse(numero));
                 documento = gestor.LeerPedido(empresa, int.Parse(numero));
             }
             else
             {
-                ComprobarSeriePermitida(numero);
+                ComprobarFacturaPermitida(empresa, numero);
                 documento = gestor.LeerFactura(empresa, numero);
             }
             if (documento == null)
@@ -111,29 +118,15 @@ namespace NestoAPI.Infraestructure.EnlacesDescarga
                 mostrarImagenes: false, forzarQuestPdf: true).ReadAsByteArrayAsync().ConfigureAwait(false);
         }
 
-        /// <summary>Como GET api/Facturas: las series sin correo de facturas (CorreoDesdeFactura null) no se descargan.</summary>
-        private static void ComprobarSeriePermitida(string factura)
+        /// <summary>
+        /// Como GET api/Facturas, con LA REGLA (<see cref="ReglaDocumentoNoDescargable"/>): ni las series sin correo de facturas
+        /// (CorreoDesdeFactura null) ni nada de la empresa espejo.
+        /// </summary>
+        private static void ComprobarFacturaPermitida(string empresa, string factura)
         {
-            if (factura == null || factura.Length < 2)
+            if (ReglaDocumentoNoDescargable.NoSeSirveFactura(empresa, factura))
             {
-                return;
-            }
-            ISerieFactura serie;
-            try
-            {
-                serie = GestorFacturas.LeerSerie(factura.Substring(0, 2));
-            }
-            catch (Exception)
-            {
-                // Serie desconocida: dará «no existe» después
-                return;
-            }
-            if (serie != null && serie.CorreoDesdeFactura == null)
-            {
-                throw new NestoBusinessException($"Las facturas de la serie {factura.Substring(0, 2)} no se pueden descargar.")
-                {
-                    StatusCode = HttpStatusCode.Forbidden
-                };
+                throw ReglaDocumentoNoDescargable.Excepcion(factura);
             }
         }
     }

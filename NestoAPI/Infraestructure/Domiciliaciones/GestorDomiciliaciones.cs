@@ -265,6 +265,11 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                         {
                             continue;
                         }
+                        // 25/11/26: ni la empresa espejo ni una serie sin descarga (GB) van adjuntas (ReglaDocumentoNoDescargable)
+                        if (ReglaDocumentoNoDescargable.NoSeSirveFactura(efecto.Empresa, doc.NumeroDocumento))
+                        {
+                            continue;
+                        }
 
                         Factura factura = gestorFacturas.LeerFactura(efecto.Empresa, doc.NumeroDocumento);
                         if (factura == null)

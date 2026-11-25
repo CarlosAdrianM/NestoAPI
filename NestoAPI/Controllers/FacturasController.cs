@@ -45,7 +45,15 @@ namespace NestoAPI.Controllers
             this.gestor = gestor;
         }
 
-        internal const string MOTIVO_SOLO_EMPLEADOS_CORREO = "Solo los empleados pueden enviar facturas por correo.";
+        /// <summary>25/11/26: LA REGLA de los documentos que no salen (<see cref="ReglaDocumentoNoDescargable"/>), con la cabecera del pedido.</summary>
+        internal ComprobadorDocumentoDescargable Comprobador
+        {
+            get => comprobador ?? (comprobador = new ComprobadorDocumentoDescargable(servicio));
+            set => comprobador = value;
+        }
+        private ComprobadorDocumentoDescargable comprobador;
+
+        internal const string MOTIVO_SOLO_EMPLEADOS_CORREO ="Solo los empleados pueden enviar facturas por correo.";
 
         /// <summary>NestoAPI#723: cambia el P.O. de una factura emitida (empresa, número, P.O., usuario) → el anterior. Sustituible en los tests.</summary>
         internal Func<string, string, string, string, Task<string>> CambiarSuPedidoFactura { get; set; } = async (empresa, numero, suPedido, usuario) =>
@@ -135,27 +143,15 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_FACTURAS_PROPIAS_VER);
             }
 
-            // CONTROL DE SEGURIDAD: Bloquear acceso a facturas de series que no permiten descarga
-            // (series con CorreoDesdeFactura == null no se pueden descargar)
-            if (numeroFactura.Length >= 2)
+            // CONTROL DE SEGURIDAD (25/11/26): LA REGLA de lo que no sale (empresa espejo, serie sin descarga como GB, o un
+            // pedido que va a la espejo: IVA de la cabecera NULL)
+            try
             {
-                try
-                {
-                    string codigoSerie = numeroFactura.Substring(0, 2);
-                    ISerieFactura serieFactura = GestorFacturas.LeerSerie(codigoSerie);
-
-                    if (serieFactura.CorreoDesdeFactura == null)
-                    {
-                        string mensajeError = $"No está permitido acceder a facturas de la serie {codigoSerie}. Esta serie no permite descarga por motivos de seguridad.";
-                        System.Diagnostics.Debug.WriteLine($"❌ SEGURIDAD: Intento de acceso a factura bloqueada: {numeroFactura}");
-                        return Content(HttpStatusCode.Forbidden, mensajeError);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Si no se puede leer la serie, permitir continuar (puede ser una serie inexistente que dará error después)
-                    System.Diagnostics.Debug.WriteLine($"⚠ Advertencia: No se pudo validar serie de factura {numeroFactura}: {ex.Message}");
-                }
+                Comprobador.ComprobarDocumento(empresa, numeroFactura);
+            }
+            catch (Infraestructure.Exceptions.NestoBusinessException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return Content(HttpStatusCode.Forbidden, ex.Message);
             }
 
             Factura factura = gestor.LeerFactura(empresa, numeroFactura);
@@ -181,31 +177,19 @@ namespace NestoAPI.Controllers
 
             try
             {
-                // CONTROL DE SEGURIDAD: Bloquear descarga de PDFs de series que no permiten descarga
-                // (series con CorreoDesdeFactura == null no se pueden descargar)
-                if (numeroFactura.Length >= 2)
+                // CONTROL DE SEGURIDAD (25/11/26): LA REGLA de lo que no sale (empresa espejo, serie sin descarga como GB, o
+                // el PDF de un pedido —proforma, presupuesto, nota— que va a la espejo: IVA de la cabecera NULL)
+                try
                 {
-                    try
+                    Comprobador.ComprobarDocumento(empresa, numeroFactura);
+                }
+                catch (NestoAPI.Infraestructure.Exceptions.NestoBusinessException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Forbidden)
                     {
-                        string codigoSerie = numeroFactura.Substring(0, 2);
-                        ISerieFactura serieFactura = GestorFacturas.LeerSerie(codigoSerie);
-
-                        if (serieFactura.CorreoDesdeFactura == null)
-                        {
-                            string mensajeError = $"No está permitido descargar PDFs de la serie {codigoSerie}. Esta serie no permite descarga por motivos de seguridad.";
-                            System.Diagnostics.Debug.WriteLine($"❌ SEGURIDAD: Intento de descarga de PDF bloqueado: {numeroFactura}");
-                            return new HttpResponseMessage(HttpStatusCode.Forbidden)
-                            {
-                                Content = new StringContent(mensajeError),
-                                ReasonPhrase = "Serie no permitida"
-                            };
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // Si no se puede leer la serie, permitir continuar (puede ser una serie inexistente que dará error después)
-                        System.Diagnostics.Debug.WriteLine($"⚠ Advertencia: No se pudo validar serie de factura {numeroFactura}: {ex.Message}");
-                    }
+                        Content = new StringContent(ex.Message),
+                        ReasonPhrase = "Documento no descargable"
+                    };
                 }
 
                 FacturaLookup factura = new FacturaLookup { Empresa = empresa, Factura = numeroFactura };
@@ -303,6 +287,12 @@ namespace NestoAPI.Controllers
             if (envio == null)
             {
                 return BadRequest("Faltan las facturas y el correo.");
+            }
+            // 25/11/26: nada de la empresa espejo sale por correo (las de una serie sin descarga, como hoy, las omite el gestor)
+            if (ReglaDocumentoNoDescargable.EsEmpresaEspejo(envio.Empresa))
+            {
+                string primera = envio.Facturas?.FirstOrDefault(f => !string.IsNullOrWhiteSpace(f));
+                return Content(HttpStatusCode.Forbidden, ReglaDocumentoNoDescargable.Mensaje(primera));
             }
             if (clienteTienda != null)
             {

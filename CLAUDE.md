@@ -1420,6 +1420,20 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (AlImprimir). TramitarTodos (GLS) lo salta (`Resultado` EsperandoCaja). La propuesta de envío no reutiliza ese pendiente. Sin las tablas o si
   falla la comprobación: no actúa (ELMAH). EntregadoPorLaAgencia sigue igual. Devueltos trae HaVuelto/FechaHaVuelto/UsuarioHaVuelto/ComoHaVuelto/ReenvioEsperandoCaja.
 
+### Documentos que no salen: empresa espejo, serie GB y pedidos sin IVA (Carlos 25/11/26)
+- LA REGLA (pura) `ReglaDocumentoNoDescargable` (`Infraestructure/Facturas/DocumentoNoDescargable.cs`): no sale hacia fuera (a) nada de la empresa
+  espejo (3), (b) una factura de una serie sin descarga (`CorreoDesdeFactura` null: GB, lo de siempre) ni (c) el pedido, albarán, proforma,
+  presupuesto o nota de un pedido que va a la espejo (`ServicioTraspasoEmpresa.VaAEmpresaEspejo(cab.IVA)`: IVA NULL o en blanco). 403 con un
+  único texto «El documento {número} no se puede descargar.». `ComprobadorDocumentoDescargable` lee la cabecera (pedido o albarán que no
+  existe: sigue y da su «no existe»).
+- Salidas: GET api/Facturas (PDF; número entero = pedido) y api/Facturas/FacturaJson, GET api/AlbaranesVenta, POST api/Facturas/EnviarPorCorreo
+  (empresa 3), enlace de descarga/WhatsApp (`ProveedorDocumentosEnlace`: ni se crea ni se sirve; un enlace antiguo da la página de «no
+  encontrado»), correo del pedido (`ProveedorDocumentosCorreo.PdfPedido`), envío diario y trimestral (fuera la empresa 3) y adjuntos de las
+  domiciliaciones (ni espejo ni GB). El correo de agencias ya lo hacía desde 2020 (`GestorEnviosAgencia`, IVA null o pedido en la 3).
+- NO pasa por aquí (interno, a propósito: la regla no está dentro de `GestorFacturas.LeerPedido/LeerAlbaran`): Facturar rutas y su impresión,
+  `DocumentosImpresion` (cobro en caja), `CrearFactura` en papel, documento de la nota de entrega/recogida, packing, etiquetas, correo
+  interno del pedido, prueba de entrega. Por decidir: Facturae, 347 de la empresa 3, facturas a Amazon.
+
 ### Facturae para FACe por B2Brouter (NestoAPI#903, 24/11/26; gemela Nesto)
 - Cinco o seis facturas al año a organismos públicos: la API genera el fichero Facturae 3.2.2 SIN firmar de una factura YA emitida y Carlos lo
   importa en b2brouter.net («importar factura emitida»), que lo firma y lo manda a FACe. Nada de certificados, firma ni envío. Solo LECTURA.

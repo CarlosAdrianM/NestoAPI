@@ -28,11 +28,16 @@ namespace NestoAPI.Infraestructure.EnvioDocumentosCorreo
                 db.Configuration.LazyLoadingEnabled = false;
                 var cab = await db.CabPedidoVtas
                     .Where(c => c.Empresa == empresa && c.Número == numero)
-                    .Select(c => new { c.Serie, c.Nº_Cliente, c.Contacto })
+                    .Select(c => new { c.Serie, c.Nº_Cliente, c.Contacto, c.IVA })
                     .FirstOrDefaultAsync().ConfigureAwait(false);
                 if (cab == null)
                 {
                     return null;
+                }
+                // 25/11/26: el PDF de un pedido que va a la empresa espejo (IVA NULL), o de la espejo, no sale por correo
+                if (ReglaDocumentoNoDescargable.NoSeSirvePedido(empresa, cab.IVA))
+                {
+                    throw ReglaDocumentoNoDescargable.Excepcion(numero.ToString());
                 }
                 serie = cab.Serie;
                 cliente = cab.Nº_Cliente?.Trim();

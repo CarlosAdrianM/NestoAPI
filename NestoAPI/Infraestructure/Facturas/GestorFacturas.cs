@@ -1229,6 +1229,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 System.Diagnostics.Debug.WriteLine(mensajeError);
                 throw new InvalidOperationException(mensajeError);
             }
+            // 25/11/26: nada de la empresa espejo sale hacia fuera (ReglaDocumentoNoDescargable)
+            facturasCorreo = facturasCorreo.Where(f => !ReglaDocumentoNoDescargable.EsEmpresaEspejo(f.Empresa)).ToList();
 
             var provisionalesPorCorreo = new Dictionary<MailMessage, List<FacturaCorreo>>();
             List<MailMessage> listaCorreos = await ConstruirCorreosFacturasDia(facturasCorreo, provisionalesPorCorreo);
@@ -1684,6 +1686,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     System.Diagnostics.Debug.WriteLine(mensajeError);
                     continue; // Saltar este cliente completo
                 }
+                // 25/11/26: nada de la empresa espejo sale hacia fuera (ReglaDocumentoNoDescargable)
+                facturasCorreo = facturasCorreo.Where(f => !ReglaDocumentoNoDescargable.EsEmpresaEspejo(f.Empresa)).ToList();
 
                 // Verificar si alguna factura es de una serie que permite envío por email
                 bool todasSeriesBloqueadas = true;

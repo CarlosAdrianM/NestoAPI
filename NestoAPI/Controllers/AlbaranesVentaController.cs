@@ -30,6 +30,20 @@ namespace NestoAPI.Controllers
         [HttpGet]
         public async Task<HttpResponseMessage> GetAlbaran(string empresa, int numeroAlbaran, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
+            // 25/11/26: LA REGLA de los documentos que no salen (empresa espejo o albarán de un pedido con IVA NULL)
+            try
+            {
+                new ComprobadorDocumentoDescargable(_servicioFacturas).ComprobarAlbaran(empresa, numeroAlbaran);
+            }
+            catch (Infraestructure.Exceptions.NestoBusinessException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent(ex.Message),
+                    ReasonPhrase = "Documento no descargable"
+                };
+            }
+
             FacturaLookup albaran = new FacturaLookup { Empresa = empresa, Factura = numeroAlbaran.ToString() };
             List<FacturaLookup> lista = new List<FacturaLookup>
             {
