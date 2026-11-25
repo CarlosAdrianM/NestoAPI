@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento;
@@ -592,6 +592,104 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
             Assert.AreEqual(220960, fila.PedidoAplicado);
             Assert.IsTrue(repositorio.Lineas[220960].All(l => l.FechaRecepcion == new DateTime(2026, 11, 19)));
         }
+
+        #region NestoAPI#905: el proveedor por el nombre del remitente del paquete (caso Postquam, correos 25 y 31)
+
+        private static readonly string SEUR_POSTQUAM_31 = SEUR_PREVISTA_HTML.Replace("PV26-56989", "PV26-57984");
+
+        private void PedidosDelCasoPostquam()
+        {
+            repositorio.AnadirPedido(220921, "451", "POSTQUAM COSMETIC, S.L.", new DateTime(2026, 11, 16, 10, 0, 0), new DateTime(2026, 12, 2), new DateTime(2026, 12, 2));
+            repositorio.AnadirPedido(220930, "65", "MAYSTAR, S.L.", new DateTime(2026, 11, 17, 10, 0, 0), new DateTime(2026, 12, 2));
+            repositorio.AnadirPedido(220935, "1080", "COSMETICOS INVENTADOS, S.L.", new DateTime(2026, 11, 17, 11, 0, 0), new DateTime(2026, 12, 2));
+        }
+
+        [TestMethod]
+        public async Task Job_SeurDePostquam_SinMemoria_VaAlUnicoPedidoDePostquamYLoRecuerda()
+        {
+            PedidosDelCasoPostquam();
+
+            await Pasada(Correo("infoenvios@mail.seur.info", SEUR_PREVISTA_ASUNTO, SEUR_POSTQUAM_31, ahora.AddMinutes(-20), html: true));
+
+            CorreoSeguimientoFila fila = repositorio.Correos.Single();
+            Assert.AreEqual("postquam", fila.RemitentePaquete);
+            Assert.AreEqual("451", fila.ProveedorPropuesto, "Antes: por asignar sin proveedor ni candidatos");
+            CandidatoPedidoCompra candidato = AsignadorPedidosCompra.Deserializar(fila.PedidosCandidatos).Single();
+            Assert.AreEqual(220921, candidato.Pedido);
+            Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE, candidato.Motivo);
+            Assert.AreEqual(220921, fila.PedidoAplicado, "Un solo pedido en el aire de ese proveedor: inequívoco");
+            Assert.IsTrue(repositorio.Lineas[220921].All(l => l.FechaRecepcion == new DateTime(2026, 11, 19)));
+            RemitentePaqueteRecordado recordado = repositorio.RemitentesPaquete.Single();
+            Assert.AreEqual("postquam", recordado.RemitentePaquete);
+            Assert.AreEqual("451", recordado.Proveedor);
+            Assert.AreEqual(ServicioAplicacionCorreosCompras.APLICADO_POR_AUTOMATICO, recordado.Usuario);
+            Assert.AreEqual(0, errores.Count, string.Join(" | ", errores.Select(e => e.Message)));
+        }
+
+        [TestMethod]
+        public async Task Job_SeurDePostquam_ConDosPedidosSuyos_QuedaPorAsignarConLosDos()
+        {
+            PedidosDelCasoPostquam();
+            repositorio.AnadirPedido(220940, "451", "POSTQUAM COSMETIC, S.L.", new DateTime(2026, 11, 17, 12, 0, 0), new DateTime(2026, 12, 3));
+
+            await Pasada(Correo("infoenvios@mail.seur.info", SEUR_PREVISTA_ASUNTO, SEUR_POSTQUAM_31, ahora.AddMinutes(-20), html: true));
+
+            CorreoSeguimientoFila fila = repositorio.Correos.Single();
+            Assert.IsNull(fila.PedidoAplicado);
+            CollectionAssert.AreEquivalent(new[] { 220921, 220940 }, AsignadorPedidosCompra.Deserializar(fila.PedidosCandidatos).Select(c => c.Pedido).ToList());
+            Assert.AreEqual(0, repositorio.RemitentesPaquete.Count, "Sin acertar el pedido no se recuerda");
+        }
+
+        [TestMethod]
+        public void Asignar_FalsoAmigo_DosProveedoresConLaMismaPalabra_NoDaNinguno()
+        {
+            var enAire = new List<PedidoCompraEnAire>
+            {
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 1, Proveedor = "451", NombreProveedor = "POSTQUAM COSMETIC, S.L." },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 2, Proveedor = "999", NombreProveedor = "POSTQUAM IBERICA DISTRIBUCIONES SL" }
+            };
+            var correo = new CorreoCompras { Asunto = "Tu envío", Cuerpo = "Tu envío PV26-57984 de Postquam está en camino.", RemitenteDireccion = "infoenvios@mail.seur.info" };
+
+            AsignacionPedidoCompra a = AsignadorPedidosCompra.Asignar(correo, null, enAire, "postquam");
+
+            Assert.AreEqual(0, a.Candidatos.Count);
+        }
+
+        [TestMethod]
+        public void ReglaNombreRemitentePaquete_PalabrasGenericasYCortasNoCuentan()
+        {
+            CollectionAssert.AreEquivalent(new[] { "POSTQUAM" }, ReglaNombreRemitentePaquete.PalabrasDistintivas("POSTQUAM COSMETIC, S.L.").ToList());
+            Assert.AreEqual(0, ReglaNombreRemitentePaquete.PalabrasDistintivas("Cosmetic Distribuciones S.A.").Count);
+            Assert.AreEqual(0, ReglaNombreRemitentePaquete.PalabrasDistintivas("ABC LUX SL").Count, "Menos de 5 letras");
+            var enAire = new[]
+            {
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 1, Proveedor = "451", NombreProveedor = "POSTQUAM COSMETIC, S.L." },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 2, Proveedor = "500", NombreProveedor = "OTRA COSMETIC SL" }
+            };
+            Assert.AreEqual(0, ReglaNombreRemitentePaquete.Pedidos(enAire, "cosmetic s.l").Count, "Una palabra genérica no casa a nadie");
+            Assert.AreEqual(1, ReglaNombreRemitentePaquete.Pedidos(enAire, "Postquam Cosmetic, S.L.").Single().Pedido);
+            Assert.AreEqual(0, ReglaNombreRemitentePaquete.Pedidos(enAire, "postquamx").Count, "Palabra entera");
+        }
+
+        [TestMethod]
+        public void Asignar_LaMemoriaYElNumeroVanPorDelanteDelNombreDelRemitente()
+        {
+            var enAire = new List<PedidoCompraEnAire>
+            {
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 220921, Proveedor = "451", NombreProveedor = "POSTQUAM COSMETIC, S.L." },
+                new PedidoCompraEnAire { Empresa = "1", Pedido = 220930, Proveedor = "65", NombreProveedor = "MAYSTAR, S.L." }
+            };
+            var correo = new CorreoCompras { Asunto = "Tu envío", Cuerpo = "Tu envío de Postquam está en camino. Pedido 220930", RemitenteDireccion = "infoenvios@mail.seur.info" };
+            Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_NUMERO, AsignadorPedidosCompra.Asignar(correo, null, enAire, "postquam").Candidatos.Single().Motivo);
+
+            correo = new CorreoCompras { Asunto = "Tu envío", Cuerpo = "Tu envío de Postquam está en camino.", RemitenteDireccion = "infoenvios@mail.seur.info" };
+            var recordados = new[] { new RemitentePaqueteRecordado { RemitentePaquete = "postquam", Empresa = "1", Proveedor = "65" } };
+            CandidatoPedidoCompra c = AsignadorPedidosCompra.Asignar(correo, null, enAire, "postquam", recordados).Candidatos.Single();
+            Assert.AreEqual(AsignadorPedidosCompra.MOTIVO_REMITENTE_PAQUETE, c.Motivo, "La memoria de Compras manda");
+            Assert.AreEqual(220930, c.Pedido);
+        }
+
+        #endregion
 
         [TestMethod]
         public async Task Reanalizar_InsertaLosQueAntesNoSeGuardaban_SinAplicar()

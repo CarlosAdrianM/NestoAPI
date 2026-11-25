@@ -323,6 +323,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 string origen = ReglaFechaRecepcionPorCorreo.Origen(decision.Correos);
                 // 20/11/26: los correos de la agencia heredan las líneas del aviso del proveedor de su mismo envío
                 List<LineaAvisoSalida> lineasAviso = LineasAvisoCorreo.DelEnvio(decision.Correos);
+                bool algunoAplicado = false;
                 foreach (CorreoSeguimientoFila fila in pendientes)
                 {
                     ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, unico.Empresa, unico.Pedido, false, APLICADO_POR_AUTOMATICO,
@@ -331,7 +332,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     {
                         registrar(new Exception($"[Correos de seguimiento de compras #857] (informativo) No se ha aplicado el correo {fila.Id} al pedido {unico.Pedido}: {resultado.Mensaje}"));
                     }
+                    algunoAplicado |= resultado.Codigo == CodigoOperacionCorreoCompra.Ok;
                     Anotar(desenlaces, new[] { fila }.Where(nuevas.Contains), DesenlaceAplicacion(resultado, unico, fecha));
+                }
+                if (algunoAplicado)
+                {
+                    await RecordarRemitenteAcertado(decision.Correos, unico).ConfigureAwait(false);
                 }
                 // Los nuevos que ya estaban aplicados (no pendientes): misma fecha
                 Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado
@@ -342,6 +348,29 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             }
             Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado { Desenlace = DesenlaceCorreoSeguimiento.PorAsignar, Candidatos = decision.Candidatos.Count });
             return heredados; // por asignar: el aviso lo da AvisarPendientes, cuando el envío lleva un rato sin correos nuevos
+        }
+
+        /// <summary>
+        /// NestoAPI#905: el envío se ha aplicado a un pedido del proveedor que se reconoció por el NOMBRE del remitente del paquete: ese remitente
+        /// pasa a la memoria (dbo.ComprasRemitentesPaquete), como si Compras lo hubiera asignado con «recordar». Nunca lanza.
+        /// </summary>
+        private async Task RecordarRemitenteAcertado(List<CorreoSeguimientoFila> correos, CandidatoPedidoCompra pedido)
+        {
+            string remitente = ReglaRecordarRemitentePaquete.QueRecordar(correos, pedido);
+            if (remitente == null)
+            {
+                return;
+            }
+            try
+            {
+                _ = await repositorio.GuardarRemitentePaquete(remitente, pedido.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    pedido.Proveedor.Trim(), APLICADO_POR_AUTOMATICO).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #905] No se ha podido recordar el remitente del paquete «{remitente}» " +
+                    $"para el proveedor {pedido.Proveedor}: {ex.Message}", ex));
+            }
         }
 
         /// <summary>NestoAPI#865: qué ha pasado al aplicar un correo nuevo, para la cabecera del reenvío. PURA.</summary>

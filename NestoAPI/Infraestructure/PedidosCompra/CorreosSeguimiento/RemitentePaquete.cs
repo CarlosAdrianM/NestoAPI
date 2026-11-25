@@ -19,6 +19,73 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     }
 
     /// <summary>
+    /// NestoAPI#905 (Carlos 24/11/26, caso Postquam: SEUR «Tu envío PV26-57984 de Postquam» quedaba por asignar aunque POSTQUAM COSMETIC, S.L.
+    /// solo tenía un pedido en el aire): el remitente del paquete que nombra la agencia se compara con el NOMBRE de los proveedores con pedidos
+    /// en el aire, cuando ningún otro criterio ha dado proveedor. PURA. Casan si comparten una palabra DISTINTIVA entera (sin forma
+    /// societaria, tildes ni mayúsculas; <see cref="LONGITUD_MINIMA"/> letras o más; nunca una genérica, <see cref="Genericas"/>). Solo si
+    /// casa UN proveedor: dos que comparten la palabra (el falso amigo) no dan ninguno.
+    /// </summary>
+    public static class ReglaNombreRemitentePaquete
+    {
+        public const int LONGITUD_MINIMA = 5;
+
+        /// <summary>Palabras que muchos proveedores llevan en el nombre y no distinguen a ninguno (en mayúsculas y sin tildes).</summary>
+        internal static readonly HashSet<string> Genericas = new HashSet<string>
+        {
+            "COSMETIC", "COSMETICS", "COSMETICA", "COSMETICAS", "COSMETICO", "COSMETICOS", "COSMETIQUE", "BEAUTY", "BELLEZA", "ESTETICA", "ESTETICO",
+            "DISTRIBUCION", "DISTRIBUCIONES", "DISTRIBUIDORA", "DISTRIBUIDOR", "DISTRIBUTION", "DISTRIBUTIONS", "DISTRIBUTOR", "PRODUCTOS", "PRODUCTS",
+            "PRODUCT", "COMERCIAL", "COMERCIALES", "COMERCIO", "INTERNACIONAL", "INTERNATIONAL", "GROUP", "GRUPO", "INDUSTRIAS", "INDUSTRIAL",
+            "LABORATORIO", "LABORATORIOS", "LABORATORIES", "PROFESIONAL", "PROFESSIONAL", "IBERICA", "ESPANA", "SPAIN", "EUROPA", "EUROPE",
+            "TRADING", "IMPORT", "EXPORT", "IMPORTACIONES", "EXPORTACIONES", "STORE", "TIENDA", "ONLINE", "SERVICIOS", "SERVICES", "LOGISTICA",
+            "LOGISTICS", "SOLUTIONS", "SOLUCIONES", "SISTEMAS", "SYSTEMS", "PELUQUERIA", "HAIRDRESSING", "NATURAL", "NATURE", "CENTRO", "COMPANY",
+            "COMPANIA", "HOLDING", "IBERIA", "MADRID", "BARCELONA", "VALENCIA", "SEVILLA", "GLOBAL", "MARKETING", "PHARMA", "FARMA", "MEDICAL"
+        };
+
+        /// <summary>Las palabras distintivas de un nombre: «POSTQUAM COSMETIC, S.L.» → { POSTQUAM }.</summary>
+        public static HashSet<string> PalabrasDistintivas(string nombre)
+        {
+            return new HashSet<string>(AsignadorPedidosCompra.NombreSinSociedad(nombre)
+                .Split(' ')
+                .Where(p => p.Length >= LONGITUD_MINIMA && p.Count(char.IsLetter) >= LONGITUD_MINIMA && !Genericas.Contains(p)));
+        }
+
+        /// <summary>Los pedidos en el aire del ÚNICO proveedor cuyo nombre casa con el remitente del paquete; vacío si ninguno o varios.</summary>
+        public static List<PedidoCompraEnAire> Pedidos(IEnumerable<PedidoCompraEnAire> enAire, string remitentePaquete)
+        {
+            HashSet<string> delRemitente = PalabrasDistintivas(remitentePaquete);
+            List<PedidoCompraEnAire> pedidos = (enAire ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
+            if (!delRemitente.Any() || !pedidos.Any())
+            {
+                return new List<PedidoCompraEnAire>();
+            }
+            List<PedidoCompraEnAire> casan = pedidos.Where(p => PalabrasDistintivas(p.NombreProveedor).Overlaps(delRemitente)).ToList();
+            int proveedores = casan.Select(p => p.Proveedor?.Trim() ?? string.Empty).Distinct(System.StringComparer.OrdinalIgnoreCase).Count();
+            return proveedores == 1 ? casan : new List<PedidoCompraEnAire>();
+        }
+    }
+
+    /// <summary>NestoAPI#905: qué remitente del paquete se recuerda al acertar por su nombre. PURA.</summary>
+    public static class ReglaRecordarRemitentePaquete
+    {
+        /// <summary>
+        /// El remitente (normalizado) de un correo del envío cuyos candidatos propios salieron por <see cref="AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE"/>
+        /// con el proveedor del pedido aplicado; null si no hay ninguno.
+        /// </summary>
+        public static string QueRecordar(IEnumerable<CorreoSeguimientoFila> correos, CandidatoPedidoCompra pedido)
+        {
+            if (pedido == null || string.IsNullOrWhiteSpace(pedido.Proveedor))
+            {
+                return null;
+            }
+            return (correos ?? Enumerable.Empty<CorreoSeguimientoFila>())
+                .Where(f => f != null && MismoEnvio.Propios(f).Any(c => c.Motivo == AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE
+                    && string.Equals(c.Proveedor?.Trim(), pedido.Proveedor.Trim(), System.StringComparison.OrdinalIgnoreCase)))
+                .Select(f => ExtractorRemitentePaquete.Normalizar(f.RemitentePaquete))
+                .FirstOrDefault(r => r != null);
+        }
+    }
+
+    /// <summary>
     /// NestoAPI#857 (fase 3): QUIÉN EXPIDE el paquete según el aviso de la agencia, que no siempre es el proveedor (caso real de UPS,
     /// 12/11/26: «¡Tu paquete está de camino!» / «De MBE STORE C/O MULTIBOXES S.L»: una tienda de Mail Boxes que envía por un
     /// proveedor). PURA. Por este orden: (1) tras una etiqueta «Remitente:», «Expedidor:», «Enviado por:» o «Shipper:» en cualquier

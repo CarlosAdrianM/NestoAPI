@@ -765,6 +765,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - **Mismo envío** (`MismoEnvio`, puro, sin columna): correos que comparten un código (Codigo + Seguimientos) con < 10 días; se deciden juntos al final
   de la tanda (caso UPS ×3 + MBE con el proveedor). Heredan los candidatos (motivo `MismoEnvio`); uno aplicado fija el pedido de los demás. Remitente del
   paquete (`ExtractorRemitentePaquete`, columna `RemitentePaquete`) y su memoria `ComprasRemitentesPaquete` (motivo `RemitentePaquete`, tras el número).
+  **Por el nombre del remitente (NestoAPI#905, caso Postquam/SEUR PV26-57984, 25/11/26)**: si ningún criterio da proveedor, LA REGLA (pura)
+  `ReglaNombreRemitentePaquete` (`RemitentePaquete.cs`) compara el remitente con el nombre de los proveedores con pedidos en el aire: palabra
+  DISTINTIVA entera (sin forma societaria, tildes ni mayúsculas; ≥ 5 letras; nunca las genéricas, `Genericas`: COSMETIC, DISTRIBUCIONES…) y solo
+  si casa UN proveedor (el falso amigo no da ninguno). Motivo `NombreRemitentePaquete`, el último (tras número, memoria, correo, dominio y nombre;
+  también sirve para dar por bueno un número suelto). Un pedido suyo → inequívoco; varios → por asignar. Aplicado el envío, el remitente pasa a
+  la memoria (`ReglaRecordarRemitentePaquete`, usuario «(automático)»; nunca rompe). Sin script.
   Por asignar: UNA campana `CompraSeguimientoPorAsignar` a Compras por envío (`AvisarPendientes`, 20 min después de su último correo).
 - `GET …/PorAsignar?dias=7` (por envío; candidatos con FechaEnvio, LineasPendientes/YaRecibidas y `Sugerido` = el enviado más reciente antes del primer
   correo, `ReglaPedidoSugerido`), `POST …/Correos/{id}/Asignar[?reasignar=true]` {Empresa, Pedido, RecordarRemitente} (también con el interruptor
