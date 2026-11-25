@@ -979,6 +979,7 @@
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoAvisoSalidaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoBoletinesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoDosNivelesTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoControlPendientesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoLineasAvisoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoIntermediariosTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\HistoricoCorreosComprasTests.cs" />

@@ -829,6 +829,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   casar ninguna, todo el pedido. Columnas `LineasAviso`/`LineasAplicadas` (`Scripts/Issue857h_ComprasCorreosLineasAplicadas.sql`; sin ellas, la fecha a todo
   el pedido). Certeza (#853/#869): un correo con `LineasAplicadas` solo da seguimiento a las líneas de esos PRODUCTOS (`ReglaSeguimientoAgencia.Vigente(…, producto)`).
   GET …/Correos y …/PorAsignar: `LineasAviso`, `LineasCasadas`, `LineasAplicadas`. Reenvío: «Fecha de recepción del 26/11 al 24/11 en 2 líneas del pedido…: 32831 (2 uds.) y 40695 (1 ud.).»
+- **Control de pendientes (NestoAPI#897, regla de Carlos 25/11/26; caso Maystar 220093/220983/220993, DHL 4313144450)**: en un proveedor con
+  `Proveedores.ControlPendientes` (en `PedidoCompraEnAire`, con `FechaPrimerEnvio` de `PedidosCompraEnvios` si está la tabla) y varios candidatos de
+  ÉL, sin nuestro número, PDF, líneas del aviso ni confirmación, LA REGLA (pura) `ReglaControlPendientes` (`ControlPendientesCorreo.cs`): «de pendientes»
+  = alguna línea ya recibida o enviado (primer envío o [Fecha Modificación]) más de N días antes del correo (ParametrosUsuario «(defecto)»
+  `Compras.DiasPedidoDePendientes`, 30 sin fila; se lee solo si hay algo que decidir y nunca crea fila): nunca recibe la fecha por esta regla. De los
+  demás enviados ANTES del correo: uno → ese; varios → el MÁS ANTIGUO (el otro puede venir agrupado: no se toca); ninguno → por asignar. Un solo
+  candidato con motivo `ControlPendientes` y `Explicacion` en el JSON de candidatos («MAYSTAR, S.L. tiene control de pendientes: se asigna al pedido
+  en curso más antiguo, 220983; el 220093 es de pendientes y el 220993 puede venir en el mismo envío.»), que va al reenvío y al rastro (`PorQuePedido`).
+  Job y Reanalizar (el histórico no). `GET …/PorAsignar`: cada candidato con `DePendientes` y `MotivoDePendientes`. Bultos y kilos: los lee SOLO la
+  clase de la agencia (`IBultosKilosAgencia`, hoy DHL: «Bultos.....: 8», «Kilos.......: 123»), al vuelo del `Extracto`: `Bultos`/`Kilos` en GET
+  …/Correos y …/PorAsignar y «Bultos: 8 bultos, 123 kg» en el reenvío; nunca deciden. Sin script.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

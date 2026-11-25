@@ -27,6 +27,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int LineasPendientes { get; set; }
         /// <summary>Fase 3: líneas ya albaraneadas del pedido (si hay, lo pendiente es un resto).</summary>
         public int LineasYaRecibidas { get; set; }
+        /// <summary>NestoAPI#897: Proveedores.ControlPendientes (lo que no tienen se queda en el aire y lo mandan con otro pedido).</summary>
+        public bool ControlPendientes { get; set; }
+        /// <summary>NestoAPI#897: PedidosCompraEnvios.FechaEnvio (el primer envío; null sin Scripts/Issue853 o sin fila).</summary>
+        public DateTime? FechaPrimerEnvio { get; set; }
     }
 
     public class CandidatoPedidoCompra
@@ -36,6 +40,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string Proveedor { get; set; }
         /// <summary><see cref="AsignadorPedidosCompra.MOTIVO_NUMERO"/>, _CORREO, _DOMINIO o _NOMBRE.</summary>
         public string Motivo { get; set; }
+        /// <summary>NestoAPI#897: por qué se ha elegido este pedido (control de pendientes); solo viaja si lo hay.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Explicacion { get; set; }
     }
 
     public class AsignacionPedidoCompra
@@ -79,6 +86,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const string MOTIVO_LINEAS_AVISO = "LineasAviso";
         /// <summary>NestoAPI#905: el remitente del paquete que nombra la agencia casa con el nombre de UN proveedor (<see cref="ReglaNombreRemitentePaquete"/>).</summary>
         public const string MOTIVO_NOMBRE_REMITENTE_PAQUETE = "NombreRemitentePaquete";
+        /// <summary>NestoAPI#897: proveedor con control de pendientes: el pedido en curso más antiguo (<see cref="ReglaControlPendientes"/>).</summary>
+        public const string MOTIVO_CONTROL_PENDIENTES = "ControlPendientes";
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 
