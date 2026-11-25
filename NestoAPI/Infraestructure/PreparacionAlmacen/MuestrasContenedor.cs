@@ -337,14 +337,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
     public interface IServicioEtiquetasMuestras
     {
-        /// <exception cref="ArgumentException">Almacén que no vale, demasiadas etiquetas o usuario sin impresora: el motivo es para el usuario.</exception>
+        /// <exception cref="ArgumentException">Almacén o impresora pedida que no valen o demasiadas etiquetas: el motivo es para el usuario.</exception>
         /// <exception cref="ImpresionEtiquetasException">Windows no ha dejado imprimir.</exception>
         Task<ResultadoEtiquetasMuestrasDTO> Imprimir(string empresa, PeticionEtiquetasMuestrasDTO peticion, string usuario, bool ensayo);
     }
 
     /// <summary>
     /// NestoAPI#884 (b): las etiquetas de cajón (REI, ALC) o gaveta (ALG) de las muestras de un almacén, POR LOTES y en el orden en
-    /// que se pegan (<see cref="ReglasMuestras.Etiquetas"/>), en UN trabajo a la impresora de etiquetas del usuario (la misma que la
+    /// que se pegan (<see cref="ReglasMuestras.Etiquetas"/>), en UN trabajo a la impresora pedida o, sin ella, a la DEL ALMACÉN (<see cref="ReglaImpresoraEtiquetas"/>, Carlos 25/11/26; la misma que la
     /// de producto). Con ensayo, el listado de lo que saldría sin imprimir ni dar códigos. De verdad, a la muestra que aún no tiene
     /// código se le da el interno (el mismo camino que la etiqueta de producto) ANTES de imprimir y después de mirar la impresora.
     /// </summary>
@@ -371,6 +371,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             string emp = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             string almacen = ReglasMuestras.NormalizarAlmacen(peticion?.Almacen)
                 ?? throw new ArgumentException(string.IsNullOrWhiteSpace(peticion?.Almacen) ? "Falta el almacén (ALG, REI o ALC)." : ReglasMuestras.MensajeAlmacen);
+            // Carlos 25/11/26: la pedida o, sin ella, la del ALMACÉN de las muestras (no la de quien imprime). Antes de leer nada:
+            // una impresora que no vale es un 400 también en el ensayo
+            ImpresoraEtiquetasElegida elegida = ReglaImpresoraEtiquetas.Elegir(peticion.Impresora, almacen,
+                ReglaImpresoraEtiquetas.LectorDefecto(parametros), () => ServicioEtiquetasHueco.ImpresoraDelUsuario(parametros, emp, usuario));
 
             List<MuestraAlmacen> todas = await repositorio.LeerMuestras(emp, almacen).ConfigureAwait(false) ?? new List<MuestraAlmacen>();
             List<MuestraAlmacen> filtradas = ReglasMuestras.Filtrar(todas, peticion.Familia, peticion.SoloConStock, peticion.Productos);
@@ -380,6 +384,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 Almacen = almacen,
                 Ensayo = ensayo,
+                Impresora = elegida.Impresora,
+                OrigenImpresora = elegida.Origen,
                 Total = etiquetas.Count,
                 Etiquetas = etiquetas,
                 NoSonMuestras = ReglasMuestras.NoSonMuestras(todas, peticion.Productos),
@@ -400,29 +406,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
             if (ensayo)
             {
-                try
-                {
-                    resultado.Impresora = ServicioEtiquetasHueco.ImpresoraDelUsuario(parametros, emp, usuario);
-                }
-                catch (ArgumentException ex)
-                {
-                    resultado.Impresora = null;
-                    noSon += " " + ex.Message;
-                }
                 foreach (EtiquetaMuestraDTO etiqueta in etiquetas)
                 {
                     etiqueta.Lineas = GeneradorEtiquetasProducto.ComponerContenedor(etiqueta.Producto, etiqueta.Nombre,
                         etiqueta.CodigoBarras ?? CodigoBarrasInterno.DeReferencia(etiqueta.Producto) ?? CodigoBarrasInterno.DeContador(1)).Lineas;
                 }
-                resultado.Mensaje = $"Saldrían {Etiquetas(etiquetas.Count)} de muestras de {almacen}" +
-                    (resultado.Impresora == null ? string.Empty : $" en {resultado.Impresora}") +
+                resultado.Mensaje = $"Saldrían {Etiquetas(etiquetas.Count)} de muestras de {almacen} en {resultado.Impresora}" +
                     (resultado.SinCodigo > 0 ? $"; a {resultado.SinCodigo} sin código se les daría el interno al imprimir" : string.Empty) + "." + noSon;
                 return resultado;
             }
 
-            // La impresora antes de dar ningún código: sin impresora no se crea nada
-            string destino = ServicioEtiquetasHueco.ImpresoraDelUsuario(parametros, emp, usuario);
-            resultado.Impresora = destino;
+            // La impresora ya está elegida (y validada) antes de dar ningún código
+            string destino = elegida.Impresora;
             var dados = new Dictionary<string, CodigoBarrasProductoDTO>(StringComparer.OrdinalIgnoreCase);
             foreach (string producto in etiquetas.Where(e => e.CodigoBarras == null).Select(e => e.Producto).Distinct(StringComparer.OrdinalIgnoreCase))
             {

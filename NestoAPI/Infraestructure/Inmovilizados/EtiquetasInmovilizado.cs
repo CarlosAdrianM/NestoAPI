@@ -43,49 +43,25 @@ namespace NestoAPI.Infraestructure.Inmovilizados
     }
 
     /// <summary>
-    /// LA REGLA (pura) de la impresora de la etiqueta de un inmovilizado: la que diga la petición; si no, la de la DELEGACIÓN del
-    /// inmovilizado: ParametrosUsuario empresa 1 «(defecto)» <c>ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC}</c> y, sin fila, la de
-    /// <see cref="POR_DEFECTO"/>; con otra delegación (VAR…), la ImpresoraCodBarras de quien imprime, como la etiqueta de producto.
+    /// LA REGLA de la impresora de la etiqueta de un inmovilizado: la COMÚN de las etiquetas (<see cref="ReglaImpresoraEtiquetas"/>)
+    /// con la DELEGACIÓN del inmovilizado como almacén: la que diga la petición; si no, ParametrosUsuario empresa 1 «(defecto)»
+    /// <c>ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC}</c> (la clave antigua, que gana) o <c>ImpresoraEtiquetas.{…}</c> (la general)
+    /// y, sin fila, la de <see cref="POR_DEFECTO"/>; con otra delegación (VAR…), la ImpresoraCodBarras de quien imprime.
     /// </summary>
     public static class ReglaImpresoraInmovilizado
     {
         public const string PREFIJO_PARAMETRO = "ImpresoraEtiquetasInmovilizado.";
 
-        public static readonly IReadOnlyDictionary<string, string> POR_DEFECTO = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            [Constantes.Almacenes.ALGETE] = @"\\RDS2016\etiquetas2",
-            [Constantes.Almacenes.REINA] = @"\\RDS2016\etiquetasreina",
-            [Constantes.Almacenes.ALCOBENDAS] = @"\\RDS2016\etiquetasalcobendas"
-        };
+        public static IReadOnlyDictionary<string, string> POR_DEFECTO => ReglaImpresoraEtiquetas.POR_DEFECTO;
 
-        /// <summary>La clave del parámetro de esa delegación, o null si no es ALG, REI ni ALC.</summary>
-        public static string ClaveParametro(string delegacion)
-        {
-            string d = delegacion?.Trim().ToUpperInvariant();
-            return d != null && POR_DEFECTO.ContainsKey(d) ? PREFIJO_PARAMETRO + d : null;
-        }
+        /// <summary>La clave (antigua) del parámetro de esa delegación, o null si no es ALG, REI ni ALC.</summary>
+        public static string ClaveParametro(string delegacion) => ReglaImpresoraEtiquetas.ClaveParametro(delegacion, PREFIJO_PARAMETRO);
 
-        /// <param name="pedida">La impresora de la petición (manda si viene).</param>
+        /// <param name="pedida">La impresora de la petición (manda si viene; se valida).</param>
         /// <param name="valorParametro">Lee el parámetro «(defecto)» de esa clave (null si no hay fila). Solo se llama con ALG, REI o ALC.</param>
         /// <param name="impresoraDelUsuario">La ImpresoraCodBarras de quien imprime; puede lanzar ArgumentException (no tiene).</param>
         public static string Elegir(string pedida, string delegacion, Func<string, string> valorParametro, Func<string> impresoraDelUsuario)
-        {
-            if (!string.IsNullOrWhiteSpace(pedida))
-            {
-                return pedida.Trim();
-            }
-            string clave = ClaveParametro(delegacion);
-            if (clave != null)
-            {
-                string valor = valorParametro?.Invoke(clave);
-                return string.IsNullOrWhiteSpace(valor) ? POR_DEFECTO[delegacion.Trim()] : valor.Trim();
-            }
-            if (impresoraDelUsuario == null)
-            {
-                throw new ArgumentException("No se sabe en qué impresora imprimir la etiqueta: indíquela.");
-            }
-            return impresoraDelUsuario();
-        }
+            => ReglaImpresoraEtiquetas.Elegir(pedida, delegacion, valorParametro, impresoraDelUsuario, PREFIJO_PARAMETRO).Impresora;
     }
 
     /// <summary>

@@ -274,6 +274,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (`Formato` se acepta y se ignora; ya no hay Code128 con la referencia). Lleva el EAN-13 de la unidad (Cantidad 1) o, si no
   tiene, el interno, que se le da al imprimir (`CodigoBarras`, `CodigoInterno`, `CodigoAsignado` en la respuesta).
   Medidas en `GeneradorEtiquetasProducto.EAN_*`; prueba con `Scripts/Issue762_EtiquetaPrueba.ps1`.
+- **Elegir la impresora; por defecto, la del ALMACÉN (Carlos 25/11/26)**: LA REGLA (pura) `ReglaImpresoraEtiquetas` (`PreparacionAlmacen/ImpresoraEtiquetas.cs`):
+  (1) la pedida; (2) la del almacén del trabajo (ALG/REI/ALC): ParametrosUsuario empresa 1 «(defecto)» `ImpresoraEtiquetas.{ALG|REI|ALC}` (leído SIN crear
+  filas, `LectorDefecto`) o, sin fila, etiquetas2/etiquetasreina/etiquetasalcobendas; (3) sin almacén u otro, la ImpresoraCodBarras del usuario. Devuelve
+  `Origen` «Pedida»/«Almacen»/«Usuario». La pedida llega del cliente y acaba en un OpenPrinter: `MotivoNoValida` exige `\\servidor\cola` (sin más barras,
+  «..» ni caracteres raros, ≤ 100) en un servidor CONOCIDO (el de alguna impresora de almacén o del usuario; RDS2016 siempre) → 400 de usted.
+  Muestras: `Impresora` opcional en la petición; sin ella, la del `Almacen` pedido (antes, la del usuario: Carlos en ALC imprimía en Algete).
+  Producto (`Imprimir`): `Impresora` y `Almacen` opcionales; SIN ninguno, la del usuario como siempre (Nesto y Ariadna no notan nada). Las dos respuestas
+  traen `Impresora` + `OrigenImpresora`. `GET api/Almacen/EtiquetasProducto/Impresoras` (permisos de imprimir) → [{Almacen, Nombre, Impresora,
+  EsLaDelUsuario}]: las tres de almacén y, si es otra, la del usuario (Almacen null, «La suya»). Inmovilizados delega en la común con su clave
+  antigua `ImpresoraEtiquetasInmovilizado.{…}`, que gana sobre la general.
 - Las REPO se reciben solo escaneando (`RecepcionDTO.SoloEscaneando`); lo que llega sin etiqueta, unidad a unidad con
   `POST api/Almacen/Recepciones/{tipo}/{documento}/SinEtiqueta` (avisa al origen y a Compras; la unidad la cuenta la app).
   Ariadna#92: si el producto tiene código de envase (ficha o ProductosCodigosBarras activo, sin contar los internos 29), `NoLleva`
@@ -321,8 +331,8 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   primero; filtro en número —«I/1823» = ese exacto— y descripción) → [{Empresa, Numero, Codigo, Descripcion, Grupo, Delegacion, Estado, EstadoDescripcion,
   FechaCreacion}]. `POST api/Inmovilizados/Etiquetas/Imprimir` {Empresa?, Numeros 1..50, Copias 1..10, Impresora?} (Administración, Dirección, Almacén,
   Tiendas, Informática; 404 si no existe ninguno) → {Impresas, Etiquetas [{Numero, Codigo, Descripcion, Delegacion, Impresora, Ok, Motivo}]}; un trabajo
-  por impresora por `ImpresoraEtiquetasConAjuste` (EPL/ZPL y ajuste, como la de producto). Impresora: `ReglaImpresoraInmovilizado` (la pedida; si no, la
-  fila «(defecto)» `ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC}` —sin crear filas— o etiquetas2/etiquetasreina/etiquetasalcobendas; VAR u otra, la
+  por impresora por `ImpresoraEtiquetasConAjuste` (EPL/ZPL y ajuste, como la de producto). Impresora: `ReglaImpresoraInmovilizado` = la común `ReglaImpresoraEtiquetas` (la pedida; si no, la
+  fila «(defecto)» `ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC}`, después la general `ImpresoraEtiquetas.{…}` —sin crear filas— o etiquetas2/etiquetasreina/etiquetasalcobendas; VAR u otra, la
   ImpresoraCodBarras de quien imprime).
 - Leerla donde se busca un producto (`ReglasInmovilizados.Reconocer`, solo lee la BD si tiene el formato; nunca casa con el producto 1823): cuerpo
   `EsInmovilizadoDTO` {Codigo «ES_INMOVILIZADO», Message «I/1823 es un inmovilizado (…): no es stock, no se cuenta ni se prepara.» / «… tiene formato de

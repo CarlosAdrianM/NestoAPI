@@ -354,6 +354,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <exception cref="ArgumentException">Producto que no existe, copias de más o usuario sin impresora: el motivo es para el usuario.</exception>
         /// <exception cref="ImpresionEtiquetasException">Windows no ha dejado imprimir.</exception>
         Task<ResultadoEtiquetasProductoDTO> Imprimir(string empresa, EtiquetasProductoDTO peticion, string usuario, bool ensayo);
+
+        /// <summary>
+        /// Carlos 25/11/26: las impresoras para elegir (las de ALG, REI y ALC según <see cref="ReglaImpresoraEtiquetas"/> y, si es
+        /// otra, la del usuario). Solo lee parámetros: nunca crea filas en los «(defecto)».
+        /// </summary>
+        List<ImpresoraEtiquetasDTO> Impresoras(string empresa, string usuario);
     }
 
     /// <summary>
@@ -414,17 +420,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .FirstOrDefault(f => string.Equals(f?.Producto?.Trim(), producto, StringComparison.OrdinalIgnoreCase))
                 ?? throw new ArgumentException($"No existe el producto {producto}.");
 
-            return await ImprimirEan13(empresa, ficha, copias, usuario, ensayo).ConfigureAwait(false);
+            // Carlos 25/11/26: sin Impresora ni Almacen, la del usuario, como siempre (Nesto y Ariadna no los mandan)
+            ImpresoraEtiquetasElegida destino = ReglaImpresoraEtiquetas.Elegir(peticion.Impresora, peticion.Almacen,
+                ReglaImpresoraEtiquetas.LectorDefecto(parametros), () => ServicioEtiquetasHueco.ImpresoraDelUsuario(parametros, empresa, usuario));
+            return await ImprimirEan13(empresa, ficha, copias, usuario, ensayo, destino).ConfigureAwait(false);
         }
+
+        public List<ImpresoraEtiquetasDTO> Impresoras(string empresa, string usuario)
+            => ReglaImpresoraEtiquetas.Lista(ReglaImpresoraEtiquetas.LectorDefecto(parametros),
+                () => ServicioEtiquetasHueco.ImpresoraDelUsuario(parametros, empresa, usuario));
 
         /// <summary>
         /// NestoAPI#762: la 3×2 con el EAN-13 de la unidad; si el producto no tiene, se le da su código interno (en el ensayo
         /// solo se dice cuál le tocaría). La impresora se mira ANTES de dar el código: sin impresora no se crea nada.
         /// </summary>
-        private async Task<ResultadoEtiquetasProductoDTO> ImprimirEan13(string empresa, FichaProductoAlmacen ficha, int copias, string usuario, bool ensayo)
+        private async Task<ResultadoEtiquetasProductoDTO> ImprimirEan13(string empresa, FichaProductoAlmacen ficha, int copias, string usuario, bool ensayo,
+            ImpresoraEtiquetasElegida elegida)
         {
             string producto = ficha.Producto.Trim();
-            string destino = ServicioEtiquetasHueco.ImpresoraDelUsuario(parametros, empresa, usuario);
+            string destino = elegida.Impresora;
             Productos.CodigoBarrasProductoDTO elegido = CodigoDeLaUnidad(await codigos.Listar(empresa, producto).ConfigureAwait(false));
             bool asignado = false;
             // En el ensayo AsignarInterno no guarda: si el código sale de ahí, es que se le daría al imprimir
@@ -444,6 +458,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Producto = producto,
                 Copias = copias,
                 Impresora = destino,
+                OrigenImpresora = elegida.Origen,
                 CodigoBarras = elegido?.Codigo?.Trim(),
                 CodigoInterno = elegido == null || Productos.CodigoBarrasInterno.EsInterno(elegido.Codigo),
                 CodigoAsignado = asignado

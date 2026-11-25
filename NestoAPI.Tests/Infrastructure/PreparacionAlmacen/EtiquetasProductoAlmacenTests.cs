@@ -7,6 +7,7 @@ using NestoAPI.Models.PreparacionAlmacen;
 using NestoAPI.Tests.Infrastructure.Productos;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
@@ -106,6 +107,61 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("8437017506379", resultado.CodigoBarras);
             CollectionAssert.AreEqual(new[] { "ROLLO PAPEL CAMILLA · 100 m", "Ref. 17404" }, resultado.Lineas);
             Assert.AreEqual(@"2 etiquetas de 17404 (8437017506379) mandadas a \\RDS2016\etiquetasalcobendas.", resultado.Mensaje);
+        }
+
+        // ---- Carlos 25/11/26: elegir la impresora ----
+
+        [TestMethod]
+        public async Task Imprimir_SinImpresoraNiAlmacen_LaDelUsuarioComoSiempre_YSinLeerLosDeAlmacen()
+        {
+            ResultadoEtiquetasProductoDTO resultado = await servicio.Imprimir(EMPRESA,
+                new EtiquetasProductoDTO { Producto = "17404" }, @"NUEVAVISION\Paloma", false);
+
+            Assert.AreEqual(@"\\RDS2016\etiquetasalcobendas", resultado.Impresora);
+            Assert.AreEqual(OrigenesImpresoraEtiquetas.USUARIO, resultado.OrigenImpresora);
+            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetasalcobendas", A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => parametros.LeerParametroSinDefecto(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Imprimir_ConAlmacen_LaDelAlmacen()
+        {
+            ResultadoEtiquetasProductoDTO resultado = await servicio.Imprimir(EMPRESA,
+                new EtiquetasProductoDTO { Producto = "17404", Almacen = "rei" }, @"NUEVAVISION\Paloma", false);
+
+            Assert.AreEqual(@"\\RDS2016\etiquetasreina", resultado.Impresora);
+            Assert.AreEqual(OrigenesImpresoraEtiquetas.ALMACEN, resultado.OrigenImpresora);
+            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetasreina", A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Imprimir_ConImpresora_LaPedidaGanaAlAlmacen()
+        {
+            ResultadoEtiquetasProductoDTO resultado = await servicio.Imprimir(EMPRESA,
+                new EtiquetasProductoDTO { Producto = "17404", Almacen = "REI", Impresora = @" \\RDS2016\etiquetas2 " }, @"NUEVAVISION\Paloma", true);
+
+            Assert.AreEqual(@"\\RDS2016\etiquetas2", resultado.Impresora);
+            Assert.AreEqual(OrigenesImpresoraEtiquetas.PEDIDA, resultado.OrigenImpresora);
+            StringAssert.Contains(resultado.Mensaje, @"\\RDS2016\etiquetas2");
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Imprimir_ImpresoraQueNoVale_ArgumentExceptionSinImprimir()
+        {
+            _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => servicio.Imprimir(EMPRESA,
+                new EtiquetasProductoDTO { Producto = "17404", Impresora = @"\\10.0.0.66\cola" }, @"NUEVAVISION\Paloma", false));
+
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Impresoras_LasTresDeAlmacen_YMarcaLaDelUsuario()
+        {
+            List<ImpresoraEtiquetasDTO> lista = servicio.Impresoras(EMPRESA, @"NUEVAVISION\Paloma");
+
+            Assert.AreEqual(3, lista.Count);
+            Assert.AreEqual("ALC", lista.Single(i => i.EsLaDelUsuario).Almacen);
         }
 
         [TestMethod]
