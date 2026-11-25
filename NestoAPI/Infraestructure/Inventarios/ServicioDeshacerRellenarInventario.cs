@@ -34,6 +34,66 @@ namespace NestoAPI.Infraestructure.Inventarios
         public int UnidadesContadas { get; set; }
     }
 
+    /// <summary>Lo que decide <see cref="ReglaDeshacerRellenadoPropio"/>.</summary>
+    public class DecisionDeshacerRellenado
+    {
+        public bool Puede { get; set; }
+        /// <summary>Con Puede false: Forbidden (hay filas de otro usuario) o Conflict (ya hay filas contadas).</summary>
+        public System.Net.HttpStatusCode? Estado { get; set; }
+        public string Mensaje { get; set; }
+    }
+
+    /// <summary>
+    /// Rellenar por error (Paloma, 25/11/26: «no es el primero que rellenan sin querer»): LA REGLA (pura) de quién deshace el rellenado de
+    /// un almacén y día. Dirección e Informática, siempre. Cualquier otro, solo si TODAS las filas pendientes son suyas (mismo usuario sin
+    /// dominio ni mayúsculas) y NINGUNA está contada (StockReal distinto de 0, el criterio de FilasContadas); si no, 403 «hay filas de otro
+    /// usuario» o 409 «ya hay N filas contadas». Sin filas pendientes no hay nada que impedir (deshacer no borra nada).
+    /// </summary>
+    public static class ReglaDeshacerRellenadoPropio
+    {
+        public static DecisionDeshacerRellenado Decidir(bool esDireccionOInformatica, string usuario, IEnumerable<ResumenPendientesInventarioUsuario> pendientes)
+        {
+            if (esDireccionOInformatica)
+            {
+                return new DecisionDeshacerRellenado { Puede = true };
+            }
+            List<ResumenPendientesInventarioUsuario> lista = (pendientes ?? Enumerable.Empty<ResumenPendientesInventarioUsuario>()).Where(p => p != null && p.Filas > 0).ToList();
+            string yo = SinDominio(usuario);
+            List<ResumenPendientesInventarioUsuario> deOtros = lista
+                .Where(p => !string.Equals(SinDominio(p.Usuario), yo, StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(yo))
+                .ToList();
+            if (deOtros.Count > 0)
+            {
+                string quienes = string.Join(", ", deOtros.OrderByDescending(p => p.Filas).Select(p => $"{SinDominio(p.Usuario)}: {p.Filas}"));
+                return new DecisionDeshacerRellenado
+                {
+                    Puede = false,
+                    Estado = System.Net.HttpStatusCode.Forbidden,
+                    Mensaje = $"No puede deshacer el rellenado: hay filas de otro usuario ({quienes}). Pídaselo a Dirección."
+                };
+            }
+            int contadas = lista.Sum(p => p.FilasContadas);
+            if (contadas > 0)
+            {
+                return new DecisionDeshacerRellenado
+                {
+                    Puede = false,
+                    Estado = System.Net.HttpStatusCode.Conflict,
+                    Mensaje = $"No puede deshacer el rellenado: ya hay {(contadas == 1 ? "1 fila contada" : $"{contadas} filas contadas")}: pídaselo a Dirección."
+                };
+            }
+            return new DecisionDeshacerRellenado { Puede = true };
+        }
+
+        /// <summary>«NUEVAVISION\Paloma» → «Paloma»; null → cadena vacía.</summary>
+        internal static string SinDominio(string usuario)
+        {
+            string limpio = usuario?.Trim() ?? string.Empty;
+            int barra = limpio.LastIndexOf('\\');
+            return barra >= 0 ? limpio.Substring(barra + 1).Trim() : limpio;
+        }
+    }
+
     public interface IRepositorioDeshacerRellenarInventario
     {
         /// <summary>Null si el almacén no existe en la empresa.</summary>
@@ -45,6 +105,11 @@ namespace NestoAPI.Infraestructure.Inventarios
     /// <summary>Sin <see cref="Confirmar"/>, el Dispose lo deshace.</summary>
     public interface IUnidadDeshacerRellenarInventario : IDisposable
     {
+        /// <summary>
+        /// Rellenar por error (25/11/26): las pendientes del almacén ese día por usuario, con lo contado, BLOQUEADAS hasta el final de la
+        /// transacción (UPDLOCK, HOLDLOCK): nadie las cuenta entre comprobarlas y borrarlas.
+        /// </summary>
+        Task<List<ResumenPendientesInventarioUsuario>> LeerPendientes(string empresa, string almacen, DateTime fecha);
         /// <summary>Borra las filas pendientes (Estado 1 y NºTraspaso NULL) del almacén ese día y devuelve lo borrado por usuario.</summary>
         Task<List<BorradasInventarioUsuario>> BorrarPendientes(string empresa, string almacen, DateTime fecha);
         /// <summary>El rastro en Modificaciones.</summary>
@@ -57,7 +122,9 @@ namespace NestoAPI.Infraestructure.Inventarios
         Ok,
         SinPermiso,
         PeticionIncorrecta,
-        ConUbicaciones
+        ConUbicaciones,
+        /// <summary>Rellenar por error (25/11/26): quien lo rellenó no puede deshacerlo porque ya hay filas contadas (409).</summary>
+        YaContadas
     }
 
     public class ResultadoDeshacerRellenarInventario
@@ -69,14 +136,16 @@ namespace NestoAPI.Infraestructure.Inventarios
 
     /// <summary>
     /// Deshacer el rellenado (NestoAPI#789) del inventario de una tienda: borra TODAS las filas pendientes (Estado 1, sin traspaso) de
-    /// ese almacén y ese día, de cualquier usuario, también lo ya contado. Solo Dirección e Informática; solo almacenes sin control de
+    /// ese almacén y ese día, de cualquier usuario, también lo ya contado. Dirección e Informática; y, desde el 25/11/26, quien lo rellenó si
+    /// todo lo pendiente es suyo y no hay nada contado (<see cref="ReglaDeshacerRellenadoPropio"/>). Solo almacenes sin control de
     /// ubicaciones (Algete va por ubicaciones). Con el mismo applock que el rellenado y en una transacción; nunca toca filas
     /// contabilizadas ni ExtractoProducto. Rastro: UNA fila resumen en Modificaciones (Tabla <see cref="TABLA_MODIFICACIONES"/>).
     /// </summary>
     public class ServicioDeshacerRellenarInventario
     {
         public const string TABLA_MODIFICACIONES = "InventarioRellenadoDeshecho";
-        public const string MENSAJE_SIN_PERMISO = "Deshacer el rellenado del inventario solo lo pueden hacer Dirección e Informática.";
+        public const string MENSAJE_SIN_PERMISO = "Deshacer el rellenado del inventario solo lo pueden hacer Dirección e Informática, " +
+            "o quien lo rellenó si todas las filas son suyas y no hay nada contado.";
 
         private readonly IRepositorioDeshacerRellenarInventario repositorio;
 
@@ -90,9 +159,15 @@ namespace NestoAPI.Infraestructure.Inventarios
             usuario != null && (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
 
-        public async Task<ResultadoDeshacerRellenarInventario> Deshacer(string empresa, string almacen, DateTime? fecha, bool puedeDeshacer, string usuario)
+        /// <param name="puedeDeshacer">Dirección o Informática: deshace todo lo pendiente, sea de quien sea.</param>
+        /// <param name="puedeDeshacerPropio">
+        /// Rellenar por error (25/11/26): quien puede rellenar (Tiendas, Almacén, Administración…) deshace el SUYO si todas las filas
+        /// pendientes son suyas y ninguna está contada (<see cref="ReglaDeshacerRellenadoPropio"/>; se mira con las filas bloqueadas).
+        /// </param>
+        public async Task<ResultadoDeshacerRellenarInventario> Deshacer(string empresa, string almacen, DateTime? fecha, bool puedeDeshacer, string usuario,
+            bool puedeDeshacerPropio = false)
         {
-            if (!puedeDeshacer)
+            if (!puedeDeshacer && !puedeDeshacerPropio)
             {
                 return Error(EstadoDeshacerRellenarInventario.SinPermiso, MENSAJE_SIN_PERMISO);
             }
@@ -124,6 +199,16 @@ namespace NestoAPI.Infraestructure.Inventarios
             DeshacerRellenarInventarioRespuestaDTO respuesta;
             using (IUnidadDeshacerRellenarInventario unidad = await repositorio.Empezar(empresaLimpia, almacenLimpio).ConfigureAwait(false))
             {
+                if (!puedeDeshacer)
+                {
+                    List<ResumenPendientesInventarioUsuario> pendientes = await unidad.LeerPendientes(empresaLimpia, almacenLimpio, dia).ConfigureAwait(false);
+                    DecisionDeshacerRellenado decision = ReglaDeshacerRellenadoPropio.Decidir(false, usuario, pendientes);
+                    if (!decision.Puede)
+                    {
+                        return Error(decision.Estado == System.Net.HttpStatusCode.Conflict ? EstadoDeshacerRellenarInventario.YaContadas : EstadoDeshacerRellenarInventario.SinPermiso,
+                            decision.Mensaje);
+                    }
+                }
                 List<BorradasInventarioUsuario> borradas = await unidad.BorrarPendientes(empresaLimpia, almacenLimpio, dia).ConfigureAwait(false)
                     ?? new List<BorradasInventarioUsuario>();
                 respuesta = new DeshacerRellenarInventarioRespuestaDTO
@@ -229,6 +314,14 @@ IF @r < 0 THROW 50001, 'Otro usuario está rellenando el inventario de este alma
                 {
                     comando.Parameters.Add("@Recurso", SqlDbType.NVarChar, 255).Value = recurso;
                     await comando.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }
+            }
+
+            public async Task<List<ResumenPendientesInventarioUsuario>> LeerPendientes(string empresa, string almacen, DateTime fecha)
+            {
+                using (var comando = new SqlCommand(string.Empty, conexion, transaccion))
+                {
+                    return await SqlRellenadoInventario.LeerPendientesPorUsuario(comando, empresa, almacen, fecha, bloquear: true).ConfigureAwait(false);
                 }
             }
 

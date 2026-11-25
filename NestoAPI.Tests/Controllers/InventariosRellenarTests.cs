@@ -217,8 +217,10 @@ namespace NestoAPI.Tests.Controllers
         {
             stocks.Add(Stock("17404", 5));
             InventariosController controller = Controlador(Constantes.GruposSeguridad.TIENDAS);
+            RellenarInventarioDTO peticion = Peticion("REI");
+            peticion.Confirmar = "reina";
 
-            var respuesta = await controller.PostRellenar(Peticion("REI"));
+            var respuesta = await controller.PostRellenar(peticion);
 
             var ok = respuesta as OkNegotiatedContentResult<RellenarInventarioRespuestaDTO>;
             Assert.IsNotNull(ok);
@@ -280,6 +282,161 @@ namespace NestoAPI.Tests.Controllers
             var bad = respuesta as BadRequestErrorMessageResult;
             Assert.IsNotNull(bad);
             Assert.AreEqual("Algete se inventaría por ubicaciones desde Ariadna.", bad.Message);
+        }
+
+        // ---------- Rellenar por error (Paloma, 25/11/26) ----------
+
+        [TestMethod]
+        public async Task PostRellenar_DesdeNestoSinConfirmar_400SinCrearNada()
+        {
+            stocks.Add(Stock("17404", 5));
+            almacen = new AlmacenInventario { Nombre = "Alcobendas", ControlUbicaciones = false };
+            InventariosController controller = Controlador(Constantes.GruposSeguridad.TIENDAS);
+
+            var respuesta = await controller.PostRellenar(Peticion("ALC")) as System.Web.Http.Results.NegotiatedContentResult<ConfirmacionRellenarInventarioDTO>;
+
+            Assert.IsNotNull(respuesta);
+            Assert.AreEqual(HttpStatusCode.BadRequest, respuesta.StatusCode);
+            Assert.AreEqual("CONFIRMACION_NECESARIA", respuesta.Content.Codigo);
+            Assert.AreEqual("Para rellenar el inventario de Alcobendas escriba el nombre del almacén.", respuesta.Content.Message);
+            A.CallTo(() => unidad.Insertar(A<IList<Inventario>>._)).MustNotHaveHappened();
+            A.CallTo(() => unidad.Confirmar()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostRellenar_DesdeNestoConfirmandoMalONombreOCodigo()
+        {
+            stocks.Add(Stock("17404", 5));
+            almacen = new AlmacenInventario { Nombre = "Alcobendas", ControlUbicaciones = false };
+            RellenarInventarioDTO mal = Peticion("ALC");
+            mal.Confirmar = "Reina";
+            var rechazo = await Controlador(Constantes.GruposSeguridad.TIENDAS).PostRellenar(mal);
+            Assert.AreEqual(HttpStatusCode.BadRequest, Estado(rechazo));
+
+            // Por la query, el código en minúsculas
+            var conCodigo = await Controlador(Constantes.GruposSeguridad.TIENDAS).PostRellenar(Peticion("ALC"), "alc");
+            Assert.IsInstanceOfType(conCodigo, typeof(OkNegotiatedContentResult<RellenarInventarioRespuestaDTO>));
+        }
+
+        [TestMethod]
+        public async Task PostRellenar_DesdeAriadna_NoPideConfirmacion()
+        {
+            stocks.Add(Stock("17404", 5));
+            InventariosController controller = Controlador(Constantes.GruposSeguridad.TIENDAS);
+            controller.Request = new System.Net.Http.HttpRequestMessage();
+            controller.Request.Headers.Add("X-Ariadna-Version", "2.44");
+
+            var respuesta = await controller.PostRellenar(Peticion("REI"));
+
+            Assert.IsInstanceOfType(respuesta, typeof(OkNegotiatedContentResult<RellenarInventarioRespuestaDTO>));
+            Assert.AreEqual(1, insertadas.Count);
+        }
+
+        [TestMethod]
+        public async Task PostRellenar_DesdeNestoYaRellenado_SigueSiendo409SinPedirConfirmacion()
+        {
+            pendientes.Add(new PendientesInventarioUsuario { Usuario = USUARIO, Filas = 64 });
+
+            var respuesta = await Controlador(Constantes.GruposSeguridad.TIENDAS).PostRellenar(Peticion("REI"));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, Estado(respuesta));
+        }
+
+        [TestMethod]
+        public void ReglaConfirmacion_CodigoNombreOPalabraDelNombre_SinMayusculasNiTildes()
+        {
+            Assert.IsTrue(ReglaConfirmacionRellenado.Casa(" alc ", "ALC", "ALCOBENDAS"));
+            Assert.IsTrue(ReglaConfirmacionRellenado.Casa("Alcobendas", "ALC", "ALCOBENDAS"));
+            Assert.IsTrue(ReglaConfirmacionRellenado.Casa("alcobendas", "ALC", "Tienda Alcobendas"));
+            Assert.IsTrue(ReglaConfirmacionRellenado.Casa("ALGETE", "ALG", "Álgete"));
+            Assert.IsFalse(ReglaConfirmacionRellenado.Casa("de", "ALC", "Tienda de Alcobendas"));
+            Assert.IsFalse(ReglaConfirmacionRellenado.Casa("Reina", "ALC", "Alcobendas"));
+            Assert.IsFalse(ReglaConfirmacionRellenado.Casa(null, "ALC", "Alcobendas"));
+            Assert.IsFalse(ReglaConfirmacionRellenado.Casa("  ", "ALC", "Alcobendas"));
+        }
+
+        [TestMethod]
+        public async Task Previa_CuentaLasFilasConElMismoCriterio_SinTocarNada()
+        {
+            almacen = new AlmacenInventario { Nombre = "Alcobendas", ControlUbicaciones = false };
+            for (int i = 0; i < 3032; i++)
+            {
+                stocks.Add(Stock((10000 + i).ToString(), 1));
+            }
+            stocks.Add(Stock("99999", 3, ficticio: true));
+            stocks.Add(Stock("88888", 0));
+            A.CallTo(() => repositorio.LeerStocks(A<string>._, A<string>._)).ReturnsLazily(() => Task.FromResult(stocks));
+            A.CallTo(() => repositorio.LeerPendientesPorUsuario(A<string>._, A<string>._, A<DateTime>._)).Returns(new List<ResumenPendientesInventarioUsuario>());
+
+            ResultadoPreviaRellenarInventario r = await Servicio().Previa(null, " alc ", dia.AddHours(9), USUARIO, false);
+
+            Assert.AreEqual(EstadoRellenarInventario.Ok, r.Estado);
+            Assert.AreEqual("ALC", r.Respuesta.Almacen);
+            Assert.AreEqual("Alcobendas", r.Respuesta.NombreAlmacen);
+            Assert.AreEqual(dia, r.Respuesta.Fecha);
+            Assert.AreEqual(3032, r.Respuesta.FilasQueSeCrearian);
+            Assert.AreEqual(0, r.Respuesta.FilasPendientesYa);
+            Assert.AreEqual("Va a crear 3.032 filas de inventario en Alcobendas con fecha 21/11/2026.", r.Respuesta.Mensaje);
+            Assert.IsFalse(r.Respuesta.PuedeDeshacer);
+            StringAssert.Contains(r.Respuesta.MotivoNoPuedeDeshacer, "no hay nada que deshacer");
+            A.CallTo(() => repositorio.Empezar(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Previa_ConPendientesSuyasSinContar_LoDiceYPuedeDeshacer()
+        {
+            almacen = new AlmacenInventario { Nombre = "Alcobendas", ControlUbicaciones = false };
+            A.CallTo(() => repositorio.LeerPendientesPorUsuario("1", "ALC", dia)).Returns(new List<ResumenPendientesInventarioUsuario>
+            {
+                new ResumenPendientesInventarioUsuario { Usuario = USUARIO, Filas = 3032 }
+            });
+
+            ResultadoPreviaRellenarInventario r = await Servicio().Previa("1", "ALC", dia, USUARIO, false);
+
+            Assert.AreEqual(0, r.Respuesta.FilasQueSeCrearian);
+            Assert.AreEqual(3032, r.Respuesta.FilasPendientesYa);
+            Assert.AreEqual("Ya hay 3.032 filas pendientes de inventario en Alcobendas con fecha 21/11/2026 (Paloma: 3.032): rellenar no crearía ninguna más.",
+                r.Respuesta.Mensaje);
+            Assert.IsTrue(r.Respuesta.PuedeDeshacer);
+            Assert.IsNull(r.Respuesta.MotivoNoPuedeDeshacer);
+            A.CallTo(() => repositorio.LeerStocks(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Previa_ConFilasContadasODeOtro_NoPuedeDeshacerSalvoDireccion()
+        {
+            A.CallTo(() => repositorio.LeerPendientesPorUsuario(A<string>._, A<string>._, A<DateTime>._)).Returns(new List<ResumenPendientesInventarioUsuario>
+            {
+                new ResumenPendientesInventarioUsuario { Usuario = USUARIO, Filas = 100, FilasContadas = 4 }
+            });
+
+            ResultadoPreviaRellenarInventario suyo = await Servicio().Previa("1", "REI", dia, USUARIO, false);
+            ResultadoPreviaRellenarInventario otro = await Servicio().Previa("1", "REI", dia, @"NUEVAVISION\Laura", false);
+            ResultadoPreviaRellenarInventario direccion = await Servicio().Previa("1", "REI", dia, @"NUEVAVISION\Carlos", true);
+
+            Assert.IsFalse(suyo.Respuesta.PuedeDeshacer);
+            StringAssert.Contains(suyo.Respuesta.MotivoNoPuedeDeshacer, "ya hay 4 filas contadas");
+            Assert.IsFalse(otro.Respuesta.PuedeDeshacer);
+            StringAssert.Contains(otro.Respuesta.MotivoNoPuedeDeshacer, "hay filas de otro usuario (Paloma: 100)");
+            Assert.IsTrue(direccion.Respuesta.PuedeDeshacer);
+        }
+
+        [TestMethod]
+        public async Task GetPrevia_SinRol403_AlgeteYSinAlmacen400()
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, Estado(await Controlador(roles: new string[0]).GetPreviaRellenar("REI", dia)));
+            Assert.AreEqual(HttpStatusCode.BadRequest, Estado(await Controlador(Constantes.GruposSeguridad.TIENDAS).GetPreviaRellenar(null, dia)));
+            almacen = new AlmacenInventario { Nombre = "Algete", ControlUbicaciones = true };
+            Assert.AreEqual(HttpStatusCode.BadRequest, Estado(await Controlador(Constantes.GruposSeguridad.ALMACEN).GetPreviaRellenar("ALG", dia)));
+            A.CallTo(() => repositorio.LeerPendientesPorUsuario(A<string>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Miles_ConPuntoTambienConCuatroCifras()
+        {
+            Assert.AreEqual("3.032", ServicioRellenarInventario.Miles(3032));
+            Assert.AreEqual("999", ServicioRellenarInventario.Miles(999));
+            Assert.AreEqual("1.234.567", ServicioRellenarInventario.Miles(1234567));
         }
 
         [TestMethod]

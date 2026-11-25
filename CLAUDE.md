@@ -854,6 +854,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Informática (403); fecha obligatoria y almacén sin ubicaciones (400). Applock `InventarioRellenar:{empresa}:{almacen}` y transacción; nunca lo
   contabilizado ni ExtractoProducto. 200 `{ Almacen, Fecha, FilasBorradas, FilasContadas, UnidadesContadas }` (ceros si no hay nada, y sin rastro);
   rastro = UNA fila en Modificaciones (Tabla «InventarioRellenadoDeshecho», resumen en JSON con el desglose por usuario).
+- **Rellenar por error (Paloma, 25/11/26: 3.032 filas en Alcobendas)**: (1) `GET api/Inventarios/Rellenar/Previa?almacen=&fecha=&empresa=` (permisos de
+  rellenar; solo lectura) → {Almacen, NombreAlmacen, Fecha, FilasQueSeCrearian (MISMA consulta `SqlRellenadoInventario.SQL_STOCKS` y `FilasARellenar`;
+  0 si ya hay pendientes), FilasPendientesYa, Mensaje «Va a crear 3.032 filas de inventario en Alcobendas con fecha 25/11/2026.», PuedeDeshacer,
+  MotivoNoPuedeDeshacer}. (2) `POST api/Inventarios/Rellenar` exige `Confirmar` (cuerpo, o `?confirmar=`) con el código o el nombre del almacén
+  (`ReglaConfirmacionRellenado`: sin mayúsculas ni tildes; vale una palabra del nombre de 4+ letras) SOLO si la petición NO trae `X-Ariadna-Version`
+  (Ariadna llama al mismo endpoint y no cambia) y solo cuando se iban a crear filas (YaRellenado/YaContabilizado salen igual); si no, 400
+  {Codigo «CONFIRMACION_NECESARIA», Message «Para rellenar el inventario de Alcobendas escriba el nombre del almacén.»} y nada creado. (3) El DELETE
+  también lo puede quien puede rellenar si TODAS las pendientes son suyas y ninguna contada (`ReglaDeshacerRellenadoPropio`, comprobado con UPDLOCK/HOLDLOCK
+  en la transacción): si no, 403 «hay filas de otro usuario (…)» o 409 «ya hay N filas contadas: pídaselo a Dirección.». Dirección e Informática, como antes.
 
 ### Alquileres: equipo y nombre del cliente en la relación (Novedades 1181, 12/11/26)
 - `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de

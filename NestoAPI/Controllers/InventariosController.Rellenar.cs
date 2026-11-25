@@ -52,19 +52,30 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/Inventarios/Rellenar")]
         [ResponseType(typeof(RellenarInventarioRespuestaDTO))]
-        public async Task<IHttpActionResult> PostRellenar(RellenarInventarioDTO peticion)
+        /// <param name="confirmar">
+        /// Rellenar por error (25/11/26): también se admite en la query; manda <see cref="RellenarInventarioDTO.Confirmar"/> del cuerpo si viene.
+        /// </param>
+        public async Task<IHttpActionResult> PostRellenar(RellenarInventarioDTO peticion, string confirmar = null)
         {
             if (!PuedeRellenarInventario(User))
             {
                 return Content(HttpStatusCode.Forbidden, new { Message = "No tiene permiso para rellenar el inventario." });
             }
 
+            if (peticion != null && string.IsNullOrWhiteSpace(peticion.Confirmar))
+            {
+                peticion.Confirmar = confirmar;
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
-            ResultadoRellenarInventario resultado = await ServicioRellenar.Rellenar(peticion, usuario).ConfigureAwait(false);
+            // Rellenar por error (Paloma, 25/11/26): el rellenado de la tienda entera de Nesto pide confirmar con el almacén. Ariadna (que
+            // también llama aquí, con X-Ariadna-Version en todas sus llamadas) no cambia.
+            ResultadoRellenarInventario resultado = await ServicioRellenar.Rellenar(peticion, usuario, !EsAriadna(Request)).ConfigureAwait(false);
             switch (resultado.Estado)
             {
                 case EstadoRellenarInventario.Ok:
                     return Ok(resultado.Respuesta);
+                case EstadoRellenarInventario.ConfirmacionNecesaria:
+                    return Content(HttpStatusCode.BadRequest, new ConfirmacionRellenarInventarioDTO { Message = resultado.Mensaje });
                 case EstadoRellenarInventario.YaRellenado:
                     return Content(HttpStatusCode.Conflict, new YaRellenadoTiendaInventarioDTO
                     {
@@ -109,17 +120,48 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> DeleteRellenar(string almacen = null, System.DateTime? fecha = null, string empresa = null)
         {
             ResultadoDeshacerRellenarInventario resultado = await ServicioDeshacerRellenar.Deshacer(empresa, almacen, fecha,
-                ServicioDeshacerRellenarInventario.PuedeDeshacer(User), UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+                ServicioDeshacerRellenarInventario.PuedeDeshacer(User), UsuarioAuditoriaHelper.Resolver(User, null),
+                PuedeRellenarInventario(User)).ConfigureAwait(false);
             switch (resultado.Estado)
             {
                 case EstadoDeshacerRellenarInventario.Ok:
                     return Ok(resultado.Respuesta);
                 case EstadoDeshacerRellenarInventario.SinPermiso:
                     return Content(HttpStatusCode.Forbidden, new HttpError(resultado.Mensaje));
+                case EstadoDeshacerRellenarInventario.YaContadas:
+                    return Content(HttpStatusCode.Conflict, new HttpError(resultado.Mensaje));
                 default:
                     return Content(HttpStatusCode.BadRequest, new HttpError(resultado.Mensaje));
             }
         }
+
+        // GET: api/Inventarios/Rellenar/Previa?almacen=ALC&fecha=2026-11-25&empresa=1
+        /// <summary>
+        /// Rellenar por error (Paloma, 25/11/26): lo que haría el rellenado, SIN tocar nada (mismos permisos que rellenar): Almacen,
+        /// NombreAlmacen, Fecha, FilasQueSeCrearian (el mismo criterio que el rellenado; 0 si ya hay pendientes), FilasPendientesYa, Mensaje
+        /// («Va a crear 3.032 filas de inventario en Alcobendas con fecha 25/11/2026.»), PuedeDeshacer y MotivoNoPuedeDeshacer (para el
+        /// botón «Deshacer el rellenado»). Sin fecha, hoy. 400 sin almacén, si no existe o si va por ubicaciones; 403 sin rol.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Inventarios/Rellenar/Previa")]
+        [ResponseType(typeof(PreviaRellenarInventarioDTO))]
+        public async Task<IHttpActionResult> GetPreviaRellenar(string almacen = null, System.DateTime? fecha = null, string empresa = null)
+        {
+            if (!PuedeRellenarInventario(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new HttpError("No tiene permiso para rellenar el inventario."));
+            }
+            ResultadoPreviaRellenarInventario resultado = await ServicioRellenar.Previa(empresa, almacen, fecha, UsuarioAuditoriaHelper.Resolver(User, null),
+                ServicioDeshacerRellenarInventario.PuedeDeshacer(User)).ConfigureAwait(false);
+            return resultado.Estado == EstadoRellenarInventario.Ok
+                ? Ok(resultado.Respuesta)
+                : (IHttpActionResult)Content(HttpStatusCode.BadRequest, new HttpError(resultado.Mensaje));
+        }
+
+        /// <summary>Ariadna manda X-Ariadna-Version en todas sus llamadas (Ariadna#58); Nesto, no.</summary>
+        internal static bool EsAriadna(System.Net.Http.HttpRequestMessage peticion)
+            => peticion?.Headers != null && peticion.Headers.Contains(Infraestructure.Ariadna.PoliticaVersionMinimaAriadna.CABECERA_VERSION);
 
         internal static bool PuedeRellenarInventario(IPrincipal usuario)
         {

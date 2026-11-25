@@ -22,6 +22,92 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// <c>YaContabilizado</c>. Con filas pendientes sigue siendo 409 <c>YaRellenado</c>.
         /// </summary>
         public bool OtraVez { get; set; }
+        /// <summary>
+        /// Rellenar por error (Paloma, 25/11/26: 3.032 filas en Alcobendas): el CÓDIGO o el NOMBRE del almacén («ALC» o «Alcobendas»,
+        /// sin distinguir mayúsculas ni tildes). Obligatorio en el rellenado de Nesto (el que no lleva X-Ariadna-Version) cuando se van a
+        /// crear filas; sin él, 400 <see cref="CodigosConflictoInventario.CONFIRMACION_NECESARIA"/> y nada creado.
+        /// </summary>
+        public string Confirmar { get; set; }
+    }
+
+    /// <summary>Rellenar por error (25/11/26): el cuerpo del 400 cuando falta la confirmación o no casa.</summary>
+    public class ConfirmacionRellenarInventarioDTO
+    {
+        public string Codigo { get; set; } = CodigosConflictoInventario.CONFIRMACION_NECESARIA;
+        public string Message { get; set; }
+    }
+
+    /// <summary>GET api/Inventarios/Rellenar/Previa: lo que haría el rellenado, sin tocar nada.</summary>
+    public class PreviaRellenarInventarioDTO
+    {
+        public string Almacen { get; set; }
+        public string NombreAlmacen { get; set; }
+        public DateTime Fecha { get; set; }
+        /// <summary>Con el MISMO criterio que el rellenado (<see cref="ServicioRellenarInventario.FilasARellenar"/>); 0 si ya hay pendientes ese día (no crearía ninguna).</summary>
+        public int FilasQueSeCrearian { get; set; }
+        /// <summary>Filas pendientes (Estado 1, sin traspaso) de ese almacén ese día, de cualquier usuario.</summary>
+        public int FilasPendientesYa { get; set; }
+        /// <summary>«Va a crear 3.032 filas de inventario en Alcobendas con fecha 25/11/2026.» (o que ya hay pendientes).</summary>
+        public string Mensaje { get; set; }
+        /// <summary>Si quien pregunta puede deshacer lo pendiente de ese día (<see cref="ReglaDeshacerRellenadoPropio"/>).</summary>
+        public bool PuedeDeshacer { get; set; }
+        public string MotivoNoPuedeDeshacer { get; set; }
+    }
+
+    /// <summary>Las filas pendientes (Estado 1, sin traspaso) de un almacén y día de un usuario, con lo ya contado (StockReal distinto de 0).</summary>
+    public class ResumenPendientesInventarioUsuario
+    {
+        public string Usuario { get; set; }
+        public int Filas { get; set; }
+        public int FilasContadas { get; set; }
+        public int UnidadesContadas { get; set; }
+    }
+
+    /// <summary>
+    /// Rellenar por error (25/11/26): LA REGLA (pura) de la confirmación del rellenado de una tienda: lo escrito casa con el CÓDIGO del
+    /// almacén, con su NOMBRE entero o con una palabra de su nombre de 4 letras o más («Alcobendas» en «Tienda Alcobendas»), sin
+    /// distinguir mayúsculas, tildes ni espacios de más.
+    /// </summary>
+    public static class ReglaConfirmacionRellenado
+    {
+        public static bool Casa(string confirmar, string almacen, string nombre)
+        {
+            string escrito = Normalizar(confirmar);
+            if (string.IsNullOrEmpty(escrito))
+            {
+                return false;
+            }
+            if (escrito == Normalizar(almacen) || escrito == Normalizar(nombre))
+            {
+                return true;
+            }
+            return Normalizar(nombre).Split(' ').Any(p => p.Length >= 4 && p == escrito);
+        }
+
+        public static string Mensaje(string almacen, string nombre)
+            => $"Para rellenar el inventario de {NombreParaMostrar(almacen, nombre)} escriba el nombre del almacén.";
+
+        internal static string NombreParaMostrar(string almacen, string nombre)
+            => string.IsNullOrWhiteSpace(nombre) ? almacen?.Trim() : nombre.Trim();
+
+        internal static string Normalizar(string texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                return string.Empty;
+            }
+            string descompuesto = texto.Trim().Normalize(NormalizationForm.FormD);
+            var sinTildes = new StringBuilder();
+            foreach (char c in descompuesto)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                {
+                    sinTildes.Append(c);
+                }
+            }
+            return string.Join(" ", sinTildes.ToString().Normalize(NormalizationForm.FormC).ToUpperInvariant()
+                .Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
     }
 
     /// <summary>NestoAPI#784: los códigos del 409 de rellenar y de GET/POST api/Inventarios (el campo Codigo del cuerpo).</summary>
@@ -42,6 +128,11 @@ namespace NestoAPI.Infraestructure.Inventarios
         /// ubicación (Lineas); se borran repitiendo con QuitarFilasSinUbicacion = true.
         /// </summary>
         public const string FILAS_SIN_UBICACION = "FilasSinUbicacion";
+        /// <summary>
+        /// Rellenar por error (25/11/26): el 400 de POST api/Inventarios/Rellenar desde Nesto sin <c>Confirmar</c> (o sin que case con
+        /// el almacén). No se ha creado nada.
+        /// </summary>
+        public const string CONFIRMACION_NECESARIA = "CONFIRMACION_NECESARIA";
     }
 
     /// <summary>NestoAPI#784: lo ya contabilizado ese día en el almacén, por usuario y traspaso.</summary>
@@ -107,7 +198,17 @@ namespace NestoAPI.Infraestructure.Inventarios
         ConUbicaciones,
         YaRellenado,
         /// <summary>NestoAPI#784: ese día ya hay filas contabilizadas en el almacén y no se ha pedido OtraVez (409).</summary>
-        YaContabilizado
+        YaContabilizado,
+        /// <summary>Rellenar por error (25/11/26): desde Nesto, sin confirmar con el código o el nombre del almacén (400). Nada creado.</summary>
+        ConfirmacionNecesaria
+    }
+
+    public class ResultadoPreviaRellenarInventario
+    {
+        /// <summary>Ok, PeticionIncorrecta o ConUbicaciones.</summary>
+        public EstadoRellenarInventario Estado { get; set; }
+        public string Mensaje { get; set; }
+        public PreviaRellenarInventarioDTO Respuesta { get; set; }
     }
 
     public class ResultadoRellenarInventario
@@ -123,13 +224,25 @@ namespace NestoAPI.Infraestructure.Inventarios
 
     public interface IServicioRellenarInventario
     {
-        Task<ResultadoRellenarInventario> Rellenar(RellenarInventarioDTO peticion, string usuario);
+        /// <param name="exigirConfirmacion">
+        /// Rellenar por error (25/11/26): true en el rellenado de Nesto (sin X-Ariadna-Version): si se van a crear filas, hace falta
+        /// <see cref="RellenarInventarioDTO.Confirmar"/> con el código o el nombre del almacén.
+        /// </param>
+        Task<ResultadoRellenarInventario> Rellenar(RellenarInventarioDTO peticion, string usuario, bool exigirConfirmacion);
+
+        /// <summary>Lo que haría el rellenado (sin tocar nada) y si quien pregunta puede deshacer lo pendiente.</summary>
+        /// <param name="puedeDeshacerTodo">Dirección o Informática (<see cref="ServicioDeshacerRellenarInventario.PuedeDeshacer"/>).</param>
+        Task<ResultadoPreviaRellenarInventario> Previa(string empresa, string almacen, DateTime? fecha, string usuario, bool puedeDeshacerTodo);
     }
 
     public interface IRepositorioRellenarInventario
     {
         /// <summary>Null si el almacén no existe en la empresa.</summary>
         Task<AlmacenInventario> LeerAlmacen(string empresa, string almacen);
+        /// <summary>Previa: el stock del almacén con la MISMA consulta que el rellenado (<see cref="SqlRellenadoInventario.SQL_STOCKS"/>), sin transacción.</summary>
+        Task<List<StockProductoInventario>> LeerStocks(string empresa, string almacen);
+        /// <summary>Previa: las filas pendientes de ese almacén y día por usuario, con lo ya contado.</summary>
+        Task<List<ResumenPendientesInventarioUsuario>> LeerPendientesPorUsuario(string empresa, string almacen, DateTime fecha);
         /// <summary>Abre la transacción, con el almacén bloqueado para que dos a la vez no rellenen dos veces.</summary>
         Task<IUnidadRellenarInventario> Empezar(string empresa, string almacen);
     }
@@ -162,7 +275,10 @@ namespace NestoAPI.Infraestructure.Inventarios
             this.repositorio = repositorio;
         }
 
-        public async Task<ResultadoRellenarInventario> Rellenar(RellenarInventarioDTO peticion, string usuario)
+        /// <summary>Sin exigir la confirmación (como lo llama Ariadna).</summary>
+        public Task<ResultadoRellenarInventario> Rellenar(RellenarInventarioDTO peticion, string usuario) => Rellenar(peticion, usuario, false);
+
+        public async Task<ResultadoRellenarInventario> Rellenar(RellenarInventarioDTO peticion, string usuario, bool exigirConfirmacion)
         {
             if (peticion == null || string.IsNullOrWhiteSpace(peticion.Almacen))
             {
@@ -217,6 +333,12 @@ namespace NestoAPI.Infraestructure.Inventarios
 
                 List<StockProductoInventario> stocks = await unidad.Stocks(empresa, almacen).ConfigureAwait(false);
                 List<Inventario> filas = FilasARellenar(stocks, empresa, almacen, fecha, usuarioAuditoria);
+                // Rellenar por error (Paloma, 25/11/26): desde Nesto solo se crean filas si se ha confirmado con el almacén. Va aquí, al
+                // final: un «ya rellenado» o «ya contabilizado» sigue saliendo igual (Nesto sigue contando en esas filas).
+                if (exigirConfirmacion && filas.Count > 0 && !ReglaConfirmacionRellenado.Casa(peticion.Confirmar, almacen, datosAlmacen.Nombre))
+                {
+                    return Error(EstadoRellenarInventario.ConfirmacionNecesaria, ReglaConfirmacionRellenado.Mensaje(almacen, datosAlmacen.Nombre));
+                }
                 if (filas.Count > 0)
                 {
                     await unidad.Insertar(filas).ConfigureAwait(false);
@@ -237,6 +359,80 @@ namespace NestoAPI.Infraestructure.Inventarios
                 };
             }
         }
+
+        public async Task<ResultadoPreviaRellenarInventario> Previa(string empresa, string almacen, DateTime? fecha, string usuario, bool puedeDeshacerTodo)
+        {
+            if (string.IsNullOrWhiteSpace(almacen))
+            {
+                return new ResultadoPreviaRellenarInventario { Estado = EstadoRellenarInventario.PeticionIncorrecta, Mensaje = "Falta el almacén." };
+            }
+            string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            string almacenLimpio = almacen.Trim().ToUpperInvariant();
+            DateTime dia = (fecha ?? DateTime.Today).Date;
+
+            AlmacenInventario datosAlmacen = await repositorio.LeerAlmacen(empresaLimpia, almacenLimpio).ConfigureAwait(false);
+            if (datosAlmacen == null)
+            {
+                return new ResultadoPreviaRellenarInventario { Estado = EstadoRellenarInventario.PeticionIncorrecta, Mensaje = $"No existe el almacén {almacenLimpio} en la empresa {empresaLimpia}." };
+            }
+            string nombre = ReglaConfirmacionRellenado.NombreParaMostrar(almacenLimpio, datosAlmacen.Nombre);
+            if (datosAlmacen.ControlUbicaciones)
+            {
+                return new ResultadoPreviaRellenarInventario { Estado = EstadoRellenarInventario.ConUbicaciones, Mensaje = $"{nombre} se inventaría por ubicaciones desde Ariadna." };
+            }
+
+            List<ResumenPendientesInventarioUsuario> pendientes = await repositorio.LeerPendientesPorUsuario(empresaLimpia, almacenLimpio, dia).ConfigureAwait(false)
+                ?? new List<ResumenPendientesInventarioUsuario>();
+            int filasPendientes = pendientes.Sum(p => p.Filas);
+            // Con pendientes el rellenado no crea ninguna (409 YaRellenado): ni se lee el stock
+            int filasQueSeCrearian = filasPendientes > 0
+                ? 0
+                : FilasARellenar(await repositorio.LeerStocks(empresaLimpia, almacenLimpio).ConfigureAwait(false), empresaLimpia, almacenLimpio, dia, usuario).Count;
+
+            DecisionDeshacerRellenado decision = ReglaDeshacerRellenadoPropio.Decidir(puedeDeshacerTodo, usuario, pendientes);
+            var respuesta = new PreviaRellenarInventarioDTO
+            {
+                Almacen = almacenLimpio,
+                NombreAlmacen = nombre,
+                Fecha = dia,
+                FilasQueSeCrearian = filasQueSeCrearian,
+                FilasPendientesYa = filasPendientes,
+                Mensaje = MensajePrevia(nombre, dia, filasQueSeCrearian, pendientes),
+                PuedeDeshacer = filasPendientes > 0 && decision.Puede,
+                MotivoNoPuedeDeshacer = filasPendientes == 0
+                    ? $"No hay filas pendientes de {nombre} con fecha {Dia(dia)}: no hay nada que deshacer."
+                    : decision.Puede ? null : decision.Mensaje
+            };
+            return new ResultadoPreviaRellenarInventario { Estado = EstadoRellenarInventario.Ok, Respuesta = respuesta };
+        }
+
+        /// <summary>
+        /// «Va a crear 3.032 filas de inventario en Alcobendas con fecha 25/11/2026.»; con pendientes, «Ya hay 3.032 filas pendientes de
+        /// inventario en Alcobendas con fecha 25/11/2026 (Paloma: 3.032): rellenar no crearía ninguna más.».
+        /// </summary>
+        internal static string MensajePrevia(string nombre, DateTime dia, int filasQueSeCrearian, IList<ResumenPendientesInventarioUsuario> pendientes)
+        {
+            int filasPendientes = pendientes?.Sum(p => p.Filas) ?? 0;
+            if (filasPendientes > 0)
+            {
+                string quienes = string.Join(", ", pendientes.Where(p => p.Filas > 0).OrderByDescending(p => p.Filas)
+                    .Select(p => $"{ReglaDeshacerRellenadoPropio.SinDominio(p.Usuario)}: {Miles(p.Filas)}"));
+                return $"Ya hay {Filas(filasPendientes)} {(filasPendientes == 1 ? "pendiente" : "pendientes")} de inventario en {nombre} con fecha {Dia(dia)} ({quienes}): " +
+                    "rellenar no crearía ninguna más.";
+            }
+            if (filasQueSeCrearian == 0)
+            {
+                return $"No hay nada que rellenar en {nombre} con fecha {Dia(dia)}: ningún producto tiene stock.";
+            }
+            return $"Va a crear {Filas(filasQueSeCrearian)} de inventario en {nombre} con fecha {Dia(dia)}.";
+        }
+
+        private static string Filas(int n) => n == 1 ? "1 fila" : $"{Miles(n)} filas";
+
+        /// <summary>3032 → «3.032» (punto de miles siempre, también con cuatro cifras).</summary>
+        internal static string Miles(int n) => n.ToString("#,0", new NumberFormatInfo { NumberGroupSeparator = ".", NumberGroupSizes = new[] { 3 } });
+
+        private static string Dia(DateTime fecha) => fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
 
         /// <summary>La regla: productos no ficticios con stock distinto de cero (positivo o negativo), una fila por producto.</summary>
         internal static List<Inventario> FilasARellenar(IEnumerable<StockProductoInventario> stocks, string empresa, string almacen, DateTime fecha, string usuario)
@@ -297,6 +493,81 @@ namespace NestoAPI.Infraestructure.Inventarios
         }
     }
 
+    /// <summary>
+    /// Las consultas del rellenado que comparten el rellenado de verdad, su previa y deshacerlo (25/11/26): un solo sitio para el stock que
+    /// se rellena y para «pendientes por usuario con lo contado» (contada = StockReal distinto de 0, el criterio de FilasContadas).
+    /// </summary>
+    public static class SqlRellenadoInventario
+    {
+        /// <summary>Lo de siempre: la suma del extracto de las empresas 1 y 3 en el almacén, con los datos de la ficha de la empresa.</summary>
+        public const string SQL_STOCKS = @"SELECT p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, CAST(p.Ficticio AS bit) AS Ficticio, SUM(CAST(e.Cantidad AS int)) AS Stock
+FROM ExtractoProducto e
+INNER JOIN Productos p ON p.Empresa = @Empresa AND p.Número = e.Número
+WHERE e.Empresa IN ('1', '3') AND e.Almacén = @Almacen
+GROUP BY p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, p.Ficticio
+HAVING SUM(CAST(e.Cantidad AS int)) <> 0";
+
+        /// <summary>Las pendientes (Estado 1, sin traspaso) del almacén ese día por usuario, con las contadas; con <paramref name="bloquear"/>, UPDLOCK y HOLDLOCK (deshacer).</summary>
+        public static string SqlPendientesPorUsuario(bool bloquear) => $@"SELECT RTRIM(Usuario), COUNT(*), SUM(CASE WHEN ISNULL(StockReal, 0) <> 0 THEN 1 ELSE 0 END), SUM(ISNULL(StockReal, 0))
+FROM dbo.Inventarios{(bloquear ? " WITH (UPDLOCK, HOLDLOCK)" : string.Empty)}
+WHERE Empresa = @Empresa AND Almacén = @Almacen AND Fecha >= @Desde AND Fecha < @Hasta AND Estado = 1 AND NºTraspaso IS NULL
+GROUP BY RTRIM(Usuario)";
+
+        public static async Task<List<StockProductoInventario>> LeerStocks(SqlCommand comando, string empresa, string almacen)
+        {
+            comando.CommandText = SQL_STOCKS;
+            comando.CommandTimeout = 120;
+            comando.Parameters.Add("@Empresa", SqlDbType.Char, 3).Value = empresa;
+            comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = almacen;
+            var resultado = new List<StockProductoInventario>();
+            using (var lector = await comando.ExecuteReaderAsync().ConfigureAwait(false))
+            {
+                while (await lector.ReadAsync().ConfigureAwait(false))
+                {
+                    resultado.Add(new StockProductoInventario
+                    {
+                        Numero = Texto(lector, 0),
+                        Descripcion = Texto(lector, 1),
+                        Grupo = Texto(lector, 2),
+                        SubGrupo = Texto(lector, 3),
+                        Familia = Texto(lector, 4),
+                        Ficticio = !lector.IsDBNull(5) && lector.GetBoolean(5),
+                        Stock = lector.GetInt32(6)
+                    });
+                }
+            }
+            return resultado;
+        }
+
+        public static async Task<List<ResumenPendientesInventarioUsuario>> LeerPendientesPorUsuario(SqlCommand comando, string empresa, string almacen,
+            DateTime fecha, bool bloquear)
+        {
+            comando.CommandText = SqlPendientesPorUsuario(bloquear);
+            comando.CommandTimeout = 120;
+            comando.Parameters.Add("@Empresa", SqlDbType.Char, 3).Value = empresa;
+            comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = almacen;
+            comando.Parameters.Add("@Desde", SqlDbType.DateTime).Value = fecha.Date;
+            comando.Parameters.Add("@Hasta", SqlDbType.DateTime).Value = fecha.Date.AddDays(1);
+            var resultado = new List<ResumenPendientesInventarioUsuario>();
+            using (var lector = await comando.ExecuteReaderAsync().ConfigureAwait(false))
+            {
+                while (await lector.ReadAsync().ConfigureAwait(false))
+                {
+                    resultado.Add(new ResumenPendientesInventarioUsuario
+                    {
+                        Usuario = lector.IsDBNull(0) ? null : lector.GetString(0),
+                        Filas = Convert.ToInt32(lector.GetValue(1)),
+                        FilasContadas = lector.IsDBNull(2) ? 0 : Convert.ToInt32(lector.GetValue(2)),
+                        UnidadesContadas = lector.IsDBNull(3) ? 0 : Convert.ToInt32(lector.GetValue(3))
+                    });
+                }
+            }
+            return resultado;
+        }
+
+        private static string Texto(SqlDataReader lector, int columna) => lector.IsDBNull(columna) ? null : lector.GetString(columna).Trim();
+    }
+
     /// <summary>NestoAPI#789: el acceso a la BD del rellenado, por ADO y en una transacción.</summary>
     public class RepositorioRellenarInventarioSql : IRepositorioRellenarInventario
     {
@@ -305,6 +576,30 @@ namespace NestoAPI.Infraestructure.Inventarios
         public RepositorioRellenarInventarioSql(NVEntities db)
         {
             cadenaConexion = db.Database.Connection.ConnectionString;
+        }
+
+        public async Task<List<StockProductoInventario>> LeerStocks(string empresa, string almacen)
+        {
+            using (var conexion = new SqlConnection(cadenaConexion))
+            {
+                await conexion.OpenAsync().ConfigureAwait(false);
+                using (var comando = new SqlCommand(string.Empty, conexion))
+                {
+                    return await SqlRellenadoInventario.LeerStocks(comando, empresa, almacen).ConfigureAwait(false);
+                }
+            }
+        }
+
+        public async Task<List<ResumenPendientesInventarioUsuario>> LeerPendientesPorUsuario(string empresa, string almacen, DateTime fecha)
+        {
+            using (var conexion = new SqlConnection(cadenaConexion))
+            {
+                await conexion.OpenAsync().ConfigureAwait(false);
+                using (var comando = new SqlCommand(string.Empty, conexion))
+                {
+                    return await SqlRellenadoInventario.LeerPendientesPorUsuario(comando, empresa, almacen, fecha, bloquear: false).ConfigureAwait(false);
+                }
+            }
         }
 
         public async Task<AlmacenInventario> LeerAlmacen(string empresa, string almacen)
@@ -436,37 +731,11 @@ ORDER BY NºTraspaso";
 
             public async Task<List<StockProductoInventario>> Stocks(string empresa, string almacen)
             {
-                // Lo de siempre: la suma del extracto de las empresas 1 y 3 en el almacén, con los datos de la ficha de la empresa.
-                const string sql = @"SELECT p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, CAST(p.Ficticio AS bit) AS Ficticio, SUM(CAST(e.Cantidad AS int)) AS Stock
-FROM ExtractoProducto e
-INNER JOIN Productos p ON p.Empresa = @Empresa AND p.Número = e.Número
-WHERE e.Empresa IN ('1', '3') AND e.Almacén = @Almacen
-GROUP BY p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, p.Ficticio
-HAVING SUM(CAST(e.Cantidad AS int)) <> 0";
-                var resultado = new List<StockProductoInventario>();
-                using (var comando = Comando(sql))
+                // La misma consulta que la previa (SqlRellenadoInventario.SQL_STOCKS), dentro de la transacción
+                using (var comando = Comando(string.Empty))
                 {
-                    comando.CommandTimeout = 120;
-                    comando.Parameters.Add("@Empresa", SqlDbType.Char, 3).Value = empresa;
-                    comando.Parameters.Add("@Almacen", SqlDbType.Char, 3).Value = almacen;
-                    using (var lector = await comando.ExecuteReaderAsync().ConfigureAwait(false))
-                    {
-                        while (await lector.ReadAsync().ConfigureAwait(false))
-                        {
-                            resultado.Add(new StockProductoInventario
-                            {
-                                Numero = Texto(lector, 0),
-                                Descripcion = Texto(lector, 1),
-                                Grupo = Texto(lector, 2),
-                                SubGrupo = Texto(lector, 3),
-                                Familia = Texto(lector, 4),
-                                Ficticio = !lector.IsDBNull(5) && lector.GetBoolean(5),
-                                Stock = lector.GetInt32(6)
-                            });
-                        }
-                    }
+                    return await SqlRellenadoInventario.LeerStocks(comando, empresa, almacen).ConfigureAwait(false);
                 }
-                return resultado;
             }
 
             public async Task Insertar(IList<Inventario> filas)
@@ -531,11 +800,6 @@ HAVING SUM(CAST(e.Cantidad AS int)) <> 0";
             private SqlCommand Comando(string sql)
             {
                 return new SqlCommand(sql, conexion, transaccion);
-            }
-
-            private static string Texto(SqlDataReader lector, int columna)
-            {
-                return lector.IsDBNull(columna) ? null : lector.GetString(columna).Trim();
             }
         }
     }
