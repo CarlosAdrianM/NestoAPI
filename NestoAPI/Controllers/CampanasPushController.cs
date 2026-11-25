@@ -1,8 +1,6 @@
+using Hangfire;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Campanas.OfertasParaTi;
-using NestoAPI.Infraestructure.CorreosPostCompra;
-using NestoAPI.Infraestructure.Notificaciones;
-using NestoAPI.Infraestructure.SugerenciasProductos;
 using NestoAPI.Models;
 using System;
 using System.Net;
@@ -22,20 +20,22 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly ServicioPushCampana servicio;
+        private readonly Func<PeticionCampanaPushDTO, string, string> encolar;
 
         public CampanasPushController()
         {
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             db.Configuration.ProxyCreationEnabled = false;
-            var nucleo = new ServicioOfertasParaTi(new LectorOfertasParaTiSql(db),
-                new PuntuadorReposicionModelo(new RepositorioSugerenciasProductosSql(db), PredictorSugerenciasProductos.Instancia));
-            servicio = new ServicioPushCampana(nucleo, new FuentePushCampanaSql(db), new ServicioNotificacionesPush());
+            servicio = ServicioPushCampana.Produccion(db);
+            encolar = (peticion, usuario) => BackgroundJob.Enqueue(() => CampanaPushJobs.Enviar(peticion, usuario));
         }
 
-        internal CampanasPushController(ServicioPushCampana servicio)
+        /// <param name="encolar">(petición, usuario) → id del trabajo de Hangfire del envío de verdad.</param>
+        internal CampanasPushController(ServicioPushCampana servicio, Func<PeticionCampanaPushDTO, string, string> encolar = null)
         {
             this.servicio = servicio;
+            this.encolar = encolar ?? ((p, u) => "0");
         }
 
         /// <summary>Ahora (sustituible en las pruebas).</summary>
@@ -43,8 +43,10 @@ namespace NestoAPI.Controllers
 
         // POST api/Campanas/Push?ensayo=true
         /// <summary>
-        /// A cada cliente con la app (consejos encendidos y sin baja en «Avisos de reposición»), sus ofertas de la campaña y su push. 400
-        /// con la petición mal o, de verdad, fuera de 9:00 a 21:00; 403 sin permiso.
+        /// A cada cliente con la app (consejos encendidos y sin baja en «Avisos de reposición»), sus ofertas de la campaña y su push. En
+        /// ensayo (por defecto), 200 con todo lo que se mandaría (síncrono, solo lee). De verdad, 202 con el id del trabajo: el envío va en
+        /// segundo plano y el resultado queda en Modificaciones (Tabla CampanaPush). 400 con la petición mal o, de verdad, fuera de 9:00 a
+        /// 21:00; 403 sin permiso.
         /// </summary>
         [HttpPost]
         [Route("api/Campanas/Push")]
@@ -54,6 +56,21 @@ namespace NestoAPI.Controllers
             if (!ReglaPushCampana.PuedeLanzar(User))
             {
                 return Content(HttpStatusCode.Forbidden, ReglaPushCampana.MENSAJE_SIN_PERMISO);
+            }
+            if (!ensayo)
+            {
+                string error = ServicioPushCampana.ValidarParaEnviar(peticion, Ahora());
+                if (error != null)
+                {
+                    return BadRequest(error);
+                }
+                string id = encolar(peticion, UsuarioAuditoriaHelper.Resolver(User, null));
+                return Content(HttpStatusCode.Accepted, new PushCampanaEncoladaDTO
+                {
+                    JobId = id,
+                    Campana = peticion.Campana.Trim(),
+                    Mensaje = "La push se está enviando en segundo plano. El resultado quedará en Modificaciones (Tabla CampanaPush) en unos minutos."
+                });
             }
             ResultadoPushCampana resultado = await servicio.Ejecutar(peticion, ensayo, Ahora(), UsuarioAuditoriaHelper.Resolver(User, null))
                 .ConfigureAwait(false);

@@ -418,6 +418,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// <summary>Clientes (sin repetir) con algún dispositivo activo de NestoTiendas que quiere consejos.</summary>
         internal static async Task<List<string>> ClientesConConsejos(NVEntities db)
         {
+            // PENDIENTE (25/11/26): este filtro (d.Empresa == EMPRESA) no encuentra a NADIE: la app de clientes no manda la empresa al
+            // registrar el dispositivo y los de NestoTiendas tienen Empresa NULL. Por eso el recordatorio de reposición no ha llegado nunca a
+            // ningún cliente (en el buzón no hay ninguno). NO se arregla todavía a propósito (Carlos 25/11/26): con la versión de la app que
+            // hay hoy en producción, estos avisos llenan el carrito del cliente. Cuando la versión nueva esté en producción, aceptar también
+            // Empresa NULL (como FuentePushCampanaSql.FiltroDestinatarios, que ya lo hace para la push de campaña).
+
             List<string> clientes = await db.DispositivosNotificaciones
                 .Where(d => d.Aplicacion == Constantes.Aplicaciones.NESTO_TIENDAS && d.Activo && d.RecibirConsejos
                     && d.Empresa == EMPRESA && d.Cliente != null)

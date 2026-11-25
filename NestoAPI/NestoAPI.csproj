@@ -1284,6 +1284,8 @@
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioOfertasParaTi.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioOfertasCliente.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioPushCampana.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\SelectorOfertasConPrecio.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\FuentesSugerenciasOfertas.cs" />
     <Compile Include="Infraestructure\Clientes\ClientesDistribuidores.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionStock.cs" />

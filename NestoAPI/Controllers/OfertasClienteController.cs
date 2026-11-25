@@ -62,6 +62,29 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        // GET api/Pedidos/Cliente/Ofertas/Todas?campana=Black%20Friday%202026&desde=0&cuantas=20&familia=&texto=
+        /// <summary>
+        /// «Ver todas las ofertas»: el ranking del cliente (lo que más le cuadra primero) desde la posición <paramref name="desde"/>, con
+        /// hasta <paramref name="cuantas"/> (1 a 50, por defecto 20) que le MEJORAN el precio. <paramref name="familia"/> (código o nombre) y
+        /// <paramref name="texto"/> (nombre o referencia; sin tildes ni mayúsculas) filtran antes de paginar. <c>Siguiente</c> = el
+        /// <c>desde</c> de la página siguiente (null si no hay más). Mismas reglas de identidad y de precios ocultos que GetOfertas.
+        /// </summary>
+        [HttpGet]
+        [Route("Cliente/Ofertas/Todas")]
+        [ResponseType(typeof(TodasOfertasParaTiRespuestaDTO))]
+        public async Task<IHttpActionResult> GetTodas(string campana = null, int desde = 0, int? cuantas = null, string familia = null, string texto = null)
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente) || !ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+            TodasOfertasParaTiRespuestaDTO respuesta = await servicio.Todas(cliente, campana, desde, cuantas, familia, texto,
+                PoliticaPreciosOcultos.NivelDe(identity), Hoy()).ConfigureAwait(false);
+            return Ok(respuesta);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)

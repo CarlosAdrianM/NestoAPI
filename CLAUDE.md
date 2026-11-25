@@ -689,19 +689,42 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   2) habituales, 3) de sus 5 familias de más importe en 24 meses (descuento, popularidad), 4) lo demás (popularidad, descuento); como mucho 2 por
   familia entre los N si hay alternativas. `Motivo` LoSuelesPedir/TeToca/DeTusMarcas/TePuedeInteresar y `Texto` de tú. Stock = el lector de «solo en
   stock» (#889, pedido 0) por tramos y solo lo que hace falta.
-- Modelo 1 (#671): SÍ puntúa una lista de productos para un cliente sin carrito ni vendedor, por `IPuntuadorReposicion` (`PuntuadorReposicionModelo`, el de
-  la puerta del recordatorio de reposición, carrito vacío y `adicionales`). Ordena las 25 primeras de la regla con stock; sin modelo o si falla (ELMAH una
-  vez por tanda), la regla. Núcleo común `ServicioOfertasParaTi` (Preparar = filas + popularidad; Calcular = compras, pendientes y familias por tandas de 200 clientes).
+- **El ranking de cada cliente (Carlos 25/11/26: «lo más vendido de la campaña es muy genérico»)**: con los criterios de las sugerencias de la
+  plantilla, NUNCA con popularidad global de relleno. `IFuentesSugerenciasOfertas` (`FuentesSugerenciasOfertasSql`, el repositorio de las sugerencias,
+  sin consultas nuevas): comprado junto (pares del job con lo comprado en 12 meses como «carrito», `ReglasSugerencias.CompradoJunto`), parecidos
+  (afinidad item-kNN) y su perfil (grupo/subgrupo, la base de «a potenciar»), restringidos a la campaña. LA REGLA `ReglaRankingOfertasParaTi`
+  (`SelectorOfertasConPrecio.cs`): grupos 1 le toca, 2 habitual, 3 comprado junto («Quienes piden X suelen pedir también este», `CompradoJunto`),
+  4 parecido («Lo piden profesionales que compran lo mismo que tú», `Parecido`; la afinidad no guarda el producto suyo), 5 sus marcas, 6 su perfil
+  («Lo piden profesionales como tú», `TePuedeInteresar`), 7 ninguna. Al modelo 1 (`IPuntuadorReposicion`) van las de sus fuentes y, hasta 300
+  (`MAXIMO_PUNTUADOS`), las demás por popularidad (un cliente sin historial se ordena por lo que el modelo sabe de su perfil, #683). Orden: lo
+  puntuado por probabilidad, detrás sus fuentes sin puntuar por la regla, al final el grupo 7. «Personal» = de sus fuentes o puntuada: solo eso va
+  a la franja y a la push; sin modelo ni fuentes, `HayOfertas` false. El ranking y los precios ya calculados se guardan con el contexto de la
+  campaña (`ContextoOfertasParaTi.Rankings`, `ResultadoOfertasCliente.Precios`; 10 min en `CacheContextoOfertasParaTi`); el stock se mira al recorrer.
+- **Selección DESPUÉS del precio (caso 15191, 255 descuentos propios: veía UNA oferta)**: `SelectorOfertasConPrecio.Recorrer` recorre el ranking,
+  mira el stock por tandas de 20, calcula el precio SOLO de lo que hace falta (precio a precio: el motor no calcula por tandas) y salta lo que no
+  mejora (`ReglaPreciosOfertaParaTi.Mejora`). Franja y push: hasta N con diversidad (2 por familia si hay alternativas, `ReglaSeleccionOfertasParaTi.Acumulador`),
+  60 consultas de precio y 200 productos mirados como mucho; 1 o 2 que mejoren, esas; ninguna, `HayOfertas` false + `Mensaje` «Ahora mismo no hay
+  ofertas que mejoren tus precios habituales.». Contrato aditivo: `Total`, `Mensaje`, `HayMasOfertas` (pinta «Ver todas las ofertas del Black Friday»).
 - `GET api/Pedidos/Cliente/Ofertas?campana=&maximo=5` (`OfertasClienteController`; cliente del claim, sin él 401; siempre 200): `Precio` por el camino de la
   app (`ProductosController.GetProductoPrecioReal`, 1 ud.) y `PrecioAntes` con `campanaExcluida` (`CalculadorPrecioSinCampanaMotor`, ficha desbloqueada
-  sin descuento); si no mejora, la oferta no sale. Cargo 30 sin importes, cargo 31 con la tarifa en `Precio` (`ReglaPreciosOfertaParaTi`). Contexto de la
-  campaña en caché 10 min (`CacheContextoOfertasParaTi`).
-- `POST api/Campanas/Push?ensayo=true` (`CampanasPushController`, Dirección/Informática, 403 de usted; ensayo por defecto: solo lee): destinatarios = los
-  del recordatorio de reposición (NestoTiendas activo con consejos, sin baja «Avisos de reposición»), SoloClientes/ExcluirClientes; sin repetir la campaña
-  en `DiasSinRepetir` días mirando el BUZÓN (Datos con `"campana":"…"`, sin tabla nueva). Datos: SIEMPRE `tipo` «ofertas», `campana` e `imagenUrl` (si
-  hay foto); NUNCA `productos` (Carlos 25/11/26: los push de campaña no tocan el carrito; el modo «Carrito» se quitó y un `Modo` en la petición se
-  ignora). Cuerpo automático o plantilla {producto} {descuento} {n}
-  {campana}; de verdad solo de 9 a 21, por `EnviarConsejoACliente` y una fila en Modificaciones (Tabla `CampanaPush`).
+  sin descuento). Cargo 30 sin importes, cargo 31 con la tarifa en `Precio` (`ReglaPreciosOfertaParaTi`).
+- `GET api/Pedidos/Cliente/Ofertas/Todas?campana=&desde=0&cuantas=20&familia=&texto=` (mismo controlador y reglas): el ranking ENTERO (también el grupo 7)
+  filtrado por familia (código o nombre) y texto (nombre o referencia, sin tildes ni mayúsculas, `ReglaRankingOfertasParaTi.PasaFiltro`), desde la
+  posición `desde`, hasta `cuantas` (1..50) que mejoran, sin diversidad, como mucho 150 productos mirados por petición → {Campana, Titulo, FechaHasta,
+  TextoHasta, PrecioOculto, DescuentoOculto, Desde, Siguiente (null = no hay más), HayMas, TotalCampana, Familias (solo con desde 0), Ofertas}.
+- `POST api/Campanas/Push?ensayo=true` (`CampanasPushController`, Dirección/Informática, 403 de usted; ensayo por defecto: solo lee, síncrono; DE VERDAD:
+  202 {JobId, Campana, Mensaje} y el envío en Hangfire, `CampanaPushJobs.Enviar` sin reintentos ni concurrencia, con el resultado en Modificaciones
+  Tabla `CampanaPush` (cifras, `ClientesEnviados`, `SaltadosDetalle`, `ConsultasPrecio`, `ProductosPuntuados`, `Segundos`); la petición y el horario se
+  comprueban antes de encolar, `ServicioPushCampana.ValidarParaEnviar`). Destinatarios (`FuentePushCampanaSql.FiltroDestinatarios`): NestoTiendas activo
+  con `RecibirConsejos` y Cliente, Empresa «1» O NULL (la app no la manda: los 60 dispositivos la tienen NULL y la push no encontraba a nadie;
+  25/11/26), sin baja «Avisos de reposición» (las bajas van siempre con la empresa 1), SoloClientes/ExcluirClientes; sin repetir la campaña en
+  `DiasSinRepetir` días mirando el BUZÓN (Datos con `"campana":"…"`). Las ofertas, la MISMA selección que la franja; `IncluirSinOfertas` por defecto
+  FALSE (saltado «No hay ofertas que le mejoren el precio.»). El cuerpo solo nombra lo suyo (todo lo que no es «TePuedeInteresar»: «Producto 3
+  (−30 %) y 1 más pensados para ti.»); si todo es «TePuedeInteresar», «Mira las ofertas del Black Friday que hemos elegido para ti.». Datos: SIEMPRE
+  `tipo` «ofertas», `campana` e `imagenUrl`; NUNCA `productos` (los push de campaña no tocan el carrito). De verdad solo de 9 a 21, por `EnviarConsejoACliente`.
+- ⚠️ `RecordatorioReposicionPushJobsService.ClientesConConsejos` tiene el MISMO filtro (`d.Empresa == EMPRESA`) y por eso el recordatorio de reposición
+  no ha llegado nunca a ningún cliente: se deja así A PROPÓSITO (`// PENDIENTE (25/11/26)`) hasta que la versión nueva de la app esté en producción
+  (con la de hoy esos avisos llenan el carrito).
 
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid

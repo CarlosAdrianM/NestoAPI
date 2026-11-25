@@ -110,7 +110,7 @@ namespace NestoAPI.Tests.Infrastructure.Campanas
             Assert.AreEqual(BF, v.Campana);
             Assert.AreEqual(5, v.Maximo);
             Assert.AreEqual(2, v.DiasSinRepetir);
-            Assert.IsTrue(v.IncluirSinOfertas);
+            Assert.IsFalse(v.IncluirSinOfertas, "25/11/26: a quien no le mejora nada, por defecto nada");
         }
 
         [TestMethod]

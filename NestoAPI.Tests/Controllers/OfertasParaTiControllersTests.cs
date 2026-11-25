@@ -72,7 +72,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             };
             JObject json = JObject.Parse(JsonConvert.SerializeObject(dto));
-            foreach (string campo in new[] { "HayOfertas", "Campana", "Titulo", "FechaHasta", "TextoHasta", "PrecioOculto", "DescuentoOculto", "Ofertas" })
+            foreach (string campo in new[] { "HayOfertas", "Campana", "Titulo", "FechaHasta", "TextoHasta", "PrecioOculto", "DescuentoOculto", "Total", "Mensaje", "HayMasOfertas", "Ofertas" })
             {
                 Assert.IsNotNull(json[campo], campo);
             }
@@ -108,7 +108,8 @@ namespace NestoAPI.Tests.Controllers
         public async Task Push_PeticionMal_400()
         {
             var nucleo = new ServicioOfertasParaTi(A.Fake<ILectorOfertasParaTi>(), A.Fake<IPuntuadorReposicion>());
-            var servicio = new ServicioPushCampana(nucleo, A.Fake<IFuentePushCampana>(), A.Fake<IServicioNotificacionesPush>(), p => Task.FromResult<string>(null));
+            var servicio = new ServicioPushCampana(nucleo, A.Fake<IFuentePushCampana>(), A.Fake<IServicioNotificacionesPush>(), A.Fake<ICalculadorPreciosOferta>(),
+                c => Task.FromResult("0"), p => Task.FromResult<string>(null));
 
             IHttpActionResult r = await Push(servicio, "Dirección").PostPush(new PeticionCampanaPushDTO());
 
@@ -126,17 +127,23 @@ namespace NestoAPI.Tests.Controllers
             });
             A.CallTo(() => lector.LeerDisponibles(A<IReadOnlyCollection<string>>._)).Returns(new Dictionary<string, int> { { "1", 3 } });
             IPuntuadorReposicion puntuador = A.Fake<IPuntuadorReposicion>();
-            A.CallTo(() => puntuador.ModeloDisponible()).Returns(null);
+            A.CallTo(() => puntuador.ModeloDisponible()).Returns("m1-x");
+            A.CallTo(() => puntuador.Puntuar(A<string>._, A<string>._, A<DateTime>._, A<IReadOnlyCollection<string>>._))
+                .Returns(new Dictionary<string, float> { { "1", 0.4f } });
+            ICalculadorPreciosOferta precios = A.Fake<ICalculadorPreciosOferta>();
+            A.CallTo(() => precios.Calcular(A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .Returns(new PreciosOferta { Precio = 7, PrecioAntes = 10, Tarifa = 10 });
             IFuentePushCampana fuente = A.Fake<IFuentePushCampana>();
             A.CallTo(() => fuente.ClientesConConsejos()).Returns(new List<string> { "1000" });
             IServicioNotificacionesPush push = A.Fake<IServicioNotificacionesPush>();
-            var servicio = new ServicioPushCampana(new ServicioOfertasParaTi(lector, puntuador), fuente, push, p => Task.FromResult<string>(null));
+            var servicio = new ServicioPushCampana(new ServicioOfertasParaTi(lector, puntuador), fuente, push, precios, c => Task.FromResult("0"),
+                p => Task.FromResult<string>(null));
 
             IHttpActionResult r = await Push(servicio, "Informática").PostPush(new PeticionCampanaPushDTO { Campana = "Black Friday 2026" });
 
             RespuestaCampanaPushDTO respuesta = ((OkNegotiatedContentResult<RespuestaCampanaPushDTO>)r).Content;
             Assert.IsTrue(respuesta.Ensayo);
-            Assert.AreEqual("Uno (−30 %), pensado para ti.", respuesta.Mensajes.Single().Cuerpo);
+            Assert.AreEqual("Mira las ofertas del Black Friday que hemos elegido para ti.", respuesta.Mensajes.Single().Cuerpo);
             A.CallTo(() => push.EnviarConsejoACliente(A<string>._, A<string>._, A<NestoAPI.Models.NotificacionPushDTO>._)).MustNotHaveHappened();
             A.CallTo(() => fuente.Anotar(A<string>._, A<string>._)).MustNotHaveHappened();
             JObject json = JObject.Parse(JsonConvert.SerializeObject(respuesta));
@@ -144,6 +151,57 @@ namespace NestoAPI.Tests.Controllers
             {
                 Assert.IsNotNull(json[campo], campo);
             }
+        }
+
+        [TestMethod]
+        public async Task Push_DeVerdad_202ConElTrabajoEncolado_YFueraDeHorario400SinEncolar()
+        {
+            var encolados = new List<string>();
+            var nucleo = new ServicioOfertasParaTi(A.Fake<ILectorOfertasParaTi>(), A.Fake<IPuntuadorReposicion>());
+            var servicio = new ServicioPushCampana(nucleo, A.Fake<IFuentePushCampana>(), A.Fake<IServicioNotificacionesPush>(), A.Fake<ICalculadorPreciosOferta>(),
+                c => Task.FromResult("0"));
+            CampanasPushController Controlador(DateTime ahora) => new CampanasPushController(servicio, (p, u) => { encolados.Add(p.Campana + "|" + u); return "42"; })
+            {
+                RequestContext = new HttpRequestContext { Principal = new GenericPrincipal(new GenericIdentity(@"NUEVAVISION\Carlos", "Bearer"), new[] { "Dirección" }) },
+                Ahora = () => ahora
+            };
+
+            IHttpActionResult r = await Controlador(new DateTime(2026, 11, 26, 10, 0, 0)).PostPush(new PeticionCampanaPushDTO { Campana = " Black Friday 2026 " }, false);
+            var aceptado = (NegotiatedContentResult<PushCampanaEncoladaDTO>)r;
+            Assert.AreEqual(HttpStatusCode.Accepted, aceptado.StatusCode);
+            Assert.AreEqual("42", aceptado.Content.JobId);
+            Assert.AreEqual("Black Friday 2026", aceptado.Content.Campana);
+            Assert.AreEqual(1, encolados.Count);
+
+            IHttpActionResult tarde = await Controlador(new DateTime(2026, 11, 26, 22, 0, 0)).PostPush(new PeticionCampanaPushDTO { Campana = "Black Friday 2026" }, false);
+            Assert.AreEqual(ReglaPushCampana.MENSAJE_FUERA_DE_HORARIO, ((BadRequestErrorMessageResult)tarde).Message);
+            Assert.AreEqual(1, encolados.Count);
+        }
+
+        [TestMethod]
+        public async Task Todas_ElClienteSaleDelToken_Y401SinEl()
+        {
+            IServicioOfertasCliente servicio = A.Fake<IServicioOfertasCliente>();
+            var respuesta = new TodasOfertasParaTiRespuestaDTO { Campana = "Black Friday 2026", Desde = 20 };
+            A.CallTo(() => servicio.Todas("15191", "Black Friday 2026", 20, 10, "Lisap", "champu", PoliticaPreciosOcultos.NivelPrecios.Completo, HOY)).Returns(respuesta);
+
+            IHttpActionResult r = await Ofertas(servicio, new Claim("cliente", "15191")).GetTodas("Black Friday 2026", 20, 10, "Lisap", "champu");
+            Assert.AreSame(respuesta, ((OkNegotiatedContentResult<TodasOfertasParaTiRespuestaDTO>)r).Content);
+
+            IHttpActionResult sin = await Ofertas(servicio, new Claim("IsEmployee", "true")).GetTodas();
+            Assert.IsInstanceOfType(sin, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public void Todas_Contrato_NombresDeCampo()
+        {
+            var dto = new TodasOfertasParaTiRespuestaDTO { Campana = "Black Friday 2026", Familias = new List<FamiliaOfertasDTO> { new FamiliaOfertasDTO { Familia = "Lisap", Productos = 722 } } };
+            JObject json = JObject.Parse(JsonConvert.SerializeObject(dto));
+            foreach (string campo in new[] { "Campana", "Titulo", "FechaHasta", "TextoHasta", "PrecioOculto", "DescuentoOculto", "Desde", "Siguiente", "HayMas", "TotalCampana", "Familias", "Ofertas" })
+            {
+                Assert.IsTrue(json.ContainsKey(campo), campo);
+            }
+            Assert.AreEqual(722, (int)json["Familias"][0]["Productos"]);
         }
     }
 }

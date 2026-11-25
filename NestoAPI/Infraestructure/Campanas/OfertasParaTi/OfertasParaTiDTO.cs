@@ -14,6 +14,10 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public const string DE_TUS_MARCAS = "DeTusMarcas";
         /// <summary>Lo demás: por descuento y por lo que lo piden otros profesionales.</summary>
         public const string TE_PUEDE_INTERESAR = "TePuedeInteresar";
+        /// <summary>Quienes piden lo que él pide suelen pedir también este (pares de las sugerencias de la plantilla).</summary>
+        public const string COMPRADO_JUNTO = "CompradoJunto";
+        /// <summary>Lo piden los clientes que compran como él (afinidad item-kNN de las sugerencias).</summary>
+        public const string PARECIDO = "Parecido";
     }
 
     /// <summary>Una fila vigente de una campaña (DescuentosProducto de tarifa, por producto) con la ficha del producto.</summary>
@@ -85,6 +89,11 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public bool Habitual { get; set; }
         /// <summary>La P1 del modelo 1, si se ha usado. Null: ordenada por la regla.</summary>
         public float? Probabilidad { get; set; }
+        /// <summary>Le cuadra a ESTE cliente: la trae una fuente suya (le toca, habitual, comprado junto, parecido, sus marcas, su perfil)
+        /// o la ha puntuado el modelo. Las que no, solo salen en «Ver todas».</summary>
+        public bool Personal { get; set; }
+        /// <summary>El grupo de la regla (<see cref="ReglaRankingOfertasParaTi"/>): 1 le toca … 6 su perfil, 7 ninguna fuente.</summary>
+        public int Grupo { get; set; }
     }
 
     /// <summary>Las ofertas de un cliente y cómo se han ordenado.</summary>
@@ -94,6 +103,30 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public List<OfertaElegida> Ofertas { get; set; } = new List<OfertaElegida>();
         /// <summary>«m1-…» si las ha ordenado el modelo 1; null si la regla.</summary>
         public string VersionModelo { get; set; }
+        /// <summary>Productos que se han pasado al modelo (para medir el coste).</summary>
+        public int Puntuados { get; set; }
+        /// <summary>Los precios ya calculados para este cliente (producto → precios; null = no se pudo), para no repetirlos entre la franja,
+        /// la pantalla, «Ver todas» y la push mientras el ranking siga guardado.</summary>
+        public System.Collections.Concurrent.ConcurrentDictionary<string, PreciosOferta> Precios { get; } =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, PreciosOferta>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Lo que traen las fuentes de las sugerencias de la plantilla para un cliente, ya restringido a los productos de la campaña.</summary>
+    public class FuentesClienteOfertas
+    {
+        /// <summary>Producto → (confianza del mejor par, nombre del producto suyo que lo trae).</summary>
+        public Dictionary<string, Tuple<decimal, string>> CompradoJunto { get; set; } = new Dictionary<string, Tuple<decimal, string>>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Producto → afinidad (item-kNN).</summary>
+        public Dictionary<string, decimal> Parecidos { get; set; } = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Producto → clientes de su perfil (grupo y subgrupo en el que más compra) que lo compran.</summary>
+        public Dictionary<string, int> Perfil { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Una oferta elegida con sus precios ya calculados (y que mejoran los de siempre del cliente).</summary>
+    public class OfertaConPrecio
+    {
+        public OfertaElegida Oferta { get; set; }
+        public PreciosOferta Precios { get; set; }
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -112,7 +145,40 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public bool PrecioOculto { get; set; }
         /// <summary>Quien la pide no ve los descuentos (cargo 31): va la tarifa en Precio, sin PrecioAntes ni Descuento.</summary>
         public bool DescuentoOculto { get; set; }
+        /// <summary>Cuántas ofertas van (= Ofertas.Count).</summary>
+        public int Total { get; set; }
+        /// <summary>Con <c>HayOfertas</c> false, el texto para el cliente (de tú); null si hay ofertas.</summary>
+        public string Mensaje { get; set; }
+        /// <summary>Hay más ofertas de la campaña que estas: la app pinta «Ver todas las ofertas del Black Friday» (GET …/Ofertas/Todas).</summary>
+        public bool HayMasOfertas { get; set; }
         public List<OfertaParaTiDTO> Ofertas { get; set; } = new List<OfertaParaTiDTO>();
+    }
+
+    /// <summary>GET api/Pedidos/Cliente/Ofertas/Todas: una página del ranking del cliente, solo lo que le mejora el precio.</summary>
+    public class TodasOfertasParaTiRespuestaDTO
+    {
+        public string Campana { get; set; }
+        public string Titulo { get; set; }
+        public string FechaHasta { get; set; }
+        public string TextoHasta { get; set; }
+        public bool PrecioOculto { get; set; }
+        public bool DescuentoOculto { get; set; }
+        /// <summary>La posición del ranking (ya filtrado) desde la que se ha mirado.</summary>
+        public int Desde { get; set; }
+        /// <summary>Por dónde seguir (el <c>desde</c> de la página siguiente); null si no hay más.</summary>
+        public int? Siguiente { get; set; }
+        public bool HayMas { get; set; }
+        /// <summary>Productos de la campaña vigentes hoy para profesionales (sin filtros).</summary>
+        public int TotalCampana { get; set; }
+        /// <summary>Solo en la primera página (desde = 0): las familias de la campaña con cuántos productos. Null en las demás.</summary>
+        public List<FamiliaOfertasDTO> Familias { get; set; }
+        public List<OfertaParaTiDTO> Ofertas { get; set; } = new List<OfertaParaTiDTO>();
+    }
+
+    public class FamiliaOfertasDTO
+    {
+        public string Familia { get; set; }
+        public int Productos { get; set; }
     }
 
     public class OfertaParaTiDTO
@@ -183,6 +249,14 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public int Enviados { get; set; }
     }
 
+    /// <summary>El 202 del envío de verdad: va en segundo plano (Hangfire) y el resultado queda en Modificaciones (Tabla CampanaPush).</summary>
+    public class PushCampanaEncoladaDTO
+    {
+        public string JobId { get; set; }
+        public string Campana { get; set; }
+        public string Mensaje { get; set; }
+    }
+
     public class RespuestaCampanaPushDTO
     {
         public bool Ensayo { get; set; }
@@ -190,6 +264,12 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public int Destinatarios { get; set; }
         public int ConOfertas { get; set; }
         public int SinOfertas { get; set; }
+        /// <summary>Consultas al motor de precios de toda la tanda (el coste: cada una, unas pocas consultas a la BD).</summary>
+        public int ConsultasPrecio { get; set; }
+        /// <summary>Productos pasados al modelo en toda la tanda (los rankings ya guardados no cuentan).</summary>
+        public int ProductosPuntuados { get; set; }
+        /// <summary>Lo que ha tardado el cálculo (y el envío, de verdad).</summary>
+        public decimal Segundos { get; set; }
         public List<SaltadoPushCampanaDTO> Saltados { get; set; } = new List<SaltadoPushCampanaDTO>();
         public List<MensajePushCampanaDTO> Mensajes { get; set; } = new List<MensajePushCampanaDTO>();
     }

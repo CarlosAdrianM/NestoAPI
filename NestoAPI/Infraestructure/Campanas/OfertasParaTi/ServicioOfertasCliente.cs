@@ -120,16 +120,21 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         }
     }
 
-    /// <summary>Lo que hace el endpoint GET api/Pedidos/Cliente/Ofertas (sustituible en las pruebas del controlador).</summary>
+    /// <summary>Lo que hacen los endpoints GET api/Pedidos/Cliente/Ofertas y …/Ofertas/Todas (sustituible en las pruebas del controlador).</summary>
     public interface IServicioOfertasCliente
     {
         /// <summary>Nunca lanza: si algo falla, sin ofertas (y a ELMAH).</summary>
         Task<OfertasParaTiRespuestaDTO> Calcular(string cliente, string campana, int? maximo, PoliticaPreciosOcultos.NivelPrecios nivel, DateTime hoy);
+
+        /// <summary>«Ver todas»: una página del ranking del cliente. Nunca lanza: si algo falla, la página vacía (y a ELMAH).</summary>
+        Task<TodasOfertasParaTiRespuestaDTO> Todas(string cliente, string campana, int desde, int? cuantas, string familia, string texto,
+            PoliticaPreciosOcultos.NivelPrecios nivel, DateTime hoy);
     }
 
     /// <summary>
-    /// «Ofertas para ti» de UN cliente de la app: el núcleo (<see cref="ServicioOfertasParaTi"/>) le da sus candidatas ordenadas y aquí se
-    /// les pone el precio del motor (fuera las que no mejoran sin la campaña), la foto de la tienda y la política de precios ocultos.
+    /// «Ofertas para ti» de UN cliente de la app: el núcleo (<see cref="ServicioOfertasParaTi"/>) le da su ranking (guardado con el
+    /// contexto de la campaña), el selector (<see cref="SelectorOfertasConPrecio"/>) lo recorre quedándose con lo que de verdad le mejora
+    /// el precio y aquí se pone la foto de la tienda y la política de precios ocultos.
     /// </summary>
     public class ServicioOfertasCliente : IServicioOfertasCliente
     {
@@ -137,7 +142,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
 
         private readonly ServicioOfertasParaTi nucleo;
         private readonly Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto;
-        private readonly ICalculadorPreciosOferta precios;
+        private readonly SelectorOfertasConPrecio selector;
         private readonly Func<string, Task<string>> leerContacto;
         private readonly Func<string, Task<string>> leerFoto;
         private readonly Action<Exception> registrar;
@@ -146,24 +151,28 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             Func<string, Task<string>> leerFoto = null, Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto = null, Action<Exception> registrar = null)
         {
             this.nucleo = nucleo ?? throw new ArgumentNullException(nameof(nucleo));
-            this.precios = precios ?? throw new ArgumentNullException(nameof(precios));
             this.leerContacto = leerContacto ?? throw new ArgumentNullException(nameof(leerContacto));
             this.leerFoto = leerFoto ?? RecordatorioReposicionJobsService.LeerFotoTienda;
             this.contexto = contexto ?? ((c, d) => nucleo.Preparar(c, d));
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
+            selector = new SelectorOfertasConPrecio(nucleo, precios ?? throw new ArgumentNullException(nameof(precios)), this.registrar);
         }
 
-        /// <summary>La de producción: con el contexto de la campaña guardado 10 minutos para todos los clientes.</summary>
+        /// <summary>
+        /// La de producción: con el contexto de la campaña guardado 10 minutos para todos los clientes; con él se guardan el ranking y los
+        /// precios ya calculados de cada cliente (la franja, la pantalla y «Ver todas» no los repiten).
+        /// </summary>
         public static ServicioOfertasCliente Produccion(NVEntities db)
         {
-            var nucleo = new ServicioOfertasParaTi(new LectorOfertasParaTiSql(db),
-                new PuntuadorReposicionModelo(new SugerenciasProductos.RepositorioSugerenciasProductosSql(db),
-                    SugerenciasProductos.PredictorSugerenciasProductos.Instancia));
-            return new ServicioOfertasCliente(nucleo, new CalculadorPreciosOfertaMotor(db),
-                async cliente => (await System.Data.Entity.QueryableExtensions.AsNoTracking(db.Clientes)
-                    .BuscarPrincipalAsync(EMPRESA, cliente).ConfigureAwait(false))?.Contacto?.Trim(),
+            ServicioOfertasParaTi nucleo = ServicioOfertasParaTi.Produccion(db);
+            return new ServicioOfertasCliente(nucleo, new CalculadorPreciosOfertaMotor(db), LectorContactoPrincipal(db),
                 contexto: (c, d) => CacheContextoOfertasParaTi.Obtener(c, d, () => nucleo.Preparar(c, d)));
         }
+
+        /// <summary>El contacto de la ficha principal del cliente (empresa 1); null si no existe.</summary>
+        internal static Func<string, Task<string>> LectorContactoPrincipal(NVEntities db)
+            => async cliente => (await System.Data.Entity.QueryableExtensions.AsNoTracking(db.Clientes)
+                .BuscarPrincipalAsync(EMPRESA, cliente).ConfigureAwait(false))?.Contacto?.Trim();
 
         public async Task<OfertasParaTiRespuestaDTO> Calcular(string cliente, string campana, int? maximo, PoliticaPreciosOcultos.NivelPrecios nivel, DateTime hoy)
         {
@@ -180,61 +189,108 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 string contacto = await leerContacto(cliente).ConfigureAwait(false);
                 if (ctx != null && ctx.Candidatas.Count > 0 && !string.IsNullOrWhiteSpace(contacto))
                 {
-                    Dictionary<string, ResultadoOfertasCliente> calculado = await nucleo.Calcular(ctx, new[] { cliente }, null).ConfigureAwait(false);
-                    List<OfertaElegida> ordenadas = calculado.TryGetValue(cliente.Trim(), out ResultadoOfertasCliente r) ? r.Ofertas : new List<OfertaElegida>();
-                    foreach (OfertaElegida o in ordenadas)
-                    {
-                        if (respuesta.Ofertas.Count >= n)
-                        {
-                            break;
-                        }
-                        PreciosOferta p;
-                        try
-                        {
-                            p = await precios.Calcular(EMPRESA, cliente, contacto, o.Candidata.Producto, o.Candidata.Campana).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            registrar(new Exception($"[Ofertas para ti] No se ha podido calcular el precio del {o.Candidata.Producto} para el cliente {cliente}: {ex.Message}", ex));
-                            continue;
-                        }
-                        if (!ReglaPreciosOfertaParaTi.Mejora(p))
-                        {
-                            continue; // con la campaña no paga menos (su precio de siempre ya es mejor): no es una oferta para él
-                        }
-                        var oferta = new OfertaParaTiDTO
-                        {
-                            Producto = o.Candidata.Producto,
-                            Nombre = ReglaOfertasParaTi.FormatoTitulo(o.Candidata.Nombre),
-                            Familia = ReglaOfertasParaTi.FormatoTitulo(string.IsNullOrWhiteSpace(o.Candidata.NombreFamilia) ? o.Candidata.Familia : o.Candidata.NombreFamilia),
-                            Campana = o.Candidata.Campana,
-                            CantidadSugerida = Math.Max(1, o.CantidadSugerida),
-                            Motivo = o.Motivo,
-                            Texto = o.Texto
-                        };
-                        ReglaPreciosOfertaParaTi.AplicarNivel(oferta, p, nivel);
-                        respuesta.Ofertas.Add(oferta);
-                    }
+                    ResultadoOfertasCliente r = await Ranking(ctx, cliente).ConfigureAwait(false);
+                    RecorridoOfertas elegidas = await selector.Seleccionar(ctx, r, EMPRESA, cliente, contacto, n).ConfigureAwait(false);
+                    respuesta.Ofertas.AddRange(elegidas.Ofertas.Select(e => ADto(e, nivel)));
                     await PonerFotos(respuesta.Ofertas).ConfigureAwait(false);
+                    // «Ver todas»: hay más ofertas de la campaña para él que las que se enseñan (apartadas por la diversidad o sin mirar)
+                    respuesta.HayMasOfertas = respuesta.Ofertas.Count > 0 && (elegidas.Sobran || r.Ofertas.Count > respuesta.Ofertas.Count);
                 }
             }
             catch (Exception ex)
             {
                 registrar(new Exception($"[Ofertas para ti] No se han podido calcular las ofertas del cliente {cliente}: {ex.Message}", ex));
                 respuesta.Ofertas.Clear();
+                respuesta.HayMasOfertas = false;
             }
 
             respuesta.HayOfertas = respuesta.Ofertas.Count > 0;
-            string principal = ctx?.CampanaPedida
-                ?? respuesta.Ofertas.FirstOrDefault()?.Campana
-                ?? ReglaOfertasParaTi.CampanaPrincipal(ctx?.Candidatas)
-                ?? (string.IsNullOrWhiteSpace(campana) ? null : campana.Trim());
+            respuesta.Total = respuesta.Ofertas.Count;
+            respuesta.Mensaje = respuesta.HayOfertas ? null : ReglaSeleccionOfertasParaTi.MENSAJE_SIN_OFERTAS;
+            string principal = Principal(ctx, respuesta.Ofertas, campana);
             respuesta.Campana = principal;
             respuesta.Titulo = ReglaOfertasParaTi.Titulo(principal);
             DateTime? fin = ReglaOfertasParaTi.FinDeCampana(ctx?.Candidatas, principal);
             respuesta.FechaHasta = fin?.ToString("yyyy-MM-dd");
             respuesta.TextoHasta = ReglaOfertasParaTi.TextoHasta(fin, hoy);
             return respuesta;
+        }
+
+        public async Task<TodasOfertasParaTiRespuestaDTO> Todas(string cliente, string campana, int desde, int? cuantas, string familia, string texto,
+            PoliticaPreciosOcultos.NivelPrecios nivel, DateTime hoy)
+        {
+            int inicio = Math.Max(0, desde);
+            var respuesta = new TodasOfertasParaTiRespuestaDTO
+            {
+                PrecioOculto = nivel == PoliticaPreciosOcultos.NivelPrecios.SinPrecios,
+                DescuentoOculto = nivel == PoliticaPreciosOcultos.NivelPrecios.SinDescuentos,
+                Desde = inicio
+            };
+            ContextoOfertasParaTi ctx = null;
+            try
+            {
+                ctx = await contexto(campana, hoy.Date).ConfigureAwait(false);
+                respuesta.TotalCampana = ctx?.Candidatas.Count ?? 0;
+                if (inicio == 0)
+                {
+                    respuesta.Familias = ReglaRankingOfertasParaTi.Familias(ctx?.Candidatas);
+                }
+                string contacto = await leerContacto(cliente).ConfigureAwait(false);
+                if (ctx != null && ctx.Candidatas.Count > 0 && !string.IsNullOrWhiteSpace(contacto))
+                {
+                    ResultadoOfertasCliente r = await Ranking(ctx, cliente).ConfigureAwait(false);
+                    List<OfertaElegida> filtradas = r.Ofertas.Where(o => ReglaRankingOfertasParaTi.PasaFiltro(o, familia, texto)).ToList();
+                    RecorridoOfertas pagina = await selector.Recorrer(ctx, r, filtradas, inicio, EMPRESA, cliente, contacto,
+                        ReglaSeleccionOfertasParaTi.CuantasTodas(cuantas), false, ReglaSeleccionOfertasParaTi.TOPE_EXAMINADOS_TODAS,
+                        ReglaSeleccionOfertasParaTi.TOPE_EXAMINADOS_TODAS).ConfigureAwait(false);
+                    respuesta.Ofertas.AddRange(pagina.Ofertas.Select(e => ADto(e, nivel)));
+                    await PonerFotos(respuesta.Ofertas).ConfigureAwait(false);
+                    respuesta.Siguiente = pagina.Siguiente;
+                }
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Ofertas para ti] No se han podido calcular todas las ofertas del cliente {cliente}: {ex.Message}", ex));
+                respuesta.Ofertas.Clear();
+                respuesta.Siguiente = null;
+            }
+            respuesta.HayMas = respuesta.Siguiente.HasValue;
+            string principal = Principal(ctx, respuesta.Ofertas, campana);
+            respuesta.Campana = principal;
+            respuesta.Titulo = ReglaOfertasParaTi.Titulo(principal);
+            DateTime? fin = ReglaOfertasParaTi.FinDeCampana(ctx?.Candidatas, principal);
+            respuesta.FechaHasta = fin?.ToString("yyyy-MM-dd");
+            respuesta.TextoHasta = ReglaOfertasParaTi.TextoHasta(fin, hoy);
+            return respuesta;
+        }
+
+        private async Task<ResultadoOfertasCliente> Ranking(ContextoOfertasParaTi ctx, string cliente)
+        {
+            Dictionary<string, ResultadoOfertasCliente> calculado = await nucleo.Calcular(ctx, new[] { cliente }, null).ConfigureAwait(false);
+            return calculado.TryGetValue(cliente.Trim(), out ResultadoOfertasCliente suyo) ? suyo : new ResultadoOfertasCliente { Cliente = cliente };
+        }
+
+        private static string Principal(ContextoOfertasParaTi ctx, List<OfertaParaTiDTO> ofertas, string campana)
+            => ctx?.CampanaPedida
+                ?? ofertas.FirstOrDefault()?.Campana
+                ?? ReglaOfertasParaTi.CampanaPrincipal(ctx?.Candidatas)
+                ?? (string.IsNullOrWhiteSpace(campana) ? null : campana.Trim());
+
+        private static OfertaParaTiDTO ADto(OfertaConPrecio elegida, PoliticaPreciosOcultos.NivelPrecios nivel)
+        {
+            OfertaElegida o = elegida.Oferta;
+            var oferta = new OfertaParaTiDTO
+            {
+                Producto = o.Candidata.Producto,
+                Nombre = ReglaOfertasParaTi.FormatoTitulo(o.Candidata.Nombre),
+                Familia = ReglaRankingOfertasParaTi.NombreFamilia(o.Candidata),
+                Campana = o.Candidata.Campana,
+                CantidadSugerida = Math.Max(1, o.CantidadSugerida),
+                Motivo = o.Motivo,
+                Texto = o.Texto
+            };
+            ReglaPreciosOfertaParaTi.AplicarNivel(oferta, elegida.Precios, nivel);
+            return oferta;
         }
 
         private async Task PonerFotos(List<OfertaParaTiDTO> ofertas)

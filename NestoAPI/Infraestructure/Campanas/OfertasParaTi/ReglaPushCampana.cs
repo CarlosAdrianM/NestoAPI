@@ -41,7 +41,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public const string MOTIVO_DE_BAJA = "Ha apagado «Avisos de reposición» en la app.";
         public const string MOTIVO_EXCLUIDO = "Excluido en la petición.";
         public const string MOTIVO_SIN_APP = "No tiene la app con los consejos encendidos.";
-        public const string MOTIVO_SIN_OFERTAS = "Sin ofertas para él (y la petición no incluye a los que no tienen).";
+        public const string MOTIVO_SIN_OFERTAS = "No hay ofertas que le mejoren el precio.";
 
         public static string MotivoRepetido(string campana, int dias)
             => dias == 1
@@ -92,7 +92,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 SoloClientes = Conjunto(peticion.SoloClientes),
                 ExcluirClientes = Conjunto(peticion.ExcluirClientes),
                 DiasSinRepetir = dias,
-                IncluirSinOfertas = peticion.IncluirSinOfertas ?? true,
+                IncluirSinOfertas = peticion.IncluirSinOfertas ?? false, // 25/11/26: a quien no le mejora nada, nada
                 CuerpoSinOfertas = Limpio(peticion.CuerpoSinOfertas)
             };
             return null;

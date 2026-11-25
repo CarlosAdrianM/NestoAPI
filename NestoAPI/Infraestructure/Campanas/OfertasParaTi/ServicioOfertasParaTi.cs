@@ -10,7 +10,9 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
 {
     /// <summary>
     /// Lo de la campaña que no depende del cliente: las candidatas (con su popularidad) y el disponible de los productos que ya se
-    /// han mirado (se va llenando según hace falta; seguro entre hilos porque el endpoint lo comparte unos minutos).
+    /// han mirado (se va llenando según hace falta; seguro entre hilos porque el endpoint lo comparte unos minutos). Guarda también el
+    /// ranking de cada cliente ya calculado: vive lo que vive el contexto (10 minutos en <see cref="CacheContextoOfertasParaTi"/>) y lo
+    /// usan la franja, la pantalla, «Ver todas» y la push.
     /// </summary>
     public class ContextoOfertasParaTi
     {
@@ -18,15 +20,17 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public DateTime Hoy { get; set; }
         public List<CandidataOferta> Candidatas { get; set; } = new List<CandidataOferta>();
         public ConcurrentDictionary<string, int> Disponibles { get; } = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        public ConcurrentDictionary<string, ResultadoOfertasCliente> Rankings { get; } = new ConcurrentDictionary<string, ResultadoOfertasCliente>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
     /// «Ofertas para ti», el NÚCLEO que comparten el endpoint de la app (un cliente) y la push de campaña (muchos): prepara la campaña
-    /// (<see cref="Preparar"/>, una lectura de filas y una de popularidad) y elige las de cada cliente (<see cref="Calcular"/>: compras,
-    /// pendientes y familias por tandas de clientes; el stock por tandas de productos y solo de lo que hace falta). El orden es el de
-    /// <see cref="ReglaOfertasParaTi"/> o, si está, el del modelo 1 de propensión sobre las <see cref="ReglaOfertasParaTi.CANDIDATOS_MODELO"/>
-    /// primeras de la regla con stock (<see cref="IPuntuadorReposicion"/>, el mismo que usa la puerta del recordatorio de reposición).
-    /// Sin modelo, o si falla, la regla (nunca rompe).
+    /// (<see cref="Preparar"/>, una lectura de filas y una de popularidad) y saca el RANKING de cada cliente (<see cref="Calcular"/>:
+    /// compras, pendientes y familias por tandas de clientes; por cliente, las fuentes de las sugerencias de la plantilla
+    /// (<see cref="IFuentesSugerenciasOfertas"/>) y el modelo 1 de propensión (<see cref="IPuntuadorReposicion"/>, el de la puerta del
+    /// recordatorio de reposición) sobre las de sus fuentes y, hasta <see cref="ReglaRankingOfertasParaTi.MAXIMO_PUNTUADOS"/>, las demás).
+    /// El orden es el de <see cref="ReglaRankingOfertasParaTi"/>. Sin modelo, o si falla, la regla; sin fuentes, o si fallan, solo las de
+    /// <see cref="ReglaOfertasParaTi.Evaluar"/> (nunca rompe). El stock no entra en el ranking: lo mira quien lo recorre, por tandas.
     /// </summary>
     public class ServicioOfertasParaTi
     {
@@ -35,13 +39,25 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
 
         private readonly ILectorOfertasParaTi lector;
         private readonly IPuntuadorReposicion puntuador;
+        private readonly IFuentesSugerenciasOfertas fuentes;
         private readonly Action<Exception> registrar;
 
-        public ServicioOfertasParaTi(ILectorOfertasParaTi lector, IPuntuadorReposicion puntuador = null, Action<Exception> registrar = null)
+        public ServicioOfertasParaTi(ILectorOfertasParaTi lector, IPuntuadorReposicion puntuador = null, Action<Exception> registrar = null,
+            IFuentesSugerenciasOfertas fuentes = null)
         {
             this.lector = lector ?? throw new ArgumentNullException(nameof(lector));
             this.puntuador = puntuador;
+            this.fuentes = fuentes;
             this.registrar = registrar ?? (ex => ElmahHelper.Log(ex));
+        }
+
+        /// <summary>El de producción: el lector SQL, el modelo 1 y las fuentes de las sugerencias de la plantilla (su mismo repositorio).</summary>
+        public static ServicioOfertasParaTi Produccion(NVEntities db)
+        {
+            var repositorio = new SugerenciasProductos.RepositorioSugerenciasProductosSql(db);
+            return new ServicioOfertasParaTi(new LectorOfertasParaTiSql(db),
+                new PuntuadorReposicionModelo(repositorio, SugerenciasProductos.PredictorSugerenciasProductos.Instancia),
+                fuentes: new FuentesSugerenciasOfertasSql(repositorio));
         }
 
         public async Task<ContextoOfertasParaTi> Preparar(string campana, DateTime hoy)
@@ -71,8 +87,9 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         }
 
         /// <summary>
-        /// Las ofertas de cada cliente, ordenadas (con <paramref name="maximo"/>, solo esas; sin él, todas las que se han mirado, como
-        /// mucho <see cref="ReglaOfertasParaTi.CANDIDATOS_MODELO"/>). Un cliente sin ofertas sale con la lista vacía.
+        /// El ranking de cada cliente (todas las ofertas de la campaña que valen para él, ordenadas; las «Personal», las suyas). Con
+        /// <paramref name="maximo"/>, solo las primeras «Personal» con stock (sin precio). Un cliente sin ofertas sale con la lista vacía.
+        /// Lo ya calculado con este contexto se reutiliza.
         /// </summary>
         public async Task<Dictionary<string, ResultadoOfertasCliente>> Calcular(ContextoOfertasParaTi contexto, IReadOnlyCollection<string> clientes, int? maximo)
         {
@@ -86,13 +103,27 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             {
                 return resultado;
             }
+            var porCalcular = new List<string>();
+            foreach (string c in lista)
+            {
+                if (contexto.Rankings.TryGetValue(c, out ResultadoOfertasCliente guardado))
+                {
+                    resultado[c] = guardado;
+                }
+                else
+                {
+                    porCalcular.Add(c);
+                }
+            }
             DateTime hoy = contexto.Hoy;
             string versionModelo = ModeloDisponible();
             var familias = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var productosCampana = new HashSet<string>(contexto.Candidatas.Select(c => c.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
+            bool conFuentes = fuentes != null;
 
-            for (int i = 0; i < lista.Count; i += LectorOfertasParaTiSql.LOTE_CLIENTES)
+            for (int i = 0; i < porCalcular.Count; i += LectorOfertasParaTiSql.LOTE_CLIENTES)
             {
-                List<string> lote = lista.Skip(i).Take(LectorOfertasParaTiSql.LOTE_CLIENTES).ToList();
+                List<string> lote = porCalcular.Skip(i).Take(LectorOfertasParaTiSql.LOTE_CLIENTES).ToList();
                 List<CompraDiaReposicion> compras = await lector.LeerCompras(EMPRESA, lote, hoy.AddMonths(-ReglaOfertasParaTi.MESES_FAMILIAS), hoy.AddDays(1))
                     .ConfigureAwait(false) ?? new List<CompraDiaReposicion>();
                 List<PendienteClienteOferta> pendientes = await lector.LeerPendientes(EMPRESA, lote).ConfigureAwait(false)
@@ -126,46 +157,84 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                         FamiliaDe = familias
                     };
                     List<CandidataEvaluada> evaluadas = ReglaOfertasParaTi.Evaluar(contexto.Candidatas, historial, hoy);
-                    List<CandidataEvaluada> conStock = await ConStock(contexto, evaluadas).ConfigureAwait(false);
-                    IDictionary<string, float> probabilidades = null;
-                    if (versionModelo != null && conStock.Count > 0)
+                    FuentesClienteOfertas suyas = null;
+                    if (conFuentes && evaluadas.Count > 0)
                     {
-                        probabilidades = await Puntuar(cliente, hoy, conStock).ConfigureAwait(false);
+                        suyas = await LeerFuentes(cliente, hoy, historial.Compras, productosCampana).ConfigureAwait(false);
+                        if (suyas == null)
+                        {
+                            conFuentes = false; // han fallado: el resto de la tanda, sin ellas
+                        }
+                    }
+                    List<OfertaElegida> clasificadas = ReglaRankingOfertasParaTi.Clasificar(evaluadas, suyas);
+                    List<string> paraPuntuar = ReglaRankingOfertasParaTi.ParaPuntuar(clasificadas);
+                    IDictionary<string, float> probabilidades = null;
+                    if (versionModelo != null && paraPuntuar.Count > 0)
+                    {
+                        probabilidades = await Puntuar(cliente, hoy, paraPuntuar).ConfigureAwait(false);
                         if (probabilidades == null)
                         {
                             versionModelo = null; // ha fallado: el resto de la tanda, por la regla
                         }
                     }
-                    List<OfertaElegida> ordenadas = ReglaOfertasParaTi.Ordenar(conStock, probabilidades);
-                    resultado[cliente] = new ResultadoOfertasCliente
+                    var ranking = new ResultadoOfertasCliente
                     {
                         Cliente = cliente,
-                        Ofertas = maximo.HasValue ? ordenadas.Take(maximo.Value).ToList() : ordenadas,
-                        VersionModelo = probabilidades != null && probabilidades.Count > 0 ? versionModelo : null
+                        Ofertas = ReglaRankingOfertasParaTi.Ordenar(clasificadas, probabilidades),
+                        VersionModelo = probabilidades != null && probabilidades.Count > 0 ? versionModelo : null,
+                        Puntuados = probabilidades == null ? 0 : paraPuntuar.Count
                     };
+                    contexto.Rankings[cliente] = ranking;
+                    resultado[cliente] = ranking;
+                }
+            }
+
+            if (maximo.HasValue)
+            {
+                foreach (string c in lista)
+                {
+                    ResultadoOfertasCliente r = resultado[c];
+                    List<OfertaElegida> conStock = await SiguientesConStock(contexto, r.Ofertas.Where(o => o.Personal), o => o.Candidata.Producto,
+                        null, maximo.Value).ConfigureAwait(false);
+                    resultado[c] = new ResultadoOfertasCliente { Cliente = c, Ofertas = conStock, VersionModelo = r.VersionModelo, Puntuados = r.Puntuados };
                 }
             }
             return resultado;
         }
 
-        /// <summary>Las primeras con stock (hasta <see cref="ReglaOfertasParaTi.CANDIDATOS_MODELO"/>), leyendo el stock por tramos y solo lo que falta.</summary>
-        private async Task<List<CandidataEvaluada>> ConStock(ContextoOfertasParaTi contexto, List<CandidataEvaluada> evaluadas)
+        /// <summary>Lee el disponible de los productos que aún no se han mirado (por tramos) y lo guarda en el contexto.</summary>
+        public async Task AsegurarStock(ContextoOfertasParaTi contexto, IEnumerable<string> productos)
         {
-            var elegidas = new List<CandidataEvaluada>();
-            for (int i = 0; i < evaluadas.Count && elegidas.Count < ReglaOfertasParaTi.CANDIDATOS_MODELO; i += TRAMO_STOCK)
+            List<string> faltan = (productos ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim())
+                .Where(p => !contexto.Disponibles.ContainsKey(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            for (int i = 0; i < faltan.Count; i += TRAMO_STOCK)
             {
-                List<CandidataEvaluada> tramo = evaluadas.Skip(i).Take(TRAMO_STOCK).ToList();
-                List<string> faltan = tramo.Select(e => e.Candidata.Producto.Trim()).Where(p => !contexto.Disponibles.ContainsKey(p))
-                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                if (faltan.Count > 0)
+                List<string> tramo = faltan.Skip(i).Take(TRAMO_STOCK).ToList();
+                Dictionary<string, int> leidos = await lector.LeerDisponibles(tramo).ConfigureAwait(false) ?? new Dictionary<string, int>();
+                foreach (string p in tramo)
                 {
-                    Dictionary<string, int> leidos = await lector.LeerDisponibles(faltan).ConfigureAwait(false) ?? new Dictionary<string, int>();
-                    foreach (string p in faltan)
-                    {
-                        contexto.Disponibles[p] = leidos.TryGetValue(p, out int d) ? d : 0;
-                    }
+                    contexto.Disponibles[p] = leidos.TryGetValue(p, out int d) ? d : 0;
                 }
-                elegidas.AddRange(ReglaOfertasParaTi.ConStock(tramo, contexto.Disponibles, ReglaOfertasParaTi.CANDIDATOS_MODELO - elegidas.Count));
+            }
+        }
+
+        /// <summary>
+        /// Las primeras <paramref name="maximo"/> de <paramref name="enOrden"/> (en ese orden) con stock que no están en
+        /// <paramref name="excluir"/>, leyendo el stock por tramos y solo de lo que aún no se ha mirado.
+        /// </summary>
+        public async Task<List<T>> SiguientesConStock<T>(ContextoOfertasParaTi contexto, IEnumerable<T> enOrden, Func<T, string> producto,
+            ISet<string> excluir, int maximo)
+        {
+            List<T> lista = (enOrden ?? Enumerable.Empty<T>())
+                .Where(e => e != null && producto(e) != null && (excluir == null || !excluir.Contains(producto(e).Trim())))
+                .ToList();
+            var elegidas = new List<T>();
+            for (int i = 0; i < lista.Count && elegidas.Count < maximo; i += TRAMO_STOCK)
+            {
+                List<T> tramo = lista.Skip(i).Take(TRAMO_STOCK).ToList();
+                await AsegurarStock(contexto, tramo.Select(producto)).ConfigureAwait(false);
+                elegidas.AddRange(tramo.Where(e => contexto.Disponibles.TryGetValue(producto(e).Trim(), out int d) && d > 0)
+                    .Take(maximo - elegidas.Count));
             }
             return elegidas;
         }
@@ -183,13 +252,26 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             }
         }
 
-        /// <summary>Las P1 del modelo, o null si ha fallado (a ELMAH; la regla sigue).</summary>
-        private async Task<IDictionary<string, float>> Puntuar(string cliente, DateTime hoy, List<CandidataEvaluada> candidatas)
+        /// <summary>Las de las fuentes de la plantilla, o null si han fallado (a ELMAH; el ranking sigue sin ellas).</summary>
+        private async Task<FuentesClienteOfertas> LeerFuentes(string cliente, DateTime hoy, List<CompraDiaReposicion> compras, ISet<string> productosCampana)
         {
             try
             {
-                Dictionary<string, float> p = await puntuador.Puntuar(EMPRESA, cliente, hoy,
-                    candidatas.Select(c => c.Candidata.Producto.Trim()).ToList()).ConfigureAwait(false);
+                return await fuentes.Leer(EMPRESA, cliente, hoy, compras, productosCampana).ConfigureAwait(false) ?? new FuentesClienteOfertas();
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Ofertas para ti] Las fuentes de las sugerencias han fallado con el cliente {cliente}; se ordena sin ellas: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>Las P1 del modelo, o null si ha fallado (a ELMAH; la regla sigue).</summary>
+        private async Task<IDictionary<string, float>> Puntuar(string cliente, DateTime hoy, List<string> productos)
+        {
+            try
+            {
+                Dictionary<string, float> p = await puntuador.Puntuar(EMPRESA, cliente, hoy, productos).ConfigureAwait(false);
                 return p ?? new Dictionary<string, float>();
             }
             catch (Exception ex)
@@ -199,6 +281,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             }
         }
     }
+
 
     /// <summary>
     /// La campaña preparada para el endpoint de la app, guardada unos minutos (todos los clientes comparten filas, popularidad y stock).
