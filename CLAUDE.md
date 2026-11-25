@@ -313,7 +313,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 
 ### Etiquetas de inmovilizado (Carlos 25/11/26; gemela Nesto)
 - Máquinas inmovilizadas tras el inventario (demostración, uso propio): etiqueta 3×2 «INMOVILIZADO · NO ES STOCK», «I/1823» en grande con la
-  delegación, la descripción en 2 líneas y un Code128 con el texto EXACTO «I/1823». LA REGLA `CodigoInmovilizado` (`Infraestructure/Inmovilizados/`):
+  delegación, la descripción en hasta 3 líneas y un Code128 con el texto EXACTO «I/1823» (56 puntos de alto). La descripción, por LA REGLA
+  `ReglaDescripcionEtiquetaInmovilizado` (sin cortar palabras): el número de serie («n/s», «s/n», «nº serie», hasta el final) sale SIEMPRE entero;
+  si no cabe, se recorta el nombre con «…» y, después, la referencia. LA REGLA `CodigoInmovilizado` (`Infraestructure/Inmovilizados/`):
   `Componer` («I/» + número sin relleno) y `Leer` («I/1823», «i/1823», espacios; solo cifras; el número a secas NO). Tabla Inmovilizados (EDMX), solo lectura.
 - `GET api/Inmovilizados?empresa=1&filtro=&delegacion=&soloVivos=true` (`InmovilizadosController`; cliente de la tienda 403; 500 como mucho, los más nuevos
   primero; filtro en número —«I/1823» = ese exacto— y descripción) → [{Empresa, Numero, Codigo, Descripcion, Grupo, Delegacion, Estado, EstadoDescripcion,

@@ -171,10 +171,97 @@ namespace NestoAPI.Tests.Infraestructure
 
             Assert.AreEqual("I/1823", e.Codigo);
             Assert.AreEqual("INMOVILIZADO · NO ES STOCK", e.Cabecera);
-            Assert.AreEqual(2, e.Descripcion.Count);
+            Assert.AreEqual(3, e.Descripcion.Count);
             Assert.IsTrue(e.Descripcion.All(l => l.Length <= GeneradorEtiquetasProducto.CARACTERES_PEQUENA));
             StringAssert.StartsWith(e.Descripcion[0], "DEPILADOR ELÉCTRICO");
             Assert.AreEqual("ALG", e.Delegacion);
+        }
+
+        private static void SinCortarPalabras(List<string> lineas, string original)
+        {
+            Assert.IsTrue(lineas.Count <= 3, string.Join(" | ", lineas));
+            Assert.IsTrue(lineas.All(l => l.Length <= 27), string.Join(" | ", lineas));
+            var palabras = new HashSet<string>(original.Split(' '));
+            palabras.Add(ReglaDescripcionEtiquetaInmovilizado.PUNTOS);
+            foreach (string palabra in lineas.SelectMany(l => l.Split(' ')).Where(p => p.Length > 0))
+            {
+                string sinPuntos = palabra.Replace(ReglaDescripcionEtiquetaInmovilizado.PUNTOS, string.Empty);
+                Assert.IsTrue(palabras.Contains(palabra) || sinPuntos.Length == 0 || palabras.Contains(sinPuntos),
+                    $"«{palabra}» está cortada: {string.Join(" | ", lineas)}");
+            }
+        }
+
+        [TestMethod]
+        public void Descripcion_LosEjemplosRealesCabenEnterosYConSuSerie()
+        {
+            foreach (var (descripcion, serie) in new[]
+            {
+                ("RF HARMONIA ref.44276 n/s SHE-RFS009-251", "n/s SHE-RFS009-251"),
+                ("HERA PLUS ref.44275 n/s OEM-M55055-26040", "n/s OEM-M55055-26040"),
+                ("MANIPULO PEQUEÑO HERA PLUS ref. 45390", "ref. 45390"),
+                ("CARRO (Circe Roll, Harmonia, T) ref. 435…", "ref. 435…")
+            })
+            {
+                List<string> lineas = ReglaDescripcionEtiquetaInmovilizado.Lineas(descripcion);
+
+                SinCortarPalabras(lineas, descripcion);
+                Assert.AreEqual(descripcion, string.Join(" ", lineas), "Cabe entera");
+                StringAssert.Contains(string.Join(" ", lineas), serie);
+            }
+        }
+
+        [TestMethod]
+        public void Descripcion_RF_Harmonia_EnDosLineas()
+        {
+            CollectionAssert.AreEqual(new[] { "RF HARMONIA ref.44276 n/s", "SHE-RFS009-251" },
+                ReglaDescripcionEtiquetaInmovilizado.Lineas("RF HARMONIA ref.44276 n/s SHE-RFS009-251"));
+        }
+
+        [TestMethod]
+        public void Descripcion_SiNoCabe_SeRecortaElNombreYLaSerieSaleEntera()
+        {
+            const string larga = "DEPILADOR ELÉCTRICO PROFESIONAL DEPIBLEND DOBLE CABEZAL CON PEDAL ref.40252 N/S DB2024-0815-XYZ";
+
+            List<string> lineas = ReglaDescripcionEtiquetaInmovilizado.Lineas(larga);
+            string junta = string.Join(" ", lineas);
+
+            SinCortarPalabras(lineas, larga);
+            StringAssert.Contains(junta, "N/S DB2024-0815-XYZ");
+            StringAssert.Contains(junta, "ref.40252");
+            StringAssert.StartsWith(junta, "DEPILADOR");
+            StringAssert.Contains(junta, "…");
+        }
+
+        [TestMethod]
+        public void Descripcion_NumeroDeSerieEscritoDeOtrasFormas()
+        {
+            foreach (string serie in new[] { "nº serie AB-123456789", "S/N AB-123456789", "Nº de serie AB-123456789" })
+            {
+                string descripcion = "CAMILLA HIDRÁULICA TRES CUERPOS CON RESPALDO ELEVABLE ref.30001 " + serie;
+                List<string> lineas = ReglaDescripcionEtiquetaInmovilizado.Lineas(descripcion);
+                StringAssert.Contains(string.Join(" ", lineas), serie, serie);
+                Assert.IsTrue(lineas.Count <= 3);
+            }
+        }
+
+        [TestMethod]
+        public void Descripcion_SinSerieNiReferencia_ElPrincipioConPuntos()
+        {
+            List<string> lineas = ReglaDescripcionEtiquetaInmovilizado.Lineas(
+                "CAMILLA HIDRÁULICA DE TRES CUERPOS CON RESPALDO ELEVABLE Y AGUJERO FACIAL Y REPOSABRAZOS ABATIBLES");
+            Assert.AreEqual(3, lineas.Count);
+            StringAssert.EndsWith(lineas[2], "…");
+            Assert.IsTrue(lineas.All(l => l.Length <= 27));
+            Assert.AreEqual(0, ReglaDescripcionEtiquetaInmovilizado.Lineas(null).Count);
+        }
+
+        [TestMethod]
+        public void Etiqueta_TresLineasYBarrasLegiblesDentroDeLa3x2()
+        {
+            int finDescripcion = GeneradorEtiquetasInmovilizado.DESCRIPCION_Y + (GeneradorEtiquetasInmovilizado.DESCRIPCION_LINEAS - 1) * GeneradorEtiquetasInmovilizado.DESCRIPCION_INTERLINEA + 12;
+            Assert.IsTrue(GeneradorEtiquetasInmovilizado.BARRAS_Y > finDescripcion);
+            Assert.IsTrue(GeneradorEtiquetasInmovilizado.BARRAS_ALTO >= 48, "Por debajo de 6 mm no se lee bien");
+            Assert.IsTrue(GeneradorEtiquetasInmovilizado.BARRAS_Y + GeneradorEtiquetasInmovilizado.BARRAS_ALTO <= GeneradorEtiquetasHueco.ALTO - 8);
         }
 
         [TestMethod]
@@ -184,7 +271,7 @@ namespace NestoAPI.Tests.Infraestructure
 
             string zpl = GeneradorEtiquetasInmovilizado.Zpl(new[] { e }, 2);
 
-            StringAssert.Contains(zpl, "^BCN,64,N,N,N,A^FH^FDI/1823^FS");
+            StringAssert.Contains(zpl, "^BCN,56,N,N,N,A^FH^FDI/1823^FS");
             StringAssert.Contains(zpl, "^FDI/1823^FS");
             StringAssert.Contains(zpl, "INMOVILIZADO _C2_B7 NO ES STOCK");
             StringAssert.Contains(zpl, "^FDALG^FS");
@@ -199,7 +286,7 @@ namespace NestoAPI.Tests.Infraestructure
 
             string epl = GeneradorEtiquetasInmovilizado.Epl(new[] { e }, 1);
 
-            StringAssert.Contains(epl, $"B{GeneradorEtiquetasInmovilizado.BarrasX("I/1823")},80,0,1,2,2,64,N,\"I/1823\"");
+            StringAssert.Contains(epl, $"B{GeneradorEtiquetasInmovilizado.BarrasX("I/1823")},88,0,1,2,2,56,N,\"I/1823\"");
             StringAssert.Contains(epl, "\"INMOVILIZADO · NO ES STOCK\"");
             StringAssert.Contains(epl, "\"I/1823\"\r\n");
             StringAssert.Contains(epl, "P1\r\n");

@@ -88,6 +88,92 @@ namespace NestoAPI.Infraestructure.Inmovilizados
         }
     }
 
+    /// <summary>
+    /// Etiquetas de inmovilizado (25/11/26): LA REGLA (pura) de la descripción en la etiqueta. Se parte en hasta <c>lineas</c> líneas de
+    /// <c>caracteres</c> sin cortar palabras y el número de serie («n/s …», «s/n …», «nº serie …», sin distinguir mayúsculas: hasta el
+    /// final) sale SIEMPRE entero: es lo que distingue una máquina de otra igual (hay varios Depiblend). Si no cabe todo, se recorta el
+    /// NOMBRE (por palabras, con «…»); después, si hiciera falta, la referencia («ref.44276»); el número de serie, nunca.
+    /// </summary>
+    public static class ReglaDescripcionEtiquetaInmovilizado
+    {
+        public const string PUNTOS = "…";
+
+        private static readonly System.Text.RegularExpressions.Regex serie = new System.Text.RegularExpressions.Regex(
+            @"(?<![\p{L}\p{N}])(n\s*/\s*s|s\s*/\s*n|n[º°o]?\.?\s*(de\s+)?serie)(?![\p{L}\p{N}]).*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        private static readonly System.Text.RegularExpressions.Regex referencia = new System.Text.RegularExpressions.Regex(
+            @"(?<![\p{L}\p{N}])ref\b\.?\s*\S+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        public static List<string> Lineas(string descripcion, int caracteres = GeneradorEtiquetasProducto.CARACTERES_PEQUENA, int lineas = 3)
+        {
+            string texto = Compactar(descripcion);
+            if (texto.Length == 0)
+            {
+                return new List<string>();
+            }
+            List<string> entera = GeneradorEtiquetasProducto.Partir(texto, caracteres);
+            if (entera.Count <= lineas)
+            {
+                return entera;
+            }
+
+            System.Text.RegularExpressions.Match deSerie = serie.Match(texto);
+            int finNombre = deSerie.Success ? deSerie.Index : texto.Length;
+            System.Text.RegularExpressions.Match deReferencia = referencia.Match(texto.Substring(0, finNombre));
+            if (deReferencia.Success)
+            {
+                finNombre = deReferencia.Index;
+            }
+            string nombre = texto.Substring(0, finNombre).Trim();
+            string textoReferencia = deReferencia.Success ? deReferencia.Value.Trim() : null;
+            string textoSerie = deSerie.Success ? deSerie.Value.Trim() : null;
+            string cola = Compactar(string.Join(" ", new[] { textoReferencia, textoSerie }.Where(t => !string.IsNullOrEmpty(t))));
+
+            if (cola.Length == 0)
+            {
+                // Sin referencia ni serie: el principio y «…»
+                return ConPuntos(entera.Take(lineas).ToList(), caracteres);
+            }
+
+            // Primero se quitan palabras del nombre (con «…»), la cola entera
+            string[] palabras = nombre.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int n = palabras.Length - 1; n >= 0; n--)
+            {
+                string recortado = n == 0 ? PUNTOS : string.Join(" ", palabras.Take(n)) + PUNTOS;
+                List<string> intento = GeneradorEtiquetasProducto.Partir(recortado + " " + cola, caracteres);
+                if (intento.Count <= lineas)
+                {
+                    return intento;
+                }
+            }
+            // Sin nombre no cabe: la referencia y la serie; si tampoco, la serie sola (y, si ni así, lo que quepa de ella)
+            foreach (string resto in new[] { cola, textoSerie }.Where(t => !string.IsNullOrEmpty(t)))
+            {
+                List<string> intento = GeneradorEtiquetasProducto.Partir(resto, caracteres);
+                if (intento.Count <= lineas)
+                {
+                    return intento;
+                }
+            }
+            return GeneradorEtiquetasProducto.Partir(textoSerie ?? cola, caracteres).Take(lineas).ToList();
+        }
+
+        private static List<string> ConPuntos(List<string> lineas, int caracteres)
+        {
+            if (lineas.Count > 0)
+            {
+                string ultima = lineas[lineas.Count - 1];
+                lineas[lineas.Count - 1] = (ultima.Length + PUNTOS.Length > caracteres ? ultima.Substring(0, caracteres - PUNTOS.Length).TrimEnd() : ultima) + PUNTOS;
+            }
+            return lineas;
+        }
+
+        private static string Compactar(string texto)
+            => string.Join(" ", new string((texto ?? string.Empty).Where(c => !char.IsControl(c)).ToArray())
+                .Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
     /// <summary>Lo que lleva la etiqueta de un inmovilizado.</summary>
     public class EtiquetaInmovilizado
     {
@@ -124,13 +210,14 @@ namespace NestoAPI.Infraestructure.Inmovilizados
         /// <summary>La delegación, en pequeño a la altura de la base del código grande.</summary>
         public const int DELEGACION_Y = 28;
 
-        public const int DESCRIPCION_Y = 48;
-        public const int DESCRIPCION_INTERLINEA = 14;
-        public const int DESCRIPCION_LINEAS = 2;
+        /// <summary>Tres líneas en la fuente pequeña (12 de alto) cada 13 puntos: 46, 59 y 72 (acaba en el 84).</summary>
+        public const int DESCRIPCION_Y = 46;
+        public const int DESCRIPCION_INTERLINEA = 13;
+        public const int DESCRIPCION_LINEAS = 3;
 
-        /// <summary>48 + 2 × 14 = 76; 4 de aire. 64 puntos (8 mm) de barras: acaba en el 144 de 160.</summary>
-        public const int BARRAS_Y = 80;
-        public const int BARRAS_ALTO = 64;
+        /// <summary>4 de aire bajo la descripción. 56 puntos (7 mm) de barras: acaba en el 144 de 160 (por debajo de 48 no bajar).</summary>
+        public const int BARRAS_Y = 88;
+        public const int BARRAS_ALTO = 56;
         /// <summary>Módulo de 2 puntos (0,25 mm): «I/1823» son ~90 módulos = 180 puntos (22,5 mm).</summary>
         public const int BARRAS_ESTRECHO = 2;
 
@@ -147,7 +234,7 @@ namespace NestoAPI.Infraestructure.Inmovilizados
                 Numero = numero,
                 Codigo = codigo,
                 Cabecera = CABECERA,
-                Descripcion = GeneradorEtiquetasProducto.Partir(Limpio(inmovilizado.Descripcion), CARACTERES_PEQUENA).Take(DESCRIPCION_LINEAS).ToList(),
+                Descripcion = ReglaDescripcionEtiquetaInmovilizado.Lineas(inmovilizado.Descripcion, CARACTERES_PEQUENA, DESCRIPCION_LINEAS),
                 Delegacion = Limpio(inmovilizado.Delegacion).ToUpperInvariant()
             };
         }
