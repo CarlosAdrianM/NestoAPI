@@ -146,6 +146,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>Alta o cambio de proveedor (único por remitente). Devuelve el Id.</summary>
         Task<int> GuardarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario);
         Task<bool> BorrarRemitentePaquete(int id, string usuario);
+        /// <summary>NestoAPI#857i: ¿existe dbo.ComprasOrigenesAgencia (Scripts/Issue857i)? Con caché. Sin ella, ni se aprende ni se usa.</summary>
+        bool OrigenesAgenciaDisponibles();
+        /// <summary>NestoAPI#857i: la memoria «agencia + origen → proveedor» (con el nombre del proveedor).</summary>
+        Task<List<OrigenAgenciaRecordado>> LeerOrigenesAgencia();
+        /// <summary>NestoAPI#857i: apunta una vez más que desde ese origen de esa agencia mandó ese proveedor (crea la fila o suma Veces).</summary>
+        Task GuardarOrigenAgencia(string agencia, string origen, string empresa, string proveedor, string usuario);
+        /// <summary>NestoAPI#857i: olvida una fila (rastro en Modificaciones); false si no existe.</summary>
+        Task<bool> BorrarOrigenAgencia(int id, string usuario);
         /// <summary>Reanálisis: actualiza SOLO lo derivado del análisis de un correo ya guardado, sin aplicar ni descartar. True si lo ha cambiado.</summary>
         Task<bool> ActualizarAnalisis(CorreoSeguimientoFila fila);
         /// <summary>Mismo envío: pone el proveedor propuesto y los candidatos de un correo sin aplicar ni descartar. True si lo ha cambiado.</summary>
@@ -335,6 +343,26 @@ SELECT @id;";
             "FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id";
         internal const string SQL_BORRAR_REMITENTE_PAQUETE = "DELETE FROM dbo.ComprasRemitentesPaquete WHERE Id = @id";
         public const string TABLA_RASTRO_REMITENTES_PAQUETE = "ComprasRemitentesPaquete";
+
+        // NestoAPI#857i: Scripts/Issue857i_ComprasOrigenesAgencia.sql
+        internal const string SQL_EXISTEN_ORIGENES = "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ComprasOrigenesAgencia', 'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string SQL_ORIGENES_AGENCIA = @"
+SELECT o.Id, o.Agencia, o.Origen, RTRIM(o.Empresa) AS Empresa, RTRIM(o.Proveedor) AS Proveedor,
+    (SELECT TOP 1 RTRIM(p.Nombre) FROM dbo.Proveedores p WITH (NOLOCK) WHERE p.Empresa = o.Empresa AND p.Número = o.Proveedor ORDER BY p.ProveedorPrincipal DESC) AS NombreProveedor,
+    o.Veces, o.UltimaVez, o.Usuario
+FROM dbo.ComprasOrigenesAgencia o WITH (NOLOCK)
+ORDER BY o.Agencia, o.Origen, o.Veces DESC";
+        internal const string SQL_GUARDAR_ORIGEN_AGENCIA = @"SET NOCOUNT ON;
+UPDATE dbo.ComprasOrigenesAgencia WITH (UPDLOCK, HOLDLOCK) SET Veces = Veces + 1, UltimaVez = GETDATE(), Usuario = @usuario
+WHERE Agencia = @agencia AND Origen = @origen AND Empresa = @empresa AND Proveedor = @proveedor;
+IF @@ROWCOUNT = 0
+    INSERT INTO dbo.ComprasOrigenesAgencia (Agencia, Origen, Empresa, Proveedor, Veces, UltimaVez, Usuario)
+    VALUES (@agencia, @origen, @empresa, @proveedor, 1, GETDATE(), @usuario);";
+        internal const string SQL_ORIGEN_AGENCIA_POR_ID = "SELECT Id, Agencia, Origen, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, " +
+            "CAST(NULL AS nvarchar(100)) AS NombreProveedor, Veces, UltimaVez, Usuario FROM dbo.ComprasOrigenesAgencia WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id";
+        internal const string SQL_BORRAR_ORIGEN_AGENCIA = "DELETE FROM dbo.ComprasOrigenesAgencia WHERE Id = @id";
+        public const string TABLA_RASTRO_ORIGENES_AGENCIA = "ComprasOrigenesAgencia";
+        public const int LONGITUD_ORIGEN = 10;
         public const string TABLA_RASTRO_DESCARTE = "CompraCorreoDescartado";
 
         // Reanálisis: solo lo derivado del análisis; {0} = las columnas de la entrega estimada si existen (Issue857c)
@@ -375,6 +403,7 @@ WHERE MensajeId = @mensajeId AND PedidoAplicado IS NULL AND ISNULL(Descartado, 0
         private static readonly ColumnasOpcionales columnasEstado = new ColumnasOpcionales(SQL_EXISTE_ESTADO);
         private static readonly ColumnasOpcionales tablaConfirmaciones = new ColumnasOpcionales(SQL_EXISTEN_CONFIRMACIONES);
         private static readonly ColumnasOpcionales columnasLineas = new ColumnasOpcionales(SQL_EXISTEN_LINEAS);
+        private static readonly ColumnasOpcionales tablaOrigenes = new ColumnasOpcionales(SQL_EXISTEN_ORIGENES);
 
         // NestoAPI#857g: Scripts/Issue857g_ComprasConfirmacionesProveedor.sql
         internal const string SQL_EXISTEN_CONFIRMACIONES = "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ComprasConfirmacionesProveedor', 'U') IS NULL THEN 0 ELSE 1 END AS bit)";
@@ -1041,6 +1070,54 @@ ORDER BY Recibido DESC";
                 _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
                     Texto("@tabla", TABLA_RASTRO_REMITENTES_PAQUETE, 100),
                     Texto("@anterior", Newtonsoft.Json.JsonConvert.SerializeObject(new { actual.Id, actual.RemitentePaquete, actual.Empresa, actual.Proveedor, actual.Usuario }), -1),
+                    Texto("@nuevo", "(borrado)", -1),
+                    Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
+                transaccion.Commit();
+                return true;
+            }
+        }
+
+        public bool OrigenesAgenciaDisponibles() => tablaOrigenes.Existen(crearContexto);
+
+        public async Task<List<OrigenAgenciaRecordado>> LeerOrigenesAgencia()
+        {
+            using (NVEntities db = crearContexto())
+            {
+                List<OrigenAgenciaRecordado> filas = await db.Database.SqlQuery<OrigenAgenciaRecordado>(SQL_ORIGENES_AGENCIA).ToListAsync().ConfigureAwait(false);
+                foreach (OrigenAgenciaRecordado f in filas)
+                {
+                    f.NombreOrigen = AgenciasEntradaRegistradas.Todas
+                        .FirstOrDefault(a => string.Equals(a.Nombre, f.Agencia?.Trim(), StringComparison.OrdinalIgnoreCase))?.NombreOrigen(f.Origen);
+                }
+                return filas;
+            }
+        }
+
+        public async Task GuardarOrigenAgencia(string agencia, string origen, string empresa, string proveedor, string usuario)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_ORIGEN_AGENCIA, Texto("@agencia", agencia, 50), Texto("@origen", origen, LONGITUD_ORIGEN),
+                    new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa }, Texto("@proveedor", proveedor, 10),
+                    Texto("@usuario", usuario, 50)).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<bool> BorrarOrigenAgencia(int id, string usuario)
+        {
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                OrigenAgenciaRecordado actual = (await db.Database.SqlQuery<OrigenAgenciaRecordado>(SQL_ORIGEN_AGENCIA_POR_ID,
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id }).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                if (actual == null)
+                {
+                    return false;
+                }
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_BORRAR_ORIGEN_AGENCIA, new SqlParameter("@id", SqlDbType.Int) { Value = id }).ConfigureAwait(false);
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                    Texto("@tabla", TABLA_RASTRO_ORIGENES_AGENCIA, 100),
+                    Texto("@anterior", Newtonsoft.Json.JsonConvert.SerializeObject(new { actual.Id, actual.Agencia, actual.Origen, actual.Empresa, actual.Proveedor, actual.Veces, actual.UltimaVez, actual.Usuario }), -1),
                     Texto("@nuevo", "(borrado)", -1),
                     Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
                 transaccion.Commit();

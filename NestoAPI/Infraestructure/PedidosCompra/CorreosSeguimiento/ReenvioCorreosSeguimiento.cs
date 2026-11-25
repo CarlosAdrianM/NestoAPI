@@ -101,8 +101,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     return $"Es del {pedido}, que ya tenía la fecha {Dia(r.FechaNueva)}: misma fecha, nada que cambiar.";
                 case DesenlaceCorreoSeguimiento.PorAsignar:
                     return r.Candidatos == 0
-                        ? "Por asignar: no se ha reconocido de qué pedido de compra es. Le llegará el aviso en la campana de Nesto."
-                        : $"Por asignar: puede ser de {r.Candidatos} pedidos de compra distintos. Le llegará el aviso en la campana de Nesto.";
+                        ? "Por asignar: no se ha reconocido de qué pedido de compra es. Le llegará el aviso en la campana de Nesto. Puede asignarlo ya en Nesto: Productos › Envíos por asignar."
+                        : $"Por asignar: puede ser de {r.Candidatos} pedidos de compra distintos. Le llegará el aviso en la campana de Nesto. Puede asignarlo ya en Nesto: Productos › Envíos por asignar.";
                 case DesenlaceCorreoSeguimiento.SalidaNuestra:
                     return "Es un envío nuestro (sale de Nueva Visión), no de una compra: no se toca.";
                 case DesenlaceCorreoSeguimiento.Descartado:

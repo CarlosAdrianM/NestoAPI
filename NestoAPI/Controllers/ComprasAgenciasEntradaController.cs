@@ -101,6 +101,10 @@ namespace NestoAPI.Controllers
         public List<LineaCasadaAviso> LineasCasadas { get; set; }
         /// <summary>20/11/26: las líneas a las que se puso la fecha; null = a todo el pedido (o sin aplicar).</summary>
         public List<LineaCasadaAviso> LineasAplicadas { get; set; }
+        /// <summary>NestoAPI#857i: la delegación de origen que pone la agencia en el código («Vic», o la clave si no sabe el nombre); null si no lo pone.</summary>
+        public string OrigenAgencia { get; set; }
+        /// <summary>NestoAPI#897/#857i: por qué se ha propuesto el pedido (control de pendientes, origen de la agencia); null si no hay.</summary>
+        public string Explicacion { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): un pedido candidato de un envío por asignar, con lo que hace falta para elegir.</summary>
@@ -139,6 +143,12 @@ namespace NestoAPI.Controllers
         public DateTime FechaRecepcionPropuesta { get; set; }
         public string RemitentePaquete { get; set; }
         public string ProveedorPropuesto { get; set; }
+        /// <summary>NestoAPI#857i: la delegación de origen que pone la agencia en el código de alguno de sus correos («Vic»); null si ninguno.</summary>
+        public string OrigenAgencia { get; set; }
+        /// <summary>NestoAPI#897/#857i: por qué se proponen estos candidatos; null si no hay explicación.</summary>
+        public string Explicacion { get; set; }
+        /// <summary>25/11/26: solo con ?incluirLlegados=true: por qué ya no está pendiente de asignar (<see cref="ReglaEnvioYaNoPendiente"/>); null si lo está.</summary>
+        public string MotivoYaNoPendiente { get; set; }
         public List<CandidatoPorAsignarDTO> Candidatos { get; set; } = new List<CandidatoPorAsignarDTO>();
     }
 
@@ -475,7 +485,12 @@ namespace NestoAPI.Controllers
             return Ok((correos ?? new List<CorreoSeguimientoFila>()).Select(Dto).ToList());
         }
 
-        // GET api/Compras/AgenciasEntrada/PorAsignar?dias=7
+        // GET api/Compras/AgenciasEntrada/PorAsignar?dias=7[&incluirLlegados=true]
+        /// <remarks>
+        /// 25/11/26: los envíos que ya no están pendientes (asignados o descartados por otro de sus correos, entregados según la agencia, con el
+        /// albarán ya encontrado o con todos sus candidatos ya recibidos: <see cref="ReglaEnvioYaNoPendiente"/>) no salen salvo con
+        /// <c>incluirLlegados</c>, y entonces llevan MotivoYaNoPendiente.
+        /// </remarks>
         /// <summary>
         /// Fase 3: los envíos (correos que comparten código de seguimiento) de los últimos días que nadie ha asignado ni descartado, con sus
         /// candidatos (fecha de envío, líneas pendientes y ya recibidas y el sugerido), y todos los pedidos de compra en el aire para elegir.
@@ -485,7 +500,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/Compras/AgenciasEntrada/PorAsignar")]
         [ResponseType(typeof(PorAsignarCorreosCompraDTO))]
-        public async Task<IHttpActionResult> GetPorAsignar(int dias = 7)
+        public async Task<IHttpActionResult> GetPorAsignar(int dias = 7, bool incluirLlegados = false)
         {
             if (!PuedeVer(User))
             {
@@ -502,7 +517,7 @@ namespace NestoAPI.Controllers
             DateTime hoy = DateTime.Today;
             List<CorreoSeguimientoFila> correos = await repositorio.LeerCorreos(hoy.AddDays(-dias - MismoEnvio.DIAS)).ConfigureAwait(false);
             List<PedidoCompraEnAire> pedidos = await repositorio.LeerPedidosEnAire(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
-            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy, ReglaControlPendientes.LeerDias()));
+            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy, ReglaControlPendientes.LeerDias(), incluirLlegados));
         }
 
         /// <summary>
@@ -510,7 +525,7 @@ namespace NestoAPI.Controllers
         /// solo cuentan para agrupar), con los candidatos del envío y el sugerido; y los pedidos en el aire marcando de qué envíos son candidatos.
         /// </summary>
         internal static PorAsignarCorreosCompraDTO ComponerPorAsignar(IEnumerable<CorreoSeguimientoFila> correos, IEnumerable<PedidoCompraEnAire> pedidos,
-            DateTime desde, DateTime hoy, int diasPedidoDePendientes = ReglaControlPendientes.DIAS_POR_DEFECTO)
+            DateTime desde, DateTime hoy, int diasPedidoDePendientes = ReglaControlPendientes.DIAS_POR_DEFECTO, bool incluirLlegados = false)
         {
             List<PedidoCompraEnAire> enAire = (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
             var resultado = new PorAsignarCorreosCompraDTO();
@@ -518,6 +533,12 @@ namespace NestoAPI.Controllers
             {
                 List<CorreoSeguimientoFila> porAsignar = grupo.Where(CorreosPorAsignar.Es).ToList();
                 if (!porAsignar.Any(f => f.Recibido >= desde))
+                {
+                    continue;
+                }
+                // 25/11/26: el envío entero (también lo que ya llegó, se entregó o se aplicó con otro de sus correos)
+                string yaNoPendiente = ReglaEnvioYaNoPendiente.Motivo(grupo, enAire);
+                if (yaNoPendiente != null && !incluirLlegados)
                 {
                     continue;
                 }
@@ -537,7 +558,10 @@ namespace NestoAPI.Controllers
                     EntregaEstimadaDia = decision.EntregaEstimadaDia,
                     FechaRecepcionPropuesta = ReglaFechaRecepcionPorCorreo.Calcular(grupo, hoy, NestoAPI.Infraestructure.JobsFestivos.EsFestivoAlgete),
                     RemitentePaquete = conPropios?.RemitentePaquete ?? grupo.Select(f => f.RemitentePaquete).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)),
-                    ProveedorPropuesto = decision.ProveedorPropuesto
+                    ProveedorPropuesto = decision.ProveedorPropuesto,
+                    OrigenAgencia = OrigenesAgenciaCorreo.Texto(OrigenesAgenciaCorreo.DelEnvio(grupo)),
+                    Explicacion = grupo.Select(f => ReglaControlPendientes.ExplicacionDe(f)).FirstOrDefault(t => t != null),
+                    MotivoYaNoPendiente = yaNoPendiente
                 };
                 foreach (CandidatoPedidoCompra candidato in decision.Candidatos)
                 {
@@ -689,6 +713,49 @@ namespace NestoAPI.Controllers
             return await repositorio.BorrarRemitentePaquete(id, usuario).ConfigureAwait(false) ? (IHttpActionResult)Ok() : NotFound();
         }
 
+        public const string MENSAJE_SIN_SCRIPT_ORIGENES = "Todavía no se puede: hay que lanzar Scripts/Issue857i_ComprasOrigenesAgencia.sql.";
+
+        // GET api/Compras/AgenciasEntrada/OrigenesAgencia
+        /// <summary>
+        /// NestoAPI#857i: la memoria «agencia + delegación de origen → proveedor» (aprendida de lo asignado a mano y de los criterios fuertes del
+        /// job), con el nombre del origen y del proveedor, las veces y la última. 503 sin Scripts/Issue857i.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/OrigenesAgencia")]
+        [ResponseType(typeof(List<OrigenAgenciaRecordado>))]
+        public async Task<IHttpActionResult> GetOrigenesAgencia()
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (!repositorio.TablasExisten() || !repositorio.OrigenesAgenciaDisponibles())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, MENSAJE_SIN_SCRIPT_ORIGENES);
+            }
+            return Ok(await repositorio.LeerOrigenesAgencia().ConfigureAwait(false));
+        }
+
+        // DELETE api/Compras/AgenciasEntrada/OrigenesAgencia/12
+        /// <summary>NestoAPI#857i: olvida una fila de la memoria de orígenes (rastro en Modificaciones). 404 si no existe; 503 sin Scripts/Issue857i.</summary>
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/OrigenesAgencia/{id:int}")]
+        public async Task<IHttpActionResult> DeleteOrigenAgencia(int id)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (!repositorio.TablasExisten() || !repositorio.OrigenesAgenciaDisponibles())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, MENSAJE_SIN_SCRIPT_ORIGENES);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
+            return await repositorio.BorrarOrigenAgencia(id, usuario).ConfigureAwait(false) ? (IHttpActionResult)Ok() : NotFound();
+        }
+
         // POST api/Compras/AgenciasEntrada/Correos/Reanalizar?dias=7
         /// <summary>
         /// Fase 3: relee el buzón de esos días (sin tocar el delta) y vuelve a analizar los correos YA guardados sin aplicar ni descartar
@@ -763,7 +830,9 @@ namespace NestoAPI.Controllers
                 EstadoEnvio = fila.EstadoEnvio,
                 OrigenEntrega = fila.OrigenEntrega,
                 EntregaConsultadaEl = fila.EntregaConsultadaEl,
-                LineasAplicadas = LineasAvisoCorreo.LeerAplicadas(fila.LineasAplicadas)
+                LineasAplicadas = LineasAvisoCorreo.LeerAplicadas(fila.LineasAplicadas),
+                OrigenAgencia = OrigenesAgenciaCorreo.Texto(OrigenesAgenciaCorreo.De(fila)),
+                Explicacion = ReglaControlPendientes.ExplicacionDe(fila)
             };
             BultosKilosEnvio bultos = BultosKilosCorreo.De(fila.Agencia, fila.Extracto);
             dto.Bultos = bultos?.Bultos;

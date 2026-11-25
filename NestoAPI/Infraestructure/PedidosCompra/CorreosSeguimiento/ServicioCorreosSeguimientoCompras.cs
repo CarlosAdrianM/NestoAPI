@@ -311,7 +311,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             if (!analisis.EsSalidaNuestra)
             {
                 pedidos = await pedidosDe(correo).ConfigureAwait(false);
-                asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos, analisis.RemitentePaquete, recordados);
+                asignacion = AsignadorPedidosCompra.Asignar(correo, analisis.RemitentesOriginales, pedidos, analisis.RemitentePaquete, recordados,
+                    analisis.NumerosQueNoSonPedido);
             }
             // NestoAPI#857e: el PDF del aviso de salida (solo si el remitente lo pide; ni el histórico ni las salidas nuestras)
             LecturaPdfsCorreo pdfs = leerPdf && analisis.RemitenteMarcado?.LeerPdf == true && !analisis.EsSalidaNuestra
@@ -346,6 +347,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     lineas = ReglaLineasAvisoSalida.Casar(analisis.LineasAviso, datos.Referencias.Where(r => suyos.Contains(r.Proveedor?.Trim() ?? string.Empty)),
                         datos.Lineas.Where(l => suyos.Contains(l.Proveedor?.Trim() ?? string.Empty)));
                     asignacion = ReglaLineasAvisoSalida.Completar(asignacion, lineas);
+                }
+            }
+            // NestoAPI#857i: si NADA ha dado proveedor, la delegación de origen que va en el código (DB Schenker «ESVIC…») contra lo aprendido
+            // (job y reanálisis; el histórico no). Antes del control de pendientes, que puede decidir entre los pedidos de UN proveedor.
+            if (lineasDe != null && !analisis.EsSalidaNuestra && pedidos != null && (asignacion?.Candidatos == null || !asignacion.Candidatos.Any()))
+            {
+                List<OrigenEnvioAgencia> origenes = OrigenesAgenciaCorreo.De(analisis.Agencia, analisis.Seguimientos, agencias);
+                if (origenes.Any())
+                {
+                    asignacion = ReglaOrigenAgencia.Completar(asignacion, origenes, await LeerOrigenesRecordados().ConfigureAwait(false), pedidos, correo.Recibido);
                 }
             }
             // NestoAPI#897: proveedor con control de pendientes y varios candidatos: el pedido en curso más antiguo (job y reanálisis; el histórico
@@ -517,6 +528,43 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 registrar(new Exception("[Correos de seguimiento de compras #857] No se han podido leer los remitentes del paquete recordados: " + ex.Message, ex));
                 return new List<RemitentePaqueteRecordado>();
+            }
+        }
+
+        private List<OrigenAgenciaRecordado> origenesRecordados;
+        private static bool sinTablaOrigenesApuntado;
+
+        /// <summary>Para los tests: que el «sin tabla» de los orígenes se vuelva a apuntar.</summary>
+        internal static void OlvidarSinTablaOrigenesApuntado() => sinTablaOrigenesApuntado = false;
+
+        /// <summary>
+        /// NestoAPI#857i: la memoria «agencia + origen → proveedor», leída una vez por servicio y solo si algún correo la necesita. Sin
+        /// Scripts/Issue857i, ninguna (se apunta una vez); si falla, ninguna (se apunta). Nunca lanza.
+        /// </summary>
+        private async Task<List<OrigenAgenciaRecordado>> LeerOrigenesRecordados()
+        {
+            if (origenesRecordados != null)
+            {
+                return origenesRecordados;
+            }
+            try
+            {
+                if (!repositorio.OrigenesAgenciaDisponibles())
+                {
+                    if (!sinTablaOrigenesApuntado)
+                    {
+                        sinTablaOrigenesApuntado = true;
+                        registrar(new Exception("[Correos de seguimiento de compras #857i] (informativo) Falta Scripts/Issue857i_ComprasOrigenesAgencia.sql: " +
+                            "no se usa la delegación de origen de la agencia para asignar."));
+                    }
+                    return origenesRecordados = new List<OrigenAgenciaRecordado>();
+                }
+                return origenesRecordados = await repositorio.LeerOrigenesAgencia().ConfigureAwait(false) ?? new List<OrigenAgenciaRecordado>();
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #857i] No se han podido leer los orígenes de agencia recordados: " + ex.Message, ex));
+                return origenesRecordados = new List<OrigenAgenciaRecordado>();
             }
         }
 
@@ -807,10 +855,52 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion, reenviador: reenviador,
                     lectorPdf: new LectorTextoPdfPig());
                 _ = await servicio.Pasada(DateTime.Now).ConfigureAwait(false);
+                ProgramarAviso(aplicacion.ProximoAvisoPendiente, DateTime.Now);
             }
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Correos de seguimiento de compras #857] Error en la pasada: {ex.Message}", ex), USUARIO_ELMAH);
+            }
+        }
+
+        public const int INTERVALO_MINUTOS = 30;
+
+        /// <summary>
+        /// 25/11/26: un envío por asignar que cumple la espera (20 min desde que se recibió) ANTES de la siguiente pasada tiene su aviso suelto a
+        /// esa hora (un correo de las 14:11 guardado a las 14:30 avisa a las 14:31, no a las 15:00). El aviso es idempotente (uno por envío). PURA.
+        /// </summary>
+        internal static TimeSpan? EsperaAvisoSuelto(DateTime? proximo, DateTime ahora)
+        {
+            if (!proximo.HasValue || proximo.Value <= ahora)
+            {
+                return null;
+            }
+            TimeSpan espera = proximo.Value - ahora + TimeSpan.FromSeconds(30);
+            return espera < TimeSpan.FromMinutes(INTERVALO_MINUTOS) ? espera : (TimeSpan?)null;
+        }
+
+        private static void ProgramarAviso(DateTime? proximo, DateTime ahora)
+        {
+            TimeSpan? espera = EsperaAvisoSuelto(proximo, ahora);
+            if (espera.HasValue)
+            {
+                _ = Hangfire.BackgroundJob.Schedule(() => AvisosPorAsignar(), espera.Value);
+            }
+        }
+
+        /// <summary>25/11/26: solo la campana de lo que queda por asignar (sin leer el buzón). Nunca lanza.</summary>
+        public static async Task AvisosPorAsignar()
+        {
+            try
+            {
+                var repositorio = new RepositorioCorreosSeguimiento();
+                Action<Exception> registrar = ex => ElmahHelper.Log(ex, USUARIO_ELMAH);
+                _ = await new ServicioAplicacionCorreosCompras(repositorio, avisador: new AvisadorCorreosPorAsignar(), registrar: registrar)
+                    .AvisarPendientes().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Correos de seguimiento de compras #857] Error en el aviso por asignar: {ex.Message}", ex), USUARIO_ELMAH);
             }
         }
     }

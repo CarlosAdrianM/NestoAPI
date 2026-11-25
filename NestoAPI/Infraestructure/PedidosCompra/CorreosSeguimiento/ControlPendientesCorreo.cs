@@ -27,7 +27,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private static readonly HashSet<string> MotivosQueMandan = new HashSet<string>
         {
             AsignadorPedidosCompra.MOTIVO_NUMERO, AsignadorPedidosCompra.MOTIVO_PDF_ADJUNTO, AsignadorPedidosCompra.MOTIVO_LINEAS_AVISO,
-            AsignadorPedidosCompra.MOTIVO_PEDIDO_PROVEEDOR, AsignadorPedidosCompra.MOTIVO_MISMO_ENVIO, AsignadorPedidosCompra.MOTIVO_CONTROL_PENDIENTES
+            AsignadorPedidosCompra.MOTIVO_PEDIDO_PROVEEDOR, AsignadorPedidosCompra.MOTIVO_MISMO_ENVIO, AsignadorPedidosCompra.MOTIVO_CONTROL_PENDIENTES,
+            // NestoAPI#857i: varios proveedores desde el mismo origen de la agencia: nunca se elige solo
+            AsignadorPedidosCompra.MOTIVO_ORIGEN_AGENCIA_VARIOS
         };
 
         private static readonly CultureInfo es = new CultureInfo("es-ES");

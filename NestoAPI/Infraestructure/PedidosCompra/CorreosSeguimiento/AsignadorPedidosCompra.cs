@@ -88,6 +88,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public const string MOTIVO_NOMBRE_REMITENTE_PAQUETE = "NombreRemitentePaquete";
         /// <summary>NestoAPI#897: proveedor con control de pendientes: el pedido en curso más antiguo (<see cref="ReglaControlPendientes"/>).</summary>
         public const string MOTIVO_CONTROL_PENDIENTES = "ControlPendientes";
+        /// <summary>NestoAPI#857i: la delegación de origen de la agencia es de UN proveedor que ya ha mandado desde allí (<see cref="ReglaOrigenAgencia"/>).</summary>
+        public const string MOTIVO_ORIGEN_AGENCIA = "OrigenAgencia";
+        /// <summary>NestoAPI#857i: desde ese origen han mandado varios proveedores: por asignar, sin que otra regla elija (<see cref="ReglaOrigenAgencia"/>).</summary>
+        public const string MOTIVO_ORIGEN_AGENCIA_VARIOS = "OrigenAgenciaVarios";
         public const int MAXIMO_CANDIDATOS = 20;
         public const int LONGITUD_MINIMA_NOMBRE = 5;
 
@@ -124,8 +128,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <param name="remitentePaquete">Quién expide el paquete según el aviso (<see cref="ExtractorRemitentePaquete"/>).</param>
         /// <param name="recordados">La memoria de remitentes del paquete (dbo.ComprasRemitentesPaquete), como dato.</param>
+        /// <param name="numerosQueNoSonPedido">
+        /// 25/11/26: los números que la agencia sabe que no son un pedido nuestro («Ref.Cliente.: 128013», la referencia del remitente en DHL):
+        /// nunca cuentan como número de pedido.
+        /// </param>
         public static AsignacionPedidoCompra Asignar(CorreoCompras correo, IEnumerable<string> remitentesOriginales, IEnumerable<PedidoCompraEnAire> pedidos,
-            string remitentePaquete = null, IEnumerable<RemitentePaqueteRecordado> recordados = null)
+            string remitentePaquete = null, IEnumerable<RemitentePaqueteRecordado> recordados = null, IEnumerable<string> numerosQueNoSonPedido = null)
         {
             var asignacion = new AsignacionPedidoCompra();
             List<PedidoCompraEnAire> enAire = (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
@@ -154,7 +162,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             // (1) Número de pedido nuestro (NestoAPI#853, ahora se escribe en compras): con una etiqueta de pedido delante, o suelto si su
             // proveedor se reconoce también por otro criterio (correo, dominio, nombre o remitente del paquete). Un código postal o un número
             // metido en una referencia ya no bastan.
-            List<(int Numero, bool Etiquetado)> numeros = NumerosDePedido(textoCompleto);
+            var deLaReferencia = new HashSet<int>((numerosQueNoSonPedido ?? Enumerable.Empty<string>())
+                .Select(r => int.TryParse(r?.Trim(), out int n) ? n : 0).Where(n => n > 0));
+            List<(int Numero, bool Etiquetado)> numeros = NumerosDePedido(textoCompleto).Where(n => !deLaReferencia.Contains(n.Numero)).ToList();
             var etiquetados = new HashSet<int>(numeros.Where(n => n.Etiquetado).Select(n => n.Numero));
             List<PedidoCompraEnAire> porNumero = enAire.Where(p => etiquetados.Contains(p.Pedido)).ToList();
             if (!porNumero.Any())

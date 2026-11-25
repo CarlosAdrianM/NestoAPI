@@ -49,6 +49,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public List<LineaCasadaAviso> LineasAviso { get; set; }
         /// <summary>20/11/26: alguna línea del aviso trae menos unidades de las pendientes.</summary>
         public bool EnvioParcial { get; set; }
+        /// <summary>NestoAPI#857i: el origen de la agencia que se ha apuntado para este proveedor («Vic»); null si ninguno.</summary>
+        public string OrigenAgenciaAprendido { get; set; }
         public string Mensaje { get; set; }
     }
 
@@ -340,6 +342,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 if (algunoAplicado)
                 {
                     await RecordarRemitenteAcertado(decision.Correos, unico).ConfigureAwait(false);
+                    // NestoAPI#857i: el origen de la agencia se aprende solo de un criterio fuerte (nunca de lo que asignó su propia regla)
+                    if (ReglaOrigenAgencia.EnsenaAutomatico(decision.Correos, unico))
+                    {
+                        _ = await AprenderOrigenes(decision.Correos, unico.Empresa, unico.Proveedor, APLICADO_POR_AUTOMATICO).ConfigureAwait(false);
+                    }
                 }
                 // Los nuevos que ya estaban aplicados (no pendientes): misma fecha
                 Anotar(desenlaces, nuevas, new ResultadoCorreoGuardado
@@ -353,26 +360,56 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         }
 
         /// <summary>
-        /// NestoAPI#905: el envío se ha aplicado a un pedido del proveedor que se reconoció por el NOMBRE del remitente del paquete: ese remitente
-        /// pasa a la memoria (dbo.ComprasRemitentesPaquete), como si Compras lo hubiera asignado con «recordar». Nunca lanza.
+        /// NestoAPI#905: el envío se ha aplicado a un pedido de un proveedor que un correo suyo reconoció (por el nombre del remitente del paquete o,
+        /// desde el 25/11/26, por cualquier otro criterio propio): su remitente del paquete, si aún no está, pasa a la memoria
+        /// (dbo.ComprasRemitentesPaquete), como si Compras lo hubiera asignado con «recordar» (<see cref="ReglaRecordarRemitentePaquete"/>). Nunca lanza.
         /// </summary>
         private async Task RecordarRemitenteAcertado(List<CorreoSeguimientoFila> correos, CandidatoPedidoCompra pedido)
         {
-            string remitente = ReglaRecordarRemitentePaquete.QueRecordar(correos, pedido);
-            if (remitente == null)
-            {
-                return;
-            }
             try
             {
+                List<RemitentePaqueteRecordado> memoria = await repositorio.LeerRemitentesPaquete().ConfigureAwait(false);
+                string remitente = ReglaRecordarRemitentePaquete.QueRecordar(correos, pedido, memoria);
+                if (remitente == null)
+                {
+                    return;
+                }
                 _ = await repositorio.GuardarRemitentePaquete(remitente, pedido.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
                     pedido.Proveedor.Trim(), APLICADO_POR_AUTOMATICO).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                registrar(new Exception($"[Correos de seguimiento de compras #905] No se ha podido recordar el remitente del paquete «{remitente}» " +
+                registrar(new Exception($"[Correos de seguimiento de compras #905] No se ha podido recordar el remitente del paquete " +
                     $"para el proveedor {pedido.Proveedor}: {ex.Message}", ex));
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#857i: apunta en dbo.ComprasOrigenesAgencia que lo que sale de los orígenes de este envío (los que su agencia pone en el código)
+        /// era de ese proveedor. Sin Scripts/Issue857i, nada. Devuelve los orígenes apuntados. Nunca lanza.
+        /// </summary>
+        private async Task<List<OrigenEnvioAgencia>> AprenderOrigenes(IEnumerable<CorreoSeguimientoFila> correos, string empresa, string proveedor, string usuario)
+        {
+            var apuntados = new List<OrigenEnvioAgencia>();
+            try
+            {
+                List<OrigenEnvioAgencia> origenes = OrigenesAgenciaCorreo.DelEnvio(correos);
+                if (!origenes.Any() || string.IsNullOrWhiteSpace(proveedor) || !repositorio.OrigenesAgenciaDisponibles())
+                {
+                    return apuntados;
+                }
+                foreach (OrigenEnvioAgencia origen in origenes)
+                {
+                    await repositorio.GuardarOrigenAgencia(origen.Agencia, origen.Origen,
+                        string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(), proveedor.Trim(), usuario).ConfigureAwait(false);
+                    apuntados.Add(origen);
+                }
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857i] No se ha podido apuntar el origen de la agencia para el proveedor {proveedor}: {ex.Message}", ex));
+            }
+            return apuntados;
         }
 
         /// <summary>NestoAPI#865: qué ha pasado al aplicar un correo nuevo, para la cabecera del reenvío. PURA.</summary>
@@ -412,6 +449,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public async Task<int> AvisarPendientes()
         {
             int avisados = 0;
+            ProximoAvisoPendiente = null;
             try
             {
                 if (avisador == null || !repositorio.AplicacionDisponible())
@@ -422,14 +460,33 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 List<CorreoSeguimientoFila> guardados = await repositorio.LeerCorreos(
                     momento.AddDays(-ReglaFechaRecepcionPorCorreo.DIAS_APLICACION_AUTOMATICA - MismoEnvio.DIAS)).ConfigureAwait(false)
                     ?? new List<CorreoSeguimientoFila>();
+                List<PedidoCompraEnAire> enAire = null;
+                bool enAireLeido = false;
                 foreach (List<CorreoSeguimientoFila> grupo in MismoEnvio.Agrupar(guardados))
                 {
                     DecisionEnvio decision = MismoEnvio.Decidir(grupo);
                     if (decision.Avisado || decision.Aplicado != null || decision.Descartado || decision.YaLlego || decision.Unico != null
                         || !decision.Correos.Any(CorreosPorAsignar.Es)
                         || !decision.Correos.Any(f => ReglaFechaRecepcionPorCorreo.Reciente(f.Recibido, momento))
-                        || !decision.Correos.Any(f => f.FechaCaptura >= momento - CAPTURA_AVISO)
-                        || momento - decision.Correos.Max(f => f.Recibido) < ESPERA_AVISO)
+                        || !decision.Correos.Any(f => f.FechaCaptura >= momento - CAPTURA_AVISO))
+                    {
+                        continue;
+                    }
+                    // La espera cuenta desde que se RECIBIÓ el último correo del envío (no desde que se capturó): si al guardarlo ya han pasado,
+                    // se avisa en esta misma pasada; si no, se apunta cuándo toca para que el job lo programe sin esperar a la siguiente pasada.
+                    DateTime cuando = decision.Correos.Max(f => f.Recibido) + ESPERA_AVISO;
+                    if (momento < cuando)
+                    {
+                        ProximoAvisoPendiente = ProximoAvisoPendiente.HasValue && ProximoAvisoPendiente.Value < cuando ? ProximoAvisoPendiente : cuando;
+                        continue;
+                    }
+                    // 25/11/26: un envío que ya no está pendiente (entregado, o sin ningún candidato en el aire) no avisa; los pedidos, una vez por pasada
+                    if (!enAireLeido)
+                    {
+                        enAireLeido = true;
+                        enAire = await LeerEnAireSinRomper().ConfigureAwait(false);
+                    }
+                    if (ReglaEnvioYaNoPendiente.Motivo(grupo, enAire) != null)
                     {
                         continue;
                     }
@@ -451,6 +508,26 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 registrar(new Exception("[Correos de seguimiento de compras #857] No se han podido revisar los avisos por asignar: " + ex.Message, ex));
             }
             return avisados;
+        }
+
+        /// <summary>
+        /// 25/11/26: tras <see cref="AvisarPendientes"/>, la primera hora a la que un envío por asignar cumple la espera (null si ninguno espera).
+        /// El job la usa para programar un aviso suelto en vez de esperar a su siguiente pasada (cada 30 min).
+        /// </summary>
+        public DateTime? ProximoAvisoPendiente { get; private set; }
+
+        /// <summary>Los pedidos en el aire; null si no se pueden leer (entonces no se descarta nada por ellos). Nunca lanza.</summary>
+        private async Task<List<PedidoCompraEnAire>> LeerEnAireSinRomper()
+        {
+            try
+            {
+                return await repositorio.LeerPedidosEnAire(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #857] No se han podido leer los pedidos en el aire para el aviso por asignar: " + ex.Message, ex));
+                return null;
+            }
         }
 
         /// <summary>Los correos del envío de <paramref name="fila"/> (ella incluida), de lo guardado en su ventana.</summary>
@@ -679,6 +756,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             if (respuesta.CorreosDelMismoEnvio > 0)
             {
                 respuesta.Mensaje += $" También se han asignado {respuesta.CorreosDelMismoEnvio} correo(s) más del mismo envío.";
+            }
+            // NestoAPI#857i: lo que asigna una persona enseña de qué proveedor es lo que sale de ese origen de la agencia
+            if (!respuesta.YaEstabaAplicado && !string.IsNullOrWhiteSpace(respuesta.Proveedor))
+            {
+                List<OrigenEnvioAgencia> aprendidos = await AprenderOrigenes(envio, empresa, respuesta.Proveedor, usuario).ConfigureAwait(false);
+                if (aprendidos.Any())
+                {
+                    respuesta.OrigenAgenciaAprendido = OrigenesAgenciaCorreo.Texto(aprendidos);
+                    respuesta.Mensaje += $" Apuntado que lo que manda {aprendidos[0].Agencia} desde {respuesta.OrigenAgenciaAprendido} es del proveedor {respuesta.Proveedor.Trim()}.";
+                }
             }
             if (peticion.RecordarRemitente)
             {

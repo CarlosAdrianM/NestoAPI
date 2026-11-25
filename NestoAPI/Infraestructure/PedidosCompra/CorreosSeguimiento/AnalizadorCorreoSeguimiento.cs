@@ -97,6 +97,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public ConfirmacionPedidoProveedor Confirmacion { get; set; }
         /// <summary>NestoAPI#857g: las referencias del remitente que da la agencia («Ref.: SO252231WKOUT77626», MBE). No se guardan.</summary>
         public List<string> ReferenciasRemitente { get; set; } = new List<string>();
+        /// <summary>25/11/26: números que la agencia dice que no son un pedido nuestro (<see cref="DatosEnvioAgencia.NumerosQueNoSonPedido"/>).</summary>
+        public List<string> NumerosQueNoSonPedido { get; set; } = new List<string>();
         /// <summary>
         /// 20/11/26: cuándo se hizo la compra en el proveedor, según su aviso de salida (<see cref="IFormatoAvisoSalida.FechaCompra"/>). No se
         /// guarda: enlaza el aviso con la confirmación de ese pedido (<see cref="ReglaPedidoProveedor.CompletarPorFechaCompra"/>).
@@ -245,6 +247,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 analisis.EsSalidaNuestra = datos?.EsSalidaNuestra ?? EnvioNuestroDeSalida.Es((correo.Asunto ?? string.Empty) + "\n" + correo.Texto);
                 analisis.RemitentePaquete = datos?.RemitentePaquete ?? ExtractorRemitentePaquete.Extraer(correo.Texto, correo.Asunto);
                 analisis.ReferenciasRemitente = datos?.ReferenciasRemitente ?? new List<string>();
+                analisis.NumerosQueNoSonPedido = datos?.NumerosQueNoSonPedido ?? new List<string>();
                 CompletarEnlaces(analisis, lista);
             }
             return analisis;

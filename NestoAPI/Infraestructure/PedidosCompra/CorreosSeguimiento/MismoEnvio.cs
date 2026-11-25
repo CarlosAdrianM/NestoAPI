@@ -186,6 +186,59 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
     }
 
     /// <summary>
+    /// 25/11/26 (Carlos: «ya no hay pedido pendiente al que asignarlos»; caso DSV ESMNR264773770: cuatro correos de estado sin aplicar de un
+    /// envío que ya se aplicó con el aviso del proveedor y se recibió). Un ENVÍO (el grupo de <see cref="MismoEnvio"/>) ya no está por asignar
+    /// si: (a) algún correo suyo está aplicado o descartado (los que llegan después de aplicarlo no se marcan: lo dice el envío, no la fila);
+    /// (b) la agencia dice Entregado en alguno (EstadoEnvio); (c) tiene candidatos y NINGUNO sigue en el aire; (d) el job ya le encontró el
+    /// albarán (PedidoReal). Sin candidatos y sin nada de eso, sigue por asignar. PURA.
+    /// </summary>
+    public static class ReglaEnvioYaNoPendiente
+    {
+        /// <param name="enAire">Los pedidos en el aire de ahora; null = no se sabe (no se aplica el punto c).</param>
+        /// <returns>Por qué ya no está pendiente, de usted; null si sigue por asignar.</returns>
+        public static string Motivo(IEnumerable<CorreoSeguimientoFila> grupo, IEnumerable<PedidoCompraEnAire> enAire)
+        {
+            List<CorreoSeguimientoFila> correos = (grupo ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f != null && f.EsSalidaNuestra != true).ToList();
+            if (!correos.Any())
+            {
+                return null;
+            }
+            CorreoSeguimientoFila aplicado = correos.FirstOrDefault(f => f.PedidoAplicado.HasValue);
+            if (aplicado != null)
+            {
+                return $"El envío ya está asignado al pedido de compra {aplicado.PedidoAplicado}.";
+            }
+            if (correos.Any(f => f.Descartado == true))
+            {
+                return "El envío ya está descartado: no es de ninguna compra.";
+            }
+            if (correos.Any(f => string.Equals(f.EstadoEnvio?.Trim(), nameof(EstadoEnvioAgencia.Entregado), StringComparison.OrdinalIgnoreCase)))
+            {
+                return "La agencia dice que el envío ya está entregado.";
+            }
+            CorreoSeguimientoFila llegado = correos.FirstOrDefault(f => f.PedidoReal.HasValue);
+            if (llegado != null)
+            {
+                return $"El pedido de compra {llegado.PedidoReal} ya se ha recibido{(llegado.FechaAlbaranReal.HasValue ? " el " + llegado.FechaAlbaranReal.Value.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture) : string.Empty)}.";
+            }
+            if (enAire != null)
+            {
+                // Los propios y también los heredados (los correos de estado de la agencia solo tienen los de su envío)
+                List<CandidatoPedidoCompra> candidatos = correos.SelectMany(f => AsignadorPedidosCompra.Deserializar(f.PedidosCandidatos))
+                    .Where(c => c != null && c.Pedido > 0).GroupBy(c => AsignadorPedidosCompra.Clave(c.Empresa, c.Pedido)).Select(g => g.First()).ToList();
+                var vivos = new HashSet<string>(enAire.Where(p => p != null).Select(p => AsignadorPedidosCompra.Clave(p.Empresa, p.Pedido)));
+                if (candidatos.Any() && !candidatos.Any(c => vivos.Contains(AsignadorPedidosCompra.Clave(c.Empresa, c.Pedido))))
+                {
+                    return candidatos.Count == 1
+                        ? $"El pedido de compra {candidatos[0].Pedido} ya no tiene nada pendiente de recibir."
+                        : "Ninguno de sus pedidos de compra candidatos tiene ya nada pendiente de recibir.";
+                }
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
     /// NestoAPI#857 (fase 3, Carlos 12/11/26): con varios candidatos NO se elige solo (decide Compras), pero se sugiere UNO: el enviado
     /// más recientemente ANTES de que llegara el primer correo del envío (un pedido enviado después no puede ser lo que ya viene). PURA.
     /// </summary>

@@ -64,24 +64,38 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         }
     }
 
-    /// <summary>NestoAPI#905: qué remitente del paquete se recuerda al acertar por su nombre. PURA.</summary>
+    /// <summary>
+    /// NestoAPI#905: qué remitente del paquete se recuerda al quedar aplicado un envío. 25/11/26: no solo si se acertó por su nombre; también
+    /// cuando el proveedor se reconoció por otro criterio del PROPIO correo (número, correo, dominio, nombre, PDF, líneas…; nunca lo heredado
+    /// de otro correo del envío, que puede ser el de un intermediario), si ese remitente aún no está en la memoria. PURA.
+    /// </summary>
     public static class ReglaRecordarRemitentePaquete
     {
         /// <summary>
-        /// El remitente (normalizado) de un correo del envío cuyos candidatos propios salieron por <see cref="AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE"/>
-        /// con el proveedor del pedido aplicado; null si no hay ninguno.
+        /// El remitente (normalizado) de un correo del envío cuyos candidatos propios llevan el proveedor del pedido aplicado (primero los que
+        /// salieron por <see cref="AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE"/>) y que no está ya en <paramref name="memoria"/>
+        /// (con ningún proveedor: lo que dijo Compras no se pisa); null si no hay ninguno.
         /// </summary>
-        public static string QueRecordar(IEnumerable<CorreoSeguimientoFila> correos, CandidatoPedidoCompra pedido)
+        public static string QueRecordar(IEnumerable<CorreoSeguimientoFila> correos, CandidatoPedidoCompra pedido,
+            IEnumerable<RemitentePaqueteRecordado> memoria = null)
         {
             if (pedido == null || string.IsNullOrWhiteSpace(pedido.Proveedor))
             {
                 return null;
             }
+            var yaRecordados = new HashSet<string>((memoria ?? Enumerable.Empty<RemitentePaqueteRecordado>())
+                .Select(r => ExtractorRemitentePaquete.Normalizar(r?.RemitentePaquete)).Where(r => r != null));
             return (correos ?? Enumerable.Empty<CorreoSeguimientoFila>())
-                .Where(f => f != null && MismoEnvio.Propios(f).Any(c => c.Motivo == AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE
-                    && string.Equals(c.Proveedor?.Trim(), pedido.Proveedor.Trim(), System.StringComparison.OrdinalIgnoreCase)))
-                .Select(f => ExtractorRemitentePaquete.Normalizar(f.RemitentePaquete))
-                .FirstOrDefault(r => r != null);
+                .Where(f => f != null)
+                .Select(f => new
+                {
+                    Remitente = ExtractorRemitentePaquete.Normalizar(f.RemitentePaquete),
+                    Suyos = MismoEnvio.Propios(f).Where(c => string.Equals(c.Proveedor?.Trim(), pedido.Proveedor.Trim(), System.StringComparison.OrdinalIgnoreCase)).ToList()
+                })
+                .Where(x => x.Remitente != null && x.Suyos.Any() && !yaRecordados.Contains(x.Remitente))
+                .OrderByDescending(x => x.Suyos.Any(c => c.Motivo == AsignadorPedidosCompra.MOTIVO_NOMBRE_REMITENTE_PAQUETE))
+                .Select(x => x.Remitente)
+                .FirstOrDefault();
         }
     }
 

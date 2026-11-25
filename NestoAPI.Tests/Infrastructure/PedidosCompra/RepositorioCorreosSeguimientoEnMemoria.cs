@@ -212,6 +212,28 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
 
         public Task<bool> BorrarRemitentePaquete(int id, string usuario) => Task.FromResult(RemitentesPaquete.RemoveAll(r => r.Id == id) > 0);
 
+        // NestoAPI#857i
+        public bool ConOrigenes { get; set; } = true;
+        public List<OrigenAgenciaRecordado> OrigenesAgencia { get; } = new List<OrigenAgenciaRecordado>();
+        public bool OrigenesAgenciaDisponibles() => ConOrigenes;
+        public Task<List<OrigenAgenciaRecordado>> LeerOrigenesAgencia() => Task.FromResult(OrigenesAgencia.ToList());
+
+        public Task GuardarOrigenAgencia(string agencia, string origen, string empresa, string proveedor, string usuario)
+        {
+            OrigenAgenciaRecordado o = OrigenesAgencia.FirstOrDefault(x => x.Agencia == agencia && x.Origen == origen && x.Empresa == empresa && x.Proveedor == proveedor);
+            if (o == null)
+            {
+                o = new OrigenAgenciaRecordado { Id = OrigenesAgencia.Count + 1, Agencia = agencia, Origen = origen, Empresa = empresa, Proveedor = proveedor };
+                OrigenesAgencia.Add(o);
+            }
+            o.Veces++;
+            o.UltimaVez = DateTime.Now;
+            o.Usuario = usuario;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> BorrarOrigenAgencia(int id, string usuario) => Task.FromResult(OrigenesAgencia.RemoveAll(o => o.Id == id) > 0);
+
         public Task<bool> ActualizarAnalisis(CorreoSeguimientoFila fila)
         {
             CorreoSeguimientoFila correo = Correos.FirstOrDefault(c => c.MensajeId == fila.MensajeId && !c.PedidoAplicado.HasValue && c.Descartado != true);

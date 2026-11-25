@@ -932,6 +932,29 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   Job y Reanalizar (el histórico no). `GET …/PorAsignar`: cada candidato con `DePendientes` y `MotivoDePendientes`. Bultos y kilos: los lee SOLO la
   clase de la agencia (`IBultosKilosAgencia`, hoy DHL: «Bultos.....: 8», «Kilos.......: 123»), al vuelo del `Extracto`: `Bultos`/`Kilos` en GET
   …/Correos y …/PorAsignar y «Bultos: 8 bultos, 123 kg» en el reenvío; nunca deciden. Sin script.
+- **Delegación de origen de la agencia, aprendida (NestoAPI#857i, Carlos 25/11/26; DB Schenker ESVIC262013788, sin remitente, pedido ni referencia)**:
+  la AGENCIA dice el origen (`IAgenciaEntrada.OrigenDelEnvio`/`NombreOrigen`, null por defecto; hoy SOLO `AgenciaEntradaSchenker`: ES + 3 letras + 9
+  cifras, mapa `Delegaciones` VIC Vic, MNR Manresa; nada de «si es Schenker» fuera). Memoria `dbo.ComprasOrigenesAgencia` (Agencia, Origen, Empresa,
+  Proveedor, Veces, UltimaVez, Usuario; `Scripts/Issue857i_ComprasOrigenesAgencia.sql`; sin ella, como antes, caché 10 min y ELMAH una vez). Se aprende
+  (suma Veces) cuando el envío queda aplicado por una PERSONA (`Asignar`, `OrigenAgenciaAprendido` en la respuesta) o, en el job, por un criterio fuerte
+  (`ReglaOrigenAgencia.MotivosQueEnsenan`: número, PDF, líneas del aviso); NUNCA de su propia regla ni del control de pendientes; descartar no toca nada.
+  LA REGLA (pura) `ReglaOrigenAgencia` (`OrigenAgencia.cs`), solo si nada ha dado candidatos (tras el nombre del remitente, antes del control de
+  pendientes), job y Reanalizar: recordados de esa agencia + origen en 12 meses; pedidos en el aire enviados ANTES del correo. Uno con uno → ese
+  (motivo `OrigenAgencia`, `Explicacion` «DB Schenker desde Vic: las otras veces era de X; se asigna a su único pedido en el aire, 220989.»); uno con
+  varios → por asignar con los suyos (decide #897 si tiene control de pendientes); varios recordados → nunca por frecuencia: solo uno con UN pedido
+  → ese («…; B no tiene nada pendiente: …»); si no, por asignar con los de ellos (motivo `OrigenAgenciaVarios`, que no deja decidir a #897). `OrigenAgencia`
+  («Vic» o la clave) y `Explicacion` en GET …/Correos y …/PorAsignar. `GET/DELETE …/OrigenesAgencia[/{id}]` (permisos de RemitentesPaquete; rastro
+  `ComprasOrigenesAgencia`). Lo que el proveedor manda directo a un cliente no se sabe sin la web (prohibida): no se intenta.
+- **Retoques del 25/11/26**: (1) DHL saca el remitente del paquete de «¡Muy pronto recibirás el envío de MAYSTAR S,L !» y su «Ref.Cliente.: 128013»
+  (en `AgenciaEntradaDhl.LeerDatosEnvio`) va a `DatosEnvioAgencia.NumerosQueNoSonPedido`: el asignador no lo cuenta como número de pedido nuestro.
+  (2) `ReglaRecordarRemitentePaquete`: al aplicarse un envío se recuerda el remitente del paquete de un correo cuyos candidatos PROPIOS llevan ese
+  proveedor por cualquier criterio (no solo el nombre del remitente; nunca lo heredado), si aún no está en la memoria. (3) Reenvío por asignar: «Puede
+  asignarlo ya en Nesto: Productos › Envíos por asignar.». La campana espera 20 min desde que se RECIBIÓ el último correo (ya era así); si no han
+  pasado, `ProximoAvisoPendiente` y el job programa en Hangfire un aviso suelto (`CorreosSeguimientoComprasJobsService.AvisosPorAsignar`) si toca
+  antes de la siguiente pasada. (4) LA REGLA (pura) `ReglaEnvioYaNoPendiente` (`MismoEnvio.cs`), por envío: aplicado o descartado algún correo, la
+  agencia dice Entregado, ya tiene `PedidoReal`, o tiene candidatos (propios o heredados) y ninguno sigue en el aire → no sale en `GET …/PorAsignar`
+  (salvo `?incluirLlegados=true`, con `MotivoYaNoPendiente`) ni avisa la campana. Caso DSV ESMNR264773770: los correos de estado que llegan DESPUÉS de
+  aplicar el envío no se marcan aplicados (el job sale antes por «ya llegó»/«entregado»); lo resuelve la regla de listado.
 
 ### Inventario pendiente de otro día y el picking (incidencias 1227 y 1057, 12/11/26)
 - `DELETE api/Inventarios/Filas/{n}`: una fila PENDIENTE de un día ANTERIOR a hoy se borra siempre (`ReglaBorrarFilaInventario.EsDeDiaAnterior`,

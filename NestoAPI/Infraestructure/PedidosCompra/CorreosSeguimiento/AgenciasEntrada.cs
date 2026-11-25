@@ -31,6 +31,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string RemitentePaquete { get; set; }
         /// <summary>Las referencias del remitente (su pedido), tal cual.</summary>
         public List<string> ReferenciasRemitente { get; set; } = new List<string>();
+        /// <summary>
+        /// 25/11/26: números del correo que la agencia SABE que no son un pedido nuestro (la referencia del remitente de DHL, «Ref.Cliente.:»).
+        /// La asignación no los cuenta como número de pedido.
+        /// </summary>
+        public List<string> NumerosQueNoSonPedido { get; set; } = new List<string>();
         /// <summary>Intermediario: la agencia que lleva el paquete de verdad (sus correos son los que dicen la entrega); null si no lo es.</summary>
         public IAgenciaEntrada Mensajero { get; set; }
         /// <summary>True/false si la agencia sabe si es una salida NUESTRA (un resumen de MBE con nuestros envíos); null = la regla común.</summary>
@@ -69,6 +74,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         EntregaAgencia LeerEntrega(CorreoCompras correo);
         /// <summary>NestoAPI#857f: el enlace público de seguimiento a partir del código; null si no se sabe.</summary>
         string UrlSeguimiento(string codigo);
+        /// <summary>
+        /// NestoAPI#857i: la delegación de ORIGEN del envío que va en su propio código, como clave corta («VIC» de «ESVIC262013788», DB
+        /// Schenker); null si la agencia no la pone en el código o el código no es suyo. Sirve para aprender de qué proveedor suele ser
+        /// lo que sale de allí (<see cref="ReglaOrigenAgencia"/>).
+        /// </summary>
+        string OrigenDelEnvio(string codigo);
+        /// <summary>NestoAPI#857i: el nombre de esa delegación si la agencia lo sabe («Vic»); null si no (se enseña la clave).</summary>
+        string NombreOrigen(string origen);
     }
 
     /// <summary>
@@ -160,6 +173,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         }
 
         public virtual string UrlSeguimiento(string codigo) => null;
+        /// <summary>NestoAPI#857i: por defecto la agencia no pone el origen en el código.</summary>
+        public virtual string OrigenDelEnvio(string codigo) => null;
+        public virtual string NombreOrigen(string origen) => null;
 
         /// <summary>Para las clases de agencia: el código listo para ir en una URL (null si no es un código).</summary>
         protected static string CodigoParaUrl(string codigo)
@@ -604,6 +620,45 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private static readonly Regex BultosDhl = new Regex(@"(?<![\p{L}])bultos\s*\.*\s*:\s*(\d{1,4})(?![\d.,])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex KilosDhl = new Regex(@"(?<![\p{L}])kilos\s*\.*\s*:\s*(\d{1,6}(?:[.,]\d{1,3})?)(?!\d)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        /// <summary>
+        /// 25/11/26: «¡Muy pronto recibirás el envío de MAYSTAR S,L !» (DHL eCommerce): quién lo expide, hasta el signo de admiración o el fin
+        /// de la línea.
+        /// </summary>
+        private static readonly Regex RecibirasElEnvioDe = new Regex(@"recibir[aá]s\s+(?:el|tu|su)\s+env[ií]o\s+de\s+([^!\r\n]+?)\s*(?:!|$)",
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
+
+        /// <summary>25/11/26: «Ref.Cliente.: 128013» es la referencia que le da el REMITENTE (el proveedor es el cliente de DHL), no un pedido nuestro.</summary>
+        private static readonly Regex RefCliente = new Regex(@"ref\s*\.?\s*cliente\s*\.*\s*:\s*([A-Za-z0-9][A-Za-z0-9\-/_.]{0,39})",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>Solo en SUS correos: el remitente del paquete y la referencia del remitente (que nunca cuenta como número de pedido nuestro).</summary>
+        public override DatosEnvioAgencia LeerDatosEnvio(CorreoCompras correo)
+        {
+            if (correo == null || !EsCorreoPropio(correo))
+            {
+                return null;
+            }
+            string texto = (correo.Asunto ?? string.Empty) + "\n" + (correo.Texto ?? string.Empty);
+            Match remitente = RecibirasElEnvioDe.Match(texto);
+            Match referencia = RefCliente.Match(texto);
+            if (!remitente.Success && !referencia.Success)
+            {
+                return null;
+            }
+            var datos = new DatosEnvioAgencia();
+            if (remitente.Success)
+            {
+                datos.RemitentePaquete = ExtractorRemitentePaquete.Normalizar(remitente.Groups[1].Value);
+            }
+            if (referencia.Success)
+            {
+                string valor = referencia.Groups[1].Value.TrimEnd('.', '-', '/', '_');
+                datos.ReferenciasRemitente.Add(valor);
+                datos.NumerosQueNoSonPedido.Add(valor);
+            }
+            return datos;
+        }
+
         public BultosKilosEnvio LeerBultosKilos(string texto)
         {
             if (string.IsNullOrWhiteSpace(texto))
@@ -1004,6 +1059,33 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             string c = CodigoParaUrl(codigo);
             return c == null ? null : "https://www.dsv.com/mydsv/tracking-public/?language_region=es-ES_ES&refNumber=" + c;
         }
+
+        private static readonly Regex NumeroEnvioEntero = new Regex(@"^ES([A-Z]{3})\d{9}$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// NestoAPI#857i (Carlos 25/11/26): las delegaciones de salida conocidas. Solo las que se han visto; una que no esté aquí se enseña
+        /// con su clave (y se aprende igual).
+        /// </summary>
+        internal static readonly Dictionary<string, string> Delegaciones = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["VIC"] = "Vic",
+            ["MNR"] = "Manresa"
+        };
+
+        /// <summary>NestoAPI#857i: las tres letras de la delegación de salida de su número de envío («ESVIC262013788» → «VIC»).</summary>
+        public override string OrigenDelEnvio(string codigo)
+        {
+            string limpio = codigo?.Replace(" ", string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return null;
+            }
+            Match m = NumeroEnvioEntero.Match(limpio);
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        public override string NombreOrigen(string origen) =>
+            origen != null && Delegaciones.TryGetValue(origen.Trim(), out string nombre) ? nombre : null;
     }
 
     public class AgenciaEntradaDpd : AgenciaEntradaPorPatrones
