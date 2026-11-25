@@ -41,6 +41,15 @@ namespace NestoAPI.Controllers
         /// <summary>Incidencia 1227: si el almacén va por huecos y lo libre del hueco (sustituible en los tests).</summary>
         internal Infraestructure.Inventarios.ILectorHuecoInventario HuecosInventario { get; set; }
 
+        private Infraestructure.Inmovilizados.IRepositorioInmovilizados inmovilizados;
+
+        /// <summary>Etiquetas de inmovilizado (25/11/26): para reconocer «I/1823» al leer (los tests lo sustituyen).</summary>
+        internal Infraestructure.Inmovilizados.IRepositorioInmovilizados Inmovilizados
+        {
+            get => inmovilizados ?? (inmovilizados = new Infraestructure.Inmovilizados.RepositorioInmovilizadosEf());
+            set => inmovilizados = value;
+        }
+
         const int ESTADO_INVENTARIO_SIN_CONTABILIZAR = 1;
 
 
@@ -67,6 +76,12 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetInventario(string empresa, string almacen, DateTime fecha, string producto,
             string pasillo = null, string fila = null, string columna = null)
         {
+            Infraestructure.Inmovilizados.EsInmovilizadoDTO inmovilizado = await Infraestructure.Inmovilizados.ReglasInmovilizados
+                .Reconocer(Inmovilizados, empresa, producto).ConfigureAwait(false);
+            if (inmovilizado != null)
+            {
+                return Content(HttpStatusCode.Conflict, inmovilizado);
+            }
             ResultadoProductoLeido leido = await lector.Leer(empresa, producto).ConfigureAwait(false);
             if (leido.Producto == null)
             {
@@ -253,6 +268,13 @@ namespace NestoAPI.Controllers
                 throw new Exception("Es obligatorio especificar el producto");
             }
 
+            // Etiquetas de inmovilizado (25/11/26): «I/1823» no se cuenta (409 ES_INMOVILIZADO con Message, como los demás 409 del lector)
+            Infraestructure.Inmovilizados.EsInmovilizadoDTO inmovilizado = await Infraestructure.Inmovilizados.ReglasInmovilizados
+                .Reconocer(Inmovilizados, inventario.Empresa, inventario.Número).ConfigureAwait(false);
+            if (inmovilizado != null)
+            {
+                return Content(HttpStatusCode.Conflict, inmovilizado);
+            }
             ResultadoProductoLeido leido = await lector.Leer(inventario.Empresa, inventario.Número).ConfigureAwait(false);
             if (leido.Producto == null)
             {

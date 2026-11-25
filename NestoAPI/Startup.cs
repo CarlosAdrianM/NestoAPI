@@ -348,6 +348,12 @@ namespace NestoAPI
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows(),
                 sp.GetRequiredService<Infraestructure.Productos.IServicioCodigosBarras>()));
+            // Etiquetas de inmovilizado (Carlos 25/11/26): consulta, etiqueta 3×2 «I/1823» con Code128 y la impresora de su delegación
+            _ = services.AddScoped<Infraestructure.Inmovilizados.IRepositorioInmovilizados>(_ => new Infraestructure.Inmovilizados.RepositorioInmovilizadosEf());
+            _ = services.AddScoped<Infraestructure.Inmovilizados.IServicioEtiquetasInmovilizado>(sp => new Infraestructure.Inmovilizados.ServicioEtiquetasInmovilizado(
+                sp.GetRequiredService<Infraestructure.Inmovilizados.IRepositorioInmovilizados>(),
+                sp.GetRequiredService<ILectorParametrosUsuario>(),
+                Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
             // NestoAPI#884: muestras sin código de fabricante: código interno en bloque, etiquetas de cajón/gaveta por lotes y hoja en PDF
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioMuestras>(_ => Infraestructure.PreparacionAlmacen.RepositorioMuestrasSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCodigoInternoMuestras>(sp => new Infraestructure.PreparacionAlmacen.ServicioCodigoInternoMuestras(

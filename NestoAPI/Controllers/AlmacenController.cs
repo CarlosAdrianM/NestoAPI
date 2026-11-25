@@ -1124,6 +1124,26 @@ namespace NestoAPI.Controllers
             return Ok(productos);
         }
 
+        private Infraestructure.Inmovilizados.IRepositorioInmovilizados inmovilizados;
+
+        /// <summary>Etiquetas de inmovilizado (25/11/26): para reconocer «I/1823» en la ficha (los tests lo sustituyen).</summary>
+        internal Infraestructure.Inmovilizados.IRepositorioInmovilizados Inmovilizados
+        {
+            get => inmovilizados ?? (inmovilizados = new Infraestructure.Inmovilizados.RepositorioInmovilizadosEf());
+            set => inmovilizados = value;
+        }
+
+        // GET api/Almacen/Productos/I/1823/Ficha
+        /// <summary>
+        /// Etiquetas de inmovilizado: «I/1823» con la barra escapada (I%2F1823) llega aquí partido en dos tramos; se contesta lo
+        /// mismo que en la ficha (404 ES_INMOVILIZADO).
+        /// </summary>
+        [HttpGet]
+        [Route("Productos/I/{numero}/Ficha")]
+        [ResponseType(typeof(FichaProductoAlmacenDTO))]
+        public Task<IHttpActionResult> GetFichaInmovilizado(string numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+            => GetFichaProducto(Infraestructure.Inmovilizados.CodigoInmovilizado.PREFIJO + numero, empresa);
+
         // GET api/Almacen/Productos/8436620930427/Ficha?empresa=1   (o la referencia: Productos/18004/Ficha)
         /// <summary>
         /// Sugerencia 824 (Andre): la ficha del producto para Ariadna: foto, nombre, referencia del proveedor, familia, los códigos
@@ -1144,6 +1164,14 @@ namespace NestoAPI.Controllers
             if (string.IsNullOrEmpty(leido))
             {
                 return BadRequest("Falta el código de barras o la referencia del producto.");
+            }
+            // Etiquetas de inmovilizado (25/11/26): «I/1823» no es un producto. 404 con Message (Ariadna lo enseña tal cual), Codigo
+            // ES_INMOVILIZADO y el inmovilizado; un 409 sin candidatos Ariadna lo trata como un error suelto.
+            Infraestructure.Inmovilizados.EsInmovilizadoDTO inmovilizado = await Infraestructure.Inmovilizados.ReglasInmovilizados
+                .Reconocer(Inmovilizados, Empresa(empresa), leido).ConfigureAwait(false);
+            if (inmovilizado != null)
+            {
+                return Content(HttpStatusCode.NotFound, inmovilizado);
             }
             ResultadoFichaProductoAlmacen resultado = await fichaProducto.Leer(Empresa(empresa), leido).ConfigureAwait(false);
             if (resultado.Ficha != null)

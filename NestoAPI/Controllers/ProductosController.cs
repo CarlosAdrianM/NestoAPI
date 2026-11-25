@@ -735,6 +735,14 @@ namespace NestoAPI.Controllers
             }
 
             codigoBarras = codigoBarras.Trim();
+            // Etiquetas de inmovilizado (25/11/26): «I/1823» no es un producto (y nunca el 1823). 404 con Codigo ES_INMOVILIZADO y el
+            // motivo: un 409 aquí lleva la LISTA de candidatos y la app de clientes y Ariadna la deserializan como lista.
+            Infraestructure.Inmovilizados.EsInmovilizadoDTO inmovilizado = await Infraestructure.Inmovilizados.ReglasInmovilizados
+                .Reconocer(Inmovilizados, Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoBarras).ConfigureAwait(false);
+            if (inmovilizado != null)
+            {
+                return Content(HttpStatusCode.NotFound, inmovilizado);
+            }
             List<Producto> coincidencias = await BuscarPorCodigoBarras(Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoBarras, incluirNumero: true).ConfigureAwait(false);
             if (coincidencias.Count == 0)
             {
@@ -751,6 +759,15 @@ namespace NestoAPI.Controllers
             IHttpActionResult actionResult = await GetProducto(producto.Empresa, producto.Número, true);
 
             return actionResult;
+        }
+
+        private Infraestructure.Inmovilizados.IRepositorioInmovilizados inmovilizados;
+
+        /// <summary>Etiquetas de inmovilizado: de dónde se leen al reconocer «I/1823» (los tests lo sustituyen).</summary>
+        internal Infraestructure.Inmovilizados.IRepositorioInmovilizados Inmovilizados
+        {
+            get => inmovilizados ?? (inmovilizados = new Infraestructure.Inmovilizados.RepositorioInmovilizadosEf());
+            set => inmovilizados = value;
         }
 
         /// <summary>

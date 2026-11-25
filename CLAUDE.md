@@ -311,6 +311,23 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   absoluta desde el login (`Auth:DiasMaximosSesionTienda`, 90; `PoliticaRefrescoToken.VentanaDesdeCaducidadVencida`). 15 de 26 clientes
   echados tras un mes sin abrir la app no volvieron a entrar. Firma, absoluta y revalidación del cliente, igual; `refreshOAuthToken` no cambia.
 
+### Etiquetas de inmovilizado (Carlos 25/11/26; gemela Nesto)
+- Máquinas inmovilizadas tras el inventario (demostración, uso propio): etiqueta 3×2 «INMOVILIZADO · NO ES STOCK», «I/1823» en grande con la
+  delegación, la descripción en 2 líneas y un Code128 con el texto EXACTO «I/1823». LA REGLA `CodigoInmovilizado` (`Infraestructure/Inmovilizados/`):
+  `Componer` («I/» + número sin relleno) y `Leer` («I/1823», «i/1823», espacios; solo cifras; el número a secas NO). Tabla Inmovilizados (EDMX), solo lectura.
+- `GET api/Inmovilizados?empresa=1&filtro=&delegacion=&soloVivos=true` (`InmovilizadosController`; cliente de la tienda 403; 500 como mucho, los más nuevos
+  primero; filtro en número —«I/1823» = ese exacto— y descripción) → [{Empresa, Numero, Codigo, Descripcion, Grupo, Delegacion, Estado, EstadoDescripcion,
+  FechaCreacion}]. `POST api/Inmovilizados/Etiquetas/Imprimir` {Empresa?, Numeros 1..50, Copias 1..10, Impresora?} (Administración, Dirección, Almacén,
+  Tiendas, Informática; 404 si no existe ninguno) → {Impresas, Etiquetas [{Numero, Codigo, Descripcion, Delegacion, Impresora, Ok, Motivo}]}; un trabajo
+  por impresora por `ImpresoraEtiquetasConAjuste` (EPL/ZPL y ajuste, como la de producto). Impresora: `ReglaImpresoraInmovilizado` (la pedida; si no, la
+  fila «(defecto)» `ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC}` —sin crear filas— o etiquetas2/etiquetasreina/etiquetasalcobendas; VAR u otra, la
+  ImpresoraCodBarras de quien imprime).
+- Leerla donde se busca un producto (`ReglasInmovilizados.Reconocer`, solo lee la BD si tiene el formato; nunca casa con el producto 1823): cuerpo
+  `EsInmovilizadoDTO` {Codigo «ES_INMOVILIZADO», Message «I/1823 es un inmovilizado (…): no es stock, no se cuenta ni se prepara.» / «… tiene formato de
+  inmovilizado, pero no existe.», Inmovilizado, Productos []}. 409 en GET/POST api/Inventarios (sus clientes ya leen Codigo + Message de un 409); 404 en
+  GET api/Productos?codigoBarras= (su 409 es una LISTA: la app de clientes y Ariadna la deserializan) y en la ficha de Ariadna (también
+  `Productos/I/{numero}/Ficha`, por la barra escapada). PorCodigoBarras y Productos/Buscar (200 con lista) no cambian: dan la lista vacía.
+
 ### Furgoneta bulto a bulto (NestoAPI#772, 31/10/26)
 - Cada bulto del reparto propio (`RP{envío}-{N}`, `NR{pedido}-{N}`, `R{traspaso}-{N}`) tiene su historia en `RepartoBultosMovimientos`
   (`Scripts/Issue772_FurgonetaBultos.sql`): Cargado, Recogido, Entregado, Descargado (Origen Repartidor/Almacen). «Lo que lleva encima»

@@ -669,6 +669,10 @@
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
     <Compile Include="Controllers\InventariosController.Rellenar.cs" />
+    <Compile Include="Controllers\InmovilizadosController.cs" />
+    <Compile Include="Infraestructure\Inmovilizados\CodigoInmovilizado.cs" />
+    <Compile Include="Infraestructure\Inmovilizados\Inmovilizados.cs" />
+    <Compile Include="Infraestructure\Inmovilizados\EtiquetasInmovilizado.cs" />
     <Compile Include="Infraestructure\Inventarios\ServicioRellenarInventario.cs" />
     <Compile Include="Controllers\InventariosController.Contabilizar.cs" />
     <Compile Include="Infraestructure\Inventarios\ComprobadorInventario.cs" />
