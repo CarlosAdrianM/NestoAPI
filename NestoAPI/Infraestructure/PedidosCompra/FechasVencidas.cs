@@ -21,7 +21,25 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         /// <summary>De las recepciones del proveedor que tardaron más de lo que ya lleva esperando este pedido, el P80.</summary>
         HistorialProveedor,
         /// <summary>Pocos casos del proveedor: hoy + el P80 de todos los proveedores (fila «*» de dbo.ProveedoresPlazosEntrega).</summary>
-        PlazoGenerico
+        PlazoGenerico,
+        /// <summary>
+        /// 25/11/26 (caso 220983): la agencia lo tiene en camino (correo de seguimiento VIVO del pedido, de los últimos
+        /// <see cref="ReglaFechaVencida.DIAS_CORREO_VIVO"/> días) pero no dice cuándo llega: hoy o el siguiente laborable. No cuenta para «hay que llamar».
+        /// </summary>
+        AgenciaEnCamino
+    }
+
+    /// <summary>25/11/26: un envío de una agencia (sus correos de seguimiento) que puede ser de un pedido de compra.</summary>
+    public class EnvioAgenciaPedido
+    {
+        public string Agencia { get; set; }
+        /// <summary>El código de seguimiento (la expedición).</summary>
+        public string Codigo { get; set; }
+        /// <summary>El último correo del envío.</summary>
+        public DateTime Aviso { get; set; }
+        /// <summary>Aplicado a ese pedido (si no, es un candidato de un envío por asignar o el único).</summary>
+        public bool Aplicado { get; set; }
+        public List<CorreoSeguimientoFila> Correos { get; set; } = new List<CorreoSeguimientoFila>();
     }
 
     /// <summary>NestoAPI#865: la fecha nueva de una línea vencida y con qué cifras se ha sacado.</summary>
@@ -42,6 +60,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         public bool AjustadaAlLaborable { get; set; }
         /// <summary>Con correo: la agencia que lo dice (null si no se sabe).</summary>
         public string Agencia { get; set; }
+        /// <summary>25/11/26, <see cref="OrigenFechaRecalculada.AgenciaEnCamino"/>: el envío que lo tiene en camino.</summary>
+        public EnvioAgenciaPedido EnCamino { get; set; }
+        /// <summary>25/11/26, <see cref="OrigenFechaRecalculada.AgenciaEnCamino"/>: la fecha nueva es hoy.</summary>
+        public bool EnCaminoHoy { get; set; }
+        /// <summary>25/11/26: con estadística, el último aviso de la agencia que ya no está vivo y no ha llegado (null si no lo hay).</summary>
+        public EnvioAgenciaPedido AvisoSinLlegar { get; set; }
     }
 
     /// <summary>
@@ -62,8 +86,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         public const double PERCENTIL = 0.8;
         private const int TOPE_LABORABLE = 30;
 
+        /// <summary>Un correo de seguimiento es VIVO durante estos días (25/11/26).</summary>
+        public const int DIAS_CORREO_VIVO = 7;
+
+        /// <param name="enCamino">25/11/26: el envío VIVO del pedido (<see cref="EnCamino"/>); con él no hay «sin noticias».</param>
+        /// <param name="avisoSinLlegar">25/11/26: el último aviso ya no vivo y sin llegar (<see cref="AvisoSinLlegar"/>), para el texto.</param>
+        /// <param name="hoyPuedeLlegar">El job corre antes de la hora de corte en un laborable: la agencia aún puede entregar hoy.</param>
         public static RecalculoFechaVencida Calcular(DateTime hoy, DateTime fechaAnterior, DateTime? fechaPedido, IEnumerable<int> plazosProveedor,
-            int? p80Generico, DateTime? llegadaCorreo, string agenciaCorreo, Func<DateTime, bool> esFestivo)
+            int? p80Generico, DateTime? llegadaCorreo, string agenciaCorreo, Func<DateTime, bool> esFestivo,
+            EnvioAgenciaPedido enCamino = null, EnvioAgenciaPedido avisoSinLlegar = null, bool hoyPuedeLlegar = false)
         {
             hoy = hoy.Date;
             int? esperando = fechaPedido.HasValue ? Math.Max(0, (hoy - fechaPedido.Value.Date).Days) : (int?)null;
@@ -75,6 +106,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                 resultado.Agencia = string.IsNullOrWhiteSpace(agenciaCorreo) ? null : agenciaCorreo.Trim();
                 return resultado;
             }
+            if (enCamino != null)
+            {
+                // 25/11/26 (220983): la agencia ya ha dicho que viene; no es «sin noticias»
+                resultado.Origen = OrigenFechaRecalculada.AgenciaEnCamino;
+                resultado.EnCamino = enCamino;
+                resultado.Agencia = string.IsNullOrWhiteSpace(enCamino.Agencia) ? null : enCamino.Agencia.Trim();
+                resultado.EnCaminoHoy = hoyPuedeLlegar && (esFestivo == null || !esFestivo(hoy));
+                resultado.FechaEstimada = resultado.FechaNueva = resultado.EnCaminoHoy ? hoy : SiguienteLaborable(hoy, esFestivo);
+                return resultado;
+            }
+            resultado.AvisoSinLlegar = avisoSinLlegar;
 
             List<int> casos = esperando.HasValue
                 ? (plazosProveedor ?? Enumerable.Empty<int>()).Where(d => d > esperando.Value).ToList()
@@ -124,6 +166,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 
         /// <summary>¿Desde el 2.º vencimiento? Entonces hay que llamar al proveedor.</summary>
         public static bool HayQueLlamar(int vencimiento) => vencimiento >= 2;
+
+        /// <summary>El envío VIVO más reciente (último correo de los últimos <see cref="DIAS_CORREO_VIVO"/> días); null si no lo hay.</summary>
+        public static EnvioAgenciaPedido EnCamino(IEnumerable<EnvioAgenciaPedido> envios, DateTime hoy) =>
+            (envios ?? Enumerable.Empty<EnvioAgenciaPedido>()).Where(e => e != null && e.Aviso.Date >= hoy.Date.AddDays(-DIAS_CORREO_VIVO))
+                .OrderByDescending(e => e.Aviso).FirstOrDefault();
+
+        /// <summary>Sin ninguno vivo: el aviso más reciente (de hace más de <see cref="DIAS_CORREO_VIVO"/> días) que no ha llegado; null si no hay.</summary>
+        public static EnvioAgenciaPedido AvisoSinLlegar(IEnumerable<EnvioAgenciaPedido> envios, DateTime hoy) =>
+            EnCamino(envios, hoy) != null ? null
+                : (envios ?? Enumerable.Empty<EnvioAgenciaPedido>()).Where(e => e != null).OrderByDescending(e => e.Aviso).FirstOrDefault();
     }
 
     /// <summary>
@@ -161,6 +213,72 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             return porPedido;
         }
 
+        /// <summary>
+        /// 25/11/26 (caso 220983): los envíos de cada pedido («empresa/pedido») que pueden traerlo: aplicado a ese pedido, o sin aplicar ni
+        /// descartar con ese pedido entre sus candidatos (en un proveedor con control de pendientes, solo si NO es «de pendientes»,
+        /// <see cref="ReglaControlPendientes.MotivoDePendientes"/>). Un envío que ya ha llegado (algún candidato con albarán) no cuenta. PURA.
+        /// </summary>
+        /// <param name="pedido">Los datos del pedido en el aire por clave (null si no se saben: entonces no se clasifica).</param>
+        public static Dictionary<string, List<EnvioAgenciaPedido>> Envios(IEnumerable<CorreoSeguimientoFila> correos, Func<string, PedidoCompraEnAire> pedido,
+            Func<int> diasPedidoDePendientes)
+        {
+            var porPedido = new Dictionary<string, List<EnvioAgenciaPedido>>(StringComparer.OrdinalIgnoreCase);
+            foreach (List<CorreoSeguimientoFila> grupo in MismoEnvio.Agrupar(correos))
+            {
+                DecisionEnvio decision = MismoEnvio.Decidir(grupo);
+                if (decision.YaLlego || (decision.Aplicado == null && decision.Descartado) || !decision.Correos.Any())
+                {
+                    continue;
+                }
+                List<CorreoSeguimientoFila> vivos = decision.Correos.Where(f => f.Descartado != true).ToList();
+                if (!vivos.Any())
+                {
+                    continue;
+                }
+                CorreoSeguimientoFila ultimo = vivos.OrderByDescending(f => f.Recibido).ThenByDescending(f => f.Id).First();
+                var claves = new List<string>();
+                if (decision.Aplicado != null)
+                {
+                    claves.Add(AsignadorPedidosCompra.Clave(decision.Aplicado.EmpresaAplicada, decision.Aplicado.PedidoAplicado.Value));
+                }
+                else
+                {
+                    DateTime primero = decision.Correos.Min(f => f.Recibido);
+                    foreach (CandidatoPedidoCompra candidato in decision.Candidatos)
+                    {
+                        string clave = AsignadorPedidosCompra.Clave(candidato.Empresa, candidato.Pedido);
+                        PedidoCompraEnAire datos = pedido?.Invoke(clave);
+                        if (datos != null && datos.ControlPendientes && decision.Candidatos.Count > 1
+                            && ReglaControlPendientes.MotivoDePendientes(datos, primero, diasPedidoDePendientes()) != null)
+                        {
+                            continue;
+                        }
+                        claves.Add(clave);
+                    }
+                }
+                foreach (string clave in claves.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!porPedido.TryGetValue(clave, out List<EnvioAgenciaPedido> lista))
+                    {
+                        porPedido[clave] = lista = new List<EnvioAgenciaPedido>();
+                    }
+                    lista.Add(new EnvioAgenciaPedido
+                    {
+                        Agencia = Agencia(vivos),
+                        Codigo = vivos.Select(f => f.Codigo?.Trim()).FirstOrDefault(c => !string.IsNullOrEmpty(c)),
+                        Aviso = ultimo.Recibido,
+                        Aplicado = decision.Aplicado != null,
+                        Correos = vivos
+                    });
+                }
+            }
+            return porPedido;
+        }
+
+        /// <summary>¿Hay algún envío sin aplicar con varios candidatos? (solo entonces hace falta leer los pedidos en el aire).</summary>
+        public static bool HayPorAsignarConVarios(IEnumerable<CorreoSeguimientoFila> correos) =>
+            MismoEnvio.Agrupar(correos).Select(MismoEnvio.Decidir).Any(d => d.Aplicado == null && d.Candidatos.Count > 1);
+
         /// <summary>La agencia del correo más reciente que la diga.</summary>
         public static string Agencia(IEnumerable<CorreoSeguimientoFila> correos) =>
             (correos ?? Enumerable.Empty<CorreoSeguimientoFila>()).Where(f => f != null && !string.IsNullOrWhiteSpace(f.Agencia))
@@ -192,6 +310,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             string motivo;
             switch (r.Origen)
             {
+                case OrigenFechaRecalculada.AgenciaEnCamino:
+                    return EnCamino(r);
                 case OrigenFechaRecalculada.CorreoSeguimiento:
                     motivo = r.Agencia == null
                         ? "lo dice el correo de seguimiento del envío"
@@ -215,8 +335,31 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             {
                 motivo += $"; salía el {Dia(r.FechaEstimada)}, pero no puede llegar antes del siguiente día laborable";
             }
+            if (r.AvisoSinLlegar != null && r.Origen != OrigenFechaRecalculada.CorreoSeguimiento)
+            {
+                // 25/11/26: la agencia avisó hace más de una semana y no ha llegado
+                motivo = $"{QuienAviso(r.AvisoSinLlegar)} avisó el {DiaCorto(r.AvisoSinLlegar.Aviso)}{Expedicion(r.AvisoSinLlegar)} y no ha llegado; " + motivo;
+            }
             return motivo;
         }
+
+        /// <summary>«DHL lo tiene en camino (expedición 4313144450, aviso del 24/11): debería llegar hoy».</summary>
+        private static string EnCamino(RecalculoFechaVencida r)
+        {
+            EnvioAgenciaPedido e = r.EnCamino ?? new EnvioAgenciaPedido();
+            string parentesis = string.IsNullOrWhiteSpace(e.Codigo)
+                ? $"aviso del {DiaCorto(e.Aviso)}"
+                : $"expedición {e.Codigo.Trim()}, aviso del {DiaCorto(e.Aviso)}";
+            string llegada = r.EnCaminoHoy ? "debería llegar hoy" : $"debería llegar el {Dia(r.FechaNueva)}";
+            return $"{QuienAviso(e)} lo tiene en camino ({parentesis}): {llegada}";
+        }
+
+        private static string QuienAviso(EnvioAgenciaPedido e) => string.IsNullOrWhiteSpace(e?.Agencia) ? "La agencia" : e.Agencia.Trim();
+
+        private static string Expedicion(EnvioAgenciaPedido e) =>
+            string.IsNullOrWhiteSpace(e?.Codigo) ? string.Empty : $" (expedición {e.Codigo.Trim()})";
+
+        private static string DiaCorto(DateTime fecha) => fecha.ToString("dd/MM", es);
 
         public static string Llamar(int vencimiento) =>
             $"Hay que llamar al proveedor: es la {vencimiento}.ª vez que pasa la fecha de esta línea.";
@@ -260,9 +403,24 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             FechaEstimada = r.FechaEstimada.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             r.AjustadaAlLaborable,
             r.Agencia,
+            EnCamino = r.EnCamino == null ? null : new { r.EnCamino.Agencia, r.EnCamino.Codigo, Aviso = r.EnCamino.Aviso.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), r.EnCamino.Aplicado },
+            AvisoSinLlegar = r.AvisoSinLlegar == null ? null : new { r.AvisoSinLlegar.Agencia, r.AvisoSinLlegar.Codigo, Aviso = r.AvisoSinLlegar.Aviso.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) },
             Vencimiento = vencimiento,
             Motivo = TextosFechaVencida.Linea(r)
         });
+
+        /// <summary>25/11/26: un recálculo porque la agencia lo tenía en camino no cuenta como vencimiento (no es para llamar al proveedor).</summary>
+        private static bool EsDeAgenciaEnCamino(string nuevo)
+        {
+            try
+            {
+                return string.Equals((string)JObject.Parse(nuevo)["Origen"], OrigenFechaRecalculada.AgenciaEnCamino.ToString(), StringComparison.Ordinal);
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
 
         /// <summary>Clave de la línea («1/220515/3») → cuántas veces se ha recalculado ya (filas del rastro). Lo ilegible no cuenta.</summary>
         public static Dictionary<string, int> ContarPorLinea(IEnumerable<string> nuevos)
@@ -279,7 +437,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                 {
                     clave = null;
                 }
-                if (string.IsNullOrWhiteSpace(clave))
+                if (string.IsNullOrWhiteSpace(clave) || EsDeAgenciaEnCamino(nuevo))
                 {
                     continue;
                 }
@@ -298,7 +456,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         public bool Cambiada { get; set; }
         /// <summary>Qué vencimiento es este (1 = el primero).</summary>
         public int Vencimiento { get; set; } = 1;
-        public bool HayQueLlamar => ReglaFechaVencida.HayQueLlamar(Vencimiento);
+        /// <summary>25/11/26: si la agencia lo tiene en camino, no se pide llamar al proveedor.</summary>
+        public bool HayQueLlamar => ReglaFechaVencida.HayQueLlamar(Vencimiento) && Recalculo?.Origen != OrigenFechaRecalculada.AgenciaEnCamino;
         /// <summary>Si no se ha cambiado, por qué (texto para el correo).</summary>
         public string Problema { get; set; }
 
@@ -352,15 +511,19 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         private readonly Func<bool> interruptor;
         private readonly Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPromesaRiesgo;
         private readonly Action<Exception> registrar;
+        private readonly Func<TimeSpan> horaCorte;
+        private readonly Func<int> diasPedidoDePendientes;
 
         /// <param name="correos">Null = sin correos de seguimiento (todo «sin noticias»).</param>
+        /// <param name="horaCorte">25/11/26: antes de esta hora (y en laborable) la agencia aún puede entregar hoy; por defecto, la del picking.</param>
         /// <param name="esFestivo">Festivo de Algete, con sábados y domingos.</param>
         /// <param name="interruptor">Por defecto, <see cref="InterruptorRecalcularFechasVencidas"/>.</param>
         public ServicioFechasVencidas(IRepositorioProveedorVencido repositorio, IRepositorioPlazosProveedores plazos, IRepositorioCorreosSeguimiento correos,
             Func<DateTime, bool> esFestivo, Func<bool> interruptor = null,
             Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPromesaRiesgo = null,
-            Action<Exception> registrar = null)
+            Action<Exception> registrar = null, Func<TimeSpan> horaCorte = null, Func<int> diasPedidoDePendientes = null)
         {
+            this.horaCorte = horaCorte ?? (() => Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.plazos = plazos;
             this.correos = correos;
@@ -368,18 +531,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             this.registrar = registrar ?? (_ => { });
             this.interruptor = interruptor ?? (() => InterruptorRecalcularFechasVencidas.Encendido(this.registrar));
             this.anotarPromesaRiesgo = anotarPromesaRiesgo ?? EventosPromesaRiesgo.Anotar;
+            int? dias = null;
+            this.diasPedidoDePendientes = diasPedidoDePendientes ?? (() => (dias ?? (dias = ReglaControlPendientes.LeerDias(this.registrar))).Value);
         }
 
         /// <summary>
         /// Recalcula y escribe. Devuelve, por clave de línea (<see cref="LineaCompraVencida.Clave"/>), lo que ha pasado; null si el
         /// interruptor está apagado (el correo, como siempre).
         /// </summary>
-        public Dictionary<string, ResultadoFechaVencida> Recalcular(List<LineaCompraVencida> lineas, DateTime hoy)
+        /// <param name="ahora">25/11/26: el momento del job (para saber si la agencia aún puede entregar hoy); sin él, <paramref name="hoy"/>.</param>
+        public Dictionary<string, ResultadoFechaVencida> Recalcular(List<LineaCompraVencida> lineas, DateTime hoy, DateTime? ahora = null)
         {
             if (!interruptor())
             {
                 return null;
             }
+            DateTime momento = ahora ?? hoy;
             hoy = hoy.Date;
             var resultados = new Dictionary<string, ResultadoFechaVencida>(StringComparer.OrdinalIgnoreCase);
             List<LineaCompraVencida> lista = (lineas ?? new List<LineaCompraVencida>()).Where(l => l != null).ToList();
@@ -393,8 +560,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             Dictionary<string, List<int>> plazosPorProveedor = Leer(() => plazos == null ? null : ReglaFechaVencida.PlazosPorProveedor(
                 plazos.LeerRecepcionesDeProveedores(Constantes.Empresas.EMPRESA_POR_DEFECTO, hoy.AddMonths(-MESES_HISTORICO), lista.Select(l => l.Proveedor))),
                 "las recepciones de los proveedores") ?? new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, List<CorreoSeguimientoFila>> correosPorPedido = Leer(() => LeerCorreos(hoy), "los correos de seguimiento")
+            List<CorreoSeguimientoFila> filasCorreos = Leer(() => LeerFilasCorreos(hoy), "los correos de seguimiento");
+            Dictionary<string, List<CorreoSeguimientoFila>> correosPorPedido = (filasCorreos == null ? null : CorreosDelPedidoCompra.Agrupar(filasCorreos))
                 ?? new Dictionary<string, List<CorreoSeguimientoFila>>(StringComparer.OrdinalIgnoreCase);
+            // 25/11/26 (220983): los envíos de cada pedido que pueden traerlo (también los por asignar con él entre sus candidatos)
+            Dictionary<string, List<EnvioAgenciaPedido>> enviosPorPedido = Leer(() => filasCorreos == null ? null
+                    : CorreosDelPedidoCompra.Envios(filasCorreos, PedidosEnAire(filasCorreos), diasPedidoDePendientes), "los envíos en camino")
+                ?? new Dictionary<string, List<EnvioAgenciaPedido>>(StringComparer.OrdinalIgnoreCase);
+            bool hoyPuedeLlegar = !esFestivo(hoy) && momento.Date == hoy
+                && momento.TimeOfDay < (Leer(() => (TimeSpan?)horaCorte(), "la hora de corte") ?? TimeSpan.Zero);
             Dictionary<string, int> anteriores = Leer(() => RastroFechaRecalculada.ContarPorLinea(
                 repositorio.LeerRecalculosAnteriores(hoy.AddDays(-RastroFechaRecalculada.DIAS_REINCIDENCIA))), "los recálculos anteriores")
                 ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -408,10 +582,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                 resultados[linea.Clave] = resultado;
                 try
                 {
-                    correosPorPedido.TryGetValue(AsignadorPedidosCompra.Clave(linea.Empresa, linea.Pedido), out List<CorreoSeguimientoFila> suyos);
+                    string clavePedido = AsignadorPedidosCompra.Clave(linea.Empresa, linea.Pedido);
+                    correosPorPedido.TryGetValue(clavePedido, out List<CorreoSeguimientoFila> suyos);
+                    enviosPorPedido.TryGetValue(clavePedido, out List<EnvioAgenciaPedido> envios);
+                    EnvioAgenciaPedido enCamino = ReglaFechaVencida.EnCamino(envios, hoy);
+                    // Lo de siempre (el aplicado o el único); y si un correo vivo trae entrega estimada futura, manda esa
+                    List<CorreoSeguimientoFila> paraLlegada = suyos ?? new List<CorreoSeguimientoFila>();
+                    DateTime? llegadaSuya = ReglaFechaRecepcionPorCorreo.DiaDeLlegada(paraLlegada, esFestivo);
+                    if ((!llegadaSuya.HasValue || llegadaSuya.Value.Date < hoy)
+                        && enCamino != null && enCamino.Correos.Any(f => f.EntregaEstimadaDia.HasValue && f.EntregaEstimadaDia.Value.Date >= hoy))
+                    {
+                        paraLlegada = enCamino.Correos;
+                    }
                     resultado.Recalculo = ReglaFechaVencida.Calcular(hoy, linea.FechaPrevista, linea.FechaPedido,
                         linea.Proveedor != null && plazosPorProveedor.TryGetValue(linea.Proveedor.Trim(), out List<int> dias) ? dias : null,
-                        p80Generico, ReglaFechaRecepcionPorCorreo.DiaDeLlegada(suyos, esFestivo), CorreosDelPedidoCompra.Agencia(suyos), esFestivo);
+                        p80Generico, ReglaFechaRecepcionPorCorreo.DiaDeLlegada(paraLlegada, esFestivo), CorreosDelPedidoCompra.Agencia(paraLlegada), esFestivo,
+                        enCamino, ReglaFechaVencida.AvisoSinLlegar(envios, hoy), hoyPuedeLlegar);
                     if (resultado.Recalculo == null)
                     {
                         resultado.Problema = TextosFechaVencida.SIN_RECALCULAR;
@@ -458,14 +644,35 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             }
         }
 
-        private Dictionary<string, List<CorreoSeguimientoFila>> LeerCorreos(DateTime hoy)
+        private List<CorreoSeguimientoFila> LeerFilasCorreos(DateTime hoy)
         {
             if (correos == null || !correos.TablasExisten() || !correos.AplicacionDisponible())
             {
                 return null;
             }
-            List<CorreoSeguimientoFila> filas = correos.LeerCorreos(hoy.AddDays(-DIAS_CORREOS)).ConfigureAwait(false).GetAwaiter().GetResult();
-            return CorreosDelPedidoCompra.Agrupar(filas);
+            return correos.LeerCorreos(hoy.AddDays(-DIAS_CORREOS)).ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 25/11/26: los pedidos en el aire por clave, para saber cuáles son «de pendientes»; solo se leen si hay algún envío por asignar con
+        /// varios candidatos. Si no se pueden leer, null (no se clasifica).
+        /// </summary>
+        private Func<string, PedidoCompraEnAire> PedidosEnAire(List<CorreoSeguimientoFila> filas)
+        {
+            if (!CorreosDelPedidoCompra.HayPorAsignarConVarios(filas))
+            {
+                return null;
+            }
+            List<PedidoCompraEnAire> pedidos = Leer(() => correos.LeerPedidosEnAire(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false).GetAwaiter().GetResult(),
+                "los pedidos de compra en el aire");
+            if (pedidos == null)
+            {
+                return null;
+            }
+            Dictionary<string, PedidoCompraEnAire> porClave = pedidos.Where(p => p != null)
+                .GroupBy(p => AsignadorPedidosCompra.Clave(p.Empresa, p.Pedido), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            return clave => porClave.TryGetValue(clave, out PedidoCompraEnAire p) ? p : null;
         }
 
         /// <summary>Una lectura de apoyo: si falla, se apunta y se sigue sin ella (default).</summary>

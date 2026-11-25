@@ -1003,6 +1003,7 @@
     <Compile Include="Infrastructure\PedidosVenta\Issue687TransaccionAmbienteTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ProveedorVencidoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\FechasVencidasTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\FechasVencidasAgenciaEnCaminoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SombraModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RegistroOrigenModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CambioClientePedidoTests.cs" />
