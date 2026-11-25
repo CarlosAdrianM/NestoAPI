@@ -4,6 +4,8 @@ using NestoAPI.Infraestructure.Inventarios;
 using NestoAPI.Models;
 using NestoAPI.Models.Inventarios;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -85,6 +87,52 @@ namespace NestoAPI.Controllers
             {
                 // El aviso de lo borrado nunca impide ver las comprobaciones.
                 ElmahHelper.Log(new Exception($"[Inventario #784] No se han podido añadir las filas borradas: {ex.Message}", ex), "Sistema (inventario)");
+            }
+        }
+
+        /// <summary>
+        /// 25/11/26: <see cref="Inventario.SePuedeBorrar"/> en las filas del GET, con la regla del DELETE. Los permisos se leen una vez
+        /// y las comprobaciones de hoy (para «sobra») solo si hay alguna fila de hoy que lo necesite, una vez por tanda. Nunca rompe el GET.
+        /// </summary>
+        private async Task MarcarSePuedeBorrar(List<Inventario> filas, string empresa, string almacen)
+        {
+            if (filas == null || filas.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                DateTime hoy = Hoy();
+                bool puedeContar = PermisosInventario.MotivoNoPuedeContar(User, AlmacenDeQuienPide(EmpresaONula(empresa)), almacen) == null;
+                bool puedeBorrar = puedeContar && PuedeBorrarFilas();
+                await MarcarSePuedeBorrar(filas, puedeContar, puedeBorrar, UsuarioAuditoriaHelper.Resolver(User, null), hoy,
+                    () => ServicioContabilizar.Comprobar(EmpresaONula(empresa), almacen?.Trim(), hoy.Date)).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Inventario] No se ha podido calcular SePuedeBorrar: {ex.Message}", ex), "Sistema (inventario)");
+            }
+        }
+
+        /// <summary>El cálculo de <see cref="MarcarSePuedeBorrar(List{Inventario}, string, string)"/>, sin el controlador (para los tests).</summary>
+        internal static async Task MarcarSePuedeBorrar(IEnumerable<Inventario> filas, bool puedeContar, bool puedeBorrar, string quienPregunta,
+            DateTime hoy, Func<Task<ComprobacionesInventarioDTO>> comprobacionesDeHoy)
+        {
+            ComprobacionesInventarioDTO comprobaciones = null;
+            bool leidas = false;
+            foreach (Inventario fila in filas ?? Enumerable.Empty<Inventario>())
+            {
+                bool pendiente = fila.Estado == ServicioRellenarInventario.ESTADO_SIN_CONTABILIZAR && !fila.NºTraspaso.HasValue;
+                // «Sobra» solo hace falta para las de hoy que pasan lo demás: las comprobaciones se piden la primera vez que hace falta
+                bool necesitaSobra = puedeContar && pendiente && fila.Fecha.Date == hoy.Date
+                    && ReglaBorrarFilaInventario.PuedeBorrarEsta(puedeBorrar, fila.Fecha, fila.Usuario, quienPregunta, hoy);
+                if (necesitaSobra && !leidas)
+                {
+                    comprobaciones = comprobacionesDeHoy == null ? null : await comprobacionesDeHoy().ConfigureAwait(false);
+                    leidas = true;
+                }
+                fila.SePuedeBorrar = ReglaBorrarFilaInventario.SePuedeBorrarFila(puedeContar, puedeBorrar, pendiente, fila.Fecha, fila.Usuario,
+                    quienPregunta, hoy, () => ReglaBorrarFilaInventario.EsBorrable(comprobaciones, fila.NºOrden));
             }
         }
 

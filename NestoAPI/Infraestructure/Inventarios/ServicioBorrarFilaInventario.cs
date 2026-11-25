@@ -129,6 +129,22 @@ namespace NestoAPI.Infraestructure.Inventarios
         public static bool PuedeBorrarEsta(bool puedeBorrar, DateTime fechaFila, string usuarioFila, string quienPregunta, DateTime hoy) =>
             puedeBorrar || (EsDeDiaAnterior(fechaFila, hoy) && EsDelUsuario(usuarioFila, quienPregunta));
 
+        /// <summary>
+        /// 25/11/26: si DELETE api/Inventarios/Filas/{n} borraría esta fila, con las mismas comprobaciones y en el mismo orden que
+        /// <see cref="ServicioBorrarFilaInventario.Borrar"/>: puede contar en el almacén, <see cref="PuedeBorrarEsta"/>, pendiente (Estado 1
+        /// sin traspaso), no de un día posterior a hoy y, si es de hoy, que sobre (<paramref name="sobra"/>: <see cref="EsBorrable"/>
+        /// sobre las comprobaciones de hoy; solo se mira si hace falta). Para el GET de las filas (SePuedeBorrar).
+        /// </summary>
+        public static bool SePuedeBorrarFila(bool puedeContar, bool puedeBorrar, bool pendiente, DateTime fechaFila, string usuarioFila,
+            string quienPregunta, DateTime hoy, Func<bool> sobra)
+        {
+            if (!puedeContar || !PuedeBorrarEsta(puedeBorrar, fechaFila, usuarioFila, quienPregunta, hoy) || !pendiente || fechaFila.Date > hoy.Date)
+            {
+                return false;
+            }
+            return EsDeDiaAnterior(fechaFila, hoy) || (sobra?.Invoke() ?? false);
+        }
+
         private static string SinDominio(string usuario)
         {
             string limpio = usuario?.Trim();

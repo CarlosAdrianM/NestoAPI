@@ -384,6 +384,7 @@
     <Compile Include="Controllers\InventariosRellenarTests.cs" />
     <Compile Include="Controllers\InventariosDeshacerRellenarTests.cs" />
     <Compile Include="Infraestructure\InmovilizadosTests.cs" />
+    <Compile Include="Controllers\InventariosSePuedeBorrarTests.cs" />
     <Compile Include="Infrastructure\Alquileres\AlquileresNombresTests.cs" />
     <Compile Include="Controllers\InventariosContabilizarControllerTests.cs" />
     <Compile Include="Infrastructure\Inventarios\ContabilizarInventarioTests.cs" />

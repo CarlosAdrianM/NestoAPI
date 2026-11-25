@@ -53,11 +53,36 @@ namespace NestoAPI.Controllers
         const int ESTADO_INVENTARIO_SIN_CONTABILIZAR = 1;
 
 
-        // GET: api/Inventarios
-        public IQueryable<Inventario> GetInventarios(string empresa, string almacen, DateTime fecha)
+        // GET: api/Inventarios?empresa=1&almacen=ALC&fecha=2026-11-25[&incluirPendientesAnteriores=true]
+        /// <summary>
+        /// Las filas pendientes del almacén ese día (como siempre). 25/11/26: cada una con <see cref="Inventario.SePuedeBorrar"/> (la regla
+        /// del DELETE api/Inventarios/Filas/{n}) y, con <paramref name="incluirPendientesAnteriores"/>, al final las pendientes (Estado 1, sin
+        /// traspaso) de días ANTERIORES del mismo almacén, de la más antigua a la más nueva, con <see cref="Inventario.PendienteDeDiaAnterior"/>
+        /// y su día en Fecha (una fila olvidada de ayer bloquea el picking y no se veía).
+        /// </summary>
+        [ResponseType(typeof(List<Inventario>))]
+        public async Task<IHttpActionResult> GetInventarios(string empresa, string almacen, DateTime fecha, bool incluirPendientesAnteriores = false)
         {
             DateTime fechaMasUno = fecha.AddDays(1);
-            return db.Inventarios.Where(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR).OrderByDescending(i => i.Fecha);
+            List<Inventario> filas = await db.Inventarios
+                .Where(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR)
+                .OrderByDescending(i => i.Fecha)
+                .ToListAsync().ConfigureAwait(false);
+            if (incluirPendientesAnteriores)
+            {
+                DateTime dia = fecha.Date;
+                List<Inventario> anteriores = await db.Inventarios
+                    .Where(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha < dia && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR && i.NºTraspaso == null)
+                    .OrderBy(i => i.Fecha).ThenBy(i => i.NºOrden)
+                    .ToListAsync().ConfigureAwait(false);
+                foreach (Inventario anterior in anteriores)
+                {
+                    anterior.PendienteDeDiaAnterior = true;
+                }
+                filas.AddRange(anteriores);
+            }
+            await MarcarSePuedeBorrar(filas, empresa, almacen).ConfigureAwait(false);
+            return Ok(filas);
         }
 
         // GET: api/Inventarios?empresa=1&almacen=ALG&fecha=11/21/2026&producto=8435454004144

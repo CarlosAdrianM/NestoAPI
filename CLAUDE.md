@@ -864,6 +864,10 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   {Codigo «CONFIRMACION_NECESARIA», Message «Para rellenar el inventario de Alcobendas escriba el nombre del almacén.»} y nada creado. (3) El DELETE
   también lo puede quien puede rellenar si TODAS las pendientes son suyas y ninguna contada (`ReglaDeshacerRellenadoPropio`, comprobado con UPDLOCK/HOLDLOCK
   en la transacción): si no, 403 «hay filas de otro usuario (…)» o 409 «ya hay N filas contadas: pídaselo a Dirección.». Dirección e Informática, como antes.
+- **Borrar desde la lista «Completo» (25/11/26)**: `GET api/Inventarios?empresa&almacen&fecha` trae en cada fila `SePuedeBorrar` (`Inventario.Partial.cs`,
+  NotMapped, setter interno: un POST/PUT no lo cambia) con LA REGLA del DELETE de filas (`ReglaBorrarFilaInventario.SePuedeBorrarFila`: puede contar,
+  `PuedeBorrarEsta`, pendiente, no posterior a hoy y, si es de hoy, que sobre; las comprobaciones de hoy se leen una vez y solo si hace falta). Con
+  `incluirPendientesAnteriores=true` (por defecto false) añade al final las pendientes de días ANTERIORES del almacén con `PendienteDeDiaAnterior` y su Fecha.
 ### Alquileres: equipo y nombre del cliente en la relación (Novedades 1181, 12/11/26)
 - `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de
   Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
