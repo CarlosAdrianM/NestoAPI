@@ -10,6 +10,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Mail;
@@ -355,6 +356,107 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             Factura factura = gestor.LeerPedido("1", PEDIDO);
 
             Assert.AreEqual(Constantes.Facturas.TiposDocumento.NOTA_ENTREGA, factura.TipoDocumento);
+        }
+
+        // ================================================================ DocumentosImpresion (Cajas, tras cobrar; Carlos 25/11/26)
+
+        [DataTestMethod]
+        [DataRow("1", true, "NV2616199", null, "NV2616199")]      // pedido sin IVA: la factura no se imprime
+        [DataRow("1", true, null, 555000, "555000")]              // ni el albarán
+        [DataRow("1", true, null, null, "931600")]                // ni la nota de entrega
+        [DataRow("1", true, "FDM", 555000, "555000")]             // fin de mes = albarán
+        [DataRow("3", false, "NV2616199", null, "NV2616199")]     // empresa espejo
+        [DataRow("1", false, "GB2600123", null, "GB2600123")]     // serie sin descarga
+        [DataRow("1", false, "NV2616199", null, null)]            // lo normal: se imprime
+        [DataRow("1", false, null, 555000, null)]
+        [DataRow("1", false, null, null, null)]
+        public void Regla_DocumentoQueNoSeImprime(string empresa, bool pedidoNoSale, string factura, int? albaran, string esperado)
+        {
+            Assert.AreEqual(esperado, ReglaDocumentoNoDescargable.DocumentoQueNoSeImprime(empresa, pedidoNoSale, PEDIDO, factura, albaran));
+        }
+
+        [DataTestMethod]
+        [DataRow("1", null)]
+        [DataRow("1", " ")]
+        public async Task DocumentosImpresion_PedidoSinIva_200SinDocumentosYElMensaje(string empresa, string iva)
+        {
+            var controller = new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LeerCabeceraDocumentosImpresion = (e, n) => Task.FromResult(new CabPedidoVta { Empresa = e, Número = n, IVA = iva })
+            };
+
+            IHttpActionResult resultado = await controller.ObtenerDocumentosImpresion(empresa, PEDIDO, "NV2616199");
+
+            var ok = resultado as OkNegotiatedContentResult<NestoAPI.Models.PedidosVenta.DocumentosImpresionPedidoDTO>;
+            Assert.IsNotNull(ok, "200: el cobro en caja de Nesto no se rompe");
+            Assert.AreEqual(0, ok.Content.Facturas.Count);
+            Assert.AreEqual(0, ok.Content.Albaranes.Count);
+            Assert.AreEqual(0, ok.Content.NotasEntrega.Count);
+            Assert.IsFalse(ok.Content.HayDocumentosParaImprimir);
+            Assert.AreEqual("El documento NV2616199 no se puede descargar.", ok.Content.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task DocumentosImpresion_EmpresaEspejo_NiSiquieraLeeElPedido()
+        {
+            bool leido = false;
+            var controller = new PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LeerCabeceraDocumentosImpresion = (e, n) => { leido = true; return Task.FromResult<CabPedidoVta>(null); }
+            };
+
+            IHttpActionResult resultado = await controller.ObtenerDocumentosImpresion("3", PEDIDO, "NV2616199");
+
+            var ok = resultado as OkNegotiatedContentResult<NestoAPI.Models.PedidosVenta.DocumentosImpresionPedidoDTO>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual("El documento NV2616199 no se puede descargar.", ok.Content.Mensaje);
+            Assert.IsFalse(leido);
+        }
+
+        // ================================================================ Modelo 347 (Carlos 25/11/26: «No entra en el 347 nada de la empresa 3»)
+
+        [TestMethod]
+        public async Task Modelo347_EmpresaEspejo_403ConElMensajeUnico()
+        {
+            var controller = new ExtractosClienteController(A.Fake<IServicioCorreoElectronico>(), A.Fake<NVEntities>())
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration()
+            };
+
+            HttpResponseMessage pdf = await controller.GetModelo347Pdf("3", "33895", 2025);
+            IHttpActionResult json = await controller.GetModelo347("3", "33895", "B99999999");
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, pdf.StatusCode);
+            Assert.AreEqual("El documento Modelo 347 no se puede descargar.", await pdf.Content.ReadAsStringAsync());
+            var contenido = json as NegotiatedContentResult<string>;
+            Assert.IsNotNull(contenido);
+            Assert.AreEqual(HttpStatusCode.Forbidden, contenido.StatusCode);
+            Assert.AreEqual("El documento Modelo 347 no se puede descargar.", contenido.Content);
+        }
+
+        [TestMethod]
+        public void Modelo347_ConLaEmpresa1_NoEntraNadaDeLaEspejo_YLasCifrasSonLasDeSiempre()
+        {
+            var desde = new DateTime(2025, 1, 1);
+            var hasta = new DateTime(2026, 1, 1);
+            var extractos = new List<ExtractoCliente>
+            {
+                new ExtractoCliente { Empresa = "1", Número = "33895", TipoApunte = "1", Fecha = new DateTime(2025, 2, 3), Importe = 100M, Estado = "NRM" },
+                new ExtractoCliente { Empresa = "1", Número = "33895", TipoApunte = "1", Fecha = new DateTime(2025, 11, 3), Importe = 50M, Estado = null },
+                new ExtractoCliente { Empresa = "3", Número = "33895", TipoApunte = "1", Fecha = new DateTime(2025, 2, 3), Importe = 999M, Estado = "NRM" },
+                new ExtractoCliente { Empresa = "1", Número = "33895", TipoApunte = "2", Fecha = new DateTime(2025, 2, 3), Importe = -100M },
+                new ExtractoCliente { Empresa = "1", Número = "33895", TipoApunte = "1", Fecha = new DateTime(2024, 12, 31), Importe = 7M },
+                new ExtractoCliente { Empresa = "1", Número = "33895", TipoApunte = "1", Fecha = new DateTime(2025, 5, 5), Importe = 3M,
+                    Estado = Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA },
+                new ExtractoCliente { Empresa = "1", Número = "11111", TipoApunte = "1", Fecha = new DateTime(2025, 5, 5), Importe = 8M }
+            };
+
+            List<ExtractoCliente> movimientos = ExtractosClienteController.MovimientosModelo347(extractos.AsQueryable(), "1", "33895", desde, hasta).ToList();
+
+            Assert.AreEqual(2, movimientos.Count);
+            Assert.IsTrue(movimientos.TrueForAll(m => m.Empresa == "1"));
+            Assert.AreEqual(150M, movimientos.Sum(m => m.Importe));
         }
     }
 }

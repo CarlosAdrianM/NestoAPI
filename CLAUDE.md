@@ -1431,8 +1431,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   encontrado»), correo del pedido (`ProveedorDocumentosCorreo.PdfPedido`), envío diario y trimestral (fuera la empresa 3) y adjuntos de las
   domiciliaciones (ni espejo ni GB). El correo de agencias ya lo hacía desde 2020 (`GestorEnviosAgencia`, IVA null o pedido en la 3).
 - NO pasa por aquí (interno, a propósito: la regla no está dentro de `GestorFacturas.LeerPedido/LeerAlbaran`): Facturar rutas y su impresión,
-  `DocumentosImpresion` (cobro en caja), `CrearFactura` en papel, documento de la nota de entrega/recogida, packing, etiquetas, correo
-  interno del pedido, prueba de entrega. Por decidir: Facturae, 347 de la empresa 3, facturas a Amazon.
+  documento de la nota de entrega/recogida, packing (`PasosDocumentosEnPapelApi`, que llama al gestor y no al endpoint), etiquetas, correo
+  interno del pedido, prueba de entrega.
+- **Las cuatro que quedaban (Carlos 25/11/26)**: (1) «No se puede imprimir en ningún caso»: `GET api/PedidosVenta/{empresa}/{pedido}/DocumentosImpresion`
+  (Cajas de Nesto tras cobrar) con empresa espejo, pedido sin IVA o factura que no se sirve → 200 con las tres listas vacías y `Mensaje` = el único
+  (LA REGLA `ReglaDocumentoNoDescargable.DocumentoQueNoSeImprime`, que elige el documento como el gestor: factura salvo FDM, albarán o nota): el cobro
+  sigue, solo no se imprime (Nesto, sin cambios: sin bytes nuevos se queda con los de CrearFactura). Y `CrearFactura` en papel (`DocumentoFacturaDetalle`):
+  una factura de la espejo o de serie sin descarga no lleva PDF ni se imprime en el servidor (Nesto no imprime sin `DatosImpresion`). `DebeImprimirDocumento`
+  solo mira comentarios: sin cambios. (2) `GET api/Facturas/Facturae` (también `comprobar=true`): 403 texto con el mensaje único, antes de leer nada
+  (después del 403 de permisos). (3) 347 (`ExtractosClienteController.GetModelo347` y `Modelo347Pdf`): con la empresa espejo, 403 «El documento Modelo 347
+  no se puede descargar.»; con la 1 nunca mezcló empresas (filtro `Empresa == empresa`, ahora en `MovimientosModelo347`, mismas cifras). (4)
+  `ServicioFacturasAmazon.FacturarYSubirAsync`: pedido sin IVA o de la espejo (antes de preguntar a Amazon ni facturar) o factura resultante que no se
+  sirve (antes del PDF) → no sube, ELMAH «[Amazon] factura no descargable omitida: …» y respuesta Estado OMITIDA con el mensaje en Avisos.
 
 ### Facturae para FACe por B2Brouter (NestoAPI#903, 24/11/26; gemela Nesto)
 - Cinco o seis facturas al año a organismos públicos: la API genera el fichero Facturae 3.2.2 SIN firmar de una factura YA emitida y Carlos lo

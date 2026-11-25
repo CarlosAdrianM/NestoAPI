@@ -116,6 +116,31 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.NotFound, respuesta.StatusCode);
         }
 
+        // Carlos 25/11/26: «No se puede mandar por FACe uno de la empresa 3» (ReglaDocumentoNoDescargable)
+        [DataTestMethod]
+        [DataRow("3", FACTURA, false)]
+        [DataRow("3", FACTURA, true)]
+        [DataRow("3  ", FACTURA, true)]
+        [DataRow("1", "GB2600012", false)]
+        [DataRow("1", "GB2600012", true)]
+        public async Task GetFacturae_EmpresaEspejoOSerieSinDescarga_403ConElMensajeUnico(string empresa, string factura, bool comprobar)
+        {
+            HttpResponseMessage respuesta = await Controlador("Administración").GetFacturae(empresa, factura, comprobar);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, respuesta.StatusCode);
+            Assert.AreEqual(ReglaDocumentoNoDescargable.Mensaje(factura), await respuesta.Content.ReadAsStringAsync());
+            A.CallTo(() => servicioFacturas.CargarCabFactura(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => gestor.LeerFactura(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetFacturae_EmpresaEspejo_SinGrupo_SigueDando403DePermiso()
+        {
+            HttpResponseMessage respuesta = await Controlador("Almacén").GetFacturae("3", FACTURA);
+
+            Assert.AreEqual(FacturaeController.MENSAJE_SIN_PERMISO, await respuesta.Content.ReadAsStringAsync());
+        }
+
         [TestMethod]
         public async Task GetFacturae_SinDir3_400ConElMensaje()
         {

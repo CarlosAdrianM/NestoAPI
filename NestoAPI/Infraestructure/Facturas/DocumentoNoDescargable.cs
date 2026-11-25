@@ -61,6 +61,29 @@ namespace NestoAPI.Infraestructure.Facturas
         public static bool NoSeSirvePedido(string empresa, string ivaCabecera)
             => EsEmpresaEspejo(empresa) || ServicioTraspasoEmpresa.VaAEmpresaEspejo(ivaCabecera);
 
+        /// <summary>
+        /// GET api/PedidosVenta/{empresa}/{pedido}/DocumentosImpresion (Cajas de Nesto, tras cobrar; Carlos 25/11/26: «No se puede
+        /// imprimir en ningún caso»). Elige el documento como GestorFacturacionRutas.ObtenerDocumentosImpresion (factura si viene y no
+        /// es FDM; si no, albarán; si no, nota de entrega del pedido) y devuelve su número si NO se imprime: <paramref name="pedidoNoSale"/>
+        /// (empresa espejo o pedido sin IVA, <see cref="NoSeSirvePedido"/>) o una factura que no se sirve (<see cref="NoSeSirveFactura"/>).
+        /// Null = se imprime como siempre.
+        /// </summary>
+        public static string DocumentoQueNoSeImprime(string empresa, bool pedidoNoSale, int pedido, string numeroFactura, int? numeroAlbaran)
+        {
+            bool esFactura = !string.IsNullOrWhiteSpace(numeroFactura)
+                && numeroFactura != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES;
+            string numero = esFactura
+                ? numeroFactura.Trim()
+                : numeroAlbaran.HasValue && numeroAlbaran.Value > 0
+                    ? numeroAlbaran.Value.ToString(CultureInfo.InvariantCulture)
+                    : pedido.ToString(CultureInfo.InvariantCulture);
+            if (pedidoNoSale || EsEmpresaEspejo(empresa))
+            {
+                return numero;
+            }
+            return esFactura && NoSeSirveFactura(empresa, numeroFactura) ? numero : null;
+        }
+
         /// <summary>Como GestorFacturas.LeerFacturas: un número entero es un pedido; si no, una factura.</summary>
         public static bool EsNumeroDePedido(string numero, out int pedido)
             => int.TryParse(numero?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out pedido);

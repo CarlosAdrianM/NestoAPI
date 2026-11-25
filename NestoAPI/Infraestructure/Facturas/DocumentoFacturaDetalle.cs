@@ -72,6 +72,12 @@ namespace NestoAPI.Infraestructure.Facturas
             try
             {
                 string empresa = string.IsNullOrWhiteSpace(factura.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : factura.Empresa.Trim();
+                // Carlos 25/11/26: «No se puede imprimir en ningún caso». Una factura de la empresa espejo (la de un pedido sin IVA,
+                // ya traspasado) o de una serie sin descarga no va en papel: sin PDF en la respuesta ni impresión en el servidor.
+                if (ReglaDocumentoNoDescargable.NoSeSirveFactura(empresa, factura.NumeroFactura))
+                {
+                    return false;
+                }
                 CabPedidoVta pedido = await leerPedido(empresa, factura.NumeroPedido).ConfigureAwait(false);
                 // Carlos 04/11/26: desde el detalle del pedido solo se imprime si el pedido pide papel («factura física»…); las 2
                 // copias de la ruta propia sin la frase son cosa de Facturar rutas, no de aquí.

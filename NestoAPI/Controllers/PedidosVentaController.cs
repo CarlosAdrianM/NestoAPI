@@ -4811,6 +4811,17 @@ namespace NestoAPI.Controllers
         {
             try
             {
+                // Carlos 25/11/26: «No se puede imprimir en ningún caso». Ni la empresa espejo, ni un pedido sin IVA, ni una factura
+                // de una serie sin descarga (LA REGLA de los documentos que no salen): 200 sin documentos y el mensaje único, para
+                // que el cobro en caja de Nesto siga (solo deja de imprimirse). El packing (PasosDocumentosEnPapelApi) no pasa por aquí.
+                string noSeImprime = ReglaDocumentoNoDescargable.EsEmpresaEspejo(empresa)
+                    ? ReglaDocumentoNoDescargable.DocumentoQueNoSeImprime(empresa, true, numeroPedido, numeroFactura, numeroAlbaran)
+                    : await DocumentoQueNoSeImprimeAsync(empresa, numeroPedido, numeroFactura, numeroAlbaran).ConfigureAwait(false);
+                if (noSeImprime != null)
+                {
+                    return Ok(new DocumentosImpresionPedidoDTO { Mensaje = ReglaDocumentoNoDescargable.Mensaje(noSeImprime) });
+                }
+
                 // Crear el gestor con todas sus dependencias
                 var servicioAlbaranes = new ServicioAlbaranesVenta();
                 var servicioFacturas = new ServicioFacturas();  // No recibe parámetros, crea su propio NVEntities
@@ -4847,6 +4858,23 @@ namespace NestoAPI.Controllers
                 ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
+        }
+
+        /// <summary>El IVA guardado de la cabecera (sustituible en tests). Null si el pedido no existe.</summary>
+        internal Func<string, int, Task<CabPedidoVta>> LeerCabeceraDocumentosImpresion
+        {
+            get => leerCabeceraDocumentosImpresion ?? (async (e, n) => await db.CabPedidoVtas.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Empresa == e && p.Número == n).ConfigureAwait(false));
+            set => leerCabeceraDocumentosImpresion = value;
+        }
+        private Func<string, int, Task<CabPedidoVta>> leerCabeceraDocumentosImpresion;
+
+        private async Task<string> DocumentoQueNoSeImprimeAsync(string empresa, int numeroPedido, string numeroFactura, int? numeroAlbaran)
+        {
+            CabPedidoVta cab = await LeerCabeceraDocumentosImpresion(empresa, numeroPedido).ConfigureAwait(false);
+            // Sin pedido no se da por «sin IVA»: sigue su camino y da su 400 de siempre («No se encontró el pedido…»)
+            bool pedidoNoSale = cab != null && ReglaDocumentoNoDescargable.NoSeSirvePedido(empresa, cab.IVA);
+            return ReglaDocumentoNoDescargable.DocumentoQueNoSeImprime(empresa, pedidoNoSale, numeroPedido, numeroFactura, numeroAlbaran);
         }
 
         /// <summary>

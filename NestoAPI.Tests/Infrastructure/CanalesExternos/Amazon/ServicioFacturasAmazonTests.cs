@@ -35,6 +35,7 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
         private IAlmacenFacturasAmazon almacen;
         private IServicioAlbaranesVenta albaranes;
         private ServicioFacturasAmazon servicio;
+        private List<System.Exception> registrados;
 
         [TestInitialize]
         public void Inicializar()
@@ -44,9 +45,10 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
             gateway = A.Fake<IAmazonFeedsGateway>();
             almacen = A.Fake<IAlmacenFacturasAmazon>();
             albaranes = A.Fake<IServicioAlbaranesVenta>();
-            servicio = new ServicioFacturasAmazon(db, gestor, gateway, almacen, albaranes);
+            registrados = new List<System.Exception>();
+            servicio = new ServicioFacturasAmazon(db, gestor, gateway, almacen, albaranes, registrados.Add);
 
-            ConfigurarPedido(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Comentarios = $"FBA {AMAZON_ORDER_ID}\r\nCumplimiento por Amazon" });
+            ConfigurarPedido(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, IVA = "G21", Comentarios = $"FBA {AMAZON_ORDER_ID}\r\nCumplimiento por Amazon" });
             ConfigurarLineas();
 
             A.CallTo(() => gateway.ObtenerPedidoAsync(AMAZON_ORDER_ID))
@@ -137,6 +139,61 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
 
             Assert.AreEqual("NV26100301", respuesta.NumeroFactura);
             A.CallTo(() => albaranes.CrearAlbaran(A<string>._, A<int>._, A<string>._, A<System.DateTime?>._)).MustNotHaveHappened();
+        }
+
+        // Carlos 25/11/26: «No hay facturas de Amazon ni en la empresa 3 ni con IVA a NULL». Guarda por si acaso
+        // (ReglaDocumentoNoDescargable): no se factura ni se sube, línea en ELMAH y OMITIDA.
+
+        [DataTestMethod]
+        [DataRow("1", null)]
+        [DataRow("1", "  ")]
+        [DataRow("3", "G21")]
+        public async Task FacturarYSubir_PedidoSinIvaODeLaEmpresaEspejo_NoFacturaNiSubeYLoApunta(string empresa, string iva)
+        {
+            ConfigurarPedido(new CabPedidoVta { Empresa = empresa, Número = PEDIDO, IVA = iva, Comentarios = $"FBA {AMAZON_ORDER_ID}" });
+
+            SubirFacturaAmazonResponseDTO respuesta = await servicio.FacturarYSubirAsync(empresa, PEDIDO, "carlos");
+
+            Assert.AreEqual(EstadosFacturaAmazon.OMITIDA, respuesta.Estado);
+            CollectionAssert.Contains(respuesta.Avisos, $"El documento {PEDIDO} no se puede descargar.");
+            Assert.AreEqual(1, registrados.Count);
+            StringAssert.StartsWith(registrados[0].Message, "[Amazon] factura no descargable omitida: ");
+            A.CallTo(() => gateway.ObtenerPedidoAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => albaranes.CrearAlbaran(A<string>._, A<int>._, A<string>._, A<System.DateTime?>._)).MustNotHaveHappened();
+            A.CallTo(() => gestor.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => gateway.CrearDocumentoFeedAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => almacen.Registrar(A<AmazonFacturaSubida>._)).MustNotHaveHappened();
+        }
+
+        [DataTestMethod]
+        [DataRow("3", "NV26100300")]
+        [DataRow("1", "GB26100300")]
+        public async Task FacturarYSubir_FacturaResultanteDeLaEspejoODeSerieSinDescarga_NoSube(string empresaFactura, string numero)
+        {
+            A.CallTo(() => gestor.CrearFactura(EMPRESA, PEDIDO, "carlos", "carlos"))
+                .Returns(Task.FromResult(new CrearFacturaResponseDTO { NumeroFactura = numero, Empresa = empresaFactura, NumeroPedido = PEDIDO }));
+
+            SubirFacturaAmazonResponseDTO respuesta = await servicio.FacturarYSubirAsync(EMPRESA, PEDIDO, "carlos");
+
+            Assert.AreEqual(EstadosFacturaAmazon.OMITIDA, respuesta.Estado);
+            Assert.AreEqual(numero, respuesta.NumeroFactura);
+            CollectionAssert.Contains(respuesta.Avisos, $"El documento {numero} no se puede descargar.");
+            Assert.AreEqual(1, registrados.Count);
+            A.CallTo(() => gestor.FacturasEnPDF(A<List<Factura>>._, A<bool>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
+            A.CallTo(() => gateway.CrearDocumentoFeedAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => almacen.Registrar(A<AmazonFacturaSubida>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarYSubir_PedidoNormal_NoApuntaNadaEnElmah()
+        {
+            ConfigurarLineas(
+                new LinPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV26100200" });
+
+            SubirFacturaAmazonResponseDTO respuesta = await servicio.FacturarYSubirAsync(EMPRESA, PEDIDO, "carlos");
+
+            Assert.AreEqual(EstadosFacturaAmazon.ENVIADA, respuesta.Estado);
+            Assert.AreEqual(0, registrados.Count);
         }
 
         [TestMethod]
