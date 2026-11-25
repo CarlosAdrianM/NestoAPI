@@ -338,6 +338,61 @@ namespace NestoAPI.Controllers
             return Ok(resultado);
         }
 
+        public const string MENSAJE_SIN_PERMISO_PERDIDA_DESCONOCIDA =
+            "El informe de pérdida desconocida va a coste y solo lo pueden ver Dirección e Informática.";
+
+        /// <summary>
+        /// NestoAPI#893: la pérdida desconocida de ALG, REI y ALC mes a mes y acumulada desde el 1 de enero, a coste (precio medio de hoy):
+        /// lo que falta y lo que sobra por inventario y por reposición, lo que cuadra entre almacenes y la pérdida de verdad, «En tránsito»
+        /// aparte (#906) y los diarios a mano sin clasificar. Sin nada, este año hasta hoy; con <paramref name="anio"/> pasado, el año
+        /// entero; con <paramref name="hasta"/>, de su 1 de enero a ese día. Solo Dirección e Informática.
+        /// GET api/Informes/PerdidaDesconocida?anio=2027  ·  GET api/Informes/PerdidaDesconocida?hasta=2027-03-31
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/PerdidaDesconocida")]
+        [ResponseType(typeof(PerdidaDesconocidaDTO))]
+        public async Task<IHttpActionResult> GetPerdidaDesconocida(int? anio = null, DateTime? hasta = null)
+        {
+            HttpStatusCode? codigo = ValidarPerdidaDesconocida(anio, hasta, out string error, out DateTime fechaHasta);
+            if (codigo.HasValue)
+            {
+                return codigo == HttpStatusCode.Forbidden ? Content(HttpStatusCode.Forbidden, error) : (IHttpActionResult)BadRequest(error);
+            }
+            PerdidaDesconocidaDTO informe = await _servicio.LeerPerdidaDesconocidaAsync(fechaHasta).ConfigureAwait(false);
+            return Ok(informe);
+        }
+
+        /// <summary>NestoAPI#893: el mismo informe en Excel (hojas «Resumen», «Productos», «Diarios sin clasificar» y «Notas»).</summary>
+        [HttpGet]
+        [Route("api/Informes/PerdidaDesconocida/Excel")]
+        public async Task<HttpResponseMessage> GetPerdidaDesconocidaExcel(int? anio = null, DateTime? hasta = null)
+        {
+            HttpStatusCode? codigo = ValidarPerdidaDesconocida(anio, hasta, out string error, out DateTime fechaHasta);
+            if (codigo.HasValue)
+            {
+                return new HttpResponseMessage(codigo.Value) { Content = new StringContent(error) };
+            }
+            PerdidaDesconocidaDTO informe = await _servicio.LeerPerdidaDesconocidaAsync(fechaHasta).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new GeneradorExcelPerdidaDesconocida().GenerarExcel(informe)
+            };
+        }
+
+        private HttpStatusCode? ValidarPerdidaDesconocida(int? anio, DateTime? hasta, out string error, out DateTime fechaHasta)
+        {
+            fechaHasta = default;
+            if (User == null || !(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
+                || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA)))
+            {
+                error = MENSAJE_SIN_PERMISO_PERDIDA_DESCONOCIDA;
+                return HttpStatusCode.Forbidden;
+            }
+            error = GestorPerdidaDesconocida.ResolverPeriodo(anio, hasta, Ahora(), out _, out fechaHasta);
+            return error == null ? (HttpStatusCode?)null : HttpStatusCode.BadRequest;
+        }
+
         private bool PuedeMandarCorreoAltasBajas()
         {
             return User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)

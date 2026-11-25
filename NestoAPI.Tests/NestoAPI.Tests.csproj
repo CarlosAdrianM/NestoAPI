@@ -512,6 +512,8 @@
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
     <Compile Include="Infraestructure\Informes\GestorFacturacionTiendaTests.cs" />
     <Compile Include="Infraestructure\Informes\GestorAltasBajasTiendaTests.cs" />
+    <Compile Include="Infraestructure\Informes\GestorPerdidaDesconocidaTests.cs" />
+    <Compile Include="Controllers\InformesControllerPerdidaDesconocidaTests.cs" />
     <Compile Include="Infraestructure\Informes\GestorFacturacionTiendaAnualTests.cs" />
     <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CatalogoServiciosAgenciasTests.cs" />

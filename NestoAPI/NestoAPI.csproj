@@ -1622,6 +1622,8 @@
     <Compile Include="Infraestructure\Informes\CorreoAltasBajasTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorExcelAltasBajasTienda.cs" />
     <Compile Include="Infraestructure\Informes\GestorAltasBajasTienda.cs" />
+    <Compile Include="Infraestructure\Informes\GestorPerdidaDesconocida.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorExcelPerdidaDesconocida.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorExcelFacturacionTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfDetalleRapports.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfExtractoContable.cs" />
@@ -2445,6 +2447,7 @@
     <Compile Include="Models\Informes\ExtractoProveedorDTO.cs" />
     <Compile Include="Models\Informes\FacturacionTiendaDTO.cs" />
     <Compile Include="Models\Informes\AltasBajasTiendaDTO.cs" />
+    <Compile Include="Models\Informes\PerdidaDesconocidaDTO.cs" />
     <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
     <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
     <Compile Include="Models\Informes\BalanceInformeDTO.cs" />

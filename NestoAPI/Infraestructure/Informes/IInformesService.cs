@@ -48,5 +48,9 @@ namespace NestoAPI.Infraestructure.Informes
         /// <summary>NestoAPI#886: lo dado de alta y de baja en el stock de la tienda (inventarios y errores de reposición) entre las dos
         /// fechas (incluidas), valorado a PVP. Una consulta de solo lectura; lo calcula <see cref="GestorAltasBajasTienda"/>.</summary>
         Task<AltasBajasTiendaDTO> LeerAltasBajasTiendaAsync(string almacen, DateTime desde, DateTime hasta);
+
+        /// <summary>NestoAPI#893: la pérdida desconocida de ALG, REI y ALC del 1 de enero a <paramref name="hasta"/>, mes a mes y acumulada,
+        /// a coste. Una consulta agregada de solo lectura; lo calcula <see cref="GestorPerdidaDesconocida"/>.</summary>
+        Task<PerdidaDesconocidaDTO> LeerPerdidaDesconocidaAsync(DateTime hasta);
     }
 }

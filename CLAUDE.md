@@ -943,6 +943,18 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   un fallo por tienda a ELMAH) van por el MISMO `EnviadorAltasBajasTienda`: a `Constantes.Correos.TIENDA_REINA`/`TIENDA_ALCOBENDAS` con CC a
   `Correos.COMPRAS`, HTML (300 líneas como mucho; el resto en el Excel adjunto). Sin movimientos, no se manda nada. Sin tabla ni script.
 
+### Pérdida desconocida por almacén, acumulada desde el 1 de enero (NestoAPI#893 corte 1, 25/11/26)
+- `GET api/Informes/PerdidaDesconocida?anio=&hasta=` y `/Excel` (hojas «Resumen», «Productos», «Diarios sin clasificar», «Notas»): SOLO Dirección e
+  Informática (va a COSTE: `Productos.PrecioMedio` de hoy, como IndicadoresStock). Sin nada, este año hasta hoy; año pasado, hasta el 31/12; `hasta`
+  ≤ hoy. UNA consulta agregada de solo lectura (NOLOCK, `GestorPerdidaDesconocida.SQL_PERDIDA_DESCONOCIDA`: ExtractoProducto 1+3, ALG/REI/ALC, por
+  almacén, mes, producto y diario). Cuentan `_RegInvent` y `_ErrRepo` (los de #886). LA REGLA (pura) `GestorPerdidaDesconocida.Construir`: por
+  producto, almacén y periodo se neta; negativo = falta, positivo = sobra; `Cuadrar` compensa la falta de un almacén con la sobra de otro del MISMO
+  producto y periodo (mes, o el año en el acumulado; orden ALG, REI, ALC); lo que no cuadra = pérdida de verdad. «Aparece y desaparece» por producto.
+- Los demás diarios A MANO (sin cliente, proveedor, pedido, albarán ni traspaso; fuera `_MontarKit` y `_Ficticio`) salen en `DiariosSinClasificar` y
+  NO cuentan hasta que Dirección diga cuáles son pérdida y cuáles tienen causa. «En tránsito» (#906): bloque propio sin imputar a ningún almacén, hoy a
+  cero (`DIARIOS_EN_TRANSITO` vacío: se rellena con el diario que escriba la resolución «pérdida en tránsito»). Sin correo ni job todavía; sin cuadre de
+  referencias parecidas (44411/44412).
+
 ### Almacenes ficticios de vendedores (NestoAPI#894, 24/11/26)
 - Sustituye a «Altas y bajas de almacén ficticio» de Nesto viejo: Almacenes.AlmacénFicticio = 1 (IF, AB, IM… de vendedores; PRV, AMZ, EXT, SDC,
   PAC…). Saldo = SUM(ExtractoProducto.Cantidad) empresas 1+3 por producto. Dueño = ParametrosUsuario empresa 1 `AlmacenFicticio` PROPIO (fila

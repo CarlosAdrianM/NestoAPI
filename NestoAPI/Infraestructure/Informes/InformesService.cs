@@ -70,6 +70,17 @@ namespace NestoAPI.Infraestructure.Informes
             return GestorAltasBajasTienda.Construir(filas, almacen, desde, hasta);
         }
 
+        // NestoAPI#893: una sola consulta agregada (almacén, mes, producto y diario) para el año; la regla, en GestorPerdidaDesconocida.
+        public async Task<PerdidaDesconocidaDTO> LeerPerdidaDesconocidaAsync(DateTime hasta)
+        {
+            DateTime desde = new DateTime(hasta.Year, 1, 1);
+            List<FilaPerdidaDesconocidaDTO> filas = await db.Database
+                .SqlQuery<FilaPerdidaDesconocidaDTO>(GestorPerdidaDesconocida.SQL_PERDIDA_DESCONOCIDA, GestorPerdidaDesconocida.Parametros(desde, hasta))
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return GestorPerdidaDesconocida.Construir(filas, hasta);
+        }
+
         public async Task<List<ResumenVentasDTO>> LeerResumenVentasAsync(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
         {
             SqlParameter fechaDesdeParam = new SqlParameter("@FechaDesde", SqlDbType.DateTime)
