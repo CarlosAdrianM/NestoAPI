@@ -773,6 +773,7 @@
     <Compile Include="Controllers\PrestashopProductosController.cs" />
     <Compile Include="Controllers\CampanasController.cs" />
     <Compile Include="Controllers\CampanasPushController.cs" />
+    <Compile Include="Controllers\CampanasOfertasResultadoController.cs" />
     <Compile Include="Controllers\OfertasClienteController.cs" />
     <Compile Include="Controllers\ProductosCategoriasSecundariasController.cs" />
     <Compile Include="Controllers\ProductosVariantesController.cs" />
@@ -1286,6 +1287,7 @@
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioPushCampana.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\SelectorOfertasConPrecio.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\FuentesSugerenciasOfertas.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\RegistroOfertasMostradas.cs" />
     <Compile Include="Infraestructure\Clientes\ClientesDistribuidores.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionStock.cs" />

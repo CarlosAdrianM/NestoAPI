@@ -310,6 +310,7 @@
     <Compile Include="Infrastructure\Campanas\ReglaOfertasParaTiTests.cs" />
     <Compile Include="Infrastructure\Campanas\PushCampanaOfertasTests.cs" />
     <Compile Include="Infrastructure\Campanas\ServiciosOfertasParaTiTests.cs" />
+    <Compile Include="Infrastructure\Campanas\RegistroOfertasMostradasTests.cs" />
     <Compile Include="Controllers\AgenciasTarifasControllerTests.cs" />
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />

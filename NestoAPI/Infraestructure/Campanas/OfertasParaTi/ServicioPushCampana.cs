@@ -133,6 +133,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         private readonly Func<string, Task<string>> leerFoto;
         private readonly Action<Exception> registrar;
         private readonly Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto;
+        private readonly IRegistroOfertasMostradas registro;
 
         /// <param name="contexto">La campaña preparada (producción: la guardada 10 minutos, con el ranking de cada cliente que ya haya
         /// calculado la app). Sin él, se prepara de nuevo.</param>
@@ -141,8 +142,9 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public ServicioPushCampana(ServicioOfertasParaTi nucleo, IFuentePushCampana fuente, IServicioNotificacionesPush push,
             ICalculadorPreciosOferta precios, Func<string, Task<string>> leerContacto,
             Func<string, Task<string>> leerFoto = null, Action<Exception> registrar = null,
-            Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto = null)
+            Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto = null, IRegistroOfertasMostradas registro = null)
         {
+            this.registro = registro;
             this.nucleo = nucleo ?? throw new ArgumentNullException(nameof(nucleo));
             this.contexto = contexto ?? ((c, d) => nucleo.Preparar(c, d));
             this.fuente = fuente ?? throw new ArgumentNullException(nameof(fuente));
@@ -159,7 +161,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             ServicioOfertasParaTi nucleo = ServicioOfertasParaTi.Produccion(db);
             return new ServicioPushCampana(nucleo, new FuentePushCampanaSql(db), new ServicioNotificacionesPush(),
                 new CalculadorPreciosOfertaMotor(db), ServicioOfertasCliente.LectorContactoPrincipal(db),
-                contexto: (c, d) => CacheContextoOfertasParaTi.Obtener(c, d, () => nucleo.Preparar(c, d)));
+                contexto: (c, d) => CacheContextoOfertasParaTi.Obtener(c, d, () => nucleo.Preparar(c, d)), registro: RegistroOfertasMostradas.Produccion());
         }
 
         /// <summary>
@@ -271,6 +273,11 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     if (!ensayo)
                     {
                         mensaje.Enviados = await push.EnviarConsejoACliente(EMPRESA, cliente, notificacion).ConfigureAwait(false);
+                        if (mensaje.Enviados > 0 && elegidas.Ofertas.Count > 0)
+                        {
+                            // En sombra: lo que la push le ha propuesto (nunca rompe: el registro va en segundo plano)
+                            registro?.Servidas(ReglaRegistroOfertas.Filas(hoy, EMPRESA, cliente, contacto, OrigenesOfertaMostrada.PUSH, elegidas.Ofertas, r.Ofertas, r.VersionModelo));
+                        }
                     }
                     respuesta.Mensajes.Add(mensaje);
                 }

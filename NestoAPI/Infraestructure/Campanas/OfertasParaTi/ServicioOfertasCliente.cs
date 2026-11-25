@@ -129,6 +129,9 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         /// <summary>«Ver todas»: una página del ranking del cliente. Nunca lanza: si algo falla, la página vacía (y a ELMAH).</summary>
         Task<TodasOfertasParaTiRespuestaDTO> Todas(string cliente, string campana, int desde, int? cuantas, string familia, string texto,
             PoliticaPreciosOcultos.NivelPrecios nivel, DateTime hoy);
+
+        /// <summary>Lo que el cliente ha hecho con las ofertas (en sombra, en segundo plano). Nunca lanza.</summary>
+        void RegistrarEventos(string cliente, PeticionEventosOfertasDTO peticion, DateTime ahora);
     }
 
     /// <summary>
@@ -146,10 +149,14 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         private readonly Func<string, Task<string>> leerContacto;
         private readonly Func<string, Task<string>> leerFoto;
         private readonly Action<Exception> registrar;
+        private readonly IRegistroOfertasMostradas registro;
 
+        /// <param name="registro">Dónde se apunta lo servido y lo que hace el cliente (en sombra). Sin él, no se apunta nada.</param>
         public ServicioOfertasCliente(ServicioOfertasParaTi nucleo, ICalculadorPreciosOferta precios, Func<string, Task<string>> leerContacto,
-            Func<string, Task<string>> leerFoto = null, Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto = null, Action<Exception> registrar = null)
+            Func<string, Task<string>> leerFoto = null, Func<string, DateTime, Task<ContextoOfertasParaTi>> contexto = null, Action<Exception> registrar = null,
+            IRegistroOfertasMostradas registro = null)
         {
+            this.registro = registro;
             this.nucleo = nucleo ?? throw new ArgumentNullException(nameof(nucleo));
             this.leerContacto = leerContacto ?? throw new ArgumentNullException(nameof(leerContacto));
             this.leerFoto = leerFoto ?? RecordatorioReposicionJobsService.LeerFotoTienda;
@@ -166,7 +173,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         {
             ServicioOfertasParaTi nucleo = ServicioOfertasParaTi.Produccion(db);
             return new ServicioOfertasCliente(nucleo, new CalculadorPreciosOfertaMotor(db), LectorContactoPrincipal(db),
-                contexto: (c, d) => CacheContextoOfertasParaTi.Obtener(c, d, () => nucleo.Preparar(c, d)));
+                contexto: (c, d) => CacheContextoOfertasParaTi.Obtener(c, d, () => nucleo.Preparar(c, d)), registro: RegistroOfertasMostradas.Produccion());
         }
 
         /// <summary>El contacto de la ficha principal del cliente (empresa 1); null si no existe.</summary>
@@ -195,6 +202,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     await PonerFotos(respuesta.Ofertas).ConfigureAwait(false);
                     // «Ver todas»: hay más ofertas de la campaña para él que las que se enseñan (apartadas por la diversidad o sin mirar)
                     respuesta.HayMasOfertas = respuesta.Ofertas.Count > 0 && (elegidas.Sobran || r.Ofertas.Count > respuesta.Ofertas.Count);
+                    Apuntar(hoy, cliente, contacto, OrigenesOfertaMostrada.CINCO, elegidas, r);
                 }
             }
             catch (Exception ex)
@@ -246,6 +254,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     respuesta.Ofertas.AddRange(pagina.Ofertas.Select(e => ADto(e, nivel)));
                     await PonerFotos(respuesta.Ofertas).ConfigureAwait(false);
                     respuesta.Siguiente = pagina.Siguiente;
+                    Apuntar(hoy, cliente, contacto, OrigenesOfertaMostrada.TODAS, pagina, r);
                 }
             }
             catch (Exception ex)
@@ -262,6 +271,35 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             respuesta.FechaHasta = fin?.ToString("yyyy-MM-dd");
             respuesta.TextoHasta = ReglaOfertasParaTi.TextoHasta(fin, hoy);
             return respuesta;
+        }
+
+        public void RegistrarEventos(string cliente, PeticionEventosOfertasDTO peticion, DateTime ahora)
+        {
+            try
+            {
+                registro?.Eventos(EMPRESA, cliente, peticion, ahora);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Ofertas para ti] No se han podido apuntar los eventos del cliente {cliente}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>Lo servido, al registro (en sombra; nunca rompe ni retrasa la respuesta).</summary>
+        private void Apuntar(DateTime hoy, string cliente, string contacto, string origen, RecorridoOfertas servidas, ResultadoOfertasCliente r)
+        {
+            if (registro == null || servidas.Ofertas.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                registro.Servidas(ReglaRegistroOfertas.Filas(hoy, EMPRESA, cliente, contacto, origen, servidas.Ofertas, r.Ofertas, r.VersionModelo));
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Ofertas para ti] No se ha podido apuntar lo servido al cliente {cliente}: {ex.Message}", ex));
+            }
         }
 
         private async Task<ResultadoOfertasCliente> Ranking(ContextoOfertasParaTi ctx, string cliente)

@@ -1053,6 +1053,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'proveedores-plazos-entrega' configurado (todos los días a las 3:40)");
 
+            // «Ofertas para ti» (25/11/26), en sombra: marca la compra de lo enseñado (7 días) en dbo.OfertasClienteMostradas. Sin
+            // Scripts/OfertasClienteMostradas.sql no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Campanas.OfertasParaTi.CompraOfertasMostradasJobsService.JOB_ID,
+                () => Infraestructure.Campanas.OfertasParaTi.CompraOfertasMostradasJobsService.Marcar(),
+                Infraestructure.Campanas.OfertasParaTi.CompraOfertasMostradasJobsService.CRON, // Cron: todos los días a las 3:35
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'ofertas-cliente-compras' configurado (todos los días a las 3:35)");
+
             // NestoAPI#861: foto diaria de la fecha ORIENTATIVA de lo no pedido (con sus ingredientes) y resolución contra el pedido de
             // compra y el albarán reales, en dbo.FechasOrientativasSinPedir. Después de los plazos de las 3:40, en su misma cola.
             // Sin Scripts/Issue861_FechasOrientativasSinPedir.sql no hace nada (ELMAH una vez).

@@ -725,6 +725,16 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - ⚠️ `RecordatorioReposicionPushJobsService.ClientesConConsejos` tiene el MISMO filtro (`d.Empresa == EMPRESA`) y por eso el recordatorio de reposición
   no ha llegado nunca a ningún cliente: se deja así A PROPÓSITO (`// PENDIENTE (25/11/26)`) hasta que la versión nueva de la app esté en producción
   (con la de hoy esos avisos llenan el carrito).
+- **Registro en sombra para reentrenar (Carlos 25/11/26)**: `dbo.OfertasClienteMostradas` (fuera del EDMX, `Scripts/OfertasClienteMostradas.sql`; sin
+  ella todo igual y nada se registra, ELMAH una vez): una fila por oferta SERVIDA y cliente, día y origen («Cinco», «Todas», «Push»; índice único,
+  `ReglaRegistroOfertas.Deduplicar`) con Posicion, PosicionRanking, Probabilidad, Motivo, VersionModelo, Descuento y Precio, insertada en segundo
+  plano (`RegistroOfertasMostradas`, ADO con Enlist=false) al servir la franja, cada página de «Ver todas» y la push DE VERDAD que sale. `POST
+  api/Pedidos/Cliente/Ofertas/Eventos` {Campana, Eventos [{Producto, Accion Vista|Abierta|Anadida, Cantidad, Origen Cinco|Todas}]} (cliente del JWT;
+  SIEMPRE 204; 100 como mucho): `ReglaRegistroOfertas.Aplicar` sobre la fila del día (o una nueva sin Posicion): VistaEl/AbiertaEl/AnadidaEl la
+  primera vez, CantidadAnadida se suma. Job `ofertas-cliente-compras` 3:35 Madrid (cola «indicadores», `CompraOfertasMostradasJobsService`):
+  CompradaEl/PedidoCompra con el primer pedido del producto (no presupuesto) del día enseñado a los 7 siguientes, una consulta por tanda de 500,
+  idempotente. `GET api/Campanas/Ofertas/Resultado?campana=&dias=30` (Dirección/Informática; 503 sin tabla): Total, PorOrigen, PorMotivo y PorDecil
+  (deciles de probabilidad de más a menos) con servidas, vistas, abiertas, añadidas, compradas y sus porcentajes. Nada se entrena todavía.
 
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid

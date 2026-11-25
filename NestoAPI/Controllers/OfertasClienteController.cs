@@ -85,6 +85,35 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        // POST api/Pedidos/Cliente/Ofertas/Eventos
+        /// <summary>
+        /// Lo que el cliente hace con las ofertas, en sombra (para reentrenar el modelo): «Vista» (la tarjeta llegó a verse; agrupadas), «Abierta»,
+        /// «Anadida» (con Cantidad). Como mucho 100 por llamada (el resto se ignora). Siempre 204 aunque falle por dentro (sin cliente, 401).
+        /// </summary>
+        [HttpPost]
+        [Route("Cliente/Ofertas/Eventos")]
+        public IHttpActionResult PostEventos([FromBody] PeticionEventosOfertasDTO peticion)
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente) || !ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+            try
+            {
+                servicio.RegistrarEventos(cliente, peticion, Ahora());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Ofertas para ti] Eventos del cliente {cliente}: {ex.Message}", ex));
+            }
+            return StatusCode(System.Net.HttpStatusCode.NoContent);
+        }
+
+        /// <summary>Ahora (sustituible en las pruebas).</summary>
+        internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
