@@ -12,14 +12,15 @@
     NO van aquí porque son SUGERENCIAS/INCIDENCIAS que se contestan (o se pasan a Implementada) en su propio hilo al publicar:
       1432 (borradores de la plantilla que se actualizan en vez de duplicarse, con su casilla), 1433 (diferencias de reposición «En discusión»;
       además sin pantalla en Nesto), 1455 (enviar una reposición con inventario pendiente dice qué fila es), 1456 («Borrar» en la lista
-      «Completo»: va dentro de la novedad de las pendientes de días anteriores, que es más amplia) y 1460 (pedido de tienda con muestras sin
-      stock: se quitan solas con aviso y la plantilla ya no vuelve a «Todo junto»).
+      «Completo»: va dentro de la novedad de las pendientes de días anteriores, que es más amplia). La 1460 (pedido de tienda con muestras
+      sin stock) se contesta en su hilo Y ADEMÁS va aquí como novedad para Vendedores y Tiendas (Carlos 25/11/26: afecta a todas las tiendas).
 
     Se omiten a propósito (nada perceptible en Nesto, sin pantalla todavía o ya contado):
       - «Ofertas para ti», su registro en sombra, la push de campaña sin carrito, el lector y el refresco del token: son de la app de clientes.
       - Pérdida desconocida por almacén (#893) y abonar solo lo comprado (#891, en sombra): sin pantalla en Nesto.
       - Lectura obligatoria de la etiqueta de las muestras en el picking: va en la novedad de Ariadna 2.45 (en Nesto no hay pantalla).
       - Deshacer un abono por el camino de un pedido nuevo deja rastro (#907): ya lo dice la novedad de la 1.10.66.3 («no se puede deshacer dos veces»).
+      - Los cambios de los pedidos sin IVA (líneas a 0 % al quitar el IVA; sus documentos no se descargan): sin novedad, por decisión de Carlos (25/11/26).
       - ELMAH sin credenciales, impresora de etiquetas por almacén (solo se nota en la ventana de Muestras, donde ya se cuenta).
 
     Ejecutar contra NV como sa. Idempotente (compara por versión y título). Los literales van con N'...'.
@@ -67,12 +68,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Correos de seguimiento: más envíos van solos al pedido correcto',
      N'En los proveedores con control de pendientes, el envío se asigna al pedido en curso más antiguo y nunca a uno de pendientes (el correo dice por qué). También se reconoce el proveedor por el nombre del remitente que da la agencia y, en DB Schenker, por la delegación de origen una vez asignado un envío de allí. Y en el correo de proveedores con la fecha pasada, si la agencia ya tiene el envío en camino, la nueva fecha es la de su llegada, se dice qué agencia lo lleva y no se marca «Hay que llamar al proveedor».',
      N'Compras'),
-    ('Corregido', N'Pedidos sin IVA: sus documentos no se pueden descargar ni enviar',
-     N'El pedido, el albarán, la proforma, el presupuesto o la nota de entrega de un pedido sin IVA no se pueden descargar ni enviar por correo ni por WhatsApp: Nesto dice «El documento … no se puede descargar.». Para uso interno (facturar las rutas, el packing, imprimir) siguen saliendo como siempre.',
-     N'Vendedores,Tiendas,Administración'),
-    ('Corregido', N'Pasar un pedido a sin IVA ya no deja líneas con IVA',
-     N'Al quitar el IVA de un pedido, algunas líneas se quedaban con el 21 % aunque el importe del IVA estuviera a cero. Ahora todas las líneas pendientes quedan sin IVA y sin recargo.',
-     N'Vendedores,Tiendas,Administración');
+    ('Mejorado', N'Pedido de tienda: las muestras sin stock se quitan solas',
+     N'En un pedido de Reina o Alcobendas, las muestras que no hay en la tienda se quitan solas al guardar (o se deja solo lo que hay) y Nesto lo avisa, en vez de rechazar el pedido. La plantilla ya no vuelve a «Todo junto», que en tienda no vale, y si algo no se puede quitar dice qué hacer: borrarlo o pasar el pedido desde Algete. Si el pedido solo lleva muestras, no se quitan. Lo avisó Sancho.',
+     N'Vendedores,Tiendas');
 
 INSERT INTO dbo.Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa', n.Perfiles
