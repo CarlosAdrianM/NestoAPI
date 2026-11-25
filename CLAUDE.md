@@ -1556,6 +1556,15 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo
   pedido, si no la más reciente; dos del mismo día sin la del mismo pedido → no cura. Si no cura, el correo del job dice «rectificativa en positivo» (no «devolución»).
 
+### Abonar solo lo comprado (NestoAPI#891, Carlos 24/11/26; EN SOMBRA, no frena nada)
+- LA REGLA (pura, lo decidido) `ReglaAbonoSoloLoComprado` (`Infraestructure/PedidosVenta/AbonoSoloLoComprado.cs`): una línea de abono (producto, cantidad < 0,
+  -1..2; sin cupón ni cheque regalo, que son descuentos) cabe si facturadas − abonadas en factura − abonadas en OTROS pedidos sin facturar ≥ lo que abona, sin
+  límite de tiempo; texto «Del 41752 este cliente tiene facturadas 3 y ya abonadas 3: no se puede abonar 1 unidad.». Lectura en UNA consulta
+  (`LectorCompradoParaAbonoSql`, LinPedidoVta Estado 4, NOLOCK). Copiar factura ya frena por línea (`ReglasAbonoCopiaFactura`, #892/#907): no se toca.
+- Sombra: tras guardar (POST y PUT de PedidosVenta), si alguna no cabe, una línea en ELMAH «[Abono de lo no comprado #891, sombra]» (cliente entero,
+  empresas 1 y 3: solo lo que no cabría de ninguna manera). Sin líneas de abono no lee nada; nunca lanza. POR DECIDIR (issue): dónde frena, cliente o
+  contacto, empresas, otros caminos (recogidas #757, devueltos, Nesto viejo), descuentos en negativo y quién se la salta.
+
 ### Agency and Shipping
 - Multiple shipping agencies supported
 - Special handling for Glovo (`GestorAgenciasGlovo`)

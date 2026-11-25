@@ -1397,6 +1397,35 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// NestoAPI#891, EN SOMBRA: ya guardado el pedido, si lleva líneas de abono de productos que el cliente no tiene comprados (o ya
+        /// abonados), una línea en ELMAH. No frena nada (dónde frena está por decidir). Sin líneas de abono no lee nada. Nunca lanza.
+        /// </summary>
+        private async Task ApuntarSombraAbonoSoloLoComprado(PedidoVentaDTO pedido)
+        {
+            try
+            {
+                if (!Infraestructure.PedidosVenta.ReglaAbonoSoloLoComprado.LineasAbono(pedido?.Lineas, null).Any())
+                {
+                    return;
+                }
+                string productoCupon = ServicioCupones.ProductoCupon;
+                List<string> productosCheque = await ServicioCanje.ProductosCheque().ConfigureAwait(true) ?? new List<string>();
+                _ = Infraestructure.PedidosVenta.SombraAbonoSoloLoComprado.Apuntar(pedido,
+                    p => Infraestructure.Cupones.ReglasCupon.EsProductoCupon(p, productoCupon)
+                        || productosCheque.Any(c => string.Equals(c?.Trim(), p, StringComparison.OrdinalIgnoreCase)),
+                    LectorCompradoParaAbono ?? new Infraestructure.PedidosVenta.LectorCompradoParaAbonoSql(db),
+                    ex => ElmahHelper.Log(ex));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Abono de lo no comprado #891, sombra] Pedido {pedido?.numero}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>NestoAPI#891: lo comprado por el cliente para la sombra del abono. Sustituible en los tests (null = el de SQL).</summary>
+        internal Infraestructure.PedidosVenta.ILectorCompradoParaAbono LectorCompradoParaAbono { get; set; }
+
+        /// <summary>
         /// NestoAPI#900 (pedido 930535): la línea de cupón o de cheque regalo añadida en este PUT a un pedido con picking vivo toma ese
         /// picking si llega a su mínimo (<see cref="Models.Picking.ReglaDescuentoAnadidoConPicking"/>). Solo lee algo si hay una línea
         /// nueva negativa y un picking vivo. Nunca lanza: si algo falla, la línea se queda sin picking, como antes (ELMAH).
@@ -2871,6 +2900,8 @@ namespace NestoAPI.Controllers
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
             // NestoAPI#860: la fecha real del cobro de los prepagos (columna fuera del EDMX). Nunca lanza.
             GuardarFechasCobroPrepagos(pedido.numero, fechasCobroPrepagos);
+            // NestoAPI#891 (en sombra): el abono de lo que el cliente no ha comprado, solo a ELMAH. Nunca lanza.
+            await ApuntarSombraAbonoSoloLoComprado(pedido).ConfigureAwait(true);
             // Caso 931007: ya guardado, la pregunta urgente a Almacén (PedirAlmacen) o el aviso de lo añadido a un pedido que hoy no sale. Nunca lanza.
             AvisoPedidoDTO avisoAmpliacion = await ServicioAmpliacionEnPreparacion.DespuesDeGuardar(pedido, ampliacion, lineasNuevasCreadas, cliente?.Nombre)
                 .ConfigureAwait(true);
@@ -3807,6 +3838,8 @@ namespace NestoAPI.Controllers
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
             // NestoAPI#860: la fecha real del cobro de los prepagos (columna fuera del EDMX). Nunca lanza.
             GuardarFechasCobroPrepagos(pedido.numero, fechasCobroPrepagos);
+            // NestoAPI#891 (en sombra): el abono de lo que el cliente no ha comprado, solo a ELMAH. Nunca lanza.
+            await ApuntarSombraAbonoSoloLoComprado(pedido).ConfigureAwait(true);
 
             // NestoAPI#757: el tipo y los bultos de la nota (tabla fuera del EDMX). Nunca lanza.
             await ServicioNotasEntregaCabecera.GuardarAlCrear(pedido, UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)).ConfigureAwait(true);
