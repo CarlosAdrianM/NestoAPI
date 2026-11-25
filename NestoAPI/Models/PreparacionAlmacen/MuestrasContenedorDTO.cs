@@ -47,6 +47,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool SoloConStock { get; set; }
         /// <summary>Opcional: solo estas referencias (para reimprimir unas pocas).</summary>
         public List<string> Productos { get; set; }
+        /// <summary>Opcional (Carlos 25/11/26): la impresora (\\servidor\cola). Sin ella, la del almacén pedido.</summary>
+        public string Impresora { get; set; }
     }
 
     public class ResultadoEtiquetasMuestrasDTO
@@ -57,8 +59,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Total { get; set; }
         /// <summary>0 en el ensayo.</summary>
         public int Impresas { get; set; }
-        /// <summary>La impresora de etiquetas del usuario (ImpresoraCodBarras). En el ensayo, null si no tiene.</summary>
+        /// <summary>Donde salen (o saldrían): la pedida o, sin ella, la del almacén (ParametrosUsuario «(defecto)» ImpresoraEtiquetas.{almacén}).</summary>
         public string Impresora { get; set; }
+        /// <summary>De dónde sale la impresora: «Pedida» o «Almacen».</summary>
+        public string OrigenImpresora { get; set; }
         /// <summary>A cuántas muestras se les ha dado ahora el código interno (sin ningún código, al imprimir).</summary>
         public int CodigosAsignados { get; set; }
         /// <summary>Cuántas muestras no tienen código: al imprimir de verdad se les da el interno del 29.</summary>

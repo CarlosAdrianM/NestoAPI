@@ -396,15 +396,57 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task Etiquetas_Ensayo_SinImpresora_NoFalla()
+        public async Task Etiquetas_Ensayo_SinImpresoraPedida_LaDelAlmacen_NoLaDelUsuario()
+        {
+            // Caso de Carlos (25/11/26): usuario de Algete en la tienda de Alcobendas, las muestras de ALC
+            Muestras(Muestra("3", codigos: FABRICANTE));
+            A.CallTo(() => parametros.LeerParametro(EMPRESA, "Carlos", "ImpresoraCodBarras")).Returns(@"\\RDS2016\etiquetas2");
+
+            ResultadoEtiquetasMuestrasDTO resultado = await ServicioEtiquetas().Imprimir(EMPRESA,
+                new PeticionEtiquetasMuestrasDTO { Almacen = "ALC" }, @"NUEVAVISION\Carlos", true);
+
+            Assert.AreEqual(@"\\RDS2016\etiquetasalcobendas", resultado.Impresora);
+            Assert.AreEqual(OrigenesImpresoraEtiquetas.ALMACEN, resultado.OrigenImpresora);
+            StringAssert.StartsWith(resultado.Mensaje, @"Saldrían 1 etiqueta de muestras de ALC en \\RDS2016\etiquetasalcobendas");
+        }
+
+        [TestMethod]
+        public async Task Etiquetas_ConFilaGeneralDelAlmacen_Esa()
         {
             Muestras(Muestra("3", codigos: FABRICANTE));
+            A.CallTo(() => parametros.LeerParametroSinDefecto("1", "(defecto)", "ImpresoraEtiquetas.ALC")).Returns(@"\\RDS2016\zebraalc");
 
             ResultadoEtiquetasMuestrasDTO resultado = await ServicioEtiquetas().Imprimir(EMPRESA,
                 new PeticionEtiquetasMuestrasDTO { Almacen = "ALC" }, @"NUEVAVISION\Otro", true);
 
-            Assert.IsNull(resultado.Impresora);
-            StringAssert.Contains(resultado.Mensaje, "impresora");
+            Assert.AreEqual(@"\\RDS2016\zebraalc", resultado.Impresora);
+        }
+
+        [TestMethod]
+        public async Task Etiquetas_ConImpresoraPedida_Esa()
+        {
+            Muestras(Muestra("3", codigos: FABRICANTE));
+
+            ResultadoEtiquetasMuestrasDTO resultado = await ServicioEtiquetas().Imprimir(EMPRESA,
+                new PeticionEtiquetasMuestrasDTO { Almacen = "ALC", Impresora = @"\\RDS2016\etiquetasreina" }, @"NUEVAVISION\Otro", false);
+
+            Assert.AreEqual(@"\\RDS2016\etiquetasreina", resultado.Impresora);
+            Assert.AreEqual(OrigenesImpresoraEtiquetas.PEDIDA, resultado.OrigenImpresora);
+            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetasreina", A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Etiquetas_ImpresoraPedidaQueNoVale_LanzaTambienEnElEnsayo()
+        {
+            Muestras(Muestra("17404"));
+
+            _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => ServicioEtiquetas().Imprimir(EMPRESA,
+                new PeticionEtiquetasMuestrasDTO { Almacen = "ALC", Impresora = @"\\maquina-de-fuera\cola" }, "Paloma", true));
+            _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => ServicioEtiquetas().Imprimir(EMPRESA,
+                new PeticionEtiquetasMuestrasDTO { Almacen = "ALC", Impresora = @"\\RDS2016\cola;rm" }, "Paloma", false));
+
+            Assert.AreEqual(0, codigosFalsos.InternosPedidos);
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -429,14 +471,15 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task Etiquetas_DeVerdad_SinImpresora_NoDaNingunCodigo()
+        public async Task Etiquetas_DeVerdad_UsuarioSinImpresora_SaleEnLaDelAlmacen()
         {
-            Muestras(Muestra("17404"));
+            Muestras(Muestra("3", codigos: FABRICANTE));
 
-            await Assert.ThrowsExceptionAsync<ArgumentException>(() => ServicioEtiquetas().Imprimir(EMPRESA,
-                new PeticionEtiquetasMuestrasDTO { Almacen = "REI" }, @"NUEVAVISION\Otro", false));
+            ResultadoEtiquetasMuestrasDTO resultado = await ServicioEtiquetas().Imprimir(EMPRESA,
+                new PeticionEtiquetasMuestrasDTO { Almacen = "REI" }, @"NUEVAVISION\Otro", false);
 
-            Assert.AreEqual(0, codigosFalsos.InternosPedidos);
+            Assert.AreEqual(1, resultado.Impresas);
+            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetasreina", A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

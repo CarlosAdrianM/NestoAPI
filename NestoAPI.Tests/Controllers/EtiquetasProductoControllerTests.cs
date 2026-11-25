@@ -99,6 +99,28 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void Impresoras_LaListaDelServicio_ConElUsuario()
+        {
+            var esperada = new List<ImpresoraEtiquetasDTO> { new ImpresoraEtiquetasDTO { Almacen = "ALC", Impresora = @"\\RDS2016\etiquetasalcobendas", EsLaDelUsuario = true } };
+            A.CallTo(() => servicio.Impresoras("1", A<string>.That.Contains("Paloma"))).Returns(esperada);
+
+            IHttpActionResult respuesta = controller.GetImpresoras();
+
+            Assert.AreSame(esperada, ((OkNegotiatedContentResult<List<ImpresoraEtiquetasDTO>>)respuesta).Content);
+        }
+
+        [TestMethod]
+        public void Impresoras_SinGrupoDeLosQuePueden_403()
+        {
+            controller.User = Usuario("RevisionGoogle");
+
+            IHttpActionResult respuesta = controller.GetImpresoras();
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)respuesta).StatusCode);
+            A.CallTo(() => servicio.Impresoras(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Imprimir_WindowsNoDejaImprimir_502()
         {
             A.CallTo(() => servicio.Imprimir(A<string>._, A<EtiquetasProductoDTO>._, A<string>._, A<bool>._))

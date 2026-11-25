@@ -34,14 +34,36 @@ namespace NestoAPI.Controllers
             this.servicio = servicio;
         }
 
+        // GET api/Almacen/EtiquetasProducto/Impresoras?empresa=1
+        /// <summary>
+        /// Carlos 25/11/26: las impresoras de etiquetas para elegir: la de Algete, la de Reina y la de Alcobendas (ParametrosUsuario
+        /// «(defecto)» ImpresoraEtiquetas.{ALG|REI|ALC} o, sin fila, las de siempre) y, si es otra, la del usuario al final
+        /// (Almacen null). EsLaDelUsuario marca la suya. Para el desplegable de Nesto y Ariadna. Mismos permisos que imprimir.
+        /// </summary>
+        [HttpGet]
+        [Route("Impresoras")]
+        [ResponseType(typeof(System.Collections.Generic.List<ImpresoraEtiquetasDTO>))]
+        public IHttpActionResult GetImpresoras(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (!ServicioCodigosBarras.PuedeEscribir(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            return Ok(servicio.Impresoras(empresaLimpia, UsuarioAuditoriaHelper.Resolver(User, null)));
+        }
+
         // POST api/Almacen/EtiquetasProducto/Imprimir?empresa=1&ensayo=false   { "Producto": "17404", "Copias": 1 }
+        // { "Producto": "17404", "Copias": 1, "Impresora": "\\\\RDS2016\\etiquetasalcobendas", "Almacen": "ALC" }   (los dos últimos, opcionales)
         /// <summary>
         /// Imprime las etiquetas del producto: el nombre y «Ref. 17404 · 100 m» y, debajo, el EAN-13 de la unidad con sus cifras.
         /// Si el producto no tiene EAN-13 de unidad, se le da el interno del 29 (en exclusiva) y se imprime ese: la respuesta lo
         /// dice en CodigoBarras, CodigoInterno y CodigoAsignado. «Formato» se acepta y se ignora (NestoAPI#791). Con
         /// ensayo=true no imprime ni crea el código: dice qué llevaría y en qué impresora. La impresión la hace el servidor.
-        /// 400 si el producto no existe, sobran copias o el usuario no tiene impresora; 403 sin permiso; 502 si Windows no deja
-        /// imprimir.
+        /// Impresora (Carlos 25/11/26, opcional): la pedida; si no, con Almacen (ALG, REI, ALC) la de ese almacén; sin ninguno de
+        /// los dos, la del usuario, como siempre. La respuesta dice Impresora y OrigenImpresora («Pedida», «Almacen», «Usuario»).
+        /// 400 si el producto no existe, sobran copias, la impresora pedida no vale o el usuario no tiene impresora; 403 sin
+        /// permiso; 502 si Windows no deja imprimir.
         /// </summary>
         [HttpPost]
         [Route("Imprimir")]

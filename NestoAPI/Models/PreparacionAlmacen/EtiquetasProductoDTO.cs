@@ -17,6 +17,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// de la unidad del producto; si no tiene, se le da el código interno (29…) y se imprime ese.
         /// </summary>
         public string Formato { get; set; }
+        /// <summary>
+        /// Opcional (Carlos 25/11/26): la impresora (\\servidor\cola, de GET api/Almacen/EtiquetasProducto/Impresoras). Sin ella ni
+        /// <see cref="Almacen"/>, la del usuario, como siempre (Nesto y Ariadna no la mandan).
+        /// </summary>
+        public string Impresora { get; set; }
+        /// <summary>Opcional: ALG, REI o ALC. Sin <see cref="Impresora"/>, sale en la de ese almacén; otro, la del usuario.</summary>
+        public string Almacen { get; set; }
     }
 
     public class ResultadoEtiquetasProductoDTO
@@ -27,8 +34,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Copias { get; set; }
         /// <summary>0 en un ensayo (vista previa).</summary>
         public int Impresas { get; set; }
-        /// <summary>La impresora de etiquetas del usuario (parámetro ImpresoraCodBarras).</summary>
+        /// <summary>Donde sale (o saldría): la pedida, la del almacén o la del usuario (parámetro ImpresoraCodBarras).</summary>
         public string Impresora { get; set; }
+        /// <summary>De dónde sale la impresora: «Pedida», «Almacen» o «Usuario».</summary>
+        public string OrigenImpresora { get; set; }
         public string Mensaje { get; set; }
         /// <summary>
         /// NestoAPI#762/#791: el EAN-13 impreso (o el que se imprimiría en el ensayo). Null solo en el ensayo de un producto al que
@@ -42,5 +51,17 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// no lo tienen todavía.
         /// </summary>
         public bool CodigoAsignado { get; set; }
+    }
+
+    /// <summary>Una impresora de etiquetas para elegir (GET api/Almacen/EtiquetasProducto/Impresoras).</summary>
+    public class ImpresoraEtiquetasDTO
+    {
+        /// <summary>ALG, REI o ALC; null en la del usuario cuando no es la de ningún almacén.</summary>
+        public string Almacen { get; set; }
+        /// <summary>«Algete», «Reina», «Alcobendas» o «La suya».</summary>
+        public string Nombre { get; set; }
+        public string Impresora { get; set; }
+        /// <summary>Es la ImpresoraCodBarras de quien pregunta.</summary>
+        public bool EsLaDelUsuario { get; set; }
     }
 }

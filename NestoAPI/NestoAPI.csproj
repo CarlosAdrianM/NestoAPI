@@ -650,6 +650,7 @@
     <Compile Include="Models\PreparacionAlmacen\LecturasAlmacenDTO.cs" />
     <Compile Include="Controllers\LecturasAlmacenController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AjusteImpresorasEtiquetas.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\ImpresoraEtiquetas.cs" />
     <Compile Include="Models\PreparacionAlmacen\AjusteImpresoraEtiquetasDTO.cs" />
     <Compile Include="Controllers\EtiquetasImpresorasController.cs" />
     <Compile Include="Models\PreparacionAlmacen\FichaProductoAlmacenDTO.cs" />

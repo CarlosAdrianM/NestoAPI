@@ -51,7 +51,7 @@ namespace NestoAPI.Controllers
         // POST api/Inmovilizados/Etiquetas/Imprimir   { "Empresa": "1", "Numeros": ["1823", "1822"], "Copias": 1, "Impresora": null }
         /// <summary>
         /// Imprime la etiqueta 3×2 de cada inmovilizado en la impresora pedida o en la de su delegación (ParametrosUsuario «(defecto)»
-        /// ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC}; otra delegación, la ImpresoraCodBarras de quien imprime). 200 con Impresas y
+        /// ImpresoraEtiquetasInmovilizado.{ALG|REI|ALC} o la general ImpresoraEtiquetas.{…}; otra delegación, la ImpresoraCodBarras de quien imprime). 200 con Impresas y
         /// una fila por inmovilizado (Ok, Motivo); 400 sin números, más de 50 o copias fuera de 1..10; 403 sin permiso; 404 si no
         /// existe ninguno. Uno que no existe, anulado o sin impresora no para a los demás.
         /// </summary>

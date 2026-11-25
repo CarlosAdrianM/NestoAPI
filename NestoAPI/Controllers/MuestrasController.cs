@@ -65,7 +65,9 @@ namespace NestoAPI.Controllers
         /// (código o nombre), solo con stock y una lista de referencias (para reimprimir unas pocas). La etiqueta es la 3×2 de
         /// producto con otro texto: «MUESTRA · Ref. 17404» y el nombre en grande, y el EAN-13 del fabricante o el interno. Con
         /// ensayo=true (por defecto) solo dice cuántas y cuáles saldrían. De verdad, a la que no tiene código se le da el interno y se
-        /// manda todo en UN trabajo a la impresora de etiquetas del usuario. 400 almacén que no vale, más de 500 o sin impresora;
+        /// manda todo en UN trabajo a la impresora pedida (Impresora, opcional) o, sin ella, a la DEL ALMACÉN pedido (Carlos 25/11/26:
+        /// ParametrosUsuario «(defecto)» ImpresoraEtiquetas.{ALG|REI|ALC} o las de siempre; la respuesta trae Impresora y
+        /// OrigenImpresora). 400 almacén o impresora que no valen o más de 500;
         /// 403 sin permiso (los de las etiquetas de producto); 502 si Windows no deja imprimir.
         /// </summary>
         [HttpPost]
