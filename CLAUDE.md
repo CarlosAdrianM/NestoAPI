@@ -632,6 +632,14 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   la campaña sube el techo esos días). Si las únicas del producto son de campaña, cuentan TODAS: la campaña suma permiso y no tapa el 52 % pactado
   por familia o grupo. Vale también para el precio autorizado; el compuesto de distribuidores no cambia. El motor de precios no se toca.
   (`ValidadorOfertasYDescuentosPermitidos` tiene la lógica vieja, pero no se usa en ningún sitio.)
+- **Solo autorizan los niveles del motor (Carlos 25/11/26)**: `ServicioPrecios.BuscarDescuentosPermitidos` sigue leyendo con la consulta AMPLIA
+  (familia O grupo) y después LA REGLA (pura) `ReglaFilaAutorizaProducto.Casa/Filtrar` deja solo: fila de producto; global de familia (sin filtro),
+  familia+grupo (grupo de la ficha) o familia+grupo+subgrupo (#467, el Outlet: contra la categoría principal o una secundaria); del cliente: grupo
+  (sin familia), familia, familia+grupo, familia+filtro. Una GLOBAL de solo grupo NO autoriza («tiene que ser una fila con ese cliente, con ese grupo
+  y el producto a NULL»), ni una global de familia con filtro. Antes, Schwarzkop|PEL|OUT 50 % autorizaba el 50 % en todo PEL (695 líneas 15/09-24/11).
+  Interruptor ParametrosUsuario «(defecto)» `Validacion.DescuentosCriteriosEstrictos` (sin fila o «1» = estricto; «0» = la consulta amplia de antes;
+  sin crear filas, caché 1 min: `InterruptorDescuentosCriteriosEstrictos`). Afecta a todos los que usan esa lectura (validador de descuentos, precio
+  especial admitido de ValidadorOfertasPermitidas y de PlantillaVentas, que solo miran filas de producto).
 - **Solo en stock (NestoAPI#889, Manuel 23/11/26; aviso NO estricto, como el del contado)**: `CondicionStock` en la petición (y `bool?` en regla y
   excepción) → una fila por producto en `dbo.CampanasCondicionStock` (Campana, Empresa, Producto, FechaDesde, FechaHasta; `Scripts/BlackFriday2026_CampanasCondicionStock.sql`;
   sin ella, ni aviso y el alta con la marca da 503), en la misma transacción; relanzar el alta con la marca sobre una campaña ya creada solo

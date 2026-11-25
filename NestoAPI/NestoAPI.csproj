@@ -1755,6 +1755,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\GestorSugerenciasOfertas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorSugerenciasOfertas.Combinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ReglaFilaAutorizaProducto.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorGanavisiones.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertaSinBeneficio.cs" />

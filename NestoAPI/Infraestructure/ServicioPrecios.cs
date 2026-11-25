@@ -181,11 +181,26 @@ namespace NestoAPI.Infraestructure
                 // Issue #423: un descuento caducado ya no autoriza nada. Sin este filtro, la campaña
                 // seguiría dando por bueno en el pedido un descuento que el motor de precios ya no
                 // calcula, que es la peor de las dos incoherencias posibles.
-                return Vigencia.Vigentes(db.DescuentosProductoes, Dia, _diasMargenFin).Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                List<DescuentosProducto> filas = Vigencia.Vigentes(db.DescuentosProductoes, Dia, _diasMargenFin).Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
                     d.NºProveedor == null &&
                     (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo || (d.Familia == producto.Familia && producto.Nombre.StartsWith(d.FiltroProducto))))
                     .Where(FiltroClienteContacto(numeroCliente, contactoCliente))
                     .ToList();
+
+                // Carlos 25/11/26: la consulta de arriba es AMPLIA (cualquier fila de la familia o del grupo). Con el interruptor
+                // Validacion.DescuentosCriteriosEstrictos encendido (sin fila o «1»), solo autorizan las filas de los niveles que aplica
+                // el motor (ReglaFilaAutorizaProducto). Las categorías secundarias del producto solo se leen si hay alguna fila con subgrupo
+                // (las del Outlet de su familia); todas sus filas ya vienen en la consulta amplia porque llevan la familia.
+                if (!ValidadoresPedido.InterruptorDescuentosCriteriosEstrictos.Activo)
+                {
+                    return filas;
+                }
+                List<CategoriaProducto> secundarias = new List<CategoriaProducto>();
+                if (filas.Any(f => !string.IsNullOrWhiteSpace(f.SubGrupoProducto)))
+                {
+                    secundarias = GestorPrecios.CategoriasDelProducto(db, producto);
+                }
+                return ValidadoresPedido.ReglaFilaAutorizaProducto.Filtrar(filas, producto, secundarias, numeroCliente);
             }
         }
 
