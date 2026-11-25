@@ -214,8 +214,11 @@ public class AuthController : ApiController
     /// <summary>
     /// Renueva el JWT de TiendasNuevaVision. La app lo llama con el token YA CADUCADO (es su
     /// mecanismo de renovación), así que la caducidad del token no se valida aquí: se validan
-    /// la firma, una ventana de un mes desde que caducó y, desde NestoAPI#427, la caducidad
-    /// absoluta desde el login original y que la ficha del cliente siga viva en la BD.
+    /// la firma, una ventana desde que caducó de los mismos días que la caducidad absoluta
+    /// (<see cref="PoliticaRefrescoToken.VentanaDesdeCaducidadVencida"/>; antes un mes fijo,
+    /// cambiado por los registros de IIS de la app de clientes del 25/11/26) y, desde
+    /// NestoAPI#427, la caducidad absoluta desde el login original y que la ficha del cliente
+    /// siga viva en la BD.
     /// </summary>
     [HttpPost]
     [Route("api/auth/refreshToken")]
@@ -239,8 +242,12 @@ public class AuthController : ApiController
             return Unauthorized();
         }
 
-        // Ventana desde que caducó el token (sin cambios: un mes)
-        if (token.ValidTo < ahora.AddMonths(-1))
+        // Ventana desde que caducó el token: los mismos días que la caducidad absoluta (antes un
+        // mes fijo, que echaba a quien no abría la app en un mes aunque su login fuera reciente;
+        // app de clientes, registros de IIS 25/11/26).
+        int diasMaximos = PoliticaRefrescoToken.DiasMaximos(
+            PoliticaRefrescoToken.SETTING_DIAS_TIENDA, PoliticaRefrescoToken.DIAS_TIENDA_POR_DEFECTO);
+        if (PoliticaRefrescoToken.VentanaDesdeCaducidadVencida(token.ValidTo, ahora, diasMaximos))
         {
             return Unauthorized();
         }
@@ -257,8 +264,6 @@ public class AuthController : ApiController
         // NestoAPI#427 (punto 3): caducidad absoluta desde el login original. Un token sin
         // login_utc (emitido antes de este cambio) pasa UNA vez más y sale con login_utc = ahora,
         // para no echar a nadie que tenga la app abierta: ver PoliticaRefrescoToken.
-        int diasMaximos = PoliticaRefrescoToken.DiasMaximos(
-            PoliticaRefrescoToken.SETTING_DIAS_TIENDA, PoliticaRefrescoToken.DIAS_TIENDA_POR_DEFECTO);
         DateTime? login = PoliticaRefrescoToken.FechaLoginParaRefresco(token, ahora, diasMaximos);
         if (login == null)
         {

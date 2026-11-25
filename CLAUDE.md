@@ -307,6 +307,9 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Lector: `GetProducto(codigoBarras)` (solo ese; `BuscarPorCodigoBarras` y los flujos de almacén siguen preguntando siempre) descarta las
   fichas anuladas (Estado < 0 o null) si queda alguna viva (`ProductosController.CoincidenciasAConsiderarLector`, pura): una viva → esa, sin 409;
   varias vivas → 409 solo con ellas; todas anuladas → 409 con todas (8436538394380: 44967 anulado / 45931 vivo).
+- Refresco: `api/auth/refreshToken` ya no corta a un mes de caducado el token: la ventana desde la caducidad son los mismos días que la
+  absoluta desde el login (`Auth:DiasMaximosSesionTienda`, 90; `PoliticaRefrescoToken.VentanaDesdeCaducidadVencida`). 15 de 26 clientes
+  echados tras un mes sin abrir la app no volvieron a entrar. Firma, absoluta y revalidación del cliente, igual; `refreshOAuthToken` no cambia.
 
 ### Furgoneta bulto a bulto (NestoAPI#772, 31/10/26)
 - Cada bulto del reparto propio (`RP{envío}-{N}`, `NR{pedido}-{N}`, `R{traspaso}-{N}`) tiene su historia en `RepartoBultosMovimientos`

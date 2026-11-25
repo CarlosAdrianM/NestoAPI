@@ -90,6 +90,16 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
         }
 
         [TestMethod]
+        public void VentanaDesdeCaducidad_LosMismosDiasQueLaAbsoluta()
+        {
+            Assert.IsFalse(PoliticaRefrescoToken.VentanaDesdeCaducidadVencida(AHORA.AddDays(-45), AHORA, 90),
+                "Antes un mes fijo: caducado hace 45 días ya no vence la ventana");
+            Assert.IsFalse(PoliticaRefrescoToken.VentanaDesdeCaducidadVencida(AHORA.AddDays(-90), AHORA, 90));
+            Assert.IsTrue(PoliticaRefrescoToken.VentanaDesdeCaducidadVencida(AHORA.AddDays(-90).AddSeconds(-1), AHORA, 90));
+            Assert.IsTrue(PoliticaRefrescoToken.VentanaDesdeCaducidadVencida(AHORA.AddDays(-31), AHORA, 30));
+        }
+
+        [TestMethod]
         public void DiasMaximos_PorDefecto90Tienda30OAuth()
         {
             Assert.AreEqual(90, PoliticaRefrescoToken.DiasMaximos(
@@ -164,7 +174,7 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
         }
 
         /// <summary>Un token de TNV como los que emite CrearJWTAsync, caducado hace 10 minutos.</summary>
-        private static string TokenTienda(DateTime? loginUtc, string cliente = "15191")
+        private static string TokenTienda(DateTime? loginUtc, string cliente = "15191", DateTime? caduca = null)
         {
             var claims = new List<Claim>
             {
@@ -176,7 +186,7 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
             {
                 claims.Add(new Claim(PoliticaRefrescoToken.CLAIM_LOGIN_UTC, PoliticaRefrescoToken.Escribir(loginUtc.Value)));
             }
-            return Firmar(DateTime.UtcNow.AddMinutes(-10), claims);
+            return Firmar(caduca ?? DateTime.UtcNow.AddMinutes(-10), claims);
         }
 
         private static string TokenOAuth(DateTime caduca, DateTime? loginUtc)
@@ -312,12 +322,44 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
             Assert.AreEqual(ahora, LoginUtcDe(TokenEmitido(await otra.RefreshToken())));
         }
 
+        /// <summary>
+        /// App de clientes, registros de IIS 25/11/26: la ventana desde la caducidad ya no es un mes sino los días
+        /// de la caducidad absoluta (90). Pasados, 401 aunque el token no lleve login_utc (transición).
+        /// </summary>
         [TestMethod]
-        public async Task RefreshToken_TokenCaducadoHaceMasDeUnMes_401_SinCambios()
+        public async Task RefreshToken_TokenCaducadoHaceMasDeLosDiasMaximos_401()
         {
             var claims = new[] { new Claim(ClaimTypes.Email, "cliente@ejemplo.com"), new Claim("nif", "12345678Z"), new Claim("cliente", "15191") };
 
-            var resultado = await Controller(Firmar(DateTime.UtcNow.AddDays(-32), claims)).RefreshToken();
+            var resultado = await Controller(Firmar(DateTime.UtcNow.AddDays(-91), claims)).RefreshToken();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        /// <summary>Registros de IIS 25/11/26: quien no abre la app en más de un mes ya no pierde la sesión.</summary>
+        [TestMethod]
+        public async Task RefreshToken_CaducadoHace45DiasConLoginDeHace50_Renueva()
+        {
+            DateTime login = Segundos(DateTime.UtcNow.AddDays(-50));
+
+            var resultado = await Controller(TokenTienda(login, caduca: DateTime.UtcNow.AddDays(-45))).RefreshToken();
+
+            Assert.AreEqual(login, LoginUtcDe(TokenEmitido(resultado)));
+        }
+
+        [TestMethod]
+        public async Task RefreshToken_CaducadoHace45DiasConLoginDeHace95_401PorLaAbsoluta()
+        {
+            var resultado = await Controller(TokenTienda(DateTime.UtcNow.AddDays(-95), caduca: DateTime.UtcNow.AddDays(-45))).RefreshToken();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public async Task RefreshToken_CaducadoHaceMasDeLosDiasMaximosConLoginReciente_401PorLaVentana()
+        {
+            // Imposible con tokens reales (caducan 1 h tras el login), pero la ventana no depende del claim
+            var resultado = await Controller(TokenTienda(DateTime.UtcNow.AddDays(-10), caduca: DateTime.UtcNow.AddDays(-91))).RefreshToken();
 
             Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
         }

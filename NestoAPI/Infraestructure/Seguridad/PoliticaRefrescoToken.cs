@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.Seguridad
     /// acepta y el token nuevo sale con <c>login_utc = ahora</c>: el reloj de la caducidad
     /// absoluta empieza a contar en su primer refresco tras el despliegue. No es una puerta
     /// abierta: ese token viejo sigue sujeto a la firma y a la ventana de caducidad de cada
-    /// endpoint (un mes en refreshToken, 30 días en refreshOAuthToken), así que deja de valer
+    /// endpoint (en refreshToken los mismos días que la absoluta, 90 por defecto; 30 días en refreshOAuthToken), así que deja de valer
     /// solo, y los que se emiten desde hoy ya llevan el claim. Lo fija el test
     /// <c>TokenSinLoginUtc_PasaYSaleConLoginUtcAhora_TransicionTNV</c>.</para>
     /// </summary>
@@ -91,6 +91,16 @@ namespace NestoAPI.Infraestructure.Seguridad
             }
 
             return login.Value;
+        }
+
+        /// <summary>
+        /// Ventana de <c>api/auth/refreshToken</c> desde que caducó el token: true (se rechaza) si caducó hace
+        /// más de <paramref name="diasMaximos"/> días, los mismos de la caducidad absoluta (antes un mes fijo,
+        /// redundante con ella: app de clientes, registros de IIS 25/11/26). La absoluta se sigue aplicando aparte.
+        /// </summary>
+        internal static bool VentanaDesdeCaducidadVencida(DateTime validTo, DateTime ahoraUtc, int diasMaximos)
+        {
+            return validTo < ahoraUtc.AddDays(-diasMaximos);
         }
 
         /// <summary>El valor del claim: segundos Unix en texto invariante.</summary>
