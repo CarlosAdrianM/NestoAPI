@@ -1560,6 +1560,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorCupon.cs" />
     <Compile Include="Controllers\CuponesController.cs" />
     <Compile Include="Models\Picking\CuponesPicking.cs" />
+    <Compile Include="Models\Picking\DescuentoAnadidoConPicking.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
     <Compile Include="Infraestructure\Productos\LectorProductoLeido.cs" />

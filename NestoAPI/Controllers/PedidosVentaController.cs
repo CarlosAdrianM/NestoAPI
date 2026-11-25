@@ -1397,6 +1397,62 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// NestoAPI#900 (pedido 930535): la línea de cupón o de cheque regalo añadida en este PUT a un pedido con picking vivo toma ese
+        /// picking si llega a su mínimo (<see cref="Models.Picking.ReglaDescuentoAnadidoConPicking"/>). Solo lee algo si hay una línea
+        /// nueva negativa y un picking vivo. Nunca lanza: si algo falla, la línea se queda sin picking, como antes (ELMAH).
+        /// Devuelve los envíos del pedido (leídos aquí si hizo falta) para no volver a leerlos.
+        /// </summary>
+        private async Task<List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido>> PonerPickingADescuentoAnadido(PedidoVentaDTO pedido,
+            CabPedidoVta cabPedidoVta, List<LinPedidoVta> lineasVivas, List<LinPedidoVta> lineasNuevas, bool hayEtiquetaEnCurso,
+            Infraestructure.Cupones.PlanCanjeCupon planCupon, List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido> envios)
+        {
+            try
+            {
+                bool hayNegativaNueva = lineasNuevas.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && (l.Cantidad ?? 0) < 0);
+                bool hayPickingVivo = lineasVivas.Any(l => (l.Picking ?? 0) > 0
+                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
+                if (!hayNegativaNueva || !hayPickingVivo)
+                {
+                    return envios;
+                }
+                if (envios == null)
+                {
+                    envios = await db.EnviosAgencias
+                        .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero)
+                        .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado, Agencia = e.Agencia })
+                        .ToListAsync().ConfigureAwait(true);
+                    await RellenarPickingsEnvios(envios).ConfigureAwait(true);
+                }
+                List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido> enviosLeidos = envios;
+                Infraestructure.Cupones.CuponLeido cupon = planCupon?.CuponAReservar;
+                var nuevas = new HashSet<LinPedidoVta>(lineasNuevas);
+                Models.Picking.ResultadoDescuentoAnadidoConPicking resultado = Models.Picking.ReglaDescuentoAnadidoConPicking.Decidir(
+                    pedido.empresa, pedido.numero,
+                    esNotaEntrega: cabPedidoVta.NotaEntrega && !lineasVivas.Any(l => l.YaFacturado),
+                    hayEtiquetaEnCurso: hayEtiquetaEnCurso,
+                    lineasDelPedido: lineasVivas.Where(l => !nuevas.Contains(l)).ToList(),
+                    lineasNuevas: lineasNuevas,
+                    laAgenciaYaLoTiene: p => Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(enviosLeidos, new[] { p }, out _),
+                    productoCupon: ServicioCupones.ProductoCupon,
+                    cupon: cupon == null ? null : new Models.Picking.CuponUsadoPicking { Importe = cupon.Importe, PedidoMinimo = cupon.PedidoMinimo },
+                    leerProductosCupon: (e, c) => Models.Picking.RellenadorPickingService.ProductosCupon(db, e, c),
+                    campanas: () => new Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo(db).LeerCampanasSincrono(),
+                    leerProductosCheque: (e, c) => Models.Picking.RellenadorPickingService.ProductosChequeRegalo(db, e, c),
+                    hoy: DateTime.Today);
+                Models.Picking.ReglaDescuentoAnadidoConPicking.Aplicar(resultado);
+                if (resultado.Picking > 0)
+                {
+                    System.Diagnostics.Trace.WriteLine($"[NestoAPI#900] Pedido {pedido.numero}: la línea de cupón o cheque añadida toma el picking {resultado.Picking}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[NestoAPI#900] Pedido {pedido?.numero}: no se ha podido poner el picking vivo a la línea de cupón o cheque añadida (se queda sin picking, como antes): {ex.Message}", ex));
+            }
+            return envios;
+        }
+
+        /// <summary>
         /// NestoAPI#722 (06/11/26): el botón del rechazo PEDIDO_YA_EN_AGENCIA del PUT. Manda a logística, con copia al vendedor del
         /// pedido, el pedido, el envío, la fecha pedida y quién lo pide, para que intenten hablar con la agencia (sin prometer nada).
         /// 200 { Mensaje, Destinatarios }; 400 sin fecha; 404 si el pedido (o el envío indicado del pedido) no existe; 502 si el
@@ -2686,6 +2742,14 @@ namespace NestoAPI.Controllers
                 pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
                 l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false,
                 teniaLineaCupon: TieneOTeniaLineaCupon(pedido.empresa, pedido.numero)).ConfigureAwait(true);
+
+            // NestoAPI#900: el cupón o cheque añadido a un pedido con picking vivo toma ese picking si llega a su mínimo (sale en el
+            // mismo albarán y factura). Después de las reglas duras del cheque y del cupón; nunca rompe el guardado.
+            if (lineasNuevasCreadas.Count > 0)
+            {
+                enviosDelPedido = await PonerPickingADescuentoAnadido(pedido, cabPedidoVta, lineasVivasTrasElPut.ToList(),
+                    lineasNuevasCreadas.Select(k => k.Value).ToList(), etiquetaAgencia != null, planCupon, enviosDelPedido).ConfigureAwait(true);
+            }
 
             // Validación: verificar que ninguna línea tenga TipoLinea NULL
             var lineasConTipoNull = cabPedidoVta.LinPedidoVtas

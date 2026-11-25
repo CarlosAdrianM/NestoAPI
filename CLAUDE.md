@@ -1371,6 +1371,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   toca y se avisa). `notificacionResuelta` + campana/push a quien lo pidió. `GET …/AmpliacionesEnPreparacion[?pendientes=false]`, `GET …/{id}`.
 - Correo: lo añadido sin picking en un pedido con picking sale como «Añadido después de sacar el picking (pendiente de que Almacén diga…)» o, en
   «Todo junto», «(sale aparte; puede salir el…)» (`GestorPresupuestos.PartidasAnadidasTrasElPicking`).
+- **Cupón o cheque añadido con picking vivo (NestoAPI#900, pedido 930535, 25/11/26)**: en el PUT, la línea NUEVA de cupón de evento o de cheque regalo
+  (−1, ALG) de un pedido con UN picking vivo (líneas -1..1 con picking) toma ese picking (y pasa a en curso) si con lo ya entregado + ese picking llega a
+  su mínimo: LA REGLA (pura) `ReglaDescuentoAnadidoConPicking.Decidir` (`Models/Picking/DescuentoAnadidoConPicking.cs`), con la MISMA decisión del picking
+  (`CuponesPicking`/`ChequesRegaloPicking` + `ReservarCupones`/`ReservarChequesRegalo`). No lo toma (queda para la siguiente entrega, como antes): nota de
+  entrega, sin picking vivo o con varios, etiqueta en curso (cambiaría el reembolso), la agencia ya lo tiene (`YaLoTieneLaAgencia`), fecha posterior a la
+  del picking o no llega al mínimo. Otras líneas negativas no se tocan. Nunca rompe el PUT (ELMAH). Sin script.
 
 ### Dirección 2 y número propio en el alta (NestoAPI#874 corte 1, Nesto#643, 17/11/26)
 - `Clientes.Dirección` sigue siendo calle y número (50). Lo que necesita el repartidor va en `Clientes.Direccion2` (nvarchar(100)) +

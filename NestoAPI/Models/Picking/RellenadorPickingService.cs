@@ -350,6 +350,10 @@ namespace NestoAPI.Models.Picking
         }
 
         private Dictionary<string, Infraestructure.Cupones.ProductoParaCupon> LeerProductosCupon(string empresa, List<string> productos)
+            => ProductosCupon(db, empresa, productos);
+
+        /// <summary>NestoAPI#900: la misma lectura para la línea de cupón añadida a un pedido con picking vivo.</summary>
+        internal static Dictionary<string, Infraestructure.Cupones.ProductoParaCupon> ProductosCupon(NVEntities db, string empresa, List<string> productos)
         {
             return db.Productos
                 .Where(p => p.Empresa == empresa && productos.Contains(p.Número))
@@ -382,6 +386,10 @@ namespace NestoAPI.Models.Picking
         }
 
         private Dictionary<string, Infraestructure.ChequesRegalo.ProductoParaChequeRegalo> LeerProductosChequeRegalo(string empresa, List<string> productos)
+            => ProductosChequeRegalo(db, empresa, productos);
+
+        /// <summary>NestoAPI#900: la misma lectura para la línea de cheque añadida a un pedido con picking vivo.</summary>
+        internal static Dictionary<string, Infraestructure.ChequesRegalo.ProductoParaChequeRegalo> ProductosChequeRegalo(NVEntities db, string empresa, List<string> productos)
         {
             var filas = db.Productos
                 .Where(p => p.Empresa == empresa && productos.Contains(p.Número))
