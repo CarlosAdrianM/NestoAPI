@@ -56,15 +56,33 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
         private readonly IAlmacenFacturasAmazon _almacen;
         private readonly AlbaranesVenta.IServicioAlbaranesVenta _servicioAlbaranes;
 
+        private readonly Action<Exception> _registrar;
+
         public ServicioFacturasAmazon(NVEntities db, IGestorFacturas gestorFacturas,
             IAmazonFeedsGateway gateway, IAlmacenFacturasAmazon almacen,
-            AlbaranesVenta.IServicioAlbaranesVenta servicioAlbaranes)
+            AlbaranesVenta.IServicioAlbaranesVenta servicioAlbaranes, Action<Exception> registrar = null)
         {
             _db = db;
             _gestorFacturas = gestorFacturas;
             _gateway = gateway;
             _almacen = almacen;
             _servicioAlbaranes = servicioAlbaranes;
+            _registrar = registrar ?? new Action<Exception>(ElmahHelper.Log);
+        }
+
+        internal const string PREFIJO_OMITIDA = "[Amazon] factura no descargable omitida: ";
+
+        /// <summary>
+        /// Carlos 25/11/26: «No hay facturas de Amazon ni en la empresa 3 ni con IVA a NULL». Guarda por si acaso con LA REGLA de los
+        /// documentos que no salen (<see cref="ReglaDocumentoNoDescargable"/>): no se factura (si es el pedido) ni se sube nada, una
+        /// línea en ELMAH y la respuesta OMITIDA con el mensaje único (no se registra en el almacén de subidas).
+        /// </summary>
+        private SubirFacturaAmazonResponseDTO Omitida(SubirFacturaAmazonResponseDTO respuesta, string numero, string detalle)
+        {
+            _registrar(new Exception(PREFIJO_OMITIDA + detalle));
+            respuesta.Estado = EstadosFacturaAmazon.OMITIDA;
+            respuesta.Avisos.Add(ReglaDocumentoNoDescargable.Mensaje(numero));
+            return respuesta;
         }
 
         public async Task<SubirFacturaAmazonResponseDTO> FacturarYSubirAsync(string empresa, int pedido, string usuario)
@@ -87,6 +105,13 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
             string amazonOrderId = ExtraerAmazonOrderId(cabecera.Comentarios)
                 ?? throw new InvalidOperationException(
                     $"El pedido {pedido} no tiene AmazonOrderId en los comentarios; no parece un pedido de Amazon.");
+
+            if (ReglaDocumentoNoDescargable.NoSeSirvePedido(empresa, cabecera.IVA))
+            {
+                return Omitida(new SubirFacturaAmazonResponseDTO { Empresa = empresa?.Trim(), Pedido = pedido, AmazonOrderId = amazonOrderId },
+                    pedido.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    $"pedido {pedido} de la empresa {empresa?.Trim()} (IVA {(cabecera.IVA == null ? "NULL" : "'" + cabecera.IVA.Trim() + "'")}), {amazonOrderId}");
+            }
 
             // El marketplace real del pedido no se persiste en Nesto (DatosMarkets es una lista del
             // cliente), así que se resuelve preguntando a Amazon. De paso valida que el pedido exista.
@@ -144,6 +169,12 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
                 respuesta.NumeroFactura = creada.NumeroFactura;
                 empresaFactura = creada.Empresa ?? empresa;
                 respuesta.Avisos.AddRange(creada.Avisos ?? new List<string>());
+            }
+
+            if (ReglaDocumentoNoDescargable.NoSeSirveFactura(empresaFactura, respuesta.NumeroFactura))
+            {
+                return Omitida(respuesta, respuesta.NumeroFactura,
+                    $"factura {respuesta.NumeroFactura?.Trim()} de la empresa {empresaFactura?.Trim()} (pedido {pedido}, {amazonOrderId})");
             }
 
             byte[] pdf = await GenerarPdfFactura(empresaFactura, respuesta.NumeroFactura, usuario).ConfigureAwait(false);

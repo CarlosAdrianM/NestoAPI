@@ -161,6 +161,12 @@ namespace NestoAPI.Controllers
                 return Texto(HttpStatusCode.BadRequest, "Falta el número de la factura.");
             }
             string laEmpresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            // Carlos 25/11/26: «No se puede mandar por FACe uno de la empresa 3». LA REGLA de los documentos que no salen (empresa
+            // espejo o serie sin descarga), antes de leer nada y también con comprobar=true.
+            if (ReglaDocumentoNoDescargable.NoSeSirveFactura(laEmpresa, factura))
+            {
+                return Texto(HttpStatusCode.Forbidden, ReglaDocumentoNoDescargable.Mensaje(factura));
+            }
             var peticion = new PeticionFacturae
             {
                 OficinaContable = oficinaContable,

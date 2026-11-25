@@ -224,11 +224,35 @@ namespace NestoAPI.Controllers
             return extracto;
         }
 
+        internal const string MODELO_347 = "Modelo 347";
+
+        /// <summary>
+        /// Carlos 25/11/26: «No entra en el 347 nada de la empresa 3». Pedirlo de la empresa espejo da el 403 de LA REGLA de los
+        /// documentos que no salen (<see cref="Infraestructure.Facturas.ReglaDocumentoNoDescargable"/>), sin leer nada; como GET
+        /// api/Facturas: texto plano en el PDF y el mensaje en el JSON.
+        /// </summary>
+        internal static bool NoSaleModelo347(string empresa) => Infraestructure.Facturas.ReglaDocumentoNoDescargable.EsEmpresaEspejo(empresa);
+
+        internal static string MensajeModelo347NoSale => Infraestructure.Facturas.ReglaDocumentoNoDescargable.Mensaje(MODELO_347);
+
+        /// <summary>
+        /// Los movimientos que suman en el 347 (los mismos de siempre, en los dos endpoints): SOLO los de la empresa pedida (nunca se
+        /// mezclan empresas: con la 1 no entra nada de la 3), facturas (TipoApunte 1) del ejercicio y sin la deuda vencida.
+        /// </summary>
+        internal static IQueryable<ExtractoCliente> MovimientosModelo347(IQueryable<ExtractoCliente> extractos, string empresa, string cliente,
+            DateTime fechaDesde, DateTime fechaHasta)
+            => extractos.Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde
+                && e.Fecha < fechaHasta && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA);
+
         // GET: api/ExtractosCliente
         [Authorize]
         [ResponseType(typeof(Mod347DTO))]
         public async Task<IHttpActionResult> GetModelo347(string empresa, string cliente, string NIF)
         {
+            if (NoSaleModelo347(empresa))
+            {
+                return Content(HttpStatusCode.Forbidden, MensajeModelo347NoSale);
+            }
             Mod347DTO modelo = new Mod347DTO();
 
             // NestoAPI#500: BuscarPrincipalAsync tolera que haya más de una ficha principal.
@@ -248,7 +272,7 @@ namespace NestoAPI.Controllers
             DateTime fechaDesde = new DateTime(hoy.AddYears(-1).Year, 1, 1);
             DateTime fechaHasta = new DateTime(hoy.Year, 1, 1);
 
-            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
+            List<ExtractoClienteDTO> extracto = await MovimientosModelo347(db.ExtractosCliente, empresa, cliente, fechaDesde, fechaHasta)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
@@ -298,6 +322,14 @@ namespace NestoAPI.Controllers
         [Route("api/ExtractosCliente/Modelo347Pdf")]
         public async Task<HttpResponseMessage> GetModelo347Pdf(string empresa, string cliente, int? anno = null)
         {
+            if (NoSaleModelo347(empresa))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent(MensajeModelo347NoSale),
+                    ReasonPhrase = "Documento no descargable"
+                };
+            }
             int ejercicio = anno ?? DateTime.Today.AddYears(-1).Year;
             DateTime fechaDesde = new DateTime(ejercicio, 1, 1);
             DateTime fechaHasta = new DateTime(ejercicio + 1, 1, 1);
@@ -311,8 +343,7 @@ namespace NestoAPI.Controllers
             }
 
             // Cargar datos del extracto
-            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente
-                .Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
+            List<ExtractoClienteDTO> extracto = await MovimientosModelo347(db.ExtractosCliente, empresa, cliente, fechaDesde, fechaHasta)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,

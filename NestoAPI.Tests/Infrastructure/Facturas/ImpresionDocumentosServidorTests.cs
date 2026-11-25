@@ -423,6 +423,25 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
 
         private static CrearFacturaResponseDTO Factura() => new CrearFacturaResponseDTO { Empresa = "1", NumeroPedido = 929244, NumeroFactura = "NV2617700" };
 
+        // Carlos 25/11/26: «No se puede imprimir en ningún caso» (ReglaDocumentoNoDescargable): ni la empresa espejo (pedido sin
+        // IVA ya traspasado) ni una serie sin descarga van en papel, aunque el pedido lo pida.
+        [DataTestMethod]
+        [DataRow("3", "NV2617700")]
+        [DataRow("1", "GB2600123")]
+        public async Task Detalle_FacturaQueNoSeSirve_NiPdfNiImpresion(string empresa, string numero)
+        {
+            IGestorFacturas gestorFacturas = GestorFacturasConPdf();
+            var factura = new CrearFacturaResponseDTO { Empresa = empresa, NumeroPedido = 929244, NumeroFactura = numero };
+
+            await Detalle(gestorFacturas, new CabPedidoVta { Empresa = empresa, Número = 929244, Ruta = "FW", ComentarioPicking = "Factura física." }, activo: true)
+                .Completar(factura, USUARIO_ARIADNA);
+
+            Assert.IsNull(factura.DatosImpresion);
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, A<bool>._, A<string>._, A<bool>._, A<bool>._)).MustNotHaveHappened();
+            A.CallTo(impresora).MustNotHaveHappened();
+            Assert.IsTrue(factura.Avisos == null || factura.Avisos.Count == 0);
+        }
+
         [DataTestMethod]
         [DataRow(true)]
         [DataRow(false)]
