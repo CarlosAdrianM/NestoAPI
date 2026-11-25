@@ -626,6 +626,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   regalo; caché 10 min por cliente). Motor: `GestorPrecios.ConCampanaDeDistribuidor` tras el descuento propio del producto (primero la marca, sin
   ella ni consulta); validación: `ValidadorDescuentosPermitidos.DescuentoCompuestoDistribuidor` autoriza hasta el compuesto (propio = la mayor
   de las demás filas autorizadas). La tienda no cambia (no viaja nada de esto).
+- **Una fila de campaña autoriza, pero no es un techo (Carlos 25/11/26, caso Israel, cliente 206, Lisap 43165)**: en `ValidadorDescuentosPermitidos`
+  LA REGLA (pura) `ReglaDescuentosQuePrevalecen.Filtrar`: la fila específica del producto prevalece sobre familia/grupo/cliente (es la forma de
+  marcar un techo) SOLO si alguna aplicable por cantidad es PERMANENTE (sin `Campana`); entonces cuentan las del producto (permanentes y de campaña:
+  la campaña sube el techo esos días). Si las únicas del producto son de campaña, cuentan TODAS: la campaña suma permiso y no tapa el 52 % pactado
+  por familia o grupo. Vale también para el precio autorizado; el compuesto de distribuidores no cambia. El motor de precios no se toca.
+  (`ValidadorOfertasYDescuentosPermitidos` tiene la lógica vieja, pero no se usa en ningún sitio.)
 - **Solo en stock (NestoAPI#889, Manuel 23/11/26; aviso NO estricto, como el del contado)**: `CondicionStock` en la petición (y `bool?` en regla y
   excepción) → una fila por producto en `dbo.CampanasCondicionStock` (Campana, Empresa, Producto, FechaDesde, FechaHasta; `Scripts/BlackFriday2026_CampanasCondicionStock.sql`;
   sin ella, ni aviso y el alta con la marca da 503), en la misma transacción; relanzar el alta con la marca sobre una campaña ya creada solo

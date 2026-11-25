@@ -133,12 +133,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             List<DescuentosProducto> todosLosDescuentos = descuentos?.ToList() ?? new List<DescuentosProducto>();
             descuentos = todosLosDescuentos;
 
-            IEnumerable<DescuentosProducto> descuentosEspecificosProducto = descuentos.Where(d => d.Nº_Producto?.Trim() == oferta.producto.Número.Trim());
-            // Si hay un descuento específico para el producto, éste prevale sobre el de la familia o grupo
-            if (descuentosEspecificosProducto != null && descuentosEspecificosProducto.Where(d => d.CantidadMínima <= (oferta.cantidad + oferta.cantidadOferta)).Any())
-            {
-                descuentos = descuentosEspecificosProducto.Where(d => d.CantidadMínima <= (oferta.cantidad + oferta.cantidadOferta));
-            }
+            // Si hay un descuento específico PERMANENTE para el producto, prevalece sobre el de la familia o grupo (es el techo);
+            // las filas de campaña del producto solo suman permiso (Carlos 25/11/26, caso Israel).
+            descuentos = ReglaDescuentosQuePrevalecen.Filtrar(todosLosDescuentos, oferta.producto.Número, oferta.cantidad + oferta.cantidadOferta);
 
             DescuentosProducto descuentoAutorizado = descuentos.FirstOrDefault(d =>
                 d.Descuento >= Math.Round((decimal)oferta.descuentoReal, 3) && (oferta.cantidad + oferta.cantidadOferta) >= d.CantidadMínima
@@ -205,6 +202,34 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
             return Campanas.DescuentoDistribuidorCampana.MaximoAutorizado(aplicables, producto.Número,
                 c => Campanas.CampanasAcumulanDistribuidores.EstaMarcada(c, hoy));
+        }
+    }
+
+    /// <summary>
+    /// LA REGLA (pura) de qué filas de DescuentosProducto cuentan para autorizar el descuento de un producto (Carlos 25/11/26, caso
+    /// Israel, cliente 206, Lisap 43165 con la fila de Black Friday del 25 % tapando el 52 % pactado por familia/grupo).
+    /// - Con alguna fila específica PERMANENTE del producto (Nº_Producto = producto, sin Campana) aplicable por cantidad: solo cuentan
+    ///   las específicas del producto aplicables (las permanentes, que son el techo, y las de campaña, que pueden subirlo esos días).
+    /// - Si las únicas específicas aplicables son de campaña: cuentan TODAS (familia, grupo, cliente y campaña): la campaña autoriza
+    ///   hasta su descuento y no tapa lo que ya estaba autorizado.
+    /// - Sin específicas aplicables: todas, como siempre.
+    /// </summary>
+    public static class ReglaDescuentosQuePrevalecen
+    {
+        public static bool EsDeCampana(DescuentosProducto d) => d != null && !string.IsNullOrWhiteSpace(d.Campana);
+
+        public static IEnumerable<DescuentosProducto> Filtrar(IEnumerable<DescuentosProducto> filas, string producto, int cantidad)
+        {
+            List<DescuentosProducto> todas = (filas ?? Enumerable.Empty<DescuentosProducto>()).Where(d => d != null).ToList();
+            string numero = producto?.Trim();
+            List<DescuentosProducto> especificasAplicables = todas
+                .Where(d => d.Nº_Producto?.Trim() == numero && d.CantidadMínima <= cantidad)
+                .ToList();
+            if (especificasAplicables.Any(d => !EsDeCampana(d)))
+            {
+                return especificasAplicables;
+            }
+            return todas;
         }
     }
 }
