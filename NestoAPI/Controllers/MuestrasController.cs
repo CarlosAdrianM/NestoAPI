@@ -3,6 +3,7 @@ using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -26,9 +27,12 @@ namespace NestoAPI.Controllers
         private readonly IServicioCodigoInternoMuestras codigoInterno;
         private readonly IServicioEtiquetasMuestras etiquetas;
         private readonly IServicioHojaMuestras hoja;
+        private readonly IServicioLecturaObligatoriaMuestras lecturaObligatoria;
 
-        public MuestrasController(IServicioCodigoInternoMuestras codigoInterno, IServicioEtiquetasMuestras etiquetas, IServicioHojaMuestras hoja)
+        public MuestrasController(IServicioCodigoInternoMuestras codigoInterno, IServicioEtiquetasMuestras etiquetas, IServicioHojaMuestras hoja,
+            IServicioLecturaObligatoriaMuestras lecturaObligatoria = null)
         {
+            this.lecturaObligatoria = lecturaObligatoria;
             this.codigoInterno = codigoInterno;
             this.etiquetas = etiquetas;
             this.hoja = hoja;
@@ -138,6 +142,59 @@ namespace NestoAPI.Controllers
                 FileName = NombreFichero(datos)
             };
             return ResponseMessage(respuesta);
+        }
+
+        // GET api/Almacen/Muestras/LecturaObligatoria?empresa=1
+        /// <summary>
+        /// Carlos 25/11/26: el interruptor de la lectura obligatoria de la etiqueta de las muestras en el picking, por almacén (ALG, REI,
+        /// ALC), con cuántas muestras con stock allí tienen código (se leerán) y cuántas no (se seguirán tecleando). Almacén, Dirección
+        /// e Informática; el resto, 403.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Almacen/Muestras/LecturaObligatoria")]
+        [ResponseType(typeof(List<EstadoLecturaObligatoriaMuestrasDTO>))]
+        public async Task<IHttpActionResult> GetLecturaObligatoria(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (!ReglaLecturaObligatoriaMuestras.PuedeGestionar(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new HttpError(ReglaLecturaObligatoriaMuestras.MENSAJE_SIN_PERMISO));
+            }
+            if (lecturaObligatoria == null)
+            {
+                return NotFound();
+            }
+            return Ok(await lecturaObligatoria.Leer(Empresa(empresa)).ConfigureAwait(false));
+        }
+
+        // PUT api/Almacen/Muestras/LecturaObligatoria?empresa=1   { "Almacen": "ALG", "Encendido": true }
+        /// <summary>
+        /// Carlos 25/11/26: enciende o apaga la lectura obligatoria en un almacén (ParametrosUsuario «(defecto)»
+        /// Muestras.PickingLecturaObligatoria.{almacén} = «1» o «0»), con rastro en Modificaciones; vale en el acto (se invalida la
+        /// caché). Al encender, <c>Aviso</c> dice cuántas muestras con stock siguen sin código. Si ya estaba así, no escribe nada.
+        /// 400 almacén que no vale; 403 sin permiso.
+        /// </summary>
+        [HttpPut]
+        [Route("api/Almacen/Muestras/LecturaObligatoria")]
+        [ResponseType(typeof(ResultadoCambioLecturaObligatoriaMuestrasDTO))]
+        public async Task<IHttpActionResult> PutLecturaObligatoria([FromBody] CambioLecturaObligatoriaMuestrasDTO cambio,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (!ReglaLecturaObligatoriaMuestras.PuedeGestionar(User))
+            {
+                return Content(HttpStatusCode.Forbidden, new HttpError(ReglaLecturaObligatoriaMuestras.MENSAJE_SIN_PERMISO));
+            }
+            if (lecturaObligatoria == null)
+            {
+                return NotFound();
+            }
+            try
+            {
+                return Ok(await lecturaObligatoria.Cambiar(Empresa(empresa), cambio, Usuario()).ConfigureAwait(false));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         /// <summary>«Muestras Lisap REI.pdf», sin caracteres que no valen en un nombre de fichero.</summary>

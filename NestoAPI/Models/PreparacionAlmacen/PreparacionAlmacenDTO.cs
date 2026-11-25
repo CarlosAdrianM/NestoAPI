@@ -103,6 +103,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// unidad: la app pide SIEMPRE la cantidad. Ver <see cref="Infraestructure.PreparacionAlmacen.MuestrasSinCodigo.PideCantidad"/>.
         /// </summary>
         public bool PideCantidad { get; set; }
+        /// <summary>
+        /// Carlos 25/11/26: en el recorrido de recogida (PICK y REPO) de un almacén con ParametrosUsuario «(defecto)»
+        /// Muestras.PickingLecturaObligatoria.{almacén} = «1», esta muestra tiene código (el interno de su etiqueta del hueco o el
+        /// cajón, o el del fabricante) y hay que LEERLO: teclear no comprueba. Si la etiqueta no está o no se lee, POST
+        /// api/Almacen/Recogidas/{tipo}/{n}/MuestraSinEtiqueta y se cuenta a mano. False con el interruptor apagado (como hoy).
+        /// Ver <see cref="Infraestructure.PreparacionAlmacen.ReglaLecturaObligatoriaMuestras"/>.
+        /// </summary>
+        public bool LecturaObligatoria { get; set; }
         /// <summary>Otro producto de este mismo picking comparte el código: hay que elegir a mano.</summary>
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }

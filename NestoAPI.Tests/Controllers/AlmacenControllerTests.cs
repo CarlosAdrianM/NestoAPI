@@ -506,6 +506,66 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(fichas).MustNotHaveHappened();
         }
 
+        private RecogidaAlmacenDTO RecogidaConMuestraDelInterno(out LineaRecogidaDTO muestra)
+        {
+            string interno = NestoAPI.Infraestructure.Productos.CodigoBarrasInterno.DeReferencia("45929");
+            muestra = new LineaRecogidaDTO
+            {
+                Producto = "45929", SubGrupoProducto = "MMP", SinCodigo = true, SinCodigoAdmitido = true, PideCantidad = true,
+                CodigosBarras = new List<string> { interno }, Pasillo = "010", Fila = "002", Columna = "003"
+            };
+            var recogida = new RecogidaAlmacenDTO { Tipo = "PICK", Numero = 99739, Almacen = "ALG", Lineas = new List<LineaRecogidaDTO> { muestra } };
+            A.CallTo(() => servicio.LeerRecogida("1", "PICK", 99739)).Returns(recogida);
+            return recogida;
+        }
+
+        [TestMethod]
+        public async Task GetRecogida_LecturaObligatoriaDeMuestras_Encendida_HayQueLeerLaEtiqueta()
+        {
+            // Carlos 25/11/26
+            _ = RecogidaConMuestraDelInterno(out LineaRecogidaDTO muestra);
+            IInterruptorLecturaMuestras interruptor = A.Fake<IInterruptorLecturaMuestras>();
+            A.CallTo(() => interruptor.Encendido("ALG", false)).Returns(true);
+            var conInterruptor = new AlmacenController(servicio, ubicaciones, compras, reposiciones, A.Fake<IFichasProductoAlmacen>(), lecturaMuestras: interruptor)
+            {
+                User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
+                Request = new HttpRequestMessage()
+            };
+
+            _ = await conInterruptor.GetRecogida("PICK", 99739);
+
+            Assert.IsTrue(muestra.LecturaObligatoria);
+            Assert.IsFalse(muestra.SinCodigoAdmitido);
+            Assert.IsFalse(muestra.SinCodigo);
+            Assert.AreEqual(muestra.CodigosBarras[0], muestra.CodigoBarras);
+            Assert.IsTrue(muestra.PideCantidad);
+        }
+
+        [TestMethod]
+        public async Task GetRecogida_LecturaObligatoriaDeMuestras_ApagadaOLigero_ComoHoy()
+        {
+            IInterruptorLecturaMuestras apagado = A.Fake<IInterruptorLecturaMuestras>();
+            A.CallTo(() => apagado.Encendido(A<string>._, A<bool>._)).Returns(false);
+            IInterruptorLecturaMuestras encendido = A.Fake<IInterruptorLecturaMuestras>();
+            A.CallTo(() => encendido.Encendido(A<string>._, A<bool>._)).Returns(true);
+
+            foreach ((IInterruptorLecturaMuestras interruptor, bool ligero) in new[] { (apagado, false), (encendido, true) })
+            {
+                _ = RecogidaConMuestraDelInterno(out LineaRecogidaDTO muestra);
+                var c = new AlmacenController(servicio, ubicaciones, compras, reposiciones, A.Fake<IFichasProductoAlmacen>(), lecturaMuestras: interruptor)
+                {
+                    User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
+                    Request = new HttpRequestMessage()
+                };
+
+                _ = await c.GetRecogida("PICK", 99739, ligero: ligero);
+
+                Assert.IsFalse(muestra.LecturaObligatoria);
+                Assert.IsTrue(muestra.SinCodigoAdmitido);
+                Assert.IsNull(muestra.CodigoBarras);
+            }
+        }
+
         [TestMethod]
         public async Task GetRecogida_MarcaComoPropioLoLeidoPorElMismoUsuario()
         {

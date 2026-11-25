@@ -642,6 +642,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\LenguajeEtiquetas.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasHuecoDTO.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasProductoAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\LecturaObligatoriaMuestras.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SinEtiquetaRecepcion.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasProductoDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\MuestrasContenedorDTO.cs" />

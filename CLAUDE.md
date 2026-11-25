@@ -312,6 +312,19 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   NO es una unidad, la app pide la cantidad. Va en `ProductoPorCodigoBarrasDTO` (PorCodigoBarras y los 409 de candidatos), `Inventario`
   (GET/POST/PUT, `Inventario.Partial.cs`), líneas de recorrido/picking y salida de reposición, packing, Ubicar, Recibir COMP/REPO, Enviar
   reposición y reposición puntual. No en Productos/Buscar ni en la Ficha de Ariadna. Gemelas: Nesto#650, Ariadna#108.
+- **Picking: leer la etiqueta de la muestra, obligatorio por almacén (Carlos 25/11/26)**: interruptor por DATO ParametrosUsuario empresa 1 «(defecto)»
+  `Muestras.PickingLecturaObligatoria.{ALG|REI|ALC}` (SOLO «1» = encendido; sin fila, apagado y todo como hoy; nace apagado; `InterruptorLecturaMuestras`,
+  singleton, caché 2 min, nunca lanza). Solo en el RECORRIDO de recogida (`GET api/Almacen/Recogidas/{PICK|REPO}/{n}` sin `ligero`, y `GET Picking/{n}`),
+  después de completar los códigos: LA REGLA (pura) `ReglaLecturaObligatoriaMuestras.Aplicar` (`LecturaObligatoriaMuestras.cs`): muestra con algún GTIN
+  válido activo (ficha o tabla, el interno incluido) → `LecturaObligatoria` = true (aditivo), `SinCodigoAdmitido` = false y, sin código en la ficha,
+  `CodigoBarras` = su primer código y `SinCodigo` = false; `PideCantidad` sigue. Sin ningún código, como hoy. Packing, Ubicar, Recibir, Enviar reposición
+  de tienda (`api/Reposiciones/...`, otro flujo) e inventario: sin cambios. Escape: `POST api/Almacen/Recogidas/{tipo}/{n}/MuestraSinEtiqueta`
+  {Producto, Pasillo, Fila, Columna, Motivo NoLleva|NoSeLee|Otro, Comentario} (no cuenta: la unidad la cuenta la app a mano tras el 200; 400 si no es muestra
+  o el almacén no lo exige): campana de Nesto `MuestraSinEtiquetaEnHueco` {producto, hueco, almacen, usuario} a Almacén (y la gente de la tienda si es
+  REI/ALC), NUNCA a Compras, una por almacén + producto + hueco y día (en memoria). `GET/PUT api/Almacen/Muestras/LecturaObligatoria` (Almacén, Dirección,
+  Informática): [{Almacen, Encendido, MuestrasConCodigo, MuestrasSinCodigo}] (con stock allí); PUT {Almacen, Encendido} con rastro en Modificaciones
+  (Tabla ParametrosUsuario), invalida la caché y, al encender, `Aviso` con las que siguen sin código. Ariadna necesita usar `LecturaObligatoria`
+  (hoy en el recorrido se puede teclear la referencia de cualquier producto con código) y el endpoint de escape.
 
 ### App de clientes (TNV): lector y refresco del token (registros de IIS 25/11/26)
 - Lector: `GetProducto(codigoBarras)` (solo ese; `BuscarPorCodigoBarras` y los flujos de almacén siguen preguntando siempre) descarta las

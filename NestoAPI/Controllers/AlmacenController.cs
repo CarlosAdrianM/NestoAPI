@@ -49,6 +49,10 @@ namespace NestoAPI.Controllers
         private readonly IServicioNoEstaSalida noEsta;
         /// <summary>NestoAPI#642: el mantenimiento de las calles del recorrido (Nesto#528). Null: no está configurado.</summary>
         private readonly IServicioRecorridoAlmacen recorrido;
+        /// <summary>Carlos 25/11/26: la lectura obligatoria de las muestras en el picking, por almacén. Null: como hoy (se teclean).</summary>
+        private readonly IInterruptorLecturaMuestras lecturaMuestras;
+        /// <summary>Carlos 25/11/26: la etiqueta de la muestra no está en el hueco o no se lee. Null: el endpoint da 404.</summary>
+        private readonly IServicioMuestraSinEtiquetaSalida muestraSinEtiqueta;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
@@ -61,8 +65,12 @@ namespace NestoAPI.Controllers
             IServicioCambioHuecoReposicion cambioHuecoReposicion = null,
             IServicioFichaProductoAlmacen fichaProducto = null,
             IServicioNoEstaSalida noEsta = null,
-            IServicioRecorridoAlmacen recorrido = null)
+            IServicioRecorridoAlmacen recorrido = null,
+            IInterruptorLecturaMuestras lecturaMuestras = null,
+            IServicioMuestraSinEtiquetaSalida muestraSinEtiqueta = null)
         {
+            this.lecturaMuestras = lecturaMuestras;
+            this.muestraSinEtiqueta = muestraSinEtiqueta;
             this.recorrido = recorrido;
             this.noEsta = noEsta;
             this.fichaProducto = fichaProducto;
@@ -107,6 +115,7 @@ namespace NestoAPI.Controllers
             await Task.WhenAll(
                 CompletarCodigos(Empresa(empresa), resultado?.Lineas),
                 CompletarMismoHueco(Empresa(empresa), resultado?.Almacen, resultado?.Lineas)).ConfigureAwait(false);
+            await AplicarLecturaObligatoriaMuestras(resultado?.Almacen, resultado?.Lineas).ConfigureAwait(false);
             return resultado.Lineas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
@@ -178,8 +187,23 @@ namespace NestoAPI.Controllers
                 await Task.WhenAll(
                     CompletarFichas(Empresa(empresa), recogida.Lineas),
                     CompletarMismoHueco(Empresa(empresa), recogida.Almacen, recogida.Lineas)).ConfigureAwait(false);
+                // Carlos 25/11/26: con los códigos ya completos (en el ligero no van: la app solo funde lo resuelto)
+                await AplicarLecturaObligatoriaMuestras(recogida.Almacen, recogida.Lineas).ConfigureAwait(false);
             }
             return Ok(recogida);
+        }
+
+        /// <summary>
+        /// Carlos 25/11/26: con ParametrosUsuario «(defecto)» Muestras.PickingLecturaObligatoria.{almacén} = «1», las muestras con
+        /// código del recorrido se tienen que leer (<see cref="ReglaLecturaObligatoriaMuestras.Aplicar"/>). Apagado, no se toca nada.
+        /// </summary>
+        private async Task AplicarLecturaObligatoriaMuestras(string almacen, IEnumerable<LineaPickingAlmacenDTO> lineas)
+        {
+            if (lecturaMuestras == null || lineas == null || string.IsNullOrWhiteSpace(almacen))
+            {
+                return;
+            }
+            _ = ReglaLecturaObligatoriaMuestras.Aplicar(lineas, await lecturaMuestras.Encendido(almacen).ConfigureAwait(false));
         }
 
         /// <summary>NestoAPI#640: lo que ha leído el mismo usuario que pregunta (con el mismo nombre que se guarda en los escaneos).</summary>
@@ -366,6 +390,36 @@ namespace NestoAPI.Controllers
                     return NotFound();
                 default:
                     return BadRequest(resultado.Mensaje);
+            }
+        }
+
+        // POST api/Almacen/Recogidas/PICK/100070/MuestraSinEtiqueta?empresa=1   { "Producto": "45929", "Pasillo": "010", "Fila": "002", "Columna": "003", "Motivo": "NoSeLee" }
+        /// <summary>
+        /// Carlos 25/11/26: la vía de escape de la lectura obligatoria de las muestras (<see cref="LineaPickingAlmacenDTO.LecturaObligatoria"/>):
+        /// la etiqueta de la muestra no está en su hueco (o cajón) o no se lee. Motivo NoLleva, NoSeLee u Otro (con Comentario). No
+        /// cuenta nada: la unidad la cuenta la app a mano, como siempre, tras el 200. No avisa a Compras; avisa a Almacén (campana de
+        /// Nesto, tipo MuestraSinEtiquetaEnHueco) una vez por producto + hueco y día. 400 si la petición no vale, el producto no es una
+        /// muestra de la recogida o su almacén no exige leer; 404 si no existe la recogida (o el servidor no lo tiene).
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{tipo}/{numero:int}/MuestraSinEtiqueta")]
+        [ResponseType(typeof(ResultadoMuestraSinEtiquetaSalidaDTO))]
+        public async Task<IHttpActionResult> PostMuestraSinEtiqueta(string tipo, int numero, [FromBody] MuestraSinEtiquetaSalidaDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (muestraSinEtiqueta == null)
+            {
+                return NotFound();
+            }
+            try
+            {
+                ResultadoMuestraSinEtiquetaSalidaDTO resultado = await muestraSinEtiqueta
+                    .Apuntar(Empresa(empresa), tipo, numero, peticion, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false);
+                return resultado == null ? (IHttpActionResult)NotFound() : Ok(resultado);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
             }
         }
 

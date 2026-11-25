@@ -368,6 +368,18 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioHojaMuestras>(sp => new Infraestructure.PreparacionAlmacen.ServicioHojaMuestras(
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioMuestras>(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen>()));
+            // Carlos 25/11/26: leer la etiqueta de la muestra es obligatorio en el picking con ParametrosUsuario «(defecto)»
+            // Muestras.PickingLecturaObligatoria.{ALG|REI|ALC} = «1» (nace apagado); singletons por la caché y la memoria de avisos
+            _ = services.AddSingleton<Infraestructure.PreparacionAlmacen.IInterruptorLecturaMuestras>(_ => new Infraestructure.PreparacionAlmacen.InterruptorLecturaMuestras());
+            _ = services.AddSingleton<Infraestructure.PreparacionAlmacen.MemoriaAvisosMuestraSinEtiqueta>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioLecturaObligatoriaMuestras, Infraestructure.PreparacionAlmacen.ServicioLecturaObligatoriaMuestras>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorMuestraSinEtiqueta>(sp => new Infraestructure.PreparacionAlmacen.AvisadorMuestraSinEtiqueta(
+                sp.GetRequiredService<IServicioNotificacionesPush>()));
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioMuestraSinEtiquetaSalida>(sp => new Infraestructure.PreparacionAlmacen.ServicioMuestraSinEtiquetaSalida(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IServicioPreparacionAlmacen>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IInterruptorLecturaMuestras>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorMuestraSinEtiqueta>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.MemoriaAvisosMuestraSinEtiqueta>()));
 
             // NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing (DesdePedido + Tramitar + ImprimirEtiqueta
             // y, si el usuario lo tiene, facturar), con los mismos endpoints que Agencias de Nesto

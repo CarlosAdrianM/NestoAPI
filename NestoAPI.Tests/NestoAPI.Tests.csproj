@@ -684,6 +684,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\MuestrasContenedorTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ReglaImpresoraEtiquetasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\PedidosQueVanSolosTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\LecturaObligatoriaMuestrasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SinEtiquetaRecepcionTests.cs" />
     <Compile Include="Controllers\EtiquetasProductoControllerTests.cs" />
     <Compile Include="Controllers\MuestrasControllerTests.cs" />
