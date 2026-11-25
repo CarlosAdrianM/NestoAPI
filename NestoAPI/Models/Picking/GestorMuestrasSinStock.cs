@@ -99,13 +99,14 @@ namespace NestoAPI.Models.Picking
             Dictionary<LineaPedidoPicking, int> cantidadesAntes = muestras.ToDictionary(l => l, l => l.Cantidad);
             foreach (LineaPedidoPicking muestra in muestras)
             {
-                if (muestra.CantidadReservada <= 0)
+                int quedan = UnidadesQueSalen(muestra.Cantidad, muestra.CantidadReservada);
+                if (quedan <= 0)
                 {
                     _ = pedido.Lineas.Remove(muestra);
                 }
                 else
                 {
-                    muestra.Cantidad = muestra.CantidadReservada;
+                    muestra.Cantidad = quedan;
                 }
             }
 
@@ -136,12 +137,18 @@ namespace NestoAPI.Models.Picking
             {
                 IdLinea = m.Id,
                 Producto = m.Producto?.Trim(),
-                UnidadesQuitadas = cantidadesAntes[m] - Math.Max(m.CantidadReservada, 0),
-                UnidadesQueSalen = Math.Max(m.CantidadReservada, 0)
+                UnidadesQuitadas = cantidadesAntes[m] - UnidadesQueSalen(cantidadesAntes[m], m.CantidadReservada),
+                UnidadesQueSalen = UnidadesQueSalen(cantidadesAntes[m], m.CantidadReservada)
             }).ToList();
             pedido.MuestrasQuitadas.AddRange(quitadas);
             return quitadas;
         }
+
+        /// <summary>
+        /// LA REGLA del reparto de una muestra sin todo su stock (picking y, desde la incidencia 1460, el guardado de un pedido de
+        /// tienda): sale lo que hay, nunca más de lo pedido; 0 = la línea se quita entera.
+        /// </summary>
+        internal static int UnidadesQueSalen(int pedidas, int disponibles) => Math.Max(Math.Min(pedidas, disponibles), 0);
 
         /// <summary>
         /// Pedido normal (no nota de entrega, no retirado), con alguna muestra sin todo su stock y con algo MÁS que muestras

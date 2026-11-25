@@ -1648,6 +1648,17 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   desde Algete (ALG)» y, con el modo corregido (llega por `ValidarServirJuntoRequest.ModoCorregidoPorTienda`, JsonIgnore, POST y PUT), «El pedido es
   de Alcobendas y allí solo puede salir «Según vaya entrando». No hay stock en Alcobendas de …: bórrelas del pedido (…) o páselo desde Algete (ALG).»
   En Algete, el texto de siempre. Reglas, `ProductosProblematicos` y `ValidarServirJunto` de pantalla (solo cambia su texto en tienda), igual.
+- **Al GUARDAR, las muestras sin stock de un pedido de tienda se quitan solas (OK de Carlos 25/11/26)**: si la denegación es de `ValidadorMaterialPromocional`
+  (`ValidarServirJuntoResponse.DenegadoPorMuestras` y `ProductoSinStockDTO.Disponibles`, JsonIgnore) en REI/ALC, con el interruptor `GestorMuestrasSinStock.CLAVE`
+  y sin ser presupuesto ni nota, `PedidosVentaController.ValidarServirJuntoQuitandoMuestrasDeTiendaAsync` (POST y PUT, en el sitio de la validación de
+  siempre: ANTES de portes, precios y líneas) aplica LA REGLA (pura) `ReglaMuestrasSinStockTienda` (`Infraestructure/PedidosVenta/MuestrasSinStockTienda.cs`)
+  con la del picking (`GestorMuestrasSinStock.UnidadesQueSalen`: sin stock, fuera; parcial, lo que hay; el disponible lo gastan primero las intocables y luego
+  por orden) y vuelve a validar (un regalo sin stock sigue dando su 400). En el PUT solo se tocan líneas nuevas o pendientes sin picking, y si el pedido ya
+  tiene picking, solo las nuevas (`SePuedeQuitarMuestraAlModificar`); si lo que falla está en curso, el 400 de hoy. Solo muestras: el 400 de hoy + «Como el pedido
+  no lleva nada más que muestras, no se quitan solas: se quedaría vacío.». Aviso `MuestrasSinStockQuitadas` en `AvisosGrabacion` (POST) / `Avisos` (PUT) y en el
+  correo («En Alcobendas no hay stock de estas muestras y se han quitado del pedido: 39918 BOLSA…. De 42654 … solo hay 1 de 3; se ha dejado en lo que hay. Si las
+  necesita, pase el pedido desde Algete (ALG).»); rastro en Modificaciones (Tabla LinPedidoVta, como el picking, usuario = quien guarda, Operacion «Pedido de
+  tienda: muestra sin stock quitada al guardar») en el mismo guardado + ELMAH. `ValidarServirJunto` de pantalla, sin cambios (Nesto sigue preguntando).
 
 ### Modo de servicio 6, «Junto con lo pendiente del cliente» (sugerencia 1340, 18/11/26; Nesto gemelo)
 - `ModosServicio.JUNTO_CON_LO_PENDIENTE` = 6: un «todo junto» (ServirJunto = 1, `EsTodoJunto`/`EsEntregaUnica` true, facturación como el 1) que

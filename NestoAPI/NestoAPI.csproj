@@ -1260,6 +1260,7 @@
     <Compile Include="Infraestructure\PedidosVenta\MensajeModelStatePedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PorcentajesIvaLinea.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RecogeEnTienda.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\MuestrasSinStockTienda.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TransicionPresupuesto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AvisoFechaEntregaLejana.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorFechaEntrega.cs" />

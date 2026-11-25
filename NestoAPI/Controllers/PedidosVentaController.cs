@@ -1950,7 +1950,11 @@ namespace NestoAPI.Controllers
             }
             // NestoAPI#518: solo si el modo CAMBIA; un pedido que no toca el modo no se bloquea por el stock.
             ComprobarModoServicioAlModificar(pedido, modoEfectivoAnterior);
-            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido, cabPedidoVta).ConfigureAwait(false);
+            // Incidencia 1460: en un pedido de tienda las muestras sin stock se quitan solas (con aviso) en vez del 400, si queda algo más.
+            // Solo líneas nuevas o pendientes sin picking (y sin picking en el pedido); lo que ya está en curso no se toca.
+            var muestrasQuitadasTienda = new List<Infraestructure.PedidosVenta.MuestraQuitadaTienda>();
+            var fallaServirJunto = await ValidarServirJuntoQuitandoMuestrasDeTiendaAsync(pedido, cabPedidoVta,
+                l => SePuedeQuitarMuestraAlModificar(l, cabPedidoVta.LinPedidoVtas), muestrasQuitadasTienda).ConfigureAwait(false);
             if (fallaServirJunto != null)
             {
                 return BadRequest(fallaServirJunto.Mensaje);
@@ -2816,6 +2820,8 @@ namespace NestoAPI.Controllers
             // Pedido 931479 (25/11/26): UNA verdad para el IVA de las líneas, la cabecera tal como se guarda. Sin IVA, ninguna línea
             // viva (-1..1) se queda con IVA, venga de donde venga (líneas de antes, nuevas, partidas, portes…).
             AplicarIvaCabeceraAlGuardar(cabPedidoVta.IVA, lineasVivasTrasElPut.ToList(), pedido.empresa, pedido.numero, "PUT", pedido.Usuario);
+            // Incidencia 1460: el rastro de las muestras quitadas, en el mismo guardado que el pedido
+            AnotarMuestrasQuitadasTienda(muestrasQuitadasTienda, pedido.empresa, pedido.numero, pedido.Usuario);
 
             // NestoAPI#722: la fecha nueva en la agencia (la misma lógica que POST api/EnviosAgencias/{id}/FechaEntrega), lo último
             // antes de guardar: si la agencia la rechaza o no responde, el pedido no se guarda.
@@ -3030,6 +3036,14 @@ namespace NestoAPI.Controllers
             {
                 avisos.Add(avisoSoloEnStock);
                 avisosCorreoModificacion.Add(avisoSoloEnStock.Mensaje);
+            }
+            // Incidencia 1460: las muestras sin stock que se han quitado de un pedido de tienda (respuesta y correo)
+            AvisoPedidoDTO avisoMuestrasQuitadas = Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.Aviso(
+                muestrasQuitadasTienda.FirstOrDefault()?.Linea?.almacen, muestrasQuitadasTienda);
+            if (avisoMuestrasQuitadas != null)
+            {
+                avisos.Add(avisoMuestrasQuitadas);
+                avisosCorreoModificacion.Add(avisoMuestrasQuitadas.Mensaje);
             }
 
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
@@ -3409,7 +3423,10 @@ namespace NestoAPI.Controllers
             // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
             // línea MMP o bonificado Ganavisiones se quedaría pendiente. Cierra el
             // agujero de orden de operaciones sin depender del cliente.
-            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido).ConfigureAwait(false);
+            // Incidencia 1460: en un pedido de tienda las muestras sin stock se quitan solas (con aviso) en vez del 400, si queda algo más.
+            // ANTES de los portes, la validación de precios y la creación de las líneas, que ven el pedido ya sin ellas.
+            var muestrasQuitadasTienda = new List<Infraestructure.PedidosVenta.MuestraQuitadaTienda>();
+            var fallaServirJunto = await ValidarServirJuntoQuitandoMuestrasDeTiendaAsync(pedido, null, _ => true, muestrasQuitadasTienda).ConfigureAwait(false);
             if (fallaServirJunto != null)
             {
                 return BadRequest(fallaServirJunto.Mensaje);
@@ -3825,6 +3842,8 @@ namespace NestoAPI.Controllers
 
             // Pedido 931479 (25/11/26): UNA verdad para el IVA de las líneas, la cabecera tal como se guarda (sin IVA, todo a 0).
             AplicarIvaCabeceraAlGuardar(cabecera.IVA, lineasPedidoInsertar, pedido.empresa, pedido.numero, "POST", pedido.Usuario);
+            // Incidencia 1460: el rastro de las muestras quitadas, con el número ya puesto y en el mismo guardado que el pedido
+            AnotarMuestrasQuitadasTienda(muestrasQuitadasTienda, pedido.empresa, pedido.numero, pedido.Usuario);
 
             try
             {
@@ -3910,6 +3929,13 @@ namespace NestoAPI.Controllers
             {
                 gestor.Avisos.Add(avisoSoloEnStock.Mensaje);
             }
+            // Incidencia 1460: las muestras sin stock que se han quitado de un pedido de tienda (correo y respuesta)
+            AvisoPedidoDTO avisoMuestrasQuitadas = Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.Aviso(
+                muestrasQuitadasTienda.FirstOrDefault()?.Linea?.almacen, muestrasQuitadasTienda);
+            if (avisoMuestrasQuitadas != null)
+            {
+                gestor.Avisos.Add(avisoMuestrasQuitadas.Mensaje);
+            }
             await gestor.EnviarCorreo();
 
             // NestoAPI#327: al meter un pedido de un cliente sin validar, se valida su NIF
@@ -3989,6 +4015,11 @@ namespace NestoAPI.Controllers
             {
                 pedido.AvisosGrabacion = pedido.AvisosGrabacion ?? new List<AvisoPedidoDTO>();
                 pedido.AvisosGrabacion.Add(avisoSoloEnStock);
+            }
+            if (avisoMuestrasQuitadas != null)
+            {
+                pedido.AvisosGrabacion = pedido.AvisosGrabacion ?? new List<AvisoPedidoDTO>();
+                pedido.AvisosGrabacion.Add(avisoMuestrasQuitadas);
             }
 
             // NestoAPI#808: cheque regalo disponible que el pedido podría usar y no lleva (no bloquea; nunca lanza)
@@ -5289,6 +5320,111 @@ namespace NestoAPI.Controllers
 
             var resultado = await servicioValidarServirJunto.Validar(request).ConfigureAwait(false);
             return resultado.PuedeDesmarcar ? null : resultado;
+        }
+
+        /// <summary>
+        /// Incidencia 1460 (Sancho; OK de Carlos 25/11/26): la validación de «Servir junto» del guardado y, si la deniega
+        /// <c>ValidadorMaterialPromocional</c> en un pedido de TIENDA (interruptor <see cref="GestorMuestrasSinStock.CLAVE"/> encendido, ni
+        /// presupuesto ni nota), quita del DTO lo que no hay (<see cref="Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda"/>, la regla del
+        /// picking) y vuelve a validar (los regalos sin stock siguen frenando como siempre). Lo quitado va a <paramref name="quitadas"/> para el
+        /// aviso y el rastro. Devuelve lo mismo que <see cref="ValidarServirJuntoDesdePedidoAsync"/>: null si se puede guardar.
+        /// </summary>
+        internal async Task<ValidarServirJuntoResponse> ValidarServirJuntoQuitandoMuestrasDeTiendaAsync(PedidoVentaDTO pedido, CabPedidoVta pedidoGuardado,
+            Func<LineaPedidoVentaDTO, bool> sePuedeTocar, List<Infraestructure.PedidosVenta.MuestraQuitadaTienda> quitadas)
+        {
+            ValidarServirJuntoResponse falla = await ValidarServirJuntoDesdePedidoAsync(pedido, pedidoGuardado).ConfigureAwait(false);
+            if (falla == null || !falla.DenegadoPorMuestras)
+            {
+                return falla;
+            }
+            // El almacén que ha validado: el de la primera línea que cuenta (como ValidarServirJuntoDesdePedidoAsync)
+            string almacen = pedido.Lineas.Where(Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.LineaCuenta)
+                .Select(l => l.almacen?.Trim()).FirstOrDefault();
+            if (!Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.SeAplica(pedido, almacen, GestorMuestrasSinStock.Activo))
+            {
+                return falla;
+            }
+            HashSet<string> muestras = await ProductosMuestraDelPedido(pedido).ConfigureAwait(false);
+            Infraestructure.PedidosVenta.ResultadoMuestrasSinStockTienda resultado = Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda
+                .Decidir(pedido.Lineas, falla.ProductosProblematicos, muestras, sePuedeTocar);
+            if (resultado.Motivo != null)
+            {
+                if (resultado.SoloMuestras)
+                {
+                    falla.Mensaje = $"{falla.Mensaje} {resultado.Motivo}";
+                }
+                return falla;
+            }
+            Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.Aplicar(pedido, resultado);
+            ValidarServirJuntoResponse otra = await ValidarServirJuntoDesdePedidoAsync(pedido, pedidoGuardado).ConfigureAwait(false);
+            if (otra != null)
+            {
+                return otra; // p. ej. un regalo sin stock: el 400 de siempre (no se guarda nada, el DTO da igual)
+            }
+            quitadas?.AddRange(resultado.Quitadas);
+            return null;
+        }
+
+        /// <summary>Incidencia 1460: en el PUT solo se quita o reduce una muestra nueva o pendiente sin picking, en un pedido sin picking.</summary>
+        internal static bool SePuedeQuitarMuestraAlModificar(LineaPedidoVentaDTO linea, IEnumerable<LinPedidoVta> lineasGuardadas)
+        {
+            if (linea == null)
+            {
+                return false;
+            }
+            List<LinPedidoVta> guardadas = (lineasGuardadas ?? Enumerable.Empty<LinPedidoVta>()).ToList();
+            if (guardadas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking ?? 0) > 0))
+            {
+                return linea.id == 0; // con picking en el pedido, solo lo que se está añadiendo ahora
+            }
+            if (linea.id == 0)
+            {
+                return true;
+            }
+            LinPedidoVta guardada = guardadas.FirstOrDefault(l => l.Nº_Orden == linea.id);
+            return guardada != null && guardada.Estado == Constantes.EstadosLineaVenta.PENDIENTE && (guardada.Picking ?? 0) == 0
+                && linea.estado == Constantes.EstadosLineaVenta.PENDIENTE && linea.picking == 0;
+        }
+
+        /// <summary>Incidencia 1460: los productos MMP del pedido (una consulta), para saber si queda algo más que muestras.</summary>
+        private async Task<HashSet<string>> ProductosMuestraDelPedido(PedidoVentaDTO pedido)
+        {
+            List<string> ids = pedido.Lineas.Where(Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.LineaCuenta)
+                .Select(l => l.Producto.Trim()).Distinct().ToList();
+            List<string> mmp = await db.Productos
+                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && ids.Contains(p.Número) && p.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS)
+                .Select(p => p.Número)
+                .ToListAsync().ConfigureAwait(false);
+            return new HashSet<string>(mmp.Select(n => n.Trim()));
+        }
+
+        /// <summary>
+        /// Incidencia 1460: el rastro de las muestras quitadas al guardar un pedido de tienda (Modificaciones, como el picking; se guarda con
+        /// el pedido) y una línea en ELMAH. Nunca lanza.
+        /// </summary>
+        private void AnotarMuestrasQuitadasTienda(List<Infraestructure.PedidosVenta.MuestraQuitadaTienda> quitadas, string empresa, int numero, string usuario)
+        {
+            if (quitadas == null || !quitadas.Any())
+            {
+                return;
+            }
+            try
+            {
+                string almacen = quitadas[0].Linea?.almacen?.Trim();
+                DateTime ahora = DateTime.Now;
+                foreach (Infraestructure.PedidosVenta.MuestraQuitadaTienda quitada in quitadas)
+                {
+                    _ = db.Modificaciones.Add(Infraestructure.PedidosVenta.ReglaMuestrasSinStockTienda.Modificacion(empresa, numero, almacen, usuario, quitada, ahora));
+                }
+                ElmahHelper.Log(new Exception(
+                    $"[Pedido de tienda: muestras sin stock quitadas] Pedido {empresa?.Trim()}/{numero} ({almacen}, usuario {usuario?.Trim()}): " +
+                    string.Join(", ", quitadas.Select(q => $"{q.Producto} {q.Quedan} de {q.Pedidas}")) +
+                    $" (incidencia 1460, interruptor {GestorMuestrasSinStock.CLAVE})."), usuario);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Pedido de tienda: muestras sin stock quitadas] No se pudo dejar el rastro del pedido {numero}: {ex.Message}", ex));
+            }
         }
 
         /// <summary>

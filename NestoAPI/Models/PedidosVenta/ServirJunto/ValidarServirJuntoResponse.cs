@@ -17,5 +17,10 @@ namespace NestoAPI.Models.PedidosVenta.ServirJunto
         // (excluidas las líneas sobre pedido). El cliente la compara con el umbral cacheado para avisar
         // si aparecen gastos de envío. Null si el request no trae LineasParaPortes.
         public decimal? BaseImponibleSinServirJunto { get; set; }
+
+        // Incidencia 1460 (25/11/26): la denegación es de ValidadorMaterialPromocional (muestras sin stock), no de los regalos.
+        // Solo para el guardado de un pedido de tienda, que entonces las quita solo. Nunca viaja.
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool DenegadoPorMuestras { get; set; }
     }
 }

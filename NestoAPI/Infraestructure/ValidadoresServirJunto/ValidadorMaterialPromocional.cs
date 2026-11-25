@@ -80,7 +80,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                 {
                     ProductoId = productoIdTrimmed,
                     ProductoNombre = nombreProducto,
-                    AlmacenConStock = null
+                    AlmacenConStock = null,
+                    Disponibles = stockEnAlmacen.CantidadDisponible
                 });
             }
 
@@ -92,6 +93,7 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             return new ValidarServirJuntoResponse
             {
                 PuedeDesmarcar = false,
+                DenegadoPorMuestras = true,
                 ProductosProblematicos = productosProblematicos,
                 Mensaje = ConstruirMensaje(productosProblematicos, modoServicio, almacen, modoCorregidoPorTienda)
             };
