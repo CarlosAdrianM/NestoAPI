@@ -629,6 +629,27 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   distribuidor sale con su descuento propio, sin componer. Una ficha que la campaña desbloquea (`CampanasAplicarDto` sin restaurar, vigente o activada, sin «Aplicar Dto» = 1 de antes;
   `ReglaCampanaSoloEnStock.FichaDesbloqueadaPorLaCampana`, una lectura por tanda) va «sin campaña» sin descuento (`aplicarDescuento` false). Una línea que ya va a precio «sin campaña» o peor no cuenta (lo partido no se vuelve a preguntar).
 
+### «Ofertas para ti»: las ofertas de una campaña para cada cliente de la app y su push (25/11/26)
+- Vale para CUALQUIER campaña (filas de tarifa por producto con `Campana`), no solo el Black Friday. Todo en `Infraestructure/Campanas/OfertasParaTi/`.
+  LA REGLA (pura) `ReglaOfertasParaTi`: candidata = fila vigente hoy (`Vigencia`), audiencia 1 o 2 (lo que la tienda publica al profesional; el 0 no se
+  anuncia), Estado ≥ 0, ni MMP ni MTP, con descuento (precio fijo → 1 − Precio/PVP); un producto en dos campañas, la de más. Por cliente: fuera lo
+  pendiente (-1..1) y lo comprado desde el inicio de su campaña; orden 1) habituales que le tocan (≥ 2 días en 12 meses y ≥ 60 % del ciclo, mediana),
+  2) habituales, 3) de sus 5 familias de más importe en 24 meses (descuento, popularidad), 4) lo demás (popularidad, descuento); como mucho 2 por
+  familia entre los N si hay alternativas. `Motivo` LoSuelesPedir/TeToca/DeTusMarcas/TePuedeInteresar y `Texto` de tú. Stock = el lector de «solo en
+  stock» (#889, pedido 0) por tramos y solo lo que hace falta.
+- Modelo 1 (#671): SÍ puntúa una lista de productos para un cliente sin carrito ni vendedor, por `IPuntuadorReposicion` (`PuntuadorReposicionModelo`, el de
+  la puerta del recordatorio de reposición, carrito vacío y `adicionales`). Ordena las 25 primeras de la regla con stock; sin modelo o si falla (ELMAH una
+  vez por tanda), la regla. Núcleo común `ServicioOfertasParaTi` (Preparar = filas + popularidad; Calcular = compras, pendientes y familias por tandas de 200 clientes).
+- `GET api/Pedidos/Cliente/Ofertas?campana=&maximo=5` (`OfertasClienteController`; cliente del claim, sin él 401; siempre 200): `Precio` por el camino de la
+  app (`ProductosController.GetProductoPrecioReal`, 1 ud.) y `PrecioAntes` con `campanaExcluida` (`CalculadorPrecioSinCampanaMotor`, ficha desbloqueada
+  sin descuento); si no mejora, la oferta no sale. Cargo 30 sin importes, cargo 31 con la tarifa en `Precio` (`ReglaPreciosOfertaParaTi`). Contexto de la
+  campaña en caché 10 min (`CacheContextoOfertasParaTi`).
+- `POST api/Campanas/Push?ensayo=true` (`CampanasPushController`, Dirección/Informática, 403 de usted; ensayo por defecto: solo lee): destinatarios = los
+  del recordatorio de reposición (NestoTiendas activo con consejos, sin baja «Avisos de reposición»), SoloClientes/ExcluirClientes; sin repetir la campaña
+  en `DiasSinRepetir` días mirando el BUZÓN (Datos con `"campana":"…"`, sin tabla nueva). Datos: `tipo` «ofertas» (+productos) o, modo Carrito, «reposicion»
+  con «ref:cant» SOLO de habituales (OJO: cuenta para la regla de 7 días de la push de reposición). Cuerpo automático o plantilla {producto} {descuento} {n}
+  {campana}; de verdad solo de 9 a 21, por `EnviarConsejoACliente` y una fila en Modificaciones (Tabla `CampanaPush`).
+
 ### Embudo de Odoo: bloque diario (11/11/26)
 - Job `embudo-bloque-diario` TODOS los días (también fines de semana y festivos, a propósito) a las 7:00 de Madrid
   (`EmbudoBloqueDiarioJobsService`): el siguiente bloque NV-AAAA-MM-NN (NN vuelve a 01 cada mes) de 50 por `ServicioEmbudoClientes.Republicar`

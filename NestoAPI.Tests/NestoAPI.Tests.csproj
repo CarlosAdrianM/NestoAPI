@@ -303,9 +303,13 @@
     <Compile Include="Controllers\ComisionAnualDetallesControllerTests.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoControllerTests.cs" />
     <Compile Include="Controllers\CampanasControllerTests.cs" />
+    <Compile Include="Controllers\OfertasParaTiControllersTests.cs" />
     <Compile Include="Infrastructure\Campanas\ReglaCampanaBloqueTests.cs" />
     <Compile Include="Infrastructure\Campanas\ServicioCampanaBloqueTests.cs" />
     <Compile Include="Infrastructure\Campanas\DescuentoDistribuidorCampanaTests.cs" />
+    <Compile Include="Infrastructure\Campanas\ReglaOfertasParaTiTests.cs" />
+    <Compile Include="Infrastructure\Campanas\PushCampanaOfertasTests.cs" />
+    <Compile Include="Infrastructure\Campanas\ServiciosOfertasParaTiTests.cs" />
     <Compile Include="Controllers\AgenciasTarifasControllerTests.cs" />
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />

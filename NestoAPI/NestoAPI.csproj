@@ -766,6 +766,8 @@
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PrestashopProductosController.cs" />
     <Compile Include="Controllers\CampanasController.cs" />
+    <Compile Include="Controllers\CampanasPushController.cs" />
+    <Compile Include="Controllers\OfertasClienteController.cs" />
     <Compile Include="Controllers\ProductosCategoriasSecundariasController.cs" />
     <Compile Include="Controllers\ProductosVariantesController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
@@ -1267,6 +1269,14 @@
     <Compile Include="Infraestructure\Campanas\RepositorioCampanaBloqueSql.cs" />
     <Compile Include="Infraestructure\Campanas\GeneradorExcelCampanaBloque.cs" />
     <Compile Include="Infraestructure\Campanas\DescuentoDistribuidorCampana.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\OfertasParaTiDTO.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\ReglaOfertasParaTi.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\TextosPushOfertas.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\ReglaPushCampana.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\LectorOfertasParaTiSql.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioOfertasParaTi.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioOfertasCliente.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioPushCampana.cs" />
     <Compile Include="Infraestructure\Clientes\ClientesDistribuidores.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CondicionesCampana\CampanasCondicionStock.cs" />
