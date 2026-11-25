@@ -120,7 +120,10 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
                 Organismo = organismo,
                 Referencias = new ReferenciasFacturae
                 {
+                    // Parámetro > el guardado en la factura > (en el constructor) nuestro número de pedido de cada línea
                     Pedido = string.IsNullOrWhiteSpace(peticion.SuPedido) ? factura.SuPedido : peticion.SuPedido,
+                    OrigenPedido = !string.IsNullOrWhiteSpace(peticion.SuPedido) ? ConstructorModeloFacturae.ORIGEN_PEDIDO_PARAMETRO
+                        : !string.IsNullOrWhiteSpace(factura.SuPedido) ? ConstructorModeloFacturae.ORIGEN_PEDIDO_FACTURA : null,
                     Expediente = peticion.Expediente,
                     Contrato = peticion.Contrato
                 }

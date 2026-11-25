@@ -187,7 +187,70 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("ES9121000418450200051332", dto.Vencimientos[0].Iban);
             Assert.AreEqual("33895", dto.Cliente);
             Assert.AreEqual("PO-2026/118", dto.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_FACTURA, dto.OrigenSuPedido);
             Assert.AreEqual("Facturae_NV2616075.xml", dto.NombreFichero);
+        }
+
+        // ---------------------------------------------------------------- Carlos 25/11/26: sin P.O., nuestro número de pedido
+
+        private async Task<ComprobacionFacturaeDTO> Comprobar(string suPedido = null)
+        {
+            HttpResponseMessage respuesta = await Controlador("Administración").GetFacturae("1", FACTURA, comprobar: true, suPedido: suPedido);
+            Assert.AreEqual(HttpStatusCode.OK, respuesta.StatusCode);
+            return (ComprobacionFacturaeDTO)((ObjectContent)respuesta.Content).Value;
+        }
+
+        private void FacturaSinSuPedido(params LinPedidoVta[] lineas)
+        {
+            DatosOrigenFacturae datos = FacturaeTests.Datos(lineas.ToList());
+            datos.Factura.SuPedido = null;
+            A.CallTo(() => servicioFacturas.CargarCabFactura("1", FACTURA)).Returns(new CabFacturaVta
+            {
+                Empresa = "1", Número = FACTURA, Serie = "NV", Nº_Cliente = "33895", Contacto = "0", LinPedidoVtas = datos.Lineas
+            });
+            A.CallTo(() => gestor.LeerFactura("1", FACTURA)).Returns(datos.Factura);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_ConSuPedidoEnLaLlamada_GanaYOrigenParametro()
+        {
+            ComprobacionFacturaeDTO dto = await Comprobar(suPedido: "EXP-1");
+
+            Assert.AreEqual("EXP-1", dto.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_PARAMETRO, dto.OrigenSuPedido);
+            Assert.IsFalse(dto.Avisos.Any(a => a.StartsWith("No consta el pedido del organismo")));
+        }
+
+        [TestMethod]
+        public async Task Comprobar_SinPoDeUnPedido_VaNuestroNumeroYLoAvisa()
+        {
+            FacturaSinSuPedido(FacturaeTests.Linea(1, 2, 10M, 0, 21));
+
+            ComprobacionFacturaeDTO dto = await Comprobar();
+
+            Assert.AreEqual("930001", dto.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_NUESTRO, dto.OrigenSuPedido);
+            CollectionAssert.Contains(dto.Avisos, "No consta el pedido del organismo: se pone nuestro número de pedido (930001) como referencia.");
+            Assert.IsFalse(dto.Avisos.Any(a => a.StartsWith("La factura no lleva «Su pedido»")), "Ya no avisa de que falta la referencia");
+        }
+
+        [TestMethod]
+        public async Task Descargar_SinPoDeDosPedidos_CadaLineaLlevaElSuyo()
+        {
+            LinPedidoVta otra = FacturaeTests.Linea(2, 1, 5M, 0, 21, producto: "40695", texto: "JABÓN");
+            otra.Número = 931472;
+            FacturaSinSuPedido(FacturaeTests.Linea(1, 2, 10M, 0, 21), otra);
+            Dir3Guardados();
+
+            ComprobacionFacturaeDTO dto = await Comprobar();
+            HttpResponseMessage respuesta = await Controlador("Administración").GetFacturae("1", FACTURA);
+
+            Assert.AreEqual("930001, 931472", dto.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_NUESTRO, dto.OrigenSuPedido);
+            Assert.AreEqual(HttpStatusCode.OK, respuesta.StatusCode);
+            XDocument doc = XDocument.Parse(await respuesta.Content.ReadAsStringAsync());
+            CollectionAssert.AreEqual(new[] { "930001", "931472" },
+                doc.Root.Descendants("InvoiceLine").Select(l => l.Element("ReceiverTransactionReference").Value).ToArray());
         }
 
         [TestMethod]

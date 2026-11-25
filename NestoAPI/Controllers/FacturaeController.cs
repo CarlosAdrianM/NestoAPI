@@ -89,7 +89,10 @@ namespace NestoAPI.Controllers
         /// <summary>«Ficha», «Llamada», «Ficha y llamada» o null.</summary>
         public string OrigenDir3 { get; set; }
         public List<CentroComprobacionFacturaeDTO> Centros { get; set; } = new List<CentroComprobacionFacturaeDTO>();
+        /// <summary>Lo que sale en ReceiverTransactionReference; con varios pedidos nuestros, separados por coma.</summary>
         public string SuPedido { get; set; }
+        /// <summary>De dónde sale <see cref="SuPedido"/>: «Parametro», «Factura» o «NuestroPedido» (null si no sale ninguno).</summary>
+        public string OrigenSuPedido { get; set; }
         public string Expediente { get; set; }
         public string Contrato { get; set; }
         public decimal BaseImponible { get; set; }
@@ -137,7 +140,8 @@ namespace NestoAPI.Controllers
         // GET api/Facturas/Facturae?empresa=1&factura=NV2616075[&comprobar=true][&oficinaContable=…&organoGestor=…&unidadTramitadora=…&organoProponente=…][&suPedido=…&expediente=…&contrato=…]
         /// <summary>
         /// La factura emitida en Facturae 3.2.2 sin firmar (application/xml, UTF-8, «Facturae_{número}.xml»). Los DIR3 salen de la
-        /// ficha del cliente; los que vengan en la llamada ganan. «Su pedido» sale de la factura (CabFacturaVta.SuPedido) si no se pasa.
+        /// ficha del cliente; los que vengan en la llamada ganan. «Su pedido» sale de la factura (CabFacturaVta.SuPedido) si no se pasa
+        /// y, si tampoco lo tiene, cada línea lleva el número de nuestro pedido.
         /// Con <paramref name="comprobar"/> devuelve un JSON con lo que falta y los totales. 400 si falta algo; 404 si no existe.
         /// </summary>
         [HttpGet]
@@ -234,7 +238,8 @@ namespace NestoAPI.Controllers
                 Codigo = c.Codigo,
                 Nombre = c.Nombre
             }).ToList();
-            dto.SuPedido = primera?.ReferenciaPedido;
+            dto.SuPedido = resultado.SuPedido ?? primera?.ReferenciaPedido;
+            dto.OrigenSuPedido = resultado.OrigenSuPedido;
             dto.Expediente = primera?.Expediente;
             dto.Contrato = primera?.Contrato;
             dto.BaseImponible = totales.TotalBruto;

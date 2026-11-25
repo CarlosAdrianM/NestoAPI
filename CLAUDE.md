@@ -1240,8 +1240,12 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
 - Datos (`ServicioFacturae`, sin lecturas nuevas de facturación): la factura del PDF (`GestorFacturas.LeerFactura`: datos fiscales guardados, NIF,
   totales, vencimientos e IBAN de la empresa), sus líneas (`CargarCabFactura`: IVA y RE por línea), el NIF de la empresa (`CargarEmpresa`), las
   originales de una rectificativa (`ServicioFacturas.CargarFacturasRectificadas`, la de Verifactu, ahora internal) y los DIR3. Emisor = dirección
-  «Empresa» del PDF; receptor = la «Fiscal»; los centros llevan la dirección fiscal del cliente. «Su pedido» = `CabFacturaVta.SuPedido` (#723)
-  como ReceiverTransactionReference en cada línea; expediente (FileReference) y contrato solo por parámetro (TextMax20: más largo = falta).
+  «Empresa» del PDF; receptor = la «Fiscal»; los centros llevan la dirección fiscal del cliente. ReceiverTransactionReference de cada línea (Carlos
+  25/11/26, «si tenemos PO lo ponemos; si no, ponemos el nuestro»): el parámetro `suPedido` > `CabFacturaVta.SuPedido` (#723) > el número de
+  NUESTRO pedido de esa línea (`LinPedidoVta.Número`; una factura de varios pedidos lleva el suyo en cada línea) con el aviso «No consta el pedido
+  del organismo: se pone nuestro número de pedido (931472) como referencia.» (ya no el de «falta la referencia»). `comprobar=true`: `SuPedido` = lo
+  que sale (varios, separados por coma) y `OrigenSuPedido` «Parametro» | «Factura» | «NuestroPedido». Expediente (FileReference) y contrato solo
+  por parámetro (TextMax20: más largo = falta; un P.O. de más de 20 es falta, no se cambia por el nuestro).
 - LA REGLA (pura) `ConstructorModeloFacturae` + escritor `GeneradorFacturae` (`Infraestructure/Facturas/Facturae/`): cabecera por (IVA, RE) como el
   PDF y Verifactu (base = suma; cuota = ROUND(suma ImporteIVA, 2); RE = ROUND(suma RE × base, 2)); línea: TotalCost = Bruto, Discount = ImporteDto
   (con DiscountRate), el redondeo ROUND(Bruto,2) − Bruto como Charge (sube) o Discount (baja) «Redondeo a céntimos», GrossAmount = la base; cuotas de

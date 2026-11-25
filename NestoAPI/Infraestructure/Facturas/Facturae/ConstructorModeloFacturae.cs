@@ -23,8 +23,14 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
     /// <summary>NestoAPI#903: las referencias del organismo (todas TextMax20 en Facturae).</summary>
     public class ReferenciasFacturae
     {
-        /// <summary>ReceiverTransactionReference: el «Su pedido / P.O.» de la factura (o el que se pase).</summary>
+        /// <summary>
+        /// ReceiverTransactionReference: el «Su pedido / P.O.» que se pase o el de la factura. Vacío: cada línea lleva el número de
+        /// NUESTRO pedido (Carlos 25/11/26: «si tenemos PO lo ponemos; si no, ponemos el nuestro»).
+        /// </summary>
         public string Pedido { get; set; }
+        /// <summary>De dónde sale <see cref="Pedido"/>: <see cref="ConstructorModeloFacturae.ORIGEN_PEDIDO_PARAMETRO"/> o
+        /// <see cref="ConstructorModeloFacturae.ORIGEN_PEDIDO_FACTURA"/> (si no se dice, de la factura).</summary>
+        public string OrigenPedido { get; set; }
         /// <summary>FileReference: el número de expediente.</summary>
         public string Expediente { get; set; }
         /// <summary>ReceiverContractReference: el número de contrato.</summary>
@@ -61,6 +67,10 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
         public List<string> Faltas { get; set; } = new List<string>();
         public List<string> Avisos { get; set; } = new List<string>();
         public bool Listo => Modelo != null && !Faltas.Any();
+        /// <summary>El «Su pedido» que sale en las líneas (con varios pedidos nuestros, separados por coma), o null.</summary>
+        public string SuPedido { get; set; }
+        /// <summary>«Parametro», «Factura» o «NuestroPedido» (null si no sale ninguno).</summary>
+        public string OrigenSuPedido { get; set; }
     }
 
     /// <summary>
@@ -79,6 +89,9 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
         public const string ROL_UNIDAD_TRAMITADORA = "03";
         public const string ROL_ORGANO_PROPONENTE = "04";
         public const int LONGITUD_REFERENCIA = 20;
+        public const string ORIGEN_PEDIDO_PARAMETRO = "Parametro";
+        public const string ORIGEN_PEDIDO_FACTURA = "Factura";
+        public const string ORIGEN_PEDIDO_NUESTRO = "NuestroPedido";
 
         public static ResultadoModeloFacturae Construir(DatosOrigenFacturae datos)
         {
@@ -131,12 +144,16 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
 
             // Referencias
             ReferenciasFacturae referencias = datos.Referencias ?? new ReferenciasFacturae();
+            // Carlos 25/11/26: «si tenemos PO lo ponemos; si no, ponemos el nuestro». Prioridad: el que se pasa > el guardado en la
+            // factura > el número de NUESTRO pedido de cada línea (una factura puede agrupar varios: cada línea lleva el suyo).
+            bool hayPedidoDelOrganismo = !string.IsNullOrWhiteSpace(referencias.Pedido);
             string pedido = Referencia(referencias.Pedido, "El «Su pedido» (referencia del pedido del organismo)", resultado);
             string expediente = Referencia(referencias.Expediente, "El expediente", resultado);
             string contrato = Referencia(referencias.Contrato, "El contrato", resultado);
-            if (pedido == null && expediente == null && contrato == null)
+            if (pedido != null)
             {
-                resultado.Avisos.Add("La factura no lleva «Su pedido», expediente ni contrato del organismo. Muchos organismos lo exigen: si se lo han dado, páselo antes de descargar.");
+                resultado.SuPedido = pedido;
+                resultado.OrigenSuPedido = string.IsNullOrWhiteSpace(referencias.OrigenPedido) ? ORIGEN_PEDIDO_FACTURA : referencias.OrigenPedido;
             }
 
             // Líneas
@@ -162,7 +179,7 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
                 decimal descuento = brutoCentimos - l.Base_Imponible;
                 var linea = new LineaFacturae
                 {
-                    ReferenciaPedido = pedido,
+                    ReferenciaPedido = hayPedidoDelOrganismo ? pedido : NuestroPedido(l),
                     Expediente = expediente,
                     Contrato = contrato,
                     Albaran = l.Nº_Albarán.HasValue && l.Nº_Albarán.Value != 0 ? l.Nº_Albarán.Value.ToString() : null,
@@ -188,6 +205,23 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
             if (!lineas.Any())
             {
                 resultado.Faltas.Add("La factura no tiene líneas con importe.");
+            }
+
+            if (!hayPedidoDelOrganismo)
+            {
+                List<string> nuestros = lineas.Select(x => x.ReferenciaPedido).Where(p => p != null).Distinct().ToList();
+                if (nuestros.Any())
+                {
+                    resultado.SuPedido = string.Join(", ", nuestros);
+                    resultado.OrigenSuPedido = ORIGEN_PEDIDO_NUESTRO;
+                    resultado.Avisos.Add(nuestros.Count == 1
+                        ? $"No consta el pedido del organismo: se pone nuestro número de pedido ({nuestros[0]}) como referencia."
+                        : $"No consta el pedido del organismo: en cada línea se pone nuestro número de pedido ({resultado.SuPedido}) como referencia.");
+                }
+            }
+            if (resultado.SuPedido == null && expediente == null && contrato == null)
+            {
+                resultado.Avisos.Add("La factura no lleva «Su pedido», expediente ni contrato del organismo. Muchos organismos lo exigen: si se lo han dado, páselo antes de descargar.");
             }
 
             // Impuestos de la cabecera: la regla del PDF y de Verifactu
@@ -320,6 +354,17 @@ namespace NestoAPI.Infraestructure.Facturas.Facturae
                 Direccion = direccion,
                 Descripcion = descripcion
             });
+        }
+
+        /// <summary>El número de nuestro pedido de la línea (LinPedidoVta.Número, como mucho 20 caracteres), o null si no tiene.</summary>
+        internal static string NuestroPedido(LinPedidoVta linea)
+        {
+            if (linea == null || linea.Número <= 0)
+            {
+                return null;
+            }
+            string numero = linea.Número.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return numero.Length > LONGITUD_REFERENCIA ? null : numero;
         }
 
         private static string Referencia(string valor, string que, ResultadoModeloFacturae resultado)

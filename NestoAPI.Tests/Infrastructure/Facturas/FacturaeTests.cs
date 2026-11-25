@@ -411,6 +411,70 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
             ResultadoModeloFacturae resultado = ConstructorModeloFacturae.Construir(datos);
 
             Assert.IsTrue(resultado.Faltas.Any(f => f.Contains("como mucho 20")));
+            Assert.IsNull(resultado.Modelo.Lineas.Single().ReferenciaPedido, "Un P.O. que no vale no se cambia por el nuestro: es una falta");
+        }
+
+        // ---------------------------------------------------------------- Carlos 25/11/26: «si no tenemos PO ponemos el nuestro»
+
+        [TestMethod]
+        public void Construir_ConSuPedidoGuardado_VaEseEnTodasLasLineas()
+        {
+            var lineas = new List<LinPedidoVta> { Linea(1, 1, 10M, 0, 21), Linea(2, 1, 5M, 0, 21) };
+            lineas[1].Número = 931472;
+
+            ResultadoModeloFacturae resultado = ConstructorModeloFacturae.Construir(Datos(lineas));
+
+            CollectionAssert.AreEqual(new[] { "PO-2026/118", "PO-2026/118" }, resultado.Modelo.Lineas.Select(l => l.ReferenciaPedido).ToArray());
+            Assert.AreEqual("PO-2026/118", resultado.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_FACTURA, resultado.OrigenSuPedido);
+            Assert.IsFalse(resultado.Avisos.Any(a => a.Contains("pedido del organismo") || a.Contains("«Su pedido»")));
+        }
+
+        [TestMethod]
+        public void Construir_ConSuPedidoDeLaLlamada_OrigenParametro()
+        {
+            DatosOrigenFacturae datos = Datos(new List<LinPedidoVta> { Linea(1, 1, 10M, 0, 21) });
+            datos.Referencias = new ReferenciasFacturae { Pedido = "EXP-1", OrigenPedido = ConstructorModeloFacturae.ORIGEN_PEDIDO_PARAMETRO };
+
+            ResultadoModeloFacturae resultado = ConstructorModeloFacturae.Construir(datos);
+
+            Assert.AreEqual("EXP-1", resultado.Modelo.Lineas.Single().ReferenciaPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_PARAMETRO, resultado.OrigenSuPedido);
+        }
+
+        [TestMethod]
+        public void Construir_SinSuPedido_UnPedido_VaNuestroNumero()
+        {
+            DatosOrigenFacturae datos = Datos(new List<LinPedidoVta> { Linea(1, 1, 10M, 0, 21), Linea(2, 2, 3M, 0, 21) });
+            datos.Referencias = new ReferenciasFacturae();
+
+            ResultadoModeloFacturae resultado = ConstructorModeloFacturae.Construir(datos);
+
+            Assert.IsTrue(resultado.Listo);
+            CollectionAssert.AreEqual(new[] { "930001", "930001" }, resultado.Modelo.Lineas.Select(l => l.ReferenciaPedido).ToArray());
+            Assert.AreEqual("930001", resultado.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_NUESTRO, resultado.OrigenSuPedido);
+            CollectionAssert.Contains(resultado.Avisos, "No consta el pedido del organismo: se pone nuestro número de pedido (930001) como referencia.");
+            Assert.IsFalse(resultado.Avisos.Any(a => a.StartsWith("La factura no lleva «Su pedido»")));
+            XDocument doc = XDocument.Parse(GeneradorFacturae.Generar(resultado.Modelo));
+            Assert.AreEqual("930001", doc.Root.Descendants("ReceiverTransactionReference").First().Value);
+        }
+
+        [TestMethod]
+        public void Construir_SinSuPedido_DosPedidos_CadaLineaElSuyo()
+        {
+            var lineas = new List<LinPedidoVta> { Linea(1, 1, 10M, 0, 21), Linea(2, 1, 5M, 0, 21), Linea(3, 1, 7M, 0, 21) };
+            lineas[1].Número = 931472;
+            DatosOrigenFacturae datos = Datos(lineas);
+            datos.Referencias = new ReferenciasFacturae { Pedido = "  " };
+
+            ResultadoModeloFacturae resultado = ConstructorModeloFacturae.Construir(datos);
+
+            CollectionAssert.AreEqual(new[] { "930001", "931472", "930001" }, resultado.Modelo.Lineas.Select(l => l.ReferenciaPedido).ToArray());
+            Assert.AreEqual("930001, 931472", resultado.SuPedido);
+            Assert.AreEqual(ConstructorModeloFacturae.ORIGEN_PEDIDO_NUESTRO, resultado.OrigenSuPedido);
+            CollectionAssert.Contains(resultado.Avisos,
+                "No consta el pedido del organismo: en cada línea se pone nuestro número de pedido (930001, 931472) como referencia.");
         }
 
         [TestMethod]
