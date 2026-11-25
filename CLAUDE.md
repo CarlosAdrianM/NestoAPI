@@ -303,6 +303,11 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   (GET/POST/PUT, `Inventario.Partial.cs`), líneas de recorrido/picking y salida de reposición, packing, Ubicar, Recibir COMP/REPO, Enviar
   reposición y reposición puntual. No en Productos/Buscar ni en la Ficha de Ariadna. Gemelas: Nesto#650, Ariadna#108.
 
+### App de clientes (TNV): lector y refresco del token (registros de IIS 25/11/26)
+- Lector: `GetProducto(codigoBarras)` (solo ese; `BuscarPorCodigoBarras` y los flujos de almacén siguen preguntando siempre) descarta las
+  fichas anuladas (Estado < 0 o null) si queda alguna viva (`ProductosController.CoincidenciasAConsiderarLector`, pura): una viva → esa, sin 409;
+  varias vivas → 409 solo con ellas; todas anuladas → 409 con todas (8436538394380: 44967 anulado / 45931 vivo).
+
 ### Furgoneta bulto a bulto (NestoAPI#772, 31/10/26)
 - Cada bulto del reparto propio (`RP{envío}-{N}`, `NR{pedido}-{N}`, `R{traspaso}-{N}`) tiene su historia en `RepartoBultosMovimientos`
   (`Scripts/Issue772_FurgonetaBultos.sql`): Cargado, Recogido, Entregado, Descargado (Origen Repartidor/Almacen). «Lo que lleva encima»

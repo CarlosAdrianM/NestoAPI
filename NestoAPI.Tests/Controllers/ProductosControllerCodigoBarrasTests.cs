@@ -197,6 +197,73 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(2, contentResult.Content.Count);
         }
 
+        // ----- App de clientes, registros de IIS 25/11/26: código compartido con una ficha anulada -----
+
+        private static Producto ConEstado(string numero, short? estado)
+        {
+            Producto p = CrearProducto(numero, "8436538394380", "Producto " + numero);
+            p.Estado = estado;
+            return p;
+        }
+
+        [TestMethod]
+        public void CoincidenciasLector_UnaVivaYUnaAnulada_LaViva()
+        {
+            List<Producto> resultado = ProductosController.CoincidenciasAConsiderarLector(
+                new List<Producto> { ConEstado("44967", -1), ConEstado("45931", 0) });
+
+            Assert.AreEqual("45931", resultado.Single().Número);
+        }
+
+        [TestMethod]
+        public void CoincidenciasLector_EstadoNull_NoCuentaComoViva()
+        {
+            List<Producto> resultado = ProductosController.CoincidenciasAConsiderarLector(
+                new List<Producto> { ConEstado("44967", null), ConEstado("45931", 1) });
+
+            Assert.AreEqual("45931", resultado.Single().Número);
+        }
+
+        [TestMethod]
+        public void CoincidenciasLector_DosVivasYUnaAnulada_LasDosVivas()
+        {
+            List<Producto> resultado = ProductosController.CoincidenciasAConsiderarLector(
+                new List<Producto> { ConEstado("44967", -1), ConEstado("45931", 0), ConEstado("45929", 1) });
+
+            CollectionAssert.AreEquivalent(new[] { "45931", "45929" }, resultado.Select(p => p.Número).ToList());
+        }
+
+        [TestMethod]
+        public void CoincidenciasLector_TodasAnuladas_Todas()
+        {
+            List<Producto> resultado = ProductosController.CoincidenciasAConsiderarLector(
+                new List<Producto> { ConEstado("44967", -1), ConEstado("44968", null) });
+
+            Assert.AreEqual(2, resultado.Count);
+        }
+
+        [TestMethod]
+        public void CoincidenciasLector_UnaSola_Esa()
+        {
+            List<Producto> resultado = ProductosController.CoincidenciasAConsiderarLector(
+                new List<Producto> { ConEstado("44967", -1) });
+
+            Assert.AreEqual("44967", resultado.Single().Número);
+        }
+
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_DosVivasYUnaAnulada_ConflictSoloConLasVivas()
+        {
+            ConfigurarProductos(ConEstado("44967", -1), ConEstado("45931", 0), ConEstado("45929", 0));
+
+            IHttpActionResult resultado = await controller.GetProducto("8436538394380");
+
+            var contentResult = resultado as NegotiatedContentResult<List<ProductoCodigoBarrasDuplicadoDTO>>;
+            Assert.IsNotNull(contentResult, "Debe devolver la lista de candidatos");
+            Assert.AreEqual(HttpStatusCode.Conflict, contentResult.StatusCode);
+            CollectionAssert.AreEquivalent(new[] { "45931", "45929" }, contentResult.Content.Select(p => p.producto).ToList());
+        }
+
         [TestMethod]
         public async Task GetProducto_ProductoSinFamiliaNiSubgrupoNiPVP_DevuelveFichaSinReventar()
         {

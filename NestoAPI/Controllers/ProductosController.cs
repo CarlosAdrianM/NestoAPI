@@ -740,6 +740,7 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+            coincidencias = CoincidenciasAConsiderarLector(coincidencias);
             if (coincidencias.Count > 1)
             {
                 // Código de barras compartido por varios productos: devolvemos la lista (409).
@@ -750,6 +751,22 @@ namespace NestoAPI.Controllers
             IHttpActionResult actionResult = await GetProducto(producto.Empresa, producto.Número, true);
 
             return actionResult;
+        }
+
+        /// <summary>
+        /// LA REGLA (pura) del lector de la app de clientes (registros de IIS 25/11/26: 8436538394380 en el 44967
+        /// anulado y el 45931 vivo): con varias coincidencias, las anuladas (Estado &lt; 0 o null) no cuentan si queda
+        /// alguna viva; con una sola viva, esa; con varias vivas, solo las vivas (409); todas anuladas, todas (409 como
+        /// antes). Solo para <c>GetProducto(codigoBarras)</c>: los flujos de almacén siguen preguntando siempre.
+        /// </summary>
+        internal static List<Producto> CoincidenciasAConsiderarLector(List<Producto> coincidencias)
+        {
+            if (coincidencias == null || coincidencias.Count <= 1)
+            {
+                return coincidencias;
+            }
+            List<Producto> vivas = coincidencias.Where(p => p.Estado >= 0).ToList();
+            return vivas.Count > 0 ? vivas : coincidencias;
         }
 
         /// <summary>
