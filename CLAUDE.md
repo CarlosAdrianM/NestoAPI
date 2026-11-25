@@ -1462,7 +1462,27 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   tres obligatorios, `ReglasDir3`: 9, letra + al menos 5 cifras; los tres vacíos = quitar; rastro en Modificaciones; sin tabla 503, el GET vacío).
   Lectura: la del contacto o, si el cliente tiene UNA sola fila, esa. Siguiente corte (si hace falta): subirlo por la API de B2Brouter.
 
-### Prepago y saldo a favor (Novedades 1302, 17/11/26)
+### Proyectos: imputar ingresos y gastos y cuenta de explotación (NestoAPI#901 corte 1, Carlos 25/11/26)
+- Cada convocatoria de un curso del SEPE (IMPE0210-2026-1), feria, evento o campaña es un PROYECTO. Se imputan DESPUÉS de contabilizar apuntes de
+  Contabilidad (cuentas 6 y 7) por IMPORTE (se enseña el porcentaje); la contabilidad ni sus SP se tocan. `dbo.Proyectos` + `dbo.ProyectosImputaciones`
+  (fuera del EDMX, `Scripts/Issue901_Proyectos.sql`; sin ellas, 503 «SIN_TABLA»). Cada imputación guarda una FOTO del apunte (cuenta, fecha, concepto,
+  documento, asiento, debe, haber, tercero del asiento por ExtractoProveedor/ExtractoCliente).
+- CONVENCIÓN DE SIGNOS (una sola, `ReglasProyectos`): importe del apunte = |Debe − Haber|; la imputación SIEMPRE positiva; 6xx = Gasto, 7xx = Ingreso; en
+  su lado natural (gasto al Debe, ingreso al Haber) suma y al contrario (abono) RESTA (`Signo`, `Efecto`). Resultado = ingresos − gastos; margen sobre ingresos.
+- LAS REGLAS (puras): `ReglasProyectos` (código ≤ 20, A-Z/cifras/- _ . /, mayúsculas, único por empresa → 409 CODIGO_REPETIDO; tipos CursoSEPE/Evento/Feria/
+  Campana/Otro; cerrado = sin cambios ni imputaciones nuevas, PROYECTO_CERRADO; borrar solo abierto y sin imputaciones; `DecidirReparto`: el PUT SUSTITUYE
+  el reparto de un apunte, todo o nada, misma empresa, importes > 0, un proyecto una vez, suma ≤ apunte + 1 céntimo, 409 APUNTE_NO_EXISTE/APUNTE_CAMBIADO,
+  aviso si el apunte cae fuera de las fechas del proyecto) y `CalculoCuentaExplotacionProyecto` (cuenta de explotación, totales y comparativa).
+- `RepositorioProyectos` (ADO, NestoConnection): el reparto va en una transacción con `sp_getapplock` «ProyectoImputacionApunte:{empresa}:{nº orden}» (otro
+  a la vez → 409 APUNTE_OCUPADO) y los proyectos leídos con UPDLOCK (cerrar espera); rastro en Modificaciones (Tablas `Proyecto` y `ProyectoImputacion`, JSON
+  antes/después). Apuntes por imputar: UNA ida (página topada a 500 + sus imputaciones), NOLOCK.
+- `ProyectosController` (Administración, Dirección, Informática; cliente de la tienda 403; Reabrir solo Dirección): `GET/POST api/Proyectos`, `GET/PUT/DELETE
+  api/Proyectos/{id}`, `POST …/{id}/Cerrar|Reabrir`, `GET api/Proyectos/ApuntesPorImputar`, `GET/PUT api/Proyectos/Apuntes/{nº orden}/Imputaciones`,
+  `GET …/{id}/CuentaExplotacion[/Excel]` (hojas «Resumen» y «Detalle»), `GET api/Proyectos/Comparativa?ids=|producto=`. Errores {Message, Codigo}.
+- Segundo corte (sin hacer): cuentas obligatorias con control «sin imputar» y aviso a Administración, reglas que proponen (proveedor + cuenta → proyecto),
+  horas de personal propio (coste interno sin apunte), propuesta de las facturas de las inscripciones del evento y la pantalla gemela de Nesto.
+
+
 - Un pago es de UN documento (Carlos 17/11/26): cada saldo a favor (ImportePdte < 0) se clasifica por los números de su Concepto (y, solo
   como pedido, su Nº Documento) contra los pedidos y facturas DEL MISMO cliente (`ClasificadorSaldoAFavor`, puro; el rellenador lee esos
   números en una consulta por cosa). Reservado a un pedido = solo cubre ese pedido, aunque no salga o ya esté facturado; reservado a una
