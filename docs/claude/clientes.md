@@ -173,3 +173,23 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - Refresco: `api/auth/refreshToken` ya no corta a un mes de caducado el token: la ventana desde la caducidad son los mismos días que la
   absoluta desde el login (`Auth:DiasMaximosSesionTienda`, 90; `PoliticaRefrescoToken.VentanaDesdeCaducidadVencida`). 15 de 26 clientes
   echados tras un mes sin abrir la app no volvieron a entrar. Firma, absoluta y revalidación del cliente, igual; `refreshOAuthToken` no cambia.
+
+### Ficha comercial: lo que la auditoría Nesto#644 dejó para la API (26/11/26)
+- `PUT api/Clientes/ClienteComercial` (solo lo llama Nesto, ventana ClienteComercial; NestoApp usa `PUT api/Clientes`, no este). (15) Ya no hace
+  `db.Entry(clienteDB).State = Modified` (escribía TODAS las columnas con lo leído): la entidad está seguida y EF solo escribe lo cambiado. El usuario
+  de auditoría (ficha, fila de peluquería y motivo #716) = `UsuarioAuditoriaHelper.Resolver(User, cliente.usuario)` (el del DTO solo sin token), vía
+  `AplicarCambiosClienteComercial(clienteDB, dto, usuarioAuditoria)` (con `ParaAuditoria`: nunca vacío).
+- (7) Permisos (`ValidadorCambioClienteComercial`): `DatosPermisoClienteComercial.CambiaPais` (`CambiaElPais`: no vacío y distinto, sin relleno ni
+  mayúsculas), `CambiaEstadoGrupo` (`CambiaElEstadoDelGrupo`: fila con estado distinto o la fila no existe) y `CreaFilaGrupo` (sin fila y llega vendedor:
+  el destino también se comprueba contra el equipo) entran en la condición de `Evaluar`. Antes un vendedor raso cambiaba el país o el estado de
+  peluquería de un cliente de fuera.
+- (6) `VendedorGrupoProductoDTO.estado` pasa a `short?` (no viaja en el JSON si es null: los vendedores del pedido no lo tienen y Nesto lo lee como
+  Short). `GestorComisiones.AplicarVendedorGrupo`: vendedor null = no tocar el vendedor; estado null = no tocar el estado. Al CREAR la fila, el estado que
+  viene (sin él, VISITA_PRESENCIAL): el segundo PUT de Nesto (`PayloadEstadoPeluqueria`) ya sobra (inofensivo).
+- (5) Copia vieja: `ClienteDTO.original` {estado, vendedor, pais, vendedorPeluqueria, estadoPeluqueria} (opcional, solo de entrada; `OriginalClienteComercialDTO`).
+  LA REGLA (pura) `ReglaClienteComercialCambiado.Evaluar` (`Infraestructure/Clientes/ClienteComercialCambiado.cs`): por cada campo que el PUT CAMBIA (mismo
+  criterio que al aplicarlo), si en la BD ya no vale lo de `original` → 409 `{ Message, Codigo: "CLIENTE_CAMBIADO", details: { campos, usuario, fecha } }`
+  («La ficha del cliente 40445 la ha cambiado Aida a las 15:14 desde que usted la abrió (estado). Recárguela y vuelva a hacer los cambios.»; «el dd/MM a las…»
+  si no es de hoy), después del 403 y antes de escribir nada. Lo que el PUT no cambia no cuenta. Textos null = vacío; estados de `original` a null no se
+  comparan; sin fila de peluquería coincide con un original sin vendedor de peluquería. Quién y cuándo: `Clientes.Usuario`/`Fecha_Modificación` o los de la
+  fila de peluquería, lo más reciente de lo que choca. Sin `original`, como antes. Nesto: mandar `original` con lo cargado (`ValoresComercialesFicha`) y tratar el 409.

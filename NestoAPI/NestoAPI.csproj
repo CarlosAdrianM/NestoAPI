@@ -1739,6 +1739,7 @@
     <Compile Include="Infraestructure\Sincronizacion\PrestashopProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Clientes\ValidadorCambioClienteComercial.cs" />
+    <Compile Include="Infraestructure\Clientes\ClienteComercialCambiado.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServir.cs" />
     <Compile Include="Models\Picking\GestorRutaInternaPicking.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PuertaPublicacionTienda.cs" />

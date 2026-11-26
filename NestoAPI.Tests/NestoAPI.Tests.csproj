@@ -1082,6 +1082,7 @@
     <Compile Include="Infrastructure\Sincronizacion\FormateadorNombreTiendaTests.cs" />
     <Compile Include="Models\ProductoDTONombreTiendaTests.cs" />
     <Compile Include="Infrastructure\ValidadorCambioClienteComercialTests.cs" />
+    <Compile Include="Infrastructure\Clientes\ClienteComercial644Tests.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServirTests.cs" />
     <Compile Include="Infrastructure\Picking\ReglasRutaPropiaTests.cs" />
     <Compile Include="Infrastructure\Picking\GestorSugerenciasRutaTests.cs" />
