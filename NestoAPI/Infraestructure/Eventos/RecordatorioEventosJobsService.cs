@@ -59,6 +59,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// Null: el aviso dice «pídanoslos», como antes.
         /// </summary>
         public Func<string, Models.Cobros.DatosPagoAviso> DatosPagoEmpresa { get; set; }
+        /// <summary>
+        /// NestoAPI#895: el dosier del evento va adjunto al recordatorio (un solo correo con el enlace y el PDF), con su marca por
+        /// inscripción (EventosInscripciones.DosierEnviado). Null o sin el script: el recordatorio sale sin él, como antes.
+        /// </summary>
+        public IRepositorioDosierEventos Dosieres { get; set; }
     }
 
     /// <summary>NestoAPI#690: lo que ha hecho una pasada del recordatorio (para los tests y el diagnóstico).</summary>
@@ -130,7 +135,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         FormasAsistencia = ids => RepositorioFormaAsistenciaEventos.LeerSinFallar(servicio.FormasAsistencia, ids),
                         EnlacesOnline = ids => RepositorioEnlaceOnlineEventos.LeerSinFallar(new RepositorioEnlaceOnlineEventos(db), ids),
                         AvisarFaltaEnlace = (evento, notificacion) => DestinatariosEvento.Avisar(db, evento, notificacion, new ServicioNotificacionesPush()),
-                        DatosPagoEmpresa = new Cobros.LectorDatosPagoEmpresa(db).Leer
+                        DatosPagoEmpresa = new Cobros.LectorDatosPagoEmpresa(db).Leer,
+                        Dosieres = new RepositorioDosierEventos(db)
                     }).ConfigureAwait(false);
                 }
             }
@@ -213,12 +219,14 @@ namespace NestoAPI.Infraestructure.Eventos
                 {
                     await deps.AvisarFaltaEnlace(evento.Key, TextosEnlaceOnlineEvento.NotificacionFaltaEnlace(evento.Key, sinEnlace)).ConfigureAwait(false);
                 }
+                // NestoAPI#895: el dosier, si lo hay, en el mismo correo
+                DosierEvento dosier = await DosierDe(deps, evento.Key).ConfigureAwait(false);
                 foreach (EventoInscripcion inscripcion in evento.Value)
                 {
                     try
                     {
                         formas.TryGetValue(inscripcion.Id, out string forma);
-                        (bool push, bool correo) = await Avisar(deps, evento.Key, inscripcion, forma, enlaceOnline).ConfigureAwait(false);
+                        (bool push, bool correo) = await Avisar(deps, evento.Key, inscripcion, forma, enlaceOnline, dosier).ConfigureAwait(false);
                         resultado.Inscripciones++;
                         resultado.Push += push ? 1 : 0;
                         resultado.Correos += correo ? 1 : 0;
@@ -238,6 +246,43 @@ namespace NestoAPI.Infraestructure.Eventos
                 {
                     await deps.MarcarEnviados(enviadas).ConfigureAwait(false);
                 }
+            }
+        }
+
+        /// <summary>NestoAPI#895: el dosier del evento para adjuntarlo (null: sin repositorio, sin el script, sin dosier o si falla).</summary>
+        internal static async Task<DosierEvento> DosierDe(DependenciasRecordatorioEventos deps, Evento evento)
+        {
+            if (deps?.Dosieres == null || evento == null)
+            {
+                return null;
+            }
+            try
+            {
+                if (!deps.Dosieres.Disponible())
+                {
+                    return null;
+                }
+                DosierEvento dosier = await deps.Dosieres.Leer(evento.Id).ConfigureAwait(false);
+                return dosier?.Contenido != null && dosier.Contenido.Length > 0 ? dosier : null;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recordatorio de eventos #895] No se ha podido leer el dosier del evento {evento.Id} (el recordatorio sale sin él): {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        /// <summary>NestoAPI#895: aparta el dosier para la inscripción; si falla, false (el recordatorio sale sin él y lo lleva el job del dosier).</summary>
+        private static async Task<bool> ReservarDosier(IRepositorioDosierEventos dosieres, int inscripcion)
+        {
+            try
+            {
+                return await dosieres.Reservar(inscripcion).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recordatorio de eventos #895] No se ha podido apartar el dosier de la inscripción {inscripcion}: {ex.Message}", ex));
+                return false;
             }
         }
 
@@ -418,7 +463,7 @@ namespace NestoAPI.Infraestructure.Eventos
         /// tarde (<see cref="EnlaceOnlineEventosJobs"/>); <paramref name="enlaceOnline"/> es el del campo propio del evento (null: el de «Lugar»).
         /// </summary>
         internal static async Task<(bool push, bool correo)> Avisar(DependenciasRecordatorioEventos deps, Evento evento, EventoInscripcion inscripcion,
-            string formaAsistencia, string enlaceOnline = null)
+            string formaAsistencia, string enlaceOnline = null, DosierEvento dosier = null)
         {
             string empresa = Limpiar(inscripcion.Empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             string cliente = Limpiar(inscripcion.Cliente);
@@ -439,9 +484,23 @@ namespace NestoAPI.Infraestructure.Eventos
             if (destino != null && inscripcion.ClaveAsistencia.HasValue)
             {
                 string nombre = await deps.NombreCliente(empresa, cliente, contacto).ConfigureAwait(false);
-                using (MailMessage mail = Correo(evento, inscripcion, nombre, destino, formaAsistencia, enlaceOnline))
+                // NestoAPI#895: el dosier se aparta para esta inscripción (marca DosierEnviado, UPDATE condicional) y va adjunto;
+                // si ya lo tenía, no se repite; si el correo falla, se suelta para que lo lleve la siguiente pasada del dosier
+                bool conDosier = dosier != null && deps.Dosieres != null && ReglasDosierEvento.LoRecibe(inscripcion, false)
+                    && await ReservarDosier(deps.Dosieres, inscripcion.Id).ConfigureAwait(false);
+                try
                 {
-                    correo = deps.Correo.EnviarCorreoSMTP(mail);
+                    using (MailMessage mail = Correo(evento, inscripcion, nombre, destino, formaAsistencia, enlaceOnline, conDosier ? dosier : null))
+                    {
+                        correo = deps.Correo.EnviarCorreoSMTP(mail);
+                    }
+                }
+                finally
+                {
+                    if (conDosier && !correo)
+                    {
+                        await deps.Dosieres.Soltar(inscripcion.Id).ConfigureAwait(false);
+                    }
                 }
                 if (!correo)
                 {
@@ -501,7 +560,7 @@ namespace NestoAPI.Infraestructure.Eventos
 
         /// <summary>El correo (de usted) con los dos botones.</summary>
         internal static MailMessage Correo(Evento evento, EventoInscripcion inscripcion, string nombre, string destino, string formaAsistencia = null,
-            string enlaceOnline = null)
+            string enlaceOnline = null, DosierEvento dosier = null)
         {
             string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
             Guid clave = inscripcion.ClaveAsistencia ?? Guid.Empty;
@@ -526,6 +585,12 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 cuerpo.Append($"<p>Puede conectarse desde este enlace: <a href='{Html(enlaceConexion)}'>{Html(enlaceConexion)}</a></p>");
             }
+            // NestoAPI#895: el dosier, adjunto, en el mismo correo
+            bool conDosier = dosier?.Contenido != null && dosier.Contenido.Length > 0;
+            if (conDosier)
+            {
+                cuerpo.Append("<p>Le adjuntamos el dosier del evento, en PDF, para que pueda imprimirlo con tiempo.</p>");
+            }
             cuerpo.Append("<p>¿Nos confirma si podrá venir? Así le guardamos su sitio.</p>");
             cuerpo.Append("<p>")
                 .Append(boton("Confirmo asistencia", "#2e7d32", RespuestaAsistenciaEvento.Confirma))
@@ -543,6 +608,10 @@ namespace NestoAPI.Infraestructure.Eventos
                 SubjectEncoding = Encoding.UTF8
             };
             mail.To.Add(destino);
+            if (conDosier)
+            {
+                mail.Attachments.Add(new Attachment(new System.IO.MemoryStream(dosier.Contenido), dosier.Nombre, ReglasDosierEvento.TIPO_PDF));
+            }
             return mail;
         }
 

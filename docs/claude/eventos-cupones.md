@@ -62,6 +62,29 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   «si no tiene los datos de la cuenta, pídanoslos»; sin cuenta o si falla la lectura, lo de siempre (nunca rompe el aviso). Gemela Nesto: botón
   «Copiar datos de transferencia» junto a «Copiar enlace» en los inscritos.
 
+### Enlace de la reunión y dosier en PDF en UN correo, dos días antes (NestoAPI#895, sugerencia 1427 de Pilar, OK de Carlos 24/11/26)
+- Ya existían: el enlace en su campo `Eventos.EnlaceOnline` (#875, `EnlaceOnlineEventos.cs`, el recordatorio de las 10:00 lo lleva a las online y se
+  manda al inscribirse tarde) y el dosier en PDF (sugerencia 1332, `DosierEventos.cs`, `dbo.EventosDosier` + marca `EventosInscripciones.DosierEnviado`,
+  `Scripts/EventosDosier.sql`), que salía 2 HORAS antes de empezar en un correo aparte. Lo de #895: el dosier sale DOS días antes y en el MISMO correo
+  que el enlace, para poder imprimirlo con tiempo. Sin script nuevo.
+- A quién: `ReglasDosierEvento.LoRecibe` = las formalizadas (pagadas, facturadas o inscritas en un gratuito, sin «No podré ir»; también «Asistió»): una
+  reserva sin pagar no. Una sola vez por inscripción (la marca `DosierEnviado`, apartada con un UPDATE condicional antes de mandar; si el correo falla,
+  se suelta).
+- Cómo: el recordatorio de las 10:00 (`RecordatorioEventosJobsService`, eventos de dentro de 1-2 días) lleva el dosier ADJUNTO («Le adjuntamos el
+  dosier del evento, en PDF, para que pueda imprimirlo con tiempo.») si la inscripción no lo tiene (`DependenciasRecordatorioEventos.Dosieres`,
+  `DosierDe`, `ReservarDosier`); igual el recordatorio que sale al inscribirse o pagar tarde o al poner el enlace tarde (`EnlaceOnlineEventosJobs`).
+  El job `eventos-dosier` (cada 15 min, 7:00-21:45 Madrid) mira ahora los eventos de hoy y de los dos días siguientes y manda, desde las 10:30 de dos
+  días antes (`ReglasDosierEvento.MomentoEnvio`, `DIAS_ANTES_DOSIER`, `HORA_ENVIO`), a quien el recordatorio no se lo llevó (recordatorio apagado
+  —interruptor Eventos:RecordatorioAsistencia—, dosier subido después, correo que falló); ese correo también lleva el enlace a quien se conecta
+  (`ReglasDosierEvento.Correo` con forma y enlace) y dice «que es el miércoles 18 de noviembre a las 17:00, online» (el mismo día, «que empieza hoy…»).
+  Al inscribirse o quedar pagada con el evento a menos de dos días: el recordatorio con enlace y dosier si es online y el recordatorio está encendido;
+  si no (presencial, o apagado), el dosier solo (con el enlace si lo lleva) por `DosierEventosJobs.AlInscribirse`. Sin hora de inicio, sin dosier
+  (como antes). Sustituir el dosier con «reenviar» sigue igual (versión actualizada a quien tenía el anterior).
+- Nada se manda si el evento no tiene dosier (el recordatorio sale como antes) ni enlace a quien no se conecta. `EnvioPrevisto` del dosier = dos días
+  antes a las 10:30. Gemela Nesto: el texto «sale solo dos días antes, con el recordatorio» junto al dosier del evento (hoy dice «2 horas antes»).
+- Abierto para Carlos: si el recordatorio de las 10:00 sigue apagado en producción, el dosier sale igual a las 10:30 con el enlace (un correo), pero
+  sin los botones de confirmar asistencia; y la app (TNV) no recibe el dosier (solo el correo).
+
 ### Cupón de evento adelantado por excepción (NestoAPI#885, 23/11/26)
 - `POST api/Cupones/{codigo}/Adelantar` {Motivo 1..500} → 200 `CuponDTO`: un cupón de Origen «Evento» que hoy está Emitido (vale desde el día
   del evento) pasa a valer desde HOY (`ValidoDesde` = hoy y Estado Activo; ni importe, ni caducidad, ni inscripción ni factura). 400 sin motivo,

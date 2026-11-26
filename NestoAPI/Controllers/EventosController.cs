@@ -379,7 +379,8 @@ namespace NestoAPI.Controllers
         // POST api/Eventos/5/Dosier   multipart/form-data, el PDF en el campo «fichero»
         /// <summary>
         /// Sugerencia 1332 (Reina; Carlos 18/11/26): pone (o sustituye) el dosier del evento, un PDF de hasta 10 MB. Sale solo, por
-        /// correo, a todas las inscritas vivas unas 2 horas antes de empezar (y al momento a quien se inscriba después); si se sube
+        /// correo, a todas las inscritas formalizadas dos días antes, en el mismo correo que el recordatorio y el enlace (NestoAPI#895; y al
+        /// momento a quien se inscriba o pague después); si se sube
         /// cuando ya es la hora, sale entonces a quien no lo tenga; con <paramref name="reenviar"/> = true (Carlos 18/11/26: Nesto lo
         /// pregunta al sustituirlo), también a las que ya tenían el anterior, como versión actualizada. Quien mantiene el evento.
         /// 415 si no es un PDF; 503 sin el script Scripts/EventosDosier.sql. Devuelve el dosier (nombre, fecha, cuándo sale y a

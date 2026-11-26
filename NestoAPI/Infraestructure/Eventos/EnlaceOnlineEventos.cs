@@ -435,7 +435,8 @@ namespace NestoAPI.Infraestructure.Eventos
                     CorreoCliente = (empresa, cliente, contacto) => RecordatorioEventosJobsService.CorreoDelCliente(db, empresa, cliente, contacto),
                     NombreCliente = (empresa, cliente, contacto) => RecordatorioEventosJobsService.NombreDelCliente(db, empresa, cliente, contacto),
                     Push = push,
-                    Correo = new ServicioCorreoElectronico()
+                    Correo = new ServicioCorreoElectronico(),
+                    Dosieres = new RepositorioDosierEventos(db) // NestoAPI#895: el dosier, en el mismo correo
                 },
                 Inscripciones = id => InscripcionesConForma(db, id),
                 PonerClaves = async inscripciones =>
@@ -524,11 +525,13 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             await deps.PonerClaves(filas.Select(f => f.Key).ToList()).ConfigureAwait(false);
             var enviadas = new List<EventoInscripcion>();
+            // NestoAPI#895: el recordatorio lleva el dosier (si lo hay y no lo tiene ya): un solo correo
+            DosierEvento dosier = await RecordatorioEventosJobsService.DosierDe(deps.Recordatorio, evento).ConfigureAwait(false);
             foreach (KeyValuePair<EventoInscripcion, string> fila in filas)
             {
                 try
                 {
-                    _ = await RecordatorioEventosJobsService.Avisar(deps.Recordatorio, evento, fila.Key, fila.Value, enlaceOnline).ConfigureAwait(false);
+                    _ = await RecordatorioEventosJobsService.Avisar(deps.Recordatorio, evento, fila.Key, fila.Value, enlaceOnline, dosier).ConfigureAwait(false);
                     enviadas.Add(fila.Key);
                 }
                 catch (Exception ex)
