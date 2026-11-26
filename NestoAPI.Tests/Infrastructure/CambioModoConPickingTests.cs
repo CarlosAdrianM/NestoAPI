@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Calidad;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
@@ -107,14 +108,13 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(correo.Body, "El cliente lo quiere todo junto");
         }
 
-        [TestMethod]
-        public async Task PostSolicitudCambioModo_MandaElCorreoConRespuestaAlUsuario()
+        private static NVEntities DbConElPedido()
         {
             NVEntities db = A.Fake<NVEntities>();
             DbSet<CabPedidoVta> cabeceras = A.Fake<DbSet<CabPedidoVta>>(o => o.Implements<IQueryable<CabPedidoVta>>().Implements<IDbAsyncEnumerable<CabPedidoVta>>());
             IQueryable<CabPedidoVta> datos = new List<CabPedidoVta>
             {
-                new CabPedidoVta { Empresa = "1", Número = 926879, Nº_Cliente = "40483", ModoServicio = 2, ServirJunto = false }
+                new CabPedidoVta { Empresa = "1", Número = 926879, Nº_Cliente = "40483", Contacto = "0", ModoServicio = 2, ServirJunto = false }
             }.AsQueryable();
             A.CallTo(() => ((IDbAsyncEnumerable<CabPedidoVta>)cabeceras).GetAsyncEnumerator()).ReturnsLazily(() => new TestDbAsyncEnumerator<CabPedidoVta>(datos.GetEnumerator()));
             A.CallTo(() => ((IQueryable<CabPedidoVta>)cabeceras).Provider).Returns(new TestDbAsyncQueryProvider<CabPedidoVta>(datos.Provider));
@@ -122,10 +122,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => ((IQueryable<CabPedidoVta>)cabeceras).ElementType).Returns(datos.ElementType);
             A.CallTo(() => ((IQueryable<CabPedidoVta>)cabeceras).GetEnumerator()).ReturnsLazily(() => datos.GetEnumerator());
             A.CallTo(() => db.CabPedidoVtas).Returns(cabeceras);
-            IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
-            MailMessage enviado = null;
-            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Invokes((MailMessage m) => enviado = m).Returns(true);
-            var controller = new PedidosVentaSolicitudesController(db, correo)
+            return db;
+        }
+
+        private static PedidosVentaSolicitudesController Controlador(IServicioCorreoElectronico correo) =>
+            new PedidosVentaSolicitudesController(DbConElPedido(), correo)
             {
                 RequestContext = new HttpRequestContext
                 {
@@ -137,6 +138,14 @@ namespace NestoAPI.Tests.Infrastructure
                 }
             };
 
+        [TestMethod]
+        public async Task PostSolicitudCambioModo_MandaElCorreoConRespuestaAlUsuario()
+        {
+            IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
+            MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Invokes((MailMessage m) => enviado = m).Returns(true);
+            var controller = Controlador(correo);
+
             var resultado = await controller.PostSolicitudCambioModo(new SolicitudCambioModoDTO
             {
                 Empresa = "1", Pedido = 926879, ModoDeseado = Constantes.Pedidos.ModosServicio.TODO_JUNTO
@@ -145,6 +154,45 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<string>));
             Assert.AreEqual("daniellopez@nuevavision.es", enviado.ReplyToList.Single().Address);
             StringAssert.Contains(enviado.Subject, "926879");
+        }
+
+        // NestoAPI#914: la petición deja su señal de calidad (antes solo salía por correo y se perdía), aunque el correo no salga
+        [DataTestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public async Task PostSolicitudCambioModo_ApuntaElEventoDeCalidad(bool correoSale)
+        {
+            Func<IEscritorEventosCalidad> escritorAntes = RegistroCalidad.Escritor;
+            Action<Action> segundoPlanoAntes = RegistroCalidad.EnSegundoPlano;
+            try
+            {
+                IEscritorEventosCalidad escritor = A.Fake<IEscritorEventosCalidad>();
+                EventoCalidad evento = null;
+                A.CallTo(() => escritor.Escribir(A<EventoCalidad>._)).Invokes((EventoCalidad e) => evento = e);
+                RegistroCalidad.Escritor = () => escritor;
+                RegistroCalidad.EnSegundoPlano = trabajo => trabajo();
+                IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
+                A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Returns(correoSale);
+
+                _ = await Controlador(correo).PostSolicitudCambioModo(new SolicitudCambioModoDTO
+                {
+                    Empresa = "1", Pedido = 926879, ModoDeseado = Constantes.Pedidos.ModosServicio.TODO_JUNTO
+                });
+
+                Assert.IsNotNull(evento);
+                Assert.AreEqual(TiposEventoCalidad.CAMBIO_DE_MODO_CON_PICKING, evento.Tipo);
+                Assert.AreEqual("dlopez", evento.Usuario);
+                Assert.AreEqual(926879, evento.Pedido);
+                Assert.AreEqual("40483", evento.Cliente);
+                StringAssert.Contains(evento.Detalle, "\"ModoActual\":2");
+                StringAssert.Contains(evento.Detalle, "\"ModoPedido\":1");
+                StringAssert.Contains(evento.Detalle, "\"CorreoEnviado\":" + (correoSale ? "true" : "false"));
+            }
+            finally
+            {
+                RegistroCalidad.Escritor = escritorAntes;
+                RegistroCalidad.EnSegundoPlano = segundoPlanoAntes;
+            }
         }
 
         [TestMethod]

@@ -249,6 +249,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Infrastructure\Calidad\RegistroCalidadTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorridoPrimeroEscaleraTests.cs" />
     <Compile Include="Infrastructure\Eventos\DatosTransferenciaInscripcionTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponAdelantadoSinAsistirTests.cs" />

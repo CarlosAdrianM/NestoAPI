@@ -1004,6 +1004,9 @@ WHERE Numero = @Numero AND Agencia = @Agencia AND Estado = @Entregado{0};";
             {
                 await Recogidas.CerrarPendiente(pedido, usuario).ConfigureAwait(false);
             }
+            // NestoAPI#914: señal de calidad (en segundo plano; nunca lanza)
+            Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.RECOGIDA_ANULADA, usuario, envio.Empresa, pedido, envio.Cliente, envio.Contacto,
+                $"Envio {envio.Numero}", detalle: new { Motivo = motivo });
             Avisar(TipoResultadoReparto.Ok, usuario, RepartoCambiadoDTO.MOTIVO_PARADA, origen);
             return ResultadoReparto<ResultadoAnularRecogidaDTO>.Bien(new ResultadoAnularRecogidaDTO
             {
@@ -1062,6 +1065,9 @@ WHERE Numero = @Numero AND Agencia = @Agencia AND Estado = @Entregado{0};";
             {
                 await Recogidas.AvisarSolicitudAnulada(solicitud, usuario).ConfigureAwait(false);
             }
+            // NestoAPI#914: señal de calidad (en segundo plano; nunca lanza). A quién se imputa (quién marcó «Recogido») no se sabe aquí.
+            Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.RECOGIDA_MARCADA_POR_ERROR, usuario, envio.Empresa, pedido, envio.Cliente, envio.Contacto,
+                $"Envio {envio.Numero}", detalle: new { Motivo = motivo });
             Avisar(TipoResultadoReparto.Ok, usuario, RepartoCambiadoDTO.MOTIVO_PARADA, origen);
             return ResultadoReparto<ResultadoAnularRecogidaDTO>.Bien(new ResultadoAnularRecogidaDTO
             {

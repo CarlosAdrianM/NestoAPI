@@ -149,6 +149,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 // Carlos 26/11/26: a quien tenga el pedido abierto, que lo que ha cambiado es el picking (en segundo plano; nunca lanza)
                 PedidosVenta.AvisoPedidoCambiado.PorPicking(empresa, pedido, usuario?.Identity?.Name, PedidosVenta.AvisoPedidoCambiado.MOTIVO_PICKING_QUITADO);
+                // NestoAPI#914: señal de calidad (en segundo plano; nunca lanza)
+                Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.QUITAR_PICKING, usuario?.Identity?.Name ?? quien, empresa, pedido,
+                    detalle: new { Lineas = lineas != null && lineas.Count > 0 ? lineas : null, PedidoEntero = lineas == null || lineas.Count == 0 });
             }
             return resultado;
         }
