@@ -134,6 +134,19 @@ namespace NestoAPI.Models.Clientes
         /// </summary>
         public DireccionEntregaCrear DireccionEntrega { get; set; }
 
+        /// <summary>
+        /// NestoAPI#876: solo en el ALTA con origen CAMBIO-FISCAL: el número del cliente que cambia de forma fiscal. Se comprueba que
+        /// existe (400 si no, o si viene con otro origen) y se guarda el enlace en dbo.ClientesAnteriores. Opcional (null = como hoy).
+        /// </summary>
+        public string ClienteAnterior { get; set; }
+
+        /// <summary>
+        /// NestoAPI#876: con <see cref="ClienteAnterior"/>, los bloques que se copian de su ficha tras crear la nueva
+        /// (<see cref="BloquesCambioFiscal"/>; lista vacía = todos). Null = no se copia nada (como hoy). Si la copia falla, el alta
+        /// queda hecha y la respuesta lo dice en Cliente.AvisoCopiaClienteAnterior.
+        /// </summary>
+        public List<string> CopiarDelAnterior { get; set; }
+
 
         public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }
     }

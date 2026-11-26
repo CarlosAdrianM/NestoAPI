@@ -38,8 +38,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <param name="efectos">Efectos creados a mano en el pedido.</param>
         /// <param name="enviosAgencia">Números de los envíos de agencia del pedido (cualquier estado).</param>
         /// <param name="pagosTarjetaVivos">Cobros con tarjeta del pedido pendientes o autorizados.</param>
+        /// <param name="admitirPicking">NestoAPI#876: el picking ya no bloquea aquí; lo decide después
+        /// <see cref="ReglaCambioClienteConPicking"/> (solo si al recalcular no cambia nada).</param>
         internal static string MotivoNoSePuede(int numero, bool notaEntrega, IEnumerable<LinPedidoVta> lineas,
-            int pagosAPlazosVivos, int efectos, IEnumerable<int> enviosAgencia, int pagosTarjetaVivos)
+            int pagosAPlazosVivos, int efectos, IEnumerable<int> enviosAgencia, int pagosTarjetaVivos, bool admitirPicking = false)
         {
             string prefijo = $"No se puede cambiar el cliente del pedido {numero}: ";
             if (notaEntrega)
@@ -60,7 +62,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return prefijo + $"{DescribirLineas(enAlbaran)} ya {(enAlbaran.Count == 1 ? "tiene" : "tienen")} albarán.";
             }
             List<LinPedidoVta> conPicking = todas.Where(l => (l.Picking ?? 0) != 0).ToList();
-            if (conPicking.Any())
+            if (conPicking.Any() && !admitirPicking)
             {
                 return prefijo + $"{DescribirLineas(conPicking)} ya {(conPicking.Count == 1 ? "tiene" : "tienen")} picking. " +
                     "Hay que quitar el picking antes de cambiar el cliente.";

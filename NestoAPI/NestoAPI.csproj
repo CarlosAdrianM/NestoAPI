@@ -534,6 +534,7 @@
     <Compile Include="Controllers\ClientesController.ContactoDefecto.cs" />
     <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
     <Compile Include="Controllers\ClientesController.Origen.cs" />
+    <Compile Include="Controllers\ClientesController.CambioFiscal.cs" />
     <Compile Include="Controllers\ClientesController.ImportarLeads.cs" />
     <Compile Include="Controllers\ClientesController.ImportarLeadsMeta.cs" />
     <Compile Include="Controllers\ClientesController.Embudo.cs" />
@@ -545,6 +546,9 @@
     <Compile Include="Infraestructure\Clientes\Embudo\PasadaSincronizacionClientes.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\OrigenesCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\RepositorioOrigenesCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\CambioFiscal\CopiaCambioFiscal.cs" />
+    <Compile Include="Infraestructure\Clientes\CambioFiscal\RepositorioCambioFiscal.cs" />
+    <Compile Include="Infraestructure\Clientes\CambioFiscal\ServicioCambioFiscal.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\LeadsSinLlamarJobsService.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\LectorLeadsMeta.cs" />
     <Compile Include="Infraestructure\Clientes\Origenes\ImportadorLeadsMeta.cs" />
@@ -1255,6 +1259,7 @@
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioClientePedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CambioClienteConPicking.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioModoConPicking.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AmpliacionPedidoEnPreparacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AbonoSoloLoComprado.cs" />
@@ -1955,6 +1960,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Clientes\ClienteCrear.cs" />
+    <Compile Include="Models\Clientes\CambioFiscalDTO.cs" />
     <Compile Include="Models\Clientes\SolicitudAltaClienteDTO.cs" />
     <Compile Include="Models\Clientes\PaisDTO.cs" />
     <Compile Include="Models\CodigosPostales\CodigoPostalMantenimientoDTO.cs" />

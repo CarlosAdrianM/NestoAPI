@@ -42,6 +42,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// el parámetro PermitirCrearPedidoConErrores) y la denegación no exige un permiso propio.
         /// </summary>
         public bool CreadoSinPasarValidacion { get; set; }
+
+        /// <summary>
+        /// NestoAPI#876: solo calcular («en seco») qué cambiaría, sin guardar nada. Los portes no se calculan en el ensayo
+        /// (los pone el guardado de verdad).
+        /// </summary>
+        public bool Ensayo { get; set; }
     }
 
     /// <summary>NestoAPI#519: lo que ha pasado al cambiar el cliente, para enseñárselo al usuario.</summary>
@@ -56,5 +62,17 @@ namespace NestoAPI.Models.PedidosVenta
 
         /// <summary>Cada cosa que ha cambiado, en lenguaje de usuario («Forma de pago: RCB → EFC»).</summary>
         public List<string> Cambios { get; set; } = new List<string>();
+
+        /// <summary>NestoAPI#876: era un ensayo (no se ha guardado nada; <see cref="Cambios"/> es lo que cambiaría).</summary>
+        public bool Ensayo { get; set; }
+
+        /// <summary>NestoAPI#876: al recalcular, ninguna línea cambia de precio, descuentos, IVA ni importes y la cabecera no cambia de IVA.</summary>
+        public bool SinCambiosDeImportes { get; set; }
+
+        /// <summary>NestoAPI#876: el pedido tenía picking (se ha cambiado sin tocarlo, porque no cambiaba nada).</summary>
+        public bool TeniaPicking { get; set; }
+
+        /// <summary>NestoAPI#876: lo que conviene saber (portes que no se calculan en el ensayo, ruta que se queda con picking…).</summary>
+        public List<string> Avisos { get; set; } = new List<string>();
     }
 }

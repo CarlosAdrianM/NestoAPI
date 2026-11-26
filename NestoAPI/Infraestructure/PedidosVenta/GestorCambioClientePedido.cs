@@ -19,6 +19,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public bool NoEncontrado { get; set; }
         /// <summary>Por qué no se ha hecho, en lenguaje de usuario. Null si se ha hecho.</summary>
         public string Error { get; set; }
+        /// <summary>NestoAPI#876: con código, el controller contesta 409 {Message, Codigo} (con picking y algo cambiaría).</summary>
+        public string Codigo { get; set; }
         public CambiarClientePedidoRespuesta Respuesta { get; set; }
     }
 
@@ -73,6 +75,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Lo que se deja en ELMAH como rastro informativo (sustituible en los tests).</summary>
         internal Action<Exception> RegistrarEnElmah { get; set; } = ElmahHelper.Log;
 
+        /// <summary>NestoAPI#876: la campana a Almacén cuando pasa de cliente un pedido con picking (nunca rompe el cambio).</summary>
+        internal Func<NotificacionPushDTO, Task> AvisarAlmacen { get; set; } = n => new Retencion.AvisadorRetencionAlmacen().Avisar(n);
+
         public async Task<ResultadoCambioClientePedido> CambiarCliente(string empresa, int numero, CambiarClientePedidoRequest peticion, string usuario)
         {
             if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente))
@@ -107,14 +112,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             if (cab.NotaEntrega)
             {
-                return await CambiarClienteNotaEntrega(cab, ficha, clienteAnterior, contactoAnterior, usuario).ConfigureAwait(false);
+                return await CambiarClienteNotaEntrega(cab, ficha, clienteAnterior, contactoAnterior, usuario, peticion.Ensayo).ConfigureAwait(false);
             }
 
+            // NestoAPI#876: el picking ya no bloquea aquí; con picking se cambia solo si al recalcular no cambia nada (más abajo)
             string motivo = await MotivoNoSePuede(cab).ConfigureAwait(false);
             if (motivo != null)
             {
                 return Error(motivo);
             }
+            List<int> pickings = cab.LinPedidoVtas.Where(l => (l.Picking ?? 0) != 0).Select(l => l.Picking ?? 0).Distinct().ToList();
+            bool conPicking = pickings.Any();
 
             PedidoVentaDTO antes = await LeerPedido(empresa, numero).ConfigureAwait(false);
 
@@ -176,6 +184,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             string anteriorParaAuditoria = JsonConvert.SerializeObject(Resumen(cab));
 
+            // NestoAPI#876: la foto de antes, para comparar «en seco» y para dejarlo todo como estaba si no se hace
+            List<FotoLineaCambioCliente> fotoLineas = ReglaCambioClienteConPicking.Fotografiar(cab.LinPedidoVtas);
+            FotoCabeceraCambioCliente fotoCabecera = FotoCabeceraCambioCliente.De(cab);
+
             foreach (LinPedidoVta linea in cab.LinPedidoVtas)
             {
                 _ = precios.TryGetValue(linea.Nº_Orden, out ProductoPlantillaDTO precioNuevo);
@@ -190,6 +202,54 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     CalcularImportes(linea, ivaNuevo);
                 }
+            }
+
+            // NestoAPI#876: en seco, la cabecera como quedaría (con picking, la ruta se queda: el picking ya es de esa ruta)
+            CambioClientePedido.AplicarACabecera(cab, ficha, condiciones, cccObligatorio, usuarioAuditoria, Ahora());
+            List<string> avisos = new List<string>();
+            if (conPicking && !string.Equals(cab.Ruta?.Trim(), fotoCabecera.Ruta?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                avisos.Add($"La ruta se queda en {fotoCabecera.Ruta?.Trim()} (la de la ficha nueva es {cab.Ruta?.Trim()}): el picking ya está hecho.");
+                cab.Ruta = fotoCabecera.Ruta;
+            }
+            List<string> diferencias = ReglaCambioClienteConPicking.Diferencias(fotoLineas,
+                ReglaCambioClienteConPicking.Fotografiar(cab.LinPedidoVtas), fotoCabecera.Iva, cab.IVA);
+            List<string> cambiosCabecera = FotoCabeceraCambioCliente.Cambios(fotoCabecera, FotoCabeceraCambioCliente.De(cab));
+            string rutaQueVa = cab.Ruta;
+            fotoCabecera.Restaurar(cab);
+            if (conPicking && diferencias.Any())
+            {
+                ReglaCambioClienteConPicking.Restaurar(cab.LinPedidoVtas, fotoLineas);
+                return new ResultadoCambioClientePedido
+                {
+                    Error = ReglaCambioClienteConPicking.MotivoNoSePuede(numero, ficha.Nº_Cliente, diferencias),
+                    Codigo = ReglaCambioClienteConPicking.CODIGO_CAMBIARIA
+                };
+            }
+            if (peticion.Ensayo)
+            {
+                ReglaCambioClienteConPicking.Restaurar(cab.LinPedidoVtas, fotoLineas);
+                if (!conPicking)
+                {
+                    avisos.Add("Los portes se vuelven a calcular al pasarlo de verdad (con el código postal y la ruta del cliente nuevo).");
+                }
+                return new ResultadoCambioClientePedido
+                {
+                    Respuesta = new CambiarClientePedidoRespuesta
+                    {
+                        Empresa = empresa,
+                        Numero = numero,
+                        ClienteAnterior = clienteAnterior,
+                        ContactoAnterior = contactoAnterior,
+                        Cliente = ficha.Nº_Cliente.Trim(),
+                        Contacto = ficha.Contacto.Trim(),
+                        Cambios = cambiosCabecera.Concat(diferencias).ToList(),
+                        Ensayo = true,
+                        SinCambiosDeImportes = !diferencias.Any(),
+                        TeniaPicking = conPicking,
+                        Avisos = avisos
+                    }
+                };
             }
 
             // Vendedores por grupo de producto: los del cliente nuevo, como al crear el pedido
@@ -210,11 +270,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
                 // 2. La cabecera
                 CambioClientePedido.AplicarACabecera(cab, ficha, condiciones, cccObligatorio, usuarioAuditoria, Ahora());
+                cab.Ruta = rutaQueVa;
                 _ = db.Modificaciones.Add(new Modificacion
                 {
                     Tabla = "Pedidos",
                     Anterior = anteriorParaAuditoria,
-                    Nuevo = JsonConvert.SerializeObject(new { Operacion = "CambiarCliente (#519)", Datos = Resumen(cab) }),
+                    Nuevo = JsonConvert.SerializeObject(new
+                    {
+                        Operacion = conPicking ? "CambiarCliente con picking sin cambios de importes (#876)" : "CambiarCliente (#519)",
+                        Pickings = conPicking ? pickings : null,
+                        Datos = Resumen(cab)
+                    }),
                     Usuario = usuarioAuditoria,
                     Fecha = Ahora()
                 });
@@ -231,11 +297,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 releido.CreadoSinPasarValidacion = peticion.CreadoSinPasarValidacion;
 
-                // 4. El PUT de siempre: portes del cliente nuevo y correo de modificación
-                string errorGuardado = GestorPedidosVenta.MensajeDeErrorDelGuardado(await GuardarPedido(releido).ConfigureAwait(true));
-                if (errorGuardado != null)
+                // 4. El PUT de siempre: portes del cliente nuevo y correo de modificación. NestoAPI#876: con picking NO (el PUT
+                // de un pedido con picking libera y recalcula portes y reembolsos; aquí no cambia ningún importe)
+                if (!conPicking)
                 {
-                    throw new NestoBusinessException($"No se ha podido cambiar el cliente del pedido {numero}: {errorGuardado}");
+                    string errorGuardado = GestorPedidosVenta.MensajeDeErrorDelGuardado(await GuardarPedido(releido).ConfigureAwait(true));
+                    if (errorGuardado != null)
+                    {
+                        throw new NestoBusinessException($"No se ha podido cambiar el cliente del pedido {numero}: {errorGuardado}");
+                    }
                 }
 
                 despues = await LeerPedido(empresa, numero).ConfigureAwait(true);
@@ -245,6 +315,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             List<string> cambios = CambioClientePedido.DescribirCambios(antes, despues);
             RegistrarEnElmah(new Exception($"[Cambio de cliente #519] Pedido {empresa}/{numero}: {clienteAnterior}/{contactoAnterior} → " +
                 $"{ficha.Nº_Cliente.Trim()}/{ficha.Contacto.Trim()} por {usuarioAuditoria}. {string.Join(". ", cambios)}"));
+
+            if (conPicking)
+            {
+                try
+                {
+                    await AvisarAlmacen(ReglaCambioClienteConPicking.Notificacion(empresa, numero, clienteAnterior, contactoAnterior,
+                        ficha.Nº_Cliente, ficha.Contacto, pickings, usuarioAuditoria)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    RegistrarEnElmah(new Exception($"[Cambio de cliente con picking #876] Pedido {empresa}/{numero}: no se ha podido avisar a Almacén: {ex.Message}", ex));
+                }
+            }
 
             return new ResultadoCambioClientePedido
             {
@@ -256,7 +339,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     ContactoAnterior = contactoAnterior,
                     Cliente = ficha.Nº_Cliente.Trim(),
                     Contacto = ficha.Contacto.Trim(),
-                    Cambios = cambios
+                    Cambios = cambios,
+                    SinCambiosDeImportes = !diferencias.Any(),
+                    TeniaPicking = conPicking,
+                    Avisos = avisos
                 }
             };
         }
@@ -267,7 +353,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// nada de condiciones, precios, importes, portes ni el PUT (que mandaría el correo de modificación).
         /// </summary>
         private async Task<ResultadoCambioClientePedido> CambiarClienteNotaEntrega(CabPedidoVta cab, Cliente ficha,
-            string clienteAnterior, string contactoAnterior, string usuario)
+            string clienteAnterior, string contactoAnterior, string usuario, bool ensayo = false)
         {
             string empresa = cab.Empresa;
             int numero = cab.Número;
@@ -279,6 +365,26 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             if (motivo != null)
             {
                 return Error(motivo);
+            }
+            string cambio = "Nota de entrega: se cambian cliente, contacto y ruta; no se recalcula nada porque ya está facturada.";
+            if (ensayo)
+            {
+                // NestoAPI#876: en seco no se toca nada
+                return new ResultadoCambioClientePedido
+                {
+                    Respuesta = new CambiarClientePedidoRespuesta
+                    {
+                        Empresa = empresa,
+                        Numero = numero,
+                        ClienteAnterior = clienteAnterior,
+                        ContactoAnterior = contactoAnterior,
+                        Cliente = ficha.Nº_Cliente.Trim(),
+                        Contacto = ficha.Contacto.Trim(),
+                        Cambios = new List<string> { cambio },
+                        Ensayo = true,
+                        SinCambiosDeImportes = true
+                    }
+                };
             }
 
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
@@ -317,7 +423,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 transaccion?.Complete();
             }
 
-            string cambio = "Nota de entrega: se cambian cliente, contacto y ruta; no se recalcula nada porque ya está facturada.";
             RegistrarEnElmah(new Exception($"[Cambio de cliente #582] Nota de entrega {empresa}/{numero}: {clienteAnterior}/{contactoAnterior} → " +
                 $"{ficha.Nº_Cliente.Trim()}/{ficha.Contacto.Trim()} por {usuarioAuditoria}."));
 
@@ -352,7 +457,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .CountAsync(p => p.Empresa == empresa && p.Documento == documento
                     && (p.Estado == Constantes.EstadosPagoTPV.PENDIENTE || p.Estado == Constantes.EstadosPagoTPV.AUTORIZADO)).ConfigureAwait(false);
             return CambioClientePedido.MotivoNoSePuede(numero, cab.NotaEntrega, cab.LinPedidoVtas,
-                pagosAPlazosVivos, efectos, envios, pagosTarjeta);
+                pagosAPlazosVivos, efectos, envios, pagosTarjeta, admitirPicking: true);
         }
 
         /// <summary>

@@ -232,3 +232,18 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   productos con `PedidosAdicionales` [{Numero, Motivo «Formación»}]; si la formación falla, los productos se quedan y va en `AvisosCursos`. Solo
   formación: UN pedido (como antes). Sin inscripción, señal ni enlace: precio y descuento de quien la vende, con las validaciones de siempre.
   Formación en un presupuesto o con un curso de evento: el 400 de antes.
+
+### Cambiar el cliente de un pedido con picking y ensayo (NestoAPI#876, Carlos 26/11/26)
+- `POST api/PedidosVenta/{empresa}/{numero}/CambiarCliente` (#519, núcleo `GestorCambioClientePedido`, ahora también en `CambiarClienteDelPedido` para
+  api/Clientes/CambioFiscal/PasarPedidos): el picking ya NO bloquea siempre. LA REGLA (pura) `ReglaCambioClienteConPicking` (`CambioClienteConPicking.cs`):
+  un pedido con picking (sin albarán, factura ni envío de agencia: esas siguen parando, `CambioClientePedido.MotivoNoSePuede(…, admitirPicking: true)`)
+  se cambia si y solo si, recalculado «en seco» para el cliente nuevo, ninguna línea cambia de precio, descuentos (producto, cliente, pronto pago,
+  línea), IVA ni importes (al céntimo; precio y descuentos a 4 decimales) y la cabecera no cambia de IVA. Si algo cambiaría: 409 `{Message, Codigo:
+  "CAMBIO_CLIENTE_CON_PICKING_CAMBIA"}` diciendo qué líneas y qué, y todo se deja como estaba (foto y `Restaurar`, sin SaveChanges).
+- Con picking y sin cambios: líneas primero y luego la cabecera (como siempre), validación con el cliente nuevo, rastro en Modificaciones («CambiarCliente
+  con picking sin cambios de importes (#876)» + pickings), SIN el PUT (que en un pedido con picking libera y recalcula portes y reembolsos) y con la
+  ruta de antes (el picking ya es de esa ruta; lo dice `Avisos`). El picking y las reservas no se tocan. Después, campana a Almacén (`AvisadorRetencionAlmacen`,
+  tipo `PedidoCambiaDeCliente`, Datos empresa/pedido/clienteAnterior/cliente/contacto/pickings; nunca rompe).
+- `CambiarClientePedidoRequest.Ensayo` (aditivo): calcula en seco y devuelve `Cambios` (cabecera y líneas) sin guardar nada; los portes no se calculan en
+  el ensayo (aviso). Respuesta (aditivo): `Ensayo`, `SinCambiosDeImportes`, `TeniaPicking`, `Avisos`.
+- Nesto: el 409 con Codigo trae el texto para enseñarlo tal cual (hoy pinta el 400 de «quite el picking»); NestoApp no lo usa.

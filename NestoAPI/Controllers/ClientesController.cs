@@ -1398,12 +1398,20 @@ namespace NestoAPI.Controllers
                 return BadRequest(errorOrigen);
             }
 
+            // NestoAPI#876: el cliente anterior de un alta por cambio de forma fiscal, antes de dar de alta
+            string errorAnterior = await ValidarClienteAnteriorAlta(clienteCrear);
+            if (errorAnterior != null)
+            {
+                return BadRequest(errorAnterior);
+            }
+
             try
             {
                 // NestoAPI#716: desde qué aplicación se da de alta (Clientes.AplicacionAlta); si no lo manda, se deduce del token.
                 clienteCrear.AplicacionAlta = DatosAltaCliente.DeducirAplicacion(User, clienteCrear.AplicacionAlta);
                 Cliente cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
                 await GuardarOrigenTrasGuardarCliente(cliente.Empresa, cliente.Nº_Cliente, clienteCrear.Origen, esAlta: true);
+                await TrasAltaCambioFiscal(cliente, clienteCrear);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
                     cliente);

@@ -335,6 +335,114 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             StringAssert.Contains(excepcion.Message, "mezclar");
         }
 
+        #region NestoAPI#876: con picking solo si no cambia nada, y ensayo
+
+        /// <summary>Un cliente nuevo con las mismas condiciones que el 10000 (lo que deja la copia del cambio de forma fiscal).</summary>
+        private void ClienteGemelo()
+        {
+            clientes.Add(new Cliente { Empresa = EMPRESA, Nº_Cliente = "30000", Contacto = "0", ClientePrincipal = true, Estado = 0, CIF_NIF = "B3", IVA = "G21", Vendedor = "NV ", Ruta = "AT " });
+            condiciones.Add(new CondPagoCliente { Empresa = EMPRESA, Nº_Cliente = "30000", Contacto = "0", FormaPago = "EFC", PlazosPago = "CONTADO", ImporteMínimo = 0 });
+            gestor.CalcularPrecio = (e, producto, cliente, contacto, cantidad) =>
+                Task.FromResult(new ProductoPlantillaDTO { precio = 10, descuento = 0, aplicarDescuento = false });
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_ConPicking_SinCambiosDeImportes_SeCambiaSinPutNiTocarElPickingYAvisaAAlmacen()
+        {
+            ClienteGemelo();
+            lineas[0].Picking = 100198;
+            List<NotificacionPushDTO> avisos = new List<NotificacionPushDTO>();
+            gestor.AvisarAlmacen = n => { avisos.Add(n); return Task.CompletedTask; };
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO, new CambiarClientePedidoRequest { Cliente = "30000" }, "u");
+
+            Assert.IsNull(resultado.Error, resultado.Error);
+            Assert.AreEqual("30000", cab.Nº_Cliente);
+            Assert.AreEqual("30000", lineas[0].Nº_Cliente);
+            Assert.AreEqual(100198, lineas[0].Picking);
+            Assert.AreEqual("FW ", cab.Ruta, "Con picking la ruta se queda");
+            Assert.AreEqual(0, guardados.Count, "Con picking no pasa por el PUT");
+            Assert.IsTrue(resultado.Respuesta.TeniaPicking);
+            Assert.IsTrue(resultado.Respuesta.SinCambiosDeImportes);
+            Assert.AreEqual(1, avisos.Count);
+            Assert.AreEqual(ReglaCambioClienteConPicking.TIPO_AVISO, avisos[0].Tipo);
+            StringAssert.Contains(avisos[0].Titulo, NUMERO.ToString());
+            Assert.AreEqual("100198", avisos[0].Datos["pickings"]);
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_ConPicking_YCambiariaElPrecio_409SinTocarNada()
+        {
+            lineas[0].Picking = 77;
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO, new CambiarClientePedidoRequest { Cliente = "20000" }, "u");
+
+            Assert.AreEqual(ReglaCambioClienteConPicking.CODIGO_CAMBIARIA, resultado.Codigo);
+            StringAssert.Contains(resultado.Error, "precio");
+            Assert.AreEqual(10M, lineas[0].Precio);
+            Assert.AreEqual("G21", cab.IVA);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_ConPicking_LaAlertaAAlmacenFalla_ElCambioSeHaceIgual()
+        {
+            ClienteGemelo();
+            lineas[0].Picking = 5;
+            gestor.AvisarAlmacen = _ => throw new InvalidOperationException("sin Almacén");
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO, new CambiarClientePedidoRequest { Cliente = "30000" }, "u");
+
+            Assert.IsNull(resultado.Error);
+            Assert.AreEqual("30000", cab.Nº_Cliente);
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_Ensayo_DiceLoQueCambiariaSinGuardarNada()
+        {
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO,
+                new CambiarClientePedidoRequest { Cliente = "20000", Ensayo = true }, "u");
+
+            Assert.IsTrue(resultado.Respuesta.Ensayo);
+            Assert.IsFalse(resultado.Respuesta.SinCambiosDeImportes);
+            Assert.IsTrue(resultado.Respuesta.Cambios.Any(c => c.StartsWith("IVA: G21 → R52")), string.Join(" | ", resultado.Respuesta.Cambios));
+            Assert.IsTrue(resultado.Respuesta.Cambios.Any(c => c.Contains("precio")), string.Join(" | ", resultado.Respuesta.Cambios));
+            Assert.AreEqual("10000", cab.Nº_Cliente);
+            Assert.AreEqual("10000", lineas[0].Nº_Cliente);
+            Assert.AreEqual(10M, lineas[0].Precio);
+            Assert.AreEqual("EFC", cab.Forma_Pago);
+            Assert.AreEqual(0, guardados.Count);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_EnsayoDeNotaDeEntrega_NoTocaNada()
+        {
+            ConvertirEnNotaDeEntrega();
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO,
+                new CambiarClientePedidoRequest { Cliente = "20000", Ensayo = true }, "u");
+
+            Assert.IsTrue(resultado.Respuesta.Ensayo);
+            Assert.AreEqual("10000", cab.Nº_Cliente);
+            Assert.AreEqual("10000", lineas[0].Nº_Cliente);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_EnsayoConClienteGemelo_SinCambiosDeImportes()
+        {
+            ClienteGemelo();
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO,
+                new CambiarClientePedidoRequest { Cliente = "30000", Ensayo = true }, "u");
+
+            Assert.IsTrue(resultado.Respuesta.SinCambiosDeImportes);
+            Assert.IsFalse(resultado.Respuesta.Cambios.Any(c => c.StartsWith("IVA")));
+        }
+
+        #endregion
+
         #region Utilidades
 
         private static PedidoVentaDTO ComoDto(CabPedidoVta cabecera)

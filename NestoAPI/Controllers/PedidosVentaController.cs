@@ -1274,6 +1274,29 @@ namespace NestoAPI.Controllers
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
+            ResultadoCambioClientePedido resultadoCambio = await CambiarClienteDelPedido(empresa, numero, peticion).ConfigureAwait(true);
+            if (resultadoCambio.NoEncontrado)
+            {
+                return NotFound();
+            }
+            if (resultadoCambio.Codigo != null)
+            {
+                // NestoAPI#876: con picking y algo cambiaría al recalcular
+                return Content(HttpStatusCode.Conflict, new { Message = resultadoCambio.Error, resultadoCambio.Codigo });
+            }
+            if (resultadoCambio.Error != null)
+            {
+                return BadRequest(resultadoCambio.Error);
+            }
+            return Ok(resultadoCambio.Respuesta);
+        }
+
+        /// <summary>
+        /// El núcleo de <see cref="PostCambiarCliente"/> sin traducir a HTTP. NestoAPI#876: lo usa también el paso de los pedidos
+        /// pendientes de un cliente que cambia de forma fiscal (api/Clientes/CambioFiscal/PasarPedidos), pedido a pedido.
+        /// </summary>
+        internal async Task<ResultadoCambioClientePedido> CambiarClienteDelPedido(string empresa, int numero, CambiarClientePedidoRequest peticion)
+        {
             string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
             string empresaPedido = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
 
@@ -1287,20 +1310,11 @@ namespace NestoAPI.Controllers
                 },
                 CalcularImportes = (linea, iva) => gestor.CalcularImportesLinea(linea, iva),
                 // Mismo permiso que el PUT para seguir con un pedido que no pasa la validación
-                PuedeOmitirValidacion = validacion => UsuarioPuedeOmitirValidacion(empresaPedido, numero, usuario, validacion)
+                PuedeOmitirValidacion = validacion => UsuarioPuedeOmitirValidacion(empresaPedido, numero, usuario, validacion),
+                AvisarAlmacen = n => AvisadorAlmacen.Avisar(n)
             };
 
-            ResultadoCambioClientePedido resultadoCambio = await gestorCambio
-                .CambiarCliente(empresaPedido, numero, peticion, usuario).ConfigureAwait(true);
-            if (resultadoCambio.NoEncontrado)
-            {
-                return NotFound();
-            }
-            if (resultadoCambio.Error != null)
-            {
-                return BadRequest(resultadoCambio.Error);
-            }
-            return Ok(resultadoCambio.Respuesta);
+            return await gestorCambio.CambiarCliente(empresaPedido, numero, peticion, usuario).ConfigureAwait(true);
         }
 
         /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. en todos sus pedidos (sustituible en los tests).</summary>

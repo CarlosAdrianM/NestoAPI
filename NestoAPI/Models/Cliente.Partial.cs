@@ -13,5 +13,18 @@ namespace NestoAPI.Models
         [NotMapped]
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string ContactoEntrega { get; set; }
+
+        /// <summary>
+        /// NestoAPI#876: en la respuesta de POST api/Clientes con ClienteCrear.CopiarDelAnterior, por qué no se ha podido copiar (el alta
+        /// queda hecha). No viaja si se copió bien o no se pidió.
+        /// </summary>
+        [NotMapped]
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AvisoCopiaClienteAnterior { get; set; }
+
+        /// <summary>NestoAPI#876: lo copiado del cliente anterior en el alta («Contacto 0: IVA G21 → E52»…). No viaja si no se pidió.</summary>
+        [NotMapped]
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> CopiadoDelAnterior { get; set; }
     }
 }

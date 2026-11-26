@@ -415,7 +415,10 @@
     <Compile Include="Infrastructure\Clientes\Direccion2DestinosTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2ModificarTests.cs" />
     <Compile Include="Controllers\ClientesControllerContactoDefectoTests.cs" />
+    <Compile Include="Controllers\ClientesControllerCambioFiscalTests.cs" />
     <Compile Include="Infrastructure\Clientes\AltaConDireccionEntregaTests.cs" />
+    <Compile Include="Infrastructure\Clientes\CopiaCambioFiscalTests.cs" />
+    <Compile Include="Infrastructure\Clientes\ServicioCambioFiscalTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2EnSesionTests.cs" />
     <Compile Include="Infrastructure\Clientes\SuPedidoObligatorioTests.cs" />
     <Compile Include="Infrastructure\Clientes\OrigenesClienteTests.cs" />
@@ -1032,6 +1035,7 @@
     <Compile Include="Infrastructure\PedidosVenta\SombraModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RegistroOrigenModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CambioClientePedidoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\CambioClienteConPickingTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorCambioClientePedidoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ServicioDatosTransferenciaPedidoTests.cs" />
     <Compile Include="Controllers\PedidosVentaTransferenciaControllerTests.cs" />

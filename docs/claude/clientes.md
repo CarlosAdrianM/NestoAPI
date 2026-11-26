@@ -144,3 +144,43 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - Refresco: `api/auth/refreshToken` ya no corta a un mes de caducado el token: la ventana desde la caducidad son los mismos días que la
   absoluta desde el login (`Auth:DiasMaximosSesionTienda`, 90; `PoliticaRefrescoToken.VentanaDesdeCaducidadVencida`). 15 de 26 clientes
   echados tras un mes sin abrir la app no volvieron a entrar. Firma, absoluta y revalidación del cliente, igual; `refreshOAuthToken` no cambia.
+
+### Cliente que cambia de forma fiscal: copiar sus condiciones y pasar sus pedidos (NestoAPI#876, corte nuevo, Carlos 26/11/26)
+- OJO: los cortes 1 y 2 de la issue (enlace en el alta, «clientes equivalentes») NO estaban hechos; de ellos solo va aquí lo imprescindible: la tabla
+  `dbo.ClientesAnteriores` (Empresa, Cliente = el nuevo, ClienteAnterior, Fecha, Usuario; única por pareja; fuera del EDMX,
+  `Scripts/Issue876_ClientesAnteriores.sql`, que ya enlaza 42178 ← 37283) y `ClienteCrear.ClienteAnterior`. Las consultas comerciales siguen sin heredar nada.
+- Carlos: «al crear un cliente porque otro ha cambiado los datos, se copian todos los datos; así, aunque se recalcule un pedido al pasarlo al cliente nuevo,
+  no cambia nada… Si algún dato el usuario pide no copiarlo, al recalcular sí que va a cambiar». LA REGLA (pura) `ReglaCopiaCambioFiscal.Planificar`
+  (`Infraestructure/Clientes/CambioFiscal/CopiaCambioFiscal.cs`), por bloques (`BloquesCambioFiscal`): `Comercial` (estado —no si el anterior está de baja—,
+  vendedor y VendedoresClienteGrupoProducto), `Fiscalidad` (SOLO Clientes.IVA; uno sin IVA no se copia: iría a la empresa espejo), `CondicionesPago`
+  (CondPagoClientes: se quitan las del nuevo que el anterior no tiene y se ponen las suyas; aviso si la forma necesita cuenta y el nuevo no tiene CCC: el
+  IBAN y el mandato NUNCA se copian), `Descuentos` (filas de DescuentosProducto del cliente, sin las caducadas; misma clave —producto, familia, grupo,
+  subgrupo, filtro, proveedor, contacto, cantidad mínima— ya en el nuevo: no se duplica y, si vale distinto, no se toca y se avisa), `Ofertas`
+  (OfertasPermitidas propias, sin caducadas ni repetidas) y `Ficha` (comentarios solo si el nuevo no tiene, días de servir, ruta, periodo de
+  facturación, NoComisiona, MantenerJunto). Cada ficha viva del nuevo copia de la del MISMO contacto en el anterior o, si no la hay, de su principal;
+  descuentos y ofertas con contacto NULL siguen NULL y los de un contacto que el nuevo no tiene, no. Idempotente (una segunda pasada no hace nada).
+- Enlace (`ReglaCopiaCambioFiscal.DecidirEnlace`): vale si consta en ClientesAnteriores; si no consta nada y el nuevo tiene origen CAMBIO-FISCAL
+  (ClientesOrigen), se crea al copiar o pasar pedidos; si no, o si consta con OTRO anterior, 409 `{Message, Codigo: "NO_ES_CAMBIO_FISCAL"}`. Permisos
+  (`MotivoSinPermiso`): Administración, Dirección, Informática y el vendedor del anterior o su jefe de equipo (`VendedoresEquipoString`); cliente de la tienda 403.
+- `GET api/Clientes/CambioFiscal/Previa?empresa=&clienteAnterior=&clienteNuevo=` (solo lectura) → `CopiaCambioFiscalDTO` {Enlazados, SeEnlazaAlCopiar,
+  MotivoNoSePuedeCopiar, Bloques [{Bloque, Nombre, Anterior[], Nuevo[], Cambios[], Avisos[], HayCambios}], PedidosPendientes [{Pedido, Contacto, Fecha,
+  Importe (base de lo pendiente), Total, Lineas, TienePicking, Pickings, NotaEntrega, SePuedePasar, Motivo}], Mensaje}. Pendiente = líneas -1..1 con
+  cantidad y sin albarán; «se puede» con la regla de CambiarCliente con el picking admitido (envío de agencia, efectos o tarjeta lo paran).
+- `POST api/Clientes/CambioFiscal/Copiar?ensayo=true` {Empresa, ClienteAnterior, ClienteNuevo, Bloques? (null = todos)}: ensayo por defecto. De verdad,
+  en UNA transacción ADO (`RepositorioCambioFiscalSql`, applock `ClienteCambioFiscal:{empresa}:{nuevo}`, datos releídos dentro; otro a la vez → 409
+  `OCUPADO`): enlace si falta, el plan y UNA fila en Modificaciones (Tabla `ClienteCambioFiscal`, Anterior «empresa|anterior → nuevo», Nuevo = JSON
+  con bloques y cambios). Sin nada que copiar ni enlace que crear, no escribe nada. Si cambia la ficha, publica cada contacto a Odoo
+  (`PublicarClienteSincronizar`, como el PUT); si Odoo falla, queda copiado y lo dice en Avisos. Sin la tabla, 503.
+- Alta (`POST api/Clientes`): `ClienteCrear.ClienteAnterior` (solo con origen CAMBIO-FISCAL, cliente nuevo —no contacto— y anterior que exista;
+  si no, 400) y `CopiarDelAnterior` (lista de bloques; vacía = todos; null = no copiar, como hoy; sin ClienteAnterior, 400). Tras crear: enlace y,
+  si se pide, el MISMO Copiar. Nunca rompe el alta: la respuesta (Cliente) trae `CopiadoDelAnterior` (lo copiado) y `AvisoCopiaClienteAnterior`
+  (por qué no se copió, o los avisos de la copia). OJO: la ficha que devuelve el alta es la de antes de copiar (relean el cliente).
+- `POST api/Clientes/CambioFiscal/PasarPedidos?ensayo=true` {Empresa, ClienteAnterior, ClienteNuevo, Pedidos[], CreadoSinPasarValidacion?}: mismo enlace y
+  permisos; pedido a pedido por el `CambiarCliente` de SIEMPRE (`PedidosVentaController.CambiarClienteDelPedido`, un controller y un contexto por pedido),
+  al mismo contacto si el nuevo lo tiene o a su principal → {Ensayo, Pedidos [{Pedido, Pasado, TeniaPicking, SinCambiosDeImportes, Codigo
+  (NO_EXISTE, NO_ES_DEL_CLIENTE_ANTERIOR, CAMBIO_CLIENTE_CON_PICKING_CAMBIA, NO_SE_PUEDE, ERROR), Mensaje, Cambios, Avisos}], Pasados, Rechazados}.
+  Con picking, la regla nueva de `docs/claude/pedidos-venta.md` (solo si no cambia nada).
+- Nesto (pendiente): en el asistente del alta con origen «Cambio de forma fiscal», pedir el cliente anterior, llamar a la Previa y enseñar una casilla
+  por bloque (marcadas) con Anterior/Nuevo/Cambios/Avisos → `CopiarDelAnterior`; después, la lista de pedidos pendientes con casillas (ensayo primero
+  para enseñar qué cambiaría; los de picking que cambiarían, sin casilla y con el porqué) → PasarPedidos. En la ficha, botón «Copiar del cliente
+  anterior» (Previa + Copiar con los bloques marcados). NestoApp: lo mismo en su alta de cliente (issue gemela); sin pantalla nueva en la ficha.
