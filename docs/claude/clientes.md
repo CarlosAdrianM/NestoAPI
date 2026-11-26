@@ -95,6 +95,22 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   regla de `DireccionEnvioCliente.Componer` (Dirección + «, » + Dirección 2 si cabe en 80; si no, delante de las Observaciones); (3) opcional: que
   Agencias pinte `Direccion2Pedido` del DTO al abrir un pedido web.
 
+### Cliente que cambia de forma fiscal: su número anterior y los «clientes equivalentes» (NestoAPI#876 cortes 1 y 2, 26/11/26)
+- Origen `CAMBIO-FISCAL` (OneShot del 17/11, EsLead 0): cliente que ya lo era y factura con otra razón social o NIF; número nuevo. Fiscalmente otro
+  cliente; comercialmente el mismo. NADA fiscal ni contable se hereda (facturas, extracto, deuda, remesas, 347, Verifactu, riesgo).
+- Dato: `dbo.ClientesAnteriores` (Empresa, Cliente, ClienteAnterior, Fecha, Usuario; PK Empresa+Cliente, CHECK distinto; fuera del EDMX,
+  `Scripts/Issue876_ClientesAnteriores.sql`). Sin la tabla: el alta no lo pide ni guarda nada, la ficha da null (como antes).
+- Alta (`POST api/Clientes`, `ClientesController.ClienteAnterior.cs`): `ClienteCrear.ClienteAnterior`. LA REGLA (pura) `ReglaClienteAnterior`
+  (`Infraestructure/Clientes/ClientesAnteriores.cs`): con CAMBIO-FISCAL es obligatorio (400 «Con el origen «Cambio de forma fiscal» indique el número de
+  cliente que tenía antes…»), tiene que existir en la empresa (400 «No existe el cliente 99999 en la empresa 1…») y no puede ser él mismo (alta de un
+  contacto: 400); sin ese origen, 400. Mismo NIF: solo aviso. Se guarda DESPUÉS del alta (como el origen; si falla, ELMAH y el cliente queda), con
+  fila en Modificaciones (Tabla `ClientesAnteriores`). Respuesta: `Cliente.ClienteAnterior` y `AvisoClienteAnterior` (NotMapped, solo si hay).
+  Ficha: `ClienteDTO.ClienteAnterior` en GET api/Clientes (un cliente) y `ClienteCrear.ClienteAnterior` en GetClienteCrear. El PUT no lo toca.
+- Pieza única (corte 2) `IClientesEquivalentes.De(empresa, cliente)` → el cliente y sus anteriores en cadena, del más reciente al más antiguo, sin
+  relleno (`ClientesEquivalentes`: todos los enlaces de la empresa en una lectura, caché de 5 min, `Invalidar()` al guardar; sin tabla o si falla,
+  solo el cliente, ELMAH una vez; LA REGLA `ReglaClientesEquivalentes.Cadena`: sin ciclos, tope 20 saltos). SIN CONECTAR todavía: plantilla de venta y
+  rapports (corte 3) y sugerencias de llamadas, fechas de compras y embudo (corte 4) la usarán; nunca lo fiscal.
+
 ### Origen del cliente: campaña (lead) o canal (NestoAPI#848, 09/11/26)
 - `dbo.OrigenesCliente.EsLead` (DEFAULT 1): 1 = campaña (META-HARMONIA-0926…: hay que llamarlo), 0 = canal (WEB, AMAZON, TIENDA-REINA,
   TIENDA-ALCOBENDAS, CURSOS: solo un dato para medir). `Scripts/Issue848_OrigenesCanal.sql` ANTES de la API (la API lee la columna).

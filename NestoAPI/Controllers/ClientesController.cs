@@ -720,6 +720,8 @@ namespace NestoAPI.Controllers
             Infraestructure.Clientes.Origenes.OrigenAsignadoCliente origenCliente = await LeerOrigenSeguro(clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente);
             clienteDTO.Origen = origenCliente?.Origen?.Trim();
             clienteDTO.OrigenDescripcion = origenCliente?.Descripcion;
+            // NestoAPI#876: el número que tenía antes del cambio de forma fiscal (sin tabla o sin enlace, null)
+            clienteDTO.ClienteAnterior = await LeerClienteAnteriorSeguro(clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente);
             // NestoAPI#879: lo que pintan la ficha, el selector de clientes y la cabecera del pedido (Dirección + Dirección 2)
             DireccionCompletaCliente.Rellenar(db, clienteDTO);
 
@@ -794,6 +796,7 @@ namespace NestoAPI.Controllers
             if (respuesta != null)
             {
                 respuesta.Origen = (await LeerOrigenSeguro(empresa, cliente))?.Origen?.Trim();
+                respuesta.ClienteAnterior = await LeerClienteAnteriorSeguro(empresa, cliente); // NestoAPI#876
             }
 
             return Ok(respuesta);
@@ -1397,6 +1400,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(errorOrigen);
             }
+            // NestoAPI#876: con origen CAMBIO-FISCAL, el número de cliente anterior (obligatorio, existe y no es él mismo)
+            ValidacionClienteAnterior clienteAnterior = await ValidarClienteAnteriorAlta(clienteCrear);
+            if (clienteAnterior.Error != null)
+            {
+                return BadRequest(clienteAnterior.Error);
+            }
 
             try
             {
@@ -1404,6 +1413,7 @@ namespace NestoAPI.Controllers
                 clienteCrear.AplicacionAlta = DatosAltaCliente.DeducirAplicacion(User, clienteCrear.AplicacionAlta);
                 Cliente cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
                 await GuardarOrigenTrasGuardarCliente(cliente.Empresa, cliente.Nº_Cliente, clienteCrear.Origen, esAlta: true);
+                await GuardarClienteAnteriorTrasAlta(cliente, clienteAnterior);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
                     cliente);

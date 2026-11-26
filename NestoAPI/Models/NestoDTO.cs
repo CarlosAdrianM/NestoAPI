@@ -53,6 +53,8 @@ namespace NestoAPI.Models
         public string Origen { get; set; }
         /// <summary>NestoAPI#623: descripción del origen («Lead de Meta · campaña Harmonia»), o null.</summary>
         public string OrigenDescripcion { get; set; }
+        /// <summary>NestoAPI#876: el número de cliente anterior (cambio de forma fiscal), o null. Solo en GET api/Clientes.</summary>
+        public string ClienteAnterior { get; set; }
         public string usuario { get; set; }
 
         // NestoAPI#464: 0 = sin empleados, 1..4, 5 = "5 o más"; null = no se ha preguntado.

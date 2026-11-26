@@ -406,6 +406,7 @@
     <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2ClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2PedidoTiendaTests.cs" />
+    <Compile Include="Infrastructure\Clientes\ClientesAnterioresTests.cs" />
     <Compile Include="Infrastructure\Clientes\DireccionCompletaClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2DestinosTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2ModificarTests.cs" />
