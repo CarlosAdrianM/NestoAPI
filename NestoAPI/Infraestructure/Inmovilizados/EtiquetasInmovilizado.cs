@@ -135,6 +135,43 @@ namespace NestoAPI.Infraestructure.Inmovilizados
             return GeneradorEtiquetasProducto.Partir(textoSerie ?? cola, caracteres).Take(lineas).ToList();
         }
 
+        private static readonly System.Text.RegularExpressions.Regex etiquetaSerie = new System.Text.RegularExpressions.Regex(
+            @"^(n\s*/\s*s|s\s*/\s*n|n[º°o]?\.?\s*(de\s+)?serie)\s*[:.]?\s*", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        private static readonly System.Text.RegularExpressions.Regex etiquetaReferencia = new System.Text.RegularExpressions.Regex(
+            @"^ref\b\.?\s*", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// NestoAPI#913: el número de serie ESCRITO en la descripción (lo que va detrás de «n/s», «s/n» o «nº serie», hasta el final),
+        /// o null. La misma lectura que la etiqueta: «… ref.44276 n/s SHE-RFS009-2511111» → «SHE-RFS009-2511111».
+        /// </summary>
+        public static string SerieEscrita(string descripcion)
+        {
+            string texto = Compactar(descripcion);
+            System.Text.RegularExpressions.Match deSerie = serie.Match(texto);
+            if (!deSerie.Success)
+            {
+                return null;
+            }
+            string valor = etiquetaSerie.Replace(deSerie.Value.Trim(), string.Empty).Trim();
+            return valor.Length == 0 ? null : valor;
+        }
+
+        /// <summary>NestoAPI#913: la referencia escrita («ref.44276» → «44276») antes del número de serie, o null.</summary>
+        public static string ReferenciaEscrita(string descripcion)
+        {
+            string texto = Compactar(descripcion);
+            System.Text.RegularExpressions.Match deSerie = serie.Match(texto);
+            string antes = deSerie.Success ? texto.Substring(0, deSerie.Index) : texto;
+            System.Text.RegularExpressions.Match deReferencia = referencia.Match(antes);
+            if (!deReferencia.Success)
+            {
+                return null;
+            }
+            string valor = etiquetaReferencia.Replace(deReferencia.Value.Trim(), string.Empty).Trim().TrimEnd(',', ';', '.', ':');
+            return valor.Length == 0 ? null : valor;
+        }
+
         private static List<string> ConPuntos(List<string> lineas, int caracteres)
         {
             if (lineas.Count > 0)
