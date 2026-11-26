@@ -32,6 +32,23 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   `UltimaNovedadVistaApp`/`UltimaNovedadVista` por ParametrosUsuario (`Scripts/Issue495_UltimaNovedadVista.sql`). Una sugerencia implementada
   conserva su Id antiguo: con `desdeId` no sale. NestoApp ya lo usa (2.28.0); el lado Nesto, pendiente.
 
+### Novedades de una versión por la API, sin scripts de sa (NestoAPI#890, 26/11/26)
+- En vez de `Scripts/Novedades_X_Y_Z_R.sql`: `Scripts/PublicarNovedades.ps1 -Version 1.10.68.0 -Fichero novedades.json` (ensayo, pregunta y carga;
+  token de Windows). Todo Dirección/Informática (403 de usted), errores {Message} con su estado. `ServicioNovedadesVersion` + LAS REGLAS (puras)
+  `ReglasNovedadesVersion` (`Infraestructure/Novedades/NovedadesVersion.cs`), SQL en `RepositorioNovedadesVersionSql`.
+- `POST api/Novedades/Version?ensayo=false` {Version, Fecha? (hoy), Ambito Nesto|NestoAPI|NestoApp|Ariadna (1.x escritorio, 2.x apps: si no
+  cuadra, 400), Novedades [{Categoria Nuevo|Mejorado|Corregido, Titulo ≤200, Descripcion ≤1000, Perfiles?, SugerenciaId?}] (1..100, títulos sin
+  repetir)} → {Version, Ambito, Fecha, Ensayo, Creadas, YaEstaban, SugerenciasImplementadas [{Id, SugerenciaId, Categoria, Titulo}], Mensaje}. Todo se
+  valida antes de escribir; idempotente por Versión + Ámbito + Título (INSERT … WHERE NOT EXISTS, applock `NovedadesVersion:{ámbito}:{versión}`, una
+  transacción y UNA fila en Modificaciones, Tabla `Novedades`, Anterior «NovedadesVersion|ámbito|versión»). Con `SugerenciaId` no crea otra: la pasa a
+  Implementada por el MISMO camino que `PUT api/Novedades/Sugerencias/{id}` (y sus perfiles si vienen; rastro «SugerenciaImplementada|id»); ya
+  implementada en esta versión = YaEstaban; en otra, 409; no existe o no es sugerencia, 400.
+- `GET api/Novedades/Version?version=&ambito=` (la versión va en la consulta: con puntos en la ruta IIS no la sirve) → [{Id, Version, Fecha,
+  Categoria, Titulo, Descripcion, Ambito, Publicada, Perfiles, EsSugerencia}]. `PUT api/Novedades/{id}` {Titulo?, Descripcion?, Categoria?, Perfiles?,
+  Publicada?} (null = no tocar; solo filas con versión: una sugerencia sin implementar → 409, va por su PUT; título repetido en la versión → 409) →
+  la fila. `DELETE api/Novedades/{id}` → 204; nunca una sugerencia ni una con comentarios o votos (409: despublíquela); con adjuntos/capturas/vídeo
+  (FK) también 409. Rastro en Modificaciones (antes y después). `Scripts/Issue890_NovedadesGrants.sql` (sa): el DELETE en dbo.Novedades.
+
 ### Endpoints que no llevaban [Authorize] (auditoría de seguridad, 26/11/26)
 - Cerrados (`[Authorize]`), porque todos sus llamantes conocidos mandan token: `GET api/ExtractosCliente/DeudaVencida` (Nesto, ficha de cliente, por
   `ClienteApiFactory`) y `GET api/AlbaranesVenta` (Nesto, `PedidoVentaService.CargarAlbaran`).

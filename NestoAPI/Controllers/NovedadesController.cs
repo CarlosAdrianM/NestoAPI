@@ -2197,7 +2197,74 @@ namespace NestoAPI.Controllers
         }
 
         private bool PuedeRevisarFeedback() =>
-            User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(GRUPO_INFORMATICA));
+            User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(GRUPO_INFORMATICA)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
+
+        #endregion
+
+        #region NestoAPI#890: cargar, cambiar y borrar las novedades de una versión (sin scripts de sa)
+
+        private ServicioNovedadesVersion novedadesVersion;
+
+        /// <summary>NestoAPI#890: el núcleo de la carga por versión. Los tests lo inyectan; si no, el de SQL.</summary>
+        internal ServicioNovedadesVersion NovedadesVersion
+        {
+            get => novedadesVersion ?? (novedadesVersion = new ServicioNovedadesVersion(RepositorioNovedadesVersionSql.DesdeConfiguracion(), servicio));
+            set => novedadesVersion = value;
+        }
+
+        private IHttpActionResult EjecutarNovedadesVersion(Func<IHttpActionResult> accion)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return Content(HttpStatusCode.Forbidden, "Solo Dirección o Informática pueden cargar, cambiar o borrar las novedades de una versión.");
+            }
+            try
+            {
+                return accion();
+            }
+            catch (ErrorNovedadesVersion ex)
+            {
+                return Content(ex.Estado, new { Message = ex.Message });
+            }
+        }
+
+        // POST api/Novedades/Version?ensayo=true  { Version, Fecha?, Ambito, Novedades: [{ Categoria, Titulo, Descripcion, Perfiles?, SugerenciaId? }] }
+        // Crea las que falten (idempotente por Versión + Ámbito + Título); con SugerenciaId, esa sugerencia pasa a Implementada en esta
+        // versión en vez de crear otra. Con ensayo=true no escribe nada y dice lo que haría.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/Version")]
+        [ResponseType(typeof(ResultadoCargaNovedadesDTO))]
+        public IHttpActionResult PostNovedadesVersion([FromBody] CargaNovedadesVersionDTO carga, bool ensayo = false) =>
+            EjecutarNovedadesVersion(() => Ok(NovedadesVersion.Cargar(carga, ensayo, User?.Identity?.Name)));
+
+        // GET api/Novedades/Version?version=1.10.67.0&ambito=Nesto   (la versión va en la consulta: con puntos en la ruta IIS no la sirve)
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/Version")]
+        [ResponseType(typeof(List<NovedadVersionLeidaDTO>))]
+        public IHttpActionResult GetNovedadesVersion(string version, string ambito = null) =>
+            EjecutarNovedadesVersion(() => Ok(NovedadesVersion.Leer(version, ambito)));
+
+        // PUT api/Novedades/7  { Titulo?, Descripcion?, Categoria?, Perfiles?, Publicada? }  (null = no tocar)
+        [HttpPut]
+        [Authorize]
+        [Route("api/Novedades/{id:int}")]
+        [ResponseType(typeof(NovedadVersionLeidaDTO))]
+        public IHttpActionResult PutNovedadVersion(int id, [FromBody] CambioNovedadVersionDTO cambio) =>
+            EjecutarNovedadesVersion(() => Ok(NovedadesVersion.Cambiar(id, cambio, User?.Identity?.Name)));
+
+        // DELETE api/Novedades/7   (solo novedades de versión sin comentarios ni votos; las sugerencias nunca: 409)
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Novedades/{id:int}")]
+        public IHttpActionResult DeleteNovedadVersion(int id) =>
+            EjecutarNovedadesVersion(() =>
+            {
+                NovedadesVersion.Borrar(id, User?.Identity?.Name);
+                return StatusCode(HttpStatusCode.NoContent);
+            });
 
         #endregion
     }
