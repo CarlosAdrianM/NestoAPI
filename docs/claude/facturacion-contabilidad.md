@@ -147,3 +147,22 @@ Related files:
 - `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de
   Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
   una consulta por tabla (sin N+1). `NombreCliente` sigue siendo solo el del contacto exacto (etiqueta). El guardado los ignora y Nesto no los manda.
+
+### Una factura por P.O.: nunca se juntan pedidos de P.O. distintas (NestoAPI#898, caso 27593 / NV2616046, Carlos 26/11/26)
+- La P.O. es `CabPedidoVta.SuPedido` (#195/#723; `PedidoVentaDTO.suPedido`), no el comentario. LA REGLA (pura) `ReglaPOAgrupacion`
+  (`Infraestructure/Facturas/Agrupacion/ReglaPOAgrupacion.cs`): dos pedidos solo van juntos con la MISMA P.O. (`Clave`: sin relleno ni
+  mayúsculas; NULL o en blanco = «sin P.O.», que solo va con otros sin P.O.). `MotivoNoSePuedenJuntar` / `MotivoNoSePuedenUnir` dan la frase.
+- Dónde se junta en la API y cómo la aplica: (1) agrupación por P.O. (`EstrategiaAgrupacionPO`: Facturar rutas y `POST api/FacturacionRutas/AgruparPorPO`)
+  agrupa por empresa + cliente + `Clave` + IVA (antes por la P.O. recortada CON mayúsculas: «po1» y «PO1» daban dos facturas; `GrupoPedidosPO.SuPedido`
+  = la del pedido de menor número, tal cual); (2) fin de mes (`EstrategiaAgrupacionFinDeMes`, `POST api/FacturacionRutas/FinDeMes`): solo pedidos SIN
+  P.O. (ya era así desde #727; la clave lleva la P.O. por explícita); (3) `MotorAgrupacionPedidos.Agrupar`, ÚLTIMA BARRERA: con P.O. distintas lanza
+  `InvalidOperationException` con el motivo ANTES de mover nada (los dos servicios lo recogen por grupo y siguen); (4) «Unir pedidos»
+  (`GestorPedidosVenta.ComprobarPOAlUnir`, antes de mover líneas): 400 `NestoBusinessException` código `PEDIDOS_PO_DISTINTAS` «No se pueden unir: el
+  pedido 926287 es de la P.O. PO00474329 y el 927198 es de la P.O. PO00481139. Cada P.O. va en su propia factura: …»; con P.O. y sin P.O. tampoco. Una
+  ampliación NUEVA de la plantilla (número 0) sin P.O. se une como siempre (toma la del original); con otra P.O., 400.
+- La factura conserva la P.O. del destino (prdCrearFacturaVta copia `SuPedido` a `CabFacturaVta.SuPedido`): sin cambios. El motor no toca el
+  `Contacto` de las líneas (cada tienda sigue en su línea). Facturar rutas factura pedido a pedido: no junta.
+- FUERA de la API (no se ha tocado): el fin de mes de Nesto viejo = `prdAgruparAlbaranesVta` (por cliente+contacto; desde
+  `Scripts/Issue727_prdAgruparAlbaranesVta_PO.sql` no mezcla P.O. ni con/sin P.O.) + la reunión de TODOS los contactos en un pedido nuevo que hace
+  el VB6 SIN mirar la P.O. y poniendo contacto 0 a las líneas: así salió la NV2616046 (927473). Con `Facturacion:FinDeMesPorApi` encendido el fin de
+  mes debe hacerse por la API. La P.O. escrita solo en el comentario («P.O. 00474329») no la ve nadie: hay que ponerla en «Su pedido».
