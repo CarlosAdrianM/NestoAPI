@@ -446,6 +446,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<EfectoDomiciliado>))]
         public IHttpActionResult EnviarCorreoDomiciliacionDia()
         {
+            // 26/11/26: antes de cerrarlo (sin [Authorize] todavía), rastro de quién lo llama sin token (una vez al día por IP)
+            Infraestructure.RastroLlamadasSinToken.Apuntar(Request, User, "GET api/ExtractosCliente/EnviarCorreoDomiciliacionDia");
             IServicioDomiciliaciones servicio = new ServicioDomiciliaciones();
             GestorDomiciliaciones gestor = new GestorDomiciliaciones(servicio, _servicioCorreo);
             DateTime fechaMovimientos = DateTime.Today;

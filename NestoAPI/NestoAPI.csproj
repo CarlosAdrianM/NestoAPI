@@ -1413,6 +1413,7 @@
     <Compile Include="Infraestructure\ErroresTriggerSql.cs" />
     <Compile Include="Infraestructure\EnlacesTienda.cs" />
     <Compile Include="Infraestructure\RoundingHelper.cs" />
+    <Compile Include="Infraestructure\RastroLlamadasSinToken.cs" />
     <Compile Include="Infraestructure\ValidadorDescuentoPP.cs" />
     <Compile Include="Infraestructure\Seguridad\ApiKeyAttribute.cs" />
     <Compile Include="Infraestructure\Seguridad\AutorizadoOApiKeyAttribute.cs" />

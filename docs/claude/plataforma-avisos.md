@@ -61,3 +61,9 @@ Related files:
 - `Infraestructure/UserSyncHandler.cs` - DelegatingHandler para sincronizar usuario
 - `App_Start/WebApiConfig.cs` - Registro del handler
 - `StartupJwtConfigurationTests.cs` - Documentación del bug de TokenValidationParameters
+
+### Endpoints que aún aceptan llamadas sin token: rastro antes de cerrarlos (26/11/26)
+- `GET api/ExtractosCliente/EnviarCorreoDomiciliacionDia` y `PUT api/ParametrosUsuario` siguen SIN `[Authorize]` (no se cierran todavía). Cuando llegan sin
+  token, `RastroLlamadasSinToken.Apuntar` (`Infraestructure/RastroLlamadasSinToken.cs`) deja en ELMAH «[Sin token] {ruta} desde {IP}, User-Agent {…}» como mucho
+  UNA vez al día natural por endpoint e IP (`MemoriaRastroSinToken`, en memoria: tras reiniciar el sitio se vuelve a apuntar). IP: X-Forwarded-For o
+  UserHostAddress. La respuesta no cambia; nunca lanza. Para cerrarlos: buscar «[Sin token]» en ELMAH unos días y avisar a quien salga.
