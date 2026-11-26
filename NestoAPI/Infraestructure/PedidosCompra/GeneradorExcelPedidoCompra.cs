@@ -63,7 +63,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                 fila++;
                 fila = ComponerTablaLineas(ws, pedido, mostrarPrecios, fila);
                 fila++;
-                ComponerNotas(ws, fila);
+                fila = ComponerNotas(ws, fila);
+                fila++;
+                ComponerAvisoSeguimiento(ws, fila, mostrarPrecios ? 8 : 5);
 
                 using (var ms = new MemoryStream())
                 {
@@ -236,7 +238,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             return fila;
         }
 
-        private void ComponerNotas(IXLWorksheet ws, int fila)
+        private int ComponerNotas(IXLWorksheet ws, int fila)
         {
             foreach (string nota in Notas)
             {
@@ -249,6 +251,25 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                 ws.Row(fila).Height = 15 * Math.Max(1, (int)Math.Ceiling(nota.Length / 110.0));
                 fila++;
             }
+            return fila;
+        }
+
+        /// <summary>
+        /// La misma petición de seguimiento que el pie del PDF (<see cref="GeneradorPdfPedidoCompra.AVISO_SEGUIMIENTO_AGENCIA"/>), en una
+        /// fila nueva AL FINAL (debajo de líneas, totales y notas): no mueve ninguna celda de antes, por si el proveedor lee por posición.
+        /// </summary>
+        private static void ComponerAvisoSeguimiento(IXLWorksheet ws, int fila, int numColumnas)
+        {
+            string aviso = GeneradorPdfPedidoCompra.AVISO_SEGUIMIENTO_AGENCIA;
+            var rango = ws.Range(fila, 1, fila, numColumnas);
+            rango.Merge();
+            rango.FirstCell().Value = aviso;
+            rango.Style.Font.Bold = true;
+            rango.Style.Alignment.WrapText = true;
+            rango.Style.Alignment.Vertical = XLAlignmentVerticalValues.Top;
+            // Combinadas no autoajustan alto: ~110 caracteres por línea a 8 columnas, menos con 5.
+            int caracteresPorLinea = numColumnas >= 8 ? 110 : 75;
+            ws.Row(fila).Height = 15 * Math.Max(1, (int)Math.Ceiling(aviso.Length / (double)caracteresPorLinea));
         }
 
         private static readonly string[] Notas =
