@@ -240,7 +240,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>El PUT con PedidoNuevo: el pedido nuevo con las líneas añadidas del propio PUT (las mismas, ya sin el original).</summary>
-        public static Task<ResultadoSeparacion> SepararDelPut(PedidoVentaDTO pedido, ComprobacionAmpliacion comprobacion,
+        public static async Task<ResultadoSeparacion> SepararDelPut(PedidoVentaDTO pedido, ComprobacionAmpliacion comprobacion,
             Func<PedidoVentaDTO, Task<IHttpActionResult>> guardar, Func<PedidoVentaDTO, Task<IHttpActionResult>> crear, DateTime hoy)
         {
             List<LineaPedidoVentaDTO> lineas = comprobacion.Evaluacion.LineasAMover;
@@ -249,7 +249,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 _ = pedido.Lineas.Remove(linea);
             }
             PedidoVentaDTO nuevo = AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo(pedido, lineas, pedido.Usuario, hoy, pedido.CreadoSinPasarValidacion);
-            return Separar(pedido, Enumerable.Empty<LineaPedidoVentaDTO>(), nuevo, guardar, crear);
+            ResultadoSeparacion resultado = await Separar(pedido, Enumerable.Empty<LineaPedidoVentaDTO>(), nuevo, guardar, crear).ConfigureAwait(true);
+            if (resultado?.PedidoNuevo != null)
+            {
+                // NestoAPI#914: se quiso añadir a un pedido con picking y lo añadido se fue a otro (en segundo plano; nunca lanza)
+                Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.AMPLIACION_CON_PICKING_PEDIDO_NUEVO, pedido.Usuario, pedido.empresa,
+                    pedido.numero, pedido.cliente, pedido.contacto, detalle: new
+                    {
+                        PedidoNuevo = resultado.PedidoNuevo,
+                        Pickings = comprobacion.Evaluacion.Pickings,
+                        Productos = AmpliacionPedidoEnPreparacion.TextoProductos(lineas)
+                    });
+            }
+            return resultado;
         }
 
         /// <summary>
@@ -266,6 +278,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             EvaluacionAmpliacion evaluacion = comprobacion.Evaluacion;
             string productos = AmpliacionPedidoEnPreparacion.TextoProductos(evaluacion.LineasAMover);
+            if (comprobacion.Accion == AccionAmpliacion.AvisarAlmacen || comprobacion.Accion == AccionAmpliacion.PedirAlmacen)
+            {
+                // NestoAPI#914: lo añadido se queda en el MISMO pedido, que ya tenía picking (en segundo plano; nunca lanza)
+                Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.AMPLIACION_CON_PICKING_MISMO_PEDIDO, pedido.Usuario, pedido.empresa,
+                    pedido.numero, pedido.cliente, pedido.contacto, detalle: new { Accion = comprobacion.Accion.ToString(), Pickings = evaluacion.Pickings, Productos = productos });
+            }
             try
             {
                 if (comprobacion.Accion == AccionAmpliacion.AvisarAlmacen)

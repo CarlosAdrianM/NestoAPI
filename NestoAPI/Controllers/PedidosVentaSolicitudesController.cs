@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Calidad;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using System.Data.Entity;
@@ -63,7 +64,17 @@ namespace NestoAPI.Controllers
                 correo.ReplyToList.Add(new MailAddress(correoUsuario));
             }
 
-            return servicioCorreo.EnviarCorreoSMTP(correo)
+            bool enviado = servicioCorreo.EnviarCorreoSMTP(correo);
+            // NestoAPI#914: la petición cuenta para la calidad aunque el correo no salga (en segundo plano; nunca lanza)
+            RegistroCalidad.Apuntar(TiposEventoCalidad.CAMBIO_DE_MODO_CON_PICKING, usuario, empresa, solicitud.Pedido,
+                cabecera.Nº_Cliente, cabecera.Contacto, detalle: new
+                {
+                    ModoActual = modoActual,
+                    ModoPedido = solicitud.ModoDeseado,
+                    Comentario = string.IsNullOrWhiteSpace(solicitud.Comentario) ? null : solicitud.Comentario.Trim(),
+                    CorreoEnviado = enviado
+                });
+            return enviado
                 ? (IHttpActionResult)Ok("Se lo hemos pedido a almacén. Si todavía están a tiempo, lo cambiarán ellos.")
                 : BadRequest("No se ha podido mandar el correo a almacén. Llámales o escríbeles directamente.");
         }
