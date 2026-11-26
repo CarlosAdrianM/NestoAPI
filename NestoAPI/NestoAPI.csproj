@@ -2527,6 +2527,8 @@
     <Compile Include="Controllers\ComprasAgenciasEntradaController.cs" />
     <Compile Include="Controllers\ComprasPlazosProveedoresController.cs" />
     <Compile Include="Controllers\ProximaEntradaProductoController.cs" />
+    <Compile Include="Controllers\VecinosProductoController.cs" />
+    <Compile Include="Infraestructure\Productos\VecinosProducto.cs" />
     <Compile Include="Controllers\DondeEstaLoQueFaltaController.cs" />
     <Compile Include="Controllers\FestivosController.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />

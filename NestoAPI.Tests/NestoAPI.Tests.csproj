@@ -980,6 +980,7 @@
     <Compile Include="Controllers\ComprasPlazosProveedoresControllerTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\FechasOrientativasTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ProximaEntradaProductoTests.cs" />
+    <Compile Include="Controllers\VecinosProductoControllerTests.cs" />
     <Compile Include="Controllers\ComprasPlazosProveedoresOrientativasControllerTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoEntregaEstimadaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoFase3Tests.cs" />
