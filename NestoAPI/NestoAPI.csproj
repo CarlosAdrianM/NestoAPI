@@ -506,6 +506,10 @@
     <Folder Include="Views\Accounts\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Controllers\CalidadPedidoPerfectoController.cs" />
+    <Compile Include="Infraestructure\Calidad\PedidoPerfecto\LectorPedidoPerfectoSql.cs" />
+    <Compile Include="Infraestructure\Calidad\PedidoPerfecto\ReglaPedidoPerfecto.cs" />
+    <Compile Include="Infraestructure\Calidad\PedidoPerfecto\ServicioPedidoPerfecto.cs" />
     <Compile Include="Infraestructure\Calidad\RegistroCalidad.cs" />
     <Compile Include="Infraestructure\Eventos\DatosTransferenciaInscripcion.cs" />
     <Compile Include="Models\Novedades\NovedadesVersionDTO.cs" />
