@@ -137,8 +137,18 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // las filas de campaña del producto solo suman permiso (Carlos 25/11/26, caso Israel).
             descuentos = ReglaDescuentosQuePrevalecen.Filtrar(todosLosDescuentos, oferta.producto.Número, oferta.cantidad + oferta.cantidadOferta);
 
+            // Laura 26/11/26 (22450 a 1,503 € = el 10 % justo de la campaña sobre 1,67 €): el descuento real se mide con el precio
+            // redondeado a céntimos (1,50 → 10,18 %) y en un producto barato ese redondeo inventa descuento. Cabe también si cabe
+            // con el precio tal como viene, sin redondear. Nunca más estricto que antes: la comparación de siempre sigue valiendo.
+            decimal descuentoPedido = Math.Round((decimal)oferta.descuentoReal, 3);
+            decimal? descuentoExacto = oferta.descuentoRealSinRedondear;
+            if (descuentoExacto.HasValue && Math.Round(descuentoExacto.Value, 3) < descuentoPedido)
+            {
+                descuentoPedido = Math.Round(descuentoExacto.Value, 3);
+            }
+
             DescuentosProducto descuentoAutorizado = descuentos.FirstOrDefault(d =>
-                d.Descuento >= Math.Round((decimal)oferta.descuentoReal, 3) && (oferta.cantidad + oferta.cantidadOferta) >= d.CantidadMínima
+                d.Descuento >= descuentoPedido && (oferta.cantidad + oferta.cantidadOferta) >= d.CantidadMínima
                 && (d.FiltroProducto == null || string.IsNullOrEmpty(d.FiltroProducto.Trim()) || producto.Nombre.StartsWith(d.FiltroProducto))
             );
             if (descuentoAutorizado != null)
@@ -163,7 +173,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             // Distribuidores (Carlos 20/11/26): con una campaña marcada, el suyo y el de la campaña uno sobre otro.
             decimal? compuesto = DescuentoCompuestoDistribuidor(todosLosDescuentos, producto, oferta, pedido);
-            if (compuesto.HasValue && Math.Round((decimal)oferta.descuentoReal, 3) <= compuesto.Value)
+            if (compuesto.HasValue && descuentoPedido <= compuesto.Value)
             {
                 return new RespuestaValidacion
                 {

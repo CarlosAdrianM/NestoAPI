@@ -441,7 +441,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             else if (ivaCabecera != null && linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
             {
+                // ELMAH 26/11/26 (Laura, Nesto, PUT): con una cuenta que no existe, NullReferenceException aquí.
                 PlanCuenta cuenta = servicio.LeerPlanCuenta(empresa, linea.Producto);
+                if (cuenta == null)
+                {
+                    throw new NestoBusinessException($"La cuenta contable {linea.Producto?.Trim()} no existe: revise la línea «{linea.texto?.Trim()}».",
+                        new ErrorContext { ErrorCode = CODIGO_PRODUCTO_NO_EXISTE, Empresa = empresa?.Trim() });
+                }
                 linea.iva = cuenta.IVA;
             }
             string vendedor = string.IsNullOrWhiteSpace(vendedorContable) ? pedido.Vendedor : vendedorContable;

@@ -69,6 +69,12 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   Interruptor ParametrosUsuario «(defecto)» `Validacion.DescuentosCriteriosEstrictos` (sin fila o «1» = estricto; «0» = la consulta amplia de antes;
   sin crear filas, caché 1 min: `InterruptorDescuentosCriteriosEstrictos`). Afecta a todos los que usan esa lectura (validador de descuentos, precio
   especial admitido de ValidadorOfertasPermitidas y de PlantillaVentas, que solo miran filas de producto).
+- **El redondeo a céntimos no inventa descuento (Laura 26/11/26, pedido de la tienda con el 22450)**: `MontarOfertaPedido` redondea el precio medio
+  a 2 decimales (`precioCalculado`) y con él `descuentoReal` de un producto barato sale mayor del que es (1,67 € con el 10 % = 1,503 € → 1,50 →
+  «10,18 %», y la fila de campaña del 10 % no lo autorizaba; 145 de las 5.151 filas del Black Friday estaban igual). Salió al encender los criterios
+  estrictos: antes lo tapaba una fila amplia. Ahora `PrecioDescuentoProducto.precioSinRedondear` / `descuentoRealSinRedondear` y
+  `ValidadorDescuentosPermitidos` da por bueno el MENOR de los dos descuentos (redondeado como siempre o exacto): nunca más estricto que antes.
+  El voucher de la tienda (`ValidadorDescuentoTiendaOnline`, 5 % y 15 % exactos) y el precio autorizado no cambian.
 - **Solo en stock (NestoAPI#889, Manuel 23/11/26; aviso NO estricto, como el del contado)**: `CondicionStock` en la petición (y `bool?` en regla y
   excepción) → una fila por producto en `dbo.CampanasCondicionStock` (Campana, Empresa, Producto, FechaDesde, FechaHasta; `Scripts/BlackFriday2026_CampanasCondicionStock.sql`;
   sin ella, ni aviso y el alta con la marca da 503), en la misma transacción; relanzar el alta con la marca sobre una campaña ya creada solo

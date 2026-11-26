@@ -744,6 +744,26 @@ namespace NestoAPI.Infraestructure
                 return divisor != 0 ? 1 - (dividendo / divisor) : 0;
             }
         }
+        /// <summary>
+        /// Laura 26/11/26 (pedido de la tienda, 22450 a 1,503 € = el 10 % justo del Black Friday sobre 1,67 €): el precio medio de
+        /// las líneas SIN redondear a céntimos. <see cref="precioCalculado"/> va redondeado (1,50) y con él el descuento real de un
+        /// producto barato sale mayor del que es (10,18 %). Null = no se conoce (el motor de precios no lo rellena).
+        /// </summary>
+        public decimal? precioSinRedondear;
+        /// <summary>El descuento real con el precio sin redondear; null si no se conoce ese precio.</summary>
+        public decimal? descuentoRealSinRedondear
+        {
+            get
+            {
+                if (!precioSinRedondear.HasValue || producto == null)
+                {
+                    return null;
+                }
+                decimal dividendo = precioSinRedondear.Value * (1 - descuentoCalculado) * cantidad;
+                decimal divisor = (decimal)(producto.PVP ?? 0) * (cantidad + cantidadOferta);
+                return divisor != 0 ? 1 - (dividendo / divisor) : (decimal?)null;
+            }
+        }
         public decimal precioCalculadoDeFicha
         {
             get

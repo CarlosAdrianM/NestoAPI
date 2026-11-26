@@ -97,6 +97,54 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             Assert.AreEqual(2, ReglaDescuentosQuePrevalecen.Filtrar(filas, "43165", 1).Count());
         }
 
+        // ---------------------------------------------------------------- el redondeo a céntimos no inventa descuento
+
+        private static RespuestaValidacion ValidarPrecio(decimal pvp, decimal precio, short cantidad, params DescuentosProducto[] filas)
+        {
+            Producto producto = Lisap();
+            producto.PVP = pvp;
+            IServicioPrecios servicio = A.Fake<IServicioPrecios>();
+            A.CallTo(() => servicio.BuscarProducto(producto.Número)).Returns(producto);
+            A.CallTo(() => servicio.BuscarOfertasPermitidas(A<string>._)).Returns(new List<OfertaPermitida>());
+            A.CallTo(() => servicio.BuscarDescuentosPermitidos(producto.Número, CLIENTE, "0")).Returns(filas.ToList());
+            var pedido = new PedidoVentaDTO { empresa = "1", cliente = CLIENTE, contacto = "0" };
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = producto.Número,
+                Cantidad = cantidad,
+                PrecioUnitario = precio
+            });
+            return ValidadorDescuentosPermitidos.EsDescuentoPermitido(producto, pedido, servicio);
+        }
+
+        [TestMethod]
+        public void CasoLaura_22450_PrecioDeLaTiendaConEl10JustoDeLaCampana_EsValido()
+        {
+            // 1,67 € con el 10 % = 1,503 €; redondeado a 1,50 «salía» un 10,18 % y la campaña del 10 % no lo autorizaba.
+            RespuestaValidacion r = ValidarPrecio(1.67M, 1.5030M, 8, Campana(0.10M));
+
+            Assert.IsTrue(r.ValidacionSuperada, r.Motivo);
+        }
+
+        [TestMethod]
+        public void PrecioPorDebajoDelDeLaCampana_SigueSinSerValido()
+        {
+            // 1,48 € es un 11,4 % de verdad: el 10 % no lo autoriza, con redondeo o sin él.
+            RespuestaValidacion r = ValidarPrecio(1.67M, 1.48M, 8, Campana(0.10M));
+
+            Assert.IsFalse(r.ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void RedondeoQueFavorecia_SigueValiendo()
+        {
+            // 16,65 € con el 25 % = 12,4875 €; redondeado a 12,49 da un 24,98 %: valía antes y vale ahora.
+            RespuestaValidacion r = ValidarPrecio(16.65M, 12.4875M, 1, Campana(0.25M));
+
+            Assert.IsTrue(r.ValidacionSuperada, r.Motivo);
+        }
+
         // ---------------------------------------------------------------- la validación
 
         [TestMethod]

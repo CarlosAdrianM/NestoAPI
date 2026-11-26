@@ -40,6 +40,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
                     producto = producto,
                     precioCalculado = Math.Round(lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
+                    precioSinRedondear = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(),
                     descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - ((1 - l.DescuentoLinea) * (1 - l.DescuentoProducto))).DefaultIfEmpty().Average()
                 };
             }
@@ -50,6 +51,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
                 producto = producto,
                 precioCalculado = Math.Round(lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
+                precioSinRedondear = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(),
                 descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - ((1 - l.DescuentoLinea) * (1 - l.DescuentoProducto))).DefaultIfEmpty().Average()
             };
 
