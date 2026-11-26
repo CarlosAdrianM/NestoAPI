@@ -384,8 +384,27 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 // NestoAPI#864: al borrar el pedido se cancela su pago a plazos; aquí no pinta nada
                 ServicioPagoAPlazos = A.Fake<NestoAPI.Infraestructure.Pagos.PagoAPlazos.IServicioPagoAPlazos>(),
                 LectorBorrar = lectorBorrar,
+                // Incidencia 1479: las líneas y la cabecera se borran en una transacción de SQL; aquí, sin base de datos
+                BorrarPedidoConLineas = cab => { pedidosBorradosConSusLineas.Add(cab.Número); _ = db.CabPedidoVtas.Remove(cab); return db.SaveChangesAsync(); },
                 RequestContext = new HttpRequestContext { Principal = VENDEDOR }
             };
+        }
+
+        private readonly List<int> pedidosBorradosConSusLineas = new List<int>();
+
+        [TestMethod]
+        public async Task BorrarPedido_Incidencia1479_LasLineasSeBorranConLaCabecera()
+        {
+            // Lidia, 26/11/26, pedido 931650: la FK de las líneas no borra en cascada y el DELETE de la cabecera daba 500.
+            IInscripcionesPorCompraEventos guardian = A.Fake<IInscripcionesPorCompraEventos>();
+            A.CallTo(() => guardian.AfectadasAlBorrar(A<string>._, A<int>._)).Returns(Task.FromResult(new List<InscripcionAfectadaPedidoDTO>()));
+            PedidosVentaController controller = ControllerBorrar(guardian);
+
+            IHttpActionResult resultado = await controller.DeleteCabPedidoVta("1", PEDIDO);
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.OkNegotiatedContentResult<CabPedidoVta>));
+            CollectionAssert.AreEqual(new List<int> { PEDIDO }, pedidosBorradosConSusLineas);
+            StringAssert.Contains(PedidosVentaController.SQL_BORRAR_LINEAS_PEDIDO, "DELETE FROM LinPedidoVta WHERE Empresa = @p0");
         }
 
         [TestMethod]

@@ -4148,8 +4148,11 @@ namespace NestoAPI.Controllers
             // ve), así que sus productos se apuntan aquí para devolver a la tienda el stock que comprometían.
             List<string> productosAEncolar = await ProductosLineasVentaABorrar(empresa, numero).ConfigureAwait(true);
 
-            db.CabPedidoVtas.Remove(cabPedidoVta);
-            await db.SaveChangesAsync();
+            // Incidencia 1479 (Lidia, 26/11/26, pedido 931650): la FK de las líneas con la cabecera NO borra en cascada
+            // (FK_LinPedidoVta_CabPedidoVta es NO ACTION y no hay disparador que lo haga), así que un pedido con líneas daba
+            // 500 «DELETE en conflicto con la restricción REFERENCE». Las líneas se borran aquí, en la misma transacción que la
+            // cabecera (todo o nada); siguen sin pasar por el ChangeTracker (#705: sus productos ya están apuntados arriba).
+            await BorrarCabeceraConSusLineas(cabPedidoVta).ConfigureAwait(true);
 
             await db.EncolarProductosLineasVentaSinRomperAsync(productosAEncolar).ConfigureAwait(true);
 
@@ -4191,6 +4194,29 @@ namespace NestoAPI.Controllers
         /// NestoAPI#705: productos de las líneas de un pedido que se va a borrar y que comprometían stock. Best-effort:
         /// si falla la consulta se borra igual (lo recoge el job nocturno... salvo que la línea ya no exista).
         /// </summary>
+        internal const string SQL_BORRAR_LINEAS_PEDIDO = "DELETE FROM LinPedidoVta WHERE Empresa = @p0 AND [Número] = @p1";
+
+        /// <summary>
+        /// Incidencia 1479: borra las líneas y la cabecera en UNA transacción. Sustituible en los tests (sin base de datos).
+        /// </summary>
+        internal Func<CabPedidoVta, Task> BorrarPedidoConLineas { get; set; }
+
+        private async Task BorrarCabeceraConSusLineas(CabPedidoVta cabPedidoVta)
+        {
+            if (BorrarPedidoConLineas != null)
+            {
+                await BorrarPedidoConLineas(cabPedidoVta).ConfigureAwait(true);
+                return;
+            }
+            using (System.Data.Entity.DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_BORRAR_LINEAS_PEDIDO, cabPedidoVta.Empresa, cabPedidoVta.Número).ConfigureAwait(true);
+                db.CabPedidoVtas.Remove(cabPedidoVta);
+                _ = await db.SaveChangesAsync().ConfigureAwait(true);
+                transaccion.Commit();
+            }
+        }
+
         private async Task<List<string>> ProductosLineasVentaABorrar(string empresa, int numero)
         {
             try
