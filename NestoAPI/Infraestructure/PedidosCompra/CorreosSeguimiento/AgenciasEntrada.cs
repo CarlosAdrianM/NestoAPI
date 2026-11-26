@@ -510,13 +510,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             @"entrega\s+prevista\s*:?\s*(?:(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s*,?\s*)?(\d{1,2})\s+de\s+(" + MESES + @")(?:\s+(?:de\s+)?(\d{4}))?(?!\d)",
             RegexOptions.Compiled);
         private static readonly Regex HoyOManana = new Regex(
-            @"se\s+entregara\s+(hoy|manana)(?:\s*,?\s*(?:de|entre)(?:\s+las)?\s+(\d{1,2})[:.h](\d{2})\s*(?:a|y|-|hasta)(?:\s+las)?\s*(\d{1,2})[:.h](\d{2}))?",
+            // 26/11/26 (Iberocel, A-2609942): otro formato, «tu envío será entregado HOY» (con saltos de línea en medio).
+            @"(?:se\s+entregara|sera\s+entregado)\s+(hoy|manana)(?:\s*,?\s*(?:de|entre)(?:\s+las)?\s+(\d{1,2})[:.h](\d{2})\s*(?:a|y|-|hasta)(?:\s+las)?\s*(\d{1,2})[:.h](\d{2}))?",
             RegexOptions.Compiled);
-        private static readonly Regex EnReparto = new Regex(@"(?<![a-z])(?:esta|va)\s+en\s+reparto(?![a-z])|se\s+entregara\s+(?:hoy|manana)", RegexOptions.Compiled);
+        private static readonly Regex EnReparto = new Regex(@"(?<![a-z])(?:esta|va)\s+en\s+reparto(?![a-z])|(?:se\s+entregara|sera\s+entregado)\s+(?:hoy|manana)", RegexOptions.Compiled);
         private static readonly Regex Entregado = new Regex(@"(?<![a-z])(?:ha\s+sido\s+entregad[oa]|se\s+ha\s+entregado|(?:envio|paquete)\s+entregad[oa])(?![a-z])", RegexOptions.Compiled);
         private static readonly Regex Reprogramado = new Regex(@"(?<![a-z])(?:reprogramad[oa]|nueva\s+fecha\s+de\s+entrega)(?![a-z])", RegexOptions.Compiled);
         /// <summary>«Tu envío PV26-56989 de Postquam»: la referencia del remitente, delante del «de».</summary>
         private static readonly Regex Referencia = new Regex(@"(?<![\p{L}\p{N}])(?:tu|su)\s+env[ií]o\s+([A-Za-z0-9][A-Za-z0-9\-]{5,39})\s+de\s", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// 26/11/26 (correo de Iberocel, «Identificador de envío: A-2609942»): el formato de aviso que SÍ trae su identificador, con
+        /// etiqueta. Va antes que la referencia del remitente.
+        /// </summary>
+        private static readonly Regex Identificador = new Regex(@"identificador\s+de(?:l)?\s+env[ií]o\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-]{5,39})(?![A-Za-z0-9\-])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public override string Nombre => "SEUR";
         protected override string[] Dominios => new[] { "seur.com", "seur.es", "seur.info" };
@@ -527,6 +534,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         {
             List<SeguimientoCorreo> resultado = base.ExtraerSeguimientos(correo);
             if (resultado.Any() || !EsCorreoPropio(correo))
+            {
+                return resultado;
+            }
+            foreach (Match m in Identificador.Matches((correo.Asunto ?? string.Empty) + "\n" + correo.Texto))
+            {
+                if (EsCodigo(m.Groups[1].Value))
+                {
+                    Anadir(resultado, m.Groups[1].Value, null);
+                }
+            }
+            if (resultado.Any())
             {
                 return resultado;
             }
