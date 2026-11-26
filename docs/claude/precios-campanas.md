@@ -151,3 +151,17 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   CompradaEl/PedidoCompra con el primer pedido del producto (no presupuesto) del día enseñado a los 7 siguientes, una consulta por tanda de 500,
   idempotente. `GET api/Campanas/Ofertas/Resultado?campana=&dias=30` (Dirección/Informática; 503 sin tabla): Total, PorOrigen, PorMotivo y PorDecil
   (deciles de probabilidad de más a menos) con servidas, vistas, abiertas, añadidas, compradas y sus porcentajes. Nada se entrena todavía.
+
+### Descuentos pactados de un cliente por la API (Carlos 26/11/26; caso 35253, Lisap Keraplant al 50 %, hasta hoy por script de sa)
+- `POST api/Clientes/{empresa}/{cliente}/DescuentosPactados?ensayo=true` {Familia?, Producto?, GrupoProducto?, FiltroProducto?, Descuento (TANTO POR UNO,
+  0 < d < 1) | Precio, CantidadMinima (1)} → {Ensayo, Creada, Fila, ProductosAfectados, Ejemplo {Producto, Nombre, Pvp, PrecioConDescuento,
+  DescuentoEfectivo}, Mensaje, Avisos}. UNA fila de DescuentosProducto del cliente (sin contacto, proveedor, subgrupo, fechas ni campaña; AudienciaOferta 0).
+  LA REGLA (pura) `ReglasCondicionesCliente` (`Infraestructure/Clientes/CondicionesCliente.cs`): solo las combinaciones que el motor mira para un cliente
+  (producto —con descuento o precio fijo—, grupo, familia, familia + grupo, familia + filtro; el precio fijo solo con producto) → 400 de usted si no.
+  Misma clave (producto, familia, grupo, filtro y cantidad mínima, sin mayúsculas ni espacios) con el mismo valor → 200 `Creada` false; con otro valor →
+  409 `DESCUENTO_PACTADO_YA_EXISTE` (bórrela primero). Ensayo (por defecto): a cuántos productos vivos aplica (Estado ≥ 0, familia y grupo exactos, nombre
+  que EMPIEZA por el filtro, como el motor) y el precio del primero con SOLO esta fila (el motor puede encontrar otra mejor); de verdad con 0 productos → 400.
+  De verdad: INSERT … NOT EXISTS (UPDLOCK) + Modificaciones (Tabla `DescuentoPactado`, JSON de la fila) en una transacción.
+- `GET …/DescuentosPactados` (todas las filas del cliente, también las de contacto o campaña) y `DELETE …/DescuentosPactados/{numeroOrden}` (solo una fila
+  de ESE cliente, 404 si no; rastro con la fila borrada). Crear y borrar: Dirección e Informática (son condiciones comerciales; 403 de usted a los demás);
+  leer: además Administración. Cliente de la tienda, 403. Sin script. La tienda no cambia (las filas de cliente no viajan).

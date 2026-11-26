@@ -236,3 +236,12 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   si no es de hoy), después del 403 y antes de escribir nada. Lo que el PUT no cambia no cuenta. Textos null = vacío; estados de `original` a null no se
   comparan; sin fila de peluquería coincide con un original sin vendedor de peluquería. Quién y cuándo: `Clientes.Usuario`/`Fecha_Modificación` o los de la
   fila de peluquería, lo más reciente de lo que choca. Sin `original`, como antes. Nesto: mandar `original` con lo cargado (`ValoresComercialesFicha`) y tratar el 409.
+
+### El IVA de la ficha por la API (Carlos 26/11/26; caso 42178, hasta hoy por script de sa)
+- `PUT api/Clientes/{empresa}/{cliente}/Iva` {Iva} (`ClientesController.Condiciones.cs`, `ServicioCondicionesCliente`): solo un IVA que exista en
+  ParametrosIVA de la empresa (`IVA_Cliente_Prov`; se guarda con sus mayúsculas; vacío —la empresa espejo— no vale aquí) → 400 de usted con los que hay.
+  TODOS los contactos del cliente en una transacción con UNA fila en Modificaciones (Tabla `ClienteIva`, Anterior «1|42178: 0=G21, 1=G21», Nuevo
+  «1|42178: E52»), y después cada contacto a Odoo como cualquier cambio de ficha (si falla, queda cambiado y lo dice en Avisos). Respuesta {Empresa,
+  Cliente, Iva, Cambiado, Cambios [«Contacto 0: G21 → E52»], Avisos}; si ya lo tenían todos, Cambiado false y nada escrito. Administración, Dirección e
+  Informática (403 de usted; cliente de la tienda, 403); 404 sin cliente. Los pedidos ya hechos no cambian (el IVA del pedido se recalcula al cambiarlo
+  de cliente o al modificarlo). Los descuentos pactados del cliente: `docs/claude/precios-campanas.md`.
