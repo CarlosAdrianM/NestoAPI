@@ -1,0 +1,149 @@
+# Facturación, cobros y contabilidad
+
+Documentación de NestoAPI para Claude, por temas (el índice está en `CLAUDE.md`). Redondeo, documentos que no salen, Facturae, rectificativas, abonos, proyectos, informes de tienda.
+Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE.md` solo se toca su línea del índice.
+
+### Rounding System (Issues #242/#243)
+The application uses `RoundingHelper` for all decimal rounding operations:
+- **Location**: `Infraestructure/RoundingHelper.cs`
+- **Default mode**: `AwayFromZero` (commercial rounding, compliant with Spanish legislation)
+- **Rollback**: Set `RoundingHelper.UsarAwayFromZero = false` to revert to VB6-style `ToEven` rounding
+- **SQL Server**: Uses `ROUND()` which is already AwayFromZero - no changes needed
+- **Auto-fix preventivo**: `ServicioFacturas.CrearFactura()` recalcula las líneas del pedido ANTES de llamar al stored procedure de facturación. Esto previene errores de descuadre causados por diferencias de redondeo entre C# y el SP `prdCrearFacturaVta`. El fix se loguea a ELMAH para diagnóstico.
+- **Restricción BD (CK_LinPedidoVta_5)**: `([bruto]=[precio]*[cantidad] OR [tipolinea]<>(1))` - Esta restricción impide modificar Bruto sin modificar también Precio. Por eso el auto-fix NO puede cambiar Bruto.
+- **CLAVE PARA EL ASIENTO CONTABLE (02/12/25)**: El SP `prdCrearFacturaVta` construye el asiento usando:
+  - HABER Ventas (700): `SUM(ROUND(Bruto, 2))`
+  - DEBE Descuentos (665): `SUM(ROUND(Bruto * Dto, 2))`
+  - La diferencia (Ventas - Descuentos) debe coincidir con `SUM(BaseImponible)`
+- **Cálculo correcto de líneas (coherente con el asiento contable)**:
+  - `Bruto = Cantidad * Precio` - **NO se puede redondear** por restricción `CK_LinPedidoVta_5`
+  - `ImporteDto = ROUND(Bruto * SumaDescuentos, 2)` - Se redondea el descuento ANTES de restar
+  - `BaseImponible = ROUND(Bruto, 2) - ImporteDto` - **USAR ROUND(Bruto, 2)** para que cuadre el asiento
+  - `ImporteIVA = BaseImponible * PorcentajeIVA / 100` - Sin redondear (precisión completa)
+  - `ImporteRE = BaseImponible * PorcentajeRE` - Sin redondear (precisión completa)
+  - `Total = BaseImponible + ImporteIVA + ImporteRE` - Sin redondear (precisión completa)
+- **Por qué ROUND(Bruto, 2) en BaseImponible**: Si Bruto tiene más de 2 decimales (ej: 67.4325 de CanalesExternos), la diferencia con ROUND(Bruto,2) (ej: 67.43) se acumula en múltiples líneas y descuadra el asiento. El SP usa ROUND(Bruto,2) para Ventas, así que BaseImponible debe calcularse igual.
+
+Related files:
+- `RoundingHelper.cs` - Rounding logic with configurable mode
+- `ValidadorDescuentoPP.cs` - Validates early payment discount calculations
+- `ServicioFacturas.cs` - Auto-fix preventivo en `CrearFactura()` y `RecalcularLineasPedido()`
+- `GestorFacturacionRutas.cs` - Logs detailed diagnostics on mismatch errors
+- `GestorPedidosVenta.cs` - `CalcularImportesLinea()` calcula Bruto, ImporteDto, BaseImponible con redondeo correcto
+- `RoundingHelperTests.cs` - Tests documentando el comportamiento de redondeo y cálculo de líneas
+
+### Documentos que no salen: empresa espejo, serie GB y pedidos sin IVA (Carlos 25/11/26)
+- LA REGLA (pura) `ReglaDocumentoNoDescargable` (`Infraestructure/Facturas/DocumentoNoDescargable.cs`): no sale hacia fuera (a) nada de la empresa
+  espejo (3), (b) una factura de una serie sin descarga (`CorreoDesdeFactura` null: GB, lo de siempre) ni (c) el pedido, albarán, proforma,
+  presupuesto o nota de un pedido que va a la espejo (`ServicioTraspasoEmpresa.VaAEmpresaEspejo(cab.IVA)`: IVA NULL o en blanco). 403 con un
+  único texto «El documento {número} no se puede descargar.». `ComprobadorDocumentoDescargable` lee la cabecera (pedido o albarán que no
+  existe: sigue y da su «no existe»).
+- Salidas: GET api/Facturas (PDF; número entero = pedido) y api/Facturas/FacturaJson, GET api/AlbaranesVenta, POST api/Facturas/EnviarPorCorreo
+  (empresa 3), enlace de descarga/WhatsApp (`ProveedorDocumentosEnlace`: ni se crea ni se sirve; un enlace antiguo da la página de «no
+  encontrado»), correo del pedido (`ProveedorDocumentosCorreo.PdfPedido`), envío diario y trimestral (fuera la empresa 3) y adjuntos de las
+  domiciliaciones (ni espejo ni GB). El correo de agencias ya lo hacía desde 2020 (`GestorEnviosAgencia`, IVA null o pedido en la 3).
+- NO pasa por aquí (interno, a propósito: la regla no está dentro de `GestorFacturas.LeerPedido/LeerAlbaran`): Facturar rutas y su impresión,
+  documento de la nota de entrega/recogida, packing (`PasosDocumentosEnPapelApi`, que llama al gestor y no al endpoint), etiquetas, correo
+  interno del pedido, prueba de entrega.
+- **Las cuatro que quedaban (Carlos 25/11/26)**: (1) «No se puede imprimir en ningún caso»: `GET api/PedidosVenta/{empresa}/{pedido}/DocumentosImpresion`
+  (Cajas de Nesto tras cobrar) con empresa espejo, pedido sin IVA o factura que no se sirve → 200 con las tres listas vacías y `Mensaje` = el único
+  (LA REGLA `ReglaDocumentoNoDescargable.DocumentoQueNoSeImprime`, que elige el documento como el gestor: factura salvo FDM, albarán o nota): el cobro
+  sigue, solo no se imprime (Nesto, sin cambios: sin bytes nuevos se queda con los de CrearFactura). Y `CrearFactura` en papel (`DocumentoFacturaDetalle`):
+  una factura de la espejo o de serie sin descarga no lleva PDF ni se imprime en el servidor (Nesto no imprime sin `DatosImpresion`). `DebeImprimirDocumento`
+  solo mira comentarios: sin cambios. (2) `GET api/Facturas/Facturae` (también `comprobar=true`): 403 texto con el mensaje único, antes de leer nada
+  (después del 403 de permisos). (3) 347 (`ExtractosClienteController.GetModelo347` y `Modelo347Pdf`): con la empresa espejo, 403 «El documento Modelo 347
+  no se puede descargar.»; con la 1 nunca mezcló empresas (filtro `Empresa == empresa`, ahora en `MovimientosModelo347`, mismas cifras). (4)
+  `ServicioFacturasAmazon.FacturarYSubirAsync`: pedido sin IVA o de la espejo (antes de preguntar a Amazon ni facturar) o factura resultante que no se
+  sirve (antes del PDF) → no sube, ELMAH «[Amazon] factura no descargable omitida: …» y respuesta Estado OMITIDA con el mensaje en Avisos.
+
+### Facturae para FACe por B2Brouter (NestoAPI#903, 24/11/26; gemela Nesto)
+- Cinco o seis facturas al año a organismos públicos: la API genera el fichero Facturae 3.2.2 SIN firmar de una factura YA emitida y Carlos lo
+  importa en b2brouter.net («importar factura emitida»), que lo firma y lo manda a FACe. Nada de certificados, firma ni envío. Solo LECTURA.
+- `GET api/Facturas/Facturae?empresa=1&factura=NV26…` (`FacturaeController`; Administración, Dirección, Informática; cliente de la tienda 403) →
+  `application/xml` UTF-8 «Facturae_{número}.xml»; 404 sin factura; 400 de usted con TODO lo que falta. Opcionales que GANAN sobre lo guardado:
+  `oficinaContable`, `organoGestor`, `unidadTramitadora`, `organoProponente`, `suPedido`, `expediente`, `contrato`. `comprobar=true` → JSON
+  `ComprobacionFacturaeDTO` (Listo, Faltas, Avisos, centros, referencias, base, impuestos, total, vencimientos con PaymentMeans e IBAN).
+- Datos (`ServicioFacturae`, sin lecturas nuevas de facturación): la factura del PDF (`GestorFacturas.LeerFactura`: datos fiscales guardados, NIF,
+  totales, vencimientos e IBAN de la empresa), sus líneas (`CargarCabFactura`: IVA y RE por línea), el NIF de la empresa (`CargarEmpresa`), las
+  originales de una rectificativa (`ServicioFacturas.CargarFacturasRectificadas`, la de Verifactu, ahora internal) y los DIR3. Emisor = dirección
+  «Empresa» del PDF; receptor = la «Fiscal»; los centros llevan la dirección fiscal del cliente. ReceiverTransactionReference de cada línea (Carlos
+  25/11/26, «si tenemos PO lo ponemos; si no, ponemos el nuestro»): el parámetro `suPedido` > `CabFacturaVta.SuPedido` (#723) > el número de
+  NUESTRO pedido de esa línea (`LinPedidoVta.Número`; una factura de varios pedidos lleva el suyo en cada línea) con el aviso «No consta el pedido
+  del organismo: se pone nuestro número de pedido (931472) como referencia.» (ya no el de «falta la referencia»). `comprobar=true`: `SuPedido` = lo
+  que sale (varios, separados por coma) y `OrigenSuPedido` «Parametro» | «Factura» | «NuestroPedido». Expediente (FileReference) y contrato solo
+  por parámetro (TextMax20: más largo = falta; un P.O. de más de 20 es falta, no se cambia por el nuestro).
+- LA REGLA (pura) `ConstructorModeloFacturae` + escritor `GeneradorFacturae` (`Infraestructure/Facturas/Facturae/`): cabecera por (IVA, RE) como el
+  PDF y Verifactu (base = suma; cuota = ROUND(suma ImporteIVA, 2); RE = ROUND(suma RE × base, 2)); línea: TotalCost = Bruto, Discount = ImporteDto
+  (con DiscountRate), el redondeo ROUND(Bruto,2) − Bruto como Charge (sube) o Discount (baja) «Redondeo a céntimos», GrossAmount = la base; cuotas de
+  línea a 2 y la línea mayor de cada tipo se lleva el céntimo. Si el total no es el de la factura o los vencimientos no lo suman: falta. Número SIN serie
+  (`NumeroSinSerie`) + InvoiceSeriesCode; BatchIdentifier = NIF + número + serie. Rectificativa: OR + Corrective (ReasonCode 16, CorrectionMethod 02
+  «por diferencias», la «I» de Verifactu; varias originales: la primera y las demás en el texto adicional; sin vinculación: falta). Pago: TRN y CNF →
+  04 con el PRIMER IBAN de la empresa (aviso si hay varios), RCB 02, EFC 01, TAR 19; otra (CHC…) → falta. Hijos sin espacio de nombres (unqualified).
+- DIR3: `dbo.ClientesFacturaElectronica` (Empresa, Cliente, Contacto; OficinaContable, OrganoGestor, UnidadTramitadora, OrganoProponente NULL y
+  sus nombres; fuera del EDMX, `Scripts/Issue903_ClientesFacturaElectronica.sql`). `GET/PUT api/Clientes/FacturaElectronica` (mismos grupos; PUT: los
+  tres obligatorios, `ReglasDir3`: 9, letra + al menos 5 cifras; los tres vacíos = quitar; rastro en Modificaciones; sin tabla 503, el GET vacío).
+  Lectura: la del contacto o, si el cliente tiene UNA sola fila, esa. Siguiente corte (si hace falta): subirlo por la API de B2Brouter.
+
+### Rectificativa de una rectificativa (NestoAPI#892, caso RV2600189, Carlos 24/11/26: se permite y se declara bien)
+- Invertir una RV con destino en serie rectificativa (añadir a su propio pedido RV) = `ReglaRectificativaDeRectificativa.EsRectificarRectificativa`
+  (`Infraestructure/Rectificativas/RectificativaDeRectificativa.cs`): se vinculan las líneas POSITIVAS a la línea de la RV de origen (`SeVincula`), al facturar
+  en el acto (`GuardarVinculacionesRectificativa`) o en `RectificativaPendiente`; se envía como R por diferencias de esa RV (el mapeador no mira el signo).
+  Con pedido nuevo sigue siendo deshacer el abono en NV (`EsDeshacerAbono`, 11/11/26). Lo de siempre (vincular las negativas) no cambia.
+  Un abono no se deshace dos veces (Carlos 24/11/26): `MotivoNoSePuedeAbonar` + `ReglasAbonoCopiaFactura.MotivoYaCorregida` (todo o nada, como la de ventas)
+  paran invertir una RV con alguna línea negativa ya vinculada o pendiente («La rectificativa RV2600186 ya está corregida por la RV2600189…»), vaya a RV o a NV;
+  lo deshecho por el camino NV deja desde NestoAPI#907 (25/11/26) su rastro en Modificaciones (Tabla `AbonoDeshecho`, Anterior «empresa|RV», Nuevo = JSON
+  con el pedido nuevo y las líneas negativas deshechas; `AbonosDeshechos.cs`, sin script) y `MotivoNoSePuedeAbonar` lo suma a las correcciones: solo
+  las líneas que siguen en el pedido nuevo (borrado = ya no bloquea), con su factura o «el pedido N (sin facturar)». Si el rastro no se puede leer o
+  escribir, ELMAH y como antes. Lo deshecho por NV antes del 25/11/26 no tiene rastro.
+- Auto-curado del job (`ServicioFacturas.GenerarVinculacionesRectificativaDeRectificativa`, tras el LIFO de #38 si este no hace nada): RV/RC sin
+  vinculaciones, sin ninguna línea negativa, todas las positivas con producto. LA REGLA (pura) `Casar`: todas casan una a una (producto, cantidad exactamente
+  contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo
+  pedido, si no la más reciente; dos del mismo día sin la del mismo pedido → no cura. Si no cura, el correo del job dice «rectificativa en positivo» (no «devolución»).
+
+### Abonar solo lo comprado (NestoAPI#891, Carlos 24/11/26; EN SOMBRA, no frena nada)
+- LA REGLA (pura, lo decidido) `ReglaAbonoSoloLoComprado` (`Infraestructure/PedidosVenta/AbonoSoloLoComprado.cs`): una línea de abono (producto, cantidad < 0,
+  -1..2; sin cupón ni cheque regalo, que son descuentos) cabe si facturadas − abonadas en factura − abonadas en OTROS pedidos sin facturar ≥ lo que abona, sin
+  límite de tiempo; texto «Del 41752 este cliente tiene facturadas 3 y ya abonadas 3: no se puede abonar 1 unidad.». Lectura en UNA consulta
+  (`LectorCompradoParaAbonoSql`, LinPedidoVta Estado 4, NOLOCK). Copiar factura ya frena por línea (`ReglasAbonoCopiaFactura`, #892/#907): no se toca.
+- Sombra: tras guardar (POST y PUT de PedidosVenta), si alguna no cabe, una línea en ELMAH «[Abono de lo no comprado #891, sombra]» (cliente entero,
+  empresas 1 y 3: solo lo que no cabría de ninguna manera). Sin líneas de abono no lee nada; nunca lanza. POR DECIDIR (issue): dónde frena, cliente o
+  contacto, empresas, otros caminos (recogidas #757, devueltos, Nesto viejo), descuentos en negativo y quién se la salta.
+
+### Proyectos: imputar ingresos y gastos y cuenta de explotación (NestoAPI#901 corte 1, Carlos 25/11/26)
+- Cada convocatoria de un curso del SEPE (IMPE0210-2026-1), feria, evento o campaña es un PROYECTO. Se imputan DESPUÉS de contabilizar apuntes de
+  Contabilidad (cuentas 6 y 7) por IMPORTE (se enseña el porcentaje); la contabilidad ni sus SP se tocan. `dbo.Proyectos` + `dbo.ProyectosImputaciones`
+  (fuera del EDMX, `Scripts/Issue901_Proyectos.sql`; sin ellas, 503 «SIN_TABLA»). Cada imputación guarda una FOTO del apunte (cuenta, fecha, concepto,
+  documento, asiento, debe, haber, tercero del asiento por ExtractoProveedor/ExtractoCliente).
+- CONVENCIÓN DE SIGNOS (una sola, `ReglasProyectos`): importe del apunte = |Debe − Haber|; la imputación SIEMPRE positiva; 6xx = Gasto, 7xx = Ingreso; en
+  su lado natural (gasto al Debe, ingreso al Haber) suma y al contrario (abono) RESTA (`Signo`, `Efecto`). Resultado = ingresos − gastos; margen sobre ingresos.
+- LAS REGLAS (puras): `ReglasProyectos` (código ≤ 20, A-Z/cifras/- _ . /, mayúsculas, único por empresa → 409 CODIGO_REPETIDO; tipos CursoSEPE/Evento/Feria/
+  Campana/Otro; cerrado = sin cambios ni imputaciones nuevas, PROYECTO_CERRADO; borrar solo abierto y sin imputaciones; `DecidirReparto`: el PUT SUSTITUYE
+  el reparto de un apunte, todo o nada, misma empresa, importes > 0, un proyecto una vez, suma ≤ apunte + 1 céntimo, 409 APUNTE_NO_EXISTE/APUNTE_CAMBIADO,
+  aviso si el apunte cae fuera de las fechas del proyecto) y `CalculoCuentaExplotacionProyecto` (cuenta de explotación, totales y comparativa).
+- `RepositorioProyectos` (ADO, NestoConnection): el reparto va en una transacción con `sp_getapplock` «ProyectoImputacionApunte:{empresa}:{nº orden}» (otro
+  a la vez → 409 APUNTE_OCUPADO) y los proyectos leídos con UPDLOCK (cerrar espera); rastro en Modificaciones (Tablas `Proyecto` y `ProyectoImputacion`, JSON
+  antes/después). Apuntes por imputar: UNA ida (página topada a 500 + sus imputaciones), NOLOCK.
+- `ProyectosController` (Administración, Dirección, Informática; cliente de la tienda 403; Reabrir solo Dirección): `GET/POST api/Proyectos`, `GET/PUT/DELETE
+  api/Proyectos/{id}`, `POST …/{id}/Cerrar|Reabrir`, `GET api/Proyectos/ApuntesPorImputar`, `GET/PUT api/Proyectos/Apuntes/{nº orden}/Imputaciones`,
+  `GET …/{id}/CuentaExplotacion[/Excel]` (hojas «Resumen» y «Detalle»), `GET api/Proyectos/Comparativa?ids=|producto=`. Errores {Message, Codigo}.
+- Segundo corte (sin hacer): cuentas obligatorias con control «sin imputar» y aviso a Administración, reglas que proponen (proveedor + cuenta → proyecto),
+  horas de personal propio (coste interno sin apunte), propuesta de las facturas de las inscripciones del evento y la pantalla gemela de Nesto.
+
+### Auditoría de seguridad: efectos del extracto (Nesto#644, hallazgos 8 y 2, 17/11/26)
+- `PUT api/ExtractosCliente` (solo lo llama Nesto, ficha de cliente, con el token de Windows): `[Authorize]` + Administración/Dirección/Informática
+  (`ExtractosClienteController.PuedeModificarEfecto`; 403 de usted). Escribe solo lo que cambia (textos sin relleno ni mayúsculas, null = vacío;
+  vencimiento sin FechaVto = Fecha); sin cambios, 400 (antes 500). `IniciarPago` (`POST api/Pagos` y los cobros internos) rechaza con 400 un efecto que
+  no existe o es de otro cliente (`ServicioPagos.MotivoEfectosDeOtroCliente`; no mira empresa ni contacto del cobro: 1/3 y varios contactos valen) y
+  pone a cada efecto el contacto de su apunte.
+
+### Facturado en tienda: acumulado del año y comparativo (NestoAPI#719, gemela de Nesto#559, 12/11/26)
+- `GET api/Informes/FacturacionTienda` (y `/Excel`) con `tipo=Semana|Acumulado|Comparativo` (vacío = Semana, lo de siempre),
+  `hasta` (sin él, hoy), `anios` (Comparativo: 2 por defecto, 1-10) y `almacen` (alias de `tienda`); mismos permisos y tienda que la semana.
+- Acumulado/Comparativo → `FacturacionTiendaAnualDTO` (meses de enero al de `hasta` + `Total`; cada mes con `Anteriores` y variación € y %
+  del año de `hasta` respecto a cada año). Una consulta agregada por año y mes (`SQL_FACTURACION_TIENDA_ANUAL`), del 1 de enero al mismo
+  día y mes de cada año. Excel: hoja «Acumulado» y, en el comparativo, también «Comparativo». El correo (POST …/Correo) sigue siendo de la semana.
+
+### Alquileres: equipo y nombre del cliente en la relación (Novedades 1181, 12/11/26)
+- `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de
+  Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
+  una consulta por tabla (sin N+1). `NombreCliente` sigue siendo solo el del contacto exacto (etiqueta). El guardado los ignora y Nesto no los manda.
