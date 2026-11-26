@@ -85,6 +85,17 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             // el gate de facturación (Fase 1) impide agrupar si algún hermano no está listo.
             // NestoAPI#727: en el fin de mes, además, solo las de fecha de albarán hasta el corte (las demás se quedan).
             List<CabPedidoVta> grupo = origenes.Where(o => o != null).ToList();
+
+            // NestoAPI#898: última barrera, antes de tocar nada: pedidos de P.O. distintas no se juntan nunca en un pedido (y por
+            // tanto en una factura), lo pida la estrategia que lo pida. Quien llama recoge el error por grupo y sigue con el resto.
+            string motivoPO = ReglaPOAgrupacion.MotivoNoSePuedenJuntar(grupo
+                .Concat(new[] { destino })
+                .GroupBy(p => p.Número)
+                .Select(g => new KeyValuePair<int, string>(g.Key, g.First().SuPedido)));
+            if (motivoPO != null)
+            {
+                throw new InvalidOperationException(motivoPO);
+            }
             List<LinPedidoVta> lineasAMover = grupo
                 .Where(o => o.Número != destino.Número)
                 .SelectMany(o => (o.LinPedidoVtas ?? new List<LinPedidoVta>())
