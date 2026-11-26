@@ -121,5 +121,85 @@ namespace NestoAPI.Models.Rectificativas
         /// pedido vuelvan a cobrarlos. Con true se copian tal cual y el cliente los paga otra vez.
         /// </summary>
         public bool IncluirPortes { get; set; }
+
+        /// <summary>
+        /// NestoAPI#899: solo estos albaranes de la factura (Nº Albarán). Las líneas de cuenta contable (portes, comisión
+        /// contra reembolso) de esos albaranes NO entran salvo que se pidan en <see cref="Lineas"/>. Null o vacía = toda la factura.
+        /// Solo con UNA factura.
+        /// </summary>
+        public List<int> Albaranes { get; set; }
+
+        /// <summary>
+        /// NestoAPI#899/#863: solo estas líneas de la factura (Nº Orden de la línea del pedido facturado), y de cada una las
+        /// unidades que se indiquen (sin cantidad = la línea entera). Se suman a las de <see cref="Albaranes"/>; si una línea
+        /// está en los dos, manda su cantidad de aquí. Null o vacía = toda la factura (o solo los albaranes). Solo con UNA factura.
+        /// Con <see cref="Albaranes"/> o <see cref="Lineas"/> la copia es FIEL: mismos precios y descuentos, sin recalcular nada.
+        /// </summary>
+        public List<LineaACopiarDTO> Lineas { get; set; }
+
+        /// <summary>
+        /// NestoAPI#863 (corte 1): Nº Orden de las líneas del abono cuyo género vuelve estropeado. Por ahora solo se deja
+        /// constancia en los comentarios del abono para regularizar el stock a mano (dónde va se decide en el corte 2).
+        /// </summary>
+        public List<int> LineasNoVendibles { get; set; }
+
+        /// <summary>NestoAPI#899: se copia solo una parte de la factura.</summary>
+        public bool HaySeleccion => (Albaranes != null && Albaranes.Count > 0) || (Lineas != null && Lineas.Count > 0);
+    }
+
+    /// <summary>NestoAPI#899/#863: GET api/PedidosVenta/CopiarFactura/Lineas: las líneas de la factura para elegir qué se copia.</summary>
+    public class LineasFacturaParaCopiarDTO
+    {
+        public string Empresa { get; set; }
+        public string Factura { get; set; }
+        public List<int> Albaranes { get; set; } = new List<int>();
+        public List<LineaFacturaParaCopiarDTO> Lineas { get; set; } = new List<LineaFacturaParaCopiarDTO>();
+    }
+
+    public class LineaFacturaParaCopiarDTO
+    {
+        public int Pedido { get; set; }
+        public int NumeroOrden { get; set; }
+        public int? Albaran { get; set; }
+        public System.DateTime? FechaAlbaran { get; set; }
+        public byte? TipoLinea { get; set; }
+        /// <summary>Cuenta contable (portes, comisión…): por albarán no entra, solo si se pide como línea.</summary>
+        public bool EsCuentaContable { get; set; }
+        /// <summary>Portes o comisión contra reembolso (cuentas 624).</summary>
+        public bool EsGastosEnvio { get; set; }
+        public string Producto { get; set; }
+        public string Texto { get; set; }
+        /// <summary>La cantidad facturada (negativa en una rectificativa).</summary>
+        public decimal Cantidad { get; set; }
+        /// <summary>Lo ya abonado (rectificativas y copias sin facturar); en una rectificativa, lo ya deshecho.</summary>
+        public decimal YaAbonada { get; set; }
+        /// <summary>|Cantidad| − YaAbonada (nunca negativo): lo que aún se puede abonar.</summary>
+        public decimal QuedanPorAbonar { get; set; }
+        public decimal Precio { get; set; }
+        public decimal BaseImponible { get; set; }
+    }
+
+    /// <summary>NestoAPI#899/#863: una línea de la factura que se copia (o abona) y cuántas unidades.</summary>
+    public class LineaACopiarDTO
+    {
+        /// <summary>Nº Orden de la línea del pedido facturado.</summary>
+        public int NumeroOrden { get; set; }
+
+        /// <summary>Alias de <see cref="NumeroOrden"/> (el nombre que usa la issue #863). Solo de entrada.</summary>
+        public int NumeroLinea
+        {
+            get => NumeroOrden;
+            set => NumeroOrden = value;
+        }
+
+        public bool ShouldSerializeNumeroLinea() => false;
+
+        /// <summary>
+        /// El pedido de la línea: solo hace falta si la factura agrupa varios pedidos y ese Nº Orden está en más de uno (si no, 400).
+        /// </summary>
+        public int? Pedido { get; set; }
+
+        /// <summary>Unidades (en positivo, de 1 a las de la línea). Null = la línea entera.</summary>
+        public short? Cantidad { get; set; }
     }
 }

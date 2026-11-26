@@ -100,6 +100,34 @@ Related files:
   contraria) con UNA rectificativa anterior del mismo cliente (no una NV con negativa), sin lo ya corregido (vinculaciones o pendientes); gana la del mismo
   pedido, si no la más reciente; dos del mismo día sin la del mismo pedido → no cura. Si no cura, el correo del job dice «rectificativa en positivo» (no «devolución»).
 
+### Copiar o abonar solo unos albaranes o unas líneas de una factura (NestoAPI#899 y #863, Carlos 24/11/26)
+- Por qué: para dejar una factura por P.O. (27593, NV2616046) hubo que copiar facturas ENTERAS y borrar líneas con un script, porque la API no
+  dejaba elegir y el PUT del pedido copiado recalculaba los portes; y una devolución PARCIAL de la agencia (#863) obligaba a abonar y rehacer todo.
+- `POST api/PedidosVenta/CopiarFactura` admite, opcionales y aditivos: `Albaranes` [Nº Albarán] y `Lineas` [{NumeroOrden (alias de entrada
+  `NumeroLinea`), Pedido? (solo si la factura agrupa pedidos y ese Nº Orden está en varios), Cantidad? (1..|la de la línea|; sin ella, entera)}],
+  y `LineasNoVendibles` [Nº Orden] (#863 corte 1: solo un comentario «[Vuelve estropeado, no vendible: … Hay que regularizar el stock a mano]» en el
+  abono). Sin ellos, todo como siempre. LA REGLA (pura) `ReglaSeleccionCopiaFactura.Elegir` (`Infraestructure/Rectificativas/SeleccionCopiaFactura.cs`):
+  entran las de los albaranes (SIN las de cuenta contable: portes y comisión solo si se piden como línea) más las líneas pedidas (manda su cantidad,
+  con el signo de la línea); todos los errores juntos y de usted (albarán o línea que no es de la factura, repetida, cantidad 0 o de más, Nº Orden
+  ambiguo, nada que copiar) → 400 y nada creado. Solo con UNA factura (`MotivoVariasFacturas`, 400 `COPIA_FACTURA_SELECCION_VARIAS_FACTURAS`).
+- Copia FIEL: con selección se copian precio, descuentos y DescuentoPP de la factura aunque haya cambio de cliente y `MantenerCondicionesOriginales`
+  = false (decisión: «no recalcula portes ni precios»); la copia nunca pasó por el PUT, así que no se añaden portes. La línea origen no se toca
+  (las cantidades elegidas van aparte, en memoria). Comentario «[Copia parcial de factura X: albaranes 101, 104; líneas 1 (2 unidades de 5)]»
+  o «[Rectificativa parcial de …]»; en el rehecho, «… [Solo: …]».
+- No abonar dos veces, por unidades: `ReglasAbonoCopiaFactura.LineaVendida.CantidadQueSeAbona` (null = entera, como antes): `MotivoYaAbonado` deja si
+  ya abonado (rectificativas + RectificativaPendiente) + lo de ahora ≤ lo vendido («17404 (4 de 5 ya abonadas: quedan 1 y se piden 2)»);
+  `MotivoYaCorregida` igual para deshacer una parte de una línea negativa. Con la línea entera, lo de siempre (cualquier abono anterior la bloquea).
+  Vinculaciones (`LinFacturaVtaRectificacion`, al facturar o en RectificativaPendiente) y rastro de #907 (`ReglaAbonoDeshecho.Construir`, ahora con la
+  cantidad COPIADA): solo de lo copiado.
+- Los tres modos: abono, abono + rehacer (#699: abono y pedido nuevo con lo mismo; sin `IncluirPortes` el rehecho lleva además los gastos de envío de
+  la factura a 0 € aunque no se elijan, `GestorCopiaPedidos.LineasDelPedidoRehecho`, para que el picking no los cobre otra vez) y abono + cargo (los
+  dos con la misma selección). Respuesta: `UnidadesCopiadas` y `ImporteCopiado` (aditivos, de `LineasCopiadas`).
+- `GET api/PedidosVenta/CopiarFactura/Lineas?empresa=&factura=` (`CopiarFacturaLineasController`, cualquier empleado; cliente de la tienda 403; 400 sin
+  datos; 404 sin factura; vale el número de pedido de una sola factura) → {Empresa, Factura, Albaranes, Lineas [{Pedido, NumeroOrden, Albaran,
+  FechaAlbaran, TipoLinea, EsCuentaContable, EsGastosEnvio, Producto, Texto, Cantidad, YaAbonada, QuedanPorAbonar, Precio, BaseImponible}]}. Sin
+  códigos de barras todavía (los pedía #863 para leer con la pistola).
+- Gemela en Nesto (#638): en «Copiar factura», marcar albaranes o líneas y cantidad, con lo ya abonado (el GET) y la casilla «no vendible».
+
 ### Abonar solo lo comprado (NestoAPI#891, Carlos 24/11/26; EN SOMBRA, no frena nada)
 - LA REGLA (pura, lo decidido) `ReglaAbonoSoloLoComprado` (`Infraestructure/PedidosVenta/AbonoSoloLoComprado.cs`): una línea de abono (producto, cantidad < 0,
   -1..2; sin cupón ni cheque regalo, que son descuentos) cabe si facturadas − abonadas en factura − abonadas en OTROS pedidos sin facturar ≥ lo que abona, sin

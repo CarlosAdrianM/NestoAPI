@@ -17,5 +17,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
         /// <param name="usuario">Usuario que realiza la operación</param>
         /// <returns>Resultado de la operación con los números de documentos creados</returns>
         Task<CopiarFacturaResponse> CopiarFactura(CopiarFacturaRequest request, string usuario);
+
+        /// <summary>NestoAPI#899/#863: las líneas de la factura con lo ya abonado, para elegir qué se copia. Null si no hay factura.</summary>
+        Task<LineasFacturaParaCopiarDTO> LineasParaCopiar(string empresa, string facturaOPedido);
     }
 }

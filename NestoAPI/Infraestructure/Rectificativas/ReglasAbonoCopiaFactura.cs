@@ -19,6 +19,10 @@ namespace NestoAPI.Infraestructure.Rectificativas
             public int Linea { get; set; }
             public string Producto { get; set; }
             public decimal Cantidad { get; set; }
+            /// <summary>
+            /// NestoAPI#899/#863: las unidades que se abonan AHORA de esta línea (en positivo), si no es la línea entera; null = entera.
+            /// </summary>
+            public decimal? CantidadQueSeAbona { get; set; }
         }
 
         /// <summary>Lo que ya abona otro documento (rectificativa emitida o copia pendiente de facturar) de una línea vendida.</summary>
@@ -74,11 +78,16 @@ namespace NestoAPI.Infraestructure.Rectificativas
                         && string.Equals(a.FacturaOriginal.Trim(), linea.Factura?.Trim(), StringComparison.OrdinalIgnoreCase))
                     .ToList();
                 decimal yaAbonado = deLaLinea.Sum(a => a.Cantidad);
-                if (yaAbonado + linea.Cantidad <= linea.Cantidad)
+                // NestoAPI#899/#863: se puede abonar una parte; nunca más de lo vendido menos lo ya abonado (o pendiente de abonar)
+                decimal aAbonar = Math.Abs(linea.CantidadQueSeAbona ?? linea.Cantidad);
+                if (yaAbonado + aAbonar <= linea.Cantidad)
                 {
                     continue;
                 }
-                pasadas.Add($"{linea.Producto?.Trim()} ({Cantidad(yaAbonado)} de {Cantidad(linea.Cantidad)} ya abonadas)");
+                decimal quedan = Math.Max(0, linea.Cantidad - yaAbonado);
+                pasadas.Add(linea.CantidadQueSeAbona.HasValue && linea.CantidadQueSeAbona.Value != linea.Cantidad
+                    ? $"{linea.Producto?.Trim()} ({Cantidad(yaAbonado)} de {Cantidad(linea.Cantidad)} ya abonadas: quedan {Cantidad(quedan)} y se piden {Cantidad(aAbonar)})"
+                    : $"{linea.Producto?.Trim()} ({Cantidad(yaAbonado)} de {Cantidad(linea.Cantidad)} ya abonadas)");
                 documentos.AddRange(deLaLinea.Select(a => a.Documento?.Trim()).Where(d => !string.IsNullOrEmpty(d)));
             }
             if (!pasadas.Any())
@@ -124,7 +133,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
                         .Where(a => a.LineaOriginal == linea.Linea
                             && string.Equals(a.FacturaOriginal.Trim(), rectificativa.Key, StringComparison.OrdinalIgnoreCase))
                         .ToList();
-                    if (!deLaLinea.Any())
+                    // NestoAPI#899: deshacer solo una parte de una línea negativa vale mientras no pase de lo abonado
+                    decimal aCorregir = Math.Abs(linea.CantidadQueSeAbona ?? linea.Cantidad);
+                    if (!deLaLinea.Any() || deLaLinea.Sum(a => a.Cantidad) + aCorregir <= Math.Abs(linea.Cantidad))
                     {
                         continue;
                     }

@@ -463,6 +463,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 request.NumeroFactura = request.NumerosFactura[0];
             }
 
+            // NestoAPI#899: los albaranes y los Nº Orden son de UNA factura
+            string motivoSeleccion = ReglaSeleccionCopiaFactura.MotivoVariasFacturas(request);
+            if (motivoSeleccion != null)
+                throw new NestoBusinessException(motivoSeleccion,
+                    new ErrorContext { ErrorCode = "COPIA_FACTURA_SELECCION_VARIAS_FACTURAS", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim() });
+
             if (request.EsCambioCliente && string.IsNullOrWhiteSpace(request.ContactoDestino))
                 throw new NestoBusinessException("El contacto destino es requerido cuando se cambia de cliente",
                     new ErrorContext { ErrorCode = "COPIA_FACTURA_SIN_CONTACTO_DESTINO", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim(), Factura = request.NumeroFactura?.Trim() });
@@ -702,9 +708,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
             List<LinPedidoVta> lineasOrigen,
             CabPedidoVta pedidoDestino,
             string usuario,
-            OpcionesRehacerPedido rehacer = null)
+            OpcionesRehacerPedido rehacer = null,
+            IDictionary<LinPedidoVta, short> cantidades = null)
         {
             var lineasCopiadas = new List<LineaCopiadaDTO>();
+            // NestoAPI#899: copiar una parte es una copia FIEL de lo elegido (ni precios ni descuentos del destino)
+            bool fiel = request.MantenerCondicionesOriginales || !request.EsCambioCliente || request.HaySeleccion;
 
             // Obtener siguiente número de orden
             int siguienteOrden = await _db.LinPedidoVtas
@@ -716,7 +725,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
             // Obtener datos para recálculo si es necesario
             DescuentosCliente descuentoClienteDestino = null;
             PlazoPago plazoPagoDestino = null;
-            if (!request.MantenerCondicionesOriginales && request.EsCambioCliente)
+            if (!fiel)
             {
                 descuentoClienteDestino = _servicioPedidos.LeerDescuentoCliente(
                     request.Empresa,
@@ -729,10 +738,11 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             foreach (var lineaOrigen in lineasOrigen)
             {
-                // Calcular cantidad
+                // Calcular cantidad (NestoAPI#899/#863: la elegida si es una parte de la línea; la línea origen NO se toca)
+                short cantidadOrigen = cantidades != null && cantidades.TryGetValue(lineaOrigen, out short elegida) ? elegida : (lineaOrigen.Cantidad ?? 0);
                 short cantidadNueva = (short)(request.InvertirCantidades
-                    ? -lineaOrigen.Cantidad
-                    : lineaOrigen.Cantidad);
+                    ? -cantidadOrigen
+                    : cantidadOrigen);
 
                 // Crear nueva línea
                 var lineaNueva = new LinPedidoVta
@@ -771,7 +781,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 };
 
                 // Copiar o recalcular condiciones
-                if (request.MantenerCondicionesOriginales || !request.EsCambioCliente)
+                if (fiel)
                 {
                     // Mantener condiciones originales
                     lineaNueva.Precio = lineaOrigen.Precio;
@@ -917,7 +927,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
         /// Deshacer un abono (invertir una RV): sus líneas negativas no se deshacen dos veces (NestoAPI#892, las vinculaciones de las
         /// positivas que lo deshicieron dentro de un pedido RV). null = se puede.
         /// </summary>
-        private async Task<string> MotivoNoSePuedeAbonar(CopiarFacturaRequest request, List<LinPedidoVta> lineasOrigen)
+        private async Task<string> MotivoNoSePuedeAbonar(CopiarFacturaRequest request, List<LinPedidoVta> lineasOrigen,
+            IDictionary<LinPedidoVta, short> cantidades = null)
         {
             if (request == null || !request.InvertirCantidades || lineasOrigen == null || !lineasOrigen.Any())
             {
@@ -942,7 +953,11 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     Factura = l.Nº_Factura.Trim(),
                     Linea = l.Nº_Orden,
                     Producto = l.Producto,
-                    Cantidad = l.Cantidad ?? 0
+                    Cantidad = l.Cantidad ?? 0,
+                    // NestoAPI#899/#863: con una parte de la línea, solo esas unidades
+                    CantidadQueSeAbona = cantidades != null && cantidades.TryGetValue(l, out short parcial) && parcial != (l.Cantidad ?? 0)
+                        ? Math.Abs((decimal)parcial)
+                        : (decimal?)null
                 })
                 .ToList();
             if (!lineas.Any())
@@ -952,6 +967,25 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             string empresa = request.Empresa?.Trim();
             List<string> facturas = lineas.Select(v => v.Factura).Distinct().ToList();
+            List<ReglasAbonoCopiaFactura.AbonoAnterior> anteriores = await LeerAbonosAnteriores(empresa, facturas);
+
+            // NestoAPI#907: lo deshecho con pedido nuevo en serie normal (no deja vinculaciones) también cuenta
+            List<string> rectificativas = lineas.Where(l => l.Cantidad < 0).Select(l => l.Factura).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (rectificativas.Any())
+            {
+                anteriores.AddRange(await CorreccionesPorPedidoNuevo(empresa, rectificativas));
+            }
+
+            return ReglasAbonoCopiaFactura.MotivoYaAbonado(lineas.Where(l => l.Cantidad > 0).ToList(), anteriores)
+                ?? ReglasAbonoCopiaFactura.MotivoYaCorregida(lineas, anteriores);
+        }
+
+        /// <summary>
+        /// Lo ya abonado de esas facturas: rectificativas emitidas (LinFacturaVtaRectificacion) y copias sin facturar
+        /// (RectificativaPendiente). NestoAPI#899: lo usan también las líneas para abonar (GET).
+        /// </summary>
+        private async Task<List<ReglasAbonoCopiaFactura.AbonoAnterior>> LeerAbonosAnteriores(string empresa, List<string> facturas)
+        {
             var anteriores = (await _db.LinFacturaVtaRectificaciones
                     .Where(r => r.Empresa == empresa && facturas.Contains(r.FacturaOriginalNumero.Trim()))
                     .Select(r => new { r.FacturaOriginalNumero, r.FacturaOriginalLinea, r.CantidadRectificada, r.NumeroFactura })
@@ -974,16 +1008,34 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 Documento = $"el pedido {p.NumeroPedido} (sin facturar)",
                 SinFacturar = true
             }));
+            return anteriores;
+        }
 
-            // NestoAPI#907: lo deshecho con pedido nuevo en serie normal (no deja vinculaciones) también cuenta
-            List<string> rectificativas = lineas.Where(l => l.Cantidad < 0).Select(l => l.Factura).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (rectificativas.Any())
+        /// <summary>
+        /// NestoAPI#899/#863: las líneas de una factura (o del pedido de una sola factura) para elegir qué se copia o abona, con lo ya
+        /// abonado de cada una (rectificativas emitidas y copias sin facturar; en una rectificativa, lo ya deshecho). Solo lectura.
+        /// </summary>
+        public async Task<LineasFacturaParaCopiarDTO> LineasParaCopiar(string empresa, string facturaOPedido)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(facturaOPedido))
             {
-                anteriores.AddRange(await CorreccionesPorPedidoNuevo(empresa, rectificativas));
+                throw new NestoBusinessException("Indique la empresa y la factura.",
+                    new ErrorContext { ErrorCode = "COPIA_FACTURA_SIN_FACTURA", Empresa = empresa?.Trim() });
             }
-
-            return ReglasAbonoCopiaFactura.MotivoYaAbonado(lineas.Where(l => l.Cantidad > 0).ToList(), anteriores)
-                ?? ReglasAbonoCopiaFactura.MotivoYaCorregida(lineas, anteriores);
+            string empresaLimpia = empresa.Trim();
+            var (lineas, factura, error) = await ObtenerLineasFacturaOPedido(empresaLimpia, facturaOPedido);
+            if (!string.IsNullOrEmpty(error) || !lineas.Any())
+            {
+                return null;
+            }
+            string numeroFactura = factura ?? facturaOPedido.Trim();
+            List<string> facturas = lineas.Select(l => l.Nº_Factura?.Trim()).Where(f => !string.IsNullOrEmpty(f)).Distinct().ToList();
+            List<ReglasAbonoCopiaFactura.AbonoAnterior> anteriores = await LeerAbonosAnteriores(empresaLimpia, facturas);
+            if (lineas.Any(l => (l.Cantidad ?? 0) < 0))
+            {
+                anteriores.AddRange(await CorreccionesPorPedidoNuevo(empresaLimpia, facturas));
+            }
+            return ReglaSeleccionCopiaFactura.LineasParaCopiar(empresaLimpia, numeroFactura, lineas, anteriores, EsLineaGastosEnvio);
         }
 
         /// <summary>
@@ -1199,7 +1251,11 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     CrearAlbaranYFactura = true, // Facturar automáticamente
                     // No cambiar de cliente para el abono
                     ClienteDestino = null,
-                    ContactoDestino = null
+                    ContactoDestino = null,
+                    // NestoAPI#899/#863: lo mismo en el abono y en el cargo
+                    Albaranes = request.Albaranes,
+                    Lineas = request.Lineas,
+                    LineasNoVendibles = request.LineasNoVendibles
                 };
 
                 var responseAbono = await CopiarFacturaInterno(requestAbono, usuario);
@@ -1230,7 +1286,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     MantenerCondicionesOriginales = request.MantenerCondicionesOriginales,
                     CrearAlbaranYFactura = true, // Facturar automáticamente
                     ClienteDestino = request.ClienteDestino,
-                    ContactoDestino = request.ContactoDestino
+                    ContactoDestino = request.ContactoDestino,
+                    Albaranes = request.Albaranes,
+                    Lineas = request.Lineas
                 };
 
                 var responseCargo = await CopiarFacturaInterno(requestCargo, usuario);
@@ -1261,7 +1319,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 response.Mensaje = $"Abono+Cargo completado. " +
                     $"ABONO: Factura {response.Abono.NumeroFactura} (cliente {clienteOrigen}/{contactoOrigen}). " +
                     $"CARGO: Factura {response.Cargo.NumeroFactura} (cliente {request.ClienteDestino}/{request.ContactoDestino}). " +
-                    $"{lineasOrigen.Count} líneas procesadas.";
+                    $"{responseCargo.LineasCopiadas.Count} líneas procesadas.";
             }
             catch (Exception ex)
             {
@@ -1362,7 +1420,11 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 MantenerCondicionesOriginales = true,
                 CrearAlbaranYFactura = request.CrearAlbaranYFactura,
                 Comentarios = request.Comentarios,
-                UsarVendedorFacturaOriginal = request.UsarVendedorFacturaOriginal
+                UsarVendedorFacturaOriginal = request.UsarVendedorFacturaOriginal,
+                // NestoAPI#863: abonar y reenviar solo lo que ha vuelto
+                Albaranes = request.Albaranes,
+                Lineas = request.Lineas,
+                LineasNoVendibles = request.LineasNoVendibles
             };
             var responseAbono = await CopiarFacturaInterno(requestAbono, usuario);
             if (!responseAbono.Exitoso)
@@ -1391,7 +1453,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 MantenerCondicionesOriginales = true,
                 CrearAlbaranYFactura = false, // sale por el picking normal
                 Comentarios = request.Comentarios,
-                UsarVendedorFacturaOriginal = request.UsarVendedorFacturaOriginal
+                UsarVendedorFacturaOriginal = request.UsarVendedorFacturaOriginal,
+                Albaranes = request.Albaranes,
+                Lineas = LineasDelPedidoRehecho(request, lineasOrigen)
             };
             var opciones = new OpcionesRehacerPedido
             {
@@ -1437,6 +1501,31 @@ namespace NestoAPI.Infraestructure.Rectificativas
             return response;
         }
 
+        /// <summary>
+        /// NestoAPI#863: el pedido rehecho lleva lo mismo que el abono. Con selección y sin <see cref="CopiarFacturaRequest.IncluirPortes"/>,
+        /// también los gastos de envío de la factura (a 0 €, como en #699) aunque no se hayan elegido: sin ellos el picking los volvería a
+        /// cobrar. Sin selección, lo que venga (null = toda la factura, como siempre).
+        /// </summary>
+        internal static List<LineaACopiarDTO> LineasDelPedidoRehecho(CopiarFacturaRequest request, IEnumerable<LinPedidoVta> lineasFactura)
+        {
+            if (request == null || !request.HaySeleccion)
+            {
+                return request?.Lineas;
+            }
+            var lineas = (request.Lineas ?? new List<LineaACopiarDTO>()).ToList();
+            if (!request.IncluirPortes)
+            {
+                foreach (LinPedidoVta gastos in (lineasFactura ?? Enumerable.Empty<LinPedidoVta>()).Where(EsLineaGastosEnvio))
+                {
+                    if (!lineas.Any(l => l.NumeroOrden == gastos.Nº_Orden && (!l.Pedido.HasValue || l.Pedido.Value == gastos.Número)))
+                    {
+                        lineas.Add(new LineaACopiarDTO { NumeroOrden = gastos.Nº_Orden, Pedido = gastos.Número });
+                    }
+                }
+            }
+            return lineas;
+        }
+
         private static string DescripcionAbono(OperacionFacturaDTO abono)
         {
             if (abono == null)
@@ -1475,8 +1564,18 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 request.NumeroFactura = numeroFacturaReal;
             }
 
+            // NestoAPI#899/#863: solo los albaranes o las líneas elegidas (sin elegir nada, toda la factura, como siempre)
+            ReglaSeleccionCopiaFactura.Resultado seleccion = ReglaSeleccionCopiaFactura.Elegir(lineasOrigen, request.NumeroFactura, request.Albaranes, request.Lineas);
+            if (seleccion.Error != null)
+            {
+                response.Mensaje = seleccion.Error;
+                return response;
+            }
+            lineasOrigen = seleccion.Lineas.Select(e => e.Linea).ToList();
+            Dictionary<LinPedidoVta, short> cantidades = seleccion.Lineas.ToDictionary(e => e.Linea, e => e.Cantidad);
+
             // 16/11/26 (RV2600152/153): ni a quien no la compró, ni dos veces lo mismo. Antes de crear nada.
-            string motivoNoAbonable = await MotivoNoSePuedeAbonar(request, lineasOrigen);
+            string motivoNoAbonable = await MotivoNoSePuedeAbonar(request, lineasOrigen, cantidades);
             if (motivoNoAbonable != null)
             {
                 response.Mensaje = motivoNoAbonable;
@@ -1513,7 +1612,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 lineasOrigen,
                 pedidoDestino,
                 usuario,
-                rehacer);
+                rehacer,
+                cantidades);
 
             response.LineasCopiadas = lineasCopiadas;
 
@@ -1523,13 +1623,28 @@ namespace NestoAPI.Infraestructure.Rectificativas
             {
                 comentarioTrazabilidad = $"[Rectificativa de factura {request.NumeroFactura}]";
             }
+            if (!string.IsNullOrEmpty(seleccion.Descripcion))
+            {
+                comentarioTrazabilidad = request.InvertirCantidades
+                    ? $"[Rectificativa parcial de factura {request.NumeroFactura}: {seleccion.Descripcion}]"
+                    : $"[Copia parcial de factura {request.NumeroFactura}: {seleccion.Descripcion}]";
+            }
             if (rehacer != null)
             {
-                comentarioTrazabilidad = rehacer.ComentarioTrazabilidad;
+                comentarioTrazabilidad = rehacer.ComentarioTrazabilidad
+                    + (string.IsNullOrEmpty(seleccion.Descripcion) ? string.Empty : $" [Solo: {seleccion.Descripcion}]");
             }
             if (request.EsCambioCliente)
             {
                 comentarioTrazabilidad += $" [Cliente origen: {request.Cliente}]";
+            }
+            // NestoAPI#863 (corte 1): lo que vuelve estropeado queda escrito en el abono para regularizarlo a mano
+            string comentarioNoVendibles = request.InvertirCantidades
+                ? ReglaSeleccionCopiaFactura.ComentarioNoVendibles(request.LineasNoVendibles, seleccion.Lineas)
+                : null;
+            if (comentarioNoVendibles != null)
+            {
+                comentarioTrazabilidad += " " + comentarioNoVendibles;
             }
 
             // Construir comentario final: comentario usuario + trazabilidad + comentarios originales

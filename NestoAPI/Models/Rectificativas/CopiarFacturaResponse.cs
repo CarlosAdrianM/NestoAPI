@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Models.Rectificativas
 {
@@ -32,6 +33,12 @@ namespace NestoAPI.Models.Rectificativas
         /// Detalle de las líneas copiadas con su origen (para trazabilidad)
         /// </summary>
         public List<LineaCopiadaDTO> LineasCopiadas { get; set; }
+
+        /// <summary>NestoAPI#863: resumen de lo copiado: unidades (en valor absoluto) de <see cref="LineasCopiadas"/>.</summary>
+        public decimal UnidadesCopiadas => (LineasCopiadas ?? new List<LineaCopiadaDTO>()).Sum(l => System.Math.Abs(l.CantidadCopiada));
+
+        /// <summary>NestoAPI#863: resumen de lo copiado: suma de la base imponible de <see cref="LineasCopiadas"/> (negativa en un abono).</summary>
+        public decimal ImporteCopiado => (LineasCopiadas ?? new List<LineaCopiadaDTO>()).Sum(l => l.BaseImponible);
 
         /// <summary>
         /// Mensaje descriptivo del resultado

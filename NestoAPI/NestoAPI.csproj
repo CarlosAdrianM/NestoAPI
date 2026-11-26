@@ -557,6 +557,7 @@
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\AparatosController.cs" />
+    <Compile Include="Controllers\CopiarFacturaLineasController.cs" />
     <Compile Include="Controllers\RemesasController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
@@ -1761,6 +1762,7 @@
     <Compile Include="Infraestructure\Rectificativas\AbonosDeshechos.cs" />
     <Compile Include="Infraestructure\Rectificativas\RectificativaDeRectificativa.cs" />
     <Compile Include="Infraestructure\Rectificativas\ReglasAbonoCopiaFactura.cs" />
+    <Compile Include="Infraestructure\Rectificativas\SeleccionCopiaFactura.cs" />
     <Compile Include="Infraestructure\Rectificativas\GestorFacturasRectificativas.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\Ariadna\PoliticaVersionMinimaAriadna.cs" />

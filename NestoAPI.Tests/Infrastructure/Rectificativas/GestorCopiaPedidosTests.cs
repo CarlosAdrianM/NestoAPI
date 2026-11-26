@@ -1288,7 +1288,8 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             return set;
         }
 
-        private static EscenarioCopia CrearEscenarioFacturaDevuelta(bool conReembolso = false)
+        private static EscenarioCopia CrearEscenarioFacturaDevuelta(bool conReembolso = false, List<LinPedidoVta> lineasFactura = null,
+            List<LinFacturaVtaRectificacion> rectificaciones = null)
         {
             var e = new EscenarioCopia
             {
@@ -1316,6 +1317,10 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             {
                 lineasOriginales.Add(Linea(4, 2, Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL, 1, 3M, 0M, Constantes.Portes.TEXTO_COMISION_REEMBOLSO));
             }
+            if (lineasFactura != null)
+            {
+                lineasOriginales = lineasFactura;
+            }
             A.CallTo(() => e.Db.LinPedidoVtas).Returns(FakeDbSet(lineasOriginales, e.LineasNuevas));
 
             var cliente = new Cliente { Empresa = "1", Nº_Cliente = "15234", Contacto = "2", IVA = "G21", Vendedor = "FICHA", CCC = "9", Ruta = "FW", PeriodoFacturación = "NRM" };
@@ -1340,7 +1345,7 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
                 new VendedorPedidoGrupoProducto { Empresa = "1", Pedido = PEDIDO_ORIGINAL, GrupoProducto = "PEL", Vendedor = "JE" }
             }, e.VendedoresNuevos));
             A.CallTo(() => e.Db.CabsFacturasVtas).Returns(FakeDbSet(new List<CabFacturaVta>(), null));
-            A.CallTo(() => e.Db.LinFacturaVtaRectificaciones).Returns(FakeDbSet(new List<LinFacturaVtaRectificacion>(), null));
+            A.CallTo(() => e.Db.LinFacturaVtaRectificaciones).Returns(FakeDbSet(rectificaciones ?? new List<LinFacturaVtaRectificacion>(), null));
 
             A.CallTo(() => e.Db.TomarSiguienteNumeroPedido()).ReturnsNextFromSequence(PEDIDO_ABONO, PEDIDO_SEGUNDO);
             A.CallTo(() => e.Db.SaveChangesAsync()).Returns(Task.FromResult(1));
@@ -1551,6 +1556,176 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             Assert.IsTrue(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 2, Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL, Texto = "Comisión contra reembolso" }));
             Assert.IsFalse(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 1, Producto = "62400" }));
             Assert.IsFalse(GestorCopiaPedidos.EsLineaGastosEnvio(new LinPedidoVta { TipoLinea = 2, Producto = "75900000" }));
+        }
+
+        #endregion
+
+        #region Copiar o abonar solo unos albaranes o unas líneas (NestoAPI#899 y #863)
+
+        // Caso 24/11/26 (27593, NV2616046): para dejar una factura por P.O. hubo que copiar la factura entera y borrar líneas con un script.
+
+        /// <summary>Una factura de cinco albaranes (100..104), una línea de producto en cada uno y los portes en el último.</summary>
+        private static List<LinPedidoVta> FacturaDeCincoAlbaranes()
+        {
+            LinPedidoVta L(int orden, int albaran, byte tipo, string producto, short cantidad, decimal precio) => new LinPedidoVta
+            {
+                Empresa = "1", Número = PEDIDO_ORIGINAL, Nº_Orden = orden, Nº_Factura = FACTURA_ORIGINAL, Nº_Albarán = albaran,
+                Estado = Constantes.EstadosLineaVenta.FACTURA, TipoLinea = tipo, Producto = producto, Texto = "TEXTO " + producto,
+                Cantidad = cantidad, Precio = precio, Descuento = 0.10M, DescuentoCliente = 0.05M, Aplicar_Dto = tipo == 1,
+                Nº_Cliente = "15234", Contacto = "2", IVA = "G21", Almacén = "ALG", Forma_Venta = "VAR"
+            };
+            return new List<LinPedidoVta>
+            {
+                L(1, 100, 1, "17404", 5, 12.5M),
+                L(2, 101, 1, "29353", 2, 8M),
+                L(3, 102, 1, "40010", 1, 30M),
+                L(4, 103, 1, "41752", 3, 4M),
+                L(5, 104, 1, "45929", 1, 20M),
+                L(6, 104, 2, Constantes.Cuentas.CUENTA_PORTES_CEX, 1, 7M)
+            };
+        }
+
+        private static CopiarFacturaRequest RequestParcial(bool invertir, bool facturar, List<int> albaranes = null, List<LineaACopiarDTO> lineas = null) => new CopiarFacturaRequest
+        {
+            Empresa = "1",
+            Cliente = "15234",
+            NumeroFactura = FACTURA_ORIGINAL,
+            InvertirCantidades = invertir,
+            CrearAlbaranYFactura = facturar,
+            Albaranes = albaranes,
+            Lineas = lineas
+        };
+
+        [TestMethod]
+        public async Task CopiaParcial_DosAlbaranesDeCinco_SoloSusLineasYSinPortes()
+        {
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes());
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(RequestParcial(false, false, new List<int> { 101, 104 }), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            List<LinPedidoVta> copia = e.Lineas(PEDIDO_ABONO);
+            CollectionAssert.AreEqual(new[] { "29353", "45929" }, copia.Select(l => l.Producto).ToArray(), "Los portes del albarán 104 no entran si no se piden");
+            CollectionAssert.AreEqual(new short?[] { 2, 1 }, copia.Select(l => l.Cantidad).ToList());
+            LinPedidoVta mascarilla = copia.First();
+            Assert.AreEqual(8M, mascarilla.Precio, "Copia fiel: el precio de la factura");
+            Assert.AreEqual(0.10M, mascarilla.Descuento);
+            Assert.AreEqual(0.05M, mascarilla.DescuentoCliente);
+            StringAssert.Contains(e.Cabecera(PEDIDO_ABONO).Comentarios, "[Copia parcial de factura NV26/000001: albaranes 101, 104]");
+            Assert.AreEqual(3M, respuesta.UnidadesCopiadas);
+        }
+
+        [TestMethod]
+        public async Task CopiaParcial_AlbaranYPortesPedidosComoLinea_EntranLosPortes()
+        {
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes());
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(
+                RequestParcial(false, false, new List<int> { 104 }, new List<LineaACopiarDTO> { new LineaACopiarDTO { NumeroOrden = 6 } }), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            CollectionAssert.AreEqual(new[] { "45929", Constantes.Cuentas.CUENTA_PORTES_CEX }, e.Lineas(PEDIDO_ABONO).Select(l => l.Producto).ToArray());
+        }
+
+        [TestMethod]
+        public async Task AbonoParcial_DosDeCincoUnidades_AbonaSoloEsasYLasVincula()
+        {
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes());
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(
+                RequestParcial(true, false, lineas: new List<LineaACopiarDTO> { new LineaACopiarDTO { NumeroOrden = 1, Cantidad = 2 } }), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            LinPedidoVta abono = e.Lineas(PEDIDO_ABONO).Single();
+            Assert.AreEqual((short)-2, abono.Cantidad);
+            Assert.AreEqual(abono.Precio * abono.Cantidad, abono.Bruto, "CK_LinPedidoVta_5");
+            Assert.AreEqual("RV", e.Cabecera(PEDIDO_ABONO).Serie);
+            StringAssert.Contains(e.Cabecera(PEDIDO_ABONO).Comentarios, "[Rectificativa parcial de factura NV26/000001: línea 1 (2 unidades de 5)]");
+            Assert.AreEqual(5M, respuesta.LineasCopiadas.Single().CantidadOriginal);
+            // Sin facturar: la vinculación espera con las 2 unidades (Verifactu: solo lo copiado)
+            A.CallTo(() => e.Pendientes.GuardarPendientes("1", PEDIDO_ABONO, A<List<RectificativaPendienteDTO>>.That.Matches(p =>
+                p.Count == 1 && p[0].FacturaOriginalLinea == 1 && p[0].CantidadRectificada == 2 && p[0].FacturaOriginalNumero == FACTURA_ORIGINAL)))
+                .MustHaveHappenedOnceExactly();
+            // La línea de la factura original no se toca
+            Assert.AreEqual((short)5, FacturaDeCincoAlbaranes()[0].Cantidad);
+        }
+
+        [TestMethod]
+        public async Task AbonoParcial_MasDeLoQueQueda_400DeUstedYNadaCreado()
+        {
+            var yaAbonadas = new List<LinFacturaVtaRectificacion>
+            {
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV26/000009", NumeroLinea = 1, FacturaOriginalNumero = FACTURA_ORIGINAL, FacturaOriginalLinea = 1, CantidadRectificada = 4 }
+            };
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes(), rectificaciones: yaAbonadas);
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(
+                RequestParcial(true, true, lineas: new List<LineaACopiarDTO> { new LineaACopiarDTO { NumeroOrden = 1, Cantidad = 2 } }), "Carlos");
+
+            Assert.IsFalse(respuesta.Exitoso);
+            StringAssert.Contains(respuesta.Mensaje, "17404 (4 de 5 ya abonadas: quedan 1 y se piden 2)");
+            StringAssert.Contains(respuesta.Mensaje, "RV26/000009");
+            Assert.AreEqual(0, e.CabecerasNuevas.Count + e.LineasNuevas.Count);
+        }
+
+        [TestMethod]
+        public async Task AbonoParcial_LoQueQueda_SePuede()
+        {
+            var yaAbonadas = new List<LinFacturaVtaRectificacion>
+            {
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV26/000009", NumeroLinea = 1, FacturaOriginalNumero = FACTURA_ORIGINAL, FacturaOriginalLinea = 1, CantidadRectificada = 3 }
+            };
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes(), rectificaciones: yaAbonadas);
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(
+                RequestParcial(true, true, lineas: new List<LineaACopiarDTO> { new LineaACopiarDTO { NumeroOrden = 1, Cantidad = 2 } }), "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            A.CallTo(() => e.ServicioFacturas.EnviarRectificativaAVerifactu("1", "RV26/000001")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Seleccion_ConVariasFacturas_400()
+        {
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes());
+            CopiarFacturaRequest request = RequestParcial(true, false, new List<int> { 100 });
+            request.NumeroFactura = null;
+            request.NumerosFactura = new List<string> { FACTURA_ORIGINAL, "NV26/000002" };
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(request, "Carlos");
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.AreEqual("Para copiar o abonar solo unos albaranes o unas líneas seleccione una sola factura.", respuesta.Mensaje);
+            Assert.AreEqual(0, e.CabecerasNuevas.Count);
+        }
+
+        [TestMethod]
+        public async Task RehacerPedido_ConSeleccion_AbonaYRehaceSoloLoQueVuelveYLosPortesA0()
+        {
+            var e = CrearEscenarioFacturaDevuelta(lineasFactura: FacturaDeCincoAlbaranes());
+            CopiarFacturaRequest request = RequestRehacer();
+            request.Lineas = new List<LineaACopiarDTO> { new LineaACopiarDTO { NumeroOrden = 1, Cantidad = 2 }, new LineaACopiarDTO { NumeroOrden = 3 } };
+            request.LineasNoVendibles = new List<int> { 3 };
+
+            CopiarFacturaResponse respuesta = await e.Gestor().CopiarFactura(request, "Carlos");
+
+            Assert.IsTrue(respuesta.Exitoso, respuesta.Mensaje);
+            CollectionAssert.AreEqual(new short?[] { -2, -1 }, e.Lineas(PEDIDO_ABONO).Select(l => l.Cantidad).ToList(), "El abono, solo lo que ha vuelto y sin portes");
+            StringAssert.Contains(e.Cabecera(PEDIDO_ABONO).Comentarios, "[Vuelve estropeado, no vendible: 40010 (1 unidad). Hay que regularizar el stock a mano]");
+            List<LinPedidoVta> rehecho = e.Lineas(PEDIDO_SEGUNDO);
+            CollectionAssert.AreEqual(new[] { "17404", "40010", Constantes.Cuentas.CUENTA_PORTES_CEX }, rehecho.Select(l => l.Producto).ToArray());
+            Assert.AreEqual((short)2, rehecho[0].Cantidad);
+            Assert.AreEqual(1M, rehecho[2].Descuento, "Los portes del reenvío, a 0 €, para que el picking no los vuelva a cobrar");
+            Assert.IsFalse(e.Cabecera(PEDIDO_SEGUNDO).Comentarios.Contains("estropeado"));
+        }
+
+        [TestMethod]
+        public void LineasDelPedidoRehecho_SinSeleccionNoTocaNada_ConIncluirPortesNoAnadeLosPortes()
+        {
+            List<LinPedidoVta> factura = FacturaDeCincoAlbaranes();
+            Assert.IsNull(GestorCopiaPedidos.LineasDelPedidoRehecho(new CopiarFacturaRequest(), factura));
+            var conPortes = new CopiarFacturaRequest { IncluirPortes = true, Albaranes = new List<int> { 100 } };
+            Assert.AreEqual(0, GestorCopiaPedidos.LineasDelPedidoRehecho(conPortes, factura).Count);
         }
 
         #endregion

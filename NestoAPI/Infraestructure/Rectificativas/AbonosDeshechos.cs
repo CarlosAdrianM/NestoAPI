@@ -79,7 +79,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                         LineaOriginal = l.LineaOrigen,
                         LineaNueva = l.NumeroLineaNueva,
                         Producto = l.Producto?.Trim(),
-                        Cantidad = Math.Abs(l.CantidadOriginal)
+                        Cantidad = Math.Abs(l.CantidadCopiada) // NestoAPI#899: lo deshecho (puede ser una parte)
                     }).ToList()
                 })
                 .ToList();
