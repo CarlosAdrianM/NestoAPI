@@ -80,7 +80,16 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#766: el cobro de deudas en efectivo (sustituible en tests).</summary>
         internal ServicioCobrosReparto ServicioCobros
         {
-            get => servicioCobros ?? (servicioCobros = new ServicioCobrosReparto(new RepositorioCobrosReparto(db)) { ControlCaja = NuevoControlCaja(db) });
+            get
+            {
+                if (servicioCobros == null)
+                {
+                    var repositorio = new RepositorioCobrosReparto(db);
+                    // Caso del 20/11/26: un cobro repetido o entero a cuenta se confirma (409 COBRO_REPETIDO / COBRO_TODO_A_CUENTA)
+                    servicioCobros = new ServicioCobrosReparto(repositorio) { ControlCaja = NuevoControlCaja(db), CobrosRecientes = repositorio };
+                }
+                return servicioCobros;
+            }
             set => servicioCobros = value;
         }
 

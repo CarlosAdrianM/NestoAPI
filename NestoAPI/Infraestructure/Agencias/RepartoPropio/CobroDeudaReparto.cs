@@ -28,6 +28,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public Guid ClaveIdempotencia { get; set; }
         /// <summary>Cuándo se cobró en el aparato (hora local). Da la fecha del asiento; nunca después de hoy.</summary>
         public DateTime? FechaHora { get; set; }
+        /// <summary>
+        /// Caso del 20/11/26 (cliente 9251, dos cobros en un minuto): true = el repartidor confirma que es un cobro distinto aunque
+        /// el cliente ya tenga uno reciente (409 COBRO_REPETIDO) o aunque no pague ninguna deuda (409 COBRO_TODO_A_CUENTA).
+        /// Sin el campo (Ariadna vieja), false: se frena.
+        /// </summary>
+        public bool Confirmar { get; set; }
     }
 
     public class ResultadoCobroDeudaDTO
@@ -312,6 +318,66 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             => deuda.TipoApunte?.Trim() == Constantes.ExtractosCliente.TiposApunte.IMPAGADO ? "Impagado" : "Factura";
     }
 
+    /// <summary>Un cobro del reparto ya registrado (de <c>Modificaciones</c>, Tabla «CobroReparto»).</summary>
+    public class CobroRecienteReparto
+    {
+        public Guid Clave { get; set; }
+        public string Cliente { get; set; }
+        public decimal Importe { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Usuario { get; set; }
+    }
+
+    /// <summary>Los cobros del reparto de un cliente desde una hora (para no cobrar dos veces lo mismo).</summary>
+    public interface ILectorCobrosRecientesReparto
+    {
+        Task<List<CobroRecienteReparto>> LeerCobrosDelCliente(string cliente, DateTime desde);
+    }
+
+    /// <summary>
+    /// LA REGLA (pura) de los cobros que hay que confirmar antes de contabilizarlos (caso del 20/11/26: el cliente 9251 recibió dos
+    /// cobros en un minuto y el segundo quedó entero a cuenta). Sin <c>Confirmar</c>: (1) el cliente ya tiene un cobro del reparto
+    /// en los últimos <see cref="MINUTOS_REPETIDO"/> minutos con OTRA clave → COBRO_REPETIDO; (2) el cobro no liquida ningún efecto
+    /// (iría entero a cuenta) → COBRO_TODO_A_CUENTA. El reintento con la MISMA clave nunca llega aquí (devuelve lo de antes).
+    /// </summary>
+    public static class ReglaCobroRepetidoReparto
+    {
+        public const int MINUTOS_REPETIDO = 30;
+        public const string CODIGO_REPETIDO = "COBRO_REPETIDO";
+        public const string CODIGO_TODO_A_CUENTA = "COBRO_TODO_A_CUENTA";
+        public const string MENSAJE_TODO_A_CUENTA = "Este cobro no corresponde a ninguna deuda del cliente: quedaría entero a cuenta. " +
+            "Confírmelo si es correcto.";
+
+        /// <summary>El cobro reciente que frena (el más reciente del cliente, en la ventana, con otra clave), o null.</summary>
+        public static CobroRecienteReparto CobroQueFrena(IEnumerable<CobroRecienteReparto> cobros, string cliente, Guid clave, DateTime ahora)
+        {
+            string buscado = cliente?.Trim();
+            DateTime desde = ahora.AddMinutes(-MINUTOS_REPETIDO);
+            return (cobros ?? Enumerable.Empty<CobroRecienteReparto>())
+                .Where(c => c != null && c.Clave != clave && c.Fecha >= desde
+                    && string.Equals(c.Cliente?.Trim(), buscado, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(c => c.Fecha)
+                .FirstOrDefault();
+        }
+
+        /// <summary>«Ya ha cobrado 84,80 € a este cliente a las 12:31. Si es otro cobro distinto, confírmelo.» (o «Miguel ya ha cobrado…»).</summary>
+        public static string MensajeRepetido(CobroRecienteReparto cobro, string usuario)
+        {
+            string importe = cobro.Importe.ToString("N2", CultureInfo.GetCultureInfo("es-ES"));
+            string hora = cobro.Fecha.ToString("HH:mm", CultureInfo.InvariantCulture);
+            string quien = SinDominio(cobro.Usuario);
+            bool esElMismo = string.IsNullOrEmpty(quien) || string.Equals(quien, SinDominio(usuario), StringComparison.OrdinalIgnoreCase);
+            string sujeto = esElMismo ? "Ya ha cobrado" : $"{quien} ya ha cobrado";
+            return $"{sujeto} {importe} € a este cliente a las {hora}. Si es otro cobro distinto, confírmelo.";
+        }
+
+        /// <summary>Sin efectos liquidados el cobro va entero a cuenta.</summary>
+        public static bool VaEnteroACuenta(int efectosLiquidados) => efectosLiquidados <= 0;
+
+        private static string SinDominio(string usuario)
+            => string.IsNullOrWhiteSpace(usuario) ? null : usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+    }
+
     /// <summary>Lo que el cobro necesita de la base de datos (fuera de los tests).</summary>
     public interface IRepositorioCobrosReparto
     {
@@ -350,6 +416,12 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// la entrega y rechazarlo perdería la entrega firmada.
         /// </summary>
         internal ControlCajaReparto ControlCaja { get; set; }
+
+        /// <summary>
+        /// Caso del 20/11/26: los cobros repetidos o enteros a cuenta se confirman (<see cref="ReglaCobroRepetidoReparto"/>). Null: no
+        /// se mira. Como <see cref="ControlCaja"/>, lo pone el controlador SOLO en POST Cobros (la nota de cobro va dentro de la entrega).
+        /// </summary>
+        internal ILectorCobrosRecientesReparto CobrosRecientes { get; set; }
 
         public ServicioCobrosReparto(IRepositorioCobrosReparto repositorio, ILectorParametrosUsuario parametros = null, Func<DateTime> ahora = null)
         {
@@ -455,6 +527,14 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     : (yaNoPendientes.Count == 1 ? "Un efecto ya no estaba pendiente" : $"{yaNoPendientes.Count} efectos ya no estaban pendientes")
                       + ": lo que les tocaba queda a cuenta del cliente."
             };
+            if (CobrosRecientes != null && !peticion.Confirmar)
+            {
+                ResultadoReparto<ResultadoCobroDeudaDTO> porConfirmar = await PorConfirmar(peticion, cliente, usuario, hoy, apuntes).ConfigureAwait(false);
+                if (porConfirmar != null)
+                {
+                    return porConfirmar;
+                }
+            }
             try
             {
                 AuditoriaCobroDeuda auditoria = AuditoriaCobroDeuda.De(resultado, usuario, cliente, contacto, pendientes, yaNoPendientes);
@@ -476,6 +556,35 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 return Invalido("No se ha podido contabilizar el cobro.");
             }
             return ResultadoReparto<ResultadoCobroDeudaDTO>.Bien(resultado);
+        }
+
+        private async Task<ResultadoReparto<ResultadoCobroDeudaDTO>> PorConfirmar(CobroDeudaRepartoDTO peticion, string cliente, string usuario,
+            DateTime hoy, ApuntesCobroDeuda apuntes)
+        {
+            List<CobroRecienteReparto> recientes = await CobrosRecientes
+                .LeerCobrosDelCliente(cliente, hoy.AddMinutes(-ReglaCobroRepetidoReparto.MINUTOS_REPETIDO)).ConfigureAwait(false);
+            CobroRecienteReparto anterior = ReglaCobroRepetidoReparto.CobroQueFrena(recientes, cliente, peticion.ClaveIdempotencia, hoy);
+            if (anterior != null)
+            {
+                return new ResultadoReparto<ResultadoCobroDeudaDTO>
+                {
+                    Tipo = TipoResultadoReparto.Conflicto,
+                    Mensaje = ReglaCobroRepetidoReparto.MensajeRepetido(anterior, usuario),
+                    Codigo = ReglaCobroRepetidoReparto.CODIGO_REPETIDO,
+                    Detalles = new { anterior.Importe, anterior.Fecha, anterior.Usuario }
+                };
+            }
+            if (ReglaCobroRepetidoReparto.VaEnteroACuenta(apuntes.EfectosLiquidados))
+            {
+                return new ResultadoReparto<ResultadoCobroDeudaDTO>
+                {
+                    Tipo = TipoResultadoReparto.Conflicto,
+                    Mensaje = ReglaCobroRepetidoReparto.MENSAJE_TODO_A_CUENTA,
+                    Codigo = ReglaCobroRepetidoReparto.CODIGO_TODO_A_CUENTA,
+                    Detalles = new { Importe = apuntes.ImporteACuenta }
+                };
+            }
+            return null;
         }
 
         private static EfectoCobroReparto Limpio(EfectoCobroReparto e) => new EfectoCobroReparto
@@ -506,7 +615,7 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
     /// JSON) en la misma transacción que el asiento: sin script de BD. Un <c>sp_getapplock</c> por clave evita que dos reintentos a
     /// la vez contabilicen dos veces.
     /// </summary>
-    public class RepositorioCobrosReparto : IRepositorioCobrosReparto
+    public class RepositorioCobrosReparto : IRepositorioCobrosReparto, ILectorCobrosRecientesReparto
     {
         internal const string TABLA_MODIFICACIONES = "CobroReparto";
 
@@ -527,6 +636,50 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 .Select(m => m.Nuevo)
                 .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
             return nuevo == null ? null : JsonConvert.DeserializeObject<ResultadoCobroDeudaDTO>(nuevo);
+        }
+
+        /// <summary>
+        /// Los cobros del reparto desde esa hora cuyo JSON (<see cref="AuditoriaCobroDeuda"/>) nombra al cliente. La regla vuelve a
+        /// comprobar el cliente en memoria. Un JSON ilegible se salta.
+        /// </summary>
+        public async Task<List<CobroRecienteReparto>> LeerCobrosDelCliente(string cliente, DateTime desde)
+        {
+            string buscado = cliente?.Trim();
+            if (string.IsNullOrEmpty(buscado))
+            {
+                return new List<CobroRecienteReparto>();
+            }
+            string marca = "\"Cliente\":" + JsonConvert.SerializeObject(buscado);
+            var filas = await db.Modificaciones
+                .Where(m => m.Tabla == TABLA_MODIFICACIONES && m.Fecha >= desde && m.Nuevo.Contains(marca))
+                .Select(m => new { m.Anterior, m.Nuevo, m.Fecha, m.Usuario })
+                .ToListAsync().ConfigureAwait(false);
+            var cobros = new List<CobroRecienteReparto>();
+            foreach (var fila in filas)
+            {
+                AuditoriaCobroDeuda auditoria;
+                try
+                {
+                    auditoria = JsonConvert.DeserializeObject<AuditoriaCobroDeuda>(fila.Nuevo);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+                if (auditoria == null || !Guid.TryParse(fila.Anterior?.Trim(), out Guid clave))
+                {
+                    continue;
+                }
+                cobros.Add(new CobroRecienteReparto
+                {
+                    Clave = clave,
+                    Cliente = auditoria.Cliente,
+                    Importe = auditoria.Importe,
+                    Fecha = fila.Fecha,
+                    Usuario = auditoria.Usuario ?? fila.Usuario
+                });
+            }
+            return cobros;
         }
 
         public Task<List<EfectoCobroReparto>> LeerEfectos(IReadOnlyCollection<int> ids)

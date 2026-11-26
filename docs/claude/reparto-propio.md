@@ -168,6 +168,17 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   crear). En `GET Envios` la NC lleva ese `Repartidor` (no se carga: `CompletarCarga` no lo borra) y con soloMios solo le sale a él;
   las NC de antes (sin repartidor) siguen saliendo a todos. Ariadna no filtra: lo hace la API.
 
+### Cobrar una deuda: cobro repetido o entero a cuenta (POST api/RepartoPropio/Cobros, #766; caso 9251 del 20/11/26, Carlos 26/11/26)
+- Dos cobros en un minuto al mismo cliente y el segundo quedó entero «a cuenta». LA REGLA (pura) `ReglaCobroRepetidoReparto`
+  (`CobroDeudaReparto.cs`), SOLO en POST Cobros (`ServicioCobrosReparto.CobrosRecientes`, lo pone el controlador; la nota de cobro, dentro de
+  la entrega, no se frena): sin `Confirmar` = true (campo nuevo del cuerpo), (1) el cliente ya tiene un cobro del reparto en los últimos
+  `MINUTOS_REPETIDO` (30) con OTRA clave (Modificaciones Tabla «CobroReparto», Fecha del registro, JSON con Cliente; incluye los de notas
+  de cobro) → 409 `COBRO_REPETIDO` («Ya ha cobrado 84,80 € a este cliente a las 12:31. Si es otro cobro distinto, confírmelo.»; de otro
+  repartidor, «Andre ya ha cobrado…»; details {Importe, Fecha, Usuario}); (2) no liquida ningún efecto (sin efectos o todos ya no
+  pendientes) → 409 `COBRO_TODO_A_CUENTA` («Este cobro no corresponde a ninguna deuda del cliente: quedaría entero a cuenta. Confírmelo
+  si es correcto.»; details {Importe}). Cuerpo del 409 = el de siempre del reparto: {error {code, message, details}, Message, Codigo}.
+  Nada se contabiliza. El reintento con la MISMA clave devuelve lo de antes (va antes). Ariadna vieja (sin el campo) recibe el 409: querido.
+
 ### Recogida solicitada por el vendedor (NestoAPI#855, 12/11/26; gemelas Nesto#635 y NestoApp#259)
 - `dbo.RecogidasSolicitadas` (fuera del EDMX, `Scripts/Issue855_RecogidasSolicitadas.sql`; sin él, 503 y el job no hace nada). Estado
   guardado Solicitada/Confirmada/Rechazada/Anulada; al leer se calcula EnReparto (parada de la 14 tramitada/incidentada) y Recogida
