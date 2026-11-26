@@ -13,3 +13,28 @@ compras, almacén ni precios. Lo nuevo de este tema se apunta aquí, en su secci
   las no numéricas. Cuentan todas las fichas de la empresa, también las anuladas. Una ida a la BD (`LectorVecinosProductoSql`).
 - OJO: la BD no tiene `TRY_CONVERT` (nivel de compatibilidad antiguo: «no es un nombre de función integrada reconocido»): se convierte
   dentro de un `CASE WHEN <solo cifras> THEN CONVERT(int, …) END`.
+
+## Referencia del proveedor y extracto del producto (sugerencia 1482, Manuel, Compras; OK de Carlos 26/11/26; gemela Nesto)
+- `FichaProductoController` (solo lectura, `[Authorize]`; cliente de la tienda 403; 400 sin producto; 404 si el producto no existe en la empresa).
+  Todo en `Infraestructure/Productos/ExtractoProductoFicha.cs` (DTO, reglas puras y `LectorFichaProductoSql`, ADO con NOLOCK).
+- `GET api/Productos/ReferenciasProveedor?producto=&empresa=1` → [{Proveedor, NombreProveedor, ReferenciaProveedor, Orden, EsHabitual}] de
+  `ProveedoresProducto` (`ReferenciaProv`, `Orden`; el nombre de `Proveedores` de la misma empresa, el contacto de la fila primero), en UNA consulta.
+  Habitual = el de menor Orden (`ReglaExtractoProducto.MarcarHabitual`; con empate, el primero por proveedor). Lista vacía si no tiene.
+  SOLO Compras, Dirección e Informática (Carlos 18/11/26: de quién se compra; `PermisosFichaProducto.PuedeVerProveedoresYCostes` = la de
+  `ComprasPlazosProveedoresController.PuedeVer`); los demás, 403 de usted. Nesto: línea bajo la familia con la referencia del habitual.
+- `GET api/Productos/Extracto?producto=&empresa=1&almacen=&desde=&hasta=&pagina=1&tamano=200` → {Producto, Nombre, Almacen (null = todos),
+  Desde, Hasta, SaldoInicial, SaldoFinal, Total, Pagina, Tamano, Movimientos [{NumeroOrden, Empresa, Fecha, Almacen, Cantidad, Saldo, Importe, Texto,
+  Diario, Albaran, Proveedor, NombreProveedor, Cliente, ContactoCliente, NombreCliente, Pedido, LineaPedido, Traspaso, AsientoAutomatico, Delegacion,
+  FormaVenta, Usuario}]}. ExtractoProducto de la empresa y su espejo (1 y 3: el stock de la casa suma las dos; cada fila dice la suya), del más
+  nuevo al más antiguo (Fecha, Fecha Modificación, Empresa, Nº Orden), sin fechas los últimos 12 meses, días completos; tamaño ≤ 500 (200 por
+  defecto). `Saldo` = acumulado del más antiguo al más nuevo dentro del filtro de almacén: LA REGLA `ReglaExtractoProducto.CalcularSaldos`
+  (saldo del más nuevo de la página = SaldoInicial + lo del periodo − lo de las páginas anteriores). `Usuario` sin dominio. ExtractoProducto
+  no guarda el número de asiento: `AsientoAutomatico` es la marca «Asiento Automático». Nombres de cliente y proveedor, de la misma empresa del
+  movimiento o, si no está, de la empresa pedida.
+- Quién: empleados de Compras, Almacén, Administración, Dirección, Informática y Tiendas (`PuedeVerExtracto`); un vendedor de NestoApp o un
+  cliente de la tienda, 403. `Importe` (coste), `Proveedor` y `NombreProveedor` solo Compras, Dirección e Informática (a los demás, null).
+- UNA ida con dos lotes (`SQL_EXTRACTO`): nombre del producto, saldo inicial, suma y número del periodo y suma de lo de las páginas anteriores;
+  después la página con los nombres por `TOP 1` correlacionado SOLO sobre las filas de la página. Sin OFFSET/FETCH ni SUM() OVER (ORDER BY)
+  (la BD va con un nivel de compatibilidad antiguo, como el TRY_CONVERT de arriba): `ROW_NUMBER()`.
+- Nesto: botón «Extracto» en la ficha que abre una VENTANA APARTE (como el extracto de cliente; irá creciendo) con filtros de almacén y
+  fechas, paginada; columnas Importe y Proveedor solo si llegan.

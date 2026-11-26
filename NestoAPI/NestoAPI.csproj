@@ -2565,6 +2565,8 @@
     <Compile Include="Controllers\ProximaEntradaProductoController.cs" />
     <Compile Include="Controllers\VecinosProductoController.cs" />
     <Compile Include="Infraestructure\Productos\VecinosProducto.cs" />
+    <Compile Include="Controllers\FichaProductoController.cs" />
+    <Compile Include="Infraestructure\Productos\ExtractoProductoFicha.cs" />
     <Compile Include="Controllers\DondeEstaLoQueFaltaController.cs" />
     <Compile Include="Controllers\FestivosController.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
