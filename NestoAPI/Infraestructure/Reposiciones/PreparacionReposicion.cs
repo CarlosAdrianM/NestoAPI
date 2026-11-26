@@ -726,6 +726,11 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// rellena o enviada, ya estaba marcada o falta el script; 403 sin permiso.
         /// </summary>
         Task<EstadoReposicionPuntualDTO> MarcarRecogida(MarcarRecogidaReposicionDTO peticion, IPrincipal usuario);
+        /// <summary>
+        /// Quién puede crear, cambiar y terminar la reposición de un origen (la gente de la tienda, Almacén y Dirección; con
+        /// control de ubicaciones, solo Almacén y Dirección). Sugerencia 1429: el ensayo del exceso pide los mismos permisos.
+        /// </summary>
+        bool PuedeEscribir(IPrincipal usuario, string empresa, string origen, bool controlUbicaciones = false);
     }
 
     /// <summary>

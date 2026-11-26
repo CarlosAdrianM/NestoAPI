@@ -3,6 +3,26 @@
 Documentación de NestoAPI para Claude, por temas (el índice está en `CLAUDE.md`). Diferencias de reposición, excepciones del calendario, festivos y días sin reparto.
 Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE.md` solo se toca su línea del índice.
 
+### Reposición del exceso de una tienda (sugerencia 1429, Manuel, 26/11/26)
+- Una tienda (REI, ALC) devuelve a Algete lo que le sobra de una familia sin ir producto a producto (caso: esmaltes de Faby en Alcobendas).
+  `POST api/Reposiciones/Exceso?ensayo=true` (ensayo por defecto: solo calcula) {Empresa, Origen REI|ALC, Destino? (ALG; distinto del origen),
+  Familia (código o nombre, sin mayúsculas ni relleno), Grupo, Subgrupo, Productos[] (≤ 1000)}; sin ningún filtro → 400 (nunca «todo el almacén»).
+  → {Ensayo, Origen, Destino, Lineas [{Producto, Nombre, Familia, NombreFamilia, Stock, EnOtraReposicion, Pendiente, StockMaximo, SinMaximo, Exceso}],
+  NumeroLineas, TotalUnidades, LineasSinMaximo, Reposicion, Mensaje «Se mandarían 418 unidades de 183 referencias de Alcobendas a Algete. De ellas, N sin
+  máximo puesto en la tienda, que se devuelven enteras.»}.
+- LA REGLA (pura) `ReglaExcesoReposicion` (`Infraestructure/Reposiciones/ExcesoReposicion.cs`): exceso = min(Stock − StockMaximo, Stock − Pendiente), solo
+  si > 0. Máximo = el «Stock Máximo (actual)» de la ficha (`ControlesStock.StockMáximo` de la empresa y el ORIGEN; no el sugerido); SIN fila = máximo 0
+  (Carlos 26/11/26): entra con todo lo disponible y `SinMaximo` = true. Ficticios fuera; lo anulado (Estado < 0) NO se excluye (es lo que conviene
+  devolver). Orden familia y nombre; más de 500 líneas → 400 de usted con cuántas salen y «acote el filtro».
+- Lectura: UNA consulta NOLOCK (`LectorExcesoReposicionSql`) con el MISMO criterio que prdRellenarReposicionStock2 (su bloque «forzar envío de excedentes de
+  una familia», `Scripts/Issue577_PropuestaReposicionSinBloqueo.sql`): Stock = ExtractoProducto del origen (empresa, su espejo y la 4) − lo comprometido
+  para salir sin contabilizar (en preparación en el DiarioSalidaRep del origen o salida numerada; sale aparte en `EnOtraReposicion`); Pendiente =
+  LinPedidoVta -1..1 del origen (empresa y espejo, sin el pedido 724488). Solo productos con Stock > 0.
+- Permisos (también en el ensayo): cliente de la tienda online 403; `PermisoRellenarReposicionManual` («UsuariosRellenarReposicionManual») y
+  `IServicioPreparacionReposicion.PuedeEscribir` (la gente de la tienda por AlmacénPedidoVta, Almacén o Dirección), los de POST api/Reposiciones.
+  De verdad: `IServicioPreparacionReposicion.Crear` con las líneas calculadas (el mismo camino; sus 409 tal cual: otra en preparación, inventario en
+  curso); queda en preparación en la tienda hasta Terminar. Sin exceso: 200 con Lineas vacía, «No hay exceso…», nada creado.
+
 ### Diferencias de reposición «En discusión» y quién pierde (NestoAPI#906, sugerencia 1433, Carlos 25/11/26: decide el sistema, no Dirección)
 - Solo FALTAS pendientes: el ORIGEN (permiso de resolver) abre `POST api/Reposiciones/Diferencias/{id}/Discusion` {Comentario obligatorio}; campana al
   destino (tipo `DiscusionDiferenciaReposicion`); plazo ParametrosUsuario «(defecto)» `Reposiciones.DiscusionPlazoHoras` (48), recordatorio 24 h antes.

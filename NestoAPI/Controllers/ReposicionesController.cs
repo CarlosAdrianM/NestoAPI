@@ -547,6 +547,39 @@ namespace NestoAPI.Controllers
             }
         }
 
+        private ILectorExcesoReposicion lectorExceso;
+
+        /// <summary>Sugerencia 1429: la lectura del exceso (sustituible en los tests).</summary>
+        internal ILectorExcesoReposicion LectorExceso
+        {
+            get => lectorExceso ?? (lectorExceso = new LectorExcesoReposicionSql(db));
+            set => lectorExceso = value;
+        }
+
+        // POST api/Reposiciones/Exceso?ensayo=true   { Empresa, Origen (REI|ALC), Destino? (ALG), Familia?, Grupo?, Subgrupo?, Productos? }
+        /// <summary>
+        /// Sugerencia 1429 (Manuel, 26/11/26): lo que una tienda tiene de más (exceso = min(stock − stock máximo de su ficha para
+        /// la tienda, stock − pendiente); sin máximo puesto = máximo 0) de una familia, grupo, subgrupo o lista de productos, para
+        /// devolverlo a Algete. Con <paramref name="ensayo"/> (por defecto) solo calcula; con false crea la reposición por el mismo
+        /// camino que POST api/Reposiciones (sus 409 salen tal cual). Mismos permisos que crear una a mano (403); 400 sin filtro o
+        /// con más de 500 líneas. Ver <see cref="ReglaExcesoReposicion"/>.
+        /// </summary>
+        [HttpPost]
+        [Route("Exceso")]
+        [ResponseType(typeof(ResultadoExcesoReposicionDTO))]
+        public async Task<IHttpActionResult> PostExceso([FromBody] PeticionExcesoReposicionDTO peticion, bool ensayo = true)
+        {
+            try
+            {
+                var servicio = new ServicioExcesoReposicion(LectorExceso, preparacion, PermisoManual);
+                return Ok(await servicio.Calcular(peticion, ensayo, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
         // GET api/Reposiciones/EnPreparacion?origen=ALC&empresa=1
         /// <summary>La reposición que el origen tiene en preparación, con sus líneas. 404 si no hay ninguna.</summary>
         [HttpGet]
