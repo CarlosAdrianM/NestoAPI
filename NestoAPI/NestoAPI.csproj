@@ -553,6 +553,7 @@
     <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\RemesasController.cs" />
+    <Compile Include="Controllers\RemesasModeloImpagadosController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
     <Compile Include="Controllers\ContabilidadesController.cs" />
@@ -1646,6 +1647,12 @@
     <Compile Include="Infraestructure\Alquileres\IProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Alquileres\ProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Remesas\IRemesasService.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\EntrenadorModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\MetricasModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\RasgosImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\ReglaImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\RepositorioModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\ServicioModeloImpagos.cs" />
     <Compile Include="Infraestructure\Remesas\RemesasService.cs" />
     <Compile Include="Infraestructure\Comisiones\ComisionesLecturaService.cs" />
     <Compile Include="Infraestructure\Comisiones\IComisionesLecturaService.cs" />

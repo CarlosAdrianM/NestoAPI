@@ -167,6 +167,51 @@ Related files:
   el VB6 SIN mirar la P.O. y poniendo contacto 0 a las líneas: así salió la NV2616046 (927473). Con `Facturacion:FinDeMesPorApi` encendido el fin de
   mes debe hacerse por la API. La P.O. escrita solo en el comentario («P.O. 00474329») no la ve nadie: hay que ponerla en «Su pedido».
 
+### Remesas: probabilidad de devolución de cada recibo, EN SOMBRA (NestoAPI#896, 26/11/26)
+- Decisión de Carlos (24/11/26): se hace YA el modelo, el entrenamiento programado y la sombra (predicción guardada y su resultado) y NO se enseña
+  nada en Nesto ni en NestoApp (ni porcentaje ni marcas) hasta que la sombra diga que es fiable. `GET api/Remesas/EfectosCandidatos` NO cambia.
+  Interruptor de ENSEÑAR: ParametrosUsuario «(defecto)» `Remesas.ModeloImpagadosEnsenar` (solo «1»; nace a «0»; leerlo no crea fila;
+  `InterruptorEnsenarImpagos`): hoy solo sale en la comparación, ese corte (candidatos, extracto, ficha) está SIN hacer.
+- Todo en `Infraestructure/Remesas/ModeloImpagados/` (patrón de ModeloPlazos #853). Fuente: `ExtractoCliente`. Recibo girado = cartera (TipoApunte 2)
+  con `Remesa` (para entrenar, FormaPago RCB); impagado = TipoApunte 4 cuyo Concepto es el motivo (el de «Gastos Impagado…» no cuenta), enlazado por
+  empresa + cliente + Nº Documento + Efecto al ÚLTIMO giro anterior sin impagado (`EnlazadorImpagados`, puro). OJO: la `Fecha` de la cartera es la
+  de la FACTURA; el día del GIRO es el de la remesa (`Remesas.Fecha`; sin fila, el vencimiento; `ReglaFechaGiro`). Etiqueta: devuelto en los 45 días
+  siguientes al giro (`ConstructorRasgosImpagos.DIAS_ETIQUETA`); los giros de los últimos 45 días no entrenan.
+- Rasgos SIN FUGA (`ConstructorRasgosImpagos.Rasgos`, puro: solo recibos del cliente girados ANTES de ese día y devoluciones con impagado ANTERIOR a ese
+  día): días desde la última devolución y su motivo (Saldo/Mandato/Cuenta/Disconforme/Otro), devoluciones en 3 y 12 meses y totales, recibos
+  anteriores y en 12 meses, tasa del cliente, antigüedad, recibos girados en los últimos 45 días (aún pueden volver), importe y su relación con el
+  habitual (mediana), regiro (ese documento y efecto ya volvió), primer giro a esa ficha bancaria, nº de efecto, días de la factura al giro, día del
+  mes, mes, día de la semana, nivel general de 14 y 30 días (`NivelGeneralImpagos`: impagados de todos / recibos girados 8 días antes o más), forma de
+  venta, vendedor y entidad de la ficha CCC (las poco frecuentes, «(otros)»; `MapaCategoriasImpagos`). Fuera a propósito: deuda vencida e impagados
+  pendientes (ImportePdte es el de HOY) y antigüedad del mandato (CCC.FechaMandato se cambia tras una devolución: sería fuga).
+- LA REGLA simple (`ReglaImpagos`, pura; la del análisis, prueba_modelo.py): 7 rasgos por tramos (última devolución, devoluciones 12 meses, recibos
+  anteriores, importe, nivel general, día del mes, recibos en 45 días); peso = log-odds de la tasa suavizada (+20) menos el de la base; probabilidad =
+  sigmoide(base + 0,6 × suma). Los pesos se AJUSTAN en cada entrenamiento (no van en el código) y se guardan SIEMPRE (`impagos_remesas_regla.json`):
+  es el respaldo y la vara de medir.
+- Modelo: LightGBM binario (ML.NET 4.0.2) + calibración de Platt propia (`CalibradorPlatt`, ajustada con recibos que el árbol no ha visto).
+  `EntrenadorModeloImpagos`: validación = últimos 6 meses de giros resueltos, calibración = los 6 anteriores. Métricas (`CalculoMetricasImpagos`): AUC,
+  % de devoluciones recogidas en el 5 % y el 10 % más arriesgado, tramos de Carlos (< 5 %, 5-15 %, 15-30 %, ≥ 30 %) previsto/real y calibración de los
+  altos (≥ 15 %: reales / previstos). `PuertaCalidadImpagos`: no promueve si ordena peor que LA REGLA (AUC −0,01) ni si empeora al guardado (AUC −0,01,
+  captado 10 % −3 puntos); ≥ 30 devoluciones en validación. Modelo en `ModeloLlamadas:Carpeta` (`impagos_remesas.zip` + `.json`).
+- Job `remesas-impagos-modelo` (DOMINGOS 4:40 Madrid, cola «entrenamiento»; lee 8 años con NOLOCK, el primero solo da historia): apunta SIEMPRE en
+  `dbo.RemesasModeloEntrenamientos` (métricas de modelo y regla, tramos en JSON, Platt, ModeloActivo, Motivo). `POST api/Remesas/ModeloImpagados/Entrenar
+  [?ahora=true]` (Dirección/Informática; 202; L-V 8-20 → a las 21:00).
+- Sombra: punto ÚNICO `RemesasService.CrearRemesaAsync` → `SombraImpagosRemesa.AlCrearRemesa` (solo ENCOLA en Hangfire, cola «indicadores»; nunca lanza,
+  ELMAH una vez): el trabajo lee los efectos ya girados (cartera con ese nº de remesa), la historia de SUS clientes (2 consultas por tanda de 500) y el
+  nivel general (2 agregadas entrando por las remesas recientes) y apunta en `dbo.RemesasPrediccionesImpago` una fila por efecto: VersionModelo,
+  Probabilidad (NULL sin modelo guardado), ProbabilidadRegla, Rasgos (JSON) y MotivosRiesgo (2 causas: contribución por rasgo del árbol,
+  `ExplicacionModeloContacto.ContribucionesDe`; si no, los pesos de la regla; frases de `TextosRiesgoImpago`). Idempotente (empresa + remesa + Nº orden).
+  Sin regla ni modelo guardados (antes del primer entrenamiento) no apunta nada. Las remesas hechas fuera de la API (Nesto viejo) no pasan por aquí.
+- Job `remesas-impagos-resultado` (todos los días 3:55, cola «indicadores», lotes de 500 Id, idempotente): Devuelto = 1 + fecha y motivo en cuanto hay
+  impagado del mismo cliente, documento y efecto en los 45 días siguientes; Devuelto = 0 al cumplirlos.
+- `GET api/Remesas/ModeloImpagados/Comparacion?semanas=12` (Dirección/Informática; 1-104; 503 sin script): UltimoEntrenamiento, Sombra (Predicciones,
+  Pendientes, Modelo y Regla por tramos previsto/real), Fiable, FiableDesde, SemanasSeguidasCumpliendo, Veredicto y SemanasEvaluadas. «Fiable»
+  (`ReglaFiabilidadImpagos`, pura): cada semana CERRADA (su domingo + 45 días ya pasó) se mide con la ventana de las 12 semanas que acaban en ella
+  (una semana sola trae ~15 devoluciones): AUC ≥ 0,80, calibración de los tramos altos dentro de ±25 %, ≥ 30 devoluciones y ≥ 30 recibos altos; 4
+  semanas seguidas → fiable.
+- `Scripts/Issue896_RemesasModeloImpagos.sql` (sa; las dos tablas, índices, GRANT y el interruptor a «0»). Sin él: remesas igual, jobs sin hacer nada
+  (ELMAH una vez), endpoints 503. Tras lanzarlo hay que entrenar una vez (domingo o POST Entrenar) para que la sombra empiece a apuntar.
+
 ## Fin de mes de Nesto viejo capado y P.O. entera o nada (NestoAPI#898, Carlos 26/11/26, urgente)
 - `Scripts/Issue898_FinDeMesNestoViejo_y_POEntera.sql` (sa; lee la definición del servidor e inserta un bloque en cada procedimiento, con marca
   «NestoAPI#898-…»; si la cabecera o el punto de inserción no cuadran, no cambia nada): (1) `prdAgruparAlbaranesVta` llamado desde Nesto viejo
