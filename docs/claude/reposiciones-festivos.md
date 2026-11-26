@@ -48,6 +48,16 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   3:35 (cola «indicadores»): inventario contabilizado posterior con sobrante ≥ unidades en origen O destino (`ReglaVerdadInventario`: cada fila gasta una vez;
   en los dos, no decide; no pisa) → ErrorDemostradoDe/Inventario, ReglaAcerto; si contradice, campana a Dirección, sin deshacer. `GET …/Diferencias/Verdad?meses=24`
   (Dirección/Informática). Modelo preparado sin implementar (`ModeloImputacionDesacuerdo`, interruptor `Reposiciones.DesacuerdoQuienManda`, hoy siempre la regla).
+- **Foto por bulto al ENVIAR (Carlos 24 y 26/11/26, «evitará disputas»)**: `POST api/Reposiciones/{traspaso}/Bultos/{bulto}/Foto?empresa=1` {FotoBase64}
+  (JPEG, 4 MB, la regla de `FotoMozoAvisoFicha.Leer`) → 200 {Bulto «R81463-2», Ruta, Fecha, Usuario}; sustituye a la anterior (las viejas siguen en el blob
+  «bultos», `reposiciones/{empresa}/{traspaso}/bulto-{n}-{guid}.jpg`). Quien prepara la reposición (`PuedeEscribir` del origen: su gente, Almacén, Dirección);
+  400 sin foto o no JPEG; 403; 404 si el bulto no existe; 503 sin el script o sin el blob. `GET …/Foto[?soloEnlace=true]`: redirige al enlace de 15 min (o
+  {Url}); el origen, el destino, Almacén, Dirección e Informática; 404 sin foto. `dbo.ReposicionesBultosFotos` (una fila por bulto,
+  `Scripts/Issue906_ReposicionesBultosFotos.sql`; aparte de ReposicionesBultos porque esa se rehace: una foto anterior a la creación del bulto no cuenta).
+  `TieneFoto` en los bultos de `GET …/{traspaso}/Seguimiento` y `Bultos` [{Codigo, Bulto, TieneFoto}] en cada `DiscusionDiferenciaDTO` (GET Discusiones, abrir y
+  responder; una lectura para todas). `ServicioFotosBultosReposicion` (`Reposiciones/FotosBultosReposicion.cs`). La regla de quién pierde NO la usa todavía;
+  sin interruptor de obligatoria (la issue propone empezar opcional). Gemelas: Ariadna y Nesto («Enviar reposición»: foto antes de cerrar cada bulto; ver fotos en
+  Diferencias y Recibir).
 
 ### Excepciones del calendario de reposiciones (NestoAPI#867, 16/11/26)
 - `dbo.ReposicionesCalendarioExcepciones` (fuera del EDMX, `Scripts/Issue867_ReposicionesCalendarioExcepciones.sql`; sin ella todo como antes y los

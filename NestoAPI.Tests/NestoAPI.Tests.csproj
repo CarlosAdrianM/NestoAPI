@@ -548,6 +548,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ReembolsoEnteroRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaDescargaTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\SeguimientoReposicionesTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\FotosBultosReposicionTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\AvisoParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenSugeridoRepartoTests.cs" />

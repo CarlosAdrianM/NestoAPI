@@ -39,6 +39,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Estado { get; set; }
         /// <summary>Etiquetado, Cargado, Entregado, Recogido, Descargado, Recibido (por FechaHora).</summary>
         public List<EventoSeguimientoReposicionDTO> Eventos { get; set; } = new List<EventoSeguimientoReposicionDTO>();
+        /// <summary>NestoAPI#906: tiene foto de cuando se envió (GET api/Reposiciones/{traspaso}/Bultos/{bulto}/Foto).</summary>
+        public bool TieneFoto { get; set; }
     }
 
     public class EventoSeguimientoReposicionDTO

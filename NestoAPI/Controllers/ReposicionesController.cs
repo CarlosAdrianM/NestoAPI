@@ -166,6 +166,8 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetSeguimiento(int numTraspaso, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             SeguimientoReposicionDTO dto = await Seguimiento.Seguimiento(empresa, numTraspaso).ConfigureAwait(false);
+            // NestoAPI#906: qué bultos tienen foto de cuando se envió (nunca lanza)
+            await FotosBultos.Completar(empresa, dto).ConfigureAwait(false);
             return dto == null
                 ? (IHttpActionResult)Content(HttpStatusCode.NotFound, new { Message = $"No se sabe nada de la reposición {numTraspaso}." })
                 : Ok(dto);
@@ -864,7 +866,9 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                return Ok(await Discusiones.Abrir(empresa, id, peticion, User).ConfigureAwait(false));
+                ResultadoDiscusionDiferenciaDTO abierta = await Discusiones.Abrir(empresa, id, peticion, User).ConfigureAwait(false);
+                await FotosBultos.Completar(empresa, abierta?.Discusion == null ? null : new[] { abierta.Discusion }).ConfigureAwait(false);
+                return Ok(abierta);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -886,7 +890,9 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                return Ok(await Discusiones.Responder(empresa, id, peticion, User).ConfigureAwait(false));
+                ResultadoDiscusionDiferenciaDTO respondida = await Discusiones.Responder(empresa, id, peticion, User).ConfigureAwait(false);
+                await FotosBultos.Completar(empresa, respondida?.Discusion == null ? null : new[] { respondida.Discusion }).ConfigureAwait(false);
+                return Ok(respondida);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -903,7 +909,10 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                return Ok(await Discusiones.Listar(empresa, almacen, soloAbiertas, User).ConfigureAwait(false));
+                List<DiscusionDiferenciaDTO> lista = await Discusiones.Listar(empresa, almacen, soloAbiertas, User).ConfigureAwait(false);
+                // NestoAPI#906: qué bultos tienen foto de cuando se envió (una lectura para todas)
+                await FotosBultos.Completar(empresa, lista).ConfigureAwait(false);
+                return Ok(lista);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -1017,6 +1026,47 @@ namespace NestoAPI.Controllers
                 ElmahHelper.Log(ex);
                 return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.BadGateway, ex.Message));
             }
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#906: foto por bulto al enviar
+
+        private ServicioFotosBultosReposicion fotosBultos;
+
+        /// <summary>NestoAPI#906: las fotos de los bultos (sustituible en los tests).</summary>
+        internal ServicioFotosBultosReposicion FotosBultos
+        {
+            get => fotosBultos ?? (fotosBultos = new ServicioFotosBultosReposicion(new RepositorioFotosBultosReposicionSql(db),
+                new AlmacenFotosBultosAzure(), (usuario, empresa, origen) => preparacion.PuedeEscribir(usuario, empresa, origen)));
+            set => fotosBultos = value;
+        }
+
+        // POST api/Reposiciones/81010/Bultos/2/Foto?empresa=1   { "FotoBase64": "..." }
+        /// <summary>
+        /// NestoAPI#906: la foto del bulto R81010-2 con su contenido a la vista, al cerrarlo al enviar la reposición (JPEG en base64, 4 MB como
+        /// mucho). Sustituye a la anterior. Quien prepara la reposición (la gente del origen, Almacén, Dirección). 200 {Bulto, Ruta, Fecha,
+        /// Usuario}; 400 sin foto o si no es un JPEG; 403; 404 si el bulto no existe; 503 sin el script o sin el almacenamiento de fotos.
+        /// </summary>
+        [HttpPost]
+        [Route("{numTraspaso:int}/Bultos/{bulto:int}/Foto")]
+        [ResponseType(typeof(FotoBultoReposicionDTO))]
+        public async Task<IHttpActionResult> PostFotoBulto(int numTraspaso, int bulto, [FromBody] SubirFotoBultoReposicionDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await FotosBultos.Subir(EmpresaBultos(empresa), numTraspaso, bulto, peticion, User).ConfigureAwait(false));
+        }
+
+        // GET api/Reposiciones/81010/Bultos/2/Foto?empresa=1[&soloEnlace=true]
+        /// <summary>
+        /// NestoAPI#906: la foto del bulto (redirige a un enlace de 15 minutos; con <paramref name="soloEnlace"/>, {Url} para pintarla). El
+        /// origen, el destino, Almacén, Dirección e Informática. 403; 404 sin bulto o sin foto; 503 sin el script o sin el almacenamiento.
+        /// </summary>
+        [HttpGet]
+        [Route("{numTraspaso:int}/Bultos/{bulto:int}/Foto")]
+        public async Task<IHttpActionResult> GetFotoBulto(int numTraspaso, int bulto, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            bool soloEnlace = false)
+        {
+            Uri enlace = await FotosBultos.Enlace(EmpresaBultos(empresa), numTraspaso, bulto, User).ConfigureAwait(false);
+            return soloEnlace ? Ok(new { Url = enlace.ToString() }) : (IHttpActionResult)Redirect(enlace);
         }
 
         private static string EmpresaBultos(string empresa)
