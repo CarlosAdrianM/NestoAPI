@@ -28,6 +28,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int Guardados { get; set; }
         public int YaGuardados { get; set; }
         public int Medidos { get; set; }
+        /// <summary>NestoAPI#857j: correos de una agencia conocida que no se reconocen, apuntados aparte (solo el job).</summary>
+        public int SinReconocer { get; set; }
         public string Error { get; set; }
     }
 
@@ -55,6 +57,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         private readonly ServicioAplicacionCorreosCompras aplicacion;
         private readonly IReenviadorCorreosSeguimiento reenviador;
         private readonly ILectorTextoPdf lectorPdf;
+        private readonly IRepositorioCorreosSinReconocer sinReconocer;
+        private static bool sinTablaSinReconocerApuntado;
 
         /// <param name="lector">Null = sin claves en secretos.config (no se hace nada).</param>
         /// <param name="horaCorte">Hora de corte del picking (por defecto, <see cref="HoraCortePicking.Leer"/> de la empresa).</param>
@@ -65,8 +69,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public ServicioCorreosSeguimientoCompras(ILectorBuzonCompras lector, IRepositorioCorreosSeguimiento repositorio,
             Action<Exception> registrar = null, IReadOnlyList<IAgenciaEntrada> agencias = null, string empresa = null,
             Func<TimeSpan> horaCorte = null, Func<DateTime, bool> esFestivo = null, ServicioAplicacionCorreosCompras aplicacion = null,
-            IReenviadorCorreosSeguimiento reenviador = null, ILectorTextoPdf lectorPdf = null, Func<int> diasPedidoDePendientes = null)
+            IReenviadorCorreosSeguimiento reenviador = null, ILectorTextoPdf lectorPdf = null, Func<int> diasPedidoDePendientes = null,
+            IRepositorioCorreosSinReconocer sinReconocer = null)
         {
+            this.sinReconocer = sinReconocer;
             this.diasPedidoDePendientes = diasPedidoDePendientes;
             this.aplicacion = aplicacion;
             this.reenviador = reenviador;
@@ -96,6 +102,52 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
         /// <summary>Para los tests: que el «sin tabla» se vuelva a apuntar.</summary>
         internal static void OlvidarSinTablaApuntado() => sinTablaApuntado = false;
+
+        /// <summary>
+        /// NestoAPI#857j: ¿se pueden apuntar los correos de agencia sin reconocer? Sin repositorio (histórico, tests), no; sin la tabla, no y
+        /// ELMAH una vez. Nunca lanza.
+        /// </summary>
+        private bool SinReconocerDisponible()
+        {
+            if (sinReconocer == null)
+            {
+                return false;
+            }
+            bool disponible;
+            try
+            {
+                disponible = sinReconocer.Disponible();
+            }
+            catch (Exception)
+            {
+                disponible = false;
+            }
+            if (!disponible && !sinTablaSinReconocerApuntado)
+            {
+                sinTablaSinReconocerApuntado = true;
+                registrar(new Exception("[Correos de seguimiento de compras #857j] (informativo) Falta dbo.ComprasCorreosSinReconocer: lanzar " +
+                    "Scripts/Issue857j_ComprasCorreosSinReconocer.sql. Mientras, los correos de agencia que no se reconocen no dejan rastro."));
+            }
+            return disponible;
+        }
+
+        internal static void OlvidarSinTablaSinReconocerApuntado() => sinTablaSinReconocerApuntado = false;
+
+        /// <summary>NestoAPI#857j: apunta el correo de agencia sin reconocer. Nunca lanza ni rompe la pasada. True si es nuevo.</summary>
+        private async Task<bool> ApuntarSinReconocer(CorreoCompras correo, string agencia)
+        {
+            try
+            {
+                CorreoSinReconocerFila fila = ReglaCorreoAgenciaSinReconocer.Fila(correo, agencia);
+                return fila != null && await sinReconocer.Insertar(fila).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857j] No se ha podido apuntar el correo sin reconocer de {agencia} del " +
+                    $"{correo?.Recibido:dd/MM/yyyy HH:mm}: {ex.Message}", ex));
+                return false;
+            }
+        }
 
         public async Task<ResultadoPasadaCorreosSeguimiento> Pasada(DateTime ahora)
         {
@@ -199,13 +251,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             bool? conAdjuntos = null;
             int adjuntosSinLeer = 0;
             bool todo = true;
+            // NestoAPI#857j: solo el job apunta los correos de agencia que no reconoce (el histórico no)
+            bool apuntarSinReconocer = aplicar && SinReconocerDisponible();
             foreach (CorreoCompras correo in correos)
             {
                 try
                 {
-                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf, confirmaciones, lineasDe).ConfigureAwait(false);
+                    AnalisisCorreoSeguimiento analizado = null;
+                    CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados, pedidosDe, leerPdf, confirmaciones, lineasDe,
+                        a => analizado = a).ConfigureAwait(false);
                     if (fila == null)
                     {
+                        if (apuntarSinReconocer && analizado?.AgenciaSinReconocer != null
+                            && await ApuntarSinReconocer(correo, analizado.AgenciaSinReconocer).ConfigureAwait(false))
+                        {
+                            resultado.SinReconocer++;
+                        }
                         continue;
                     }
                     // Los adjuntos (solo nombre, tipo y tamaño), una petición por correo GUARDADO con adjuntos y solo si hay columnas
@@ -294,9 +355,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <param name="confirmaciones">NestoAPI#857g: las confirmaciones de pedido del proveedor (las nuevas de la tanda se añaden).</param>
         private async Task<CorreoSeguimientoFila> FilaAnalizada(CorreoCompras correo, List<RemitenteMarcado> marcados,
             List<RemitentePaqueteRecordado> recordados, Func<CorreoCompras, Task<List<PedidoCompraEnAire>>> pedidosDe, bool leerPdf,
-            List<ConfirmacionPedidoProveedorFila> confirmaciones = null, Func<List<string>, Task<DatosLineasAviso>> lineasDe = null)
+            List<ConfirmacionPedidoProveedorFila> confirmaciones = null, Func<List<string>, Task<DatosLineasAviso>> lineasDe = null,
+            Action<AnalisisCorreoSeguimiento> alAnalizar = null)
         {
             AnalisisCorreoSeguimiento analisis = AnalizadorCorreoSeguimiento.Analizar(correo, agencias, marcados);
+            alAnalizar?.Invoke(analisis);
             if (analisis.Confirmacion != null)
             {
                 await GuardarConfirmacion(correo, analisis, pedidosDe, confirmaciones).ConfigureAwait(false);
@@ -660,6 +723,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             List<ConfirmacionPedidoProveedorFila> confirmaciones = await LeerConfirmaciones(ahora.AddDays(-dias - ReglaPedidoProveedor.DIAS_CONFIRMACIONES)).ConfigureAwait(false);
             List<PedidoCompraEnAire> pedidos = null;
             Func<List<string>, Task<DatosLineasAviso>> lineasDe = CacheLineasAviso();
+            // NestoAPI#857j: los apuntados «sin reconocer» de esos días, para pasar a correos normales los que ahora sí se reconocen
+            HashSet<string> sinReconocerPendientes = SinReconocerDisponible() ? await LeerSinReconocerPendientes(ahora.AddDays(-dias)).ConfigureAwait(false) : null;
             string enlace = null;
             for (int pagina = 0; pagina < MAXIMO_PAGINAS_REANALISIS; pagina++)
             {
@@ -677,8 +742,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     resultado.Leidos++;
                     try
                     {
+                        AnalisisCorreoSeguimiento analizado = null;
                         CorreoSeguimientoFila fila = await FilaAnalizada(correo, marcados, recordados,
-                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true, confirmaciones, lineasDe).ConfigureAwait(false);
+                            async _ => pedidos ?? (pedidos = await LeerPedidos().ConfigureAwait(false)), leerPdf: true, confirmaciones, lineasDe,
+                            a => analizado = a).ConfigureAwait(false);
                         if (fila != null && await repositorio.ActualizarAnalisis(fila).ConfigureAwait(false))
                         {
                             resultado.Actualizados++;
@@ -687,6 +754,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                             && await repositorio.Insertar(fila).ConfigureAwait(false))
                         {
                             resultado.Insertados++;
+                        }
+                        if (sinReconocerPendientes != null)
+                        {
+                            await ReanalizarSinReconocer(correo, fila, analizado, sinReconocerPendientes, resultado).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)
@@ -706,6 +777,59 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 resultado.Enlazados = await aplicacion.Reenlazar(ahora.AddDays(-dias)).ConfigureAwait(false);
             }
             return resultado;
+        }
+
+        /// <summary>NestoAPI#857j: las claves de los apuntados «sin reconocer» desde ese día; null si no se pueden leer (se sigue sin ellos).</summary>
+        private async Task<HashSet<string>> LeerSinReconocerPendientes(DateTime desde)
+        {
+            try
+            {
+                List<CorreoSinReconocerFila> filas = await sinReconocer.Leer(desde).ConfigureAwait(false) ?? new List<CorreoSinReconocerFila>();
+                return new HashSet<string>(filas.Where(f => f?.MensajeId != null).Select(f => f.MensajeId), StringComparer.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception("[Correos de seguimiento de compras #857j, reanálisis] No se han podido leer los correos sin reconocer: " + ex.Message, ex));
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#857j: en el reanálisis, un correo apuntado «sin reconocer» que ahora SÍ se guarda queda marcado como reconocido (con su Id de
+        /// correo normal); uno de agencia que sigue sin reconocerse y no estaba apuntado, se apunta. Nunca lanza.
+        /// </summary>
+        private async Task ReanalizarSinReconocer(CorreoCompras correo, CorreoSeguimientoFila fila, AnalisisCorreoSeguimiento analizado,
+            HashSet<string> pendientes, ResultadoReanalisisCorreos resultado)
+        {
+            try
+            {
+                string clave = correo?.Clave();
+                if (clave == null)
+                {
+                    return;
+                }
+                if (fila != null)
+                {
+                    if (pendientes.Contains(clave))
+                    {
+                        int? id = await repositorio.IdDe(fila.MensajeId).ConfigureAwait(false);
+                        if (await sinReconocer.MarcarReconocido(clave, id).ConfigureAwait(false))
+                        {
+                            resultado.SinReconocerReconocidos++;
+                        }
+                        _ = pendientes.Remove(clave);
+                    }
+                }
+                else if (analizado?.AgenciaSinReconocer != null && !pendientes.Contains(clave)
+                    && await ApuntarSinReconocer(correo, analizado.AgenciaSinReconocer).ConfigureAwait(false))
+                {
+                    resultado.SinReconocerApuntados++;
+                }
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Correos de seguimiento de compras #857j, reanálisis] Correo sin reconocer del {correo?.Recibido:dd/MM/yyyy HH:mm}: {ex.Message}", ex));
+            }
         }
 
         /// <summary>Segundo paso: de los guardados con candidatos y sin real, si alguno de sus candidatos ya tiene albarán, cuál.</summary>
@@ -763,6 +887,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int Enlazados { get; set; }
         /// <summary>NestoAPI#857f: correos que antes no se guardaban y ahora sí (se insertan sin aplicar, reenviar ni avisar).</summary>
         public int Insertados { get; set; }
+        /// <summary>NestoAPI#857j: de los apuntados como «de una agencia, sin reconocer», los que ahora sí se reconocen (pasan a correos normales).</summary>
+        public int SinReconocerReconocidos { get; set; }
+        /// <summary>NestoAPI#857j: correos de una agencia que siguen sin reconocerse y se han apuntado ahora (no lo estaban).</summary>
+        public int SinReconocerApuntados { get; set; }
         public int Fallidos { get; set; }
         public string Error { get; set; }
     }
@@ -853,7 +981,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 var aplicacion = new ServicioAplicacionCorreosCompras(repositorio, avisador: new AvisadorCorreosPorAsignar(), registrar: registrar);
                 var reenviador = new ReenviadorCorreosSeguimiento(new ServicioCorreoElectronico(), registrar: registrar);
                 var servicio = new ServicioCorreosSeguimientoCompras(lector, repositorio, registrar, aplicacion: aplicacion, reenviador: reenviador,
-                    lectorPdf: new LectorTextoPdfPig());
+                    lectorPdf: new LectorTextoPdfPig(), sinReconocer: new RepositorioCorreosSinReconocer());
                 _ = await servicio.Pasada(DateTime.Now).ConfigureAwait(false);
                 ProgramarAviso(aplicacion.ProximoAvisoPendiente, DateTime.Now);
             }

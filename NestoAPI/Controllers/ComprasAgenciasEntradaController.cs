@@ -209,6 +209,7 @@ namespace NestoAPI.Controllers
         public const string MENSAJE_SIN_PERMISO_HISTORICO = "Solo Dirección o Informática pueden lanzar la lectura del histórico del buzón de Compras.";
 
         private readonly IRepositorioCorreosSeguimiento repositorio;
+        private readonly IRepositorioCorreosSinReconocer sinReconocer;
         private readonly Func<ServicioHistoricoCorreosCompras> crearHistorico;
 
         private readonly Func<ServicioAplicacionCorreosCompras> crearAplicacion;
@@ -220,16 +221,19 @@ namespace NestoAPI.Controllers
         }
 
         internal ComprasAgenciasEntradaController(IRepositorioCorreosSeguimiento repositorio, Func<ServicioHistoricoCorreosCompras> crearHistorico = null,
-            Func<ServicioAplicacionCorreosCompras> crearAplicacion = null, Func<ServicioCorreosSeguimientoCompras> crearNucleo = null)
+            Func<ServicioAplicacionCorreosCompras> crearAplicacion = null, Func<ServicioCorreosSeguimientoCompras> crearNucleo = null,
+            IRepositorioCorreosSinReconocer sinReconocer = null)
         {
             this.repositorio = repositorio;
+            this.sinReconocer = sinReconocer ?? new RepositorioCorreosSinReconocer();
             this.crearHistorico = crearHistorico ?? HistoricoCorreosComprasJobs.CrearServicio;
             this.crearAplicacion = crearAplicacion ?? (() => new ServicioAplicacionCorreosCompras(repositorio, registrar: ex => ElmahHelper.Log(ex, USUARIO_ELMAH)));
             this.crearNucleo = crearNucleo ?? (() =>
             {
                 ConfiguracionBuzonCompras configuracion = ConfiguracionBuzonCompras.Leer(clave => System.Configuration.ConfigurationManager.AppSettings[clave]);
                 ILectorBuzonCompras lector = configuracion == null ? null : new LectorBuzonComprasGraph(configuracion);
-                return new ServicioCorreosSeguimientoCompras(lector, repositorio, ex => ElmahHelper.Log(ex, USUARIO_ELMAH), aplicacion: this.crearAplicacion());
+                return new ServicioCorreosSeguimientoCompras(lector, repositorio, ex => ElmahHelper.Log(ex, USUARIO_ELMAH), aplicacion: this.crearAplicacion(),
+                    sinReconocer: this.sinReconocer);
             });
         }
 
@@ -483,6 +487,37 @@ namespace NestoAPI.Controllers
             }
             List<CorreoSeguimientoFila> correos = await repositorio.LeerCorreos(DateTime.Today.AddDays(-dias)).ConfigureAwait(false);
             return Ok((correos ?? new List<CorreoSeguimientoFila>()).Select(Dto).ToList());
+        }
+
+        public const string MENSAJE_SIN_TABLA_SIN_RECONOCER =
+            "Todavía no existe la tabla de los correos sin reconocer: hay que lanzar Scripts/Issue857j_ComprasCorreosSinReconocer.sql.";
+
+        // GET api/Compras/AgenciasEntrada/Correos/SinReconocer?dias=30
+        /// <summary>
+        /// NestoAPI#857j: los correos de una agencia conocida que el lector no ha reconocido (ni código, ni entrega, ni estado), lo más reciente
+        /// primero, sin los que Reanalizar ya ha reconocido. Para descubrir formatos nuevos: no tienen proveedor, pedido ni fecha. 503 sin
+        /// Scripts/Issue857j.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/Correos/SinReconocer")]
+        [ResponseType(typeof(List<CorreoSinReconocerFila>))]
+        public async Task<IHttpActionResult> GetCorreosSinReconocer(int dias = 30)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (dias < 1 || dias > DIAS_MAXIMOS)
+            {
+                return BadRequest($"Los días tienen que estar entre 1 y {DIAS_MAXIMOS}.");
+            }
+            if (!sinReconocer.Disponible())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, MENSAJE_SIN_TABLA_SIN_RECONOCER);
+            }
+            List<CorreoSinReconocerFila> filas = await sinReconocer.Leer(DateTime.Today.AddDays(-dias)).ConfigureAwait(false);
+            return Ok(filas ?? new List<CorreoSinReconocerFila>());
         }
 
         // GET api/Compras/AgenciasEntrada/PorAsignar?dias=7[&incluirLlegados=true]

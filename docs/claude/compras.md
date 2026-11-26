@@ -232,3 +232,23 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (correo #857 vigente), con `Recalculada` (Usuario de #865) y `PrevistaPasada`; (2) sin pedido, Orientativa = `ReglaFechaOrientativaSinPedir` del
   proveedor habitual + `FechaSiSePidieraHoy` (`ReglaFechaRecepcionEstimada` sin DíasEnServir); (3) `SinDatos` con `Motivo`. `Texto` hecho
   (`TextosProximaEntrada`, calificativos de `TextosCertezaFechaEntrega`). Lee con `LectorCertezaFechaEntregaSql`. Aparte de GET api/Productos (que va por Nesto_sync).
+
+## Correos de agencia sin reconocer (NestoAPI#857j, Carlos 26/11/26; caso SEUR de Iberocel «Identificador de envío: A-2609942»)
+- Antes, un correo de la PROPIA agencia (SEUR, UPS, MBE…: la clase dice `EsCorreoPropio`) al que su clase no sacaba ni código ni entrega ni
+  estado no se guardaba ni dejaba rastro: un formato nuevo solo se descubría viéndolo en el buzón. Ahora el analizador lo marca
+  (`AnalisisCorreoSeguimiento.AgenciaSinReconocer`; `Guardar` sigue false) y el JOB (solo él: ni el histórico ni nada más) lo apunta APARTE,
+  en `dbo.ComprasCorreosSinReconocer` (`Scripts/Issue857j_ComprasCorreosSinReconocer.sql`): MensajeId (único, como los demás), Recibido,
+  Remitente, Agencia, Asunto, Extracto (los primeros 2.000 caracteres del texto), FechaAlta, ReconocidoEl, CorreoId. Tabla aparte a propósito:
+  no sale en «por asignar», no propone proveedor ni pedido, no toca fechas, no se reenvía ni avisa. `ResultadoPasadaCorreosSeguimiento.SinReconocer`.
+- LA REGLA (pura) `ReglaCorreoAgenciaSinReconocer` (`CorreosSinReconocer.cs`): solo si no se guarda, no es una confirmación de pedido ni de un
+  remitente ignorado; agencia = la primera cuya clase dice que el correo es suyo. NO se apuntan (`MotivoDescarteAgencia`): su publicidad
+  («Boletín», el mismo `BoletinComercial` que ya la descartaba; `Seur_PublicidadDeLaAgencia_NoSeGuarda` sigue igual) ni sus encuestas
+  («Encuesta»: «tu opinión», «¿qué tal fue…?», «survey»…).
+- `GET api/Compras/AgenciasEntrada/Correos/SinReconocer?dias=30` (permisos de esa ruta: Compras, Dirección, Informática; 1..365 días) → los NO
+  reconocidos, lo más reciente primero [{Id, MensajeId, Recibido, Remitente, Agencia, Asunto, Extracto, FechaAlta, ReconocidoEl, CorreoId}]; 503
+  sin el script. Sin la tabla el job sigue igual (ELMAH informativo una vez; caché de 10 min, sin reiniciar). Apuntar nunca rompe la pasada.
+- `Reanalizar` (que relee el buzón por fechas): un apuntado que ahora SÍ se reconoce se guarda como correo normal (lo de siempre, `Insertados`)
+  y aquí queda con ReconocidoEl y su CorreoId (`SinReconocerReconocidos`); uno de agencia que sigue sin reconocerse y no estaba, se apunta
+  (`SinReconocerApuntados`). Flujo para un formato nuevo: se ve en la lista, se enseña a la clase de su agencia, se publica y se reanaliza.
+- Nesto (junto a «Envíos por asignar»): una pestaña o sección «Correos de agencia sin reconocer» que llame al GET (Fecha, Agencia, Remitente,
+  Asunto y el Extracto al desplegar); con 503, ocultarla. Solo lectura: no hay que asignar ni descartar (desaparecen al reconocerse).

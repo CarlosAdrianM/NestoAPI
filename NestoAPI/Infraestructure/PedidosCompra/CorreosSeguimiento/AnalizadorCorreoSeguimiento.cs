@@ -109,6 +109,14 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// ellas se sabe el pedido y las líneas a las que poner la fecha (<see cref="ReglaLineasAvisoSalida"/>).
         /// </summary>
         public List<LineaAvisoSalida> LineasAviso { get; set; } = new List<LineaAvisoSalida>();
+        /// <summary>
+        /// NestoAPI#857j: no se guarda (<see cref="Guardar"/> false) pero es un correo de esta AGENCIA conocida que su clase no reconoce: se
+        /// apunta aparte (<see cref="CorreoSinReconocerFila"/>) para descubrir formatos nuevos. Null si no lo es o si se descarta (ver
+        /// <see cref="MotivoDescarteAgencia"/>).
+        /// </summary>
+        public string AgenciaSinReconocer { get; set; }
+        /// <summary>NestoAPI#857j: un correo de la agencia sin reconocer que NO se apunta: «Boletín» (su publicidad) o «Encuesta».</summary>
+        public string MotivoDescarteAgencia { get; set; }
     }
 
     /// <summary>
@@ -249,6 +257,16 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                 analisis.ReferenciasRemitente = datos?.ReferenciasRemitente ?? new List<string>();
                 analisis.NumerosQueNoSonPedido = datos?.NumerosQueNoSonPedido ?? new List<string>();
                 CompletarEnlaces(analisis, lista);
+            }
+            else
+            {
+                // NestoAPI#857j: un correo de una agencia conocida que no se reconoce deja rastro (salvo su publicidad o una encuesta)
+                string agenciaPropia = ReglaCorreoAgenciaSinReconocer.Agencia(correo, analisis, lista);
+                if (agenciaPropia != null)
+                {
+                    analisis.MotivoDescarteAgencia = ReglaCorreoAgenciaSinReconocer.MotivoDescarte(correo);
+                    analisis.AgenciaSinReconocer = analisis.MotivoDescarteAgencia == null ? agenciaPropia : null;
+                }
             }
             return analisis;
         }

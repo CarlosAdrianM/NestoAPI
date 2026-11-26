@@ -740,6 +740,7 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ExtractorEnlaces.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AgenciasEntrada.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AnalizadorCorreoSeguimiento.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\CorreosSinReconocer.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AsignadorPedidosCompra.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ControlPendientesCorreo.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PlazosEntrega\PlazosProveedores.cs" />
