@@ -335,6 +335,91 @@ namespace NestoAPI.Tests.Infrastructure.Aparatos
         }
 
         [TestMethod]
+        public void Descuadres_CompradoSinRegistro_SoloSiSigueEnStockYEsDelAlcanceControlado()
+        {
+            DatosAparatos datos = Datos();
+            datos.Productos.Add(new ProductoAparatoFila { Producto = "22222", Nombre = "DE LA LISTA", NecesitaNumSerie = false, EnListaAlquileres = true });
+            datos.Productos.Add(new ProductoAparatoFila { Producto = "33333", Nombre = "CON REGISTRO SOLO", NecesitaNumSerie = false, EnListaAlquileres = false });
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220931, Producto = "44276", NumeroSerie = "C1", Cantidad = 1, Fecha = D1 });
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220932, Producto = "22222", NumeroSerie = "C2", Cantidad = 1, Fecha = D1 });
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220933, Producto = "33333", NumeroSerie = "C3", Cantidad = 1, Fecha = D1 });
+            // Comprado y vendido: no es «comprado sin registro» (es vendido sin registro)
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220934, Producto = "44276", NumeroSerie = "C4", Cantidad = 1, Fecha = D1 });
+            datos.Ventas.Add(new VentaAparatoFila { Pedido = 1, Producto = "44276", NumeroSerie = "C4", Cantidad = 1, FechaAlbaran = D2, Cliente = "1" });
+            // Comprado y devuelto al proveedor: tampoco
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220935, Producto = "44276", NumeroSerie = "C5", Cantidad = 1, Fecha = D1 });
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220936, Producto = "44276", NumeroSerie = "C5", Cantidad = -1, Fecha = D2 });
+            // Comprado con registro: coincide
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 220937, Producto = "36929", NumeroSerie = "C6", Cantidad = 1, Fecha = D1 });
+            datos.Registros.Add(R(7, serie: "C6"));
+
+            InformeDescuadresAparatosDTO informe = ReglaDescuadresAparatos.Calcular(datos, false);
+
+            CollectionAssert.AreEquivalent(new[] { "C1", "C2" }, informe.Descuadres.Where(d => d.Motivo == MotivoDescuadreAparato.CompradoSinRegistro).Select(d => d.NumeroSerie).ToArray());
+            Assert.AreEqual("Comprado con número de serie (pedido de compra 220931), sigue en stock y no tiene registro en Alquileres.",
+                informe.Descuadres.Single(d => d.NumeroSerie == "C1").TextoMotivo);
+            Assert.AreEqual(MotivoDescuadreAparato.VendidoSinRegistro, informe.Descuadres.Single(d => d.NumeroSerie == "C4").Motivo);
+            Assert.IsFalse(informe.Descuadres.Any(d => d.NumeroSerie == "C3" || d.NumeroSerie == "C5" || d.NumeroSerie == "C6"));
+        }
+
+        [TestMethod]
+        public void Descuadres_CompradoSinRegistro_VendidoYAbonadoTambien()
+        {
+            DatosAparatos datos = Datos();
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 1, Producto = "44276", NumeroSerie = "C1", Cantidad = 1, Fecha = D1 });
+            datos.Ventas.Add(new VentaAparatoFila { Pedido = 2, Producto = "44276", NumeroSerie = "C1", Cantidad = 1, FechaAlbaran = D2, Cliente = "1" });
+            datos.Ventas.Add(new VentaAparatoFila { Pedido = 3, Producto = "44276", NumeroSerie = "C1", Cantidad = -1, FechaAlbaran = D3, Cliente = "1" });
+
+            Assert.AreEqual(MotivoDescuadreAparato.CompradoSinRegistro, ReglaDescuadresAparatos.Calcular(datos, false).Descuadres.Single().Motivo);
+        }
+
+        [TestMethod]
+        public void SeriesParecidas_Normalizar()
+        {
+            Assert.AreEqual(ReglaSeriesParecidas.Normalizar("SHE-RFS009-2511111"), ReglaSeriesParecidas.Normalizar("SHE RFS 9.2511111"));
+            Assert.AreEqual(ReglaSeriesParecidas.Normalizar("A32046"), ReglaSeriesParecidas.Normalizar("A32O46"));
+            Assert.AreEqual(ReglaSeriesParecidas.Normalizar("0012345"), ReglaSeriesParecidas.Normalizar("12345"));
+            Assert.AreEqual(ReglaSeriesParecidas.Normalizar("B1L"), ReglaSeriesParecidas.Normalizar("bIl"));
+            Assert.AreEqual("100", ReglaSeriesParecidas.Normalizar("100"));
+            Assert.AreEqual("A0B", ReglaSeriesParecidas.Normalizar("A00B"));
+            Assert.AreNotEqual(ReglaSeriesParecidas.Normalizar("A32046"), ReglaSeriesParecidas.Normalizar("A32047"));
+            Assert.AreNotEqual(ReglaSeriesParecidas.Normalizar("A10"), ReglaSeriesParecidas.Normalizar("A1"));
+            Assert.AreEqual(string.Empty, ReglaSeriesParecidas.Normalizar(" - . "));
+        }
+
+        [TestMethod]
+        public void Descuadres_SerieEscritaDeDosFormas_JuntasYSinUnificar()
+        {
+            DatosAparatos datos = Datos();
+            // Las dos coinciden con su registro: solo salen por estar escritas de dos formas
+            datos.Registros.Add(R(1, serie: "A-32046"));
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 1, Producto = "36929", NumeroSerie = "A-32046", Cantidad = 1, Fecha = D1 });
+            datos.Registros.Add(R(2, serie: "A32O46"));
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 2, Producto = "36929", NumeroSerie = "A32O46", Cantidad = 1, Fecha = D1 });
+            // Una serie de en medio (por orden) que no tiene que ver: con descuadre propio
+            datos.Registros.Add(R(3, serie: "A-5", cliente: "9"));
+            // La misma forma en OTRO producto no cuenta
+            datos.Compras.Add(new CompraAparatoFila { Pedido = 3, Producto = "44276", NumeroSerie = "A32046", Cantidad = 1, Fecha = D1 });
+
+            InformeDescuadresAparatosDTO informe = ReglaDescuadresAparatos.Calcular(datos, false);
+
+            List<DescuadreAparatoDTO> dosFormas = informe.Descuadres.Where(d => d.Motivos.Contains(MotivoDescuadreAparato.SerieEscritaDeDosFormas)).ToList();
+            CollectionAssert.AreEqual(new[] { "A-32046", "A32O46" }, dosFormas.Select(d => d.NumeroSerie).ToArray());
+            CollectionAssert.AreEqual(new[] { "A32O46" }, dosFormas[0].OtrasFormasDeLaSerie);
+            CollectionAssert.AreEqual(new[] { "A-32046" }, dosFormas[1].OtrasFormasDeLaSerie);
+            Assert.AreEqual(dosFormas[0].GrupoSerie, dosFormas[1].GrupoSerie);
+            Assert.AreEqual("En este producto la serie también está escrita como A32O46: compruebe cuál es la buena (no se unifican solas).", dosFormas[0].TextoMotivo);
+            // Juntas en el listado
+            int primera = informe.Descuadres.IndexOf(dosFormas[0]);
+            Assert.AreSame(dosFormas[1], informe.Descuadres[primera + 1]);
+            // El de otro producto sale solo por comprado sin registro, sin la otra forma
+            DescuadreAparatoDTO otro = informe.Descuadres.Single(d => d.Producto == "44276");
+            CollectionAssert.AreEqual(new[] { MotivoDescuadreAparato.CompradoSinRegistro }, otro.Motivos);
+            Assert.IsNull(otro.GrupoSerie);
+            Assert.AreEqual(0, otro.OtrasFormasDeLaSerie.Count);
+        }
+
+        [TestMethod]
         public void Descuadres_ResumenPorProducto()
         {
             DatosAparatos datos = Datos();

@@ -47,7 +47,11 @@ namespace NestoAPI.Infraestructure.Aparatos
         InmovilizadoSinEnlazar,
         RegistroConClienteSinVenta,
         RegistroConClientePeroDevuelto,
-        VendidoSinRegistro
+        VendidoSinRegistro,
+        /// <summary>Comprado (recibido) de un producto con NecesitaNumSerie o de la lista de Alquileres, sigue en stock y no tiene registro.</summary>
+        CompradoSinRegistro,
+        /// <summary>Otra serie del mismo producto solo difiere en espacios, guiones, puntos, ceros a la izquierda u O/0 e I/1 (no se unifican solas).</summary>
+        SerieEscritaDeDosFormas
     }
 
     public class MovimientoAparatoDTO
@@ -124,6 +128,10 @@ namespace NestoAPI.Infraestructure.Aparatos
         public SituacionAparato SituacionCalculada { get; set; }
         public string TextoSituacion { get; set; }
         public List<int> Registros { get; set; } = new List<int>();
+        /// <summary>Con <see cref="MotivoDescuadreAparato.SerieEscritaDeDosFormas"/>: las otras formas en que está escrita (tal cual); si no, vacía.</summary>
+        public List<string> OtrasFormasDeLaSerie { get; set; } = new List<string>();
+        /// <summary>Con <see cref="MotivoDescuadreAparato.SerieEscritaDeDosFormas"/>: la forma común que las agrupa (<see cref="ReglaSeriesParecidas.Normalizar"/>); si no, null.</summary>
+        public string GrupoSerie { get; set; }
     }
 
     public class StockAlmacenAparatoDTO
@@ -597,7 +605,23 @@ namespace NestoAPI.Infraestructure.Aparatos
             ILookup<(string, string), RegistroAparatoDTO> registrosPorAparato = registros
                 .ToLookup(r => (ReglaSituacionAparato.Clave(r.Producto), ReglaSituacionAparato.Clave(r.NumeroSerie)));
 
+            // La serie tal cual de cada aparato y las parecidas del mismo producto (NestoAPI#913, serie escrita de dos formas)
+            Dictionary<(string, string), string> escrita = claves.ToDictionary(c => c, c => porAparato[c].Select(m => m.NumeroSerie)
+                .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? c.Serie);
+            var parecidas = new Dictionary<(string, string), List<string>>();
+            var primeraDelGrupo = new Dictionary<(string, string), string>();
+            foreach (List<(string Producto, string Serie)> grupo in ReglaSeriesParecidas.Grupos(claves))
+            {
+                string primera = grupo[0].Serie;
+                foreach ((string Producto, string Serie) c in grupo)
+                {
+                    parecidas[c] = grupo.Where(o => o.Serie != c.Serie).Select(o => escrita[o]).ToList();
+                    primeraDelGrupo[c] = primera;
+                }
+            }
+
             var descuadres = new List<DescuadreAparatoDTO>();
+            var ordenDescuadre = new Dictionary<DescuadreAparatoDTO, (string, string, string)>();
             var enStockMovimientos = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach ((string producto, string serie) clave in claves)
             {
@@ -609,7 +633,13 @@ namespace NestoAPI.Infraestructure.Aparatos
                 {
                     enStockMovimientos[clave.producto] = (enStockMovimientos.TryGetValue(clave.producto, out int n) ? n : 0) + 1;
                 }
-                List<MotivoDescuadreAparato> motivos = Motivos(deEste, regs, calculada, fichas[clave.producto].NecesitaNumSerie);
+                List<MotivoDescuadreAparato> motivos = Motivos(deEste, regs, calculada, fichas[clave.producto].NecesitaNumSerie,
+                    fichas[clave.producto].EnListaAlquileres);
+                List<string> otrasFormas = parecidas.TryGetValue(clave, out List<string> formas) ? formas : new List<string>();
+                if (otrasFormas.Any())
+                {
+                    motivos.Add(MotivoDescuadreAparato.SerieEscritaDeDosFormas);
+                }
                 if (!motivos.Any())
                 {
                     continue;
@@ -622,13 +652,22 @@ namespace NestoAPI.Infraestructure.Aparatos
                     NumeroSerie = deEste.Select(m => m.NumeroSerie).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))?.Trim() ?? clave.serie,
                     Motivo = motivos[0],
                     Motivos = motivos,
-                    TextoMotivo = TextoMotivos(motivos, regs, deEste),
+                    TextoMotivo = TextoMotivos(motivos, regs, deEste, otrasFormas),
                     SituacionSegunRegistro = registro == null ? (SituacionAparato?)null : ReglaSituacionAparato.SegunRegistro(registro),
                     SituacionCalculada = calculada,
                     TextoSituacion = ReglaSituacionAparato.Texto(deEste, registro),
-                    Registros = regs.Select(r => r.Numero).OrderBy(x => x).ToList()
+                    Registros = regs.Select(r => r.Numero).OrderBy(x => x).ToList(),
+                    OtrasFormasDeLaSerie = otrasFormas,
+                    GrupoSerie = otrasFormas.Any() ? ReglaSeriesParecidas.Normalizar(clave.serie) : null
                 });
+                ordenDescuadre[descuadres[descuadres.Count - 1]] = (clave.producto, otrasFormas.Any() ? primeraDelGrupo[clave] : clave.serie, clave.serie);
             }
+            // Las series escritas de dos formas salen juntas (en el sitio de la primera del grupo); lo demás, en el orden de siempre.
+            descuadres = descuadres
+                .OrderBy(d => ordenDescuadre[d].Item1, StringComparer.Ordinal)
+                .ThenBy(d => ordenDescuadre[d].Item2, StringComparer.Ordinal)
+                .ThenBy(d => ordenDescuadre[d].Item3, StringComparer.Ordinal)
+                .ToList();
 
             var informe = new InformeDescuadresAparatosDTO
             {
@@ -646,7 +685,7 @@ namespace NestoAPI.Infraestructure.Aparatos
 
         /// <summary>Por qué no coincide (en orden de importancia); vacía si coincide.</summary>
         public static List<MotivoDescuadreAparato> Motivos(List<MovimientoAparatoDTO> movimientos, List<RegistroAparatoDTO> registros,
-            SituacionAparato calculada, bool necesitaNumSerie)
+            SituacionAparato calculada, bool necesitaNumSerie, bool enListaAlquileres = false)
         {
             var motivos = new List<MotivoDescuadreAparato>();
             RegistroAparatoDTO registro = registros?.FirstOrDefault();
@@ -684,10 +723,17 @@ namespace NestoAPI.Infraestructure.Aparatos
             {
                 motivos.Add(MotivoDescuadreAparato.VendidoSinRegistro);
             }
+            else if ((necesitaNumSerie || enListaAlquileres) && calculada == SituacionAparato.EnStock
+                && movimientos.Any(m => m.Tipo == TipoMovimientoAparato.Compra))
+            {
+                // Comprado y recibido (LinPedidoCmp Estado >= 2: las -99 no cuentan), sigue en stock según los movimientos y no está en Alquileres.
+                motivos.Add(MotivoDescuadreAparato.CompradoSinRegistro);
+            }
             return motivos;
         }
 
-        public static string TextoMotivo(MotivoDescuadreAparato motivo, List<RegistroAparatoDTO> registros, List<MovimientoAparatoDTO> movimientos)
+        public static string TextoMotivo(MotivoDescuadreAparato motivo, List<RegistroAparatoDTO> registros, List<MovimientoAparatoDTO> movimientos,
+            List<string> otrasFormas = null)
         {
             RegistroAparatoDTO registro = registros?.FirstOrDefault();
             MovimientoAparatoDTO inmovilizado = movimientos?.LastOrDefault(m => m.Tipo == TipoMovimientoAparato.Inmovilizado && !m.Anulado);
@@ -707,13 +753,21 @@ namespace NestoAPI.Infraestructure.Aparatos
                     return $"El registro {registro.Numero} tiene el cliente {registro.Cliente?.Trim()}, pero la última venta se abonó: está en stock.";
                 case MotivoDescuadreAparato.VendidoSinRegistro:
                     return "Vendido con número de serie y sin registro en Alquileres.";
+                case MotivoDescuadreAparato.CompradoSinRegistro:
+                    MovimientoAparatoDTO compra = movimientos?.LastOrDefault(m => m.Tipo == TipoMovimientoAparato.Compra);
+                    return $"Comprado con número de serie{(compra?.Pedido.HasValue == true ? $" (pedido de compra {compra.Pedido.Value})" : string.Empty)}, " +
+                        "sigue en stock y no tiene registro en Alquileres.";
+                case MotivoDescuadreAparato.SerieEscritaDeDosFormas:
+                    return $"En este producto la serie también está escrita como {string.Join(", ", otrasFormas ?? new List<string>())}: " +
+                        "compruebe cuál es la buena (no se unifican solas).";
                 default:
                     return motivo.ToString();
             }
         }
 
-        private static string TextoMotivos(List<MotivoDescuadreAparato> motivos, List<RegistroAparatoDTO> registros, List<MovimientoAparatoDTO> movimientos)
-            => string.Join(" ", motivos.Select(m => TextoMotivo(m, registros, movimientos)));
+        private static string TextoMotivos(List<MotivoDescuadreAparato> motivos, List<RegistroAparatoDTO> registros, List<MovimientoAparatoDTO> movimientos,
+            List<string> otrasFormas)
+            => string.Join(" ", motivos.Select(m => TextoMotivo(m, registros, movimientos, otrasFormas)));
 
         private static List<ResumenProductoAparatosDTO> Resumen(Dictionary<string, ProductoAparatoFila> fichas, List<RegistroAparatoDTO> registros,
             Dictionary<string, int> enStockMovimientos, List<StockAparatoFila> stock, SortedSet<(string Producto, string Serie)> claves)
@@ -749,6 +803,62 @@ namespace NestoAPI.Infraestructure.Aparatos
                         DiferenciaStockContable = total - segunRegistro
                     };
                 })
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#913: LA REGLA (pura) de las series «escritas de dos formas». Dos series del MISMO producto son la misma escrita de otra
+    /// forma si solo difieren en espacios (también interiores), guiones, puntos, ceros a la izquierda (de la serie y de cada tramo de
+    /// cifras) o las letras O/0 e I/1. Solo agrupa para que alguien decida cuál es la buena: nunca se unifican solas.
+    /// </summary>
+    public static class ReglaSeriesParecidas
+    {
+        /// <summary>La forma común: mayúsculas, sin espacios, guiones ni puntos, O → 0, I → 1 y sin ceros a la izquierda en cada tramo de cifras.</summary>
+        public static string Normalizar(string serie)
+        {
+            var limpia = new System.Text.StringBuilder();
+            foreach (char c in (serie ?? string.Empty).ToUpperInvariant())
+            {
+                if (char.IsWhiteSpace(c) || c == '-' || c == '.')
+                {
+                    continue;
+                }
+                limpia.Append(c == 'O' ? '0' : c == 'I' ? '1' : c);
+            }
+            string texto = limpia.ToString();
+            var resultado = new System.Text.StringBuilder();
+            for (int i = 0; i < texto.Length; i++)
+            {
+                bool empiezaTramo = i == 0 || !char.IsDigit(texto[i - 1]);
+                if (texto[i] == '0' && empiezaTramo)
+                {
+                    int j = i;
+                    while (j < texto.Length && texto[j] == '0')
+                    {
+                        j++;
+                    }
+                    if (j >= texto.Length || !char.IsDigit(texto[j]))
+                    {
+                        resultado.Append('0'); // un tramo solo de ceros se queda en uno
+                    }
+                    i = j - 1;
+                    continue;
+                }
+                resultado.Append(texto[i]);
+            }
+            return resultado.ToString();
+        }
+
+        /// <summary>Los grupos (de 2 o más) de series distintas del mismo producto con la misma forma común, cada uno ordenado. Las claves vienen ya recortadas y en mayúsculas.</summary>
+        public static List<List<(string Producto, string Serie)>> Grupos(IEnumerable<(string Producto, string Serie)> aparatos)
+        {
+            return (aparatos ?? Enumerable.Empty<(string Producto, string Serie)>())
+                .Where(a => !string.IsNullOrEmpty(a.Serie))
+                .Distinct()
+                .GroupBy(a => (a.Producto, Forma: Normalizar(a.Serie)))
+                .Where(g => g.Key.Forma.Length > 0 && g.Count() > 1)
+                .Select(g => g.OrderBy(a => a.Serie, StringComparer.Ordinal).ToList())
                 .ToList();
         }
     }
