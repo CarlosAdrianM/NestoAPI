@@ -132,7 +132,11 @@ namespace NestoAPI.Infraestructure.Remesas
         {
             using (NVEntities db = new NVEntities())
             {
-                return await new CrearRemesaService(db).CrearRemesa(peticion, usuario).ConfigureAwait(false);
+                CrearRemesaResponse respuesta = await new CrearRemesaService(db).CrearRemesa(peticion, usuario).ConfigureAwait(false);
+                // NestoAPI#896 (EN SOMBRA): con la remesa ya creada y confirmada, se encola apuntar la probabilidad de devolución de
+                // cada efecto. Solo encola (Hangfire) y nunca lanza: ni rompe ni retrasa la remesa. No se enseña nada a nadie.
+                ModeloImpagados.SombraImpagosRemesa.AlCrearRemesa(peticion?.Empresa, respuesta?.NumeroRemesa ?? 0);
+                return respuesta;
             }
         }
 

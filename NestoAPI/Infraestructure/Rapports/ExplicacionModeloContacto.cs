@@ -34,6 +34,13 @@ namespace NestoAPI.Infraestructure.Rapports
         /// mismo orden. Lanza si el modelo no permite calcularla (lo recoge quien llama).
         /// </summary>
         public static List<Dictionary<string, float>> Contribuciones(ITransformer modelo, MLContext ml, IList<ModeloContactoEntrada> entradas)
+            => ContribucionesDe(modelo, ml, entradas);
+
+        /// <summary>
+        /// NestoAPI#896: lo mismo para cualquier modelo de árbol con sus entradas (el de impagados de remesas): la contribución de cada rasgo
+        /// (nombre de la propiedad de <typeparamref name="T"/>; las columnas one-hot deben llamarse «RasgoCod»).
+        /// </summary>
+        public static List<Dictionary<string, float>> ContribucionesDe<T>(ITransformer modelo, MLContext ml, IList<T> entradas) where T : class
         {
             var resultado = new List<Dictionary<string, float>>();
             if (entradas == null || entradas.Count == 0)

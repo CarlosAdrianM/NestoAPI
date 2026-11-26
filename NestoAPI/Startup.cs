@@ -1119,6 +1119,33 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'plazos-proveedores-modelo' configurado (todos los días a las 4:10)");
 
+            // NestoAPI#896: modelo de probabilidad de devolución de los recibos de una remesa, EN SOMBRA. Entrenamiento semanal (domingos
+            // 4:40, cola «entrenamiento»): métricas de validación de modelo y regla SIEMPRE en dbo.RemesasModeloEntrenamientos y puerta de
+            // calidad. Sin Scripts/Issue896_RemesasModeloImpagos.sql no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Remesas.ModeloImpagados.ModeloImpagosRemesasJobsService.JOB_ID,
+                () => Infraestructure.Remesas.ModeloImpagados.ModeloImpagosRemesasJobsService.EntrenarProgramado(),
+                Infraestructure.Remesas.ModeloImpagados.ModeloImpagosRemesasJobsService.CRON, // Cron: los domingos a las 4:40
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'remesas-impagos-modelo' configurado (los domingos a las 4:40)");
+
+            // NestoAPI#896: resultado de las predicciones apuntadas en la sombra al crear cada remesa (devuelto o no a los 45 días).
+            // Todos los días a las 3:55, cola «indicadores», por lotes e idempotente. Sin el script no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Remesas.ModeloImpagados.ResultadoImpagosRemesasJobsService.JOB_ID,
+                () => Infraestructure.Remesas.ModeloImpagados.ResultadoImpagosRemesasJobsService.Resolver(),
+                Infraestructure.Remesas.ModeloImpagados.ResultadoImpagosRemesasJobsService.CRON, // Cron: todos los días a las 3:55
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'remesas-impagos-resultado' configurado (todos los días a las 3:55)");
+
             // NestoAPI#881 (corte 3): el modelo de los minutos reales de cada parada del reparto propio, EN SOMBRA: apunta siempre en
             // dbo.RepartoTiemposModeloEntrenamientos el error de la regla y del modelo (o «sin datos suficientes»). Cola «entrenamiento»,
             // fuera de horario. El fin de ruta no lo usa salvo Reparto.TiempoParadaQuienManda = «Modelo». Sin el script no hace nada.

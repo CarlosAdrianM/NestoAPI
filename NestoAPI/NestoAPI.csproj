@@ -564,6 +564,7 @@
     <Compile Include="Controllers\AparatosController.cs" />
     <Compile Include="Controllers\CopiarFacturaLineasController.cs" />
     <Compile Include="Controllers\RemesasController.cs" />
+    <Compile Include="Controllers\RemesasModeloImpagadosController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
     <Compile Include="Controllers\ContabilidadesController.cs" />
@@ -1662,6 +1663,12 @@
     <Compile Include="Infraestructure\Aparatos\Aparatos.cs" />
     <Compile Include="Infraestructure\Aparatos\LectorAparatosSql.cs" />
     <Compile Include="Infraestructure\Remesas\IRemesasService.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\EntrenadorModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\MetricasModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\RasgosImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\ReglaImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\RepositorioModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\ServicioModeloImpagos.cs" />
     <Compile Include="Infraestructure\Remesas\RemesasService.cs" />
     <Compile Include="Infraestructure\Comisiones\ComisionesLecturaService.cs" />
     <Compile Include="Infraestructure\Comisiones\IComisionesLecturaService.cs" />
