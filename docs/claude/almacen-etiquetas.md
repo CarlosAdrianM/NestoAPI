@@ -90,6 +90,13 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - `PUT …/Recorrido?almacen=&empresa=&ensayo=` sustituye TODO el recorrido del almacén en una transacción (`RepositorioRecorridoSql.Guardar`):
   el orden de la lista es el de las calles (Orden 10, 20…), el de cada lista de pasillos su Posicion; `FilaAMano` null = no tocar. Permiso: el
   de Etiquetas de hueco (escribir en api/Almacen: Almacén o Dirección). 400 validación, 403, 503 sin tablas. Sin caché: el lector es Scoped.
+- **«Primero la escalera», por almacén (NestoAPI#888, sugerencia 1418 de Santiago; Carlos 23/11/26)**: dato `Almacenes.PrimeroEscalera` (bit NULL,
+  junto a FilaAMano, fuera del EDMX; `Scripts/Issue888_RecorridoPrimeroEscalera.sql`; sin él, como hoy). `OrdenRecorrido(pasillos, filaAMano,
+  primeroEscalera)`: con 1, dentro de cada columna de una calle primero la escalera y después lo de a mano; y las filas de la escalera pasan a
+  ASCENDENTES (1, 2, 3: de arriba abajo, para seguir bajando a lo de a mano, que va como siempre); sin calle, nada cambia. Decisión provisional del
+  orden de las filas: confirmarla con Santiago. Llega solo a picking, reposiciones, pendiente de ubicar y huecos alternativos (todos por
+  `LectorOrdenRecorridoSql`, `SQL_PRIMERO_ESCALERA`). GET/PUT Recorrido: `PrimeroEscalera` (bool en la vista; en el PUT bool?, null = no tocar;
+  true sin la columna → 503 `RecorridoSinColumnaPrimeroEscaleraException`). Activarlo en ALG tras publicar.
 
 ### Aviso de ficha desde Ariadna: foto del mozo (NestoAPI#868, 16/11/26)
 - `POST api/Almacen/AvisosFicha` admite `FotoMozoBase64` (opcional, JPEG, tope 4 MB; `FotoMozoAvisoFicha.Leer`, 400 si no vale): se sube UNA vez al blob de

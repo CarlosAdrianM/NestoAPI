@@ -16,6 +16,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool TablasCreadas { get; set; }
         /// <summary>Desde qué fila se llega con la mano (las de arriba, 1 hasta FilaAMano - 1, son de escalera).</summary>
         public int FilaAMano { get; set; }
+        /// <summary>
+        /// NestoAPI#888 (sugerencia 1418): dentro de cada columna, primero la escalera (de arriba abajo) y después lo de a mano. False si no se
+        /// ha marcado o falta Scripts/Issue888_RecorridoPrimeroEscalera.sql (el orden de siempre).
+        /// </summary>
+        public bool PrimeroEscalera { get; set; }
         /// <summary>En el orden del recorrido.</summary>
         public List<CalleRecorridoDTO> Calles { get; set; } = new List<CalleRecorridoDTO>();
         /// <summary>Pasillos con huecos en uso (o con nombre) que no van en ninguna calle: van al final, como siempre. Por pasillo.</summary>
@@ -79,6 +84,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
     {
         /// <summary>Null: no se toca. De 1 a 255.</summary>
         public int? FilaAMano { get; set; }
+        /// <summary>NestoAPI#888: null = no se toca. True sin la columna (script sin lanzar): 503.</summary>
+        public bool? PrimeroEscalera { get; set; }
         public List<CalleRecorridoDTO> Calles { get; set; } = new List<CalleRecorridoDTO>();
         /// <summary>Solo para guardar el nombre de un pasillo que no va en ninguna calle (sin nombre, se ignora).</summary>
         public List<PasilloRecorridoAlmacenDTO> PasillosSinCalle { get; set; } = new List<PasilloRecorridoAlmacenDTO>();

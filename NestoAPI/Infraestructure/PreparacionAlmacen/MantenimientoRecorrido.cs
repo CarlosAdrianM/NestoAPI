@@ -34,6 +34,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             : base("Faltan las tablas del recorrido en la base de datos (Scripts/Issue641_RecorridoCalles.sql). Avise a informática.")
         {
         }
+
+        protected RecorridoSinTablasException(string mensaje) : base(mensaje)
+        {
+        }
+    }
+
+    /// <summary>NestoAPI#888: se pide «primero la escalera» y falta la columna Almacenes.PrimeroEscalera.</summary>
+    public class RecorridoSinColumnaPrimeroEscaleraException : RecorridoSinTablasException
+    {
+        public RecorridoSinColumnaPrimeroEscaleraException()
+            : base("Falta en la base de datos el dato «primero la escalera» de los almacenes (Scripts/Issue888_RecorridoPrimeroEscalera.sql). Avise a informática.")
+        {
+        }
     }
 
     /// <summary>NestoAPI#642: lectura y escritura de las tablas del recorrido (fuera del EDMX, SQL a mano).</summary>
@@ -43,6 +56,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<CalleRecorridoGuardada>> LeerCalles(string empresa, string almacen);
         Task<List<PasilloRecorrido>> LeerPasillos(string empresa, string almacen);
         Task<int?> LeerFilaAMano(string empresa, string almacen);
+        /// <summary>NestoAPI#888: Almacenes.PrimeroEscalera. Null sin la columna (Scripts/Issue888_RecorridoPrimeroEscalera.sql) o sin valor.</summary>
+        Task<bool?> LeerPrimeroEscalera(string empresa, string almacen);
+        /// <summary>NestoAPI#888: si ya está la columna Almacenes.PrimeroEscalera.</summary>
+        Task<bool> ColumnaPrimeroEscalera();
         Task<List<HuecoRecorrido>> LeerHuecosEnUso(string empresa, string almacen);
         /// <summary>Sustituye calles y pasillos del almacén (y FilaAMano si no es null) en UNA transacción.</summary>
         Task Guardar(string empresa, string almacen, RecorridoNormalizado recorrido, string usuario);
@@ -61,6 +78,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class RecorridoNormalizado
     {
         public int? FilaAMano { get; set; }
+        /// <summary>NestoAPI#888: null = no se toca.</summary>
+        public bool? PrimeroEscalera { get; set; }
         public List<CalleNormalizada> Calles { get; set; } = new List<CalleNormalizada>();
         /// <summary>Pasillos sin calle con nombre.</summary>
         public List<PasilloNormalizado> PasillosSinCalle { get; set; } = new List<PasilloNormalizado>();
@@ -107,7 +126,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 throw new ArgumentException($"La fila desde la que se llega con la mano tiene que estar entre 1 y {MAXIMO_FILA_A_MANO}.");
             }
 
-            var resultado = new RecorridoNormalizado { FilaAMano = peticion.FilaAMano };
+            var resultado = new RecorridoNormalizado { FilaAMano = peticion.FilaAMano, PrimeroEscalera = peticion.PrimeroEscalera };
             var nombresCalle = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var pasillosVistos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             int numero = 0;
@@ -204,7 +223,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// de los tramos con la regla única <see cref="OrdenRecorrido"/> (la misma que usan picking, reposiciones y ubicar).
         /// </summary>
         public static RecorridoAlmacenDTO ConstruirVista(string empresa, string almacen, bool tablasCreadas, IEnumerable<CalleRecorridoGuardada> calles,
-            IEnumerable<PasilloRecorrido> pasillos, int? filaAMano, IEnumerable<HuecoRecorrido> huecos)
+            IEnumerable<PasilloRecorrido> pasillos, int? filaAMano, IEnumerable<HuecoRecorrido> huecos, bool primeroEscalera = false)
         {
             List<HuecoRecorrido> enUso = (huecos ?? Enumerable.Empty<HuecoRecorrido>())
                 .Where(h => OrdenRecorrido.NormalizarPasillo(h?.Pasillo) != null)
@@ -226,7 +245,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Empresa = empresa,
                 Almacen = almacen,
                 TablasCreadas = tablasCreadas,
-                FilaAMano = filaAMano.HasValue && filaAMano.Value > 0 ? filaAMano.Value : OrdenRecorrido.FILA_A_MANO_POR_DEFECTO
+                FilaAMano = filaAMano.HasValue && filaAMano.Value > 0 ? filaAMano.Value : OrdenRecorrido.FILA_A_MANO_POR_DEFECTO,
+                PrimeroEscalera = primeroEscalera
             };
 
             // Para la regla: cada pasillo con los datos de su calle (como los lee LectorOrdenRecorridoSql)
@@ -277,7 +297,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             vista.PasillosSinCalle = sinCalle.Values.OrderBy(p => p.Pasillo, StringComparer.Ordinal).ToList();
 
-            var orden = new OrdenRecorrido(paraLaRegla, vista.FilaAMano);
+            var orden = new OrdenRecorrido(paraLaRegla, vista.FilaAMano, vista.PrimeroEscalera);
             TramoRecorridoDTO tramo = null;
             string claveTramo = null;
             foreach (var h in enUso
@@ -308,7 +328,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>La vista de un PUT en ensayo: lo pedido como si estuviera guardado (las calles sin Id).</summary>
         public static RecorridoAlmacenDTO VistaDeEnsayo(string empresa, string almacen, RecorridoNormalizado recorrido, int? filaAManoGuardada,
-            IEnumerable<HuecoRecorrido> huecos)
+            IEnumerable<HuecoRecorrido> huecos, bool? primeroEscaleraGuardado = null)
         {
             var calles = new List<CalleRecorridoGuardada>();
             var pasillos = new List<PasilloRecorrido>();
@@ -321,7 +341,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 pasillos.AddRange(calle.Pasillos.Select(p => new PasilloRecorrido { Pasillo = p.Pasillo, Nombre = p.Nombre, IdCalle = id, Posicion = p.Posicion }));
             }
             pasillos.AddRange(recorrido.PasillosSinCalle.Select(p => new PasilloRecorrido { Pasillo = p.Pasillo, Nombre = p.Nombre }));
-            RecorridoAlmacenDTO vista = ConstruirVista(empresa, almacen, true, calles, pasillos, recorrido.FilaAMano ?? filaAManoGuardada, huecos);
+            RecorridoAlmacenDTO vista = ConstruirVista(empresa, almacen, true, calles, pasillos, recorrido.FilaAMano ?? filaAManoGuardada, huecos,
+                (recorrido.PrimeroEscalera ?? primeroEscaleraGuardado) == true);
             vista.Ensayo = true;
             return vista;
         }
@@ -341,13 +362,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             List<HuecoRecorrido> huecos = await repositorio.LeerHuecosEnUso(empresa, almacen).ConfigureAwait(false);
             int? filaAMano = await repositorio.LeerFilaAMano(empresa, almacen).ConfigureAwait(false);
+            bool primeroEscalera = await repositorio.LeerPrimeroEscalera(empresa, almacen).ConfigureAwait(false) == true;
             if (!await repositorio.TablasCreadas().ConfigureAwait(false))
             {
-                return ReglasMantenimientoRecorrido.ConstruirVista(empresa, almacen, false, null, null, filaAMano, huecos);
+                return ReglasMantenimientoRecorrido.ConstruirVista(empresa, almacen, false, null, null, filaAMano, huecos, primeroEscalera);
             }
             List<CalleRecorridoGuardada> calles = await repositorio.LeerCalles(empresa, almacen).ConfigureAwait(false);
             List<PasilloRecorrido> pasillos = await repositorio.LeerPasillos(empresa, almacen).ConfigureAwait(false);
-            return ReglasMantenimientoRecorrido.ConstruirVista(empresa, almacen, true, calles, pasillos, filaAMano, huecos);
+            return ReglasMantenimientoRecorrido.ConstruirVista(empresa, almacen, true, calles, pasillos, filaAMano, huecos, primeroEscalera);
         }
 
         public async Task<RecorridoAlmacenDTO> Guardar(string empresa, string almacen, PeticionRecorridoAlmacenDTO peticion, string usuario, bool ensayo)
@@ -357,11 +379,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new RecorridoSinTablasException();
             }
+            // NestoAPI#888: pedir «primero la escalera» sin la columna no se puede guardar; apagarlo (false) sin columna es lo que ya hay
+            if (recorrido.PrimeroEscalera == true && !await repositorio.ColumnaPrimeroEscalera().ConfigureAwait(false))
+            {
+                throw new RecorridoSinColumnaPrimeroEscaleraException();
+            }
             if (ensayo)
             {
                 List<HuecoRecorrido> huecos = await repositorio.LeerHuecosEnUso(empresa, almacen).ConfigureAwait(false);
                 int? filaAMano = await repositorio.LeerFilaAMano(empresa, almacen).ConfigureAwait(false);
-                return ReglasMantenimientoRecorrido.VistaDeEnsayo(empresa, almacen, recorrido, filaAMano, huecos);
+                bool? primeroEscalera = await repositorio.LeerPrimeroEscalera(empresa, almacen).ConfigureAwait(false);
+                return ReglasMantenimientoRecorrido.VistaDeEnsayo(empresa, almacen, recorrido, filaAMano, huecos, primeroEscalera);
             }
             await repositorio.Guardar(empresa, almacen, recorrido, usuario).ConfigureAwait(false);
             // Sin caché que invalidar: cada petición monta su OrdenRecorrido (ILectorOrdenRecorrido es Scoped), así que el
@@ -414,6 +442,15 @@ IF COL_LENGTH('dbo.Almacenes', 'FilaAMano') IS NOT NULL
     EXEC sp_executesql N'UPDATE dbo.Almacenes SET FilaAMano = @f WHERE Empresa = @e AND [Número] = @a',
                        N'@f tinyint, @e char(3), @a char(3)', @f = @p2, @e = @p0, @a = @p1;";
 
+        // NestoAPI#888: con la columna, se guarda (bit); sin ella, nada (el servicio ya ha parado el «sí»)
+        internal const string SQL_PRIMERO_ESCALERA = @"
+IF COL_LENGTH('dbo.Almacenes', 'PrimeroEscalera') IS NOT NULL
+    EXEC sp_executesql N'UPDATE dbo.Almacenes SET PrimeroEscalera = @f WHERE Empresa = @e AND [Número] = @a',
+                       N'@f bit, @e char(3), @a char(3)', @f = @p2, @e = @p0, @a = @p1;";
+
+        internal const string SQL_COLUMNA_PRIMERO_ESCALERA =
+            "SELECT CAST(CASE WHEN COL_LENGTH('dbo.Almacenes', 'PrimeroEscalera') IS NOT NULL THEN 1 ELSE 0 END AS bit)";
+
         private readonly NVEntities db;
 
         public RepositorioRecorridoSql(NVEntities db)
@@ -453,6 +490,17 @@ IF COL_LENGTH('dbo.Almacenes', 'FilaAMano') IS NOT NULL
                 .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
         }
 
+        public async Task<bool?> LeerPrimeroEscalera(string empresa, string almacen)
+        {
+            return (await db.Database.SqlQuery<bool?>(LectorOrdenRecorridoSql.SQL_PRIMERO_ESCALERA, Char("@p0", 3, empresa), Char("@p1", 3, almacen))
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
+
+        public async Task<bool> ColumnaPrimeroEscalera()
+        {
+            return (await db.Database.SqlQuery<bool>(SQL_COLUMNA_PRIMERO_ESCALERA).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
+
         public Task<List<HuecoRecorrido>> LeerHuecosEnUso(string empresa, string almacen)
         {
             return db.Database.SqlQuery<HuecoRecorrido>(SQL_HUECOS_EN_USO,
@@ -484,6 +532,12 @@ IF COL_LENGTH('dbo.Almacenes', 'FilaAMano') IS NOT NULL
                 {
                     await db.Database.ExecuteSqlCommandAsync(SQL_FILA_A_MANO,
                         Char("@p0", 3, empresa), Char("@p1", 3, almacen), new SqlParameter("@p2", System.Data.SqlDbType.TinyInt) { Value = (byte)recorrido.FilaAMano.Value })
+                        .ConfigureAwait(false);
+                }
+                if (recorrido.PrimeroEscalera.HasValue)
+                {
+                    await db.Database.ExecuteSqlCommandAsync(SQL_PRIMERO_ESCALERA,
+                        Char("@p0", 3, empresa), Char("@p1", 3, almacen), new SqlParameter("@p2", System.Data.SqlDbType.Bit) { Value = recorrido.PrimeroEscalera.Value })
                         .ConfigureAwait(false);
                 }
                 transaccion.Commit();

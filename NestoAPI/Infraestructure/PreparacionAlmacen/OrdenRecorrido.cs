@@ -46,6 +46,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// se va subiendo peldaño a peldaño y se baja una vez). La fila 000 (suelo o palé, sin altura: pasillos 12, 13 y del
     /// 20 en adelante) y cualquier fila que no sea un número cuentan como «a mano».</para>
     ///
+    /// <para><b>Primero la escalera</b> (NestoAPI#888, sugerencia 1418 de Santiago; dato por almacén, Almacenes.PrimeroEscalera): dentro
+    /// de cada columna se invierten los dos niveles: primero la escalera y después lo que se coge a mano. Y las filas de la escalera van
+    /// entonces ascendentes (1, 2, 3: se empieza arriba y se va bajando), de modo que toda la columna se recorre de arriba abajo; a mano,
+    /// igual que siempre (de la más alta que se alcanza hacia el suelo). Sin el dato, como hasta ahora.</para>
+    ///
     /// <para><b>Pasillo sin calle</b>: va después de todas las calles, por pasillo, columna y fila ascendentes, sin
     /// niveles, exactamente como hoy. Por eso, <b>sin filas en las tablas el orden es idéntico al de antes</b>, y una
     /// columna o una fila nuevas en un pasillo con calle heredan su sitio solas.</para>
@@ -61,8 +66,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         private readonly Dictionary<string, PasilloRecorrido> pasillos;
 
-        public OrdenRecorrido(IEnumerable<PasilloRecorrido> pasillos, int? filaAMano = null)
+        public OrdenRecorrido(IEnumerable<PasilloRecorrido> pasillos, int? filaAMano = null, bool primeroEscalera = false)
         {
+            PrimeroEscalera = primeroEscalera;
             this.pasillos = new Dictionary<string, PasilloRecorrido>(StringComparer.OrdinalIgnoreCase);
             foreach (PasilloRecorrido pasillo in pasillos ?? Enumerable.Empty<PasilloRecorrido>())
             {
@@ -77,6 +83,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>Desde qué fila se llega con la mano (Almacenes.FilaAMano; 4 si no se dice).</summary>
         public int FilaAMano { get; }
+
+        /// <summary>NestoAPI#888: dentro de cada columna, primero la escalera y después lo de a mano (Almacenes.PrimeroEscalera; false si no se dice).</summary>
+        public bool PrimeroEscalera { get; }
 
         /// <summary>Si algún pasillo está en una calle (si no, el orden es el de siempre).</summary>
         public bool TieneCalles => pasillos.Values.Any(p => p.IdCalle.HasValue);
@@ -112,8 +121,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             string clave = NormalizarPasillo(pasillo);
             if (clave != null && pasillos.TryGetValue(clave, out PasilloRecorrido calle) && calle.IdCalle.HasValue)
             {
-                int nivel = EsDeEscalera(fila) ? ClaveRecorrido.NIVEL_ESCALERA : ClaveRecorrido.NIVEL_A_MANO;
+                bool deEscalera = EsDeEscalera(fila);
+                int nivel = deEscalera ? ClaveRecorrido.NIVEL_ESCALERA : ClaveRecorrido.NIVEL_A_MANO;
                 return ClaveRecorrido.EnCalle(
+                    PrimeroEscalera,
                     calle.OrdenCalle ?? int.MaxValue,
                     calle.IdCalle.Value,
                     columna?.Trim(),
@@ -160,11 +171,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Posicion { get; private set; }
         public string Pasillo { get; private set; }
         public string Fila { get; private set; }
+        /// <summary>NestoAPI#888: el almacén recorre primero la escalera (cambia el orden de los niveles y el de las filas de la escalera).</summary>
+        public bool PrimeroEscalera { get; private set; }
 
-        internal static ClaveRecorrido EnCalle(int ordenCalle, int idCalle, string columna, bool descendente, int nivel, int posicion, string pasillo, string fila)
+        /// <summary>En qué orden va el nivel dentro de la columna: a mano primero (lo de siempre) o la escalera primero (#888).</summary>
+        private int OrdenNivel => PrimeroEscalera ? (Nivel == NIVEL_ESCALERA ? 0 : 1) : Nivel;
+
+        internal static ClaveRecorrido EnCalle(bool primeroEscalera, int ordenCalle, int idCalle, string columna, bool descendente, int nivel, int posicion,
+            string pasillo, string fila)
         {
             return new ClaveRecorrido
             {
+                PrimeroEscalera = primeroEscalera,
                 ConCalle = true,
                 OrdenCalle = ordenCalle,
                 IdCalle = idCalle,
@@ -208,15 +226,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (c != 0) return c;
             c = string.CompareOrdinal(Columna, otra.Columna);
             if (c != 0) return Descendente ? -c : c;
-            c = Nivel.CompareTo(otra.Nivel);
+            c = OrdenNivel.CompareTo(otra.OrdenNivel);
             if (c != 0) return c;
             c = Posicion.CompareTo(otra.Posicion);
             if (c != 0) return c;
             c = string.CompareOrdinal(Pasillo, otra.Pasillo);
             if (c != 0) return c;
             c = string.CompareOrdinal(Fila, otra.Fila);
-            // A mano, de la más alta que se alcanza hacia el suelo; con la escalera, de abajo arriba (3, 2, 1)
-            return Nivel == NIVEL_ESCALERA ? -c : c;
+            // A mano, de la más alta que se alcanza hacia el suelo; con la escalera, de abajo arriba (3, 2, 1). #888: con la
+            // escalera primero, también de arriba abajo (1, 2, 3), para seguir bajando luego a lo de a mano.
+            return Nivel == NIVEL_ESCALERA && !PrimeroEscalera ? -c : c;
         }
 
         int IComparable.CompareTo(object obj) => CompareTo(obj as ClaveRecorrido);
@@ -254,6 +273,14 @@ ELSE
            CAST(NULL AS varchar(10)) AS Calle, CAST(NULL AS int) AS OrdenCalle, CAST(NULL AS char(1)) AS Sentido,
            CAST(NULL AS int) AS Posicion
     WHERE 1 = 0;";
+
+        // NestoAPI#888: Scripts/Issue888_RecorridoPrimeroEscalera.sql; sin la columna, null (= como siempre)
+        internal const string SQL_PRIMERO_ESCALERA = @"
+IF COL_LENGTH('dbo.Almacenes', 'PrimeroEscalera') IS NOT NULL
+    EXEC sp_executesql N'SELECT CAST(PrimeroEscalera AS bit) FROM dbo.Almacenes WHERE Empresa = @e AND [Número] = @a',
+                       N'@e char(3), @a char(3)', @e = @p0, @a = @p1;
+ELSE
+    SELECT CAST(NULL AS bit) WHERE 1 = 0;";
 
         // La columna se añade con el mismo script: sin él, la consulta dinámica no llega a compilarse
         internal const string SQL_FILA_A_MANO = @"
@@ -303,7 +330,9 @@ ELSE
                 }
                 int? filaAMano = (await baseDeDatos.SqlQuery<int?>(SQL_FILA_A_MANO, Char("@p0", empresa), Char("@p1", almacen))
                     .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
-                return new OrdenRecorrido(pasillos, filaAMano);
+                bool? primeroEscalera = (await baseDeDatos.SqlQuery<bool?>(SQL_PRIMERO_ESCALERA, Char("@p0", empresa), Char("@p1", almacen))
+                    .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                return new OrdenRecorrido(pasillos, filaAMano, primeroEscalera == true);
             }
             catch (Exception ex)
             {
