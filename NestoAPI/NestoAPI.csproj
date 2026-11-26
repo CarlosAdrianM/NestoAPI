@@ -767,6 +767,7 @@
     <Compile Include="Controllers\PedidosVentaAmpliacionesController.cs" />
     <Compile Include="Controllers\PedidosVentaAutorizacionesController.cs" />
     <Compile Include="Controllers\InformeRepartoController.cs" />
+    <Compile Include="Controllers\BultosPendientesRepartoController.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\InformeReparto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\AutorizacionesPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Autorizaciones\AvisosAutorizacionPedido.cs" />
@@ -967,6 +968,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\AvisosCobroReparto.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Cobros.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\BultosPendientesReparto.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
     <Compile Include="Infraestructure\PreciosMedios\AritmeticaMoney.cs" />

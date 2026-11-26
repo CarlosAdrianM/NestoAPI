@@ -475,16 +475,22 @@ GROUP BY e.NumeroOrigen";
         private readonly Func<string, (bool Valido, int Envio)> leerToken;
         private readonly Func<EnviosAgencia, Task<bool>> esRecogida;
         private readonly Func<string> claveFotos;
+        private readonly Func<int, Task<int>> bultosPendientes;
 
         /// <param name="esRecogida">NestoAPI#759: ¿el envío es la parada de una nota de RECOGIDA? Sin él, nunca.</param>
         /// <param name="claveFotos">NestoAPI#771: la clave de los enlaces públicos de las fotos. Sin ella, la del Web.config.</param>
+        /// <param name="bultosPendientes">
+        /// NestoAPI#880 corte 2: cuántos bultos del envío siguen pendientes (decisión 8: «Entregado parcialmente» hasta el último). Sin él,
+        /// una entrega incompleta sale «Entregado», como antes.
+        /// </param>
         public ServicioSeguimientoPublicoReparto(ILectorSeguimientoPublicoReparto lector, Func<string, (bool, int)> leerToken = null,
-            Func<EnviosAgencia, Task<bool>> esRecogida = null, Func<string> claveFotos = null)
+            Func<EnviosAgencia, Task<bool>> esRecogida = null, Func<string> claveFotos = null, Func<int, Task<int>> bultosPendientes = null)
         {
             this.lector = lector ?? throw new ArgumentNullException(nameof(lector));
             this.leerToken = leerToken ?? (t => (EnlaceSeguimientoRepartoPropio.TryLeerEnvio(t, out int envio), envio));
             this.esRecogida = esRecogida;
             this.claveFotos = claveFotos ?? (() => ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION]);
+            this.bultosPendientes = bultosPendientes;
         }
 
         /// <summary>NestoAPI#759: con la BD, mira si el pedido del envío es una nota de recogida.</summary>
@@ -536,11 +542,23 @@ GROUP BY e.NumeroOrigen";
                 // Sin la trazabilidad, la página de siempre
                 ElmahHelper.Log(new Exception($"[Seguimiento #771] No se pudo leer la trazabilidad del envío {envio.Numero}: {ex.Message}", ex));
             }
+            bool parcial = false;
+            if (bultosPendientes != null && !recogida && ReglasBultosPendientes.EntregaParcial(envio.Estado, envio.DetalleEstado, 1))
+            {
+                try
+                {
+                    parcial = ReglasBultosPendientes.EntregaParcial(envio.Estado, envio.DetalleEstado, await bultosPendientes(envio.Numero).ConfigureAwait(false));
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Seguimiento #880] No se pudo saber si al envío {envio.Numero} le quedan bultos pendientes: {ex.Message}", ex));
+                }
+            }
             string clave = claveFotos();
             string urlBase = (EnlaceSeguimientoRepartoPropio.LeerUrlBase() ?? string.Empty).Trim().TrimEnd('/');
             VistaSeguimientoReparto vista = VistaSeguimientoReparto.Construir(envio, hitos, recogida, datos,
                 urlFoto: f => UrlFoto(urlBase, clave, f),
-                urlSeguimiento: EnlaceSeguimientoRepartoPropio.Url);
+                urlSeguimiento: EnlaceSeguimientoRepartoPropio.Url, entregaParcial: parcial);
             return new PaginaSeguimientoReparto { Estado = HttpStatusCode.OK, Html = PaginaHtmlSeguimientoReparto.Html(vista) };
         }
 
@@ -599,8 +617,13 @@ GROUP BY e.NumeroOrigen";
         public List<FotoGaleriaPublica> Fotos { get; set; } = new List<FotoGaleriaPublica>();
         /// <summary>NestoAPI#771: los demás envíos del pedido. Vacía: no sale la sección.</summary>
         public List<OtroEnvioPublico> OtrosEnvios { get; set; } = new List<OtroEnvioPublico>();
+        /// <summary>NestoAPI#880 corte 2: entregado, pero queda algún bulto por llevar («Entregado parcialmente»).</summary>
+        public bool EntregaParcial { get; set; }
+        public const string TITULO_ENTREGA_PARCIAL = "Entregado parcialmente";
+        public const string TEXTO_ENTREGA_PARCIAL = "Le hemos entregado parte de los bultos de su pedido. El resto se lo haremos llegar lo antes posible; " +
+            "si tiene cualquier duda, póngase en contacto con nosotros.";
         public bool MostrarContacto => Estado == EstadoSeguimientoPublico.Incidencia || Estado == EstadoSeguimientoPublico.Devuelto
-            || Estado == EstadoSeguimientoPublico.Cerrado;
+            || Estado == EstadoSeguimientoPublico.Cerrado || EntregaParcial;
 
         /// <summary>Para el cliente, de usted: qué le pasó a su envío (no el código de Ariadna).</summary>
         internal static string MotivoLegible(string motivo)
@@ -617,7 +640,8 @@ GROUP BY e.NumeroOrigen";
         }
 
         public static VistaSeguimientoReparto Construir(EnviosAgencia envio, IEnumerable<HitoEntregaPublico> hitos, bool esRecogida = false,
-            DatosTrazabilidadEnvio datos = null, Func<FotoDeLaGaleria, string> urlFoto = null, Func<int, string> urlSeguimiento = null)
+            DatosTrazabilidadEnvio datos = null, Func<FotoDeLaGaleria, string> urlFoto = null, Func<int, string> urlSeguimiento = null,
+            bool entregaParcial = false)
         {
             List<HitoEntregaPublico> lista = (hitos ?? Enumerable.Empty<HitoEntregaPublico>()).Where(h => h != null).OrderBy(h => h.FechaHora).ToList();
             HitoEntregaPublico entrega = lista.LastOrDefault(h => string.Equals(h.Tipo?.Trim(), PruebaEntregaReparto.TIPO_ENTREGA, StringComparison.OrdinalIgnoreCase));
@@ -636,6 +660,13 @@ GROUP BY e.NumeroOrigen";
                     vista.TextoEstado = esRecogida
                         ? "Ya hemos pasado a recogerlo. Gracias por confiar en Nueva Visión."
                         : "Su pedido ya está entregado. Gracias por confiar en Nueva Visión.";
+                    // NestoAPI#880 corte 2 (decisión 8): mientras quede algún bulto por llevar
+                    if (entregaParcial && !esRecogida)
+                    {
+                        vista.EntregaParcial = true;
+                        vista.TituloEstado = TITULO_ENTREGA_PARCIAL;
+                        vista.TextoEstado = TEXTO_ENTREGA_PARCIAL;
+                    }
                     break;
                 case Constantes.Agencias.ESTADO_INCIDENTADO:
                     vista.Estado = EstadoSeguimientoPublico.Incidencia;

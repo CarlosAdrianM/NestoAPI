@@ -1,3 +1,4 @@
+using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Models;
@@ -215,7 +216,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             await avisos.Avisar(envio, incompleta, MIGUEL);
             await avisos.Avisar(envio, completa, MIGUEL);
 
-            FakeItEasy.A.CallTo(() => push.GuardarEnBuzonDeUsuario(FakeItEasy.A<string>._, Constantes.Aplicaciones.NESTO, FakeItEasy.A<NotificacionPushDTO>._))
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>._, Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._))
                 .MustHaveHappened(2, FakeItEasy.Times.Exactly);
             Assert.AreEqual(1, alPedido.Count);
             Assert.AreEqual(EntregaIncompletaReparto.TIPO_NOTIFICACION, alPedido[0].Tipo);
@@ -264,6 +265,33 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
             Assert.AreEqual("Leídos 4 de 5. No entregado: RP251099-5 (no se ha leído al entregar).", prueba.Contenido.ResumenBultos);
             Assert.IsFalse(prueba.Contenido.Bultos.Last().Entregado);
+        }
+
+        [TestMethod]
+        public async Task Issue880Corte2_EntregaIncompleta_ApuntaLosBultosPendientes_TambienEnElReintento()
+        {
+            Envio(ENVIO_INCOMPLETO, bultos: 5);
+            await CargarTodos(ENVIO_INCOMPLETO, 5, MIGUEL);
+            Guid clave = Guid.NewGuid();
+
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, EntregaSoloLeidos(clave, Rp(ENVIO_INCOMPLETO, 1, 2, 3, 4)), MIGUEL);
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, EntregaSoloLeidos(clave, Rp(ENVIO_INCOMPLETO, 1, 2, 3, 4)), MIGUEL);
+
+            // Las dos veces (la tabla no lo duplica: es única por el código)
+            A.CallTo(() => pendientes.Registrar(A<IReadOnlyList<BultoPendienteReparto>>.That.Matches(l =>
+                l.Count == 1 && l[0].Codigo == "RP251099-5" && l[0].SituacionAlEntregar == "NoLeidoSeQueda" && l[0].EnvioId == ENVIO_INCOMPLETO)))
+                .MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task Issue880Corte2_EntregaCompleta_NoApuntaNada()
+        {
+            Envio(ENVIO_INCOMPLETO, bultos: 2);
+            await CargarTodos(ENVIO_INCOMPLETO, 2, MIGUEL);
+
+            _ = await servicio.Entregar(ENVIO_INCOMPLETO, Entrega(null, Rp(ENVIO_INCOMPLETO, 1, 2)), MIGUEL);
+
+            A.CallTo(() => pendientes.Registrar(A<IReadOnlyList<BultoPendienteReparto>>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

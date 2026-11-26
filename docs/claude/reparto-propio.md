@@ -26,6 +26,18 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (`IAvisosEntregaIncompleta`: campana a Almacén + campana/push a quien hizo el pedido y su vendedor, tipo `EntregaIncompletaReparto`). El job de las
   22:00 no cierra los bultos de un envío incompleto. Ni recogidas, ni NC, ni reposiciones. `EntregaIncompleta` (+ `DetalleEntregaIncompleta`) en los
   DTO de envío: Nesto lo marca en Agencias › Tramitados («Incompleto», cabecera) y en la pestaña Entrega del pedido.
+- **Bultos pendientes con cierre a mano (NestoAPI#880 corte 2, 26/11/26)**: cada bulto que FALTA en una entrega incompleta queda Pendiente en
+  `dbo.RepartoBultosPendientes` (`Scripts/Issue880_RepartoBultosPendientes.sql`, fuera del EDMX, CHECK de Estado/Cierre/Situación y coherencia; sin él no se apunta
+  nada y los endpoints dan 503), desde `CompletarEntregaIncompleta` (también en el reintento; único por Codigo; nunca rompe la entrega). Todo en `BultosPendientesReparto.cs`
+  (LAS REGLAS `ReglasBultosPendientes`, `ServicioBultosPendientesReparto`, `RepositorioBultosPendientesSql`). `GET api/RepartoPropio/BultosPendientes?soloPendientes=true&empresa=
+  &pedido=&envio=&dias=30` (`BultosPendientesRepartoController`; empleados y vendedores, 403 al cliente de la tienda; 500 como mucho) → [{Id, Empresa, EnvioId, Pedido, Cliente,
+  Contacto, Nombre, Codigo, Bulto, Total, SituacionAlEntregar, MotivoFalta, Repartidor, FechaEntrega, Estado Pendiente|Cerrado, Cierre, MotivoCierre, UsuarioCierre, FechaCierre,
+  DondeEsta (último movimiento de la furgoneta: «En la furgoneta de Miguel desde el 26/11 a las 9:42.», «En el almacén: lo descargó…»), Texto}]. `POST …/BultosPendientes/{id}/Cerrar`
+  {Cierre EntregadoEnMano|Perdido|Abonado, Motivo 1..500} (Almacén, Dirección, Informática, `PermisosRepartoPropio.PuedeCerrarBultoPendiente`; 400/403/404/409 de usted): UPDATE
+  condicionado a Pendiente + rastro `RepartoBultoPendienteCerrado` y, con EntregadoEnMano, el movimiento Entregado del bulto (Origen Almacen, «Entregado en mano: motivo», clave
+  derivada del Id) en la MISMA transacción. Job `reparto-bultos-pendientes` L-V 9:00 Madrid (no en festivo de Algete): campana `BultosPendientesReparto` a Almacén. Seguimiento
+  público: «Entregado parcialmente» (con «contacte con nosotros») mientras el envío esté Entregado incompleto y le quede algún Pendiente (`ReglasBultosPendientes.EntregaParcial`;
+  si no se puede contar, se fía del DetalleEstado). Ni envíos internos (EI), ni recogidas, ni NC. Las entregas incompletas de antes del script no se apuntan.
 - **Reembolso entero o autorizado (Carlos 19/11/26)**: en `Entregar` con Efectivo e `ImporteCobrado` < reembolso − 0,01 € hace falta la MISMA
   autorización que para no cobrar (Autorizada o Telefonica, #773; vale para cualquier importe); sin ella, 409 `Codigo` REEMBOLSO_PARCIAL (en la raíz
   y en error.code), regla pura `ReglaReembolsoEntero`. Cobrar de más no cambia. Las notas de cobro NO (lo de menos queda a cuenta). La petición de

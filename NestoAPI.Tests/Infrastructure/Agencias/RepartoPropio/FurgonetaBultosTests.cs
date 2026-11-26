@@ -99,8 +99,19 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
                     RecogidaReposiciones = marcador,
                     AvisosAlmacen = avisosAlmacen,
                     AvisosFurgoneta = avisosFurgoneta,
-                    EntregaIncompleta = avisosIncompleta
+                    EntregaIncompleta = avisosIncompleta,
+                    BultosPendientes = new ServicioBultosPendientesReparto(pendientes, repo, () => ahora)
                 });
+
+        /// <summary>NestoAPI#880 corte 2: la tabla de los bultos pendientes (falsa).</summary>
+        private IRepositorioBultosPendientes pendientes = PendientesFalsos();
+
+        private static IRepositorioBultosPendientes PendientesFalsos()
+        {
+            IRepositorioBultosPendientes falso = A.Fake<IRepositorioBultosPendientes>();
+            A.CallTo(() => falso.Disponible()).Returns(true);
+            return falso;
+        }
 
         private ResolucionCodigoNota Resolver(string codigo)
         {

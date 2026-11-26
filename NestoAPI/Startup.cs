@@ -908,6 +908,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'furgoneta-sin-descargar' configurado (L-V a las 22:00)");
 
+            // NestoAPI#880 (corte 2): de lunes a viernes a las 9:00 (no en festivo de Algete), campana a Almacén con los bultos que
+            // faltaron en una entrega incompleta y siguen pendientes. Sin la tabla (Issue880_RepartoBultosPendientes.sql), nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Agencias.RepartoPropio.BultosPendientesRecordatorioJobsService.JOB_ID,
+                () => Infraestructure.Agencias.RepartoPropio.BultosPendientesRecordatorioJobsService.Recordar(),
+                Infraestructure.Agencias.RepartoPropio.BultosPendientesRecordatorioJobsService.CRON,
+                new RecurringJobOptions
+                {
+                    TimeZone = ZonaHorariaPeninsular()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reparto-bultos-pendientes' configurado (L-V a las 9:00)");
+
             // NestoAPI#855: las recogidas solicitadas por el vendedor que llevan un día laborable (Algete) sin respuesta del almacén:
             // campana a Almacén y a quien la pidió, una sola vez por solicitud. Sin el script (Issue855_RecogidasSolicitadas.sql), nada.
             RecurringJob.AddOrUpdate(
