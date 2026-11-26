@@ -252,6 +252,41 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void CompletarIvaLineasDeCuenta_Novedad1453_LaLineaSinIvaTomaElDeSuCuenta()
+        {
+            // Laura, 26/11/26: en Nesto no hay dónde escribir el Tipo de IVA de una línea de cuenta contable.
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas = new List<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "70500009  ", texto = "Ingresos Sept. 26 YouTube", iva = null },
+                new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "62400005", texto = "Portes", iva = "R10" }
+            };
+
+            int completadas = PedidosVentaController.CompletarIvaLineasDeCuenta(pedido, cuenta => cuenta == "70500009" ? "G21  " : "OTRO");
+
+            Assert.AreEqual(1, completadas);
+            Assert.AreEqual("G21", pedido.Lineas.First().iva);
+            Assert.AreEqual("R10", pedido.Lineas.Last().iva, "La que ya trae su Tipo de IVA no se toca");
+            Assert.IsNull(PedidosVentaController.ValidarIvaLineas(new PedidoVentaDTO { Lineas = new List<LineaPedidoVentaDTO> { pedido.Lineas.First() } }, ParametrosIvaG21()));
+        }
+
+        [TestMethod]
+        public void CompletarIvaLineasDeCuenta_LaCuentaTampocoLoTiene_ElAvisoDiceQueFaltaEnLaCuenta()
+        {
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas = new List<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "70500009", texto = "Ingresos", iva = null }
+            };
+
+            Assert.AreEqual(0, PedidosVentaController.CompletarIvaLineasDeCuenta(pedido, cuenta => null));
+            string error = PedidosVentaController.ValidarIvaLineas(pedido, ParametrosIvaG21());
+
+            StringAssert.Contains(error, "plan de cuentas");
+            StringAssert.Contains(error, "Tipo de IVA");
+        }
+
+        [TestMethod]
         public void ValidarIvaLineas_TipoIvaQueNoTieneElCliente_AvisaConElCodigo()
         {
             PedidoVentaDTO pedido = PedidoCompleto();
