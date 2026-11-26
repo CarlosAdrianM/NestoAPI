@@ -102,6 +102,67 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. (sustituible en los tests). Solo se consulta sin P.O.</summary>
         internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
 
+        /// <summary>NestoAPI#898 (solo tests): sustituye la lectura de la tanda (pedidos → pedido → datos). null = la de verdad.</summary>
+        internal Func<IEnumerable<CabPedidoVta>, Task<Dictionary<int, DatosPOEnteraPedido>>> LectorPOEnteraTanda { get; set; }
+
+        /// <summary>
+        /// NestoAPI#898: lee en UNA consulta por empresa los datos de la P.O. entera de los pedidos de la tanda que llevan «Su
+        /// pedido». Nunca lanza: si falla, diccionario vacío (la (a) se mira igual en memoria y CrearFactura/el procedimiento
+        /// son la última barrera).
+        /// </summary>
+        internal async Task<Dictionary<int, DatosPOEnteraPedido>> LeerPOEnteraTanda(IEnumerable<CabPedidoVta> pedidos)
+        {
+            var resultado = new Dictionary<int, DatosPOEnteraPedido>();
+            try
+            {
+                List<CabPedidoVta> conPO = (pedidos ?? Enumerable.Empty<CabPedidoVta>())
+                    .Where(p => p != null && ReglaPOEntera.Aplica(p.SuPedido))
+                    .ToList();
+                if (!conPO.Any() || !InterruptorPOSoloEntera.Activo)
+                {
+                    return resultado;
+                }
+                if (LectorPOEnteraTanda != null)
+                {
+                    return await LectorPOEnteraTanda(conPO) ?? resultado;
+                }
+                foreach (IGrouping<string, CabPedidoVta> porEmpresa in conPO.GroupBy(p => p.Empresa))
+                {
+                    foreach (KeyValuePair<int, DatosPOEnteraPedido> fila in await LectorPOEnteraSql.LeerAsync(db, porEmpresa.Key, porEmpresa.Select(p => p.Número)))
+                    {
+                        resultado[fila.Key] = fila.Value;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[P.O. entera #898] Facturar rutas: no se han podido leer los pedidos de las P.O.: lo comprueba cada factura. {ex.Message}", ex));
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#898: por qué no se factura este pedido de la tanda, o null. La (a) en memoria (líneas recargadas después del
+        /// albarán); la (b), de la lectura de la tanda.
+        /// </summary>
+        internal static string MotivoPOEntera(CabPedidoVta pedido, Dictionary<int, DatosPOEnteraPedido> poEnteraTanda)
+        {
+            if (pedido == null || !ReglaPOEntera.Aplica(pedido.SuPedido) || !InterruptorPOSoloEntera.Activo)
+            {
+                return null;
+            }
+            DatosPOEnteraPedido leido = null;
+            _ = poEnteraTanda?.TryGetValue(pedido.Número, out leido);
+            return ReglaPOEntera.MotivoNoSePuedeFacturar(new DatosPOEnteraPedido
+            {
+                Pedido = pedido.Número,
+                SuPedido = pedido.SuPedido,
+                Cliente = pedido.Nº_Cliente,
+                QuedanSinEntregar = ReglaPOEntera.QuedanSinEntregar(pedido.LinPedidoVtas),
+                OtroPedido = leido?.OtroPedido
+            });
+        }
+
         /// <summary>NestoAPI#723: el pedido no se factura porque el cliente exige el P.O. y no lo tiene.</summary>
         public bool EsperaSuPedido(CabPedidoVta pedido)
             => pedido != null && Clientes.ReglaSuPedidoObligatorio.Activa && !Clientes.ReglaSuPedidoObligatorio.TieneSuPedido(pedido.SuPedido)
@@ -260,12 +321,15 @@ namespace NestoAPI.Infraestructure.Facturas
 
             var stopwatch = Stopwatch.StartNew();
 
+            // NestoAPI#898: los otros pedidos de la misma P.O. sin facturar, en una consulta por tanda (solo los que llevan P.O.).
+            Dictionary<int, DatosPOEnteraPedido> poEnteraTanda = await LeerPOEnteraTanda(pedidos);
+
             foreach (var pedido in pedidos)
             {
                 System.Diagnostics.Debug.WriteLine($"Procesando pedido {pedido.Número} - Cliente: {pedido.Nº_Cliente} - NotaEntrega: {pedido.NotaEntrega} - Periodo: {pedido.Periodo_Facturacion}");
                 try
                 {
-                    await ProcesarPedido(pedido, response, usuario, fechaEntregaDesde);
+                    await ProcesarPedido(pedido, response, usuario, fechaEntregaDesde, poEnteraTanda);
                     response.PedidosProcesados++;
                     System.Diagnostics.Debug.WriteLine($"  ✓ Pedido {pedido.Número} procesado correctamente");
                 }
@@ -314,7 +378,8 @@ namespace NestoAPI.Infraestructure.Facturas
             CabPedidoVta pedido,
             FacturarRutasResponseDTO response,
             string usuario,
-            DateTime fechaEntregaDesde)
+            DateTime fechaEntregaDesde,
+            Dictionary<int, DatosPOEnteraPedido> poEnteraTanda = null)
         {
             // 0. Validar visto bueno ANTES de cualquier procesamiento
             if (!TieneTodasLasLineasConVistoBueno(pedido))
@@ -511,7 +576,7 @@ namespace NestoAPI.Infraestructure.Facturas
             // 4. Si es NRM, crear factura (si es posible)
             if (pedido.Periodo_Facturacion?.Trim() == Constantes.Pedidos.PERIODO_FACTURACION_NORMAL)
             {
-                await ProcesarFacturaNRM(pedido, numeroAlbaran, response, usuario);
+                await ProcesarFacturaNRM(pedido, numeroAlbaran, response, usuario, poEnteraTanda);
             }
             // 5. Si es FDM, generar PDF del albarán si tiene comentario de impresión
             else if (pedido.Periodo_Facturacion?.Trim() == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
@@ -552,8 +617,32 @@ namespace NestoAPI.Infraestructure.Facturas
             CabPedidoVta pedido,
             int numeroAlbaran,
             FacturarRutasResponseDTO response,
-            string usuario)
+            string usuario,
+            Dictionary<int, DatosPOEnteraPedido> poEnteraTanda = null)
         {
+            // NestoAPI#898: una P.O. va en una sola factura. El albarán ya está hecho; la factura se salta con el motivo (como el
+            // «al completar» de abajo) y los demás pedidos siguen.
+            string motivoPO = MotivoPOEntera(pedido, poEnteraTanda);
+            if (motivoPO != null)
+            {
+                RegistrarError(pedido, "Factura",
+                    $"{motivoPO} Se ha creado el albarán {numeroAlbaran}; la factura queda pendiente.",
+                    response,
+                    NivelSeveridad.Warning);
+                if (DebeImprimirDocumento(pedido))
+                {
+                    try
+                    {
+                        AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response, usuario);
+                    }
+                    catch (Exception ex)
+                    {
+                        RegistrarError(pedido, "Generación PDF Albarán", ex, response);
+                    }
+                }
+                return;
+            }
+
             // IMPORTANTE: Después de crear el albarán, el estado de las líneas puede haber cambiado.
             // Necesitamos validar de nuevo si ahora SÍ se puede facturar.
             // Esto es crucial para pedidos con MantenerJunto=1 donde el albarán completó todas las líneas.

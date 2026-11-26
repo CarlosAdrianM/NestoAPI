@@ -173,8 +173,19 @@ Related files:
   (`fnEsNestoViejo`) → error «…hágalo en Nesto (Facturar rutas, «Fin de mes»)…» y no agrupa nada (mecanismo de #590: ParametrosUsuario
   `NestoViejo_FinDeMes_Modo` «(defecto)» = Bloqueo | Sombra y `NestoViejo_FinDeMes` = 1 por usuario; rastro en `NestoViejoSombra`). También corta el
   «agrupar albaranes» de un cliente en Nesto viejo. El fin de mes va por la API (`POST api/FacturacionRutas/FinDeMes`, en uso desde el 30/10/26).
-  (2) `prdCrearFacturaVta` (por él factura todo): el pedido con P.O. de un cliente de `ClientesSuPedidoObligatorio` (hoy solo el 27593) NO se
-  factura si le queda alguna línea -1..1 con cantidad, ni si otro pedido del mismo cliente y la misma P.O. tiene líneas -1..2 (hay que agrupar por
-  P.O. antes): «una P.O. va en una sola factura». Carlos: «o se factura todo y se recoge lo no entregado, o no se factura nada hasta que esté todo
-  albaraneado». Interruptor «(defecto)» `Facturacion.POSoloEntera` (sin fila o ≠ 0 = encendido). El texto de «Su pedido» de un cliente SIN la marca
-  (texto libre: «ENSEÑAR A SANTY») no bloquea nada. PENDIENTE: la misma regla en la API con mensaje propio antes de llamar al procedimiento.
+  (2) `prdCrearFacturaVta` (por él factura todo): un pedido con «Su pedido» (P.O.) NO se factura si le queda alguna línea -1..1 con cantidad, ni si
+  otro pedido del mismo cliente y la misma P.O. (recortada de los extremos, nada más) tiene líneas -1..2 (hay que agrupar por P.O. antes): «una P.O. va
+  en una sola factura». Carlos: «o se factura todo y se recoge lo no entregado, o no se factura nada hasta que esté todo albaraneado». POR PEDIDO desde
+  `Scripts/Issue898b_POEntera_PorPedido.sql` (26/11/26): cualquier pedido con «Su pedido», no solo los clientes de `ClientesSuPedidoObligatorio`;
+  también el texto libre («ENSEÑAR A SANTY», 3 de 37 en 90 días): ese pedido tampoco se factura a medias (si hace falta, se vacía el campo).
+  Interruptor «(defecto)» `Facturacion.POSoloEntera` (sin fila o ≠ «0» = encendido).
+- La MISMA regla en la API, antes del procedimiento y con mensaje propio: LA REGLA (pura) `ReglaPOEntera` (`Infraestructure/Facturas/POEntera.cs`;
+  la P.O. con `ReglaPOAgrupacion`), interruptor `InterruptorPOSoloEntera` (la misma fila, sin crear filas, caché 1 min; solo «0» apaga, como el
+  procedimiento) y la lectura `LectorPOEnteraSql` (UNA consulta por tanda y empresa, solo los pedidos con P.O.). `ServicioFacturas.CrearFactura`
+  (`ComprobarPOEntera`, tras el «FDM sin agrupar» y ANTES de traspasar a la espejo) → `FacturacionException` `FACTURACION_PO_NO_ENTERA` (400):
+  «El pedido N es de la P.O. X y no está todo entregado: una P.O. va en una sola factura. Entregue lo que falta, o quítelo del pedido, y vuelva a
+  facturar.» / «La P.O. X tiene más pedidos sin facturar (el N, por ejemplo): agrúpelos antes por P.O. cuando estén todos entregados.». Si la lectura
+  falla, sigue (ELMAH): el procedimiento es la última barrera. Facturar rutas (`GestorFacturacionRutas`): la (b) se lee al empezar para toda la tanda
+  (`LeerPOEnteraTanda`) y la (a) en memoria con las líneas recargadas DESPUÉS del albarán (`MotivoPOEntera`); el albarán se hace, la factura se salta
+  con el motivo en `PedidosConErrores` (TipoError «Factura», Warning, como el «al completar») y sale el papel del albarán si toca; los demás siguen.
+  Fin de mes por la API: no coge pedidos con P.O. (van por «Agrupar por P.O.»); si alguno llegara, CrearFactura lo rechaza y va a `Errores`.

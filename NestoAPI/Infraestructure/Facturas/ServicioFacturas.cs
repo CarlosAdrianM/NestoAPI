@@ -505,6 +505,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 };
             }
 
+            // NestoAPI#898 (Carlos 26/11/26): una P.O. va en una sola factura. La misma regla que prdCrearFacturaVta, aquí con
+            // mensaje propio y ANTES de traspasar a la espejo (que no quede nada a medias). Si no se puede leer, sigue: el
+            // procedimiento es la última barrera.
+            await ComprobarPOEntera(cabPedido, empresa, pedido, usuario);
+
             // Verificar si hay que traspasar a empresa espejo
             // NOTA: Solo traspasar si NO estamos usando db externo (para evitar doble traspaso
             // cuando se llama desde GestorFacturacionRutas que ya maneja el traspaso)
@@ -896,6 +901,38 @@ namespace NestoAPI.Infraestructure.Facturas
                     pedido: pedido,
                     usuario: usuario)
                     .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#898 (solo tests): sustituye la lectura de la regla de la P.O. entera (empresa, pedido → datos o null).
+        /// <c>null</c> (siempre en producción) = <see cref="LectorPOEnteraSql"/> con este contexto.
+        /// </summary>
+        internal Func<string, int, Task<DatosPOEnteraPedido>> LectorPOEntera { get; set; }
+
+        /// <summary>NestoAPI#898: 400 con el motivo si la P.O. del pedido no se puede facturar entera (ver <see cref="ReglaPOEntera"/>).</summary>
+        internal async Task ComprobarPOEntera(CabPedidoVta cabPedido, string empresa, int pedido, string usuario)
+        {
+            if (cabPedido == null || !ReglaPOEntera.Aplica(cabPedido.SuPedido) || !InterruptorPOSoloEntera.Activo)
+            {
+                return;
+            }
+            DatosPOEnteraPedido datos;
+            try
+            {
+                datos = LectorPOEntera != null
+                    ? await LectorPOEntera(empresa, pedido)
+                    : (await LectorPOEnteraSql.LeerAsync(db, empresa, new[] { pedido })).TryGetValue(pedido, out DatosPOEnteraPedido leido) ? leido : null;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[P.O. entera #898] No se ha podido comprobar la P.O. del pedido {pedido}: lo comprueba el procedimiento. {ex.Message}", ex));
+                return;
+            }
+            string motivo = ReglaPOEntera.MotivoNoSePuedeFacturar(datos);
+            if (motivo != null)
+            {
+                throw new FacturacionException(motivo, ReglaPOEntera.CODIGO, empresa: empresa, pedido: pedido, usuario: usuario);
             }
         }
 
