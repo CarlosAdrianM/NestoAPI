@@ -81,6 +81,19 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (`LONGITUD_CALLE`, tope prudente: el código no tenía ninguno); si no, la Dirección sola.
 - **Devueltos (seguridad, 19/11/26)**: GET Devueltos, Reenviar, Abonar y HaVuelto dan 403 a un token de cliente de la tienda
   (`ValidadorAccesoCliente.EsClienteTienda`). Empleados y vendedores, como antes.
+- **Pedidos de la tienda online: `address2` y `company` (NestoAPI#878, parte del importador, Carlos 26/11/26)**: el importador de pedidos web está en
+  NESTO (`CanalesExternos/CanalExternoPedidosPrestashop.TransformarPedido`), no en la API: hoy mete `address2` como una línea suelta en los comentarios
+  y lo pega a la calle de la etiqueta (`pedidoExterno.Direccion = address1 + " " + address2`, que «Crear etiqueta» copia tal cual al envío pendiente);
+  `company` no se usa. NADIE en la API lee la dirección de los comentarios. En la API: LA REGLA (pura) `Direccion2PedidoTienda`
+  (`Infraestructure/Clientes/Direccion2PedidoTienda.cs`): `Componer(address2, company)` → {Direccion2 en mayúsculas, ≤ 100; con company no contenida
+  en address2 (sin tildes ni mayúsculas) «… · RÓTULO: COMPANY» o, sin address2, «LOCAL · RÓTULO: COMPANY»; TipoLugar «Local» con company, si no null:
+  nunca «Piso»}; `LineaComentario` («DIRECCIÓN 2: …») y `LeerDeComentarios` (tolerante: tildes, mayúsculas, espacios; la primera no vacía). GET
+  ParaAgencia (`GestorPedidoParaAgencia.Montar`) trae aditivos `Direccion2Pedido` y `TipoLugarPedido` de esa línea, APARTE de la ficha (la del 31517 no
+  es la dirección de entrega: no se mezcla con `ClienteFicha.Direccion`). «TOTAL PEDIDO:» no cambia.
+  Falta en Nesto (CanalesExternos): (1) en los comentarios, sustituir la línea suelta de `address2` por la línea «DIRECCIÓN 2: …» con lo compuesto
+  (gemela C# de `Componer`, o la misma regla copiada con sus pruebas); (2) `pedidoExterno.Direccion` = solo `address1` y la Dirección 2 al envío con la
+  regla de `DireccionEnvioCliente.Componer` (Dirección + «, » + Dirección 2 si cabe en 80; si no, delante de las Observaciones); (3) opcional: que
+  Agencias pinte `Direccion2Pedido` del DTO al abrir un pedido web.
 
 ### Origen del cliente: campaña (lead) o canal (NestoAPI#848, 09/11/26)
 - `dbo.OrigenesCliente.EsLead` (DEFAULT 1): 1 = campaña (META-HARMONIA-0926…: hay que llamarlo), 0 = canal (WEB, AMAZON, TIENDA-REINA,

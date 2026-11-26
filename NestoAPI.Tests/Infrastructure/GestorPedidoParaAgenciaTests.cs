@@ -100,6 +100,32 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("916280000", dto.ClienteFicha.Telefono);
         }
 
+        // NestoAPI#878: la Dirección 2 de la entrega de un pedido web viaja en los comentarios; va aparte, sin tocar la ficha
+        [TestMethod]
+        public void LeerPorEmpresaYNumero_PedidoWebConDireccion2EnComentarios_LaTraeAparte()
+        {
+            CabPedidoVta web = PedidoCompleto();
+            web.Comentarios = "RLJTDQBKU \r\nANA PÉREZ\r\nCALLE LAS NEVERAS 2\r\nDIRECCIÓN 2: 3A · RÓTULO: ESTÉTICA GOJI\r\n28110 ALGETE\r\nTOTAL PEDIDO: 84,80 €";
+            var gestor = new GestorPedidoParaAgencia(CrearDb(new[] { web }, new[] { FichaCompleta() }));
+
+            PedidoParaAgenciaDTO dto = gestor.LeerPorEmpresaYNumero("1  ", 924645).Result;
+
+            Assert.AreEqual("3A · RÓTULO: ESTÉTICA GOJI", dto.Direccion2Pedido);
+            Assert.AreEqual("Local", dto.TipoLugarPedido);
+            Assert.AreEqual("CALLE DE LA REINA, 5", dto.ClienteFicha.Direccion, "la ficha no se toca");
+            Assert.AreEqual(web.Comentarios, dto.Comentarios);
+        }
+
+        [TestMethod]
+        public void LeerPorEmpresaYNumero_SinLineaDireccion2_Null()
+        {
+            PedidoParaAgenciaDTO dto = new GestorPedidoParaAgencia(CrearDb(new[] { PedidoCompleto() }, new[] { FichaCompleta() }))
+                .LeerPorEmpresaYNumero("1  ", 924645).Result;
+
+            Assert.IsNull(dto.Direccion2Pedido);
+            Assert.IsNull(dto.TipoLugarPedido);
+        }
+
         [TestMethod]
         public void LeerPorEmpresaYNumero_NotaDeEntrega_LoDice_765()
         {

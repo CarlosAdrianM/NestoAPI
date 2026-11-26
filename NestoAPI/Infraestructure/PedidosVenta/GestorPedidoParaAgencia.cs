@@ -187,6 +187,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Ruta = pedido.Ruta,
                 NotaEntrega = pedido.NotaEntrega
             };
+            // NestoAPI#878: la Dirección 2 de la entrega de un pedido web viaja en los comentarios («DIRECCIÓN 2: …»)
+            dto.Direccion2Pedido = Clientes.Direccion2PedidoTienda.LeerDeComentarios(pedido.Comentarios);
+            dto.TipoLugarPedido = Clientes.Direccion2PedidoTienda.TipoLugarDe(dto.Direccion2Pedido);
 
             Cliente ficha = await db.Clientes.FirstOrDefaultAsync(c =>
                 c.Empresa == pedido.Empresa
