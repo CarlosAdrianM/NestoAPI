@@ -568,7 +568,12 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
             UltimaModificacionPedido ultima = VersionPedidoVenta.UltimaModificacion(datos);
-            return Ok(new { Version = VersionPedidoVenta.Calcular(datos), ultima?.Usuario, ultima?.Fecha });
+            // Carlos 26/11/26 (aditivo): Pickings y HuellaContenido, para saber si lo que ha cambiado es solo el picking
+            return Ok(new
+            {
+                Version = VersionPedidoVenta.Calcular(datos), ultima?.Usuario, ultima?.Fecha,
+                Pickings = VersionPedidoVenta.Pickings(datos), HuellaContenido = VersionPedidoVenta.HuellaContenido(datos)
+            });
         }
 
         /// <summary>
@@ -1004,7 +1009,11 @@ namespace NestoAPI.Controllers
                 {
                     code = VersionPedidoVenta.CODIGO_CONFLICTO,
                     message = mensaje,
-                    details = new { Version = versionActual, ultima?.Usuario, ultima?.Fecha }
+                    details = new
+                    {
+                        Version = versionActual, ultima?.Usuario, ultima?.Fecha,
+                        Pickings = VersionPedidoVenta.Pickings(datosVersion), HuellaContenido = VersionPedidoVenta.HuellaContenido(datosVersion)
+                    }
                 },
                 Message = mensaje
             };
@@ -3119,8 +3128,9 @@ namespace NestoAPI.Controllers
             PedidoVentaDTO pedidoGuardado = QuiereElPedidoGuardado()
                 ? await LeerPedidoConVersionCoherente(pedido.empresa, pedido.numero).ConfigureAwait(true)
                 : null;
-            string versionNueva = pedidoGuardado?.Version ?? VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
-            AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, versionNueva);
+            DatosVersionPedido datosNuevos = pedidoGuardado == null ? LeerDatosVersionSinFallar(pedido.empresa, pedido.numero) : null;
+            string versionNueva = pedidoGuardado?.Version ?? VersionPedidoVenta.Calcular(datosNuevos);
+            AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, versionNueva, datosNuevos);
 
             if (avisos.Count > 0 || tieneFechasFuturas.HasValue || versionNueva != null)
             {
@@ -4061,7 +4071,8 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#873: la versión del pedido recién creado (para que el cliente pueda modificarlo sin recargar) y el aviso
             // «pedidoCambiado» (en segundo plano; nunca lanza).
-            pedido.Version = VersionPedidoVenta.Calcular(LeerDatosVersionSinFallar(pedido.empresa, pedido.numero));
+            DatosVersionPedido datosNuevos = LeerDatosVersionSinFallar(pedido.empresa, pedido.numero);
+            pedido.Version = VersionPedidoVenta.Calcular(datosNuevos);
             // Ampliación: con ?devolverPedido=true, además el pedido tal como ha quedado (con los Nº de orden de sus líneas) y su
             // versión, en «PedidoGuardado» (el cuerpo de siempre no cambia: los clientes viejos leen numero y tieneFechasFuturas).
             if (QuiereElPedidoGuardado())
@@ -4072,7 +4083,8 @@ namespace NestoAPI.Controllers
                     pedido.Version = pedido.PedidoGuardado.Version;
                 }
             }
-            AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, pedido.Version);
+            AvisoPedidoCambiado.EnSegundoPlano(pedido.empresa, pedido.numero, pedido.Usuario, pedido.Version,
+                pedido.PedidoGuardado == null ? datosNuevos : null);
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);

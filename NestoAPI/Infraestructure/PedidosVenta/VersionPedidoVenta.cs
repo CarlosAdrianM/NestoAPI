@@ -39,6 +39,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public int? HuellaEfectos { get; set; }
         public string UsuarioEfecto { get; set; }
         public DateTime? FechaEfecto { get; set; }
+
+        /// <summary>
+        /// Carlos 26/11/26: los números de picking distintos de 0 de las líneas, ordenados y separados por comas («100195,100198»), o
+        /// null. Sacar o quitar el picking cambia la Version (RowVersion de las líneas) pero no Usuario ni Fecha: con esto se sabe.
+        /// </summary>
+        public string PickingsLineas { get; set; }
+
+        /// <summary>La huella del CONTENIDO de la cabecera: solo lo que edita un usuario (nada del picking ni de quién/cuándo).</summary>
+        public int? HuellaCabeceraContenido { get; set; }
+
+        /// <summary>La huella del CONTENIDO de las líneas (por Nº de orden: producto, cantidad, precio, descuentos, texto, fecha de entrega,
+        /// almacén, IVA y si está servida): ni el picking ni el paso de pendiente a en curso la cambian.</summary>
+        public int? HuellaLineasContenido { get; set; }
     }
 
     /// <summary>NestoAPI#873: quién y cuándo tocó el pedido por última vez (de lo que se ve en <see cref="DatosVersionPedido"/>).</summary>
@@ -79,6 +92,45 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(texto));
                 return Hex(hash.Take(16).ToArray());
             }
+        }
+
+        /// <summary>
+        /// Carlos 26/11/26: una huella (32 hexadecimales) que SOLO cambia cuando cambia lo que edita un usuario: cabecera (sin el
+        /// picking), líneas por Nº de orden, prepagos y efectos. Sacar, quitar o terminar el picking no la cambia. Null sin datos.
+        /// No decide el 409 (lo decide <see cref="HayConflicto"/> con la Version): es para que el cliente sepa si ha cambiado algo suyo.
+        /// </summary>
+        public static string HuellaContenido(DatosVersionPedido datos)
+        {
+            if (datos == null)
+            {
+                return null;
+            }
+            string texto = string.Join("|",
+                "c:" + Numero(datos.HuellaCabeceraContenido),
+                "l:" + datos.Lineas.ToString(CultureInfo.InvariantCulture) + ":" + Numero(datos.HuellaLineasContenido),
+                "p:" + datos.Prepagos.ToString(CultureInfo.InvariantCulture) + ":" + Numero(datos.SumaIdPrepagos) + ":" + Numero(datos.HuellaPrepagos),
+                "e:" + datos.Efectos.ToString(CultureInfo.InvariantCulture) + ":" + Numero(datos.SumaIdEfectos) + ":" + Numero(datos.HuellaEfectos));
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(texto));
+                return Hex(hash.Take(16).ToArray());
+            }
+        }
+
+        /// <summary>Carlos 26/11/26: los pickings (distintos de 0) de las líneas, ordenados y sin repetir. Vacía si no hay; null sin datos.</summary>
+        public static System.Collections.Generic.List<int> Pickings(DatosVersionPedido datos)
+        {
+            if (datos == null)
+            {
+                return null;
+            }
+            return (datos.PickingsLineas ?? string.Empty)
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => int.TryParse(p.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0)
+                .Where(n => n != 0)
+                .Distinct()
+                .OrderBy(n => n)
+                .ToList();
         }
 
         /// <summary>
@@ -207,7 +259,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
     /// <summary>
     /// NestoAPI#873: UNA consulta (READ COMMITTED: nada de NOLOCK, la versión no puede ser de algo sin confirmar) sobre
-    /// CabPedidoVta, LinPedidoVta, Prepagos y EfectosPedidoVenta.
+    /// CabPedidoVta, LinPedidoVta, Prepagos y EfectosPedidoVenta. Desde el 26/11/26 trae también los pickings de las líneas y las
+    /// huellas del contenido (<see cref="VersionPedidoVenta.HuellaContenido"/>), en la misma ida.
     /// </summary>
     public class LectorVersionPedidoSql : ILectorVersionPedido
     {
@@ -216,7 +269,13 @@ SELECT
     c.RowVersion AS RowVersionCabecera, c.Usuario AS UsuarioCabecera, c.[Fecha Modificación] AS FechaCabecera,
     l.Lineas, l.RowVersionLineas, ul.Usuario AS UsuarioLinea, ul.[Fecha Modificación] AS FechaLinea,
     p.Prepagos, p.SumaIdPrepagos, p.HuellaPrepagos, up.Usuario AS UsuarioPrepago, up.FechaModificacion AS FechaPrepago,
-    e.Efectos, e.SumaIdEfectos, e.HuellaEfectos, ue.Usuario AS UsuarioEfecto, ue.FechaModificacion AS FechaEfecto
+    e.Efectos, e.SumaIdEfectos, e.HuellaEfectos, ue.Usuario AS UsuarioEfecto, ue.FechaModificacion AS FechaEfecto,
+    STUFF((SELECT ',' + CAST(x.Picking AS varchar(12)) FROM dbo.LinPedidoVta x
+           WHERE x.Empresa = c.Empresa AND x.Número = c.Número AND x.Picking IS NOT NULL AND x.Picking <> 0
+           GROUP BY x.Picking ORDER BY x.Picking FOR XML PATH('')), 1, 1, '') AS PickingsLineas,
+    BINARY_CHECKSUM(c.[Nº Cliente], c.Contacto, c.Fecha, c.[Forma Pago], c.PlazosPago, c.[Primer Vencimiento], c.IVA, c.Vendedor,
+        c.Comentarios, c.ComentarioPicking, c.AvisarConImporteAlCogerPicking, c.[Periodo Facturacion], c.Ruta, c.CCC, c.ContactoCobro,
+        c.NotaEntrega, c.MantenerJunto, c.ServirJunto, c.ModoServicio, c.SuPedido, c.NoCobrarComisionReembolso) AS HuellaCabeceraContenido
 FROM dbo.CabPedidoVta c
 OUTER APPLY (SELECT COUNT(*) AS Lineas, MAX(x.RowVersion) AS RowVersionLineas
              FROM dbo.LinPedidoVta x WHERE x.Empresa = c.Empresa AND x.Número = c.Número) l
@@ -235,6 +294,10 @@ OUTER APPLY (SELECT COUNT(*) AS Efectos, SUM(CAST(x.Id AS bigint)) AS SumaIdEfec
 OUTER APPLY (SELECT TOP 1 x.Usuario, x.FechaModificacion
              FROM dbo.EfectosPedidoVenta x WHERE x.Empresa = c.Empresa AND x.Pedido = c.Número
              ORDER BY x.FechaModificacion DESC) ue
+OUTER APPLY (SELECT CHECKSUM_AGG(BINARY_CHECKSUM(x.[Nº Orden], x.TipoLinea, x.Producto, x.Cantidad, x.Precio, x.Descuento, x.DescuentoProducto,
+                    x.DescuentoCliente, x.[Aplicar Dto], x.Texto, x.[Fecha Entrega], x.Almacén, x.IVA,
+                    CASE WHEN x.Estado < 2 THEN 0 ELSE x.Estado END)) AS HuellaLineasContenido
+             FROM dbo.LinPedidoVta x WHERE x.Empresa = c.Empresa AND x.Número = c.Número) hl
 WHERE c.Empresa = @empresa AND c.Número = @numero";
 
         private readonly NVEntities db;

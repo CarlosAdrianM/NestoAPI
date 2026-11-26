@@ -199,7 +199,7 @@ namespace NestoAPI.Controllers
             modulos.rellenadorUbicaciones = new RellenadorUbicacionesService();
             modulos.finalizador = new FinalizadorPicking();
 
-            gestorPicking = new GestorPicking(modulos);
+            gestorPicking = new GestorPicking(modulos) { Usuario = User?.Identity?.Name };
         }
 
         protected override void Dispose(bool disposing)

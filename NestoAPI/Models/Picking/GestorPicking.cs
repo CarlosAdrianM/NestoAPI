@@ -20,6 +20,14 @@ namespace NestoAPI.Models.Picking
         private string empresaPedidoUnico;
         private NVEntities db = new NVEntities();
 
+        /// <summary>
+        /// Carlos 26/11/26: quien saca el picking (va en el aviso «pedidoCambiado» con Motivo «PickingSacado»). Lo pone el controlador;
+        /// sin él (jobs), <see cref="USUARIO_POR_DEFECTO"/>.
+        /// </summary>
+        public string Usuario { get; set; }
+
+        public const string USUARIO_POR_DEFECTO = "Almacén";
+
         public GestorPicking(ModulosPicking modulos)
         {
             this.modulos = modulos;
@@ -370,6 +378,10 @@ namespace NestoAPI.Models.Picking
                 throw ErrorSinPicking(descartados);
             }
 
+            // Carlos 26/11/26: a quien tenga abierto cada pedido que ha cogido picking, que lo que ha cambiado es el picking (y quién).
+            // En segundo plano y solo si alguien lo tiene abierto; nunca lanza.
+            AvisarPickingSacado(candidatos, Usuario);
+
             // Mandamos el correo con los pedidos que van por debajo del margen
             GestorMargenes gestor = new GestorMargenes();
             gestor.Rellenar(asignadorPicking.numeroPicking);
@@ -399,6 +411,25 @@ namespace NestoAPI.Models.Picking
                     new Infraestructure.Notificaciones.ServicioNotificacionesPush()));
             }
 
+        }
+
+        /// <summary>Carlos 26/11/26: «pedidoCambiado» con Motivo «PickingSacado» a quien tenga abierto cada pedido. Nunca lanza.</summary>
+        internal static void AvisarPickingSacado(IEnumerable<PedidoPicking> pedidos, string usuario)
+        {
+            try
+            {
+                foreach (PedidoPicking pedido in (pedidos ?? Enumerable.Empty<PedidoPicking>()).Where(p => p != null)
+                    .GroupBy(p => (p.Empresa?.Trim(), p.Id)).Select(g => g.First()))
+                {
+                    Infraestructure.PedidosVenta.AvisoPedidoCambiado.PorPicking(pedido.Empresa, pedido.Id,
+                        string.IsNullOrWhiteSpace(usuario) ? USUARIO_POR_DEFECTO : usuario,
+                        Infraestructure.PedidosVenta.AvisoPedidoCambiado.MOTIVO_PICKING_SACADO);
+                }
+            }
+            catch (Exception)
+            {
+                // nunca rompe el picking
+            }
         }
 
         /// <summary>

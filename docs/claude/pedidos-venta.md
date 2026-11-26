@@ -68,6 +68,19 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - SignalR: `pedidoCambiado` {Empresa, Pedido, Usuario, Fecha, Version} al grupo `Pedido:{empresa}:{numero}` del **AlmacenHub** (donde Nesto ya
   entra/sale con Entrar/Salir), a todos (Nesto ignora el suyo por la Version), solo si alguien lo tiene abierto, en segundo plano
   (`AvisoPedidoCambiado`, nunca lanza): PUT, POST, cobro de la app (`ServicioPagos`) y pago a plazos (`RepositorioPagoAPlazos`).
+- **Lo que ha cambiado es el picking (Carlos 26/11/26)**: sacar el picking cambia la RowVersion de las líneas (y la Version) pero no Usuario ni
+  Fecha, y Nesto decía «Carlos ha modificado este pedido a las 10:58» cuando fue Almacén. Aditivos, en la MISMA consulta (`LectorVersionPedidoSql`):
+  `Pickings` (números ≠ 0 de las líneas, ordenados, sin repetir; FOR XML PATH, sin STRING_AGG) y `HuellaContenido` (`VersionPedidoVenta.HuellaContenido`,
+  32 hex): cabecera sin nada del picking ni quién/cuándo (cliente, contacto, fecha, forma y plazos de pago, primer vencimiento, IVA, vendedor,
+  comentarios, comentario de picking, avisar con importe, periodo, ruta, CCC, contacto de cobro, nota de entrega, mantener/servir junto, modo de
+  servicio, su pedido, no cobrar comisión), líneas por Nº de orden (tipo, producto, cantidad, precio, descuentos, aplicar dto, texto, fecha de
+  entrega, almacén, IVA y estado solo si ya está servida: -1→1 no cuenta), prepagos y efectos. Van en `GET …/Version` ({Version, Usuario, Fecha,
+  Pickings, HuellaContenido}), en `details` del 409 `PEDIDO_CAMBIADO` y en `pedidoCambiado` (más `Motivo`). La regla del 409 NO cambia (Version).
+  Punto único del picking: `GestorPicking` (al terminar de asignar, cada pedido que coge picking; `Usuario` = quien llama a api/Picking, sin él
+  «Almacén») y `ServicioQuitarPicking` (Quitado) → `AvisoPedidoCambiado.PorPicking` con `Motivo` «PickingSacado» / «PickingQuitado»: solo si alguien
+  tiene el pedido abierto (sin leer nada si no), en segundo plano, nunca lanza. Nesto: si llega una Version nueva y `HuellaContenido` es la que
+  tenía, no es una modificación: con `Motivo` «PickingSacado», «{Usuario} ha sacado el picking {Pickings nuevos} de este pedido. Recárguelo antes
+  de guardar.» («PickingQuitado»: «… ha quitado el picking …»); sin `Motivo` (p. ej. lo vio por GET Version), comparar `Pickings` con los que tenía.
 
 ### Ampliar un pedido en preparación (caso 931007, 18/11/26)
 - Añadir líneas de PRODUCTO (id 0, cantidad > 0, sin evento, cheque ni cupón) a un pedido EN PREPARACIÓN que sale hoy ya no pasa en silencio.

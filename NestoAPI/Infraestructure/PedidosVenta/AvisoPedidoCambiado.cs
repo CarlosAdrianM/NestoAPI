@@ -15,6 +15,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public DateTime Fecha { get; set; }
         /// <summary>La versión del pedido tras guardarlo (<see cref="VersionPedidoVenta"/>). Null si no se ha podido calcular.</summary>
         public string Version { get; set; }
+        /// <summary>Carlos 26/11/26 (aditivo): los pickings de las líneas (<see cref="VersionPedidoVenta.Pickings"/>). Null si no se ha podido leer.</summary>
+        public System.Collections.Generic.List<int> Pickings { get; set; }
+        /// <summary>Carlos 26/11/26 (aditivo): <see cref="VersionPedidoVenta.HuellaContenido"/>: si no cambia, no ha cambiado nada que edite un usuario.</summary>
+        public string HuellaContenido { get; set; }
+        /// <summary>Carlos 26/11/26 (aditivo): null en un guardado; «PickingSacado» o «PickingQuitado» cuando lo que ha cambiado es el picking.</summary>
+        public string Motivo { get; set; }
     }
 
     /// <summary>NestoAPI#873: avisar por SignalR a quien tenga abierto el pedido de que alguien lo ha guardado. Nunca lanza.</summary>
@@ -29,11 +35,91 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// </summary>
     public static class AvisoPedidoCambiado
     {
+        public const string MOTIVO_PICKING_SACADO = "PickingSacado";
+        public const string MOTIVO_PICKING_QUITADO = "PickingQuitado";
+
         /// <summary>Para los tests: quien manda el aviso (por defecto, el hub del almacén, que es donde Nesto entra en el grupo).</summary>
         internal static Func<IAvisosPedidoCambiado> Avisos { get; set; } = () => new AvisosAlmacenSignalR();
 
+        /// <summary>Para los tests: si alguien tiene el pedido abierto (el grupo «Pedido:{empresa}:{numero}» del hub del almacén).</summary>
+        internal static Func<string, int, bool> HayAlguienConElPedido { get; set; } =
+            (empresa, pedido) => ConexionesAlmacen.HayOtros(AvisosAlmacen.GrupoPedido(empresa, pedido), null);
+
+        /// <summary>Para los tests: lee los datos de la versión con su propio contexto (en segundo plano).</summary>
+        internal static Func<string, int, DatosVersionPedido> LeerDatos { get; set; } = (empresa, pedido) =>
+        {
+            using (var db = new NVEntities())
+            {
+                return new LectorVersionPedidoSql(db).Leer(empresa, pedido);
+            }
+        };
+
+        /// <summary>Para los tests: cómo se lanza el trabajo en segundo plano.</summary>
+        internal static Action<Action> EnOtroHilo { get; set; } = accion => _ = Task.Run(accion);
+
+        /// <summary>
+        /// Carlos 26/11/26: el picking de un pedido ha cambiado (sacado o quitado). Solo si alguien tiene el pedido abierto; en segundo
+        /// plano lee la versión, los pickings y la huella del contenido y manda «pedidoCambiado» con <paramref name="motivo"/> y quien lo
+        /// ha hecho. Nunca lanza.
+        /// </summary>
+        public static void PorPicking(string empresa, int pedido, string usuario, string motivo)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || pedido <= 0)
+            {
+                return;
+            }
+            try
+            {
+                if (!(HayAlguienConElPedido?.Invoke(empresa.Trim(), pedido) ?? false))
+                {
+                    return; // nadie lo tiene abierto: ni se lee nada
+                }
+                DateTime fecha = DateTime.Now;
+                EnOtroHilo(() =>
+                {
+                    var aviso = new PedidoCambiadoDTO
+                    {
+                        Empresa = empresa.Trim(),
+                        Pedido = pedido,
+                        Usuario = VersionPedidoVenta.SinDominio(usuario),
+                        Fecha = fecha,
+                        Motivo = motivo
+                    };
+                    try
+                    {
+                        Completar(aviso, LeerDatos?.Invoke(aviso.Empresa, pedido));
+                    }
+                    catch (Exception ex)
+                    {
+                        Registrar(aviso, ex);
+                    }
+                    Mandar(aviso);
+                });
+            }
+            catch (Exception ex)
+            {
+                Registrar(new PedidoCambiadoDTO { Empresa = empresa, Pedido = pedido }, ex);
+            }
+        }
+
+        /// <summary>Version, Pickings y HuellaContenido de lo leído (si se leyó).</summary>
+        internal static void Completar(PedidoCambiadoDTO aviso, DatosVersionPedido datos)
+        {
+            if (aviso == null || datos == null)
+            {
+                return;
+            }
+            aviso.Version = aviso.Version ?? VersionPedidoVenta.Calcular(datos);
+            aviso.Pickings = VersionPedidoVenta.Pickings(datos);
+            aviso.HuellaContenido = VersionPedidoVenta.HuellaContenido(datos);
+        }
+
         /// <summary>Con la versión ya calculada (PUT y POST del pedido). Nunca lanza.</summary>
         public static void EnSegundoPlano(string empresa, int pedido, string usuario, string version)
+            => EnSegundoPlano(empresa, pedido, usuario, version, null);
+
+        /// <summary>Con la versión ya calculada y, si se tienen, los datos leídos (para Pickings y HuellaContenido). Nunca lanza.</summary>
+        public static void EnSegundoPlano(string empresa, int pedido, string usuario, string version, DatosVersionPedido datos)
         {
             if (string.IsNullOrWhiteSpace(empresa) || pedido <= 0)
             {
@@ -49,6 +135,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             };
             try
             {
+                Completar(aviso, datos);
                 _ = Task.Run(() => Mandar(aviso));
             }
             catch (Exception ex)
@@ -83,7 +170,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         using (var db = new NVEntities())
                         {
-                            aviso.Version = VersionPedidoVenta.Calcular(new LectorVersionPedidoSql(db).Leer(aviso.Empresa, pedido));
+                            Completar(aviso, new LectorVersionPedidoSql(db).Leer(aviso.Empresa, pedido));
                         }
                     }
                     catch (Exception ex)

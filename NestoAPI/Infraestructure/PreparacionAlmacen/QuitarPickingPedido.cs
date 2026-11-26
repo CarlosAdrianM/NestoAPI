@@ -144,7 +144,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     "Para quitar el picking hay que ser de Almacén o de Dirección.");
             }
             string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario?.Identity?.Name);
-            return await repositorio.EnTransaccion(tx => Quitar(tx, empresa, pedido, confirmado, quien, lineas)).ConfigureAwait(false);
+            ResultadoQuitarPicking resultado = await repositorio.EnTransaccion(tx => Quitar(tx, empresa, pedido, confirmado, quien, lineas)).ConfigureAwait(false);
+            if (resultado?.Estado == EstadoQuitarPicking.Quitado)
+            {
+                // Carlos 26/11/26: a quien tenga el pedido abierto, que lo que ha cambiado es el picking (en segundo plano; nunca lanza)
+                PedidosVenta.AvisoPedidoCambiado.PorPicking(empresa, pedido, usuario?.Identity?.Name, PedidosVenta.AvisoPedidoCambiado.MOTIVO_PICKING_QUITADO);
+            }
+            return resultado;
         }
 
         public async Task<ResultadoLineasConPicking> LeerLineas(string empresa, int pedido, IPrincipal usuario)
