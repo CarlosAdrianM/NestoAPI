@@ -44,7 +44,8 @@ namespace NestoAPI.Controllers
                 using (var db = new NVEntities())
                 {
                     pagina = await new ServicioSeguimientoPublicoReparto(new LectorSeguimientoPublicoReparto(db),
-                        esRecogida: ServicioSeguimientoPublicoReparto.EsRecogidaEnBaseDeDatos(db)).Pagina(token).ConfigureAwait(false);
+                        esRecogida: ServicioSeguimientoPublicoReparto.EsRecogidaEnBaseDeDatos(db),
+                        bultosPendientes: new ServicioBultosPendientesReparto(new RepositorioBultosPendientesSql(), null).PendientesDelEnvio).Pagina(token).ConfigureAwait(false);
                 }
             }
             var respuesta = new HttpResponseMessage(pagina.Estado)

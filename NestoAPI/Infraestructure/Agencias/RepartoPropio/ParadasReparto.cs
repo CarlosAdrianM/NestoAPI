@@ -432,6 +432,8 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
         public IAvisosFurgoneta AvisosFurgoneta { get; set; }
         /// <summary>NestoAPI#880: los avisos de una entrega incompleta. Null: sin aviso.</summary>
         public IAvisosEntregaIncompleta EntregaIncompleta { get; set; }
+        /// <summary>NestoAPI#880 (corte 2): apuntar los bultos que faltan como pendientes. Null: no se apuntan.</summary>
+        public ServicioBultosPendientesReparto BultosPendientes { get; set; }
         /// <summary>NestoAPI#881: las constantes del fin de ruta (ParametrosUsuario «(defecto)»). Null: las del código.</summary>
         public IConfiguracionTiemposReparto ConfiguracionTiempos { get; set; }
         /// <summary>NestoAPI#881: el centro de cada código postal (paradas sin coordenadas). Null: esas paradas sin posición.</summary>
@@ -472,6 +474,7 @@ SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo." + TABLA + @" WHERE ParadaId = 
                 AvisosAlmacen = avisos as Notificaciones.IAvisosAlmacen,
                 AvisosFurgoneta = new AvisosFurgonetaSinDescargar(),
                 EntregaIncompleta = new AvisosEntregaIncompleta(),
+                BultosPendientes = new ServicioBultosPendientesReparto(new RepositorioBultosPendientesSql(), new RepositorioFurgoneta(db)),
                 AvisosSinCargar = new AvisosRepartoSinCargar(),
                 EnviosInternos = new RepositorioEnviosInternosSql(db),
                 Horarios = new HorariosParadas(new global::NestoAPI.Infraestructure.Clientes.ServicioHorarioPreferible(

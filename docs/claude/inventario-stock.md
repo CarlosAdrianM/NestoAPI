@@ -166,3 +166,12 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (Datos tipo, referencia = Id) a Almacén, Dirección y la gente de las tiendas afectadas con la lista de las pendientes; una vez (también se marca si no hay ninguna).
 - Sin hacer (corte 2 de la issue): recordatorio la víspera y la comprobación automática de la mañana del inventario (reservas de reposición vivas, pendiente de
   ubicar, reservas de picking huérfanas, descuadres stock/ubicado, filas pendientes de otros días). Gemela: pantalla en Nesto (Almacén/Dirección).
+
+### Inventario de tiendas: el teórico de una fila nueva lo pone la API (NestoAPI#856 corte 1, 26/11/26)
+- Antes, `POST api/Inventarios` grababa el `StockCalculado` del cliente y Nesto manda 0 para un producto sin fila: lo contado se apuntaba entero al
+  contabilizar (`prdContabilizarInventario` = StockReal − StockCalculado, sin recalcular). Ahora, en un almacén SIN `ControlUbicaciones` (REI, ALC), el
+  teórico de la fila NUEVA = SUM(ExtractoProducto.Cantidad) del producto en el almacén, empresas 1 y 3, en ese momento (la cuenta de `SqlRellenadoInventario.SQL_STOCKS`).
+  LA REGLA `ReglaTeoricoInventarioTienda.LoPoneLaApi` + `LectorTeoricoInventarioTiendaSql` (`Inventarios/TeoricoInventarioTienda.cs`). Algete no cambia (el hueco, 1227; si
+  el producto no se ubica, lo del cliente). Interruptor ParametrosUsuario empresa 1 «(defecto)» `Inventario.TeoricoAlContar` (sin fila o «1» encendido; «0»/false/no/off/apagado
+  = lo de antes; sin crear filas, caché 1 min). Sin script. Si no se puede leer: lo del cliente y ELMAH. El lector solo se pone en el constructor público (en los tests, a mano).
+- Sin hacer: PUT, filas rellenadas y refresco de las no contadas al contabilizar (corte 2: `Inventarios.FechaConteo`, script sa) y los disparadores (corte 3).

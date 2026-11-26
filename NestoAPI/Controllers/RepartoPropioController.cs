@@ -807,6 +807,9 @@ namespace NestoAPI.Controllers
         /// <summary>Caso 930553 (Carlos 26/11/26): anular una recogida que ya figura como recogida (marcada por error): Almacén y Dirección.</summary>
         public static bool PuedeAnularRecogidaMarcada(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_OTRAS_FURGONETAS);
 
+        /// <summary>NestoAPI#880 corte 2 (decisión 9): cerrar a mano un bulto pendiente de una entrega incompleta: Almacén, Dirección e Informática.</summary>
+        public static bool PuedeCerrarBultoPendiente(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_LECTURAS_RECHAZADAS);
+
         private static bool EnAlguno(System.Security.Principal.IPrincipal usuario, IEnumerable<string> grupos)
             => usuario != null && grupos.Any(g => usuario.IsInRoleSinDominio(g));
     }

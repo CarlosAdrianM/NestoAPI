@@ -279,6 +279,85 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
+        // ---------- NestoAPI#856 corte 1: el teórico de una fila nueva en una tienda lo pone la API ----------
+
+        private ILectorTeoricoInventarioTienda Teorico(bool encendido, int stock)
+        {
+            ILectorTeoricoInventarioTienda teorico = A.Fake<ILectorTeoricoInventarioTienda>();
+            A.CallTo(() => teorico.Encendido()).Returns(encendido);
+            A.CallTo(() => teorico.StockContable(A<string>._, A<string>._)).Returns(Task.FromResult(stock));
+            return teorico;
+        }
+
+        [TestMethod]
+        public async Task PostInventario_Tienda_ElTeoricoEsElStockContableDeAhora_NoElQueMandaNesto_856()
+        {
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            controller.HuecosInventario = Huecos(false);
+            controller.TeoricoTienda = Teorico(true, 3);
+            var fila = new Inventario { Empresa = "1", Almacén = "ALC", Fecha = hoy, Número = "45487", StockReal = 4, StockCalculado = 0 };
+
+            Assert.IsInstanceOfType(await controller.PostInventario(fila), typeof(CreatedAtRouteNegotiatedContentResult<Inventario>));
+
+            Assert.AreEqual(3, fila.StockCalculado);
+            A.CallTo(() => controller.TeoricoTienda.StockContable("ALC", "45487")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostInventario_TiendaConElInterruptorApagado_ElTeoricoDelCliente_856()
+        {
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            controller.HuecosInventario = Huecos(false);
+            controller.TeoricoTienda = Teorico(false, 3);
+            var fila = new Inventario { Empresa = "1", Almacén = "ALC", Fecha = hoy, Número = "45487", StockReal = 4, StockCalculado = 0 };
+
+            await controller.PostInventario(fila);
+
+            Assert.AreEqual(0, fila.StockCalculado);
+            A.CallTo(() => controller.TeoricoTienda.StockContable(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostInventario_AlmacenConUbicaciones_NoLoPoneLaApi_856()
+        {
+            // Algete: con hueco manda lo libre del hueco (1227); un producto que no se ubica, lo del cliente, como siempre
+            ProductoQueSeUbica(ubicar: false);
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            controller.HuecosInventario = Huecos(true);
+            controller.TeoricoTienda = Teorico(true, 3);
+            var fila = new Inventario { Empresa = "1", Almacén = "ALG", Fecha = hoy, Número = "45487", StockReal = 4, StockCalculado = 9 };
+
+            await controller.PostInventario(fila);
+
+            Assert.AreEqual(9, fila.StockCalculado);
+        }
+
+        [TestMethod]
+        public async Task PostInventario_TiendaSiFallaLaLectura_ElDelClienteYCreaLaFila_856()
+        {
+            ConfigurarFakeDbSet(fakeInventarios, new List<Inventario>().AsQueryable());
+            controller.HuecosInventario = Huecos(false);
+            ILectorTeoricoInventarioTienda teorico = Teorico(true, 3);
+            A.CallTo(() => teorico.StockContable(A<string>._, A<string>._)).Throws(new InvalidOperationException("sin conexión"));
+            controller.TeoricoTienda = teorico;
+            var fila = new Inventario { Empresa = "1", Almacén = "REI", Fecha = hoy, Número = "45487", StockReal = 4, StockCalculado = 2 };
+
+            Assert.IsInstanceOfType(await controller.PostInventario(fila), typeof(CreatedAtRouteNegotiatedContentResult<Inventario>));
+            Assert.AreEqual(2, fila.StockCalculado);
+        }
+
+        [TestMethod]
+        public void ReglaTeoricoInventarioTienda_SoloTiendasYConElInterruptor_856()
+        {
+            Assert.IsTrue(ReglaTeoricoInventarioTienda.LoPoneLaApi(true, false));
+            Assert.IsFalse(ReglaTeoricoInventarioTienda.LoPoneLaApi(true, true));
+            Assert.IsFalse(ReglaTeoricoInventarioTienda.LoPoneLaApi(false, false));
+            Assert.IsTrue(InterruptorTeoricoAlContar.Interpretar(null));
+            Assert.IsTrue(InterruptorTeoricoAlContar.Interpretar("1"));
+            Assert.IsFalse(InterruptorTeoricoAlContar.Interpretar(" Apagado "));
+            Assert.IsFalse(InterruptorTeoricoAlContar.Interpretar("0"));
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

@@ -346,6 +346,7 @@
     <Compile Include="Infraestructure\PedidosVenta\AmpliacionPedidoEnPreparacionTests.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AutorizacionesPedidoTests.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\InformeRepartoTests.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\KmJornadasRepartoTests.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorFechaEntregaTests.cs" />
     <Compile Include="Controllers\PedidosVentaPortesTests.cs" />
     <Compile Include="Controllers\PlantillaVentasControllerTests.cs" />
@@ -557,6 +558,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaBultosTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaEntregaSinLeerTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaEntregaIncompletaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\BultosPendientesRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ReembolsoEnteroRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaDescargaTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\SeguimientoReposicionesTests.cs" />

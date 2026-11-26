@@ -1096,9 +1096,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             try
             {
                 EvaluacionBultosEntrega evaluacion = estado.Evaluacion;
+                EnviosAgencia envioEntregado = estado.EnvioEntregado;
                 if (!estado.EsNueva)
                 {
                     EnviosAgencia envio = await repositorio.LeerEnvio(envioId).ConfigureAwait(false);
+                    envioEntregado = envio;
                     NotaParadaReparto nota = await NotaDe(envio?.Pedido).ConfigureAwait(false);
                     evaluacion = nota?.EsRecogida == true || nota?.EsCobro == true ? null : await EvaluarBultosEntrega(envio, peticion, usuario).ConfigureAwait(false);
                 }
@@ -1115,6 +1117,11 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     Motivo = b.Motivo
                 }).ToList();
                 estado.ResumenEntregaIncompleta = EntregaIncompletaReparto.Resumen(evaluacion);
+                // NestoAPI#880 corte 2: cada bulto que falta queda pendiente (también en el reintento: idempotente por el código)
+                if (envioEntregado != null && paradas.BultosPendientes != null)
+                {
+                    _ = await paradas.BultosPendientes.RegistrarDeEntrega(envioEntregado, evaluacion, usuario).ConfigureAwait(false);
+                }
                 if (estado.EsNueva && estado.EnvioEntregado != null && paradas.EntregaIncompleta != null)
                 {
                     await paradas.EntregaIncompleta.Avisar(estado.EnvioEntregado, evaluacion, usuario).ConfigureAwait(false);

@@ -13,7 +13,8 @@ namespace NestoAPI.Controllers
     /// NestoAPI#881 (corte 4): el informe de reparto por repartidor y día (paradas, incidencias, bultos, horas, dinero cobrado, tiempo por parada
     /// real frente al previsto), con totales, medias por día de la semana y desglose por código postal. Solo lectura, de las tablas del corte 3
     /// (RepartoParadasTiempos, sin ella 503) y de las de la furgoneta (#772) y las estimaciones si están. Almacén, Dirección e Informática; con
-    /// soloMio=true, el suyo («Mi informe» de Ariadna). Sin km: es el corte 5.
+    /// soloMio=true, el suyo («Mi informe» de Ariadna). Corte 5: los km por mapa de cada jornada salen del job nocturno reparto-km-jornadas
+    /// (RepartoJornadasKm; sin ella, o la jornada de hoy, Km null).
     /// </summary>
     [Authorize]
     public class InformeRepartoController : ApiController

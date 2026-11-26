@@ -26,6 +26,18 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (`IAvisosEntregaIncompleta`: campana a Almacén + campana/push a quien hizo el pedido y su vendedor, tipo `EntregaIncompletaReparto`). El job de las
   22:00 no cierra los bultos de un envío incompleto. Ni recogidas, ni NC, ni reposiciones. `EntregaIncompleta` (+ `DetalleEntregaIncompleta`) en los
   DTO de envío: Nesto lo marca en Agencias › Tramitados («Incompleto», cabecera) y en la pestaña Entrega del pedido.
+- **Bultos pendientes con cierre a mano (NestoAPI#880 corte 2, 26/11/26)**: cada bulto que FALTA en una entrega incompleta queda Pendiente en
+  `dbo.RepartoBultosPendientes` (`Scripts/Issue880_RepartoBultosPendientes.sql`, fuera del EDMX, CHECK de Estado/Cierre/Situación y coherencia; sin él no se apunta
+  nada y los endpoints dan 503), desde `CompletarEntregaIncompleta` (también en el reintento; único por Codigo; nunca rompe la entrega). Todo en `BultosPendientesReparto.cs`
+  (LAS REGLAS `ReglasBultosPendientes`, `ServicioBultosPendientesReparto`, `RepositorioBultosPendientesSql`). `GET api/RepartoPropio/BultosPendientes?soloPendientes=true&empresa=
+  &pedido=&envio=&dias=30` (`BultosPendientesRepartoController`; empleados y vendedores, 403 al cliente de la tienda; 500 como mucho) → [{Id, Empresa, EnvioId, Pedido, Cliente,
+  Contacto, Nombre, Codigo, Bulto, Total, SituacionAlEntregar, MotivoFalta, Repartidor, FechaEntrega, Estado Pendiente|Cerrado, Cierre, MotivoCierre, UsuarioCierre, FechaCierre,
+  DondeEsta (último movimiento de la furgoneta: «En la furgoneta de Miguel desde el 26/11 a las 9:42.», «En el almacén: lo descargó…»), Texto}]. `POST …/BultosPendientes/{id}/Cerrar`
+  {Cierre EntregadoEnMano|Perdido|Abonado, Motivo 1..500} (Almacén, Dirección, Informática, `PermisosRepartoPropio.PuedeCerrarBultoPendiente`; 400/403/404/409 de usted): UPDATE
+  condicionado a Pendiente + rastro `RepartoBultoPendienteCerrado` y, con EntregadoEnMano, el movimiento Entregado del bulto (Origen Almacen, «Entregado en mano: motivo», clave
+  derivada del Id) en la MISMA transacción. Job `reparto-bultos-pendientes` L-V 9:00 Madrid (no en festivo de Algete): campana `BultosPendientesReparto` a Almacén. Seguimiento
+  público: «Entregado parcialmente» (con «contacte con nosotros») mientras el envío esté Entregado incompleto y le quede algún Pendiente (`ReglasBultosPendientes.EntregaParcial`;
+  si no se puede contar, se fía del DetalleEstado). Ni envíos internos (EI), ni recogidas, ni NC. Las entregas incompletas de antes del script no se apuntan.
 - **Reembolso entero o autorizado (Carlos 19/11/26)**: en `Entregar` con Efectivo e `ImporteCobrado` < reembolso − 0,01 € hace falta la MISMA
   autorización que para no cobrar (Autorizada o Telefonica, #773; vale para cualquier importe); sin ella, 409 `Codigo` REEMBOLSO_PARCIAL (en la raíz
   y en error.code), regla pura `ReglaReembolsoEntero`. Cobrar de más no cambia. Las notas de cobro NO (lo de menos queda a cuenta). La petición de
@@ -144,7 +156,14 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   LA REGLA pura `CalculoInformeReparto` (`InformeReparto.cs`): paradas hechas = entregadas + recogidas; incidencias aparte; horas = primera carga (o primer
   movimiento) → último movimiento (bultos, paradas, jornada), sin descontar la comida; horas en ruta = primera → última parada cerrada; dinero = efectivo y
   tarjeta (enlace/tarjeta) de los reembolsos + otros cobros (notas de cobro); minutos de parada reales = fin − llegada (0..120) frente a `MinutosPrevistos`.
-  Totales y medias por día de la semana (por repartidor y de todos) y desglose por CP y día. Km null (corte 5). Sin PDF/Excel, ni cobros de deuda (POST Cobros: no están en estas tablas).
+  Totales y medias por día de la semana (por repartidor y de todos) y desglose por CP y día. Km: ver corte 5. Sin PDF/Excel, ni cobros de deuda (POST Cobros: no están en estas tablas).
+- **Km por mapa (corte 5, 26/11/26)**: SOLO por mapa (decisión de Carlos). `KmJornadasReparto.cs`: LA REGLA `CalculoKmJornada.Recorrido` = sede (Algete) → paradas cerradas
+  del día CON posición (`RepartoParadasTiempos.Latitud/Longitud`, entregas, recogidas e incidencias) por `FechaHoraFin` → sede; sin posición o (0,0) fuera
+  (`ParadasSinPosicion`), dos seguidas a < 30 m, una. Km por carretera con el motor del fin de ruta (`IMatrizTiempos`/`MatrizTiemposOsrm`, tramo i→i+1, bloques de ≤ 60
+  puntos solapados en uno); si no responde, `MatrizTiempos.Heuristica` (línea recta × 1,3) y `Aproximada`. Job `reparto-km-jornadas` 3:50 Madrid (cola «indicadores»):
+  los últimos 7 días sin hoy, solo lo que falta, cambia de paradas con posición o se calculó sin OSRM (`HayQueCalcular`) → `dbo.RepartoJornadasKm` (PK Repartidor+Dia,
+  `Scripts/Issue881_RepartoJornadasKm.sql`; sin ella, nada). El informe la lee en su conexión: por jornada `Km`, `KmAproximados`, `ParadasSinPosicion`; en los totales
+  (y por día de la semana) `Km`, `JornadasConKm`, `MediaKm` (aditivo; sin tabla o la jornada de hoy, null). Cuentakilómetros, no.
 
 ### Día de reparto de nuestra ruta: código postal y excepción por contacto (NestoAPI#764, #799)
 - Las rutas propias (`RutasPropiasConfiguradas`: AT, 16…) tienen día de reparto: el del CP de entrega en `CodigosPostalesDiaReparto`

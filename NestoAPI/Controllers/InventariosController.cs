@@ -23,7 +23,12 @@ namespace NestoAPI.Controllers
         // Carlos 07/12/15: lo pongo para desactivar el Lazy Loading
         public InventariosController() : this(new NVEntities())
         {
+            // NestoAPI#856 corte 1: solo en el camino de producción (los tests lo ponen a mano; sin él, el teórico es el del cliente)
+            TeoricoTienda = new Infraestructure.Inventarios.LectorTeoricoInventarioTiendaSql(db);
         }
+
+        /// <summary>NestoAPI#856 corte 1: el teórico de una fila nueva en una tienda (null = lo que mande el cliente, como antes).</summary>
+        internal Infraestructure.Inventarios.ILectorTeoricoInventarioTienda TeoricoTienda { get; set; }
 
         internal InventariosController(NVEntities db) : this(db, new RepositorioCodigosBarras(db))
         {
@@ -356,6 +361,8 @@ namespace NestoAPI.Controllers
                 });
             }
 
+            await PonerTeoricoDeTienda(inventario, numero).ConfigureAwait(false);
+
             inventario.Número = producto.Número;
             inventario.PorCodigoBarras = leido.PorCodigoBarras;
             inventario.Descripción = inventario.Descripción ?? producto.Nombre;
@@ -401,6 +408,37 @@ namespace NestoAPI.Controllers
                 db.Dispose();
             }
             base.Dispose(disposing);
+        }
+
+        /// <summary>
+        /// NestoAPI#856 corte 1: en un almacén sin ubicaciones (tienda), el teórico de la fila nueva es el stock contable de ahora
+        /// (empresas 1 y 3), no el que mande el cliente (Nesto manda 0 si el producto no tenía fila). Nunca rompe el conteo: si no se
+        /// puede leer, lo del cliente y ELMAH.
+        /// </summary>
+        private async Task PonerTeoricoDeTienda(Inventario inventario, string numero)
+        {
+            if (TeoricoTienda == null || HuecosInventario == null)
+            {
+                return;
+            }
+            try
+            {
+                if (!TeoricoTienda.Encendido())
+                {
+                    return;
+                }
+                bool control = await HuecosInventario.ControlUbicaciones(inventario.Empresa, inventario.Almacén).ConfigureAwait(false);
+                if (!Infraestructure.Inventarios.ReglaTeoricoInventarioTienda.LoPoneLaApi(true, control))
+                {
+                    return;
+                }
+                inventario.StockCalculado = await TeoricoTienda.StockContable(inventario.Almacén, numero).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Infraestructure.ElmahHelper.Log(new Exception($"[Inventario #856] No se ha podido leer el stock del {numero?.Trim()} en {inventario.Almacén?.Trim()}: " +
+                    $"se graba el teórico que manda el cliente ({inventario.StockCalculado}). {ex.Message}", ex));
+            }
         }
 
         private bool InventarioExists(int id)
