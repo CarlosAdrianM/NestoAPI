@@ -3512,6 +3512,10 @@ namespace NestoAPI.Controllers
                 pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
             }
 
+            // Novedad 1453 (Laura, 26/11/26): una línea de cuenta contable que llega sin Tipo de IVA toma el de su cuenta
+            // (PlanCuentas.IVA); en Nesto no hay dónde escribirlo.
+            CompletarIvaLineasDeCuenta(pedido, cuenta => IvaDeLaCuentaSinFallar(pedido.empresa, cuenta));
+
             string faltaIva = ValidarIvaLineas(pedido, pedido.ParametrosIva);
             if (faltaIva != null)
             {
@@ -4720,6 +4724,43 @@ namespace NestoAPI.Controllers
         /// de cuenta contable sin IVA (ingresos de YouTube, 70500009) reventaba en el Single de ParametrosIva con «La
         /// secuencia no contiene ningún elemento coincidente». Sin parámetros de IVA (cliente exento) no hay nada que validar.
         /// </summary>
+        /// <summary>
+        /// Novedad 1453 (Laura, 26/11/26, ingresos de YouTube): a cada línea de cuenta contable que llega SIN Tipo de IVA se le
+        /// pone el de su cuenta en el plan de cuentas, si lo tiene. La que ya lo trae no se toca. Devuelve cuántas ha completado.
+        /// </summary>
+        internal static int CompletarIvaLineasDeCuenta(PedidoVentaDTO pedido, Func<string, string> ivaDeLaCuenta)
+        {
+            if (pedido?.Lineas == null || ivaDeLaCuenta == null)
+            {
+                return 0;
+            }
+            int completadas = 0;
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
+                && string.IsNullOrWhiteSpace(l.iva) && !string.IsNullOrWhiteSpace(l.Producto)))
+            {
+                string iva = ivaDeLaCuenta(linea.Producto.Trim());
+                if (!string.IsNullOrWhiteSpace(iva))
+                {
+                    linea.iva = iva.Trim();
+                    completadas++;
+                }
+            }
+            return completadas;
+        }
+
+        private string IvaDeLaCuentaSinFallar(string empresa, string cuenta)
+        {
+            try
+            {
+                return db.PlanCuentas.Where(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta).Select(c => c.IVA).FirstOrDefault();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Novedad 1453] No se ha podido leer el Tipo de IVA de la cuenta {cuenta}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
         internal static string ValidarIvaLineas(PedidoVentaDTO pedido, IEnumerable<ParametrosIvaBase> parametrosIva)
         {
             if (pedido?.Lineas == null || parametrosIva == null || !parametrosIva.Any())
@@ -4737,7 +4778,9 @@ namespace NestoAPI.Controllers
                 }
                 if (string.IsNullOrWhiteSpace(linea.iva))
                 {
-                    return $"{queLinea} no tiene Tipo de IVA. Póngale el que corresponda (por ejemplo, G21) y vuelva a crear el pedido.";
+                    return linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
+                        ? $"{queLinea} no tiene Tipo de IVA, y la cuenta tampoco lo tiene puesto en el plan de cuentas. Avise a Informática para que se lo ponga a la cuenta y vuelva a crear el pedido."
+                        : $"{queLinea} no tiene Tipo de IVA. Póngale el que corresponda (por ejemplo, G21) y vuelva a crear el pedido.";
                 }
                 if (!parametrosIva.Any(p => p.CodigoIvaProducto == linea.iva.Trim()))
                 {

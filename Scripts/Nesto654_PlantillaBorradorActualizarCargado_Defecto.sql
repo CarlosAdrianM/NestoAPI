@@ -1,4 +1,4 @@
-/*
+﻿/*
     Nesto#654 / incidencia 1481 (Lidia, 26/11/26): la casilla «Al guardar un borrador que he cargado, actualizarlo en vez de crear
     otro» de la plantilla da «No se ha podido guardar su preferencia» porque el parámetro de usuario no tiene su fila «(defecto)»
     (PUT api/ParametrosUsuario → 404: no hay fila que cambiar ni de la que copiar). Nace apagado para todos; cada usuario lo
