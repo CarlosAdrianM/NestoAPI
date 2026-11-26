@@ -952,7 +952,9 @@ namespace NestoAPI.Controllers
 
         private Infraestructure.PreparacionAlmacen.IServicioBultosReposicion Bultos => bultos
             ?? new Infraestructure.PreparacionAlmacen.ServicioBultosReposicion(new Infraestructure.PreparacionAlmacen.RepositorioBultosReposicionSql(db),
-                new LectorParametrosUsuario(), Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows());
+                new LectorParametrosUsuario(), Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows(),
+                // Carlos 26/11/26: con algún bulto ya en una furgoneta no se cambia el número de bultos (409)
+                new Infraestructure.PreparacionAlmacen.LectorFurgonetaReposicionSql(db));
 
         // POST api/Reposiciones/81010/Bultos?empresa=1   { "Bultos": 3, "Imprimir": true }
         /// <summary>

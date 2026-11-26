@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -333,6 +334,65 @@ SELECT RTRIM(@o) AS Origen, RTRIM(@d) AS Destino";
         }
     }
 
+    /// <summary>
+    /// LA REGLA (pura) de los bultos de una reposición que ya van en una furgoneta: algún R{traspaso}-{b} cuyo último movimiento en
+    /// RepartoBultosMovimientos es Cargado o Recogido (el núcleo de siempre, <see cref="CandadoFurgonetaEnvio.EnFurgoneta"/>). Entonces
+    /// no se cambia el número de bultos: el bulto viejo se quedaría «fantasma» en la furgoneta.
+    /// </summary>
+    public static class ReglaBultosReposicionEnFurgoneta
+    {
+        public static BultosEnFurgoneta EnFurgoneta(int traspaso, IEnumerable<MovimientoBultoReparto> movimientos)
+            => CandadoFurgonetaEnvio.EnFurgoneta((movimientos ?? Enumerable.Empty<MovimientoBultoReparto>())
+                .Where(m => m != null && m.NumTraspaso == traspaso
+                    && string.Equals(m.TipoCodigo?.Trim(), CodigoBultoFurgoneta.R, StringComparison.OrdinalIgnoreCase)));
+
+        /// <summary>«No se puede cambiar el número de bultos: la reposición 81463 la lleva Andre en la furgoneta desde las 9:42 (R81463-1). Que la descargue o la entregue primero.»</summary>
+        public static string Mensaje(int traspaso, BultosEnFurgoneta furgoneta, DateTime ahora)
+        {
+            string quien = string.IsNullOrWhiteSpace(furgoneta?.Repartidor) ? "un repartidor" : furgoneta.Repartidor;
+            string codigos = furgoneta?.Codigos == null || furgoneta.Codigos.Count == 0 ? string.Empty : $" ({string.Join(", ", furgoneta.Codigos)})";
+            return $"No se puede cambiar el número de bultos: la reposición {traspaso.ToString(CultureInfo.InvariantCulture)} la lleva {quien} " +
+                $"en la furgoneta desde {CandadoFurgonetaEnvio.CuandoDesde(furgoneta?.Desde ?? ahora, ahora)}{codigos}. Que la descargue o la entregue primero.";
+        }
+    }
+
+    /// <summary>Lee si algún bulto de una reposición va en una furgoneta. Null si ninguno o si no se puede saber.</summary>
+    public interface ILectorFurgonetaReposicion
+    {
+        Task<BultosEnFurgoneta> Leer(int traspaso);
+    }
+
+    /// <summary>Sin Scripts/Issue772_FurgonetaBultos.sql, o si la lectura falla (ELMAH), null: se sigue como antes.</summary>
+    public class LectorFurgonetaReposicionSql : ILectorFurgonetaReposicion
+    {
+        private readonly NVEntities db;
+
+        public LectorFurgonetaReposicionSql(NVEntities db)
+        {
+            this.db = db ?? throw new ArgumentNullException(nameof(db));
+        }
+
+        public async Task<BultosEnFurgoneta> Leer(int traspaso)
+        {
+            try
+            {
+                var repositorio = new RepositorioFurgoneta(db);
+                if (!repositorio.ScriptAplicado())
+                {
+                    return null;
+                }
+                List<MovimientoBultoReparto> historia = await repositorio
+                    .LeerHistoria(new ConsultaMovimientosBulto { Traspasos = new[] { traspaso } }).ConfigureAwait(false);
+                return ReglaBultosReposicionEnFurgoneta.EnFurgoneta(traspaso, historia);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Bultos de reposición] No se ha podido mirar si la reposición {traspaso} va en una furgoneta: {ex.Message}", ex));
+                return null;
+            }
+        }
+    }
+
     /// <summary>Un error de los bultos con el código HTTP que le toca (503 sin tabla, 404, 409, 400).</summary>
     public class BultosReposicionException : Exception
     {
@@ -380,12 +440,18 @@ SELECT RTRIM(@o) AS Origen, RTRIM(@d) AS Destino";
         private readonly IRepositorioBultosReposicion repositorio;
         private readonly ILectorParametrosUsuario parametros;
         private readonly IImpresoraEtiquetasAlmacen impresora;
+        private readonly ILectorFurgonetaReposicion furgoneta;
+        private readonly Func<DateTime> ahora;
 
-        public ServicioBultosReposicion(IRepositorioBultosReposicion repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetasAlmacen impresora)
+        /// <param name="furgoneta">Null: no se mira si algún bulto va ya en una furgoneta (como antes).</param>
+        public ServicioBultosReposicion(IRepositorioBultosReposicion repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetasAlmacen impresora,
+            ILectorFurgonetaReposicion furgoneta = null, Func<DateTime> ahora = null)
         {
             this.repositorio = repositorio;
             this.parametros = parametros;
             this.impresora = impresora;
+            this.furgoneta = furgoneta;
+            this.ahora = ahora ?? (() => DateTime.Now);
         }
 
         public async Task<ResultadoBultosReposicionDTO> Crear(string empresa, int traspaso, CrearBultosReposicionDTO peticion, string usuario)
@@ -398,6 +464,10 @@ SELECT RTRIM(@o) AS Origen, RTRIM(@d) AS Destino";
             await ComprobarTabla().ConfigureAwait(false);
             OrigenDestinoReposicion datos = await repositorio.LeerOrigenDestino(empresa, traspaso).ConfigureAwait(false)
                 ?? throw new BultosReposicionException(HttpStatusCode.NotFound, $"No hay ninguna reposición con el número {traspaso}.");
+            if (furgoneta != null && await furgoneta.Leer(traspaso).ConfigureAwait(false) is BultosEnFurgoneta enFurgoneta)
+            {
+                throw new BultosReposicionException(HttpStatusCode.Conflict, ReglaBultosReposicionEnFurgoneta.Mensaje(traspaso, enFurgoneta, ahora()));
+            }
             if (!await repositorio.Reemplazar(empresa, traspaso, total, usuario).ConfigureAwait(false))
             {
                 throw new BultosReposicionException(HttpStatusCode.Conflict,

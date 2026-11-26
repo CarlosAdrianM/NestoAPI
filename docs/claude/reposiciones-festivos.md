@@ -23,6 +23,13 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   De verdad: `IServicioPreparacionReposicion.Crear` con las líneas calculadas (el mismo camino; sus 409 tal cual: otra en preparación, inventario en
   curso); queda en preparación en la tienda hasta Terminar. Sin exceso: 200 con Lineas vacía, «No hay exceso…», nada creado.
 
+### Bultos de una reposición: no se cambian si alguno va en una furgoneta (NestoAPI#645, Carlos 26/11/26)
+- `POST api/Reposiciones/{n}/Bultos` (`ServicioBultosReposicion.Crear`, `PreparacionAlmacen/BultosReposicion.cs`) rehace los bultos R{n}-{b}: 409 si alguno
+  se ha leído al recibir (como siempre) y, además, si alguno tiene como último movimiento Cargado o Recogido en RepartoBultosMovimientos (LA REGLA
+  `ReglaBultosReposicionEnFurgoneta`, sobre el núcleo `CandadoFurgonetaEnvio.EnFurgoneta`; lectura `LectorFurgonetaReposicionSql` por NumTraspaso y TipoCodigo
+  R): 409 {Message «No se puede cambiar el número de bultos: la reposición 81010 la lleva Andre en la furgoneta desde las 9:42 (R81010-1). Que la descargue
+  o la entregue primero.»} antes de tocar nada ni imprimir. Sin el script de #772 o si la lectura falla (ELMAH), como antes.
+
 ### Diferencias de reposición «En discusión» y quién pierde (NestoAPI#906, sugerencia 1433, Carlos 25/11/26: decide el sistema, no Dirección)
 - Solo FALTAS pendientes: el ORIGEN (permiso de resolver) abre `POST api/Reposiciones/Diferencias/{id}/Discusion` {Comentario obligatorio}; campana al
   destino (tipo `DiscusionDiferenciaReposicion`); plazo ParametrosUsuario «(defecto)» `Reposiciones.DiscusionPlazoHoras` (48), recordatorio 24 h antes.

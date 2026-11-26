@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Reposiciones;
@@ -248,6 +249,58 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
+        }
+
+        // Carlos 26/11/26: con un bulto ya en la furgoneta, cambiar el número de bultos lo dejaría «fantasma»
+        [TestMethod]
+        public async Task Crear_AlgunBultoEnUnaFurgoneta_409ConElRepartidorYNoTocaNada()
+        {
+            ILectorFurgonetaReposicion furgoneta = A.Fake<ILectorFurgonetaReposicion>();
+            A.CallTo(() => furgoneta.Leer(81010)).Returns(new BultosEnFurgoneta
+            {
+                Usuario = "NUEVAVISION\\Andre", Repartidor = "Andre", Desde = new DateTime(2026, 11, 26, 9, 42, 0), Codigos = new List<string> { "R81010-1" }
+            });
+            servicio = new ServicioBultosReposicion(repositorio, parametros, impresora, furgoneta, () => new DateTime(2026, 11, 26, 10, 0, 0));
+
+            BultosReposicionException ex = await Assert.ThrowsExceptionAsync<BultosReposicionException>(() =>
+                servicio.Crear("1", 81010, new CrearBultosReposicionDTO { Bultos = 2, Imprimir = true }, "Paloma"));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual("No se puede cambiar el número de bultos: la reposición 81010 la lleva Andre en la furgoneta desde las 9:42 (R81010-1). " +
+                "Que la descargue o la entregue primero.", ex.Message);
+            A.CallTo(() => repositorio.Reemplazar(A<string>._, A<int>._, A<int>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Crear_NingunBultoEnFurgoneta_ComoAntes()
+        {
+            ILectorFurgonetaReposicion furgoneta = A.Fake<ILectorFurgonetaReposicion>();
+            A.CallTo(() => furgoneta.Leer(81010)).Returns((BultosEnFurgoneta)null);
+            servicio = new ServicioBultosReposicion(repositorio, parametros, impresora, furgoneta);
+
+            ResultadoBultosReposicionDTO r = await servicio.Crear("1", 81010, new CrearBultosReposicionDTO { Bultos = 2 }, "Paloma");
+
+            Assert.IsNotNull(r);
+            A.CallTo(() => repositorio.Reemplazar("1", 81010, 2, "Paloma")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Regla_EnFurgoneta_SoloLosRDeEsaReposicionConUltimoCargadoORecogido()
+        {
+            var movimientos = new List<MovimientoBultoReparto>
+            {
+                // R81010-1: cargado y descargado → en el almacén
+                new MovimientoBultoReparto { Id = 1, Codigo = "R81010-1", TipoCodigo = "R", NumTraspaso = 81010, Tipo = TiposMovimientoBulto.CARGADO, FechaHora = new DateTime(2026, 11, 26, 9, 0, 0), Usuario = "Andre" },
+                new MovimientoBultoReparto { Id = 2, Codigo = "R81010-1", TipoCodigo = "R", NumTraspaso = 81010, Tipo = TiposMovimientoBulto.DESCARGADO, FechaHora = new DateTime(2026, 11, 26, 9, 30, 0), Usuario = "Andre" },
+                // Otra reposición en la furgoneta: no cuenta
+                new MovimientoBultoReparto { Id = 3, Codigo = "R81011-1", TipoCodigo = "R", NumTraspaso = 81011, Tipo = TiposMovimientoBulto.RECOGIDO, FechaHora = new DateTime(2026, 11, 26, 9, 10, 0), Usuario = "Andre" }
+            };
+            Assert.IsNull(ReglaBultosReposicionEnFurgoneta.EnFurgoneta(81010, movimientos));
+
+            movimientos.Add(new MovimientoBultoReparto { Id = 4, Codigo = "R81010-2", TipoCodigo = "R", NumTraspaso = 81010, Tipo = TiposMovimientoBulto.RECOGIDO, FechaHora = new DateTime(2026, 11, 26, 9, 40, 0), Usuario = "NUEVAVISION\\Miguel" });
+            BultosEnFurgoneta enFurgoneta = ReglaBultosReposicionEnFurgoneta.EnFurgoneta(81010, movimientos);
+            CollectionAssert.AreEqual(new[] { "R81010-2" }, enFurgoneta.Codigos);
         }
 
         [DataTestMethod]
