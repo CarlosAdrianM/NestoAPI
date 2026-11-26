@@ -130,6 +130,40 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
         }
 
         [TestMethod]
+        public void Seur_SeraEntregadoHoy_ConIdentificadorDeEnvio_SeGuarda_Iberocel()
+        {
+            // Carlos 26/11/26: este aviso de SEUR (proveedor Iberocel, envío A-2609942) no se guardó: otro formato («será entregado
+            // HOY» en dos líneas, «Identificador de envío:» con etiqueta y «Remitente:» en vez de «Tu envío X de Y»).
+            const string cuerpo = @"Hola, NUEVA VISION, tu envío será entregado
+ 
+ 
+HOY
+ 
+Sigue tu envío
+
+
+ 
+Datos de la entrega
+" +
+                @"Identificador de envío: A-2609942
+Remitente: Iberocel - Paraiso
+Dirección: C/ Rio Tietar 11, Nave 22. Algete, 28110
+
+Gracias por confiar en SEUR.";
+            CorreoCompras correo = Correo("infoenvios@mail.seur.info", "NUEVA VISION, tu envío será entregado hoy", cuerpo, new DateTime(2026, 11, 26, 8, 40, 0));
+
+            AnalisisCorreoSeguimiento a = Analizar(correo);
+
+            Assert.IsTrue(a.Guardar);
+            Assert.AreEqual("SEUR", a.Agencia);
+            Assert.AreEqual("A-2609942", a.Seguimientos.Single().Codigo);
+            Assert.AreEqual(new DateTime(2026, 11, 26), a.EntregaEstimada.Dia);
+            Assert.AreEqual(EstadoEnvioAgencia.EnReparto, a.EstadoEnvio);
+            StringAssert.Contains(a.RemitentePaquete, "iberocel");
+            Assert.IsFalse(a.EsSalidaNuestra, "Nos nombran como destinatario («Hola, NUEVA VISION»): no es una salida nuestra");
+        }
+
+        [TestMethod]
         public void Seur_EnRepartoHoy_SinCodigo_SeGuardaPorLoQueDice_ConElRemitenteDelAsunto()
         {
             CorreoCompras correo = Correo("infoenvios@mail.seur.info", SEUR_HOY_ASUNTO, SEUR_HOY_HTML, new DateTime(2026, 11, 19, 8, 30, 0), html: true);
