@@ -487,6 +487,8 @@ namespace NestoAPI.Controllers
         /// Informática; motivo obligatorio). La parada sale del reparto (Cerrado a mano, «Recogida anulada: motivo») con historia y rastro en
         /// Modificaciones (RecogidaAnulada); si viene de una solicitud, queda Anulada. 200 ResultadoAnularRecogidaDTO; 400; 403; 404 si no es una
         /// nota de recogida; 409 si no tiene parada en reparto, ya está hecha, o RECOGIDA_YA_RECOGIDA (bultos NR en una furgoneta o abonada).
+        /// Caso 930553 (Carlos 26/11/26): también si la parada ya está Entregada (marcada «Recogido» por error), solo Almacén o Dirección (403 a
+        /// los demás) y sin abono (409 RECOGIDA_ABONADA): «Recogida anulada (marcada por error): motivo» y sus bultos NR en furgoneta, Descargado.
         /// </summary>
         [HttpPost]
         [Route("Recogidas/{pedido:int}/Anular")]
@@ -497,7 +499,8 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido();
             }
-            return Responder(await servicio.AnularRecogida(pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen()));
+            return Responder(await servicio.AnularRecogida(pedido, peticion, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"), Origen(),
+                PermisosRepartoPropio.PuedeAnularRecogidaMarcada(User)));
         }
 
         // GET api/RepartoPropio/Recogidas/NoRecogidas
@@ -718,6 +721,8 @@ namespace NestoAPI.Controllers
                     return Content(HttpStatusCode.Conflict, new { Message = resultado.Mensaje });
                 case TipoResultadoReparto.NoDisponible:
                     return Content(HttpStatusCode.ServiceUnavailable, new { Message = resultado.Mensaje });
+                case TipoResultadoReparto.Prohibido:
+                    return Content(HttpStatusCode.Forbidden, new { Message = resultado.Mensaje });
                 default:
                     return Content(HttpStatusCode.BadRequest, new { Message = resultado.Mensaje });
             }
@@ -798,6 +803,9 @@ namespace NestoAPI.Controllers
 
         /// <summary>Sugerencia 1277: dar de alta, imprimir y anular envíos internos: Almacén, Dirección e Informática.</summary>
         public static bool PuedeGestionarEnviosInternos(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_LECTURAS_RECHAZADAS);
+
+        /// <summary>Caso 930553 (Carlos 26/11/26): anular una recogida que ya figura como recogida (marcada por error): Almacén y Dirección.</summary>
+        public static bool PuedeAnularRecogidaMarcada(System.Security.Principal.IPrincipal usuario) => EnAlguno(usuario, GRUPOS_OTRAS_FURGONETAS);
 
         private static bool EnAlguno(System.Security.Principal.IPrincipal usuario, IEnumerable<string> grupos)
             => usuario != null && grupos.Any(g => usuario.IsInRoleSinDominio(g));

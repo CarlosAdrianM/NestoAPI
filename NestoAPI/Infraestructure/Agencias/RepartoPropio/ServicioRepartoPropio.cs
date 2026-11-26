@@ -66,7 +66,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         NoEncontrado,
         Conflicto,
         /// <summary>Carlos 20/11/26: falta un script (los endpoints nuevos dan 503).</summary>
-        NoDisponible
+        NoDisponible,
+        /// <summary>Caso 930553 (26/11/26): el usuario puede usar el reparto, pero no esto (403 con el Mensaje).</summary>
+        Prohibido
     }
 
     public class ResultadoReparto<T>

@@ -222,6 +222,15 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - `POST api/RepartoPropio/Recogidas/{pedido}/Anular` {Motivo} (grupos del reparto): parada en reparto → Cerrado a mano «Recogida anulada: motivo», historia y
   Modificaciones `RecogidaAnulada` en UNA transacción (`RecogidasParadaRepartoSql.CerrarParada`, solo si sigue 1/3); la solicitud, Anulada. Las líneas de
   la nota no se tocan. Reglas puras `ReglasParadaRecogida` (`RecogidasParadaReparto.cs`).
+- **Anular una recogida marcada «Recogido» por error (caso 930553, Carlos 26/11/26)**: el MISMO `POST …/Recogidas/{pedido}/Anular` {Motivo} vale también si la
+  parada ya está Entregada (2), solo para Almacén y Dirección (`PermisosRepartoPropio.PuedeAnularRecogidaMarcada`; los demás grupos del reparto, 403 de
+  usted) y si no hay abono de esa recogida (`NotasEntregaCabecera.PedidoAbono`, lo que mira `ServicioAbonosRecogida`; con abono, 409 `RECOGIDA_ABONADA`; si
+  no se puede leer, 503). LA REGLA `ReglasParadaRecogida.MotivoNoAnulableMarcada`. Los bultos NR en una furgoneta NO lo impiden. En UNA transacción
+  (`RecogidasParadaRepartoSql.AnularRecogidaMarcada`; el UPDATE exige Estado 2 y la nota sin abono con UPDLOCK: si cambia, 409): Cerrado a mano (5),
+  DetalleEstado «Recogida anulada (marcada por error): motivo», historia, Modificaciones `RecogidaAnulada` (Nuevo con `MarcadaPorError`), la solicitud
+  (#855) Confirmada → Anulada, y un Descargado (Origen Almacen, clave derivada) por cada NR{pedido}-{n} cuyo último movimiento es Cargado/Recogido.
+  Después, el aviso de la solicitud anulada y `repartoCambiado` «Parada». Al quedar en 5, leer el NR en Algete ya no crea abono sin «Forzar».
+  Las líneas de la nota no se tocan: ya están a -2 (Facturar rutas las procesó al crear la parada), así que ni picking ni Facturar rutas las vuelven a coger.
 - **«No se ha recogido» pasa a Almacén, que decide (Carlos 20/11/26)**: con `dbo.RepartoRecogidasNoRecogidas` (`Scripts/RepartoRecogidasNoRecogidas.sql`;
   sin él, NoRecogida cierra como arriba y los endpoints nuevos dan 503) la recogida NO se cierra: el envío queda Incidentado (3) con el mismo DetalleEstado y
   FechaEntrega = `FechaRepartoPropio.FECHA_PENDIENTE_DECIDIR` (31/12/2099: no sale en ningún día, ni en SinCargar; leer su papel da «pendiente de que
