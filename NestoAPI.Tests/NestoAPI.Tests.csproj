@@ -391,6 +391,7 @@
     <Compile Include="Infrastructure\Alquileres\AlquileresNombresTests.cs" />
     <Compile Include="Controllers\InventariosContabilizarControllerTests.cs" />
     <Compile Include="Infrastructure\Inventarios\ContabilizarInventarioTests.cs" />
+    <Compile Include="Infrastructure\Inventarios\FechasInventarioTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioACeroTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioBorrarFilaTests.cs" />

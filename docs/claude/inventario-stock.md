@@ -147,3 +147,21 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   lectura, siguen). (c) No sale en `GET api/PedidosVenta/Almacenes` (`PedidosVentaController.QuitarAlmacenIncompletos`). Propuestas e indicadores de stock, sin cambios.
 - Pendiente: aviso al vender una serie incompleta, costes, apartado en el informe de pérdida desconocida (#893), regularizar los Depiblend 101268
   y 101270. Gemelas Nesto#653 (pantalla) y Ariadna#109 (PDA).
+
+### Fecha de inventario por almacén y aviso de las reposiciones de la víspera (NestoAPI#883 corte 1, 26/11/26; decisión de Carlos 20/11/26)
+- Caso: inventario del sábado 21/11/26; nadie quitó las reposiciones de la víspera y las del lunes que salían de Algete reservaron 230 unidades.
+  `dbo.InventariosFechas` (Empresa, Almacen ALG/REI/ALC, Fecha, Comentario, Usuario, AvisoEnviado) + `dbo.InventariosFechasViajes` (decisión por viaje
+  Quitar/Mantener), fuera del EDMX, `Scripts/Issue883_InventariosFechas.sql` (sin él, 503 y el job no hace nada). Todo en `Inventarios/FechasInventario.cs`.
+- LA REGLA (pura) `ReglasFechasInventario.Afectadas`, con la calculadora de siempre (`CortesQueLleganElDia`/`CortesDelDia`, #867 incluido): los viajes que LLEGAN
+  al almacén la víspera (natural) o el día y los que SALEN de él y CIERRAN la víspera o el día; Estado Pendiente / Mantenida (decisión) / Quitada (tiene la
+  excepción SinReposicion: se calcula también sin excepciones para enseñarla), `SePuedeQuitar` (vivo y sin cerrar), `Texto` «Reposición Reina → Algete, llega el
+  viernes 20/11 (cierra el viernes 20/11 a las 9:00)». `DiaAviso` = tres laborables del almacén antes (L-V sin sus festivos; sábado 21 → miércoles 18).
+- `InventariosFechasController`: `GET api/Inventarios/Fechas?almacen=&desde=` (empleados; cliente de la tienda 403) → [{Id, Empresa, Almacen, Fecha, Comentario,
+  Usuario, FechaModificacion, AvisoEnviado, DiaAviso, Reposiciones[], Pendientes}]; `POST` {Empresa?, Almacen, Fecha, Comentario?} (crear o cambiar por la clave;
+  400 almacén o día pasado); `DELETE {id}` (no pasada); `POST {id}/Reposiciones` {Origen, Destino, FechaLlegada, Decision Quitar|Mantener}: Quitar = la excepción
+  SinReposicion por `ServicioExcepcionesCalendarioReposiciones.Guardar` (sus 400/409 y su rastro; Motivo «Inventario de Algete del 21/11/2026»), Mantener = deja de
+  avisar; 404 si el viaje no toca. Escribir y decidir: Almacén, Dirección, Informática (`ServicioCalendarioReposiciones.PuedeMantener`).
+- Job `inventario-fechas-aviso` L-V 8:30 Madrid: a las fechas con el aviso sin salir, desde `DiaAviso` hasta el día, campana de Nesto `InventarioReposicionesPendientes`
+  (Datos tipo, referencia = Id) a Almacén, Dirección y la gente de las tiendas afectadas con la lista de las pendientes; una vez (también se marca si no hay ninguna).
+- Sin hacer (corte 2 de la issue): recordatorio la víspera y la comprobación automática de la mañana del inventario (reservas de reposición vivas, pendiente de
+  ubicar, reservas de picking huérfanas, descuadres stock/ubicado, filas pendientes de otros días). Gemela: pantalla en Nesto (Almacén/Dirección).

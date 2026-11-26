@@ -678,6 +678,7 @@
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
+    <Compile Include="Controllers\InventariosFechasController.cs" />
     <Compile Include="Controllers\InventariosController.Rellenar.cs" />
     <Compile Include="Controllers\InmovilizadosController.cs" />
     <Compile Include="Infraestructure\Inmovilizados\CodigoInmovilizado.cs" />
@@ -687,6 +688,7 @@
     <Compile Include="Controllers\InventariosController.Contabilizar.cs" />
     <Compile Include="Infraestructure\Inventarios\ComprobadorInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\ErrorInventarioPendiente.cs" />
+    <Compile Include="Infraestructure\Inventarios\FechasInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\HuecoInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\PermisosInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioContabilizarInventario.cs" />
