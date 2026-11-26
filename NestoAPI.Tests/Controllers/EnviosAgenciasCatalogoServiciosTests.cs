@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http.Results;
 
@@ -107,6 +108,46 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Post_PedidoAplazado_EnvioSinTramitarDeCualquierAgencia_SeGraba()
+        {
+            // Incidencia 1483 (Alfredo, 26/11/26): dejar grabado hoy el envío de GLS de un pedido que sale mañana.
+            controller.MotivoPedidoRetenido = (e, p, aplazadoNoBloquea) => Task.FromResult(aplazadoNoBloquea ? null : "El pedido 931742 está aplazado hasta el 27/11/2026");
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_GLS, 96, 18, 1);
+            envio.Pedido = 931742;
+
+            _ = await controller.PostEnviosAgencia(envio);
+
+            Assert.IsNotNull(insertado, "Grabar no avisa a la agencia: se puede");
+        }
+
+        [TestMethod]
+        public async Task Post_PedidoAplazado_EnvioYaTramitado_409()
+        {
+            controller.MotivoPedidoRetenido = (e, p, aplazadoNoBloquea) => Task.FromResult(aplazadoNoBloquea ? null : "El pedido 931742 está aplazado hasta el 27/11/2026");
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_GLS, 96, 18, 1, estado: Constantes.Agencias.ESTADO_TRAMITADO);
+            envio.Pedido = 931742;
+
+            var resultado = await controller.PostEnviosAgencia(envio);
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ((NegotiatedContentResult<string>)resultado).StatusCode);
+            Assert.IsNull(insertado);
+        }
+
+        [TestMethod]
+        public async Task Post_PedidoRetenido_EnvioSinTramitar_409()
+        {
+            // El retenido (modo 5) bloquea siempre, también grabar.
+            controller.MotivoPedidoRetenido = (e, p, aplazadoNoBloquea) => Task.FromResult("El pedido 931742 está retenido");
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_GLS, 96, 18, 1);
+            envio.Pedido = 931742;
+
+            var resultado = await controller.PostEnviosAgencia(envio);
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ((NegotiatedContentResult<string>)resultado).StatusCode);
+            Assert.IsNull(insertado);
+        }
+
+        [TestMethod]
         public async Task Post_CTTConServicioCeroSinElegir_Inserta()
         {
             _ = await controller.PostEnviosAgencia(Envio(Constantes.Agencias.AGENCIA_CTT, 0, 0, 0));
@@ -194,11 +235,15 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task Post_OtraAgenciaDeUnPedidoAplazado_Devuelve409YNoInserta()
+        public async Task Post_OtraAgenciaDeUnPedidoAplazado_YaTramitado_Devuelve409YNoInserta()
         {
+            // Incidencia 1483 (26/11/26): grabar el envío SIN TRAMITAR de un aplazado ya se puede (tests de más abajo); lo que
+            // sigue sin poder entrar es uno ya tramitado de otra agencia.
             PedidoAplazado();
+            EnviosAgencia yaTramitado = EnvioDelPedido(Constantes.Agencias.AGENCIA_GLS, 96, 18);
+            yaTramitado.Estado = Constantes.Agencias.ESTADO_TRAMITADO;
 
-            var resultado = await controller.PostEnviosAgencia(EnvioDelPedido(Constantes.Agencias.AGENCIA_GLS, 96, 18));
+            var resultado = await controller.PostEnviosAgencia(yaTramitado);
 
             Assert.IsInstanceOfType(resultado, typeof(NegotiatedContentResult<string>));
             var conflicto = (NegotiatedContentResult<string>)resultado;

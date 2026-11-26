@@ -3783,7 +3783,12 @@ namespace NestoAPI.Controllers
             }
             // NestoAPI#698: un pedido retenido no tiene envío. NestoAPI#831 (Alfredo 09/11/26, «Insertar e Imprimir» de Agencias en
             // Nesto): el del reparto propio de un aplazado, sí; el día de reparto se lo fija el Tramitar que Nesto llama justo después.
-            string retenido = await MotivoRetenido(enviosAgencia.Empresa, enviosAgencia.Pedido, EsEtiquetaRepartoPropio(enviosAgencia));
+            // Incidencia 1483 (Alfredo, 26/11/26; decisión de Carlos): GRABAR el envío de un pedido aplazado sí se puede, de
+            // cualquier agencia, mientras quede sin tramitar: es solo nuestro, la agencia no se entera. Lo que sigue bloqueado hasta
+            // su día es TRAMITAR e imprimir la etiqueta (ahí es cuando la agencia espera el bulto; en CTT la etiqueta exige tramitar)
+            // y el albarán. Un retenido (modo 5) o retenido por falta sigue sin poder tener envío.
+            bool aplazadoNoBloquea = EsEtiquetaRepartoPropio(enviosAgencia) || enviosAgencia.Estado < Constantes.Agencias.ESTADO_TRAMITADO;
+            string retenido = await MotivoRetenido(enviosAgencia.Empresa, enviosAgencia.Pedido, aplazadoNoBloquea);
             if (retenido != null)
             {
                 return Content(HttpStatusCode.Conflict, retenido);
