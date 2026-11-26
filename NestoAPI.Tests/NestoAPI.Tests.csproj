@@ -852,6 +852,7 @@
     <Compile Include="Infrastructure\Eventos\FormaPagoSenalEventoTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTests.cs" />
     <Compile Include="Infrastructure\AlmacenesFicticios\AlmacenesFicticiosTests.cs" />
+    <Compile Include="Infrastructure\ProductosIncompletos\ProductosIncompletosTests.cs" />
     <Compile Include="Infrastructure\Cupones\AdelantarCuponTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponPedidoMinimoPorEventoTests.cs" />
     <Compile Include="Infrastructure\Cupones\EspejoCuponesPrestashopTests.cs" />

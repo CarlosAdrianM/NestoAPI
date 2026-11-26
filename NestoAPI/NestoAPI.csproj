@@ -1610,6 +1610,10 @@
     <Compile Include="Infraestructure\AlmacenesFicticios\ServicioAlmacenesFicticios.cs" />
     <Compile Include="Infraestructure\ExtractosProducto\MovimientoTraspasoStockSql.cs" />
     <Compile Include="Controllers\AlmacenesFicticiosController.cs" />
+    <Compile Include="Controllers\ProductosIncompletosController.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\ProductosIncompletos.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\RepositorioProductosIncompletosSql.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\ServicioProductosIncompletos.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicionSql.cs" />
     <Compile Include="Infraestructure\Reposiciones\DesacuerdoDiferenciasReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiscusionesDiferenciasReposicionSql.cs" />
