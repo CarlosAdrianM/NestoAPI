@@ -38,12 +38,19 @@ namespace NestoAPI.Tests.Controllers
         // ---- Permisos ----
 
         [TestMethod]
-        public void Permisos_Extracto_LosSeisGruposSi()
+        public void Permisos_Extracto_LosCincoGruposSi()
         {
-            foreach (string grupo in new[] { "Compras", "Almacén", "Administración", "Dirección", "Informática", "Tiendas" })
+            foreach (string grupo in new[] { "Compras", "Almacén", "Dirección", "Informática", "Tiendas" })
             {
                 Assert.IsTrue(PermisosFichaProducto.PuedeVerExtracto(Empleado(grupo)), grupo);
             }
+        }
+
+        [TestMethod]
+        public void Permisos_Extracto_AdministracionNo()
+        {
+            // Carlos 26/11/26: Administración no necesita el extracto de un producto.
+            Assert.IsFalse(PermisosFichaProducto.PuedeVerExtracto(Empleado("Administración")));
         }
 
         [TestMethod]

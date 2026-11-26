@@ -70,7 +70,7 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// Los movimientos de ExtractoProducto de la empresa y su espejo (1 y 3), del más nuevo al más antiguo, paginados (≤ 500), con su saldo
         /// acumulado. Sin fechas, los últimos 12 meses. Importes y proveedor solo para Compras, Dirección e Informática (a los demás, null).
-        /// 403 a quien no es de Compras, Almacén, Administración, Dirección, Informática ni Tiendas; 400 sin producto o fechas al revés; 404.
+        /// 403 a quien no es de Compras, Almacén, Dirección, Informática ni Tiendas; 400 sin producto o fechas al revés; 404.
         /// </summary>
         [HttpGet]
         [Authorize]

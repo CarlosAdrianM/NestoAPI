@@ -92,14 +92,13 @@ namespace NestoAPI.Infraestructure.Productos
         {
             Constantes.GruposSeguridad.COMPRAS,
             Constantes.GruposSeguridad.ALMACEN,
-            Constantes.GruposSeguridad.ADMINISTRACION,
             Constantes.GruposSeguridad.DIRECCION,
             Constantes.GruposSeguridad.INFORMATICA,
             Constantes.GruposSeguridad.TIENDAS
         };
 
         public const string MENSAJE_SIN_PERMISO_EXTRACTO =
-            "No tiene permiso para ver el extracto del producto: es para Compras, Almacén, Administración, Dirección, Informática y Tiendas.";
+            "No tiene permiso para ver el extracto del producto: es para Compras, Almacén, Dirección, Informática y Tiendas.";
         public const string MENSAJE_SIN_PERMISO_PROVEEDORES =
             "No tiene permiso para ver de quién se compra el producto: es para Compras, Dirección e Informática.";
 
@@ -110,7 +109,7 @@ namespace NestoAPI.Infraestructure.Productos
         public static bool PuedeVerProveedoresYCostes(IPrincipal usuario) =>
             usuario != null && !NestoAPI.Infraestructure.Seguridad.ValidadorAccesoCliente.EsClienteTienda(usuario) && NestoAPI.Controllers.ComprasPlazosProveedoresController.PuedeVer(usuario);
 
-        /// <summary>El extracto: empleados de Compras, Almacén, Administración, Dirección, Informática y Tiendas. Ni vendedores de NestoApp ni clientes.</summary>
+        /// <summary>El extracto: empleados de Compras, Almacén, Dirección, Informática y Tiendas. Ni vendedores de NestoApp ni clientes.</summary>
         public static bool PuedeVerExtracto(IPrincipal usuario) =>
             usuario != null && !NestoAPI.Infraestructure.Seguridad.ValidadorAccesoCliente.EsClienteTienda(usuario)
             && GRUPOS_EXTRACTO.Any(g => usuario.IsInRoleSinDominio(g));
