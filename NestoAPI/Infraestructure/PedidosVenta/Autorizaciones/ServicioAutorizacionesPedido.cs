@@ -247,6 +247,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Autorizaciones
                     return ResultadoAutorizacionPedido.Error(HttpStatusCode.BadRequest, TextosAutorizacionPedido.ERROR_PEDIDO_ILEGIBLE);
                 }
 
+                pedido.AutorizadoPor = ReglaOmitirValidacionPedido.SinDominio(autorizador);
                 IHttpActionResult alta = await crearPedido(pedido, autorizador).ConfigureAwait(true);
                 int? numero = NumeroCreado(alta);
                 if (!numero.HasValue)

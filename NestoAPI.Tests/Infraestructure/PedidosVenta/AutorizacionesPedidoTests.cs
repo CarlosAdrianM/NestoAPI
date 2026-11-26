@@ -317,6 +317,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             Assert.AreEqual(931500, ((ResolucionAutorizacionPedidoDTO)r.Cuerpo).Pedido);
             Assert.AreEqual("NUEVAVISION\\Ana", recibido.Usuario);
             Assert.IsTrue(recibido.CreadoSinPasarValidacion);
+            Assert.AreEqual("Carlos", recibido.AutorizadoPor, "Carlos 26/11/26: el correo «Pedido nuevo» dice quién lo autorizó");
             Assert.AreEqual("NUEVAVISION\\Carlos", autorizadorRecibido);
             A.CallTo(() => repositorio.Resolver(7, EstadosAutorizacionPedido.AUTORIZADA, "NUEVAVISION\\Carlos", ahora, "Por esta vez", 931500)).MustHaveHappenedOnceExactly();
             A.CallTo(() => repositorio.Rastro(RepositorioAutorizacionesPedido.TABLA_RASTRO, A<string>._, A<string>.That.Contains("931500"), "NUEVAVISION\\Carlos"))

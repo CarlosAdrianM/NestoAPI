@@ -24,6 +24,22 @@ namespace NestoAPI.Tests.Infrastructure
             => new PlazoPago { Nº_Plazos = plazos, Financiacion = financiacionDias };
 
         [TestMethod]
+        public void SeccionValidacion_PedidoAutorizadoPorOtro_DiceQuienLoAutorizo()
+        {
+            // Carlos 26/11/26: lo pidió un vendedor y lo autorizó otro: que el correo diga quién.
+            var gestor = new GestorPresupuestos(new PedidoVentaDTO(), null, A.Fake<NVEntities>(), A.Fake<IServicioVendedores>(),
+                A.Fake<IServicioGestorStocks>(), A.Fake<IServicioCorreoElectronico>());
+            var respuesta = new RespuestaValidacion { ValidacionSuperada = false, Motivo = "Descuento no autorizado" };
+
+            string conAutorizador = gestor.GenerarHtmlSeccionValidacion(true, respuesta, 8, "Laura <b>");
+            string sinAutorizador = gestor.GenerarHtmlSeccionValidacion(true, respuesta, 8);
+
+            StringAssert.Contains(conAutorizador, "<strong>Autorizado por:</strong> Laura &lt;b&gt;</td>");
+            Assert.IsFalse(sinAutorizador.Contains("Autorizado por"));
+            Assert.AreEqual(string.Empty, gestor.GenerarHtmlSeccionValidacion(false, respuesta, 8, "Laura"));
+        }
+
+        [TestMethod]
         public void AsuntoCorreo_PedidoDeLaApp_VaMarcadoConElCanal()
         {
             // NestoAPI#444: el correo interno de un pedido hecho por el cliente desde la app

@@ -179,6 +179,12 @@ namespace NestoAPI.Models.PedidosVenta
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }
         /// <summary>
+        /// Carlos 26/11/26: quién AUTORIZÓ el pedido cuando lo pidió otro (solicitud de autorización): sale en el correo «Pedido nuevo»,
+        /// junto al aviso en rojo. Lo pone el servidor al autorizar; no viaja (ni se lee de lo que mande un cliente).
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string AutorizadoPor { get; set; }
+        /// <summary>
         /// NestoAPI#712: aviso de fecha de entrega lejana (más de 60 días). Null = el cliente no sabe preguntar y graba como
         /// siempre, sin aviso. False = la API comprueba y, si alguna línea nueva o con la fecha cambiada va a más de 60 días,
         /// rechaza con FECHA_ENTREGA_LEJANA (400) y la pregunta en el mensaje. True = el usuario ya ha dicho que sí.

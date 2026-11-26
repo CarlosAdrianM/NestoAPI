@@ -858,7 +858,7 @@ namespace NestoAPI.Infraestructure
 
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
             int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
-            string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion);
+            string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion, pedido.AutorizadoPor);
             if (!string.IsNullOrEmpty(htmlValidacion))
             {
                 _ = s.Append(htmlValidacion);
@@ -1858,7 +1858,7 @@ namespace NestoAPI.Infraestructure
         /// <param name="respuesta">La respuesta de validación (puede ser null)</param>
         /// <param name="colspan">Número de columnas para el colspan</param>
         /// <returns>HTML de la sección de validación, o string vacío si no aplica</returns>
-        internal string GenerarHtmlSeccionValidacion(bool creadoSinPasarValidacion, RespuestaValidacion respuesta, int colspan)
+        internal string GenerarHtmlSeccionValidacion(bool creadoSinPasarValidacion, RespuestaValidacion respuesta, int colspan, string autorizadoPor = null)
         {
             if (!creadoSinPasarValidacion)
             {
@@ -1895,6 +1895,11 @@ namespace NestoAPI.Infraestructure
             }
 
             _ = s.AppendLine("</tr>");
+            if (!string.IsNullOrWhiteSpace(autorizadoPor))
+            {
+                // Carlos 26/11/26: el pedido lo pidió uno y lo autorizó otro: que el correo diga quién.
+                _ = s.Replace("</td>", $"<br/><strong>Autorizado por:</strong> {System.Net.WebUtility.HtmlEncode(autorizadoPor.Trim())}</td>");
+            }
             return s.ToString();
         }
 
