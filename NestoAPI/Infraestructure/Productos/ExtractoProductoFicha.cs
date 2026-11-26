@@ -109,7 +109,25 @@ namespace NestoAPI.Infraestructure.Productos
         public static bool PuedeVerProveedoresYCostes(IPrincipal usuario) =>
             usuario != null && !NestoAPI.Infraestructure.Seguridad.ValidadorAccesoCliente.EsClienteTienda(usuario) && NestoAPI.Controllers.ComprasPlazosProveedoresController.PuedeVer(usuario);
 
-        /// <summary>El extracto: empleados de Compras, Almacén, Dirección, Informática y Tiendas. Ni vendedores de NestoApp ni clientes.</summary>
+        public const string MENSAJE_SIN_TIENDA =
+            "No se ha podido saber cuál es su tienda (su almacén de pedidos de venta): avise a Informática.";
+
+        private static readonly string[] GRUPOS_TODOS_LOS_ALMACENES =
+        {
+            Constantes.GruposSeguridad.COMPRAS,
+            Constantes.GruposSeguridad.ALMACEN,
+            Constantes.GruposSeguridad.DIRECCION,
+            Constantes.GruposSeguridad.INFORMATICA
+        };
+
+        /// <summary>
+        /// Carlos 26/11/26: Tiendas ve el extracto, pero solo de SU almacén. Quien además es de Compras, Almacén, Dirección o
+        /// Informática lo ve de todos.
+        /// </summary>
+        public static bool SoloSuAlmacen(IPrincipal usuario) =>
+            PuedeVerExtracto(usuario) && !GRUPOS_TODOS_LOS_ALMACENES.Any(g => usuario.IsInRoleSinDominio(g));
+
+        /// <summary>El extracto: empleados de Compras, Almacén, Dirección, Informática y Tiendas (cada tienda, solo su almacén). Ni vendedores de NestoApp ni clientes.</summary>
         public static bool PuedeVerExtracto(IPrincipal usuario) =>
             usuario != null && !NestoAPI.Infraestructure.Seguridad.ValidadorAccesoCliente.EsClienteTienda(usuario)
             && GRUPOS_EXTRACTO.Any(g => usuario.IsInRoleSinDominio(g));

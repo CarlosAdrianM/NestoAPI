@@ -31,7 +31,7 @@ compras, almacén ni precios. Lo nuevo de este tema se apunta aquí, en su secci
   (saldo del más nuevo de la página = SaldoInicial + lo del periodo − lo de las páginas anteriores). `Usuario` sin dominio. ExtractoProducto
   no guarda el número de asiento: `AsientoAutomatico` es la marca «Asiento Automático». Nombres de cliente y proveedor, de la misma empresa del
   movimiento o, si no está, de la empresa pedida.
-- Quién: empleados de Compras, Almacén, Dirección, Informática y Tiendas (`PuedeVerExtracto`; Administración NO: Carlos 26/11/26, «¿para qué?»); un vendedor de NestoApp o un
+- Quién: empleados de Compras, Almacén, Dirección, Informática y Tiendas (`PuedeVerExtracto`; Administración NO: Carlos 26/11/26, «¿para qué?»; quien solo es de Tiendas ve SOLO su almacén —su `AlmacénPedidoVta`—, pida el que pida, `SoloSuAlmacen`; sin almacén conocido, 403); un vendedor de NestoApp o un
   cliente de la tienda, 403. `Importe` (coste), `Proveedor` y `NombreProveedor` solo Compras, Dirección e Informática (a los demás, null).
 - UNA ida con dos lotes (`SQL_EXTRACTO`): nombre del producto, saldo inicial, suma y número del periodo y suma de lo de las páginas anteriores;
   después la página con los nombres por `TOP 1` correlacionado SOLO sobre las filas de la página. Sin OFFSET/FETCH ni SUM() OVER (ORDER BY)

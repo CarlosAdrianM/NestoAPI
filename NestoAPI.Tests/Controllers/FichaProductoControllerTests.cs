@@ -28,7 +28,7 @@ namespace NestoAPI.Tests.Controllers
             new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("IsVendedor", "true"), new Claim("Vendedor", "JE") }, "JWT"));
 
         private static FichaProductoController Controlador(ILectorFichaProducto lector, IPrincipal usuario) =>
-            new FichaProductoController(() => lector, () => HOY) { User = usuario };
+            new FichaProductoController(() => lector, () => HOY) { User = usuario, AlmacenDelUsuario = u => "REI" };
 
         private static MovimientoExtractoProductoDTO Mov(int orden, int cantidad) => new MovimientoExtractoProductoDTO
         {
@@ -235,6 +235,41 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void Extracto_Tiendas_SoloSuAlmacen_PidaElQuePida()
+        {
+            // Carlos 26/11/26: una tienda ve el extracto, pero filtrado por su almacén.
+            ILectorFichaProducto lector = LectorConExtracto();
+
+            var r = Controlador(lector, Empleado("Tiendas")).GetExtracto("17404", almacen: "alg") as OkNegotiatedContentResult<ExtractoProductoFichaDTO>;
+
+            Assert.IsNotNull(r);
+            Assert.AreEqual("REI", r.Content.Almacen);
+            A.CallTo(() => lector.LeerExtracto("1", "17404", "REI", A<DateTime>._, A<DateTime>._, 1, 200)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Extracto_Tiendas_SinAlmacenConocido_403SinLeer()
+        {
+            ILectorFichaProducto lector = LectorConExtracto();
+            FichaProductoController controlador = Controlador(lector, Empleado("Tiendas"));
+            controlador.AlmacenDelUsuario = u => null;
+
+            var r = controlador.GetExtracto("17404") as NegotiatedContentResult<string>;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, r.StatusCode);
+            Assert.AreEqual(PermisosFichaProducto.MENSAJE_SIN_TIENDA, r.Content);
+            A.CallTo(lector).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Extracto_TiendasQueAdemasEsDeAlmacen_VeTodos()
+        {
+            Assert.IsTrue(PermisosFichaProducto.SoloSuAlmacen(Empleado("Tiendas")));
+            Assert.IsFalse(PermisosFichaProducto.SoloSuAlmacen(Empleado("Tiendas", "Almacén")));
+            Assert.IsFalse(PermisosFichaProducto.SoloSuAlmacen(Empleado("Compras")));
+        }
+
+        [TestMethod]
         public void Extracto_Compras_ConImportesYProveedor()
         {
             var r = Controlador(LectorConExtracto(), Empleado("Compras")).GetExtracto("17404") as OkNegotiatedContentResult<ExtractoProductoFichaDTO>;
@@ -250,7 +285,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ILectorFichaProducto lector = LectorConExtracto();
 
-            Controlador(lector, Empleado("Tiendas")).GetExtracto("17404", pagina: 3, tamano: 9999);
+            Controlador(lector, Empleado("Almacén")).GetExtracto("17404", pagina: 3, tamano: 9999);
 
             A.CallTo(() => lector.LeerExtracto("1", "17404", null, A<DateTime>._, A<DateTime>._, 3, 500)).MustHaveHappenedOnceExactly();
         }

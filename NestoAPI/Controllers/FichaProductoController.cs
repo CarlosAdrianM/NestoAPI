@@ -20,6 +20,10 @@ namespace NestoAPI.Controllers
         public const string MENSAJE_SIN_PRODUCTO = "Falta el producto.";
         public const string MENSAJE_FECHAS = "La fecha «desde» no puede ser posterior a «hasta».";
 
+        /// <summary>El AlmacénPedidoVta del usuario (sin dominio): la tienda de quien es de Tiendas. Sustituible en los tests.</summary>
+        internal Func<string, string> AlmacenDelUsuario { get; set; } = usuario =>
+            ParametrosUsuarioController.LeerParametro(Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, NestoAPI.Infraestructure.Informes.GestorFacturacionTienda.CLAVE_ALMACEN_USUARIO);
+
         private readonly Func<ILectorFichaProducto> crearLector;
         private readonly Func<DateTime> hoy;
 
@@ -99,6 +103,18 @@ namespace NestoAPI.Controllers
             int paginaPedida = ReglaExtractoProducto.Pagina(pagina);
             int tamanoPedido = ReglaExtractoProducto.Tamano(tamano);
             string almacenFiltro = string.IsNullOrWhiteSpace(almacen) ? null : almacen.Trim().ToUpperInvariant();
+            if (PermisosFichaProducto.SoloSuAlmacen(User))
+            {
+                // Carlos 26/11/26: una tienda solo ve los movimientos de su almacén, pida el que pida.
+                string nombre = User?.Identity?.Name;
+                string sinDominio = string.IsNullOrWhiteSpace(nombre) ? null : nombre.Substring(nombre.LastIndexOf('\\') + 1).Trim();
+                string suyo = sinDominio == null ? null : AlmacenDelUsuario(sinDominio)?.Trim().ToUpperInvariant();
+                if (string.IsNullOrEmpty(suyo))
+                {
+                    return Content(HttpStatusCode.Forbidden, PermisosFichaProducto.MENSAJE_SIN_TIENDA);
+                }
+                almacenFiltro = suyo;
+            }
 
             PaginaExtractoProducto leido = crearLector().LeerExtracto(Empresa(empresa), producto.Trim(), almacenFiltro, inicio, fin, paginaPedida, tamanoPedido);
             if (leido == null)
