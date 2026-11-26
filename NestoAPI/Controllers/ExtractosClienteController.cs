@@ -88,7 +88,9 @@ namespace NestoAPI.Controllers
         /// vencimiento pasado, empresas 1 y 3) para la ficha de cliente de Nesto. Replica la
         /// consulta EF que hacía ClientesViewModel sobre ExtractoCliente.
         /// </summary>
+        // Auditoría de seguridad (26/11/26): [Authorize]; su único llamante (Nesto, ficha de cliente) va por ClienteApiFactory con token.
         [HttpGet]
+        [Authorize]
         [Route("api/ExtractosCliente/DeudaVencida")]
         [ResponseType(typeof(decimal))]
         public IHttpActionResult GetDeudaVencida(string cliente, string contacto)
@@ -440,6 +442,8 @@ namespace NestoAPI.Controllers
             return Ok(extractoCliente);
         }
 
+        // Auditoría de seguridad (26/11/26): SIN [Authorize] a propósito. Ningún repositorio (Nesto, NestoApp, TNV, Ariadna) ni job
+        // de Hangfire lo llama: lo lanza una tarea programada de fuera, que puede no llevar token. Cerrarlo cuando se sepa cuál es.
         [HttpGet]
         [Route("api/ExtractosCliente/EnviarCorreoDomiciliacionDia")]
         // GET: api/Clientes/5

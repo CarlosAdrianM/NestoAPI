@@ -506,6 +506,7 @@
     <Folder Include="Views\Accounts\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Infraestructure\ParametrosUsuario\ReglaCambioParametroUsuario.cs" />
     <Compile Include="App_Start\BundleConfig.cs" />
     <Compile Include="App_Start\FilterConfig.cs" />
     <Compile Include="App_Start\RouteConfig.cs" />

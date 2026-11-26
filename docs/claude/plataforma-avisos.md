@@ -32,6 +32,16 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   `UltimaNovedadVistaApp`/`UltimaNovedadVista` por ParametrosUsuario (`Scripts/Issue495_UltimaNovedadVista.sql`). Una sugerencia implementada
   conserva su Id antiguo: con `desdeId` no sale. NestoApp ya lo usa (2.28.0); el lado Nesto, pendiente.
 
+### Endpoints que no llevaban [Authorize] (auditoría de seguridad, 26/11/26)
+- Cerrados (`[Authorize]`), porque todos sus llamantes conocidos mandan token: `GET api/ExtractosCliente/DeudaVencida` (Nesto, ficha de cliente, por
+  `ClienteApiFactory`) y `GET api/AlbaranesVenta` (Nesto, `PedidoVentaService.CargarAlbaran`).
+- SIN cerrar a propósito: `GET api/ExtractosCliente/EnviarCorreoDomiciliacionDia` (ningún repositorio ni job lo llama: será una tarea programada de
+  fuera, quizá sin token) y `PUT api/ParametrosUsuario` (Nesto guarda sus preferencias con `Configuracion.GuardarParametro`/`GuardarParametroSync`, un
+  HttpClient SIN token; NestoApp sí lo manda). En el PUT, LA REGLA (pura) `ReglaCambioParametroUsuario` (`Infraestructure/ParametrosUsuario/`): las claves
+  de permiso (`PermitirCrearPedidoConErroresValidacion`, `InventarioBorrarFilas` y las que empiezan por `Permitir`, `Cupones.`, `NestoViejo_`,
+  `Validacion.`) y la fila «(defecto)» solo Dirección/Informática con token; un usuario identificado solo SUS filas; sin token, lo de siempre (sus
+  preferencias) salvo esas → 403 de usted. Para cerrarlo del todo: que Nesto guarde por `ClienteApiFactory` y entonces `[Authorize]`.
+
 ### ELMAH User Sync (05/12/25)
 ELMAH no mostraba el usuario en los errores porque OWIN/JWT no sincroniza automáticamente el usuario con `HttpContext.Current.User`.
 

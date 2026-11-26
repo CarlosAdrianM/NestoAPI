@@ -176,9 +176,23 @@ namespace NestoAPI.Controllers
         }
 
         // PUT: api/ParametrosUsuario/5
+        // Auditoría de seguridad (26/11/26): SIN [Authorize] a propósito, porque Nesto guarda sus preferencias con un HttpClient
+        // sin token (Configuracion.GuardarParametro/GuardarParametroSync); NestoApp sí manda el token. Mientras tanto, LA REGLA
+        // ReglaCambioParametroUsuario: las claves de permiso y la fila «(defecto)» solo Dirección/Informática (con token), y un
+        // usuario identificado solo sus filas → 403 de usted.
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutParametroUsuario(ParametroUsuario parametro)
         {
+            if (parametro == null)
+            {
+                return BadRequest("Falta el parámetro.");
+            }
+            string motivo = ReglaCambioParametroUsuario.MotivoNoPermitido(User, parametro.Usuario, parametro.Clave);
+            if (motivo != null)
+            {
+                return Content(HttpStatusCode.Forbidden, motivo);
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);

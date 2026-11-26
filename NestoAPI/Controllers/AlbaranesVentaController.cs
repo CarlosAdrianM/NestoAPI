@@ -27,7 +27,9 @@ namespace NestoAPI.Controllers
         }
 
         // GET api/AlbaranesVenta
+        // Auditoría de seguridad (26/11/26): [Authorize]; su único llamante (Nesto, PedidoVentaService.CargarAlbaran) manda el token.
         [HttpGet]
+        [Authorize]
         public async Task<HttpResponseMessage> GetAlbaran(string empresa, int numeroAlbaran, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             // 25/11/26: LA REGLA de los documentos que no salen (empresa espejo o albarán de un pedido con IVA NULL)
