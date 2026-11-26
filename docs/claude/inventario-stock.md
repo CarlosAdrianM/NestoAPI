@@ -138,7 +138,12 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (revisar con el SELECT del script). El paso 4 pone `AlmacenIncompletos` = INC si estaba vacío.
   No cuenta en: stock de la web (#818, ALG/REI/ALC), motor de fechas y disponible (`ListaSedes`), reposición del exceso (origen REI/ALC), pérdida desconocida
   (ALG/REI/ALC; además los apuntes llevan NºTraspaso). SÍ cuenta (todos los almacenes menos EXT): indicadores de stock y propuestas de stock (Tendencias,
-  `DemandaStock.SQL_FILTRO_STOCK`), precio medio (todas). Y se puede elegir como almacén en: rellenar/contar inventario (cualquier almacén sin ubicaciones),
-  los traspasos de #894 (tipo «Otro», solo Almacén: saltaría las fichas) y la lista de almacenes de los pedidos (`api/PedidosVenta/Almacenes`).
+  `DemandaStock.SQL_FILTRO_STOCK`), precio medio (todas).
+- **Que no se cuele por otros caminos (Fable con el criterio de Carlos «nada se pierde, todo por su cauce», 26/11/26)**: `GuardaAlmacenIncompletos`
+  (`ProductosIncompletos/GuardaAlmacenIncompletos.cs`; código del parámetro `AlmacenIncompletos` con caché de 5 min, nunca «INC» a fuego; sin fila o si no se
+  puede leer, no frena nada). (a) `POST api/Inventarios/Rellenar`, `POST`/`PUT api/Inventarios`, `POST …/DejarACero` y `POST …/Contabilizar` en ese almacén → 400
+  {Message «El almacén de incompletos no se inventaría: sus unidades se controlan desde Productos incompletos.»}. (b) Almacenes ficticios (#894): no sale en
+  `GET api/AlmacenesFicticios` y `POST …/Traspasos` → 403 «El almacén de incompletos no admite traspasos de almacenes ficticios: …» (las Existencias, solo
+  lectura, siguen). (c) No sale en `GET api/PedidosVenta/Almacenes` (`PedidosVentaController.QuitarAlmacenIncompletos`). Propuestas e indicadores de stock, sin cambios.
 - Pendiente: aviso al vender una serie incompleta, costes, apartado en el informe de pérdida desconocida (#893), regularizar los Depiblend 101268
   y 101270. Gemelas Nesto#653 (pantalla) y Ariadna#109 (PDA).

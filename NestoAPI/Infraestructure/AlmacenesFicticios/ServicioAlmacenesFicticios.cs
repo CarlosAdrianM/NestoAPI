@@ -85,15 +85,34 @@ namespace NestoAPI.Infraestructure.AlmacenesFicticios
     {
         private readonly IRepositorioAlmacenesFicticios repositorio;
         private readonly IAvisadorAlmacenFicticio avisador;
+        /// <summary>NestoAPI#902: el código del almacén de incompletos (null = ninguno). Sin él, el de ParametrosUsuario con caché.</summary>
+        private readonly Func<string> almacenIncompletos;
 
         public ServicioAlmacenesFicticios(NVEntities db) : this(new RepositorioAlmacenesFicticiosSql(db), new AvisadorAlmacenFicticio())
         {
         }
 
-        internal ServicioAlmacenesFicticios(IRepositorioAlmacenesFicticios repositorio, IAvisadorAlmacenFicticio avisador)
+        internal ServicioAlmacenesFicticios(IRepositorioAlmacenesFicticios repositorio, IAvisadorAlmacenFicticio avisador,
+            Func<string> almacenIncompletos = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.avisador = avisador;
+            this.almacenIncompletos = almacenIncompletos ?? ProductosIncompletos.GuardaAlmacenIncompletos.Codigo;
+        }
+
+        /// <summary>NestoAPI#902: el de incompletos no sale aquí (sus unidades se mueven desde Productos incompletos). Nunca lanza.</summary>
+        private bool EsElDeIncompletos(string almacen)
+        {
+            string codigo;
+            try
+            {
+                codigo = almacenIncompletos();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            return ProductosIncompletos.GuardaAlmacenIncompletos.EsElDeIncompletos(almacen, codigo);
         }
 
         private static string Empresa => Constantes.Empresas.EMPRESA_POR_DEFECTO;
@@ -138,7 +157,7 @@ namespace NestoAPI.Infraestructure.AlmacenesFicticios
             List<AlmacenLeido> almacenes = await repositorio.LeerAlmacenes(Empresa).ConfigureAwait(false) ?? new List<AlmacenLeido>();
             List<DuenoAlmacenFicticio> duenos = await repositorio.LeerDuenos().ConfigureAwait(false) ?? new List<DuenoAlmacenFicticio>();
             var lista = new List<AlmacenFicticioDTO>();
-            foreach (AlmacenLeido almacen in almacenes.Where(a => a.EsFicticio))
+            foreach (AlmacenLeido almacen in almacenes.Where(a => a.EsFicticio && !EsElDeIncompletos(a.Codigo)))
             {
                 DecisionAlmacenFicticio decision = ReglasAlmacenesFicticios.Decidir(contexto, almacen.Codigo, duenos);
                 if (!decision.PuedeVer)
@@ -204,6 +223,11 @@ namespace NestoAPI.Infraestructure.AlmacenesFicticios
             if (invalida != null)
             {
                 throw new NestoBusinessException(invalida);
+            }
+            // NestoAPI#902: ni meter ni sacar del almacén de incompletos por aquí (403 de usted)
+            if (EsElDeIncompletos(peticion.AlmacenFicticio))
+            {
+                throw new NestoBusinessException(ProductosIncompletos.GuardaAlmacenIncompletos.MENSAJE_TRASPASO) { StatusCode = HttpStatusCode.Forbidden };
             }
             (AlmacenLeido ficticio, DecisionAlmacenFicticio decision, List<AlmacenLeido> almacenes, List<DuenoAlmacenFicticio> duenos) =
                 await Resolver(peticion.AlmacenFicticio, contexto).ConfigureAwait(false);

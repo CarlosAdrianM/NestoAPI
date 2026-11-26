@@ -1612,6 +1612,7 @@
     <Compile Include="Controllers\AlmacenesFicticiosController.cs" />
     <Compile Include="Controllers\ProductosIncompletosController.cs" />
     <Compile Include="Infraestructure\ProductosIncompletos\ProductosIncompletos.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\GuardaAlmacenIncompletos.cs" />
     <Compile Include="Infraestructure\ProductosIncompletos\RepositorioProductosIncompletosSql.cs" />
     <Compile Include="Infraestructure\ProductosIncompletos\ServicioProductosIncompletos.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicionSql.cs" />

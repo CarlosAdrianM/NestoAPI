@@ -230,6 +230,11 @@ namespace NestoAPI.Controllers
                 .Select(i => new { i.PorCodigoBarras, i.Pasillo, i.Fila, i.Columna, i.Empresa, i.Almacén, i.Fecha, i.Número })
                 .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
             bool? marcaGuardada = guardada?.PorCodigoBarras;
+            // NestoAPI#902: el almacén de incompletos no se inventaría (sus unidades, desde Productos incompletos)
+            if (Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.Es(guardada?.Almacén ?? inventario.Almacén))
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.MENSAJE_INVENTARIO });
+            }
             // Incidencia 1227: una fila que tenía hueco no se queda sin él por un PUT (sería «sin ubicación» y bloquearía el contabilizar)
             if (guardada != null && Infraestructure.Inventarios.ReglasHuecoInventario.TraeHueco(guardada.Pasillo, guardada.Fila, guardada.Columna)
                 && !Infraestructure.Inventarios.ReglasHuecoInventario.TraeHueco(inventario.Pasillo, inventario.Fila, inventario.Columna))
@@ -291,6 +296,11 @@ namespace NestoAPI.Controllers
             if (string.IsNullOrWhiteSpace(inventario.Empresa) || string.IsNullOrWhiteSpace(inventario.Número))
             {
                 throw new Exception("Es obligatorio especificar el producto");
+            }
+            // NestoAPI#902: el almacén de incompletos no se inventaría (sus unidades, desde Productos incompletos)
+            if (Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.Es(inventario.Almacén))
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.MENSAJE_INVENTARIO });
             }
 
             // Etiquetas de inmovilizado (25/11/26): «I/1823» no se cuenta (409 ES_INMOVILIZADO con Message, como los demás 409 del lector)
