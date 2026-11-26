@@ -167,7 +167,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Autorizaciones
             Func<string, string, string, string> lector = Memorizado(leerParametro);
             return filas
                 .Where(f => ReglasAutorizacionPedido.EsDe(f.Solicitante, usuario) || (!mias && PuedeAutorizar(principal, usuario, f, lector)))
-                .Select(f => ADto(f, conPedido: false))
+                .Select(f => ConPermisos(ADto(f, conPedido: false), f, principal, usuario, lector))
                 .ToList();
         }
 
@@ -179,11 +179,26 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Autorizaciones
                 return ResultadoAutorizacionPedido.Error(HttpStatusCode.NotFound, TextosAutorizacionPedido.ERROR_NO_ENCONTRADA);
             }
             string usuario = usuarioDe(principal, null);
-            if (!ReglasAutorizacionPedido.EsDe(fila.Solicitante, usuario) && !PuedeAutorizar(principal, usuario, fila, leerParametro))
+            Func<string, string, string, string> lector = Memorizado(leerParametro);
+            if (!ReglasAutorizacionPedido.EsDe(fila.Solicitante, usuario) && !PuedeAutorizar(principal, usuario, fila, lector))
             {
                 return ResultadoAutorizacionPedido.Error(HttpStatusCode.Forbidden, TextosAutorizacionPedido.ERROR_SIN_PERMISO_VER);
             }
-            return ResultadoAutorizacionPedido.Bien(ADto(fila, conPedido: true));
+            return ResultadoAutorizacionPedido.Bien(ConPermisos(ADto(fila, conPedido: true), fila, principal, usuario, lector));
+        }
+
+        /// <summary>
+        /// NestoAPI#909: PuedeAutorizar y PuedeAnular para quien pregunta. Con el lector memorizado de la petición, los parámetros del
+        /// usuario se leen una vez por petición (no por fila); en las suyas o las ya resueltas ni se miran.
+        /// </summary>
+        internal static AutorizacionPedidoDTO ConPermisos(AutorizacionPedidoDTO dto, FilaAutorizacionPedido fila, IPrincipal principal, string usuario,
+            Func<string, string, string, string> lector)
+        {
+            bool suya = ReglasAutorizacionPedido.EsDe(fila.Solicitante, usuario);
+            bool pendiente = ReglasAutorizacionPedido.MotivoNoPendiente(fila) == null;
+            dto.PuedeAutorizar = pendiente && !suya && PuedeAutorizar(principal, usuario, fila, lector);
+            dto.PuedeAnular = pendiente && suya;
+            return dto;
         }
 
         // ----- POST …/{id}/Autorizar -----

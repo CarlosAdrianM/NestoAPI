@@ -27,6 +27,10 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   orden— en 24 h → 409 {Message, Codigo YA_SOLICITADA, Id}) → 201 {Id, Estado, Motivos, Errores, Destinatarios}; `GET …?pendientes=true&mias=false` (30 días;
   ve las suyas y las que LA REGLA le deja autorizar), `GET …/{id}` (+ Pedido; 403), `POST …/{id}/Autorizar` {Comentario?}, `POST …/{id}/Denegar` {Motivo 1..500},
   `DELETE …/{id}` (solo quien la pidió). 409 si ya no está Pendiente.
+- **`PuedeAutorizar` y `PuedeAnular` (NestoAPI#909, para NestoApp#294, 26/11/26)**: aditivos en cada `AutorizacionPedidoDTO` de los dos GET, para QUIEN
+  PREGUNTA (`ServicioAutorizacionesPedido.ConPermisos`): `PuedeAutorizar` = Pendiente + no es suya + LA REGLA de Autorizar/Denegar
+  (`PuedeAutorizar` → `ReglaOmitirValidacionPedido.PuedeOmitir`, con Almacenes y PermisoNecesario guardados en la fila); `PuedeAnular` = suya y Pendiente.
+  Los parámetros del usuario se leen una vez por petición (lector memorizado), nunca por fila; en las suyas o las resueltas ni se miran.
 - Autorizar: bloqueo `sp_getapplock` de sesión `PedidoAutorizacion:{id}` (otro a la vez → 409), y el pedido se crea por `PedidosVentaController.PostPedidoVenta`
   (el MISMO camino, con el principal de quien autoriza) con Usuario = solicitante y `CreadoSinPasarValidacion`; `PedidosVentaController.UsuarioPermisosValidacion`
   = quien autoriza (sus parámetros, no los del solicitante). Si el alta falla, su respuesta tal cual y la solicitud sigue Pendiente. Rastro en Modificaciones
