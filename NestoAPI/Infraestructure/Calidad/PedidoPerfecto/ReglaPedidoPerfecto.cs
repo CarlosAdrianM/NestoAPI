@@ -123,7 +123,10 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         /// <summary>Almacén de las líneas de producto (el mayor si hay varios): sus festivos cuentan para los laborables.</summary>
         public string Almacen { get; set; }
         public decimal Importe { get; set; }
+        /// <summary>Alguna línea con cantidad negativa (cheque regalo, descuento de portes, devolución suelta…): el pedido entra igual.</summary>
+        public bool LlevaLineasNegativas { get; set; }
 
+        /// <summary>Líneas de producto con cantidad positiva (las negativas no cuentan para servido, pendiente ni albaranes).</summary>
         public int LineasProducto { get; set; }
         /// <summary>Líneas de producto en -1 o 1 (pendientes o en curso).</summary>
         public int LineasPendientes { get; set; }

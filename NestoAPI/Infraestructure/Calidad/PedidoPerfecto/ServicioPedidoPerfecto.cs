@@ -90,6 +90,8 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         public byte? ModoServicio { get; set; }
         public string PlazosPago { get; set; }
         public string FormaPago { get; set; }
+        /// <summary>Alguna línea con cantidad negativa (cheque regalo, descuento, devolución suelta): entra igual en el universo.</summary>
+        public bool LlevaLineasNegativas { get; set; }
     }
 
     public class PaginaPedidosPerfectoDTO
@@ -301,7 +303,8 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
             Albaranes = h.Albaranes,
             ModoServicio = h.ModoServicio,
             PlazosPago = h.PlazosPago?.Trim(),
-            FormaPago = h.FormaPago?.Trim()
+            FormaPago = h.FormaPago?.Trim(),
+            LlevaLineasNegativas = h.LlevaLineasNegativas
         };
 
         internal static decimal? Porcentaje(int parte, int total) =>
