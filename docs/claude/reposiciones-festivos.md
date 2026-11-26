@@ -22,6 +22,16 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   `IServicioPreparacionReposicion.PuedeEscribir` (la gente de la tienda por AlmacénPedidoVta, Almacén o Dirección), los de POST api/Reposiciones.
   De verdad: `IServicioPreparacionReposicion.Crear` con las líneas calculadas (el mismo camino; sus 409 tal cual: otra en preparación, inventario en
   curso); queda en preparación en la tienda hasta Terminar. Sin exceso: 200 con Lineas vacía, «No hay exceso…», nada creado.
+- **Filtros flexibles (Manuel 26/11/26: «solo los esmaltes tradicionales», «más de X unidades», «sin ventas en el último año»)**: opcionales y
+  combinables (Y) con los de siempre: `TextoNombre` (el nombre lleva TODAS sus palabras, sin mayúsculas; también es filtro de selección),
+  `TextoNombreExcluir` (fuera si lleva CUALQUIERA de sus palabras: «PERMANENTE»), `StockMinimo` (Stock > N, el de la línea), `SinVentasEnMeses` 1..60
+  (ninguna línea de venta Estado ≥ 2 y Cantidad > 0 de ese producto en la TIENDA de origen, empresas del stock 1/espejo/4, con `[Fecha Albarán]` en esos
+  meses; nunca vendida = entra) y `DejarEnTienda` (sustituye al máximo de la ficha: exceso = min(Stock − Dejar, Stock − Pendiente); entonces
+  `LineasSinMaximo` = 0). Sigue haciendo falta un filtro de selección (familia, grupo, subgrupo, productos o TextoNombre); como mucho 10 palabras.
+  Respuesta: `Filtros` («Filtros: familia FABY; el nombre lleva «ESMALTE»; el nombre no lleva «PERMANENTE»; más de 3 unidades en la tienda; sin ventas
+  en Alcobendas en los últimos 12 meses; se dejan 2 unidades de cada referencia en la tienda.») y, si se pidió `SinVentasEnMeses`, `UltimaVenta` en cada
+  línea (null = no consta). Todo en LA REGLA (`PasaFiltros`, `TextoFiltros`) y, para no leer de más, también en la MISMA consulta (LIKE con ESCAPE '!',
+  `@stockMinimo`; la CTE `ventas` solo si se pide).
 
 ### Diferencias de reposición «En discusión» y quién pierde (NestoAPI#906, sugerencia 1433, Carlos 25/11/26: decide el sistema, no Dirección)
 - Solo FALTAS pendientes: el ORIGEN (permiso de resolver) abre `POST api/Reposiciones/Diferencias/{id}/Discusion` {Comentario obligatorio}; campana al

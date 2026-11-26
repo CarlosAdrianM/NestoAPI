@@ -292,5 +292,171 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.IsFalse(LectorExcesoReposicionSql.Sql(0).Contains("@p0"));
             StringAssert.Contains(sql, "WITH (NOLOCK)");
         }
+
+        // ---------------------------------------------------------------- filtros flexibles (sugerencia 1429, Manuel 26/11/26)
+
+        private static FilaExcesoReposicion FilaConVenta(string producto, string nombre, int stock, DateTime? ultimaVenta)
+        {
+            FilaExcesoReposicion fila = Fila(producto, stock, 0, 0, nombre);
+            fila.UltimaVenta = ultimaVenta;
+            return fila;
+        }
+
+        private static readonly DateTime HOY = new DateTime(2026, 11, 26);
+
+        [TestMethod]
+        public void Normalizar_SoloTextoDelNombre_ValeComoFiltroDeSeleccion()
+        {
+            FiltroExcesoReposicion filtro = ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO
+            {
+                Origen = "ALC", TextoNombre = " esmalte   faby ", TextoNombreExcluir = "permanente"
+            });
+            CollectionAssert.AreEqual(new[] { "ESMALTE", "FABY" }, filtro.PalabrasNombre);
+            CollectionAssert.AreEqual(new[] { "PERMANENTE" }, filtro.PalabrasExcluir);
+        }
+
+        [TestMethod]
+        public void Normalizar_LosFiltrosQueNoSeleccionanNoBastan()
+        {
+            var ex = Assert.ThrowsException<NestoBusinessException>(() => ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO
+            {
+                Origen = "ALC", TextoNombreExcluir = "PERMANENTE", StockMinimo = 3, SinVentasEnMeses = 12, DejarEnTienda = 2
+            }));
+            StringAssert.Contains(ex.Message, "texto del nombre");
+        }
+
+        [TestMethod]
+        public void Normalizar_ValoresFueraDeRango_400()
+        {
+            Assert.ThrowsException<NestoBusinessException>(() => ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "X", SinVentasEnMeses = 0 }));
+            Assert.ThrowsException<NestoBusinessException>(() => ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "X", SinVentasEnMeses = 61 }));
+            Assert.ThrowsException<NestoBusinessException>(() => ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "X", StockMinimo = -1 }));
+            Assert.ThrowsException<NestoBusinessException>(() => ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "X", DejarEnTienda = -1 }));
+            Assert.ThrowsException<NestoBusinessException>(() => ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", TextoNombre = "a b c d e f g h i j k" }));
+            Assert.IsNotNull(ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "X", SinVentasEnMeses = 60, DejarEnTienda = 0, StockMinimo = 0 }));
+        }
+
+        [TestMethod]
+        public void Calcular_TextoDelNombre_TodasLasPalabrasSinMayusculasYExcluida_Ninguna()
+        {
+            FiltroExcesoReposicion filtro = ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO
+            {
+                Origen = "ALC", TextoNombre = "esmalte faby", TextoNombreExcluir = "permanente"
+            });
+            List<LineaExcesoReposicionDTO> lineas = ReglaExcesoReposicion.Calcular(new[]
+            {
+                Fila("1", 3, 0, 0, "Faby esmalte rojo"),
+                Fila("2", 3, 0, 0, "ESMALTE FABY PERMANENTE ROJO"),
+                Fila("3", 3, 0, 0, "Esmalte tradicional"),
+                Fila("4", 3, 0, 0, null)
+            }, filtro, HOY);
+
+            CollectionAssert.AreEqual(new[] { "1" }, lineas.Select(l => l.Producto).ToArray());
+        }
+
+        [TestMethod]
+        public void Calcular_StockMinimo_SoloLasQueLoSuperan()
+        {
+            FiltroExcesoReposicion filtro = ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "FAB", StockMinimo = 3 });
+            List<LineaExcesoReposicionDTO> lineas = ReglaExcesoReposicion.Calcular(new[] { Fila("1", 3, 0, 0), Fila("2", 4, 0, 0) }, filtro, HOY);
+            CollectionAssert.AreEqual(new[] { "2" }, lineas.Select(l => l.Producto).ToArray());
+        }
+
+        [TestMethod]
+        public void Calcular_SinVentasEnMeses_FueraLasVendidasDentroDelPlazoYConLaFecha()
+        {
+            FiltroExcesoReposicion filtro = ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "FAB", SinVentasEnMeses = 12 });
+            List<LineaExcesoReposicionDTO> lineas = ReglaExcesoReposicion.Calcular(new[]
+            {
+                FilaConVenta("1", "A", 3, null),                          // nunca vendida: entra
+                FilaConVenta("2", "B", 3, new DateTime(2025, 11, 25)),    // hace más de 12 meses: entra
+                FilaConVenta("3", "C", 3, new DateTime(2025, 11, 26)),    // justo 12 meses: cuenta como vendida
+                FilaConVenta("4", "D", 3, new DateTime(2026, 10, 1))      // vendida hace poco: fuera
+            }, filtro, HOY);
+
+            CollectionAssert.AreEqual(new[] { "1", "2" }, lineas.Select(l => l.Producto).ToArray());
+            Assert.IsNull(lineas[0].UltimaVenta);
+            Assert.AreEqual(new DateTime(2025, 11, 25), lineas[1].UltimaVenta);
+        }
+
+        [TestMethod]
+        public void Calcular_SinPedirVentas_NoLlevaUltimaVenta()
+        {
+            List<LineaExcesoReposicionDTO> lineas = ReglaExcesoReposicion.Calcular(new[] { FilaConVenta("1", "A", 3, new DateTime(2026, 10, 1)) },
+                ReglaExcesoReposicion.Normalizar(Peticion()), HOY);
+            Assert.IsNull(lineas.Single().UltimaVenta);
+        }
+
+        [TestMethod]
+        public void Calcular_DejarEnTienda_SustituyeAlMaximoConElTopeDelPendiente()
+        {
+            FiltroExcesoReposicion filtro = ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO { Origen = "ALC", Familia = "FAB", DejarEnTienda = 2 });
+            List<LineaExcesoReposicionDTO> lineas = ReglaExcesoReposicion.Calcular(new[]
+            {
+                Fila("1", 7, 0, 5),      // la ficha dejaría 5; se dejan 2 → 5
+                Fila("2", 7, 4, null),   // pendiente 4 topa → 3
+                Fila("3", 2, 0, 0)       // se queda en la tienda entero
+            }, filtro, HOY);
+
+            CollectionAssert.AreEqual(new[] { "1:5", "2:3" }, lineas.Select(l => l.Producto + ":" + l.Exceso).ToArray());
+        }
+
+        [TestMethod]
+        public void Resultado_DejarEnTienda_NoCuentaLasSinMaximoYFiltrosEnUnaLinea()
+        {
+            FiltroExcesoReposicion filtro = ReglaExcesoReposicion.Normalizar(new PeticionExcesoReposicionDTO
+            {
+                Origen = "ALC", Familia = "faby", TextoNombre = "esmalte", TextoNombreExcluir = "permanente gel", StockMinimo = 3,
+                SinVentasEnMeses = 12, DejarEnTienda = 2
+            });
+            ResultadoExcesoReposicionDTO r = ReglaExcesoReposicion.Resultado(filtro, new[] { Fila("1", 7, 0, null, "Esmalte rojo") }, true, HOY);
+
+            Assert.AreEqual(0, r.LineasSinMaximo);
+            Assert.AreEqual("Filtros: familia FABY; el nombre lleva «ESMALTE»; el nombre no lleva «PERMANENTE» ni «GEL»; más de 3 unidades en la tienda; " +
+                "sin ventas en Alcobendas en los últimos 12 meses; se dejan 2 unidades de cada referencia en la tienda.", r.Filtros);
+            Assert.AreEqual("Se mandarían 5 unidades de 1 referencia de Alcobendas a Algete.", r.Mensaje);
+        }
+
+        [TestMethod]
+        public void Resultado_SinFiltrosNuevos_DiceQueSeDejaElMaximoDeLaFicha()
+        {
+            ResultadoExcesoReposicionDTO r = ReglaExcesoReposicion.Resultado(ReglaExcesoReposicion.Normalizar(Peticion()), new[] { Fila("1", 7, 0, 2) }, true, HOY);
+            Assert.AreEqual("Filtros: familia FABY; se deja en la tienda el máximo de la ficha.", r.Filtros);
+        }
+
+        [TestMethod]
+        public void Sql_ConPalabrasYVentas_ParametrosYUltimaVentaSoloSiSePide()
+        {
+            string sql = LectorExcesoReposicionSql.Sql(0, 2, 1, true);
+            StringAssert.Contains(sql, "UPPER(p.Nombre) LIKE @n0 ESCAPE '!'");
+            StringAssert.Contains(sql, "UPPER(p.Nombre) LIKE @n1 ESCAPE '!'");
+            StringAssert.Contains(sql, "NOT LIKE @x0 ESCAPE '!'");
+            StringAssert.Contains(sql, "LEFT JOIN ventas v");
+            StringAssert.Contains(sql, "l.Estado >= 2 AND l.Cantidad > 0");
+            StringAssert.Contains(sql, "> @stockMinimo");
+            Assert.IsFalse(LectorExcesoReposicionSql.Sql(0, 1, 0, false).Contains("ventas AS"));
+            Assert.IsFalse(sql.Contains("STRING_SPLIT") || sql.Contains("TRY_CONVERT"));
+        }
+
+        [TestMethod]
+        public void Like_EscapaLosComodines()
+        {
+            Assert.AreEqual("%50!%!_A![B!!%", LectorExcesoReposicionSql.Like("50%_A[B!"));
+        }
+
+        [TestMethod]
+        public async Task PostExceso_ConFiltrosNuevos_LlegaAlLectorYVuelvenEnLaRespuesta()
+        {
+            var ok = (OkNegotiatedContentResult<ResultadoExcesoReposicionDTO>)await Controlador().PostExceso(new PeticionExcesoReposicionDTO
+            {
+                Empresa = "1", Origen = "ALC", TextoNombre = "producto", StockMinimo = 2, SinVentasEnMeses = 6, DejarEnTienda = 1
+            });
+
+            A.CallTo(() => lector.Leer(A<FiltroExcesoReposicion>.That.Matches(f => f.PalabrasNombre.Single() == "PRODUCTO"
+                && f.StockMinimo == 2 && f.SinVentasEnMeses == 6 && f.DejarEnTienda == 1))).MustHaveHappenedOnceExactly();
+            // 12345: stock 7, pendiente 1, se deja 1 → 6; 67890: stock 3 → 2
+            CollectionAssert.AreEquivalent(new[] { "12345:6", "67890:2" }, ok.Content.Lineas.Select(l => l.Producto + ":" + l.Exceso).ToArray());
+            StringAssert.StartsWith(ok.Content.Filtros, "Filtros: el nombre lleva «PRODUCTO»");
+        }
     }
 }

@@ -556,7 +556,8 @@ namespace NestoAPI.Controllers
             set => lectorExceso = value;
         }
 
-        // POST api/Reposiciones/Exceso?ensayo=true   { Empresa, Origen (REI|ALC), Destino? (ALG), Familia?, Grupo?, Subgrupo?, Productos? }
+        // POST api/Reposiciones/Exceso?ensayo=true   { Empresa, Origen (REI|ALC), Destino? (ALG), Familia?, Grupo?, Subgrupo?, Productos?,
+        //     TextoNombre?, TextoNombreExcluir?, StockMinimo?, SinVentasEnMeses? (1..60), DejarEnTienda? }
         /// <summary>
         /// Sugerencia 1429 (Manuel, 26/11/26): lo que una tienda tiene de más (exceso = min(stock − stock máximo de su ficha para
         /// la tienda, stock − pendiente); sin máximo puesto = máximo 0) de una familia, grupo, subgrupo o lista de productos, para

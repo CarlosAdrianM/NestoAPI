@@ -30,6 +30,19 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Grupo { get; set; }
         public string Subgrupo { get; set; }
         public List<string> Productos { get; set; }
+        /// <summary>
+        /// Sugerencia 1429 (Manuel, 26/11/26): el nombre del producto contiene este texto (sin mayúsculas; varias palabras = todas,
+        /// en cualquier orden). También vale como filtro de selección.
+        /// </summary>
+        public string TextoNombre { get; set; }
+        /// <summary>El nombre NO contiene este texto (p. ej. «PERMANENTE»; varias palabras = fuera si tiene cualquiera).</summary>
+        public string TextoNombreExcluir { get; set; }
+        /// <summary>Solo productos con Stock &gt; este número (el stock de la línea: ya sin lo comprometido en otra reposición).</summary>
+        public int? StockMinimo { get; set; }
+        /// <summary>1..60: solo productos sin ninguna venta (albarán o factura, cantidad &gt; 0) en la tienda de origen en esos meses.</summary>
+        public int? SinVentasEnMeses { get; set; }
+        /// <summary>Si viene, sustituye al máximo de la ficha: exceso = Stock − DejarEnTienda (con el mismo tope del pendiente).</summary>
+        public int? DejarEnTienda { get; set; }
     }
 
     public class LineaExcesoReposicionDTO
@@ -50,6 +63,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <summary>Sin fila en ControlesStock para la tienda: se trata como máximo 0 (se devuelve entero).</summary>
         public bool SinMaximo { get; set; }
         public int Exceso { get; set; }
+        /// <summary>
+        /// Solo cuando se pide <see cref="PeticionExcesoReposicionDTO.SinVentasEnMeses"/>: la última venta del producto en la tienda
+        /// (fecha del albarán). Null si no consta ninguna (o no se pidió).
+        /// </summary>
+        public DateTime? UltimaVenta { get; set; }
     }
 
     public class ResultadoExcesoReposicionDTO
@@ -65,6 +83,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <summary>De verdad: la reposición creada (la misma respuesta que POST api/Reposiciones). Null en el ensayo o sin exceso.</summary>
         public ReposicionEnPreparacionDTO Reposicion { get; set; }
         public string Mensaje { get; set; }
+        /// <summary>Los filtros aplicados, en una línea de texto («Filtros: familia FABY; el nombre lleva «ESMALTE»; …»).</summary>
+        public string Filtros { get; set; }
     }
 
     /// <summary>Una fila de la lectura: producto con stock en la tienda y sus cifras.</summary>
@@ -79,6 +99,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Pendiente { get; set; }
         /// <summary>Null: el producto no tiene fila en ControlesStock para la tienda.</summary>
         public int? StockMaximo { get; set; }
+        /// <summary>Solo si se pidió «sin ventas»: la fecha del último albarán de venta en la tienda. Null = ninguna.</summary>
+        public DateTime? UltimaVenta { get; set; }
     }
 
     /// <summary>El filtro ya normalizado (mayúsculas, sin espacios; null = no filtra).</summary>
@@ -91,6 +113,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Grupo { get; set; }
         public string Subgrupo { get; set; }
         public List<string> Productos { get; set; } = new List<string>();
+        /// <summary>Palabras que tiene que llevar el nombre (todas), en mayúsculas.</summary>
+        public List<string> PalabrasNombre { get; set; } = new List<string>();
+        /// <summary>Palabras que el nombre no puede llevar (ninguna), en mayúsculas.</summary>
+        public List<string> PalabrasExcluir { get; set; } = new List<string>();
+        public int? StockMinimo { get; set; }
+        public int? SinVentasEnMeses { get; set; }
+        public int? DejarEnTienda { get; set; }
     }
 
     /// <summary>
@@ -102,6 +131,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
     {
         public const int MAXIMO_LINEAS = 500;
         public const int MAXIMO_PRODUCTOS_PETICION = 1000;
+        public const int MAXIMO_MESES_SIN_VENTAS = 60;
+        public const int MAXIMO_PALABRAS = 10;
 
         internal static readonly string[] TIENDAS = { Constantes.Almacenes.REINA, Constantes.Almacenes.ALCOBENDAS };
 
@@ -115,7 +146,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         {
             if (peticion == null)
             {
-                throw new NestoBusinessException("Faltan los datos: la tienda de origen y qué productos (familia, grupo, subgrupo o lista de productos).");
+                throw new NestoBusinessException("Faltan los datos: la tienda de origen y qué productos (familia, grupo, subgrupo, texto del nombre o lista de productos).");
             }
             string origen = Limpio(peticion.Origen);
             if (origen == null || !TIENDAS.Contains(origen))
@@ -144,11 +175,32 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 Familia = Limpio(peticion.Familia),
                 Grupo = Limpio(peticion.Grupo),
                 Subgrupo = Limpio(peticion.Subgrupo),
-                Productos = productos
+                Productos = productos,
+                PalabrasNombre = Palabras(peticion.TextoNombre),
+                PalabrasExcluir = Palabras(peticion.TextoNombreExcluir),
+                StockMinimo = peticion.StockMinimo,
+                SinVentasEnMeses = peticion.SinVentasEnMeses,
+                DejarEnTienda = peticion.DejarEnTienda
             };
-            if (filtro.Familia == null && filtro.Grupo == null && filtro.Subgrupo == null && !productos.Any())
+            if (filtro.Familia == null && filtro.Grupo == null && filtro.Subgrupo == null && !productos.Any() && !filtro.PalabrasNombre.Any())
             {
-                throw new NestoBusinessException("Indique qué productos quiere devolver: una familia, un grupo, un subgrupo o una lista de productos.");
+                throw new NestoBusinessException("Indique qué productos quiere devolver: una familia, un grupo, un subgrupo, un texto del nombre o una lista de productos.");
+            }
+            if (filtro.PalabrasNombre.Count + filtro.PalabrasExcluir.Count > MAXIMO_PALABRAS)
+            {
+                throw new NestoBusinessException($"Como mucho {MAXIMO_PALABRAS} palabras entre el texto del nombre y el que se excluye.");
+            }
+            if (filtro.StockMinimo < 0)
+            {
+                throw new NestoBusinessException("El stock mínimo no puede ser negativo.");
+            }
+            if (filtro.SinVentasEnMeses.HasValue && (filtro.SinVentasEnMeses < 1 || filtro.SinVentasEnMeses > MAXIMO_MESES_SIN_VENTAS))
+            {
+                throw new NestoBusinessException($"Los meses sin ventas tienen que ir de 1 a {MAXIMO_MESES_SIN_VENTAS}.");
+            }
+            if (filtro.DejarEnTienda < 0)
+            {
+                throw new NestoBusinessException("Lo que se deja en la tienda no puede ser negativo.");
             }
             if (productos.Count > MAXIMO_PRODUCTOS_PETICION)
             {
@@ -168,8 +220,21 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <summary>Las líneas con exceso &gt; 0, ordenadas por familia y nombre. 400 si pasan de <see cref="MAXIMO_LINEAS"/>.</summary>
         public static List<LineaExcesoReposicionDTO> Calcular(IEnumerable<FilaExcesoReposicion> filas)
         {
+            return Calcular(filas, null, DateTime.Today);
+        }
+
+        /// <summary>
+        /// Lo mismo con los filtros de la sugerencia 1429 (Y lógico): texto del nombre (todas las palabras), texto excluido (ninguna),
+        /// stock mínimo (Stock &gt; N), sin ventas en N meses (última venta anterior a <paramref name="hoy"/> − N meses, o ninguna) y
+        /// «dejar en la tienda», que sustituye al máximo de la ficha.
+        /// </summary>
+        public static List<LineaExcesoReposicionDTO> Calcular(IEnumerable<FilaExcesoReposicion> filas, FiltroExcesoReposicion filtro, DateTime hoy)
+        {
+            int? dejar = filtro?.DejarEnTienda;
+            bool conVentas = filtro?.SinVentasEnMeses != null;
             List<LineaExcesoReposicionDTO> lineas = (filas ?? Enumerable.Empty<FilaExcesoReposicion>())
                 .Where(f => !string.IsNullOrWhiteSpace(f.Producto))
+                .Where(f => PasaFiltros(f, filtro, hoy))
                 .Select(f => new LineaExcesoReposicionDTO
                 {
                     Producto = f.Producto.Trim(),
@@ -181,7 +246,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     Pendiente = f.Pendiente,
                     StockMaximo = Math.Max(0, f.StockMaximo ?? 0),
                     SinMaximo = !f.StockMaximo.HasValue,
-                    Exceso = Exceso(f.Stock, f.Pendiente, f.StockMaximo)
+                    Exceso = Exceso(f.Stock, f.Pendiente, dejar ?? f.StockMaximo),
+                    UltimaVenta = conVentas ? f.UltimaVenta : null
                 })
                 .Where(l => l.Exceso > 0)
                 .OrderBy(l => l.NombreFamilia ?? l.Familia ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
@@ -196,10 +262,99 @@ namespace NestoAPI.Infraestructure.Reposiciones
             return lineas;
         }
 
+        /// <summary>¿Pasa la fila los filtros de nombre, stock y ventas? (Familia, grupo, subgrupo y productos los aplica la lectura.)</summary>
+        public static bool PasaFiltros(FilaExcesoReposicion fila, FiltroExcesoReposicion filtro, DateTime hoy)
+        {
+            if (filtro == null)
+            {
+                return true;
+            }
+            string nombre = (fila.Nombre ?? string.Empty).ToUpperInvariant();
+            if ((filtro.PalabrasNombre ?? new List<string>()).Any(p => !nombre.Contains(p)))
+            {
+                return false;
+            }
+            if ((filtro.PalabrasExcluir ?? new List<string>()).Any(p => nombre.Contains(p)))
+            {
+                return false;
+            }
+            if (filtro.StockMinimo.HasValue && fila.Stock <= filtro.StockMinimo.Value)
+            {
+                return false;
+            }
+            if (filtro.SinVentasEnMeses.HasValue && fila.UltimaVenta.HasValue
+                && fila.UltimaVenta.Value.Date >= hoy.Date.AddMonths(-filtro.SinVentasEnMeses.Value))
+            {
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Los filtros aplicados, en una línea, para la respuesta.</summary>
+        public static string TextoFiltros(FiltroExcesoReposicion filtro)
+        {
+            if (filtro == null)
+            {
+                return null;
+            }
+            var partes = new List<string>();
+            if (filtro.Familia != null)
+            {
+                partes.Add($"familia {filtro.Familia}");
+            }
+            if (filtro.Grupo != null)
+            {
+                partes.Add($"grupo {filtro.Grupo}");
+            }
+            if (filtro.Subgrupo != null)
+            {
+                partes.Add($"subgrupo {filtro.Subgrupo}");
+            }
+            if (filtro.Productos != null && filtro.Productos.Any())
+            {
+                partes.Add(filtro.Productos.Count == 1 ? $"el producto {filtro.Productos[0]}" : $"{filtro.Productos.Count} productos de la lista");
+            }
+            if (filtro.PalabrasNombre != null && filtro.PalabrasNombre.Any())
+            {
+                partes.Add("el nombre lleva " + Enumerar(filtro.PalabrasNombre, " y "));
+            }
+            if (filtro.PalabrasExcluir != null && filtro.PalabrasExcluir.Any())
+            {
+                partes.Add("el nombre no lleva " + Enumerar(filtro.PalabrasExcluir, " ni "));
+            }
+            if (filtro.StockMinimo.HasValue)
+            {
+                partes.Add($"más de {Unidades(filtro.StockMinimo.Value)} en la tienda");
+            }
+            if (filtro.SinVentasEnMeses.HasValue)
+            {
+                partes.Add(filtro.SinVentasEnMeses == 1
+                    ? $"sin ventas en {NombreAlmacen(filtro.Origen)} en el último mes"
+                    : $"sin ventas en {NombreAlmacen(filtro.Origen)} en los últimos {filtro.SinVentasEnMeses} meses");
+            }
+            partes.Add(filtro.DejarEnTienda.HasValue
+                ? $"se dejan {Unidades(filtro.DejarEnTienda.Value)} de cada referencia en la tienda"
+                : "se deja en la tienda el máximo de la ficha");
+            return "Filtros: " + string.Join("; ", partes) + ".";
+        }
+
+        private static string Enumerar(List<string> palabras, string ultimo)
+        {
+            List<string> citadas = palabras.Select(p => $"«{p}»").ToList();
+            return citadas.Count == 1
+                ? citadas[0]
+                : string.Join(", ", citadas.Take(citadas.Count - 1)) + ultimo + citadas.Last();
+        }
+
         /// <summary>El resultado completo (sin la reposición creada).</summary>
         public static ResultadoExcesoReposicionDTO Resultado(FiltroExcesoReposicion filtro, IEnumerable<FilaExcesoReposicion> filas, bool ensayo)
         {
-            List<LineaExcesoReposicionDTO> lineas = Calcular(filas);
+            return Resultado(filtro, filas, ensayo, DateTime.Today);
+        }
+
+        public static ResultadoExcesoReposicionDTO Resultado(FiltroExcesoReposicion filtro, IEnumerable<FilaExcesoReposicion> filas, bool ensayo, DateTime hoy)
+        {
+            List<LineaExcesoReposicionDTO> lineas = Calcular(filas, filtro, hoy);
             var resultado = new ResultadoExcesoReposicionDTO
             {
                 Ensayo = ensayo,
@@ -208,7 +363,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 Lineas = lineas,
                 NumeroLineas = lineas.Count,
                 TotalUnidades = lineas.Sum(l => l.Exceso),
-                LineasSinMaximo = lineas.Count(l => l.SinMaximo)
+                // Con «dejar en la tienda» el máximo de la ficha no cuenta: ninguna se devuelve entera por no tenerlo.
+                LineasSinMaximo = filtro.DejarEnTienda.HasValue ? 0 : lineas.Count(l => l.SinMaximo),
+                Filtros = TextoFiltros(filtro)
             };
             resultado.Mensaje = Mensaje(resultado, NombreAlmacen(filtro.Origen), NombreAlmacen(filtro.Destino), creada: false);
             return resultado;
@@ -243,6 +400,16 @@ namespace NestoAPI.Infraestructure.Reposiciones
         private static string Unidades(int n) => n == 1 ? "1 unidad" : $"{n.ToString("N0", new CultureInfo("es-ES"))} unidades";
 
         private static string Referencias(int n) => n == 1 ? "1 referencia" : $"{n.ToString("N0", new CultureInfo("es-ES"))} referencias";
+
+        /// <summary>Las palabras de un texto, en mayúsculas y sin repetir.</summary>
+        internal static List<string> Palabras(string texto)
+        {
+            return (texto ?? string.Empty)
+                .Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.ToUpperInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        }
 
         private static string Limpio(string texto)
         {
@@ -285,7 +452,9 @@ WITH candidatos AS (
       AND (@grupo IS NULL OR UPPER(RTRIM(LTRIM(p.Grupo))) = @grupo)
       AND (@subgrupo IS NULL OR UPPER(RTRIM(LTRIM(p.SubGrupo))) = @subgrupo)";
 
-        internal const string SQL_FIN = @"
+        internal const string SQL_FIN = SQL_CTES + SQL_SELECT_SIN_VENTAS;
+
+        internal const string SQL_CTES = @"
 ), stock AS (
     SELECT e.[Número] AS Producto, SUM(e.Cantidad) AS Cantidad
     FROM ExtractoProducto e WITH (NOLOCK)
@@ -312,28 +481,77 @@ WITH candidatos AS (
     WHERE l.Empresa IN (@empresa, @espejo) AND l.[Almacén] = @origen AND l.Estado BETWEEN -1 AND 1 AND l.[Número] <> 724488
       AND l.Producto IN (SELECT Producto FROM candidatos)
     GROUP BY l.Producto
-)
+)";
+
+        /// <summary>Sugerencia 1429: la última venta en la tienda (albarán o factura, cantidad &gt; 0; las empresas del stock).</summary>
+        internal const string SQL_VENTAS = @", ventas AS (
+    SELECT l.Producto, MAX(l.[Fecha Albarán]) AS UltimaVenta
+    FROM LinPedidoVta l WITH (NOLOCK)
+    WHERE l.Empresa IN (@empresa, @espejo, '4') AND l.[Almacén] = @origen AND l.Estado >= 2 AND l.Cantidad > 0
+      AND l.Producto IN (SELECT Producto FROM candidatos)
+    GROUP BY l.Producto
+)";
+
+        internal const string SQL_SELECT_INICIO = @"
 SELECT RTRIM(c.Producto) AS Producto, RTRIM(c.Nombre) AS Nombre, RTRIM(c.Familia) AS Familia, RTRIM(c.NombreFamilia) AS NombreFamilia,
        CAST(ISNULL(s.Cantidad, 0) - ISNULL(sa.Cantidad, 0) AS int) AS Stock,
        CAST(ISNULL(sa.Cantidad, 0) AS int) AS EnOtraReposicion,
        CAST(ISNULL(pd.Cantidad, 0) AS int) AS Pendiente,
-       CAST(cs.StockMáximo AS int) AS StockMaximo
+       CAST(cs.StockMáximo AS int) AS StockMaximo,";
+
+        internal const string SQL_SELECT_FROM = @"
 FROM candidatos c
 LEFT JOIN stock s ON s.Producto = c.Producto
 LEFT JOIN salida sa ON sa.Producto = c.Producto
 LEFT JOIN pendiente pd ON pd.Producto = c.Producto
-LEFT JOIN ControlesStock cs WITH (NOLOCK) ON cs.Empresa = @empresa AND cs.[Almacén] = @origen AND cs.[Número] = c.Producto
-WHERE ISNULL(s.Cantidad, 0) - ISNULL(sa.Cantidad, 0) > 0";
+LEFT JOIN ControlesStock cs WITH (NOLOCK) ON cs.Empresa = @empresa AND cs.[Almacén] = @origen AND cs.[Número] = c.Producto";
+
+        internal const string SQL_SELECT_WHERE = @"
+WHERE ISNULL(s.Cantidad, 0) - ISNULL(sa.Cantidad, 0) > @stockMinimo";
+
+        internal const string SQL_SELECT_SIN_VENTAS = SQL_SELECT_INICIO + @"
+       CAST(NULL AS datetime) AS UltimaVenta" + SQL_SELECT_FROM + SQL_SELECT_WHERE;
+
+        internal const string SQL_SELECT_CON_VENTAS = SQL_SELECT_INICIO + @"
+       v.UltimaVenta" + SQL_SELECT_FROM + @"
+LEFT JOIN ventas v ON v.Producto = c.Producto" + SQL_SELECT_WHERE;
 
         /// <summary>La consulta con un parámetro por producto de la lista (si la hay).</summary>
         internal static string Sql(int numeroProductos)
         {
-            if (numeroProductos <= 0)
+            return Sql(numeroProductos, 0, 0, false);
+        }
+
+        /// <summary>
+        /// La consulta con un parámetro por producto (@p0…), por palabra del nombre (@n0…, LIKE) y por palabra excluida (@x0…, NOT
+        /// LIKE); la última venta solo si se pide «sin ventas» (si no, no se lee LinPedidoVta de más).
+        /// </summary>
+        internal static string Sql(int numeroProductos, int numeroPalabras, int numeroExcluidas, bool conVentas)
+        {
+            var sql = new System.Text.StringBuilder(SQL_INICIO);
+            if (numeroProductos > 0)
             {
-                return SQL_INICIO + SQL_FIN;
+                string lista = string.Join(", ", Enumerable.Range(0, numeroProductos).Select(i => "@p" + i));
+                _ = sql.Append($"\n      AND p.[Número] IN ({lista})");
             }
-            string lista = string.Join(", ", Enumerable.Range(0, numeroProductos).Select(i => "@p" + i));
-            return SQL_INICIO + $"\n      AND p.[Número] IN ({lista})" + SQL_FIN;
+            for (int i = 0; i < numeroPalabras; i++)
+            {
+                _ = sql.Append($"\n      AND UPPER(p.Nombre) LIKE @n{i} ESCAPE '!'");
+            }
+            for (int i = 0; i < numeroExcluidas; i++)
+            {
+                _ = sql.Append($"\n      AND (p.Nombre IS NULL OR UPPER(p.Nombre) NOT LIKE @x{i} ESCAPE '!')");
+            }
+            _ = sql.Append(SQL_CTES);
+            _ = conVentas ? sql.Append(SQL_VENTAS).Append(SQL_SELECT_CON_VENTAS) : sql.Append(SQL_SELECT_SIN_VENTAS);
+            return sql.ToString();
+        }
+
+        /// <summary>El valor del LIKE: «%PALABRA%» con los comodines de la palabra escapados (con «!»).</summary>
+        internal static string Like(string palabra)
+        {
+            string escapada = (palabra ?? string.Empty).Replace("!", "!!").Replace("%", "!%").Replace("_", "!_").Replace("[", "![");
+            return "%" + escapada + "%";
         }
 
         public async Task<List<FilaExcesoReposicion>> Leer(FiltroExcesoReposicion filtro)
@@ -344,18 +562,30 @@ WHERE ISNULL(s.Cantidad, 0) - ISNULL(sa.Cantidad, 0) > 0";
                 new SqlParameter("@origen", SqlDbType.Char, 3) { Value = filtro.Origen },
                 new SqlParameter("@familia", SqlDbType.NVarChar, 100) { Value = (object)filtro.Familia ?? DBNull.Value },
                 new SqlParameter("@grupo", SqlDbType.NVarChar, 50) { Value = (object)filtro.Grupo ?? DBNull.Value },
-                new SqlParameter("@subgrupo", SqlDbType.NVarChar, 50) { Value = (object)filtro.Subgrupo ?? DBNull.Value }
+                new SqlParameter("@subgrupo", SqlDbType.NVarChar, 50) { Value = (object)filtro.Subgrupo ?? DBNull.Value },
+                new SqlParameter("@stockMinimo", SqlDbType.Int) { Value = Math.Max(0, filtro.StockMinimo ?? 0) }
             };
             List<string> productos = filtro.Productos ?? new List<string>();
             for (int i = 0; i < productos.Count; i++)
             {
                 parametros.Add(new SqlParameter("@p" + i, SqlDbType.Char, 15) { Value = productos[i] });
             }
+            List<string> palabras = filtro.PalabrasNombre ?? new List<string>();
+            for (int i = 0; i < palabras.Count; i++)
+            {
+                parametros.Add(new SqlParameter("@n" + i, SqlDbType.NVarChar, 120) { Value = Like(palabras[i]) });
+            }
+            List<string> excluidas = filtro.PalabrasExcluir ?? new List<string>();
+            for (int i = 0; i < excluidas.Count; i++)
+            {
+                parametros.Add(new SqlParameter("@x" + i, SqlDbType.NVarChar, 120) { Value = Like(excluidas[i]) });
+            }
             int? tiempoAnterior = db.Database.CommandTimeout;
             db.Database.CommandTimeout = Math.Max(tiempoAnterior ?? 0, 60);
             try
             {
-                return await db.Database.SqlQuery<FilaExcesoReposicion>(Sql(productos.Count), parametros.Cast<object>().ToArray())
+                string sql = Sql(productos.Count, palabras.Count, excluidas.Count, filtro.SinVentasEnMeses.HasValue);
+                return await db.Database.SqlQuery<FilaExcesoReposicion>(sql, parametros.Cast<object>().ToArray())
                     .ToListAsync().ConfigureAwait(false);
             }
             finally
