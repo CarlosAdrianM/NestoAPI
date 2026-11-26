@@ -31,6 +31,10 @@ namespace NestoAPI.Infraestructure.Calidad
         public const string RECOGIDA_MARCADA_POR_ERROR = "RecogidaMarcadaPorError";
         /// <summary>Envío de la ruta propia metido a mano fuera de su día de reparto. SIN CONECTAR: no hay un punto único donde se fuerce.</summary>
         public const string ENVIO_RUTA_PROPIA_FUERA_DE_DIA = "EnvioRutaPropiaFueraDeDia";
+        /// <summary>El repartidor confirmó (tras el 409 COBRO_DE_MAS) cobrar en efectivo más que el reembolso y la entrega se registró.</summary>
+        public const string COBRO_DE_MAS_CONFIRMADO = "CobroDeMasConfirmado";
+        /// <summary>El repartidor confirmó (tras el 409 COBRO_REPETIDO o COBRO_TODO_A_CUENTA) un cobro de deuda y se contabilizó.</summary>
+        public const string COBRO_REPETIDO_CONFIRMADO = "CobroRepetidoConfirmado";
 
         /// <summary>Los que dicen que el pedido se tocó después del picking (motivo TocadoTrasElPicking).</summary>
         public static readonly IReadOnlyList<string> TOCADO_TRAS_EL_PICKING = new[] { QUITAR_PICKING, AMPLIACION_CON_PICKING_MISMO_PEDIDO };

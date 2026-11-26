@@ -1,10 +1,12 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
+using NestoAPI.Infraestructure.Calidad;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -164,6 +166,71 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.IsFalse(ReglaReembolsoEntero.PideConfirmarDeMas(true, true, 120m, 150m, null), "Nota de cobro: no cambia");
             Assert.IsFalse(ReglaReembolsoEntero.PideConfirmarDeMas(false, false, 120m, 150m, null), "Enlace o tarjeta: no");
             Assert.IsFalse(ReglaReembolsoEntero.PideConfirmarDeMas(true, false, 120m, 150m, true));
+        }
+
+        // ================================================================ NestoAPI#914: señal de calidad del confirmado
+
+        private static async Task<T> ConEscritorDeCalidad<T>(Func<Task<T>> accion, List<EventoCalidad> eventos, bool falla = false)
+        {
+            Func<IEscritorEventosCalidad> escritorAntes = RegistroCalidad.Escritor;
+            Action<Action> segundoPlanoAntes = RegistroCalidad.EnSegundoPlano;
+            try
+            {
+                IEscritorEventosCalidad escritor = A.Fake<IEscritorEventosCalidad>();
+                A.CallTo(() => escritor.Escribir(A<EventoCalidad>._)).Invokes((EventoCalidad e) => eventos.Add(e));
+                RegistroCalidad.Escritor = () => escritor;
+                RegistroCalidad.EnSegundoPlano = falla ? (Action<Action>)(_ => throw new InvalidOperationException("falla al apuntar")) : (trabajo => trabajo());
+                return await accion();
+            }
+            finally
+            {
+                RegistroCalidad.Escritor = escritorAntes;
+                RegistroCalidad.EnSegundoPlano = segundoPlanoAntes;
+            }
+        }
+
+        [TestMethod]
+        public async Task EfectivoDeMas_Confirmado_ApuntaCobroDeMasConfirmadoConLoDeMas()
+        {
+            var eventos = new List<EventoCalidad>();
+            EntregaRepartoDTO peticion = Efectivo(150m);
+            peticion.ConfirmarCobroDeMas = true;
+
+            var r = await ConEscritorDeCalidad(() => servicio.Entregar(251300, peticion, USUARIO), eventos);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            EventoCalidad evento = eventos.Single();
+            Assert.AreEqual(TiposEventoCalidad.COBRO_DE_MAS_CONFIRMADO, evento.Tipo);
+            Assert.AreEqual("Repartidor", evento.Usuario);
+            Assert.AreEqual(30m, evento.Importe);
+            StringAssert.Contains(evento.Documento, "Envio ");
+
+            // El reintento con la misma clave no vuelve a apuntar
+            _ = await ConEscritorDeCalidad(() => servicio.Entregar(251300, peticion, USUARIO), eventos);
+            Assert.AreEqual(1, eventos.Count);
+        }
+
+        [TestMethod]
+        public async Task EfectivoJusto_NoApunta()
+        {
+            var eventos = new List<EventoCalidad>();
+
+            var entero = await ConEscritorDeCalidad(() => servicio.Entregar(251300, Efectivo(120m), USUARIO), eventos);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, entero.Tipo, entero.Mensaje);
+            Assert.AreEqual(0, eventos.Count);
+        }
+
+        [TestMethod]
+        public async Task EfectivoDeMas_Confirmado_SiApuntarFalla_LaEntregaSaleIgual()
+        {
+            EntregaRepartoDTO peticion = Efectivo(150m);
+            peticion.ConfirmarCobroDeMas = true;
+
+            var r = await ConEscritorDeCalidad(() => servicio.Entregar(251300, peticion, USUARIO), new List<EventoCalidad>(), falla: true);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(150m, reparto.Registros.Single().ImporteAContabilizar);
         }
     }
 }

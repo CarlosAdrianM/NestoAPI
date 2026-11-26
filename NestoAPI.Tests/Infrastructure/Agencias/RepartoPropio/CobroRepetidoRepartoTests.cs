@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias.RepartoPropio;
+using NestoAPI.Infraestructure.Calidad;
 using NestoAPI.Models;
 using Newtonsoft.Json.Linq;
 using System;
@@ -96,6 +97,94 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
             Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
             Assert.AreEqual(777, r.Contenido.Asiento);
+        }
+
+        // ================================================================ NestoAPI#914: señal de calidad del confirmado
+
+        private static async Task<T> ConEscritorDeCalidad<T>(Func<Task<T>> accion, List<EventoCalidad> eventos, bool falla = false)
+        {
+            Func<IEscritorEventosCalidad> escritorAntes = RegistroCalidad.Escritor;
+            Action<Action> segundoPlanoAntes = RegistroCalidad.EnSegundoPlano;
+            try
+            {
+                IEscritorEventosCalidad escritor = A.Fake<IEscritorEventosCalidad>();
+                A.CallTo(() => escritor.Escribir(A<EventoCalidad>._)).Invokes((EventoCalidad e) => eventos.Add(e));
+                RegistroCalidad.Escritor = () => escritor;
+                RegistroCalidad.EnSegundoPlano = falla ? (Action<Action>)(_ => throw new InvalidOperationException("falla al apuntar")) : (trabajo => trabajo());
+                return await accion();
+            }
+            finally
+            {
+                RegistroCalidad.Escritor = escritorAntes;
+                RegistroCalidad.EnSegundoPlano = segundoPlanoAntes;
+            }
+        }
+
+        [TestMethod]
+        public async Task Cobrar_RepetidoConfirmado_ApuntaCobroRepetidoConfirmadoConElImporte()
+        {
+            var eventos = new List<EventoCalidad>();
+            Efecto(1, 84.80m);
+            CobroAnterior(Guid.NewGuid(), new DateTime(2026, 11, 20, 12, 31, 0));
+            CobroDeudaRepartoDTO peticion = Peticion(84.80m, 1);
+            peticion.Confirmar = true;
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await ConEscritorDeCalidad(() => servicio.Cobrar(peticion, MIGUEL), eventos);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            EventoCalidad evento = eventos.Single();
+            Assert.AreEqual(TiposEventoCalidad.COBRO_REPETIDO_CONFIRMADO, evento.Tipo);
+            Assert.AreEqual("Miguel", evento.Usuario);
+            Assert.AreEqual(CLIENTE, evento.Cliente);
+            Assert.AreEqual(84.80m, evento.Importe);
+            StringAssert.Contains(evento.Detalle, ReglaCobroRepetidoReparto.CODIGO_REPETIDO);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_TodoACuentaConfirmado_ApuntaConLoQueVaACuenta()
+        {
+            var eventos = new List<EventoCalidad>();
+            CobroDeudaRepartoDTO peticion = Peticion(30m);
+            peticion.Confirmar = true;
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await ConEscritorDeCalidad(() => servicio.Cobrar(peticion, MIGUEL), eventos);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(30m, eventos.Single().Importe);
+            StringAssert.Contains(eventos.Single().Detalle, ReglaCobroRepetidoReparto.CODIGO_TODO_A_CUENTA);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_ConfirmadoSinQueHicieraFalta_NoApunta()
+        {
+            var eventos = new List<EventoCalidad>();
+            Efecto(1, 50m);
+            CobroDeudaRepartoDTO peticion = Peticion(50m, 1);
+            peticion.Confirmar = true;
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await ConEscritorDeCalidad(() => servicio.Cobrar(peticion, MIGUEL), eventos);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(0, eventos.Count);
+        }
+
+        [TestMethod]
+        public async Task Cobrar_RepetidoConfirmado_SiApuntarOMirarFalla_ContabilizaIgual()
+        {
+            Efecto(1, 84.80m);
+            CobroAnterior(Guid.NewGuid(), new DateTime(2026, 11, 20, 12, 31, 0));
+            CobroDeudaRepartoDTO peticion = Peticion(84.80m, 1);
+            peticion.Confirmar = true;
+
+            ResultadoReparto<ResultadoCobroDeudaDTO> r = await ConEscritorDeCalidad(() => servicio.Cobrar(peticion, MIGUEL), new List<EventoCalidad>(), falla: true);
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(777, r.Contenido.Asiento);
+
+            A.CallTo(() => recientes.LeerCobrosDelCliente(A<string>._, A<DateTime>._)).Throws(new InvalidOperationException("BD caída"));
+            CobroDeudaRepartoDTO otra = Peticion(84.80m, 1);
+            otra.Confirmar = true;
+            ResultadoReparto<ResultadoCobroDeudaDTO> r2 = await servicio.Cobrar(otra, MIGUEL);
+            Assert.AreEqual(TipoResultadoReparto.Ok, r2.Tipo, r2.Mensaje);
         }
 
         [TestMethod]

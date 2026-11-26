@@ -675,11 +675,31 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 await CobroEntrega.Confirmar(comprobacion, envio, usuario).ConfigureAwait(false); // NestoAPI#773: la autorización por teléfono
             }
+            // NestoAPI#914: cobro de más confirmado (el repartidor confirma tras el 409 COBRO_DE_MAS) y la entrega registrada. Nunca lanza.
+            if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido?.EsNueva == true && efectivo && !notaCobro
+                && peticion.ConfirmarCobroDeMas == true && ReglaReembolsoEntero.EsDeMas(reembolso, peticion.ImporteCobrado))
+            {
+                ApuntarCobroDeMas(envio, usuario, reembolso, peticion.ImporteCobrado.Value);
+            }
             if (resultado.Tipo == TipoResultadoReparto.Ok && resultado.Contenido?.EsNueva == true && comentarioRecogida != null)
             {
                 await AvisarSolicitudRecogida(envio.Pedido, true, comentarioRecogida, usuario).ConfigureAwait(false); // Punto 5: nunca lanza
             }
             return resultado;
+        }
+
+        /// <summary>NestoAPI#914: la señal de calidad del cobro de más confirmado. Importe = lo cobrado de más. Nunca lanza.</summary>
+        internal static void ApuntarCobroDeMas(EnviosAgencia envio, string usuario, decimal reembolso, decimal cobrado)
+        {
+            try
+            {
+                Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.COBRO_DE_MAS_CONFIRMADO, usuario, envio.Empresa, envio.Pedido, envio.Cliente,
+                    envio.Contacto, $"Envio {envio.Numero}", detalle: new { Reembolso = reembolso, Cobrado = cobrado }, importe: cobrado - reembolso);
+            }
+            catch (Exception)
+            {
+                // La señal de calidad nunca cambia la entrega
+            }
         }
 
         // ---------------------------------------------------------------- incidencia
