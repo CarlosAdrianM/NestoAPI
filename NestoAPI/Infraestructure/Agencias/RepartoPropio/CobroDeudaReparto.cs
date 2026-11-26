@@ -535,6 +535,20 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     return porConfirmar;
                 }
             }
+            // NestoAPI#914: con Confirmar, ¿es que se habría frenado (el repartidor confirma tras el 409)? Solo para la señal de calidad:
+            // si mirarlo falla, no se apunta y el cobro sigue igual.
+            ResultadoReparto<ResultadoCobroDeudaDTO> confirmado = null;
+            if (CobrosRecientes != null && peticion.Confirmar)
+            {
+                try
+                {
+                    confirmado = await PorConfirmar(peticion, cliente, usuario, hoy, apuntes).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    confirmado = null;
+                }
+            }
             try
             {
                 AuditoriaCobroDeuda auditoria = AuditoriaCobroDeuda.De(resultado, usuario, cliente, contacto, pendientes, yaNoPendientes);
@@ -555,7 +569,30 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             {
                 return Invalido("No se ha podido contabilizar el cobro.");
             }
+            if (confirmado != null)
+            {
+                ApuntarConfirmado(confirmado.Codigo, usuario, cliente, contacto, resultado);
+            }
             return ResultadoReparto<ResultadoCobroDeudaDTO>.Bien(resultado);
+        }
+
+        /// <summary>
+        /// NestoAPI#914: el repartidor confirmó un cobro repetido o «todo a cuenta» y se ha contabilizado. Importe: el cobro entero si es
+        /// repetido; lo que va a cuenta si no liquida nada. Nunca lanza (RegistroCalidad tampoco).
+        /// </summary>
+        internal static void ApuntarConfirmado(string codigo, string usuario, string cliente, string contacto, ResultadoCobroDeudaDTO resultado)
+        {
+            try
+            {
+                bool repetido = codigo == ReglaCobroRepetidoReparto.CODIGO_REPETIDO;
+                Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.COBRO_REPETIDO_CONFIRMADO, usuario, null, null, cliente, contacto,
+                    $"Asiento {resultado.Asiento}", detalle: new { Motivo = codigo },
+                    importe: repetido ? resultado.Importe : resultado.ImporteACuenta);
+            }
+            catch (Exception)
+            {
+                // La señal de calidad nunca cambia el cobro
+            }
         }
 
         private async Task<ResultadoReparto<ResultadoCobroDeudaDTO>> PorConfirmar(CobroDeudaRepartoDTO peticion, string cliente, string usuario,

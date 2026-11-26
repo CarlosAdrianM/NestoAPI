@@ -545,5 +545,45 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             }
             StringAssert.Contains(con, "READ UNCOMMITTED");
         }
+
+        // Universo con líneas negativas (cheque regalo, descuento de portes, devolución suelta: Carlos 26/11/26)
+        [TestMethod]
+        public void Universo_SoloQuitaLosPedidosSinProductoEnPositivo_NoLosQueLlevanAlgunaLineaNegativa()
+        {
+            string universo = LectorPedidoPerfectoSql.SQL_UNIVERSO;
+
+            StringAssert.Contains(universo, "l.TipoLinea = 1 AND l.Cantidad > 0)");
+            Assert.IsFalse(universo.Contains("Cantidad < 0"), "Una línea negativa ya no deja fuera el pedido");
+            StringAssert.Contains(universo, "l.Estado = -3");
+        }
+
+        [TestMethod]
+        public void SqlPedidos_ServidoPendienteYAlbaranes_SoloMiranLineasDeProductoEnPositivo()
+        {
+            string sql = LectorPedidoPerfectoSql.SQL_PEDIDOS;
+
+            foreach (string columna in new[] { "AS LineasProducto", "AS Pendientes", "AS Servidas", "AS Albaranes", "AS PrimerAlbaran", "AS MinFechaEntrega", "AS Almacen" })
+            {
+                string linea = sql.Split('\n').Single(l => l.Contains(columna));
+                StringAssert.Contains(linea, "l.TipoLinea = 1 AND l.Cantidad > 0", columna);
+            }
+            string importe = sql.Split('\n').Single(l => l.Contains("AS Importe"));
+            Assert.IsFalse(importe.Contains("Cantidad"), "El importe suma todas las líneas");
+            StringAssert.Contains(sql, "a.LineasNegativas");
+        }
+
+        [TestMethod]
+        public void PedidoConChequeRegaloServidoDeUnaVez_EsPerfectoYElDetalleLoDice()
+        {
+            HechosPedidoPerfecto h = Perfecto(x => { x.LlevaLineasNegativas = true; x.Importe = 70m; });
+
+            EvaluacionPedidoPerfecto e = Evaluar(h);
+            PedidoPerfectoDTO detalle = ServicioPedidoPerfecto.Detalle(h, e);
+
+            Assert.IsTrue(e.Perfecto, string.Join(", ", e.Motivos));
+            Assert.IsTrue(detalle.LlevaLineasNegativas);
+            Assert.AreEqual(70m, detalle.Importe);
+            Assert.IsFalse(ServicioPedidoPerfecto.Detalle(Perfecto(), Evaluar(Perfecto())).LlevaLineasNegativas);
+        }
     }
 }

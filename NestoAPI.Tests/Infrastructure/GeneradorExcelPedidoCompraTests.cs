@@ -183,6 +183,39 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0x4B, bytes[1]);
         }
 
+        // --- Carlos 26/11/26: la misma petición de seguimiento a la agencia que el PDF, en una fila al final ---
+
+        [DataTestMethod]
+        [DataRow(true, "H")]
+        [DataRow(false, "E")]
+        public void GenerarExcel_AvisoSeguimiento_EnLaUltimaFila_EnNegritaYCombinadoALoAnchoDeLaTabla(bool valorado, string ultimaColumna)
+        {
+            byte[] bytes = GenerarBytes(PedidoEjemplo(valorado));
+
+            using (var ms = new MemoryStream(bytes))
+            using (var doc = SpreadsheetDocument.Open(ms, false))
+            {
+                List<string> sst = doc.WorkbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().Select(i => i.InnerText).ToList();
+                WorksheetPart hoja = doc.WorkbookPart.WorksheetParts.Single();
+                List<Cell> celdas = hoja.Worksheet.Descendants<Cell>().ToList();
+                string Texto(Cell c) => c.DataType?.Value == CellValues.SharedString ? sst[int.Parse(c.CellValue.Text)] : c.InnerText;
+                uint Fila(Cell c) => uint.Parse(new string(c.CellReference.Value.SkipWhile(char.IsLetter).ToArray()));
+
+                Cell aviso = celdas.Single(c => Texto(c) == GeneradorPdfPedidoCompra.AVISO_SEGUIMIENTO_AGENCIA);
+                Cell gracias = celdas.Single(c => Texto(c) == "Muchas gracias");
+                Assert.AreEqual("A", new string(aviso.CellReference.Value.TakeWhile(char.IsLetter).ToArray()));
+                Assert.IsTrue(Fila(aviso) > Fila(gracias), "El aviso va después de todo lo que ya había");
+                Assert.AreEqual(Fila(aviso), celdas.Where(c => !string.IsNullOrEmpty(Texto(c))).Max(Fila), "Es la última fila con contenido");
+                Assert.IsTrue(hoja.Worksheet.Descendants<MergeCell>().Any(m => m.Reference.Value == $"A{Fila(aviso)}:{ultimaColumna}{Fila(aviso)}"),
+                    "Combinado a lo ancho de la tabla");
+
+                var formato = (CellFormat)doc.WorkbookPart.WorkbookStylesPart.Stylesheet.CellFormats.ElementAt((int)aviso.StyleIndex.Value);
+                var fuente = (Font)doc.WorkbookPart.WorkbookStylesPart.Stylesheet.Fonts.ElementAt((int)formato.FontId.Value);
+                Assert.IsNotNull(fuente.Bold, "En negrita");
+                Assert.AreEqual(true, formato.Alignment?.WrapText?.Value, "Texto ajustado");
+            }
+        }
+
         private static List<string> LeerTextosCompartidos(byte[] bytes)
         {
             using (var ms = new MemoryStream(bytes))

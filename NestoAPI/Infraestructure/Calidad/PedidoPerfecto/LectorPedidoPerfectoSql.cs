@@ -64,8 +64,8 @@ WHERE c.Empresa = @empresa AND c.Fecha >= @desde AND c.Fecha < @hasta
   AND NULLIF(RTRIM(c.TipoRectificativa), '') IS NULL
   AND c.PedidoOrigen IS NULL
   AND c.NotaEntrega = 0
-  AND EXISTS (SELECT 1 FROM LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.[Número] = c.[Número] AND l.TipoLinea = 1)
-  AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.[Número] = c.[Número] AND (l.Estado = -3 OR l.Cantidad < 0));
+  AND EXISTS (SELECT 1 FROM LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.[Número] = c.[Número] AND l.TipoLinea = 1 AND l.Cantidad > 0)
+  AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.[Número] = c.[Número] AND l.Estado = -3);
 CREATE CLUSTERED INDEX IX_p ON #p (Empresa, Pedido);
 SELECT DISTINCT l.Empresa, l.[Número] AS Pedido, l.[Nº Cliente] AS Cliente, l.[Nº Factura] AS Factura
 INTO #f
@@ -74,30 +74,33 @@ INNER JOIN #p p ON p.Empresa = l.Empresa AND p.Pedido = l.[Número]
 WHERE l.[Nº Factura] IS NOT NULL AND RTRIM(l.[Nº Factura]) <> '';
 ";
 
-        /// <summary>Resultado 1: cabecera + líneas agregadas (TipoLinea 1 = producto; estado ≥ 2 = albarán o factura).</summary>
+        /// <summary>Resultado 1: cabecera + líneas agregadas (TipoLinea 1 = producto; estado ≥ 2 = albarán o factura). Servido, pendiente, albaranes,
+        /// fechas, almacén y cursos miran solo las líneas de producto con cantidad POSITIVA (un cheque regalo en −1 o una devolución suelta no
+        /// cuentan como «pendiente» ni como otro albarán); el Importe suma todas.</summary>
         internal const string SQL_PEDIDOS = @"
 SELECT c.[Número] AS Pedido, c.Fecha, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(ISNULL(c.Contacto, '')) AS Contacto,
        RTRIM(ISNULL(c.Vendedor, '')) AS Vendedor, RTRIM(ISNULL(c.Usuario, '')) AS Usuario, RTRIM(ISNULL(c.[Forma Pago], '')) AS FormaPago,
        RTRIM(ISNULL(c.PlazosPago, '')) AS PlazosPago, c.ModoServicio, c.ServirJunto, RTRIM(ISNULL(c.Ruta, '')) AS Ruta,
        a.LineasProducto, a.Pendientes, a.Servidas, a.Albaranes, a.PrimerAlbaran, a.MinFechaEntrega, a.Importe,
-       a.EnTienda, a.Amazon, a.TiendaOnline, a.OtroCanal, a.App, a.Cursos, a.Almacen
+       a.EnTienda, a.Amazon, a.TiendaOnline, a.OtroCanal, a.App, a.Cursos, a.Almacen, a.LineasNegativas
 FROM #p p
 INNER JOIN CabPedidoVta c WITH (NOLOCK) ON c.Empresa = p.Empresa AND c.[Número] = p.Pedido
 CROSS APPLY (
-    SELECT SUM(CASE WHEN l.TipoLinea = 1 THEN 1 ELSE 0 END) AS LineasProducto,
-           SUM(CASE WHEN l.TipoLinea = 1 AND l.Estado BETWEEN -1 AND 1 THEN 1 ELSE 0 END) AS Pendientes,
-           SUM(CASE WHEN l.TipoLinea = 1 AND l.Estado >= 2 THEN 1 ELSE 0 END) AS Servidas,
-           COUNT(DISTINCT CASE WHEN l.TipoLinea = 1 AND l.Estado >= 2 THEN l.[Nº Albarán] END) AS Albaranes,
-           MIN(CASE WHEN l.TipoLinea = 1 AND l.Estado >= 2 THEN l.[Fecha Albarán] END) AS PrimerAlbaran,
-           MIN(CASE WHEN l.TipoLinea = 1 THEN l.[Fecha Entrega] END) AS MinFechaEntrega,
+    SELECT SUM(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 THEN 1 ELSE 0 END) AS LineasProducto,
+           SUM(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 AND l.Estado BETWEEN -1 AND 1 THEN 1 ELSE 0 END) AS Pendientes,
+           SUM(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 AND l.Estado >= 2 THEN 1 ELSE 0 END) AS Servidas,
+           COUNT(DISTINCT CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 AND l.Estado >= 2 THEN l.[Nº Albarán] END) AS Albaranes,
+           MIN(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 AND l.Estado >= 2 THEN l.[Fecha Albarán] END) AS PrimerAlbaran,
+           MIN(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 THEN l.[Fecha Entrega] END) AS MinFechaEntrega,
            CAST(ISNULL(SUM(l.[Base Imponible]), 0) AS decimal(18, 2)) AS Importe,
-           SUM(CASE WHEN l.TipoLinea = 1 AND l.[Almacén] IN ('REI', 'ALC') THEN 1 ELSE 0 END) AS EnTienda,
+           SUM(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 AND l.[Almacén] IN ('REI', 'ALC') THEN 1 ELSE 0 END) AS EnTienda,
            SUM(CASE WHEN l.[Forma Venta] = 'STK' THEN 1 ELSE 0 END) AS Amazon,
            SUM(CASE WHEN l.[Forma Venta] = 'WEB' THEN 1 ELSE 0 END) AS TiendaOnline,
            SUM(CASE WHEN l.[Forma Venta] IN ('QRU', 'BLT') THEN 1 ELSE 0 END) AS OtroCanal,
            SUM(CASE WHEN l.[Forma Venta] = 'APP' THEN 1 ELSE 0 END) AS App,
-           SUM(CASE WHEN l.TipoLinea = 1 AND l.Grupo = 'CUR' THEN 1 ELSE 0 END) AS Cursos,
-           MAX(CASE WHEN l.TipoLinea = 1 THEN RTRIM(l.[Almacén]) END) AS Almacen
+           SUM(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 AND l.Grupo = 'CUR' THEN 1 ELSE 0 END) AS Cursos,
+           MAX(CASE WHEN l.TipoLinea = 1 AND l.Cantidad > 0 THEN RTRIM(l.[Almacén]) END) AS Almacen,
+           SUM(CASE WHEN l.Cantidad < 0 THEN 1 ELSE 0 END) AS LineasNegativas
     FROM LinPedidoVta l WITH (NOLOCK)
     WHERE l.Empresa = c.Empresa AND l.[Número] = c.[Número]) a;
 ";
@@ -365,7 +368,8 @@ GROUP BY e.Tipo;";
                             LineasOtroCanalExterno = Entero(r, 21),
                             LineasApp = Entero(r, 22),
                             LineasCursos = Entero(r, 23),
-                            Almacen = r.IsDBNull(24) ? null : r.GetString(24)
+                            Almacen = r.IsDBNull(24) ? null : r.GetString(24),
+                            LlevaLineasNegativas = Entero(r, 25) > 0
                         };
                         delLote[h.Pedido] = h;
                     }
