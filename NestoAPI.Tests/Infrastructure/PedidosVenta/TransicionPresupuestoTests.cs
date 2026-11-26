@@ -35,6 +35,20 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void Decidir_ElDtoNoTraeNingunaDeLasLineasGuardadas_NoEsPasarAPresupuesto()
+        {
+            // Regresión 26/11/26 (pedido 931726): Nesto guardó el pedido recién creado con su línea todavía con id 0 y el
+            // pedido pasó a presupuesto por verdad vacua.
+            var lineasBD = new List<LinPedidoVta> { LineaBD(1, Constantes.EstadosLineaVenta.EN_CURSO, picking: 0) };
+            var dto = DtoConLineas(LineaDto(0, Constantes.EstadosLineaVenta.EN_CURSO));
+
+            var decision = TransicionPresupuesto.Decidir(lineasBD, dto);
+
+            Assert.IsFalse(decision.EsPasarAPresupuesto);
+            Assert.AreEqual(0, decision.IdsParaPresupuesto.Count);
+        }
+
+        [TestMethod]
         public void Decidir_TodasEnCursoYDTOTodasPresupuesto_EsPasarAPresupuesto()
         {
             var lineasBD = new List<LinPedidoVta>

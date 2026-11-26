@@ -74,9 +74,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             // El DTO debe pedir explícitamente PRESUPUESTO para todas las elegibles.
             // Si el cliente no marcó alguna como PRESUPUESTO, no se interpreta como
             // "pasar a presupuesto" (probablemente sea otro tipo de modificación).
-            bool todasElegiblesEnPresupuestoEnDTO = dto.Lineas
-                .Where(l => idsElegibles.Contains(l.id))
-                .All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+            // 26/11/26 (pedido 931726, Laura): si el DTO no trae NINGUNA de las elegibles (Nesto mandó la línea recién creada
+            // todavía con id 0), el .All() sobre la lista vacía daba true por verdad vacua y el pedido pasaba a presupuesto sin
+            // que nadie lo pidiera. Tiene que venir al menos una, y todas las que vengan, en PRESUPUESTO.
+            var elegiblesEnDto = dto.Lineas.Where(l => l != null && idsElegibles.Contains(l.id)).ToList();
+            bool todasElegiblesEnPresupuestoEnDTO = elegiblesEnDto.Any()
+                && elegiblesEnDto.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
 
             if (!todasElegiblesEnPresupuestoEnDTO)
             {
