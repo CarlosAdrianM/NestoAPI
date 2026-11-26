@@ -166,3 +166,15 @@ Related files:
   `Scripts/Issue727_prdAgruparAlbaranesVta_PO.sql` no mezcla P.O. ni con/sin P.O.) + la reunión de TODOS los contactos en un pedido nuevo que hace
   el VB6 SIN mirar la P.O. y poniendo contacto 0 a las líneas: así salió la NV2616046 (927473). Con `Facturacion:FinDeMesPorApi` encendido el fin de
   mes debe hacerse por la API. La P.O. escrita solo en el comentario («P.O. 00474329») no la ve nadie: hay que ponerla en «Su pedido».
+
+## Fin de mes de Nesto viejo capado y P.O. entera o nada (NestoAPI#898, Carlos 26/11/26, urgente)
+- `Scripts/Issue898_FinDeMesNestoViejo_y_POEntera.sql` (sa; lee la definición del servidor e inserta un bloque en cada procedimiento, con marca
+  «NestoAPI#898-…»; si la cabecera o el punto de inserción no cuadran, no cambia nada): (1) `prdAgruparAlbaranesVta` llamado desde Nesto viejo
+  (`fnEsNestoViejo`) → error «…hágalo en Nesto (Facturar rutas, «Fin de mes»)…» y no agrupa nada (mecanismo de #590: ParametrosUsuario
+  `NestoViejo_FinDeMes_Modo` «(defecto)» = Bloqueo | Sombra y `NestoViejo_FinDeMes` = 1 por usuario; rastro en `NestoViejoSombra`). También corta el
+  «agrupar albaranes» de un cliente en Nesto viejo. El fin de mes va por la API (`POST api/FacturacionRutas/FinDeMes`, en uso desde el 30/10/26).
+  (2) `prdCrearFacturaVta` (por él factura todo): el pedido con P.O. de un cliente de `ClientesSuPedidoObligatorio` (hoy solo el 27593) NO se
+  factura si le queda alguna línea -1..1 con cantidad, ni si otro pedido del mismo cliente y la misma P.O. tiene líneas -1..2 (hay que agrupar por
+  P.O. antes): «una P.O. va en una sola factura». Carlos: «o se factura todo y se recoge lo no entregado, o no se factura nada hasta que esté todo
+  albaraneado». Interruptor «(defecto)» `Facturacion.POSoloEntera` (sin fila o ≠ 0 = encendido). El texto de «Su pedido» de un cliente SIN la marca
+  (texto libre: «ENSEÑAR A SANTY») no bloquea nada. PENDIENTE: la misma regla en la API con mensaje propio antes de llamar al procedimiento.
