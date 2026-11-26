@@ -1,0 +1,31 @@
+{
+  "Ambito": "Ariadna",
+  "Fecha": "2026-11-26",
+  "Novedades": [
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Reposición: foto de cada bulto al enviarla",
+      "Descripcion": "Al cerrar los bultos de una reposición se puede hacer una foto de cada uno. Quien la recibe y quien revisa una diferencia pueden ver esas fotos, para saber qué iba en cada bulto."
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Reposición: cambiar el número de bultos después de imprimir las etiquetas",
+      "Descripcion": "Si se han puesto menos o más bultos de los que son, en Salidas se puede corregir el número con la reposición ya etiquetada y sacar las etiquetas que falten, sin rehacerla."
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Código de barras de varios productos: se pregunta cuál es en más pantallas",
+      "Descripcion": "Cuando un código corresponde a más de un producto, Ariadna pregunta cuál es también en la reposición puntual, en las diferencias de reposición y en «Lo contado» del inventario."
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Reparto: confirmar un cobro repetido o de más",
+      "Descripcion": "Si se va a cobrar dos veces seguidas al mismo cliente, a cobrar algo que quedaría todo a cuenta o a cobrar más que el reembolso, Ariadna lo avisa y pide confirmarlo antes de apuntarlo."
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Inventario desde el móvil",
+      "Descripcion": "Antes de rellenar «La tienda entera» dice cuántas filas va a crear, y varias pantallas del inventario se ven y se manejan mejor en el teléfono."
+    }
+  ]
+}

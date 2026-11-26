@@ -1,0 +1,170 @@
+{
+  "Ambito": "Nesto",
+  "Fecha": "2026-11-26",
+  "Novedades": [
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Ficha de producto: flechas a la referencia anterior y siguiente",
+      "Descripcion": "Junto a la referencia hay dos flechas para pasar a la anterior o a la siguiente por número. Las referencias anuladas se saltan.",
+      "SugerenciaId": 1478
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Ficha de producto: referencia del proveedor y «Extracto del producto»",
+      "Descripcion": "Debajo de la familia aparece la referencia que el proveedor habitual da al producto (Compras, Dirección e Informática). El botón «Extracto» abre en una ventana aparte los movimientos del producto, con saldo acumulado y filtros de almacén y fechas. Lo ven Compras, Almacén y Dirección; cada tienda, solo los movimientos de su almacén.",
+      "Perfiles": [
+        "Compras",
+        "Almacén",
+        "Tiendas"
+      ],
+      "SugerenciaId": 1482
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Enviar reposición: «Devolver exceso a Algete…»",
+      "Descripcion": "Desde «Enviar reposición» se puede preparar la devolución a Algete de lo que sobra en la tienda, filtrando por familia, nombre, stock mínimo, meses sin ventas o dejando unas unidades en la tienda. Antes de crearla enseña lo que va a mandar.",
+      "Perfiles": [
+        "Tiendas",
+        "Almacén",
+        "Compras"
+      ],
+      "SugerenciaId": 1429
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Eventos: «Copiar datos de transferencia» en los inscritos",
+      "Descripcion": "En la lista de inscritos de un evento, un botón copia el texto con el importe, la cuenta y el concepto que tiene que poner el cliente para pagar por transferencia, listo para pegarlo en un correo o un WhatsApp.",
+      "Perfiles": [
+        "Tiendas",
+        "Administración",
+        "Vendedores"
+      ],
+      "SugerenciaId": 1421
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Recorrido del almacén: «Primero las filas de escalera»",
+      "Descripcion": "En el mantenimiento del recorrido hay una casilla por almacén para que la reposición recorra primero las filas que necesitan escalera.",
+      "Perfiles": [
+        "Almacén"
+      ],
+      "SugerenciaId": 1418
+    },
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Crear un pedido con una línea de cuenta contable ya no da error ni lo deja como presupuesto",
+      "Descripcion": "Al crear un pedido podía salir «Collection was modified…» y, al guardar después, el pedido pasaba a presupuesto. Corregido. Además, una línea de cuenta contable sin tipo de IVA toma el de su cuenta.",
+      "Perfiles": [
+        "Administración"
+      ],
+      "SugerenciaId": 1453
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Agencias: se puede grabar hoy el envío de un pedido que sale otro día",
+      "Descripcion": "Si el pedido está aplazado a otra fecha, ya se puede grabar su envío y dejarlo en «Pendientes» sin tocar las fechas del pedido. Tramitarlo, imprimir la etiqueta y hacer el albarán siguen sin poder hacerse hasta su día.",
+      "Perfiles": [
+        "Almacén"
+      ],
+      "SugerenciaId": 1483
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Menú lateral que se pliega solo",
+      "Descripcion": "El menú de la izquierda se recoge solo al pulsar fuera o a los pocos segundos de sacar el ratón, y deja más sitio para trabajar. Se abre al pasar por encima o con Ctrl+K, y con la chincheta se queda fijo para quien lo prefiera."
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Cliente que cambia de forma fiscal: copiar sus condiciones y pasar sus pedidos",
+      "Descripcion": "Al dar de alta un cliente con origen «Cambio de forma fiscal» se indica el cliente anterior y se elige qué copiar de él (comercial, fiscalidad, condiciones de pago, descuentos, ofertas y ficha). Después ofrece pasar al cliente nuevo los pedidos pendientes del anterior. En la ficha, la pestaña «Cliente anterior» permite hacerlo más tarde.",
+      "Perfiles": [
+        "Administración",
+        "Vendedores"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Reparto: lista de «Bultos pendientes»",
+      "Descripcion": "Cuando una entrega del reparto propio queda incompleta, los bultos que faltan aparecen en Agencias, en la pestaña «Bultos pendientes», y en la pestaña «Entrega» del pedido, hasta que se entregan o se cierran indicando el motivo.",
+      "Perfiles": [
+        "Almacén",
+        "Administración"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "«Copiar factura»: copiar o abonar solo unos albaranes o unas líneas",
+      "Descripcion": "Al copiar o abonar una factura se puede elegir qué albaranes o qué líneas entran, en vez de la factura entera.",
+      "Perfiles": [
+        "Administración"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Alquileres: historia de cada aparato y descuadres",
+      "Descripcion": "En la ventana de Alquileres, dos pestañas nuevas enseñan la historia de un aparato por su número de serie (compra, alquileres, ventas) y los aparatos cuyos datos no cuadran.",
+      "Perfiles": [
+        "Administración"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Fechas de inventario por almacén",
+      "Descripcion": "Ventana nueva para apuntar el día del inventario de cada almacén. Enseña las reposiciones a las que afecta ese día y la víspera (el laborable anterior) para decidir qué se hace con cada una.",
+      "Perfiles": [
+        "Almacén",
+        "Tiendas"
+      ]
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Pedido: el aviso de «ha modificado este pedido» distingue el picking",
+      "Descripcion": "Si lo único que ha cambiado mientras tenía el pedido abierto es que Almacén le ha sacado o quitado el picking, el aviso lo dice así («… ha sacado el picking N de este pedido») en vez de decir que alguien lo ha modificado."
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Código de barras de varios productos: se pregunta cuál es en todas las pantallas",
+      "Descripcion": "Cuando un código de barras corresponde a más de un producto, Nesto pregunta cuál es también en el pedido de compra y en la plantilla de venta."
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Ficha comercial del cliente: guardar más seguro",
+      "Descripcion": "Guardar ya no bloquea la pantalla, solo manda lo que usted ha cambiado y avisa si otro usuario ha modificado la ficha mientras tanto. Si algo no se puede cargar o guardar, lo dice.",
+      "Perfiles": [
+        "Vendedores",
+        "Administración"
+      ]
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Pedido de compra: se pide al proveedor el seguimiento de la agencia",
+      "Descripcion": "El correo, el PDF y el Excel del pedido de compra piden al proveedor que dé a la agencia el correo de Compras, para que el seguimiento del envío nos llegue directamente y la fecha de recepción se ponga sola. En «Envíos de proveedor por asignar» hay además una pestaña con los correos de agencia que el sistema aún no sabe leer.",
+      "Perfiles": [
+        "Compras"
+      ]
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Pedidos de la tienda online: la segunda línea de la dirección",
+      "Descripcion": "La segunda línea de la dirección y la empresa que escribe el cliente en la tienda online llegan al pedido y a la etiqueta del envío.",
+      "Perfiles": [
+        "Almacén",
+        "Administración"
+      ]
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Pedido nuevo autorizado por otra persona: el correo dice quién lo autorizó",
+      "Descripcion": "Cuando un pedido que no pasa la validación lo pide una persona y lo autoriza otra, el correo «Pedido nuevo» indica quién lo ha autorizado.",
+      "Perfiles": [
+        "Vendedores",
+        "Administración"
+      ]
+    },
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Varios arreglos",
+      "Descripcion": "«Cambiar cliente…» ya no desaparece del pedido: sale deshabilitado con el motivo. «Anular recogida» sirve también para una recogida marcada como recogida por error. Un nombre de cliente largo ya no saca los botones del extracto de cliente fuera de la pantalla. Al reclamar una deuda con Paygold al cliente le llega un solo enlace. Un pedido sin IVA no ofrece descargar ni enviar su PDF."
+    }
+  ]
+}
