@@ -39,6 +39,8 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   que pueden autorizar (`ReglasAutorizacionPedido.Destinatarios`: grupos del dominio + filas PROPIAS de ParametrosUsuario, sin «(defecto)» ni el solicitante);
   al resolver, `AutorizacionPedidoResuelta` {…, estado, pedido} al solicitante (campana) y push de NestoApp al vendedor del pedido, y `notificacionResuelta`
   (Tipo `AutorizacionPedidoPedida`, Referencia = Id) a los demás; al anular, solo `notificacionResuelta`.
+  Push de NestoApp también a quien la pidió (Carlos 26/11/26) si tiene dispositivo de NestoApp y no es el vendedor del pedido (LA REGLA
+  `ReglaPushAutorizacionResuelta.PushAlSolicitante`: ninguno de sus dispositivos es del vendedor; si alguno lo es, es la misma persona y no se duplica). La campana no cambia.
 
 ### Recoge en tienda (NestoAPI#571, cortes 1 y 2, 11/11/26)
 - Sin columna: la ruta es la verdad. `TiendasRecogida.EsRutaDeRecogida` (AM, ALC, REI). `PedidoVentaDTO.RecogeEnTienda` (bool?): al leer,

@@ -586,6 +586,45 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             Assert.IsNotNull(prop);
         }
 
+        // ================================================================ Carlos 26/11/26: push también a quien la pidió
+
+        [TestMethod]
+        public void ReglaPushAutorizacionResuelta_SoloSiTieneNestoAppYNoEsElVendedor()
+        {
+            Assert.IsTrue(ReglaPushAutorizacionResuelta.PushAlSolicitante(new[] { 3 }, new[] { 9 }));
+            Assert.IsTrue(ReglaPushAutorizacionResuelta.PushAlSolicitante(new[] { 3 }, null), "Pedido sin vendedor con app");
+            Assert.IsFalse(ReglaPushAutorizacionResuelta.PushAlSolicitante(new int[0], new[] { 9 }), "Sin NestoApp, nada");
+            Assert.IsFalse(ReglaPushAutorizacionResuelta.PushAlSolicitante(new[] { 9 }, new[] { 9, 10 }), "Es el vendedor: ya lo recibe");
+        }
+
+        [TestMethod]
+        public async Task AvisosResuelta_PushAlVendedorYAQuienLaPidio_SinDuplicar()
+        {
+            var push = A.Fake<IServicioNotificacionesPush>();
+            A.CallTo(() => push.ObtenerDispositivosVendedor("1", "JE", Constantes.Aplicaciones.NESTO_APP))
+                .Returns(Task.FromResult(new List<DispositivoNotificacion> { new DispositivoNotificacion { Id = 9 } }));
+            A.CallTo(() => push.ObtenerDispositivosUsuario("ana", Constantes.Aplicaciones.NESTO_APP))
+                .Returns(Task.FromResult(new List<DispositivoNotificacion> { new DispositivoNotificacion { Id = 3 } }));
+            A.CallTo(() => push.ObtenerDispositivosUsuario("jefe", Constantes.Aplicaciones.NESTO_APP))
+                .Returns(Task.FromResult(new List<DispositivoNotificacion> { new DispositivoNotificacion { Id = 9 } }));
+            var avisosReales = new AvisosAutorizacionPedido(push, A.Fake<IAvisosTiempoReal>());
+            var aviso = new NotificacionPushDTO { Titulo = "t", Cuerpo = "c" };
+
+            await avisosReales.Resuelta("ana", "1", "JE", aviso);
+            A.CallTo(() => push.EnviarAVendedor("1", "JE", aviso)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.EnviarAUsuario("ana", Constantes.Aplicaciones.NESTO_APP, aviso)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+
+            // El que la pidió ES el vendedor del pedido: un solo push
+            await avisosReales.Resuelta("jefe", "1", "JE", aviso);
+            A.CallTo(() => push.EnviarAUsuario("jefe", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+
+            // Desde Nesto (con dominio) y sin NestoApp: la campana, sin push suyo
+            await avisosReales.Resuelta("NUEVAVISION\\Luis", "1", null, aviso);
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Luis", Constantes.Aplicaciones.NESTO, aviso)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.EnviarAUsuario("NUEVAVISION\\Luis", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
         private class FakeController : ApiController
         {
             public FakeController()
