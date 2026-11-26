@@ -397,6 +397,7 @@
     <Compile Include="Infrastructure\Alquileres\AlquileresNombresTests.cs" />
     <Compile Include="Controllers\InventariosContabilizarControllerTests.cs" />
     <Compile Include="Infrastructure\Inventarios\ContabilizarInventarioTests.cs" />
+    <Compile Include="Infrastructure\Inventarios\FechasInventarioTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioACeroTests.cs" />
     <Compile Include="Infrastructure\Inventarios\InventarioBorrarFilaTests.cs" />
@@ -411,6 +412,8 @@
     <Compile Include="Infrastructure\Sincronizacion\VendedorEmailPublicacionTests.cs" />
     <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2ClienteTests.cs" />
+    <Compile Include="Infrastructure\Clientes\Direccion2PedidoTiendaTests.cs" />
+    <Compile Include="Infrastructure\Clientes\ClientesAnterioresTests.cs" />
     <Compile Include="Infrastructure\Clientes\DireccionCompletaClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2DestinosTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2ModificarTests.cs" />
@@ -555,6 +558,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ReembolsoEnteroRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\FurgonetaDescargaTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\SeguimientoReposicionesTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\FotosBultosReposicionTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\AvisoParadasRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\OrdenSugeridoRepartoTests.cs" />
@@ -562,6 +566,7 @@
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CierreCajaRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CajaSinCerrarRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroDeudaRepartoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RepartoPropio\CobroRepetidoRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\EmpresaDelCobroRepartoTests.cs" />
     <Compile Include="Infrastructure\Agencias\RepartoPropio\ReembolsoDesfasadoRepartoPropioTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\AvisoChequeRegaloSinUsarTests.cs" />
@@ -860,6 +865,8 @@
     <Compile Include="Infrastructure\Eventos\FormaPagoSenalEventoTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTests.cs" />
     <Compile Include="Infrastructure\AlmacenesFicticios\AlmacenesFicticiosTests.cs" />
+    <Compile Include="Infrastructure\ProductosIncompletos\ProductosIncompletosTests.cs" />
+    <Compile Include="Infrastructure\ProductosIncompletos\GuardaAlmacenIncompletosTests.cs" />
     <Compile Include="Infrastructure\Cupones\AdelantarCuponTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponPedidoMinimoPorEventoTests.cs" />
     <Compile Include="Infrastructure\Cupones\EspejoCuponesPrestashopTests.cs" />
@@ -1091,6 +1098,8 @@
     <Compile Include="Infrastructure\Sincronizacion\FormateadorNombreTiendaTests.cs" />
     <Compile Include="Models\ProductoDTONombreTiendaTests.cs" />
     <Compile Include="Infrastructure\ValidadorCambioClienteComercialTests.cs" />
+    <Compile Include="Infrastructure\RastroLlamadasSinTokenTests.cs" />
+    <Compile Include="Infrastructure\Clientes\ClienteComercial644Tests.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServirTests.cs" />
     <Compile Include="Infrastructure\Picking\ReglasRutaPropiaTests.cs" />
     <Compile Include="Infrastructure\Picking\GestorSugerenciasRutaTests.cs" />

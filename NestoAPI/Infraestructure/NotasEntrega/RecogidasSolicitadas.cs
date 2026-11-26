@@ -726,6 +726,33 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             }
         }
 
+        /// <summary>
+        /// Caso 930553 (Carlos 26/11/26): la solicitud <paramref name="id"/> ya se ha dejado Anulada en la MISMA transacción que la
+        /// recogida marcada por error (<c>IRecogidasParadaReparto.AnularRecogidaMarcada</c>): aquí solo se avisa, como cualquier anulación.
+        /// Nunca lanza.
+        /// </summary>
+        public async Task AvisarAnuladaEnReparto(int id, string usuario)
+        {
+            try
+            {
+                if (!repositorio.ScriptAplicado())
+                {
+                    return;
+                }
+                FilaRecogidaSolicitada anulada = await repositorio.Leer(id).ConfigureAwait(false);
+                if (anulada == null)
+                {
+                    return;
+                }
+                List<RecogidaSolicitadaDTO> lista = await Construir(anulada.Empresa, new List<FilaRecogidaSolicitada> { anulada }).ConfigureAwait(false);
+                avisos?.Anulada(lista[0], usuario, false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recogidas solicitadas] La solicitud {id} está anulada, pero no se ha podido avisar a quien la pidió: {ex.Message}", ex));
+            }
+        }
+
         // ================================================================ un día laborable sin respuesta (job)
 
         /// <summary>A cuántas solicitudes se ha avisado. Sin el script, ninguna. Nunca lanza.</summary>

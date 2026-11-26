@@ -183,6 +183,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutParametroUsuario(ParametroUsuario parametro)
         {
+            // 26/11/26: antes de cerrarlo (sin [Authorize] todavía), rastro de quién lo llama sin token (una vez al día por IP)
+            Infraestructure.RastroLlamadasSinToken.Apuntar(Request, User, "PUT api/ParametrosUsuario");
             if (parametro == null)
             {
                 return BadRequest("Falta el parámetro.");

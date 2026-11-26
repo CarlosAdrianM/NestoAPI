@@ -442,5 +442,136 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             HttpResponseMessage prohibido = await (await Controlador(null).GetRecogidasNoRecogidas()).ExecuteAsync(CancellationToken.None);
             Assert.AreEqual(HttpStatusCode.Forbidden, prohibido.StatusCode);
         }
+
+        // ================================================================ caso 930553: la recogida marcada «Recogido» por error
+
+        private EnviosAgencia EnvioEntregado()
+        {
+            EnviosAgencia envio = Envio();
+            envio.Estado = Constantes.Agencias.ESTADO_ENTREGADO;
+            A.CallTo(() => paradasNota.Resolver("NR" + PEDIDO)).Returns(Task.FromResult(new ResolucionCodigoNota
+            {
+                Pedido = PEDIDO, EsNota = true, EsRecogida = true, EnvioEntregado = 251104
+            }));
+            // Marcada «Recogido»: el seguimiento dice que hubo bultos NR (no lo impide); sin abono
+            A.CallTo(() => recogidas.LeerSeguimiento(PEDIDO)).Returns(Task.FromResult(new SeguimientoNotaRecogida { Existe = true, BultosRecogidos = true }));
+            return envio;
+        }
+
+        private void AnularMarcadaDevuelve(AnulacionRecogidaMarcada valor)
+            => A.CallTo(() => recogidas.AnularRecogidaMarcada(A<int>._, A<int>._, A<string>._, A<string>._, A<IList<EnvioHistoria>>._,
+                A<IReadOnlyList<MovimientoBultoReparto>>._, A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(valor));
+
+        private static MovimientoBultoReparto Nr(int bulto, string tipo, int minuto) => new MovimientoBultoReparto
+        {
+            Id = bulto * 10 + minuto,
+            Codigo = $"NR{PEDIDO}-{bulto}",
+            TipoCodigo = CodigoBultoFurgoneta.NR,
+            Pedido = PEDIDO,
+            Bulto = bulto,
+            Tipo = tipo,
+            Usuario = ANDRE,
+            FechaHora = AHORA.Date.AddHours(9).AddMinutes(minuto),
+            ClaveIdempotencia = Guid.NewGuid()
+        };
+
+        [TestMethod]
+        public void Reglas_AnularMarcada_SoloAlmacenODireccion_YSinAbono()
+        {
+            StringAssert.Contains(ReglasParadaRecogida.MotivoNoAnulableMarcada("NR930553", false, null), "solo Almacén o Dirección");
+            Assert.IsNull(ReglasParadaRecogida.MotivoNoAnulableMarcada("NR930553", true, new SeguimientoNotaRecogida { BultosRecogidos = true }),
+                "Los bultos en la furgoneta no lo impiden: se descargan");
+            StringAssert.Contains(ReglasParadaRecogida.MotivoNoAnulableMarcada("NR930553", true, new SeguimientoNotaRecogida { PedidoAbono = 931000 }),
+                "ya está abonada (abono 931000)");
+        }
+
+        [TestMethod]
+        public async Task AnularMarcada_Almacen_CierraConDetalle_DescargaLoQueSigueEnLaFurgoneta_YAvisaDeLaSolicitud()
+        {
+            EnvioEntregado();
+            var furgoneta = A.Fake<IRepositorioFurgoneta>();
+            A.CallTo(() => furgoneta.ScriptAplicado()).Returns(true);
+            A.CallTo(() => furgoneta.LeerHistoria(A<ConsultaMovimientosBulto>.That.Matches(c => c.Pedidos.Contains(PEDIDO)))).Returns(Task.FromResult(new List<MovimientoBultoReparto>
+            {
+                Nr(1, TiposMovimientoBulto.RECOGIDO, 0),
+                Nr(2, TiposMovimientoBulto.RECOGIDO, 0),
+                Nr(2, TiposMovimientoBulto.DESCARGADO, 5) // ese ya lo descargó (sin leer el otro)
+            }));
+            var conFurgoneta = new ServicioRepartoPropio(repositorio, () => AHORA, null, new ServicioRepartoPropioTests.ParametrosFalsos(),
+                () => A.Fake<IServicioPagos>(), () => A.Fake<IInformesService>(), null,
+                new DependenciasParadasReparto { NotasParada = notas, Notas = paradasNota, Furgoneta = furgoneta })
+            {
+                Recogidas = recogidas
+            };
+            AnularMarcadaDevuelve(new AnulacionRecogidaMarcada { SolicitudesAnuladas = new List<int> { 7 }, BultosDescargados = 1 });
+
+            var resultado = await conFurgoneta.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "Lo marcó recogido por error" }, ANDRE,
+                puedeAnularMarcada: true);
+
+            Assert.AreEqual(TipoResultadoReparto.Ok, resultado.Tipo, resultado.Mensaje);
+            Assert.AreEqual(ReglasParadaRecogida.ESTADO_ANULADA, resultado.Contenido.Estado);
+            StringAssert.Contains(resultado.Contenido.Mensaje, $"NR{PEDIDO}-1");
+            A.CallTo(() => recogidas.AnularRecogidaMarcada(251104, PEDIDO, "Recogida anulada (marcada por error): Lo marcó recogido por error",
+                "Lo marcó recogido por error", A<IList<EnvioHistoria>>.That.Matches(h => h[0].Observaciones.Contains("por error")),
+                A<IReadOnlyList<MovimientoBultoReparto>>.That.Matches(d => d.Count == 1 && d[0].Codigo == $"NR{PEDIDO}-1"
+                    && d[0].Tipo == TiposMovimientoBulto.DESCARGADO && d[0].Origen == OrigenesMovimientoBulto.ALMACEN && d[0].EnvioId == 251104),
+                A<string>._, A<string>.That.Contains("MarcadaPorError"), ANDRE)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => recogidas.AvisarSolicitudAnulada(7, ANDRE)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => recogidas.CerrarParada(A<int>._, A<string>._, A<IList<EnvioHistoria>>._, A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => recogidas.AnularSolicitud(A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AnularMarcada_SinPermiso403_ConAbono409_SinMotivo400_YCarrera409_SinTocarNada()
+        {
+            EnvioEntregado();
+            AnularMarcadaDevuelve(new AnulacionRecogidaMarcada());
+
+            var sinPermiso = await servicio.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "x" }, ANDRE);
+            Assert.AreEqual(TipoResultadoReparto.Prohibido, sinPermiso.Tipo);
+
+            Assert.AreEqual(TipoResultadoReparto.Invalido, (await servicio.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO(), ANDRE, puedeAnularMarcada: true)).Tipo);
+
+            A.CallTo(() => recogidas.LeerSeguimiento(PEDIDO)).Returns(Task.FromResult(new SeguimientoNotaRecogida { Existe = true, PedidoAbono = 931000 }));
+            var abonada = await servicio.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "x" }, ANDRE, puedeAnularMarcada: true);
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, abonada.Tipo);
+            Assert.AreEqual(ReglasParadaRecogida.CODIGO_ABONADA, abonada.Codigo);
+            StringAssert.Contains(abonada.Mensaje, "abono 931000");
+            A.CallTo(() => recogidas.AnularRecogidaMarcada(A<int>._, A<int>._, A<string>._, A<string>._, A<IList<EnvioHistoria>>._,
+                A<IReadOnlyList<MovimientoBultoReparto>>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+
+            A.CallTo(() => recogidas.LeerSeguimiento(PEDIDO)).Returns(Task.FromResult(new SeguimientoNotaRecogida { Existe = true }));
+            AnularMarcadaDevuelve(null); // el abono llegó mientras, o la parada cambió
+            var carrera = await servicio.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "x" }, ANDRE, puedeAnularMarcada: true);
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, carrera.Tipo);
+            A.CallTo(() => recogidas.AvisarSolicitudAnulada(A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AnularMarcada_SinSeguimiento503()
+        {
+            EnvioEntregado();
+            A.CallTo(() => recogidas.LeerSeguimiento(PEDIDO)).Returns(Task.FromResult<SeguimientoNotaRecogida>(null));
+
+            var resultado = await servicio.AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "x" }, ANDRE, puedeAnularMarcada: true);
+
+            Assert.AreEqual(TipoResultadoReparto.NoDisponible, resultado.Tipo);
+        }
+
+        [TestMethod]
+        public async Task Controlador_AnularMarcada_Almacen200_Administracion403()
+        {
+            EnvioEntregado();
+            AnularMarcadaDevuelve(new AnulacionRecogidaMarcada());
+
+            HttpResponseMessage administracion = await (await Controlador(Constantes.GruposSeguridad.ADMINISTRACION)
+                .AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "x" })).ExecuteAsync(CancellationToken.None);
+            Assert.AreEqual(HttpStatusCode.Forbidden, administracion.StatusCode);
+            StringAssert.Contains(await administracion.Content.ReadAsStringAsync(), "Almacén o Dirección");
+
+            HttpResponseMessage almacen = await (await Controlador(Constantes.GruposSeguridad.ALMACEN)
+                .AnularRecogida(PEDIDO, new AnularRecogidaRepartoDTO { Motivo = "x" })).ExecuteAsync(CancellationToken.None);
+            Assert.AreEqual(HttpStatusCode.OK, almacen.StatusCode);
+        }
     }
 }

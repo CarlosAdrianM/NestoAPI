@@ -541,8 +541,13 @@ WHERE (Empresa = @p0 OR Empresa = @p1) AND [Almacén] = @p2 AND [Número] = @p3 
   AND RTRIM(Pasillo) + RTRIM(Fila) + RTRIM(Columna) = @p4
 ORDER BY FechaCreación, [NºOrden]";
 
-        public async Task<ResumenUbicaciones> SalidaDeHuecoAFicticio(string empresa, string almacen, string producto, HuecoUbicacion hueco,
-            int cantidad, int numeroTraspaso, string usuario)
+        public Task<ResumenUbicaciones> SalidaDeHuecoAFicticio(string empresa, string almacen, string producto, HuecoUbicacion hueco,
+            int cantidad, int numeroTraspaso, string usuario) =>
+            SalidaDeLoLibreDelHueco(empresa, almacen, producto, hueco, cantidad, numeroTraspaso, usuario, TipoMovimientoUbicacion.TraspasoAlmacenFicticio);
+
+        /// <summary>El núcleo de las salidas de lo LIBRE de un hueco elegido, todo o nada (almacenes ficticios #894, productos incompletos #902).</summary>
+        private async Task<ResumenUbicaciones> SalidaDeLoLibreDelHueco(string empresa, string almacen, string producto, HuecoUbicacion hueco,
+            int cantidad, int numeroTraspaso, string usuario, TipoMovimientoUbicacion tipo)
         {
             var resumen = new ResumenUbicaciones();
             if (cantidad <= 0)
@@ -580,7 +585,7 @@ ORDER BY FechaCreación, [NºOrden]";
                 resumen.FilasTocadas += 1;
                 Apuntar(resumen, new MovimientoUbicacion
                 {
-                    Tipo = TipoMovimientoUbicacion.TraspasoAlmacenFicticio,
+                    Tipo = tipo,
                     Empresa = toma.Libre.Empresa, Almacen = almacen, Producto = articulo, NumeroOrdenUbicacion = toma.Libre.NumeroOrden,
                     HuecoOrigen = toma.Libre.Hueco, Cantidad = toma.Cantidad, EstadoAnterior = EstadosUbicacion.LIBRE,
                     Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
@@ -591,6 +596,63 @@ ORDER BY FechaCreación, [NºOrden]";
 
         public Task<ResumenUbicaciones> EntradaDeFicticio(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario) =>
             EntradaPendienteDeUbicar(empresa, almacen, producto, cantidad, numeroTraspaso, usuario, TipoMovimientoUbicacion.TraspasoAlmacenFicticio);
+
+        // ---------------------------------------------------------------- Productos incompletos (NestoAPI#902)
+
+        public Task<ResumenUbicaciones> EntradaPorProductoIncompleto(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario) =>
+            EntradaPendienteDeUbicar(empresa, almacen, producto, cantidad, numeroTraspaso, usuario, TipoMovimientoUbicacion.ProductoIncompleto);
+
+        public async Task<ResumenUbicaciones> SalidaPorProductoIncompleto(string empresa, string almacen, string producto, HuecoUbicacion hueco,
+            int cantidad, int numeroTraspaso, string usuario)
+        {
+            if (hueco?.TieneHueco == true)
+            {
+                return await SalidaDeLoLibreDelHueco(empresa, almacen, producto, hueco, cantidad, numeroTraspaso, usuario, TipoMovimientoUbicacion.ProductoIncompleto)
+                    .ConfigureAwait(false);
+            }
+            var resumen = new ResumenUbicaciones();
+            if (cantidad <= 0)
+            {
+                return resumen;
+            }
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string articulo = producto?.Trim();
+            // Las mismas filas que una diferencia de reposición (lo libre y lo pendiente de ubicar, sin reservas); con un traspaso
+            // nuevo ninguna es «del traspaso»: primero lo pendiente de ubicar y después el único hueco con existencias
+            List<FilaUbicacionDiferencia> filas = await db.Database.SqlQuery<FilaUbicacionDiferencia>(SQL_FILAS_PARA_DIFERENCIA,
+                Char("@p0", empresa, 3), Char("@p1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, 3), Char("@p2", almacen, 3),
+                Char("@p3", articulo, 15), new SqlParameter("@p4", SqlDbType.Int) { Value = numeroTraspaso })
+                .ToListAsync().ConfigureAwait(false);
+            List<TomaDeHueco> tomas = PlanificadorDiferenciaUbicaciones.Repartir(filas, cantidad, primeroPendienteDeUbicar: true);
+            int encontradas = tomas.Sum(t => t.Cantidad);
+            if (encontradas < cantidad)
+            {
+                throw new NestoBusinessException($"No se encuentran {cantidad} de {articulo} libres en {almacen?.Trim()} pendientes de ubicar ni en un único hueco " +
+                    $"(hay {encontradas}): diga de qué hueco sale. No se ha hecho nada.")
+                {
+                    StatusCode = System.Net.HttpStatusCode.Conflict
+                };
+            }
+            foreach (TomaDeHueco toma in tomas)
+            {
+                int tocadas = toma.Entera
+                    ? await db.Database.ExecuteSqlCommandAsync(SQL_QUITAR_FILA_ENTERA, Orden(toma.Libre.NumeroOrden),
+                        new SqlParameter("@p1", SqlDbType.Int) { Value = toma.Cantidad }).ConfigureAwait(false)
+                    : await db.Database.ExecuteSqlCommandAsync(SQL_RESTAR_DE_LIBRE, Orden(toma.Libre.NumeroOrden),
+                        new SqlParameter("@p1", SqlDbType.Int) { Value = toma.Cantidad },
+                        new SqlParameter("@p2", SqlDbType.VarChar, 30) { Value = quien }).ConfigureAwait(false);
+                Comprobar(tocadas, toma);
+                resumen.FilasTocadas += 1;
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.ProductoIncompleto,
+                    Empresa = toma.Libre.Empresa, Almacen = almacen, Producto = articulo, NumeroOrdenUbicacion = toma.Libre.NumeroOrden,
+                    HuecoOrigen = toma.Libre.Hueco, Cantidad = toma.Cantidad, EstadoAnterior = toma.Libre.Estado,
+                    Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
+                });
+            }
+            return resumen;
+        }
 
         // ---------------------------------------------------------------- Aún no pasan por la puerta (corte 3 de #594)
 

@@ -1735,6 +1735,18 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Jobs recurrentes 'reposiciones-discusiones-diferencias' (cada hora 8-21) y 'reposiciones-desacuerdos-verdad' (3:35) configurados");
 
+            // NestoAPI#883: tres laborables antes de cada fecha de inventario, aviso de las reposiciones que tocan su stock y siguen sin decidir.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Inventarios.FechasInventarioJobsService.ID_JOB,
+                () => Infraestructure.Inventarios.FechasInventarioJobsService.Avisar(),
+                Infraestructure.Inventarios.FechasInventarioJobsService.CRON, // Cron: de lunes a viernes a las 8:30
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'inventario-fechas-aviso' configurado (de lunes a viernes a las 8:30)");
+
             // NestoAPI#693: pedidos con la fecha de entrega a la agencia prometida en riesgo. Lo de cada movimiento que pasa por
             // la API va por eventos (EventosPromesaRiesgo, un job un minuto después); esta pasada nocturna recalcula, fuera de
             // horario, todos los pedidos pendientes con promesa de hoy o futura (unas decenas) para lo que no pasa por la API

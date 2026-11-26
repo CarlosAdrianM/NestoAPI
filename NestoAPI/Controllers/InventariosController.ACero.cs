@@ -46,6 +46,11 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el producto.");
             }
+            // NestoAPI#902: el almacén de incompletos no se inventaría (sus unidades, desde Productos incompletos)
+            if (Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.Es(peticion.Almacen))
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.MENSAJE_INVENTARIO });
+            }
             string empresa = EmpresaONula(peticion.Empresa);
             string motivo = PermisosInventario.MotivoNoPuedeContar(User, AlmacenDeQuienPide(empresa), peticion.Almacen.Trim());
             if (motivo != null)

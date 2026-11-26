@@ -38,6 +38,15 @@ namespace NestoAPI.Models.PedidosVenta
         /// objeto vacío.
         /// </summary>
         public ClienteParaAgenciaDTO ClienteFicha { get; set; }
+
+        /// <summary>
+        /// NestoAPI#878: la Dirección 2 de la ENTREGA de un pedido de la tienda online, leída de su línea «DIRECCIÓN 2: …» de los
+        /// comentarios (<see cref="Infraestructure.Clientes.Direccion2PedidoTienda"/>). Va aparte de la ficha (la del 31517 no es la
+        /// dirección de entrega): quien monta el envío con la dirección del pedido la usa. Null si el pedido no la trae.
+        /// </summary>
+        public string Direccion2Pedido { get; set; }
+        /// <summary>NestoAPI#878: «Local» si esa Dirección 2 lleva rótulo; si no, null.</summary>
+        public string TipoLugarPedido { get; set; }
     }
 
     public class ClienteParaAgenciaDTO

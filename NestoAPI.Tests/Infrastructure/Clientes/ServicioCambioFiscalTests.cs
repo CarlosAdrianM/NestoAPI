@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Clientes.CambioFiscal;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models.Clientes;
@@ -15,18 +16,16 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
     public class ServicioCambioFiscalTests
     {
         private RepositorioFalso repo;
+        private AnterioresFalso anteriores;
         private ServicioCambioFiscal servicio;
         private List<string> publicados;
 
         private class RepositorioFalso : IRepositorioCambioFiscal
         {
-            public bool HayTabla = true;
             public DatosCambioFiscal Datos;
             public DecisionCopiaCambioFiscal Escrita;
             public int Copias;
-            public List<string> Enlaces = new List<string>();
 
-            public Task<bool> TablaExiste() => Task.FromResult(HayTabla);
             public Task<DatosCambioFiscal> Leer(string empresa, string anterior, string nuevo) => Task.FromResult(Datos);
             public Task<DecisionCopiaCambioFiscal> Copiar(string empresa, string anterior, string nuevo, Func<DatosCambioFiscal, DecisionCopiaCambioFiscal> decidir, string usuario)
             {
@@ -38,9 +37,21 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                 }
                 return Task.FromResult(d);
             }
-            public Task CrearEnlace(string empresa, string nuevo, string anterior, string usuario)
+        }
+
+        /// <summary>El único acceso a dbo.ClientesAnteriores (cortes 1 y 2): si está la tabla y el enlace de PasarPedidos.</summary>
+        private class AnterioresFalso : IRepositorioClientesAnteriores
+        {
+            public bool HayTabla = true;
+            public List<string> Enlaces = new List<string>();
+
+            public bool TablaExiste() => HayTabla;
+            public Task<string> LeerAnterior(string empresa, string cliente) => Task.FromResult<string>(null);
+            public Task<List<EnlaceClienteAnterior>> LeerEnlaces(string empresa) => Task.FromResult(new List<EnlaceClienteAnterior>());
+            public Task<DatosClienteAnterior> LeerCliente(string empresa, string cliente) => Task.FromResult<DatosClienteAnterior>(null);
+            public Task Guardar(string empresa, string cliente, string clienteAnterior, string usuario)
             {
-                Enlaces.Add($"{nuevo}<-{anterior}");
+                Enlaces.Add($"{cliente}<-{clienteAnterior}");
                 return Task.CompletedTask;
             }
         }
@@ -65,7 +76,8 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                     OrigenNuevo = "CAMBIO-FISCAL"
                 }
             };
-            servicio = new ServicioCambioFiscal(repo) { Hoy = () => new DateTime(2026, 11, 26), RegistrarEnElmah = _ => { } };
+            anteriores = new AnterioresFalso();
+            servicio = new ServicioCambioFiscal(repo, anteriores) { Hoy = () => new DateTime(2026, 11, 26), RegistrarEnElmah = _ => { } };
             publicados = new List<string>();
         }
 
@@ -76,7 +88,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
         [TestMethod]
         public async Task Copiar_SinTabla_503()
         {
-            repo.HayTabla = false;
+            anteriores.HayTabla = false;
 
             Assert.AreEqual(503, (await Copiar(false)).Estado);
         }
@@ -198,7 +210,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                 });
 
             Assert.AreEqual(200, r.Estado, r.Motivo);
-            CollectionAssert.AreEqual(new[] { "42178<-37283" }, repo.Enlaces, "Sin enlace y con origen CAMBIO-FISCAL, se crea");
+            CollectionAssert.AreEqual(new[] { "42178<-37283" }, anteriores.Enlaces, "Sin enlace y con origen CAMBIO-FISCAL, se crea");
             Assert.AreEqual(1, r.Datos.Pasados);
             Assert.IsTrue(r.Datos.Pedidos.Single(p => p.Pedido == 931691).TeniaPicking);
             Assert.AreEqual("NO_ES_DEL_CLIENTE_ANTERIOR", r.Datos.Pedidos.Single(p => p.Pedido == 931700).Codigo);
@@ -218,7 +230,7 @@ namespace NestoAPI.Tests.Infrastructure.Clientes
                 (n, p) => { vista = p; return Task.FromResult(new ResultadoCambioClientePedido { Respuesta = new CambiarClientePedidoRespuesta { Ensayo = true } }); });
 
             Assert.AreEqual(200, r.Estado);
-            Assert.AreEqual(0, repo.Enlaces.Count);
+            Assert.AreEqual(0, anteriores.Enlaces.Count);
             Assert.IsTrue(vista.Ensayo);
             Assert.IsNull(vista.Contacto, "El nuevo no tiene el contacto 5: va a su principal");
         }

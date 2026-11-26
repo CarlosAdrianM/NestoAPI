@@ -53,6 +53,8 @@ namespace NestoAPI.Models
         public string Origen { get; set; }
         /// <summary>NestoAPI#623: descripción del origen («Lead de Meta · campaña Harmonia»), o null.</summary>
         public string OrigenDescripcion { get; set; }
+        /// <summary>NestoAPI#876: el número de cliente anterior (cambio de forma fiscal), o null. Solo en GET api/Clientes.</summary>
+        public string ClienteAnterior { get; set; }
         public string usuario { get; set; }
 
         // NestoAPI#464: 0 = sin empleados, 1..4, 5 = "5 o más"; null = no se ha preguntado.
@@ -72,6 +74,12 @@ namespace NestoAPI.Models
         public string motivoCambioEstado { get; set; }
         /// <summary>NestoAPI#716: texto libre que acompaña al motivo (200 caracteres como mucho). Opcional.</summary>
         public string comentarioCambioEstado { get; set; }
+        /// <summary>
+        /// Nesto#644 (5): solo de entrada en el PUT de ClienteComercial. Lo que había al abrir la ficha; si lo que el PUT cambia
+        /// ya no vale eso en la base de datos, 409 CLIENTE_CAMBIADO sin escribir nada. Null = como antes. Al leer, no viaja.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public OriginalClienteComercialDTO original { get; set; }
         /// <summary>
         /// Si la pantalla de rapport tiene que preguntar (o enseñar ya relleno) el número de
         /// empleados. La regla vive en el servidor (PoliticaEmpleadosCliente): Nesto y NestoApp
@@ -608,9 +616,30 @@ namespace NestoAPI.Models
     }
     public class VendedorGrupoProductoDTO
     {
+        /// <summary>Nesto#644 (6): en el PUT de ClienteComercial, null = no tocar el vendedor de la fila.</summary>
         public string vendedor { get; set; }
-        public short estado { get; set; }
+        /// <summary>
+        /// Nesto#644 (6): en el PUT de ClienteComercial, null = no tocar el estado de la fila (al crearla, el que llega o, sin él,
+        /// VISITA_PRESENCIAL). Al leer no viaja si no se sabe (los vendedores del pedido no tienen estado): un cliente que lo
+        /// lee como short no-anulable sigue recibiendo lo de siempre (0 al faltar).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public short? estado { get; set; }
         public string grupoProducto { get; set; }
         public string usuario { get; set; }
+    }
+
+    /// <summary>
+    /// Nesto#644 (5): lo que la ficha comercial tenía al ABRIRLA, para que el PUT de ClienteComercial no pise lo que otro
+    /// cambió entre medias (<see cref="Infraestructure.Clientes.ReglaClienteComercialCambiado"/>). Opcional: sin él, como antes.
+    /// Los textos a null o en blanco son «vacío»; los estados a null no se comparan.
+    /// </summary>
+    public class OriginalClienteComercialDTO
+    {
+        public short? estado { get; set; }
+        public string vendedor { get; set; }
+        public string pais { get; set; }
+        public string vendedorPeluqueria { get; set; }
+        public short? estadoPeluqueria { get; set; }
     }
 }

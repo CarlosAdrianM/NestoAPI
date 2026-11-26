@@ -533,6 +533,7 @@
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\ClientesController.ContactoDefecto.cs" />
     <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
+    <Compile Include="Controllers\ClientesController.ClienteAnterior.cs" />
     <Compile Include="Controllers\ClientesController.Origen.cs" />
     <Compile Include="Controllers\ClientesController.CambioFiscal.cs" />
     <Compile Include="Controllers\ClientesController.ImportarLeads.cs" />
@@ -558,7 +559,6 @@
     <Compile Include="Infraestructure\Clientes\Origenes\RepositorioLeadsMeta.cs" />
     <Compile Include="Infraestructure\Rapports\ImpulsoLeadsCampanaContacto.cs" />
     <Compile Include="Controllers\ClientesController.SinVendedor.cs" />
-    <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\AparatosController.cs" />
     <Compile Include="Controllers\CopiarFacturaLineasController.cs" />
@@ -688,6 +688,7 @@
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
+    <Compile Include="Controllers\InventariosFechasController.cs" />
     <Compile Include="Controllers\InventariosController.Rellenar.cs" />
     <Compile Include="Controllers\InmovilizadosController.cs" />
     <Compile Include="Infraestructure\Inmovilizados\CodigoInmovilizado.cs" />
@@ -697,6 +698,7 @@
     <Compile Include="Controllers\InventariosController.Contabilizar.cs" />
     <Compile Include="Infraestructure\Inventarios\ComprobadorInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\ErrorInventarioPendiente.cs" />
+    <Compile Include="Infraestructure\Inventarios\FechasInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\HuecoInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\PermisosInventario.cs" />
     <Compile Include="Infraestructure\Inventarios\RepositorioContabilizarInventario.cs" />
@@ -1101,6 +1103,8 @@
     <Compile Include="Infraestructure\Clientes\MotivoCambioEstadoCliente.cs" />
     <Compile Include="Infraestructure\Clientes\DatosAltaCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2Cliente.cs" />
+    <Compile Include="Infraestructure\Clientes\Direccion2PedidoTienda.cs" />
+    <Compile Include="Infraestructure\Clientes\ClientesAnteriores.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2ClienteSql.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2EnSesion.cs" />
     <Compile Include="Infraestructure\Clientes\DireccionCompletaCliente.cs" />
@@ -1414,7 +1418,6 @@
     <Compile Include="Infraestructure\IndicadoresStock\RepositorioIndicadoresStock.cs" />
     <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ResumenRapportsCliente.cs" />
-    <Compile Include="Infraestructure\Rapports\ResumenRapportsCliente.cs" />
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ResumenRapportsDia.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
@@ -1423,6 +1426,7 @@
     <Compile Include="Infraestructure\ErroresTriggerSql.cs" />
     <Compile Include="Infraestructure\EnlacesTienda.cs" />
     <Compile Include="Infraestructure\RoundingHelper.cs" />
+    <Compile Include="Infraestructure\RastroLlamadasSinToken.cs" />
     <Compile Include="Infraestructure\ValidadorDescuentoPP.cs" />
     <Compile Include="Infraestructure\Seguridad\ApiKeyAttribute.cs" />
     <Compile Include="Infraestructure\Seguridad\AutorizadoOApiKeyAttribute.cs" />
@@ -1620,9 +1624,15 @@
     <Compile Include="Infraestructure\AlmacenesFicticios\ServicioAlmacenesFicticios.cs" />
     <Compile Include="Infraestructure\ExtractosProducto\MovimientoTraspasoStockSql.cs" />
     <Compile Include="Controllers\AlmacenesFicticiosController.cs" />
+    <Compile Include="Controllers\ProductosIncompletosController.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\ProductosIncompletos.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\GuardaAlmacenIncompletos.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\RepositorioProductosIncompletosSql.cs" />
+    <Compile Include="Infraestructure\ProductosIncompletos\ServicioProductosIncompletos.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicionSql.cs" />
     <Compile Include="Infraestructure\Reposiciones\DesacuerdoDiferenciasReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\DiscusionesDiferenciasReposicionSql.cs" />
+    <Compile Include="Infraestructure\Reposiciones\FotosBultosReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\ServicioDiscusionesDiferencias.cs" />
     <Compile Include="Infraestructure\Ubicaciones\CuadreUbicaciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\UbicacionesHuerfanasJobsService.cs" />
@@ -1747,6 +1757,7 @@
     <Compile Include="Infraestructure\Sincronizacion\PrestashopProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Clientes\ValidadorCambioClienteComercial.cs" />
+    <Compile Include="Infraestructure\Clientes\ClienteComercialCambiado.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServir.cs" />
     <Compile Include="Models\Picking\GestorRutaInternaPicking.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PuertaPublicacionTienda.cs" />

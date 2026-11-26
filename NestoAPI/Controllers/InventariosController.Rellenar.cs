@@ -66,6 +66,11 @@ namespace NestoAPI.Controllers
             {
                 peticion.Confirmar = confirmar;
             }
+            // NestoAPI#902: el almacén de incompletos no se inventaría (sus unidades, desde Productos incompletos)
+            if (Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.Es(peticion?.Almacen))
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.MENSAJE_INVENTARIO });
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
             // Rellenar por error (Paloma, 25/11/26): el rellenado de la tienda entera de Nesto pide confirmar con el almacén. Ariadna (que
             // también llama aquí, con X-Ariadna-Version en todas sus llamadas) no cambia.

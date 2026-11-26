@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Seguridad;
+﻿using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 using System;
@@ -41,6 +41,10 @@ namespace NestoAPI.Infraestructure.Clientes
             IPrincipal user, NVEntities db, Cliente clienteDB, ClienteDTO cambios,
             IServicioVendedores servicioVendedores, IServicioUsuarioVendedor servicioUsuarioVendedor)
         {
+            VendedorClienteGrupoProducto filaGrupo = db.VendedoresClientesGruposProductos
+                .Where(v => v.Empresa == clienteDB.Empresa && v.Cliente == clienteDB.Nº_Cliente && v.Contacto == clienteDB.Contacto)
+                .FirstOrDefault();
+            VendedorGrupoProductoDTO filaNueva = cambios.VendedoresGrupoProducto?.FirstOrDefault();
             DatosPermisoClienteComercial datos = new DatosPermisoClienteComercial
             {
                 EsOficina = EsUsuarioDeOficina(user),
@@ -48,11 +52,11 @@ namespace NestoAPI.Infraestructure.Clientes
                 VendedorActual = clienteDB.Vendedor,
                 VendedorDestino = cambios.vendedor,
                 CambiaEstado = cambios.estado != null && clienteDB.Estado != cambios.estado,
-                VendedorGrupoActual = db.VendedoresClientesGruposProductos
-                    .Where(v => v.Empresa == clienteDB.Empresa && v.Cliente == clienteDB.Nº_Cliente && v.Contacto == clienteDB.Contacto)
-                    .Select(v => v.Vendedor)
-                    .FirstOrDefault(),
-                VendedorGrupoDestino = cambios.VendedoresGrupoProducto?.FirstOrDefault()?.vendedor
+                CambiaPais = CambiaElPais(clienteDB.Pais, cambios.pais),
+                CambiaEstadoGrupo = CambiaElEstadoDelGrupo(filaGrupo, filaNueva),
+                CreaFilaGrupo = filaGrupo == null && !string.IsNullOrWhiteSpace(filaNueva?.vendedor),
+                VendedorGrupoActual = filaGrupo?.Vendedor,
+                VendedorGrupoDestino = filaNueva?.vendedor
             };
 
             if (!datos.EsOficina && datos.VendedorDelUsuario != null)
@@ -75,10 +79,12 @@ namespace NestoAPI.Infraestructure.Clientes
 
             string actual = datos.VendedorActual?.Trim();
             bool cambiaVendedor = SonDistintos(actual, datos.VendedorDestino);
+            // Nesto#644 (7): crear la fila de peluquería también es asignar el grupo a alguien
             bool cambiaGrupo = datos.VendedorGrupoDestino != null
-                && SonDistintos(datos.VendedorGrupoActual?.Trim(), datos.VendedorGrupoDestino);
+                && (datos.CreaFilaGrupo || SonDistintos(datos.VendedorGrupoActual?.Trim(), datos.VendedorGrupoDestino));
 
-            if (!cambiaVendedor && !cambiaGrupo && !datos.CambiaEstado)
+            // Nesto#644 (7): el país y el estado de peluquería también tocan el cliente (antes pasaban sin mirar el equipo)
+            if (!cambiaVendedor && !cambiaGrupo && !datos.CambiaEstado && !datos.CambiaPais && !datos.CambiaEstadoGrupo)
             {
                 return ResultadoPermisoClienteComercial.Si();
             }
@@ -127,6 +133,32 @@ namespace NestoAPI.Infraestructure.Clientes
             }
 
             return ResultadoPermisoClienteComercial.Si();
+        }
+
+        /// <summary>
+        /// Nesto#644 (7): el mismo criterio que AplicarCambiosClienteComercial: país no vacío y distinto del guardado (sin
+        /// relleno ni mayúsculas).
+        /// </summary>
+        internal static bool CambiaElPais(string guardado, string nuevo)
+        {
+            return !string.IsNullOrWhiteSpace(nuevo)
+                && !string.Equals(guardado?.Trim(), nuevo.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Nesto#644 (7): llega fila de grupo con estado y es distinto del guardado, o la fila no existe (se va a crear).
+        /// </summary>
+        internal static bool CambiaElEstadoDelGrupo(VendedorClienteGrupoProducto guardada, VendedorGrupoProductoDTO nueva)
+        {
+            if (nueva == null)
+            {
+                return false;
+            }
+            if (guardada == null)
+            {
+                return true;
+            }
+            return nueva.estado.HasValue && nueva.estado.Value != guardada.Estado;
         }
 
         /// <summary>Mismo criterio de "cambia" que AplicarCambiosClienteComercial: ambos con
@@ -207,5 +239,11 @@ namespace NestoAPI.Infraestructure.Clientes
         public string VendedorGrupoActual { get; set; }
         public string VendedorGrupoDestino { get; set; }
         public bool CambiaEstado { get; set; }
+        /// <summary>Nesto#644 (7): el PUT cambia el país fiscal.</summary>
+        public bool CambiaPais { get; set; }
+        /// <summary>Nesto#644 (7): llega fila de grupo con estado distinto del guardado, o la fila no existe.</summary>
+        public bool CambiaEstadoGrupo { get; set; }
+        /// <summary>Nesto#644 (7): la fila de grupo no existe y llega con vendedor: se va a crear.</summary>
+        public bool CreaFilaGrupo { get; set; }
     }
 }

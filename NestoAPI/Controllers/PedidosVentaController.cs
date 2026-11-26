@@ -5147,8 +5147,18 @@ namespace NestoAPI.Controllers
                 ORDER BY AlmacénFicticio, PermitirNegativo, Número";
 
             var almacenes = await db.Database.SqlQuery<AlmacenDTO>(consulta, empresa).ToListAsync().ConfigureAwait(false);
+            // NestoAPI#902: el almacén de incompletos no se elige en un pedido (sus unidades se mueven desde Productos incompletos)
+            almacenes = QuitarAlmacenIncompletos(almacenes, Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.Codigo());
 
             return Ok(almacenes);
+        }
+
+        /// <summary>NestoAPI#902 (pura): la lista sin el almacén de incompletos.</summary>
+        internal static List<AlmacenDTO> QuitarAlmacenIncompletos(List<AlmacenDTO> almacenes, string codigoIncompletos)
+        {
+            return (almacenes ?? new List<AlmacenDTO>())
+                .Where(a => !Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.EsElDeIncompletos(a?.Codigo, codigoIncompletos))
+                .ToList();
         }
 
         // Carlos 09/12/25: Issue #245 - Endpoint para obtener lista de series de facturación

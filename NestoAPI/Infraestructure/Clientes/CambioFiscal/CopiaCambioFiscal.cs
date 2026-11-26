@@ -172,7 +172,7 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
     /// </summary>
     public static class ReglaCopiaCambioFiscal
     {
-        public const string ORIGEN_CAMBIO_FISCAL = "CAMBIO-FISCAL";
+        public const string ORIGEN_CAMBIO_FISCAL = ReglaClienteAnterior.ORIGEN_CAMBIO_FISCAL;
 
         public static PlanCopiaCambioFiscal Planificar(FotoClienteCambioFiscal anterior, FotoClienteCambioFiscal nuevo, IEnumerable<string> bloques, DateTime hoy)
         {

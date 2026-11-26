@@ -64,6 +64,8 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         DiferenciaDeReposicion,
         /// <summary>NestoAPI#894: lo que se entrega a un almacén ficticio (sale de un hueco) o se recoge de él (pendiente de ubicar).</summary>
         TraspasoAlmacenFicticio,
+        /// <summary>NestoAPI#902: la pieza sacada de un producto (o la que lo completa) y la unidad incompleta que vuelve a su almacén.</summary>
+        ProductoIncompleto,
         // Kits
         MontarKit,
         DesmontarKit,
@@ -318,6 +320,21 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         /// sin hueco), como cualquier entrada, para que el mozo lo ubique con la PDA.
         /// </summary>
         Task<ResumenUbicaciones> EntradaDeFicticio(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario);
+
+        // ---------------------------------------------------------------- Productos incompletos (NestoAPI#902)
+        /// <summary>
+        /// NestoAPI#902: lo que ENTRA por un producto incompleto (la pieza sacada de una unidad, o la unidad completada que vuelve):
+        /// «pendiente de ubicar» (estado 2, sin hueco), para que el mozo lo ubique con la PDA.
+        /// </summary>
+        Task<ResumenUbicaciones> EntradaPorProductoIncompleto(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// NestoAPI#902: lo que SALE por un producto incompleto (la unidad donante, de su hueco; la pieza que la completa). Con hueco,
+        /// de lo libre de ese hueco (como <see cref="SalidaDeHuecoAFicticio"/>); sin hueco, de lo pendiente de ubicar y después del
+        /// único hueco con existencias. Todo o nada: si no se encuentra todo, NestoBusinessException (409) sin haber escrito nada.
+        /// </summary>
+        Task<ResumenUbicaciones> SalidaPorProductoIncompleto(string empresa, string almacen, string producto, HuecoUbicacion hueco, int cantidad,
+            int numeroTraspaso, string usuario);
 
         // ---------------------------------------------------------------- Kits
         /// <summary>Montar un kit: reservar los componentes (estado 5) y dar entrada al kit. Hoy: prdUbicarReposicion tipo 2, Kits/UbicacionService.</summary>

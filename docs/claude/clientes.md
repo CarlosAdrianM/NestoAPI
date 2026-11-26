@@ -81,6 +81,78 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (`LONGITUD_CALLE`, tope prudente: el código no tenía ninguno); si no, la Dirección sola.
 - **Devueltos (seguridad, 19/11/26)**: GET Devueltos, Reenviar, Abonar y HaVuelto dan 403 a un token de cliente de la tienda
   (`ValidadorAccesoCliente.EsClienteTienda`). Empleados y vendedores, como antes.
+- **Pedidos de la tienda online: `address2` y `company` (NestoAPI#878, parte del importador, Carlos 26/11/26)**: el importador de pedidos web está en
+  NESTO (`CanalesExternos/CanalExternoPedidosPrestashop.TransformarPedido`), no en la API: hoy mete `address2` como una línea suelta en los comentarios
+  y lo pega a la calle de la etiqueta (`pedidoExterno.Direccion = address1 + " " + address2`, que «Crear etiqueta» copia tal cual al envío pendiente);
+  `company` no se usa. NADIE en la API lee la dirección de los comentarios. En la API: LA REGLA (pura) `Direccion2PedidoTienda`
+  (`Infraestructure/Clientes/Direccion2PedidoTienda.cs`): `Componer(address2, company)` → {Direccion2 en mayúsculas, ≤ 100; con company no contenida
+  en address2 (sin tildes ni mayúsculas) «… · RÓTULO: COMPANY» o, sin address2, «LOCAL · RÓTULO: COMPANY»; TipoLugar «Local» con company, si no null:
+  nunca «Piso»}; `LineaComentario` («DIRECCIÓN 2: …») y `LeerDeComentarios` (tolerante: tildes, mayúsculas, espacios; la primera no vacía). GET
+  ParaAgencia (`GestorPedidoParaAgencia.Montar`) trae aditivos `Direccion2Pedido` y `TipoLugarPedido` de esa línea, APARTE de la ficha (la del 31517 no
+  es la dirección de entrega: no se mezcla con `ClienteFicha.Direccion`). «TOTAL PEDIDO:» no cambia.
+  Falta en Nesto (CanalesExternos): (1) en los comentarios, sustituir la línea suelta de `address2` por la línea «DIRECCIÓN 2: …» con lo compuesto
+  (gemela C# de `Componer`, o la misma regla copiada con sus pruebas); (2) `pedidoExterno.Direccion` = solo `address1` y la Dirección 2 al envío con la
+  regla de `DireccionEnvioCliente.Componer` (Dirección + «, » + Dirección 2 si cabe en 80; si no, delante de las Observaciones); (3) opcional: que
+  Agencias pinte `Direccion2Pedido` del DTO al abrir un pedido web.
+
+### Cliente que cambia de forma fiscal: su número anterior y los «clientes equivalentes» (NestoAPI#876 cortes 1 y 2, 26/11/26)
+- Origen `CAMBIO-FISCAL` (OneShot del 17/11, EsLead 0): cliente que ya lo era y factura con otra razón social o NIF; número nuevo. Fiscalmente otro
+  cliente; comercialmente el mismo. NADA fiscal ni contable se hereda (facturas, extracto, deuda, remesas, 347, Verifactu, riesgo).
+- Dato: `dbo.ClientesAnteriores` (Empresa, Cliente, ClienteAnterior, Fecha, Usuario; PK Empresa+Cliente, CHECK distinto; fuera del EDMX,
+  `Scripts/Issue876_ClientesAnteriores.sql`). Sin la tabla: el alta no lo pide ni guarda nada, la ficha da null (como antes).
+- Alta (`POST api/Clientes`, `ClientesController.ClienteAnterior.cs`): `ClienteCrear.ClienteAnterior`. LA REGLA (pura) `ReglaClienteAnterior`
+  (`Infraestructure/Clientes/ClientesAnteriores.cs`): con CAMBIO-FISCAL es obligatorio (400 «Con el origen «Cambio de forma fiscal» indique el número de
+  cliente que tenía antes…»), tiene que existir en la empresa (400 «No existe el cliente 99999 en la empresa 1…») y no puede ser él mismo (alta de un
+  contacto: 400); sin ese origen, 400. Mismo NIF: solo aviso. Se guarda DESPUÉS del alta (como el origen; si falla, ELMAH y el cliente queda), con
+  fila en Modificaciones (Tabla `ClientesAnteriores`). Respuesta: `Cliente.ClienteAnterior` y `AvisoClienteAnterior` (NotMapped, solo si hay).
+  Ficha: `ClienteDTO.ClienteAnterior` en GET api/Clientes (un cliente) y `ClienteCrear.ClienteAnterior` en GetClienteCrear. El PUT no lo toca.
+- Pieza única (corte 2) `IClientesEquivalentes.De(empresa, cliente)` → el cliente y sus anteriores en cadena, del más reciente al más antiguo, sin
+  relleno (`ClientesEquivalentes`: todos los enlaces de la empresa en una lectura, caché de 5 min, `Invalidar()` al guardar; sin tabla o si falla,
+  solo el cliente, ELMAH una vez; LA REGLA `ReglaClientesEquivalentes.Cadena`: sin ciclos, tope 20 saltos). SIN CONECTAR todavía: plantilla de venta y
+  rapports (corte 3) y sugerencias de llamadas, fechas de compras y embudo (corte 4) la usarán; nunca lo fiscal.
+
+### Cliente que cambia de forma fiscal: copiar sus condiciones y pasar sus pedidos (NestoAPI#876, corte nuevo, Carlos 26/11/26)
+- Va ENCIMA de los cortes 1 y 2 (sección anterior): la misma `dbo.ClientesAnteriores` (una fila por cliente nuevo; el script, que ya enlaza
+  42178 ← 37283, también pasa a la forma definitiva una tabla creada con la forma provisional de la mañana del 26/11) y un solo acceso a ella,
+  `RepositorioClientesAnterioresSql` (la copia usa su SQL dentro de su transacción; `ServicioCambioFiscal` mira la tabla y guarda el enlace de
+  PasarPedidos por él). Las consultas comerciales siguen sin heredar nada.
+- Carlos: «al crear un cliente porque otro ha cambiado los datos, se copian todos los datos; así, aunque se recalcule un pedido al pasarlo al cliente nuevo,
+  no cambia nada… Si algún dato el usuario pide no copiarlo, al recalcular sí que va a cambiar». LA REGLA (pura) `ReglaCopiaCambioFiscal.Planificar`
+  (`Infraestructure/Clientes/CambioFiscal/CopiaCambioFiscal.cs`), por bloques (`BloquesCambioFiscal`): `Comercial` (estado —no si el anterior está de baja—,
+  vendedor y VendedoresClienteGrupoProducto), `Fiscalidad` (SOLO Clientes.IVA; uno sin IVA no se copia: iría a la empresa espejo), `CondicionesPago`
+  (CondPagoClientes: se quitan las del nuevo que el anterior no tiene y se ponen las suyas; aviso si la forma necesita cuenta y el nuevo no tiene CCC: el
+  IBAN y el mandato NUNCA se copian), `Descuentos` (filas de DescuentosProducto del cliente, sin las caducadas; misma clave —producto, familia, grupo,
+  subgrupo, filtro, proveedor, contacto, cantidad mínima— ya en el nuevo: no se duplica y, si vale distinto, no se toca y se avisa), `Ofertas`
+  (OfertasPermitidas propias, sin caducadas ni repetidas) y `Ficha` (comentarios solo si el nuevo no tiene, días de servir, ruta, periodo de
+  facturación, NoComisiona, MantenerJunto). Cada ficha viva del nuevo copia de la del MISMO contacto en el anterior o, si no la hay, de su principal;
+  descuentos y ofertas con contacto NULL siguen NULL y los de un contacto que el nuevo no tiene, no. Idempotente (una segunda pasada no hace nada).
+- Enlace (`ReglaCopiaCambioFiscal.DecidirEnlace`): vale si consta en ClientesAnteriores; si no consta nada y el nuevo tiene origen CAMBIO-FISCAL
+  (ClientesOrigen), se crea al copiar o pasar pedidos; si no, o si consta con OTRO anterior, 409 `{Message, Codigo: "NO_ES_CAMBIO_FISCAL"}`. Permisos
+  (`MotivoSinPermiso`): Administración, Dirección, Informática y el vendedor del anterior o su jefe de equipo (`VendedoresEquipoString`); cliente de la tienda 403.
+- `GET api/Clientes/CambioFiscal/Previa?empresa=&clienteAnterior=&clienteNuevo=` (solo lectura) → `CopiaCambioFiscalDTO` {Enlazados, SeEnlazaAlCopiar,
+  MotivoNoSePuedeCopiar, Bloques [{Bloque, Nombre, Anterior[], Nuevo[], Cambios[], Avisos[], HayCambios}], PedidosPendientes [{Pedido, Contacto, Fecha,
+  Importe (base de lo pendiente), Total, Lineas, TienePicking, Pickings, NotaEntrega, SePuedePasar, Motivo}], Mensaje}. Pendiente = líneas -1..1 con
+  cantidad y sin albarán; «se puede» con la regla de CambiarCliente con el picking admitido (envío de agencia, efectos o tarjeta lo paran).
+- `POST api/Clientes/CambioFiscal/Copiar?ensayo=true` {Empresa, ClienteAnterior, ClienteNuevo, Bloques? (null = todos)}: ensayo por defecto. De verdad,
+  en UNA transacción ADO (`RepositorioCambioFiscalSql`, applock `ClienteCambioFiscal:{empresa}:{nuevo}`, datos releídos dentro; otro a la vez → 409
+  `OCUPADO`): enlace si falta, el plan y UNA fila en Modificaciones (Tabla `ClienteCambioFiscal`, Anterior «empresa|anterior → nuevo», Nuevo = JSON
+  con bloques y cambios). Sin nada que copiar ni enlace que crear, no escribe nada. Si cambia la ficha, publica cada contacto a Odoo
+  (`PublicarClienteSincronizar`, como el PUT); si Odoo falla, queda copiado y lo dice en Avisos. Sin la tabla, 503.
+- Alta (`POST api/Clientes`): `ClienteCrear.ClienteAnterior` con las validaciones de los cortes 1-2 (`ReglaClienteAnterior`: con CAMBIO-FISCAL,
+  obligatorio; existe; no es él mismo; sin ese origen, 400; mismo NIF, solo aviso) y, además, `CopiarDelAnterior` (lista de bloques; vacía = todos;
+  null = no copiar, como hoy; sin ClienteAnterior o con un bloque que no existe, 400). Tras crear: el enlace (`GuardarClienteAnteriorTrasAlta`) y, si
+  se pide, el MISMO Copiar (`TrasAltaCambioFiscal`). Nunca rompe el alta: la respuesta (Cliente) trae `ClienteAnterior`, `AvisoClienteAnterior`,
+  `CopiadoDelAnterior` (lo copiado) y `AvisoCopiaClienteAnterior` (por qué no se copió, o los avisos de la copia). OJO: la ficha que devuelve el alta es
+  la de antes de copiar (relean el cliente).
+- `POST api/Clientes/CambioFiscal/PasarPedidos?ensayo=true` {Empresa, ClienteAnterior, ClienteNuevo, Pedidos[], CreadoSinPasarValidacion?}: mismo enlace y
+  permisos; pedido a pedido por el `CambiarCliente` de SIEMPRE (`PedidosVentaController.CambiarClienteDelPedido`, un controller y un contexto por pedido),
+  al mismo contacto si el nuevo lo tiene o a su principal → {Ensayo, Pedidos [{Pedido, Pasado, TeniaPicking, SinCambiosDeImportes, Codigo
+  (NO_EXISTE, NO_ES_DEL_CLIENTE_ANTERIOR, CAMBIO_CLIENTE_CON_PICKING_CAMBIA, NO_SE_PUEDE, ERROR), Mensaje, Cambios, Avisos}], Pasados, Rechazados}.
+  Con picking, la regla nueva de `docs/claude/pedidos-venta.md` (solo si no cambia nada).
+- Nesto (pendiente): en el asistente del alta con origen «Cambio de forma fiscal», pedir el cliente anterior, llamar a la Previa y enseñar una casilla
+  por bloque (marcadas) con Anterior/Nuevo/Cambios/Avisos → `CopiarDelAnterior`; después, la lista de pedidos pendientes con casillas (ensayo primero
+  para enseñar qué cambiaría; los de picking que cambiarían, sin casilla y con el porqué) → PasarPedidos. En la ficha, botón «Copiar del cliente
+  anterior» (Previa + Copiar con los bloques marcados). NestoApp: lo mismo en su alta de cliente (issue gemela); sin pantalla nueva en la ficha.
 
 ### Origen del cliente: campaña (lead) o canal (NestoAPI#848, 09/11/26)
 - `dbo.OrigenesCliente.EsLead` (DEFAULT 1): 1 = campaña (META-HARMONIA-0926…: hay que llamarlo), 0 = canal (WEB, AMAZON, TIENDA-REINA,
@@ -145,42 +217,22 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   absoluta desde el login (`Auth:DiasMaximosSesionTienda`, 90; `PoliticaRefrescoToken.VentanaDesdeCaducidadVencida`). 15 de 26 clientes
   echados tras un mes sin abrir la app no volvieron a entrar. Firma, absoluta y revalidación del cliente, igual; `refreshOAuthToken` no cambia.
 
-### Cliente que cambia de forma fiscal: copiar sus condiciones y pasar sus pedidos (NestoAPI#876, corte nuevo, Carlos 26/11/26)
-- OJO: los cortes 1 y 2 de la issue (enlace en el alta, «clientes equivalentes») NO estaban hechos; de ellos solo va aquí lo imprescindible: la tabla
-  `dbo.ClientesAnteriores` (Empresa, Cliente = el nuevo, ClienteAnterior, Fecha, Usuario; única por pareja; fuera del EDMX,
-  `Scripts/Issue876_ClientesAnteriores.sql`, que ya enlaza 42178 ← 37283) y `ClienteCrear.ClienteAnterior`. Las consultas comerciales siguen sin heredar nada.
-- Carlos: «al crear un cliente porque otro ha cambiado los datos, se copian todos los datos; así, aunque se recalcule un pedido al pasarlo al cliente nuevo,
-  no cambia nada… Si algún dato el usuario pide no copiarlo, al recalcular sí que va a cambiar». LA REGLA (pura) `ReglaCopiaCambioFiscal.Planificar`
-  (`Infraestructure/Clientes/CambioFiscal/CopiaCambioFiscal.cs`), por bloques (`BloquesCambioFiscal`): `Comercial` (estado —no si el anterior está de baja—,
-  vendedor y VendedoresClienteGrupoProducto), `Fiscalidad` (SOLO Clientes.IVA; uno sin IVA no se copia: iría a la empresa espejo), `CondicionesPago`
-  (CondPagoClientes: se quitan las del nuevo que el anterior no tiene y se ponen las suyas; aviso si la forma necesita cuenta y el nuevo no tiene CCC: el
-  IBAN y el mandato NUNCA se copian), `Descuentos` (filas de DescuentosProducto del cliente, sin las caducadas; misma clave —producto, familia, grupo,
-  subgrupo, filtro, proveedor, contacto, cantidad mínima— ya en el nuevo: no se duplica y, si vale distinto, no se toca y se avisa), `Ofertas`
-  (OfertasPermitidas propias, sin caducadas ni repetidas) y `Ficha` (comentarios solo si el nuevo no tiene, días de servir, ruta, periodo de
-  facturación, NoComisiona, MantenerJunto). Cada ficha viva del nuevo copia de la del MISMO contacto en el anterior o, si no la hay, de su principal;
-  descuentos y ofertas con contacto NULL siguen NULL y los de un contacto que el nuevo no tiene, no. Idempotente (una segunda pasada no hace nada).
-- Enlace (`ReglaCopiaCambioFiscal.DecidirEnlace`): vale si consta en ClientesAnteriores; si no consta nada y el nuevo tiene origen CAMBIO-FISCAL
-  (ClientesOrigen), se crea al copiar o pasar pedidos; si no, o si consta con OTRO anterior, 409 `{Message, Codigo: "NO_ES_CAMBIO_FISCAL"}`. Permisos
-  (`MotivoSinPermiso`): Administración, Dirección, Informática y el vendedor del anterior o su jefe de equipo (`VendedoresEquipoString`); cliente de la tienda 403.
-- `GET api/Clientes/CambioFiscal/Previa?empresa=&clienteAnterior=&clienteNuevo=` (solo lectura) → `CopiaCambioFiscalDTO` {Enlazados, SeEnlazaAlCopiar,
-  MotivoNoSePuedeCopiar, Bloques [{Bloque, Nombre, Anterior[], Nuevo[], Cambios[], Avisos[], HayCambios}], PedidosPendientes [{Pedido, Contacto, Fecha,
-  Importe (base de lo pendiente), Total, Lineas, TienePicking, Pickings, NotaEntrega, SePuedePasar, Motivo}], Mensaje}. Pendiente = líneas -1..1 con
-  cantidad y sin albarán; «se puede» con la regla de CambiarCliente con el picking admitido (envío de agencia, efectos o tarjeta lo paran).
-- `POST api/Clientes/CambioFiscal/Copiar?ensayo=true` {Empresa, ClienteAnterior, ClienteNuevo, Bloques? (null = todos)}: ensayo por defecto. De verdad,
-  en UNA transacción ADO (`RepositorioCambioFiscalSql`, applock `ClienteCambioFiscal:{empresa}:{nuevo}`, datos releídos dentro; otro a la vez → 409
-  `OCUPADO`): enlace si falta, el plan y UNA fila en Modificaciones (Tabla `ClienteCambioFiscal`, Anterior «empresa|anterior → nuevo», Nuevo = JSON
-  con bloques y cambios). Sin nada que copiar ni enlace que crear, no escribe nada. Si cambia la ficha, publica cada contacto a Odoo
-  (`PublicarClienteSincronizar`, como el PUT); si Odoo falla, queda copiado y lo dice en Avisos. Sin la tabla, 503.
-- Alta (`POST api/Clientes`): `ClienteCrear.ClienteAnterior` (solo con origen CAMBIO-FISCAL, cliente nuevo —no contacto— y anterior que exista;
-  si no, 400) y `CopiarDelAnterior` (lista de bloques; vacía = todos; null = no copiar, como hoy; sin ClienteAnterior, 400). Tras crear: enlace y,
-  si se pide, el MISMO Copiar. Nunca rompe el alta: la respuesta (Cliente) trae `CopiadoDelAnterior` (lo copiado) y `AvisoCopiaClienteAnterior`
-  (por qué no se copió, o los avisos de la copia). OJO: la ficha que devuelve el alta es la de antes de copiar (relean el cliente).
-- `POST api/Clientes/CambioFiscal/PasarPedidos?ensayo=true` {Empresa, ClienteAnterior, ClienteNuevo, Pedidos[], CreadoSinPasarValidacion?}: mismo enlace y
-  permisos; pedido a pedido por el `CambiarCliente` de SIEMPRE (`PedidosVentaController.CambiarClienteDelPedido`, un controller y un contexto por pedido),
-  al mismo contacto si el nuevo lo tiene o a su principal → {Ensayo, Pedidos [{Pedido, Pasado, TeniaPicking, SinCambiosDeImportes, Codigo
-  (NO_EXISTE, NO_ES_DEL_CLIENTE_ANTERIOR, CAMBIO_CLIENTE_CON_PICKING_CAMBIA, NO_SE_PUEDE, ERROR), Mensaje, Cambios, Avisos}], Pasados, Rechazados}.
-  Con picking, la regla nueva de `docs/claude/pedidos-venta.md` (solo si no cambia nada).
-- Nesto (pendiente): en el asistente del alta con origen «Cambio de forma fiscal», pedir el cliente anterior, llamar a la Previa y enseñar una casilla
-  por bloque (marcadas) con Anterior/Nuevo/Cambios/Avisos → `CopiarDelAnterior`; después, la lista de pedidos pendientes con casillas (ensayo primero
-  para enseñar qué cambiaría; los de picking que cambiarían, sin casilla y con el porqué) → PasarPedidos. En la ficha, botón «Copiar del cliente
-  anterior» (Previa + Copiar con los bloques marcados). NestoApp: lo mismo en su alta de cliente (issue gemela); sin pantalla nueva en la ficha.
+### Ficha comercial: lo que la auditoría Nesto#644 dejó para la API (26/11/26)
+- `PUT api/Clientes/ClienteComercial` (solo lo llama Nesto, ventana ClienteComercial; NestoApp usa `PUT api/Clientes`, no este). (15) Ya no hace
+  `db.Entry(clienteDB).State = Modified` (escribía TODAS las columnas con lo leído): la entidad está seguida y EF solo escribe lo cambiado. El usuario
+  de auditoría (ficha, fila de peluquería y motivo #716) = `UsuarioAuditoriaHelper.Resolver(User, cliente.usuario)` (el del DTO solo sin token), vía
+  `AplicarCambiosClienteComercial(clienteDB, dto, usuarioAuditoria)` (con `ParaAuditoria`: nunca vacío).
+- (7) Permisos (`ValidadorCambioClienteComercial`): `DatosPermisoClienteComercial.CambiaPais` (`CambiaElPais`: no vacío y distinto, sin relleno ni
+  mayúsculas), `CambiaEstadoGrupo` (`CambiaElEstadoDelGrupo`: fila con estado distinto o la fila no existe) y `CreaFilaGrupo` (sin fila y llega vendedor:
+  el destino también se comprueba contra el equipo) entran en la condición de `Evaluar`. Antes un vendedor raso cambiaba el país o el estado de
+  peluquería de un cliente de fuera.
+- (6) `VendedorGrupoProductoDTO.estado` pasa a `short?` (no viaja en el JSON si es null: los vendedores del pedido no lo tienen y Nesto lo lee como
+  Short). `GestorComisiones.AplicarVendedorGrupo`: vendedor null = no tocar el vendedor; estado null = no tocar el estado. Al CREAR la fila, el estado que
+  viene (sin él, VISITA_PRESENCIAL): el segundo PUT de Nesto (`PayloadEstadoPeluqueria`) ya sobra (inofensivo).
+- (5) Copia vieja: `ClienteDTO.original` {estado, vendedor, pais, vendedorPeluqueria, estadoPeluqueria} (opcional, solo de entrada; `OriginalClienteComercialDTO`).
+  LA REGLA (pura) `ReglaClienteComercialCambiado.Evaluar` (`Infraestructure/Clientes/ClienteComercialCambiado.cs`): por cada campo que el PUT CAMBIA (mismo
+  criterio que al aplicarlo), si en la BD ya no vale lo de `original` → 409 `{ Message, Codigo: "CLIENTE_CAMBIADO", details: { campos, usuario, fecha } }`
+  («La ficha del cliente 40445 la ha cambiado Aida a las 15:14 desde que usted la abrió (estado). Recárguela y vuelva a hacer los cambios.»; «el dd/MM a las…»
+  si no es de hoy), después del 403 y antes de escribir nada. Lo que el PUT no cambia no cuenta. Textos null = vacío; estados de `original` a null no se
+  comparan; sin fila de peluquería coincide con un original sin vendedor de peluquería. Quién y cuándo: `Clientes.Usuario`/`Fecha_Modificación` o los de la
+  fila de peluquería, lo más reciente de lo que choca. Sin `original`, como antes. Nesto: mandar `original` con lo cargado (`ValoresComercialesFicha`) y tratar el 409.

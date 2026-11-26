@@ -82,6 +82,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Autorizaciones
         public DateTime? FechaResolucion { get; set; }
         public string MotivoResolucion { get; set; }
         public int? PedidoCreado { get; set; }
+        /// <summary>
+        /// NestoAPI#909 (para NestoApp#294): quien pregunta puede autorizarla (y denegarla): está Pendiente, no es suya y LA REGLA
+        /// (<see cref="ReglaOmitirValidacionPedido"/>, la misma que en Autorizar) le deja.
+        /// </summary>
+        public bool PuedeAutorizar { get; set; }
+        /// <summary>NestoAPI#909: es suya y está Pendiente (DELETE …/{id}).</summary>
+        public bool PuedeAnular { get; set; }
         /// <summary>Solo en GET …/{id}: el pedido guardado.</summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public PedidoVentaDTO Pedido { get; set; }

@@ -83,6 +83,28 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 : null;
         }
 
+        // ------------------------------------------------ Caso 930553 (Carlos 26/11/26): la recogida marcada «Recogido» por error
+
+        public const string PREFIJO_ANULADA_MARCADA = "Recogida anulada (marcada por error): ";
+        public const string CODIGO_ABONADA = "RECOGIDA_ABONADA";
+        internal const string TIPO_CLAVE_DESCARGA_ANULAR = "AnularRecogidaMarcada";
+
+        /// <summary>
+        /// LA REGLA de «Anular» una recogida cuya parada ya está ENTREGADA (el repartidor la marcó «Recogido» por error): solo Almacén o
+        /// Dirección y solo si no hay abono de esa recogida (NotasEntregaCabecera.PedidoAbono, lo mismo que mira ServicioAbonosRecogida).
+        /// Los bultos NR en una furgoneta NO lo impiden: se dan por descargados. Null: se puede.
+        /// </summary>
+        public static string MotivoNoAnulableMarcada(string documento, bool puedeAnularMarcada, SeguimientoNotaRecogida seguimiento)
+        {
+            if (!puedeAnularMarcada)
+            {
+                return $"La recogida {documento} ya figura como recogida: solo Almacén o Dirección pueden anularla.";
+            }
+            return seguimiento?.PedidoAbono.HasValue == true
+                ? $"La recogida {documento} ya está abonada (abono {seguimiento.PedidoAbono.Value}): no se puede anular."
+                : null;
+        }
+
         // ------------------------------------------------ Carlos 20/11/26: «No se ha recogido» pasa a Almacén, que decide
 
         /// <summary>La tabla de las recogidas no hechas pendientes de decidir (Scripts/RepartoRecogidasNoRecogidas.sql).</summary>
@@ -192,6 +214,25 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         Task CerrarPendiente(int pedido, string usuario);
         /// <summary>La campana a Almacén. Nunca lanza.</summary>
         Task AvisarAlmacen(NotificacionPushDTO notificacion);
+
+        // Caso 930553 (Carlos 26/11/26): la recogida marcada «Recogido» por error.
+        /// <summary>
+        /// En UNA transacción: el envío ENTREGADO pasa a Cerrado a mano con <paramref name="detalle"/> (solo si sigue Entregado y la nota
+        /// sigue sin abono), su historia, los Descargado de <paramref name="descargas"/>, la solicitud Confirmada de la nota (si la hay) a
+        /// Anulada con el motivo y el rastro (RecogidaAnulada). Null si algo había cambiado (nada cambia).
+        /// </summary>
+        Task<AnulacionRecogidaMarcada> AnularRecogidaMarcada(int envio, int pedido, string detalle, string motivo, IList<EnvioHistoria> historia,
+            IReadOnlyList<MovimientoBultoReparto> descargas, string anterior, string nuevo, string usuario);
+        /// <summary>El aviso a quien pidió la recogida de la solicitud ya anulada. Nunca lanza.</summary>
+        Task AvisarSolicitudAnulada(int idSolicitud, string usuario);
+    }
+
+    /// <summary>Caso 930553: lo que ha hecho la anulación de una recogida marcada por error.</summary>
+    public class AnulacionRecogidaMarcada
+    {
+        /// <summary>Las solicitudes (#855) que han quedado Anuladas (normalmente una o ninguna).</summary>
+        public List<int> SolicitudesAnuladas { get; set; } = new List<int>();
+        public int BultosDescargados { get; set; }
     }
 
     /// <summary>Punto 5: con su propio contexto (como el resto de piezas que no viven en el del reparto).</summary>
@@ -480,6 +521,106 @@ UPDATE {T} SET Estado = @Anulada, FechaDecision = GETDATE(), UsuarioDecision = @
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Reparto] No se pudo avisar a Almacén de la recogida no hecha: {ex.Message}", ex));
+            }
+        }
+
+        // ------------------------------------------------ Caso 930553 (Carlos 26/11/26): la recogida marcada «Recogido» por error
+
+        private const string SQL_CERRAR_ENTREGADA = @"
+UPDATE dbo.EnviosAgencia SET Estado = @Estado, DetalleEstado = @Detalle, Usuario = @Usuario
+WHERE Numero = @Numero AND Agencia = @Agencia AND Estado = @Entregado{0};";
+        private const string SQL_SIN_ABONO = @"
+  AND NOT EXISTS (SELECT 1 FROM dbo." + RepositorioNotasEntregaCabecera.TABLA + @" n WITH (UPDLOCK, HOLDLOCK)
+                  WHERE n.Empresa = @Empresa AND n.Pedido = @Pedido AND n.PedidoAbono IS NOT NULL)";
+        private const string SQL_SOLICITUDES_DE_LA_NOTA = "SELECT Id FROM dbo." + RepositorioRecogidasSolicitadas.TABLA + " WITH (UPDLOCK, HOLDLOCK) " +
+            "WHERE Empresa = @p0 AND PedidoNota = @p1 AND Estado = '" + EstadosRecogidaSolicitada.CONFIRMADA + "'";
+
+        public async Task<AnulacionRecogidaMarcada> AnularRecogidaMarcada(int envio, int pedido, string detalle, string motivo, IList<EnvioHistoria> historia,
+            IReadOnlyList<MovimientoBultoReparto> descargas, string anterior, string nuevo, string usuario)
+        {
+            using (var db = new NVEntities())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    string sinAbono = ColumnasOpcionales.ExisteTabla(db, RepositorioNotasEntregaCabecera.TABLA) ? SQL_SIN_ABONO : string.Empty;
+                    int filas = await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_CERRAR_ENTREGADA, sinAbono),
+                        new SqlParameter("@Estado", SqlDbType.SmallInt) { Value = Constantes.Agencias.ESTADO_CERRADO_A_MANO },
+                        new SqlParameter("@Detalle", SqlDbType.VarChar, 100) { Value = detalle },
+                        new SqlParameter("@Usuario", SqlDbType.VarChar, 50) { Value = Recortar(usuario, 50) },
+                        new SqlParameter("@Numero", SqlDbType.Int) { Value = envio },
+                        new SqlParameter("@Agencia", SqlDbType.Int) { Value = Constantes.Agencias.AGENCIA_REPARTO_PROPIO },
+                        new SqlParameter("@Entregado", SqlDbType.SmallInt) { Value = Constantes.Agencias.ESTADO_ENTREGADO },
+                        new SqlParameter("@Empresa", SqlDbType.Char, 3) { Value = Constantes.Empresas.EMPRESA_POR_DEFECTO },
+                        new SqlParameter("@Pedido", SqlDbType.Int) { Value = pedido }).ConfigureAwait(false);
+                    if (filas != 1)
+                    {
+                        transaccion.Rollback();
+                        return null;
+                    }
+                    foreach (EnvioHistoria fila in historia ?? new List<EnvioHistoria>())
+                    {
+                        NVEntities.AcotarHistoriaEnvio(fila);
+                        _ = await db.Database.ExecuteSqlCommandAsync(SQL_HISTORIA,
+                            new SqlParameter("@NumeroEnvio", SqlDbType.Int) { Value = fila.NumeroEnvio },
+                            new SqlParameter("@Campo", SqlDbType.NVarChar, 50) { Value = fila.Campo ?? string.Empty },
+                            new SqlParameter("@ValorAnterior", SqlDbType.NVarChar, 50) { Value = fila.ValorAnterior ?? string.Empty },
+                            new SqlParameter("@Observaciones", SqlDbType.NVarChar, -1) { Value = (object)fila.Observaciones ?? DBNull.Value },
+                            new SqlParameter("@UsuarioHistoria", SqlDbType.VarChar, 50) { Value = Recortar(fila.Usuario, 50) },
+                            new SqlParameter("@Fecha", SqlDbType.DateTime) { Value = fila.FechaModificacion }).ConfigureAwait(false);
+                    }
+                    var resultado = new AnulacionRecogidaMarcada();
+                    if (descargas != null && descargas.Count > 0 && ColumnasOpcionales.ExisteTabla(db, RepositorioFurgoneta.TABLA))
+                    {
+                        foreach (MovimientoBultoReparto m in descargas)
+                        {
+                            resultado.BultosDescargados += await db.Database.ExecuteSqlCommandAsync(RepositorioFurgoneta.SQL_INSERTAR, RepositorioFurgoneta.Parametros(m)).ConfigureAwait(false) > 0 ? 1 : 0;
+                        }
+                    }
+                    if (ColumnasOpcionales.ExisteTabla(db, RepositorioRecogidasSolicitadas.TABLA))
+                    {
+                        List<int> solicitudes = await db.Database.SqlQuery<int>(SQL_SOLICITUDES_DE_LA_NOTA, Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido)
+                            .ToListAsync().ConfigureAwait(false);
+                        foreach (int id in solicitudes)
+                        {
+                            if (await db.Database.ExecuteSqlCommandAsync(RepositorioRecogidasSolicitadas.SQL_ANULAR,
+                                new SqlParameter("@Motivo", SqlDbType.NVarChar, -1) { Value = (object)motivo ?? DBNull.Value },
+                                new SqlParameter("@Usuario", SqlDbType.VarChar, 50) { Value = Recortar(usuario, 50) },
+                                new SqlParameter("@Id", SqlDbType.Int) { Value = id },
+                                new SqlParameter("@Esperado", SqlDbType.VarChar, 20) { Value = EstadosRecogidaSolicitada.CONFIRMADA }).ConfigureAwait(false) == 1)
+                            {
+                                resultado.SolicitudesAnuladas.Add(id);
+                            }
+                        }
+                    }
+                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                        new SqlParameter("@Tabla", SqlDbType.NVarChar, 50) { Value = ReglasParadaRecogida.TABLA_MODIFICACIONES_ANULADA },
+                        new SqlParameter("@Anterior", SqlDbType.NVarChar, -1) { Value = (object)anterior ?? DBNull.Value },
+                        new SqlParameter("@Nuevo", SqlDbType.NVarChar, -1) { Value = (object)nuevo ?? DBNull.Value },
+                        new SqlParameter("@UsuarioRastro", SqlDbType.NVarChar, 50) { Value = Recortar(usuario, 50) }).ConfigureAwait(false);
+                    transaccion.Commit();
+                    return resultado;
+                }
+                catch (Exception)
+                {
+                    transaccion.RollbackSeguro();
+                    throw;
+                }
+            }
+        }
+
+        public async Task AvisarSolicitudAnulada(int idSolicitud, string usuario)
+        {
+            try
+            {
+                using (var db = new NVEntities())
+                {
+                    await Solicitudes(db).AvisarAnuladaEnReparto(idSolicitud, usuario).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto] No se ha podido avisar de la solicitud {idSolicitud} anulada: {ex.Message}", ex));
             }
         }
     }
@@ -807,7 +948,10 @@ UPDATE {T} SET Estado = @Anulada, FechaDecision = GETDATE(), UsuarioDecision = @
         /// reparto (Cerrado a mano, «Recogida anulada: motivo») con historia y rastro en Modificaciones; si viene de una solicitud, la
         /// solicitud queda Anulada. 409 si sus bultos NR ya están en una furgoneta o está abonada. La nota (sus líneas) no se toca.
         /// </summary>
-        public async Task<ResultadoReparto<ResultadoAnularRecogidaDTO>> AnularRecogida(int pedido, AnularRecogidaRepartoDTO peticion, string usuario, OrigenPeticionReparto origen = null)
+        /// <param name="puedeAnularMarcada">Caso 930553: quien llama es de Almacén o Dirección (los únicos que pueden anular una recogida ya
+        /// marcada «Recogido»).</param>
+        public async Task<ResultadoReparto<ResultadoAnularRecogidaDTO>> AnularRecogida(int pedido, AnularRecogidaRepartoDTO peticion, string usuario,
+            OrigenPeticionReparto origen = null, bool puedeAnularMarcada = false)
         {
             string error = ReglasParadaRecogida.ValidarTexto(peticion?.Motivo, true, "El motivo");
             if (error != null)
@@ -826,6 +970,10 @@ UPDATE {T} SET Estado = @Anulada, FechaDecision = GETDATE(), UsuarioDecision = @
                 return ResultadoReparto<ResultadoAnularRecogidaDTO>.Mal(TipoResultadoReparto.NoEncontrado, $"No existe la nota de recogida {documento}.");
             }
             ResolucionCodigoNota resolucion = await paradas.Notas.Resolver(documento).ConfigureAwait(false);
+            if (resolucion?.EnvioId == null && resolucion?.EnvioEntregado != null)
+            {
+                return await AnularRecogidaMarcada(pedido, documento, resolucion.EnvioEntregado.Value, motivo, usuario, origen, puedeAnularMarcada).ConfigureAwait(false);
+            }
             if (resolucion?.EnvioId == null)
             {
                 return ResultadoReparto<ResultadoAnularRecogidaDTO>.Mal(TipoResultadoReparto.Conflicto, resolucion?.EnvioEntregado != null
@@ -865,6 +1013,89 @@ UPDATE {T} SET Estado = @Anulada, FechaDecision = GETDATE(), UsuarioDecision = @
                 Estado = ReglasParadaRecogida.ESTADO_ANULADA,
                 Mensaje = $"Recogida {documento} anulada: la parada {envio.Numero} ya no está en el reparto."
             });
+        }
+
+        /// <summary>
+        /// Caso 930553 (Carlos 26/11/26): el repartidor marcó «Recogido» por error (la parada quedó Entregada) y la nota se queda esperando
+        /// un abono que no llegará. Solo Almacén o Dirección (403) y sin abono de la recogida (409 RECOGIDA_ABONADA). En UNA transacción:
+        /// Cerrado a mano con «Recogida anulada (marcada por error): motivo», historia, rastro RecogidaAnulada, la solicitud a Anulada y los
+        /// bultos NR que sigan en una furgoneta, Descargado (Origen Almacen). Las líneas de la nota no se tocan.
+        /// </summary>
+        private async Task<ResultadoReparto<ResultadoAnularRecogidaDTO>> AnularRecogidaMarcada(int pedido, string documento, int envioId, string motivo,
+            string usuario, OrigenPeticionReparto origen, bool puedeAnularMarcada)
+        {
+            if (!puedeAnularMarcada)
+            {
+                return ResultadoReparto<ResultadoAnularRecogidaDTO>.Mal(TipoResultadoReparto.Prohibido,
+                    ReglasParadaRecogida.MotivoNoAnulableMarcada(documento, false, null));
+            }
+            SeguimientoNotaRecogida seguimiento = await SeguimientoRecogida(pedido).ConfigureAwait(false);
+            if (seguimiento == null)
+            {
+                return ResultadoReparto<ResultadoAnularRecogidaDTO>.Mal(TipoResultadoReparto.NoDisponible,
+                    $"No se ha podido comprobar si la recogida {documento} está abonada. Inténtelo de nuevo y, si sigue, avise a Informática.");
+            }
+            string noSePuede = ReglasParadaRecogida.MotivoNoAnulableMarcada(documento, true, seguimiento);
+            if (noSePuede != null)
+            {
+                return new ResultadoReparto<ResultadoAnularRecogidaDTO> { Tipo = TipoResultadoReparto.Conflicto, Mensaje = noSePuede, Codigo = ReglasParadaRecogida.CODIGO_ABONADA };
+            }
+            EnviosAgencia envio = await repositorio.LeerEnvio(envioId).ConfigureAwait(false);
+            if (envio == null || envio.Estado != Constantes.Agencias.ESTADO_ENTREGADO)
+            {
+                return ResultadoReparto<ResultadoAnularRecogidaDTO>.Mal(TipoResultadoReparto.Conflicto, $"La parada de la recogida {documento} ha cambiado mientras: actualice la lista.");
+            }
+            List<MovimientoBultoReparto> descargas = await DescargasAlAnularMarcada(pedido, envioId, usuario).ConfigureAwait(false);
+            string detalle = ReglasParadaRecogida.Detalle(ReglasParadaRecogida.PREFIJO_ANULADA_MARCADA, motivo);
+            List<EnvioHistoria> historia = Historia(envio, $"Recogida {documento} anulada: estaba marcada como recogida por error. Motivo: {motivo}" +
+                (descargas.Count > 0 ? $". Se dan por descargados en Algete: {string.Join(", ", descargas.Select(d => d.Codigo))}." : string.Empty), usuario);
+            string anterior = JsonConvert.SerializeObject(new { Pedido = pedido, Envio = envio.Numero, envio.Estado, DetalleEstado = envio.DetalleEstado?.Trim() });
+            string nuevo = JsonConvert.SerializeObject(new { Pedido = pedido, Envio = envio.Numero, Estado = Constantes.Agencias.ESTADO_CERRADO_A_MANO, DetalleEstado = detalle,
+                Motivo = motivo, MarcadaPorError = true, Descargados = descargas.Select(d => d.Codigo).ToList() });
+            AnulacionRecogidaMarcada hecho = await Recogidas.AnularRecogidaMarcada(envio.Numero, pedido, detalle, motivo, historia, descargas, anterior, nuevo, usuario).ConfigureAwait(false);
+            if (hecho == null)
+            {
+                return ResultadoReparto<ResultadoAnularRecogidaDTO>.Mal(TipoResultadoReparto.Conflicto,
+                    $"La recogida {documento} ha cambiado mientras (o ya está abonada): actualice la lista.");
+            }
+            foreach (int solicitud in hecho.SolicitudesAnuladas ?? new List<int>())
+            {
+                await Recogidas.AvisarSolicitudAnulada(solicitud, usuario).ConfigureAwait(false);
+            }
+            Avisar(TipoResultadoReparto.Ok, usuario, RepartoCambiadoDTO.MOTIVO_PARADA, origen);
+            return ResultadoReparto<ResultadoAnularRecogidaDTO>.Bien(new ResultadoAnularRecogidaDTO
+            {
+                Pedido = pedido,
+                CodigoDocumento = documento,
+                EnvioId = envio.Numero,
+                Estado = ReglasParadaRecogida.ESTADO_ANULADA,
+                Mensaje = $"Recogida {documento} anulada: estaba marcada como recogida por error y ya no espera ningún abono." +
+                    (descargas.Count > 0 ? $" Sus bultos ({string.Join(", ", descargas.Select(d => d.Codigo))}) se dan por descargados en Algete." : string.Empty)
+            });
+        }
+
+        /// <summary>Caso 930553: los bultos NR de la nota que siguen en una furgoneta (último movimiento Cargado o Recogido) → Descargado (Almacén).</summary>
+        private async Task<List<MovimientoBultoReparto>> DescargasAlAnularMarcada(int pedido, int envioId, string usuario)
+        {
+            if (!FurgonetaDisponible())
+            {
+                return new List<MovimientoBultoReparto>();
+            }
+            List<MovimientoBultoReparto> historia = await paradas.Furgoneta.LeerHistoria(new ConsultaMovimientosBulto { Pedidos = new[] { pedido } }).ConfigureAwait(false)
+                ?? new List<MovimientoBultoReparto>();
+            DateTime momento = ahora();
+            return NucleoFurgoneta.Ultimos(historia.Where(m => m.TipoCodigo == CodigoBultoFurgoneta.NR && m.Pedido == pedido))
+                .Where(u => TiposMovimientoBulto.DejaEnFurgoneta(u.Tipo))
+                .OrderBy(u => u.Bulto)
+                .Select(u =>
+                {
+                    MovimientoBultoReparto d = Copia(u, TiposMovimientoBulto.DESCARGADO, usuario?.Trim(), momento, momento, OrigenesMovimientoBulto.ALMACEN,
+                        NucleoFurgoneta.ClaveDerivada(u.ClaveIdempotencia, u.Codigo, ReglasParadaRecogida.TIPO_CLAVE_DESCARGA_ANULAR));
+                    d.EnvioId = d.EnvioId ?? envioId;
+                    d.Descripcion = $"Recogida {pedido} anulada (marcada por error): se da por descargado";
+                    return d;
+                })
+                .ToList();
         }
     }
 }

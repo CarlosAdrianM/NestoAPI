@@ -33,6 +33,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public DateTime? FechaCierre { get; set; }
         /// <summary>Qué decidió la regla (o cómo se pusieron de acuerdo), en palabras del almacén.</summary>
         public string Resumen { get; set; }
+        /// <summary>NestoAPI#906: los bultos de la reposición y cuáles tienen foto de cuando se envió (vacía sin el script de las fotos).</summary>
+        public List<BultoConFotoReposicionDTO> Bultos { get; set; } = new List<BultoConFotoReposicionDTO>();
     }
 
     /// <summary>NestoAPI#906: una unidad en desacuerdo con sus rasgos, la decisión de la regla y la verdad (dbo.DiferenciasReposicionImputaciones).</summary>

@@ -37,10 +37,27 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
             "no se puede saber qué cliente es el anterior de cuál.";
 
         private readonly IRepositorioCambioFiscal repositorio;
+        /// <summary>El único acceso a dbo.ClientesAnteriores (cortes 1 y 2): si está la tabla y el enlace fuera de la copia.</summary>
+        private readonly IRepositorioClientesAnteriores anteriores;
 
-        public ServicioCambioFiscal(IRepositorioCambioFiscal repositorio)
+        public ServicioCambioFiscal(IRepositorioCambioFiscal repositorio, IRepositorioClientesAnteriores anteriores)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.anteriores = anteriores ?? throw new ArgumentNullException(nameof(anteriores));
+        }
+
+        /// <summary>Si está dbo.ClientesAnteriores. Nunca lanza: si no se puede saber, false (ELMAH).</summary>
+        internal static bool TablaSegura(IRepositorioClientesAnteriores anteriores)
+        {
+            try
+            {
+                return anteriores != null && anteriores.TablaExiste();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cambio de forma fiscal #876] No se ha podido comprobar dbo.ClientesAnteriores: {ex.Message}", ex));
+                return false;
+            }
         }
 
         internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
@@ -58,7 +75,7 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
             empresa = Empresa(empresa);
             anterior = anterior?.Trim();
             nuevo = nuevo?.Trim();
-            bool hayTabla = await repositorio.TablaExiste().ConfigureAwait(false);
+            bool hayTabla = TablaSegura(anteriores);
             DatosCambioFiscal datos = await repositorio.Leer(empresa, anterior, nuevo).ConfigureAwait(false);
             DecisionEnlaceCambioFiscal enlace = Enlace(datos, anterior, nuevo);
             if (enlace.Estado == 400 || enlace.Estado == 404)
@@ -101,7 +118,7 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
                 return ResultadoCambioFiscal<CopiaCambioFiscalDTO>.Error(400, $"No existe el bloque {string.Join(", ", desconocidos)}. " +
                     $"Los bloques son: {string.Join(", ", BloquesCambioFiscal.TODOS)}.");
             }
-            if (!await repositorio.TablaExiste().ConfigureAwait(false))
+            if (!TablaSegura(anteriores))
             {
                 return ResultadoCambioFiscal<CopiaCambioFiscalDTO>.Error(503, MENSAJE_SIN_TABLA);
             }
@@ -211,7 +228,7 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
             {
                 return ResultadoCambioFiscal<PasarPedidosCambioFiscalDTO>.Error(400, "Diga qué pedidos pasan al cliente nuevo.");
             }
-            if (!await repositorio.TablaExiste().ConfigureAwait(false))
+            if (!TablaSegura(anteriores))
             {
                 return ResultadoCambioFiscal<PasarPedidosCambioFiscalDTO>.Error(503, MENSAJE_SIN_TABLA);
             }
@@ -231,7 +248,7 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
             }
             if (enlace.CrearEnlace && !ensayo)
             {
-                await repositorio.CrearEnlace(empresa, nuevo, anterior, usuario).ConfigureAwait(false);
+                await anteriores.Guardar(empresa, nuevo, anterior, usuario).ConfigureAwait(false);
             }
 
             PasarPedidosCambioFiscalDTO respuesta = new PasarPedidosCambioFiscalDTO { Ensayo = ensayo, ClienteAnterior = anterior, ClienteNuevo = nuevo };

@@ -30,6 +30,11 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   autorización que para no cobrar (Autorizada o Telefonica, #773; vale para cualquier importe); sin ella, 409 `Codigo` REEMBOLSO_PARCIAL (en la raíz
   y en error.code), regla pura `ReglaReembolsoEntero`. Cobrar de más no cambia. Las notas de cobro NO (lo de menos queda a cuenta). La petición de
   autorización admite `ImporteCobrado` opcional (sin columna: va en el Motivo; si Ariadna ya lo escribe, no se repite).
+- **Cobrar MÁS que el reembolso, con confirmación (Carlos 26/11/26)**: en `Entregar` con Efectivo e `ImporteCobrado` > reembolso + 0,01 € → 409
+  `{ error: { code, message, details: { reembolso, importeCobrado, deMas } }, Message, Codigo: "COBRO_DE_MAS" }` «Está cobrando 30,00 € más que el reembolso
+  (120,00 €). Si es correcto, confírmelo: lo de más quedará a cuenta del cliente.» salvo `EntregaRepartoDTO.ConfirmarCobroDeMas` = true (opcional); confirmado,
+  se contabiliza lo cobrado como hasta ahora. LA REGLA `ReglaReembolsoEntero.PideConfirmarDeMas`. Va DESPUÉS de la idempotencia: un reintento con la misma clave
+  no se frena. Ni notas de cobro, ni enlace ni tarjeta. Ariadna: al recibir COBRO_DE_MAS, preguntar y reenviar con `ConfirmarCobroDeMas` = true (misma clave).
 - **Bultos en la prueba de entrega (19/11/26)**: `PruebaEntregaDTO`/`PruebaEntregaEnvioDTO` traen (aditivo, solo reparto propio) `Bultos`
   [{Codigo, Bulto, Situacion, Entregado, Texto}] y `ResumenBultos` («Leídos 6 de 7. Sin leer: RP…-7.»), con la misma regla de #880 sobre el envío ya
   entregado (`EntregaIncompletaReparto.EvaluarEntregado`). Sin movimientos RP del envío (antiguos, otras agencias), null. Nesto lo pinta en una línea.
@@ -168,6 +173,17 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   crear). En `GET Envios` la NC lleva ese `Repartidor` (no se carga: `CompletarCarga` no lo borra) y con soloMios solo le sale a él;
   las NC de antes (sin repartidor) siguen saliendo a todos. Ariadna no filtra: lo hace la API.
 
+### Cobrar una deuda: cobro repetido o entero a cuenta (POST api/RepartoPropio/Cobros, #766; caso 9251 del 20/11/26, Carlos 26/11/26)
+- Dos cobros en un minuto al mismo cliente y el segundo quedó entero «a cuenta». LA REGLA (pura) `ReglaCobroRepetidoReparto`
+  (`CobroDeudaReparto.cs`), SOLO en POST Cobros (`ServicioCobrosReparto.CobrosRecientes`, lo pone el controlador; la nota de cobro, dentro de
+  la entrega, no se frena): sin `Confirmar` = true (campo nuevo del cuerpo), (1) el cliente ya tiene un cobro del reparto en los últimos
+  `MINUTOS_REPETIDO` (30) con OTRA clave (Modificaciones Tabla «CobroReparto», Fecha del registro, JSON con Cliente; incluye los de notas
+  de cobro) → 409 `COBRO_REPETIDO` («Ya ha cobrado 84,80 € a este cliente a las 12:31. Si es otro cobro distinto, confírmelo.»; de otro
+  repartidor, «Andre ya ha cobrado…»; details {Importe, Fecha, Usuario}); (2) no liquida ningún efecto (sin efectos o todos ya no
+  pendientes) → 409 `COBRO_TODO_A_CUENTA` («Este cobro no corresponde a ninguna deuda del cliente: quedaría entero a cuenta. Confírmelo
+  si es correcto.»; details {Importe}). Cuerpo del 409 = el de siempre del reparto: {error {code, message, details}, Message, Codigo}.
+  Nada se contabiliza. El reintento con la MISMA clave devuelve lo de antes (va antes). Ariadna vieja (sin el campo) recibe el 409: querido.
+
 ### Recogida solicitada por el vendedor (NestoAPI#855, 12/11/26; gemelas Nesto#635 y NestoApp#259)
 - `dbo.RecogidasSolicitadas` (fuera del EDMX, `Scripts/Issue855_RecogidasSolicitadas.sql`; sin él, 503 y el job no hace nada). Estado
   guardado Solicitada/Confirmada/Rechazada/Anulada; al leer se calcula EnReparto (parada de la 14 tramitada/incidentada) y Recogida
@@ -211,6 +227,15 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - `POST api/RepartoPropio/Recogidas/{pedido}/Anular` {Motivo} (grupos del reparto): parada en reparto → Cerrado a mano «Recogida anulada: motivo», historia y
   Modificaciones `RecogidaAnulada` en UNA transacción (`RecogidasParadaRepartoSql.CerrarParada`, solo si sigue 1/3); la solicitud, Anulada. Las líneas de
   la nota no se tocan. Reglas puras `ReglasParadaRecogida` (`RecogidasParadaReparto.cs`).
+- **Anular una recogida marcada «Recogido» por error (caso 930553, Carlos 26/11/26)**: el MISMO `POST …/Recogidas/{pedido}/Anular` {Motivo} vale también si la
+  parada ya está Entregada (2), solo para Almacén y Dirección (`PermisosRepartoPropio.PuedeAnularRecogidaMarcada`; los demás grupos del reparto, 403 de
+  usted) y si no hay abono de esa recogida (`NotasEntregaCabecera.PedidoAbono`, lo que mira `ServicioAbonosRecogida`; con abono, 409 `RECOGIDA_ABONADA`; si
+  no se puede leer, 503). LA REGLA `ReglasParadaRecogida.MotivoNoAnulableMarcada`. Los bultos NR en una furgoneta NO lo impiden. En UNA transacción
+  (`RecogidasParadaRepartoSql.AnularRecogidaMarcada`; el UPDATE exige Estado 2 y la nota sin abono con UPDLOCK: si cambia, 409): Cerrado a mano (5),
+  DetalleEstado «Recogida anulada (marcada por error): motivo», historia, Modificaciones `RecogidaAnulada` (Nuevo con `MarcadaPorError`), la solicitud
+  (#855) Confirmada → Anulada, y un Descargado (Origen Almacen, clave derivada) por cada NR{pedido}-{n} cuyo último movimiento es Cargado/Recogido.
+  Después, el aviso de la solicitud anulada y `repartoCambiado` «Parada». Al quedar en 5, leer el NR en Algete ya no crea abono sin «Forzar».
+  Las líneas de la nota no se tocan: ya están a -2 (Facturar rutas las procesó al crear la parada), así que ni picking ni Facturar rutas las vuelven a coger.
 - **«No se ha recogido» pasa a Almacén, que decide (Carlos 20/11/26)**: con `dbo.RepartoRecogidasNoRecogidas` (`Scripts/RepartoRecogidasNoRecogidas.sql`;
   sin él, NoRecogida cierra como arriba y los endpoints nuevos dan 503) la recogida NO se cierra: el envío queda Incidentado (3) con el mismo DetalleEstado y
   FechaEntrega = `FechaRepartoPropio.FECHA_PENDIENTE_DECIDIR` (31/12/2099: no sale en ningún día, ni en SinCargar; leer su papel da «pendiente de que

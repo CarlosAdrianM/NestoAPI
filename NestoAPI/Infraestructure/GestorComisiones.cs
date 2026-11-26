@@ -183,13 +183,20 @@ namespace NestoAPI.Infraestructure
                 return;
             }
 
-            bool cambiaVendedor = actual.Vendedor?.Trim() != nuevo.vendedor?.Trim();
+            // Nesto#644 (6): vendedor o estado a null = no tocar ese campo (Nesto manda solo lo que cambia el usuario).
+            bool cambiaVendedor = nuevo.vendedor != null && actual.Vendedor?.Trim() != nuevo.vendedor.Trim();
             if (cambiaVendedor || string.IsNullOrWhiteSpace(actual.Usuario))
             {
                 actual.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             }
-            actual.Vendedor = nuevo.vendedor;
-            actual.Estado = nuevo.estado;
+            if (cambiaVendedor)
+            {
+                actual.Vendedor = nuevo.vendedor;
+            }
+            if (nuevo.estado.HasValue && actual.Estado != nuevo.estado.Value)
+            {
+                actual.Estado = nuevo.estado.Value;
+            }
         }
 
         internal static void ActualizarVendedorClienteGrupoProducto(NVEntities db, Cliente clienteDB, ClienteDTO cliente, string usuarioAuditoria = null)
@@ -218,7 +225,8 @@ namespace NestoAPI.Infraestructure
                     Contacto = clienteDB.Contacto,
                     GrupoProducto = vendedorGrupoNuevo.grupoProducto,
                     Vendedor = vendedorGrupoNuevo.vendedor,
-                    Estado = Constantes.Clientes.Estados.VISITA_PRESENCIAL,
+                    // Nesto#644 (6): el estado que viene; antes siempre VISITA_PRESENCIAL y Nesto tenía que mandar un segundo PUT
+                    Estado = vendedorGrupoNuevo.estado ?? Constantes.Clientes.Estados.VISITA_PRESENCIAL,
                     Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario)
                 };
                 db.VendedoresClientesGruposProductos.Add(vendedorGrupoActual);

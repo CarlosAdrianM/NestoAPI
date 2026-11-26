@@ -34,9 +34,6 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
 
     public interface IRepositorioCambioFiscal
     {
-        /// <summary>Si está dbo.ClientesAnteriores (Scripts/Issue876_ClientesAnteriores.sql). Sin ella, 503.</summary>
-        Task<bool> TablaExiste();
-
         /// <summary>Solo lectura (previa y ensayo).</summary>
         Task<DatosCambioFiscal> Leer(string empresa, string anterior, string nuevo);
 
@@ -46,12 +43,10 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
         /// </summary>
         Task<DecisionCopiaCambioFiscal> Copiar(string empresa, string anterior, string nuevo, Func<DatosCambioFiscal, DecisionCopiaCambioFiscal> decidir, string usuario);
 
-        /// <summary>El enlace del alta (idempotente): el nuevo es el anterior con otra forma fiscal.</summary>
-        Task CrearEnlace(string empresa, string nuevo, string anterior, string usuario);
     }
 
     /// <summary>NestoAPI#876: ADO sobre NestoConnection. Clientes, CondPagoClientes, DescuentosProducto, OfertasPermitidas y
-    /// VendedoresClienteGrupoProducto ya los escribía la API; dbo.ClientesAnteriores es nueva (fuera del EDMX).</summary>
+    /// VendedoresClienteGrupoProducto ya los escribía la API; dbo.ClientesAnteriores (fuera del EDMX) con el SQL de su único acceso.</summary>
     public class RepositorioCambioFiscalSql : IRepositorioCambioFiscal
     {
         private readonly string cadenaConexion;
@@ -60,8 +55,6 @@ namespace NestoAPI.Infraestructure.Clientes.CambioFiscal
         {
             this.cadenaConexion = cadenaConexion;
         }
-
-        internal const string SQL_TABLA = "SELECT CASE WHEN OBJECT_ID(N'dbo.ClientesAnteriores', N'U') IS NULL THEN 0 ELSE 1 END";
 
         internal const string SQL_FICHAS = @"
 SELECT RTRIM(Contacto) AS Contacto, ClientePrincipal, RTRIM(Nombre) AS Nombre, Estado, RTRIM(Vendedor) AS Vendedor, RTRIM(IVA) AS IVA,
@@ -89,17 +82,15 @@ SELECT RTRIM(Número), RTRIM(Familia), CantidadConPrecio, CantidadRegalo, Denega
        CAST(FechaDesde AS datetime), CAST(FechaHasta AS datetime), RTRIM(SubGrupo)
 FROM OfertasPermitidas WHERE Empresa = @empresa AND Cliente = @cliente ORDER BY NºOrden";
 
-        internal const string SQL_ENLACES = @"
-IF OBJECT_ID(N'dbo.ClientesAnteriores', N'U') IS NOT NULL
-    SELECT RTRIM(ClienteAnterior) FROM dbo.ClientesAnteriores WHERE Empresa = @empresa AND Cliente = @cliente";
+        /// <summary>dbo.ClientesAnteriores: el SQL vive en su único acceso (<see cref="RepositorioClientesAnterioresSql"/>); aquí se
+        /// usa dentro de la transacción de la copia.</summary>
+        internal const string SQL_ENLACES = RepositorioClientesAnterioresSql.SQL_ANTERIOR_BLOQUEANDO;
 
         internal const string SQL_ORIGEN = @"
 IF OBJECT_ID(N'dbo.ClientesOrigen', N'U') IS NOT NULL
     SELECT RTRIM(Origen) FROM dbo.ClientesOrigen WHERE Empresa = @empresa AND Cliente = @cliente";
 
-        internal const string SQL_CREAR_ENLACE = @"
-IF NOT EXISTS (SELECT 1 FROM dbo.ClientesAnteriores WITH (UPDLOCK, HOLDLOCK) WHERE Empresa = @empresa AND Cliente = @cliente AND ClienteAnterior = @anterior)
-    INSERT INTO dbo.ClientesAnteriores (Empresa, Cliente, ClienteAnterior, Fecha, Usuario) VALUES (@empresa, @cliente, @anterior, GETDATE(), @usuario);";
+        internal const string SQL_CREAR_ENLACE = RepositorioClientesAnterioresSql.SQL_CREAR_SI_NO_HAY;
 
         internal const string SQL_FICHA = @"
 UPDATE Clientes SET
@@ -144,26 +135,6 @@ VALUES (@empresa, @producto, @familia, @conPrecio, @regalo, @denegar, @cliente, 
         internal const string SQL_RASTRO = @"
 INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario, Fecha) VALUES (N'ClienteCambioFiscal', @anterior, @nuevo, @usuario, GETDATE());";
 
-        public async Task<bool> TablaExiste()
-        {
-            try
-            {
-                using (SqlConnection conexion = new SqlConnection(cadenaConexion))
-                {
-                    await conexion.OpenAsync().ConfigureAwait(false);
-                    using (SqlCommand comando = new SqlCommand(SQL_TABLA, conexion))
-                    {
-                        return Convert.ToInt32(await comando.ExecuteScalarAsync().ConfigureAwait(false)) == 1;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                ElmahHelper.Log(new Exception($"[Cambio de forma fiscal #876] No se ha podido comprobar dbo.ClientesAnteriores: {ex.Message}", ex));
-                return false;
-            }
-        }
-
         public async Task<DatosCambioFiscal> Leer(string empresa, string anterior, string nuevo)
         {
             using (SqlConnection conexion = new SqlConnection(cadenaConexion))
@@ -207,17 +178,12 @@ SELECT @r;", conexion, transaccion))
                         ("@nuevo", JsonConvert.SerializeObject(decision.Rastro)),
                         ("@usuario", quien)).ConfigureAwait(false);
                     transaccion.Commit();
+                    if (decision.CrearEnlace)
+                    {
+                        ClientesEquivalentes.Invalidar();
+                    }
                     return decision;
                 }
-            }
-        }
-
-        public async Task CrearEnlace(string empresa, string nuevo, string anterior, string usuario)
-        {
-            using (SqlConnection conexion = new SqlConnection(cadenaConexion))
-            {
-                await conexion.OpenAsync().ConfigureAwait(false);
-                await Ejecutar(conexion, null, SQL_CREAR_ENLACE, ("@empresa", empresa), ("@cliente", nuevo), ("@anterior", anterior), ("@usuario", Recortar(usuario, 30))).ConfigureAwait(false);
             }
         }
 

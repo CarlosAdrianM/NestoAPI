@@ -14,6 +14,16 @@ namespace NestoAPI.Models
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string ContactoEntrega { get; set; }
 
+        /// <summary>NestoAPI#876: en la respuesta del alta con origen CAMBIO-FISCAL, el número de cliente anterior guardado. No viaja si no lo hay.</summary>
+        [NotMapped]
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string ClienteAnterior { get; set; }
+
+        /// <summary>NestoAPI#876: aviso del alta (p. ej. el cliente anterior tiene el mismo NIF). No viaja si no lo hay.</summary>
+        [NotMapped]
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AvisoClienteAnterior { get; set; }
+
         /// <summary>
         /// NestoAPI#876: en la respuesta de POST api/Clientes con ClienteCrear.CopiarDelAnterior, por qué no se ha podido copiar (el alta
         /// queda hecha). No viaja si se copió bien o no se pidió.

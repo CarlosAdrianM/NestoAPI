@@ -94,6 +94,11 @@ namespace NestoAPI.Controllers
             string empresa = EmpresaONula(parametros.Empresa);
             string almacen = parametros.Almacen.Trim();
             DateTime fecha = parametros.Fecha.Date;
+            // NestoAPI#902: el almacén de incompletos no se inventaría (sus unidades, desde Productos incompletos)
+            if (Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.Es(almacen))
+            {
+                return Content(HttpStatusCode.BadRequest, new { Message = Infraestructure.ProductosIncompletos.GuardaAlmacenIncompletos.MENSAJE_INVENTARIO });
+            }
             string motivo = PermisosInventario.MotivoNoPuedeContabilizar(User, AlmacenDeQuienPide(empresa), almacen);
             if (motivo != null)
             {

@@ -46,7 +46,7 @@ namespace NestoAPI.Controllers
                 return StatusCode(HttpStatusCode.Forbidden);
             }
             string emp = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
-            ResultadoCambioFiscal<CopiaCambioFiscalDTO> r = await new ServicioCambioFiscal(RepositorioCambioFiscal)
+            ResultadoCambioFiscal<CopiaCambioFiscalDTO> r = await new ServicioCambioFiscal(RepositorioCambioFiscal, RepositorioClientesAnteriores)
                 .Previa(emp, clienteAnterior, clienteNuevo, v => MotivoSinPermisoCambioFiscal(emp, clienteAnterior, v),
                     () => LeerPedidosPendientesCambioFiscal(emp, clienteAnterior?.Trim())).ConfigureAwait(true);
             return Traducir(r);
@@ -84,7 +84,7 @@ namespace NestoAPI.Controllers
             string emp = string.IsNullOrWhiteSpace(peticion?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
             Func<string, int, CambiarClientePedidoRequest, Task<ResultadoCambioClientePedido>> cambiar = CambiarClienteDePedido ?? CambiarClienteDePedidoPorPedidosVenta;
-            ResultadoCambioFiscal<PasarPedidosCambioFiscalDTO> r = await new ServicioCambioFiscal(RepositorioCambioFiscal)
+            ResultadoCambioFiscal<PasarPedidosCambioFiscalDTO> r = await new ServicioCambioFiscal(RepositorioCambioFiscal, RepositorioClientesAnteriores)
                 .PasarPedidos(peticion, ensayo, usuario, v => MotivoSinPermisoCambioFiscal(emp, peticion?.ClienteAnterior, v),
                     async numero =>
                     {
@@ -101,68 +101,34 @@ namespace NestoAPI.Controllers
         {
             string emp = string.IsNullOrWhiteSpace(peticion?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
-            return new ServicioCambioFiscal(RepositorioCambioFiscal)
+            return new ServicioCambioFiscal(RepositorioCambioFiscal, RepositorioClientesAnteriores)
                 .Copiar(peticion, ensayo, usuario, v => MotivoSinPermisoCambioFiscal(emp, peticion?.ClienteAnterior, v), PublicarClienteTrasCopia);
         }
 
         /// <summary>
-        /// NestoAPI#876: en el alta, <see cref="ClienteCrear.ClienteAnterior"/> solo con origen CAMBIO-FISCAL, de un cliente que existe,
-        /// y <see cref="ClienteCrear.CopiarDelAnterior"/> solo con él y con bloques que existen. Null = vale (o no viene).
+        /// NestoAPI#876: tras el alta con <see cref="ClienteCrear.ClienteAnterior"/>, el enlace en dbo.ClientesAnteriores (cortes 1-2,
+        /// <see cref="GuardarClienteAnteriorTrasAlta"/>) y, con <see cref="ClienteCrear.CopiarDelAnterior"/>, la copia de sus condiciones
+        /// (el mismo núcleo que Copiar). Nunca rompe el alta: lo que falle va a <see cref="Cliente.AvisoCopiaClienteAnterior"/> y a ELMAH.
         /// </summary>
-        internal async Task<string> ValidarClienteAnteriorAlta(ClienteCrear clienteCrear)
+        internal async Task TrasAltaCambioFiscal(Cliente cliente, ClienteCrear clienteCrear, ValidacionClienteAnterior validacion)
         {
-            string anterior = clienteCrear?.ClienteAnterior?.Trim();
-            if (string.IsNullOrWhiteSpace(anterior))
-            {
-                return clienteCrear?.CopiarDelAnterior != null
-                    ? "Para copiar las condiciones del cliente anterior, diga cuál es (ClienteAnterior)."
-                    : null;
-            }
-            if (!string.Equals(clienteCrear.Origen?.Trim(), ReglaCopiaCambioFiscal.ORIGEN_CAMBIO_FISCAL, StringComparison.OrdinalIgnoreCase))
-            {
-                return "El cliente anterior solo se indica en un alta por cambio de forma fiscal (origen «Cambio de forma fiscal»).";
-            }
-            if (clienteCrear.EsContacto)
-            {
-                return "El cliente anterior se indica al dar de alta un cliente nuevo, no un contacto.";
-            }
-            _ = BloquesCambioFiscal.Normalizar(clienteCrear.CopiarDelAnterior, out List<string> desconocidos);
-            if (desconocidos.Any())
-            {
-                return $"No existe el bloque {string.Join(", ", desconocidos)}. Los bloques son: {string.Join(", ", BloquesCambioFiscal.TODOS)}.";
-            }
-            string emp = string.IsNullOrWhiteSpace(clienteCrear.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : clienteCrear.Empresa.Trim();
-            bool existe = await db.Clientes.AnyAsync(c => c.Empresa == emp && c.Nº_Cliente == anterior).ConfigureAwait(true);
-            return existe ? null : $"No existe el cliente anterior {anterior}.";
-        }
-
-        /// <summary>
-        /// NestoAPI#876: tras el alta con <see cref="ClienteCrear.ClienteAnterior"/>, el enlace en dbo.ClientesAnteriores y, con
-        /// <see cref="ClienteCrear.CopiarDelAnterior"/>, la copia de sus condiciones (el mismo núcleo que Copiar). Nunca rompe el alta:
-        /// lo que falle va a <see cref="Cliente.AvisoCopiaClienteAnterior"/> y a ELMAH.
-        /// </summary>
-        internal async Task TrasAltaCambioFiscal(Cliente cliente, ClienteCrear clienteCrear)
-        {
-            string anterior = clienteCrear?.ClienteAnterior?.Trim();
-            if (cliente == null || string.IsNullOrWhiteSpace(anterior))
+            if (cliente == null || clienteCrear == null)
             {
                 return;
             }
+            await GuardarClienteAnteriorTrasAlta(cliente, validacion).ConfigureAwait(true);
+            if (clienteCrear.CopiarDelAnterior == null)
+            {
+                return;
+            }
+            string anterior = validacion?.Anterior ?? clienteCrear.ClienteAnterior?.Trim();
             string emp = cliente.Empresa?.Trim();
             string nuevo = cliente.Nº_Cliente?.Trim();
             try
             {
-                if (!await RepositorioCambioFiscal.TablaExiste().ConfigureAwait(true))
+                if (!ServicioCambioFiscal.TablaSegura(RepositorioClientesAnteriores))
                 {
-                    cliente.AvisoCopiaClienteAnterior = clienteCrear.CopiarDelAnterior != null
-                        ? "El cliente se ha creado, pero no se han copiado las condiciones del anterior: " + ServicioCambioFiscal.MENSAJE_SIN_TABLA
-                        : null;
-                    return;
-                }
-                string usuario = UsuarioAuditoriaHelper.Resolver(User, clienteCrear.Usuario);
-                await RepositorioCambioFiscal.CrearEnlace(emp, nuevo, anterior, usuario).ConfigureAwait(true);
-                if (clienteCrear.CopiarDelAnterior == null)
-                {
+                    cliente.AvisoCopiaClienteAnterior = "El cliente se ha creado, pero no se han copiado las condiciones del anterior: " + ServicioCambioFiscal.MENSAJE_SIN_TABLA;
                     return;
                 }
                 ResultadoCambioFiscal<CopiaCambioFiscalDTO> copia = await CopiarCambioFiscal(new CopiaCambioFiscalRequest

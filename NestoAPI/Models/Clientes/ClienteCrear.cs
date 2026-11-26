@@ -128,17 +128,19 @@ namespace NestoAPI.Models.Clientes
         public string Origen { get; set; }
 
         /// <summary>
+        /// NestoAPI#876: con Origen «CAMBIO-FISCAL» (cliente que ya lo era y cambia de razón social o NIF), el número de cliente que
+        /// tenía antes: obligatorio con ese origen, tiene que existir y no puede ser él mismo (400 de usted); sin ese origen, 400. Solo
+        /// en el alta (dbo.ClientesAnteriores; sin la tabla no se exige ni se guarda). GET api/Clientes/GetClienteCrear lo trae relleno.
+        /// Comercialmente es el mismo cliente; nada fiscal se hereda.
+        /// </summary>
+        public string ClienteAnterior { get; set; }
+
+        /// <summary>
         /// Alta con dirección de entrega distinta (19/11/26). Opcional y solo en el alta de un cliente NUEVO (con <see cref="EsContacto"/>
         /// es un 400): crea además un segundo contacto con esta dirección y deja el ContactoDefecto del principal apuntándole. Sin él,
         /// el alta es exactamente la de siempre. La respuesta trae el contacto creado en Cliente.ContactoEntrega.
         /// </summary>
         public DireccionEntregaCrear DireccionEntrega { get; set; }
-
-        /// <summary>
-        /// NestoAPI#876: solo en el ALTA con origen CAMBIO-FISCAL: el número del cliente que cambia de forma fiscal. Se comprueba que
-        /// existe (400 si no, o si viene con otro origen) y se guarda el enlace en dbo.ClientesAnteriores. Opcional (null = como hoy).
-        /// </summary>
-        public string ClienteAnterior { get; set; }
 
         /// <summary>
         /// NestoAPI#876: con <see cref="ClienteAnterior"/>, los bloques que se copian de su ficha tras crear la nueva

@@ -341,6 +341,11 @@ namespace NestoAPI.Models.Agencias
         public string CobroReembolso { get; set; }
         /// <summary>Lo cobrado (o el importe del enlace); sin él, el reembolso del envío.</summary>
         public decimal? ImporteCobrado { get; set; }
+        /// <summary>
+        /// Carlos 26/11/26 (opcional): cobrar en efectivo MÁS que el reembolso (más de 1 céntimo) da 409 COBRO_DE_MAS salvo con esto a true
+        /// (el repartidor confirma que es correcto: lo de más queda a cuenta del cliente). Las notas de cobro no lo piden.
+        /// </summary>
+        public bool? ConfirmarCobroDeMas { get; set; }
         /// <summary>Obligatorio y con formato válido con CobroReembolso = "Enlace": a dónde se manda el enlace de pago.</summary>
         public string CorreoEnlace { get; set; }
         public decimal? Latitud { get; set; }
