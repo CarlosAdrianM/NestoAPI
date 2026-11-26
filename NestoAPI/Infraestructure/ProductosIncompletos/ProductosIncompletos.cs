@@ -299,6 +299,11 @@ namespace NestoAPI.Infraestructure.ProductosIncompletos
             {
                 return $"El almacén de incompletos {limpio} no puede llevar control de ubicaciones.";
             }
+            // Carlos 26/11/26: el de incompletos es FICTICIO («INC»): sus unidades no son stock vendible para nadie (tampoco Nesto viejo)
+            if (!almacen.EsFicticio)
+            {
+                return $"El almacén de incompletos {limpio} tiene que ser un almacén ficticio (AlmacénFicticio = 1).";
+            }
             return null;
         }
 

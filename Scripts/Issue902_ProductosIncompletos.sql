@@ -9,11 +9,11 @@
       2. Los dos diarios de sistema (DiariosProducto empresa '1', Sistema = 1, sin recálculo de precio medio, como «_Ficticio» de #894):
          «_SacaPieza» (sacar y completar) y «_BajaIncom» (la baja: merma con causa conocida). Nunca «_RegInvent»: no es un inventario.
          PreExtrProducto.Diario tiene clave ajena a DiariosProducto: sin ellos, la primera operación falla.
-      3. El almacén ficticio de incompletos: plantilla COMENTADA (no sé qué columnas exige Almacenes; la rellena Carlos). Tiene que
-         ser activo, NO ser ALG/REI/ALC (son lo único que cuentan el stock disponible, el motor de fechas y la tienda) y SIN control
-         de ubicaciones. La API lo comprueba y, si no, da 503 con el motivo.
-      4. ParametrosUsuario empresa '1', fila «(defecto)», clave «AlmacenIncompletos» = el código del almacén del paso 3. Se crea
-         VACÍA si no existe (sin valor, 503 «falta el almacén de incompletos»): se rellena con el UPDATE comentado.
+      3. El almacén ficticio de incompletos «INC» («Incompletos», decisión de Carlos 26/11/26), COPIANDO la fila de otro ficticio
+         (PRV) y fijando las columnas que usa el código (ver el paso). Tiene que ser activo, NO ser ALG/REI/ALC (son lo único que
+         cuentan el stock disponible, el motor de fechas y la tienda) y SIN control de ubicaciones. La API lo comprueba y, si no, 503.
+      4. ParametrosUsuario empresa '1', fila «(defecto)», clave «AlmacenIncompletos». Se crea VACÍA si no existe y, si INC existe
+         y sigue vacía, se pone 'INC' (sin valor, 503 «falta el almacén de incompletos»).
 
     GRANT: la tabla es nueva → SELECT, INSERT, UPDATE (y DELETE por si hay que limpiar) a la cuenta de la API. El resto ya lo tiene
     (la API ya lee Almacenes, ParametrosUsuario, Productos, ExtractoProducto y Ubicaciones y ya escribe en PreExtrProducto,
@@ -79,14 +79,51 @@ IF NOT EXISTS (SELECT 1 FROM DiariosProducto WHERE Empresa = '1' AND [Número] =
     VALUES ('1', '_BajaIncom', 'Baja de productos incompletos (API)', 1, 0, 'Issue902', GETDATE());
 GO
 
--- 3. PLANTILLA (comentada a propósito): el almacén ficticio de incompletos. Antes, mirar cómo está dado de alta otro ficticio
---    (p. ej. PRV) y copiar sus columnas obligatorias; comprobar que el código no existe:
---
--- SELECT * FROM Almacenes WHERE Empresa = '1' AND [Número] IN ('PRV', 'INC');
---
--- INSERT INTO Almacenes (Empresa, [Número], [Descripción], AlmacénFicticio, ControlUbicaciones, PermitirNegativo, Estado /* , … */)
--- VALUES ('1', 'INC', 'Productos incompletos (piezas sacadas)', 1, 0, 0, 0 /* , … */);
--- GO
+-- 3. El almacén ficticio de incompletos «INC» (Carlos 26/11/26: «Incompletos», ficticio: sus unidades no cuentan como stock vendible).
+--    Almacenes NO está en el EDMX y no se conocen todas sus columnas obligatorias, así que la fila se COPIA de otro almacén ficticio
+--    activo (PRV si existe; si no, el primero ficticio activo sin control de ubicaciones) y se fijan las columnas que usa el código:
+--    Número 'INC', Descripción 'Incompletos', AlmacénFicticio = 1, ControlUbicaciones = 0, PermitirNegativo = 0 y Estado = 0;
+--    Usuario y [Fecha Modificación] si existen. Las DEMÁS columnas (DiarioEntradaRep, DiarioSalidaRep, FilaAMano, Delegación…)
+--    quedan COMO EN LA PLANTILLA: revíselas con el SELECT de abajo (INC no se repone ni se vende: no debería llevar diarios de
+--    reposición). Sin plantilla, no hace nada y lo dice. Idempotente: si INC ya existe, no lo toca.
+--    ANTES de lanzarlo: SELECT * FROM Almacenes WHERE Empresa = '1' AND [Número] IN ('INC', 'PRV');
+IF NOT EXISTS (SELECT 1 FROM Almacenes WHERE Empresa = '1' AND [Número] = 'INC')
+BEGIN
+    DECLARE @plantilla char(3) =
+        ISNULL((SELECT [Número] FROM Almacenes WHERE Empresa = '1' AND [Número] = 'PRV' AND ISNULL(AlmacénFicticio, 0) = 1),
+               (SELECT TOP 1 [Número] FROM Almacenes WHERE Empresa = '1' AND ISNULL(AlmacénFicticio, 0) = 1 AND ISNULL(Estado, 0) >= 0
+                    AND ISNULL(ControlUbicaciones, 0) = 0 AND [Número] NOT IN ('ALG', 'REI', 'ALC') ORDER BY [Número]));
+    IF @plantilla IS NULL
+        PRINT 'No hay ningún almacén ficticio que copiar: dé de alta INC a mano (AlmacénFicticio 1, ControlUbicaciones 0, PermitirNegativo 0, Estado 0).';
+    ELSE
+    BEGIN
+        DECLARE @columnas nvarchar(max) = N'', @valores nvarchar(max) = N'';
+        SELECT @columnas = @columnas + N', ' + QUOTENAME(c.name),
+               @valores = @valores + N', ' + CASE c.name
+                    WHEN N'Número' THEN N'''INC'''
+                    WHEN N'Descripción' THEN N'''Incompletos'''
+                    WHEN N'AlmacénFicticio' THEN N'1'
+                    WHEN N'ControlUbicaciones' THEN N'0'
+                    WHEN N'PermitirNegativo' THEN N'0'
+                    WHEN N'Estado' THEN N'0'
+                    WHEN N'Usuario' THEN N'''Issue902'''
+                    WHEN N'Fecha Modificación' THEN N'GETDATE()'
+                    ELSE QUOTENAME(c.name) END
+        FROM sys.columns c
+        WHERE c.object_id = OBJECT_ID(N'dbo.Almacenes') AND c.is_identity = 0 AND c.is_computed = 0
+          AND TYPE_NAME(c.user_type_id) NOT IN (N'timestamp', N'rowversion')
+        ORDER BY c.column_id;
+        DECLARE @sql nvarchar(max) = N'INSERT INTO dbo.Almacenes (' + STUFF(@columnas, 1, 2, N'') + N') SELECT ' + STUFF(@valores, 1, 2, N'')
+            + N' FROM dbo.Almacenes WHERE Empresa = ''1'' AND [Número] = @plantilla;';
+        PRINT 'Alta de INC copiando ' + @plantilla + ': ' + @sql;
+        EXEC sp_executesql @sql, N'@plantilla char(3)', @plantilla = @plantilla;
+    END
+END
+GO
+
+-- Para revisar INC contra su plantilla (todas las columnas)
+SELECT * FROM Almacenes WHERE Empresa = '1' AND [Número] IN ('INC', 'PRV');
+GO
 
 -- 4. El parámetro con el almacén de incompletos (vacío si no existe; se rellena con el UPDATE cuando exista el almacén)
 IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = 'AlmacenIncompletos' AND Usuario = '(defecto)')
@@ -94,9 +131,11 @@ IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = '
     VALUES ('1', 'AlmacenIncompletos', '(defecto)', '', 'Issue902', GETDATE());
 GO
 
--- UPDATE ParametrosUsuario SET Valor = 'INC', Usuario2 = 'Issue902', [Fecha Modificación] = GETDATE()
--- WHERE Empresa = '1' AND Clave = 'AlmacenIncompletos' AND Usuario = '(defecto)';
--- GO
+-- Con INC dado de alta, el parámetro apunta a él (solo si sigue vacío: si ya tiene otro valor, no se pisa)
+IF EXISTS (SELECT 1 FROM Almacenes WHERE Empresa = '1' AND [Número] = 'INC')
+    UPDATE ParametrosUsuario SET Valor = 'INC', Usuario2 = 'Issue902', [Fecha Modificación] = GETDATE()
+    WHERE Empresa = '1' AND Clave = 'AlmacenIncompletos' AND Usuario = '(defecto)' AND LTRIM(RTRIM(ISNULL(Valor, ''))) = '';
+GO
 
 -- Comprobaciones (solo lectura)
 SELECT name, create_date FROM sys.tables WHERE name = 'ProductosIncompletos';

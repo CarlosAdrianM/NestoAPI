@@ -167,7 +167,8 @@ namespace NestoAPI.Tests.Infrastructure.ProductosIncompletos
             new AlmacenLeido { Codigo = "REI" },
             new AlmacenLeido { Codigo = "ALC" },
             new AlmacenLeido { Codigo = "INC", EsFicticio = true },
-            new AlmacenLeido { Codigo = "UBI", EsFicticio = true, ControlUbicaciones = true }
+            new AlmacenLeido { Codigo = "UBI", EsFicticio = true, ControlUbicaciones = true },
+            new AlmacenLeido { Codigo = "NOF" }
         };
 
         [TestMethod]
@@ -178,6 +179,7 @@ namespace NestoAPI.Tests.Infrastructure.ProductosIncompletos
             StringAssert.Contains(ReglasProductosIncompletos.MotivoAlmacenIncompletosNoValido("ALG", ALMACENES), "contarían como stock disponible");
             StringAssert.Contains(ReglasProductosIncompletos.MotivoAlmacenIncompletosNoValido("XYZ", ALMACENES), "no existe");
             StringAssert.Contains(ReglasProductosIncompletos.MotivoAlmacenIncompletosNoValido("UBI", ALMACENES), "control de ubicaciones");
+            StringAssert.Contains(ReglasProductosIncompletos.MotivoAlmacenIncompletosNoValido("NOF", ALMACENES), "tiene que ser un almacén ficticio");
         }
 
         [TestMethod]

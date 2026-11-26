@@ -132,5 +132,13 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   Algete por la puerta: `SalidaPorProductoIncompleto` (del hueco; sin hueco, pendiente de ubicar y luego el único hueco; todo o nada, 409) y
   `EntradaPorProductoIncompleto` (pendiente de ubicar). Rastro en Modificaciones (Tabla `ProductoIncompleto`). Después, sin romper: etiqueta
   «INCOMPLETO» 3×2 (`GeneradorEtiquetaIncompleto`, Code128 `INC{Id}`) por la `ImpresoraCodBarras` del usuario y campana a Compras («Se debe…»).
+- **El almacén «INC» (Carlos 26/11/26)**: «Incompletos», FICTICIO. `MotivoAlmacenIncompletosNoValido` exige ahora además `AlmacénFicticio` = 1. El paso 3 del
+  script lo da de alta COPIANDO la fila de otro ficticio (PRV o el primero ficticio activo sin ubicaciones) por `sys.columns` y fijando Número, Descripción,
+  AlmacénFicticio 1, ControlUbicaciones 0, PermitirNegativo 0, Estado 0 (y Usuario/Fecha Modificación si existen); las demás columnas, como la plantilla
+  (revisar con el SELECT del script). El paso 4 pone `AlmacenIncompletos` = INC si estaba vacío.
+  No cuenta en: stock de la web (#818, ALG/REI/ALC), motor de fechas y disponible (`ListaSedes`), reposición del exceso (origen REI/ALC), pérdida desconocida
+  (ALG/REI/ALC; además los apuntes llevan NºTraspaso). SÍ cuenta (todos los almacenes menos EXT): indicadores de stock y propuestas de stock (Tendencias,
+  `DemandaStock.SQL_FILTRO_STOCK`), precio medio (todas). Y se puede elegir como almacén en: rellenar/contar inventario (cualquier almacén sin ubicaciones),
+  los traspasos de #894 (tipo «Otro», solo Almacén: saltaría las fichas) y la lista de almacenes de los pedidos (`api/PedidosVenta/Almacenes`).
 - Pendiente: aviso al vender una serie incompleta, costes, apartado en el informe de pérdida desconocida (#893), regularizar los Depiblend 101268
   y 101270. Gemelas Nesto#653 (pantalla) y Ariadna#109 (PDA).
