@@ -27,6 +27,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         private const string EMPRESA_POBLACION = "28119 Algete (Madrid)";
         private const string EMPRESA_CIF = "CIF: A/78368255";
         private const string EMPRESA_EMAIL = "compras@nuevavision.es";
+        internal const string AVISO_SEGUIMIENTO_AGENCIA = "IMPORTANTE: indiquen sin falta a la agencia de transportes el correo " + EMPRESA_EMAIL + " como correo de aviso del destinatario, para que nos envíe el seguimiento del envío.";
 
         // Logo de Nueva Visión (mismo que usan las facturas de la serie NV).
         private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
@@ -270,8 +271,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 
         private void ComponerPie(IContainer container)
         {
-            container.AlignCenter().Text($"{EMPRESA_NOMBRE}  ·  {EMPRESA_DIRECCION}  ·  {EMPRESA_POBLACION}  ·  {EMPRESA_EMAIL}")
-                .FontSize(7).FontColor(Colors.Grey.Darken1);
+            container.Column(col =>
+            {
+                // Carlos 26/11/26: que la agencia nos mande el seguimiento a Compras (la API lo lee de ese buzón, NestoAPI#857).
+                col.Item().PaddingBottom(4).AlignCenter().Text(AVISO_SEGUIMIENTO_AGENCIA).Bold().FontSize(8);
+                col.Item().AlignCenter().Text($"{EMPRESA_NOMBRE}  ·  {EMPRESA_DIRECCION}  ·  {EMPRESA_POBLACION}  ·  {EMPRESA_EMAIL}")
+                    .FontSize(7).FontColor(Colors.Grey.Darken1);
+            });
         }
 
         private static void CeldaCabecera(IContainer celda, string texto, bool alinearDerecha = false)
