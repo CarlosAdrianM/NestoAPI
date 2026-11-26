@@ -506,6 +506,7 @@
     <Folder Include="Views\Accounts\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Infraestructure\Eventos\DatosTransferenciaInscripcion.cs" />
     <Compile Include="Models\Novedades\NovedadesVersionDTO.cs" />
     <Compile Include="Infraestructure\Novedades\NovedadesVersion.cs" />
     <Compile Include="Infraestructure\ParametrosUsuario\ReglaCambioParametroUsuario.cs" />

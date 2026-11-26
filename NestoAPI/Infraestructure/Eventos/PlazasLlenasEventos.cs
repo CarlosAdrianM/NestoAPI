@@ -232,6 +232,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public DateTime Plazo { get; set; }
         /// <summary>La página del enlace de pago, si lo tiene.</summary>
         public string UrlPago { get; set; }
+        /// <summary>NestoAPI#887: los datos de la transferencia (los pone el job si paga por transferencia y hay cuenta). Null: «pídanoslos».</summary>
+        public DatosTransferenciaInscripcionDTO DatosTransferencia { get; set; }
     }
 
     /// <summary>NestoAPI#746: lo que ha hecho una pasada de la política en uno o en todos los eventos.</summary>

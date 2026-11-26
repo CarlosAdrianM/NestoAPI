@@ -539,6 +539,29 @@ namespace NestoAPI.Controllers
             return Ok(await inscripciones.MarcarPagada(id, peticion, User).ConfigureAwait(false));
         }
 
+        // GET api/Eventos/Inscripciones/7/DatosTransferencia
+        /// <summary>
+        /// NestoAPI#887: IBAN y beneficiario de la empresa, concepto «Cliente NNNNN - INS7» (el documento del cobro en Cajas), la señal y
+        /// el texto listo para pegar, de una reserva (Reservada) de pago. Solo la casa (el cliente de la tienda, 403). 404 sin inscripción,
+        /// 409 si no es una reserva de pago, 400 si la empresa no tiene cuenta bancaria. Solo lectura.
+        /// </summary>
+        [HttpGet]
+        [Route("Inscripciones/{id:int}/DatosTransferencia")]
+        [ResponseType(typeof(DatosTransferenciaInscripcionDTO))]
+        public async Task<IHttpActionResult> GetDatosTransferenciaInscripcion(int id)
+        {
+            return Ok(await DatosTransferencia.Leer(id, User).ConfigureAwait(false));
+        }
+
+        private IServicioDatosTransferenciaInscripcion datosTransferencia;
+
+        /// <summary>NestoAPI#887: los tests lo inyectan; si no, el de la base de datos.</summary>
+        internal IServicioDatosTransferenciaInscripcion DatosTransferencia
+        {
+            get => datosTransferencia ?? (datosTransferencia = new ServicioDatosTransferenciaInscripcion(db));
+            set => datosTransferencia = value;
+        }
+
         // GET api/Eventos/Inscripciones/SinPagar?empresa=1&cliente=33895
         /// <summary>
         /// 19/11/26: las reservas de eventos sin pagar del cliente (todos sus contactos) para cobrarlas en Cajas: Reservada o

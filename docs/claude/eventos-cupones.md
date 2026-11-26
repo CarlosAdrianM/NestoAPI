@@ -50,6 +50,18 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   asistencia siguen con `PuedeMarcarPagada`. POST/PUT PedidosVenta con la referencia del curso de un evento vivo (sin EventoId; en el PUT, líneas nuevas):
   aviso `CursoVendidoAMano` (POST en `AvisosGrabacion`), se guarda igual. Nesto: Cajas › Cobros enseña las reservas; Marcar pagada oculto a las tiendas.
 
+### Datos de la transferencia de una inscripción (NestoAPI#887, duda de Paloma, novedad 1421; Carlos 23/11/26)
+- `GET api/Eventos/Inscripciones/{id}/DatosTransferencia` (solo lectura; la casa: cliente de la tienda 403; 404 sin inscripción; 409 si no es una reserva
+  —Reservada— de pago; 400 si la empresa no tiene cuenta) → {InscripcionId, EventoId, Evento, Empresa, Cliente, Contacto, Iban, Titular, Concepto «Cliente
+  29606 - INS123» (el documento del cobro en Cajas), Importe (la señal según la modalidad), Texto (una línea por dato, para pegar), Recordatorio («Cuando
+  llegue la transferencia, Administración apunta el cobro en Cajas › Cobros (documento INS123).»: para quien copia, no va en el Texto)}. Como el del pedido
+  de prepago (sugerencia 396): IBAN y beneficiario de `LectorDatosPagoEmpresa`. LAS REGLAS (puras) `ReglasDatosTransferenciaInscripcion`
+  (`Infraestructure/Eventos/DatosTransferenciaInscripcion.cs`).
+- Los avisos de plazo de pago (`RecordatorioEventosJobsService.CorreoPago`) y de evento lleno (`PlazasLlenasEventosJobsService.CorreoAviso`) de una reserva
+  por transferencia sin enlace dicen ahora beneficiario, IBAN, importe y concepto (`ReglasInscripcionEvento.ComoPagarSinEnlace(forma, datos)`) en vez de
+  «si no tiene los datos de la cuenta, pídanoslos»; sin cuenta o si falla la lectura, lo de siempre (nunca rompe el aviso). Gemela Nesto: botón
+  «Copiar datos de transferencia» junto a «Copiar enlace» en los inscritos.
+
 ### Cupón de evento adelantado por excepción (NestoAPI#885, 23/11/26)
 - `POST api/Cupones/{codigo}/Adelantar` {Motivo 1..500} → 200 `CuponDTO`: un cupón de Origen «Evento» que hoy está Emitido (vale desde el día
   del evento) pasa a valer desde HOY (`ValidoDesde` = hoy y Estado Activo; ni importe, ni caducidad, ni inscripción ni factura). 400 sin motivo,

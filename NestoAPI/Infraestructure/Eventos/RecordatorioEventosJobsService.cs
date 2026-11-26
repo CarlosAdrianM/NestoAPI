@@ -54,6 +54,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// enlace). Null: no se avisa.
         /// </summary>
         public Func<Evento, NotificacionPushDTO, Task> AvisarFaltaEnlace { get; set; }
+        /// <summary>
+        /// NestoAPI#887: (empresa) → su IBAN y beneficiario, para que el aviso de pago de una reserva por transferencia lleve los datos.
+        /// Null: el aviso dice «pídanoslos», como antes.
+        /// </summary>
+        public Func<string, Models.Cobros.DatosPagoAviso> DatosPagoEmpresa { get; set; }
     }
 
     /// <summary>NestoAPI#690: lo que ha hecho una pasada del recordatorio (para los tests y el diagnóstico).</summary>
@@ -124,7 +129,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         LiberarVencidas = () => servicio.LiberarReservasVencidas(),
                         FormasAsistencia = ids => RepositorioFormaAsistenciaEventos.LeerSinFallar(servicio.FormasAsistencia, ids),
                         EnlacesOnline = ids => RepositorioEnlaceOnlineEventos.LeerSinFallar(new RepositorioEnlaceOnlineEventos(db), ids),
-                        AvisarFaltaEnlace = (evento, notificacion) => DestinatariosEvento.Avisar(db, evento, notificacion, new ServicioNotificacionesPush())
+                        AvisarFaltaEnlace = (evento, notificacion) => DestinatariosEvento.Avisar(db, evento, notificacion, new ServicioNotificacionesPush()),
+                        DatosPagoEmpresa = new Cobros.LectorDatosPagoEmpresa(db).Leer
                     }).ConfigureAwait(false);
                 }
             }
@@ -311,6 +317,7 @@ namespace NestoAPI.Infraestructure.Eventos
             if (destino != null)
             {
                 string nombre = await deps.NombreCliente(empresa, cliente, contacto).ConfigureAwait(false);
+                aviso.DatosTransferencia = aviso.DatosTransferencia ?? DatosTransferencia(deps.DatosPagoEmpresa, aviso.Inscripcion, aviso.Evento, empresa);
                 using (MailMessage mail = CorreoPago(aviso, nombre, destino))
                 {
                     correo = deps.Correo.EnviarCorreoSMTP(mail);
@@ -362,7 +369,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             else
             {
-                cuerpo.Append($"<p>{Html(ReglasInscripcionEvento.ComoPagarSinEnlace(aviso.Inscripcion?.FormaPago))}</p>"); // Sugerencia 899
+                cuerpo.Append($"<p>{Html(ReglasInscripcionEvento.ComoPagarSinEnlace(aviso.Inscripcion?.FormaPago, aviso.DatosTransferencia))}</p>"); // Sugerencia 899, #887
             }
             cuerpo.Append("<p>Si ya la ha pagado, no tenga en cuenta este mensaje.</p><p>Muchas gracias.</p><p>Nueva Visión</p></body></html>");
 
@@ -380,6 +387,29 @@ namespace NestoAPI.Infraestructure.Eventos
         }
 
         /// <summary>Entre las 9:00 y las 21:00: nunca de madrugada, aunque Hangfire relance el job tarde.</summary>
+        /// <summary>
+        /// NestoAPI#887: los datos de la transferencia de una reserva que paga por transferencia (sin enlace), para el aviso. Null si no
+        /// paga así, no hay de dónde leer la cuenta o falla (nunca rompe el aviso: dice «pídanoslos», como antes).
+        /// </summary>
+        internal static DatosTransferenciaInscripcionDTO DatosTransferencia(Func<string, Models.Cobros.DatosPagoAviso> datosPagoEmpresa,
+            EventoInscripcion inscripcion, Evento evento, string empresa)
+        {
+            if (datosPagoEmpresa == null || inscripcion == null
+                || ReglasInscripcionEvento.FormaPago(inscripcion.FormaPago) != FormaPagoInscripcionEvento.Transferencia)
+            {
+                return null;
+            }
+            try
+            {
+                return ReglasDatosTransferenciaInscripcion.Construir(inscripcion, evento, datosPagoEmpresa(empresa));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #887] No se han podido leer los datos de la cuenta para el aviso de la inscripción {inscripcion.Id}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
         internal static bool DentroDeHorario(DateTime ahora) =>
             ahora.TimeOfDay >= HORA_DESDE && ahora.TimeOfDay < HORA_HASTA;
 

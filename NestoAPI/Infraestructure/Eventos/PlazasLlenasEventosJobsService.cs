@@ -28,6 +28,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public Func<string, NotificacionPushDTO, Task> AvisarUsuario { get; set; }
         /// <summary>(evento, cuándo) → programa otra pasada de ese evento (Hangfire en producción).</summary>
         public Action<int, DateTime> Programar { get; set; }
+        /// <summary>NestoAPI#887: (empresa) → su IBAN y beneficiario, para el aviso de una reserva por transferencia. Null: «pídanoslos».</summary>
+        public Func<string, Models.Cobros.DatosPagoAviso> DatosPagoEmpresa { get; set; }
     }
 
     /// <summary>
@@ -106,7 +108,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         Push = new ServicioNotificacionesPush(),
                         Correo = new ServicioCorreoElectronico(),
                         AvisarUsuario = (usuario, notificacion) => AvisoCobroNestoPago.Avisar(usuario, notificacion, new ServicioNotificacionesPush()),
-                        Programar = ProgramarEnHangfire
+                        Programar = ProgramarEnHangfire,
+                        DatosPagoEmpresa = new Cobros.LectorDatosPagoEmpresa(db).Leer
                     }, eventoId).ConfigureAwait(false);
                 }
             }
@@ -144,6 +147,8 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             foreach (AvisoPlazasLlenasInscripcion aviso in resultado.Avisos)
             {
+                aviso.DatosTransferencia = aviso.DatosTransferencia ?? RecordatorioEventosJobsService.DatosTransferencia(deps.DatosPagoEmpresa,
+                    aviso.Inscripcion, aviso.Evento, string.IsNullOrWhiteSpace(aviso.Inscripcion?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : aviso.Inscripcion.Empresa.Trim());
                 await AvisarCliente(deps, aviso, NotificacionAviso(aviso), CorreoAviso).ConfigureAwait(false);
                 await AvisarQuienInscribio(deps, aviso, NotificacionInternaAviso(aviso)).ConfigureAwait(false);
             }
@@ -252,7 +257,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 $"{Html(RecordatorioEventosJobsService.CuandoYDonde(aviso.Evento))}, y la suya está pendiente de pago.</p>");
             cuerpo.Append($"<p>Para mantener su plaza, <b>pague antes del {Html(ReglasPlazasLlenas.DiaYHora(aviso.Plazo))}</b>. " +
                 "Si no, la perderá y quedará libre para otra persona.</p>");
-            BotonPago(cuerpo, aviso.UrlPago, aviso.Inscripcion?.FormaPago);
+            BotonPago(cuerpo, aviso.UrlPago, aviso.Inscripcion?.FormaPago, aviso.DatosTransferencia);
             cuerpo.Append("<p>Si ya la ha pagado, no tenga en cuenta este mensaje.</p>");
             return Correo(cuerpo, $"Pague su plaza en «{Titulo(aviso.Evento)}» antes del {ReglasPlazasLlenas.DiaYHora(aviso.Plazo)}", destino);
         }
@@ -372,7 +377,7 @@ namespace NestoAPI.Infraestructure.Eventos
             cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre.Trim()))}:</p>");
         }
 
-        private static void BotonPago(StringBuilder cuerpo, string urlPago, string formaPago)
+        private static void BotonPago(StringBuilder cuerpo, string urlPago, string formaPago, DatosTransferenciaInscripcionDTO datosTransferencia = null)
         {
             if (!string.IsNullOrWhiteSpace(urlPago))
             {
@@ -381,7 +386,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             else
             {
-                cuerpo.Append($"<p>{Html(ReglasInscripcionEvento.ComoPagarSinEnlace(formaPago))}</p>"); // Sugerencia 899: según su forma de pago
+                cuerpo.Append($"<p>{Html(ReglasInscripcionEvento.ComoPagarSinEnlace(formaPago, datosTransferencia))}</p>"); // Sugerencia 899 y #887
             }
         }
 

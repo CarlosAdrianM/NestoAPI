@@ -235,8 +235,22 @@ namespace NestoAPI.Infraestructure.Eventos
         /// según su forma de pago: a la de transferencia, que la pague por transferencia; a la de efectivo, en la tienda; al resto,
         /// como hasta ahora (en la tienda o pidiendo el enlace). Texto plano, de usted.
         /// </summary>
-        public static string ComoPagarSinEnlace(string formaPago)
+        public static string ComoPagarSinEnlace(string formaPago) => ComoPagarSinEnlace(formaPago, null);
+
+        /// <summary>
+        /// NestoAPI#887: con los datos de la transferencia de la inscripción, la de transferencia lleva beneficiario, IBAN, importe y
+        /// concepto en vez de «si no tiene los datos de la cuenta, pídanoslos». Sin ellos (o sin IBAN), lo de siempre.
+        /// </summary>
+        public static string ComoPagarSinEnlace(string formaPago, DatosTransferenciaInscripcionDTO datosTransferencia)
         {
+            if (FormaPago(formaPago) == FormaPagoInscripcionEvento.Transferencia)
+            {
+                string conDatos = ReglasDatosTransferenciaInscripcion.FraseAviso(datosTransferencia);
+                if (conDatos != null)
+                {
+                    return conDatos;
+                }
+            }
             switch (FormaPago(formaPago))
             {
                 case FormaPagoInscripcionEvento.Transferencia:
