@@ -5,7 +5,8 @@ compras, almacén ni precios. Lo nuevo de este tema se apunta aquí, en su secci
 (La próxima entrada de la ficha, #869, está en `compras.md`.)
 
 ## Referencia anterior y siguiente en la ficha (sugerencia 1478, Manuel, 26/11/26; gemela Nesto)
-- `GET api/Productos/Vecinos?producto=45957&empresa=1` (`VecinosProductoController`, `[Authorize]`, solo lectura; cliente de la tienda 403;
+- `GET api/Productos/Vecinos?producto=45957&empresa=1&saltarAnuladas=true` (`saltarAnuladas` opcional, false por defecto; Nesto lo manda siempre:
+  las de Estado negativo o sin estado no cuentan como vecinas) (`VecinosProductoController`, `[Authorize]`, solo lectura; cliente de la tienda 403;
   400 sin producto; 404 si no existe) → {Producto, Anterior, Siguiente} (null = no hay). Nesto pinta dos flechas junto a la referencia.
 - LA REGLA (`ReglaVecinosProducto`, `Infraestructure/Productos/VecinosProducto.cs`): una referencia NUMÉRICA (solo cifras, 1..9) tiene por
   vecinas la numérica inmediatamente menor y mayor por su VALOR, saltando huecos; una no numérica (MF…, IMPE…), por orden alfabético entre

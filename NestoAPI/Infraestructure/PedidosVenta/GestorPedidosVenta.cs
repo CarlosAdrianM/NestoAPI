@@ -1267,6 +1267,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
+            ComprobarPOAlUnir(pedidoOriginal, pedidoAmpliacion);
             MoverLineasAmpliacionAPedidoOriginal(pedidoOriginal, pedidoAmpliacion);
 
             // NestoAPI#324: el pedido que se valida al persistir la unión es el ORIGINAL (con las
@@ -1499,6 +1500,33 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <see cref="EsLineaPortesOReembolso"/> determina qué se filtra. Extraído de
         /// <see cref="UnirPedidos"/> para poder testear el comportamiento sin tocar la BD.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#898: al unir, LA REGLA de la P.O. (<see cref="NestoAPI.Infraestructure.Facturas.Agrupacion.ReglaPOAgrupacion"/>): dos pedidos de P.O.
+        /// distintas (o uno con P.O. y otro sin ella) no se unen, porque acabarían en la misma factura. 400 de usted antes de tocar
+        /// nada. Una ampliación nueva de la plantilla sin P.O. se une como siempre (toma la del original).
+        /// </summary>
+        internal static void ComprobarPOAlUnir(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+        {
+            if (pedidoOriginal == null || pedidoAmpliacion == null)
+            {
+                return;
+            }
+            string motivo = NestoAPI.Infraestructure.Facturas.Agrupacion.ReglaPOAgrupacion.MotivoNoSePuedenUnir(
+                pedidoOriginal.numero, pedidoOriginal.suPedido,
+                pedidoAmpliacion.numero, pedidoAmpliacion.suPedido,
+                ampliacionEsNueva: pedidoAmpliacion.numero == 0);
+            if (motivo != null)
+            {
+                throw new NestoBusinessException(motivo, new ErrorContext
+                {
+                    ErrorCode = NestoAPI.Infraestructure.Facturas.Agrupacion.ReglaPOAgrupacion.CODIGO_PO_DISTINTAS,
+                    Empresa = pedidoOriginal.empresa,
+                    Pedido = pedidoOriginal.numero,
+                    Cliente = pedidoOriginal.cliente
+                });
+            }
+        }
+
         internal static void MoverLineasAmpliacionAPedidoOriginal(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
             bool originalEsPresupuesto = pedidoOriginal.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);

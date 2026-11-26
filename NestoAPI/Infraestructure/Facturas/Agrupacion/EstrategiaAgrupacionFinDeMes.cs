@@ -56,7 +56,8 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             // En memoria repetimos los filtros de texto recortados (los char de la BD vienen rellenos de espacios).
             List<CabPedidoVta> candidatos = consulta
                 .ToList()
-                .Where(c => string.IsNullOrWhiteSpace(c.SuPedido)
+                // NestoAPI#898: LA REGLA de la P.O.: aquí solo los que no tienen; los que tienen van por P.O. (una factura por P.O.).
+                .Where(c => !ReglaPOAgrupacion.TienePO(c.SuPedido)
                          && c.LinPedidoVtas != null
                          && c.LinPedidoVtas.Any(l => MotorAgrupacionPedidos.LineaAgrupable(l, fechaCorte)))
                 .ToList();
@@ -68,7 +69,9 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 {
                     Empresa = (c.Empresa ?? string.Empty).Trim(),
                     Cliente = (c.Nº_Cliente ?? string.Empty).Trim(),
-                    IVA = (c.IVA ?? string.Empty).Trim().ToUpperInvariant()
+                    IVA = (c.IVA ?? string.Empty).Trim().ToUpperInvariant(),
+                    // NestoAPI#898: siempre "" (sin P.O.); va en la clave para que la regla sea explícita aunque cambie el filtro.
+                    PO = ReglaPOAgrupacion.Clave(c.SuPedido)
                 })
                 .OrderBy(g => g.Key.Cliente)
                 .ThenBy(g => g.Key.IVA)

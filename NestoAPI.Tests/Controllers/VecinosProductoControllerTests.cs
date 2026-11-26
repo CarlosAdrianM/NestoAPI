@@ -62,7 +62,7 @@ namespace NestoAPI.Tests.Controllers
         public void GetVecinos_ProductoQueNoExiste_404()
         {
             ILectorVecinosProducto lector = A.Fake<ILectorVecinosProducto>();
-            A.CallTo(() => lector.Leer("1", "NOEXISTE")).Returns(null);
+            A.CallTo(() => lector.Leer("1", "NOEXISTE", false)).Returns(null);
 
             Assert.IsInstanceOfType(Controlador(lector).GetVecinos("NOEXISTE"), typeof(NotFoundResult));
         }
@@ -71,13 +71,32 @@ namespace NestoAPI.Tests.Controllers
         public void GetVecinos_Existe_DevuelveAnteriorYSiguienteConLaEmpresaPorDefecto()
         {
             ILectorVecinosProducto lector = A.Fake<ILectorVecinosProducto>();
-            A.CallTo(() => lector.Leer("1", "45957")).Returns(new VecinosProductoDTO { Producto = "45957", Anterior = "45956", Siguiente = "45958" });
+            A.CallTo(() => lector.Leer("1", "45957", false)).Returns(new VecinosProductoDTO { Producto = "45957", Anterior = "45956", Siguiente = "45958" });
 
             var r = Controlador(lector).GetVecinos("45957") as OkNegotiatedContentResult<VecinosProductoDTO>;
 
             Assert.IsNotNull(r);
             Assert.AreEqual("45956", r.Content.Anterior);
             Assert.AreEqual("45958", r.Content.Siguiente);
+        }
+
+        [TestMethod]
+        public void GetVecinos_SaltarAnuladas_SeLoPideAlLector()
+        {
+            ILectorVecinosProducto lector = A.Fake<ILectorVecinosProducto>();
+            A.CallTo(() => lector.Leer("1", "45957", true)).Returns(new VecinosProductoDTO { Producto = "45957", Anterior = "45955", Siguiente = "45958" });
+
+            var r = Controlador(lector).GetVecinos("45957", null, true) as OkNegotiatedContentResult<VecinosProductoDTO>;
+
+            Assert.IsNotNull(r);
+            Assert.AreEqual("45955", r.Content.Anterior);
+        }
+
+        [TestMethod]
+        public void Consultas_ConSaltarAnuladas_FiltranPorEstadoEnLosCuatroVecinos()
+        {
+            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(LectorVecinosProductoSql.SQL_NUMERICA, "@saltarAnuladas = 0 OR p.Estado >= 0").Count);
+            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(LectorVecinosProductoSql.SQL_NO_NUMERICA, "@saltarAnuladas = 0 OR p.Estado >= 0").Count);
         }
 
         [TestMethod]
@@ -90,7 +109,7 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(r);
             Assert.AreEqual(HttpStatusCode.Forbidden, r.StatusCode);
-            A.CallTo(() => lector.Leer(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => lector.Leer(A<string>._, A<string>._, A<bool>._)).MustNotHaveHappened();
         }
     }
 }

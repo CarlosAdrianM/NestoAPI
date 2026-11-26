@@ -31,6 +31,8 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                          && c.SuPedido != null
                          && c.SuPedido != "")
                 .ToList()
+                // NestoAPI#898: con P.O. de verdad (los char vienen rellenos de espacios; en blanco = sin P.O.)
+                .Where(c => ReglaPOAgrupacion.TienePO(c.SuPedido))
                 // NestoAPI#727: un pedido con todas sus líneas ya facturadas no tiene nada que agrupar ni facturar
                 // (los que aún tienen algo pendiente sí cuentan: bloquean su grupo hasta estar en albarán)
                 .Where(c => c.LinPedidoVtas == null || !c.LinPedidoVtas.Any()
@@ -43,7 +45,8 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 {
                     c.Empresa,
                     Cliente = (c.Nº_Cliente ?? string.Empty).Trim(),
-                    SuPedido = (c.SuPedido ?? string.Empty).Trim(),
+                    // NestoAPI#898: LA REGLA de la P.O. (sin relleno ni mayúsculas): «po1» y «PO1 » son la misma P.O.
+                    SuPedido = ReglaPOAgrupacion.Clave(c.SuPedido),
                     IVA = (c.IVA ?? string.Empty).Trim().ToUpperInvariant()
                 })
                 // El grupo está listo solo si TODOS sus pedidos tienen líneas y todas en albarán.
@@ -52,7 +55,7 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 {
                     Empresa = g.Key.Empresa,
                     Cliente = g.Key.Cliente,
-                    SuPedido = g.Key.SuPedido,
+                    SuPedido = g.OrderBy(p => p.Número).First().SuPedido.Trim(),
                     IVA = g.Key.IVA,
                     Pedidos = g.OrderBy(p => p.Número).ToList()
                 })

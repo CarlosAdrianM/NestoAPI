@@ -147,3 +147,34 @@ Related files:
 - `GET api/Alquileres/Cabeceras` y `…/Cabeceras/PorCliente` traen además (solo lectura, `AlquilerCabeceraDTO`) `ProductoNombre` (ficha de
   Productos; si no, la copia `CabAlquileres.NombreProducto`) y `ClienteNombre` (contacto del alquiler o, si falta o no casa, el principal), con
   una consulta por tabla (sin N+1). `NombreCliente` sigue siendo solo el del contacto exacto (etiqueta). El guardado los ignora y Nesto no los manda.
+
+### Una factura por P.O.: nunca se juntan pedidos de P.O. distintas (NestoAPI#898, caso 27593 / NV2616046, Carlos 26/11/26)
+- La P.O. es `CabPedidoVta.SuPedido` (#195/#723; `PedidoVentaDTO.suPedido`), no el comentario. LA REGLA (pura) `ReglaPOAgrupacion`
+  (`Infraestructure/Facturas/Agrupacion/ReglaPOAgrupacion.cs`): dos pedidos solo van juntos con la MISMA P.O. (`Clave`: sin relleno ni
+  mayúsculas; NULL o en blanco = «sin P.O.», que solo va con otros sin P.O.). `MotivoNoSePuedenJuntar` / `MotivoNoSePuedenUnir` dan la frase.
+- Dónde se junta en la API y cómo la aplica: (1) agrupación por P.O. (`EstrategiaAgrupacionPO`: Facturar rutas y `POST api/FacturacionRutas/AgruparPorPO`)
+  agrupa por empresa + cliente + `Clave` + IVA (antes por la P.O. recortada CON mayúsculas: «po1» y «PO1» daban dos facturas; `GrupoPedidosPO.SuPedido`
+  = la del pedido de menor número, tal cual); (2) fin de mes (`EstrategiaAgrupacionFinDeMes`, `POST api/FacturacionRutas/FinDeMes`): solo pedidos SIN
+  P.O. (ya era así desde #727; la clave lleva la P.O. por explícita); (3) `MotorAgrupacionPedidos.Agrupar`, ÚLTIMA BARRERA: con P.O. distintas lanza
+  `InvalidOperationException` con el motivo ANTES de mover nada (los dos servicios lo recogen por grupo y siguen); (4) «Unir pedidos»
+  (`GestorPedidosVenta.ComprobarPOAlUnir`, antes de mover líneas): 400 `NestoBusinessException` código `PEDIDOS_PO_DISTINTAS` «No se pueden unir: el
+  pedido 926287 es de la P.O. PO00474329 y el 927198 es de la P.O. PO00481139. Cada P.O. va en su propia factura: …»; con P.O. y sin P.O. tampoco. Una
+  ampliación NUEVA de la plantilla (número 0) sin P.O. se une como siempre (toma la del original); con otra P.O., 400.
+- La factura conserva la P.O. del destino (prdCrearFacturaVta copia `SuPedido` a `CabFacturaVta.SuPedido`): sin cambios. El motor no toca el
+  `Contacto` de las líneas (cada tienda sigue en su línea). Facturar rutas factura pedido a pedido: no junta.
+- FUERA de la API (no se ha tocado): el fin de mes de Nesto viejo = `prdAgruparAlbaranesVta` (por cliente+contacto; desde
+  `Scripts/Issue727_prdAgruparAlbaranesVta_PO.sql` no mezcla P.O. ni con/sin P.O.) + la reunión de TODOS los contactos en un pedido nuevo que hace
+  el VB6 SIN mirar la P.O. y poniendo contacto 0 a las líneas: así salió la NV2616046 (927473). Con `Facturacion:FinDeMesPorApi` encendido el fin de
+  mes debe hacerse por la API. La P.O. escrita solo en el comentario («P.O. 00474329») no la ve nadie: hay que ponerla en «Su pedido».
+
+## Fin de mes de Nesto viejo capado y P.O. entera o nada (NestoAPI#898, Carlos 26/11/26, urgente)
+- `Scripts/Issue898_FinDeMesNestoViejo_y_POEntera.sql` (sa; lee la definición del servidor e inserta un bloque en cada procedimiento, con marca
+  «NestoAPI#898-…»; si la cabecera o el punto de inserción no cuadran, no cambia nada): (1) `prdAgruparAlbaranesVta` llamado desde Nesto viejo
+  (`fnEsNestoViejo`) → error «…hágalo en Nesto (Facturar rutas, «Fin de mes»)…» y no agrupa nada (mecanismo de #590: ParametrosUsuario
+  `NestoViejo_FinDeMes_Modo` «(defecto)» = Bloqueo | Sombra y `NestoViejo_FinDeMes` = 1 por usuario; rastro en `NestoViejoSombra`). También corta el
+  «agrupar albaranes» de un cliente en Nesto viejo. El fin de mes va por la API (`POST api/FacturacionRutas/FinDeMes`, en uso desde el 30/10/26).
+  (2) `prdCrearFacturaVta` (por él factura todo): el pedido con P.O. de un cliente de `ClientesSuPedidoObligatorio` (hoy solo el 27593) NO se
+  factura si le queda alguna línea -1..1 con cantidad, ni si otro pedido del mismo cliente y la misma P.O. tiene líneas -1..2 (hay que agrupar por
+  P.O. antes): «una P.O. va en una sola factura». Carlos: «o se factura todo y se recoge lo no entregado, o no se factura nada hasta que esté todo
+  albaraneado». Interruptor «(defecto)» `Facturacion.POSoloEntera` (sin fila o ≠ 0 = encendido). El texto de «Su pedido» de un cliente SIN la marca
+  (texto libre: «ENSEÑAR A SANTY») no bloquea nada. PENDIENTE: la misma regla en la API con mensaje propio antes de llamar al procedimiento.
