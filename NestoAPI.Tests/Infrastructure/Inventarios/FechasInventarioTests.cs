@@ -128,6 +128,29 @@ namespace NestoAPI.Tests.Infrastructure.Inventarios
         }
 
         [TestMethod]
+        public void Vispera_ElLaborableAnterior()
+        {
+            Assert.AreEqual(new DateTime(2026, 11, 20), ReglasFechasInventario.Vispera(SABADO, "ALG", SinFestivos), "sábado 21 → viernes 20");
+            Assert.AreEqual(new DateTime(2026, 11, 20), ReglasFechasInventario.Vispera(new DateTime(2026, 11, 23), "ALG", SinFestivos),
+                "lunes 23 → viernes 20, no el domingo");
+            Assert.AreEqual(new DateTime(2026, 11, 19), ReglasFechasInventario.Vispera(new DateTime(2026, 11, 23), "ALG", (d, a) => d == new DateTime(2026, 11, 20)),
+                "con el viernes festivo, el jueves");
+            Assert.AreEqual(new DateTime(2026, 11, 24), ReglasFechasInventario.Vispera(new DateTime(2026, 11, 25), "REI", SinFestivos), "miércoles → martes");
+        }
+
+        [TestMethod]
+        public void Afectadas_InventarioEnLunes_MiraLasDelViernes()
+        {
+            // Lunes 23: la víspera es el viernes 20 (llegan REI → ALG y ALC → ALG; ALG → REI del lunes cierra el viernes)
+            List<ReposicionAfectadaInventarioDTO> r = ReglasFechasInventario.Afectadas(Calculadora(), Calculadora(), Calendario(), "1", "ALG",
+                new DateTime(2026, 11, 23), null, MIERCOLES_8_30, SinFestivos);
+
+            CollectionAssert.AreEquivalent(new[] { "REI", "ALC" }, r.Where(x => x.Motivo == ReposicionAfectadaInventarioDTO.LLEGA).Select(x => x.Origen).ToArray(),
+                "las que llegan el viernes");
+            Assert.IsTrue(r.Any(x => x.Motivo == ReposicionAfectadaInventarioDTO.SALE && x.Destino == "REI"), "la del lunes sale de Algete y cierra el viernes");
+        }
+
+        [TestMethod]
         public void Cuerpo_DeUsted()
         {
             var fecha = new FechaInventarioDTO { Almacen = "ALG", Fecha = SABADO };

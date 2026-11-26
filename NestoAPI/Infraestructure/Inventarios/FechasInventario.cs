@@ -139,6 +139,20 @@ namespace NestoAPI.Infraestructure.Inventarios
             return dia;
         }
 
+        /// <summary>
+        /// LA VÍSPERA del inventario (Carlos 26/11/26): el último día LABORABLE del almacén antes de la fecha (L-V sin sus festivos de
+        /// <see cref="GestorFestivos"/>), no el día natural anterior: un inventario en lunes mira las reposiciones del viernes.
+        /// </summary>
+        public static DateTime Vispera(DateTime fechaInventario, string almacen, Func<DateTime, string, bool> esFestivo)
+        {
+            DateTime dia = fechaInventario.Date.AddDays(-1);
+            for (int i = 0; i < 60 && (dia.DayOfWeek == DayOfWeek.Saturday || dia.DayOfWeek == DayOfWeek.Sunday || (esFestivo?.Invoke(dia, almacen) ?? false)); i++)
+            {
+                dia = dia.AddDays(-1);
+            }
+            return dia;
+        }
+
         /// <summary>Le toca el aviso hoy: aún no ha salido, ya es el día (o después, si la fecha se dio tarde) y el inventario no ha pasado.</summary>
         public static bool TocaAvisar(FechaInventarioDTO fecha, DateTime hoy, Func<DateTime, string, bool> esFestivo)
             => fecha != null && !fecha.AvisoEnviado.HasValue && hoy.Date <= fecha.Fecha.Date
@@ -146,16 +160,16 @@ namespace NestoAPI.Infraestructure.Inventarios
 
         /// <summary>
         /// Los viajes que tocan stock alrededor del inventario de <paramref name="almacen"/> el día <paramref name="fechaInventario"/> (la víspera
-        /// natural y el día): llegan a él o salen de él y cierran. <paramref name="conExcepciones"/> dice lo que hay HOY (con las excepciones de #867);
+        /// —el laborable anterior, <see cref="Vispera"/>— y el día): llegan a él o salen de él y cierran. <paramref name="conExcepciones"/> dice lo que hay HOY (con las excepciones de #867);
         /// <paramref name="sinExcepciones"/>, lo que habría sin ellas (para enseñar también los ya quitados). Las decisiones «Mantener» los confirman.
         /// </summary>
         public static List<ReposicionAfectadaInventarioDTO> Afectadas(CalculadoraFechaReposicion conExcepciones, CalculadoraFechaReposicion sinExcepciones,
             IEnumerable<ReposicionCalendario> calendario, string empresa, string almacen, DateTime fechaInventario,
-            IEnumerable<DecisionViajeInventario> decisiones, DateTime ahora)
+            IEnumerable<DecisionViajeInventario> decisiones, DateTime ahora, Func<DateTime, string, bool> esFestivo = null)
         {
             string a = Almacen(almacen);
             List<ReposicionCalendario> filas = (calendario ?? Enumerable.Empty<ReposicionCalendario>()).ToList();
-            var dias = new[] { fechaInventario.Date.AddDays(-1), fechaInventario.Date };
+            var dias = new[] { Vispera(fechaInventario, a, esFestivo), fechaInventario.Date };
             string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
 
             IEnumerable<(CorteReposicion Corte, string Motivo)> Cortes(CalculadoraFechaReposicion calc)
@@ -446,7 +460,7 @@ namespace NestoAPI.Infraestructure.Inventarios
             {
                 fecha.DiaAviso = ReglasFechasInventario.DiaAviso(fecha.Fecha, fecha.Almacen, esFestivo);
                 fecha.Reposiciones = ReglasFechasInventario.Afectadas(conExcepciones, sinExcepciones, calendario, empresa, fecha.Almacen, fecha.Fecha,
-                    decisiones.Where(d => d.InventarioFechaId == fecha.Id), ahora);
+                    decisiones.Where(d => d.InventarioFechaId == fecha.Id), ahora, esFestivo);
                 fecha.Pendientes = fecha.Reposiciones.Count(r => r.Estado == ReposicionAfectadaInventarioDTO.PENDIENTE);
             }
         }

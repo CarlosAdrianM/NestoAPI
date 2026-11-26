@@ -153,7 +153,8 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   `dbo.InventariosFechas` (Empresa, Almacen ALG/REI/ALC, Fecha, Comentario, Usuario, AvisoEnviado) + `dbo.InventariosFechasViajes` (decisión por viaje
   Quitar/Mantener), fuera del EDMX, `Scripts/Issue883_InventariosFechas.sql` (sin él, 503 y el job no hace nada). Todo en `Inventarios/FechasInventario.cs`.
 - LA REGLA (pura) `ReglasFechasInventario.Afectadas`, con la calculadora de siempre (`CortesQueLleganElDia`/`CortesDelDia`, #867 incluido): los viajes que LLEGAN
-  al almacén la víspera (natural) o el día y los que SALEN de él y CIERRAN la víspera o el día; Estado Pendiente / Mantenida (decisión) / Quitada (tiene la
+  al almacén la víspera o el día y los que SALEN de él y CIERRAN la víspera o el día (víspera = el último LABORABLE del almacén antes, `Vispera`: L-V sin sus
+  festivos de `GestorFestivos`; un inventario en lunes mira las del viernes; Carlos 26/11/26); Estado Pendiente / Mantenida (decisión) / Quitada (tiene la
   excepción SinReposicion: se calcula también sin excepciones para enseñarla), `SePuedeQuitar` (vivo y sin cerrar), `Texto` «Reposición Reina → Algete, llega el
   viernes 20/11 (cierra el viernes 20/11 a las 9:00)». `DiaAviso` = tres laborables del almacén antes (L-V sin sus festivos; sábado 21 → miércoles 18).
 - `InventariosFechasController`: `GET api/Inventarios/Fechas?almacen=&desde=` (empleados; cliente de la tienda 403) → [{Id, Empresa, Almacen, Fecha, Comentario,
