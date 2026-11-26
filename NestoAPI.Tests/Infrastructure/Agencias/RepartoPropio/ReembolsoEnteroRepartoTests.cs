@@ -69,7 +69,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
             Assert.AreEqual(119.99m, reparto.Registros.Single().ImporteAContabilizar);
             Assert.IsFalse(ReglaReembolsoEntero.EsParcial(120m, null));
             Assert.IsFalse(ReglaReembolsoEntero.EsParcial(120m, 120m));
-            Assert.IsFalse(ReglaReembolsoEntero.EsParcial(120m, 150m), "Cobrar de más no se toca");
+            Assert.IsFalse(ReglaReembolsoEntero.EsParcial(120m, 150m), "Cobrar de más no es parcial (va por COBRO_DE_MAS)");
             Assert.IsTrue(ReglaReembolsoEntero.EsParcial(120m, 119.98m));
         }
 
@@ -121,6 +121,49 @@ namespace NestoAPI.Tests.Infrastructure.Agencias.RepartoPropio
 
             Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
             Assert.AreEqual(EstadosAutorizacionReembolso.TELEFONICA, autorizacionesRepo.Filas.Single().Estado);
+        }
+
+        // ================================================================ Carlos 26/11/26: cobrar de más, con confirmación
+
+        [TestMethod]
+        public async Task EfectivoDeMas_SinConfirmar_409CobroDeMas_YNoSeRegistraNada()
+        {
+            var r = await servicio.Entregar(251300, Efectivo(150m), USUARIO);
+
+            Assert.AreEqual(TipoResultadoReparto.Conflicto, r.Tipo);
+            Assert.AreEqual(ReglaReembolsoEntero.CODIGO_DE_MAS, r.Codigo);
+            Assert.AreEqual("Está cobrando 30,00 € más que el reembolso (120,00 €). Si es correcto, confírmelo: lo de más quedará a cuenta del cliente.", r.Mensaje);
+            Assert.AreEqual(0, reparto.Registros.Count);
+        }
+
+        [TestMethod]
+        public async Task EfectivoDeMas_Confirmado_SeEntregaYSeContabilizaLoCobrado_YElReintentoNoSeFrena()
+        {
+            EntregaRepartoDTO peticion = Efectivo(150m);
+            peticion.ConfirmarCobroDeMas = true;
+
+            var r = await servicio.Entregar(251300, peticion, USUARIO);
+            Assert.AreEqual(TipoResultadoReparto.Ok, r.Tipo, r.Mensaje);
+            Assert.AreEqual(150m, reparto.Registros.Single().ImporteAContabilizar);
+
+            // El reintento con la misma clave (aunque se pierda la confirmación) devuelve lo de antes
+            peticion.ConfirmarCobroDeMas = null;
+            var otraVez = await servicio.Entregar(251300, peticion, USUARIO);
+            Assert.AreEqual(TipoResultadoReparto.Ok, otraVez.Tipo, otraVez.Mensaje);
+            Assert.AreEqual(1, reparto.Registros.Count);
+        }
+
+        [TestMethod]
+        public void ReglaDeMas_UnCentimoDeTolerancia_NotasDeCobroYOtrosCobrosNo()
+        {
+            Assert.IsFalse(ReglaReembolsoEntero.EsDeMas(120m, 120.01m));
+            Assert.IsTrue(ReglaReembolsoEntero.EsDeMas(120m, 120.02m));
+            Assert.IsFalse(ReglaReembolsoEntero.EsDeMas(120m, null));
+            Assert.IsFalse(ReglaReembolsoEntero.EsDeMas(0m, 10m), "Sin reembolso no hay «de más»");
+            Assert.IsTrue(ReglaReembolsoEntero.PideConfirmarDeMas(true, false, 120m, 150m, null));
+            Assert.IsFalse(ReglaReembolsoEntero.PideConfirmarDeMas(true, true, 120m, 150m, null), "Nota de cobro: no cambia");
+            Assert.IsFalse(ReglaReembolsoEntero.PideConfirmarDeMas(false, false, 120m, 150m, null), "Enlace o tarjeta: no");
+            Assert.IsFalse(ReglaReembolsoEntero.PideConfirmarDeMas(true, false, 120m, 150m, true));
         }
     }
 }

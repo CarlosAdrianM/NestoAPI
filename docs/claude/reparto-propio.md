@@ -30,6 +30,11 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   autorización que para no cobrar (Autorizada o Telefonica, #773; vale para cualquier importe); sin ella, 409 `Codigo` REEMBOLSO_PARCIAL (en la raíz
   y en error.code), regla pura `ReglaReembolsoEntero`. Cobrar de más no cambia. Las notas de cobro NO (lo de menos queda a cuenta). La petición de
   autorización admite `ImporteCobrado` opcional (sin columna: va en el Motivo; si Ariadna ya lo escribe, no se repite).
+- **Cobrar MÁS que el reembolso, con confirmación (Carlos 26/11/26)**: en `Entregar` con Efectivo e `ImporteCobrado` > reembolso + 0,01 € → 409
+  `{ error: { code, message, details: { reembolso, importeCobrado, deMas } }, Message, Codigo: "COBRO_DE_MAS" }` «Está cobrando 30,00 € más que el reembolso
+  (120,00 €). Si es correcto, confírmelo: lo de más quedará a cuenta del cliente.» salvo `EntregaRepartoDTO.ConfirmarCobroDeMas` = true (opcional); confirmado,
+  se contabiliza lo cobrado como hasta ahora. LA REGLA `ReglaReembolsoEntero.PideConfirmarDeMas`. Va DESPUÉS de la idempotencia: un reintento con la misma clave
+  no se frena. Ni notas de cobro, ni enlace ni tarjeta. Ariadna: al recibir COBRO_DE_MAS, preguntar y reenviar con `ConfirmarCobroDeMas` = true (misma clave).
 - **Bultos en la prueba de entrega (19/11/26)**: `PruebaEntregaDTO`/`PruebaEntregaEnvioDTO` traen (aditivo, solo reparto propio) `Bultos`
   [{Codigo, Bulto, Situacion, Entregado, Texto}] y `ResumenBultos` («Leídos 6 de 7. Sin leer: RP…-7.»), con la misma regla de #880 sobre el envío ya
   entregado (`EntregaIncompletaReparto.EvaluarEntregado`). Sin movimientos RP del envío (antiguos, otras agencias), null. Nesto lo pinta en una línea.

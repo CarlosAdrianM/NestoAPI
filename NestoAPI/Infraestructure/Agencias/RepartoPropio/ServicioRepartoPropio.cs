@@ -483,6 +483,19 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             ComprobacionCobroEntrega comprobacion = null;
             // NestoAPI#759: en las notas de recogida, los bultos que se trae. NestoAPI#786: una nota de cobro liquida sus efectos.
             NotaParadaReparto nota = await NotaDe(envio.Pedido).ConfigureAwait(false);
+            // Carlos 26/11/26: cobrar en efectivo MÁS que el reembolso pide confirmación (ConfirmarCobroDeMas). El reintento con la misma clave
+            // ya ha salido arriba (YaRegistrada), así que no se frena. Las notas de cobro no cambian.
+            if (ReglaReembolsoEntero.PideConfirmarDeMas(cobro == PruebaEntregaReparto.COBRO_EFECTIVO, nota?.EsCobro == true, reembolso,
+                peticion.ImporteCobrado, peticion.ConfirmarCobroDeMas))
+            {
+                return new ResultadoReparto<EstadoEnvioRepartoDTO>
+                {
+                    Tipo = TipoResultadoReparto.Conflicto,
+                    Mensaje = ReglaReembolsoEntero.MensajeDeMas(reembolso, peticion.ImporteCobrado.Value),
+                    Codigo = ReglaReembolsoEntero.CODIGO_DE_MAS,
+                    Detalles = new { reembolso, importeCobrado = peticion.ImporteCobrado.Value, deMas = peticion.ImporteCobrado.Value - reembolso }
+                };
+            }
             if (CobroEntrega != null)
             {
                 // 19/11/26: el reembolso entero o autorizado no se aplica a las notas de cobro (lo que se cobre de menos queda a cuenta)

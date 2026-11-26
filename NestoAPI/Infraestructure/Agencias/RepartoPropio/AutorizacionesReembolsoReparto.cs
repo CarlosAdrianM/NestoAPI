@@ -797,8 +797,9 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
 
     /// <summary>
     /// Carlos 19/11/26: un reembolso se cobra ENTERO o con autorización (la misma que para no cobrar: Autorizada o Telefonica, #773). Cobrar en
-    /// efectivo menos del reembolso (tolerancia de 1 céntimo) sin autorización: 409 REEMBOLSO_PARCIAL. Cobrar más no cambia (se contabiliza lo
-    /// cobrado, como hasta ahora). PURA.
+    /// efectivo menos del reembolso (tolerancia de 1 céntimo) sin autorización: 409 REEMBOLSO_PARCIAL. Cobrar más (26/11/26): 409 COBRO_DE_MAS
+    /// salvo con ConfirmarCobroDeMas (<see cref="PideConfirmarDeMas"/>); confirmado, se contabiliza lo
+    /// cobrado, como hasta ahora. PURA.
     /// </summary>
     public static class ReglaReembolsoEntero
     {
@@ -824,6 +825,26 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
             }
             return texto + " Pídala a Administración o cobre el reembolso entero.";
         }
+
+        // ------------------------------------------------ Carlos 26/11/26: cobrar MÁS que el reembolso, con confirmación
+
+        public const string CODIGO_DE_MAS = "COBRO_DE_MAS";
+
+        /// <summary>Efectivo de más: lo cobrado pasa del reembolso en más de 1 céntimo. Sin importe, se cobra el reembolso (no es de más).</summary>
+        public static bool EsDeMas(decimal reembolso, decimal? importeCobrado)
+            => reembolso > 0 && importeCobrado.HasValue && importeCobrado.Value > reembolso + TOLERANCIA;
+
+        /// <summary>
+        /// LA REGLA: ¿se frena la entrega en efectivo para que confirme el cobro de más? Las notas de cobro no (lo cobrado ya va a cuenta) y
+        /// con <paramref name="confirmado"/> tampoco.
+        /// </summary>
+        public static bool PideConfirmarDeMas(bool efectivo, bool notaCobro, decimal reembolso, decimal? importeCobrado, bool? confirmado)
+            => efectivo && !notaCobro && confirmado != true && EsDeMas(reembolso, importeCobrado);
+
+        /// <summary>«Está cobrando 20,00 € más que el reembolso (100,00 €). Si es correcto, confírmelo: lo de más quedará a cuenta del cliente.»</summary>
+        public static string MensajeDeMas(decimal reembolso, decimal cobrado)
+            => $"Está cobrando {TextosAutorizacionReembolso.Euros(cobrado - reembolso)} más que el reembolso ({TextosAutorizacionReembolso.Euros(reembolso)}). " +
+               "Si es correcto, confírmelo: lo de más quedará a cuenta del cliente.";
     }
     /// <summary>
     /// NestoAPI#775: el escalado a Dirección con Hangfire (sin temporizadores en los clientes): al pedir la autorización se programa
