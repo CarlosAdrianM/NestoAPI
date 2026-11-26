@@ -198,25 +198,24 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            db.Entry(parametro).State = EntityState.Modified;
-
-            try
+            // Incidencia 1481 (Lidia 26/11/26): sin la fila del usuario pero con la «(defecto)», se crea (antes, 404 y Nesto decía
+            // «No se ha podido guardar su preferencia»); sin ninguna de las dos, 404 de usted y una línea en ELMAH al día por clave.
+            AccionGuardarParametroUsuario accion = await new ServicioGuardarParametroUsuario(AlmacenParametros).Guardar(parametro);
+            if (accion == AccionGuardarParametroUsuario.NoDadoDeAlta)
             {
-                _ = await db.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!ParametroUsuarioExists(parametro.Empresa, parametro.Usuario, parametro.Clave))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return Content(HttpStatusCode.NotFound, ReglaGuardarParametroUsuario.MotivoNoDadoDeAlta(parametro.Clave));
             }
 
             return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        private IAlmacenParametrosUsuario almacenParametros;
+
+        /// <summary>Incidencia 1481: las lecturas y escrituras del PUT (sustituible en los tests).</summary>
+        internal IAlmacenParametrosUsuario AlmacenParametros
+        {
+            get => almacenParametros ?? (almacenParametros = new AlmacenParametrosUsuarioEF(db));
+            set => almacenParametros = value;
         }
         /*
         // POST: api/ParametrosUsuario

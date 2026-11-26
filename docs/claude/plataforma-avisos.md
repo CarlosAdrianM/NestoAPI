@@ -58,6 +58,13 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   de permiso (`PermitirCrearPedidoConErroresValidacion`, `InventarioBorrarFilas` y las que empiezan por `Permitir`, `Cupones.`, `NestoViejo_`,
   `Validacion.`) y la fila «(defecto)» solo Dirección/Informática con token; un usuario identificado solo SUS filas; sin token, lo de siempre (sus
   preferencias) salvo esas → 403 de usted. Para cerrarlo del todo: que Nesto guarde por `ClienteApiFactory` y entonces `[Authorize]`.
+- **El PUT ya no da 404 a un parámetro con «(defecto)» (incidencia 1481, Lidia 26/11/26)**: la casilla de los borradores de Nesto decía «No se ha
+  podido guardar su preferencia» porque el PUT solo MODIFICABA y el usuario aún no tenía su fila de `PlantillaBorradorActualizarCargado` (tampoco había
+  «(defecto)»: la crea el script del commit 998a7ad9). Ahora, DESPUÉS de la regla de permisos, LA REGLA (pura) `ReglaGuardarParametroUsuario.Decidir`
+  (`Infraestructure/ParametrosUsuario/GuardadoParametroUsuario.cs`): fila del usuario → se modifica (como siempre); sin ella pero con la «(defecto)» de la
+  clave → se CREA la del usuario con el valor pedido (Usuario2 = el enviado o el usuario; fecha = la enviada o ahora), 204; sin ninguna → 404 de usted
+  «El parámetro X no está dado de alta: avise a Informática.» y una línea en ELMAH por empresa + clave y día (en memoria, `AvisoParametroNoDadoDeAlta`).
+  Núcleo `ServicioGuardarParametroUsuario` sobre `IAlmacenParametrosUsuario` (EF en producción; `AlmacenParametros` sustituible en los tests).
 
 ### ELMAH User Sync (05/12/25)
 ELMAH no mostraba el usuario en los errores porque OWIN/JWT no sincroniza automáticamente el usuario con `HttpContext.Current.User`.
