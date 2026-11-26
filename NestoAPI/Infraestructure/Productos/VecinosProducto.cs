@@ -21,7 +21,8 @@ namespace NestoAPI.Infraestructure.Productos
     /// LA REGLA (pura): una referencia NUMÉRICA (solo cifras, de 1 a 9: casi todas) tiene por vecinas la numérica inmediatamente
     /// menor y la inmediatamente mayor, por su VALOR (la 9999 va antes de la 10000) y saltando los huecos; una que no es numérica
     /// (MF…, IMPE…) las tiene, por orden alfabético, entre las que tampoco lo son. Cuentan todas las fichas de la empresa, también
-    /// las anuladas: son las que hay.
+    /// las anuladas: son las que hay; con «saltarAnuladas» (Carlos 26/11/26: lo normal en la ficha) las de Estado negativo o sin
+    /// estado no cuentan como vecinas (la ficha en la que se está sí puede ser una anulada).
     /// </summary>
     public static class ReglaVecinosProducto
     {
@@ -48,7 +49,7 @@ namespace NestoAPI.Infraestructure.Productos
     public interface ILectorVecinosProducto
     {
         /// <summary>Null si el producto no existe en esa empresa.</summary>
-        VecinosProductoDTO Leer(string empresa, string producto);
+        VecinosProductoDTO Leer(string empresa, string producto, bool saltarAnuladas);
     }
 
     /// <summary>Solo lectura, una ida a la BD.</summary>
@@ -62,20 +63,20 @@ namespace NestoAPI.Infraestructure.Productos
         internal const string SQL_NUMERICA = @"
 SELECT
   (SELECT TOP 1 RTRIM(p.Número) FROM Productos p WITH (NOLOCK)
-    WHERE p.Empresa = @empresa AND " + VALOR + @" < @valor
+    WHERE p.Empresa = @empresa AND (@saltarAnuladas = 0 OR p.Estado >= 0) AND " + VALOR + @" < @valor
     ORDER BY " + VALOR + @" DESC) AS Anterior,
   (SELECT TOP 1 RTRIM(p.Número) FROM Productos p WITH (NOLOCK)
-    WHERE p.Empresa = @empresa AND " + VALOR + @" > @valor
+    WHERE p.Empresa = @empresa AND (@saltarAnuladas = 0 OR p.Estado >= 0) AND " + VALOR + @" > @valor
     ORDER BY " + VALOR + @") AS Siguiente,
   (SELECT TOP 1 RTRIM(p.Número) FROM Productos p WITH (NOLOCK) WHERE p.Empresa = @empresa AND p.Número = @producto) AS Producto";
 
         internal const string SQL_NO_NUMERICA = @"
 SELECT
   (SELECT TOP 1 RTRIM(p.Número) FROM Productos p WITH (NOLOCK)
-    WHERE p.Empresa = @empresa AND NOT (" + FILTRO_NUMERICA + @") AND RTRIM(p.Número) < @producto
+    WHERE p.Empresa = @empresa AND (@saltarAnuladas = 0 OR p.Estado >= 0) AND NOT (" + FILTRO_NUMERICA + @") AND RTRIM(p.Número) < @producto
     ORDER BY RTRIM(p.Número) DESC) AS Anterior,
   (SELECT TOP 1 RTRIM(p.Número) FROM Productos p WITH (NOLOCK)
-    WHERE p.Empresa = @empresa AND NOT (" + FILTRO_NUMERICA + @") AND RTRIM(p.Número) > @producto
+    WHERE p.Empresa = @empresa AND (@saltarAnuladas = 0 OR p.Estado >= 0) AND NOT (" + FILTRO_NUMERICA + @") AND RTRIM(p.Número) > @producto
     ORDER BY RTRIM(p.Número)) AS Siguiente,
   (SELECT TOP 1 RTRIM(p.Número) FROM Productos p WITH (NOLOCK) WHERE p.Empresa = @empresa AND p.Número = @producto) AS Producto";
 
@@ -96,7 +97,7 @@ SELECT
             return new LectorVecinosProductoSql(origen.ConnectionString);
         }
 
-        public VecinosProductoDTO Leer(string empresa, string producto)
+        public VecinosProductoDTO Leer(string empresa, string producto, bool saltarAnuladas)
         {
             string referencia = producto?.Trim();
             if (string.IsNullOrEmpty(referencia))
@@ -109,6 +110,7 @@ SELECT
             {
                 comando.Parameters.AddWithValue("@empresa", empresa);
                 comando.Parameters.AddWithValue("@producto", referencia);
+                comando.Parameters.AddWithValue("@saltarAnuladas", saltarAnuladas ? 1 : 0);
                 if (numerica)
                 {
                     comando.Parameters.AddWithValue("@valor", int.Parse(referencia));

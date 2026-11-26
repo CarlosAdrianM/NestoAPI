@@ -29,13 +29,13 @@ namespace NestoAPI.Controllers
             this.crearLector = crearLector ?? throw new ArgumentNullException(nameof(crearLector));
         }
 
-        // GET api/Productos/Vecinos?producto=45957&empresa=1
+        // GET api/Productos/Vecinos?producto=45957&empresa=1&saltarAnuladas=true
         /// <summary>200 {Producto, Anterior, Siguiente} (null = no hay); 400 sin producto; 404 si no existe.</summary>
         [HttpGet]
         [Authorize]
         [Route("api/Productos/Vecinos")]
         [ResponseType(typeof(VecinosProductoDTO))]
-        public IHttpActionResult GetVecinos(string producto, string empresa = null)
+        public IHttpActionResult GetVecinos(string producto, string empresa = null, bool saltarAnuladas = false)
         {
             if (ValidadorAccesoCliente.EsClienteTienda(User))
             {
@@ -46,7 +46,7 @@ namespace NestoAPI.Controllers
                 return BadRequest(MENSAJE_SIN_PRODUCTO);
             }
             string empresaConsulta = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
-            VecinosProductoDTO vecinos = crearLector().Leer(empresaConsulta, producto);
+            VecinosProductoDTO vecinos = crearLector().Leer(empresaConsulta, producto, saltarAnuladas);
             if (vecinos == null)
             {
                 return NotFound();
