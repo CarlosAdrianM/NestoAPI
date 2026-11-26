@@ -156,7 +156,14 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   LA REGLA pura `CalculoInformeReparto` (`InformeReparto.cs`): paradas hechas = entregadas + recogidas; incidencias aparte; horas = primera carga (o primer
   movimiento) → último movimiento (bultos, paradas, jornada), sin descontar la comida; horas en ruta = primera → última parada cerrada; dinero = efectivo y
   tarjeta (enlace/tarjeta) de los reembolsos + otros cobros (notas de cobro); minutos de parada reales = fin − llegada (0..120) frente a `MinutosPrevistos`.
-  Totales y medias por día de la semana (por repartidor y de todos) y desglose por CP y día. Km null (corte 5). Sin PDF/Excel, ni cobros de deuda (POST Cobros: no están en estas tablas).
+  Totales y medias por día de la semana (por repartidor y de todos) y desglose por CP y día. Km: ver corte 5. Sin PDF/Excel, ni cobros de deuda (POST Cobros: no están en estas tablas).
+- **Km por mapa (corte 5, 26/11/26)**: SOLO por mapa (decisión de Carlos). `KmJornadasReparto.cs`: LA REGLA `CalculoKmJornada.Recorrido` = sede (Algete) → paradas cerradas
+  del día CON posición (`RepartoParadasTiempos.Latitud/Longitud`, entregas, recogidas e incidencias) por `FechaHoraFin` → sede; sin posición o (0,0) fuera
+  (`ParadasSinPosicion`), dos seguidas a < 30 m, una. Km por carretera con el motor del fin de ruta (`IMatrizTiempos`/`MatrizTiemposOsrm`, tramo i→i+1, bloques de ≤ 60
+  puntos solapados en uno); si no responde, `MatrizTiempos.Heuristica` (línea recta × 1,3) y `Aproximada`. Job `reparto-km-jornadas` 3:50 Madrid (cola «indicadores»):
+  los últimos 7 días sin hoy, solo lo que falta, cambia de paradas con posición o se calculó sin OSRM (`HayQueCalcular`) → `dbo.RepartoJornadasKm` (PK Repartidor+Dia,
+  `Scripts/Issue881_RepartoJornadasKm.sql`; sin ella, nada). El informe la lee en su conexión: por jornada `Km`, `KmAproximados`, `ParadasSinPosicion`; en los totales
+  (y por día de la semana) `Km`, `JornadasConKm`, `MediaKm` (aditivo; sin tabla o la jornada de hoy, null). Cuentakilómetros, no.
 
 ### Día de reparto de nuestra ruta: código postal y excepción por contacto (NestoAPI#764, #799)
 - Las rutas propias (`RutasPropiasConfiguradas`: AT, 16…) tienen día de reparto: el del CP de entrega en `CodigosPostalesDiaReparto`

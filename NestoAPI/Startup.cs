@@ -1133,6 +1133,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'reparto-tiempos-parada-modelo' configurado (todos los días a las 4:25)");
 
+            // NestoAPI#881 (corte 5): los km por mapa de cada jornada del reparto propio de los últimos 7 días (sede → paradas por la hora
+            // real → sede, OSRM con la línea recta de respaldo) para el informe de reparto. Cola «indicadores». Sin el script, nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Agencias.RepartoPropio.KmJornadasRepartoJobsService.JOB_ID,
+                () => Infraestructure.Agencias.RepartoPropio.KmJornadasRepartoJobsService.Calcular(),
+                Infraestructure.Agencias.RepartoPropio.KmJornadasRepartoJobsService.CRON, // Cron: todos los días a las 3:50
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reparto-km-jornadas' configurado (todos los días a las 3:50)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

@@ -969,6 +969,7 @@
     <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.Cobros.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\SeguimientoPublicoRepartoPropio.cs" />
     <Compile Include="Infraestructure\Agencias\RepartoPropio\BultosPendientesReparto.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\KmJornadasReparto.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
     <Compile Include="Infraestructure\PreciosMedios\AritmeticaMoney.cs" />

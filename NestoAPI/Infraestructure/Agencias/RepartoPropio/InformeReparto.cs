@@ -100,8 +100,15 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         /// <summary>Media de minutos entre el fin de una parada y el de la siguiente (conducción + parada; hasta 120).</summary>
         public decimal? MinutosEntreParadasMedio { get; set; }
 
-        /// <summary>Corte 5 (km por mapa): todavía null.</summary>
+        /// <summary>
+        /// Corte 5: km por mapa (sede → paradas por la hora real → sede) del job nocturno (RepartoJornadasKm). Null: sin calcular todavía (hoy,
+        /// o sin la tabla).
+        /// </summary>
         public decimal? Km { get; set; }
+        /// <summary>Corte 5: el mapa no respondió (línea recta × 1,3) o alguna parada no tenía posición. Null sin km.</summary>
+        public bool? KmAproximados { get; set; }
+        /// <summary>Corte 5: paradas sin posición que no entran en los km. Null sin km.</summary>
+        public int? ParadasSinPosicion { get; set; }
         /// <summary>El fin de ruta que se previó en la PRIMERA estimación del día (RepartoEstimaciones), y si pasaba del cierre.</summary>
         public DateTime? FinPrevisto { get; set; }
         public DateTime? HoraCierre { get; set; }
@@ -134,6 +141,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public decimal? MediaHoras { get; set; }
         public decimal? MediaHorasEnRuta { get; set; }
         public decimal? MediaCobrado { get; set; }
+        /// <summary>Corte 5: los km de las jornadas que los tienen (null si ninguna), cuántas son y su media.</summary>
+        public decimal? Km { get; set; }
+        public int JornadasConKm { get; set; }
+        public decimal? MediaKm { get; set; }
     }
 
     /// <summary>Medias por jornada de un día de la semana.</summary>
@@ -196,6 +207,8 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
         public List<JornadaTerminadaReparto> Jornadas { get; set; }
         /// <summary>Null = sin la tabla.</summary>
         public List<PrimeraEstimacionReparto> Estimaciones { get; set; }
+        /// <summary>Corte 5: los km de cada jornada (RepartoJornadasKm). Null = sin la tabla.</summary>
+        public List<KmJornadaReparto> Km { get; set; }
     }
 
     public interface IRepositorioInformeReparto
@@ -317,6 +330,17 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                     j.FinPrevisto = e.FinEstimado;
                     j.HoraCierre = e.HoraCierre;
                     j.PrevistoPasabaDelCierre = e.PasaDelCierre;
+                }
+            }
+
+            // Corte 5: los km del job nocturno (solo de jornadas que ya salen en el informe)
+            foreach (KmJornadaReparto k in (datos.Km ?? new List<KmJornadaReparto>()).Where(k => k != null && Vale(Nombre(k.Repartidor)) && EnRango(k.Dia)))
+            {
+                if (claves.TryGetValue(Nombre(k.Repartidor) + "|" + k.Dia.Date.ToString("yyyyMMdd", CultureInfo.InvariantCulture), out JornadaInformeRepartoDTO j))
+                {
+                    j.Km = k.Km;
+                    j.KmAproximados = k.Aproximada;
+                    j.ParadasSinPosicion = k.ParadasSinPosicion;
                 }
             }
 
@@ -483,6 +507,10 @@ namespace NestoAPI.Infraestructure.Agencias.RepartoPropio
                 t.MediaHorasEnRuta = Math.Round(t.HorasEnRuta / t.Jornadas, 2);
                 t.MediaCobrado = Math.Round(t.TotalCobrado / t.Jornadas, 2);
             }
+            List<decimal> km = dias.Where(d => d.Km.HasValue).Select(d => d.Km.Value).ToList();
+            t.JornadasConKm = km.Count;
+            t.Km = km.Count == 0 ? (decimal?)null : km.Sum();
+            t.MediaKm = km.Count == 0 ? (decimal?)null : Math.Round(km.Average(), 1);
             return t;
         }
 
@@ -673,6 +701,11 @@ WHERE x.n = 1";
                         HoraCierre = l.IsDBNull(3) ? (DateTime?)null : l.GetDateTime(3),
                         PasaDelCierre = !l.IsDBNull(4) && Convert.ToBoolean(l.GetValue(4))
                     }).ConfigureAwait(false);
+                }
+                // Corte 5: los km del job nocturno (sin la tabla, Km null en cada jornada)
+                if (Existe(RepositorioKmJornadasReparto.TABLA))
+                {
+                    datos.Km = await RepositorioKmJornadasReparto.LeerKm(conexion, desde, hasta, TIMEOUT).ConfigureAwait(false);
                 }
             }
             return datos;
