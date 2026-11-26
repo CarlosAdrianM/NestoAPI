@@ -249,6 +249,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Infrastructure\Cupones\CuponAdelantadoSinAsistirTests.cs" />
     <Compile Include="Controllers\NovedadesVersionTests.cs" />
     <Compile Include="Infraestructure\SeguridadEndpointsSinAuthorizeTests.cs" />
     <Compile Include="Controllers\ClientesControllerTests.cs" />

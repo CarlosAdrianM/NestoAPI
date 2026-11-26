@@ -96,6 +96,25 @@ namespace NestoAPI.Infraestructure.Cupones
         /// por el espejo de siempre. False si no se ha tocado nada.
         /// </summary>
         Task<bool> Adelantar(int id, DateTime validoDesde, string usuario, string rastroAnterior, string rastroNuevo);
+        /// <summary>
+        /// NestoAPI#910: las filas de rastro «CuponAdelantado» de Modificaciones desde <paramref name="desde"/> (la emisión más antigua de
+        /// los cupones de evento que se preguntan: no se adelanta antes de emitir). UNA consulta por tanda; quién y cuándo los saca
+        /// <see cref="ReglaAdelantarCupon.Adelantos"/>.
+        /// </summary>
+        Task<List<RastroAdelantoCupon>> LeerRastrosAdelanto(DateTime desde);
+        /// <summary>
+        /// NestoAPI#910: apunta (una sola vez por cupón) que ya se ha avisado de que quien lo tenía adelantado no asistió: fila en
+        /// Modificaciones (Tabla «CuponAdelantadoSinAsistir», Anterior = el código) si no estaba. True si la acaba de apuntar.
+        /// </summary>
+        Task<bool> AnotarAvisoSinAsistir(string codigo, string nuevo, string usuario);
+    }
+
+    /// <summary>NestoAPI#910: una fila «CuponAdelantado» de Modificaciones.</summary>
+    public class RastroAdelantoCupon
+    {
+        public string Nuevo { get; set; }
+        public string Usuario { get; set; }
+        public DateTime Fecha { get; set; }
     }
 
     /// <summary>
@@ -521,6 +540,27 @@ SELECT @n;";
                 .OrderByDescending(f => f.ClientePrincipal).Select(f => f.IVA).FirstOrDefaultAsync().ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(iva) ? null : iva.Trim();
         }
+
+        internal const string SQL_RASTROS_ADELANTO =
+            "SELECT Nuevo, RTRIM(Usuario) AS Usuario, Fecha FROM dbo.Modificaciones WITH (NOLOCK) WHERE Tabla = @p0 AND Fecha >= @p1";
+
+        internal const string SQL_ANOTAR_SIN_ASISTIR = @"
+INSERT INTO dbo.Modificaciones (Tabla, Anterior, Nuevo, Usuario)
+SELECT @p0, @p1, @p2, @p3
+WHERE NOT EXISTS (SELECT 1 FROM dbo.Modificaciones WHERE Tabla = @p0 AND Anterior = @p1);
+SELECT @@ROWCOUNT;";
+
+        public async Task<List<RastroAdelantoCupon>> LeerRastrosAdelanto(DateTime desde) =>
+            await db.Database.SqlQuery<RastroAdelantoCupon>(SQL_RASTROS_ADELANTO,
+                new SqlParameter("@p0", ReglaAdelantarCupon.TABLA_MODIFICACIONES),
+                new SqlParameter("@p1", System.Data.SqlDbType.DateTime) { Value = desde.Date }).ToListAsync().ConfigureAwait(false);
+
+        public async Task<bool> AnotarAvisoSinAsistir(string codigo, string nuevo, string usuario) =>
+            (await db.Database.SqlQuery<int>(SQL_ANOTAR_SIN_ASISTIR,
+                new SqlParameter("@p0", ReglaAdelantarCupon.TABLA_SIN_ASISTIR),
+                new SqlParameter("@p1", System.Data.SqlDbType.NVarChar, -1) { Value = codigo?.Trim() ?? string.Empty },
+                new SqlParameter("@p2", System.Data.SqlDbType.NVarChar, -1) { Value = (object)nuevo ?? DBNull.Value },
+                new SqlParameter("@p3", Usuario(usuario))).ToListAsync().ConfigureAwait(false)).FirstOrDefault() > 0;
 
         public async Task<bool> Adelantar(int id, DateTime validoDesde, string usuario, string rastroAnterior, string rastroNuevo) =>
             (await db.Database.SqlQuery<int>(SQL_ADELANTAR,

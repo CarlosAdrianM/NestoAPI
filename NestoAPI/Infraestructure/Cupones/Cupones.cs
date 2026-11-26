@@ -134,6 +134,15 @@ namespace NestoAPI.Infraestructure.Cupones
         /// api/Cupones/{codigo}/Adelantar). Solo en GET por código y en los del cliente; con la X-API-KEY de la tienda o un cliente, false.
         /// </summary>
         public bool SePuedeAdelantar { get; set; }
+        /// <summary>
+        /// NestoAPI#910 (para NestoApp#297): se adelantó por excepción (POST api/Cupones/{codigo}/Adelantar). Sale del rastro «CuponAdelantado»
+        /// de Modificaciones, leído una vez por petición. Solo en GET por código y en los del cliente.
+        /// </summary>
+        public bool Adelantado { get; set; }
+        /// <summary>NestoAPI#910: quién lo adelantó (usuario sin dominio). Null si no se adelantó.</summary>
+        public string AdelantadoPor { get; set; }
+        /// <summary>NestoAPI#910: cuándo se adelantó. Null si no se adelantó.</summary>
+        public DateTime? AdelantadoEl { get; set; }
     }
 
     /// <summary>NestoAPI#694: lo que guarda dbo.Cupones del uso en la tienda (columnas del script Issue694, fuera de la lectura común).</summary>

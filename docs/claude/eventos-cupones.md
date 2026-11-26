@@ -65,3 +65,14 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   petición; con «Equipo», una lectura de vendedores por empresa). X-API-KEY o cliente: false.
 - Espejo de PrestaShop (#614): si el cart_rule está Activo allí, el adelanto pone `EspejoPendienteDesde` y `HayQueSincronizar`/`SQL_PENDIENTES`
   vuelven a mandar entero (PUT con el date_from nuevo) un Activo marcado pendiente; se intenta en el acto y, si falla, el job de cada 15 min.
+- **Quién lo adelantó y aviso si no asiste (NestoAPI#910, para NestoApp#297, 26/11/26; sin script)**: `CuponDTO.Adelantado` (bool),
+  `AdelantadoPor` (usuario sin dominio) y `AdelantadoEl` (fecha y hora) en GET por código y en los del cliente: del rastro «CuponAdelantado» de
+  Modificaciones (no hay columnas), UNA lectura por petición (`LeerRastrosAdelanto`: Tabla + Fecha ≥ la emisión más antigua de los cupones de evento
+  de la respuesta) y solo si hay alguno de evento; LA REGLA `ReglaAdelantarCupon.Adelantos` (el último por código; usuario del JSON). Si falla,
+  ELMAH y sin esos datos. «No asiste» = la inscripción pasa a «No asistió» (la lista guardada sin marcarla, o el job del día siguiente con las «No
+  podré ir»), es decir, `ServicioCupones.AplicarAsistencia` con false: si su cupón estaba adelantado, push de NestoApp `CuponAdelantadoSinAsistir`
+  (`AvisadorCuponAdelantadoSinAsistir`: al vendedor del cliente —Clientes.Vendedor del contacto o el principal— y a su jefe de equipo,
+  `JefeEquipo`; Datos tipo, empresa, cliente, contacto, codigo, importe, evento; texto de usted con el evento, el importe, quién lo adelantó y
+  si se anuló o ya está usado en el pedido N). UNA vez por cupón: fila «CuponAdelantadoSinAsistir» (Anterior = el código) en Modificaciones
+  (`AnotarAvisoSinAsistir`, INSERT … WHERE NOT EXISTS); volver a pasar la lista no repite. El cupón no se toca más de lo de siempre (anulado si no
+  estaba usado; usado, ELMAH como antes). Nunca rompe la lista.

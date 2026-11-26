@@ -191,6 +191,172 @@ namespace NestoAPI.Infraestructure.Cupones
         }
 
         private static string FechaIso(DateTime fecha) => fecha.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        #region NestoAPI#910: quién y cuándo lo adelantó, y el aviso si no asiste
+
+        /// <summary>Tabla del rastro (una sola vez por cupón) del aviso de que quien tenía el cupón adelantado no asistió.</summary>
+        public const string TABLA_SIN_ASISTIR = "CuponAdelantadoSinAsistir";
+        public const string TIPO_NOTIFICACION_SIN_ASISTIR = "CuponAdelantadoSinAsistir";
+
+        /// <summary>
+        /// De las filas «CuponAdelantado» de Modificaciones, el ÚLTIMO adelanto de cada código pedido (sin mayúsculas). Quién: el «Usuario»
+        /// del JSON (el de auditoría) o, si no viene, el de la fila; sin dominio. Una fila ilegible no cuenta.
+        /// </summary>
+        public static Dictionary<string, AdelantoCupon> Adelantos(IEnumerable<RastroAdelantoCupon> rastros, IEnumerable<string> codigos)
+        {
+            var buscados = new HashSet<string>((codigos ?? Enumerable.Empty<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()),
+                StringComparer.OrdinalIgnoreCase);
+            var resultado = new Dictionary<string, AdelantoCupon>(StringComparer.OrdinalIgnoreCase);
+            if (buscados.Count == 0)
+            {
+                return resultado;
+            }
+            foreach (RastroAdelantoCupon r in rastros ?? Enumerable.Empty<RastroAdelantoCupon>())
+            {
+                string codigo;
+                string usuario;
+                try
+                {
+                    Newtonsoft.Json.Linq.JObject json = Newtonsoft.Json.Linq.JObject.Parse(r?.Nuevo ?? string.Empty);
+                    codigo = json.Value<string>("Codigo")?.Trim();
+                    usuario = json.Value<string>("Usuario");
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+                if (string.IsNullOrEmpty(codigo) || !buscados.Contains(codigo))
+                {
+                    continue;
+                }
+                if (resultado.TryGetValue(codigo, out AdelantoCupon ya) && ya.Fecha >= r.Fecha)
+                {
+                    continue;
+                }
+                resultado[codigo] = new AdelantoCupon
+                {
+                    Usuario = PermisosEventos.SinDominio(string.IsNullOrWhiteSpace(usuario) ? r.Usuario : usuario),
+                    Fecha = r.Fecha
+                };
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// El aviso al vendedor del cliente y a su jefe de equipo (push de NestoApp, que abre la ficha del cliente con empresa, cliente y
+        /// contacto): «Raquel (40513) no asistió a «Masterclass…»: tenía adelantado el cupón EV-… de 50,00 € (lo adelantó Manuel el
+        /// 20/11/2026) y ya lo ha usado en el pedido 930535.»
+        /// </summary>
+        public static NotificacionPushDTO NotificacionSinAsistir(CuponLeido cupon, AdelantoCupon adelanto, string nombreCliente, bool anulado)
+        {
+            string quien = string.IsNullOrWhiteSpace(nombreCliente) ? $"El cliente {cupon.Cliente?.Trim()}" : $"{nombreCliente.Trim()} ({cupon.Cliente?.Trim()})";
+            string evento = string.IsNullOrWhiteSpace(cupon.Evento) ? "el evento" : $"«{cupon.Evento.Trim()}»";
+            string porQuien = adelanto == null ? string.Empty
+                : $" (lo adelantó {(string.IsNullOrWhiteSpace(adelanto.Usuario) ? "alguien" : adelanto.Usuario)} el {ReglasCupon.Fecha(adelanto.Fecha)})";
+            string estado = anulado
+                ? "Como no lo había usado, se ha anulado."
+                : string.Equals(cupon.Estado?.Trim(), EstadosCupon.USADO, StringComparison.OrdinalIgnoreCase)
+                    ? $"Ya lo ha usado{(cupon.UsadoEnPedido.HasValue ? $" en el pedido {cupon.UsadoEnPedido}" : string.Empty)}: hable con el cliente."
+                    : "Revise el cupón.";
+            return new NotificacionPushDTO
+            {
+                Titulo = "Cupón adelantado sin asistir",
+                Cuerpo = $"{quien} no asistió a {evento}: tenía adelantado el cupón {cupon.Codigo?.Trim()} de {ReglasCupon.Euros(cupon.Importe)} €{porQuien}. {estado}",
+                Tipo = TIPO_NOTIFICACION_SIN_ASISTIR,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = TIPO_NOTIFICACION_SIN_ASISTIR,
+                    ["empresa"] = cupon.Empresa?.Trim(),
+                    ["cliente"] = cupon.Cliente?.Trim(),
+                    ["contacto"] = cupon.Contacto?.Trim(),
+                    ["codigo"] = cupon.Codigo?.Trim(),
+                    ["importe"] = cupon.Importe.ToString(CultureInfo.InvariantCulture),
+                    ["evento"] = cupon.EventoId?.ToString(CultureInfo.InvariantCulture)
+                }
+            };
+        }
+
+        #endregion
+    }
+
+    /// <summary>NestoAPI#910: quién adelantó un cupón y cuándo (del rastro «CuponAdelantado» de Modificaciones).</summary>
+    public class AdelantoCupon
+    {
+        public string Usuario { get; set; }
+        public DateTime Fecha { get; set; }
+    }
+
+    /// <summary>NestoAPI#910: el aviso de que quien tenía el cupón adelantado no asistió. Nunca lanza.</summary>
+    public interface IAvisadorCuponAdelantadoSinAsistir
+    {
+        Task Avisar(CuponLeido cupon, AdelantoCupon adelanto, bool anulado);
+    }
+
+    /// <summary>
+    /// Push de NestoApp al vendedor del cliente (Clientes.Vendedor del contacto o, si no, del principal) y a su jefe de equipo
+    /// (<see cref="IServicioVendedores.JefeEquipo"/>, EquiposVenta), como el de la promesa en riesgo.
+    /// </summary>
+    public class AvisadorCuponAdelantadoSinAsistir : IAvisadorCuponAdelantadoSinAsistir
+    {
+        private readonly NVEntities db;
+        private readonly Func<IServicioNotificacionesPush> push;
+        private readonly IServicioVendedores vendedores;
+
+        public AvisadorCuponAdelantadoSinAsistir(NVEntities db) : this(db, null, null)
+        {
+        }
+
+        internal AvisadorCuponAdelantadoSinAsistir(NVEntities db, Func<IServicioNotificacionesPush> push, IServicioVendedores vendedores)
+        {
+            this.db = db;
+            this.push = push ?? (() => new ServicioNotificacionesPush());
+            this.vendedores = vendedores ?? new ServicioVendedores();
+        }
+
+        public async Task Avisar(CuponLeido cupon, AdelantoCupon adelanto, bool anulado)
+        {
+            if (cupon == null)
+            {
+                return;
+            }
+            try
+            {
+                string empresa = string.IsNullOrWhiteSpace(cupon.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : cupon.Empresa.Trim();
+                string cliente = cupon.Cliente?.Trim();
+                string contacto = cupon.Contacto?.Trim();
+                var fichas = await db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                    .Select(c => new { c.Contacto, c.ClientePrincipal, c.Vendedor, c.Nombre }).ToListAsync().ConfigureAwait(false);
+                var ficha = fichas.FirstOrDefault(f => f.Contacto?.Trim() == contacto) ?? fichas.FirstOrDefault(f => f.ClientePrincipal);
+                string vendedor = ficha?.Vendedor?.Trim();
+                NotificacionPushDTO notificacion = ReglaAdelantarCupon.NotificacionSinAsistir(cupon, adelanto, ficha?.Nombre, anulado);
+                var destinatarios = new List<string>();
+                if (!string.IsNullOrEmpty(vendedor))
+                {
+                    destinatarios.Add(vendedor);
+                    try
+                    {
+                        VendedorDTO jefe = await vendedores.JefeEquipo(empresa, vendedor).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(jefe?.vendedor))
+                        {
+                            destinatarios.Add(jefe.vendedor.Trim());
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Cupones #910] No se ha podido leer el jefe de equipo del vendedor {vendedor}: {ex.Message}", ex));
+                    }
+                }
+                IServicioNotificacionesPush servicio = push();
+                foreach (string v in destinatarios.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    _ = await servicio.EnviarAVendedor(empresa, v, notificacion).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #910] No se ha podido avisar del cupón adelantado {cupon.Codigo?.Trim()} sin asistir: {ex.Message}", ex));
+            }
+        }
     }
 
     /// <summary>NestoAPI#885: los datos que hacen falta para el permiso (sustituible en los tests).</summary>

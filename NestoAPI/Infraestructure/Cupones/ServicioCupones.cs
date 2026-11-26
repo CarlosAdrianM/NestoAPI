@@ -106,11 +106,13 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly Func<Task<List<string>>> productosCheque;
         private readonly IAutorizadorAdelantarCupon autorizadorAdelantar;
         private readonly IAvisadorCuponAdelantado avisadorAdelantado;
+        private readonly IAvisadorCuponAdelantadoSinAsistir avisadorSinAsistir;
 
         public ServicioCupones(NVEntities db) : this(new RepositorioCupones(db), db, null, null, new ServicioEspejoCuponesPrestashop(db),
             () => new ServicioCorreoElectronico(), () => ReglasEspejoPrestashop.Encendido,
             new ChequesRegalo.ServicioCanjeChequesRegalo(new ChequesRegalo.RepositorioCanjeChequesRegalo(db)).ProductosCheque,
-            new AutorizadorAdelantarCupon(new LectorPermisoAdelantarCupon(db)), new AvisadorCuponAdelantado())
+            new AutorizadorAdelantarCupon(new LectorPermisoAdelantarCupon(db)), new AvisadorCuponAdelantado(),
+            new AvisadorCuponAdelantadoSinAsistir(db))
         {
         }
 
@@ -124,8 +126,9 @@ namespace NestoAPI.Infraestructure.Cupones
         internal ServicioCupones(IRepositorioCupones repositorio, NVEntities db, Func<DateTime> ahora, string productoCupon,
             IEspejoCupones espejo = null, Func<IServicioCorreoElectronico> correo = null, Func<bool> usoEnTiendaEncendido = null,
             Func<Task<List<string>>> productosCheque = null, IAutorizadorAdelantarCupon autorizadorAdelantar = null,
-            IAvisadorCuponAdelantado avisadorAdelantado = null)
+            IAvisadorCuponAdelantado avisadorAdelantado = null, IAvisadorCuponAdelantadoSinAsistir avisadorSinAsistir = null)
         {
+            this.avisadorSinAsistir = avisadorSinAsistir;
             this.repositorio = repositorio;
             this.db = db;
             this.ahora = ahora ?? (() => DateTime.Now);
@@ -158,7 +161,55 @@ namespace NestoAPI.Infraestructure.Cupones
                 .Where(c => todos || c.Estado == EstadosCupon.ACTIVO || c.Estado == EstadosCupon.EMITIDO));
             await CompletarGanavisiones(lista).ConfigureAwait(false);
             await CompletarSePuedeAdelantar(cupones, lista, hoy, usuario).ConfigureAwait(false);
+            await CompletarAdelantados(cupones, lista).ConfigureAwait(false);
             return lista;
+        }
+
+        /// <summary>
+        /// NestoAPI#910: <see cref="CuponDTO.Adelantado"/>, <see cref="CuponDTO.AdelantadoPor"/> y <see cref="CuponDTO.AdelantadoEl"/>, del rastro
+        /// «CuponAdelantado» de Modificaciones: UNA consulta por petición y solo si en la respuesta hay algún cupón de evento. Nunca rompe.
+        /// </summary>
+        private async Task CompletarAdelantados(IEnumerable<CuponLeido> leidos, List<CuponDTO> dtos)
+        {
+            if (dtos == null || !dtos.Any())
+            {
+                return;
+            }
+            Dictionary<string, AdelantoCupon> adelantos = await LeerAdelantos(leidos, dtos.Select(d => d.Id)).ConfigureAwait(false);
+            foreach (CuponDTO dto in dtos)
+            {
+                if (dto.Codigo != null && adelantos.TryGetValue(dto.Codigo.Trim(), out AdelantoCupon a))
+                {
+                    dto.Adelantado = true;
+                    dto.AdelantadoPor = a.Usuario;
+                    dto.AdelantadoEl = a.Fecha;
+                }
+            }
+        }
+
+        /// <summary>NestoAPI#910: el adelanto de los cupones de evento de <paramref name="leidos"/> (de los Id pedidos; null = todos). Nunca lanza.</summary>
+        private async Task<Dictionary<string, AdelantoCupon>> LeerAdelantos(IEnumerable<CuponLeido> leidos, IEnumerable<int> ids)
+        {
+            var vacio = new Dictionary<string, AdelantoCupon>(StringComparer.OrdinalIgnoreCase);
+            HashSet<int> pedidos = ids == null ? null : new HashSet<int>(ids);
+            List<CuponLeido> deEvento = (leidos ?? Enumerable.Empty<CuponLeido>())
+                .Where(c => c != null && !string.IsNullOrWhiteSpace(c.Codigo) && (pedidos == null || pedidos.Contains(c.Id))
+                    && string.Equals(c.Origen?.Trim(), OrigenesCupon.EVENTO, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (!deEvento.Any())
+            {
+                return vacio;
+            }
+            try
+            {
+                List<RastroAdelantoCupon> rastros = await repositorio.LeerRastrosAdelanto(deEvento.Min(c => c.FechaEmision).Date).ConfigureAwait(false);
+                return ReglaAdelantarCupon.Adelantos(rastros, deEvento.Select(c => c.Codigo));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #910] No se ha podido leer quién adelantó los cupones: {ex.Message}", ex));
+                return vacio;
+            }
         }
 
         /// <summary>
@@ -230,6 +281,7 @@ namespace NestoAPI.Infraestructure.Cupones
             await CompletarGanavisiones(new List<CuponDTO> { dto }).ConfigureAwait(false);
             await CompletarUsoTienda(cupon, dto).ConfigureAwait(false);
             await CompletarSePuedeAdelantar(new[] { cupon }, new List<CuponDTO> { dto }, hoy, usuario).ConfigureAwait(false);
+            await CompletarAdelantados(new[] { cupon }, new List<CuponDTO> { dto }).ConfigureAwait(false);
             return dto;
         }
 
@@ -754,6 +806,8 @@ namespace NestoAPI.Infraestructure.Cupones
         /// </summary>
         public async Task AplicarAsistencia(IEnumerable<KeyValuePair<int, bool>> asistencias, string usuario)
         {
+            // NestoAPI#910: los cupones de quienes no vinieron (y si se han anulado), para ver después si alguno estaba adelantado
+            var noVinieron = new List<KeyValuePair<CuponLeido, bool>>();
             foreach (KeyValuePair<int, bool> a in asistencias ?? Enumerable.Empty<KeyValuePair<int, bool>>())
             {
                 if (a.Value)
@@ -761,15 +815,65 @@ namespace NestoAPI.Infraestructure.Cupones
                     _ = await repositorio.ReactivarDeInscripcion(a.Key, MOTIVO_NO_ASISTIO, usuario).ConfigureAwait(false);
                     continue;
                 }
+                CuponLeido cupon = avisadorSinAsistir == null ? null : await repositorio.LeerDeInscripcion(a.Key).ConfigureAwait(false);
                 int anulados = await repositorio.AnularDeInscripcion(a.Key, MOTIVO_NO_ASISTIO, usuario).ConfigureAwait(false);
                 if (anulados == 0)
                 {
-                    CuponLeido cupon = await repositorio.LeerDeInscripcion(a.Key).ConfigureAwait(false);
+                    cupon = cupon ?? await repositorio.LeerDeInscripcion(a.Key).ConfigureAwait(false);
                     if (cupon?.Estado?.Trim() == EstadosCupon.USADO)
                     {
                         ElmahHelper.Log(new Exception($"[Cupones #613] La inscripción {a.Key} está como «No asistió», pero su cupón {cupon.Codigo?.Trim()} " +
                             $"ya está usado en el pedido {cupon.UsadoEnPedido}: no se anula. Decidan si se quita del pedido."));
                     }
+                }
+                if (cupon != null)
+                {
+                    noVinieron.Add(new KeyValuePair<CuponLeido, bool>(cupon, anulados > 0));
+                }
+            }
+            await AvisarAdelantadosSinAsistir(noVinieron, usuario).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// NestoAPI#910: si quien no vino tenía el cupón adelantado, push a su vendedor y a su jefe de equipo, UNA vez por cupón (rastro
+        /// «CuponAdelantadoSinAsistir» en Modificaciones: pasar la lista otra vez no repite el aviso). Una lectura del rastro por tanda.
+        /// El cupón no se toca más de lo de siempre (anulado si no estaba usado). Nunca rompe la lista.
+        /// </summary>
+        private async Task AvisarAdelantadosSinAsistir(List<KeyValuePair<CuponLeido, bool>> noVinieron, string usuario)
+        {
+            if (avisadorSinAsistir == null || noVinieron == null || !noVinieron.Any())
+            {
+                return;
+            }
+            Dictionary<string, AdelantoCupon> adelantos = await LeerAdelantos(noVinieron.Select(n => n.Key), null).ConfigureAwait(false);
+            foreach (KeyValuePair<CuponLeido, bool> n in noVinieron)
+            {
+                CuponLeido cupon = n.Key;
+                if (cupon.Codigo == null || !adelantos.TryGetValue(cupon.Codigo.Trim(), out AdelantoCupon adelanto))
+                {
+                    continue;
+                }
+                try
+                {
+                    string rastro = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                    {
+                        Codigo = cupon.Codigo.Trim(),
+                        Cliente = cupon.Cliente?.Trim(),
+                        Contacto = cupon.Contacto?.Trim(),
+                        cupon.EventoId,
+                        Anulado = n.Value,
+                        AdelantadoPor = adelanto.Usuario,
+                        AdelantadoEl = adelanto.Fecha
+                    });
+                    if (!await repositorio.AnotarAvisoSinAsistir(cupon.Codigo, rastro, usuario).ConfigureAwait(false))
+                    {
+                        continue; // ya se avisó
+                    }
+                    await avisadorSinAsistir.Avisar(cupon, adelanto, n.Value).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cupones #910] No se ha podido avisar del cupón adelantado {cupon.Codigo.Trim()} sin asistir: {ex.Message}", ex));
                 }
             }
         }
