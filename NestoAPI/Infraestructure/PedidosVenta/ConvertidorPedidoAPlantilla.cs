@@ -100,6 +100,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         Cantidad = linea.Cantidad,
                         Precio = linea.PrecioUnitario,
                         Descuento = linea.DescuentoLinea,
+                        DescuentoProducto = linea.DescuentoProducto, // incidencia 1504
                         AplicarDescuento = linea.AplicarDescuento,
                         IdLineaPago = linea.id,
                         PagoTienePicking = linea.picking != 0,
@@ -131,6 +132,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 CantidadOferta = pagoEsRegalo ? pago.Cantidad : deOferta.Sum(l => l.Cantidad),
                 Precio = pagoEsRegalo ? 0 : pago.PrecioUnitario,
                 Descuento = pagoEsRegalo ? 0 : pago.DescuentoLinea,
+                DescuentoProducto = pagoEsRegalo ? 0 : pago.DescuentoProducto, // incidencia 1504: el de la línea de pago
                 AplicarDescuento = pago.AplicarDescuento,
                 IdLineaPago = pagoEsRegalo ? 0 : pago.id,
                 IdLineaOferta = pagoEsRegalo ? pago.id : deOferta.FirstOrDefault()?.id,

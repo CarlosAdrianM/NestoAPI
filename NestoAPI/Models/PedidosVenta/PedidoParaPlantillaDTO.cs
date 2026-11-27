@@ -55,7 +55,16 @@ namespace NestoAPI.Models.PedidosVenta
         public string Texto { get; set; }
         public int Cantidad { get; set; }
         public decimal Precio { get; set; }
+        /// <summary>El descuento de LÍNEA de la línea de pago (LinPedidoVta.Descuento), no el de producto.</summary>
         public decimal Descuento { get; set; }
+        /// <summary>
+        /// Incidencia 1504 (María José, pedido 931500, 27/11/26): el descuento de PRODUCTO grabado en la línea de pago
+        /// (LinPedidoVta.DescuentoProducto), que es donde van los de campaña (Black Friday) y el 100 % de las muestras. Sin él, la
+        /// plantilla pintaba 0 % y, al guardar, la línea perdía el descuento. Mismo nombre que espera Nesto
+        /// (LineaParaPlantillaModel.DescuentoProducto): si llega, no hace la segunda lectura del pedido. Se manda tal cual está
+        /// grabado aunque AplicarDescuento sea falso (el cliente lo compone con AplicarDescuento, como SumaDescuentos).
+        /// </summary>
+        public decimal DescuentoProducto { get; set; }
         public bool AplicarDescuento { get; set; }
         public int CantidadOferta { get; set; }
         public bool PersonalizarOferta { get; set; }
