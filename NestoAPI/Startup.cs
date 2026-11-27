@@ -1173,6 +1173,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'reparto-km-jornadas' configurado (todos los días a las 3:50)");
 
+            // NestoAPI#914: el tablero de KPI con nota semanal. Los lunes a las 4:20 (cola «indicadores»): las semanas ya maduras que faltan
+            // y, siempre, las últimas 8 cerradas (datos tardíos). Sin Scripts/Issue914t_CalidadTablero.sql no hace nada (ELMAH una vez).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Calidad.Tablero.TableroKpiJobsService.JOB_ID,
+                () => Infraestructure.Calidad.Tablero.TableroKpiJobsService.CalcularSemanal(),
+                Infraestructure.Calidad.Tablero.TableroKpiJobsService.CRON, // Cron: los lunes a las 4:20
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'calidad-tablero-kpi' configurado (los lunes a las 4:20)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

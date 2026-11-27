@@ -281,3 +281,7 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   Cliente, Iva, Cambiado, Cambios [«Contacto 0: G21 → E52»], Avisos}; si ya lo tenían todos, Cambiado false y nada escrito. Administración, Dirección e
   Informática (403 de usted; cliente de la tienda, 403); 404 sin cliente. Los pedidos ya hechos no cambian (el IVA del pedido se recalcula al cambiarlo
   de cliente o al modificarlo). Los descuentos pactados del cliente: `docs/claude/precios-campanas.md`.
+
+### Búsqueda de clientes: el contacto telefónico delante sin filtrar por vendedor (sugerencia 582 + PermitirVerClientesTodosLosVendedores, Carlos 27/11/26)
+
+- `GET api/Clientes?empresa=&vendedor=&filtro=&contactoTelefonicoPrimero=true&vendedorTelefonico=` (opcional): si viene `vendedorTelefonico`, decide él si quien busca es telefónico (Vendedores.Estado 9) y se adelanta el contacto en estado 9; `vendedor` queda solo como filtro (vacío = todos). Sin él (o vacío), decide `vendedor`, como antes (Nesto ya publicado, NestoApp). Lo manda el SelectorCliente de Nesto en Rapports; el enrutado de las sobrecargas de `GetClientes`/`GetCliente` está probado en `ClientesControllerVendedorTelefonicoTests`.

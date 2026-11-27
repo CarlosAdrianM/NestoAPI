@@ -521,6 +521,15 @@
     <Compile Include="Infraestructure\Calidad\PedidoPerfecto\ReglaPedidoPerfecto.cs" />
     <Compile Include="Infraestructure\Calidad\PedidoPerfecto\ServicioPedidoPerfecto.cs" />
     <Compile Include="Infraestructure\Calidad\RegistroCalidad.cs" />
+    <Compile Include="Controllers\CalidadTableroController.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\FuentesKpi.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\IdentidadTablero.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\KpisTablero.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\KpiTablero.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\ReglaNotaKpi.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\RepositorioTableroSql.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\ServicioTablero.cs" />
+    <Compile Include="Infraestructure\Calidad\Tablero\TableroKpiJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\DatosTransferenciaInscripcion.cs" />
     <Compile Include="Models\Novedades\NovedadesVersionDTO.cs" />
     <Compile Include="Infraestructure\Novedades\NovedadesVersion.cs" />
