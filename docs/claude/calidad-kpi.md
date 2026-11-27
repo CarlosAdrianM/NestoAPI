@@ -25,7 +25,7 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - Código: `Infraestructure/Calidad/PedidoPerfecto/`: LA REGLA (pura) `ReglaPedidoPerfecto.Evaluar(HechosPedidoPerfecto, ContextoPedidoPerfecto)`, el
   enum `MotivoPedidoPerfecto` con su atributo (Texto de usted, `EsError`), el lector `LectorPedidoPerfectoSql` y `ServicioPedidoPerfecto` (resumen,
   página y caché en memoria de 30 min por empresa+periodo, compartida por los dos GET; si la lectura falla no se cachea). Sin tabla nueva ni job.
-- Lector: SOLO LECTURA (READ UNCOMMITTED + NOLOCK), una ida por MES (tabla temporal #p con los pedidos del mes y #f con sus facturas; varios
+- Lector: SOLO LECTURA (READ UNCOMMITTED + NOLOCK), una ida por MES (tabla temporal #p con los pedidos del mes, #f con sus facturas y #r con lo rectificado de ellas; varios
   resultados en el mismo lote) + tres consultas para todo el periodo (Modificaciones, CalidadEventos, primera foto). Sin N+1. Las tablas fuera del
   EDMX son opcionales (OBJECT_ID): sin ellas su parte no se lee y lo que dependa queda «no evaluado» (y sale en `Aviso`).
 - «No evaluado»: por PEDIDO, un motivo puede no poderse mirar (no hay rastro de esa época, plazo sin vencer…). Un motivo no evaluado no cuenta ni a
@@ -62,13 +62,29 @@ procesan a −2 y nunca tienen albarán; saldrían todas «sin servir»). Los cl
 | `NoSalioAlDiaSiguiente` | sí | Días laborables (sin sábados, domingos ni festivos del ALMACÉN de las líneas: `GestorFestivos.EsFestivo`) d con referencia < d ≤ primer `Fecha Albarán`; > 1 → motivo. Pedido del viernes servido el lunes = 1 (perfecto); metido en sábado, el lunes hace de día del pedido. No evaluado: sin albarán, modo 6 o sin fecha (2099). | Siempre |
 | `FaltabaStock` | sí | Alguna foto de `dbo.FechasEntregaFotos` del pedido con `FechaFoto` ≤ Fecha + 3 días y `Origen` Tienda, EnCamino, Proveedor o SinStock (lo que no sale del stock de Algete). | Primera `FechaFoto` (11/11/26) |
 | `NoCobradoAlContado` | NO (informativo) | `PlazosPago` distinto de CONTADO, CR (contado riguroso) y PRE (prepago). Sin plazos: no evaluado. | Siempre |
-| `TieneRectificativaOAbono` | sí | Otro pedido con `PedidoOrigen` = este, o alguna de sus facturas (`Nº Factura` de sus líneas) es `FacturaOriginalNumero` de `LinFacturaVtaRectificacion`. | Siempre |
+| `EntregaIncompleta` (13) | sí | Otro pedido con `PedidoOrigen` = este que es la NOTA DE ENTREGA de lo pendiente: su `NotaEntrega` = 1 (marca firme) o, de respaldo, su `Comentarios` contiene «NOTA DE ENTREGA: pendiente de entregar del pedido N » con N = este pedido. Ver abajo. | Siempre (pero el enlace `PedidoOrigen` solo existe desde #542, 25/09/26: lo albaranado antes no puede salir) |
+| `FacturaRectificadaEntera` (14) | sí | Alguna de sus facturas (`Nº Factura` de sus líneas) es `FacturaOriginalNumero` de `LinFacturaVtaRectificacion` (con otra `NumeroFactura`) y las unidades rectificadas ≥ las unidades de producto (TipoLinea 1, Cantidad > 0) de ESTE pedido en esa factura (> 0). Rectificadas = Σ ABS(`CantidadRectificada`) de las filas cuya `FacturaOriginalLinea` (= `Nº Orden`) es una línea de producto de este pedido en esa factura, más las filas que no casan con ninguna línea de la factura si la factura solo lleva este pedido. | Siempre |
+| `FacturaRectificadaEnParte` (15) | sí | Alguna factura rectificada (como arriba) y ninguna entera. Excluyentes: rectificadas = entera + en parte. | Siempre |
+| `TieneCopia` (16) | NO (informativo) | Otro pedido con `PedidoOrigen` = este que NO es nota de entrega (ni marca ni comentario). Hoy no debería haber: solo #542 rellena `PedidoOrigen` (la copia de pedidos no, `GestorCopiaPedidos`); está para no perderla de vista. | Siempre |
 | `Impagado` | sí | `ExtractoCliente` TipoApunte 4, Importe > 0, Concepto que no empieza por «Gastos Impagado» (como `ModeloImpagados`), mismo empresa + cliente + `Nº Documento` = su factura. | Siempre |
 | `IncidenciaDeAgenciaOReenvio` | sí | Envíos del pedido con Estado ≥ 1: más de uno, o alguno en 3 (incidentado), 4 (devuelto) o 5 (cerrado a mano), o con «Reenviar» en `EnviosAgenciaReenvios` (#699), o su caja «ha vuelto» (`EnviosAgenciaHaVuelto`, #870). | Siempre (lo que hay HOY: un incidentado que acabó entregado no deja rastro en GLS) |
 | `TocadoTrasElPicking` | sí | «Quitar picking» de Nesto en Modificaciones (Tabla LinPedidoVta, Nuevo «Pedido N…: sin picking (quitado por …») o eventos `QuitarPicking` / `AmpliacionConPickingMismoPedido`. | 09/11/26 (#590) o el primer evento, lo que sea antes |
 | `EnvioDeRutaPropiaForzado` | sí | Evento `EnvioRutaPropiaFueraDeDia`. SIN CONECTAR: no hay un punto único donde se fuerce; hoy siempre no evaluado. | Primer evento |
 | `EntregaIncompletaDelReparto` | sí | Envío de la agencia 14 con DetalleEstado «Entregado (reparto propio): …» (#880 corte 1) o con filas en `RepartoBultosPendientes` (#880 corte 2). Sin envío de la 14: no aplica (falso, evaluado). | Envíos de la 14 desde el 19/11/26 |
 | `PidioCambiarAlgoConPicking` | sí | Eventos `CambioDeModoConPicking` o `AmpliacionConPickingPedidoNuevo`. | Primer evento |
+
+**Rectificativas, notas de entrega y copias, partidos (Carlos 27/11/26).** El antiguo `TieneRectificativaOAbono` (6) mezclaba cosas distintas: de
+27/08 a 05/11/26 (empresa 1, 3.645 pedidos) lo tenían 204; 46 por «copia», que eran todas NOTAS DE ENTREGA de lo pendiente (entrega
+incompleta), y 161 por factura rectificada (85 enteras, 13 en más de la mitad, 64 en menos). Se partió en los cuatro de arriba; el 6 NO se
+reutiliza y el nombre antiguo ya no existe (`?motivo=TieneRectificativaOAbono` → 400). Los tres primeros son error, como el antiguo: el
+porcentaje de perfectos no cambia; solo una copia que no sea nota deja de ser error (sí sigue quitando el «perfecto» a secas, como `NoCobradoAlContado`).
+- Cómo se reconoce la nota: el ÚNICO sitio que rellena `PedidoOrigen` es `CreadorNotaEntregaPendiente` (#542, tras el albarán con líneas
+  `Recoger`: el pedido se factura entero y lo no entregado va a una nota), siempre con `NotaEntrega` = 1, `AlbaranOrigen` y el comentario
+  (`PREFIJO_COMENTARIO`). Por eso manda la marca; el comentario (de ESE pedido, no de otro) es solo respaldo. Regla: `ReglaPedidoPerfecto.EsNotaEntregaDeLoPendiente`.
+- NO se pisa con `EntregaIncompletaDelReparto` (11): ese es el repartidor de la 14 que llega con bultos de menos (#880, DetalleEstado o
+  `RepartoBultosPendientes`), no crea nota; este es lo que se queda sin entregar AL HACER EL ALBARÁN. Un pedido puede tener los dos (son dos
+  fallos distintos). Tampoco con `NoServidoDeUnaVez`: las líneas con `Recoger` quedan en albarán/factura, así que ese no salta; este motivo
+  es justo lo que aquél no ve. Ni con `IncidenciaDeAgenciaOReenvio`: el envío de la nota va con el número de la nota, no del pedido.
 
 Referencia de los plazos: el día del pedido o, si la menor `Fecha Entrega` de sus líneas de producto es posterior (fecha pedida por el cliente), esa.
 Decisiones (corte 1): modo 6 «Junto con lo pendiente del cliente» espera a propósito → no se evalúa el día siguiente; los modos 2/3/4 sí se evalúan

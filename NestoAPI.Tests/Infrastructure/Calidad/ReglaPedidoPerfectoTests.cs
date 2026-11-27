@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Calidad;
 using NestoAPI.Infraestructure.Calidad.PedidoPerfecto;
+using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -269,10 +270,11 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
         }
 
         [TestMethod]
-        public void NoCobradoAlContado_EsInformativo()
+        public void NoCobradoAlContadoYTieneCopia_SonLosUnicosInformativos()
         {
-            Assert.IsFalse(InfoMotivosPedidoPerfecto.EsError(MotivoPedidoPerfecto.NoCobradoAlContado));
-            Assert.IsTrue(InfoMotivosPedidoPerfecto.Todos.Where(m => m != MotivoPedidoPerfecto.NoCobradoAlContado).All(InfoMotivosPedidoPerfecto.EsError));
+            var informativos = new[] { MotivoPedidoPerfecto.NoCobradoAlContado, MotivoPedidoPerfecto.TieneCopia };
+            Assert.IsTrue(informativos.All(m => !InfoMotivosPedidoPerfecto.EsError(m)));
+            Assert.IsTrue(InfoMotivosPedidoPerfecto.Todos.Where(m => !informativos.Contains(m)).All(InfoMotivosPedidoPerfecto.EsError));
         }
 
         [TestMethod]
@@ -281,12 +283,159 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             Assert.IsTrue(Evaluar(Perfecto(h => h.PlazosPago = "")).NoEvaluados.Contains(MotivoPedidoPerfecto.NoCobradoAlContado));
         }
 
-        // 6-8
+        // 6. Antes TieneRectificativaOAbono, partido en cuatro (Carlos 27/11/26)
+        private static FacturaRectificadaPedidoPerfecto Rectificada(decimal facturadas, decimal delPedido, decimal sinLinea = 0, int pedidosDeLaFactura = 1) =>
+            new FacturaRectificadaPedidoPerfecto
+            {
+                Factura = "NV26/001234",
+                UnidadesFacturadas = facturadas,
+                UnidadesRectificadasDelPedido = delPedido,
+                UnidadesRectificadasSinLinea = sinLinea,
+                PedidosDeLaFactura = pedidosDeLaFactura
+            };
+
         [TestMethod]
-        public void CopiaORectificativa()
+        public void NotaDeEntregaDeLoPendiente_EntregaIncompleta_YNoCopia()
         {
-            CollectionAssert.Contains(Evaluar(Perfecto(h => h.TieneCopia = true)).Motivos, MotivoPedidoPerfecto.TieneRectificativaOAbono);
-            CollectionAssert.Contains(Evaluar(Perfecto(h => h.TieneRectificativa = true)).Motivos, MotivoPedidoPerfecto.TieneRectificativaOAbono);
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h => LectorPedidoPerfectoSql.AnadirHijo(h, notaEntrega: true, comentarioDeNota: true)));
+
+            CollectionAssert.AreEqual(new List<MotivoPedidoPerfecto> { MotivoPedidoPerfecto.EntregaIncompleta }, e.Motivos);
+            Assert.IsFalse(e.PerfectoSinContarInformativos, "La entrega incompleta es error");
+        }
+
+        [DataTestMethod]
+        [DataRow(true, false, true)]   // NotaEntrega = 1 del hijo: la marca firme (#542 siempre la pone)
+        [DataRow(false, true, true)]   // Solo el comentario de la nota de ESTE pedido: respaldo
+        [DataRow(true, true, true)]
+        [DataRow(false, false, false)] // Ni marca ni comentario: una copia
+        public void Hijo_NotaDeEntregaOCopia(bool notaEntrega, bool comentario, bool esNota)
+        {
+            Assert.AreEqual(esNota, ReglaPedidoPerfecto.EsNotaEntregaDeLoPendiente(notaEntrega, comentario));
+            HechosPedidoPerfecto h = Perfecto(x => LectorPedidoPerfectoSql.AnadirHijo(x, notaEntrega, comentario));
+            Assert.AreEqual(esNota, h.TieneNotaEntregaPendiente);
+            Assert.AreEqual(!esNota, h.TieneCopia);
+        }
+
+        [TestMethod]
+        public void CopiaQueNoEsNota_EsInformativa()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h => LectorPedidoPerfectoSql.AnadirHijo(h, false, false)));
+
+            CollectionAssert.AreEqual(new List<MotivoPedidoPerfecto> { MotivoPedidoPerfecto.TieneCopia }, e.Motivos);
+            Assert.IsFalse(e.Perfecto, "Como NoCobradoAlContado: un motivo informativo también quita el «perfecto» a secas");
+            Assert.IsTrue(e.PerfectoSinContarInformativos);
+        }
+
+        [TestMethod]
+        public void NotaYCopiaALaVez_LosDosMotivos()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h =>
+            {
+                LectorPedidoPerfectoSql.AnadirHijo(h, true, true);
+                LectorPedidoPerfectoSql.AnadirHijo(h, false, false);
+            }));
+
+            CollectionAssert.AreEqual(new List<MotivoPedidoPerfecto> { MotivoPedidoPerfecto.EntregaIncompleta, MotivoPedidoPerfecto.TieneCopia }, e.Motivos);
+        }
+
+        [DataTestMethod]
+        [DataRow(3, 3, 0, 1, true)]    // todas las unidades
+        [DataRow(3, 5, 0, 1, true)]    // más de las facturadas (rectificada dos veces): entera
+        [DataRow(3, 2, 0, 1, false)]   // en parte
+        [DataRow(3, 0, 3, 1, true)]    // enlace sin línea en una factura solo suya: cuentan
+        [DataRow(3, 0, 3, 2, false)]   // sin línea en una factura de dos pedidos: no se le atribuyen
+        [DataRow(3, 1, 2, 1, true)]
+        [DataRow(0, 0, 0, 1, false)]   // nada de producto (solo portes): en parte
+        public void FacturaRectificada_EnteraOEnParte(int facturadas, int delPedido, int sinLinea, int pedidos, bool entera)
+        {
+            FacturaRectificadaPedidoPerfecto f = Rectificada(facturadas, delPedido, sinLinea, pedidos);
+            Assert.AreEqual(entera, ReglaPedidoPerfecto.EsRectificadaEntera(f));
+
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h => h.FacturasRectificadas.Add(f)));
+            CollectionAssert.AreEqual(new List<MotivoPedidoPerfecto>
+            {
+                entera ? MotivoPedidoPerfecto.FacturaRectificadaEntera : MotivoPedidoPerfecto.FacturaRectificadaEnParte
+            }, e.Motivos);
+        }
+
+        [TestMethod]
+        public void UnaFacturaEnteraYOtraEnParte_SoloEntera()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h =>
+            {
+                h.FacturasRectificadas.Add(Rectificada(2, 1));
+                h.FacturasRectificadas.Add(Rectificada(4, 4));
+            }));
+
+            CollectionAssert.AreEqual(new List<MotivoPedidoPerfecto> { MotivoPedidoPerfecto.FacturaRectificadaEntera }, e.Motivos);
+        }
+
+        [TestMethod]
+        public void LecturaDeFacturaRectificada_SeAnadeConSusUnidades()
+        {
+            HechosPedidoPerfecto h = Perfecto();
+            LectorPedidoPerfectoSql.AnadirFacturaRectificada(h, "NV26/001234   ", 5m, 2m, 1m, 1);
+
+            Assert.AreEqual(1, h.FacturasRectificadas.Count);
+            Assert.AreEqual("NV26/001234", h.FacturasRectificadas[0].Factura);
+            Assert.AreEqual(3m, ReglaPedidoPerfecto.UnidadesRectificadas(h.FacturasRectificadas[0]));
+            Assert.IsFalse(ReglaPedidoPerfecto.EsRectificadaEntera(h.FacturasRectificadas[0]));
+        }
+
+        /// <summary>
+        /// El reparto no cambia el porcentaje de perfectos: lo que con el motivo antiguo (copia o rectificativa) no era perfecto sigue sin
+        /// serlo, y lo perfecto lo sigue siendo. Solo la copia que no es nota pasa a informativa (sale del error, no del «perfecto» a secas).
+        /// </summary>
+        [TestMethod]
+        public void PartirElMotivoAntiguo_NoCambiaElPorcentajeDePerfectos()
+        {
+            var pedidos = new List<HechosPedidoPerfecto>
+            {
+                Perfecto(),
+                Perfecto(h => h.Pedido = 2),
+                Perfecto(h => { h.Pedido = 3; LectorPedidoPerfectoSql.AnadirHijo(h, true, true); }),
+                Perfecto(h => { h.Pedido = 4; h.FacturasRectificadas.Add(Rectificada(3, 3)); }),
+                Perfecto(h => { h.Pedido = 5; h.FacturasRectificadas.Add(Rectificada(3, 1)); }),
+                Perfecto(h => { h.Pedido = 6; LectorPedidoPerfectoSql.AnadirHijo(h, true, false); h.FacturasRectificadas.Add(Rectificada(3, 1)); }),
+                Perfecto(h => { h.Pedido = 7; LectorPedidoPerfectoSql.AnadirHijo(h, false, false); })
+            };
+            // El motivo antiguo: alguna copia (de cualquier tipo) o alguna factura rectificada
+            Func<HechosPedidoPerfecto, bool> antiguo = h => h.TieneNotaEntregaPendiente || h.TieneCopia || h.FacturasRectificadas.Count > 0;
+            int perfectosAntes = pedidos.Count(h => !antiguo(h));
+            int erroresAhora = pedidos.Count(h => h.TieneNotaEntregaPendiente || h.FacturasRectificadas.Count > 0);
+
+            var calculo = new CalculoPedidoPerfecto
+            {
+                Empresa = "1",
+                Contexto = Contexto(),
+                Pedidos = pedidos.Select(h => new KeyValuePair<HechosPedidoPerfecto, EvaluacionPedidoPerfecto>(h, Evaluar(h))).ToList()
+            };
+            ResumenPedidoPerfectoDTO resumen = ServicioPedidoPerfecto.Resumir(calculo);
+
+            Assert.AreEqual(2, perfectosAntes);
+            Assert.AreEqual(perfectosAntes, resumen.Perfectos);
+            Assert.AreEqual(pedidos.Count - erroresAhora, resumen.PerfectosSinContarInformativos, "La copia (pedido 7) ya no es error");
+            int Con(MotivoPedidoPerfecto m) => resumen.Motivos.Single(x => x.Motivo == m.ToString()).Pedidos;
+            Assert.AreEqual(1, Con(MotivoPedidoPerfecto.FacturaRectificadaEntera));
+            Assert.AreEqual(2, Con(MotivoPedidoPerfecto.FacturaRectificadaEnParte));
+            Assert.AreEqual(2, Con(MotivoPedidoPerfecto.EntregaIncompleta));
+            Assert.AreEqual(1, Con(MotivoPedidoPerfecto.TieneCopia));
+            Assert.IsFalse(resumen.Motivos.Any(x => x.Motivo == "TieneRectificativaOAbono"), "El nombre antiguo ya no sale");
+            Assert.IsTrue(new[] { MotivoPedidoPerfecto.EntregaIncompleta, MotivoPedidoPerfecto.FacturaRectificadaEntera, MotivoPedidoPerfecto.FacturaRectificadaEnParte }
+                .All(m => resumen.Motivos.Single(x => x.Motivo == m.ToString()).EsError));
+        }
+
+        [TestMethod]
+        public void SqlHijos_ReconoceLaNotaPorLaMarcaYPorElComentarioDeEsePedido()
+        {
+            string sql = LectorPedidoPerfectoSql.SQL_RECTIFICATIVAS_IMPAGADOS;
+
+            StringAssert.Contains(sql, "CAST(o.NotaEntrega AS bit)");
+            StringAssert.Contains(sql, "LIKE N'%NOTA DE ENTREGA: pendiente de entregar del pedido ' + CAST(o.PedidoOrigen AS nvarchar(12)) + N' %'");
+            StringAssert.Contains(CreadorNotaEntregaPendiente.ComentarioNota(null, 929555, 733462),
+                CreadorNotaEntregaPendiente.PREFIJO_COMENTARIO + "929555 (albarán 733462)");
+            StringAssert.Contains(sql, "o.[Nº Orden] = r.Linea");
+            StringAssert.Contains(LectorPedidoPerfectoSql.SQL_FIN_LOTE, "DROP TABLE #r");
         }
 
         [TestMethod]
@@ -504,7 +653,7 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
                 Assert.IsFalse(string.IsNullOrWhiteSpace(InfoMotivosPedidoPerfecto.Texto(m)), m.ToString());
                 Assert.IsFalse(string.IsNullOrWhiteSpace(InfoMotivosPedidoPerfecto.PorQueNoEvaluado(m)), m.ToString());
             }
-            Assert.AreEqual(12, InfoMotivosPedidoPerfecto.Todos.Count);
+            Assert.AreEqual(15, InfoMotivosPedidoPerfecto.Todos.Count);
         }
 
         [TestMethod]
