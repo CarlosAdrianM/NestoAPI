@@ -51,7 +51,11 @@ namespace NestoAPI.Infraestructure.Aparatos
         /// <summary>Comprado (recibido) de un producto con NecesitaNumSerie o de la lista de Alquileres, sigue en stock y no tiene registro.</summary>
         CompradoSinRegistro,
         /// <summary>Otra serie del mismo producto solo difiere en espacios, guiones, puntos, ceros a la izquierda u O/0 e I/1 (no se unifican solas).</summary>
-        SerieEscritaDeDosFormas
+        SerieEscritaDeDosFormas,
+        /// <summary>NestoAPI#913 corte 2: el registro está «inmovilizado» pero su ficha de inmovilizado no existe o está anulada.</summary>
+        InmovilizadoSinFicha,
+        /// <summary>NestoAPI#913 corte 2: una ficha de inmovilizado viva, sin enlazar, con una serie que no es de ningún aparato.</summary>
+        InmovilizadoSinAparato
     }
 
     public class MovimientoAparatoDTO
@@ -132,6 +136,8 @@ namespace NestoAPI.Infraestructure.Aparatos
         public List<string> OtrasFormasDeLaSerie { get; set; } = new List<string>();
         /// <summary>Con <see cref="MotivoDescuadreAparato.SerieEscritaDeDosFormas"/>: la forma común que las agrupa (<see cref="ReglaSeriesParecidas.Normalizar"/>); si no, null.</summary>
         public string GrupoSerie { get; set; }
+        /// <summary>NestoAPI#913 corte 2: con <see cref="MotivoDescuadreAparato.InmovilizadoSinFicha"/> o <see cref="MotivoDescuadreAparato.InmovilizadoSinAparato"/>, el inmovilizado («I/1824»); si no, null.</summary>
+        public string Inmovilizado { get; set; }
     }
 
     public class StockAlmacenAparatoDTO
@@ -215,6 +221,10 @@ namespace NestoAPI.Infraestructure.Aparatos
         public string Descripcion { get; set; }
         public short Estado { get; set; }
         public DateTime? FechaCreacion { get; set; }
+        /// <summary>NestoAPI#913 corte 2: Inmovilizados.Producto, solo con el script Issue913b (si no, null).</summary>
+        public string Producto { get; set; }
+        /// <summary>NestoAPI#913 corte 2: Inmovilizados.NumeroSerie, solo con el script Issue913b (si no, null: se lee del texto).</summary>
+        public string NumeroSerie { get; set; }
     }
 
     public class NumeroSerieFila
@@ -240,6 +250,8 @@ namespace NestoAPI.Infraestructure.Aparatos
         public List<InmovilizadoAparatoFila> Inmovilizados { get; set; } = new List<InmovilizadoAparatoFila>();
         public List<NumeroSerieFila> NumerosSerie { get; set; } = new List<NumeroSerieFila>();
         public List<StockAparatoFila> Stock { get; set; } = new List<StockAparatoFila>();
+        /// <summary>NestoAPI#913 corte 2: Inmovilizados tiene las columnas Producto y NumeroSerie (script Issue913b).</summary>
+        public bool ColumnasAparatoEnInmovilizados { get; set; }
     }
 
     /// <summary>
@@ -491,13 +503,15 @@ namespace NestoAPI.Infraestructure.Aparatos
 
             foreach (InmovilizadoAparatoFila i in datos.Inmovilizados ?? new List<InmovilizadoAparatoFila>())
             {
-                string serie = ReglaDescripcionEtiquetaInmovilizado.SerieEscrita(i.Descripcion);
-                if (serie == null)
+                // NestoAPI#913 corte 2: las columnas (si están) y, si no, la serie escrita; de la entera y su primer tramo, la que sea de un aparato
+                SerieLeidaInmovilizado leida = ReglaSerieInmovilizado.DeFicha(i);
+                if (leida == null)
                 {
                     continue;
                 }
+                string serie = leida.Candidatas().FirstOrDefault(c => productosDeSerie.ContainsKey(ReglaSituacionAparato.Clave(c))) ?? leida.Serie;
                 string claveSerie = ReglaSituacionAparato.Clave(serie);
-                string referencia = ReglaSituacionAparato.Clave(ReglaDescripcionEtiquetaInmovilizado.ReferenciaEscrita(i.Descripcion));
+                string referencia = ReglaSituacionAparato.Clave(leida.Referencia);
                 string producto;
                 if (referencia.Length > 0)
                 {
@@ -620,6 +634,11 @@ namespace NestoAPI.Infraestructure.Aparatos
                 }
             }
 
+            // NestoAPI#913 corte 2: las fichas de inmovilizado (para el registro «inmovilizado» sin ficha)
+            Dictionary<string, InmovilizadoAparatoFila> fichasInmovilizado = (datos.Inmovilizados ?? new List<InmovilizadoAparatoFila>())
+                .GroupBy(i => ReglaPropuestasInmovilizados.ClaveInmovilizado(i.Empresa, i.Numero))
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
             var descuadres = new List<DescuadreAparatoDTO>();
             var ordenDescuadre = new Dictionary<DescuadreAparatoDTO, (string, string, string)>();
             var enStockMovimientos = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -635,6 +654,14 @@ namespace NestoAPI.Infraestructure.Aparatos
                 }
                 List<MotivoDescuadreAparato> motivos = Motivos(deEste, regs, calculada, fichas[clave.producto].NecesitaNumSerie,
                     fichas[clave.producto].EnListaAlquileres);
+                string inmovilizadoSinFicha = null;
+                if (registro != null && !string.IsNullOrWhiteSpace(registro.Inmovilizado)
+                    && (!fichasInmovilizado.TryGetValue(ReglaPropuestasInmovilizados.ClaveInmovilizado(registro.Empresa, registro.Inmovilizado), out InmovilizadoAparatoFila fichaInm)
+                        || fichaInm.Estado < 0))
+                {
+                    motivos.Add(MotivoDescuadreAparato.InmovilizadoSinFicha);
+                    inmovilizadoSinFicha = CodigoInmovilizado.Componer(registro.Inmovilizado) ?? registro.Inmovilizado.Trim();
+                }
                 List<string> otrasFormas = parecidas.TryGetValue(clave, out List<string> formas) ? formas : new List<string>();
                 if (otrasFormas.Any())
                 {
@@ -652,13 +679,14 @@ namespace NestoAPI.Infraestructure.Aparatos
                     NumeroSerie = deEste.Select(m => m.NumeroSerie).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))?.Trim() ?? clave.serie,
                     Motivo = motivos[0],
                     Motivos = motivos,
-                    TextoMotivo = TextoMotivos(motivos, regs, deEste, otrasFormas),
+                    TextoMotivo = TextoMotivos(motivos, regs, deEste, otrasFormas, fichasInmovilizado),
                     SituacionSegunRegistro = registro == null ? (SituacionAparato?)null : ReglaSituacionAparato.SegunRegistro(registro),
                     SituacionCalculada = calculada,
                     TextoSituacion = ReglaSituacionAparato.Texto(deEste, registro),
                     Registros = regs.Select(r => r.Numero).OrderBy(x => x).ToList(),
                     OtrasFormasDeLaSerie = otrasFormas,
-                    GrupoSerie = otrasFormas.Any() ? ReglaSeriesParecidas.Normalizar(clave.serie) : null
+                    GrupoSerie = otrasFormas.Any() ? ReglaSeriesParecidas.Normalizar(clave.serie) : null,
+                    Inmovilizado = inmovilizadoSinFicha
                 });
                 ordenDescuadre[descuadres[descuadres.Count - 1]] = (clave.producto, otrasFormas.Any() ? primeraDelGrupo[clave] : clave.serie, clave.serie);
             }
@@ -668,6 +696,35 @@ namespace NestoAPI.Infraestructure.Aparatos
                 .ThenBy(d => ordenDescuadre[d].Item2, StringComparer.Ordinal)
                 .ThenBy(d => ordenDescuadre[d].Item3, StringComparer.Ordinal)
                 .ToList();
+
+            // NestoAPI#913 corte 2: fichas de inmovilizado vivas y sin enlazar cuya serie no es de ningún aparato (al final, por número).
+            // Solo con el alcance completo: con la lista de la ventana, los aparatos de otros productos no se han leído.
+            if (!soloListaAlquileres)
+            {
+                foreach (PropuestaInmovilizadoDTO p in ReglaPropuestasInmovilizados.Calcular(datos).Propuestas
+                    .Where(p => p.Certeza == CertezaEnlaceInmovilizado.Ninguna)
+                    .OrderBy(p => p.Empresa, StringComparer.Ordinal)
+                    .ThenBy(p => int.TryParse(p.Inmovilizado, out int n) ? n : int.MaxValue)
+                    .ThenBy(p => p.Inmovilizado, StringComparer.Ordinal))
+                {
+                    string referencia = p.ReferenciaLeida;
+                    ProductoAparatoFila ficha = referencia == null ? null
+                        : fichas.TryGetValue(ReglaSituacionAparato.Clave(referencia), out ProductoAparatoFila f) ? f : null;
+                    descuadres.Add(new DescuadreAparatoDTO
+                    {
+                        Producto = ficha?.Producto?.Trim() ?? referencia,
+                        Nombre = ficha?.Nombre?.Trim(),
+                        NumeroSerie = p.SerieLeida,
+                        Motivo = MotivoDescuadreAparato.InmovilizadoSinAparato,
+                        Motivos = new List<MotivoDescuadreAparato> { MotivoDescuadreAparato.InmovilizadoSinAparato },
+                        TextoMotivo = $"El inmovilizado {p.Codigo} ({p.Descripcion}) tiene la serie {p.SerieLeida}, pero no es de ningún aparato: " +
+                            "ni compra, ni venta, ni registro de Alquileres con esa serie.",
+                        SituacionCalculada = SituacionAparato.Inmovilizado,
+                        TextoSituacion = $"Inmovilizado {p.Codigo}" + (p.FechaCreacion.HasValue ? " desde el " + ConstructorMovimientosAparato.Fecha(p.FechaCreacion) : string.Empty) + ".",
+                        Inmovilizado = p.Codigo
+                    });
+                }
+            }
 
             var informe = new InformeDescuadresAparatosDTO
             {
@@ -733,7 +790,7 @@ namespace NestoAPI.Infraestructure.Aparatos
         }
 
         public static string TextoMotivo(MotivoDescuadreAparato motivo, List<RegistroAparatoDTO> registros, List<MovimientoAparatoDTO> movimientos,
-            List<string> otrasFormas = null)
+            List<string> otrasFormas = null, Dictionary<string, InmovilizadoAparatoFila> fichasInmovilizado = null)
         {
             RegistroAparatoDTO registro = registros?.FirstOrDefault();
             MovimientoAparatoDTO inmovilizado = movimientos?.LastOrDefault(m => m.Tipo == TipoMovimientoAparato.Inmovilizado && !m.Anulado);
@@ -760,14 +817,22 @@ namespace NestoAPI.Infraestructure.Aparatos
                 case MotivoDescuadreAparato.SerieEscritaDeDosFormas:
                     return $"En este producto la serie también está escrita como {string.Join(", ", otrasFormas ?? new List<string>())}: " +
                         "compruebe cuál es la buena (no se unifican solas).";
+                case MotivoDescuadreAparato.InmovilizadoSinFicha:
+                    string codigo = CodigoInmovilizado.Componer(registro?.Inmovilizado) ?? registro?.Inmovilizado?.Trim();
+                    bool anulado = fichasInmovilizado != null && registro != null
+                        && fichasInmovilizado.TryGetValue(ReglaPropuestasInmovilizados.ClaveInmovilizado(registro.Empresa, registro.Inmovilizado), out InmovilizadoAparatoFila ficha)
+                        && ficha.Estado < 0;
+                    return anulado
+                        ? $"El registro {registro.Numero} pone el inmovilizado {codigo}, que está anulado."
+                        : $"El registro {registro?.Numero} pone el inmovilizado {codigo}, pero esa ficha de inmovilizado no existe.";
                 default:
                     return motivo.ToString();
             }
         }
 
         private static string TextoMotivos(List<MotivoDescuadreAparato> motivos, List<RegistroAparatoDTO> registros, List<MovimientoAparatoDTO> movimientos,
-            List<string> otrasFormas)
-            => string.Join(" ", motivos.Select(m => TextoMotivo(m, registros, movimientos, otrasFormas)));
+            List<string> otrasFormas, Dictionary<string, InmovilizadoAparatoFila> fichasInmovilizado)
+            => string.Join(" ", motivos.Select(m => TextoMotivo(m, registros, movimientos, otrasFormas, fichasInmovilizado)));
 
         private static List<ResumenProductoAparatosDTO> Resumen(Dictionary<string, ProductoAparatoFila> fichas, List<RegistroAparatoDTO> registros,
             Dictionary<string, int> enStockMovimientos, List<StockAparatoFila> stock, SortedSet<(string Producto, string Serie)> claves)

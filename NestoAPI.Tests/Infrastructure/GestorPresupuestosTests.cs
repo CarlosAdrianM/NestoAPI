@@ -39,6 +39,80 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(string.Empty, gestor.GenerarHtmlSeccionValidacion(false, respuesta, 8, "Laura"));
         }
 
+        private static GestorPresupuestos GestorParaSeccionValidacion()
+            => new GestorPresupuestos(new PedidoVentaDTO(), null, A.Fake<NVEntities>(), A.Fake<IServicioVendedores>(),
+                A.Fake<IServicioGestorStocks>(), A.Fake<IServicioCorreoElectronico>());
+
+        private static readonly string N = Environment.NewLine;
+        private const string SEPARADO_931730 = "<tr><td colspan='8'>Pedido creado automáticamente al separar del pedido 931730 lo que se le añadió cuando ya estaba en preparación.</td></tr>";
+
+        [TestMethod]
+        public void SeccionValidacion_PedidoSeparadoPorElSistemaQuePasaLaValidacion_NoDiceCreadoSinPasarValidacion()
+        {
+            // Pedido 931846 (Carlos 27/11/26): Paloma añadió dos productos al 931730 con picking («PedirAlmacen») y pasaron la validación; luego el
+            // sistema los separó a un pedido nuevo con la marca de «sin validar». El correo decía en rojo «pedido creado sin pasar validación».
+            var respuesta = new RespuestaValidacion { ValidacionSuperada = true, Motivo = "Hay un descuento autorizado del 15,00 %" };
+
+            string html = GestorParaSeccionValidacion().GenerarHtmlSeccionValidacion(true, respuesta, 8, null, 931730, validadoAlAnadirse: true);
+
+            Assert.AreEqual(SEPARADO_931730 + N, html);
+        }
+
+        [TestMethod]
+        public void SeccionValidacion_PedidoSeparadoPorElSistemaQueHoyNoPasaria_AvisaSinAcusar()
+        {
+            var respuesta = new RespuestaValidacion { ValidacionSuperada = false, Motivo = "El producto 39284 no admite descuento" };
+
+            string html = GestorParaSeccionValidacion().GenerarHtmlSeccionValidacion(true, respuesta, 8, null, 931730, validadoAlAnadirse: true);
+
+            Assert.AreEqual(SEPARADO_931730 + N + "<tr style=\"color: red;\">" + N
+                + "<td colspan='8'>Aviso: estas líneas pasaron la validación al añadirse, pero ahora no la pasarían:<br/>• El producto 39284 no admite descuento</td>" + N
+                + "</tr>" + N, html);
+            Assert.IsFalse(html.Contains("creado sin pasar validación"));
+        }
+
+        [TestMethod]
+        public void SeccionValidacion_SeparadoDelPutQueElUsuarioCreoSinValidar_DiceLasDosCosas()
+        {
+            // SepararDelPut hereda la marca del PUT: si el usuario sí eligió crear sin validar (y podía), no se oculta.
+            var respuesta = new RespuestaValidacion { ValidacionSuperada = false, Motivo = "Descuento no autorizado" };
+
+            string html = GestorParaSeccionValidacion().GenerarHtmlSeccionValidacion(true, respuesta, 8, "Laura", 931730, validadoAlAnadirse: false);
+
+            Assert.AreEqual(SEPARADO_931730 + N + "<tr style=\"color: red;\">" + N
+                + "<td colspan='8'>Nota: pedido creado sin pasar validación (actualmente NO pasaría la validación)<br/><strong>Motivo:</strong><br/>• Descuento no autorizado"
+                + "<br/><strong>Autorizado por:</strong> Laura</td>" + N + "</tr>" + N, html);
+        }
+
+        [TestMethod]
+        public void SeccionValidacion_SeparadoDelPutQuePasoLaValidacion_SoloLaLineaDeSeparacion()
+        {
+            var respuesta = new RespuestaValidacion { ValidacionSuperada = true };
+
+            Assert.AreEqual(SEPARADO_931730 + N, GestorParaSeccionValidacion().GenerarHtmlSeccionValidacion(false, respuesta, 8, null, 931730));
+        }
+
+        [TestMethod]
+        public void SeccionValidacion_PedidosQueNoSonDeSeparacion_ComoSiempre()
+        {
+            // Pedido 931846: fija los textos de siempre (pedido normal, creado sin validar por el usuario, autorizado por otro, sin respuesta).
+            GestorPresupuestos gestor = GestorParaSeccionValidacion();
+            var pasa = new RespuestaValidacion { ValidacionSuperada = true, Motivo = "Hay un descuento autorizado del 15,00 %" };
+            var noPasa = new RespuestaValidacion { ValidacionSuperada = false, Motivo = "Descuento no autorizado" };
+
+            Assert.AreEqual(string.Empty, gestor.GenerarHtmlSeccionValidacion(false, pasa, 8));
+            Assert.AreEqual(string.Empty, gestor.GenerarHtmlSeccionValidacion(false, noPasa, 8, "Laura"));
+            Assert.AreEqual("<tr style=\"color: red;\">" + N
+                + "<td colspan='8'>Nota: pedido creado sin pasar validación (actualmente pasaría la validación)<br/><strong>Info:</strong> Hay un descuento autorizado del 15,00 %</td>" + N
+                + "</tr>" + N, gestor.GenerarHtmlSeccionValidacion(true, pasa, 8));
+            Assert.AreEqual("<tr style=\"color: red;\">" + N
+                + "<td colspan='8'>Nota: pedido creado sin pasar validación (actualmente NO pasaría la validación)<br/><strong>Motivo:</strong><br/>• Descuento no autorizado"
+                + "<br/><strong>Autorizado por:</strong> Laura</td>" + N + "</tr>" + N, gestor.GenerarHtmlSeccionValidacion(true, noPasa, 8, "Laura"));
+            Assert.AreEqual("<tr style=\"color: red;\">" + N
+                + "<td colspan='8'>Nota: pedido creado sin pasar validación (respuestaValidacion es null)</td>" + N + "</tr>" + N,
+                gestor.GenerarHtmlSeccionValidacion(true, null, 8));
+        }
+
         [TestMethod]
         public void AsuntoCorreo_PedidoDeLaApp_VaMarcadoConElCanal()
         {

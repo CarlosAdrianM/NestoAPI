@@ -508,7 +508,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             original.LineasQuePasanAPedidoNuevo = new HashSet<int>(lineas.Select(l => l.id));
             original.Usuario = solicitud.Usuario;
             // Lo añadido ya pasó la validación al guardarlo en el pedido: el pedido nuevo no la repite (quien puede saltársela, se la salta)
-            PedidoVentaDTO nuevo = AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo(original, copias, solicitud.Usuario, DateTime.Today, creadoSinPasarValidacion: true);
+            PedidoVentaDTO nuevo = AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo(original, copias, solicitud.Usuario, DateTime.Today, creadoSinPasarValidacion: true,
+                validadoAlAnadirse: true);
             using (var controller = new PedidosVentaController())
             {
                 return await ServicioAmpliacionPedidoEnPreparacion.Separar(original, lineas, nuevo, controller.PutPedidoVenta, controller.PostPedidoVenta)

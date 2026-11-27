@@ -185,6 +185,19 @@ namespace NestoAPI.Models.PedidosVenta
         [Newtonsoft.Json.JsonIgnore]
         public string AutorizadoPor { get; set; }
         /// <summary>
+        /// Pedido 931846 (Carlos 27/11/26): el pedido nuevo lo ha creado el sistema al separar de este pedido lo que se le añadió cuando ya
+        /// estaba en preparación (<c>AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo</c>). Solo para que el correo lo diga. Nunca viaja.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal int? SeparadoDelPedido { get; set; }
+        /// <summary>
+        /// Pedido 931846: la marca <see cref="CreadoSinPasarValidacion"/> la ha puesto el sistema, no el usuario, porque las líneas ya pasaron la
+        /// validación al añadirse al pedido original (el «No» de Almacén o el vencimiento). El correo no dice «creado sin pasar validación»;
+        /// solo avisa si hoy no la pasaría. Nunca viaja.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        internal bool ValidadoAlAnadirse { get; set; }
+        /// <summary>
         /// NestoAPI#712: aviso de fecha de entrega lejana (más de 60 días). Null = el cliente no sabe preguntar y graba como
         /// siempre, sin aviso. False = la API comprueba y, si alguna línea nueva o con la fecha cambiada va a más de 60 días,
         /// rechaza con FECHA_ENTREGA_LEJANA (400) y la pregunta en el mensaje. True = el usuario ya ha dicho que sí.

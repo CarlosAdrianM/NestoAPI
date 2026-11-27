@@ -262,7 +262,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// defecto: modos sin informar). Sin prepagos, ni efectos, ni nota de entrega. Pura.
         /// </summary>
         public static PedidoVentaDTO ConstruirPedidoNuevo(PedidoVentaDTO original, IEnumerable<LineaPedidoVentaDTO> lineas, string usuario,
-            DateTime hoy, bool creadoSinPasarValidacion)
+            DateTime hoy, bool creadoSinPasarValidacion, bool validadoAlAnadirse = false)
         {
             if (original == null)
             {
@@ -293,6 +293,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 comentarios = $"Añadido al pedido {original.numero} cuando ya estaba en preparación.",
                 Usuario = string.IsNullOrWhiteSpace(usuario) ? original.Usuario : usuario,
                 CreadoSinPasarValidacion = creadoSinPasarValidacion,
+                // Pedido 931846: para que el correo diga que lo ha creado el sistema (y no acuse a nadie de saltarse la validación)
+                SeparadoDelPedido = original.numero,
+                ValidadoAlAnadirse = creadoSinPasarValidacion && validadoAlAnadirse,
                 // Modos sin informar: nace en los de por defecto (NestoAPI#482/#542), como cualquier pedido nuevo
                 modoServicio = null,
                 modoFacturacion = null,
