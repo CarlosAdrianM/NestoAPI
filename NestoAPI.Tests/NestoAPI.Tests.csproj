@@ -253,6 +253,8 @@
     <Compile Include="Controllers\CalidadEncuestasControllerTests.cs" />
     <Compile Include="Controllers\CalidadPedidoPerfectoControllerTests.cs" />
     <Compile Include="Controllers\CalidadTableroControllerTests.cs" />
+    <Compile Include="Infrastructure\Calidad\CorreoResumenSemanalTests.cs" />
+    <Compile Include="Controllers\CalidadResumenSemanalControllerTests.cs" />
     <Compile Include="Infrastructure\Calidad\FuentesCandidatosEncuestaTests.cs" />
     <Compile Include="Infrastructure\Calidad\GobernadorEncuestasTests.cs" />
     <Compile Include="Infrastructure\Calidad\KpisTableroTests.cs" />

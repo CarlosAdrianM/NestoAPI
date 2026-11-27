@@ -397,3 +397,39 @@ a los trabajadores (ya dicho en la épica).
 #### Cómo se aprueban los umbrales
 1. Lanzar el script. 2. `POST …/Recalcular?semanas=26` (se programa para la noche). 3. `GET …/Umbrales/Propuesta?kpi=X` y mirar la distribución.
 4. Carlos aprueba (o ajusta) con `PUT …/Umbrales`, uno por KPI y tipo de dueño. Hasta entonces, el KPI se enseña sin nota.
+
+### Correo semanal de calidad (27/11/26)
+Carlos: «de momento, un correo automático cada lunes, SOLO A MÍ (no a Dirección), con el resumen. Y lo comentaremos en cada sesión de todos modos.»
+Código: `Infraestructure/Calidad/ResumenSemanal/` (LA REGLA pura `ReglaCorreoResumenSemanal.Componer(DatosResumenSemanal)` → `CorreoResumenSemanal`
+con todos los textos; el pintor puro `PintorCorreoResumenSemanal.Pintar`; `ServicioCorreoResumenSemanal` lee, manda y apunta; job
+`CorreoResumenSemanalJobsService`). Controlador `CalidadResumenSemanalController`.
+
+- **Destinatario**: UNA dirección en ParametrosUsuario empresa 1, «(defecto)», `Calidad.CorreoResumenSemanal` (`LeerParametroSinDefecto`: leerla no crea
+  fila). Sin fila, vacía, con coma/punto y coma (una lista no vale) o mal escrita → NO se manda nada y ELMAH una sola vez por arranque. Ninguna
+  dirección a fuego (el remitente es el de siempre, nesto@). `Scripts/Issue914r_CalidadCorreoResumen.sql` crea la fila VACÍA (idempotente; no la pisa).
+- **Job** `calidad-correo-resumen-semanal`: los LUNES a las 7:30 de Madrid, cola «indicadores» (después del tablero de las 4:20). La semana = la de lunes
+  a domingo anterior (`ReglaCorreoResumenSemanal.SemanaCerrada`). Si el tablero aún no tiene ESA semana (ningún KPI sin maduración con filas: su job se
+  fue a las 21:00 por ir la cola con retraso; la pérdida desconocida siempre guarda los tres almacenes), no manda y se reprograma UNA vez para las 23:00
+  (`Reintentar`, que manda con lo que haya).
+- **No calcula nada pesado**: el tablero, de `dbo.CalidadKpiSemanas`/`CalidadKpiUmbrales` (las semanas de la tira y la tendencia de todos los KPI, una
+  lectura); Almacén, `ServicioCalidadAlmacen.Resumen` de la semana cerrada (con su caché, como el endpoint); encuestas, lo guardado en sombra
+  (`ServicioEncuestas.SombraEntre`, la semana; `DiasProcesados` nuevo en el DTO) y el interruptor. Cada parte por su lado: si falla o falta su tabla,
+  su sección dice «No disponible: …» (y ELMAH si es un fallo) y el resto del correo sale igual.
+- **Idempotente por semana**: el envío se apunta en `dbo.Modificaciones` (Tabla `CalidadCorreoResumenSemanal`, Anterior «Semana yyyy-MM-dd», Nuevo
+  {Destinatario, Asunto}, Usuario = el sistema o quien lo pidió); antes de mandar se mira esa fila (Fecha ≥ el lunes siguiente). Ya mandada → no se manda.
+  Si no se puede mirar, NO se manda (mejor uno de menos que dos). Se apunta DESPUÉS de que el SMTP lo acepte (si no lo acepta, no se apunta).
+- **Contenido** (HTML sobrio, ≤ 640 px, estilos en línea, de usted): asunto «Calidad: semana del 23 al 29/11/2026»; «Lo que más ha cambiado» (hasta 5:
+  los KPI/dueños cuya última semana cerrada se separa más, en proporción, de la media de sus 4 anteriores con valor, con `ReglaNotaKpi.Tendencia`
+  y `Mejora`; media 0 va delante; «Pérdida desconocida en Alcobendas: 312 € (FAIR), sube respecto a las 4 semanas anteriores (180 €), a peor.»);
+  Tablero (por KPI con fuente, la semana si ya está cerrada para él o, si madura, «La semana del … estará el …» y la última cerrada; tabla dueño,
+  valor, nota o «sin umbral», y tira de las 8 últimas: P/F/G/★, «·» con valor sin nota, «–» sin dato; sin fuente, «Todavía no disponible»; sin
+  filas, «no está calculada»); Almacén (los dos oficiales por preparador y el total, «sin evaluar» o «2,5 % (1 de 40)», con la nota de los N días de
+  reclamación, pickings en papel, líneas sin preparador, etiquetas con packing incompleto y el Aviso); Encuestas en sombra (cuántas se habrían
+  mandado, de cuántas candidatas y en cuántos días procesados, el tope, por tema y por canal; apagado, lo dice); Pendiente de usted (KPI y tipos sin
+  umbrales con la ruta de la propuesta, scripts que faltan del tablero, de las encuestas y los `SinRastro` de Almacén que piden un script, y el
+  interruptor `Calidad.EncuestasSombra` apagado); pie con las rutas de la API de cada cifra y que es solo para él.
+- **Probarlo**: `POST api/Calidad/ResumenSemanal/Enviar?semana=&ensayo=true` (Dirección/Informática, 403 de usted). Sin `semana`, la última cerrada;
+  una semana sin acabar o de hace más de 104 semanas → 400. `ensayo=true` (por defecto) NO manda ni apunta: devuelve {Semana, Ensayo, Enviado, Estado,
+  Destinatario, YaEnviadoEl, Asunto, Html, Mensaje} (dice a quién saldría y si ya se mandó). `ensayo=false` lo manda SOLO al configurado (la petición no
+  admite otro): 200 Enviado; 409 si ya se mandó esa semana o no hay destinatario; 503 si no se puede comprobar o el SMTP no lo acepta. Es el mismo camino
+  que el job (sin el aplazamiento).

@@ -88,6 +88,8 @@ namespace NestoAPI.Infraestructure.Calidad.Encuestas
         /// <summary>De usted: fuentes sin leer, parámetros corregidos, bajas sin leer… (null si nada).</summary>
         public string Aviso { get; set; }
         public DateTime CalculadoEl { get; set; }
+        /// <summary>Solo en lo guardado en sombra: cuántos días del rango ha procesado el job (null en la simulación).</summary>
+        public int? DiasProcesados { get; set; }
     }
 
     /// <summary>Una fila de la comparación entre intervalos.</summary>
@@ -132,6 +134,10 @@ namespace NestoAPI.Infraestructure.Calidad.Encuestas
         SimulacionEncuestasDTO Simular(string empresa, DateTime desde, DateTime hasta, int? diasEntre);
         ComparacionSimulacionEncuestasDTO Comparar(string empresa, DateTime desde, DateTime hasta, IReadOnlyList<int> intervalos);
         SimulacionEncuestasDTO Sombra(string empresa, int dias);
+        /// <summary>Lo guardado en sombra con día en [desde, hasta) (el correo semanal: la semana cerrada).</summary>
+        SimulacionEncuestasDTO SombraEntre(string empresa, DateTime desde, DateTime hasta);
+        /// <summary>El interruptor Calidad.EncuestasSombra (solo «1» enciende).</summary>
+        bool SombraEncendida();
     }
 
     /// <summary>Las candidatas de un rango ya preparadas (sin clientes excluidos y con su canal) y lo que hay que avisar.</summary>
@@ -335,13 +341,23 @@ namespace NestoAPI.Infraestructure.Calidad.Encuestas
 
         public SimulacionEncuestasDTO Sombra(string empresa, int dias)
         {
+            DateTime hasta = ahora().Date;
+            return SombraEntre(empresa, hasta.AddDays(-dias), hasta);
+        }
+
+        /// <summary>
+        /// Lo guardado por el job en sombra con día en [<paramref name="desde"/>, <paramref name="hasta"/>) (el correo semanal de calidad pide la
+        /// semana cerrada). Lanza <see cref="EncuestasSinTablasException"/> sin el script.
+        /// </summary>
+        public SimulacionEncuestasDTO SombraEntre(string empresa, DateTime desde, DateTime hasta)
+        {
             ILectorEncuestas l = lector();
             if (!l.ExistenTablas())
             {
                 throw new EncuestasSinTablasException();
             }
-            DateTime hasta = ahora().Date;
-            DateTime desde = hasta.AddDays(-dias);
+            desde = desde.Date;
+            hasta = hasta.Date;
             LecturaSombraEncuestas sombra = l.LeerSombra(empresa, desde, hasta);
             var candidatas = sombra.Encuestas.Concat(sombra.Descartes.Select(d => d.Key)).ToList();
             var avisos = new List<string>();
@@ -349,8 +365,10 @@ namespace NestoAPI.Infraestructure.Calidad.Encuestas
             {
                 avisos.Add($"El job en sombra está apagado (ParametrosUsuario «(defecto)» {ParametrosEncuestas.SOMBRA} distinto de «1»).");
             }
-            return Resumir(empresa, desde, hasta, sombra.UltimoIntervalo ?? DiasEntreDelParametro(out _), candidatas, sombra.Encuestas,
+            SimulacionEncuestasDTO resumen = Resumir(empresa, desde, hasta, sombra.UltimoIntervalo ?? DiasEntreDelParametro(out _), candidatas, sombra.Encuestas,
                 sombra.Descartes, sombra.CandidatasPorDia, avisos, ahora());
+            resumen.DiasProcesados = sombra.CandidatasPorDia?.Count ?? 0;
+            return resumen;
         }
 
         // ------------------------------------------------------------ resumen (PURO)

@@ -1186,6 +1186,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'calidad-tablero-kpi' configurado (los lunes a las 4:20)");
 
+            // NestoAPI#914: el correo semanal de calidad (tablero, Almacén y encuestas en sombra), SOLO al destinatario de ParametrosUsuario
+            // «(defecto)» Calidad.CorreoResumenSemanal (sin él no manda nada). Los lunes a las 7:30 (cola «indicadores», después del tablero);
+            // no calcula nada pesado e idempotente por semana (dbo.Modificaciones). Si el tablero aún no tiene la semana, otra vez a las 23:00.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Calidad.ResumenSemanal.CorreoResumenSemanalJobsService.JOB_ID,
+                () => Infraestructure.Calidad.ResumenSemanal.CorreoResumenSemanalJobsService.EnviarSemanal(),
+                Infraestructure.Calidad.ResumenSemanal.CorreoResumenSemanalJobsService.CRON, // Cron: los lunes a las 7:30
+                new RecurringJobOptions
+                {
+                    TimeZone = Infraestructure.Clientes.Embudo.EmbudoBloqueDiarioJobsService.ZonaMadrid()
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'calidad-correo-resumen-semanal' configurado (los lunes a las 7:30; solo con Calidad.CorreoResumenSemanal)");
+
             // 11/11/26: cada madrugada, de solo lectura, ubicaciones de ALG de albaranes que ya no existen (se deshizo el albarán y
             // sus ubicaciones no volvieron): aviso en la campana de Nesto y por correo a Dirección y Almacén.
             RecurringJob.AddOrUpdate(

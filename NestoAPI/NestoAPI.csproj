@@ -525,6 +525,10 @@
     <Compile Include="Infraestructure\Calidad\Reclamaciones\LectorReclamacionesEnvioSql.cs" />
     <Compile Include="Infraestructure\Calidad\Reclamaciones\ReglaErrorEnvioReclamado.cs" />
     <Compile Include="Infraestructure\Calidad\RegistroCalidad.cs" />
+    <Compile Include="Infraestructure\Calidad\ResumenSemanal\PintorCorreoResumenSemanal.cs" />
+    <Compile Include="Infraestructure\Calidad\ResumenSemanal\ReglaCorreoResumenSemanal.cs" />
+    <Compile Include="Infraestructure\Calidad\ResumenSemanal\ServicioCorreoResumenSemanal.cs" />
+    <Compile Include="Controllers\CalidadResumenSemanalController.cs" />
     <Compile Include="Controllers\CalidadTableroController.cs" />
     <Compile Include="Infraestructure\Calidad\Tablero\FuentesKpi.cs" />
     <Compile Include="Infraestructure\Calidad\Tablero\IdentidadTablero.cs" />
