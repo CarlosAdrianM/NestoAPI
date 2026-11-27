@@ -155,10 +155,35 @@ namespace NestoAPI.Controllers
             });
         }
 
-        // GET: api/ExtractosCliente
-        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string cliente)
+        /// <summary>
+        /// Carlos 27/11/26 (NestoAPI#876): las fichas equivalentes del cliente (duplicadas o de un cambio de forma fiscal), para
+        /// <c>incluirEquivalentes</c>. SOLO EN LECTURA: nada que escriba ni calcule deuda o riesgo las mira. Sustituible en los tests.
+        /// </summary>
+        internal IClientesEquivalentes ClientesEquivalentes
         {
-            List<ExtractoClienteDTO> extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte != 0 && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
+            get => clientesEquivalentes ?? (clientesEquivalentes = new ClientesEquivalentes());
+            set => clientesEquivalentes = value;
+        }
+        private IClientesEquivalentes clientesEquivalentes;
+
+        /// <summary>Los movimientos del cliente o, con <paramref name="incluirEquivalentes"/>, de todas sus fichas equivalentes (cada uno con su <c>cliente</c>).</summary>
+        private IQueryable<ExtractoCliente> DelCliente(string empresa, string cliente, bool incluirEquivalentes)
+        {
+            if (!incluirEquivalentes)
+            {
+                return db.ExtractosCliente.Where(e => e.Número == cliente);
+            }
+            List<string> clientes = ConsultaConEquivalentes.Clientes(ClientesEquivalentes, empresa, cliente, true).ToList();
+            return db.ExtractosCliente.Where(e => clientes.Contains(e.Número));
+        }
+
+        // GET: api/ExtractosCliente
+        // Carlos 27/11/26 (NestoAPI#876): incluirEquivalentes opcional, false por defecto (Nesto, NestoApp y TNV no cambian): con true,
+        // también lo pendiente de sus fichas equivalentes; cada movimiento dice de qué ficha es en «cliente».
+        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string cliente, bool incluirEquivalentes = false)
+        {
+            List<ExtractoClienteDTO> extracto = DelCliente(Constantes.Empresas.EMPRESA_POR_DEFECTO, cliente, incluirEquivalentes)
+                .Where(e => e.ImportePdte != 0 && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
@@ -192,9 +217,13 @@ namespace NestoAPI.Controllers
         // Issue NestoAPI#168 (TiendasNuevaVision#29): filtrarPorEmpresa opcional, default false
         // para no romper llamadas existentes (Nesto, NestoApp). TiendasNuevaVision lo envía a
         // true para ver solo movimientos de la empresa 1.
-        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string empresa, string cliente, string tipoApunte, DateTime fechaDesde, DateTime fechaHasta, bool filtrarPorEmpresa = false)
+        // Carlos 27/11/26 (NestoAPI#876): incluirEquivalentes opcional, false por defecto: con true, también los movimientos de sus fichas
+        // equivalentes (cada uno con su «cliente»).
+        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string empresa, string cliente, string tipoApunte, DateTime fechaDesde, DateTime fechaHasta, bool filtrarPorEmpresa = false,
+            bool incluirEquivalentes = false)
         {
-            IQueryable<ExtractoCliente> baseQuery = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta);
+            IQueryable<ExtractoCliente> baseQuery = DelCliente(empresa, cliente, incluirEquivalentes)
+                .Where(e => e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta);
             if (filtrarPorEmpresa)
             {
                 baseQuery = baseQuery.Where(e => e.Empresa == empresa);

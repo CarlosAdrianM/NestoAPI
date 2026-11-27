@@ -540,6 +540,7 @@
     <Compile Include="Controllers\ClientesController.DiaReparto.cs" />
     <Compile Include="Controllers\ClientesController.ClienteAnterior.cs" />
     <Compile Include="Controllers\ClientesController.Condiciones.cs" />
+    <Compile Include="Controllers\ClientesController.Equivalentes.cs" />
     <Compile Include="Controllers\ClientesController.Origen.cs" />
     <Compile Include="Controllers\ClientesController.CambioFiscal.cs" />
     <Compile Include="Controllers\ClientesController.ImportarLeads.cs" />
@@ -1117,6 +1118,7 @@
     <Compile Include="Infraestructure\Clientes\Direccion2Cliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2PedidoTienda.cs" />
     <Compile Include="Infraestructure\Clientes\ClientesAnteriores.cs" />
+    <Compile Include="Infraestructure\Clientes\EquivalenciasClientes.cs" />
     <Compile Include="Infraestructure\Clientes\CondicionesCliente.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2ClienteSql.cs" />
     <Compile Include="Infraestructure\Clientes\Direccion2EnSesion.cs" />

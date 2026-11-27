@@ -89,12 +89,20 @@ namespace NestoAPI.Infraestructure.Clientes
     /// <summary>
     /// NestoAPI#876 corte 2: LA PIEZA ÚNICA «clientes equivalentes» = el cliente y sus anteriores, en cadena (el anterior del anterior…),
     /// sin ciclos. La usarán las consultas COMERCIALES (plantilla de venta, rapports, sugerencias de llamadas, fechas de compras,
-    /// embudo: cortes 3 y 4); NUNCA las fiscales ni contables (facturas, extracto, deuda, remesas, 347, Verifactu, riesgo).
+    /// embudo: cortes 3 y 4); NUNCA para escribir ni para calcular nada fiscal o contable (facturas, deuda, remesas, cobros, 347,
+    /// Verifactu, riesgo). Carlos 27/11/26: el extracto y los rapports la usan SOLO EN LECTURA y solo si se pide
+    /// (<c>incluirEquivalentes=true</c>, <see cref="ConsultaConEquivalentes"/>), para ver junto el histórico de las fichas duplicadas.
     /// </summary>
     public interface IClientesEquivalentes
     {
         /// <summary>El cliente (primero) y sus anteriores, del más reciente al más antiguo, sin relleno. Nunca vacía con cliente; nunca lanza.</summary>
         Task<IReadOnlyList<string>> De(string empresa, string cliente);
+
+        /// <summary>
+        /// Carlos 27/11/26: TODAS las fichas equivalentes, en los dos sentidos (sus anteriores y las que vinieron después), para que la
+        /// consulta de cualquiera de ellas vea el histórico entero. Primero el cliente pedido. Nunca vacía con cliente; nunca lanza.
+        /// </summary>
+        Task<IReadOnlyList<string>> Todas(string empresa, string cliente);
     }
 
     /// <summary>La regla (pura) de la cadena: sigue los enlaces cliente → anterior hasta que no hay más, se repite uno o llega al tope.</summary>
@@ -123,6 +131,75 @@ namespace NestoAPI.Infraestructure.Clientes
                 actual = anterior;
             }
             return cadena;
+        }
+
+        /// <summary>Tope de fichas de un grupo de equivalentes (<see cref="Grupo"/>): un dato raro nunca deja la consulta colgada.</summary>
+        public const int MAXIMO_FICHAS_GRUPO = 50;
+
+        /// <summary>
+        /// Carlos 27/11/26: el grupo entero de fichas equivalentes a <paramref name="cliente"/> (enlaces en los dos sentidos). Orden: el
+        /// cliente pedido; después, las demás de su cadena (<see cref="Cadena"/>) desde la ficha más reciente; y si alguna ficha antigua
+        /// es el anterior de dos (rama), las de la otra rama detrás. Sin repetidos y con tope <see cref="MAXIMO_FICHAS_GRUPO"/>.
+        /// </summary>
+        public static IReadOnlyList<string> Grupo(string cliente, IReadOnlyDictionary<string, string> anteriorDe)
+        {
+            string inicio = cliente?.Trim();
+            if (string.IsNullOrEmpty(inicio))
+            {
+                return new List<string>();
+            }
+            anteriorDe = anteriorDe ?? new Dictionary<string, string>();
+            // Los que vinieron después de cada ficha (el inverso del enlace)
+            var siguientesDe = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> e in anteriorDe)
+            {
+                string anterior = e.Value?.Trim();
+                if (string.IsNullOrEmpty(anterior))
+                {
+                    continue;
+                }
+                if (!siguientesDe.TryGetValue(anterior, out List<string> lista))
+                {
+                    siguientesDe[anterior] = lista = new List<string>();
+                }
+                lista.Add(e.Key.Trim());
+            }
+            // Todas las del grupo, sin mirar el sentido
+            var grupo = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { inicio };
+            var pendientes = new Queue<string>();
+            pendientes.Enqueue(inicio);
+            while (pendientes.Count > 0 && grupo.Count < MAXIMO_FICHAS_GRUPO)
+            {
+                string actual = pendientes.Dequeue();
+                var vecinos = new List<string>();
+                if (anteriorDe.TryGetValue(actual, out string suAnterior) && !string.IsNullOrWhiteSpace(suAnterior))
+                {
+                    vecinos.Add(suAnterior.Trim());
+                }
+                if (siguientesDe.TryGetValue(actual, out List<string> suyos))
+                {
+                    vecinos.AddRange(suyos);
+                }
+                foreach (string v in vecinos)
+                {
+                    if (grupo.Count < MAXIMO_FICHAS_GRUPO && grupo.Add(v))
+                    {
+                        pendientes.Enqueue(v);
+                    }
+                }
+            }
+            // Las cabezas (nadie las tiene de anterior): primero la de la cadena del cliente pedido; las demás, por número
+            List<string> cabezas = grupo.Where(f => !siguientesDe.TryGetValue(f, out List<string> s) || !s.Any(grupo.Contains))
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+            string cabezaPropia = cabezas.FirstOrDefault(c => Cadena(c, anteriorDe).Contains(inicio, StringComparer.OrdinalIgnoreCase));
+            var orden = new List<string> { inicio };
+            foreach (string cabeza in new[] { cabezaPropia }.Where(c => c != null).Concat(cabezas.Where(c => c != cabezaPropia)))
+            {
+                orden.AddRange(Cadena(cabeza, anteriorDe).Where(f => grupo.Contains(f) && !orden.Contains(f, StringComparer.OrdinalIgnoreCase)));
+            }
+            // Lo que quede (un ciclo en los datos no tiene cabeza)
+            orden.AddRange(grupo.Where(f => !orden.Contains(f, StringComparer.OrdinalIgnoreCase)).OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+            return orden;
         }
 
         /// <summary>Los enlaces de una empresa como diccionario cliente → anterior (sin relleno; si se repitiera un cliente, el más reciente).</summary>
@@ -295,6 +372,13 @@ COMMIT TRANSACTION;";
             string emp = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             IReadOnlyDictionary<string, string> enlaces = await Enlaces(emp).ConfigureAwait(false);
             return ReglaClientesEquivalentes.Cadena(cliente, enlaces);
+        }
+
+        public async Task<IReadOnlyList<string>> Todas(string empresa, string cliente)
+        {
+            string emp = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            IReadOnlyDictionary<string, string> enlaces = await Enlaces(emp).ConfigureAwait(false);
+            return ReglaClientesEquivalentes.Grupo(cliente, enlaces);
         }
 
         private async Task<IReadOnlyDictionary<string, string>> Enlaces(string empresa)

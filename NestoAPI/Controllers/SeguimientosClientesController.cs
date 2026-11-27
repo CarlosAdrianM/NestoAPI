@@ -34,13 +34,47 @@ namespace NestoAPI.Controllers
             _servicioCorreoElectronico = servicioCorreoElectronico;
         }
 
+        /// <summary>
+        /// Carlos 27/11/26 (NestoAPI#876): las fichas equivalentes del cliente (duplicadas o de un cambio de forma fiscal), para
+        /// <c>incluirEquivalentes</c>. Solo en lectura. Sustituible en los tests.
+        /// </summary>
+        internal IClientesEquivalentes ClientesEquivalentes
+        {
+            get => clientesEquivalentes ?? (clientesEquivalentes = new ClientesEquivalentes());
+            set => clientesEquivalentes = value;
+        }
+        private IClientesEquivalentes clientesEquivalentes;
+
+        /// <summary>
+        /// Los rapports del cliente y contacto pedidos y, con <paramref name="otrasFichas"/> (sus equivalentes), los de esas fichas en
+        /// TODOS sus contactos: los números de contacto de una ficha duplicada no tienen por qué ser los mismos. Sin otras fichas, el
+        /// filtro de siempre.
+        /// </summary>
+        internal static IQueryable<SeguimientoCliente> DelCliente(IQueryable<SeguimientoCliente> seguimientos, string empresa, string cliente, string contacto,
+            IReadOnlyCollection<string> otrasFichas)
+        {
+            if (otrasFichas == null || otrasFichas.Count == 0)
+            {
+                return seguimientos.Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto);
+            }
+            List<string> otras = otrasFichas.ToList();
+            return seguimientos.Where(s => s.Empresa == empresa && ((s.Número == cliente && s.Contacto == contacto) || otras.Contains(s.Número)));
+        }
+
+        private List<string> OtrasFichas(string empresa, string cliente, bool incluirEquivalentes)
+            => incluirEquivalentes
+                ? ConsultaConEquivalentes.Otras(ConsultaConEquivalentes.Clientes(ClientesEquivalentes, empresa, cliente, true), cliente)
+                : new List<string>();
+
         // GET: api/SeguimientosClientes
-        public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string empresa, string cliente, string contacto)
+        // Carlos 27/11/26 (NestoAPI#876): incluirEquivalentes opcional, false por defecto (Nesto y NestoApp no cambian): con true, también
+        // los rapports de sus fichas equivalentes; cada uno dice de qué ficha es en «Cliente».
+        public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string empresa, string cliente, string contacto, bool incluirEquivalentes = false)
         {
             DateTime fechaDesde = DateTime.Today.AddYears(-3);
-            return ConResultado(db.SeguimientosClientes
-                .Include(s => s.Cliente)
-                .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto && s.Fecha >= fechaDesde)
+            return ConResultado(DelCliente(db.SeguimientosClientes
+                .Include(s => s.Cliente), empresa, cliente, contacto, OtrasFichas(empresa, cliente, incluirEquivalentes))
+                .Where(s => s.Fecha >= fechaDesde)
                 .Select(s => new SeguimientoClienteDTO
                 {
                     Aparatos = s.Aparatos,
@@ -166,11 +200,11 @@ namespace NestoAPI.Controllers
 
         [HttpGet]
         [Route("api/SeguimientosClientes/Resumen")]
-        public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, string cliente, string contacto)
+        // Carlos 27/11/26 (NestoAPI#876): con incluirEquivalentes (por defecto false), también los rapports de sus fichas equivalentes.
+        public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, string cliente, string contacto, bool incluirEquivalentes = false)
         {
             // Obtiene los 100 comentarios y fechas de los seguimientos más recientes
-            var seguimientos = db.SeguimientosClientes
-                .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto)
+            var seguimientos = DelCliente(db.SeguimientosClientes, empresa, cliente, contacto, OtrasFichas(empresa, cliente, incluirEquivalentes))
                 .Select(s => new { s.Fecha, s.Comentarios, s.Pedido })
                 .OrderByDescending(s => s.Fecha)  // Ordenar por fecha descendente
                 .Take(100)                        // Tomar solo los 100 más recientes
