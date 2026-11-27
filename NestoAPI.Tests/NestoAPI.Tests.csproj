@@ -883,6 +883,7 @@
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoCoberturaTests.cs" />
     <Compile Include="Infrastructure\Rapports\DatosSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ExplicacionModeloContactoTests.cs" />
+    <Compile Include="Infrastructure\Remesas\CandidatosRiesgoImpagosTests.cs" />
     <Compile Include="Infrastructure\Remesas\ModeloImpagosRemesasTests.cs" />
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ReglasImpulsoOfertasContactoTests.cs" />

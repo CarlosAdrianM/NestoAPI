@@ -31,6 +31,9 @@ namespace NestoAPI.Infraestructure.Remesas.ModeloImpagados
         public string Ccc { get; set; }
         /// <summary>Entidad (4 cifras) de esa ficha bancaria.</summary>
         public string Entidad { get; set; }
+        /// <summary>Nombre del cliente (solo lo trae <see cref="IRepositorioModeloImpagos.LeerEfectosCartera"/>; no entra en los rasgos).</summary>
+        [JsonIgnore]
+        public string Nombre { get; set; }
 
         /// <summary>Día del impagado que se le ha enlazado (<see cref="EnlazadorImpagados"/>). Null = no ha vuelto.</summary>
         public DateTime? FechaImpago { get; set; }

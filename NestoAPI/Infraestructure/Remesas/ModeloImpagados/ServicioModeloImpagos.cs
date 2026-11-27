@@ -277,21 +277,14 @@ namespace NestoAPI.Infraestructure.Remesas.ModeloImpagados
                 {
                     return 0;
                 }
-                DateTime hoy = ahora().Date;
-                DateTime desde = hoy.AddYears(-ModeloImpagosRemesasJobsService.ANIOS_HISTORICO);
-                HistoricoImpagos historia = repositorio.LeerHistorialClientes(empresa, efectos.Select(e => e.Cliente).ToList(), desde);
-                _ = EnlazadorImpagados.Enlazar(historia.Recibos, historia.Impagados);
-                NivelGeneralImpagos general = repositorio.LeerNivelGeneral(hoy);
-                ILookup<string, ReciboGirado> porCliente = historia.Recibos.ToLookup(r => r.ClaveCliente);
-
-                // El día del giro es el de la remesa (hoy, si se apunta al crearla): lo que se sabe ese día.
-                List<RasgosImpago> rasgos = efectos.Select(e => ConstructorRasgosImpagos.Rasgos(e, e.FechaGiro, porCliente[e.ClaveCliente], general)).ToList();
-                List<PrediccionRiesgoImpago> predicciones = predictor.Predecir(rasgos);
+                // El núcleo común (el mismo que GET api/Remesas/ModeloImpagados/Candidatos): el día del giro es el de la remesa (hoy, si
+                // se apunta al crearla) y solo cuenta lo que se sabía ese día.
+                List<RiesgoEfectoImpago> riesgos = CalculoRiesgoImpagos.Calcular(repositorio, predictor, empresa, efectos, ahora().Date);
                 var filas = new List<FilaPrediccionImpago>();
-                for (int i = 0; i < efectos.Count && i < predicciones.Count; i++)
+                foreach (RiesgoEfectoImpago riesgo in riesgos)
                 {
-                    ReciboGirado e = efectos[i];
-                    PrediccionRiesgoImpago p = predicciones[i];
+                    ReciboGirado e = riesgo.Efecto;
+                    PrediccionRiesgoImpago p = riesgo.Prediccion;
                     if (!p.Probabilidad.HasValue && !p.ProbabilidadRegla.HasValue)
                     {
                         continue;
@@ -311,7 +304,7 @@ namespace NestoAPI.Infraestructure.Remesas.ModeloImpagados
                         VersionModelo = p.VersionModelo,
                         Probabilidad = Redondear(p.Probabilidad),
                         ProbabilidadRegla = Redondear(p.ProbabilidadRegla),
-                        Rasgos = JsonConvert.SerializeObject(rasgos[i]),
+                        Rasgos = JsonConvert.SerializeObject(riesgo.Rasgos),
                         MotivosRiesgo = p.Motivos == null || p.Motivos.Count == 0 ? null : string.Join("; ", p.Motivos)
                     });
                 }

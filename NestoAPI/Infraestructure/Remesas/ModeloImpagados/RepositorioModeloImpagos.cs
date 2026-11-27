@@ -94,6 +94,11 @@ namespace NestoAPI.Infraestructure.Remesas.ModeloImpagados
         NivelGeneralImpagos LeerNivelGeneral(DateTime hoy);
         /// <summary>Los efectos (cartera) que lleva la remesa.</summary>
         List<ReciboGirado> LeerEfectosRemesa(string empresa, int remesa);
+        /// <summary>
+        /// Los efectos de cartera con esos Nº de orden (por tandas), aunque no estén girados: los candidatos a una remesa. Trae el nombre
+        /// del cliente (<see cref="ReciboGirado.Nombre"/>). Solo lee.
+        /// </summary>
+        List<ReciboGirado> LeerEfectosCartera(string empresa, IReadOnlyCollection<int> numerosOrden);
         /// <summary>Inserta las que no estén ya (por empresa + remesa + Nº de orden). Devuelve cuántas ha insertado.</summary>
         int GuardarPredicciones(IReadOnlyCollection<FilaPrediccionImpago> filas);
         /// <summary>Si <see cref="EntrenamientoModeloImpagos.ModeloActivo"/>, deja las demás filas a 0 en la misma transacción.</summary>
@@ -127,14 +132,29 @@ namespace NestoAPI.Infraestructure.Remesas.ModeloImpagados
         /// Recibo girado = cartera (TipoApunte 2) con Remesa. El día del giro sale de la remesa (<see cref="ReglaFechaGiro"/>): la Fecha
         /// del apunte es la de la factura. La entidad, de la ficha bancaria del efecto.
         /// </summary>
-        internal const string SQL_RECIBOS = @"
+        internal const string SQL_RECIBOS = SQL_COLUMNAS_RECIBO + SQL_ORIGEN_RECIBO + @"
+WHERE e.Remesa IS NOT NULL AND e.TipoApunte = '2' AND e.Importe > 0";
+
+        /// <summary>Las columnas de un recibo (las que lee <see cref="LeerRecibos"/>, en este orden).</summary>
+        private const string SQL_COLUMNAS_RECIBO = @"
 SELECT RTRIM(e.Empresa), e.[Nº Orden], RTRIM(e.[Número]), RTRIM(ISNULL(e.Contacto, '')), CAST(CAST(e.Fecha AS date) AS datetime),
        CAST(CAST(e.FechaVto AS date) AS datetime), CAST(CAST(r.Fecha AS date) AS datetime), RTRIM(e.[Nº Documento]), RTRIM(ISNULL(e.Efecto, '')),
-       e.Importe, e.Remesa, RTRIM(ISNULL(e.Vendedor, '')), RTRIM(ISNULL(e.FormaVenta, '')), RTRIM(ISNULL(e.CCC, '')), RTRIM(ISNULL(c.Entidad, ''))
+       e.Importe, e.Remesa, RTRIM(ISNULL(e.Vendedor, '')), RTRIM(ISNULL(e.FormaVenta, '')), RTRIM(ISNULL(e.CCC, '')), RTRIM(ISNULL(c.Entidad, ''))";
+
+        private const string SQL_ORIGEN_RECIBO = @"
 FROM ExtractoCliente e WITH (NOLOCK)
 LEFT JOIN Remesas r WITH (NOLOCK) ON r.Empresa = e.Empresa AND r.[Número] = e.Remesa
-LEFT JOIN CCC c WITH (NOLOCK) ON c.Empresa = e.Empresa AND c.Cliente = e.[Número] AND c.Contacto = e.Contacto AND c.[Número] = e.CCC
-WHERE e.Remesa IS NOT NULL AND e.TipoApunte = '2' AND e.Importe > 0";
+LEFT JOIN CCC c WITH (NOLOCK) ON c.Empresa = e.Empresa AND c.Cliente = e.[Número] AND c.Contacto = e.Contacto AND c.[Número] = e.CCC";
+
+        /// <summary>
+        /// 27/11/26: los efectos de cartera por Nº de orden (los candidatos a remesa, aún sin girar), con las mismas columnas que un recibo
+        /// girado y el nombre del cliente detrás. Sin filtro de remesa: todavía no la tienen.
+        /// </summary>
+        internal const string SQL_EFECTOS_CARTERA = SQL_COLUMNAS_RECIBO + @", RTRIM(ISNULL(cl.Nombre, ''))" + SQL_ORIGEN_RECIBO + @"
+LEFT JOIN Clientes cl WITH (NOLOCK) ON cl.Empresa = e.Empresa AND cl.[Nº Cliente] = e.[Número] AND cl.Contacto = e.Contacto
+WHERE e.TipoApunte = '2' AND e.Empresa = @empresa";
+
+        private const int EFECTOS_POR_TANDA = 500;
 
         /// <summary>Para entrenar y para la historia: solo los recibos bancarios (FormaPago RCB), como en el análisis.</summary>
         internal const string SQL_FILTRO_HISTORICO = " AND e.FormaPago = 'RCB' AND e.Fecha >= @desde";
@@ -326,6 +346,34 @@ SELECT COUNT(*), SUM(CASE WHEN Devuelto IS NULL THEN 1 ELSE 0 END), MIN(FechaPre
             return SinRepetir(recibos);
         }
 
+        public List<ReciboGirado> LeerEfectosCartera(string empresa, IReadOnlyCollection<int> numerosOrden)
+        {
+            var recibos = new List<ReciboGirado>();
+            List<int> lista = (numerosOrden ?? new List<int>()).Distinct().OrderBy(n => n).ToList();
+            if (lista.Count == 0)
+            {
+                return recibos;
+            }
+            using (SqlConnection conexion = Abrir())
+            {
+                for (int inicio = 0; inicio < lista.Count; inicio += EFECTOS_POR_TANDA)
+                {
+                    List<int> tanda = lista.Skip(inicio).Take(EFECTOS_POR_TANDA).ToList();
+                    string filtro = " AND e.[Nº Orden] IN (" + string.Join(", ", tanda.Select((n, i) => "@o" + i)) + ")";
+                    using (var comando = new SqlCommand(SQL_EFECTOS_CARTERA + filtro, conexion) { CommandTimeout = TIMEOUT_LECTURA })
+                    {
+                        comando.Parameters.Add("@empresa", SqlDbType.Char, 3).Value = (empresa ?? string.Empty).Trim();
+                        for (int i = 0; i < tanda.Count; i++)
+                        {
+                            comando.Parameters.Add("@o" + i, SqlDbType.Int).Value = tanda[i];
+                        }
+                        LeerRecibos(comando, recibos);
+                    }
+                }
+            }
+            return SinRepetir(recibos);
+        }
+
         public int GuardarPredicciones(IReadOnlyCollection<FilaPrediccionImpago> filas)
         {
             if (filas == null || filas.Count == 0)
@@ -506,7 +554,8 @@ SELECT COUNT(*), SUM(CASE WHEN Devuelto IS NULL THEN 1 ELSE 0 END), MIN(FechaPre
                         Vendedor = Cadena(lector, 11),
                         FormaVenta = Cadena(lector, 12),
                         Ccc = Cadena(lector, 13),
-                        Entidad = Cadena(lector, 14)
+                        Entidad = Cadena(lector, 14),
+                        Nombre = lector.FieldCount > 15 ? Cadena(lector, 15) : null
                     });
                 }
             }

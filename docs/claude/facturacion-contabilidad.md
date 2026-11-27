@@ -237,6 +237,18 @@ Related files:
   (`ReglaFiabilidadImpagos`, pura): cada semana CERRADA (su domingo + 45 días ya pasó) se mide con la ventana de las 12 semanas que acaban en ella
   (una semana sola trae ~15 devoluciones): AUC ≥ 0,80, calibración de los tramos altos dentro de ±25 %, ≥ 30 devoluciones y ≥ 30 recibos altos; 4
   semanas seguidas → fiable.
+- RIESGO ANTES DE GIRAR (Carlos, 27/11/26): `GET api/Remesas/ModeloImpagados/Candidatos?empresa=1[&hasta=AAAA-MM-DD]` (Dirección/Informática, 403
+  de usted; 503 sin script como `Comparacion`; NO mira el interruptor de enseñar; solo lee, no apunta predicciones ni rastro). Mismos parámetros y
+  MISMOS candidatos que `GET api/Remesas/EfectosCandidatos` (`IRemesasService.LeerEfectosCandidatosSepaAsync`, que no cambia), todos, también los
+  retenidos (`Preseleccionado` y `MotivoRetencion` en cada efecto; los totales los incluyen). Para cada uno, lo que apuntaría la sombra si la remesa se
+  creara hoy: NÚCLEO COMÚN `CalculoRiesgoImpagos.Calcular` (`RiesgoImpagosEfectos.cs`; historia de sus clientes por tandas, enlace, nivel general,
+  rasgos al día de `FechaGiro` de cada efecto, modelo + Platt, regla y motivos), que usa también `SombraImpagosRemesa` (sin cambio observable). Los
+  efectos se leen por Nº de orden (`LeerEfectosCartera`, sin filtro de remesa, con el nombre del cliente) y se ponen «como si se giraran hoy»
+  (`ReglaFechaGiro` con hoy, sin remesa). El propio efecto no está en la historia (no está girado) y en la sombra se excluye por ser del mismo día:
+  «recibos en 45 días» y «regiro» salen iguales (test `Nucleo_ElCandidatoDaLoMismoQueEseEfectoYaGiradoHoyEnLaSombra`). Rasgos con el Importe de la
+  cartera (como la sombra); lo que se enseña y suma es el ImportePendiente del candidato. Respuesta: Fecha, VersionModelo, ConModelo, Mensaje, Total
+  (Recibos, Importe, DevolucionesEsperadas, ImporteEnRiesgo), Tramos (los cuatro de `CalculoMetricasImpagos`) y Efectos de mayor a menor probabilidad
+  (Probabilidad = la del modelo; sin él, la de la regla con ConModelo false; sin regla ni modelo, null y Mensaje).
 - `Scripts/Issue896_RemesasModeloImpagos.sql` (sa; las dos tablas, índices, GRANT y el interruptor a «0»). Sin él: remesas igual, jobs sin hacer nada
   (ELMAH una vez), endpoints 503. Tras lanzarlo hay que entrenar una vez (domingo o POST Entrenar) para que la sombra empiece a apuntar.
 

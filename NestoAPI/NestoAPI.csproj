@@ -1673,6 +1673,7 @@
     <Compile Include="Infraestructure\Remesas\ModeloImpagados\RasgosImpagos.cs" />
     <Compile Include="Infraestructure\Remesas\ModeloImpagados\ReglaImpagos.cs" />
     <Compile Include="Infraestructure\Remesas\ModeloImpagados\RepositorioModeloImpagos.cs" />
+    <Compile Include="Infraestructure\Remesas\ModeloImpagados\RiesgoImpagosEfectos.cs" />
     <Compile Include="Infraestructure\Remesas\ModeloImpagados\ServicioModeloImpagos.cs" />
     <Compile Include="Infraestructure\Remesas\RemesasService.cs" />
     <Compile Include="Infraestructure\Comisiones\ComisionesLecturaService.cs" />
