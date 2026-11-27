@@ -250,8 +250,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controllers\CalidadPedidoPerfectoControllerTests.cs" />
+    <Compile Include="Controllers\CalidadTableroControllerTests.cs" />
     <Compile Include="Infrastructure\Calidad\RegistroCalidadTests.cs" />
     <Compile Include="Infrastructure\Calidad\ReglaPedidoPerfectoTests.cs" />
+    <Compile Include="Infrastructure\Calidad\KpisTableroTests.cs" />
+    <Compile Include="Infrastructure\Calidad\ReglaNotaKpiTests.cs" />
+    <Compile Include="Infrastructure\Calidad\ServicioTableroTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorridoPrimeroEscaleraTests.cs" />
     <Compile Include="Infrastructure\Eventos\DatosTransferenciaInscripcionTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponAdelantadoSinAsistirTests.cs" />
