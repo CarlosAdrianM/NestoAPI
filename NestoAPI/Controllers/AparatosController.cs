@@ -31,6 +31,7 @@ namespace NestoAPI.Controllers
 
         private readonly NVEntities db;
         private ILectorAparatos lector;
+        private IServicioEnlaceInmovilizados enlaces;
 
         public AparatosController()
         {
@@ -38,12 +39,15 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
-        internal AparatosController(ILectorAparatos lector)
+        internal AparatosController(ILectorAparatos lector, IServicioEnlaceInmovilizados enlaces = null)
         {
             this.lector = lector ?? throw new ArgumentNullException(nameof(lector));
+            this.enlaces = enlaces;
         }
 
         internal ILectorAparatos Lector => lector ?? (lector = new LectorAparatosSql(db));
+
+        internal IServicioEnlaceInmovilizados Enlaces => enlaces ?? (enlaces = new ServicioEnlaceInmovilizados(Lector, new EscritorEnlacesInmovilizadoSql(db)));
 
         internal static bool PuedeVer(IPrincipal usuario)
             => usuario != null && !ValidadorAccesoCliente.EsClienteTienda(usuario) && GRUPOS.Any(g => usuario.IsInRoleSinDominio(g));
@@ -100,6 +104,53 @@ namespace NestoAPI.Controllers
             }
             DatosAparatos datos = await Lector.Leer(new FiltroAparatos { SoloListaAlquileres = soloListaAlquileres, ConStock = true }).ConfigureAwait(false);
             return Ok(ReglaDescuadresAparatos.Calcular(datos, soloListaAlquileres));
+        }
+
+        // GET api/Aparatos/Inmovilizados/Propuestas
+        /// <summary>
+        /// NestoAPI#913 corte 2, SOLO LECTURA: para cada inmovilizado vivo y sin enlazar a ningún registro de Alquileres, la serie leída
+        /// (de la descripción o, con el script Issue913b, de su columna), los aparatos con los que casa y la certeza
+        /// (UnaCoincidenciaExacta, VariasCoincidencias, SoloPorParecido, Ninguna; <c>CertezaAlta</c> = se enlazaría en bloque); y, al
+        /// revés, los registros que ponen un inmovilizado que no existe, está anulado o es de otra serie.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Aparatos/Inmovilizados/Propuestas")]
+        [ResponseType(typeof(PropuestasInmovilizadosDTO))]
+        public async Task<IHttpActionResult> GetPropuestasInmovilizados()
+        {
+            if (!PuedeVer(User))
+            {
+                return Prohibido();
+            }
+            return Ok(await Enlaces.Propuestas().ConfigureAwait(false));
+        }
+
+        // POST api/Aparatos/Inmovilizados/Enlazar?ensayo=true   { "TodasLasDeCertezaAlta": true }  o  { "Pares": [{ "Inmovilizado": "I/1824", "Registro": 1242 }] }
+        /// <summary>
+        /// NestoAPI#913 corte 2: pone el inmovilizado en el registro de Alquileres (CabAlquileres.Inmovilizado, con rastro en
+        /// Modificaciones). En bloque, solo las propuestas de certeza alta; uno a uno, el par (sin registro, el de la propuesta si es de
+        /// certeza alta; con registro, ese, a mano). Por defecto es un ENSAYO: dice qué haría sin escribir nada; con
+        /// <c>ensayo=false</c>, escribe cada enlace por separado. 200 con una fila por enlace (Ok, Motivo); 400 sin nada que enlazar o
+        /// con más de 500 pares.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Aparatos/Inmovilizados/Enlazar")]
+        [ResponseType(typeof(ResultadoEnlaceInmovilizadosDTO))]
+        public async Task<IHttpActionResult> PostEnlazarInmovilizados([FromBody] PeticionEnlaceInmovilizadosDTO peticion, bool ensayo = true)
+        {
+            if (!PuedeVer(User))
+            {
+                return Prohibido();
+            }
+            try
+            {
+                string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+                return Ok(await Enlaces.Enlazar(peticion, ensayo, usuario).ConfigureAwait(false));
+            }
+            catch (ArgumentException ex)
+            {
+                return Content(HttpStatusCode.BadRequest, new HttpError(ex.Message));
+            }
         }
 
         protected override void Dispose(bool disposing)

@@ -1672,6 +1672,8 @@
     <Compile Include="Infraestructure\Alquileres\IProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Alquileres\ProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Aparatos\Aparatos.cs" />
+    <Compile Include="Infraestructure\Aparatos\EscritorEnlacesInmovilizadoSql.cs" />
+    <Compile Include="Infraestructure\Aparatos\InmovilizadosAparatos.cs" />
     <Compile Include="Infraestructure\Aparatos\LectorAparatosSql.cs" />
     <Compile Include="Infraestructure\Remesas\IRemesasService.cs" />
     <Compile Include="Infraestructure\Remesas\ModeloImpagados\EntrenadorModeloImpagos.cs" />

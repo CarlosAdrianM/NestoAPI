@@ -812,6 +812,7 @@
     <Compile Include="Infrastructure\Facturas\Agrupacion\ReglaPOAgrupacionTests.cs" />
     <Compile Include="Infrastructure\Facturas\POEnteraTests.cs" />
     <Compile Include="Infrastructure\Aparatos\AparatosTests.cs" />
+    <Compile Include="Infrastructure\Aparatos\InmovilizadosAparatosTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\PersistenciaMovimientoLineasSqlTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\EstrategiaAgrupacionPOTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\ServicioAgruparPorPOTests.cs" />

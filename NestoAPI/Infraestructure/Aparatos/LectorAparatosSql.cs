@@ -98,10 +98,27 @@ WHERE l.Estado >= 2 AND l.Cantidad <> 0 AND l.NumSerie IS NOT NULL AND LTRIM(RTR
         /// Los inmovilizados (826 en total: se leen todos en el informe; en la historia, los que nombran la serie). La serie y la
         /// referencia se sacan del texto en C# (<see cref="ConstructorMovimientosAparato"/>).
         /// </summary>
-        internal static string SqlInmovilizados(FiltroAparatos f) => @"
-SELECT RTRIM(i.Empresa) AS Empresa, RTRIM(i.[Número]) AS Numero, RTRIM(i.Descripción) AS Descripcion, i.Estado, i.FechaCreación AS FechaCreacion
+        /// <remarks>
+        /// NestoAPI#913 corte 2: con las columnas del script Issue913b (<paramref name="conColumnas"/>), también Producto y NumeroSerie,
+        /// y la historia busca además por la columna; sin ellas, NULL (se lee del texto). Sin descripción solo entra si tiene la serie
+        /// en la columna.
+        /// </remarks>
+        internal static string SqlInmovilizados(FiltroAparatos f, bool conColumnas = false) => @"
+SELECT RTRIM(i.Empresa) AS Empresa, RTRIM(i.[Número]) AS Numero, RTRIM(i.Descripción) AS Descripcion, i.Estado, i.FechaCreación AS FechaCreacion, " +
+            (conColumnas
+                ? "RTRIM(i.Producto) AS Producto, RTRIM(i.NumeroSerie) AS NumeroSerie"
+                : "CAST(NULL AS varchar(15)) AS Producto, CAST(NULL AS varchar(30)) AS NumeroSerie") + @"
 FROM Inmovilizados i WITH (NOLOCK)
-WHERE i.Descripción IS NOT NULL" + (string.IsNullOrWhiteSpace(f.NumeroSerie) ? string.Empty : " AND UPPER(i.Descripción) LIKE @serieLike ESCAPE '!'");
+WHERE " + (conColumnas ? "(i.Descripción IS NOT NULL OR i.NumeroSerie IS NOT NULL)" : "i.Descripción IS NOT NULL") +
+            (string.IsNullOrWhiteSpace(f.NumeroSerie) ? string.Empty
+                : conColumnas
+                    ? " AND (UPPER(i.Descripción) LIKE @serieLike ESCAPE '!' OR UPPER(LTRIM(RTRIM(i.NumeroSerie))) = @serie)"
+                    : " AND UPPER(i.Descripción) LIKE @serieLike ESCAPE '!'");
+
+        /// <summary>NestoAPI#913 corte 2: ¿está aplicado el script Issue913b (Inmovilizados.Producto y .NumeroSerie)?</summary>
+        internal const string SQL_COLUMNAS_INMOVILIZADOS = @"
+SELECT CAST(CASE WHEN COL_LENGTH('dbo.Inmovilizados', 'Producto') IS NOT NULL
+                  AND COL_LENGTH('dbo.Inmovilizados', 'NumeroSerie') IS NOT NULL THEN 1 ELSE 0 END AS bit)";
 
         internal static string SqlNumerosSerie(FiltroAparatos f) => @"
 SELECT RTRIM(n.Producto) AS Producto, RTRIM(n.NumSerie) AS NumeroSerie
@@ -150,13 +167,15 @@ HAVING SUM(e.Cantidad) <> 0";
             db.Database.CommandTimeout = Math.Max(tiempoAnterior ?? 0, 60);
             try
             {
+                bool columnas = (await db.Database.SqlQuery<bool>(SQL_COLUMNAS_INMOVILIZADOS).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
                 var datos = new DatosAparatos
                 {
+                    ColumnasAparatoEnInmovilizados = columnas,
                     Productos = await Consulta<ProductoAparatoFila>(SqlProductos(filtro), filtro).ConfigureAwait(false),
                     Registros = await Consulta<RegistroAparatoDTO>(SqlRegistros(filtro), filtro).ConfigureAwait(false),
                     Ventas = await Consulta<VentaAparatoFila>(SqlVentas(filtro), filtro).ConfigureAwait(false),
                     Compras = await Consulta<CompraAparatoFila>(SqlCompras(filtro), filtro).ConfigureAwait(false),
-                    Inmovilizados = await Consulta<InmovilizadoAparatoFila>(SqlInmovilizados(filtro), filtro).ConfigureAwait(false),
+                    Inmovilizados = await Consulta<InmovilizadoAparatoFila>(SqlInmovilizados(filtro, columnas), filtro).ConfigureAwait(false),
                     NumerosSerie = await Consulta<NumeroSerieFila>(SqlNumerosSerie(filtro), filtro).ConfigureAwait(false)
                 };
                 if (filtro.ConStock)
