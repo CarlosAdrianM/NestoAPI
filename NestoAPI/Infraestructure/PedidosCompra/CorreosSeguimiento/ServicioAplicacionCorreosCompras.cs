@@ -51,6 +51,13 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public bool EnvioParcial { get; set; }
         /// <summary>NestoAPI#857i: el origen de la agencia que se ha apuntado para este proveedor («Vic»); null si ninguno.</summary>
         public string OrigenAgenciaAprendido { get; set; }
+        /// <summary>
+        /// 27/11/26: el pedido ya estaba recibido: no se ha cambiado ninguna fecha (LineasPendientes y LineasCambiadas a 0) y el envío queda
+        /// asignado a él como «pedido real» (PedidoReal). FechaNueva es entonces el día de su albarán.
+        /// </summary>
+        public bool YaRecibido { get; set; }
+        /// <summary>27/11/26: con <see cref="YaRecibido"/>, el día del albarán que se toma por el de este envío; null si no.</summary>
+        public DateTime? FechaAlbaran { get; set; }
         public string Mensaje { get; set; }
     }
 
@@ -78,6 +85,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public int CorreosDelMismoEnvio { get; set; }
         /// <summary>NestoAPI#857e: al descartar con ignorarRemitente, el remitente que ha quedado ignorado (null si no se ha marcado).</summary>
         public string RemitenteIgnorado { get; set; }
+        /// <summary>27/11/26: al enseñar un remitente del paquete, la fila guardada y lo que ha cambiado.</summary>
+        public RespuestaRemitentePaqueteDTO RemitentePaquete { get; set; }
     }
 
     /// <summary>NestoAPI#857 (fase 3): la campana a Compras de un correo que se queda por asignar.</summary>
@@ -737,6 +746,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
 
             ResultadoOperacionCorreoCompra resultado = await Aplicar(fila, empresa, peticion.Pedido, reasignar, usuario, auditoria, false, fecha,
                 eligioSugerido, lineasAviso: lineasAviso).ConfigureAwait(false);
+            if (resultado.Codigo == CodigoOperacionCorreoCompra.NoEnElAire && !fila.PedidoAplicado.HasValue)
+            {
+                // 27/11/26: quizá el pedido ya llegó antes de que nadie asignara el correo (caso Iberocel 220985)
+                return await AsignarYaRecibido(fila, envio, empresa, peticion, usuario).ConfigureAwait(false);
+            }
             if (resultado.Codigo != CodigoOperacionCorreoCompra.Ok)
             {
                 return resultado;
@@ -757,6 +771,18 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
             {
                 respuesta.Mensaje += $" También se han asignado {respuesta.CorreosDelMismoEnvio} correo(s) más del mismo envío.";
             }
+            await AprenderDeLaPersona(respuesta, fila, envio, empresa, peticion, usuario).ConfigureAwait(false);
+            resultado.Mensaje = respuesta.Mensaje;
+            return resultado;
+        }
+
+        /// <summary>
+        /// Lo que enseña una asignación hecha por una persona (también la de un pedido ya recibido): el origen de la agencia (NestoAPI#857i) y,
+        /// si lo pide, quién expide el paquete. Lo va diciendo en el mensaje de la respuesta.
+        /// </summary>
+        private async Task AprenderDeLaPersona(RespuestaAsignacionCorreoCompraDTO respuesta, CorreoSeguimientoFila fila, List<CorreoSeguimientoFila> envio,
+            string empresa, PeticionAsignarCorreoCompraDTO peticion, string usuario)
+        {
             // NestoAPI#857i: lo que asigna una persona enseña de qué proveedor es lo que sale de ese origen de la agencia
             if (!respuesta.YaEstabaAplicado && !string.IsNullOrWhiteSpace(respuesta.Proveedor))
             {
@@ -782,8 +808,90 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
                     respuesta.Mensaje += $" Desde ahora, lo que envíe «{remitente}» se propondrá para el proveedor {respuesta.Proveedor.Trim()}.";
                 }
             }
-            resultado.Mensaje = respuesta.Mensaje;
-            return resultado;
+        }
+
+        /// <summary>
+        /// 27/11/26 (caso real SEUR Id 38, Iberocel, pedido 220985 recibido entero antes de asignar el correo): el pedido no tiene líneas en el
+        /// aire. Si ya se recibió en el plazo del envío (<see cref="ReglaPedidoYaRecibido"/>), el correo y los demás de su envío sin aplicar quedan
+        /// con ese pedido como «pedido real» (lo mismo que apunta la medición del job; así <see cref="ReglaEnvioYaNoPendiente"/> lo saca de «por
+        /// asignar» y el job no vuelve a poner fechas con ellos) SIN tocar ninguna fecha de compras, y se aprende como en una asignación normal.
+        /// Si no existe, 400 «No existe…»; si no se envió nunca (u otra causa), el 400 de siempre.
+        /// </summary>
+        private async Task<ResultadoOperacionCorreoCompra> AsignarYaRecibido(CorreoSeguimientoFila fila, List<CorreoSeguimientoFila> envio, string empresa,
+            PeticionAsignarCorreoCompraDTO peticion, string usuario)
+        {
+            int pedido = peticion.Pedido;
+            DateTime primero = envio.Any() ? envio.Min(f => f.Recibido) : fila.Recibido;
+            EstadoPedidoCompraCorreo estado = await repositorio.LeerEstadoPedido(empresa, pedido).ConfigureAwait(false);
+            SituacionPedidoAsignado situacion = ReglaPedidoYaRecibido.Clasificar(estado, primero);
+            if (situacion != SituacionPedidoAsignado.YaRecibido)
+            {
+                // El mismo código de siempre (400): un pedido que no existe tampoco está en el aire; el mensaje dice el porqué
+                return Error(CodigoOperacionCorreoCompra.NoEnElAire, ReglaPedidoYaRecibido.MensajeNoSeAsigna(situacion, estado, pedido));
+            }
+            CorreoSeguimientoFila otroReal = envio.FirstOrDefault(f => f.PedidoReal.HasValue
+                && AsignadorPedidosCompra.Clave(f.EmpresaReal, f.PedidoReal.Value) != AsignadorPedidosCompra.Clave(empresa, pedido));
+            if (otroReal != null)
+            {
+                return Error(CodigoOperacionCorreoCompra.Conflicto,
+                    $"Este envío ya consta como recibido con el pedido de compra {otroReal.PedidoReal}: no se puede asignar también al {pedido}.");
+            }
+            DateTime albaran = ReglaPedidoYaRecibido.AlbaranDelEnvio(estado, primero).Value;
+            var real = new AlbaranPedidoCompra { Empresa = empresa, Pedido = pedido, FechaAlbaran = albaran };
+            var respuesta = new RespuestaAsignacionCorreoCompraDTO
+            {
+                CorreoId = fila.Id,
+                Empresa = empresa,
+                Pedido = pedido,
+                Proveedor = estado.Proveedor?.Trim(),
+                FechaNueva = albaran,
+                FechaAlbaran = albaran,
+                YaRecibido = true,
+                RemitentePaquete = fila.RemitentePaquete,
+                Mensaje = ReglaPedidoYaRecibido.MensajeAsignado(pedido)
+            };
+            if (!fila.PedidoReal.HasValue)
+            {
+                _ = await repositorio.AsignarYaRecibido(fila.Id, real, usuario).ConfigureAwait(false);
+            }
+            foreach (CorreoSeguimientoFila otro in envio.Where(f => f.Id != fila.Id && !f.PedidoAplicado.HasValue && f.Descartado != true && !f.PedidoReal.HasValue))
+            {
+                if (await repositorio.AsignarYaRecibido(otro.Id, real, usuario).ConfigureAwait(false))
+                {
+                    respuesta.CorreosDelMismoEnvio++;
+                }
+            }
+            if (respuesta.CorreosDelMismoEnvio > 0)
+            {
+                respuesta.Mensaje += $" También se han asignado {respuesta.CorreosDelMismoEnvio} correo(s) más del mismo envío.";
+            }
+            await AprenderDeLaPersona(respuesta, fila, envio, empresa, peticion, usuario).ConfigureAwait(false);
+            return Ok(respuesta);
+        }
+
+        /// <summary>
+        /// 27/11/26: POST api/Compras/AgenciasEntrada/RemitentesPaquete. Compras dice a mano de qué proveedor es quien expide el paquete
+        /// (normalizado como lo lee el job). El proveedor tiene que existir; si ya apuntaba a otro, se cambia y se dice. Rastro en Modificaciones.
+        /// </summary>
+        public async Task<ResultadoOperacionCorreoCompra> EnsenarRemitentePaquete(PeticionRemitentePaqueteDTO peticion, string usuario)
+        {
+            if (!Disponible)
+            {
+                return Error(CodigoOperacionCorreoCompra.SinTabla, MENSAJE_SIN_SCRIPT);
+            }
+            string error = ReglaEnsenarRemitentePaquete.Validar(peticion, out string remitente, out string empresa, out string proveedor);
+            if (error != null)
+            {
+                return Error(CodigoOperacionCorreoCompra.PeticionIncorrecta, error);
+            }
+            string nombre = await repositorio.LeerNombreProveedor(empresa, proveedor).ConfigureAwait(false);
+            if (nombre == null)
+            {
+                return Error(CodigoOperacionCorreoCompra.PeticionIncorrecta, $"No existe el proveedor {proveedor} en la empresa {empresa}.");
+            }
+            RemitentePaqueteEnsenado ensenado = await repositorio.EnsenarRemitentePaquete(remitente, empresa, proveedor, usuario).ConfigureAwait(false);
+            RespuestaRemitentePaqueteDTO respuesta = ReglaEnsenarRemitentePaquete.Respuesta(ensenado, remitente, empresa, proveedor, nombre, usuario);
+            return new ResultadoOperacionCorreoCompra { Codigo = CodigoOperacionCorreoCompra.Ok, Mensaje = respuesta.Mensaje, RemitentePaquete = respuesta };
         }
 
         /// <summary>

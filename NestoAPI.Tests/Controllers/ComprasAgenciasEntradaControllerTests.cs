@@ -206,6 +206,48 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.NotFound, ((NegotiatedContentResult<string>)await c.PostAsignar(2, new PeticionAsignarCorreoCompraDTO { Pedido = 912001 })).StatusCode);
         }
 
+        // 27/11/26: caso Iberocel (correo SEUR 38, «iberocel - paraiso» → proveedor 846)
+        [TestMethod]
+        public async Task PostRemitentePaquete_SinGrupo403_SinScript503()
+        {
+            var peticion = new PeticionRemitentePaqueteDTO { RemitentePaquete = "iberocel - paraiso", Empresa = "1", Proveedor = "846" };
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((NegotiatedContentResult<string>)await Controller("Almacén").PostRemitentePaquete(peticion)).StatusCode);
+            A.CallTo(() => repositorio.AplicacionDisponible()).Returns(false);
+            Assert.AreEqual(HttpStatusCode.ServiceUnavailable, ((NegotiatedContentResult<string>)await Controller("Compras").PostRemitentePaquete(peticion)).StatusCode);
+            A.CallTo(() => repositorio.EnsenarRemitentePaquete(A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostRemitentePaquete_CasoIberocel_DevuelveLaFila()
+        {
+            A.CallTo(() => repositorio.AplicacionDisponible()).Returns(true);
+            A.CallTo(() => repositorio.LeerNombreProveedor("1", "846")).Returns("IBEROCELULOSA MADRILEÑA, S.L.");
+            A.CallTo(() => repositorio.EnsenarRemitentePaquete("iberocel - paraiso", "1", "846", A<string>._)).Returns(new RemitentePaqueteEnsenado
+            {
+                Fila = new RemitentePaqueteRecordado { Id = 15, RemitentePaquete = "iberocel - paraiso", Empresa = "1", Proveedor = "846", Usuario = "Prueba" }
+            });
+
+            var ok = await Controller("Compras").PostRemitentePaquete(new PeticionRemitentePaqueteDTO { RemitentePaquete = "IBEROCEL - PARAISO", Empresa = "1", Proveedor = "846" })
+                as OkNegotiatedContentResult<RespuestaRemitentePaqueteDTO>;
+
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(15, ok.Content.Id);
+            Assert.AreEqual("846", ok.Content.Proveedor);
+            Assert.AreEqual("IBEROCELULOSA MADRILEÑA, S.L.", ok.Content.NombreProveedor);
+            Assert.IsTrue(ok.Content.Nuevo);
+        }
+
+        [TestMethod]
+        public async Task PostRemitentePaquete_ProveedorQueNoExiste_400()
+        {
+            A.CallTo(() => repositorio.AplicacionDisponible()).Returns(true);
+            A.CallTo(() => repositorio.LeerNombreProveedor(A<string>._, A<string>._)).Returns(Task.FromResult<string>(null));
+
+            Assert.IsInstanceOfType(await Controller("Compras").PostRemitentePaquete(
+                new PeticionRemitentePaqueteDTO { RemitentePaquete = "iberocel - paraiso", Proveedor = "99999" }), typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => repositorio.EnsenarRemitentePaquete(A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
         #endregion
     }
 }

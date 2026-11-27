@@ -1023,6 +1023,7 @@
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoBoletinesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoDosNivelesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSinReconocerTests.cs" />
+    <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoYaRecibidoTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoControlPendientesTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoOrigenAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\CorreosSeguimientoLineasAvisoTests.cs" />

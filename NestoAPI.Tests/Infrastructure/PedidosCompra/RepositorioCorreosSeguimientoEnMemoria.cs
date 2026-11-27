@@ -212,6 +212,66 @@ namespace NestoAPI.Tests.Infrastructure.PedidosCompra
 
         public Task<bool> BorrarRemitentePaquete(int id, string usuario) => Task.FromResult(RemitentesPaquete.RemoveAll(r => r.Id == id) > 0);
 
+        // 27/11/26
+        /// <summary>Proveedores que existen (empresa|código → nombre).</summary>
+        public Dictionary<string, string> Proveedores { get; } = new Dictionary<string, string>();
+        /// <summary>Rastros de lo enseñado a mano (remitente, proveedor anterior, nuevo).</summary>
+        public List<(string Remitente, string Anterior, string Nuevo)> RastrosRemitentePaquete { get; } = new List<(string, string, string)>();
+        /// <summary>Rastros de lo asignado a un pedido ya recibido (correo, pedido, usuario).</summary>
+        public List<(int CorreoId, int Pedido, string Usuario)> RastrosYaRecibido { get; } = new List<(int, int, string)>();
+        /// <summary>Pedidos que existen pero nunca se enviaron (número → líneas sin enviar).</summary>
+        public Dictionary<int, int> SinEnviar { get; } = new Dictionary<int, int>();
+
+        public Task<RemitentePaqueteEnsenado> EnsenarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario)
+        {
+            RemitentePaqueteRecordado actual = RemitentesPaquete.FirstOrDefault(x => x.RemitentePaquete == remitente);
+            var resultado = new RemitentePaqueteEnsenado
+            {
+                Anterior = actual == null ? null : new RemitentePaqueteRecordado
+                {
+                    Id = actual.Id, RemitentePaquete = actual.RemitentePaquete, Empresa = actual.Empresa, Proveedor = actual.Proveedor, Usuario = actual.Usuario
+                }
+            };
+            if (!ReglaEnsenarRemitentePaquete.Igual(actual, empresa, proveedor))
+            {
+                RastrosRemitentePaquete.Add((remitente, actual?.Proveedor, proveedor));
+                _ = GuardarRemitentePaquete(remitente, empresa, proveedor, usuario);
+            }
+            resultado.Fila = RemitentesPaquete.First(x => x.RemitentePaquete == remitente);
+            return Task.FromResult(resultado);
+        }
+
+        public Task<string> LeerNombreProveedor(string empresa, string proveedor) =>
+            Task.FromResult(Proveedores.TryGetValue(empresa + "|" + proveedor, out string nombre) ? nombre : null);
+
+        public Task<EstadoPedidoCompraCorreo> LeerEstadoPedido(string empresa, int pedido)
+        {
+            PedidoCompraEnAire p = Pedidos.FirstOrDefault(x => x.Pedido == pedido);
+            List<DateTime> albaranes = Albaranes.Where(a => a.Pedido == pedido).Select(a => a.FechaAlbaran.Date).Distinct().ToList();
+            int enAire = Lineas.TryGetValue(pedido, out var l) ? l.Count : 0;
+            int sinEnviar = SinEnviar.TryGetValue(pedido, out int n) ? n : 0;
+            return Task.FromResult(new EstadoPedidoCompraCorreo
+            {
+                Empresa = empresa, Pedido = pedido, Proveedor = p?.Proveedor,
+                Lineas = p == null && sinEnviar == 0 ? 0 : enAire + sinEnviar + albaranes.Count,
+                LineasEnAire = enAire, LineasSinEnviar = sinEnviar, LineasRecibidas = albaranes.Count, Albaranes = albaranes
+            });
+        }
+
+        public Task<bool> AsignarYaRecibido(int id, AlbaranPedidoCompra albaran, string usuario)
+        {
+            CorreoSeguimientoFila fila = Correos.Single(c => c.Id == id);
+            if (fila.PedidoReal.HasValue)
+            {
+                return Task.FromResult(false);
+            }
+            fila.EmpresaReal = albaran.Empresa;
+            fila.PedidoReal = albaran.Pedido;
+            fila.FechaAlbaranReal = albaran.FechaAlbaran.Date;
+            RastrosYaRecibido.Add((id, albaran.Pedido, usuario));
+            return Task.FromResult(true);
+        }
+
         // NestoAPI#857i
         public bool ConOrigenes { get; set; } = true;
         public List<OrigenAgenciaRecordado> OrigenesAgencia { get; } = new List<OrigenAgenciaRecordado>();

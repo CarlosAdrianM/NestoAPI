@@ -252,3 +252,39 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   (`SinReconocerApuntados`). Flujo para un formato nuevo: se ve en la lista, se enseña a la clase de su agencia, se publica y se reanaliza.
 - Nesto (junto a «Envíos por asignar»): una pestaña o sección «Correos de agencia sin reconocer» que llame al GET (Fecha, Agencia, Remitente,
   Asunto y el Extracto al desplegar); con 503, ocultarla. Solo lectura: no hay que asignar ni descartar (desaparecen al reconocerse).
+
+## Remitente del paquete a mano, pedido ya recibido y remitente recordado sin pedidos (NestoAPI#857, Carlos 27/11/26; caso SEUR Id 38 de Iberocel)
+- Caso: correo SEUR Id 38 (26/11 12:55, «tu envío de IBEROCEL - PARAISO será entregado hoy», A-2609942, `RemitentePaquete` «iberocel - paraiso»):
+  el proveedor es el 846 (IBEROCELULOSA MADRILEÑA), que no casa solo por el nombre; su pedido 220985 se recibió entero antes de asignar el correo.
+  `Asignar` daba 400 («no tiene líneas enviadas y sin recibir»), no había forma de enseñar el remitente y el envío quedaba «por asignar» para siempre.
+- **Enseñar a mano**: `POST api/Compras/AgenciasEntrada/RemitentesPaquete` {RemitentePaquete, Empresa (vacía = «1»), Proveedor} (permisos y 503 de
+  GET/DELETE vecinos). Normaliza con `ExtractorRemitentePaquete.Normalizar` (la clave de la memoria); 400 si falta algo, empresa > 3, proveedor > 10
+  o no existe en `Proveedores` («No existe el proveedor X en la empresa 1.»). Crea o cambia la fila; si ya apuntaba a otro proveedor, lo cambia y lo
+  dice (`ProveedorAnterior`, `EmpresaAnterior`, `Mensaje`); si ya era ese, `SinCambios` y no toca nada. Rastro en Modificaciones Tabla
+  `ComprasRemitentesPaquete` (como el DELETE; «(nuevo)» o la fila anterior → la nueva con «Origen: A mano»), en una transacción. Devuelve la fila
+  (`RespuestaRemitentePaqueteDTO` = `RemitentePaqueteRecordado` + `NombreProveedor`, `Nuevo`, `EmpresaAnterior`, `ProveedorAnterior`, `SinCambios`,
+  `Mensaje`). Lógica en `ServicioAplicacionCorreosCompras.EnsenarRemitentePaquete` y LA REGLA (pura) `ReglaEnsenarRemitentePaquete` (`RemitentePaquete.cs`).
+  `GET …/RemitentesPaquete` trae ahora también `NombreProveedor` (aditivo). No vuelve a analizar los correos ya guardados (eso es `Reanalizar`).
+- **Asignar a un pedido que YA ha llegado**: en `POST …/Correos/{id}/Asignar`, si el pedido no tiene líneas en el aire y el correo no está aplicado,
+  LA REGLA (pura) `ReglaPedidoYaRecibido` (`PedidoYaRecibido.cs`, con `LeerEstadoPedido`: líneas en el aire, sin enviar y recibidas, y días de
+  albarán, por la clave de LinPedidoCmp) decide: sin líneas → 400 «No existe el pedido de compra N.»; alguna recibida con albarán entre 7 días
+  antes del primer correo del envío y 60 después → YA RECIBIDO; recibido fuera de ese plazo (o sin fecha de albarán) → el 400 de siempre + el
+  porqué; nada recibido (nunca enviado u otra causa) → el 400 de siempre. Las líneas que queden sin enviar no impiden «ya recibido».
+- Ya recibido → 200 SIN tocar ninguna fecha de compras ni marcar el correo como aplicado (`PedidoAplicado` sigue null: no se puso fecha). El correo y
+  los demás de su envío sin aplicar, sin descartar y sin pedido real quedan con `EmpresaReal`/`PedidoReal`/`FechaAlbaranReal` (lo MISMO que apunta la
+  medición del job; reutilizarlo es lo que menos inventa: `ReglaEnvioYaNoPendiente` ya lo saca de `…/PorAsignar` —«El pedido de compra 220985 ya se ha
+  recibido el 26/11/2026.»— y `DecisionEnvio.YaLlego` impide que el job ponga fechas con sus correos). Día de albarán = el primero desde el día del
+  correo (como `DecidirReal`) o, si no hay, el último de antes en el margen. Rastro en Modificaciones Tabla `CompraCorreoYaRecibido` (quién; la fila
+  real no guarda usuario). Se recuerda el remitente con `RecordarRemitente` y se aprende el origen de la agencia (#857i), como en una asignación normal.
+  Respuesta: `YaRecibido` = true, `FechaAlbaran` (y `FechaNueva` = ese día), `LineasPendientes`/`LineasCambiadas` 0, `Mensaje` «El pedido 220985 ya
+  estaba recibido: no se ha cambiado ninguna fecha; el envío queda asignado a él.» (+ correos del envío y lo recordado). 409 si el envío ya consta
+  recibido con OTRO pedido. Un correo YA aplicado a otro pedido (reasignar) a un pedido recibido sigue con el 400 (no se mezclan aplicado y real).
+- **Remitente recordado sin candidatos** (caso «postquam» → 451 sin pedidos en el aire): en `GET …/PorAsignar`, un envío sin candidatos cuyo remitente
+  del paquete está en la memoria lleva `ProveedorPropuesto` (el recordado), el nuevo `NombreProveedorPropuesto` y `Explicacion` (si no había otra):
+  «Postquam es el proveedor 451 (POSTQUAM COSMETIC, S.L.), pero no tiene ningún pedido de compra enviado y sin recibir.»; si SÍ tiene pedidos en el
+  aire (el correo se analizó antes de enseñar el remitente), «… y tiene un pedido de compra enviado y sin recibir, el 220990. El correo se analizó
+  antes de saberlo: asígnelo a mano.» No se inventan candidatos. LA REGLA (pura) `ReglaRemitenteRecordadoSinCandidatos` (`RemitentePaquete.cs`).
+  `NombreProveedorPropuesto` también se rellena cuando el proveedor propuesto sale de los candidatos. Todo aditivo: ningún campo cambia ni se quita.
+- Nesto: (1) en «Envíos por asignar», una acción «Este remitente es del proveedor…» que llame al POST (o el «recordar» al asignar, que ya existía);
+  (2) al asignar, si la respuesta trae `YaRecibido`, enseñar el `Mensaje` (no es un error) y quitar el envío de la lista; (3) mostrar
+  `NombreProveedorPropuesto` y `Explicacion` cuando no hay candidatos. Sin cambios, Nesto sigue funcionando (todo aditivo).

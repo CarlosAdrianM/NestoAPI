@@ -768,6 +768,7 @@
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\EntregaEstimadaCorreo.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\AplicacionFechaCorreo.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\MismoEnvio.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\PedidoYaRecibido.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\OrigenAgencia.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\RemitentePaquete.cs" />
     <Compile Include="Infraestructure\PedidosCompra\CorreosSeguimiento\ServicioAplicacionCorreosCompras.cs" />

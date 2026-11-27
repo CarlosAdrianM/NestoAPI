@@ -16,6 +16,184 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         public string Proveedor { get; set; }
         public string Usuario { get; set; }
         public System.DateTime? FechaModificacion { get; set; }
+        /// <summary>27/11/26: el nombre del proveedor (dbo.Proveedores, el principal); null si no se ha leído o no existe.</summary>
+        public string NombreProveedor { get; set; }
+    }
+
+    /// <summary>27/11/26: cuerpo de POST api/Compras/AgenciasEntrada/RemitentesPaquete (enseñar a mano quién expide → proveedor).</summary>
+    public class PeticionRemitentePaqueteDTO
+    {
+        /// <summary>Tal como lo pone la agencia («IBEROCEL - PARAISO»); se normaliza como el lector (<see cref="ExtractorRemitentePaquete.Normalizar"/>).</summary>
+        public string RemitentePaquete { get; set; }
+        /// <summary>Vacía = «1».</summary>
+        public string Empresa { get; set; }
+        public string Proveedor { get; set; }
+    }
+
+    /// <summary>27/11/26: respuesta de POST …/RemitentesPaquete: la fila guardada y qué ha cambiado.</summary>
+    public class RespuestaRemitentePaqueteDTO : RemitentePaqueteRecordado
+    {
+        /// <summary>No estaba en la memoria: se ha creado.</summary>
+        public bool Nuevo { get; set; }
+        /// <summary>Ya estaba y apuntaba a otro proveedor (o empresa): cuál era; null si no.</summary>
+        public string EmpresaAnterior { get; set; }
+        public string ProveedorAnterior { get; set; }
+        /// <summary>Ya apuntaba a ese mismo proveedor: no se ha tocado nada.</summary>
+        public bool SinCambios { get; set; }
+        public string Mensaje { get; set; }
+    }
+
+    /// <summary>27/11/26: lo que devuelve <see cref="IRepositorioCorreosSeguimiento.EnsenarRemitentePaquete"/>.</summary>
+    public class RemitentePaqueteEnsenado
+    {
+        public RemitentePaqueteRecordado Fila { get; set; }
+        /// <summary>Cómo estaba antes (null = no estaba).</summary>
+        public RemitentePaqueteRecordado Anterior { get; set; }
+    }
+
+    /// <summary>
+    /// 27/11/26 (caso Iberocel, correo SEUR 38: «iberocel - paraiso» no casa solo con IBEROCELULOSA MADRILEÑA y su pedido ya estaba recibido, así
+    /// que no había forma de enseñarlo): enseñar a mano un remitente del paquete. PURA: qué se guarda y qué se contesta.
+    /// </summary>
+    public static class ReglaEnsenarRemitentePaquete
+    {
+        public const int LONGITUD_PROVEEDOR = 10;
+
+        /// <summary>El remitente normalizado, la empresa («1» si vacía) y el proveedor (sin espacios); el error (de usted) o null.</summary>
+        public static string Validar(PeticionRemitentePaqueteDTO peticion, out string remitente, out string empresa, out string proveedor)
+        {
+            remitente = ExtractorRemitentePaquete.Normalizar(peticion?.RemitentePaquete);
+            empresa = string.IsNullOrWhiteSpace(peticion?.Empresa) ? NestoAPI.Models.Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
+            proveedor = peticion?.Proveedor?.Trim();
+            if (peticion == null || remitente == null)
+            {
+                return "Falta quién expide el paquete (RemitentePaquete).";
+            }
+            if (empresa.Length > 3)
+            {
+                return "La empresa no es válida.";
+            }
+            if (string.IsNullOrEmpty(proveedor))
+            {
+                return "Falta el proveedor.";
+            }
+            if (proveedor.Length > LONGITUD_PROVEEDOR)
+            {
+                return $"El proveedor no puede pasar de {LONGITUD_PROVEEDOR} caracteres.";
+            }
+            return null;
+        }
+
+        /// <summary>¿Ya apuntaba a esa empresa y ese proveedor? (entonces no se toca nada).</summary>
+        public static bool Igual(RemitentePaqueteRecordado anterior, string empresa, string proveedor) =>
+            anterior != null
+            && string.Equals(anterior.Proveedor?.Trim(), proveedor?.Trim(), System.StringComparison.OrdinalIgnoreCase)
+            && string.Equals(anterior.Empresa?.Trim(), empresa?.Trim(), System.StringComparison.OrdinalIgnoreCase);
+
+        public static RespuestaRemitentePaqueteDTO Respuesta(RemitentePaqueteEnsenado ensenado, string remitente, string empresa, string proveedor,
+            string nombreProveedor, string usuario)
+        {
+            RemitentePaqueteRecordado fila = ensenado?.Fila;
+            RemitentePaqueteRecordado anterior = ensenado?.Anterior;
+            string nombre = string.IsNullOrWhiteSpace(nombreProveedor) ? null : nombreProveedor.Trim();
+            string quien = $"el proveedor {proveedor}{(nombre == null ? string.Empty : " (" + nombre + ")")}";
+            var respuesta = new RespuestaRemitentePaqueteDTO
+            {
+                Id = fila?.Id ?? 0,
+                RemitentePaquete = fila?.RemitentePaquete ?? remitente,
+                Empresa = fila?.Empresa?.Trim() ?? empresa,
+                Proveedor = fila?.Proveedor?.Trim() ?? proveedor,
+                Usuario = fila?.Usuario ?? usuario,
+                FechaModificacion = fila?.FechaModificacion,
+                NombreProveedor = nombre,
+                Nuevo = anterior == null
+            };
+            if (anterior == null)
+            {
+                respuesta.Mensaje = $"Desde ahora, lo que envíe «{remitente}» se propondrá para {quien}.";
+            }
+            else if (Igual(anterior, empresa, proveedor))
+            {
+                respuesta.SinCambios = true;
+                respuesta.Mensaje = $"«{remitente}» ya era de {quien}: no se ha cambiado nada.";
+            }
+            else
+            {
+                respuesta.EmpresaAnterior = anterior.Empresa?.Trim();
+                respuesta.ProveedorAnterior = anterior.Proveedor?.Trim();
+                respuesta.Mensaje = $"«{remitente}» era del proveedor {respuesta.ProveedorAnterior}" +
+                    $"{(string.Equals(respuesta.EmpresaAnterior, empresa, System.StringComparison.OrdinalIgnoreCase) ? string.Empty : " de la empresa " + respuesta.EmpresaAnterior)}; " +
+                    $"desde ahora se propondrá para {quien}.";
+            }
+            return respuesta;
+        }
+    }
+
+    /// <summary>27/11/26: de quién es un envío por asignar según la memoria de remitentes del paquete, cuando eso no ha dado candidatos.</summary>
+    public class RemitenteRecordadoEnvio
+    {
+        public string RemitentePaquete { get; set; }
+        public string Empresa { get; set; }
+        public string Proveedor { get; set; }
+        public string NombreProveedor { get; set; }
+        /// <summary>Sus pedidos en el aire (vacío = ninguno).</summary>
+        public List<int> PedidosEnAire { get; set; } = new List<int>();
+        public string Explicacion { get; set; }
+    }
+
+    /// <summary>
+    /// 27/11/26 (caso real «postquam» → proveedor 451, sin ningún pedido en el aire): un envío por asignar SIN candidatos cuyo remitente del
+    /// paquete ya está en la memoria (dbo.ComprasRemitentesPaquete) no decía de quién era. Esta regla lo dice: el proveedor recordado y por qué
+    /// no hay candidatos (no tiene nada enviado y sin recibir o, si lo tiene, el correo se analizó antes de enseñar el remitente). PURA.
+    /// </summary>
+    public static class ReglaRemitenteRecordadoSinCandidatos
+    {
+        /// <param name="candidatos">Los del envío (<see cref="MismoEnvio.Decidir"/>); con alguno, null (ya se sabe de quién es).</param>
+        /// <returns>El recordado con su explicación (de usted), o null.</returns>
+        public static RemitenteRecordadoEnvio Explicar(IEnumerable<CorreoSeguimientoFila> grupo, IEnumerable<CandidatoPedidoCompra> candidatos,
+            IEnumerable<RemitentePaqueteRecordado> memoria, IEnumerable<PedidoCompraEnAire> enAire)
+        {
+            if ((candidatos ?? Enumerable.Empty<CandidatoPedidoCompra>()).Any() || memoria == null)
+            {
+                return null;
+            }
+            List<RemitentePaqueteRecordado> recordados = memoria.Where(r => r != null && !string.IsNullOrWhiteSpace(r.Proveedor)).ToList();
+            foreach (string remitente in (grupo ?? Enumerable.Empty<CorreoSeguimientoFila>())
+                .Where(f => f != null && f.EsSalidaNuestra != true)
+                .Select(f => ExtractorRemitentePaquete.Normalizar(f.RemitentePaquete)).Where(r => r != null).Distinct())
+            {
+                RemitentePaqueteRecordado recordado = recordados.FirstOrDefault(r => ExtractorRemitentePaquete.Normalizar(r.RemitentePaquete) == remitente);
+                if (recordado == null)
+                {
+                    continue;
+                }
+                string empresa = string.IsNullOrWhiteSpace(recordado.Empresa) ? NestoAPI.Models.Constantes.Empresas.EMPRESA_POR_DEFECTO : recordado.Empresa.Trim();
+                string proveedor = recordado.Proveedor.Trim();
+                List<int> suyos = (enAire ?? Enumerable.Empty<PedidoCompraEnAire>())
+                    .Where(p => p != null && string.Equals(p.Proveedor?.Trim(), proveedor, System.StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(p.Empresa?.Trim() ?? empresa, empresa, System.StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.Pedido).Distinct().OrderBy(p => p).ToList();
+                string nombre = string.IsNullOrWhiteSpace(recordado.NombreProveedor) ? null : recordado.NombreProveedor.Trim();
+                string quien = $"{Capitalizar(remitente)} es el proveedor {proveedor}{(nombre == null ? string.Empty : " (" + nombre + ")")}";
+                return new RemitenteRecordadoEnvio
+                {
+                    RemitentePaquete = remitente,
+                    Empresa = empresa,
+                    Proveedor = proveedor,
+                    NombreProveedor = nombre,
+                    PedidosEnAire = suyos,
+                    Explicacion = !suyos.Any()
+                        ? quien + ", pero no tiene ningún pedido de compra enviado y sin recibir."
+                        : quien + $" y tiene {(suyos.Count == 1 ? "un pedido de compra enviado y sin recibir, el " + suyos[0] : suyos.Count + " pedidos de compra enviados y sin recibir: " + string.Join(", ", suyos))}" +
+                            ". El correo se analizó antes de saberlo: asígnelo a mano."
+                };
+            }
+            return null;
+        }
+
+        /// <summary>«postquam» → «Postquam»; «iberocel - paraiso» → «Iberocel - paraiso».</summary>
+        internal static string Capitalizar(string texto) =>
+            string.IsNullOrEmpty(texto) ? texto : char.ToUpper(texto[0], CultureInfo.GetCultureInfo("es-ES")) + texto.Substring(1);
     }
 
     /// <summary>

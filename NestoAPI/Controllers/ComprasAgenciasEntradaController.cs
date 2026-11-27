@@ -142,7 +142,13 @@ namespace NestoAPI.Controllers
         /// <summary>La fecha de recepción que se pondría al asignarlo hoy.</summary>
         public DateTime FechaRecepcionPropuesta { get; set; }
         public string RemitentePaquete { get; set; }
+        /// <summary>
+        /// El proveedor de los candidatos si es uno solo. 27/11/26: sin candidatos, el que dice la memoria de remitentes del paquete
+        /// (<see cref="ReglaRemitenteRecordadoSinCandidatos"/>), y entonces <see cref="Explicacion"/> dice por qué no hay candidatos.
+        /// </summary>
         public string ProveedorPropuesto { get; set; }
+        /// <summary>27/11/26: el nombre de <see cref="ProveedorPropuesto"/> cuando se sabe; null si no.</summary>
+        public string NombreProveedorPropuesto { get; set; }
         /// <summary>NestoAPI#857i: la delegación de origen que pone la agencia en el código de alguno de sus correos («Vic»); null si ninguno.</summary>
         public string OrigenAgencia { get; set; }
         /// <summary>NestoAPI#897/#857i: por qué se proponen estos candidatos; null si no hay explicación.</summary>
@@ -552,7 +558,9 @@ namespace NestoAPI.Controllers
             DateTime hoy = DateTime.Today;
             List<CorreoSeguimientoFila> correos = await repositorio.LeerCorreos(hoy.AddDays(-dias - MismoEnvio.DIAS)).ConfigureAwait(false);
             List<PedidoCompraEnAire> pedidos = await repositorio.LeerPedidosEnAire(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
-            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy, ReglaControlPendientes.LeerDias(), incluirLlegados));
+            // 27/11/26: la memoria de remitentes del paquete, para decir de quién es un envío sin candidatos
+            List<RemitentePaqueteRecordado> memoria = await repositorio.LeerRemitentesPaquete().ConfigureAwait(false);
+            return Ok(ComponerPorAsignar(correos, pedidos, hoy.AddDays(-dias), hoy, ReglaControlPendientes.LeerDias(), incluirLlegados, memoria));
         }
 
         /// <summary>
@@ -560,7 +568,8 @@ namespace NestoAPI.Controllers
         /// solo cuentan para agrupar), con los candidatos del envío y el sugerido; y los pedidos en el aire marcando de qué envíos son candidatos.
         /// </summary>
         internal static PorAsignarCorreosCompraDTO ComponerPorAsignar(IEnumerable<CorreoSeguimientoFila> correos, IEnumerable<PedidoCompraEnAire> pedidos,
-            DateTime desde, DateTime hoy, int diasPedidoDePendientes = ReglaControlPendientes.DIAS_POR_DEFECTO, bool incluirLlegados = false)
+            DateTime desde, DateTime hoy, int diasPedidoDePendientes = ReglaControlPendientes.DIAS_POR_DEFECTO, bool incluirLlegados = false,
+            IEnumerable<RemitentePaqueteRecordado> memoria = null)
         {
             List<PedidoCompraEnAire> enAire = (pedidos ?? Enumerable.Empty<PedidoCompraEnAire>()).Where(p => p != null).ToList();
             var resultado = new PorAsignarCorreosCompraDTO();
@@ -619,6 +628,19 @@ namespace NestoAPI.Controllers
                         MotivoDePendientes = dePendientes
                     });
                 }
+                if (envio.ProveedorPropuesto != null)
+                {
+                    envio.NombreProveedorPropuesto = delEnvio.Where(p => string.Equals(p.Proveedor?.Trim(), envio.ProveedorPropuesto.Trim(), StringComparison.OrdinalIgnoreCase))
+                        .Select(p => p.NombreProveedor).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                }
+                // 27/11/26: sin candidatos, pero quien expide ya está recordado (caso «postquam» → 451 sin pedidos en el aire): de quién es y por qué
+                RemitenteRecordadoEnvio recordado = ReglaRemitenteRecordadoSinCandidatos.Explicar(grupo, decision.Candidatos, memoria, enAire);
+                if (recordado != null)
+                {
+                    envio.ProveedorPropuesto = envio.ProveedorPropuesto ?? recordado.Proveedor;
+                    envio.NombreProveedorPropuesto = envio.NombreProveedorPropuesto ?? recordado.NombreProveedor;
+                    envio.Explicacion = envio.Explicacion ?? recordado.Explicacion;
+                }
                 resultado.Envios.Add(envio);
             }
             resultado.Envios = resultado.Envios.OrderByDescending(e => e.PrimerCorreo).ToList();
@@ -647,7 +669,9 @@ namespace NestoAPI.Controllers
         // POST api/Compras/AgenciasEntrada/Correos/12/Asignar?reasignar=false   { "Empresa": "1", "Pedido": 912001, "RecordarRemitente": true }
         /// <summary>
         /// Fase 3: Compras dice de qué pedido es un correo. Pone su fecha (la del envío) en las líneas enviadas y sin recibir del pedido, y
-        /// también a los demás correos del mismo envío sin aplicar. 400 si el pedido no está en el aire; 404 si no existe el correo; 409 si
+        /// también a los demás correos del mismo envío sin aplicar. 27/11/26: si el pedido YA se recibió (en el plazo del envío,
+        /// <see cref="ReglaPedidoYaRecibido"/>), 200 sin tocar ninguna fecha (YaRecibido, FechaAlbaran) y el envío queda asignado a él como pedido
+        /// real; 400 si no existe o si no está en el aire por otra causa (nunca se envió…); 404 si no existe el correo; 409 si
         /// ya está aplicado a otro pedido (con <paramref name="reasignar"/> = true se aplica al nuevo; el anterior NO se deshace); 503 sin
         /// Scripts/Issue857d. Funciona con el interruptor apagado.
         /// </summary>
@@ -727,6 +751,31 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.ServiceUnavailable, ServicioAplicacionCorreosCompras.MENSAJE_SIN_SCRIPT);
             }
             return Ok(await repositorio.LeerRemitentesPaquete().ConfigureAwait(false));
+        }
+
+        // POST api/Compras/AgenciasEntrada/RemitentesPaquete   { "RemitentePaquete": "iberocel - paraiso", "Empresa": "1", "Proveedor": "846" }
+        /// <summary>
+        /// 27/11/26: enseña a mano de qué proveedor es quien expide el paquete (sin tener que asignar un correo). Normaliza el remitente como
+        /// el lector; el proveedor tiene que existir (400 si no). Crea la fila o, si ya apuntaba a otro proveedor, lo cambia (ProveedorAnterior y
+        /// Mensaje lo dicen); rastro en Modificaciones. Devuelve la fila. 503 sin Scripts/Issue857d.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Compras/AgenciasEntrada/RemitentesPaquete")]
+        [ResponseType(typeof(RespuestaRemitentePaqueteDTO))]
+        public async Task<IHttpActionResult> PostRemitentePaquete([FromBody] PeticionRemitentePaqueteDTO peticion)
+        {
+            if (!PuedeVer(User))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO);
+            }
+            if (!repositorio.TablasExisten() || !repositorio.AplicacionDisponible())
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, ServicioAplicacionCorreosCompras.MENSAJE_SIN_SCRIPT);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, UsuarioAuditoriaHelper.DESCONOCIDO);
+            ResultadoOperacionCorreoCompra resultado = await crearAplicacion().EnsenarRemitentePaquete(peticion, usuario).ConfigureAwait(false);
+            return Resultado(resultado, resultado.RemitentePaquete);
         }
 
         // DELETE api/Compras/AgenciasEntrada/RemitentesPaquete/12
