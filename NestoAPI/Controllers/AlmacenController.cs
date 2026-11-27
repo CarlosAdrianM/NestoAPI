@@ -923,6 +923,8 @@ namespace NestoAPI.Controllers
         /// <item>200 <see cref="Models.Agencias.EtiquetaPackingDTO"/>: impresa, o para GLS y Canteras grabado con
         /// EtiquetaEnNesto y «La etiqueta de GLS hay que sacarla en Nesto».</item>
         /// <item>409 <see cref="Models.Agencias.ConflictoEnvioDesdePedidoDTO"/>: lo pendiente de DesdePedido; se repite con las respuestas.</item>
+        /// <item>409 PACKING_INCOMPLETO (NestoAPI#914, con AvisarPackingIncompleto y sin ConfirmarPackingIncompleto): quedan productos sin leer
+        /// en la mesa; <see cref="Infraestructure.Agencias.Conflicto409ConCodigoDTO"/>. Se repite con ConfirmarPackingIncompleto = true.</item>
         /// <item>400 <see cref="Models.Agencias.ErrorEnvioDesdePedidoDTO"/> con su Codigo (los de DesdePedido y SinBultos).</item>
         /// <item>404: el pedido no existe.</item>
         /// <item>502 <see cref="Models.Agencias.EtiquetaPackingDTO"/>: el envío está grabado pero la agencia o la impresora han
@@ -950,6 +952,9 @@ namespace NestoAPI.Controllers
                     return NotFound();
                 case Infraestructure.Agencias.TipoResultadoEtiquetaPacking.FalloAgencia:
                     return Content(HttpStatusCode.BadGateway, resultado.Etiqueta);
+                case Infraestructure.Agencias.TipoResultadoEtiquetaPacking.PackingIncompleto:
+                    // NestoAPI#914: el sobre de los 409 con código (COBRO_DE_MAS, NO_CARGADA): { error: { code, message, details }, Message, Codigo }
+                    return Content(HttpStatusCode.Conflict, resultado.ConflictoConCodigo);
                 default:
                     return Content(HttpStatusCode.BadRequest, resultado.Error);
             }

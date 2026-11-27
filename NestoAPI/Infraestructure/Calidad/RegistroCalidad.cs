@@ -40,6 +40,11 @@ namespace NestoAPI.Infraestructure.Calidad
         /// (Ariadna#12, «Cambiar hueco»). Lo que no estaba pasa a «pendiente de ubicar» y hasta ahora no quedaba constancia de quién, qué y dónde.
         /// </summary>
         public const string NO_ESTABA_EN_SU_HUECO = "NoEstabaEnSuHueco";
+        /// <summary>
+        /// NestoAPI#914 (Carlos 27/11/26, «avisar y dejar seguir»): se grabó el envío de la etiqueta del packing con productos sin leer en la mesa
+        /// (ServicioEtiquetaPacking.Imprimir). Detalle {Modo «Confirmado» o «SinAviso», Picking, Unidades, Productos}. Indicador del EMPAQUETADOR.
+        /// </summary>
+        public const string ETIQUETA_CON_PACKING_INCOMPLETO = "EtiquetaConPackingIncompleto";
 
         /// <summary>Los que dicen que el pedido se tocó después del picking (motivo TocadoTrasElPicking).</summary>
         public static readonly IReadOnlyList<string> TOCADO_TRAS_EL_PICKING = new[] { QUITAR_PICKING, AMPLIACION_CON_PICKING_MISMO_PEDIDO };

@@ -653,7 +653,7 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
                 Assert.IsFalse(string.IsNullOrWhiteSpace(InfoMotivosPedidoPerfecto.Texto(m)), m.ToString());
                 Assert.IsFalse(string.IsNullOrWhiteSpace(InfoMotivosPedidoPerfecto.PorQueNoEvaluado(m)), m.ToString());
             }
-            Assert.AreEqual(15, InfoMotivosPedidoPerfecto.Todos.Count);
+            Assert.AreEqual(16, InfoMotivosPedidoPerfecto.Todos.Count);
         }
 
         [TestMethod]
@@ -733,6 +733,61 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             Assert.IsTrue(detalle.LlevaLineasNegativas);
             Assert.AreEqual(70m, detalle.Importe);
             Assert.IsFalse(ServicioPedidoPerfecto.Detalle(Perfecto(), Evaluar(Perfecto())).LlevaLineasNegativas);
+        }
+
+        // 17. Error de envío reclamado (Carlos 27/11/26)
+
+        private static NestoAPI.Infraestructure.Calidad.Reclamaciones.ResultadoReclamacion Reclamacion(bool evaluada,
+            params NestoAPI.Infraestructure.Calidad.Reclamaciones.SubMotivoReclamacion[] subMotivos)
+        {
+            var r = new NestoAPI.Infraestructure.Calidad.Reclamaciones.ResultadoReclamacion { Pedido = 900, Linea = 1, Evaluada = evaluada };
+            foreach (var s in subMotivos)
+            {
+                _ = r.SubMotivos.Add(s);
+            }
+            return r;
+        }
+
+        [TestMethod]
+        public void ErrorDeEnvioReclamado_SinLineasMiradas_NoEvaluadoYSigueSiendoPerfecto()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto());
+
+            Assert.IsTrue(e.NoEvaluados.Contains(MotivoPedidoPerfecto.ErrorDeEnvioReclamado));
+            Assert.IsTrue(e.Perfecto);
+        }
+
+        [TestMethod]
+        public void ErrorDeEnvioReclamado_ReenviadoSinCoste_EsError()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h => h.ReclamacionesEnvio.Add(Reclamacion(true,
+                NestoAPI.Infraestructure.Calidad.Reclamaciones.SubMotivoReclamacion.ReenviadoSinCoste))));
+
+            CollectionAssert.Contains(e.Motivos, MotivoPedidoPerfecto.ErrorDeEnvioReclamado);
+            Assert.IsFalse(e.PerfectoSinContarInformativos);
+        }
+
+        [TestMethod]
+        public void ErrorDeEnvioReclamado_SoloAbonadoSinReposicion_NoEsMotivo()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h => h.ReclamacionesEnvio.Add(Reclamacion(true,
+                NestoAPI.Infraestructure.Calidad.Reclamaciones.SubMotivoReclamacion.AbonadoSinReposicion))));
+
+            CollectionAssert.DoesNotContain(e.Motivos, MotivoPedidoPerfecto.ErrorDeEnvioReclamado);
+            Assert.IsFalse(e.NoEvaluados.Contains(MotivoPedidoPerfecto.ErrorDeEnvioReclamado));
+        }
+
+        [TestMethod]
+        public void ErrorDeEnvioReclamado_CambiadoPorOtro_VaJuntoConLaRectificativa()
+        {
+            EvaluacionPedidoPerfecto e = Evaluar(Perfecto(h =>
+            {
+                h.ReclamacionesEnvio.Add(Reclamacion(true, NestoAPI.Infraestructure.Calidad.Reclamaciones.SubMotivoReclamacion.CambiadoPorOtro));
+                h.FacturasRectificadas.Add(new FacturaRectificadaPedidoPerfecto { Factura = "NV26/1", UnidadesFacturadas = 3, UnidadesRectificadasDelPedido = 1, PedidosDeLaFactura = 1 });
+            }));
+
+            CollectionAssert.Contains(e.Motivos, MotivoPedidoPerfecto.ErrorDeEnvioReclamado);
+            CollectionAssert.Contains(e.Motivos, MotivoPedidoPerfecto.FacturaRectificadaEnParte);
         }
     }
 }

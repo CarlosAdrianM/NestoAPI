@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.Calidad.Reclamaciones;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -59,7 +60,30 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
 
         [IndicadorAlmacen("Lectura que no casa: leyó un código desconocido o de otro producto y Ariadna lo paró (casi-error, no cuenta contra nadie).",
             AmbitoIndicadorAlmacen.Lecturas, esError: false)]
-        LecturaNoCasada = 6
+        LecturaNoCasada = 6,
+
+        // Carlos 27/11/26: «el error real es cuando decimos que hemos mandado un producto y en realidad hemos mandado otro (o ninguno)».
+        // Ver ReglaErrorEnvioReclamado (la misma regla y la misma lectura que el motivo del pedido perfecto).
+        [IndicadorAlmacen("Error de envío reclamado: después de servirla, se le volvió a mandar el mismo producto sin coste o se rectificó y se le mandó otro parecido.",
+            AmbitoIndicadorAlmacen.Linea)]
+        ErrorDeEnvioReclamado = 7,
+
+        [IndicadorAlmacen("Reenviado sin coste: no llegó o llegó mal y se le volvió a mandar el mismo producto sin coste (parte del error de envío reclamado).",
+            AmbitoIndicadorAlmacen.Linea)]
+        ReenviadoSinCoste = 8,
+
+        [IndicadorAlmacen("Cambiado por otro: se rectificó la línea y se le cargó o mandó sin coste otro producto parecido (parte del error de envío reclamado).",
+            AmbitoIndicadorAlmacen.Linea)]
+        CambiadoPorOtro = 9,
+
+        [IndicadorAlmacen("Abonado sin reposición: se rectificó la línea y no se le mandó nada en su lugar (devolución o abono comercial: no es del preparador).",
+            AmbitoIndicadorAlmacen.Linea, esError: false)]
+        AbonadoSinReposicion = 10,
+
+        // Corte 2 (27/11/26), con el hueco de cada lectura (Scripts/Issue914c_PreparacionEscaneosHueco.sql, Ariadna 2.48). Ver ReglaFaltaQueSiEstaba.
+        [IndicadorAlmacen("Falta que sí estaba: dio una falta en un hueco y, poco después, otra salida cogió ese producto de ese mismo hueco.",
+            AmbitoIndicadorAlmacen.Parada, esError: false)]
+        FaltaQueSiEstaba = 11
     }
 
     public static class InfoIndicadoresAlmacen
@@ -76,6 +100,31 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
 
         public static AmbitoIndicadorAlmacen Ambito(IndicadorAlmacen indicador) => atributos[indicador].Ambito;
 
+        /// <summary>
+        /// Los dos indicadores OFICIALES por preparador (Carlos 27/11/26): el error real (lo que el cliente reclamó) y el error que se cazó
+        /// antes de salir (la falta del packing). Los demás son informativos.
+        /// </summary>
+        public static IReadOnlyList<IndicadorAlmacen> Oficiales { get; } = new[] { IndicadorAlmacen.ErrorDeEnvioReclamado, IndicadorAlmacen.FaltaEnPacking };
+
+        /// <summary>Cada sub-motivo de la reclamación, como indicador de línea.</summary>
+        internal static IndicadorAlmacen Indicador(SubMotivoReclamacion subMotivo)
+        {
+            switch (subMotivo)
+            {
+                case SubMotivoReclamacion.ReenviadoSinCoste:
+                    return IndicadorAlmacen.ReenviadoSinCoste;
+                case SubMotivoReclamacion.CambiadoPorOtro:
+                    return IndicadorAlmacen.CambiadoPorOtro;
+                default:
+                    return IndicadorAlmacen.AbonadoSinReposicion;
+            }
+        }
+
+        /// <summary>Los de la reclamación (se evalúan juntos: la misma ventana de días).</summary>
+        internal static bool EsDeReclamacion(IndicadorAlmacen indicador) =>
+            indicador == IndicadorAlmacen.ErrorDeEnvioReclamado || indicador == IndicadorAlmacen.ReenviadoSinCoste
+            || indicador == IndicadorAlmacen.CambiadoPorOtro || indicador == IndicadorAlmacen.AbonadoSinReposicion;
+
         /// <summary>Por qué una línea o parada no se ha podido evaluar (IndicadoresNoEvaluados del resumen).</summary>
         public static string PorQueNoEvaluado(IndicadorAlmacen indicador)
         {
@@ -91,6 +140,15 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                     return "Solo las líneas ya facturadas: una línea sin factura todavía no se ha podido rectificar. Tampoco las que no tienen preparador.";
                 case IndicadorAlmacen.LecturaNoCasada:
                     return "Solo hay rastro desde que Ariadna apunta las lecturas que no casan (dbo.LecturasNoCasadasAlmacen, Ariadna#43).";
+                case IndicadorAlmacen.FaltaQueSiEstaba:
+                    return "Solo desde que las lecturas del recorrido guardan el hueco (columna PreparacionEscaneos.Hueco, Scripts/Issue914c_PreparacionEscaneosHueco.sql, " +
+                        "y Ariadna 2.48): antes, o sin la columna, no se sabe de qué hueco se cogió.";
+                case IndicadorAlmacen.ErrorDeEnvioReclamado:
+                case IndicadorAlmacen.ReenviadoSinCoste:
+                case IndicadorAlmacen.CambiadoPorOtro:
+                case IndicadorAlmacen.AbonadoSinReposicion:
+                    return $"Solo las líneas con albarán servidas hace al menos los días de «{ReglaErrorEnvioReclamado.PARAMETRO_DIAS}» " +
+                        $"({ReglaErrorEnvioReclamado.DIAS_POR_DEFECTO} si no hay fila en «(defecto)»): antes el cliente aún puede reclamar. Tampoco las que no tienen preparador.";
                 default:
                     return "Siempre se evalúa en las paradas con alguna lectura del recorrido en Ariadna.";
             }
@@ -182,6 +240,31 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public DateTime? PrimeraNoCasada { get; set; }
         /// <summary>Tablas opcionales que no están.</summary>
         public List<string> TablasQueFaltan { get; set; } = new List<string>();
+        /// <summary>Lo que pasó después de servir las líneas (reenvíos sin coste y rectificativas): <see cref="LectorReclamacionesEnvioSql"/>.</summary>
+        public LecturaReclamacionesEnvio Reclamaciones { get; set; } = new LecturaReclamacionesEnvio();
+        /// <summary>Los días de reclamación con que se leyó (<see cref="ReglaErrorEnvioReclamado.PARAMETRO_DIAS"/>).</summary>
+        public int DiasReclamacionEnvio { get; set; } = ReglaErrorEnvioReclamado.DIAS_POR_DEFECTO;
+        /// <summary>Etiquetas impresas con el packing incompleto en el periodo, por empaquetador (eventos de dbo.CalidadEventos).</summary>
+        public List<EtiquetasPackingIncompletoAlmacen> EtiquetasPackingIncompleto { get; set; } = new List<EtiquetasPackingIncompletoAlmacen>();
+        /// <summary>El primer evento EtiquetaConPackingIncompleto (desde cuándo hay rastro); null si ninguno o sin la tabla.</summary>
+        public DateTime? PrimeraEtiquetaPackingIncompleto { get; set; }
+        /// <summary>Existe PreparacionEscaneos.Hueco (Scripts/Issue914c_PreparacionEscaneosHueco.sql).</summary>
+        public bool HayColumnaHueco { get; set; }
+        /// <summary>La primera lectura del recorrido con hueco en el periodo (desde cuándo se evalúa FaltaQueSiEstaba).</summary>
+        public DateTime? PrimeraLecturaConHueco { get; set; }
+        public List<FaltaConHuecoAlmacen> FaltasConHueco { get; set; } = new List<FaltaConHuecoAlmacen>();
+        public List<CogidaConHuecoAlmacen> CogidasConHueco { get; set; } = new List<CogidaConHuecoAlmacen>();
+    }
+
+    /// <summary>Las etiquetas impresas con el packing incompleto por un empaquetador (NestoAPI#914, 27/11/26).</summary>
+    public class EtiquetasPackingIncompletoAlmacen
+    {
+        public string Usuario { get; set; }
+        public int Etiquetas { get; set; }
+        /// <summary>Tras el aviso 409 PACKING_INCOMPLETO, el mozo confirmó.</summary>
+        public int Confirmadas { get; set; }
+        /// <summary>Desde una Ariadna que no avisa (anterior a 2.48).</summary>
+        public int SinAviso { get; set; }
     }
 
     /// <summary>Lo de un producto en un picking: la parada del recorrido, con quién la hizo.</summary>
@@ -204,12 +287,15 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public int FaltasEnPacking { get; set; }
         public HashSet<IndicadorAlmacen> Indicadores { get; } = new HashSet<IndicadorAlmacen>();
         public HashSet<IndicadorAlmacen> NoEvaluados { get; } = new HashSet<IndicadorAlmacen>();
+        /// <summary>Las cogidas posteriores en el mismo hueco que demuestran FaltaQueSiEstaba.</summary>
+        public List<FaltaQueSiEstabaAlmacen> FaltasQueSiEstaban { get; } = new List<FaltaQueSiEstabaAlmacen>();
 
         public string Clave => ReglaCalidadAlmacen.ClaveParada(Picking, Producto);
 
         /// <summary>A quién se imputa: las faltas del recorrido, a quien las dio; el descuadre, al preparador.</summary>
         public string Imputado(IndicadorAlmacen indicador) =>
-            (indicador == IndicadorAlmacen.FaltaEnPicking || indicador == IndicadorAlmacen.FaltaDeshechaPorOtro) && DioLaFalta != null
+            (indicador == IndicadorAlmacen.FaltaEnPicking || indicador == IndicadorAlmacen.FaltaDeshechaPorOtro
+             || indicador == IndicadorAlmacen.FaltaQueSiEstaba) && DioLaFalta != null
                 ? DioLaFalta
                 : Preparador;
     }
@@ -239,6 +325,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public decimal UnidadesRectificadas { get; set; }
         public HashSet<IndicadorAlmacen> Indicadores { get; } = new HashSet<IndicadorAlmacen>();
         public HashSet<IndicadorAlmacen> NoEvaluados { get; } = new HashSet<IndicadorAlmacen>();
+        /// <summary>Lo que le pasó después de servirla (a sus líneas), aunque aún no cuente: el Detalle lo enseña con sus pruebas.</summary>
+        public List<ResultadoReclamacion> Reclamaciones { get; } = new List<ResultadoReclamacion>();
 
         public string ClaveParada => ReglaCalidadAlmacen.ClaveParada(Picking, Producto);
     }
@@ -296,7 +384,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                     Ultima = g.Max(l => l.Ultima)
                 }).ToList();
 
-        public static EvaluacionCalidadAlmacen Evaluar(LecturaCalidadAlmacen lectura)
+        /// <param name="hoy">Para saber si ya han pasado los días de reclamación desde el albarán (null: hoy).</param>
+        public static EvaluacionCalidadAlmacen Evaluar(LecturaCalidadAlmacen lectura, DateTime? hoy = null)
         {
             var evaluacion = new EvaluacionCalidadAlmacen();
             if (lectura == null)
@@ -323,6 +412,12 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
             Dictionary<Tuple<int, int, string>, List<LecturaPackingCalidadAlmacen>> packingPorProducto = packing
                 .GroupBy(l => Tuple.Create(l.Picking, l.Pedido, ClaveProducto(l.Producto)))
                 .ToDictionary(g => g.Key, g => g.ToList());
+
+            // Falta que sí estaba (con el hueco de cada lectura): las pruebas, por parada
+            Dictionary<string, List<FaltaQueSiEstabaAlmacen>> siEstaban = (lectura.HayColumnaHueco
+                    ? ReglaFaltaQueSiEstaba.Evaluar(lectura.FaltasConHueco, lectura.CogidasConHueco)
+                    : new List<FaltaQueSiEstabaAlmacen>())
+                .GroupBy(x => ClaveParada(x.Falta.Picking, x.Falta.Producto)).ToDictionary(g => g.Key, g => g.ToList());
 
             // Paradas: de las lecturas del recorrido (también las dadas enteras por falta, que ya no tienen línea en el picking)
             foreach (IGrouping<string, LecturaPickingCalidadAlmacen> g in (lectura.LecturasPicking ?? new List<LecturaPickingCalidadAlmacen>())
@@ -360,6 +455,16 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 {
                     parada.DioLaFalta = parada.DioLaFalta ?? dioLaFalta.Usuario;
                     _ = parada.Indicadores.Add(IndicadorAlmacen.FaltaDeshechaPorOtro);
+                }
+
+                if (!lectura.HayColumnaHueco || !lectura.PrimeraLecturaConHueco.HasValue || parada.FechaPicking < lectura.PrimeraLecturaConHueco.Value)
+                {
+                    _ = parada.NoEvaluados.Add(IndicadorAlmacen.FaltaQueSiEstaba);
+                }
+                else if (parada.Faltas > 0 && siEstaban.TryGetValue(parada.Clave, out List<FaltaQueSiEstabaAlmacen> pruebas))
+                {
+                    _ = parada.Indicadores.Add(IndicadorAlmacen.FaltaQueSiEstaba);
+                    parada.FaltasQueSiEstaban.AddRange(pruebas);
                 }
 
                 lineasPorParada.TryGetValue(parada.Clave, out List<LineaPreparadaAlmacen> suyas);
@@ -406,6 +511,14 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 evaluacion.Paradas.Add(parada);
             }
 
+            // Error de envío reclamado (Carlos 27/11/26): lo que pasó después de servir cada línea
+            Dictionary<Tuple<int, int>, ResultadoReclamacion> reclamaciones = ReglaErrorEnvioReclamado.Evaluar(lectura.Reclamaciones,
+                (hoy ?? DateTime.Today).Date, lectura.DiasReclamacionEnvio);
+            foreach (LineaPreparadaAlmacen l in lineas.Where(l => l.Preparador != null))
+            {
+                PonerReclamacion(l, reclamaciones);
+            }
+
             // Las líneas sin ninguna lectura de su producto en el recorrido: sin preparador, nada evaluado
             foreach (LineaPreparadaAlmacen l in lineas.Where(l => l.Preparador == null))
             {
@@ -427,6 +540,43 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
             evaluacion.Lineas = lineas
                 .OrderBy(x => x.FechaPicking).ThenBy(x => x.Picking).ThenBy(x => x.Pedido).ThenBy(x => x.Producto, StringComparer.Ordinal).ToList();
             return evaluacion;
+        }
+
+        /// <summary>
+        /// Los indicadores de la reclamación de una línea preparada (sus líneas del pedido juntas). Sin albarán, o servida hace menos de los
+        /// días de reclamación: no evaluados (aunque ya se vea algo, que queda en <see cref="LineaPreparadaAlmacen.Reclamaciones"/>).
+        /// </summary>
+        internal static void PonerReclamacion(LineaPreparadaAlmacen l, Dictionary<Tuple<int, int>, ResultadoReclamacion> reclamaciones)
+        {
+            foreach (int linea in l.LineasPedido)
+            {
+                if (reclamaciones != null && reclamaciones.TryGetValue(Tuple.Create(l.Pedido, linea), out ResultadoReclamacion r))
+                {
+                    l.Reclamaciones.Add(r);
+                }
+            }
+            bool? error = ReglaErrorEnvioReclamado.Combinar(l.Reclamaciones, l.LineasPedido.Count);
+            if (!error.HasValue)
+            {
+                foreach (IndicadorAlmacen i in InfoIndicadoresAlmacen.Todos.Where(InfoIndicadoresAlmacen.EsDeReclamacion))
+                {
+                    _ = l.NoEvaluados.Add(i);
+                }
+                return;
+            }
+            if (error.Value)
+            {
+                _ = l.Indicadores.Add(IndicadorAlmacen.ErrorDeEnvioReclamado);
+            }
+            foreach (SubMotivoReclamacion subMotivo in l.Reclamaciones.Where(r => r.Evaluada).SelectMany(r => r.SubMotivos).Distinct())
+            {
+                IndicadorAlmacen indicador = InfoIndicadoresAlmacen.Indicador(subMotivo);
+                // Abonado sin reposición solo si ninguna de sus líneas tiene error (si no, es parte del error)
+                if (indicador != IndicadorAlmacen.AbonadoSinReposicion || !error.Value)
+                {
+                    _ = l.Indicadores.Add(indicador);
+                }
+            }
         }
 
         private static LineaPreparadaAlmacen Linea(List<LineaPedidoCalidadAlmacen> lineas, PickingCalidadAlmacen picking)

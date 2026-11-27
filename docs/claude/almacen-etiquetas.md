@@ -109,3 +109,32 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   La del mozo NO lleva enlace a tamaño completo: el blob `bultos` es privado y solo da enlaces de lectura que caducan
   (`IAlmacenFotosBultos.EnlaceDeLectura`), y no hay endpoint que sirva `avisos-ficha/…`. Es el único correo con fotos hechas con el móvil:
   las de bultos y diferencias de reposición (#906) y las del reparto propio no van en correos (se ven con enlaces que caducan).
+
+### Etiqueta del packing con el packing incompleto: avisar y dejar seguir (NestoAPI#914, Carlos 27/11/26; Ariadna 2.48)
+- `POST api/Almacen/Pedidos/{pedido}/Etiqueta` (`PeticionEtiquetaPackingDTO`) lleva dos campos OPCIONALES: `AvisarPackingIncompleto` (bool) y
+  `ConfirmarPackingIncompleto` (bool). Ariadna 2.48 manda siempre `AvisarPackingIncompleto: true` y `ConfirmarPackingIncompleto: false` (o `true`
+  cuando el mozo confirma). Una Ariadna anterior no manda ninguno (los dos false): imprime como siempre.
+- «Packing incompleto» (`ReglaPackingIncompleto.SinLeer`, pura): en TODOS los pedidos de la entrega del packing (la etiqueta es de todas sus
+  cajas), por pedido y producto, Σ Cantidad − Σ Metidas − Σ Faltas &gt; 0 con las cuentas del progreso del packing (`LeerPacking`; sin las líneas de
+  texto). Sin packing en curso (solo bultos) no se sabe y no se avisa.
+- Se mira ANTES de grabar el envío: con `AvisarPackingIncompleto` y sin `ConfirmarPackingIncompleto` → 409 sin grabar ni imprimir, con el sobre de
+  los 409 con código (como COBRO_DE_MAS / NO_CARGADA) más `Mensaje` y `Detalles` en la raíz:
+  `{"error":{"code":"PACKING_INCOMPLETO","message":"…","details":{…}},"Message":"Faltan 2 productos por leer en la mesa (2 unidades). ¿Imprimir la etiqueta igualmente?","Codigo":"PACKING_INCOMPLETO","Mensaje":"…","Detalles":{"Faltan":2,"Unidades":2,"Productos":[{"Producto":"41262","Nombre":"SYNERGY…","Cantidad":1,"Pedido":926940},…]}}`.
+  El mensaje NO enumera los productos (la app los pinta debajo con `Detalles`). Con `ConfirmarPackingIncompleto` (o sin aviso) se imprime.
+- Siempre que se graba el envío de la etiqueta con el packing incompleto (confirmado o desde una versión que no avisa) se apunta el evento de
+  calidad `EtiquetaConPackingIncompleto` (una vez por envío: los reintentos y reimpresiones, con el envío ya en curso, no vuelven a mirar el
+  packing ni lo repiten). Nunca rompe la etiqueta. Ver `docs/claude/calidad-kpi.md`.
+
+### El hueco de cada lectura del recorrido (NestoAPI#914, Carlos 27/11/26: «SÍ, con la próxima versión de Ariadna»; Ariadna 2.48)
+- `POST api/Almacen/Escaneos?empresa=1` (cuerpo: lista de `EscaneoAlmacenDTO`): cada lectura puede traer `"Hueco": "001/002/004"` (OPCIONAL; el
+  hueco de la parada tal como lo pinta el recorrido, mismo formato que el `Motivo` de las faltas). Lo mandan el picking y las demás salidas que
+  pasan por el recorrido (también la reposición de Algete); el packing usa el mismo endpoint y NO lo manda. Las faltas, sus deshacer y las
+  correcciones en negativo llevan el hueco donde se dio la falta (la corrección de `POST api/Almacen/Escaneos/Corregir` lo pone desde
+  `CorregirEscaneoDTO.Hueco`, también en las de LECTURA).
+- Se guarda en `dbo.PreparacionEscaneos.Hueco varchar(20) NULL` (`Scripts/Issue914c_PreparacionEscaneosHueco.sql`, sa, idempotente, sin GRANT:
+  el verbo INSERT ya lo tenía la API). Recortado a 20. Solo si la columna existe (COL_LENGTH, mismo patrón que PendienteParada/TotalParada de
+  #713: el «sí» se recuerda; el «no», se vuelve a mirar a los 5 minutos) Y la lectura lo trae: sin el script o sin el dato, el INSERT de siempre.
+  Antes de añadirla se revisó el repo: todos los INSERT en la tabla llevan lista de columnas y no hay SELECT * sobre ella.
+  Las compensaciones de `EscriturasSalida` (el INSERT agrupado que deshace las lecturas de un usuario) no copian el hueco: quedan con Hueco NULL.
+- Para qué: el indicador `FaltaQueSiEstaba` del corte 2 de calidad (`docs/claude/calidad-kpi.md`). Límite conocido (Ariadna 2.48): en las salidas
+  que no cambian la reserva, si el mozo coge el producto de otro hueco la app no lo sabe y manda el de la parada.

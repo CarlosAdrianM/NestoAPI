@@ -82,7 +82,8 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             Assert.AreEqual("Santiago", linea.Empaquetador);
             Assert.IsTrue(linea.PackingEvaluado);
             Assert.AreEqual(0, linea.Indicadores.Count);
-            Assert.AreEqual(0, linea.NoEvaluados.Count);
+            // Sin albarán todavía: lo de la reclamación (27/11/26) no se puede mirar; lo demás, sí
+            Assert.IsTrue(linea.NoEvaluados.All(InfoIndicadoresAlmacen.EsDeReclamacion), string.Join(", ", linea.NoEvaluados));
             Assert.AreEqual(0, e.Paradas.Single().Indicadores.Count);
         }
 
@@ -283,6 +284,70 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
 
             Assert.AreEqual(0, e.Paradas.Count);
             Assert.AreEqual(0, e.Lineas.Count);
+        }
+
+        // Error de envío reclamado (Carlos 27/11/26)
+
+        private static LecturaCalidadAlmacen ConReenvio(DateTime albaran)
+        {
+            LecturaCalidadAlmacen lectura = Lectura(100);
+            lectura.LecturasPicking.Add(Pick(100, "A", "Alfredo", 1));
+            lectura.Lineas.Add(Linea(100, 900, 1, "A", 1, factura: "NV26/1"));
+            lectura.Reclamaciones.Servidas.Add(new NestoAPI.Infraestructure.Calidad.Reclamaciones.LineaServidaReclamacion
+            {
+                Pedido = 900, Linea = 1, Producto = "A", Cliente = "1001", FechaAlbaran = albaran, Factura = "NV26/1", Cantidad = 1, BaseImponible = 10m
+            });
+            lectura.Reclamaciones.MismoProducto.Add(new NestoAPI.Infraestructure.Calidad.Reclamaciones.LineaPosteriorReclamacion
+            {
+                Cliente = "1001", Pedido = 950, Linea = 1, Fecha = albaran.AddDays(3), Producto = "A", Cantidad = 1, BaseImponible = 0m
+            });
+            return lectura;
+        }
+
+        [TestMethod]
+        public void Evaluar_ReenviadoSinCosteHaceMasDeLosDias_ErrorDeEnvioReclamadoDelPreparador()
+        {
+            EvaluacionCalidadAlmacen e = ReglaCalidadAlmacen.Evaluar(ConReenvio(DIA.Date.AddDays(-60)), DIA);
+
+            LineaPreparadaAlmacen linea = e.Lineas.Single();
+            Assert.AreEqual("Alfredo", linea.Preparador);
+            Assert.IsTrue(linea.Indicadores.Contains(IndicadorAlmacen.ErrorDeEnvioReclamado));
+            Assert.IsTrue(linea.Indicadores.Contains(IndicadorAlmacen.ReenviadoSinCoste));
+            Assert.IsFalse(linea.Indicadores.Contains(IndicadorAlmacen.AbonadoSinReposicion));
+            Assert.AreEqual(950, linea.Reclamaciones.Single().Pruebas.Single().Pedido);
+        }
+
+        [TestMethod]
+        public void Evaluar_ReenvioDeHacePocosDias_NoEvaluadoPeroConLaPrueba()
+        {
+            EvaluacionCalidadAlmacen e = ReglaCalidadAlmacen.Evaluar(ConReenvio(DIA.Date.AddDays(-10)), DIA);
+
+            LineaPreparadaAlmacen linea = e.Lineas.Single();
+            Assert.IsTrue(linea.NoEvaluados.Contains(IndicadorAlmacen.ErrorDeEnvioReclamado));
+            Assert.IsFalse(linea.Indicadores.Contains(IndicadorAlmacen.ErrorDeEnvioReclamado));
+            Assert.AreEqual(1, linea.Reclamaciones.Single().Pruebas.Count);
+        }
+
+        [TestMethod]
+        public void Evaluar_SinAlbaran_ReclamacionNoEvaluada()
+        {
+            LecturaCalidadAlmacen lectura = Lectura(100);
+            lectura.LecturasPicking.Add(Pick(100, "A", "Alfredo", 1));
+            lectura.Lineas.Add(Linea(100, 900, 1, "A", 1));
+
+            LineaPreparadaAlmacen linea = ReglaCalidadAlmacen.Evaluar(lectura, DIA).Lineas.Single();
+
+            Assert.IsTrue(linea.NoEvaluados.Contains(IndicadorAlmacen.ErrorDeEnvioReclamado));
+            Assert.IsTrue(linea.NoEvaluados.Contains(IndicadorAlmacen.AbonadoSinReposicion));
+        }
+
+        [TestMethod]
+        public void Oficiales_ErrorDeEnvioReclamadoYFaltaEnPacking()
+        {
+            CollectionAssert.AreEqual(new[] { IndicadorAlmacen.ErrorDeEnvioReclamado, IndicadorAlmacen.FaltaEnPacking }, InfoIndicadoresAlmacen.Oficiales.ToList());
+            Assert.IsFalse(InfoIndicadoresAlmacen.EsError(IndicadorAlmacen.DescuadrePickingPacking));
+            Assert.IsFalse(InfoIndicadoresAlmacen.EsError(IndicadorAlmacen.FaltaDeshechaPorOtro));
+            Assert.IsFalse(InfoIndicadoresAlmacen.EsError(IndicadorAlmacen.AbonadoSinReposicion));
         }
     }
 }

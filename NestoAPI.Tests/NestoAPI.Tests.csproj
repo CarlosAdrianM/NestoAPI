@@ -261,6 +261,10 @@
     <Compile Include="Infrastructure\Calidad\ReglaCalidadAlmacenTests.cs" />
     <Compile Include="Infrastructure\Calidad\ReglaNotaKpiTests.cs" />
     <Compile Include="Infrastructure\Calidad\ReglaPedidoPerfectoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\PackingIncompletoEtiquetaTests.cs" />
+    <Compile Include="Infrastructure\Calidad\FaltaQueSiEstabaTests.cs" />
+    <Compile Include="Infrastructure\Calidad\LectorReclamacionesEnvioSqlTests.cs" />
+    <Compile Include="Infrastructure\Calidad\ReglaErrorEnvioReclamadoTests.cs" />
     <Compile Include="Infrastructure\Calidad\ServicioCalidadAlmacenTests.cs" />
     <Compile Include="Infrastructure\Calidad\ServicioEncuestasTests.cs" />
     <Compile Include="Infrastructure\Calidad\ServicioTableroTests.cs" />

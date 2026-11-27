@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.Calidad.Reclamaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -20,6 +21,10 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         public Dictionary<string, DateTime> PrimerEventoPorTipo { get; set; } = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         /// <summary>Tablas opcionales que no están (para el aviso del resumen).</summary>
         public List<string> TablasQueFaltan { get; set; } = new List<string>();
+        /// <summary>Lo que pasó después de servir las líneas de los pedidos (Carlos 27/11/26): la misma lectura que Almacén.</summary>
+        public LecturaReclamacionesEnvio Reclamaciones { get; set; } = new LecturaReclamacionesEnvio();
+        /// <summary>Los días de reclamación con que se leyó (Calidad.DiasReclamacionEnvio).</summary>
+        public int DiasReclamacionEnvio { get; set; } = ReglaErrorEnvioReclamado.DIAS_POR_DEFECTO;
     }
 
     public interface ILectorPedidoPerfecto
@@ -169,6 +174,23 @@ WHERE o.Operacion = 'Crear' AND o.Usuario IS NOT NULL
 ORDER BY o.Id;
 ";
 
+        /// <summary>
+        /// Últimos resultados: el error de envío reclamado (Carlos 27/11/26) de las líneas de producto servidas de los pedidos del mes (sin
+        /// ficticios ni cursos), con la lectura común <see cref="LectorReclamacionesEnvioSql.SQL_RECLAMACIONES"/> (la misma que Almacén).
+        /// </summary>
+        internal static readonly string SQL_RECLAMACIONES = @"
+IF OBJECT_ID('tempdb..#s0') IS NOT NULL DROP TABLE #s0;
+SELECT l.Empresa, l.[Número] AS Pedido, l.[Nº Orden] AS Linea
+INTO #s0
+FROM #p p
+INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = p.Empresa AND l.[Número] = p.Pedido
+LEFT JOIN Productos pr WITH (NOLOCK) ON pr.Empresa = l.Empresa AND pr.[Número] = l.Producto
+WHERE l.TipoLinea = 1 AND l.Cantidad > 0 AND l.Estado >= 2 AND l.[Fecha Albarán] IS NOT NULL
+  AND ISNULL(pr.Ficticio, 0) = 0 AND ISNULL(l.Grupo, '') <> 'CUR';
+" + LectorReclamacionesEnvioSql.SQL_RECLAMACIONES + @"
+DROP TABLE #s0;
+";
+
         internal const string SQL_FIN_LOTE = @"
 DROP TABLE #r;
 DROP TABLE #f;
@@ -220,7 +242,7 @@ GROUP BY e.Tipo;";
             SQL_UNIVERSO + SQL_PEDIDOS + SQL_RECTIFICATIVAS_IMPAGADOS
             + string.Format(CultureInfo.InvariantCulture, SQL_ENVIOS, reenvios ? SQL_ENVIO_REENVIO : SQL_NULO, haVuelto ? SQL_ENVIO_HA_VUELTO : SQL_NULO,
                 bultos ? SQL_ENVIO_BULTOS : SQL_NULO)
-            + (fotos ? SQL_FOTOS : string.Empty) + (origen ? SQL_ORIGEN : string.Empty) + SQL_FIN_LOTE;
+            + (fotos ? SQL_FOTOS : string.Empty) + (origen ? SQL_ORIGEN : string.Empty) + SQL_RECLAMACIONES + SQL_FIN_LOTE;
 
         /// <summary>Los meses (o trozos de mes) en que se parte [desde, hasta).</summary>
         public static List<Tuple<DateTime, DateTime>> Tandas(DateTime desde, DateTime hasta)
@@ -265,10 +287,11 @@ GROUP BY e.Tipo;";
                 AnotarQueFalta(lectura, origen, "dbo.PedidosModoServicioOrigen");
                 AnotarQueFalta(lectura, eventos, "dbo.CalidadEventos");
 
+                lectura.DiasReclamacionEnvio = LectorReclamacionesEnvioSql.LeerDias(conexion, empresa);
                 string lote = Lote(reenvios, haVuelto, bultos, fotos, origen);
                 foreach (Tuple<DateTime, DateTime> tanda in Tandas(desde, hasta))
                 {
-                    LeerTanda(conexion, lote, empresa, tanda.Item1, tanda.Item2, fotos, origen, lectura.Pedidos);
+                    LeerTanda(conexion, lote, empresa, tanda.Item1, tanda.Item2, fotos, origen, lectura.Pedidos, lectura.Reclamaciones, lectura.DiasReclamacionEnvio);
                 }
                 Dictionary<int, HechosPedidoPerfecto> porNumero = lectura.Pedidos.GroupBy(p => p.Pedido).ToDictionary(g => g.Key, g => g.First());
 
@@ -347,7 +370,7 @@ GROUP BY e.Tipo;";
         }
 
         private static void LeerTanda(SqlConnection conexion, string lote, string empresa, DateTime desde, DateTime hasta, bool fotos, bool origen,
-            List<HechosPedidoPerfecto> pedidos)
+            List<HechosPedidoPerfecto> pedidos, LecturaReclamacionesEnvio reclamaciones, int diasReclamacion)
         {
             var delLote = new Dictionary<int, HechosPedidoPerfecto>();
             using (var comando = new SqlCommand(lote, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
@@ -355,6 +378,7 @@ GROUP BY e.Tipo;";
                 comando.Parameters.Add("@empresa", SqlDbType.Char, 3).Value = empresa;
                 comando.Parameters.Add("@desde", SqlDbType.DateTime).Value = desde;
                 comando.Parameters.Add("@hasta", SqlDbType.DateTime).Value = hasta;
+                comando.Parameters.Add("@diasReclamacion", SqlDbType.Int).Value = diasReclamacion;
                 using (SqlDataReader r = comando.ExecuteReader())
                 {
                     // 1. Pedidos
@@ -440,6 +464,11 @@ GROUP BY e.Tipo;";
                                 h.UsuarioEsDelAlta = true;
                             }
                         }
+                    }
+                    // Último: lo que pasó después de servir sus líneas (reenvíos sin coste y rectificativas)
+                    if (r.NextResult())
+                    {
+                        LectorReclamacionesEnvioSql.LeerResultados(r, reclamaciones);
                     }
                 }
             }

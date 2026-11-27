@@ -128,6 +128,29 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
         }
 
         [TestMethod]
+        public void LeerEtiquetasPackingIncompleto_PorEmpaquetadorYDesdeCuando()
+        {
+            var ds = new DataSet();
+            DataTable t = Tabla("Etiquetas", ("Usuario", typeof(string)), ("Etiquetas", typeof(int)), ("Confirmadas", typeof(int)), ("SinAviso", typeof(int)));
+            _ = t.Rows.Add("Santiago", 3, 2, 1);
+            ds.Tables.Add(t);
+            DataTable primera = Tabla("Primera", ("Primera", typeof(DateTime)));
+            _ = primera.Rows.Add(new DateTime(2026, 11, 28, 9, 0, 0));
+            ds.Tables.Add(primera);
+            var lectura = new LecturaCalidadAlmacen();
+
+            using (DataTableReader r = ds.CreateDataReader())
+            {
+                LectorCalidadAlmacenSql.LeerEtiquetasPackingIncompleto(r, lectura);
+            }
+
+            Assert.AreEqual(3, lectura.EtiquetasPackingIncompleto.Single().Etiquetas);
+            Assert.AreEqual(1, lectura.EtiquetasPackingIncompleto.Single().SinAviso);
+            Assert.AreEqual(new DateTime(2026, 11, 28, 9, 0, 0), lectura.PrimeraEtiquetaPackingIncompleto);
+            StringAssert.Contains(LectorCalidadAlmacenSql.SQL_ETIQUETAS_PACKING_INCOMPLETO, "e.Detalle LIKE N'%\"Modo\":\"Confirmado\"%'");
+        }
+
+        [TestMethod]
         public void Lote_SinTablasOpcionales_NoLasNombra()
         {
             string lote = LectorCalidadAlmacenSql.Lote(false, false);

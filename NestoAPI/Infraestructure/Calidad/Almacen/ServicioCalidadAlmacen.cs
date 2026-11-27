@@ -32,11 +32,21 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public int Paradas { get; set; }
         /// <summary>Unidades cogidas (leídas en el recorrido, netas).</summary>
         public int Unidades { get; set; }
-        /// <summary>Líneas con algún indicador que es error (hoy, solo FaltaEnPacking).</summary>
+        /// <summary>
+        /// Líneas con algún indicador que es error: desde el 27/11/26, FaltaEnPacking o ErrorDeEnvioReclamado (antes, solo FaltaEnPacking).
+        /// Mezcla dos denominadores: para cada uno por separado, <see cref="ErrorDeEnvioReclamado"/> y <see cref="FaltaEnPacking"/>.
+        /// </summary>
         public int LineasConError { get; set; }
         /// <summary>Líneas evaluadas para algún indicador de error de línea.</summary>
         public int LineasEvaluadasError { get; set; }
         public decimal? PorcentajeError { get; set; }
+        /// <summary>
+        /// OFICIAL 1 (Carlos 27/11/26): el error real, lo que el cliente reclamó (reenviado sin coste o cambiado por otro), sobre sus líneas
+        /// servidas hace al menos los días de reclamación. La misma fila que la de <see cref="Indicadores"/>.
+        /// </summary>
+        public IndicadorPreparadorDTO ErrorDeEnvioReclamado { get; set; }
+        /// <summary>OFICIAL 2: el error que se cazó antes de salir (falta en el packing), sobre sus líneas empaquetadas con Ariadna.</summary>
+        public IndicadorPreparadorDTO FaltaEnPacking { get; set; }
         public List<IndicadorPreparadorDTO> Indicadores { get; set; } = new List<IndicadorPreparadorDTO>();
     }
 
@@ -45,6 +55,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public string Indicador { get; set; }
         public string Texto { get; set; }
         public bool EsError { get; set; }
+        /// <summary>Uno de los dos indicadores oficiales por preparador (<see cref="InfoIndicadoresAlmacen.Oficiales"/>).</summary>
+        public bool Oficial { get; set; }
         public string Ambito { get; set; }
         /// <summary>Desde cuándo hay rastro (null: no hay ninguno).</summary>
         public DateTime? EvaluadoDesde { get; set; }
@@ -79,12 +91,40 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public Dictionary<string, int> PorAlmacen { get; set; } = new Dictionary<string, int>();
     }
 
+    /// <summary>Etiquetas del packing impresas con el packing incompleto de un empaquetador (o de todos).</summary>
+    public class EmpaquetadorPackingIncompletoDTO
+    {
+        /// <summary>Sin dominio. Null en el total.</summary>
+        public string Empaquetador { get; set; }
+        public int Etiquetas { get; set; }
+        public int Confirmadas { get; set; }
+        public int SinAviso { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#914 (27/11/26): indicador INFORMATIVO del EMPAQUETADOR (no del preparador): etiquetas impresas con productos sin leer en la mesa
+    /// (evento EtiquetaConPackingIncompleto), por fecha del evento en el periodo. Recuento sin denominador.
+    /// </summary>
+    public class EtiquetasPackingIncompletoDTO
+    {
+        /// <summary>Desde cuándo hay rastro (el primer evento); null si no hay ninguno o falta dbo.CalidadEventos.</summary>
+        public DateTime? EvaluadoDesde { get; set; }
+        public EmpaquetadorPackingIncompletoDTO Total { get; set; } = new EmpaquetadorPackingIncompletoDTO();
+        public List<EmpaquetadorPackingIncompletoDTO> PorEmpaquetador { get; set; } = new List<EmpaquetadorPackingIncompletoDTO>();
+    }
+
     public class ResumenCalidadAlmacenDTO
     {
+        /// <summary>NestoAPI#914 (27/11/26): etiquetas impresas con el packing incompleto, por empaquetador (informativo).</summary>
+        public EtiquetasPackingIncompletoDTO EtiquetasConPackingIncompleto { get; set; } = new EtiquetasPackingIncompletoDTO();
         public string Empresa { get; set; }
         public DateTime Desde { get; set; }
         public DateTime Hasta { get; set; }
         public PreparadorAlmacenDTO Total { get; set; }
+        /// <summary>Los dos indicadores oficiales por preparador, en orden: ErrorDeEnvioReclamado y FaltaEnPacking.</summary>
+        public List<string> IndicadoresOficiales { get; set; } = new List<string>();
+        /// <summary>Los días después del albarán que se mira si el cliente reclamó (Calidad.DiasReclamacionEnvio, 45 sin fila).</summary>
+        public int DiasReclamacionEnvio { get; set; }
         public List<PreparadorAlmacenDTO> Preparadores { get; set; } = new List<PreparadorAlmacenDTO>();
         public List<IndicadorAlmacenDTO> Indicadores { get; set; } = new List<IndicadorAlmacenDTO>();
         public List<IndicadorNoEvaluadoAlmacenDTO> IndicadoresNoEvaluados { get; set; } = new List<IndicadorNoEvaluadoAlmacenDTO>();
@@ -120,6 +160,13 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public decimal UnidadesRectificadas { get; set; }
         public List<string> Indicadores { get; set; } = new List<string>();
         public List<string> NoEvaluados { get; set; } = new List<string>();
+        /// <summary>Lo que le pasó después de servirla (ReenviadoSinCoste, CambiadoPorOtro, AbonadoSinReposicion), aunque aún no cuente.</summary>
+        public List<string> SubMotivosReclamacion { get; set; } = new List<string>();
+        /// <summary>Ya han pasado los días de reclamación desde el albarán (si no, los sub-motivos se ven pero no cuentan).</summary>
+        public bool ReclamacionEvaluada { get; set; }
+        /// <summary>Las líneas posteriores que lo demuestran (pedido, fecha, producto, cantidad, importe) o la rectificativa.</summary>
+        public List<NestoAPI.Infraestructure.Calidad.Reclamaciones.PruebaReclamacion> PruebasReclamacion { get; set; } =
+            new List<NestoAPI.Infraestructure.Calidad.Reclamaciones.PruebaReclamacion>();
     }
 
     public class ParadaCalidadAlmacenDTO
@@ -137,6 +184,20 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public int FaltasEnPacking { get; set; }
         public List<string> Indicadores { get; set; } = new List<string>();
         public List<string> NoEvaluados { get; set; } = new List<string>();
+        /// <summary>FaltaQueSiEstaba: la cogida posterior en el mismo hueco que lo demuestra.</summary>
+        public List<CogidaDespuesDeLaFaltaDTO> CogidasDespuesDeLaFalta { get; set; } = new List<CogidaDespuesDeLaFaltaDTO>();
+    }
+
+    public class CogidaDespuesDeLaFaltaDTO
+    {
+        public string Hueco { get; set; }
+        public string DioLaFalta { get; set; }
+        public DateTime FechaFalta { get; set; }
+        public string TipoOrigen { get; set; }
+        public int NumeroOrigen { get; set; }
+        public string Usuario { get; set; }
+        public DateTime Fecha { get; set; }
+        public int Cantidad { get; set; }
     }
 
     public class NoCasadasPreparadorDTO
@@ -195,33 +256,14 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 Indicador = "FaltaQueSiEstaba",
                 Que = "Una falta que quedó como falta al terminar el picking y luego el producto sí estaba en el hueco. Las lecturas del recorrido no guardan el hueco " +
                     "de lo cogido (solo el de la falta), y un recuento posterior del hueco no dice si se repuso entre medias.",
-                HaceFalta = "Guardar el hueco en cada lectura del recorrido (columna en dbo.PreparacionEscaneos, que mande Ariadna) y apuntar un evento cuando un recuento " +
-                    "del hueco (inventario por huecos o «No está» de otra salida) encuentre unidades de un producto dado por falta en ese hueco. Desde hoy se apunta " +
-                    "«NoEstabaEnSuHueco» al cambiar de hueco en el recorrido (ServicioCambioHuecoPicking / ServicioCambioHuecoReposicion), que es la otra cara."
+                HaceFalta = "Lanzar Scripts/Issue914c_PreparacionEscaneosHueco.sql (columna Hueco en dbo.PreparacionEscaneos; Ariadna 2.48 ya lo manda): con la columna " +
+                    "esta fila desaparece y se mide «FaltaQueSiEstaba» (falta en un hueco y, en las 4 horas siguientes, otra salida coge ese producto de ese hueco). " +
+                    "«NoEstabaEnSuHueco» (al cambiar de hueco en el recorrido) es la otra cara y ya se apunta."
             },
-            new IndicadorSinRastroAlmacenDTO
-            {
-                Indicador = "ProductoOCantidadEquivocados",
-                Que = "Una rectificativa o un abono porque se mandó otro producto u otra cantidad. LinFacturaVtaRectificacion no guarda el motivo: «LineaRectificada» " +
-                    "dice qué líneas preparadas se rectificaron, pero no por qué (puede ser precio, cliente, devolución…).",
-                HaceFalta = "Un motivo que salga solo al hacer la rectificativa (por ejemplo, que en la misma rectificativa se abone un producto y se cargue otro al mismo " +
-                    "cliente = cambio de producto), apuntado como evento en el único punto que crea la rectificativa. Nada manual."
-            },
-            new IndicadorSinRastroAlmacenDTO
-            {
-                Indicador = "ReenvioPorPreparacion",
-                Que = "Un envío que hay que repetir porque faltaba algo en la caja. Los reenvíos de #699/#870 son solo de devueltos e incidentados y no dicen el motivo.",
-                HaceFalta = "Que el reenvío o la nota de lo que faltaba se cree desde un único punto con el motivo «faltaba en la caja» (sin teclear) y apunte un evento " +
-                    "con el pedido y el picking original."
-            },
-            new IndicadorSinRastroAlmacenDTO
-            {
-                Indicador = "EtiquetaConPackingIncompleto",
-                Que = "La etiqueta de agencia se imprimió con el packing sin completar (productos sin meter en las cajas y sin falta del packing). Hoy se puede ver después " +
-                    "como «DescuadrePickingPacking», pero no se sabe si se imprimió así.",
-                HaceFalta = "Apuntar un evento en ServicioEtiquetaPacking.Imprimir cuando el estado del packing (LeerEstadoPedido) no esté completo. No se ha conectado: " +
-                    "es una lectura más en mitad de la etiqueta y Carlos tiene que decidir si se avisa o se frena."
-            },
+            // «ProductoOCantidadEquivocados» y «ReenvioPorPreparacion» ya se miran con los datos (Carlos 27/11/26): CambiadoPorOtro y
+            // ReenviadoSinCoste, que forman ErrorDeEnvioReclamado. Una cantidad de menos que se repone sin coste es ReenviadoSinCoste.
+            // «EtiquetaConPackingIncompleto» se apunta desde el 27/11/26 (ServicioEtiquetaPacking.Imprimir, «avisar y dejar seguir»): sale en
+            // EtiquetasConPackingIncompleto del resumen, por empaquetador.
             new IndicadorSinRastroAlmacenDTO
             {
                 Indicador = "EntregaIncompleta (no imputable)",
@@ -275,7 +317,7 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 Hasta = hasta,
                 CalculadoEl = ahora(),
                 Lectura = lectura,
-                Evaluacion = ReglaCalidadAlmacen.Evaluar(lectura)
+                Evaluacion = ReglaCalidadAlmacen.Evaluar(lectura, ahora().Date)
             };
         }
 
@@ -294,6 +336,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                     return Mayor(lectura?.PrimeraLecturaPicking, lectura?.PrimeraLecturaPacking);
                 case IndicadorAlmacen.LecturaNoCasada:
                     return Mayor(lectura?.PrimeraLecturaPicking, lectura?.PrimeraNoCasada);
+                case IndicadorAlmacen.FaltaQueSiEstaba:
+                    return lectura?.HayColumnaHueco == true ? Mayor(lectura.PrimeraLecturaPicking, lectura.PrimeraLecturaConHueco) : null;
                 default:
                     return lectura?.PrimeraLecturaPicking;
             }
@@ -316,9 +360,33 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 PreparadorDesde = lectura.PrimeraLecturaPicking,
                 LineasSinPreparador = e.Lineas.Count(l => l.Preparador == null),
                 Total = Preparador(null, e, noCasadas, hayNoCasadas),
-                SinRastro = SIN_RASTRO.ToList(),
+                IndicadoresOficiales = InfoIndicadoresAlmacen.Oficiales.Select(i => i.ToString()).ToList(),
+                DiasReclamacionEnvio = lectura.DiasReclamacionEnvio,
+                // NestoAPI#914: con la columna Hueco, FaltaQueSiEstaba ya se mide (indicador de parada)
+                SinRastro = SIN_RASTRO.Where(s => !(lectura.HayColumnaHueco && s.Indicador == IndicadorAlmacen.FaltaQueSiEstaba.ToString())).ToList(),
                 Aviso = lectura.TablasQueFaltan.Count == 0 ? null
                     : $"Faltan tablas ({string.Join(", ", lectura.TablasQueFaltan)}): lo que dependa de ellas no se ha podido mirar."
+            };
+            List<EtiquetasPackingIncompletoAlmacen> etiquetas = (lectura.EtiquetasPackingIncompleto ?? new List<EtiquetasPackingIncompletoAlmacen>())
+                .Where(x => ReglaCalidadAlmacen.Persona(x.Usuario) != null).ToList();
+            resumen.EtiquetasConPackingIncompleto = new EtiquetasPackingIncompletoDTO
+            {
+                EvaluadoDesde = lectura.PrimeraEtiquetaPackingIncompleto,
+                Total = new EmpaquetadorPackingIncompletoDTO
+                {
+                    Etiquetas = etiquetas.Sum(x => x.Etiquetas),
+                    Confirmadas = etiquetas.Sum(x => x.Confirmadas),
+                    SinAviso = etiquetas.Sum(x => x.SinAviso)
+                },
+                PorEmpaquetador = etiquetas.GroupBy(x => ReglaCalidadAlmacen.Persona(x.Usuario), StringComparer.OrdinalIgnoreCase)
+                    .Select(g => new EmpaquetadorPackingIncompletoDTO
+                    {
+                        Empaquetador = g.Key,
+                        Etiquetas = g.Sum(x => x.Etiquetas),
+                        Confirmadas = g.Sum(x => x.Confirmadas),
+                        SinAviso = g.Sum(x => x.SinAviso)
+                    })
+                    .OrderByDescending(x => x.Etiquetas).ThenBy(x => x.Empaquetador, StringComparer.OrdinalIgnoreCase).ToList()
             };
             List<PickingSinLecturasAlmacen> sinLecturas = lectura.PickingsSinLecturas ?? new List<PickingSinLecturasAlmacen>();
             resumen.PickingsSinRastro = new PickingsSinRastroDTO
@@ -346,6 +414,7 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                     Indicador = indicador.ToString(),
                     Texto = InfoIndicadoresAlmacen.Texto(indicador),
                     EsError = InfoIndicadoresAlmacen.EsError(indicador),
+                    Oficial = InfoIndicadoresAlmacen.Oficiales.Contains(indicador),
                     Ambito = total.Ambito,
                     EvaluadoDesde = desde,
                     Evaluadas = total.Evaluadas,
@@ -431,6 +500,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 }
                 dto.Indicadores.Add(fila);
             }
+            dto.ErrorDeEnvioReclamado = dto.Indicadores.First(i => i.Indicador == IndicadorAlmacen.ErrorDeEnvioReclamado.ToString());
+            dto.FaltaEnPacking = dto.Indicadores.First(i => i.Indicador == IndicadorAlmacen.FaltaEnPacking.ToString());
             return dto;
         }
 
@@ -496,7 +567,10 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
             FaltasEnPacking = l.FaltasEnPacking,
             UnidadesRectificadas = l.UnidadesRectificadas,
             Indicadores = l.Indicadores.OrderBy(i => (int)i).Select(i => i.ToString()).ToList(),
-            NoEvaluados = l.NoEvaluados.OrderBy(i => (int)i).Select(i => i.ToString()).ToList()
+            NoEvaluados = l.NoEvaluados.OrderBy(i => (int)i).Select(i => i.ToString()).ToList(),
+            SubMotivosReclamacion = l.Reclamaciones.SelectMany(r => r.SubMotivos).Distinct().OrderBy(s => (int)s).Select(s => s.ToString()).ToList(),
+            ReclamacionEvaluada = l.Reclamaciones.Count > 0 && l.Reclamaciones.All(r => r.Evaluada),
+            PruebasReclamacion = l.Reclamaciones.SelectMany(r => r.Pruebas).ToList()
         };
 
         private static ParadaCalidadAlmacenDTO DetalleParada(ParadaPreparadaAlmacen p) => new ParadaCalidadAlmacenDTO
@@ -513,7 +587,18 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
             MetidasEnPacking = p.MetidasEnPacking,
             FaltasEnPacking = p.FaltasEnPacking,
             Indicadores = p.Indicadores.OrderBy(i => (int)i).Select(i => i.ToString()).ToList(),
-            NoEvaluados = p.NoEvaluados.OrderBy(i => (int)i).Select(i => i.ToString()).ToList()
+            NoEvaluados = p.NoEvaluados.OrderBy(i => (int)i).Select(i => i.ToString()).ToList(),
+            CogidasDespuesDeLaFalta = p.FaltasQueSiEstaban.Select(x => new CogidaDespuesDeLaFaltaDTO
+            {
+                Hueco = x.Falta.Hueco,
+                DioLaFalta = ReglaCalidadAlmacen.Persona(x.Falta.Usuario),
+                FechaFalta = x.Falta.Fecha,
+                TipoOrigen = x.Cogida.TipoOrigen,
+                NumeroOrigen = x.Cogida.NumeroOrigen,
+                Usuario = ReglaCalidadAlmacen.Persona(x.Cogida.Usuario),
+                Fecha = x.Cogida.Fecha,
+                Cantidad = x.Cogida.Cantidad
+            }).ToList()
         };
 
         internal static decimal? Porcentaje(int parte, int total) =>

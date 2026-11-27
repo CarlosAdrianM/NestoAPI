@@ -108,7 +108,14 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             Assert.AreEqual(3, noEvaluado.SinEvaluar, "B y D sin packing en Ariadna y E sin preparador");
             Assert.AreEqual(new DateTime(2026, 10, 20, 8, 0, 0), r.Indicadores.Single(i => i.Indicador == "LecturaNoCasada").EvaluadoDesde);
             Assert.IsTrue(r.SinRastro.Any(s => s.Indicador == "FaltaQueSiEstaba"));
-            Assert.IsTrue(r.Indicadores.Where(i => i.EsError).All(i => i.Indicador == "FaltaEnPacking"), "Hoy el único error imputable es la falta del packing");
+            // Carlos 27/11/26: los errores imputables son la falta del packing y el error de envío reclamado (con sus dos sub-motivos)
+            CollectionAssert.AreEquivalent(new[] { "FaltaEnPacking", "ErrorDeEnvioReclamado", "ReenviadoSinCoste", "CambiadoPorOtro" },
+                r.Indicadores.Where(i => i.EsError).Select(i => i.Indicador).ToList());
+            CollectionAssert.AreEqual(new[] { "ErrorDeEnvioReclamado", "FaltaEnPacking" }, r.IndicadoresOficiales);
+            Assert.IsTrue(r.Indicadores.Single(i => i.Indicador == "FaltaEnPacking").Oficial);
+            Assert.IsFalse(r.Indicadores.Single(i => i.Indicador == "DescuadrePickingPacking").Oficial);
+            Assert.AreEqual(falta.Con, r.Total.FaltaEnPacking.Con);
+            Assert.AreEqual("ErrorDeEnvioReclamado", r.Total.ErrorDeEnvioReclamado.Indicador);
         }
 
         [TestMethod]
@@ -124,6 +131,25 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             StringAssert.Contains(r.Aviso, "LecturasNoCasadasAlmacen");
             Assert.IsNull(r.Indicadores.Single(i => i.Indicador == "LecturaNoCasada").EvaluadoDesde);
             Assert.IsTrue(r.IndicadoresNoEvaluados.Any(i => i.Indicador == "LecturaNoCasada"));
+        }
+
+        [TestMethod]
+        public void Resumir_EtiquetasConPackingIncompleto_PorEmpaquetadorYFueraDeSinRastro()
+        {
+            LecturaCalidadAlmacen lectura = Lectura();
+            lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen { Usuario = @"NUEVAVISION\Santiago", Etiquetas = 2, Confirmadas = 2 });
+            lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen { Usuario = "santiago", Etiquetas = 1, SinAviso = 1 });
+            lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen { Usuario = "Andre", Etiquetas = 1, SinAviso = 1 });
+            lectura.PrimeraEtiquetaPackingIncompleto = new DateTime(2026, 11, 28);
+
+            ResumenCalidadAlmacenDTO r = ServicioCalidadAlmacen.Resumir(Calculo(lectura));
+
+            Assert.AreEqual(4, r.EtiquetasConPackingIncompleto.Total.Etiquetas);
+            EmpaquetadorPackingIncompletoDTO santiago = r.EtiquetasConPackingIncompleto.PorEmpaquetador.First();
+            Assert.AreEqual(3, santiago.Etiquetas);
+            Assert.AreEqual(2, santiago.Confirmadas);
+            Assert.AreEqual(new DateTime(2026, 11, 28), r.EtiquetasConPackingIncompleto.EvaluadoDesde);
+            Assert.IsFalse(r.SinRastro.Any(s => s.Indicador == "EtiquetaConPackingIncompleto"));
         }
 
         [TestMethod]

@@ -561,8 +561,84 @@ SELECT CAST(CASE WHEN COL_LENGTH('dbo.PreparacionEscaneos', 'PendienteParada') I
             }
         }
 
-        /// <summary>NestoAPI#713: el INSERT y sus parámetros, con o sin las columnas de la parada.</summary>
+        internal const string SQL_HAY_COLUMNA_HUECO = @"
+SELECT CAST(CASE WHEN COL_LENGTH('dbo.PreparacionEscaneos', 'Hueco') IS NOT NULL THEN 1 ELSE 0 END AS bit)";
+
+        /// <summary>NestoAPI#914: longitud de PreparacionEscaneos.Hueco (Scripts/Issue914c_PreparacionEscaneosHueco.sql).</summary>
+        internal const int LONGITUD_HUECO = 20;
+
+        private static readonly object cerrojoColumnaHueco = new object();
+        private static bool hayColumnaHueco;
+        private static DateTime ultimaComprobacionColumnaHueco = DateTime.MinValue;
+
+        /// <summary>Para los tests: olvida lo que se sabía de la columna del hueco.</summary>
+        internal static void OlvidarColumnaHueco()
+        {
+            lock (cerrojoColumnaHueco)
+            {
+                hayColumnaHueco = false;
+                ultimaComprobacionColumnaHueco = DateTime.MinValue;
+            }
+        }
+
+        /// <summary>NestoAPI#914: ¿está ya la columna Hueco? Misma política que <see cref="HayColumnasParada"/> (sí para siempre; no, se vuelve a mirar a los 5 min).</summary>
+        internal static async Task<bool> HayColumnaHueco(Func<Task<bool>> preguntar)
+        {
+            lock (cerrojoColumnaHueco)
+            {
+                if (hayColumnaHueco || DateTime.Now - ultimaComprobacionColumnaHueco < REINTENTO_SIN_COLUMNAS_PARADA)
+                {
+                    return hayColumnaHueco;
+                }
+            }
+            bool ahora;
+            try
+            {
+                ahora = await preguntar().ConfigureAwait(false);
+            }
+            catch
+            {
+                ahora = false;
+            }
+            lock (cerrojoColumnaHueco)
+            {
+                hayColumnaHueco = hayColumnaHueco || ahora;
+                ultimaComprobacionColumnaHueco = DateTime.Now;
+                return hayColumnaHueco;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#713: el INSERT y sus parámetros, con o sin las columnas de la parada. NestoAPI#914: y con o sin el hueco (solo si la columna
+        /// existe Y la lectura lo trae; si no, el INSERT de siempre).
+        /// </summary>
         internal static (string Sql, SqlParameter[] Parametros) ComandoInsertarEscaneo(string empresa, EscaneoAlmacenDTO escaneo, string usuario,
+            bool conParada, bool conHueco = false)
+        {
+            (string sql, SqlParameter[] parametros) = ComandoInsertarEscaneoSinHueco(empresa, escaneo, usuario, conParada);
+            if (!conHueco || string.IsNullOrWhiteSpace(escaneo.Hueco))
+            {
+                return (sql, parametros);
+            }
+            var lista = new List<SqlParameter>(parametros) { Texto("@pHueco", escaneo.Hueco, LONGITUD_HUECO) };
+            return (conParada ? SQL_INSERTAR_ESCANEO_CON_PARADA_Y_HUECO : SQL_INSERTAR_ESCANEO_CON_HUECO, lista.ToArray());
+        }
+
+        /// <summary>NestoAPI#914: el INSERT de siempre con el hueco (Scripts/Issue914c_PreparacionEscaneosHueco.sql).</summary>
+        internal const string SQL_INSERTAR_ESCANEO_CON_HUECO = @"
+INSERT INTO PreparacionEscaneos
+       (IdCliente, Empresa, NumeroOrigen, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo, TipoOrigen, Hueco)
+SELECT @p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @pHueco
+WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
+
+        /// <summary>NestoAPI#914: con lo que pedía la parada (#713) y el hueco.</summary>
+        internal const string SQL_INSERTAR_ESCANEO_CON_PARADA_Y_HUECO = @"
+INSERT INTO PreparacionEscaneos
+       (IdCliente, Empresa, NumeroOrigen, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo, TipoOrigen, PendienteParada, TotalParada, Hueco)
+SELECT @p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @pHueco
+WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
+
+        private static (string Sql, SqlParameter[] Parametros) ComandoInsertarEscaneoSinHueco(string empresa, EscaneoAlmacenDTO escaneo, string usuario,
             bool conParada)
         {
             var parametros = new List<SqlParameter>
@@ -979,7 +1055,10 @@ WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado >= 2"
             {
                 bool conParada = (escaneo.PendienteParada.HasValue || escaneo.TotalParada.HasValue)
                     && await HayColumnasParada(() => baseDeDatos.SqlQuery<bool>(SQL_HAY_COLUMNAS_PARADA).FirstAsync()).ConfigureAwait(false);
-                (string sql, SqlParameter[] parametros) = ComandoInsertarEscaneo(empresa, escaneo, usuario, conParada);
+                // NestoAPI#914: el hueco solo si la lectura lo trae y la columna existe (sin el script, como siempre)
+                bool conHueco = !string.IsNullOrWhiteSpace(escaneo.Hueco)
+                    && await HayColumnaHueco(() => baseDeDatos.SqlQuery<bool>(SQL_HAY_COLUMNA_HUECO).FirstAsync()).ConfigureAwait(false);
+                (string sql, SqlParameter[] parametros) = ComandoInsertarEscaneo(empresa, escaneo, usuario, conParada, conHueco);
                 int filas = await baseDeDatos.ExecuteSqlCommandAsync(sql, parametros).ConfigureAwait(false);
                 return filas > 0;
             }
