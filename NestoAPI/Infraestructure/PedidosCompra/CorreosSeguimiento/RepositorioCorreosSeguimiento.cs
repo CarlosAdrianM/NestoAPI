@@ -146,6 +146,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra.CorreosSeguimiento
         /// <summary>Alta o cambio de proveedor (único por remitente). Devuelve el Id.</summary>
         Task<int> GuardarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario);
         Task<bool> BorrarRemitentePaquete(int id, string usuario);
+        /// <summary>
+        /// 27/11/26: POST …/RemitentesPaquete. En UNA transacción: crea o cambia la fila de ese remitente (ya normalizado) y deja el rastro en
+        /// Modificaciones (Tabla <see cref="RepositorioCorreosSeguimiento.TABLA_RASTRO_REMITENTES_PAQUETE"/>); si ya apuntaba a ese mismo
+        /// proveedor, no toca nada. Devuelve la fila y cómo estaba.
+        /// </summary>
+        Task<RemitentePaqueteEnsenado> EnsenarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario);
+        /// <summary>27/11/26: el nombre del proveedor (cadena vacía si no tiene); null si no existe.</summary>
+        Task<string> LeerNombreProveedor(string empresa, string proveedor);
+        /// <summary>27/11/26: cuántas líneas tiene el pedido y en qué estado, y sus días de albarán (Lineas = 0 si no existe).</summary>
+        Task<EstadoPedidoCompraCorreo> LeerEstadoPedido(string empresa, int pedido);
+        /// <summary>
+        /// 27/11/26: Compras asigna el correo a un pedido que YA se ha recibido: el «pedido real» (EmpresaReal/PedidoReal/FechaAlbaranReal,
+        /// como la medición) si aún no lo tenía, con rastro en Modificaciones (Tabla <see cref="RepositorioCorreosSeguimiento.TABLA_RASTRO_YA_RECIBIDO"/>),
+        /// en una transacción. No toca ninguna fecha de compras. True si lo ha escrito.
+        /// </summary>
+        Task<bool> AsignarYaRecibido(int id, AlbaranPedidoCompra albaran, string usuario);
         /// <summary>NestoAPI#857i: ¿existe dbo.ComprasOrigenesAgencia (Scripts/Issue857i)? Con caché. Sin ella, ni se aprende ni se usa.</summary>
         bool OrigenesAgenciaDisponibles();
         /// <summary>NestoAPI#857i: la memoria «agencia + origen → proveedor» (con el nombre del proveedor).</summary>
@@ -325,8 +341,10 @@ WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND " + LINEAS_EN_AIRE + @"
         internal const string SQL_DESCARTAR = "UPDATE dbo.ComprasCorreosSeguimiento SET Descartado = 1, AplicadoPor = @usuario, AplicadoEl = GETDATE() " +
             "WHERE Id = @id AND PedidoAplicado IS NULL";
 
-        internal const string SQL_REMITENTES_PAQUETE = "SELECT Id, RemitentePaquete, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, Usuario, FechaModificacion " +
-            "FROM dbo.ComprasRemitentesPaquete WITH (NOLOCK) ORDER BY RemitentePaquete";
+        // 27/11/26: con el nombre del proveedor (el principal), como la memoria de orígenes
+        internal const string SQL_REMITENTES_PAQUETE = "SELECT r.Id, r.RemitentePaquete, RTRIM(r.Empresa) AS Empresa, RTRIM(r.Proveedor) AS Proveedor, r.Usuario, r.FechaModificacion, " +
+            "(SELECT TOP 1 RTRIM(p.Nombre) FROM dbo.Proveedores p WITH (NOLOCK) WHERE p.Empresa = r.Empresa AND p.Número = r.Proveedor ORDER BY p.ProveedorPrincipal DESC) AS NombreProveedor " +
+            "FROM dbo.ComprasRemitentesPaquete r WITH (NOLOCK) ORDER BY r.RemitentePaquete";
 
         internal const string SQL_GUARDAR_REMITENTE_PAQUETE = @"SET NOCOUNT ON;
 DECLARE @id int = (SELECT TOP 1 Id FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE RemitentePaquete = @remitente);
@@ -339,8 +357,28 @@ ELSE
     UPDATE dbo.ComprasRemitentesPaquete SET Empresa = @empresa, Proveedor = @proveedor, Usuario = @usuario, FechaModificacion = GETDATE() WHERE Id = @id;
 SELECT @id;";
 
-        internal const string SQL_REMITENTE_PAQUETE_POR_ID = "SELECT Id, RemitentePaquete, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, Usuario, FechaModificacion " +
-            "FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id";
+        internal const string SQL_REMITENTE_PAQUETE_POR_ID = "SELECT Id, RemitentePaquete, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, Usuario, FechaModificacion, " +
+            "CAST(NULL AS nvarchar(100)) AS NombreProveedor FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id";
+        // 27/11/26: POST …/RemitentesPaquete (enseñar a mano): la fila de ese remitente, bloqueada, antes de cambiarla
+        internal const string SQL_REMITENTE_PAQUETE_POR_REMITENTE = "SELECT Id, RemitentePaquete, RTRIM(Empresa) AS Empresa, RTRIM(Proveedor) AS Proveedor, Usuario, " +
+            "FechaModificacion, CAST(NULL AS nvarchar(100)) AS NombreProveedor FROM dbo.ComprasRemitentesPaquete WITH (UPDLOCK, HOLDLOCK) WHERE RemitentePaquete = @remitente";
+        // 27/11/26: el proveedor existe (su nombre; '' si no tiene): para enseñar un remitente del paquete
+        internal const string SQL_NOMBRE_PROVEEDOR = "SELECT TOP 1 ISNULL(RTRIM(p.Nombre), '') FROM dbo.Proveedores p WITH (NOLOCK) " +
+            "WHERE p.Empresa = @empresa AND p.Número = @proveedor ORDER BY p.ProveedorPrincipal DESC";
+
+        // 27/11/26: cómo está un pedido al que se asigna un correo y no tiene líneas en el aire (por la clave de LinPedidoCmp)
+        internal const string SQL_ESTADO_PEDIDO = @"
+SELECT RTRIM(MAX(c.[NºProveedor])) AS Proveedor, COUNT(*) AS Lineas,
+    ISNULL(SUM(CASE WHEN c.Estado IN (-1, 1) AND c.Enviado = 1 THEN 1 ELSE 0 END), 0) AS LineasEnAire,
+    ISNULL(SUM(CASE WHEN c.Estado IN (-1, 1) AND ISNULL(c.Enviado, 0) = 0 THEN 1 ELSE 0 END), 0) AS LineasSinEnviar,
+    ISNULL(SUM(CASE WHEN c.Estado >= 2 THEN 1 ELSE 0 END), 0) AS LineasRecibidas
+FROM dbo.LinPedidoCmp c WITH (NOLOCK)
+WHERE c.Empresa = @empresa AND c.[Número] = @pedido";
+        internal const string SQL_ALBARANES_PEDIDO = @"
+SELECT DISTINCT CAST(CAST(c.FechaAlbarán AS date) AS datetime)
+FROM dbo.LinPedidoCmp c WITH (NOLOCK)
+WHERE c.Empresa = @empresa AND c.[Número] = @pedido AND c.Estado >= 2 AND c.FechaAlbarán IS NOT NULL";
+        public const string TABLA_RASTRO_YA_RECIBIDO = "CompraCorreoYaRecibido";
         internal const string SQL_BORRAR_REMITENTE_PAQUETE = "DELETE FROM dbo.ComprasRemitentesPaquete WHERE Id = @id";
         public const string TABLA_RASTRO_REMITENTES_PAQUETE = "ComprasRemitentesPaquete";
 
@@ -1074,6 +1112,104 @@ ORDER BY Recibido DESC";
                     Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
                 transaccion.Commit();
                 return true;
+            }
+        }
+
+        public async Task<RemitentePaqueteEnsenado> EnsenarRemitentePaquete(string remitente, string empresa, string proveedor, string usuario)
+        {
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                RemitentePaqueteRecordado anterior = (await db.Database.SqlQuery<RemitentePaqueteRecordado>(SQL_REMITENTE_PAQUETE_POR_REMITENTE,
+                    Texto("@remitente", remitente, ExtractorRemitentePaquete.LONGITUD)).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                var resultado = new RemitentePaqueteEnsenado { Anterior = anterior };
+                if (ReglaEnsenarRemitentePaquete.Igual(anterior, empresa, proveedor))
+                {
+                    resultado.Fila = anterior;
+                    transaccion.Commit();
+                    return resultado;
+                }
+                int id = (await db.Database.SqlQuery<int>(SQL_GUARDAR_REMITENTE_PAQUETE, Texto("@remitente", remitente, ExtractorRemitentePaquete.LONGITUD),
+                    new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa }, Texto("@proveedor", proveedor, 10),
+                    Texto("@usuario", usuario, 50)).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                    Texto("@tabla", TABLA_RASTRO_REMITENTES_PAQUETE, 100),
+                    Texto("@anterior", anterior == null ? "(nuevo)"
+                        : Newtonsoft.Json.JsonConvert.SerializeObject(new { anterior.Id, anterior.RemitentePaquete, anterior.Empresa, anterior.Proveedor, anterior.Usuario }), -1),
+                    Texto("@nuevo", Newtonsoft.Json.JsonConvert.SerializeObject(new { Id = id, RemitentePaquete = remitente, Empresa = empresa, Proveedor = proveedor, Usuario = usuario, Origen = "A mano" }), -1),
+                    Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
+                resultado.Fila = (await db.Database.SqlQuery<RemitentePaqueteRecordado>(SQL_REMITENTE_PAQUETE_POR_ID,
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id }).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                transaccion.Commit();
+                return resultado;
+            }
+        }
+
+        public async Task<string> LeerNombreProveedor(string empresa, string proveedor)
+        {
+            using (NVEntities db = crearContexto())
+            {
+                return (await db.Database.SqlQuery<string>(SQL_NOMBRE_PROVEEDOR, new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa },
+                    Texto("@proveedor", proveedor, 10)).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            }
+        }
+
+        private class FilaEstadoPedido
+        {
+            public string Proveedor { get; set; }
+            public int Lineas { get; set; }
+            public int LineasEnAire { get; set; }
+            public int LineasSinEnviar { get; set; }
+            public int LineasRecibidas { get; set; }
+        }
+
+        public async Task<EstadoPedidoCompraCorreo> LeerEstadoPedido(string empresa, int pedido)
+        {
+            SqlParameter[] Parametros() => new[]
+            {
+                new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = empresa },
+                new SqlParameter("@pedido", SqlDbType.Int) { Value = pedido }
+            };
+            using (NVEntities db = crearContexto())
+            {
+                FilaEstadoPedido fila = (await db.Database.SqlQuery<FilaEstadoPedido>(SQL_ESTADO_PEDIDO, Parametros()).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                var estado = new EstadoPedidoCompraCorreo
+                {
+                    Empresa = empresa, Pedido = pedido, Proveedor = fila?.Proveedor, Lineas = fila?.Lineas ?? 0, LineasEnAire = fila?.LineasEnAire ?? 0,
+                    LineasSinEnviar = fila?.LineasSinEnviar ?? 0, LineasRecibidas = fila?.LineasRecibidas ?? 0
+                };
+                if (estado.LineasRecibidas > 0)
+                {
+                    estado.Albaranes = await db.Database.SqlQuery<DateTime>(SQL_ALBARANES_PEDIDO, Parametros()).ToListAsync().ConfigureAwait(false);
+                }
+                return estado;
+            }
+        }
+
+        public async Task<bool> AsignarYaRecibido(int id, AlbaranPedidoCompra albaran, string usuario)
+        {
+            using (NVEntities db = crearContexto())
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction(IsolationLevel.ReadCommitted))
+            {
+                int filas = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_REAL,
+                    new SqlParameter("@id", SqlDbType.Int) { Value = id },
+                    new SqlParameter("@empresa", SqlDbType.Char, 3) { Value = albaran.Empresa },
+                    new SqlParameter("@pedido", SqlDbType.Int) { Value = albaran.Pedido },
+                    new SqlParameter("@fecha", SqlDbType.DateTime) { Value = albaran.FechaAlbaran.Date }).ConfigureAwait(false);
+                if (filas > 0)
+                {
+                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_RASTRO,
+                        Texto("@tabla", TABLA_RASTRO_YA_RECIBIDO, 100),
+                        Texto("@anterior", Newtonsoft.Json.JsonConvert.SerializeObject(new { CorreoId = id }), -1),
+                        Texto("@nuevo", Newtonsoft.Json.JsonConvert.SerializeObject(new
+                        {
+                            albaran.Empresa, albaran.Pedido, FechaAlbaran = albaran.FechaAlbaran.Date,
+                            Motivo = "Asignado a mano a un pedido ya recibido: no se cambia ninguna fecha"
+                        }), -1),
+                        Texto("@usuarioRastro", usuario, 100)).ConfigureAwait(false);
+                }
+                transaccion.Commit();
+                return filas > 0;
             }
         }
 
