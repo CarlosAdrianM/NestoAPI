@@ -159,7 +159,11 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         // contactoTelefonicoPrimero (sugerencia 582): lo pide el selector de Rapports de Nesto; si el
         // vendedor es telefónico, dentro de cada cliente van primero los contactos en estado 9.
-        public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro, bool contactoTelefonicoPrimero = false)
+        // vendedorTelefonico (opcional, Carlos 27/11/26): si viene, es él quien decide si quien busca es telefónico
+        // y «vendedor» queda solo como filtro (vacío = todos los vendedores): así la centralita con
+        // PermitirVerClientesTodosLosVendedores encuentra clientes de otros sin perder la prioridad. Sin él,
+        // decide «vendedor», como siempre (Nesto ya publicado, NestoApp).
+        public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro, bool contactoTelefonicoPrimero = false, string vendedorTelefonico = null)
         {
             if ((filtro == null) || ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c)))))
             {
@@ -272,7 +276,8 @@ namespace NestoAPI.Controllers
                     lista = porFactura.Select(PROYECCION_CLIENTE).ToList();
                 }
             }
-            if (contactoTelefonicoPrimero && ContactoTelefonicoPrimero.EsVendedorTelefonico(db.Vendedores, empresa, vendedor))
+            string quienBusca = string.IsNullOrWhiteSpace(vendedorTelefonico) ? vendedor : vendedorTelefonico;
+            if (contactoTelefonicoPrimero && ContactoTelefonicoPrimero.EsVendedorTelefonico(db.Vendedores, empresa, quienBusca))
             {
                 lista = ContactoTelefonicoPrimero.Ordenar(lista);
             }

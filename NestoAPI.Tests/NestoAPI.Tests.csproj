@@ -269,6 +269,7 @@
     <Compile Include="Controllers\RecepcionesControllerTests.cs" />
     <Compile Include="Controllers\DiariosProductosControllerTests.cs" />
     <Compile Include="Controllers\ClientesControllerBusquedaPorFacturaTests.cs" />
+    <Compile Include="Controllers\ClientesControllerVendedorTelefonicoTests.cs" />
     <Compile Include="Controllers\EmpresasControllerTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\AritmeticaMoneyTests.cs" />
     <Compile Include="Infrastructure\Novedades\ReglasVersionesNovedadesTests.cs" />
