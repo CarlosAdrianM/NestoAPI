@@ -116,3 +116,89 @@ se da siempre que haya albarán (también en modo 6), cuente o no.
   pedido perfecto): pedido retenido por falta (#858, ya en `PedidosRetenidosPorFalta`); entrega incompleta (#880, ya en
   `RepartoBultosPendientes`); aplazar líneas con picking (`AplazamientoPedidoConPicking`); cambiar el cliente con picking (#876, ya en Modificaciones).
   Pedir autorización de un pedido que no pasa la validación NO cuenta (Carlos 26/11/26).
+
+### Encuestas a clientes, corte E1 en sombra (#914, 27/11/26)
+Especificación: el último comentario de la issue («Corte nuevo: la voz del cliente»). E1 NO envía NADA (ni correo, ni push, ni WhatsApp) ni tiene
+plantillas ni página de respuesta (eso es E2). Código en `Infraestructure/Calidad/Encuestas/`.
+
+- **El gobernador** (`GobernadorEncuestas`, PURO, con tests): historial del cliente + su situación + las candidatas de un día → como mucho UNA y, de
+  las demás, por qué no (`MotivoDescarteEncuesta`, el primero que se cumple, en este orden): `Baja` → `Impago` → `TopeEntreEncuestas` → `TemaRepetido`
+  → `SinCanal`; las que pasan y no ganan, `OtraCandidataElegida`.
+  - Intervalo: el que se le PASA (la regla no lee parámetros). Suelo `ParametrosEncuestas.DIAS_ENTRE_MINIMO` = 30 (Carlos 27/11/26: se puede bajar a
+    45 o 30 para recoger datos, NUNCA menos): `ConSuelo`. Si las DOS últimas encuestas fueron ignoradas, ×2; con cada ignorada más, ×2 otra vez
+    (sobre el intervalo que toque: con 30, 60, 120…); tope 365. Ignorada (`ReglaEncuestaIgnorada`) = enviada y 14 días sin respuesta: en sombra no
+    hay ninguna.
+  - Tema repetido: la última fue de esa clave, o hubo una de esa clave hace menos de 12 meses. Clave (`CandidataEncuesta.ClaveTema`) = el tema y, en el
+    de Vendedor, «Vendedor|código»: si le cambian el vendedor se le puede preguntar por el nuevo (el tope general sigue mandando). Decisión de este
+    corte: «dos seguidas» también se mira por vendedor.
+  - Prioridad (`ClaseCandidataEncuesta`): ProblemaResuelto > Cambio > PrimeraVez > Otra; a igualdad, el TEMA por el que hace más que no se le pregunta
+    (nunca = el que más); después el evento más reciente; después un orden fijo (tema, fuente, pedido, vendedor).
+- **Parámetros** (ParametrosUsuario empresa 1, «(defecto)», leídos con `LeerParametroSinDefecto`: no crean fila): `Calidad.EncuestasDiasEntre` (60
+  sin fila; < 30 → 30, > 180 → 180, ilegible → 60, y la respuesta lo dice en `Aviso`), `Calidad.EncuestasSombra` (solo «1» enciende el job; nace
+  apagado), `Calidad.EncuestasDiasTrasAparato` (15), `Calidad.EncuestasDiasTrasFormacion` (7).
+- **Bajas**: la baja de TODO de `CorreosPostCompraBajas` (#532, Tipo NULL; por cliente o por cualquiera de sus correos), con la misma lectura que el
+  recordatorio de reposición (`RepositorioRecordatorioReposicionSql.SQL_BAJAS` + `ConstruirBajas`). Las bajas por tipo (vídeos, reposición) y las de
+  push de `NotificacionesClientesBajas` (#692: solo EventosYCursos y AvisosReposicion) NO cuentan: son de otra cosa. Sin la tabla o si falla, no se
+  mira (y sale en `Aviso`).
+- **Impago en gestión**: un impagado SIN LIQUIDAR: `ExtractoCliente` TipoApunte 4, Importe > 0, Concepto que no empieza por «Gastos Impagado» (como
+  `ModeloImpagados`) e `ImportePdte` ≠ 0; cuenta desde la fecha del más antiguo.
+- **Clientes que nunca**: `ReglaClientesEncuesta` = los de factura simplificada (tienda online 31517, Amazon 32624, público final 10458, materiales de
+  cursos 31794, pedido tienda 9500) y El Edén (15191).
+- **Canal previsto** (`ReglaCanalEncuesta`, solo se calcula): push si el cliente tiene la app con avisos (`FuentePushCampanaSql.FiltroDestinatarios`,
+  el de la push de campaña); si no, correo: el primero válido (`ComercialesPedido.EsCorreoValido`) de las personas de contacto activas (Estado ≥ 0)
+  de ESE contacto o, si no tiene, de otro contacto del cliente; si no, `SinCanal`. NO se exige «Enviar boletín» (no es un correo comercial; duda
+  abierta para Carlos).
+
+#### Candidatas por evento (`IFuenteCandidatosEncuesta`, una clase por evento; `FuentesCandidatosEncuesta.Todas()`)
+Cada fuente lee con NOLOCK, en UNA consulta, la ventana de FECHAS DEL EVENTO = la de días de candidatura menos su retraso; el día de la candidata =
+fecha del evento + retraso. Cada candidata lleva cliente, contacto, tema, clase, motivo de usted, fecha del evento y enlaces (pedido, factura, envío,
+evento, producto, vendedor + nombre + ámbito, profesora).
+
+| Fuente | Tema / clase | Evento (de dónde) | Retraso |
+|---|---|---|---|
+| `EntregaPedido` | Entrega / Otra | `EnviosAgencia` Estado 2 + `FechaEntrega` (la real en ese estado: la pone el seguimiento de GLS, Innovatrans y CTT y el repartidor de la 14 en Ariadna). Sin notas, rectificativas ni copias; con alguna línea de producto servida. | 2 |
+| `VendedorPrimerPedido` | Vendedor / PrimeraVez | Primer pedido del cliente con ESE vendedor por ámbito, con LA REGLA de comisiones y factura (`ComercialesPedido.CodigosVendedores`, sin dar la peluquería huérfana al de estética): líneas PEL → `VendedoresPedidoGrupoProducto` PEL; el resto → `CabPedidoVta.Vendedor`. Un pedido mixto da DOS. | 3 |
+| `VendedorCambioFicha` | Vendedor / Cambio | `LogModificaciones` (trgClientesUpd: Tabla Clientes, Columna Vendedor, ValorAntiguo); el nuevo = el que tiene HOY la ficha. | 14 |
+| `VendedorPeluqueriaCambioFicha` | Vendedor / Cambio | `VendedoresClienteGrupoProducto` PEL NO deja rastro: su `FechaModificacion` y un vendedor distinto del de peluquería del último pedido ANTERIOR del cliente. Sin pedido PEL anterior, no sale. | 14 |
+| `ProblemaNotaEntregaPendiente` | Problema / ProblemaResuelto | La nota de lo pendiente (`NotaEntrega` = 1 con `PedidoOrigen`, #542) entregada (su envío en Estado 2). | 2 |
+| `ProblemaReenvioEntregado` | Problema | `EnviosAgenciaReenvios` «Reenviar» con el reenvío entregado. Opcional (tabla). | 2 |
+| `ProblemaBultosPendientesCerrados` | Problema | `RepartoBultosPendientes` (#880) con TODOS los bultos del envío cerrados; el último `FechaCierre`. Opcional. | 2 |
+| `ProblemaRectificativa` | Problema | `CabFacturaVta` con filas en `LinFacturaVtaRectificacion` (la misma fuente que FacturaRectificadaEntera/EnParte). | 3 |
+| `CobroPrimerGiro` | Cobro / PrimeraVez | Primer recibo del cliente en una remesa (`ExtractoCliente` TipoApunte 2 con Remesa; el día, `Remesas.Fecha`, como ModeloImpagados) sin otro en una remesa anterior. | 3 |
+| `TecnicaAparato` | Información técnica / Otra | Pedido entregado (como `EntregaPedido`) con una línea del grupo «APA» (`Constantes.Productos.GRUPO_APARATOS`, el de las reglas de muestras y de ruta; `NecesitaNumSerie` es solo un subconjunto). Carlos: las profesoras intervienen sobre todo con aparatos y cursos, y la puesta en marcha es después. | `DiasTrasAparato` (15) |
+| `TecnicaFormacionSinEvento` | Información técnica | Línea CUR facturada (`[Fecha Factura]`, Estado ≥ 4) que es formación sin evento (`ReglasFormacionPlantilla.EsFormacion` y no el `ProductoCurso` de ningún evento). | `DiasTrasFormacion` (7) |
+| `TecnicaAsistenciaEvento` | Información técnica | `EventosInscripciones` Estado «Asistio» (#908; de pago o gratuito); profesora = `Eventos.Ponente`. Los cursos CON evento solo salen por aquí (si asistió). | 2 |
+
+- Fuera por falta de datos: el CAMBIO DE FORMA DE PAGO de la ficha (`CondPagoCliente` no tiene fecha ni el disparador lo apunta); las incidencias de
+  agencia que acabaron entregadas sin reenvío (el seguimiento no guarda la historia del estado); la entrega de lo que no va por agencia (recoge en
+  tienda, agencias sin seguimiento, que nunca llegan a Estado 2); quién hizo la puesta en marcha o la formación de un aparato (no consta: haría falta
+  apuntarlo, p. ej. un rapport de la profesora con el pedido); el pedido de una inscripción a un evento.
+- Vendedores que no son una persona (`ReglaVendedorEncuesta.EsPersona`): el general «NV» (`ComercialesPedido.EsComercialReal`), Estado 99 (para
+  anular) y Estado negativo. Nombre visible = `Vendedores.Descripción` (el del correo del pedido). Ámbito `Estetica`/`Peluqueria`
+  (`AmbitosVendedorEncuesta.Texto`: «de estética»/«de peluquería», SIN género: Vendedores no lo tiene; E2 tendrá que redactar «la atención de X, que
+  le atiende en …»). El vendedor guardado es al que se avisará de una nota mala (E3).
+
+#### Tablas (`Scripts/Issue914e_CalidadEncuestas.sql`, fuera del EDMX, como sa; idempotente)
+- `dbo.CalidadEncuestas`: una fila por encuesta decidida (UNIQUE Empresa + Cliente + Fecha), con todo lo de la candidata, `CanalPrevisto`, `Correo`,
+  `IntervaloDias`, `Sombra` = 1 y las columnas de E2 vacías (`EnviadaEl`, `CanalEnvio`, `RespondidaEl`, `Nota` 1-3, `Texto`). GRANT SELECT, INSERT, UPDATE.
+- `dbo.CalidadEncuestasDescartes` (las candidatas no cogidas y el motivo) y `dbo.CalidadEncuestasDias` (día procesado: lo que hace el job idempotente).
+  GRANT SELECT, INSERT.
+- Sin el script: la simulación funciona (no escribe), el job no hace nada (ELMAH una vez) y `…/Sombra` da 503 (ELMAH una vez).
+
+#### Job y endpoints
+- Job `calidad-encuestas-sombra` (todos los días 4:45, cola «indicadores»): con `Calidad.EncuestasSombra` = 1 y las tablas, las candidatas de AYER →
+  gobernador con el historial GUARDADO (sombra incluida, 800 días) → guarda en una transacción encuestas, descartes y el día. Día ya procesado: nada.
+  Nunca lanza (ELMAH).
+- `GET api/Calidad/Encuestas/Simulacion?desde=&hasta=&diasEntre=&comparar=` (Dirección e Informática, 403 de usted; `CalidadPedidoPerfectoController.PuedeVer`).
+  Días de candidatura [desde, hasta): por defecto los 90 hasta hoy; como mucho 180; hasta ≤ hoy. `diasEntre` 30-180 (si no, 400); sin él, el del
+  parámetro. NO escribe: recorre día a día con el historial EN MEMORIA desde vacío (nadie ignora). Lee las candidatas UNA vez (caché 30 min por
+  rango y retrasos) y con `comparar=30,45,60` (hasta 5, cada uno 30-180) aplica el gobernador una vez por intervalo →
+  `ComparacionSimulacionEncuestasDTO` {Empresa, Desde, Hasta, Candidatas, Comparacion[{DiasEntre, Encuestas, MediaPorDia, MaximoPorDia,
+  ClientesEncuestados, ClientesCon1, ClientesCon2, ClientesCon3oMas, MaximoEncuestasMismoCliente, PerdidasPorTope, PorTema}], Simulaciones[], Aviso,
+  CalculadoEl}. Sin `comparar` → `SimulacionEncuestasDTO` {Empresa, Desde, Hasta, DiasEntre, Dias, Candidatas, Encuestas, MediaPorDia, MaximoPorDia,
+  DiaDelMaximo, ClientesConCandidatas, ClientesEncuestados, ClientesPorNumeroDeEncuestas[{«1»|«2»|«3 o más», Clientes}], MaximoEncuestasMismoCliente,
+  PerdidasPorTope, PorTema[{Tema, Candidatas, Encuestas}], PorCanal[{Canal, Encuestas}], PorOrigen[{Origen, Tema, Candidatas, Encuestas}],
+  Descartes[{Motivo, Candidatas}], PorDia[{Dia, Candidatas, Encuestas}], MasDescartadosPorTope (20: {Cliente, Candidatas, DescartadasPorTope,
+  Encuestas}), Aviso, CalculadoEl}. Límite: canal, bajas e impagos son los de HOY (un impagado ya cobrado no se ve); lo dice el `Aviso`. Fallo → 503.
+- `GET api/Calidad/Encuestas/Sombra?dias=30` (1-365): lo guardado por el job en [hoy − dias, hoy), con el mismo `SimulacionEncuestasDTO`
+  (`DiasEntre` = el del último día procesado). 503 sin el script.

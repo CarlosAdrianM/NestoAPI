@@ -1909,6 +1909,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Jobs recurrentes 'riesgo-abandono-resolver' (L-S 5:10) y 'riesgo-abandono-diario' (L-S 5:20) configurados (sombra)");
             Console.WriteLine("✅ Job recurrente 'clasificar-rapports-nocturno' configurado (diario a las 23:15; solo con la tabla y OpenAIKey)");
+
+            // NestoAPI#914 (encuestas a clientes, corte E1): EN SOMBRA, no envía nada. Todos los días a las 4:45 (fuera de horario, cola
+            // «indicadores»): candidatas de AYER → gobernador (con el historial guardado, también el de sombra) → dbo.CalidadEncuestas con
+            // Sombra = 1. Idempotente por día. Interruptor ParametrosUsuario «(defecto)» Calidad.EncuestasSombra (solo «1»; nace apagado);
+            // sin Scripts/Issue914e_CalidadEncuestas.sql no hace nada (ELMAH una vez).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Calidad.Encuestas.EncuestasSombraJobsService.ID_JOB,
+                () => Infraestructure.Calidad.Encuestas.EncuestasSombraJobsService.Procesar(),
+                Infraestructure.Calidad.Encuestas.EncuestasSombraJobsService.CRON, // Cron: todos los días a las 4:45
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'calidad-encuestas-sombra' configurado (diario a las 4:45; solo con Calidad.EncuestasSombra = 1 y las tablas)");
         }
     }
 }
