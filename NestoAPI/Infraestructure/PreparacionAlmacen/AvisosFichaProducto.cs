@@ -1026,6 +1026,12 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
         /// <summary>NestoAPI#868: los títulos de las dos fotos del correo.</summary>
         internal const string TITULO_FOTO_TIENDA = "La foto de la tienda que ha visto";
         internal const string TITULO_FOTO_MOZO = "Lo que tiene el mozo en la mano";
+        /// <summary>
+        /// Carlos 27/11/26: el tamaño de las fotos del correo. Outlook de escritorio ignora max-width y pintaba la del mozo al tamaño de la
+        /// cámara: el ancho va como ATRIBUTO (que sí respeta) y el estilo se queda para los demás clientes. Sin height, para no deformarla.
+        /// </summary>
+        internal const string ESTILO_FOTO_TIENDA = "width=\"240\" style=\"max-width:240px;height:auto\"";
+        internal const string ESTILO_FOTO_MOZO = "width=\"320\" style=\"max-width:320px;width:100%;height:auto\"";
         /// <summary>18/11/26: la línea del correo cuando el mozo no ha mandado foto (para que no parezca que se ha perdido).</summary>
         internal const string NOTA_SIN_FOTO_MOZO = "El mozo no ha adjuntado foto del producto.";
 
@@ -1302,19 +1308,20 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             {
                 if (fotoDentro)
                 {
-                    _ = html.Append($"<p>{TITULO_FOTO_TIENDA}:<br/><img src=\"cid:{ID_FOTO}\" alt=\"Foto de la tienda que ha visto el mozo\" style=\"max-width:240px\"/>"
+                    _ = html.Append($"<p>{TITULO_FOTO_TIENDA}:<br/><img src=\"cid:{ID_FOTO}\" alt=\"Foto de la tienda que ha visto el mozo\" {ESTILO_FOTO_TIENDA}/>"
                         + $"<br/><a href=\"{H(aviso.UrlFoto)}\" style=\"color:#666;font-size:small\">Dirección de la foto en la tienda</a></p>");
                 }
                 else
                 {
-                    _ = html.Append($"<p>{TITULO_FOTO_TIENDA}:<br/><img src=\"{H(aviso.UrlFoto)}\" style=\"max-width:240px\"/>"
+                    _ = html.Append($"<p>{TITULO_FOTO_TIENDA}:<br/><img src=\"{H(aviso.UrlFoto)}\" {ESTILO_FOTO_TIENDA}/>"
                         + $"<br/><a href=\"{H(aviso.UrlFoto)}\">Abrir la foto</a><br/><span style=\"color:#666\">{H(NOTA_SIN_FOTO)}</span></p>");
                 }
             }
             if (fotoMozoDentro)
             {
                 // NestoAPI#868: la foto que ha hecho el mozo del producto que tiene delante
-                _ = html.Append($"<p>{TITULO_FOTO_MOZO}:<br/><img src=\"cid:{ID_FOTO_MOZO}\" alt=\"Foto del mozo\" style=\"max-width:480px;width:100%\"/></p>");
+                // 27/11/26: con su ancho como atributo, que Outlook de escritorio ignora max-width y la pintaba al tamaño de la cámara
+                _ = html.Append($"<p>{TITULO_FOTO_MOZO}:<br/><img src=\"cid:{ID_FOTO_MOZO}\" alt=\"Foto del mozo\" {ESTILO_FOTO_MOZO}/></p>");
             }
             else
             {

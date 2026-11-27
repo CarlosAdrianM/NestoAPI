@@ -283,6 +283,27 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public void Correo_LasFotosLlevanElAnchoComoAtributo_ParaOutlookDeEscritorio()
+        {
+            // Carlos 27/11/26: Outlook de escritorio ignora max-width y la foto del mozo salía al tamaño de la cámara
+            var tienda = new FotoCorreo { Bytes = new byte[] { 0xFF, 0xD8, 0xFF, 9 }, TipoMime = "image/jpeg" };
+
+            string html = Html(AvisadorFichaProducto.Correo(AvisoCorreo(JPEG), new DatosFichaActual { Producto = "43449" }, new[] { "Foto" }, "t", null, null, tienda));
+
+            StringAssert.Contains(html, "<img src=\"cid:" + AvisadorFichaProducto.ID_FOTO_MOZO + "\" alt=\"Foto del mozo\" width=\"320\" style=\"max-width:320px;width:100%;height:auto\"/>");
+            StringAssert.Contains(html, "<img src=\"cid:" + AvisadorFichaProducto.ID_FOTO + "\" alt=\"Foto de la tienda que ha visto el mozo\" width=\"240\" style=\"max-width:240px;height:auto\"/>");
+            Assert.IsFalse(html.Contains("height=\""), "Sin alto: que no se deforme");
+        }
+
+        [TestMethod]
+        public void Correo_FotoDeLaTiendaSinDescargar_TambienConAncho()
+        {
+            string html = Html(AvisadorFichaProducto.Correo(AvisoCorreo(JPEG), new DatosFichaActual { Producto = "43449" }, new[] { "Foto" }, "t", null, null, null));
+
+            StringAssert.Contains(html, "width=\"240\" style=\"max-width:240px;height:auto\"/>");
+        }
+
+        [TestMethod]
         public void Correo_SoloLaDelMozo_UnRecursoYLaDeLaTiendaConEnlaceYNota()
         {
             MailMessage mail = AvisadorFichaProducto.Correo(AvisoCorreo(JPEG), new DatosFichaActual { Producto = "43449" }, new[] { "Foto" }, "t", null, null, null);

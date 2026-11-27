@@ -103,3 +103,9 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   bultos (`avisos-ficha/{producto}-{guid}.jpg`) y su ruta va en `AvisosFichaProducto.FotoMozo` (`Scripts/Issue868_AvisosFichaFotoMozo.sql`; sin la columna o
   sin blob, no se guarda pero la foto va igual en el correo). Correo: «La foto de la tienda que ha visto» (cid foto-ficha) y «Lo que tiene el mozo en la
   mano» (cid foto-mozo). Varios informantes: la última foto (sin foto nueva se queda la guardada; el correo solo lleva la del envío).
+- **Tamaño de las fotos en el correo (Carlos 27/11/26)**: Outlook de escritorio ignora `max-width` y pintaba la foto del mozo al tamaño de la cámara.
+  El ancho va como ATRIBUTO de la imagen (`AvisadorFichaProducto.ESTILO_FOTO_MOZO`: `width="320"` + `max-width:320px;width:100%;height:auto`;
+  `ESTILO_FOTO_TIENDA`: `width="240"` + `max-width:240px;height:auto`, en las dos variantes de la de la tienda), sin `height` para no deformarla.
+  La del mozo NO lleva enlace a tamaño completo: el blob `bultos` es privado y solo da enlaces de lectura que caducan
+  (`IAlmacenFotosBultos.EnlaceDeLectura`), y no hay endpoint que sirva `avisos-ficha/…`. Es el único correo con fotos hechas con el móvil:
+  las de bultos y diferencias de reposición (#906) y las del reparto propio no van en correos (se ven con enlaces que caducan).
