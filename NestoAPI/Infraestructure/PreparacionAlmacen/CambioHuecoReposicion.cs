@@ -210,6 +210,11 @@ HAVING SUM(u.Cantidad) > 0";
                 resultado.Mensaje = $"{ServicioSalidas.Unidades(resultado.Movidas)} se coge{(resultado.Movidas == 1 ? string.Empty : "n")} del hueco " +
                     $"{ServicioSalidas.Hueco(destino)}; lo que no estaba en el {ServicioSalidas.Hueco(origen)} pasa a «pendiente de ubicar».";
             }
+            if (!ensayo && resultado != null && resultado.Estado == EstadoCambioHueco.Cambiado && !resultado.Ensayo && resultado.Movidas > 0)
+            {
+                ServicioCambioHuecoPicking.ApuntarNoEstabaEnSuHueco(CasadorEscaneos.ORIGEN_REPOSICION, empresa, traspaso, cambio.Producto, origen, destino,
+                    cambio.Cantidad, resultado.Movidas, usuario);
+            }
             return resultado ?? new ResultadoCambioHueco { Estado = EstadoCambioHueco.NoSePuede, Mensaje = "No se ha cambiado nada." };
         }
     }

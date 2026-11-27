@@ -376,6 +376,7 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
                     Mensaje = "No se ha cambiado nada: en ese hueco ya no queda libre de ese producto, o la reserva del picking ya no está donde decía. Vuelva a abrir la recogida."
                 };
             }
+            ApuntarNoEstabaEnSuHueco(CasadorEscaneos.ORIGEN_PICKING, empresa, picking, cambio.Producto, origen, destino, cambio.Cantidad, movidas, usuario);
             return new ResultadoCambioHueco
             {
                 Estado = EstadoCambioHueco.Cambiado,
@@ -384,6 +385,18 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
                     ? $"Solo había {movidas} libres en ese hueco: esas se cogen de allí y el resto sigue donde estaba."
                     : null
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#914 (corte 2): EL punto único de la señal «no estaba en su hueco» (cambio de hueco hecho, picking o reposición, nunca en un
+        /// ensayo). Ya guardado; nunca lanza (RegistroCalidad.Apuntar no lanza ni retrasa). Imputado: nadie (quien lo ubicó no se sabe aquí).
+        /// </summary>
+        internal static void ApuntarNoEstabaEnSuHueco(string tipoSalida, string empresa, int numero, string producto, string huecoOrigen, string huecoDestino,
+            int cantidad, int movidas, string usuario)
+        {
+            Calidad.RegistroCalidad.Apuntar(Calidad.TiposEventoCalidad.NO_ESTABA_EN_SU_HUECO, usuario, empresa,
+                documento: (tipoSalida == CasadorEscaneos.ORIGEN_REPOSICION ? "Traspaso " : "Picking ") + numero.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                detalle: new { Tipo = tipoSalida, Producto = producto?.Trim(), HuecoOrigen = huecoOrigen, HuecoDestino = huecoDestino, Cantidad = cantidad, Movidas = movidas });
         }
 
         public async Task<ResultadoCambioHueco> Ensayar(string empresa, int picking, CambiarHuecoPickingDTO cambio, string usuario)

@@ -506,8 +506,12 @@
     <Folder Include="Views\Accounts\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Controllers\CalidadAlmacenController.cs" />
     <Compile Include="Controllers\CalidadEncuestasController.cs" />
     <Compile Include="Controllers\CalidadPedidoPerfectoController.cs" />
+    <Compile Include="Infraestructure\Calidad\Almacen\LectorCalidadAlmacenSql.cs" />
+    <Compile Include="Infraestructure\Calidad\Almacen\ReglaCalidadAlmacen.cs" />
+    <Compile Include="Infraestructure\Calidad\Almacen\ServicioCalidadAlmacen.cs" />
     <Compile Include="Infraestructure\Calidad\Encuestas\FuentesCandidatosEncuesta.cs" />
     <Compile Include="Infraestructure\Calidad\Encuestas\GobernadorEncuestas.cs" />
     <Compile Include="Infraestructure\Calidad\Encuestas\LectorEncuestasSql.cs" />

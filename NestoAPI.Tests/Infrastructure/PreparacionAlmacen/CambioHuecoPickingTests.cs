@@ -124,6 +124,85 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(EstadoCambioHueco.NoSePuede, resultado.Estado);
         }
 
+        // ---- NestoAPI#914 corte 2: la señal de calidad «no estaba en su hueco» ----
+
+        internal static async Task<T> ConEscritorDeCalidad<T>(System.Func<Task<T>> accion, List<NestoAPI.Infraestructure.Calidad.EventoCalidad> eventos, bool falla = false)
+        {
+            System.Func<NestoAPI.Infraestructure.Calidad.IEscritorEventosCalidad> escritorAntes = NestoAPI.Infraestructure.Calidad.RegistroCalidad.Escritor;
+            System.Action<System.Action> segundoPlanoAntes = NestoAPI.Infraestructure.Calidad.RegistroCalidad.EnSegundoPlano;
+            try
+            {
+                NestoAPI.Infraestructure.Calidad.IEscritorEventosCalidad escritor = A.Fake<NestoAPI.Infraestructure.Calidad.IEscritorEventosCalidad>();
+                A.CallTo(() => escritor.Escribir(A<NestoAPI.Infraestructure.Calidad.EventoCalidad>._))
+                    .Invokes((NestoAPI.Infraestructure.Calidad.EventoCalidad e) => eventos.Add(e));
+                NestoAPI.Infraestructure.Calidad.RegistroCalidad.Escritor = () => escritor;
+                NestoAPI.Infraestructure.Calidad.RegistroCalidad.EnSegundoPlano = falla
+                    ? (System.Action<System.Action>)(_ => throw new System.InvalidOperationException("falla al apuntar"))
+                    : (trabajo => trabajo());
+                return await accion();
+            }
+            finally
+            {
+                NestoAPI.Infraestructure.Calidad.RegistroCalidad.Escritor = escritorAntes;
+                NestoAPI.Infraestructure.Calidad.RegistroCalidad.EnSegundoPlano = segundoPlanoAntes;
+            }
+        }
+
+        [TestMethod]
+        public async Task Cambiar_Hecho_ApuntaNoEstabaEnSuHuecoConQuienYDonde()
+        {
+            var eventos = new List<NestoAPI.Infraestructure.Calidad.EventoCalidad>();
+            IRepositorioCambioHueco repositorio = A.Fake<IRepositorioCambioHueco>();
+            A.CallTo(() => repositorio.Cambiar(A<string>._, A<int>._, A<string>._, A<string>._, A<string>._, A<int>._, A<string>._)).Returns(1);
+
+            _ = await ConEscritorDeCalidad(() => new ServicioCambioHuecoPicking(repositorio).Cambiar("1", 99633, Cambio(cantidad: 2), @"NUEVAVISION\Andrey"), eventos);
+
+            NestoAPI.Infraestructure.Calidad.EventoCalidad evento = eventos.Single();
+            Assert.AreEqual(NestoAPI.Infraestructure.Calidad.TiposEventoCalidad.NO_ESTABA_EN_SU_HUECO, evento.Tipo);
+            Assert.AreEqual("Andrey", evento.Usuario);
+            Assert.AreEqual("1", evento.Empresa);
+            Assert.AreEqual("Picking 99633", evento.Documento);
+            Assert.IsNull(evento.Pedido);
+            Assert.IsNull(evento.Imputado);
+            StringAssert.Contains(evento.Detalle,"\"Producto\":\"22624\"");
+            StringAssert.Contains(evento.Detalle, "\"HuecoOrigen\":\"001007002\"");
+            StringAssert.Contains(evento.Detalle, "\"Movidas\":1");
+        }
+
+        [TestMethod]
+        public async Task Cambiar_NoSePuede_NoApunta()
+        {
+            var eventos = new List<NestoAPI.Infraestructure.Calidad.EventoCalidad>();
+            IRepositorioCambioHueco repositorio = A.Fake<IRepositorioCambioHueco>();
+            A.CallTo(() => repositorio.Cambiar(A<string>._, A<int>._, A<string>._, A<string>._, A<string>._, A<int>._, A<string>._)).Returns(0);
+
+            _ = await ConEscritorDeCalidad(() => new ServicioCambioHuecoPicking(repositorio).Cambiar("1", 99633, Cambio(), "Andrey"), eventos);
+
+            Assert.AreEqual(0, eventos.Count);
+        }
+
+        [TestMethod]
+        public async Task Cambiar_SiFallaElApunte_ElCambioSigue()
+        {
+            var eventos = new List<NestoAPI.Infraestructure.Calidad.EventoCalidad>();
+            IRepositorioCambioHueco repositorio = A.Fake<IRepositorioCambioHueco>();
+            A.CallTo(() => repositorio.Cambiar(A<string>._, A<int>._, A<string>._, A<string>._, A<string>._, A<int>._, A<string>._)).Returns(2);
+            System.Action<System.Exception> registradorAntes = NestoAPI.Infraestructure.Calidad.RegistroCalidad.Registrador;
+            NestoAPI.Infraestructure.Calidad.RegistroCalidad.Registrador = _ => { };
+            try
+            {
+                ResultadoCambioHueco resultado = await ConEscritorDeCalidad(() => new ServicioCambioHuecoPicking(repositorio).Cambiar("1", 99633, Cambio(), "Andrey"),
+                    eventos, falla: true);
+
+                Assert.AreEqual(EstadoCambioHueco.Cambiado, resultado.Estado);
+                Assert.AreEqual(0, eventos.Count);
+            }
+            finally
+            {
+                NestoAPI.Infraestructure.Calidad.RegistroCalidad.Registrador = registradorAntes;
+            }
+        }
+
         [TestMethod]
         [DataRow("", "003001002", 2, "22624")]
         [DataRow("001007002", "no es un hueco", 2, "22624")]
