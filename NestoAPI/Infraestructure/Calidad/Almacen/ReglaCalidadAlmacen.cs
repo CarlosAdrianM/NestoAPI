@@ -236,6 +236,21 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public LecturaReclamacionesEnvio Reclamaciones { get; set; } = new LecturaReclamacionesEnvio();
         /// <summary>Los días de reclamación con que se leyó (<see cref="ReglaErrorEnvioReclamado.PARAMETRO_DIAS"/>).</summary>
         public int DiasReclamacionEnvio { get; set; } = ReglaErrorEnvioReclamado.DIAS_POR_DEFECTO;
+        /// <summary>Etiquetas impresas con el packing incompleto en el periodo, por empaquetador (eventos de dbo.CalidadEventos).</summary>
+        public List<EtiquetasPackingIncompletoAlmacen> EtiquetasPackingIncompleto { get; set; } = new List<EtiquetasPackingIncompletoAlmacen>();
+        /// <summary>El primer evento EtiquetaConPackingIncompleto (desde cuándo hay rastro); null si ninguno o sin la tabla.</summary>
+        public DateTime? PrimeraEtiquetaPackingIncompleto { get; set; }
+    }
+
+    /// <summary>Las etiquetas impresas con el packing incompleto por un empaquetador (NestoAPI#914, 27/11/26).</summary>
+    public class EtiquetasPackingIncompletoAlmacen
+    {
+        public string Usuario { get; set; }
+        public int Etiquetas { get; set; }
+        /// <summary>Tras el aviso 409 PACKING_INCOMPLETO, el mozo confirmó.</summary>
+        public int Confirmadas { get; set; }
+        /// <summary>Desde una Ariadna que no avisa (anterior a 2.48).</summary>
+        public int SinAviso { get; set; }
     }
 
     /// <summary>Lo de un producto en un picking: la parada del recorrido, con quién la hizo.</summary>

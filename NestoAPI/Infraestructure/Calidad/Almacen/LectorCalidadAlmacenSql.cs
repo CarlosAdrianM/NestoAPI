@@ -33,7 +33,22 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         internal const string SQL_TABLAS = @"
 SELECT CAST(CASE WHEN OBJECT_ID('dbo.PreparacionEscaneos', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Escaneos,
        CAST(CASE WHEN OBJECT_ID('dbo.PreparacionSalidasTerminadas', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Terminadas,
-       CAST(CASE WHEN OBJECT_ID('dbo.LecturasNoCasadasAlmacen', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS NoCasadas";
+       CAST(CASE WHEN OBJECT_ID('dbo.LecturasNoCasadasAlmacen', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS NoCasadas,
+       CAST(CASE WHEN OBJECT_ID('dbo.CalidadEventos', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Eventos";
+
+        /// <summary>
+        /// NestoAPI#914 (27/11/26): las etiquetas del packing impresas con el packing incompleto (evento EtiquetaConPackingIncompleto), por
+        /// empaquetador, con la fecha del evento en el periodo (IX (Tipo, Fecha) de dbo.CalidadEventos). Y desde cuándo hay rastro.
+        /// </summary>
+        internal const string SQL_ETIQUETAS_PACKING_INCOMPLETO = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT RTRIM(e.Usuario) AS Usuario, COUNT(*) AS Etiquetas,
+       SUM(CASE WHEN e.Detalle LIKE N'%""Modo"":""Confirmado""%' THEN 1 ELSE 0 END) AS Confirmadas,
+       SUM(CASE WHEN e.Detalle LIKE N'%""Modo"":""SinAviso""%' THEN 1 ELSE 0 END) AS SinAviso
+FROM dbo.CalidadEventos e WITH (NOLOCK)
+WHERE e.Tipo = @tipo AND e.Fecha >= @desde AND e.Fecha < @hasta AND e.Empresa = @empresa
+GROUP BY e.Usuario;
+SELECT MIN(e.Fecha) FROM dbo.CalidadEventos e WITH (NOLOCK) WHERE e.Tipo = @tipo;";
 
         /// <summary>Desde cuándo hay rastro (primera lectura del recorrido, del packing y primera lectura que no casa). {0}: la de no casadas o NULL.</summary>
         internal const string SQL_DESDE = @"
@@ -193,7 +208,7 @@ DROP TABLE #c;";
             using (var conexion = new SqlConnection(cadenaConexion))
             {
                 conexion.Open();
-                bool escaneos, terminadas, noCasadas;
+                bool escaneos, terminadas, noCasadas, eventos;
                 using (var comando = new SqlCommand(SQL_TABLAS, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
                 using (SqlDataReader r = comando.ExecuteReader())
                 {
@@ -201,6 +216,25 @@ DROP TABLE #c;";
                     escaneos = r.GetBoolean(0);
                     terminadas = r.GetBoolean(1);
                     noCasadas = r.GetBoolean(2);
+                    eventos = r.GetBoolean(3);
+                }
+                if (!eventos)
+                {
+                    lectura.TablasQueFaltan.Add("dbo.CalidadEventos");
+                }
+                else
+                {
+                    using (var comando = new SqlCommand(SQL_ETIQUETAS_PACKING_INCOMPLETO, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
+                    {
+                        comando.Parameters.Add("@empresa", SqlDbType.Char, 3).Value = empresa;
+                        comando.Parameters.Add("@tipo", SqlDbType.VarChar, 40).Value = TiposEventoCalidad.ETIQUETA_CON_PACKING_INCOMPLETO;
+                        comando.Parameters.Add("@desde", SqlDbType.DateTime).Value = desde;
+                        comando.Parameters.Add("@hasta", SqlDbType.DateTime).Value = hasta;
+                        using (SqlDataReader r = comando.ExecuteReader())
+                        {
+                            LeerEtiquetasPackingIncompleto(r, lectura);
+                        }
+                    }
                 }
                 if (!terminadas)
                 {
@@ -346,6 +380,25 @@ DROP TABLE #c;";
             if (r.NextResult())
             {
                 LectorReclamacionesEnvioSql.LeerResultados(r, lectura.Reclamaciones);
+            }
+        }
+
+        /// <summary>Los dos resultados de <see cref="SQL_ETIQUETAS_PACKING_INCOMPLETO"/> (público para los tests con resultados simulados).</summary>
+        public static void LeerEtiquetasPackingIncompleto(DbDataReader r, LecturaCalidadAlmacen lectura)
+        {
+            while (r.Read())
+            {
+                lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen
+                {
+                    Usuario = Texto(r, 0),
+                    Etiquetas = Entero(r, 1),
+                    Confirmadas = Entero(r, 2),
+                    SinAviso = Entero(r, 3)
+                });
+            }
+            if (r.NextResult() && r.Read())
+            {
+                lectura.PrimeraEtiquetaPackingIncompleto = FechaNula(r, 0);
             }
         }
 

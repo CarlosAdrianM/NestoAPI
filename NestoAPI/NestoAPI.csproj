@@ -514,6 +514,7 @@
     <Compile Include="Infraestructure\Calidad\PedidoPerfecto\LectorPedidoPerfectoSql.cs" />
     <Compile Include="Infraestructure\Calidad\PedidoPerfecto\ReglaPedidoPerfecto.cs" />
     <Compile Include="Infraestructure\Calidad\PedidoPerfecto\ServicioPedidoPerfecto.cs" />
+    <Compile Include="Infraestructure\Agencias\PackingIncompletoEtiqueta.cs" />
     <Compile Include="Infraestructure\Calidad\Reclamaciones\LectorReclamacionesEnvioSql.cs" />
     <Compile Include="Infraestructure\Calidad\Reclamaciones\ReglaErrorEnvioReclamado.cs" />
     <Compile Include="Infraestructure\Calidad\RegistroCalidad.cs" />

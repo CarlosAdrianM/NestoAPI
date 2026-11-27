@@ -91,8 +91,32 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public Dictionary<string, int> PorAlmacen { get; set; } = new Dictionary<string, int>();
     }
 
+    /// <summary>Etiquetas del packing impresas con el packing incompleto de un empaquetador (o de todos).</summary>
+    public class EmpaquetadorPackingIncompletoDTO
+    {
+        /// <summary>Sin dominio. Null en el total.</summary>
+        public string Empaquetador { get; set; }
+        public int Etiquetas { get; set; }
+        public int Confirmadas { get; set; }
+        public int SinAviso { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#914 (27/11/26): indicador INFORMATIVO del EMPAQUETADOR (no del preparador): etiquetas impresas con productos sin leer en la mesa
+    /// (evento EtiquetaConPackingIncompleto), por fecha del evento en el periodo. Recuento sin denominador.
+    /// </summary>
+    public class EtiquetasPackingIncompletoDTO
+    {
+        /// <summary>Desde cuándo hay rastro (el primer evento); null si no hay ninguno o falta dbo.CalidadEventos.</summary>
+        public DateTime? EvaluadoDesde { get; set; }
+        public EmpaquetadorPackingIncompletoDTO Total { get; set; } = new EmpaquetadorPackingIncompletoDTO();
+        public List<EmpaquetadorPackingIncompletoDTO> PorEmpaquetador { get; set; } = new List<EmpaquetadorPackingIncompletoDTO>();
+    }
+
     public class ResumenCalidadAlmacenDTO
     {
+        /// <summary>NestoAPI#914 (27/11/26): etiquetas impresas con el packing incompleto, por empaquetador (informativo).</summary>
+        public EtiquetasPackingIncompletoDTO EtiquetasConPackingIncompleto { get; set; } = new EtiquetasPackingIncompletoDTO();
         public string Empresa { get; set; }
         public DateTime Desde { get; set; }
         public DateTime Hasta { get; set; }
@@ -224,14 +248,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
             },
             // «ProductoOCantidadEquivocados» y «ReenvioPorPreparacion» ya se miran con los datos (Carlos 27/11/26): CambiadoPorOtro y
             // ReenviadoSinCoste, que forman ErrorDeEnvioReclamado. Una cantidad de menos que se repone sin coste es ReenviadoSinCoste.
-            new IndicadorSinRastroAlmacenDTO
-            {
-                Indicador = "EtiquetaConPackingIncompleto",
-                Que = "La etiqueta de agencia se imprimió con el packing sin completar (productos sin meter en las cajas y sin falta del packing). Hoy se puede ver después " +
-                    "como «DescuadrePickingPacking», pero no se sabe si se imprimió así.",
-                HaceFalta = "Apuntar un evento en ServicioEtiquetaPacking.Imprimir cuando el estado del packing (LeerEstadoPedido) no esté completo. No se ha conectado: " +
-                    "es una lectura más en mitad de la etiqueta y Carlos tiene que decidir si se avisa o se frena."
-            },
+            // «EtiquetaConPackingIncompleto» se apunta desde el 27/11/26 (ServicioEtiquetaPacking.Imprimir, «avisar y dejar seguir»): sale en
+            // EtiquetasConPackingIncompleto del resumen, por empaquetador.
             new IndicadorSinRastroAlmacenDTO
             {
                 Indicador = "EntregaIncompleta (no imputable)",
@@ -331,6 +349,27 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 SinRastro = SIN_RASTRO.ToList(),
                 Aviso = lectura.TablasQueFaltan.Count == 0 ? null
                     : $"Faltan tablas ({string.Join(", ", lectura.TablasQueFaltan)}): lo que dependa de ellas no se ha podido mirar."
+            };
+            List<EtiquetasPackingIncompletoAlmacen> etiquetas = (lectura.EtiquetasPackingIncompleto ?? new List<EtiquetasPackingIncompletoAlmacen>())
+                .Where(x => ReglaCalidadAlmacen.Persona(x.Usuario) != null).ToList();
+            resumen.EtiquetasConPackingIncompleto = new EtiquetasPackingIncompletoDTO
+            {
+                EvaluadoDesde = lectura.PrimeraEtiquetaPackingIncompleto,
+                Total = new EmpaquetadorPackingIncompletoDTO
+                {
+                    Etiquetas = etiquetas.Sum(x => x.Etiquetas),
+                    Confirmadas = etiquetas.Sum(x => x.Confirmadas),
+                    SinAviso = etiquetas.Sum(x => x.SinAviso)
+                },
+                PorEmpaquetador = etiquetas.GroupBy(x => ReglaCalidadAlmacen.Persona(x.Usuario), StringComparer.OrdinalIgnoreCase)
+                    .Select(g => new EmpaquetadorPackingIncompletoDTO
+                    {
+                        Empaquetador = g.Key,
+                        Etiquetas = g.Sum(x => x.Etiquetas),
+                        Confirmadas = g.Sum(x => x.Confirmadas),
+                        SinAviso = g.Sum(x => x.SinAviso)
+                    })
+                    .OrderByDescending(x => x.Etiquetas).ThenBy(x => x.Empaquetador, StringComparer.OrdinalIgnoreCase).ToList()
             };
             List<PickingSinLecturasAlmacen> sinLecturas = lectura.PickingsSinLecturas ?? new List<PickingSinLecturasAlmacen>();
             resumen.PickingsSinRastro = new PickingsSinRastroDTO

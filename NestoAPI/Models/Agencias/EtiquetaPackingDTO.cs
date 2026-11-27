@@ -33,6 +33,13 @@ namespace NestoAPI.Models.Agencias
         /// siempre. Negativo, 400. Solo cuenta al grabar el envío: en una reimpresión no se usa.
         /// </summary>
         public decimal? Reembolso { get; set; }
+        /// <summary>
+        /// NestoAPI#914 (Carlos 27/11/26, Ariadna 2.48): si el packing de la entrega no está completo (productos sin leer en la mesa ni dados por
+        /// falta), en vez de imprimir responde 409 PACKING_INCOMPLETO para que el mozo confirme. Sin él (versiones anteriores), imprime como siempre.
+        /// </summary>
+        public bool AvisarPackingIncompleto { get; set; }
+        /// <summary>El mozo ha visto el aviso PACKING_INCOMPLETO y quiere imprimir igualmente.</summary>
+        public bool ConfirmarPackingIncompleto { get; set; }
     }
 
     /// <summary>NestoAPI#595 (slice 5): la respuesta 200 (y la 502, con <see cref="Impresa"/> a false) de la etiqueta del packing.</summary>

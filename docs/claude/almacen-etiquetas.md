@@ -109,3 +109,18 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   La del mozo NO lleva enlace a tamaño completo: el blob `bultos` es privado y solo da enlaces de lectura que caducan
   (`IAlmacenFotosBultos.EnlaceDeLectura`), y no hay endpoint que sirva `avisos-ficha/…`. Es el único correo con fotos hechas con el móvil:
   las de bultos y diferencias de reposición (#906) y las del reparto propio no van en correos (se ven con enlaces que caducan).
+
+### Etiqueta del packing con el packing incompleto: avisar y dejar seguir (NestoAPI#914, Carlos 27/11/26; Ariadna 2.48)
+- `POST api/Almacen/Pedidos/{pedido}/Etiqueta` (`PeticionEtiquetaPackingDTO`) lleva dos campos OPCIONALES: `AvisarPackingIncompleto` (bool) y
+  `ConfirmarPackingIncompleto` (bool). Ariadna 2.48 manda siempre `AvisarPackingIncompleto: true` y `ConfirmarPackingIncompleto: false` (o `true`
+  cuando el mozo confirma). Una Ariadna anterior no manda ninguno (los dos false): imprime como siempre.
+- «Packing incompleto» (`ReglaPackingIncompleto.SinLeer`, pura): en TODOS los pedidos de la entrega del packing (la etiqueta es de todas sus
+  cajas), por pedido y producto, Σ Cantidad − Σ Metidas − Σ Faltas &gt; 0 con las cuentas del progreso del packing (`LeerPacking`; sin las líneas de
+  texto). Sin packing en curso (solo bultos) no se sabe y no se avisa.
+- Se mira ANTES de grabar el envío: con `AvisarPackingIncompleto` y sin `ConfirmarPackingIncompleto` → 409 sin grabar ni imprimir, con el sobre de
+  los 409 con código (como COBRO_DE_MAS / NO_CARGADA) más `Mensaje` y `Detalles` en la raíz:
+  `{"error":{"code":"PACKING_INCOMPLETO","message":"…","details":{…}},"Message":"Faltan 2 productos por leer en la mesa (2 unidades). ¿Imprimir la etiqueta igualmente?","Codigo":"PACKING_INCOMPLETO","Mensaje":"…","Detalles":{"Faltan":2,"Unidades":2,"Productos":[{"Producto":"41262","Nombre":"SYNERGY…","Cantidad":1,"Pedido":926940},…]}}`.
+  El mensaje NO enumera los productos (la app los pinta debajo con `Detalles`). Con `ConfirmarPackingIncompleto` (o sin aviso) se imprime.
+- Siempre que se graba el envío de la etiqueta con el packing incompleto (confirmado o desde una versión que no avisa) se apunta el evento de
+  calidad `EtiquetaConPackingIncompleto` (una vez por envío: los reintentos y reimpresiones, con el envío ya en curso, no vuelven a mirar el
+  packing ni lo repiten). Nunca rompe la etiqueta. Ver `docs/claude/calidad-kpi.md`.

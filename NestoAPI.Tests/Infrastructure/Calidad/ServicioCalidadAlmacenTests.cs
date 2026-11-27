@@ -134,6 +134,25 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
         }
 
         [TestMethod]
+        public void Resumir_EtiquetasConPackingIncompleto_PorEmpaquetadorYFueraDeSinRastro()
+        {
+            LecturaCalidadAlmacen lectura = Lectura();
+            lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen { Usuario = @"NUEVAVISION\Santiago", Etiquetas = 2, Confirmadas = 2 });
+            lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen { Usuario = "santiago", Etiquetas = 1, SinAviso = 1 });
+            lectura.EtiquetasPackingIncompleto.Add(new EtiquetasPackingIncompletoAlmacen { Usuario = "Andre", Etiquetas = 1, SinAviso = 1 });
+            lectura.PrimeraEtiquetaPackingIncompleto = new DateTime(2026, 11, 28);
+
+            ResumenCalidadAlmacenDTO r = ServicioCalidadAlmacen.Resumir(Calculo(lectura));
+
+            Assert.AreEqual(4, r.EtiquetasConPackingIncompleto.Total.Etiquetas);
+            EmpaquetadorPackingIncompletoDTO santiago = r.EtiquetasConPackingIncompleto.PorEmpaquetador.First();
+            Assert.AreEqual(3, santiago.Etiquetas);
+            Assert.AreEqual(2, santiago.Confirmadas);
+            Assert.AreEqual(new DateTime(2026, 11, 28), r.EtiquetasConPackingIncompleto.EvaluadoDesde);
+            Assert.IsFalse(r.SinRastro.Any(s => s.Indicador == "EtiquetaConPackingIncompleto"));
+        }
+
+        [TestMethod]
         public void Resumir_PeriodoVacio_SinErrores()
         {
             ResumenCalidadAlmacenDTO r = ServicioCalidadAlmacen.Resumir(Calculo(new LecturaCalidadAlmacen()));

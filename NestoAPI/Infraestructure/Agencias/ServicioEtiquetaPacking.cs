@@ -47,7 +47,9 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>404: el pedido no existe.</summary>
         NoEncontrado,
         /// <summary>502: el envío está grabado, pero la agencia o la impresora han fallado.</summary>
-        FalloAgencia
+        FalloAgencia,
+        /// <summary>409 PACKING_INCOMPLETO (NestoAPI#914): quedan productos sin leer en la mesa y la app pide aviso sin haber confirmado.</summary>
+        PackingIncompleto
     }
 
     public class ResultadoEtiquetaPacking
@@ -56,6 +58,11 @@ namespace NestoAPI.Infraestructure.Agencias
         public EtiquetaPackingDTO Etiqueta { get; private set; }
         public ConflictoEnvioDesdePedidoDTO Conflicto { get; private set; }
         public ErrorEnvioDesdePedidoDTO Error { get; private set; }
+        /// <summary>El cuerpo del 409 PACKING_INCOMPLETO.</summary>
+        public Conflicto409ConCodigoDTO ConflictoConCodigo { get; private set; }
+
+        public static ResultadoEtiquetaPacking ConPackingIncompleto(Conflicto409ConCodigoDTO conflicto)
+            => new ResultadoEtiquetaPacking { Tipo = TipoResultadoEtiquetaPacking.PackingIncompleto, ConflictoConCodigo = conflicto };
 
         public static ResultadoEtiquetaPacking Hecha(EtiquetaPackingDTO etiqueta)
             => new ResultadoEtiquetaPacking { Tipo = TipoResultadoEtiquetaPacking.Hecha, Etiqueta = etiqueta };
@@ -92,6 +99,13 @@ namespace NestoAPI.Infraestructure.Agencias
         public int? Fotos { get; set; }
         /// <summary>Los demás pedidos de la misma entrega (mismo cliente y dirección en el picking).</summary>
         public List<int> OtrosPedidos { get; set; } = new List<int>();
+        /// <summary>
+        /// NestoAPI#914: lo que queda sin leer en la mesa en la entrega (<see cref="ReglaPackingIncompleto.SinLeer"/>). Null si no se sabe (sin
+        /// packing en curso: solo se ven los bultos); vacía si está completo.
+        /// </summary>
+        public List<ProductoSinLeerPackingDTO> SinLeer { get; set; }
+        /// <summary>El picking del packing (0 si no se sabe).</summary>
+        public int Picking { get; set; }
 
         /// <summary>
         /// La entrega de <paramref name="pedido"/> en el packing de su picking. Una caja es su foto (cada pedido de una caja
@@ -113,7 +127,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 Bultos = cajas.Count,
                 BultosSinFoto = cajas.Count(c => !c.Any(b => b.TieneFoto)),
                 Fotos = cajas.Count(c => c.Any(b => b.TieneFoto)) + fotosLibres,
-                OtrosPedidos = entrega.Pedidos.Select(p => p.Pedido).Where(p => p != pedido).Distinct().OrderBy(p => p).ToList()
+                OtrosPedidos = entrega.Pedidos.Select(p => p.Pedido).Where(p => p != pedido).Distinct().OrderBy(p => p).ToList(),
+                SinLeer = ReglaPackingIncompleto.SinLeer(entrega),
+                Picking = packing.Picking
             };
         }
 
@@ -266,6 +282,15 @@ namespace NestoAPI.Infraestructure.Agencias
                             $"El pedido {pedido} no tiene ninguna caja cerrada en el packing. Indique los bultos o cierre antes las cajas con su foto.");
                     }
 
+                    // NestoAPI#914 (Carlos 27/11/26): con el packing incompleto, avisar y dejar seguir. Se mira antes de grabar el envío;
+                    // los reintentos y reimpresiones (envío ya en curso) siguen desde ahí sin volver a mirarlo.
+                    DecisionPackingIncompleto packing = ReglaPackingIncompleto.Decidir(entrega?.SinLeer,
+                        peticion.AvisarPackingIncompleto, peticion.ConfirmarPackingIncompleto);
+                    if (packing == DecisionPackingIncompleto.Avisar)
+                    {
+                        return ResultadoEtiquetaPacking.ConPackingIncompleto(ReglaPackingIncompleto.Conflicto(entrega.SinLeer));
+                    }
+
                     ResultadoEnvioDesdePedido creado = await pasos.CrearDesdePedido(new CrearEnvioDesdePedidoDTO
                     {
                         Empresa = empresa,
@@ -305,6 +330,11 @@ namespace NestoAPI.Infraestructure.Agencias
 
                     envio = creado.Envio.Envio;
                     etiqueta.EnvioNuevo = true;
+                    if (packing == DecisionPackingIncompleto.ImprimirConfirmado || packing == DecisionPackingIncompleto.ImprimirSinAviso)
+                    {
+                        ApuntarPackingIncompleto(usuarioAuditoria, empresa, pedido, envio, entrega,
+                            packing == DecisionPackingIncompleto.ImprimirConfirmado ? ReglaPackingIncompleto.MODO_CONFIRMADO : ReglaPackingIncompleto.MODO_SIN_AVISO);
+                    }
                     etiqueta.Avisos.AddRange(creado.Envio.Avisos ?? new List<string>());
                     // Con los bultos tecleados no se cierran cajas: el aviso de las fotos no tiene sentido. NestoAPI#771: ya no hace
                     // falta una foto por caja (mínimo una por entrega): solo se avisa si la entrega no tiene ninguna.
@@ -420,6 +450,38 @@ namespace NestoAPI.Infraestructure.Agencias
                 return ResultadoEtiquetaPacking.Hecha(etiqueta);
             }
         }
+
+        /// <summary>NestoAPI#914: cómo se apunta la señal de calidad (en los tests, otra cosa). Nunca rompe la etiqueta.</summary>
+        internal Action<string, string, string, int?, string, string, string, string, object, decimal?> ApuntarCalidad { get; set; } =
+            (tipo, usuario, empresa, pedido, cliente, contacto, documento, imputado, detalle, importe) =>
+                Calidad.RegistroCalidad.Apuntar(tipo, usuario, empresa, pedido, cliente, contacto, documento, imputado, detalle, importe);
+
+        /// <summary>
+        /// NestoAPI#914: el envío de la etiqueta se ha grabado con productos sin leer en la mesa (confirmado por el mozo o desde una Ariadna que no
+        /// avisa). Una vez por envío (los reintentos no lo repiten). Usuario = el empaquetador que pide la etiqueta.
+        /// </summary>
+        private void ApuntarPackingIncompleto(string usuario, string empresa, int pedido, EnviosAgencia envio, EntregaParaEtiqueta entrega, string modo)
+        {
+            try
+            {
+                List<ProductoSinLeerPackingDTO> sinLeer = entrega?.SinLeer ?? new List<ProductoSinLeerPackingDTO>();
+                ApuntarCalidad(Calidad.TiposEventoCalidad.ETIQUETA_CON_PACKING_INCOMPLETO, usuario, empresa, pedido, envio?.Cliente?.Trim(), envio?.Contacto?.Trim(),
+                    envio != null ? $"Envio {envio.Numero}" : null, null,
+                    new
+                    {
+                        Modo = modo,
+                        Picking = PickingDe(entrega),
+                        Unidades = sinLeer.Sum(p => p.Cantidad),
+                        Productos = sinLeer.Select(p => new { p.Pedido, p.Producto, p.Cantidad }).ToList()
+                    }, null);
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[Calidad #914] No se ha podido apuntar la etiqueta con el packing incompleto del pedido {pedido}: {ex.Message}", ex));
+            }
+        }
+
+        private static int? PickingDe(EntregaParaEtiqueta entrega) => entrega?.Picking > 0 ? entrega.Picking : (int?)null;
 
         /// <summary>«1», «true» o «sí» en ParámetrosUsuario FacturarAlImprimirEtiqueta (o en «(defecto)»). Sin parámetro, no.</summary>
         internal bool FacturarAlImprimir(string usuario)

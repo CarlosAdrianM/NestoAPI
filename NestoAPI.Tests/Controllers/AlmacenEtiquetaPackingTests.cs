@@ -77,6 +77,33 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PackingIncompleto_409ConElSobreDeLosCodigos()
+        {
+            Conflicto409ConCodigoDTO cuerpo = ReglaPackingIncompleto.Conflicto(new List<ProductoSinLeerPackingDTO>
+            {
+                new ProductoSinLeerPackingDTO { Producto = "41262", Nombre = "SYNERGY", Cantidad = 1 }
+            });
+            Devuelve(ResultadoEtiquetaPacking.ConPackingIncompleto(cuerpo));
+
+            var resultado = (NegotiatedContentResult<Conflicto409ConCodigoDTO>)await controller.PostEtiquetaDelPedido(926940,
+                new PeticionEtiquetaPackingDTO { AvisarPackingIncompleto = true });
+
+            Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
+            Assert.AreEqual("PACKING_INCOMPLETO", resultado.Content.Codigo);
+            Assert.AreEqual("PACKING_INCOMPLETO", resultado.Content.error.code);
+        }
+
+        [TestMethod]
+        public void Peticion_LosCamposNuevosSonOpcionales_UnaAriadnaViejaNoLosManda()
+        {
+            var peticion = Newtonsoft.Json.JsonConvert.DeserializeObject<PeticionEtiquetaPackingDTO>("{\"Empresa\":\"1\",\"Peso\":2}");
+            Assert.IsFalse(peticion.AvisarPackingIncompleto);
+            Assert.IsFalse(peticion.ConfirmarPackingIncompleto);
+            peticion = Newtonsoft.Json.JsonConvert.DeserializeObject<PeticionEtiquetaPackingDTO>("{\"AvisarPackingIncompleto\":true,\"ConfirmarPackingIncompleto\":true}");
+            Assert.IsTrue(peticion.AvisarPackingIncompleto && peticion.ConfirmarPackingIncompleto);
+        }
+
+        [TestMethod]
         public async Task Invalida_400ConElCodigo()
         {
             Devuelve(ResultadoEtiquetaPacking.Invalida(CodigosEtiquetaPacking.SIN_BULTOS, "Cierre antes las cajas."));
