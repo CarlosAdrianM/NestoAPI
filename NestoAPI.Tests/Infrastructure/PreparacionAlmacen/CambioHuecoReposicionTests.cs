@@ -258,6 +258,40 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.StartsWith(resultado.Mensaje, "ENSAYO");
         }
 
+        // NestoAPI#914 corte 2: la señal «no estaba en su hueco» (la misma que en el picking, con el traspaso)
+
+        [TestMethod]
+        public async Task Cambiar_Hecho_ApuntaNoEstabaEnSuHuecoConElTraspaso()
+        {
+            var eventos = new System.Collections.Generic.List<NestoAPI.Infraestructure.Calidad.EventoCalidad>();
+            IRepositorioCambioHuecoReposicion repositorio = A.Fake<IRepositorioCambioHuecoReposicion>();
+            A.CallTo(() => repositorio.Cambiar(A<string>._, A<int>._, A<string>._, A<string>._, A<string>._, A<int>._, A<string>._, false))
+                .Returns(new ResultadoCambioHueco { Estado = EstadoCambioHueco.Cambiado, Movidas = 2 });
+
+            _ = await CambioHuecoPickingTests.ConEscritorDeCalidad(() => new ServicioCambioHuecoReposicion(repositorio).Cambiar("1", TRASPASO, Cambio(), "Andrey"), eventos);
+
+            NestoAPI.Infraestructure.Calidad.EventoCalidad evento = System.Linq.Enumerable.Single(eventos);
+            Assert.AreEqual(NestoAPI.Infraestructure.Calidad.TiposEventoCalidad.NO_ESTABA_EN_SU_HUECO, evento.Tipo);
+            Assert.AreEqual("Traspaso " + TRASPASO, evento.Documento);
+            StringAssert.Contains(evento.Detalle, "\"Tipo\":\"REPO\"");
+        }
+
+        [TestMethod]
+        public async Task Cambiar_EnsayoONoSePuede_NoApunta()
+        {
+            var eventos = new System.Collections.Generic.List<NestoAPI.Infraestructure.Calidad.EventoCalidad>();
+            IRepositorioCambioHuecoReposicion repositorio = A.Fake<IRepositorioCambioHuecoReposicion>();
+            A.CallTo(() => repositorio.Cambiar(A<string>._, A<int>._, A<string>._, A<string>._, A<string>._, A<int>._, A<string>._, true))
+                .Returns(new ResultadoCambioHueco { Estado = EstadoCambioHueco.Cambiado, Movidas = 2, Ensayo = true, Mensaje = "ENSAYO" });
+            A.CallTo(() => repositorio.Cambiar(A<string>._, A<int>._, A<string>._, A<string>._, A<string>._, A<int>._, A<string>._, false))
+                .Returns(new ResultadoCambioHueco { Estado = EstadoCambioHueco.NoSePuede, Mensaje = "ya está terminada" });
+
+            _ = await CambioHuecoPickingTests.ConEscritorDeCalidad(() => new ServicioCambioHuecoReposicion(repositorio).Cambiar("1", TRASPASO, Cambio(), "Carlos", ensayo: true), eventos);
+            _ = await CambioHuecoPickingTests.ConEscritorDeCalidad(() => new ServicioCambioHuecoReposicion(repositorio).Cambiar("1", TRASPASO, Cambio(), "Carlos"), eventos);
+
+            Assert.AreEqual(0, eventos.Count);
+        }
+
         [TestMethod]
         public async Task LeerAlternativas_SinElHuecoDondeNoEstabaYEnElOrdenDelRecorrido()
         {

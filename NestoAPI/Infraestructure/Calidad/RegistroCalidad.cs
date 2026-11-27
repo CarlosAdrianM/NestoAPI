@@ -35,6 +35,11 @@ namespace NestoAPI.Infraestructure.Calidad
         public const string COBRO_DE_MAS_CONFIRMADO = "CobroDeMasConfirmado";
         /// <summary>El repartidor confirmó (tras el 409 COBRO_REPETIDO o COBRO_TODO_A_CUENTA) un cobro de deuda y se contabilizó.</summary>
         public const string COBRO_REPETIDO_CONFIRMADO = "CobroRepetidoConfirmado";
+        /// <summary>
+        /// NestoAPI#914 corte 2: en el recorrido (picking o reposición) el producto no estaba en el hueco de la parada y el mozo lo cogió de otro
+        /// (Ariadna#12, «Cambiar hueco»). Lo que no estaba pasa a «pendiente de ubicar» y hasta ahora no quedaba constancia de quién, qué y dónde.
+        /// </summary>
+        public const string NO_ESTABA_EN_SU_HUECO = "NoEstabaEnSuHueco";
 
         /// <summary>Los que dicen que el pedido se tocó después del picking (motivo TocadoTrasElPicking).</summary>
         public static readonly IReadOnlyList<string> TOCADO_TRAS_EL_PICKING = new[] { QUITAR_PICKING, AMPLIACION_CON_PICKING_MISMO_PEDIDO };

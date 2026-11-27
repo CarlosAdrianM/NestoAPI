@@ -110,9 +110,63 @@ se da siempre que haya albarán (también en modo 6), cuente o no.
 | `RecogidaMarcadaPorError` | `ServicioRepartoPropio.AnularRecogidaMarcada` (caso 930553). Imputado: no se sabe aquí quién marcó «Recogido». | (ninguno) |
 | `EnvioRutaPropiaFueraDeDia` | SIN CONECTAR (no hay un punto único donde se fuerce). | `EnvioDeRutaPropiaForzado` |
 | `CobroDeMasConfirmado` | `ServicioRepartoPropio.Entregar`: efectivo con `ConfirmarCobroDeMas` = true, lo cobrado pasa del reembolso (`ReglaReembolsoEntero.EsDeMas`), no es nota de cobro y la entrega se registra NUEVA (el reintento con la misma clave no apunta). Usuario = el repartidor; Importe = lo cobrado de más; Documento «Envio N»; Detalle {Reembolso, Cobrado}. | (ninguno todavía) |
+| `NoEstabaEnSuHueco` | `ServicioCambioHuecoPicking.ApuntarNoEstabaEnSuHueco` (EL punto único), desde `ServicioCambioHuecoPicking.Cambiar` (picking) y `ServicioCambioHuecoReposicion.Cambiar` (reposición) cuando el cambio de hueco de Ariadna#12 se hace (movidas > 0, nunca en ensayo). Usuario = el mozo; Empresa; sin pedido (un picking sirve a varios); Documento «Picking N» / «Traspaso N»; Detalle {Tipo, Producto, HuecoOrigen, HuecoDestino, Cantidad, Movidas}; Imputado vacío (quien lo ubicó no se sabe ahí). Hasta ahora no quedaba rastro (ni Modificaciones): lo que no estaba pasaba a «pendiente de ubicar» sin más. Conectado el 27/11/26 (corte 2). | (ninguno: para el corte 3, ubicaciones y cadena de custodia, y para «falta que sí estaba») |
 | `CobroRepetidoConfirmado` | `ServicioCobrosReparto.Cobrar` (POST Cobros, con `CobrosRecientes`): con `Confirmar` = true se vuelve a mirar si se habría frenado (409 COBRO_REPETIDO o COBRO_TODO_A_CUENTA) y, si el cobro se contabiliza, se apunta. Usuario = el repartidor; sin pedido; Cliente/Contacto; Documento «Asiento N»; Importe = el cobro entero si es repetido, lo que va a cuenta si es todo a cuenta; Detalle {Motivo = el código}. Mirarlo es UNA lectura más solo en los confirmados; si falla, no se apunta y el cobro sigue. El cobro de una nota de cobro (dentro de la entrega) no se frena y no apunta. | (ninguno todavía) |
 
 - Los dos cobros confirmados del reparto se conectaron el 26/11/26 (arriba). Candidatos vistos y NO conectados (habría que adivinar o no son del
   pedido perfecto): pedido retenido por falta (#858, ya en `PedidosRetenidosPorFalta`); entrega incompleta (#880, ya en
   `RepartoBultosPendientes`); aplazar líneas con picking (`AplazamientoPedidoConPicking`); cambiar el cliente con picking (#876, ya en Modificaciones).
   Pedir autorización de un pedido que no pasa la validación NO cuenta (Carlos 26/11/26).
+
+### Almacén: preparación de pedidos, corte 2 (NestoAPI#914, 27/11/26)
+- Solo lectura y en sombra, mismos permisos que el pedido perfecto (Dirección e Informática; 403 de usted). Aquí SÍ van nombres (es por preparador):
+  antes de enseñárselo a nadie más, informar a los trabajadores (principio de la issue).
+- **El preparador es el de Ariadna**: quien leyó el producto en el recorrido del picking (`dbo.PreparacionEscaneos`, TipoOrigen PICK, Fase PICK; Usuario
+  sin dominio, #823: «NUEVAVISION\Alfredo» y «Alfredo» son la misma persona). Es fiable porque cada lectura la manda la PDA con el usuario del token
+  (no se teclea) y con IdCliente único. NO se usa `EtiquetasPicking.UsuarioQuePrepara` (desde Nesto sale siempre el mismo usuario) ni la cabecera del
+  picking de Nesto viejo. `PreparacionSalidasTerminadas.Usuario` (quién lo terminó) se lee, pero no manda.
+- Pickings compartidos (pregunta abierta de la issue; decisión de este corte): cada PARADA (producto en un picking) es de quien leyó más unidades
+  netas de ese producto (empate: la lectura más reciente; sin cogidas, quien dio la falta); cada línea, del de su parada. Un picking con paradas de
+  dos personas cuenta para las dos y sale en `PickingsCompartidos`.
+- Universo: los pickings (TipoOrigen PICK) cuya PRIMERA lectura del recorrido cae en [desde, hasta). Líneas = LinPedidoVta con ese Picking,
+  TipoLinea 1, sin ficticios, Cantidad − Recoger > 0 (lo que se recoge, como el packing), agrupadas por pedido + producto. Una línea dada ENTERA por
+  falta sale del picking (Picking = 0 al terminar) y solo queda su parada. Los pickings del rango de números del periodo sin ninguna lectura del
+  recorrido (hechos en papel) no entran: salen contados en `PickingsSinRastro` (por almacén; estimación, los números son correlativos).
+- `GET api/Calidad/Almacen/Resumen?empresa=1&desde=&hasta=` → {Empresa, Desde, Hasta, Total, Preparadores[], Indicadores[{Indicador, Texto, EsError,
+  Ambito, EvaluadoDesde, Evaluadas, Con, Porcentaje}], IndicadoresNoEvaluados[{Indicador, PorQue, EvaluadoDesde, SinEvaluar}], SinRastro[{Indicador,
+  Que, HaceFalta}], LineasSinPreparador, PickingsSinRastro{Pickings, Pedidos, Lineas, PorAlmacen}, PreparadorDesde, CalculadoEl, Aviso}. Total y cada
+  preparador: {Preparador, Pickings, PickingsCompartidos, Pedidos, Lineas, Paradas, Unidades (cogidas netas), LineasConError, LineasEvaluadasError,
+  PorcentajeError, Indicadores[{Indicador, Ambito, Evaluadas, Con, Porcentaje}]}. Ámbito Linea: sobre sus líneas evaluadas; Parada: sobre sus paradas
+  evaluadas, y la falta se imputa a quien la dio; Lecturas: recuento sin denominador.
+- `GET api/Calidad/Almacen/Detalle?empresa=1&preparador=&desde=&hasta=&indicador=&pagina=1&tamano=100` → {…, TotalLineas, TotalParadas,
+  Lineas[{Picking, FechaPicking, Pedido, Cliente, Contacto, Producto, LineasPedido (Nº Orden), Cantidad, Almacen, Factura, Preparador, PackingEvaluado,
+  Empaquetador, MetidasEnPacking, FaltasEnPacking, UnidadesRectificadas, Indicadores, NoEvaluados}], Paradas[{Picking, FechaPicking, Producto,
+  Preparador, OtrosQueLeyeron, Cogidas, Faltas, DioLaFalta, CantidadEnLineas, MetidasEnPacking, FaltasEnPacking, Indicadores, NoEvaluados}],
+  NoCasadas[{Picking, Usuario, Pantalla, Lecturas}]}. `preparador` opcional (sin dominio, sin distinguir mayúsculas); `indicador` = nombre del enum
+  (un número o un nombre que no existe → 400 con la lista); con indicador solo salen las líneas/paradas que lo tienen (las paradas, imputadas a él).
+- Periodo: por defecto de hoy − 3 meses a hoy (hoy no entra); como mucho 13 meses; hasta ≤ mañana. No hay rastro de Ariadna antes del 30/09/26 (#556).
+- Código: `Infraestructure/Calidad/Almacen/`: LA REGLA (pura) `ReglaCalidadAlmacen.Evaluar(LecturaCalidadAlmacen)`, el enum `IndicadorAlmacen` con su
+  atributo (Texto de usted, Ámbito, EsError), el lector `LectorCalidadAlmacenSql` (`LeerTanda` probado con resultados simulados) y `ServicioCalidadAlmacen`
+  (caché 30 min por empresa + periodo, compartida por los dos GET; un fallo no se cachea; 503 + ELMAH). Controlador `CalidadAlmacenController`.
+- Lector: SOLO LECTURA (READ UNCOMMITTED + NOLOCK), una ida por MES: #c (pickings con lecturas en la tanda, por IX_PreparacionEscaneos_Fecha) → #k
+  (los que EMPIEZAN en la tanda) → todo lo demás por clave (IX_PreparacionEscaneos_Origen; LinPedidoVta por Empresa + Picking; rectificativas por
+  factura + línea; no casadas por IX_LecturasNoCasadasAlmacen_Fecha). Nunca recorre LinPedidoVta ni ExtractoProducto por fechas. Tablas opcionales
+  (OBJECT_ID): `PreparacionSalidasTerminadas`, `LecturasNoCasadasAlmacen`; sin `PreparacionEscaneos` no hay nada (Aviso).
+
+#### Indicadores de almacén (definiciones exactas)
+| Indicador | EsError | Ámbito | Cómo se calcula | Desde cuándo |
+|---|---|---|---|---|
+| `FaltaEnPacking` | sí | Línea | El pedido se empaquetó con Ariadna en ese picking (alguna lectura PACK del pedido en ese picking) y las faltas netas del PACK de ese producto en ese pedido son > 0: el recorrido lo dio por cogido y en la mesa no apareció (la «falta de packing» de #556, que avisa a Compras; deshacerla = «ha aparecido»). Se imputa al preparador. | Primera lectura PACK (nunca antes de la primera PICK) |
+| `DescuadrePickingPacking` | NO (duda) | Parada | Todos los pedidos del picking con ese producto se empaquetaron con Ariadna y (metidas en packing + faltas de packing) ≠ cogidas en el recorrido. Puede ser del preparador (leyó de más o de menos) o del empaquetador (cerró sin meterlo ni dar la falta): informativo hasta que Carlos decida. | Como el anterior |
+| `FaltaEnPicking` | NO | Parada | Faltas netas del recorrido (Metodo FALTA, con sus «deshacer») de ese producto en ese picking > 0. Imputada a quien la dio. Es falta de stock o de ubicación, no del mozo, salvo que el producto estuviera (eso es «FaltaQueSiEstaba», sin rastro). | Primera lectura PICK |
+| `FaltaDeshechaPorOtro` | NO (casi-error) | Parada | Alguien tiene faltas netas > 0 del producto en el picking y OTRA persona faltas netas < 0 (quitó su falta: el producto sí estaba). Imputada a quien la dio. Deshacer la propia no cuenta. | Primera lectura PICK |
+| `LineaRectificada` | NO | Línea | Alguna de sus líneas (`Nº Orden`) es `FacturaOriginalLinea` de `LinFacturaVtaRectificacion` (misma factura original, otra factura). No se sabe por qué (precio, cliente, devolución, producto equivocado…). Sin factura todavía: no evaluada. | Primera lectura PICK |
+| `LecturaNoCasada` | NO (casi-error) | Lecturas | Filas de `LecturasNoCasadasAlmacen` (TipoOrigen PICK, de esos pickings) del usuario: Ariadna paró un código desconocido o de otro producto. No cuenta contra nadie (issue). | Primera fila de la tabla (Ariadna#43) |
+
+- «Error» de hoy = solo `FaltaEnPacking`; `PorcentajeError` = líneas con error / líneas evaluadas para él (empaquetadas con Ariadna).
+- Sin rastro (salen en `SinRastro` con lo que haría falta): `FaltaQueSiEstaba` (las lecturas del recorrido no guardan el hueco de lo cogido; haría
+  falta guardarlo y apuntar cuando un recuento del hueco encuentre lo dado por falta; `NoEstabaEnSuHueco` es la otra cara y ya se apunta),
+  `ProductoOCantidadEquivocados` (la rectificativa no tiene motivo), `ReenvioPorPreparacion` (los reenvíos #699/#870 son de devueltos/incidentados),
+  `EtiquetaConPackingIncompleto` (no se mira el packing al imprimir la etiqueta; conectar es una lectura más en `ServicioEtiquetaPacking.Imprimir`).
+- NO imputables a preparación (decisión de este corte, se quedan en el pedido perfecto): `EntregaIncompleta` (#542: las líneas con `Recoger` se deciden
+  antes del picking, que ya no las recoge) y `TocadoTrasElPicking` (lo hace Almacén a petición de otro).
