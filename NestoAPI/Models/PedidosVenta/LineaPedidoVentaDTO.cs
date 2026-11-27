@@ -102,8 +102,17 @@ namespace NestoAPI.Models.PedidosVenta
             copia.CantidadAnterior = null;
             copia.ProductoAnterior = null;
             copia.NoRevalidarDescuento = false;
+            copia.SituacionGuardada = null;
             return copia;
         }
+        /// <summary>
+        /// Pedido 929421 (27/11/26): cómo está la línea en la BD tras guardar la modificación (estado, albarán y factura con sus
+        /// fechas), para que el correo diga si ya está entregada o facturada sin fiarse de lo que mandó el cliente. Solo la rellena
+        /// el PUT; null = se usa lo del DTO (estado, Albaran, Factura). No va en el JSON.
+        /// </summary>
+        [JsonIgnore]
+        public Infraestructure.PedidosVenta.SituacionGuardadaLinea SituacionGuardada { get; set; }
+
         [JsonIgnore]
         public bool CambioProducto => !EsLineaNueva && ProductoAnterior != null && ProductoAnterior.Trim() != Producto?.Trim();
 

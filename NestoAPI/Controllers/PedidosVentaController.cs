@@ -3069,6 +3069,17 @@ namespace NestoAPI.Controllers
                 avisosCorreoModificacion.Add(avisoMuestrasQuitadas.Mensaje);
             }
 
+            // Pedido 929421 (27/11/26): el correo dice en qué está cada línea (entregada, facturada) con lo que ha quedado en la BD, no
+            // con lo que mandó el cliente; sin nada por entregar, sin bloque de entrega. Nunca rompe el PUT.
+            try
+            {
+                Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.CopiarSituacionGuardada(pedido.Lineas, cabPedidoVta.LinPedidoVtas);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Correo de la modificación] Pedido {pedido.numero}: no se ha podido leer el estado guardado de las líneas (el correo usa el del DTO): {ex.Message}", ex));
+            }
+
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {

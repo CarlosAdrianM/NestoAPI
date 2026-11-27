@@ -1349,6 +1349,7 @@
     <Compile Include="Infraestructure\PedidosVenta\DondeEstaLoQueFalta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ReglaColorLineaCorreo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ReglaEstadoLineasCorreo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\SombraModoServicio.cs" />

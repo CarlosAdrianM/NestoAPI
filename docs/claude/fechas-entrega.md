@@ -13,6 +13,33 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   `ReglasDondeEstaLoQueFalta` («… (1 ud.): viene en la reposición 81463 de Alcobendas, recogida por Miguel el miércoles 18/11 a las 12:53; pendiente
   de recibir en Algete.»). Nesto: sección plegable en el detalle del pedido y «Dónde está» en «Pedidos con la fecha en riesgo».
 
+### Correo de un pedido ya servido: estado de cada línea y sin bloque de entrega (pedido 929421, Carlos 27/11/26)
+- Caso: se borra la única línea pendiente (el proveedor no la iba a mandar) y todo lo demás está facturado; el «Modificación Pedido» pintaba las
+  líneas como las de un pedido cualquiera y llevaba «Modo de entrega… Fecha de entrega: 28/10/2026 ⚠ Cambia la fecha de entrega a la agencia.
+  Antes: miércoles 28/10/2026 → Ahora: sin fecha» («sobra entero, no hay nada pendiente de entregar»). LA REGLA (pura):
+  `ReglaEstadoLineasCorreo` (`Infraestructure/PedidosVenta/`), aplicada en el generador común `GestorPresupuestos.GenerarTablaHTML` (el mismo
+  del pedido nuevo, presupuesto y modificación; autorizaciones y pedidos de la app de clientes van por el POST, UnirPedidos y la ampliación
+  «PedidoNuevo» por el PUT/POST: no hay otro correo con este generador).
+- Servida = estado −2 (nota de entrega procesada), 2 (albarán) o 4 (factura); lo demás (−3, −1, 1 y el 0 de un DTO sin estado) es pendiente.
+  «Queda algo por entregar» se mira en las líneas de PRODUCTO con cantidad (los portes o una cuenta contable no son mercancía; si el pedido no
+  tiene ninguna de producto, todas las que tienen cantidad). Un presupuesto (−3) cuenta como por entregar: su correo no cambia.
+- Marca bajo el texto de la línea (celda de la descripción, `<small>` gris; el color de la fila NO cambia, sigue siendo el de la sección de abajo):
+  «Entregada: albarán 732939 del 28/10/2026», «Entregada (nota de entrega)», «Facturada: factura NV26/012345 del 28/10/2026». Lo pendiente,
+  sin marca, salvo en un pedido a medias: «Pendiente de entregar» (o «… (ya facturada)», #542), con el color de su fila.
+- Sin nada por entregar: frase arriba, bajo los avisos (`GenerarHtmlTodoServido`: «Este pedido ya está entregado y facturado; el cambio no afecta
+  a ninguna entrega.», o «ya está entregado», o «entregado y facturado en parte»), y `GenerarHtmlBloqueEntrega` no pinta modo de entrega ni de
+  facturación, «Fecha de entrega» ni la fecha de entrega a la agencia (ni su «⚠ Cambia la fecha»): solo el «Retorno: …» si hay un envío
+  pendiente o en curso (es del envío, no de la entrega). A medias: primero «Parte del pedido ya está entregada. Lo que sigue (modo de entrega y
+  fechas) es solo para lo que queda por entregar: N líneas marcadas «Pendiente de entregar».», y la fecha común y la columna F. Entrega salen
+  solo de lo pendiente (`LineasParaFechas`). Sin nada servido, el correo es idéntico al de antes (test).
+- El estado sale de la BD, no del DTO: el PUT, justo antes del correo, copia a cada línea (por Nº de orden) estado, albarán, factura y sus
+  fechas (`CopiarSituacionGuardada` → `LineaPedidoVentaDTO.SituacionGuardada`, JsonIgnore; el DTO no se toca). Las servidas que no vienen
+  en el PUT (la plantilla no las carga) siguen sin salir en el correo, como antes.
+- El «cambio de fecha» no dispara nada fuera del correo en este caso: `ServicioFechaEntregaAgencia.CalcularPedidoParaCorreo` solo anota para la
+  promesa en riesgo los productos de líneas −1/1 (`AnotarPedidoGrabado`; sin ninguna, nada), los candidatos de la promesa en riesgo
+  (`RepositorioPromesaRiesgo.SQL_CANDIDATOS`) exigen líneas −1/1, `AdelantarPrometida` no toca la prometida sin fecha nueva y el cambio de fecha
+  en la agencia del PUT (#722) solo sale de líneas con picking aplazadas.
+
 ### Color de las líneas del correo del pedido: el mismo motor que el pie (pedido 925901, 18/11/26)
 - El correo pintaba cada línea con `GestorStocks.ColorStock` (stock − TODOS los pendientes) y el pie con el motor #606: un pedido a 31/12/2099
   ponía en rojo una línea que el pie daba «con stock en Algete». LA REGLA (pura): `ReglaColorLineaCorreo` (`Infraestructure/PedidosVenta/`): de

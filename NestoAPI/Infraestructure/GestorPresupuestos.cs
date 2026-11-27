@@ -630,6 +630,8 @@ namespace NestoAPI.Infraestructure
 
             // NestoAPI#335: avisos operativos destacados, justo debajo del título.
             _ = s.Append(GenerarHtmlAvisos(Avisos));
+            // Pedido 929421: si ya no queda nada por entregar, que se vea antes que nada.
+            _ = s.Append(GenerarHtmlTodoServido(pedido.Lineas));
 
             _ = s.AppendLine("<table border=\"0\" style=\"width:100%\">");
             _ = s.AppendLine("<tr>");
@@ -707,7 +709,10 @@ namespace NestoAPI.Infraestructure
             bool hayDescuentos = pedido.Lineas.Any(l => l.SumaDescuentosSinPP > 0);
             // Issue #110: si todas las líneas se entregan el mismo día la fecha va una sola vez al
             // pie; solo cuando difieren se saca la columna por línea, para no alargar el correo.
-            bool hayFechasEntregaDistintas = !TieneFechaEntregaUnica(pedido.Lineas);
+            // Pedido 929421: con algo ya servido, las fechas son las de lo que queda por servir (sin nada servido, todas: como siempre).
+            List<LineaPedidoVentaDTO> lineasParaFechas = Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.LineasParaFechas(pedido.Lineas);
+            bool hayFechasEntregaDistintas = !TieneFechaEntregaUnica(lineasParaFechas);
+            bool pedidoAMedias = Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.EsPedidoAMedias(pedido.Lineas);
 
             _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
             _ = s.AppendLine("<thead align = \"right\">");
@@ -810,17 +815,19 @@ namespace NestoAPI.Infraestructure
                     _ = s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
                 }
                 _ = s.Append("<td>" + linea.Producto + "</td>");
+                // Pedido 929421: en qué está la línea (entregada, facturada; y en un pedido a medias, lo pendiente). Sin nada servido, nada.
+                string marcaEstado = HtmlMarcaEstadoLinea(linea, pedidoAMedias);
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
                     // NestoAPI#706: la URL viene limpia (o null) y el correo le pone sus tres UTM; sin URL, sin enlace
                     string rutaEnlace = EnlaceProductoCorreo(await ProductoDTO.RutaEnlace(linea.Producto).ConfigureAwait(false));
                     _ = s.Append(rutaEnlace == null
-                        ? "<td>" + linea.texto + "</td>"
-                        : "<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a></td>");
+                        ? "<td>" + linea.texto + marcaEstado + "</td>"
+                        : "<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a>" + marcaEstado + "</td>");
                 }
                 else
                 {
-                    _ = s.Append("<td>" + linea.texto + "</td>");
+                    _ = s.Append("<td>" + linea.texto + marcaEstado + "</td>");
                 }
                 _ = s.Append("<td>" + linea.Cantidad.ToString() + "</td>");
                 _ = s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
@@ -846,15 +853,13 @@ namespace NestoAPI.Infraestructure
             // NestoAPI#507: la regla de financiación (riesgo B) necesita saber si falta stock de algo,
             // porque en «Tras reponer de tiendas» el pedido solo se trocea si hay líneas rojas.
             _faltaStockDeAlgo = faltaStockDeAlgo;
-            _ = s.Append(GenerarHtmlModoServicio(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspanNotas, LeerTextoRetorno(pedido)));
             // Issue #110: fecha de entrega común a todo el pedido, al pie y discreta (cuando las
             // líneas difieren no sale nada aquí: cada una lleva la suya en la columna F. Entrega).
             int colspanFechaEntrega = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
-            _ = s.Append(GenerarHtmlFechaEntregaComun(pedido.Lineas, colspanFechaEntrega));
-            // NestoAPI#606 (09/10): la fecha de entrega a la agencia que se le ha dicho al cliente y por qué.
-            _ = s.Append(GenerarHtmlFechaEntregaAgencia(FechaEntregaAgencia, pedido.EsPresupuesto,
-                tipoCorreo == "Modificación" && !FechaEntregaAgenciaRecienPrometida, pedido.Lineas, colspanFechaEntrega,
-                pedido.servirPendienteAlHaberStock == true, ProductosPendientesDeAlmacen));
+            // Pedido 929421: el bloque de entrega (modo de entrega y de facturación, fecha de entrega y fecha de entrega a la agencia),
+            // solo si queda algo por entregar; a medias, con la frase de a qué se refiere.
+            _ = s.Append(GenerarHtmlBloqueEntrega(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspanNotas, LeerTextoRetorno(pedido),
+                FechaEntregaAgencia, tipoCorreo == "Modificación" && !FechaEntregaAgenciaRecienPrometida, ProductosPendientesDeAlmacen));
 
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
             int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
@@ -1483,6 +1488,66 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine($"<td colspan='{colspan}'>{texto}</td>");
             _ = s.AppendLine("</tr>");
             return s.ToString();
+        }
+
+        /// <summary>
+        /// Pedido 929421 (Carlos, 27/11/26): el bloque de entrega del pie (modo de entrega y de facturación, «Fecha de entrega» común y la
+        /// fecha de entrega a la agencia con su «⚠ Cambia la fecha…»). Sin nada por entregar (<see cref="Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo"/>)
+        /// no sale nada: no es un cambio de fecha, es que ya no hay entrega (solo el retorno del envío, si lo hay, que es del envío).
+        /// A medias, primero la frase de a qué se refiere y la fecha común de lo pendiente. Sin nada servido, idéntico a lo de siempre.
+        /// </summary>
+        internal static string GenerarHtmlBloqueEntrega(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto,
+            int colspan, string textoRetorno, FechaEntregaAgenciaDTO fechaEntregaAgencia, bool esModificacion,
+            ISet<string> productosPendientesDeAlmacen = null)
+        {
+            StringBuilder s = new StringBuilder();
+            if (!Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.QuedaAlgoPorEntregar(pedido.Lineas))
+            {
+                if (!string.IsNullOrEmpty(textoRetorno))
+                {
+                    _ = s.AppendLine("<tr>");
+                    _ = s.AppendLine($"<td colspan='{colspan}'>{textoRetorno}</td>");
+                    _ = s.AppendLine("</tr>");
+                }
+                return s.ToString();
+            }
+            string loQueFalta = Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.FraseLoQueFalta(pedido.Lineas);
+            if (loQueFalta != null)
+            {
+                _ = s.AppendLine("<tr>");
+                _ = s.AppendLine($"<td colspan='{colspan}' style=\"text-align:left\"><b>{EscaparHtml(loQueFalta)}</b></td>");
+                _ = s.AppendLine("</tr>");
+            }
+            _ = s.Append(GenerarHtmlModoServicio(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspan, textoRetorno));
+            _ = s.Append(GenerarHtmlFechaEntregaComun(Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.LineasParaFechas(pedido.Lineas), colspan));
+            _ = s.Append(GenerarHtmlFechaEntregaAgencia(fechaEntregaAgencia, pedido.EsPresupuesto, esModificacion, pedido.Lineas, colspan,
+                pedido.servirPendienteAlHaberStock == true, productosPendientesDeAlmacen));
+            return s.ToString();
+        }
+
+        /// <summary>Pedido 929421: la frase de arriba del correo cuando ya no queda nada por entregar (vacía si queda algo).</summary>
+        internal static string GenerarHtmlTodoServido(IEnumerable<LineaPedidoVentaDTO> lineas)
+        {
+            string frase = Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.FraseTodoServido(lineas);
+            return frase == null
+                ? string.Empty
+                : "<p style=\"background-color:#e7f1ff; border:2px solid #0d6efd; padding:10px\"><b>&#9432; " + EscaparHtml(frase) + "</b></p>" + Environment.NewLine;
+        }
+
+        /// <summary>
+        /// Pedido 929421: la marca de la línea en la celda de la descripción, debajo del texto. Las servidas en gris (no cambian el color
+        /// de la fila, que sigue siendo el de siempre); «Pendiente de entregar» con el color de su fila. Vacía si no lleva marca.
+        /// </summary>
+        internal static string HtmlMarcaEstadoLinea(LineaPedidoVentaDTO linea, bool pedidoAMedias)
+        {
+            string marca = Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.Marca(linea, pedidoAMedias);
+            if (marca == null)
+            {
+                return string.Empty;
+            }
+            return Infraestructure.PedidosVenta.ReglaEstadoLineasCorreo.EstaServida(linea)
+                ? "<br><small style=\"color:#555555\"><b>" + EscaparHtml(marca) + "</b></small>"
+                : "<br><small><b>" + EscaparHtml(marca) + "</b></small>";
         }
 
         internal static bool EsPedidoDeTienda(PedidoVentaDTO pedido)
