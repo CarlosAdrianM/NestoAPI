@@ -129,6 +129,8 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - Enlace (`ReglaCopiaCambioFiscal.DecidirEnlace`): vale si consta en ClientesAnteriores; si no consta nada y el nuevo tiene origen CAMBIO-FISCAL
   (ClientesOrigen), se crea al copiar o pasar pedidos; si no, o si consta con OTRO anterior, 409 `{Message, Codigo: "NO_ES_CAMBIO_FISCAL"}`. Permisos
   (`MotivoSinPermiso`): Administración, Dirección, Informática y el vendedor del anterior o su jefe de equipo (`VendedoresEquipoString`); cliente de la tienda 403.
+  Los tres (Previa, Copiar, PasarPedidos) llevan `[Authorize]` desde el 27/11/26 (sin token, 401): el único llamante es Nesto
+  (`Modulos/Cliente/CambioFiscalService.cs`, siempre con `ConfigurarAutorizacion`); NestoApp y TNV no los llaman. Los permisos de dentro, igual.
 - `GET api/Clientes/CambioFiscal/Previa?empresa=&clienteAnterior=&clienteNuevo=` (solo lectura) → `CopiaCambioFiscalDTO` {Enlazados, SeEnlazaAlCopiar,
   MotivoNoSePuedeCopiar, Bloques [{Bloque, Nombre, Anterior[], Nuevo[], Cambios[], Avisos[], HayCambios}], PedidosPendientes [{Pedido, Contacto, Fecha,
   Importe (base de lo pendiente), Total, Lineas, TienePicking, Pickings, NotaEntrega, SePuedePasar, Motivo}], Mensaje}. Pendiente = líneas -1..1 con

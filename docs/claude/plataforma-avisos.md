@@ -51,7 +51,8 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 
 ### Endpoints que no llevaban [Authorize] (auditoría de seguridad, 26/11/26)
 - Cerrados (`[Authorize]`), porque todos sus llamantes conocidos mandan token: `GET api/ExtractosCliente/DeudaVencida` (Nesto, ficha de cliente, por
-  `ClienteApiFactory`) y `GET api/AlbaranesVenta` (Nesto, `PedidoVentaService.CargarAlbaran`).
+  `ClienteApiFactory`) y `GET api/AlbaranesVenta` (Nesto, `PedidoVentaService.CargarAlbaran`). El 27/11/26, `api/Clientes/CambioFiscal/Previa`,
+  `…/Copiar` y `…/PasarPedidos` (#876; Nesto, `CambioFiscalService`, con token); los de `…/Iva`, `…/DescuentosPactados` y `…/Equivalentes` ya nacieron con él.
 - SIN cerrar a propósito: `GET api/ExtractosCliente/EnviarCorreoDomiciliacionDia` (ningún repositorio ni job lo llama: será una tarea programada de
   fuera, quizá sin token) y `PUT api/ParametrosUsuario` (Nesto guarda sus preferencias con `Configuracion.GuardarParametro`/`GuardarParametroSync`, un
   HttpClient SIN token; NestoApp sí lo manda). En el PUT, LA REGLA (pura) `ReglaCambioParametroUsuario` (`Infraestructure/ParametrosUsuario/`): las claves

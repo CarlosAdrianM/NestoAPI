@@ -37,6 +37,7 @@ namespace NestoAPI.Controllers
 
         /// <summary>Solo lectura: por bloque, lo que tiene cada cliente y lo que cambiaría; y los pedidos pendientes del anterior.</summary>
         [HttpGet]
+        [Authorize]
         [Route("api/Clientes/CambioFiscal/Previa")]
         [ResponseType(typeof(CopiaCambioFiscalDTO))]
         public async Task<IHttpActionResult> GetPreviaCambioFiscal(string empresa, string clienteAnterior, string clienteNuevo)
@@ -57,6 +58,7 @@ namespace NestoAPI.Controllers
         /// (Tabla ClienteCambioFiscal) y publicando el cliente a Odoo. Con <paramref name="ensayo"/> (por defecto) no escribe nada.
         /// </summary>
         [HttpPost]
+        [Authorize]
         [Route("api/Clientes/CambioFiscal/Copiar")]
         [ResponseType(typeof(CopiaCambioFiscalDTO))]
         public async Task<IHttpActionResult> PostCopiarCambioFiscal([FromBody] CopiaCambioFiscalRequest peticion, bool ensayo = true)
@@ -73,6 +75,7 @@ namespace NestoAPI.Controllers
         /// solo si no cambia nada). Con <paramref name="ensayo"/> (por defecto) dice qué cambiaría en cada uno sin tocar nada.
         /// </summary>
         [HttpPost]
+        [Authorize]
         [Route("api/Clientes/CambioFiscal/PasarPedidos")]
         [ResponseType(typeof(PasarPedidosCambioFiscalDTO))]
         public async Task<IHttpActionResult> PostPasarPedidosCambioFiscal([FromBody] PasarPedidosCambioFiscalRequest peticion, bool ensayo = true)

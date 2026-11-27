@@ -125,6 +125,28 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.Contains(motivo, "Nif");
         }
 
+        // Carlos 27/11/26: los tres llevan [Authorize] (su único llamante, Nesto, va con token por ConfigurarAutorizacion).
+        private static bool TieneAuthorize(string metodo)
+            => typeof(ClientesController).GetMethod(metodo).GetCustomAttributes(typeof(AuthorizeAttribute), true).Length > 0;
+
+        [TestMethod]
+        public void Previa_LlevaAuthorize()
+        {
+            Assert.IsTrue(TieneAuthorize(nameof(ClientesController.GetPreviaCambioFiscal)));
+        }
+
+        [TestMethod]
+        public void Copiar_LlevaAuthorize()
+        {
+            Assert.IsTrue(TieneAuthorize(nameof(ClientesController.PostCopiarCambioFiscal)));
+        }
+
+        [TestMethod]
+        public void PasarPedidos_LlevaAuthorize()
+        {
+            Assert.IsTrue(TieneAuthorize(nameof(ClientesController.PostPasarPedidosCambioFiscal)));
+        }
+
         private static HttpStatusCode EstadoDe(IHttpActionResult r)
         {
             object estado = r.GetType().GetProperty("StatusCode")?.GetValue(r);
