@@ -45,8 +45,9 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// A cada cliente con la app (consejos encendidos y sin baja en «Avisos de reposición»), sus ofertas de la campaña y su push. En
         /// ensayo (por defecto), 200 con todo lo que se mandaría (síncrono, solo lee). De verdad, 202 con el id del trabajo: el envío va en
-        /// segundo plano y el resultado queda en Modificaciones (Tabla CampanaPush). 400 con la petición mal o, de verdad, fuera de 9:00 a
-        /// 21:00; 403 sin permiso.
+        /// segundo plano y el resultado queda en Modificaciones (Tabla CampanaPush). 400 con la petición mal, con el momento «Cierre» si la
+        /// campaña no acaba hoy o mañana o, de verdad, fuera de 9:00 a 21:00; 403 sin permiso. <c>Momento</c>: Arranque (por defecto),
+        /// Recordatorio o Cierre (<see cref="ReglaMomentoPushCampana"/>).
         /// </summary>
         [HttpPost]
         [Route("api/Campanas/Push")]
@@ -59,7 +60,8 @@ namespace NestoAPI.Controllers
             }
             if (!ensayo)
             {
-                string error = ServicioPushCampana.ValidarParaEnviar(peticion, Ahora());
+                // La petición, el horario y, en el cierre, que la campaña acabe hoy o mañana: el 400 en el acto, antes de encolar
+                string error = await servicio.ValidarAntesDeEncolar(peticion, Ahora()).ConfigureAwait(false);
                 if (error != null)
                 {
                     return BadRequest(error);

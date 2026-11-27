@@ -21,6 +21,8 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public int DiasSinRepetir { get; set; }
         public bool IncluirSinOfertas { get; set; }
         public string CuerpoSinOfertas { get; set; }
+        /// <summary><see cref="MomentosPushCampana"/> (sin dato, Arranque).</summary>
+        public string Momento { get; set; } = MomentosPushCampana.ARRANQUE;
     }
 
     /// <summary>
@@ -82,6 +84,11 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             {
                 return "La imagen tiene que ser una dirección web completa (https://…).";
             }
+            string momento = MomentosPushCampana.Normalizar(peticion.Momento);
+            if (momento == null)
+            {
+                return ReglaMomentoPushCampana.MENSAJE_MOMENTO_DESCONOCIDO;
+            }
             valida = new PeticionPushCampanaValida
             {
                 Campana = peticion.Campana.Trim(),
@@ -93,7 +100,8 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 ExcluirClientes = Conjunto(peticion.ExcluirClientes),
                 DiasSinRepetir = dias,
                 IncluirSinOfertas = peticion.IncluirSinOfertas ?? false, // 25/11/26: a quien no le mejora nada, nada
-                CuerpoSinOfertas = Limpio(peticion.CuerpoSinOfertas)
+                CuerpoSinOfertas = Limpio(peticion.CuerpoSinOfertas),
+                Momento = momento
             };
             return null;
         }

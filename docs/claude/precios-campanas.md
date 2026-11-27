@@ -151,6 +151,32 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   CompradaEl/PedidoCompra con el primer pedido del producto (no presupuesto) del día enseñado a los 7 siguientes, una consulta por tanda de 500,
   idempotente. `GET api/Campanas/Ofertas/Resultado?campana=&dias=30` (Dirección/Informática; 503 sin tabla): Total, PorOrigen, PorMotivo y PorDecil
   (deciles de probabilidad de más a menos) con servidas, vistas, abiertas, añadidas, compradas y sus porcentajes. Nada se entrena todavía.
+- **El «momento» de la push: más de una push por campaña sin repetir lo mismo (Carlos 27/11/26; vale para CUALQUIER campaña: en el código no hay
+  nombre, fecha ni «Black Friday»; todo sale del título de la campaña sin el año y de su fecha de fin)**. Campo nuevo `Momento` en la petición
+  (`MomentosPushCampana`): `Arranque` (por defecto si no viene: TODO como antes, misma selección y mismos textos), `Recordatorio` o `Cierre`; otro
+  valor, 400. `Cierre` solo si la campaña acaba hoy o mañana (`ReglaMomentoPushCampana.ValidarCierre`, 400 de usted; también en ensayo y antes de
+  encolar: `ServicioPushCampana.ValidarAntesDeEncolar`, que lee la campaña guardada 10 min). El fin con hora (`ReglaMomentoPushCampana.Fin`): el más
+  tardío de las filas vigentes; una fila sin hora acaba a las 23:59 (`CandidataOferta.FechaHastaExacta`, la de la fila tal cual).
+  LA REGLA (pura) `ReglaMomentoPushCampana.Lista` sobre el ranking guardado (sin tocarlo: lo de «lo que miró» va en copias):
+  Recordatorio = lo «Personal» sin lo ya anunciado por push de ESA campaña (filas Origen «Push» de `OfertasClienteMostradas`, cualquier día) y,
+  como desempate de grupo sobre el ranking, primero lo que convierte (TeToca, LoSuelesPedir, DeTusMarcas: 5-8 % y 2 % comprado frente a 0 % de
+  CompradoJunto y TePuedeInteresar en la primera push), cada grupo en su orden. Cierre = primero lo que añadió, abrió o vio (en ese orden; a
+  igualdad, el del ranking; cualquier origen, también «Ver todas»), AUNQUE se le anunciase, con motivo nuevo `LoMiraste` (texto «Lo añadiste al
+  carrito y sigue con descuento» / «Lo miraste y sigue con descuento» / de lo solo visto «Sigue con descuento»); después lo «Personal» sin lo
+  anunciado. Lo comprado desde el inicio y lo pendiente no está en el ranking, así que no vuelve; stock y «mejora su precio» se miran igual
+  (`SelectorOfertasConPrecio.Recorrer`, mismos topes y diversidad). Si se le quitó algo y no queda nada: saltado «Ya se le han anunciado todas sus
+  ofertas.» (con `IncluirSinOfertas` true, el texto de sin ofertas de siempre).
+  Lo ya anunciado y lo que miró: `IFuentePushCampana.LeerIntereses`, UNA consulta para todos los destinatarios (tandas de 200; `FuentePushCampanaSql.SQL_INTERESES`,
+  por Empresa, Campana y Cliente IN, agrupado por cliente y producto). Sin la tabla, no se quita nada y la respuesta lleva `Aviso`.
+  Textos (`TextosMomentoPushCampana`, pura, de tú; título ≤ 45 y cuerpo ≤ 110, el nombre del producto o de la campaña recortado con «…», como
+  mucho 40): Arranque los de siempre; Recordatorio «{Campaña}: más ofertas para ti» / «Te hemos elegido otras: {Producto} (−30 %) y 2 más.» (una:
+  «Te hemos elegido otra: {Producto} (−30 %).»; sin nombrables «Te hemos elegido otras ofertas de {Campaña}. ¡Échales un vistazo!»); Cierre hoy
+  «Último día de {Campaña}» / «Termina hoy a las 23:59: {Producto} (−30 %) y 2 más.», mañana «{Campaña}: termina mañana» / «Termina mañana: …»
+  (con hora si no acaba al final del día); si el primero es `LoMiraste`, «{Producto} sigue al −30 % hasta esta noche.» / «hasta mañana». Con
+  `Titulo`/`Cuerpo` en la petición mandan las plantillas, como siempre. Datos de la push: además `momento` (nunca `productos`). Ensayo y
+  Modificaciones: `Momento`, `Fin` («yyyy-MM-dd HH:mm»), `Aviso`; por mensaje `Momento`, `Ofertas` [{Producto, Nombre, Motivo, Texto, Descuento}]
+  y `QuitadasYaAnunciadas` (aditivo). La franja y «Ver todas» no cambian. ⚠️ `DiasSinRepetir` (2 por defecto) sigue mirando el buzón: para un
+  recordatorio al día siguiente de otra push hay que pasar `DiasSinRepetir` 1 (o 0).
 
 ### Descuentos pactados de un cliente por la API (Carlos 26/11/26; caso 35253, Lisap Keraplant al 50 %, hasta hoy por script de sa)
 - `POST api/Clientes/{empresa}/{cliente}/DescuentosPactados?ensayo=true` {Familia?, Producto?, GrupoProducto?, FiltroProducto?, Descuento (TANTO POR UNO,

@@ -25,6 +25,11 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         Task<ISet<string>> ClientesConPushDeCampana(string campana, IReadOnlyCollection<string> clientes, DateTime desde);
         /// <summary>Una fila en Modificaciones (Tabla CampanaPush).</summary>
         Task Anotar(string nuevo, string usuario);
+        /// <summary>
+        /// Del registro en sombra (dbo.OfertasClienteMostradas), lo de esa campaña para esos clientes: lo ya anunciado por push y lo que
+        /// vio, abrió o añadió en la app. Una sola lectura para todos (por tandas de clientes). Sin la tabla, <c>TablaExiste</c> false.
+        /// </summary>
+        Task<InteresesPushCampana> LeerIntereses(string campana, IReadOnlyCollection<string> clientes);
     }
 
     public class FuentePushCampanaSql : IFuentePushCampana
@@ -86,6 +91,72 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 foreach (string c in con.Where(c => c != null))
                 {
                     _ = resultado.Add(c.Trim());
+                }
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// Por cliente y producto de la campaña: si hay alguna fila de origen «Push» (ya anunciada) y el primer momento en que la vio, la
+        /// abrió o la añadió (cualquier origen: franja, «Ver todas» o push). {0} = la lista de parámetros de clientes.
+        /// </summary>
+        internal const string SQL_INTERESES = @"
+SELECT RTRIM(Cliente) AS Cliente, RTRIM(Producto) AS Producto,
+    CAST(MAX(CASE WHEN Origen = 'Push' THEN 1 ELSE 0 END) AS bit) AS AnunciadaPorPush,
+    MIN(VistaEl) AS VistaEl, MIN(AbiertaEl) AS AbiertaEl, MIN(AnadidaEl) AS AnadidaEl
+FROM dbo.OfertasClienteMostradas WITH (NOLOCK)
+WHERE Empresa = @empresa AND Campana = @campana AND Cliente IN ({0})
+GROUP BY Cliente, Producto";
+
+        internal class FilaInteres
+        {
+            public string Cliente { get; set; }
+            public string Producto { get; set; }
+            public bool AnunciadaPorPush { get; set; }
+            public DateTime? VistaEl { get; set; }
+            public DateTime? AbiertaEl { get; set; }
+            public DateTime? AnadidaEl { get; set; }
+        }
+
+        public async Task<InteresesPushCampana> LeerIntereses(string campana, IReadOnlyCollection<string> clientes)
+        {
+            var resultado = new InteresesPushCampana();
+            int existe = (await db.Database.SqlQuery<int>(RepositorioOfertasMostradasSql.SQL_EXISTE).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            if (existe != 1)
+            {
+                return resultado;
+            }
+            resultado.TablaExiste = true;
+            List<string> lista = ReglaPushCampana.Conjunto(clientes).ToList();
+            for (int i = 0; i < lista.Count; i += LectorOfertasParaTiSql.LOTE_CLIENTES)
+            {
+                List<string> lote = lista.Skip(i).Take(LectorOfertasParaTiSql.LOTE_CLIENTES).ToList();
+                var parametros = new List<object>
+                {
+                    new SqlParameter("@empresa", SqlDbType.VarChar, 3) { Value = Constantes.Empresas.EMPRESA_POR_DEFECTO },
+                    new SqlParameter("@campana", SqlDbType.NVarChar, 50) { Value = (object)campana?.Trim() ?? DBNull.Value }
+                };
+                for (int k = 0; k < lote.Count; k++)
+                {
+                    parametros.Add(new SqlParameter("@c" + k, SqlDbType.VarChar, 10) { Value = lote[k] });
+                }
+                string sql = string.Format(SQL_INTERESES, string.Join(", ", lote.Select((_, k) => "@c" + k)));
+                List<FilaInteres> filas = await db.Database.SqlQuery<FilaInteres>(sql, parametros.ToArray()).ToListAsync().ConfigureAwait(false);
+                foreach (FilaInteres f in filas.Where(f => f.Cliente != null && f.Producto != null))
+                {
+                    if (!resultado.PorCliente.TryGetValue(f.Cliente.Trim(), out Dictionary<string, InteresOfertaCliente> suyos))
+                    {
+                        suyos = new Dictionary<string, InteresOfertaCliente>(StringComparer.OrdinalIgnoreCase);
+                        resultado.PorCliente[f.Cliente.Trim()] = suyos;
+                    }
+                    suyos[f.Producto.Trim()] = new InteresOfertaCliente
+                    {
+                        Producto = f.Producto.Trim(),
+                        AnunciadaPorPush = f.AnunciadaPorPush,
+                        VistaEl = f.VistaEl,
+                        AbiertaEl = f.AbiertaEl,
+                        AnadidaEl = f.AnadidaEl
+                    };
                 }
             }
             return resultado;
@@ -177,6 +248,26 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             return ReglaPushCampana.EnHorario(ahora) ? null : ReglaPushCampana.MENSAJE_FUERA_DE_HORARIO;
         }
 
+        /// <summary>
+        /// Lo de <see cref="ValidarParaEnviar(PeticionCampanaPushDTO, DateTime)"/> y, con el momento «Cierre», que la campaña acabe hoy o
+        /// mañana (lee la campaña: la guardada 10 minutos, la misma que usará el envío). Null si vale.
+        /// </summary>
+        public async Task<string> ValidarAntesDeEncolar(PeticionCampanaPushDTO peticion, DateTime ahora)
+        {
+            string error = ValidarParaEnviar(peticion, ahora);
+            if (error != null)
+            {
+                return error;
+            }
+            _ = ReglaPushCampana.Validar(peticion, out PeticionPushCampanaValida p);
+            if (p.Momento != MomentosPushCampana.CIERRE)
+            {
+                return null;
+            }
+            ContextoOfertasParaTi ctx = await contexto(p.Campana, ahora.Date).ConfigureAwait(false);
+            return ReglaMomentoPushCampana.ValidarCierre(ReglaMomentoPushCampana.Fin(ctx?.Candidatas, p.Campana), ahora);
+        }
+
         public async Task<ResultadoPushCampana> Ejecutar(PeticionCampanaPushDTO peticion, bool ensayo, DateTime ahora, string usuario)
         {
             string error = ReglaPushCampana.Validar(peticion, out PeticionPushCampanaValida p);
@@ -201,8 +292,23 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     Mensaje = $"La campaña «{p.Campana}» no tiene hoy ninguna oferta vigente para profesionales (por producto, con audiencia 1 o 2)."
                 };
             }
+            DateTime? fin = ReglaMomentoPushCampana.Fin(contexto.Candidatas, p.Campana);
+            if (p.Momento == MomentosPushCampana.CIERRE)
+            {
+                string errorCierre = ReglaMomentoPushCampana.ValidarCierre(fin, ahora);
+                if (errorCierre != null)
+                {
+                    return new ResultadoPushCampana { Estado = EstadoPushCampana.PeticionIncorrecta, Mensaje = errorCierre };
+                }
+            }
             string titulo = ReglaOfertasParaTi.Titulo(p.Campana);
-            var respuesta = new RespuestaCampanaPushDTO { Ensayo = ensayo, Campana = p.Campana };
+            var respuesta = new RespuestaCampanaPushDTO
+            {
+                Ensayo = ensayo,
+                Campana = p.Campana,
+                Momento = p.Momento,
+                Fin = fin?.ToString("yyyy-MM-dd HH:mm")
+            };
 
             List<string> conApp = await fuente.ClientesConConsejos().ConfigureAwait(false) ?? new List<string>();
             ISet<string> deBaja = await fuente.ClientesDeBaja().ConfigureAwait(false) ?? new HashSet<string>();
@@ -219,6 +325,25 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
 
             // Enteras y luego la MISMA selección que la pantalla: solo las que le mejoran el precio, con el respaldo general
             Dictionary<string, ResultadoOfertasCliente> listas = await nucleo.Calcular(contexto, reparto.Destinatarios, null).ConfigureAwait(false);
+            bool arranque = p.Momento == MomentosPushCampana.ARRANQUE;
+            // Recordatorio y Cierre: lo ya anunciado y lo que miró, en UNA lectura para todos los destinatarios
+            InteresesPushCampana intereses = new InteresesPushCampana();
+            if (!arranque && reparto.Destinatarios.Count > 0)
+            {
+                try
+                {
+                    intereses = await fuente.LeerIntereses(p.Campana, reparto.Destinatarios).ConfigureAwait(false) ?? intereses;
+                }
+                catch (Exception ex)
+                {
+                    registrar(new Exception($"[Push de campaña] No se ha podido leer lo ya anunciado de «{p.Campana}»; no se quita nada: {ex.Message}", ex));
+                    intereses = new InteresesPushCampana();
+                }
+                if (!intereses.TablaExiste)
+                {
+                    respuesta.Aviso = ReglaMomentoPushCampana.AVISO_SIN_REGISTRO;
+                }
+            }
             var fotos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (string cliente in reparto.Destinatarios)
             {
@@ -226,17 +351,25 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                 {
                     ResultadoOfertasCliente r = listas.TryGetValue(cliente, out ResultadoOfertasCliente suyo) ? suyo : new ResultadoOfertasCliente { Cliente = cliente };
                     string contacto = await leerContacto(cliente).ConfigureAwait(false);
-                    RecorridoOfertas elegidas = await selector.Seleccionar(contexto, r, EMPRESA, cliente, contacto, p.Maximo).ConfigureAwait(false);
+                    ListaPushCliente aRecorrer = ReglaMomentoPushCampana.Lista(p.Momento, r.Ofertas, intereses.DelCliente(cliente));
+                    RecorridoOfertas elegidas = arranque
+                        ? await selector.Seleccionar(contexto, r, EMPRESA, cliente, contacto, p.Maximo).ConfigureAwait(false)
+                        : await selector.Recorrer(contexto, r, aRecorrer.Lista, 0, EMPRESA, cliente, contacto, p.Maximo, true,
+                            ReglaSeleccionOfertasParaTi.TOPE_CONSULTAS_PRECIO, ReglaSeleccionOfertasParaTi.TOPE_EXAMINADOS).ConfigureAwait(false);
                     consultasPrecio += elegidas.ConsultasPrecio;
                     puntuados += r.Puntuados;
                     List<OfertaElegida> ofertas = elegidas.Ofertas.Select(e => e.Oferta).ToList();
-                    // Solo se nombra un producto si es de lo suyo (habitual, le toca, de sus marcas)
+                    // Solo se nombra un producto si es de lo suyo (habitual, le toca, de sus marcas, lo que miró)
                     List<OfertaElegida> nombrables = ofertas.Where(ReglaSeleccionOfertasParaTi.EsSuya).ToList();
                     string cuerpo;
                     if (ofertas.Count > 0)
                     {
                         respuesta.ConOfertas++;
-                        if (nombrables.Count == 0 && (p.Cuerpo == null || TextosPushOfertas.NombraProducto(p.Cuerpo)))
+                        if (!arranque && p.Cuerpo == null)
+                        {
+                            cuerpo = TextosMomentoPushCampana.Cuerpo(p.Momento, titulo, fin, ahora, nombrables, ofertas.Count);
+                        }
+                        else if (nombrables.Count == 0 && (p.Cuerpo == null || TextosPushOfertas.NombraProducto(p.Cuerpo)))
                         {
                             cuerpo = TextosPushOfertas.CuerpoGenerico(titulo);
                         }
@@ -252,23 +385,36 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                         respuesta.SinOfertas++;
                         if (!p.IncluirSinOfertas)
                         {
-                            respuesta.Saltados.Add(new SaltadoPushCampanaDTO { Cliente = cliente, Motivo = ReglaPushCampana.MOTIVO_SIN_OFERTAS });
+                            // Si se le ha quitado algo por ya anunciado, ese es el motivo (no es que no tenga ofertas)
+                            string motivo = aRecorrer.QuitadasYaAnunciadas > 0 ? ReglaMomentoPushCampana.MOTIVO_YA_ANUNCIADAS : ReglaPushCampana.MOTIVO_SIN_OFERTAS;
+                            respuesta.Saltados.Add(new SaltadoPushCampanaDTO { Cliente = cliente, Motivo = motivo });
                             continue;
                         }
                         cuerpo = TextosPushOfertas.AplicarPlantilla(p.CuerpoSinOfertas ?? TextosPushOfertas.CuerpoSinOfertasPorDefecto(titulo), ofertas, titulo);
                     }
+                    string tituloAutomatico = arranque ? titulo : TextosMomentoPushCampana.Titulo(p.Momento, titulo, fin, ahora);
                     string tituloPush = p.Titulo != null
-                        ? (nombrables.Count == 0 && TextosPushOfertas.NombraProducto(p.Titulo) ? titulo : TextosPushOfertas.AplicarPlantilla(p.Titulo, nombrables, titulo, ofertas.Count))
-                        : titulo;
+                        ? (nombrables.Count == 0 && TextosPushOfertas.NombraProducto(p.Titulo) ? tituloAutomatico : TextosPushOfertas.AplicarPlantilla(p.Titulo, nombrables, titulo, ofertas.Count))
+                        : tituloAutomatico;
                     string imagen = p.ImagenUrl ?? (ofertas.Count > 0 ? await Foto(fotos, ofertas[0].Candidata.Producto).ConfigureAwait(false) : null);
-                    NotificacionPushDTO notificacion = TextosPushOfertas.Notificacion(p.Campana, tituloPush, cuerpo, imagen);
+                    NotificacionPushDTO notificacion = TextosPushOfertas.Notificacion(p.Campana, tituloPush, cuerpo, imagen, p.Momento);
                     var mensaje = new MensajePushCampanaDTO
                     {
                         Cliente = cliente,
                         Titulo = notificacion.Titulo,
                         Cuerpo = notificacion.Cuerpo,
                         Productos = ofertas.Select(o => o.Candidata.Producto).ToList(),
-                        ImagenUrl = notificacion.Datos.TryGetValue("imagenUrl", out string foto) ? foto : null
+                        ImagenUrl = notificacion.Datos.TryGetValue("imagenUrl", out string foto) ? foto : null,
+                        Momento = p.Momento,
+                        QuitadasYaAnunciadas = aRecorrer.QuitadasYaAnunciadas,
+                        Ofertas = ofertas.Select(o => new OfertaPushCampanaDTO
+                        {
+                            Producto = o.Candidata.Producto,
+                            Nombre = ReglaOfertasParaTi.FormatoTitulo(o.Candidata.Nombre),
+                            Motivo = o.Motivo,
+                            Texto = o.Texto,
+                            Descuento = o.Candidata.Descuento
+                        }).ToList()
                     };
                     if (!ensayo)
                     {
@@ -301,6 +447,8 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     {
                         Peticion = peticion,
                         respuesta.Campana,
+                        respuesta.Momento,
+                        respuesta.Aviso,
                         respuesta.Destinatarios,
                         respuesta.ConOfertas,
                         respuesta.SinOfertas,
@@ -309,6 +457,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                         Saltados = respuesta.Saltados.Count,
                         ClientesEnviados = respuesta.Mensajes.Where(m => m.Enviados > 0).Select(m => m.Cliente).ToList(),
                         SaltadosDetalle = respuesta.Saltados.Select(s => s.Cliente + ": " + s.Motivo).ToList(),
+                        QuitadasYaAnunciadas = respuesta.Mensajes.Sum(m => m.QuitadasYaAnunciadas),
                         respuesta.ConsultasPrecio,
                         respuesta.ProductosPuntuados,
                         respuesta.Segundos

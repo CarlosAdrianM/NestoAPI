@@ -79,7 +79,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
 
         /// <summary>
         /// Cuando todas sus ofertas son del respaldo general (ninguna es de lo suyo), no se nombra ningún producto: «Mira las ofertas del
-        /// Black Friday que hemos elegido para ti.».
+        /// {título de la campaña} que hemos elegido para ti.».
         /// </summary>
         public static string CuerpoGenerico(string titulo)
             => string.IsNullOrWhiteSpace(titulo)
@@ -131,6 +131,10 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         /// (Carlos 25/11/26: los push de campaña no tocan el carrito del cliente; las ofertas las pide la app a GET api/Pedidos/Cliente/Ofertas).
         /// </summary>
         public static NotificacionPushDTO Notificacion(string campana, string titulo, string cuerpo, string imagenUrl)
+            => Notificacion(campana, titulo, cuerpo, imagenUrl, null);
+
+        /// <summary>Igual, con «momento» (Arranque, Recordatorio o Cierre) en los datos si viene (27/11/26).</summary>
+        public static NotificacionPushDTO Notificacion(string campana, string titulo, string cuerpo, string imagenUrl, string momento)
         {
             string tipo = TIPO_OFERTAS;
             var datos = new Dictionary<string, string>
@@ -142,6 +146,10 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
             if (foto != null)
             {
                 datos["imagenUrl"] = foto;
+            }
+            if (!string.IsNullOrWhiteSpace(momento))
+            {
+                datos["momento"] = momento.Trim();
             }
             return new NotificacionPushDTO
             {

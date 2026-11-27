@@ -1324,6 +1324,8 @@
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\OfertasParaTiDTO.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ReglaOfertasParaTi.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\TextosPushOfertas.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\TextosMomentoPushCampana.cs" />
+    <Compile Include="Infraestructure\Campanas\OfertasParaTi\ReglaMomentoPushCampana.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ReglaPushCampana.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\LectorOfertasParaTiSql.cs" />
     <Compile Include="Infraestructure\Campanas\OfertasParaTi\ServicioOfertasParaTi.cs" />

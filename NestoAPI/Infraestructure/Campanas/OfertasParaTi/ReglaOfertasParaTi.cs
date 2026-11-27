@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
 {
     /// <summary>
-    /// «Ofertas para ti» (Black Friday 2026 y cualquier campaña futura): LA REGLA, pura. De las filas vigentes de una campaña saca las
+    /// «Ofertas para ti» (cualquier campaña): LA REGLA, pura. De las filas vigentes de una campaña saca las
     /// candidatas y, para un cliente, las ordena y elige como mucho N (por defecto 5, de 1 a 10).
     /// <list type="bullet">
     /// <item>Candidata = fila de tarifa por producto con Campana, vigente HOY (<see cref="Vigencia"/>), audiencia de profesional (1 o 2,
@@ -103,6 +103,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
                     Descuento = Math.Round(DescuentoDeFila(f), 4, MidpointRounding.AwayFromZero),
                     FechaDesde = f.FechaDesde?.Date,
                     FechaHasta = f.FechaHasta?.Date,
+                    FechaHastaExacta = f.FechaHasta,
                     Popularidad = popularidad != null && popularidad.TryGetValue(f.Producto.Trim(), out int p) ? p : 0
                 })
                 .OrderBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)

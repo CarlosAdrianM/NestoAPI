@@ -18,6 +18,8 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public const string COMPRADO_JUNTO = "CompradoJunto";
         /// <summary>Lo piden los clientes que compran como él (afinidad item-kNN de las sugerencias).</summary>
         public const string PARECIDO = "Parecido";
+        /// <summary>Solo en la push de cierre (27/11/26): lo añadió al carrito, lo abrió o lo vio en la app y aún no lo ha pedido.</summary>
+        public const string LO_MIRASTE = "LoMiraste";
     }
 
     /// <summary>Una fila vigente de una campaña (DescuentosProducto de tarifa, por producto) con la ficha del producto.</summary>
@@ -51,6 +53,8 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public decimal Descuento { get; set; }
         public DateTime? FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
+        /// <summary>La de la fila tal cual, con su hora si la tiene (para el «termina a las …» de la push de cierre).</summary>
+        public DateTime? FechaHastaExacta { get; set; }
         /// <summary>Clientes distintos que lo compraron en 12 meses (SugerenciasProductosPopularidad; 0 si no hay tabla).</summary>
         public int Popularidad { get; set; }
     }
@@ -149,7 +153,7 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public int Total { get; set; }
         /// <summary>Con <c>HayOfertas</c> false, el texto para el cliente (de tú); null si hay ofertas.</summary>
         public string Mensaje { get; set; }
-        /// <summary>Hay más ofertas de la campaña que estas: la app pinta «Ver todas las ofertas del Black Friday» (GET …/Ofertas/Todas).</summary>
+        /// <summary>Hay más ofertas de la campaña que estas: la app pinta «Ver todas las ofertas» con el <c>Titulo</c> de la campaña (GET …/Ofertas/Todas).</summary>
         public bool HayMasOfertas { get; set; }
         public List<OfertaParaTiDTO> Ofertas { get; set; } = new List<OfertaParaTiDTO>();
     }
@@ -230,6 +234,19 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public int? DiasSinRepetir { get; set; }
         public bool? IncluirSinOfertas { get; set; }
         public string CuerpoSinOfertas { get; set; }
+        /// <summary>«Arranque» (por defecto: como siempre), «Recordatorio» o «Cierre» (solo si la campaña acaba hoy o mañana). 27/11/26.</summary>
+        public string Momento { get; set; }
+    }
+
+    /// <summary>Una oferta elegida para la push de un cliente (en el ensayo, para decidir).</summary>
+    public class OfertaPushCampanaDTO
+    {
+        public string Producto { get; set; }
+        public string Nombre { get; set; }
+        public string Motivo { get; set; }
+        public string Texto { get; set; }
+        /// <summary>El de la fila de la campaña (el que sale en el texto), en tanto por uno.</summary>
+        public decimal Descuento { get; set; }
     }
 
     public class SaltadoPushCampanaDTO
@@ -247,6 +264,11 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
         public string ImagenUrl { get; set; }
         /// <summary>Dispositivos a los que ha salido (0 en ensayo).</summary>
         public int Enviados { get; set; }
+        public string Momento { get; set; }
+        /// <summary>Las ofertas elegidas, en orden, con su motivo.</summary>
+        public List<OfertaPushCampanaDTO> Ofertas { get; set; } = new List<OfertaPushCampanaDTO>();
+        /// <summary>Las de su ranking que no se han mirado porque ya se le anunciaron por push de esta campaña (Recordatorio y Cierre).</summary>
+        public int QuitadasYaAnunciadas { get; set; }
     }
 
     /// <summary>El 202 del envío de verdad: va en segundo plano (Hangfire) y el resultado queda en Modificaciones (Tabla CampanaPush).</summary>
@@ -261,6 +283,11 @@ namespace NestoAPI.Infraestructure.Campanas.OfertasParaTi
     {
         public bool Ensayo { get; set; }
         public string Campana { get; set; }
+        public string Momento { get; set; }
+        /// <summary>El fin de la campaña con su hora («yyyy-MM-dd HH:mm»; null sin fin).</summary>
+        public string Fin { get; set; }
+        /// <summary>Algo que conviene saber antes de mandarla (p. ej., sin el registro no se quita lo ya anunciado). Null si nada.</summary>
+        public string Aviso { get; set; }
         public int Destinatarios { get; set; }
         public int ConOfertas { get; set; }
         public int SinOfertas { get; set; }
