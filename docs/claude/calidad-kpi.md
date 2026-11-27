@@ -72,6 +72,13 @@ procesan a −2 y nunca tienen albarán; saldrían todas «sin servir»). Los cl
 | `EnvioDeRutaPropiaForzado` | sí | Evento `EnvioRutaPropiaFueraDeDia`. SIN CONECTAR: no hay un punto único donde se fuerce; hoy siempre no evaluado. | Primer evento |
 | `EntregaIncompletaDelReparto` | sí | Envío de la agencia 14 con DetalleEstado «Entregado (reparto propio): …» (#880 corte 1) o con filas en `RepartoBultosPendientes` (#880 corte 2). Sin envío de la 14: no aplica (falso, evaluado). | Envíos de la 14 desde el 19/11/26 |
 | `PidioCambiarAlgoConPicking` | sí | Eventos `CambioDeModoConPicking` o `AmpliacionConPickingPedidoNuevo`. | Primer evento |
+| `ErrorDeEnvioReclamado` (17) | sí | Alguna línea de producto servida del pedido (TipoLinea 1, Cantidad > 0, estado ≥ 2 con Fecha Albarán, sin ficticios ni cursos) con `ReenviadoSinCoste` o `CambiadoPorOtro` (ver «Error de envío reclamado» abajo: la MISMA regla y lectura que Almacén). No evaluado: nada servido, o alguna línea servida hace menos de `Calidad.DiasReclamacionEnvio` días (salvo que otra ya tenga el error). El detalle lleva `SubMotivosReclamacion` y `PruebasReclamacion`. | Siempre (27/11/26) |
+
+**Error de envío reclamado y las rectificativas (27/11/26).** Un pedido con `CambiadoPorOtro` tiene SIEMPRE también `FacturaRectificadaEntera`
+o `FacturaRectificadaEnParte` (el cambio sale de una línea rectificada): son dos motivos del mismo pedido, uno dice «hay rectificativa» y otro
+«y fue porque se mandó otra cosa». El porcentaje de perfectos no cuenta nada dos veces (un pedido es perfecto o no), pero la suma de los
+`Pedidos` de cada motivo sí puede pasar del total. `ReenviadoSinCoste` no tiene por qué tener rectificativa: es justo el pedido que se tuvo que
+reenviar y antes salía «perfecto». `AbonadoSinReposicion` (rectificada sin reposición) NO es este motivo: ya lo dicen los de rectificativa.
 
 **Rectificativas, notas de entrega y copias, partidos (Carlos 27/11/26).** El antiguo `TieneRectificativaOAbono` (6) mezclaba cosas distintas: de
 27/08 a 05/11/26 (empresa 1, 3.645 pedidos) lo tenían 204; 46 por «copia», que eran todas NOTAS DE ENTREGA de lo pendiente (entrega
@@ -156,17 +163,61 @@ se da siempre que haya albarán (también en modo 6), cuente o no.
 #### Indicadores de almacén (definiciones exactas)
 | Indicador | EsError | Ámbito | Cómo se calcula | Desde cuándo |
 |---|---|---|---|---|
-| `FaltaEnPacking` | sí | Línea | El pedido se empaquetó con Ariadna en ese picking (alguna lectura PACK del pedido en ese picking) y las faltas netas del PACK de ese producto en ese pedido son > 0: el recorrido lo dio por cogido y en la mesa no apareció (la «falta de packing» de #556, que avisa a Compras; deshacerla = «ha aparecido»). Se imputa al preparador. | Primera lectura PACK (nunca antes de la primera PICK) |
-| `DescuadrePickingPacking` | NO (duda) | Parada | Todos los pedidos del picking con ese producto se empaquetaron con Ariadna y (metidas en packing + faltas de packing) ≠ cogidas en el recorrido. Puede ser del preparador (leyó de más o de menos) o del empaquetador (cerró sin meterlo ni dar la falta): informativo hasta que Carlos decida. | Como el anterior |
+| `ErrorDeEnvioReclamado` (OFICIAL 1) | sí | Línea | `ReenviadoSinCoste` o `CambiadoPorOtro` en alguna de sus líneas (abajo). Es «el error real» de Carlos: lo que el cliente reclamó. Sobre las líneas servidas y ya evaluables (albarán de hace ≥ N días). No evaluado: sin albarán, servida hace menos de N días o sin preparador. | Primera lectura PICK |
+| `ReenviadoSinCoste` | sí (parte del anterior) | Línea | Sub-motivo: se le volvió a mandar el mismo producto sin coste. | Como el anterior |
+| `CambiadoPorOtro` | sí (parte del anterior) | Línea | Sub-motivo: rectificada y se le cargó o mandó sin coste otro producto parecido. | Como el anterior |
+| `AbonadoSinReposicion` | NO | Línea | Sub-motivo informativo: rectificada sin reposición ni cambio (devolución o abono comercial). Solo si la línea NO tiene error. | Como el anterior |
+| `FaltaEnPacking` (OFICIAL 2) | sí | Línea | El pedido se empaquetó con Ariadna en ese picking (alguna lectura PACK del pedido en ese picking) y las faltas netas del PACK de ese producto en ese pedido son > 0: el recorrido lo dio por cogido y en la mesa no apareció (la «falta de packing» de #556, que avisa a Compras; deshacerla = «ha aparecido»). Se imputa al preparador. | Primera lectura PACK (nunca antes de la primera PICK) |
+| `DescuadrePickingPacking` | NO | Parada | Todos los pedidos del picking con ese producto se empaquetaron con Ariadna y (metidas en packing + faltas de packing) ≠ cogidas en el recorrido. Puede ser del preparador (leyó de más o de menos) o del empaquetador (cerró sin meterlo ni dar la falta). **Informativo, no se cuenta a nadie (decisión de Carlos 27/11/26).** | Como el anterior |
 | `FaltaEnPicking` | NO | Parada | Faltas netas del recorrido (Metodo FALTA, con sus «deshacer») de ese producto en ese picking > 0. Imputada a quien la dio. Es falta de stock o de ubicación, no del mozo, salvo que el producto estuviera (eso es «FaltaQueSiEstaba», sin rastro). | Primera lectura PICK |
 | `FaltaDeshechaPorOtro` | NO (casi-error) | Parada | Alguien tiene faltas netas > 0 del producto en el picking y OTRA persona faltas netas < 0 (quitó su falta: el producto sí estaba). Imputada a quien la dio. Deshacer la propia no cuenta. | Primera lectura PICK |
 | `LineaRectificada` | NO | Línea | Alguna de sus líneas (`Nº Orden`) es `FacturaOriginalLinea` de `LinFacturaVtaRectificacion` (misma factura original, otra factura). No se sabe por qué (precio, cliente, devolución, producto equivocado…). Sin factura todavía: no evaluada. | Primera lectura PICK |
 | `LecturaNoCasada` | NO (casi-error) | Lecturas | Filas de `LecturasNoCasadasAlmacen` (TipoOrigen PICK, de esos pickings) del usuario: Ariadna paró un código desconocido o de otro producto. No cuenta contra nadie (issue). | Primera fila de la tabla (Ariadna#43) |
 
-- «Error» de hoy = solo `FaltaEnPacking`; `PorcentajeError` = líneas con error / líneas evaluadas para él (empaquetadas con Ariadna).
+- **Los dos indicadores OFICIALES por preparador (Carlos 27/11/26)**: (1) `ErrorDeEnvioReclamado` sobre sus líneas servidas y evaluables (el
+  error real: lo que el cliente reclamó) y (2) `FaltaEnPacking` sobre sus líneas empaquetadas con Ariadna (el error que se cazó antes de salir).
+  Cada uno con su denominador, en `Total`/`Preparadores[].ErrorDeEnvioReclamado` y `.FaltaEnPacking` ({Indicador, Ambito, Evaluadas, Con,
+  Porcentaje}, la misma fila que en `Indicadores`); el resumen lleva `IndicadoresOficiales` = ["ErrorDeEnvioReclamado", "FaltaEnPacking"],
+  `Indicadores[].Oficial` y `DiasReclamacionEnvio`. `FaltaDeshechaPorOtro` (la fiabilidad de las faltas que dio) y `DescuadrePickingPacking`,
+  informativos. `LineasConError`/`PorcentajeError` se quedan (no se rompe el contrato) pero ahora son la UNIÓN de las líneas con algún error
+  (FaltaEnPacking o ErrorDeEnvioReclamado) sobre las evaluadas para alguno: mezcla denominadores; para leer, los dos oficiales por separado.
+- Detalle: cada línea lleva `SubMotivosReclamacion` (aunque aún no cuente), `ReclamacionEvaluada` y `PruebasReclamacion[{SubMotivo, Pedido,
+  Linea, Fecha, Producto, Cantidad, Importe, FacturaRectificativa, EnRectificativa, NotaEntrega}]`: la línea posterior que lo demuestra.
 - Sin rastro (salen en `SinRastro` con lo que haría falta): `FaltaQueSiEstaba` (las lecturas del recorrido no guardan el hueco de lo cogido; haría
   falta guardarlo y apuntar cuando un recuento del hueco encuentre lo dado por falta; `NoEstabaEnSuHueco` es la otra cara y ya se apunta),
-  `ProductoOCantidadEquivocados` (la rectificativa no tiene motivo), `ReenvioPorPreparacion` (los reenvíos #699/#870 son de devueltos/incidentados),
   `EtiquetaConPackingIncompleto` (no se mira el packing al imprimir la etiqueta; conectar es una lectura más en `ServicioEtiquetaPacking.Imprimir`).
+  `ProductoOCantidadEquivocados` y `ReenvioPorPreparacion` salieron de `SinRastro` el 27/11/26: los mide `ErrorDeEnvioReclamado`.
+
+#### Error de envío reclamado (NestoAPI#914, Carlos 27/11/26)
+«El error real es cuando decimos que hemos mandado un producto y en realidad hemos mandado otro (o ninguno). ¿Cómo nos damos cuenta? Porque el
+cliente protesta. ¿Cómo se podría ver en los datos? Mirando si después del pedido hay una rectificativa o se vuelve a enviar el mismo producto sin
+coste.» Código: `Infraestructure/Calidad/Reclamaciones/` (LA REGLA pura `ReglaErrorEnvioReclamado.Evaluar`, y la lectura común
+`LectorReclamacionesEnvioSql.SQL_RECLAMACIONES`, que se pega al lote de cada lector partiendo de su `#s0 (Empresa, Pedido, Linea)`: en Almacén,
+las líneas de los pickings; en el pedido perfecto, las líneas servidas de los pedidos del mes). Por LÍNEA servida (con albarán), mirando desde
+su Fecha Albarán hasta N días después; N = parámetro «(defecto)» `Calidad.DiasReclamacionEnvio` (1-365; sin fila o mal, 45; se lee con un
+SELECT de la fila «(defecto)», no crea filas). No evaluada: sin albarán o servida hace menos de N días (el cliente aún puede reclamar; si ya se ve
+algo, sale en el detalle pero no cuenta). En Almacén, además, sin preparador de Ariadna.
+- **`ReenviadoSinCoste`**: el mismo cliente recibe el MISMO producto en otra línea de producto (otro pedido o nota de entrega; estado ≠ −3) con
+  Cantidad > 0 y `Base Imponible` = 0, en un pedido cuya `Fecha` cae en [Fecha Albarán, Fecha Albarán + N]. Falsos positivos cerrados: la línea
+  original ya iba gratis (base 0), era muestra (MMP) o parte de una oferta; la posterior es muestra/material promocional (SubGrupo MMP), lleva
+  `NºOferta` (la gratis de un N+M o un regalo de oferta), es un producto de `dbo.Ganavisiones` o de `dbo.RegaloImportePedido` vigente ese día,
+  es del MISMO pedido o es la nota de lo pendiente de ESE pedido (#542, `PedidoOrigen` = el pedido). Cada línea posterior demuestra UNA
+  reclamación: la de la última vez que se le sirvió ese producto antes (quien lo compra dos veces en la ventana no cuenta doble).
+- **`CambiadoPorOtro`**: la línea está rectificada (`LinFacturaVtaRectificacion` por FacturaOriginalNumero + FacturaOriginalLinea, otra factura)
+  y se le carga o manda sin coste OTRO producto «parecido» = misma `Familia` (marca) o mismo `Grupo` + `SubGrupo` (nunca MMP), que no sea un
+  regalo (como arriba), y: (a) en la MISMA rectificativa (sus líneas por `Nº Factura`, cargado o sin coste), salvo que la rectificativa también
+  abone ese otro producto (eso es una refacturación de precio o de cliente, no un cambio); o (b) SIN COSTE en otro pedido del mismo cliente con
+  Fecha a ±7 días de la rectificativa y no antes del albarán. Decisión: lo CARGADO en un pedido normal no cuenta (con quien compra cada semana la
+  regla «misma familia o subgrupo» sería demasiado laxa); por eso no hizo falta el «precio de tarifa parecido».
+- **`AbonadoSinReposicion`** (informativo, NO es del preparador): rectificada y ni reenvío ni cambio (devolución, abono comercial, precio).
+- `ErrorDeEnvioReclamado` = `ReenviadoSinCoste` o `CambiadoPorOtro`.
+- Falsos positivos que quedan: un regalo comercial del vendedor al 100 % del mismo producto que no lleve oferta ni sea Ganavisiones (sale como
+  reenvío); un producto que esté en `dbo.Ganavisiones` o `RegaloImportePedido` y SÍ se reenvió por error (sale como regalo: falso negativo);
+  en `CambiadoPorOtro` (b), un regalo sin oferta de un producto de la misma marca cerca de una rectificativa por otra causa. Un reenvío con coste
+  (se le vuelve a cobrar) no se ve. Lo que el cliente reclamó y se arregló sin documento (le llevó el comercial el producto) tampoco.
+- Lectura (SOLO LECTURA, NOLOCK, en el mismo lote de cada tanda): las servidas por PK de LinPedidoVta; lo posterior del mismo producto por
+  LinPedidoVta Empresa + Nº Cliente + Producto (como `RegistroOfertasMostradas`) y su CabPedidoVta por PK; las rectificaciones por factura +
+  línea; las líneas de sus rectificativas por Nº Factura; y lo sin coste del cliente alrededor de la rectificativa por CabPedidoVta Empresa +
+  Nº Cliente + Fecha (solo de los clientes con líneas rectificadas). Nunca LinPedidoVta por fechas a pelo.
 - NO imputables a preparación (decisión de este corte, se quedan en el pedido perfecto): `EntregaIncompleta` (#542: las líneas con `Recoger` se deciden
   antes del picking, que ya no las recoge) y `TocadoTrasElPicking` (lo hace Almacén a petición de otro).

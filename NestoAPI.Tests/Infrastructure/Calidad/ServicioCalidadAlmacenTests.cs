@@ -108,7 +108,14 @@ namespace NestoAPI.Tests.Infrastructure.Calidad
             Assert.AreEqual(3, noEvaluado.SinEvaluar, "B y D sin packing en Ariadna y E sin preparador");
             Assert.AreEqual(new DateTime(2026, 10, 20, 8, 0, 0), r.Indicadores.Single(i => i.Indicador == "LecturaNoCasada").EvaluadoDesde);
             Assert.IsTrue(r.SinRastro.Any(s => s.Indicador == "FaltaQueSiEstaba"));
-            Assert.IsTrue(r.Indicadores.Where(i => i.EsError).All(i => i.Indicador == "FaltaEnPacking"), "Hoy el único error imputable es la falta del packing");
+            // Carlos 27/11/26: los errores imputables son la falta del packing y el error de envío reclamado (con sus dos sub-motivos)
+            CollectionAssert.AreEquivalent(new[] { "FaltaEnPacking", "ErrorDeEnvioReclamado", "ReenviadoSinCoste", "CambiadoPorOtro" },
+                r.Indicadores.Where(i => i.EsError).Select(i => i.Indicador).ToList());
+            CollectionAssert.AreEqual(new[] { "ErrorDeEnvioReclamado", "FaltaEnPacking" }, r.IndicadoresOficiales);
+            Assert.IsTrue(r.Indicadores.Single(i => i.Indicador == "FaltaEnPacking").Oficial);
+            Assert.IsFalse(r.Indicadores.Single(i => i.Indicador == "DescuadrePickingPacking").Oficial);
+            Assert.AreEqual(falta.Con, r.Total.FaltaEnPacking.Con);
+            Assert.AreEqual("ErrorDeEnvioReclamado", r.Total.ErrorDeEnvioReclamado.Indicador);
         }
 
         [TestMethod]

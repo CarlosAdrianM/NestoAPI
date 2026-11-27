@@ -256,6 +256,8 @@
     <Compile Include="Infrastructure\Calidad\ServicioCalidadAlmacenTests.cs" />
     <Compile Include="Infrastructure\Calidad\RegistroCalidadTests.cs" />
     <Compile Include="Infrastructure\Calidad\ReglaPedidoPerfectoTests.cs" />
+    <Compile Include="Infrastructure\Calidad\ReglaErrorEnvioReclamadoTests.cs" />
+    <Compile Include="Infrastructure\Calidad\LectorReclamacionesEnvioSqlTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorridoPrimeroEscaleraTests.cs" />
     <Compile Include="Infrastructure\Eventos\DatosTransferenciaInscripcionTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponAdelantadoSinAsistirTests.cs" />

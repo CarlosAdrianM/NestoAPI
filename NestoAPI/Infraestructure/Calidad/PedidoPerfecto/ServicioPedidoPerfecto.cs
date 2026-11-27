@@ -92,6 +92,10 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         public string FormaPago { get; set; }
         /// <summary>Alguna línea con cantidad negativa (cheque regalo, descuento, devolución suelta): entra igual en el universo.</summary>
         public bool LlevaLineasNegativas { get; set; }
+        /// <summary>Lo que pasó después de servirlo (ReenviadoSinCoste, CambiadoPorOtro, AbonadoSinReposicion), aunque aún no cuente.</summary>
+        public List<string> SubMotivosReclamacion { get; set; } = new List<string>();
+        /// <summary>Las líneas posteriores (o rectificativas) que lo demuestran.</summary>
+        public List<Reclamaciones.PruebaReclamacion> PruebasReclamacion { get; set; } = new List<Reclamaciones.PruebaReclamacion>();
     }
 
     public class PaginaPedidosPerfectoDTO
@@ -164,6 +168,21 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         internal CalculoPedidoPerfecto CalcularSinCache(string empresa, DateTime desde, DateTime hasta)
         {
             LecturaPedidoPerfecto lectura = lector().Leer(empresa, desde, hasta);
+            // Error de envío reclamado (Carlos 27/11/26): la misma regla que Almacén, con la lectura de todo el periodo
+            Dictionary<Tuple<int, int>, Reclamaciones.ResultadoReclamacion> reclamaciones =
+                Reclamaciones.ReglaErrorEnvioReclamado.Evaluar(lectura.Reclamaciones, ahora().Date, lectura.DiasReclamacionEnvio);
+            if (reclamaciones.Count > 0)
+            {
+                Dictionary<int, List<Reclamaciones.ResultadoReclamacion>> porPedido = reclamaciones.Values.GroupBy(r => r.Pedido)
+                    .ToDictionary(g => g.Key, g => g.OrderBy(r => r.Linea).ToList());
+                foreach (HechosPedidoPerfecto h in lectura.Pedidos ?? new List<HechosPedidoPerfecto>())
+                {
+                    if (porPedido.TryGetValue(h.Pedido, out List<Reclamaciones.ResultadoReclamacion> suyas))
+                    {
+                        h.ReclamacionesEnvio = suyas;
+                    }
+                }
+            }
             var contexto = new ContextoPedidoPerfecto
             {
                 Hoy = ahora().Date,
@@ -304,7 +323,10 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
             ModoServicio = h.ModoServicio,
             PlazosPago = h.PlazosPago?.Trim(),
             FormaPago = h.FormaPago?.Trim(),
-            LlevaLineasNegativas = h.LlevaLineasNegativas
+            LlevaLineasNegativas = h.LlevaLineasNegativas,
+            SubMotivosReclamacion = (h.ReclamacionesEnvio ?? new List<Reclamaciones.ResultadoReclamacion>())
+                .SelectMany(r => r.SubMotivos).Distinct().OrderBy(s => (int)s).Select(s => s.ToString()).ToList(),
+            PruebasReclamacion = (h.ReclamacionesEnvio ?? new List<Reclamaciones.ResultadoReclamacion>()).SelectMany(r => r.Pruebas).ToList()
         };
 
         internal static decimal? Porcentaje(int parte, int total) =>

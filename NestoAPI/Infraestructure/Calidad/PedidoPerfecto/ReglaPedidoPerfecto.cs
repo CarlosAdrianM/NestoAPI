@@ -73,7 +73,12 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         FacturaRectificadaEnParte = 15,
 
         [MotivoPedidoPerfecto("Otro pedido lo tiene de pedido de origen y no es una nota de entrega de lo pendiente.", esError: false)]
-        TieneCopia = 16
+        TieneCopia = 16,
+
+        // Carlos 27/11/26: el pedido que se tuvo que reenviar deja de ser perfecto aunque no tenga rectificativa. La misma regla y la misma
+        // lectura que el indicador de Almacén (ReglaErrorEnvioReclamado).
+        [MotivoPedidoPerfecto("Error de envío reclamado: después de servirlo se le volvió a mandar algún producto sin coste, o se rectificó y se le mandó otro parecido.")]
+        ErrorDeEnvioReclamado = 17
     }
 
     public static class InfoMotivosPedidoPerfecto
@@ -109,6 +114,9 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
                     return "Solo hay rastro de las entregas incompletas del reparto propio desde el 19/11/26 (NestoAPI#880); antes no se leían los bultos al entregar.";
                 case MotivoPedidoPerfecto.PidioCambiarAlgoConPicking:
                     return "Solo desde el primer evento de calidad (dbo.CalidadEventos): antes la petición solo salía por correo y no quedaba en la BD.";
+                case MotivoPedidoPerfecto.ErrorDeEnvioReclamado:
+                    return $"Solo los pedidos con algo servido y cuyas líneas servidas tienen albarán de hace al menos los días de «{Reclamaciones.ReglaErrorEnvioReclamado.PARAMETRO_DIAS}» " +
+                        $"({Reclamaciones.ReglaErrorEnvioReclamado.DIAS_POR_DEFECTO} si no hay fila en «(defecto)»): antes el cliente aún puede reclamar.";
                 default:
                     return "Siempre se evalúa.";
             }
@@ -184,6 +192,11 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         public bool PickingQuitado { get; set; }
         /// <summary>Tipos de dbo.CalidadEventos apuntados con este pedido.</summary>
         public HashSet<string> EventosCalidad { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>
+        /// Lo que pasó después de servir cada línea servida del pedido (<see cref="Reclamaciones.ReglaErrorEnvioReclamado"/>); lo rellena el
+        /// servicio con la lectura del periodo. Vacía: no se ha podido mirar (no evaluado).
+        /// </summary>
+        public List<Reclamaciones.ResultadoReclamacion> ReclamacionesEnvio { get; set; } = new List<Reclamaciones.ResultadoReclamacion>();
     }
 
     /// <summary>Una factura del pedido que tiene rectificativa (LinFacturaVtaRectificacion.FacturaOriginalNumero), con sus unidades.</summary>
@@ -407,6 +420,10 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
             // 12. Pidió cambiar algo con picking
             Poner(MotivoPedidoPerfecto.PidioCambiarAlgoConPicking, DesdeRastro(MotivoPedidoPerfecto.PidioCambiarAlgoConPicking,
                 () => Alguno(h.EventosCalidad, TiposEventoCalidad.PIDIO_CAMBIAR_CON_PICKING)));
+
+            // 17. Error de envío reclamado (Carlos 27/11/26): reenviado sin coste o cambiado por otro en alguna línea servida. Puede ir con
+            // FacturaRectificadaEntera/EnParte (el cambio por otro siempre tiene rectificativa): son dos motivos del mismo pedido.
+            Poner(MotivoPedidoPerfecto.ErrorDeEnvioReclamado, Reclamaciones.ReglaErrorEnvioReclamado.Combinar(h.ReclamacionesEnvio));
 
             evaluacion.Motivos.Sort();
             return evaluacion;

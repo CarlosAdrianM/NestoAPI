@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure.Calidad.PedidoPerfecto;
+using NestoAPI.Infraestructure.Calidad.Reclamaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -139,6 +140,17 @@ WHERE l.Empresa = @empresa AND l.Picking BETWEEN @min AND @max AND l.TipoLinea =
 GROUP BY l.Picking;
 ";
 
+        /// <summary>
+        /// Resultados 7-10: el error de envío reclamado de las líneas de #l (Carlos 27/11/26), con la lectura común
+        /// (<see cref="LectorReclamacionesEnvioSql.SQL_RECLAMACIONES"/>, la misma que el pedido perfecto).
+        /// </summary>
+        internal static readonly string SQL_RECLAMACIONES = @"
+IF OBJECT_ID('tempdb..#s0') IS NOT NULL DROP TABLE #s0;
+SELECT DISTINCT l.Empresa, l.Pedido, l.Linea INTO #s0 FROM #l l;
+" + LectorReclamacionesEnvioSql.SQL_RECLAMACIONES + @"
+DROP TABLE #s0;
+";
+
         internal const string SQL_FIN_LOTE = @"
 DROP TABLE #l;
 DROP TABLE #k;
@@ -172,6 +184,7 @@ DROP TABLE #c;";
             + SQL_LECTURAS_Y_LINEAS
             + (noCasadas ? SQL_NO_CASADAS : string.Empty)
             + SQL_SIN_LECTURAS
+            + SQL_RECLAMACIONES
             + SQL_FIN_LOTE;
 
         public LecturaCalidadAlmacen Leer(string empresa, DateTime desde, DateTime hasta)
@@ -219,6 +232,7 @@ DROP TABLE #c;";
                     }
                 }
 
+                lectura.DiasReclamacionEnvio = LectorReclamacionesEnvioSql.LeerDias(conexion, empresa);
                 string lote = Lote(terminadas, noCasadas);
                 foreach (Tuple<DateTime, DateTime> tanda in LectorPedidoPerfectoSql.Tandas(desde, hasta))
                 {
@@ -227,6 +241,7 @@ DROP TABLE #c;";
                         comando.Parameters.Add("@empresa", SqlDbType.Char, 3).Value = empresa;
                         comando.Parameters.Add("@desde", SqlDbType.DateTime).Value = tanda.Item1;
                         comando.Parameters.Add("@hasta", SqlDbType.DateTime).Value = tanda.Item2;
+                        comando.Parameters.Add("@diasReclamacion", SqlDbType.Int).Value = lectura.DiasReclamacionEnvio;
                         using (SqlDataReader r = comando.ExecuteReader())
                         {
                             LeerTanda(r, noCasadas, lectura);
@@ -326,6 +341,11 @@ DROP TABLE #c;";
                     Lineas = Entero(r, 2),
                     Almacen = Texto(r, 3)
                 });
+            }
+            // 7-10. Lo que pasó después de servir las líneas (si el lote lo trae)
+            if (r.NextResult())
+            {
+                LectorReclamacionesEnvioSql.LeerResultados(r, lectura.Reclamaciones);
             }
         }
 
