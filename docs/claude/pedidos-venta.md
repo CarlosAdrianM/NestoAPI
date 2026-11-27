@@ -266,3 +266,8 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - `CambiarClientePedidoRequest.Ensayo` (aditivo): calcula en seco y devuelve `Cambios` (cabecera y líneas) sin guardar nada; los portes no se calculan en
   el ensayo (aviso). Respuesta (aditivo): `Ensayo`, `SinCambiosDeImportes`, `TeniaPicking`, `Avisos`.
 - Nesto: el 409 con Codigo trae el texto para enseñarlo tal cual (hoy pinta el 400 de «quite el picking»); NestoApp no lo usa.
+
+### Modificar un pedido con la plantilla: descuento de producto de cada línea (incidencia 1504, María José, pedido 931500, 27/11/26)
+- `GET/POST api/PedidosVenta/ParaPlantilla` (`ConvertidorPedidoAPlantilla`) manda en `LineaParaPlantillaDTO.DescuentoProducto` (aditivo) el grabado en la línea de
+  pago (en una oferta, el de la de pago; 0 si solo quedó la regalada), junto a `Descuento` (sigue siendo el de LÍNEA) y `AplicarDescuento`: ahí van los de campaña y
+  el 100 % de las muestras. Nesto (`LineaParaPlantillaModel.DescuentoProducto As Decimal?`) lo usa si llega y si no hace una segunda lectura del pedido; NestoApp lo ignora.

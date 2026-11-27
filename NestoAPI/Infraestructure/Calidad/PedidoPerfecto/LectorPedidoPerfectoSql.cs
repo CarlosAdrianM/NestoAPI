@@ -57,6 +57,7 @@ SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 IF OBJECT_ID('tempdb..#p') IS NOT NULL DROP TABLE #p;
 IF OBJECT_ID('tempdb..#f') IS NOT NULL DROP TABLE #f;
+IF OBJECT_ID('tempdb..#r') IS NOT NULL DROP TABLE #r;
 SELECT c.Empresa, c.[Número] AS Pedido, CAST(CAST(c.Fecha AS date) AS datetime) AS Fecha
 INTO #p
 FROM CabPedidoVta c WITH (NOLOCK)
@@ -105,15 +106,32 @@ CROSS APPLY (
     WHERE l.Empresa = c.Empresa AND l.[Número] = c.[Número]) a;
 ";
 
-        /// <summary>Resultados 2-4: copias (otro pedido lo tiene de PedidoOrigen), facturas rectificadas e impagados (como ModeloImpagados).</summary>
+        /// <summary>
+        /// Resultados 2-4: (2) los pedidos hijos (otro pedido lo tiene de PedidoOrigen), con su marca de nota de entrega y si su comentario es
+        /// el de la nota de lo pendiente de ESTE pedido (respaldo); (3) las facturas rectificadas, con las unidades facturadas de producto del
+        /// pedido en esa factura y las rectificadas (por la línea original, FacturaOriginalLinea = Nº Orden; las que no casan con ninguna línea
+        /// de la factura, aparte); (4) impagados (como ModeloImpagados).
+        /// </summary>
         internal const string SQL_RECTIFICATIVAS_IMPAGADOS = @"
-SELECT DISTINCT o.PedidoOrigen AS Pedido
+SELECT o.PedidoOrigen AS Pedido, CAST(o.NotaEntrega AS bit) AS NotaEntrega,
+       CAST(CASE WHEN o.Comentarios LIKE N'%" + NotasEntrega.CreadorNotaEntregaPendiente.PREFIJO_COMENTARIO + @"' + CAST(o.PedidoOrigen AS nvarchar(12)) + N' %' THEN 1 ELSE 0 END AS bit) AS ComentarioDeNota
 FROM CabPedidoVta o WITH (NOLOCK)
 INNER JOIN #p p ON p.Empresa = o.Empresa AND p.Pedido = o.PedidoOrigen;
-SELECT DISTINCT f.Pedido
-FROM #f f
-INNER JOIN LinFacturaVtaRectificacion r WITH (NOLOCK) ON r.Empresa = f.Empresa AND r.FacturaOriginalNumero = f.Factura
-WHERE r.NumeroFactura <> f.Factura;
+SELECT r.Empresa, r.Pedido, r.Factura, r.FacturaOriginalLinea AS Linea, ABS(r.CantidadRectificada) AS Cantidad
+INTO #r
+FROM (SELECT DISTINCT f.Empresa, f.Pedido, f.Factura, x.FacturaOriginalLinea, x.CantidadRectificada, x.NumeroFactura, x.NumeroLinea
+      FROM #f f
+      INNER JOIN LinFacturaVtaRectificacion x WITH (NOLOCK) ON x.Empresa = f.Empresa AND x.FacturaOriginalNumero = f.Factura
+      WHERE x.NumeroFactura <> f.Factura) r;
+SELECT r.Pedido, RTRIM(r.Factura) AS Factura,
+       CAST(ISNULL((SELECT SUM(l.Cantidad) FROM LinPedidoVta l WITH (NOLOCK)
+                    WHERE l.Empresa = r.Empresa AND l.[Número] = r.Pedido AND l.[Nº Factura] = r.Factura AND l.TipoLinea = 1 AND l.Cantidad > 0), 0) AS decimal(18, 2)) AS Facturadas,
+       CAST(ISNULL(SUM(CASE WHEN o.[Número] = r.Pedido AND o.TipoLinea = 1 THEN r.Cantidad END), 0) AS decimal(18, 2)) AS RectificadasDelPedido,
+       CAST(ISNULL(SUM(CASE WHEN o.[Número] IS NULL THEN r.Cantidad END), 0) AS decimal(18, 2)) AS RectificadasSinLinea,
+       (SELECT COUNT(DISTINCT l.[Número]) FROM LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = r.Empresa AND l.[Nº Factura] = r.Factura) AS PedidosDeLaFactura
+FROM #r r
+LEFT JOIN LinPedidoVta o WITH (NOLOCK) ON o.Empresa = r.Empresa AND o.[Nº Factura] = r.Factura AND o.[Nº Orden] = r.Linea
+GROUP BY r.Empresa, r.Pedido, r.Factura;
 SELECT DISTINCT f.Pedido
 FROM #f f
 INNER JOIN ExtractoCliente e WITH (NOLOCK) ON e.Empresa = f.Empresa AND e.[Número] = f.Cliente AND e.[Nº Documento] = f.Factura
@@ -152,6 +170,7 @@ ORDER BY o.Id;
 ";
 
         internal const string SQL_FIN_LOTE = @"
+DROP TABLE #r;
 DROP TABLE #f;
 DROP TABLE #p;";
 
@@ -373,11 +392,23 @@ GROUP BY e.Tipo;";
                         };
                         delLote[h.Pedido] = h;
                     }
-                    // 2-4. Copias, rectificativas, impagados
+                    // 2-4. Pedidos hijos (nota de entrega o copia), facturas rectificadas, impagados
                     _ = r.NextResult();
-                    Marcar(r, delLote, h => h.TieneCopia = true);
+                    while (r.Read())
+                    {
+                        if (!r.IsDBNull(0) && delLote.TryGetValue(Convert.ToInt32(r.GetValue(0), CultureInfo.InvariantCulture), out HechosPedidoPerfecto h))
+                        {
+                            AnadirHijo(h, !r.IsDBNull(1) && r.GetBoolean(1), !r.IsDBNull(2) && r.GetBoolean(2));
+                        }
+                    }
                     _ = r.NextResult();
-                    Marcar(r, delLote, h => h.TieneRectificativa = true);
+                    while (r.Read())
+                    {
+                        if (!r.IsDBNull(0) && delLote.TryGetValue(Convert.ToInt32(r.GetValue(0), CultureInfo.InvariantCulture), out HechosPedidoPerfecto h))
+                        {
+                            AnadirFacturaRectificada(h, r.IsDBNull(1) ? null : r.GetString(1), Decimal(r, 2), Decimal(r, 3), Decimal(r, 4), Entero(r, 5));
+                        }
+                    }
                     _ = r.NextResult();
                     Marcar(r, delLote, h => h.Impagado = true);
                     // 5. Envíos
@@ -413,6 +444,33 @@ GROUP BY e.Tipo;";
                 }
             }
             pedidos.AddRange(delLote.Values.OrderBy(p => p.Pedido));
+        }
+
+        /// <summary>Lo que aporta un pedido hijo (PedidoOrigen = este): la nota de entrega de lo pendiente o una copia (puro, para los tests).</summary>
+        internal static void AnadirHijo(HechosPedidoPerfecto h, bool notaEntrega, bool comentarioDeNota)
+        {
+            if (ReglaPedidoPerfecto.EsNotaEntregaDeLoPendiente(notaEntrega, comentarioDeNota))
+            {
+                h.TieneNotaEntregaPendiente = true;
+            }
+            else
+            {
+                h.TieneCopia = true;
+            }
+        }
+
+        /// <summary>Lo que aporta una factura rectificada del pedido (puro, para los tests).</summary>
+        internal static void AnadirFacturaRectificada(HechosPedidoPerfecto h, string factura, decimal facturadas, decimal rectificadasDelPedido,
+            decimal rectificadasSinLinea, int pedidosDeLaFactura)
+        {
+            h.FacturasRectificadas.Add(new FacturaRectificadaPedidoPerfecto
+            {
+                Factura = factura?.Trim(),
+                UnidadesFacturadas = facturadas,
+                UnidadesRectificadasDelPedido = rectificadasDelPedido,
+                UnidadesRectificadasSinLinea = rectificadasSinLinea,
+                PedidosDeLaFactura = pedidosDeLaFactura
+            });
         }
 
         /// <summary>Lo que aporta un envío a los hechos del pedido (puro, para los tests).</summary>
@@ -458,6 +516,8 @@ GROUP BY e.Tipo;";
                 }
             }
         }
+
+        private static decimal Decimal(SqlDataReader r, int i) => r.IsDBNull(i) ? 0 : Convert.ToDecimal(r.GetValue(i), CultureInfo.InvariantCulture);
 
         private static int Entero(SqlDataReader r, int i) => r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i), CultureInfo.InvariantCulture);
 

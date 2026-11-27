@@ -42,8 +42,8 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         [MotivoPedidoPerfecto("No se cobró al contado (plazos de pago que no son contado ni prepago).", esError: false)]
         NoCobradoAlContado = 5,
 
-        [MotivoPedidoPerfecto("Tiene una rectificativa, un abono o una copia (otro pedido lo tiene de pedido de origen o su factura está rectificada).")]
-        TieneRectificativaOAbono = 6,
+        // 6 era TieneRectificativaOAbono: se partió en EntregaIncompleta, FacturaRectificadaEntera, FacturaRectificadaEnParte y
+        // TieneCopia (Carlos 27/11/26). El número no se reutiliza.
 
         [MotivoPedidoPerfecto("Algún efecto de sus facturas se devolvió (impagado).")]
         Impagado = 7,
@@ -61,7 +61,19 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         EntregaIncompletaDelReparto = 11,
 
         [MotivoPedidoPerfecto("Se pidió cambiar algo cuando ya tenía picking (el modo de entrega, o añadir líneas que acabaron en un pedido nuevo).")]
-        PidioCambiarAlgoConPicking = 12
+        PidioCambiarAlgoConPicking = 12,
+
+        [MotivoPedidoPerfecto("Entrega incompleta: se hizo el albarán (y se facturó entero) pero quedó algo pendiente de entregar, que va en una nota de entrega aparte.")]
+        EntregaIncompleta = 13,
+
+        [MotivoPedidoPerfecto("Se rectificó entera alguna de sus facturas (se abonaron todas las unidades de producto que se le facturaron).")]
+        FacturaRectificadaEntera = 14,
+
+        [MotivoPedidoPerfecto("Se rectificó en parte alguna de sus facturas (se abonaron unidades, pero no todas).")]
+        FacturaRectificadaEnParte = 15,
+
+        [MotivoPedidoPerfecto("Otro pedido lo tiene de pedido de origen y no es una nota de entrega de lo pendiente.", esError: false)]
+        TieneCopia = 16
     }
 
     public static class InfoMotivosPedidoPerfecto
@@ -145,8 +157,12 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         public int LineasApp { get; set; }
         public int LineasCursos { get; set; }
 
+        /// <summary>Otro pedido con PedidoOrigen = este que es la nota de entrega de lo pendiente (#542): <see cref="ReglaPedidoPerfecto.EsNotaEntregaDeLoPendiente"/>.</summary>
+        public bool TieneNotaEntregaPendiente { get; set; }
+        /// <summary>Otro pedido con PedidoOrigen = este que NO es una nota de entrega de lo pendiente (informativo).</summary>
         public bool TieneCopia { get; set; }
-        public bool TieneRectificativa { get; set; }
+        /// <summary>Sus facturas que son FacturaOriginalNumero de alguna rectificativa, con las unidades de cada una.</summary>
+        public List<FacturaRectificadaPedidoPerfecto> FacturasRectificadas { get; set; } = new List<FacturaRectificadaPedidoPerfecto>();
         public bool Impagado { get; set; }
 
         /// <summary>Envíos del pedido que han salido (Estado ≥ 1).</summary>
@@ -168,6 +184,20 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
         public bool PickingQuitado { get; set; }
         /// <summary>Tipos de dbo.CalidadEventos apuntados con este pedido.</summary>
         public HashSet<string> EventosCalidad { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Una factura del pedido que tiene rectificativa (LinFacturaVtaRectificacion.FacturaOriginalNumero), con sus unidades.</summary>
+    public class FacturaRectificadaPedidoPerfecto
+    {
+        public string Factura { get; set; }
+        /// <summary>Unidades de producto (TipoLinea 1, Cantidad &gt; 0) de ESTE pedido en esa factura.</summary>
+        public decimal UnidadesFacturadas { get; set; }
+        /// <summary>Unidades rectificadas cuya línea original (FacturaOriginalLinea = Nº Orden) es una línea de producto de este pedido en esa factura.</summary>
+        public decimal UnidadesRectificadasDelPedido { get; set; }
+        /// <summary>Unidades rectificadas de esa factura cuya línea original no es ninguna línea de la factura (rastro antiguo o mal enlazado).</summary>
+        public decimal UnidadesRectificadasSinLinea { get; set; }
+        /// <summary>Cuántos pedidos distintos lleva la factura (las «sin línea» solo se le atribuyen al pedido si es el único).</summary>
+        public int PedidosDeLaFactura { get; set; }
     }
 
     /// <summary>Lo que no depende del pedido: hoy, los festivos y desde cuándo hay rastro de cada cosa (null = no hay).</summary>
@@ -337,8 +367,13 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
             // 5. Contado (informativo)
             Poner(MotivoPedidoPerfecto.NoCobradoAlContado, string.IsNullOrWhiteSpace(h.PlazosPago) ? (bool?)null : !EsContado(h.PlazosPago));
 
-            // 6. Rectificativa, abono o copia
-            Poner(MotivoPedidoPerfecto.TieneRectificativaOAbono, h.TieneCopia || h.TieneRectificativa);
+            // 6. Antes «rectificativa, abono o copia», partido en cuatro (Carlos 27/11/26). Los tres primeros son error, como lo era el antiguo.
+            Poner(MotivoPedidoPerfecto.EntregaIncompleta, h.TieneNotaEntregaPendiente);
+            List<FacturaRectificadaPedidoPerfecto> rectificadas = h.FacturasRectificadas ?? new List<FacturaRectificadaPedidoPerfecto>();
+            bool entera = rectificadas.Any(EsRectificadaEntera);
+            Poner(MotivoPedidoPerfecto.FacturaRectificadaEntera, entera);
+            Poner(MotivoPedidoPerfecto.FacturaRectificadaEnParte, !entera && rectificadas.Count > 0);
+            Poner(MotivoPedidoPerfecto.TieneCopia, h.TieneCopia);
 
             // 7. Impagado
             Poner(MotivoPedidoPerfecto.Impagado, h.Impagado);
@@ -376,6 +411,21 @@ namespace NestoAPI.Infraestructure.Calidad.PedidoPerfecto
             evaluacion.Motivos.Sort();
             return evaluacion;
         }
+
+        /// <summary>
+        /// ¿El pedido hijo (PedidoOrigen = el evaluado) es la nota de entrega de lo pendiente? La marca firme es <c>NotaEntrega</c> = 1 del hijo:
+        /// el único sitio que rellena PedidoOrigen es <c>CreadorNotaEntregaPendiente</c> (#542), y siempre con NotaEntrega = 1 (la copia de
+        /// pedidos NO lo rellena). El comentario «NOTA DE ENTREGA: pendiente de entregar del pedido N» que deja, solo como respaldo.
+        /// </summary>
+        public static bool EsNotaEntregaDeLoPendiente(bool notaEntrega, bool comentarioDeNotaDelPedido) => notaEntrega || comentarioDeNotaDelPedido;
+
+        /// <summary>Unidades rectificadas que se le atribuyen al pedido en esa factura: las de sus líneas y, si la factura es solo suya, las sin línea.</summary>
+        public static decimal UnidadesRectificadas(FacturaRectificadaPedidoPerfecto f) =>
+            f == null ? 0 : f.UnidadesRectificadasDelPedido + (f.PedidosDeLaFactura <= 1 ? f.UnidadesRectificadasSinLinea : 0);
+
+        /// <summary>Entera: unidades rectificadas ≥ unidades de producto facturadas en esa factura para ese pedido (y alguna facturada).</summary>
+        public static bool EsRectificadaEntera(FacturaRectificadaPedidoPerfecto f) =>
+            f != null && f.UnidadesFacturadas > 0 && UnidadesRectificadas(f) >= f.UnidadesFacturadas;
 
         /// <summary>El día desde el que se cuenta: el del pedido o, si el cliente pidió una fecha de entrega posterior, esa.</summary>
         public static DateTime Referencia(HechosPedidoPerfecto h)

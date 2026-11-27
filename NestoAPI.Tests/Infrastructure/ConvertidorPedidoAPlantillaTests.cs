@@ -52,6 +52,71 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // Incidencia 1504 (María José, pedido 931500, 27/11/26): «Modificar con plantilla» pintaba 0 % y totales sin descontar
+        // porque ParaPlantilla solo mandaba el descuento de línea; los de campaña y el 100 % de las muestras van en DescuentoProducto.
+        [TestMethod]
+        public void Convertir_LineaConDescuentoDeCampana_LlevaElDescuentoProducto()
+        {
+            LineaPedidoVentaDTO linea = Linea(1, "41938", 2, 20M);
+            linea.DescuentoProducto = .30M;
+            linea.AplicarDescuento = true;
+
+            LineaParaPlantillaDTO resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(linea)).Lineas.Single();
+
+            Assert.AreEqual(0M, resultado.Descuento, "Descuento sigue siendo el de línea");
+            Assert.AreEqual(.30M, resultado.DescuentoProducto);
+            Assert.IsTrue(resultado.AplicarDescuento);
+        }
+
+        [TestMethod]
+        public void Convertir_Muestra_LlevaElDescuentoProductoDel100()
+        {
+            LineaPedidoVentaDTO muestra = Linea(1, "44206", 4, .25M);
+            muestra.DescuentoProducto = 1M;
+            muestra.AplicarDescuento = true;
+
+            LineaParaPlantillaDTO resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(muestra)).Lineas.Single();
+
+            Assert.AreEqual(0M, resultado.Descuento);
+            Assert.AreEqual(1M, resultado.DescuentoProducto);
+            Assert.IsTrue(resultado.AplicarDescuento);
+            Assert.AreEqual(.25M, resultado.Precio);
+        }
+
+        [TestMethod]
+        public void Convertir_LineaSinAplicarDescuento_LlevaElDeLineaYElDeProductoGrabado()
+        {
+            LineaPedidoVentaDTO linea = Linea(1, "38697", 6, 10M, descuento: .10M);
+            linea.DescuentoProducto = 0M;
+            linea.AplicarDescuento = false;
+
+            LineaParaPlantillaDTO resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(linea)).Lineas.Single();
+
+            Assert.AreEqual(.10M, resultado.Descuento);
+            Assert.AreEqual(0M, resultado.DescuentoProducto);
+            Assert.IsFalse(resultado.AplicarDescuento);
+        }
+
+        [TestMethod]
+        public void Convertir_LineaConOferta_LlevaElDescuentoProductoDeLaLineaDePago()
+        {
+            LineaPedidoVentaDTO pago = Linea(2, "42276", 6, 6.40M, oferta: 7);
+            pago.DescuentoProducto = .15M;
+            pago.AplicarDescuento = true;
+            LineaPedidoVentaDTO gratis = Linea(3, "42276", 1, 6.40M, descuento: 1, oferta: 7);
+            gratis.DescuentoProducto = 0M;
+            gratis.AplicarDescuento = true;
+
+            LineaParaPlantillaDTO resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(pago, gratis)).Lineas.Single();
+
+            Assert.AreEqual(2, resultado.IdLineaPago);
+            Assert.AreEqual(6, resultado.Cantidad);
+            Assert.AreEqual(1, resultado.CantidadOferta);
+            Assert.AreEqual(0M, resultado.Descuento);
+            Assert.AreEqual(.15M, resultado.DescuentoProducto);
+            Assert.IsTrue(resultado.AplicarDescuento);
+        }
+
         // Sugerencia 756 (Sancho, pedido 929207, 23/10/26): al modificar con la plantilla, las líneas que ya tenía el pedido llegaban
         // sin grupo y no contaban en la base bonificable de Ganavisiones (81,17 € en vez de 264,08 €: «ha superado los Ganavisiones»).
         [TestMethod]

@@ -35,6 +35,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         internal const string VALOR_ENCENDIDO = "1";
         internal const string MARCA = "NestoAPI#542";
 
+        /// <summary>Cómo empieza la etiqueta del comentario de la nota (el pedido perfecto de #914 la usa como respaldo de NotaEntrega).</summary>
+        internal const string PREFIJO_COMENTARIO = "NOTA DE ENTREGA: pendiente de entregar del pedido ";
+
         /// <summary>
         /// NestoAPI#582: lo que se deja en carpeta casi nunca se entrega el mismo día (y a veces ni se sabe cuándo).
         /// La nota nace con esta fecha para que no entre en el picking hasta que alguien ponga la de verdad (Nesto la
@@ -282,7 +285,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
 
         internal static string ComentarioNota(string comentarioOriginal, int pedido, int albaran, bool conFecha = false)
         {
-            string etiqueta = $"NOTA DE ENTREGA: pendiente de entregar del pedido {pedido} (albarán {albaran})\r\n" +
+            string etiqueta = $"{PREFIJO_COMENTARIO}{pedido} (albarán {albaran})\r\n" +
                 (conFecha ? AVISO_SERVIR_AL_HABER_STOCK : AVISO_SIN_FECHA);
             string original = comentarioOriginal?.Trim();
             return string.IsNullOrEmpty(original) ? etiqueta : original + "\r\n" + etiqueta;
