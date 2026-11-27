@@ -368,10 +368,10 @@ namespace NestoAPI.Infraestructure.Cupones
         /// puede superar al pedido». Los cupones que ya estaban aplicados en su pedido ANTES de este día (Cupones.FechaUso anterior)
         /// conservan en ESE pedido el mínimo de antes (<see cref="PedidoMinimoSinTope"/>), para no bloquear a Almacén al modificarlo.
         /// </summary>
-        public static readonly DateTime INICIO_TOPE_IMPORTE_CUPON = new DateTime(2026, 11, 28);
+        public static readonly DateTime INICIO_TOPE_IMPORTE_CUPON = new DateTime(2026, 11, 27);
 
         /// <summary>
-        /// El mínimo guardado o el de la regla antigua, SIN el tope del importe del cupón: lo de antes del 28/11/26. Desde el
+        /// El mínimo guardado o el de la regla antigua, SIN el tope del importe del cupón: lo de antes del 27/11/26. Desde el
         /// 29/10/26 lo define el evento y se guarda en el cupón al emitirlo (<paramref name="pedidoMinimoGuardado"/>,
         /// Cupones.PedidoMinimo; 0 = cualquier importe). Los manuales lo guardan desde el 29/10/26 (200 € si no se indica). Sin él
         /// (NULL: cupones de antes del script), la regla de antes: el doble del cupón.
@@ -412,7 +412,7 @@ namespace NestoAPI.Infraestructure.Cupones
             cupon != null && pedido != 0 && cupon.Estado?.Trim() == EstadosCupon.USADO && cupon.UsadoEnPedido == pedido ? cupon.FechaUso : null;
 
         /// <summary>
-        /// El mínimo del cupón en <paramref name="pedido"/>: si ya estaba aplicado en él desde antes del 28/11/26, el de antes; si
+        /// El mínimo del cupón en <paramref name="pedido"/>: si ya estaba aplicado en él desde antes del 27/11/26, el de antes; si
         /// no, el de hoy (<see cref="PedidoMinimo(CuponLeido)"/>).
         /// </summary>
         public static decimal PedidoMinimoEnElPedido(CuponLeido cupon, int pedido) =>
@@ -601,7 +601,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 }
             }
             // 27/11/26: añadirlo (o un pedido nuevo), el mínimo de hoy (nunca menos que el cupón); si ya estaba en este pedido
-            // desde antes del 28/11/26, el de entonces (el pedido 931694 se sigue pudiendo modificar)
+            // desde antes del 27/11/26, el de entonces (el pedido 931694 se sigue pudiendo modificar)
             decimal minimo = yaEnEstePedido ? PedidoMinimoEnElPedido(cupon, pedido) : PedidoMinimo(cupon);
             if (comprobarMinimo && minimo > 0 && totalComputable < minimo)
             {
@@ -666,7 +666,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 Cliente = c.Cliente?.Trim(),
                 Contacto = c.Contacto?.Trim(),
                 Importe = c.Importe,
-                // Usado: el de su pedido (si se aplicó antes del 28/11/26, el de entonces); si no, el de hoy
+                // Usado: el de su pedido (si se aplicó antes del 27/11/26, el de entonces); si no, el de hoy
                 PedidoMinimo = estado == EstadosCupon.USADO ? PedidoMinimoEnElPedido(c, c.UsadoEnPedido ?? 0) : PedidoMinimo(c),
                 Origen = c.Origen?.Trim(),
                 EventoId = c.EventoId,

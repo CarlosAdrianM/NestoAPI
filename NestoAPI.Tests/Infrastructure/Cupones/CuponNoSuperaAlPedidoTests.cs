@@ -17,7 +17,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
     /// <summary>
     /// Carlos (27/11/26, «Sí, cierra el hueco»): un cupón nunca puede superar al pedido. El pedido mínimo efectivo es el mayor entre
     /// el guardado (o el doble si es NULL) y el propio importe del cupón. Caso real: EV-2611-WGMB, de 100 €, en el pedido 931694 con
-    /// 62,87 € de productos IVA incluido (quedaba en −28,65 €). Los pedidos que ya lo llevaban desde antes del 28/11/26 se pueden
+    /// 62,87 € de productos IVA incluido (quedaba en −28,65 €). Los pedidos que ya lo llevaban desde antes del 27/11/26 se pueden
     /// seguir modificando con el mínimo de entonces.
     /// </summary>
     [TestClass]
@@ -125,11 +125,11 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         }
 
         [TestMethod]
-        public void PedidoMinimo_AplicadoAntesDel28_11_ElDeEntonces_YDespuesElDeHoy()
+        public void PedidoMinimo_AplicadoAntesDel27_11_ElDeEntonces_YDespuesElDeHoy()
         {
             Assert.AreEqual(0M, ReglasCupon.PedidoMinimo(100, 0, new DateTime(2026, 11, 26, 18, 0, 0)));
-            Assert.AreEqual(0M, ReglasCupon.PedidoMinimo(100, 0, new DateTime(2026, 11, 27, 23, 59, 0)));
-            Assert.AreEqual(100M, ReglasCupon.PedidoMinimo(100, 0, new DateTime(2026, 11, 28)));
+            Assert.AreEqual(0M, ReglasCupon.PedidoMinimo(100, 0, new DateTime(2026, 11, 26, 23, 59, 0)));
+            Assert.AreEqual(100M, ReglasCupon.PedidoMinimo(100, 0, new DateTime(2026, 11, 27)));
             Assert.AreEqual(100M, ReglasCupon.PedidoMinimo(100, 0, null), "Sin fecha de uso (nuevo en el pedido): el de hoy");
             Assert.AreEqual(200M, ReglasCupon.PedidoMinimo(100, null, new DateTime(2026, 11, 20)), "El doble de los antiguos sigue igual");
         }
