@@ -379,8 +379,8 @@ namespace NestoAPI.Models.Picking
         {
             // NestoAPI#613 (29/10/26): con su pedido mínimo (APPLY_PEDIDO_MINIMO: NULL si todavía no existe la columna)
             return db.Database.SqlQuery<CuponUsadoPicking>(
-                "IF OBJECT_ID('dbo.Cupones') IS NULL SELECT CAST(0 AS decimal(10,2)) AS Importe, CAST(NULL AS decimal(10,2)) AS PedidoMinimo WHERE 1 = 0 " +
-                "ELSE SELECT TOP 1 c.Importe, pmc.Valor AS PedidoMinimo FROM dbo.Cupones c" + Infraestructure.Cupones.RepositorioCupones.APPLY_PEDIDO_MINIMO +
+                "IF OBJECT_ID('dbo.Cupones') IS NULL SELECT CAST(0 AS decimal(10,2)) AS Importe, CAST(NULL AS decimal(10,2)) AS PedidoMinimo, CAST(NULL AS datetime) AS FechaUso WHERE 1 = 0 " +
+                "ELSE SELECT TOP 1 c.Importe, pmc.Valor AS PedidoMinimo, c.FechaUso FROM dbo.Cupones c" + Infraestructure.Cupones.RepositorioCupones.APPLY_PEDIDO_MINIMO +
                 " WHERE c.UsadoEnPedido = @p0 AND c.Estado = 'Usado'",
                 new System.Data.SqlClient.SqlParameter("@p0", pedido)).FirstOrDefault();
         }

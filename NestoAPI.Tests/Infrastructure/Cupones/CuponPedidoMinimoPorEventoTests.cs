@@ -44,7 +44,8 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         [TestMethod]
         public void PedidoMinimo_ElGuardadoManda_YSinGuardarElDobleDeAntes()
         {
-            Assert.AreEqual(0M, ReglasCupon.PedidoMinimo(Cupon(0)), "Evento sin mínimo: cualquier importe");
+            Assert.AreEqual(100M, ReglasCupon.PedidoMinimo(Cupon(0)), "Evento sin mínimo: desde el 27/11/26, el propio cupón");
+            Assert.AreEqual(0M, ReglasCupon.PedidoMinimoSinTope(100, 0), "Sin el tope, el del evento");
             Assert.AreEqual(200M, ReglasCupon.PedidoMinimo(Cupon(200)), "El del evento, no el doble del cupón");
             Assert.AreEqual(200M, ReglasCupon.PedidoMinimo(Cupon(null)), "Cupón de antes del script: el doble (100 € → 200 €)");
             Assert.AreEqual(150M, ReglasCupon.PedidoMinimo(Cupon(150, importe: 50)), "Aunque no sea el doble");
@@ -95,10 +96,11 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         // ---------------- Uso en el pedido ----------------
 
         [TestMethod]
-        public void Usar_ConMinimoCero_CualquierImporteVale()
+        public void Usar_ConMinimoCero_PideElImporteDelCupon()
         {
-            ReglasCupon.Comprobar(Cupon(0), "1", PEDIDO, CLIENTE, HOY, false, 0M);
-            ReglasCupon.Comprobar(Cupon(0), "1", PEDIDO, CLIENTE, HOY, false, 12.5M);
+            var ex = Assert.ThrowsException<NestoBusinessException>(() => ReglasCupon.Comprobar(Cupon(0), "1", PEDIDO, CLIENTE, HOY, false, 12.5M));
+            Assert.AreEqual(ReglasCupon.ERROR_MINIMO, ex.Context.ErrorCode);
+            ReglasCupon.Comprobar(Cupon(0), "1", PEDIDO, CLIENTE, HOY, false, 100M);
         }
 
         [TestMethod]
@@ -123,21 +125,22 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         // ---------------- Textos ----------------
 
         [TestMethod]
-        public void Textos_ConMinimoCero_NoHablanDePedidoMinimo()
+        public void Textos_ConMinimoCero_DicenQueElPedidoTieneQueLlegarAlCupon()
         {
+            // 27/11/26: con mínimo 0 en el evento, el mínimo es el propio cupón (antes: «en un pedido de productos», sin cifra)
             CuponLeido cupon = Cupon(0);
             CuponDTO dto = ReglasCupon.ADTO(cupon, HOY, PRODUCTO);
-            Assert.AreEqual(0M, dto.PedidoMinimo);
-            Assert.AreEqual("Tiene un cupón de 100,00 € (EV-2610-7K3Q) para un pedido de productos, hasta el 30/04/2027.", dto.Mensaje);
+            Assert.AreEqual(100M, dto.PedidoMinimo);
+            Assert.AreEqual("Tiene un cupón de 100,00 € (EV-2610-7K3Q) para un pedido de al menos 100,00 € de productos " +
+                "(el cupón no puede superar al pedido), hasta el 30/04/2027.", dto.Mensaje);
 
             NotificacionPushDTO push = AvisadorCupones.Notificacion(cupon, "Luna");
-            Assert.IsFalse(push.Cuerpo.Contains("al menos"), push.Cuerpo);
-            StringAssert.EndsWith(push.Cuerpo, "en un pedido de productos.");
+            StringAssert.EndsWith(push.Cuerpo, "en un pedido de al menos 100,00 € de productos (el cupón no puede superar al pedido).");
 
             using (MailMessage mail = AvisadorCupones.Correo(cupon, "Luna", "luna@example.com"))
             {
-                Assert.IsFalse(mail.Body.Contains("al menos"), "Sin cifra de mínimo");
-                StringAssert.Contains(mail.Body, "Se usa una sola vez, en un pedido de productos");
+                StringAssert.Contains(mail.Body, "Se usa una sola vez y entero, en un pedido de productos de al menos 100,00 € " +
+                    "(el importe del cupón, IVA incluido; no cuentan cursos ni portes): el cupón no puede superar al pedido. Uno por pedido.");
             }
         }
 
@@ -177,7 +180,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         [TestMethod]
         public void Espejo_MinimoDelCupon()
         {
-            Assert.AreEqual("0.00", MinimoEnPrestashop(0), "Sin mínimo");
+            Assert.AreEqual("100.00", MinimoEnPrestashop(0), "Sin mínimo en el evento: el propio cupón (27/11/26)");
             Assert.AreEqual("200.00", MinimoEnPrestashop(200));
             Assert.AreEqual("200.00", MinimoEnPrestashop(null), "Cupón de antes: el doble");
         }
@@ -185,7 +188,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         // ---------------- Picking ----------------
 
         [TestMethod]
-        public void Picking_ConMinimoCero_ElCuponSaleEnLaPrimeraEntrega()
+        public void Picking_ConMinimoCero_AplicadoAntesDel28_11_ElCuponSaleEnLaPrimeraEntregaComoAntes()
         {
             var pedido = new PedidoPicking
             {
@@ -204,7 +207,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             };
 
             CuponesPicking.Rellenar(new List<PedidoPicking> { pedido }, PRODUCTO, (e, c) => productos, p => new List<LineaEntregadaCupon>(),
-                p => new CuponUsadoPicking { Importe = 100, PedidoMinimo = 0 });
+                p => new CuponUsadoPicking { Importe = 100, PedidoMinimo = 0, FechaUso = new DateTime(2026, 11, 20) });
             GestorReservasStock.ReservarCupones(new List<PedidoPicking> { pedido });
 
             Assert.AreEqual(0M, pedido.Cupon.PedidoMinimo);

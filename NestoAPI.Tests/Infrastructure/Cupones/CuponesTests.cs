@@ -701,7 +701,8 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             await servicio.CrearManual(new CrearCuponManualDTO { Cliente = "15191", Importe = 30, Motivo = "Compensación", PedidoMinimo = 0 }, direccion);
 
             Assert.AreEqual(0M, insertado().PedidoMinimo);
-            Assert.AreEqual(0M, ReglasCupon.PedidoMinimo(30, insertado().PedidoMinimo));
+            Assert.AreEqual(0M, ReglasCupon.PedidoMinimoSinTope(30, insertado().PedidoMinimo));
+            Assert.AreEqual(30M, ReglasCupon.PedidoMinimo(30, insertado().PedidoMinimo), "27/11/26: nunca menos que el propio cupón");
         }
 
         [TestMethod]

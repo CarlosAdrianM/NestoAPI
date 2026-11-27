@@ -125,7 +125,8 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <summary>
         /// El cart_rule del cupón (épica #610 y #614): de una vez (quantity 1, quantity_per_user 1, sin uso parcial, que no deja otro
         /// vale con lo que sobre), solo para su customer, importe IVA incluido, válido del día del evento a la caducidad, pedido
-        /// mínimo el del cupón (<see cref="ReglasCupon.PedidoMinimo(CuponLeido)"/>: el del evento, 0 = sin mínimo) IVA incluido sin
+        /// mínimo el del cupón (<see cref="ReglasCupon.PedidoMinimo(CuponLeido)"/>: el del evento, nunca menos que el propio cupón desde el
+        /// 27/11/26) IVA incluido sin
         /// portes. Combina con otras reglas (el cheque regalo NVCHEQUE-*: Carlos, 15/10/26).
         /// Desactivado: active 0 y quantity 0. Con <paramref name="idCartRule"/>, para el PUT (el recurso entero).
         /// <para>Restricción a productos (Carlos, 22/10/26: que no aplique sobre los cursos ni cuenten para el mínimo): NO se puede

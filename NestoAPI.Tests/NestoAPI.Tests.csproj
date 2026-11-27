@@ -888,6 +888,7 @@
     <Compile Include="Infrastructure\ProductosIncompletos\GuardaAlmacenIncompletosTests.cs" />
     <Compile Include="Infrastructure\Cupones\AdelantarCuponTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponPedidoMinimoPorEventoTests.cs" />
+    <Compile Include="Infrastructure\Cupones\CuponNoSuperaAlPedidoTests.cs" />
     <Compile Include="Infrastructure\Cupones\EspejoCuponesPrestashopTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTiendaPrestashopTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesChequeRegaloNoAcumulablesTests.cs" />

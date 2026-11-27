@@ -17,6 +17,11 @@ namespace NestoAPI.Models.Picking
     {
         public decimal Importe { get; set; }
         public decimal? PedidoMinimo { get; set; }
+        /// <summary>
+        /// Cuándo se aplicó en este pedido (Cupones.FechaUso). Antes del 28/11/26, el mínimo de entonces (sin el tope del importe del
+        /// cupón, <see cref="ReglasCupon.PedidoMinimo(decimal, decimal?, DateTime?)"/>); null, el de hoy.
+        /// </summary>
+        public DateTime? FechaUso { get; set; }
     }
 
     /// <summary>
@@ -69,7 +74,7 @@ namespace NestoAPI.Models.Picking
                 }
                 pedido.Cupon = new CuponPicking
                 {
-                    PedidoMinimo = ReglasCupon.PedidoMinimo(importe, usado?.PedidoMinimo),
+                    PedidoMinimo = ReglasCupon.PedidoMinimo(importe, usado?.PedidoMinimo, usado?.FechaUso),
                     TotalComputableYaEntregado = entregadas
                         .Where(e => ReglasCupon.ComputaParaMinimo(Constantes.TiposLineaVenta.PRODUCTO, ReglasCupon.Buscar(productos, e.Producto)))
                         .Sum(e => e.Total)

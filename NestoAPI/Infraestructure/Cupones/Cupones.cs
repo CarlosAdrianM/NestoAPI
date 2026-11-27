@@ -85,7 +85,8 @@ namespace NestoAPI.Infraestructure.Cupones
         public decimal Importe { get; set; }
         /// <summary>
         /// El pedido tiene que llevar al menos esto de productos (IVA incluido). NestoAPI#613 (29/10/26): lo define el evento (0 =
-        /// cualquier importe); los cupones de antes, el doble del cupón.
+        /// cualquier importe); los cupones de antes, el doble del cupón. Desde el 27/11/26 nunca menos que el propio importe del
+        /// cupón (<see cref="ReglasCupon.PedidoMinimo(decimal, decimal?)"/>).
         /// </summary>
         public decimal PedidoMinimo { get; set; }
         public string Origen { get; set; }
@@ -211,7 +212,7 @@ namespace NestoAPI.Infraestructure.Cupones
     /// <summary>
     /// NestoAPI#613: las reglas del cupón, todas aquí y sin base de datos (decisiones de la épica #610, 08/10/26): de una vez,
     /// uno por pedido, pedido mínimo IVA incluido sin contar cursos ni portes (el del evento desde el 29/10/26, 0 por defecto; el
-    /// doble del cupón en los de antes), solo productos, convive con ofertas y descuentos (va sobre el neto), válido desde el día
+    /// doble del cupón en los de antes; desde el 27/11/26, nunca menos que el propio cupón), solo productos, convive con ofertas y descuentos (va sobre el neto), válido desde el día
     /// del evento y durante 6 meses, del mismo cliente.
     /// </summary>
     public static class ReglasCupon
@@ -363,20 +364,81 @@ namespace NestoAPI.Infraestructure.Cupones
         }
 
         /// <summary>
-        /// NestoAPI#613: EL ÚNICO SITIO que decide el pedido mínimo de un cupón (IVA incluido, solo productos). Desde el 29/10/26 lo
-        /// define el evento y se guarda en el cupón al emitirlo (<paramref name="pedidoMinimoGuardado"/>, Cupones.PedidoMinimo; 0 =
-        /// cualquier importe). Los manuales lo guardan desde el 29/10/26 (200 € si no se indica). Sin él (NULL: cupones de antes
-        /// del script), la regla de antes: el doble del cupón.
+        /// Carlos (27/11/26, cupón EV-2611-WGMB de 100 € en el pedido 931694 de 62,87 €, que quedaba en −28,65 €): «un cupón nunca
+        /// puede superar al pedido». Los cupones que ya estaban aplicados en su pedido ANTES de este día (Cupones.FechaUso anterior)
+        /// conservan en ESE pedido el mínimo de antes (<see cref="PedidoMinimoSinTope"/>), para no bloquear a Almacén al modificarlo.
         /// </summary>
-        public static decimal PedidoMinimo(decimal importe, decimal? pedidoMinimoGuardado) =>
+        public static readonly DateTime INICIO_TOPE_IMPORTE_CUPON = new DateTime(2026, 11, 28);
+
+        /// <summary>
+        /// El mínimo guardado o el de la regla antigua, SIN el tope del importe del cupón: lo de antes del 28/11/26. Desde el
+        /// 29/10/26 lo define el evento y se guarda en el cupón al emitirlo (<paramref name="pedidoMinimoGuardado"/>,
+        /// Cupones.PedidoMinimo; 0 = cualquier importe). Los manuales lo guardan desde el 29/10/26 (200 € si no se indica). Sin él
+        /// (NULL: cupones de antes del script), la regla de antes: el doble del cupón.
+        /// </summary>
+        public static decimal PedidoMinimoSinTope(decimal importe, decimal? pedidoMinimoGuardado) =>
             pedidoMinimoGuardado.HasValue
                 ? Math.Max(0, Math.Round(pedidoMinimoGuardado.Value, 2, MidpointRounding.AwayFromZero))
                 : Math.Round(importe * MULTIPLO_PEDIDO_MINIMO, 2, MidpointRounding.AwayFromZero);
 
+        /// <summary>
+        /// NestoAPI#613: EL ÚNICO SITIO que decide el pedido mínimo de un cupón (IVA incluido, solo productos: ni cursos ni portes).
+        /// Es el mayor entre <see cref="PedidoMinimoSinTope"/> (el guardado, o el doble si es NULL) y EL PROPIO IMPORTE del cupón
+        /// (Carlos, 27/11/26: un cupón se usa de una vez y entero, así que nunca puede superar al pedido; un cupón de 100 € exige
+        /// al menos 100 € de productos, valga lo que valga el mínimo del evento).
+        /// </summary>
+        public static decimal PedidoMinimo(decimal importe, decimal? pedidoMinimoGuardado) =>
+            Math.Max(PedidoMinimoSinTope(importe, pedidoMinimoGuardado), Math.Max(0, Math.Round(importe, 2, MidpointRounding.AwayFromZero)));
+
+        /// <summary>
+        /// El mínimo del cupón en el pedido donde está aplicado desde <paramref name="aplicadoEnSuPedidoEl"/> (Cupones.FechaUso):
+        /// si se aplicó antes de <see cref="INICIO_TOPE_IMPORTE_CUPON"/>, el de antes (sin el tope); si no, o sin fecha, el de hoy.
+        /// </summary>
+        public static decimal PedidoMinimo(decimal importe, decimal? pedidoMinimoGuardado, DateTime? aplicadoEnSuPedidoEl) =>
+            AplicadoAntesDelTope(aplicadoEnSuPedidoEl)
+                ? PedidoMinimoSinTope(importe, pedidoMinimoGuardado)
+                : PedidoMinimo(importe, pedidoMinimoGuardado);
+
+        public static bool AplicadoAntesDelTope(DateTime? aplicadoEnSuPedidoEl) =>
+            aplicadoEnSuPedidoEl.HasValue && aplicadoEnSuPedidoEl.Value < INICIO_TOPE_IMPORTE_CUPON;
+
+        /// <summary>El mínimo de hoy de un cupón (el que se anuncia, el del espejo de PrestaShop y el de añadirlo a un pedido).</summary>
         public static decimal PedidoMinimo(CuponLeido cupon) => cupon == null ? 0 : PedidoMinimo(cupon.Importe, cupon.PedidoMinimo);
+
+        /// <summary>
+        /// Cuándo se aplicó el cupón en <paramref name="pedido"/> (FechaUso) si está Usado en él; si no, null (es nuevo en ese pedido).
+        /// </summary>
+        public static DateTime? AplicadoEnEstePedidoEl(CuponLeido cupon, int pedido) =>
+            cupon != null && pedido != 0 && cupon.Estado?.Trim() == EstadosCupon.USADO && cupon.UsadoEnPedido == pedido ? cupon.FechaUso : null;
+
+        /// <summary>
+        /// El mínimo del cupón en <paramref name="pedido"/>: si ya estaba aplicado en él desde antes del 28/11/26, el de antes; si
+        /// no, el de hoy (<see cref="PedidoMinimo(CuponLeido)"/>).
+        /// </summary>
+        public static decimal PedidoMinimoEnElPedido(CuponLeido cupon, int pedido) =>
+            cupon == null ? 0 : PedidoMinimo(cupon.Importe, cupon.PedidoMinimo, AplicadoEnEstePedidoEl(cupon, pedido));
+
+        /// <summary>El mínimo lo pone el propio importe del cupón (el del evento, o el doble, es menor).</summary>
+        public static bool MinimoEsElImporte(decimal importe, decimal? pedidoMinimoGuardado, decimal minimo) =>
+            minimo > 0 && minimo > PedidoMinimoSinTope(importe, pedidoMinimoGuardado);
+
+        public static bool MinimoEsElImporte(CuponLeido cupon, decimal minimo) =>
+            cupon != null && MinimoEsElImporte(cupon.Importe, cupon.PedidoMinimo, minimo);
 
         /// <summary>NestoAPI#613: «de al menos 200,00 € de productos» o, sin mínimo (0), «de productos» (los textos no hablan de mínimo).</summary>
         public static string TextoPedidoMinimo(decimal minimo) => minimo > 0 ? $"de al menos {Euros(minimo)} € de productos" : "de productos";
+
+        /// <summary>
+        /// Lo mismo con el porqué cuando el mínimo es el propio importe (27/11/26): «de al menos 100,00 € de productos (el cupón
+        /// no puede superar al pedido)».
+        /// </summary>
+        public static string TextoPedidoMinimo(CuponLeido cupon)
+        {
+            decimal minimo = PedidoMinimo(cupon);
+            return MinimoEsElImporte(cupon, minimo)
+                ? $"{TextoPedidoMinimo(minimo)} (el cupón no puede superar al pedido)"
+                : TextoPedidoMinimo(minimo);
+        }
 
         public static DateTime Caducidad(DateTime validoDesde) => validoDesde.Date.AddMonths(MESES_VALIDEZ);
 
@@ -538,23 +600,45 @@ namespace NestoAPI.Infraestructure.Cupones
                         throw Error(ERROR_TODAVIA_NO, $"El cupón {codigo} vale desde el {Fecha(cupon.ValidoDesde)}.", empresa, pedido, cliente);
                 }
             }
-            decimal minimo = PedidoMinimo(cupon);
+            // 27/11/26: añadirlo (o un pedido nuevo), el mínimo de hoy (nunca menos que el cupón); si ya estaba en este pedido
+            // desde antes del 28/11/26, el de entonces (el pedido 931694 se sigue pudiendo modificar)
+            decimal minimo = yaEnEstePedido ? PedidoMinimoEnElPedido(cupon, pedido) : PedidoMinimo(cupon);
             if (comprobarMinimo && minimo > 0 && totalComputable < minimo)
             {
                 decimal falta = minimo - totalComputable;
-                throw Error(ERROR_MINIMO, $"Para usar el cupón {codigo} de {Euros(cupon.Importe)} € el pedido tiene que ser de al menos " +
-                    $"{Euros(minimo)} € de productos (IVA incluido, sin contar cursos ni portes). Lleva {Euros(totalComputable)} €: " +
-                    $"faltan {Euros(falta)} €.", empresa, pedido, cliente,
-                    new Dictionary<string, object> { ["minimo"] = minimo, ["totalComputable"] = totalComputable, ["falta"] = falta });
+                bool superaAlPedido = MinimoEsElImporte(cupon, minimo);
+                string mensaje = superaAlPedido
+                    ? MensajeCuponSuperaAlPedido(codigo, cupon.Importe, totalComputable, minimo, cupon.Caducidad)
+                    : $"Para usar el cupón {codigo} de {Euros(cupon.Importe)} € el pedido tiene que ser de al menos " +
+                        $"{Euros(minimo)} € de productos (IVA incluido, sin contar cursos ni portes). Lleva {Euros(totalComputable)} €: " +
+                        $"faltan {Euros(falta)} €.";
+                throw Error(ERROR_MINIMO, mensaje, empresa, pedido, cliente,
+                    new Dictionary<string, object>
+                    {
+                        ["minimo"] = minimo,
+                        ["totalComputable"] = totalComputable,
+                        ["falta"] = falta,
+                        ["cuponSuperaAlPedido"] = superaAlPedido
+                    });
             }
         }
+
+        /// <summary>
+        /// 27/11/26: el rechazo cuando el mínimo es el propio cupón, para el mostrador: «El cupón EV-2611-WGMB es de 100,00 € y este
+        /// pedido lleva 62,87 € en productos (IVA incluido, sin contar cursos ni portes). El cupón se usa de una vez y no puede
+        /// superar al pedido: guárdelo para un pedido de 100,00 € o más. No caduca hasta el 24/05/2027.»
+        /// </summary>
+        public static string MensajeCuponSuperaAlPedido(string codigo, decimal importe, decimal totalComputable, decimal minimo, DateTime caducidad) =>
+            $"El cupón {codigo?.Trim()} es de {Euros(importe)} € y este pedido lleva {Euros(totalComputable)} € en productos " +
+            "(IVA incluido, sin contar cursos ni portes). El cupón se usa de una vez y no puede superar al pedido: guárdelo para un " +
+            $"pedido de {Euros(minimo)} € o más. No caduca hasta el {Fecha(caducidad)}.";
 
         public static string Mensaje(CuponLeido c, string estado)
         {
             switch (estado)
             {
                 case EstadosCupon.ACTIVO:
-                    return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) para un pedido {TextoPedidoMinimo(PedidoMinimo(c))}, " +
+                    return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) para un pedido {TextoPedidoMinimo(c)}, " +
                         $"hasta el {Fecha(c.Caducidad)}.";
                 case EstadosCupon.EMITIDO:
                     return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) que vale desde el {Fecha(c.ValidoDesde)} hasta el {Fecha(c.Caducidad)}.";
@@ -582,7 +666,8 @@ namespace NestoAPI.Infraestructure.Cupones
                 Cliente = c.Cliente?.Trim(),
                 Contacto = c.Contacto?.Trim(),
                 Importe = c.Importe,
-                PedidoMinimo = PedidoMinimo(c),
+                // Usado: el de su pedido (si se aplicó antes del 28/11/26, el de entonces); si no, el de hoy
+                PedidoMinimo = estado == EstadosCupon.USADO ? PedidoMinimoEnElPedido(c, c.UsadoEnPedido ?? 0) : PedidoMinimo(c),
                 Origen = c.Origen?.Trim(),
                 EventoId = c.EventoId,
                 Evento = c.Evento?.Trim(),

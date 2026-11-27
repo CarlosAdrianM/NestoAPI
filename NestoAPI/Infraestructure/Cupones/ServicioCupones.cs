@@ -1051,7 +1051,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 Titulo = $"Cupón de {ReglasCupon.Euros(cupon.Importe)} €",
                 Cuerpo = $"{quien} tiene el cupón {cupon.Codigo?.Trim()}" + (string.IsNullOrWhiteSpace(cupon.Evento) ? "" : $" por «{cupon.Evento.Trim()}»") +
                     $": vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)} en un pedido " +
-                    $"{ReglasCupon.TextoPedidoMinimo(ReglasCupon.PedidoMinimo(cupon))}.",
+                    $"{ReglasCupon.TextoPedidoMinimo(cupon)}.",
                 Tipo = EmisorCuponesEvento.TIPO_NOTIFICACION,
                 Datos = new Dictionary<string, string>
                 {
@@ -1090,10 +1090,19 @@ namespace NestoAPI.Infraestructure.Cupones
             cuerpo.Append("<ul>");
             cuerpo.Append($"<li>Vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)}.</li>");
             decimal minimo = ReglasCupon.PedidoMinimo(cupon);
-            cuerpo.Append(minimo > 0
-                ? $"<li>Se usa una sola vez, en un pedido de al menos {ReglasCupon.Euros(minimo)} € de productos " +
-                    "(IVA incluido; no cuentan cursos ni portes). Uno por pedido.</li>"
-                : "<li>Se usa una sola vez, en un pedido de productos (no vale para cursos ni portes). Uno por pedido.</li>");
+            if (ReglasCupon.MinimoEsElImporte(cupon, minimo))
+            {
+                // 27/11/26: el mínimo es el propio cupón (se usa entero y no puede superar al pedido)
+                cuerpo.Append($"<li>Se usa una sola vez y entero, en un pedido de productos de al menos {ReglasCupon.Euros(minimo)} € " +
+                    "(el importe del cupón, IVA incluido; no cuentan cursos ni portes): el cupón no puede superar al pedido. Uno por pedido.</li>");
+            }
+            else
+            {
+                cuerpo.Append(minimo > 0
+                    ? $"<li>Se usa una sola vez, en un pedido de al menos {ReglasCupon.Euros(minimo)} € de productos " +
+                        "(IVA incluido; no cuentan cursos ni portes). Uno por pedido.</li>"
+                    : "<li>Se usa una sola vez, en un pedido de productos (no vale para cursos ni portes). Uno por pedido.</li>");
+            }
             cuerpo.Append("<li>Si no asiste al evento, el cupón se pierde.</li>");
             cuerpo.Append("</ul>");
             if (!string.IsNullOrEmpty(urlNormas))

@@ -111,3 +111,22 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   si se anuló o ya está usado en el pedido N). UNA vez por cupón: fila «CuponAdelantadoSinAsistir» (Anterior = el código) en Modificaciones
   (`AnotarAvisoSinAsistir`, INSERT … WHERE NOT EXISTS); volver a pasar la lista no repite. El cupón no se toca más de lo de siempre (anulado si no
   estaba usado; usado, ELMAH como antes). Nunca rompe la lista.
+
+### Un cupón nunca puede superar al pedido (caso del pedido 931694, Carlos 27/11/26: «Sí, cierra el hueco»)
+- El hueco: desde el 29/10/26 el mínimo es el del evento y los 21 cupones emitidos tenían `PedidoMinimo` = 0. El cupón EV-2611-WGMB (100 €) entró en
+  el 931694 con 62,87 € de productos IVA incluido → pedido en −28,65 € (factura negativa). Otro cliente quiso lo mismo con 62,35 €.
+- LA REGLA, en el único sitio (`ReglasCupon.PedidoMinimo(importe, guardado)`): el mínimo efectivo es el MAYOR entre `PedidoMinimoSinTope` (el guardado;
+  NULL = el doble, como antes) y el propio importe del cupón. 100 € con mínimo 0 → 100 €; con mínimo del evento 150 → 150; los antiguos (doble) no cambian.
+  Sigue siendo IVA incluido y solo productos (ni cursos ni portes). La emisión no cambia: se guarda lo del evento y el tope se aplica al leer.
+- Lo heredan: POST/PUT de PedidosVenta (`ServicioCanjeCupones.Comprobar`), el carrito de TNV (`CarritoCupones`) y de PrestaShop (`ComprobarCarrito`), el
+  `CuponDTO.PedidoMinimo` y `Mensaje` (Nesto/NestoApp calculan «faltan…» con ese mínimo), el cart_rule del espejo (`minimum_amount`), el push y el correo
+  de emisión, y el picking (`CuponesPicking`: la línea del cupón solo sale con la entrega que llega al mínimo → no hay factura negativa por partes).
+- Mensaje de `CUPON_PEDIDO_MINIMO` cuando manda el importe (`MensajeCuponSuperaAlPedido`, details `cuponSuperaAlPedido` = true): «El cupón EV-2611-WGMB
+  es de 100,00 € y este pedido lleva 62,87 € en productos (IVA incluido, sin contar cursos ni portes). El cupón se usa de una vez y no puede superar al
+  pedido: guárdelo para un pedido de 100,00 € o más. No caduca hasta el 24/05/2027.» Si manda el del evento, el de siempre («Para usar el cupón…faltan…»).
+- Pedidos que YA lo llevaban: si el cupón está Usado en ESE pedido con `FechaUso` anterior a `ReglasCupon.INICIO_TOPE_IMPORTE_CUPON` (28/11/26), en ese
+  pedido vale el mínimo de antes (`PedidoMinimoEnElPedido`): el PUT del 931694 se sigue guardando, su picking sale como antes y su DTO enseña 0. Añadir un
+  cupón (línea nueva en el guardado) siempre con la regla; y uno aplicado desde el 28/11 tampoco deja bajar el pedido por debajo del cupón quitando
+  líneas (el mínimo se mira en cada guardado). Hueco aceptado: un cupón añadido el 27/11 tras publicar queda como «de antes».
+- Los cart_rule ya activos en PrestaShop siguen con su `minimum_amount` viejo hasta que se vuelvan a espejar (la tienda pregunta igualmente a
+  `ComprobarCarrito`). No se reenvió ningún correo: el texto nuevo es para los próximos.
