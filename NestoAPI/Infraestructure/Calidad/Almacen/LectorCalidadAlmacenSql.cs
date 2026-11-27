@@ -34,7 +34,36 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
 SELECT CAST(CASE WHEN OBJECT_ID('dbo.PreparacionEscaneos', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Escaneos,
        CAST(CASE WHEN OBJECT_ID('dbo.PreparacionSalidasTerminadas', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Terminadas,
        CAST(CASE WHEN OBJECT_ID('dbo.LecturasNoCasadasAlmacen', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS NoCasadas,
-       CAST(CASE WHEN OBJECT_ID('dbo.CalidadEventos', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Eventos";
+       CAST(CASE WHEN OBJECT_ID('dbo.CalidadEventos', 'U') IS NULL THEN 0 ELSE 1 END AS bit) AS Eventos,
+       CAST(CASE WHEN COL_LENGTH('dbo.PreparacionEscaneos', 'Hueco') IS NULL THEN 0 ELSE 1 END AS bit) AS Hueco";
+
+        /// <summary>
+        /// NestoAPI#914 (con la columna Hueco, Scripts/Issue914c): (1) las faltas netas del recorrido de los pickings de la tanda por producto, hueco
+        /// (el de la columna o, si no, el Motivo de la falta) y usuario; (2) las cogidas con hueco de esos productos en cualquier salida, desde el
+        /// principio de la tanda hasta <see cref="ReglaFaltaQueSiEstaba.HORAS"/> horas después del final (por IX_PreparacionEscaneos_Fecha);
+        /// (3) la primera lectura del recorrido con hueco de la tanda.
+        /// </summary>
+        internal static readonly string SQL_HUECO = @"
+IF OBJECT_ID('tempdb..#fh') IS NOT NULL DROP TABLE #fh;
+SELECT e.NumeroOrigen AS Picking, RTRIM(e.Producto) AS Producto, ISNULL(NULLIF(RTRIM(e.Hueco), ''), RTRIM(e.Motivo)) AS Hueco, RTRIM(e.Usuario) AS Usuario,
+       CAST(SUM(e.Cantidad) AS int) AS Faltas, MAX(CASE WHEN e.Cantidad > 0 THEN e.FechaEscaneo END) AS Fecha
+INTO #fh
+FROM #k k
+INNER JOIN dbo.PreparacionEscaneos e WITH (NOLOCK) ON e.Empresa = @empresa AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = k.Picking AND e.Fase = 'PICK'
+WHERE e.Metodo = 'FALTA'
+GROUP BY e.NumeroOrigen, e.Producto, ISNULL(NULLIF(RTRIM(e.Hueco), ''), RTRIM(e.Motivo)), e.Usuario
+HAVING SUM(e.Cantidad) > 0;
+SELECT f.Picking, f.Producto, f.Hueco, f.Usuario, f.Faltas, f.Fecha FROM #fh f;
+SELECT RTRIM(e.TipoOrigen) AS TipoOrigen, e.NumeroOrigen, RTRIM(e.Producto) AS Producto, RTRIM(e.Hueco) AS Hueco, RTRIM(e.Usuario) AS Usuario,
+       e.FechaEscaneo, CAST(e.Cantidad AS int) AS Cantidad
+FROM dbo.PreparacionEscaneos e WITH (NOLOCK)
+WHERE e.Empresa = @empresa AND e.Fase = 'PICK' AND e.FechaEscaneo >= @desde AND e.FechaEscaneo < DATEADD(hour, " + ReglaFaltaQueSiEstaba.HORAS + @", @hasta)
+  AND e.Metodo <> 'FALTA' AND e.Cantidad > 0 AND e.Hueco IS NOT NULL
+  AND EXISTS (SELECT 1 FROM #fh f WHERE f.Producto = RTRIM(e.Producto));
+SELECT MIN(e.FechaEscaneo) FROM dbo.PreparacionEscaneos e WITH (NOLOCK)
+WHERE e.Empresa = @empresa AND e.Fase = 'PICK' AND e.FechaEscaneo >= @desde AND e.FechaEscaneo < @hasta AND e.Hueco IS NOT NULL;
+DROP TABLE #fh;
+";
 
         /// <summary>
         /// NestoAPI#914 (27/11/26): las etiquetas del packing impresas con el packing incompleto (evento EtiquetaConPackingIncompleto), por
@@ -193,13 +222,14 @@ DROP TABLE #c;";
         }
 
         /// <summary>El lote de una tanda con las tablas opcionales que haya (público para poder lanzarlo a mano).</summary>
-        public static string Lote(bool terminadas, bool noCasadas) =>
+        public static string Lote(bool terminadas, bool noCasadas, bool hueco = false) =>
             SQL_UNIVERSO
             + string.Format(CultureInfo.InvariantCulture, SQL_PICKINGS, terminadas ? SQL_TERMINADA : SQL_SIN_TERMINADA)
             + SQL_LECTURAS_Y_LINEAS
             + (noCasadas ? SQL_NO_CASADAS : string.Empty)
             + SQL_SIN_LECTURAS
             + SQL_RECLAMACIONES
+            + (hueco ? SQL_HUECO : string.Empty)
             + SQL_FIN_LOTE;
 
         public LecturaCalidadAlmacen Leer(string empresa, DateTime desde, DateTime hasta)
@@ -208,7 +238,7 @@ DROP TABLE #c;";
             using (var conexion = new SqlConnection(cadenaConexion))
             {
                 conexion.Open();
-                bool escaneos, terminadas, noCasadas, eventos;
+                bool escaneos, terminadas, noCasadas, eventos, hueco;
                 using (var comando = new SqlCommand(SQL_TABLAS, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
                 using (SqlDataReader r = comando.ExecuteReader())
                 {
@@ -217,7 +247,9 @@ DROP TABLE #c;";
                     terminadas = r.GetBoolean(1);
                     noCasadas = r.GetBoolean(2);
                     eventos = r.GetBoolean(3);
+                    hueco = r.GetBoolean(4);
                 }
+                lectura.HayColumnaHueco = escaneos && hueco;
                 if (!eventos)
                 {
                     lectura.TablasQueFaltan.Add("dbo.CalidadEventos");
@@ -267,7 +299,7 @@ DROP TABLE #c;";
                 }
 
                 lectura.DiasReclamacionEnvio = LectorReclamacionesEnvioSql.LeerDias(conexion, empresa);
-                string lote = Lote(terminadas, noCasadas);
+                string lote = Lote(terminadas, noCasadas, lectura.HayColumnaHueco);
                 foreach (Tuple<DateTime, DateTime> tanda in LectorPedidoPerfectoSql.Tandas(desde, hasta))
                 {
                     using (var comando = new SqlCommand(lote, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
@@ -278,7 +310,7 @@ DROP TABLE #c;";
                         comando.Parameters.Add("@diasReclamacion", SqlDbType.Int).Value = lectura.DiasReclamacionEnvio;
                         using (SqlDataReader r = comando.ExecuteReader())
                         {
-                            LeerTanda(r, noCasadas, lectura);
+                            LeerTanda(r, noCasadas, lectura, lectura.HayColumnaHueco);
                         }
                     }
                 }
@@ -289,7 +321,7 @@ DROP TABLE #c;";
         }
 
         /// <summary>Los resultados de una tanda, en el orden del lote (público para los tests con resultados simulados).</summary>
-        public static void LeerTanda(DbDataReader r, bool noCasadas, LecturaCalidadAlmacen lectura)
+        public static void LeerTanda(DbDataReader r, bool noCasadas, LecturaCalidadAlmacen lectura, bool hueco = false)
         {
             // 1. Pickings
             while (r.Read())
@@ -380,6 +412,53 @@ DROP TABLE #c;";
             if (r.NextResult())
             {
                 LectorReclamacionesEnvioSql.LeerResultados(r, lectura.Reclamaciones);
+            }
+            // 11-13. Con la columna Hueco: faltas con hueco, cogidas con hueco y la primera lectura con hueco
+            if (hueco && r.NextResult())
+            {
+                LeerHueco(r, lectura);
+            }
+        }
+
+        /// <summary>Los tres resultados de <see cref="SQL_HUECO"/>, con el lector YA en el primero (público para los tests).</summary>
+        public static void LeerHueco(DbDataReader r, LecturaCalidadAlmacen lectura)
+        {
+            while (r.Read())
+            {
+                lectura.FaltasConHueco.Add(new FaltaConHuecoAlmacen
+                {
+                    Picking = Entero(r, 0),
+                    Producto = Texto(r, 1),
+                    Hueco = Texto(r, 2),
+                    Usuario = Texto(r, 3),
+                    Faltas = Entero(r, 4),
+                    Fecha = FechaNula(r, 5) ?? DateTime.MinValue
+                });
+            }
+            if (!r.NextResult())
+            {
+                return;
+            }
+            while (r.Read())
+            {
+                lectura.CogidasConHueco.Add(new CogidaConHuecoAlmacen
+                {
+                    TipoOrigen = Texto(r, 0),
+                    NumeroOrigen = Entero(r, 1),
+                    Producto = Texto(r, 2),
+                    Hueco = Texto(r, 3),
+                    Usuario = Texto(r, 4),
+                    Fecha = FechaNula(r, 5) ?? DateTime.MinValue,
+                    Cantidad = Entero(r, 6)
+                });
+            }
+            if (r.NextResult() && r.Read())
+            {
+                DateTime? primera = FechaNula(r, 0);
+                if (primera.HasValue && (!lectura.PrimeraLecturaConHueco.HasValue || primera.Value < lectura.PrimeraLecturaConHueco.Value))
+                {
+                    lectura.PrimeraLecturaConHueco = primera;
+                }
             }
         }
 

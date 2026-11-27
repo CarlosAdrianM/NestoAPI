@@ -508,6 +508,7 @@
   <ItemGroup>
     <Compile Include="Controllers\CalidadAlmacenController.cs" />
     <Compile Include="Controllers\CalidadPedidoPerfectoController.cs" />
+    <Compile Include="Infraestructure\Calidad\Almacen\FaltaQueSiEstaba.cs" />
     <Compile Include="Infraestructure\Calidad\Almacen\LectorCalidadAlmacenSql.cs" />
     <Compile Include="Infraestructure\Calidad\Almacen\ReglaCalidadAlmacen.cs" />
     <Compile Include="Infraestructure\Calidad\Almacen\ServicioCalidadAlmacen.cs" />

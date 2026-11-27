@@ -78,7 +78,12 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
 
         [IndicadorAlmacen("Abonado sin reposición: se rectificó la línea y no se le mandó nada en su lugar (devolución o abono comercial: no es del preparador).",
             AmbitoIndicadorAlmacen.Linea, esError: false)]
-        AbonadoSinReposicion = 10
+        AbonadoSinReposicion = 10,
+
+        // Corte 2 (27/11/26), con el hueco de cada lectura (Scripts/Issue914c_PreparacionEscaneosHueco.sql, Ariadna 2.48). Ver ReglaFaltaQueSiEstaba.
+        [IndicadorAlmacen("Falta que sí estaba: dio una falta en un hueco y, poco después, otra salida cogió ese producto de ese mismo hueco.",
+            AmbitoIndicadorAlmacen.Parada, esError: false)]
+        FaltaQueSiEstaba = 11
     }
 
     public static class InfoIndicadoresAlmacen
@@ -135,6 +140,9 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                     return "Solo las líneas ya facturadas: una línea sin factura todavía no se ha podido rectificar. Tampoco las que no tienen preparador.";
                 case IndicadorAlmacen.LecturaNoCasada:
                     return "Solo hay rastro desde que Ariadna apunta las lecturas que no casan (dbo.LecturasNoCasadasAlmacen, Ariadna#43).";
+                case IndicadorAlmacen.FaltaQueSiEstaba:
+                    return "Solo desde que las lecturas del recorrido guardan el hueco (columna PreparacionEscaneos.Hueco, Scripts/Issue914c_PreparacionEscaneosHueco.sql, " +
+                        "y Ariadna 2.48): antes, o sin la columna, no se sabe de qué hueco se cogió.";
                 case IndicadorAlmacen.ErrorDeEnvioReclamado:
                 case IndicadorAlmacen.ReenviadoSinCoste:
                 case IndicadorAlmacen.CambiadoPorOtro:
@@ -240,6 +248,12 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public List<EtiquetasPackingIncompletoAlmacen> EtiquetasPackingIncompleto { get; set; } = new List<EtiquetasPackingIncompletoAlmacen>();
         /// <summary>El primer evento EtiquetaConPackingIncompleto (desde cuándo hay rastro); null si ninguno o sin la tabla.</summary>
         public DateTime? PrimeraEtiquetaPackingIncompleto { get; set; }
+        /// <summary>Existe PreparacionEscaneos.Hueco (Scripts/Issue914c_PreparacionEscaneosHueco.sql).</summary>
+        public bool HayColumnaHueco { get; set; }
+        /// <summary>La primera lectura del recorrido con hueco en el periodo (desde cuándo se evalúa FaltaQueSiEstaba).</summary>
+        public DateTime? PrimeraLecturaConHueco { get; set; }
+        public List<FaltaConHuecoAlmacen> FaltasConHueco { get; set; } = new List<FaltaConHuecoAlmacen>();
+        public List<CogidaConHuecoAlmacen> CogidasConHueco { get; set; } = new List<CogidaConHuecoAlmacen>();
     }
 
     /// <summary>Las etiquetas impresas con el packing incompleto por un empaquetador (NestoAPI#914, 27/11/26).</summary>
@@ -273,12 +287,15 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public int FaltasEnPacking { get; set; }
         public HashSet<IndicadorAlmacen> Indicadores { get; } = new HashSet<IndicadorAlmacen>();
         public HashSet<IndicadorAlmacen> NoEvaluados { get; } = new HashSet<IndicadorAlmacen>();
+        /// <summary>Las cogidas posteriores en el mismo hueco que demuestran FaltaQueSiEstaba.</summary>
+        public List<FaltaQueSiEstabaAlmacen> FaltasQueSiEstaban { get; } = new List<FaltaQueSiEstabaAlmacen>();
 
         public string Clave => ReglaCalidadAlmacen.ClaveParada(Picking, Producto);
 
         /// <summary>A quién se imputa: las faltas del recorrido, a quien las dio; el descuadre, al preparador.</summary>
         public string Imputado(IndicadorAlmacen indicador) =>
-            (indicador == IndicadorAlmacen.FaltaEnPicking || indicador == IndicadorAlmacen.FaltaDeshechaPorOtro) && DioLaFalta != null
+            (indicador == IndicadorAlmacen.FaltaEnPicking || indicador == IndicadorAlmacen.FaltaDeshechaPorOtro
+             || indicador == IndicadorAlmacen.FaltaQueSiEstaba) && DioLaFalta != null
                 ? DioLaFalta
                 : Preparador;
     }
@@ -396,6 +413,12 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 .GroupBy(l => Tuple.Create(l.Picking, l.Pedido, ClaveProducto(l.Producto)))
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            // Falta que sí estaba (con el hueco de cada lectura): las pruebas, por parada
+            Dictionary<string, List<FaltaQueSiEstabaAlmacen>> siEstaban = (lectura.HayColumnaHueco
+                    ? ReglaFaltaQueSiEstaba.Evaluar(lectura.FaltasConHueco, lectura.CogidasConHueco)
+                    : new List<FaltaQueSiEstabaAlmacen>())
+                .GroupBy(x => ClaveParada(x.Falta.Picking, x.Falta.Producto)).ToDictionary(g => g.Key, g => g.ToList());
+
             // Paradas: de las lecturas del recorrido (también las dadas enteras por falta, que ya no tienen línea en el picking)
             foreach (IGrouping<string, LecturaPickingCalidadAlmacen> g in (lectura.LecturasPicking ?? new List<LecturaPickingCalidadAlmacen>())
                 .Where(l => evaluacion.Pickings.ContainsKey(l.Picking))
@@ -432,6 +455,16 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 {
                     parada.DioLaFalta = parada.DioLaFalta ?? dioLaFalta.Usuario;
                     _ = parada.Indicadores.Add(IndicadorAlmacen.FaltaDeshechaPorOtro);
+                }
+
+                if (!lectura.HayColumnaHueco || !lectura.PrimeraLecturaConHueco.HasValue || parada.FechaPicking < lectura.PrimeraLecturaConHueco.Value)
+                {
+                    _ = parada.NoEvaluados.Add(IndicadorAlmacen.FaltaQueSiEstaba);
+                }
+                else if (parada.Faltas > 0 && siEstaban.TryGetValue(parada.Clave, out List<FaltaQueSiEstabaAlmacen> pruebas))
+                {
+                    _ = parada.Indicadores.Add(IndicadorAlmacen.FaltaQueSiEstaba);
+                    parada.FaltasQueSiEstaban.AddRange(pruebas);
                 }
 
                 lineasPorParada.TryGetValue(parada.Clave, out List<LineaPreparadaAlmacen> suyas);

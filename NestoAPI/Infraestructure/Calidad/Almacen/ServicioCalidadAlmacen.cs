@@ -184,6 +184,20 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
         public int FaltasEnPacking { get; set; }
         public List<string> Indicadores { get; set; } = new List<string>();
         public List<string> NoEvaluados { get; set; } = new List<string>();
+        /// <summary>FaltaQueSiEstaba: la cogida posterior en el mismo hueco que lo demuestra.</summary>
+        public List<CogidaDespuesDeLaFaltaDTO> CogidasDespuesDeLaFalta { get; set; } = new List<CogidaDespuesDeLaFaltaDTO>();
+    }
+
+    public class CogidaDespuesDeLaFaltaDTO
+    {
+        public string Hueco { get; set; }
+        public string DioLaFalta { get; set; }
+        public DateTime FechaFalta { get; set; }
+        public string TipoOrigen { get; set; }
+        public int NumeroOrigen { get; set; }
+        public string Usuario { get; set; }
+        public DateTime Fecha { get; set; }
+        public int Cantidad { get; set; }
     }
 
     public class NoCasadasPreparadorDTO
@@ -242,9 +256,9 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 Indicador = "FaltaQueSiEstaba",
                 Que = "Una falta que quedó como falta al terminar el picking y luego el producto sí estaba en el hueco. Las lecturas del recorrido no guardan el hueco " +
                     "de lo cogido (solo el de la falta), y un recuento posterior del hueco no dice si se repuso entre medias.",
-                HaceFalta = "Guardar el hueco en cada lectura del recorrido (columna en dbo.PreparacionEscaneos, que mande Ariadna) y apuntar un evento cuando un recuento " +
-                    "del hueco (inventario por huecos o «No está» de otra salida) encuentre unidades de un producto dado por falta en ese hueco. Desde hoy se apunta " +
-                    "«NoEstabaEnSuHueco» al cambiar de hueco en el recorrido (ServicioCambioHuecoPicking / ServicioCambioHuecoReposicion), que es la otra cara."
+                HaceFalta = "Lanzar Scripts/Issue914c_PreparacionEscaneosHueco.sql (columna Hueco en dbo.PreparacionEscaneos; Ariadna 2.48 ya lo manda): con la columna " +
+                    "esta fila desaparece y se mide «FaltaQueSiEstaba» (falta en un hueco y, en las 4 horas siguientes, otra salida coge ese producto de ese hueco). " +
+                    "«NoEstabaEnSuHueco» (al cambiar de hueco en el recorrido) es la otra cara y ya se apunta."
             },
             // «ProductoOCantidadEquivocados» y «ReenvioPorPreparacion» ya se miran con los datos (Carlos 27/11/26): CambiadoPorOtro y
             // ReenviadoSinCoste, que forman ErrorDeEnvioReclamado. Una cantidad de menos que se repone sin coste es ReenviadoSinCoste.
@@ -322,6 +336,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                     return Mayor(lectura?.PrimeraLecturaPicking, lectura?.PrimeraLecturaPacking);
                 case IndicadorAlmacen.LecturaNoCasada:
                     return Mayor(lectura?.PrimeraLecturaPicking, lectura?.PrimeraNoCasada);
+                case IndicadorAlmacen.FaltaQueSiEstaba:
+                    return lectura?.HayColumnaHueco == true ? Mayor(lectura.PrimeraLecturaPicking, lectura.PrimeraLecturaConHueco) : null;
                 default:
                     return lectura?.PrimeraLecturaPicking;
             }
@@ -346,7 +362,8 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
                 Total = Preparador(null, e, noCasadas, hayNoCasadas),
                 IndicadoresOficiales = InfoIndicadoresAlmacen.Oficiales.Select(i => i.ToString()).ToList(),
                 DiasReclamacionEnvio = lectura.DiasReclamacionEnvio,
-                SinRastro = SIN_RASTRO.ToList(),
+                // NestoAPI#914: con la columna Hueco, FaltaQueSiEstaba ya se mide (indicador de parada)
+                SinRastro = SIN_RASTRO.Where(s => !(lectura.HayColumnaHueco && s.Indicador == IndicadorAlmacen.FaltaQueSiEstaba.ToString())).ToList(),
                 Aviso = lectura.TablasQueFaltan.Count == 0 ? null
                     : $"Faltan tablas ({string.Join(", ", lectura.TablasQueFaltan)}): lo que dependa de ellas no se ha podido mirar."
             };
@@ -570,7 +587,18 @@ namespace NestoAPI.Infraestructure.Calidad.Almacen
             MetidasEnPacking = p.MetidasEnPacking,
             FaltasEnPacking = p.FaltasEnPacking,
             Indicadores = p.Indicadores.OrderBy(i => (int)i).Select(i => i.ToString()).ToList(),
-            NoEvaluados = p.NoEvaluados.OrderBy(i => (int)i).Select(i => i.ToString()).ToList()
+            NoEvaluados = p.NoEvaluados.OrderBy(i => (int)i).Select(i => i.ToString()).ToList(),
+            CogidasDespuesDeLaFalta = p.FaltasQueSiEstaban.Select(x => new CogidaDespuesDeLaFaltaDTO
+            {
+                Hueco = x.Falta.Hueco,
+                DioLaFalta = ReglaCalidadAlmacen.Persona(x.Falta.Usuario),
+                FechaFalta = x.Falta.Fecha,
+                TipoOrigen = x.Cogida.TipoOrigen,
+                NumeroOrigen = x.Cogida.NumeroOrigen,
+                Usuario = ReglaCalidadAlmacen.Persona(x.Cogida.Usuario),
+                Fecha = x.Cogida.Fecha,
+                Cantidad = x.Cogida.Cantidad
+            }).ToList()
         };
 
         internal static decimal? Porcentaje(int parte, int total) =>

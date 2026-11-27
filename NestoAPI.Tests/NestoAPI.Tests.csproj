@@ -259,6 +259,7 @@
     <Compile Include="Infrastructure\Calidad\ReglaErrorEnvioReclamadoTests.cs" />
     <Compile Include="Infrastructure\Calidad\LectorReclamacionesEnvioSqlTests.cs" />
     <Compile Include="Infrastructure\Agencias\PackingIncompletoEtiquetaTests.cs" />
+    <Compile Include="Infrastructure\Calidad\FaltaQueSiEstabaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecorridoPrimeroEscaleraTests.cs" />
     <Compile Include="Infrastructure\Eventos\DatosTransferenciaInscripcionTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponAdelantadoSinAsistirTests.cs" />

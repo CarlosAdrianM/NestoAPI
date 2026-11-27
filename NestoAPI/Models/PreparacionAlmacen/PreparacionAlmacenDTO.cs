@@ -517,6 +517,12 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int? PendienteParada { get; set; }
         /// <summary>NestoAPI#713: la cantidad total de esa parada. Null si no viene de una parada.</summary>
         public int? TotalParada { get; set; }
+        /// <summary>
+        /// NestoAPI#914 (Ariadna 2.48): el hueco de la parada de donde se cogió, tal como lo pinta el recorrido («001/002/004»). En las faltas,
+        /// sus deshacer y las correcciones, el hueco donde se dio la falta. Null: no viene (el packing no lo manda, Ariadna anterior). Se guarda
+        /// en PreparacionEscaneos.Hueco si existe la columna (Scripts/Issue914c_PreparacionEscaneosHueco.sql); sin ella, como siempre.
+        /// </summary>
+        public string Hueco { get; set; }
     }
 
     public class ResultadoEscaneosAlmacenDTO

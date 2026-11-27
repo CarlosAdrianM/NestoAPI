@@ -124,3 +124,17 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
 - Siempre que se graba el envío de la etiqueta con el packing incompleto (confirmado o desde una versión que no avisa) se apunta el evento de
   calidad `EtiquetaConPackingIncompleto` (una vez por envío: los reintentos y reimpresiones, con el envío ya en curso, no vuelven a mirar el
   packing ni lo repiten). Nunca rompe la etiqueta. Ver `docs/claude/calidad-kpi.md`.
+
+### El hueco de cada lectura del recorrido (NestoAPI#914, Carlos 27/11/26: «SÍ, con la próxima versión de Ariadna»; Ariadna 2.48)
+- `POST api/Almacen/Escaneos?empresa=1` (cuerpo: lista de `EscaneoAlmacenDTO`): cada lectura puede traer `"Hueco": "001/002/004"` (OPCIONAL; el
+  hueco de la parada tal como lo pinta el recorrido, mismo formato que el `Motivo` de las faltas). Lo mandan el picking y las demás salidas que
+  pasan por el recorrido (también la reposición de Algete); el packing usa el mismo endpoint y NO lo manda. Las faltas, sus deshacer y las
+  correcciones en negativo llevan el hueco donde se dio la falta (la corrección de `POST api/Almacen/Escaneos/Corregir` lo pone desde
+  `CorregirEscaneoDTO.Hueco`, también en las de LECTURA).
+- Se guarda en `dbo.PreparacionEscaneos.Hueco varchar(20) NULL` (`Scripts/Issue914c_PreparacionEscaneosHueco.sql`, sa, idempotente, sin GRANT:
+  el verbo INSERT ya lo tenía la API). Recortado a 20. Solo si la columna existe (COL_LENGTH, mismo patrón que PendienteParada/TotalParada de
+  #713: el «sí» se recuerda; el «no», se vuelve a mirar a los 5 minutos) Y la lectura lo trae: sin el script o sin el dato, el INSERT de siempre.
+  Antes de añadirla se revisó el repo: todos los INSERT en la tabla llevan lista de columnas y no hay SELECT * sobre ella.
+  Las compensaciones de `EscriturasSalida` (el INSERT agrupado que deshace las lecturas de un usuario) no copian el hueco: quedan con Hueco NULL.
+- Para qué: el indicador `FaltaQueSiEstaba` del corte 2 de calidad (`docs/claude/calidad-kpi.md`). Límite conocido (Ariadna 2.48): en las salidas
+  que no cambian la reserva, si el mozo coge el producto de otro hueco la app no lo sabe y manda el de la parada.
