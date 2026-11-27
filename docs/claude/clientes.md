@@ -154,6 +154,40 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   para enseñar qué cambiaría; los de picking que cambiarían, sin casilla y con el porqué) → PasarPedidos. En la ficha, botón «Copiar del cliente
   anterior» (Previa + Copiar con los bloques marcados). NestoApp: lo mismo en su alta de cliente (issue gemela); sin pantalla nueva en la ficha.
 
+### Fichas duplicadas y clientes equivalentes por la API; el extracto y los rapports juntos (NestoAPI#876, Carlos 27/11/26)
+- Caso: personas dadas de alta dos veces (mismo NIF; las destapó el control de NIF de Verifactu). El 26/11 se dejó una ficha viva por persona (la
+  otra, Estado -1 y motivo «Duplicado») y `Scripts/OneShot_20261126_ClientesDuplicados_Enlazar.sql` enlazó 9 pares en `dbo.ClientesAnteriores` (la
+  viva apunta a la duplicada; tres fichas, encadenadas: 39570 → 14315 → 5868). Desde hoy, sin script: la MISMA tabla, «Duplicado» o «CambioFiscal».
+- Motivo y comentario: `Scripts/Issue876_ClientesAnteriores_Motivo.sql` (columnas `Motivo varchar(20)` con DEFAULT 'CambioFiscal' —el alta y la copia
+  de #876 no lo mandan— y `Comentario nvarchar(255)`; rellena las de antes: Usuario «Duplicado…» → Duplicado, el resto CambioFiscal). Sin el script
+  todo funciona igual: el motivo y el comentario solo quedan en Modificaciones y el GET los da null.
+- LA REGLA (pura) `ReglaEnlaceEquivalentes.Decidir` (`Infraestructure/Clientes/EquivalenciasClientes.cs`): 400 si falta alguno, son el mismo o el
+  motivo no es ninguno de los dos (tolera «duplicado», «Cambio fiscal», «CAMBIO-FISCAL»); 404 si no existe alguna; 200 `YaEstaba` (sin escribir) si
+  la otra ya está en la cadena del cliente; 409 `CICLO` si la cadena de la otra llega a la del cliente (al revés, o las dos a una misma ficha) o la
+  del cliente no termina; si el cliente ya tiene anterior, ENCADENA (A → B y se pide A → C: B → C), como el script. Avisos sin impedir: con
+  Duplicado, NIF distintos (normalizados) o la otra aún de alta; con CambioFiscal, el mismo NIF; si la otra ya era el anterior de otra ficha (rama).
+- `POST api/Clientes/Equivalentes` {Empresa?, Cliente (la que queda), ClienteAnterior (la otra), Motivo, Comentario?} → `ResultadoEnlaceEquivalenteDTO`
+  {Empresa, Cliente, ClienteAnterior, Motivo, Cambiado, YaEstaba, EnlaceCliente, EnlaceClienteAnterior, Encadenado, Mensaje, Avisos[], Fichas[]};
+  errores `{Message}` (409 con `Codigo` CICLO u OCUPADO —otro enlazó el mismo cliente a la vez—; 503 sin la tabla). Escribe en UNA transacción ADO
+  la fila (solo si el cliente aún no tiene anterior) y la de Modificaciones (Tabla `ClientesAnteriores`, «26815: sin anterior» → «26815: 8244
+  (Duplicado; comentario)»), e invalida la caché de `ClientesEquivalentes`.
+- `GET api/Clientes/{empresa}/{cliente}/Equivalentes` → `ClientesEquivalentesDTO` {Empresa, Cliente, Fichas [{Cliente, Nombre, Estado (de la
+  principal), Activa (algún contacto con Estado ≥ 0), Nif, EsLaConsultada, ClienteAnterior, Motivo, Comentario, Usuario, Fecha}]}: el GRUPO entero
+  en los dos sentidos (`ReglaClientesEquivalentes.Grupo`: el consultado primero y luego desde la ficha más reciente; tope 50). 404 si no existe;
+  sin la tabla, solo la ficha.
+- `DELETE api/Clientes/{empresa}/{cliente}/Equivalentes/{clienteAnterior}`: deshace SOLO esa fila (404 si no es exactamente ese enlace), con rastro.
+- Permisos (los de #876, `MotivoSinPermisoCambioFiscal`): POST y DELETE, Administración, Dirección, Informática y el vendedor de la otra ficha
+  (ClienteAnterior) o su jefe de equipo; el GET, cualquier usuario de dentro. Cliente de la tienda, 403 en los tres. `[Authorize]` en los tres.
+- `IClientesEquivalentes.Todas` (nuevo, junto a `De`): el grupo en los dos sentidos. Conectado SOLO EN LECTURA y solo si se pide
+  (`incluirEquivalentes=true`, por defecto false: Nesto, NestoApp y TNV no cambian; `ConsultaConEquivalentes`, si falla, solo el cliente):
+  `GET api/ExtractosCliente?cliente=` (lo pendiente) y `?empresa&cliente&tipoApunte&fechaDesde&fechaHasta` (movimientos; cada uno dice su ficha en
+  `cliente`); `GET api/SeguimientosClientes?empresa&cliente&contacto` y `GET api/SeguimientosClientes/Resumen?empresa&cliente&contacto` (de las
+  otras fichas, TODOS sus contactos: los números de contacto de una duplicada no tienen por qué coincidir). NO lo miran: DeudaVencida, SaldoAFavor,
+  liquidar, cobros, remesas, riesgo ni el 347.
+- 347: por número de cliente, no por NIF (`ExtractosClienteController.MovimientosModelo347`: `e.Número == cliente`, en la empresa pedida); el NIF
+  solo se comprueba en GetModelo347. Dos fichas duplicadas con el mismo NIF salen como dos certificados. Sin cambiar (decisión pendiente de Carlos).
+- Falta en Nesto: pestaña o botón en la ficha para ver y enlazar equivalentes, y la casilla «Incluir fichas equivalentes» en Extracto y Rapports.
+
 ### Origen del cliente: campaña (lead) o canal (NestoAPI#848, 09/11/26)
 - `dbo.OrigenesCliente.EsLead` (DEFAULT 1): 1 = campaña (META-HARMONIA-0926…: hay que llamarlo), 0 = canal (WEB, AMAZON, TIENDA-REINA,
   TIENDA-ALCOBENDAS, CURSOS: solo un dato para medir). `Scripts/Issue848_OrigenesCanal.sql` ANTES de la API (la API lee la columna).

@@ -420,6 +420,7 @@
     <Compile Include="Infrastructure\Clientes\Direccion2ClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2PedidoTiendaTests.cs" />
     <Compile Include="Infrastructure\Clientes\ClientesAnterioresTests.cs" />
+    <Compile Include="Infrastructure\Clientes\EquivalenciasClientesTests.cs" />
     <Compile Include="Infrastructure\Clientes\CondicionesClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\DireccionCompletaClienteTests.cs" />
     <Compile Include="Infrastructure\Clientes\Direccion2DestinosTests.cs" />

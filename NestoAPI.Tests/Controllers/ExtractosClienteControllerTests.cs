@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
 using System;
@@ -9,6 +10,7 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Controllers
 {
@@ -137,6 +139,63 @@ namespace NestoAPI.Tests.Controllers
                 .ToList();
 
             Assert.AreEqual(0, resultado.Count);
+        }
+
+        // ----- Carlos 27/11/26 (NestoAPI#876): incluirEquivalentes, solo en lectura y solo si se pide -----
+
+        private IClientesEquivalentes EquivalentesDe26815()
+        {
+            IClientesEquivalentes equivalentes = A.Fake<IClientesEquivalentes>();
+            A.CallTo(() => equivalentes.Todas(A<string>._, "26815")).Returns(Task.FromResult<IReadOnlyList<string>>(new List<string> { "26815", "8244" }));
+            controller.ClientesEquivalentes = equivalentes;
+            return equivalentes;
+        }
+
+        [TestMethod]
+        public void GetExtractosCliente_Movimientos_SinIncluirEquivalentes_SoloLaFichaYNiSeMiran()
+        {
+            IClientesEquivalentes equivalentes = EquivalentesDe26815();
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Crear("1", "26815", "1", new DateTime(2026, 11, 20)),
+                Crear("1", "8244", "1", new DateTime(2026, 3, 1))
+            }.AsQueryable());
+
+            List<ExtractoClienteDTO> r = controller.GetExtractosCliente("1", "26815", "1", new DateTime(2026, 1, 1), new DateTime(2026, 12, 31)).ToList();
+
+            CollectionAssert.AreEqual(new[] { "26815" }, r.Select(e => e.cliente).ToList());
+            A.CallTo(() => equivalentes.Todas(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GetExtractosCliente_Movimientos_ConEquivalentes_LosDeLasDosFichasYCadaUnoConLaSuya()
+        {
+            EquivalentesDe26815();
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Crear("1", "26815", "1", new DateTime(2026, 11, 20)),
+                Crear("1", "8244", "1", new DateTime(2026, 3, 1)),
+                Crear("1", "11111", "1", new DateTime(2026, 5, 1))
+            }.AsQueryable());
+
+            List<ExtractoClienteDTO> r = controller.GetExtractosCliente("1", "26815", "1", new DateTime(2026, 1, 1), new DateTime(2026, 12, 31),
+                incluirEquivalentes: true).ToList();
+
+            CollectionAssert.AreEqual(new[] { "8244", "26815" }, r.Select(e => e.cliente).ToList(), "Por fecha, cada uno con su ficha");
+        }
+
+        [TestMethod]
+        public void GetExtractosCliente_Pendiente_ConEquivalentes_TambienLoDeLaOtraFicha()
+        {
+            EquivalentesDe26815();
+            ExtractoCliente propio = Crear("1", "26815", "1", new DateTime(2026, 11, 20));
+            propio.ImportePdte = 10m;
+            ExtractoCliente deLaOtra = Crear("1", "8244", "1", new DateTime(2026, 3, 1));
+            deLaOtra.ImportePdte = 25m;
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { propio, deLaOtra }.AsQueryable());
+
+            Assert.AreEqual(1, controller.GetExtractosCliente("26815").Count(), "Por defecto, como siempre");
+            CollectionAssert.AreEquivalent(new[] { "26815", "8244" }, controller.GetExtractosCliente("26815", incluirEquivalentes: true).Select(e => e.cliente).ToList());
         }
 
         // ----- DeudaVencida (Nesto#340, 1C.8 slice 2) -----
