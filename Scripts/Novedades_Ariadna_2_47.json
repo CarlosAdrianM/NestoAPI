@@ -1,0 +1,28 @@
+{
+  "Ambito": "Ariadna",
+  "Fecha": "2026-11-27",
+  "Novedades": [
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Enviar reposición en el móvil: la tarjeta de arriba se ve entera",
+      "Descripcion": "En el móvil, la tarjeta de arriba (producto, referencia y lo que hay que mandar) se ve siempre entera al enviar una reposición, y también en recibir, ubicar, inventario y las demás pantallas con lista: la que cede el sitio es la lista de abajo.",
+      "SugerenciaId": 1503
+    },
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Preparar pedidos en el móvil: ubicación, referencia y código de barras vuelven a verse juntos",
+      "Descripcion": "Al preparar pedidos en el móvil, la ubicación, la referencia y el código de barras vuelven a verse juntos arriba, sin tener que desplazar la pantalla.",
+      "SugerenciaId": 1454
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Reparto: hay que cargar la furgoneta leyendo los bultos",
+      "Descripcion": "A partir del lunes 30 de noviembre solo se podrá entregar lo que se lleve cargado a nombre de quien entrega. Al entrar en Reparto por la mañana, un aviso lo recuerda y señala «Cargar furgoneta» en el menú; mientras no haya nada cargado, una banda lo indica en la lista. Si en un cliente falta algo por cargar, basta con leer ese bulto (o el papel de la nota) para cargarlo en ese momento."
+    },
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Reparto: no se pierde lo tecleado si la entrega se rechaza por no estar cargada",
+      "Descripcion": "Si al entregar la aplicación avisa de que la parada no está cargada, al volver a pulsar Entregar se conserva lo que ya se había escrito: quién recibe, el DNI, el cobro y el comentario. La firma se conserva si no ha cambiado lo que firma el cliente."
+    }
+  ]
+}

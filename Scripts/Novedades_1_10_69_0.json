@@ -1,0 +1,87 @@
+{
+  "Ambito": "Nesto",
+  "Fecha": "2026-11-27",
+  "Novedades": [
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Modificar un pedido con la plantilla: se ven y se conservan los descuentos de campaña",
+      "Descripcion": "Al modificar un pedido existente con la plantilla, «% Dto.», la base de cada línea y los totales salían sin los descuentos de producto (los de campaña y los de muestras), y al guardar podían perderse. Ahora se enseña el descuento real de cada línea y una línea que no se toca se guarda con sus descuentos tal como estaban.",
+      "Perfiles": [
+        "Vendedores",
+        "Tiendas"
+      ],
+      "SugerenciaId": 1504
+    },
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Buscador de clientes del pedido: encuentra clientes de cualquier vendedor si tiene ese permiso",
+      "Descripcion": "Quien tiene permiso para ver los clientes de todos los vendedores (tiendas y centralita) ya puede buscarlos también desde «Iniciar Pedido Nuevo», «Cambiar cliente…», Copiar factura, el extracto y las demás pantallas con ese buscador, por nombre, número o teléfono. Antes solo salían los de su vendedor.",
+      "Perfiles": [
+        "Tiendas",
+        "Vendedores"
+      ],
+      "SugerenciaId": 1506
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Rapports: la centralita busca clientes de cualquier vendedor",
+      "Descripcion": "En el buscador de clientes de Rapports, quien tiene permiso para ver los clientes de todos los vendedores ya los encuentra, y sigue saliendo primero su contacto telefónico.",
+      "Perfiles": [
+        "Vendedores"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Ficha del cliente: pestaña «Fichas equivalentes»",
+      "Descripcion": "Cuando un cliente tiene dos fichas (una duplicada, o la anterior a un cambio de forma fiscal), la pestaña «Fichas equivalentes» las enseña juntas y permite enlazarlas o deshacer el enlace. En el extracto y en los rapports aparece entonces la casilla «Incluir fichas equivalentes» para ver el histórico de todas a la vez; lo que se cobra o se apunta sigue yendo a la ficha abierta.",
+      "Perfiles": [
+        "Administración",
+        "Vendedores"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Cupones: un cupón no puede superar al pedido",
+      "Descripcion": "Un cupón se usa de una vez y entero, así que el pedido tiene que llevar en productos (IVA incluido, sin contar cursos ni portes) al menos el importe del cupón. Si no llega, al guardar se avisa de cuánto falta y el cupón se conserva para otro pedido. Recuerde que después de pulsar «Añadir el cupón» hay que guardar el pedido para que quede aplicado.",
+      "Perfiles": [
+        "Vendedores",
+        "Tiendas"
+      ]
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Correo de modificación de un pedido: dice qué está ya entregado o facturado",
+      "Descripcion": "En el correo de un pedido modificado, cada línea ya servida lleva su marca («Entregada: albarán…» o «Facturada: factura…»). Si no queda nada por entregar, el correo lo dice arriba y ya no enseña el modo de entrega, la fecha ni el aviso de cambio de fecha a la agencia.",
+      "Perfiles": [
+        "Vendedores",
+        "Tiendas",
+        "Almacén"
+      ]
+    },
+    {
+      "Categoria": "Corregido",
+      "Titulo": "Correo del pedido que se separa de otro en preparación",
+      "Descripcion": "Cuando lo añadido a un pedido que ya estaba en preparación pasa a un pedido nuevo, el correo ya no dice «creado sin pasar validación» (no era cierto): dice que se ha creado automáticamente al separarlo del pedido original.",
+      "Perfiles": [
+        "Vendedores",
+        "Tiendas"
+      ]
+    },
+    {
+      "Categoria": "Nuevo",
+      "Titulo": "Envíos por asignar: «Este remitente es del proveedor…»",
+      "Descripcion": "En «Envíos por asignar» se puede decir de qué proveedor es un remitente que el sistema no reconoce, para que la próxima vez lo proponga solo. Un correo de un pedido que ya se había recibido se puede asignar igualmente (no cambia ninguna fecha) y, cuando el remitente es conocido pero no tiene pedidos pendientes, la lista lo explica.",
+      "Perfiles": [
+        "Compras"
+      ]
+    },
+    {
+      "Categoria": "Mejorado",
+      "Titulo": "Aviso de ficha desde el almacén: las fotos del correo salen a un tamaño razonable",
+      "Descripcion": "En el correo del aviso de ficha, la foto que hace el mozo ya no sale a tamaño completo en Outlook.",
+      "Perfiles": [
+        "Compras"
+      ]
+    }
+  ]
+}
