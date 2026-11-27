@@ -863,7 +863,8 @@ namespace NestoAPI.Infraestructure
 
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
             int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
-            string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion, pedido.AutorizadoPor);
+            string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion, pedido.AutorizadoPor,
+                pedido.SeparadoDelPedido, pedido.ValidadoAlAnadirse);
             if (!string.IsNullOrEmpty(htmlValidacion))
             {
                 _ = s.Append(htmlValidacion);
@@ -1923,14 +1924,32 @@ namespace NestoAPI.Infraestructure
         /// <param name="respuesta">La respuesta de validación (puede ser null)</param>
         /// <param name="colspan">Número de columnas para el colspan</param>
         /// <returns>HTML de la sección de validación, o string vacío si no aplica</returns>
-        internal string GenerarHtmlSeccionValidacion(bool creadoSinPasarValidacion, RespuestaValidacion respuesta, int colspan, string autorizadoPor = null)
+        /// <param name="separadoDelPedido">Pedido 931846: el pedido del que el sistema ha separado lo añadido en preparación (null si no).</param>
+        /// <param name="validadoAlAnadirse">Pedido 931846: la marca de «sin validar» la puso el sistema porque las líneas ya pasaron la validación
+        /// al añadirse: no se dice «creado sin pasar validación», solo se avisa si hoy no la pasaría.</param>
+        internal string GenerarHtmlSeccionValidacion(bool creadoSinPasarValidacion, RespuestaValidacion respuesta, int colspan, string autorizadoPor = null,
+            int? separadoDelPedido = null, bool validadoAlAnadirse = false)
         {
+            string separacion = separadoDelPedido.HasValue
+                ? $"<tr><td colspan='{colspan}'>Pedido creado automáticamente al separar del pedido {separadoDelPedido.Value} lo que se le añadió cuando ya estaba en preparación.</td></tr>{Environment.NewLine}"
+                : string.Empty;
             if (!creadoSinPasarValidacion)
             {
-                return string.Empty;
+                return separacion;
+            }
+            if (validadoAlAnadirse)
+            {
+                // Nadie decidió saltarse la validación: solo se dice si algo ha cambiado y hoy no la pasaría
+                if (respuesta == null || respuesta.ValidacionSuperada)
+                {
+                    return separacion;
+                }
+                return separacion + "<tr style=\"color: red;\">" + Environment.NewLine
+                    + $"<td colspan='{colspan}'>Aviso: estas líneas pasaron la validación al añadirse, pero ahora no la pasarían:<br/>• {MotivoValidacionNoSuperada(respuesta).Replace(Environment.NewLine, "<br/>• ")}</td>"
+                    + Environment.NewLine + "</tr>" + Environment.NewLine;
             }
 
-            StringBuilder s = new StringBuilder();
+            StringBuilder s = new StringBuilder(separacion);
             _ = s.AppendLine("<tr style=\"color: red;\">");
 
             if (respuesta != null)
@@ -1938,11 +1957,7 @@ namespace NestoAPI.Infraestructure
                 if (!respuesta.ValidacionSuperada)
                 {
                     // La validación actual NO pasa - mostrar el motivo del error
-                    string motivo = !string.IsNullOrEmpty(respuesta.Motivo) ?
-                        respuesta.Motivo :
-                        (respuesta.Motivos != null && respuesta.Motivos.Any() ?
-                            string.Join("<br/>• ", respuesta.Motivos.Select(m => m)) :
-                            "Error de validación no especificado");
+                    string motivo = MotivoValidacionNoSuperada(respuesta);
                     _ = s.AppendLine($"<td colspan='{colspan}'>Nota: pedido creado sin pasar validación (actualmente NO pasaría la validación)<br/><strong>Motivo:</strong><br/>• {motivo.Replace(Environment.NewLine, "<br/>• ")}</td>");
                 }
                 else
@@ -1963,10 +1978,17 @@ namespace NestoAPI.Infraestructure
             if (!string.IsNullOrWhiteSpace(autorizadoPor))
             {
                 // Carlos 26/11/26: el pedido lo pidió uno y lo autorizó otro: que el correo diga quién.
-                _ = s.Replace("</td>", $"<br/><strong>Autorizado por:</strong> {System.Net.WebUtility.HtmlEncode(autorizadoPor.Trim())}</td>");
+                _ = s.Replace("</td>", $"<br/><strong>Autorizado por:</strong> {System.Net.WebUtility.HtmlEncode(autorizadoPor.Trim())}</td>", separacion.Length, s.Length - separacion.Length);
             }
             return s.ToString();
         }
+
+        private static string MotivoValidacionNoSuperada(RespuestaValidacion respuesta)
+            => !string.IsNullOrEmpty(respuesta.Motivo) ?
+                respuesta.Motivo :
+                (respuesta.Motivos != null && respuesta.Motivos.Any() ?
+                    string.Join("<br/>• ", respuesta.Motivos.Select(m => m)) :
+                    "Error de validación no especificado");
 
         public void Rellenar(int numeroPedido)
         {

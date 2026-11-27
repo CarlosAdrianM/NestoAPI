@@ -99,6 +99,7 @@ Lo nuevo de este tema se apunta aquí, en su sección o en una nueva; en `CLAUDE
   toca y se avisa). `notificacionResuelta` + campana/push a quien lo pidió. `GET …/AmpliacionesEnPreparacion[?pendientes=false]`, `GET …/{id}`.
 - Correo: lo añadido sin picking en un pedido con picking sale como «Añadido después de sacar el picking (pendiente de que Almacén diga…)» o, en
   «Todo junto», «(sale aparte; puede salir el…)» (`GestorPresupuestos.PartidasAnadidasTrasElPicking`).
+- Correo del pedido nuevo separado (pedido 931846, Carlos 27/11/26): `ConstruirPedidoNuevo` pone `SeparadoDelPedido` y, en el «No»/vencimiento (marca de «sin validar» puesta por el sistema), `ValidadoAlAnadirse` (los dos JsonIgnore): el correo dice «Pedido creado automáticamente al separar del pedido N…» y no «creado sin pasar validación»; solo si hoy no la pasaría, «Aviso: estas líneas pasaron la validación al añadirse, pero ahora no la pasarían: …». Del PUT con `CreadoSinPasarValidacion` del usuario, las dos cosas.
 - **Cupón o cheque añadido con picking vivo (NestoAPI#900, pedido 930535, 25/11/26)**: en el PUT, la línea NUEVA de cupón de evento o de cheque regalo
   (−1, ALG) de un pedido con UN picking vivo (líneas -1..1 con picking) toma ese picking (y pasa a en curso) si con lo ya entregado + ese picking llega a
   su mínimo: LA REGLA (pura) `ReglaDescuentoAnadidoConPicking.Decidir` (`Models/Picking/DescuentoAnadidoConPicking.cs`), con la MISMA decisión del picking

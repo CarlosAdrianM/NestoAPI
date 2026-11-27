@@ -267,6 +267,32 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         [TestMethod]
+        public void ConstruirPedidoNuevo_DiceDeQuePedidoSeSeparaYQuienPusoLaMarcaSinValidar()
+        {
+            // Pedido 931846 (Carlos 27/11/26): el correo tiene que saber que lo creó el sistema y si la marca de «sin validar» la puso él.
+            var original = new PedidoVentaDTO { empresa = "1", numero = 931730, cliente = "15191", contacto = "0", Usuario = "NUEVAVISION\\Paloma" };
+
+            PedidoVentaDTO delSistema = AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo(original, new[] { Nueva() }, "NUEVAVISION\\Paloma", Hoy,
+                creadoSinPasarValidacion: true, validadoAlAnadirse: true);
+            PedidoVentaDTO delPutSinValidar = AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo(original, new[] { Nueva() }, "NUEVAVISION\\Paloma", Hoy, true);
+            PedidoVentaDTO delPutValidado = AmpliacionPedidoEnPreparacion.ConstruirPedidoNuevo(original, new[] { Nueva() }, "NUEVAVISION\\Paloma", Hoy, false);
+
+            Assert.AreEqual(931730, delSistema.SeparadoDelPedido);
+            Assert.IsTrue(delSistema.CreadoSinPasarValidacion, "La lógica de creación no cambia");
+            Assert.IsTrue(delSistema.ValidadoAlAnadirse);
+            Assert.AreEqual(931730, delPutSinValidar.SeparadoDelPedido);
+            Assert.IsTrue(delPutSinValidar.CreadoSinPasarValidacion);
+            Assert.IsFalse(delPutSinValidar.ValidadoAlAnadirse, "Lo eligió el usuario: el correo lo dice");
+            Assert.IsFalse(delPutValidado.CreadoSinPasarValidacion);
+            Assert.IsFalse(delPutValidado.ValidadoAlAnadirse);
+
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(delSistema,
+                new Newtonsoft.Json.JsonSerializerSettings { ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore });
+            Assert.IsFalse(json.Contains("SeparadoDelPedido"), "No viaja en el JSON");
+            Assert.IsFalse(json.Contains("ValidadoAlAnadirse"), "No viaja en el JSON");
+        }
+
+        [TestMethod]
         public void AvisoPedidoNuevo_ConPrepagoLoDice()
         {
             var original = new PedidoVentaDTO { numero = 931007, plazosPago = "PRE" };
